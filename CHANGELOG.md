@@ -13,6 +13,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`gsync` was undocumented in `aliases.md`.** The upstream-sync helper
+  (`zsh/aliases.zsh`, pushes an OS repo's vendored `core/` back to dotfiles-core)
+  had no entry in the aliases cheat sheet. Added an "Upstream Sync" section.
+
 ## [v3.0.0] - 2026-07-02
 
 ### Added
