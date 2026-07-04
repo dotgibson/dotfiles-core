@@ -13,6 +13,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **nvim: `utils/ui-highlights.lua` — a flat table of NvChad-flavored highlight
+  overrides.** Hairline window splits (`WinSeparator`/`VertSplit`), minimal
+  rounded floats (`NormalFloat`/`FloatBorder`/`FloatTitle`), a border-tinted
+  fzf-lua palette (`FzfLua*`), a matching blink.cmp menu/docs palette
+  (`BlinkCmp*`), and NvChad's dim-linenr / bright-current-line gutter. Applied
+  through tokyonight's `on_highlights` in `plugins/theme.lua`, so it re-runs on
+  every `:colorscheme` and recolors from whatever `style`/theme is active — no
+  `ColorScheme` autocmd, no per-plugin hardcoded hexes. Deliberately one flat
+  function, not a helper framework.
+
+### Changed
+
+- **nvim: the statusline now wears NvChad's rounded block look.** `plugins/lualine-nvim.lua`
+  keeps its sections and (intentionally) its existing diagnostic glyphs — which
+  stay in lockstep with `utils/diagnostics.lua` and the tabline — but swaps
+  powerline arrows for NvChad's half-circle bubble caps (U+E0B6 / U+E0B4)
+  and drops inner component separators so each half reads as one clean run of
+  blocks. Adds a cwd (project basename) segment on the right, the cue a global
+  statusline otherwise loses. Still a standard lualine config — no NvChad
+  backend, no statusline caching, no managed toggle state.
+- **nvim: fzf-lua now mirrors NvChad's telescope layout.** `plugins/fzf-lua.lua`
+  gains `winopts`/`fzf_opts` translated 1:1 from `nvchad/configs/telescope.lua`
+  (width 0.87, height 0.80, 55% preview on the right, prompt on top, a
+  U+F002 magnifier prompt prefix, a U+F0DA selection caret) with rounded
+  borders — the minimal
+  NvChad finder look, on the finder you actually run (fzf-lua, not telescope).
+- **nvim: the bufferline tabline picks up NvChad's flat-tab modified dot.**
+  `plugins/bufferline-nvim.lua` sets `modified_icon` to the same ● (f111) used by
+  lualine and incline, and annotates `separator_style = "thin"` as the flat,
+  NvChad-tabufline-style rectangular tabs it already produces.
+
 ## [v3.0.1] - 2026-07-03
 
 ### Changed
