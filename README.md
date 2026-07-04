@@ -23,19 +23,23 @@ dotfiles system — authored once, vendored into every OS layer via `git subtree
 <!-- Row 3 — Languages (simpleicons brand colors) -->
 ![Zsh](https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white)
 ![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white)
-![Lua](https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white)
+![Lua](https://img.shields.io/badge/Lua-000080?style=flat-square&logo=lua&logoColor=white)
 ![TOML](https://img.shields.io/badge/TOML-9C4121?style=flat-square&logo=toml&logoColor=white)
+![YAML](https://img.shields.io/badge/YAML-CB171E?style=flat-square&logo=yaml&logoColor=white)
+![JSON](https://img.shields.io/badge/JSON-000000?style=flat-square&logo=json&logoColor=white)
 
-<!-- Row 4 — Tooling (branded via simpleicons; mise/lazygit/jujutsu/sesh have no icon → neutral) -->
+<!-- Row 4 — Tooling (branded via simpleicons; mise/lazygit/jujutsu/sesh/fzf have no icon → neutral) -->
 ![Neovim](https://img.shields.io/badge/Neovim-57A143?style=flat-square&logo=neovim&logoColor=white)
 ![Vim](https://img.shields.io/badge/Vim-019733?style=flat-square&logo=vim&logoColor=white)
 ![tmux](https://img.shields.io/badge/tmux-1BB91F?style=flat-square&logo=tmux&logoColor=white)
 ![Starship](https://img.shields.io/badge/Starship-DD0B78?style=flat-square&logo=starship&logoColor=white)
-![Git](https://img.shields.io/badge/Git-F05032?style=flat-square&logo=git&logoColor=white)
+![Git](https://img.shields.io/badge/Git-F03C2E?style=flat-square&logo=git&logoColor=white)
+![1Password](https://img.shields.io/badge/1Password-145FE4?style=flat-square&logo=1password&logoColor=white)
 ![mise](https://img.shields.io/badge/mise-4C566A?style=flat-square)
 ![lazygit](https://img.shields.io/badge/lazygit-4C566A?style=flat-square)
 ![jujutsu](https://img.shields.io/badge/jujutsu-4C566A?style=flat-square)
 ![sesh](https://img.shields.io/badge/sesh-4C566A?style=flat-square)
+![fzf](https://img.shields.io/badge/fzf-4C566A?style=flat-square)
 
 ---
 
