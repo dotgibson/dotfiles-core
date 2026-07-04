@@ -19,12 +19,17 @@ dotfiles system — authored once, vendored into every OS layer via `git subtree
 ![last commit](https://img.shields.io/github/last-commit/dotgibson/dotfiles-core?branch=main&style=flat-square&logo=git&logoColor=white)
 ![commit activity](https://img.shields.io/github/commit-activity/m/dotgibson/dotfiles-core?style=flat-square&logo=git&logoColor=white)
 
-<!-- Row 3 — Tech stack & ecosystem (simpleicons brand colors) -->
-![PowerShell](https://img.shields.io/badge/PowerShell-5391FE?style=flat-square&logo=powershell&logoColor=white)
+<!-- Row 3 — Languages (simpleicons brand colors) -->
 ![Zsh](https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white)
 ![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white)
 ![Lua](https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white)
 ![TOML](https://img.shields.io/badge/TOML-9C4121?style=flat-square&logo=toml&logoColor=white)
+
+<!-- Row 4 — Tooling (simpleicons brand colors) -->
+![Neovim](https://img.shields.io/badge/Neovim-57A143?style=flat-square&logo=neovim&logoColor=white)
+![tmux](https://img.shields.io/badge/tmux-1BB91F?style=flat-square&logo=tmux&logoColor=white)
+![Starship](https://img.shields.io/badge/Starship-DD0B78?style=flat-square&logo=starship&logoColor=white)
+![Git](https://img.shields.io/badge/Git-F05032?style=flat-square&logo=git&logoColor=white)
 
 ---
 
