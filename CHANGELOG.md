@@ -19,10 +19,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   status & automation — live `ci` and `core-integrity` Actions status,
   open-issue / open-PR counts, repo size, and latest release. Row 2 is the
   MIT license (auto-detected from `LICENSE`) plus last-commit / commit-activity.
-  Row 3 is the languages and Row 4 the tooling, both with official simpleicons
-  brand colors (Zsh, Bash, Lua, TOML; Neovim, tmux, Starship, Git). All
-  `flat-square`; the old hardcoded `audit-passing` shield is replaced by the
-  live `ci` status it was standing in for.
+  Row 3 is the languages and Row 4 the tooling, with official simpleicons
+  brand colors (Zsh, Bash, Lua, TOML; Neovim, tmux, Starship, Git, plus a
+  plain `mise` badge — it has no simpleicon). Row 1 leads with a `dotgibson`
+  badge whose icon is the org avatar, embedded as a base64 data-URI logo and
+  linked to the org profile. All `flat-square`; the old hardcoded
+  `audit-passing` shield is replaced by the live `ci` status it stood in for.
 - **nvim: `utils/ui-highlights.lua` — a flat table of NvChad-flavored highlight
   overrides.** Hairline window splits (`WinSeparator`/`VertSplit`), minimal
   rounded floats (`NormalFloat`/`FloatBorder`/`FloatTitle`), a border-tinted
