@@ -5,7 +5,26 @@ dotfiles system — authored once, vendored into every OS layer via `git subtree
 
 `zsh` · `nvim` · `tmux` · `starship`
 
-[![showcase](https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square)](https://dotgibson.github.io/dotfiles-web/) ![audit](https://img.shields.io/badge/audit-passing-9ece6a?style=flat-square)
+<!-- Row 1 — Repo status & automation (CI/CD) -->
+[![ci](https://img.shields.io/github/actions/workflow/status/dotgibson/dotfiles-core/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=ci)](https://github.com/dotgibson/dotfiles-core/actions/workflows/ci.yml)
+[![core-integrity](https://img.shields.io/github/actions/workflow/status/dotgibson/dotfiles-core/core-integrity.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=core-integrity)](https://github.com/dotgibson/dotfiles-core/actions/workflows/core-integrity.yml)
+[![open issues](https://img.shields.io/github/issues/dotgibson/dotfiles-core?style=flat-square&logo=github)](https://github.com/dotgibson/dotfiles-core/issues)
+[![open PRs](https://img.shields.io/github/issues-pr/dotgibson/dotfiles-core?style=flat-square&logo=github)](https://github.com/dotgibson/dotfiles-core/pulls)
+![repo size](https://img.shields.io/github/repo-size/dotgibson/dotfiles-core?style=flat-square&logo=github)
+[![latest release](https://img.shields.io/github/v/release/dotgibson/dotfiles-core?style=flat-square&logo=github&label=release)](https://github.com/dotgibson/dotfiles-core/releases/latest)
+[![showcase](https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square)](https://dotgibson.github.io/dotfiles-web/)
+
+<!-- Row 2 — License & project info -->
+[![license](https://img.shields.io/github/license/dotgibson/dotfiles-core?style=flat-square&color=blue)](LICENSE)
+![last commit](https://img.shields.io/github/last-commit/dotgibson/dotfiles-core?branch=main&style=flat-square&logo=git&logoColor=white)
+![commit activity](https://img.shields.io/github/commit-activity/m/dotgibson/dotfiles-core?style=flat-square&logo=git&logoColor=white)
+
+<!-- Row 3 — Tech stack & ecosystem (simpleicons brand colors) -->
+![PowerShell](https://img.shields.io/badge/PowerShell-5391FE?style=flat-square&logo=powershell&logoColor=white)
+![Zsh](https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white)
+![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white)
+![Lua](https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white)
+![TOML](https://img.shields.io/badge/TOML-9C4121?style=flat-square&logo=toml&logoColor=white)
 
 ---
 

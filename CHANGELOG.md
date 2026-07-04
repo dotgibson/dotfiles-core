@@ -15,6 +15,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **README: a structured three-row badge block at the top.** Row 1 is repo
+  status & automation — live `ci` and `core-integrity` Actions status,
+  open-issue / open-PR counts, repo size, and latest release. Row 2 is the
+  MIT license (auto-detected from `LICENSE`) plus last-commit / commit-activity.
+  Row 3 is the tech stack with official simpleicons brand colors (PowerShell,
+  Zsh, Bash, Lua, TOML). All `flat-square`; the old hardcoded `audit-passing`
+  shield is replaced by the live `ci` status it was standing in for.
 - **nvim: `utils/ui-highlights.lua` — a flat table of NvChad-flavored highlight
   overrides.** Hairline window splits (`WinSeparator`/`VertSplit`), minimal
   rounded floats (`NormalFloat`/`FloatBorder`/`FloatTitle`), a border-tinted
