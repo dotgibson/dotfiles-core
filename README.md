@@ -2,16 +2,11 @@
 <a id="readme-top"></a>
 
 <!-- Project Shields -->
-[![dotgibson][dotgibson-shield]][dotgibson-url]
-[![CI][ci-shield]][ci-url]
-![Last Commit][lastcommit-shield]
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![Showcase][showcase-shield]][showcase-url]
-[![MIT License][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
+<p align="center">
+
+[![dotgibson][dotgibson-shield]][dotgibson-url] [![CI][ci-shield]][ci-url] ![Last Commit][lastcommit-shield] [![Contributors][contributors-shield]][contributors-url] [![Forks][forks-shield]][forks-url] [![Stargazers][stars-shield]][stars-url] [![Issues][issues-shield]][issues-url] [![Showcase][showcase-shield]][showcase-url] [![MIT License][license-shield]][license-url] [![LinkedIn][linkedin-shield]][linkedin-url]
+
+</p>
 
 <!-- PROJECT LOGO -->
 <br />
