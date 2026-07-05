@@ -25,9 +25,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Every brand color is taken from the `simple-icons` dataset (e.g. Lua `000080`,
   Git `F03C2E`, 1Password `145FE4`). Vim is the `vim/vimrc` fallback editor for
   boxes with no nvim, not just the `vim=nvim` alias; the tooling row covers
-  every tool Core ships a dedicated config for. Every language/tool badge links
-  to its home in the repo (e.g. Lua → `nvim/`, tmux → `tmux/tmux.conf`,
-  fzf → `zsh/fzf.zsh`). Row 1 leads with a `dotgibson` badge that shows the
+  every tool Core ships a dedicated config for. Each Row 3/4 badge links to its
+  upstream project on GitHub and, where the project publishes releases/tags,
+  shows the current upstream version live (Neovim, Vim, tmux, Starship, Git,
+  Lua, TOML, mise, lazygit, jujutsu, sesh, fzf); Zsh, Bash, YAML, JSON, and
+  1Password have no clean upstream version and stay plain. Row 1 leads with a
+  `dotgibson` badge that shows the
   current release version (dynamic `github/v/release`) with the org avatar as
   its icon (base64 data-URI logo) and links to the latest release. All `flat-square`; the old hardcoded `audit-passing`
   shield is replaced by the live `ci` status it stood in for.
