@@ -82,11 +82,11 @@ Of course, what works for me won't necessarily work for everyone. Dotfiles are v
 ### Languages
 
 * [![Zsh][zsh-shield]][zsh-url]
-* [![React][React.js]][React-url]
-* [![Vue][Vue.js]][Vue-url]
-* [![Angular][Angular.io]][Angular-url]
-* [![Svelte][Svelte.dev]][Svelte-url]
-* [![Laravel][Laravel.com]][Laravel-url]
+* [![Bash][bash-shield]][bash-url]
+* [![Lua][lua-shield]][lua-url]
+* [![TOML][toml-shield]][toml-url]
+* [![YAML][yaml-shield]][yaml-url]
+* [![JSON][json-shield]][json-url]
 
 ### Tools
 * [![Laravel][Laravel.com]][Laravel-url]
