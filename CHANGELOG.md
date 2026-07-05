@@ -15,6 +15,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **README: a structured four-row badge block at the top.** Row 1 is repo
+  status & automation — live `ci` and `core-integrity` Actions status,
+  open-issue / open-PR counts, repo size, and latest release. Row 2 is the
+  MIT license (auto-detected from `LICENSE`) plus last-commit / commit-activity.
+  Row 3 is the languages (Zsh, Bash, Lua, TOML, YAML, JSON) and Row 4 the
+  tooling (Neovim, Vim, tmux, Starship, Git, 1Password). Tools with no
+  simpleicon (`mise`, `lazygit`, `jujutsu`, `sesh`, `fzf`) get a neutral badge.
+  Every brand color is taken from the `simple-icons` dataset (e.g. Lua `000080`,
+  Git `F03C2E`, 1Password `145FE4`). Vim is the `vim/vimrc` fallback editor for
+  boxes with no nvim, not just the `vim=nvim` alias; the tooling row covers
+  every tool Core ships a dedicated config for. Row 1 leads with a `dotgibson`
+  badge whose icon is the org avatar, embedded as a base64 data-URI logo and
+  linked to the org profile. All `flat-square`; the old hardcoded
+  `audit-passing` shield is replaced by the live `ci` status it stood in for.
 - **nvim: `utils/ui-highlights.lua` — a flat table of NvChad-flavored highlight
   overrides.** Hairline window splits (`WinSeparator`/`VertSplit`), minimal
   rounded floats (`NormalFloat`/`FloatBorder`/`FloatTitle`), a border-tinted

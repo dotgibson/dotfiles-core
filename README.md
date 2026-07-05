@@ -5,7 +5,41 @@ dotfiles system — authored once, vendored into every OS layer via `git subtree
 
 `zsh` · `nvim` · `tmux` · `starship`
 
-[![showcase](https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square)](https://dotgibson.github.io/dotfiles-web/) ![audit](https://img.shields.io/badge/audit-passing-9ece6a?style=flat-square)
+<!-- Row 1 — Repo status & automation (CI/CD) -->
+[![dotgibson](https://img.shields.io/badge/dotgibson-181717?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAF1klEQVR4nLSWbUxT7RnHr9PT09MXSltaoC9QXkqR16Iwhb0Iw8VYYE7jPri5aBaZzpmFZbpolpn4QeMyM%2BM%2B7MVt0Q9LNJIlxCzqxGWS6aKAig51vBQKIi3QltpCS0%2Fbc879pD1N3%2Bnz4fG5Pl2977v%2F331d131f5%2BZrddWQZAgAgy9uCRlefICzT6GeIsP%2FXF15kahmu9JglGmLRQoRQdIQWgu77BuWGe%2Fo%2BOqym8odApaWomTT1%2Bl2HqirahaTuJ9kQMggkgYhDRGfRiQDZBi9fuf52%2BD7l1b3ZhRcmq%2FMnBHmibuO7fvWoTalVoDjQRwL8RGgEOtzB0MbtBDnkRjGR0AgTK%2BQfNukr1LKXlhXKZpJSxTKGoFSq9vf16tQ8%2FiEh094Vu0L449mLGMup20DRWuFYVCiFm%2BvU36nTbOlMB%2BnCDxIOBzhvv6nFpc3TS0dUKDRHzh1Jk9O8wlPYN326Oa%2FJobnN8shAOxqKjrdXa8WSnGKWPewR%2FuHLG5P8oKUFJHi%2FH19F6UKEQ%2BnbJap27%2B%2BtWR15VAHgLkV%2F%2F0xW6OuQCfNE4PgmyX6f0xZKYbJDuj43lmtoYqHU%2FaZdwNXr4eoUG51zqgw%2B%2FCtrbm0UCeRynBhqVj2YC4RNC%2FuqStbKkydAODzeO7%2B6QYTpnOIYgB729R729RY9DAGafb0wDOHLwAA5vKK1mJNFoCpsxeLLn%2Fy91uU359719%2FfVXL%2BSM35IzU9rcXciCcQujz0imOfbGhOB0jkGo2hFQBW7Quzr0Zzq6vyBT%2FuKY%2BHErfBmQWLK1Lhr6l1OkleCqC0poPb%2FuTwv3OrA8DPDhgkokgLmLX77o86kqcGJmaj5xjr1JWlAAr1Js75MDEGAAI%2B1mvWX%2F1JY29XmYDPS5ZoNsrM24si1xSh3%2FRbGBYlz%2F73g41ztqliqYv1onyVHgDocMjjXASAKycavlqnZBHa2ajcasjv%2B8MbAPhRV9nI5MezB41crIPPHWOW9Gtl9XhDDCMCokIqSwGQ4shvyucFhEQCnqlSdm9k%2BdKt6XM%2FqO7aof7t8YbIIW5SHdpVIhUTAOAP0L8bmM3MHgJwByidQCgnhSmAqOEYnQ8AgRBr%2FuUzKsgggIs3pyVCfkeTCgAmFtaNOgm39C%2F3511r2W8JYvIAJbIaAwQ3vKAEoVgRaTQIBYKxqxgMs6euvdUXiQDgeHd5rV7K1fb2kC2rOgaYghQBMJ5grI3HUGuuhQiNIOWq8sy%2FLTgCKplgT0ZtCyprWw7%2FvKCyNr6yQqYg8cim59a9KQDnwv84R1%2F99UwAzsMya4vxeOYLN7YePGG%2BcAPjxXS%2BoavknFfOlRTAh8nHKNqLa1v2ZwK6dxQZtHk5ahu3%2FcYmLsoh%2B%2FsUgN%2BztDQzEvkYFBurGnan%2FS1%2B1P98L1FbxLIPzh193X%2FtwbmjiGUBYHd5nVFRCABPlxdtfh%2B3LHGKxof%2Bqo90C6yj58yi9Tm1kWjr94ZXsGhTuDuynAx2z0245yY4X06Kf9HWFd0N%2BuPbsUR64%2B3a57Erig2qIoOIlJSUNE69GWTZRFufXvRNL%2Fo2ywyJE1fMP6xWqHBEP5yfvP7%2FbAAAsFufG01mkVCqkGvLyrbNTD2mw9kfDckmE0oudx9rUZfhiF5Zd%2F%2F00QDF0NkBTJhanB3e0riHJIRKhXarqWfdu%2Bx0WnOot1ftuNR90lhQzEO0L7B2YvCm3b%2BWNI%2ByffSLq757%2BPcquYaIvBtgdcXycuzO9MzTFdccd9IwDNMVlDaXbzPXtxsVhQRDEQzl8i6d%2Buf12Y%2BONDVMo6vOfHWJxHLz3l811u8WAEZABCNAAHSI8n8k2HABKRJjLJ8JECxFMAE%2BHXhiGb7yn35vcCNDKVsEcSuv%2BEpn%2B7Etla0CwAQIOBLBhrkt85kAnwm8mX95e%2FTOa9vUZiIxQI43r0Kura9uN5SYNMoyuVDGZ2nK73C65iy28Rezo44152bSKYAvz3ifVA1lDn0WAAD%2F%2F%2FWvXexgMwqgAAAAAElFTkSuQmCC&logoColor=white)](https://github.com/dotgibson)
+[![ci](https://img.shields.io/github/actions/workflow/status/dotgibson/dotfiles-core/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=ci)](https://github.com/dotgibson/dotfiles-core/actions/workflows/ci.yml)
+[![core-integrity](https://img.shields.io/github/actions/workflow/status/dotgibson/dotfiles-core/core-integrity.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=core-integrity)](https://github.com/dotgibson/dotfiles-core/actions/workflows/core-integrity.yml)
+[![open issues](https://img.shields.io/github/issues/dotgibson/dotfiles-core?style=flat-square&logo=github)](https://github.com/dotgibson/dotfiles-core/issues)
+[![open PRs](https://img.shields.io/github/issues-pr/dotgibson/dotfiles-core?style=flat-square&logo=github)](https://github.com/dotgibson/dotfiles-core/pulls)
+![repo size](https://img.shields.io/github/repo-size/dotgibson/dotfiles-core?style=flat-square&logo=github)
+[![latest release](https://img.shields.io/github/v/release/dotgibson/dotfiles-core?style=flat-square&logo=github&label=release)](https://github.com/dotgibson/dotfiles-core/releases/latest)
+[![showcase](https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square)](https://dotgibson.github.io/dotfiles-web/)
+
+<!-- Row 2 — License & project info -->
+[![license](https://img.shields.io/github/license/dotgibson/dotfiles-core?style=flat-square&color=blue)](LICENSE)
+![last commit](https://img.shields.io/github/last-commit/dotgibson/dotfiles-core?branch=main&style=flat-square&logo=git&logoColor=white)
+![commit activity](https://img.shields.io/github/commit-activity/m/dotgibson/dotfiles-core?style=flat-square&logo=git&logoColor=white)
+
+<!-- Row 3 — Languages (simpleicons brand colors) -->
+![Zsh](https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white)
+![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white)
+![Lua](https://img.shields.io/badge/Lua-000080?style=flat-square&logo=lua&logoColor=white)
+![TOML](https://img.shields.io/badge/TOML-9C4121?style=flat-square&logo=toml&logoColor=white)
+![YAML](https://img.shields.io/badge/YAML-CB171E?style=flat-square&logo=yaml&logoColor=white)
+![JSON](https://img.shields.io/badge/JSON-000000?style=flat-square&logo=json&logoColor=white)
+
+<!-- Row 4 — Tooling (branded via simpleicons; mise/lazygit/jujutsu/sesh/fzf have no icon → neutral) -->
+![Neovim](https://img.shields.io/badge/Neovim-57A143?style=flat-square&logo=neovim&logoColor=white)
+![Vim](https://img.shields.io/badge/Vim-019733?style=flat-square&logo=vim&logoColor=white)
+![tmux](https://img.shields.io/badge/tmux-1BB91F?style=flat-square&logo=tmux&logoColor=white)
+![Starship](https://img.shields.io/badge/Starship-DD0B78?style=flat-square&logo=starship&logoColor=white)
+![Git](https://img.shields.io/badge/Git-F03C2E?style=flat-square&logo=git&logoColor=white)
+![1Password](https://img.shields.io/badge/1Password-145FE4?style=flat-square&logo=1password&logoColor=white)
+![mise](https://img.shields.io/badge/mise-4C566A?style=flat-square)
+![lazygit](https://img.shields.io/badge/lazygit-4C566A?style=flat-square)
+![jujutsu](https://img.shields.io/badge/jujutsu-4C566A?style=flat-square)
+![sesh](https://img.shields.io/badge/sesh-4C566A?style=flat-square)
+![fzf](https://img.shields.io/badge/fzf-4C566A?style=flat-square)
 
 ---
 
