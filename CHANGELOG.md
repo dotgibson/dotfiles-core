@@ -25,10 +25,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Every brand color is taken from the `simple-icons` dataset (e.g. Lua `000080`,
   Git `F03C2E`, 1Password `145FE4`). Vim is the `vim/vimrc` fallback editor for
   boxes with no nvim, not just the `vim=nvim` alias; the tooling row covers
-  every tool Core ships a dedicated config for. Row 1 leads with a `dotgibson`
-  badge whose icon is the org avatar, embedded as a base64 data-URI logo and
-  linked to the org profile. All `flat-square`; the old hardcoded
-  `audit-passing` shield is replaced by the live `ci` status it stood in for.
+  every tool Core ships a dedicated config for. Every language/tool badge links
+  to its home in the repo (e.g. Lua → `nvim/`, tmux → `tmux/tmux.conf`,
+  fzf → `zsh/fzf.zsh`). Row 1 leads with a `dotgibson` badge that shows the
+  current release version (dynamic `github/v/release`, GitHub logo) and links to
+  the latest release. All `flat-square`; the old hardcoded `audit-passing`
+  shield is replaced by the live `ci` status it stood in for.
 - **nvim: `utils/ui-highlights.lua` — a flat table of NvChad-flavored highlight
   overrides.** Hairline window splits (`WinSeparator`/`VertSplit`), minimal
   rounded floats (`NormalFloat`/`FloatBorder`/`FloatTitle`), a border-tinted
