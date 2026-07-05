@@ -19,26 +19,26 @@ dotfiles system — authored once, vendored into every OS layer via `git subtree
 ![last commit](https://img.shields.io/github/last-commit/dotgibson/dotfiles-core?branch=main&style=flat-square&logo=git&logoColor=white)
 ![commit activity](https://img.shields.io/github/commit-activity/m/dotgibson/dotfiles-core?style=flat-square&logo=git&logoColor=white)
 
-<!-- Row 3 — Languages (brand color; dynamic upstream version where available, linked to source) -->
+<!-- Row 3 — Languages (name in brand color; version in Tokyo Night blue where a source publishes one) -->
 [![Zsh](https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white)](https://github.com/zsh-users/zsh)
 [![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white)](https://github.com/bminor/bash)
-[![Lua](https://img.shields.io/github/v/tag/lua/lua?sort=semver&style=flat-square&logo=lua&logoColor=white&label=Lua&color=000080)](https://github.com/lua/lua)
-[![TOML](https://img.shields.io/github/v/tag/toml-lang/toml?sort=semver&style=flat-square&logo=toml&logoColor=white&label=TOML&color=9C4121)](https://github.com/toml-lang/toml)
+[![Lua](https://img.shields.io/github/v/tag/lua/lua?sort=semver&style=flat-square&logo=lua&logoColor=white&label=Lua&labelColor=000080&color=3D59A1)](https://github.com/lua/lua)
+[![TOML](https://img.shields.io/github/v/tag/toml-lang/toml?sort=semver&style=flat-square&logo=toml&logoColor=white&label=TOML&labelColor=9C4121&color=3D59A1)](https://github.com/toml-lang/toml)
 [![YAML](https://img.shields.io/badge/YAML-CB171E?style=flat-square&logo=yaml&logoColor=white)](https://github.com/yaml)
 [![JSON](https://img.shields.io/badge/JSON-000000?style=flat-square&logo=json&logoColor=white)](https://www.json.org)
 
-<!-- Row 4 — Tooling (dynamic upstream release version, linked to upstream repo; branded via simpleicons where one exists) -->
-[![Neovim](https://img.shields.io/github/v/release/neovim/neovim?style=flat-square&logo=neovim&logoColor=white&label=Neovim&color=57A143)](https://github.com/neovim/neovim)
-[![Vim](https://img.shields.io/github/v/tag/vim/vim?sort=semver&style=flat-square&logo=vim&logoColor=white&label=Vim&color=019733)](https://github.com/vim/vim)
-[![tmux](https://img.shields.io/github/v/release/tmux/tmux?style=flat-square&logo=tmux&logoColor=white&label=tmux&color=1BB91F)](https://github.com/tmux/tmux)
-[![Starship](https://img.shields.io/github/v/release/starship/starship?style=flat-square&logo=starship&logoColor=white&label=Starship&color=DD0B78)](https://github.com/starship/starship)
-[![Git](https://img.shields.io/github/v/tag/git/git?sort=semver&style=flat-square&logo=git&logoColor=white&label=Git&color=F03C2E)](https://github.com/git/git)
+<!-- Row 4 — Tooling (name in brand color; icon-less tools share a terminal glyph + TN-purple label; version in TN blue) -->
+[![Neovim](https://img.shields.io/github/v/release/neovim/neovim?style=flat-square&logo=neovim&logoColor=white&label=Neovim&labelColor=57A143&color=3D59A1)](https://github.com/neovim/neovim)
+[![Vim](https://img.shields.io/github/v/tag/vim/vim?sort=semver&style=flat-square&logo=vim&logoColor=white&label=Vim&labelColor=019733&color=3D59A1)](https://github.com/vim/vim)
+[![tmux](https://img.shields.io/github/v/release/tmux/tmux?style=flat-square&logo=tmux&logoColor=white&label=tmux&labelColor=1BB91F&color=3D59A1)](https://github.com/tmux/tmux)
+[![Starship](https://img.shields.io/github/v/release/starship/starship?style=flat-square&logo=starship&logoColor=white&label=Starship&labelColor=DD0B78&color=3D59A1)](https://github.com/starship/starship)
+[![Git](https://img.shields.io/github/v/tag/git/git?sort=semver&style=flat-square&logo=git&logoColor=white&label=Git&labelColor=F03C2E&color=3D59A1)](https://github.com/git/git)
 [![1Password](https://img.shields.io/badge/1Password-145FE4?style=flat-square&logo=1password&logoColor=white)](https://github.com/1Password)
-[![mise](https://img.shields.io/github/v/release/jdx/mise?style=flat-square&label=mise&color=4C566A)](https://github.com/jdx/mise)
-[![lazygit](https://img.shields.io/github/v/release/jesseduffield/lazygit?style=flat-square&label=lazygit&color=4C566A)](https://github.com/jesseduffield/lazygit)
-[![jujutsu](https://img.shields.io/github/v/release/jj-vcs/jj?style=flat-square&label=jujutsu&color=4C566A)](https://github.com/jj-vcs/jj)
-[![sesh](https://img.shields.io/github/v/release/joshmedeski/sesh?style=flat-square&label=sesh&color=4C566A)](https://github.com/joshmedeski/sesh)
-[![fzf](https://img.shields.io/github/v/release/junegunn/fzf?style=flat-square&label=fzf&color=4C566A)](https://github.com/junegunn/fzf)
+[![mise](https://img.shields.io/github/v/release/jdx/mise?style=flat-square&logo=gnometerminal&logoColor=24283B&label=mise&labelColor=BB9AF7&color=3D59A1)](https://github.com/jdx/mise)
+[![lazygit](https://img.shields.io/github/v/release/jesseduffield/lazygit?style=flat-square&logo=gnometerminal&logoColor=24283B&label=lazygit&labelColor=BB9AF7&color=3D59A1)](https://github.com/jesseduffield/lazygit)
+[![jujutsu](https://img.shields.io/github/v/release/jj-vcs/jj?style=flat-square&logo=gnometerminal&logoColor=24283B&label=jujutsu&labelColor=BB9AF7&color=3D59A1)](https://github.com/jj-vcs/jj)
+[![sesh](https://img.shields.io/github/v/release/joshmedeski/sesh?style=flat-square&logo=gnometerminal&logoColor=24283B&label=sesh&labelColor=BB9AF7&color=3D59A1)](https://github.com/joshmedeski/sesh)
+[![fzf](https://img.shields.io/github/v/release/junegunn/fzf?style=flat-square&logo=gnometerminal&logoColor=24283B&label=fzf&labelColor=BB9AF7&color=3D59A1)](https://github.com/junegunn/fzf)
 
 ---
 
