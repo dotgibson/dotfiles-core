@@ -72,7 +72,7 @@
 
 [![Product Name Screen Shot][product-screenshot]](https://dotgibson.github.io/dotfiles-web)
 
-There are tons of great examples of dotfiles available online, and I'm pretty sure all of them provided some level of inspiration for this project. Every change to my personal setup lead to me feeling the urge to optimize or refactor something else, and on and on the cycle went. I eventually made enough changes where I felt happy in my terminal setup, and thought it would be great if I could replicate the same setup on multiple systems. That way, if I had to hop around on different machines I wouldn't have any productivity gaps. 
+There are tons of great examples of dotfiles available online, and I'm pretty sure all of them provided some level of inspiration for this project. Every change to my personal setup led to me feeling the urge to optimize or refactor something else, and on and on the cycle went. I eventually made enough changes where I felt happy in my terminal setup, and thought it would be great if I could replicate the same setup on multiple systems. That way, if I had to hop around on different machines I wouldn't have any productivity gaps. 
 
 That's when `dotgibson` was born. I think I've finally made something I can call my terminal workflow endgame.
 
@@ -180,7 +180,7 @@ Every repo follows the same shape: clone, optionally dry-run to preview the syml
    ```
 2. Preview the plan (optional)
    ```sh
-   #MacOS
+   # MacOS
    ./bootstrap.sh --links-only --dry-run
 
    # Linux distros (Fedora, Arch, openSUSE, Alpine, Gentoo)
@@ -239,7 +239,7 @@ Every repo follows the same shape: clone, optionally dry-run to preview the syml
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Check out [Aliases](ALIASES.md). This is a cheat sheet for the core repository.
+Check out [Aliases](aliases.md). This is a cheat sheet for the core repository.
 
 _For more examples, please refer to the [Documentation](https://dotgibson.github.io/dotfiles-web)_
 
@@ -281,7 +281,7 @@ If you have a suggestion that would make this better, please fork the repo and c
 <!-- LICENSE -->
 ## License
 
-Distributed under the MIT License. See `LICENSE.txt` for more information.
+Distributed under the MIT License. See `LICENSE` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -302,7 +302,7 @@ Here are some of my favorite dotfile configurations.
 * [Neovim (Tony, btw.)](https://github.com/tonybanters/nvim)
 * [Dotfiles (omerxx)](https://github.com/omerxx/dotfiles)
 * [Dotfiles (josean-dev)](https://github.com/josean-dev/dev-environment-files)
-* [Dotfiles (hendrikmi](https://github.com/hendrikmi/dotfiles)
+* [Dotfiles (hendrikmi)](https://github.com/hendrikmi/dotfiles)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -323,10 +323,10 @@ Here are some of my favorite dotfile configurations.
 [showcase-shield]: https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square
 [showcase-url]: https://dotgibson.github.io/dotfiles-web
 [license-shield]: https://img.shields.io/github/license/dotgibson/dotfiles-core.svg?style=flat-square
-[license-url]: https://github.com/dotgibson/dotfiles-core/blob/main/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue
+[license-url]: https://github.com/dotgibson/dotfiles-core/blob/main/LICENSE
+[linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue?style=flat-square&logo=linkedin&logoColor=white
 [linkedin-url]: https://linkedin.com/in/garrettallen2
-[product-screenshot]: https://github.com/dotgibson/dotfiles-web/blob/main/public/og.svg
+[product-screenshot]: https://raw.githubusercontent.com/dotgibson/dotfiles-web/main/public/og.svg
 [zsh-shield]: https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white
 [zsh-url]: https://github.com/zsh-users/zsh
 [bash-shield]: https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white

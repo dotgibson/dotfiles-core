@@ -13,6 +13,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **README: broken links and a non-rendering hero image.** The License section
+  and license-shield URL pointed at `LICENSE.txt` (the file is `LICENSE`); the
+  Usage link pointed at `ALIASES.md` (the file is `aliases.md`), a dead link on
+  case-sensitive filesystems; the About screenshot used a GitHub `blob` URL that
+  serves HTML instead of the image, so it never rendered (now the
+  `raw.githubusercontent.com` URL); and a mangled `hendrikmi` acknowledgment
+  link was missing its closing paren. Also styled the LinkedIn badge to match
+  the `flat-square` row and fixed a `#MacOS` comment.
+
 ### Added
 
 - **README: a structured four-row badge block at the top.** Row 1 is repo
