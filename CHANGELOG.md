@@ -29,7 +29,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   upstream project on GitHub and, where the project publishes releases/tags,
   shows the current upstream version live (Neovim, Vim, tmux, Starship, Git,
   Lua, TOML, mise, lazygit, jujutsu, sesh, fzf); Zsh, Bash, YAML, JSON, and
-  1Password have no clean upstream version and stay plain. Row 1 leads with a
+  1Password have no clean upstream version and stay plain. On the versioned
+  badges the name side carries the brand color and the version side is a Tokyo
+  Night blue (not grey); the icon-less tools (`mise`, `lazygit`, `jujutsu`,
+  `sesh`, `fzf`) share a generic terminal glyph on a Tokyo Night purple label.
+  Row 1 leads with a
   `dotgibson` badge that shows the
   current release version (dynamic `github/v/release`) with the org avatar as
   its icon (base64 data-URI logo) and links to the latest release. All `flat-square`; the old hardcoded `audit-passing`
