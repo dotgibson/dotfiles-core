@@ -21,7 +21,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   MIT license (auto-detected from `LICENSE`) plus last-commit / commit-activity.
   Row 3 is the languages (Zsh, Bash, Lua, TOML, YAML, JSON) and Row 4 the
   tooling (Neovim, Vim, tmux, Starship, Git, 1Password). Tools with no
-  simpleicon (`mise`, `lazygit`, `jujutsu`, `sesh`, `fzf`) get a neutral badge.
+  simpleicon (`mise`, `lazygit`, `jujutsu`, `sesh`, `fzf`) share a substitute
+  `gnometerminal` glyph on a Tokyo Night purple label.
   Every brand color is taken from the `simple-icons` dataset (e.g. Lua `000080`,
   Git `F03C2E`, 1Password `145FE4`). Vim is the `vim/vimrc` fallback editor for
   boxes with no nvim, not just the `vim=nvim` alias; the tooling row covers
@@ -31,10 +32,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Lua, TOML, mise, lazygit, jujutsu, sesh, fzf); Zsh, Bash, YAML, JSON, and
   1Password have no clean upstream version and stay plain. On the versioned
   badges the name side carries the brand color and the version side is a Tokyo
-  Night blue (not grey); the icon-less tools (`mise`, `lazygit`, `jujutsu`,
-  `sesh`, `fzf`) share a generic terminal glyph on a Tokyo Night purple label.
-  Row 1 leads with a
-  `dotgibson` badge that shows the
+  Night blue (not grey). Row 1 leads with a `dotgibson` badge that shows the
   current release version (dynamic `github/v/release`) with the org avatar as
   its icon (base64 data-URI logo) and links to the latest release. All `flat-square`; the old hardcoded `audit-passing`
   shield is replaced by the live `ci` status it stood in for.
