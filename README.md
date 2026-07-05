@@ -69,9 +69,11 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
+[![Product Name Screen Shot][product-screenshot]](https://dotgibson.github.io/dotfiles-web)
 
-There are tons of great examples of dotfiles setups available online, but I could never just stop at one user's configuration. One change to my personal setup lead to feeling the urge to optimize something else, and on and on the cycle went. I eventually found happiness in a general look and feel of my terminal setup, and thought it would be great if I could replicate the same setup on multiple systems. That way, if I had to hop around on different machines I wouldn't have any productivity gaps. That's when `dotgibson` came to be. I think I've finally made something I can call my terminal workflow endgame.
+There are tons of great examples of dotfiles available online, and just about every single one of them provided some level of inspiration for this project. Every single change to my personal setup lead to me feeling the urge to optimize or refactor something else, and on and on the cycle went. I eventually found happiness in my terminal setup, and thought it would be great if I could replicate the same setup on multiple systems. That way, if I had to hop around on different machines I wouldn't have any productivity gaps. 
+
+That's when `dotgibson` came to be. I think I've finally made something I can call my terminal workflow endgame.
 
 Of course, what works for me won't necessarily work for everyone. Dotfiles are very personalized to fit the needs of the user, and different users do different things. So, I'll be adding more in the near future. You may also suggest changes by forking this repo and creating a pull request or opening an issue. Thanks to all who have provided the inspiration or offered advice!
 
@@ -476,5 +478,16 @@ A quiet week (no bot PR/issue) means nothing needs doing. Every bot is
 [license-url]: https://github.com/dotgibson/dotfiles-core/blob/main/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue
 [linkedin-url]: https://linkedin.com/in/garrettallen2
+[product-screenshot]: https://github.com/dotgibson/dotfiles-web/blob/main/public/og.svg
 [zsh-shield]: https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white
-[zsh-url]: https://img.shields.io/github/v/tag/zsh-users/zsh
+[zsh-url]: https://github.com/zsh-users/zsh
+[bash-shield]: https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white
+[bash-url]: https://github.com/bminor/bash
+[lua-shield]: https://img.shields.io/github/v/tag/lua/lua?sort=semver&style=flat-square&logo=lua&logoColor=white&label=Lua&color=000080
+[lua-url]: https://github.com/lua/lua
+[toml-shield]: https://img.shields.io/github/v/tag/toml-lang/toml?sort=semver&style=flat-square&logo=toml&logoColor=white&label=TOML&color=9C4121
+[toml-url]: https://github.com/toml-lang/toml
+[yaml-shield]: https://img.shields.io/badge/YAML-CB171E?style=flat-square&logo=yaml&logoColor=white
+[yaml-url]: https://github.com/yaml
+[json-shield]: https://img.shields.io/badge/JSON-000000?style=flat-square&logo=json&logoColor=white
+[json-url]: https://www.json.org
