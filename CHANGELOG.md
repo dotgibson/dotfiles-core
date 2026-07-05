@@ -28,8 +28,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   every tool Core ships a dedicated config for. Every language/tool badge links
   to its home in the repo (e.g. Lua → `nvim/`, tmux → `tmux/tmux.conf`,
   fzf → `zsh/fzf.zsh`). Row 1 leads with a `dotgibson` badge that shows the
-  current release version (dynamic `github/v/release`, GitHub logo) and links to
-  the latest release. All `flat-square`; the old hardcoded `audit-passing`
+  current release version (dynamic `github/v/release`) with the org avatar as
+  its icon (base64 data-URI logo) and links to the latest release. All `flat-square`; the old hardcoded `audit-passing`
   shield is replaced by the live `ci` status it stood in for.
 - **nvim: `utils/ui-highlights.lua` — a flat table of NvChad-flavored highlight
   overrides.** Hairline window splits (`WinSeparator`/`VertSplit`), minimal
