@@ -51,7 +51,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Contributing steps with the repo's real contract (`CONTRIBUTING.md`, keep-it-Core,
   `make audit`). Sharpened the personal About narrative, and de-hardcoded the
   install version — the clone commands now use a `vX.Y.Z` placeholder pointing at
-  each repo's Releases page instead of a pinned tag that silently rots.
+  each repo's Releases page instead of a pinned tag that silently rots. Added an
+  at-a-glance three-layer table (Core / OS-native / role) so the landing page
+  signals the architecture without carrying its implementation detail, and turned
+  the one-line Usage section into a real modern-CLI-swaps table that surfaces the
+  `HAVE_*` detection-flag fallback.
   Fixed broken links along the way: `LICENSE.txt` → `LICENSE`,
   `ALIASES.md` → `aliases.md`, the `bug-report---.md` / `feature-request---.md`
   issue-template deep-links → `bug_report.md` / `feature_request.md`, the hero

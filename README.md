@@ -78,6 +78,18 @@ per-OS repo, so you don't install this repo directly: you clone the repo for you
 platform (macOS, Kali, Fedora, …), which already carries Core inside it. Full docs live
 at the [documentation site][docs].
 
+The system is three layers — Core here, an OS-native layer per machine, and an optional
+role layer — each building on the one below:
+
+| Layer | Lives in | Owns |
+| --- | --- | --- |
+| **Core** | this repo → vendored into every OS repo's `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
+| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,…}` | package manager, clipboard, paths |
+| **Role** | `dotfiles-Kali`, `dotfiles-Defense` | offensive / defensive tooling |
+
+The rationale (why subtree, how a sync fans out) lives on the [docs site][docs]; this
+README is the quick tour.
+
 Like most dotfiles, this started as a personal itch. Every tweak to my terminal led to refactoring something else, and the cycle didn't stop until the whole environment finally felt like home. Once it did, I wanted the exact same setup on every machine I touch — no productivity gaps when hopping between them. That's `dotgibson`: my terminal workflow, made portable.
 
 It won't be everyone's ideal — dotfiles are personal — but the pieces here are meant to be borrowed, and it keeps evolving as I find better ways to build it. Suggestions and issues are always welcome; thanks to everyone whose own configs inspired this one.
@@ -218,9 +230,25 @@ setup notes live in each OS repo's README and the [docs site][docs]; the essenti
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Check out [Aliases](aliases.md). This is a cheat sheet for the core repository.
+Core swaps the classic Unix tools for modern equivalents — but only when they're
+installed. Detection flags (`HAVE_*`) are resolved at load time, so every alias falls
+back to the classic command on a box that doesn't have the newer one. Nothing breaks;
+things just get nicer where they can.
 
-_For more examples, please refer to the [Documentation](https://dotgibson.github.io/dotfiles-web)_
+| You type | You get | When present |
+| --- | --- | --- |
+| `ls` / `ll` | `eza` — icons, git status, tree view | eza |
+| `cat` | `bat` — syntax highlighting | bat |
+| `cd` | `zoxide` — frecency-ranked jumps | zoxide |
+| `top` | `btop` | btop |
+| `du` / `df` | `dust` / `duf` | dust, duf |
+| `vim` | `nvim` | always |
+
+Run `core help` (aliased `cheat`) for the built-in index of every command, or browse the
+full [alias cheat sheet](aliases.md) — including the OMZ-compatible git suite (`gst`,
+`gcb`, `glog`, `gpf`, …).
+
+_For more, see the [Documentation][docs]._
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
