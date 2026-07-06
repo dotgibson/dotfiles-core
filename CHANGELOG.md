@@ -15,6 +15,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`assets/`: a reproducible VHS tape for the README hero demo.**
+  `assets/demo.tape` scripts a short terminal tour (eza, bat, zoxide, `core help`,
+  `glog`) that renders to `assets/demo.gif` via `vhs assets/demo.tape`, so the hero
+  can be regenerated rather than hand-recorded. `assets/README.md` documents the
+  render steps; `assets/` is allowlisted in `audit-core.sh` as repo-meta (it rides
+  along in the subtree copy but is never symlinked).
 - **README: a structured four-row badge block at the top.** Row 1 is repo
   status & automation — live `ci` and `core-integrity` Actions status,
   open-issue / open-PR counts, repo size, and latest release. Row 2 is the
@@ -48,6 +54,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **README: reworked into a lean public landing page.** Replaced the long-form
+  technical README with a concise landing page — a lead stating Core is the vendored
+  foundation layer (you install an OS repo, not this one), an at-a-glance three-layer
+  table, a modern-CLI Usage section framed by the `HAVE_*` detection-flag fallback,
+  and the repo's real contribution contract. The deep architecture and reference
+  material now lives on the documentation hub at `dotfiles-web`. Fixed broken links
+  along the way (`LICENSE`, `aliases.md`, the issue-template deep-links, a malformed
+  acknowledgment link), and scoped MD033 in `.markdownlint.jsonc` with
+  `allowed_elements` so the intentional showcase inline HTML passes the markdown gate
+  while the rule still catches unexpected tags.
 - **nvim: the statusline now wears NvChad's rounded block look.** `plugins/lualine-nvim.lua`
   keeps its sections and (intentionally) its existing diagnostic glyphs — which
   stay in lockstep with `utils/diagnostics.lua` and the tabline — but swaps
