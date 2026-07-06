@@ -70,7 +70,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Product Name Screen Shot][product-screenshot]](https://dotgibson.github.io/dotfiles-web)
+[![dotgibson dotfiles][product-screenshot]](https://dotgibson.github.io/dotfiles-web)
 
 **`dotfiles-core` is the foundation layer** — the shell, editor, and tooling config
 that stays identical on every machine. It's authored once here and vendored into each
@@ -78,13 +78,9 @@ per-OS repo, so you don't install this repo directly: you clone the repo for you
 platform (macOS, Kali, Fedora, …), which already carries Core inside it. Full docs live
 at the [documentation site][docs].
 
-There are tons of great examples of dotfiles available online, and I'm pretty sure all of them provided some level of inspiration for this project. Every change to my personal setup led to me feeling the urge to optimize or refactor something else, and on and on the cycle went. I eventually made enough changes where I felt happy in my terminal setup, and thought it would be great if I could replicate the same setup on multiple systems. That way, if I had to hop around on different machines I wouldn't have any productivity gaps.
+Like most dotfiles, this started as a personal itch. Every tweak to my terminal led to refactoring something else, and the cycle didn't stop until the whole environment finally felt like home. Once it did, I wanted the exact same setup on every machine I touch — no productivity gaps when hopping between them. That's `dotgibson`: my terminal workflow, made portable.
 
-That's when `dotgibson` was born. I think I've finally made something I can call my terminal workflow endgame.
-
-Of course, what works for me won't necessarily work for everyone. Dotfiles are personalized to fit the needs of the user, and different users do different things. So, I'll be adding more in the near future. I'll also be researching different ways of implementing what I currently have to improve efficiency or whatever else.
-
-You may also suggest changes by forking this repo and creating a pull request or opening an issue. Thanks to all who have provided the inspiration or offered advice!
+It won't be everyone's ideal — dotfiles are personal — but the pieces here are meant to be borrowed, and it keeps evolving as I find better ways to build it. Suggestions and issues are always welcome; thanks to everyone whose own configs inspired this one.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -130,25 +126,26 @@ setup notes live in each OS repo's README and the [docs site][docs]; the essenti
 
 ### Installation
 
-1. Clone the repo
+1. Clone the repo for your platform. Releases are tagged per repo — replace
+   `vX.Y.Z` with the latest tag from that repo's **Releases** page.
 
    ```sh
    # MacOS
-   git clone --branch v3.0.1 https://github.com/dotgibson/dotfiles-MacBook ~/dotfiles-MacBook
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-MacBook ~/dotfiles-MacBook
    cd ~/dotfiles-MacBook
 
    # Kali
-   git clone --branch v3.0.1 https://github.com/dotgibson/dotfiles-Kali ~/dotfiles-Kali
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Kali ~/dotfiles-Kali
    cd ~/dotfiles-Kali
 
    # Linux distros (Fedora, Arch, openSUSE, Alpine, Gentoo)
-   git clone --branch v3.0.1 https://github.com/dotgibson/dotfiles-Fedora ~/dotfiles-Fedora
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Fedora ~/dotfiles-Fedora
    cd ~/dotfiles-Fedora
    ```
 
    ```pwsh
    # Windows
-   git clone --branch v3.0.1 https://github.com/dotgibson/dotfiles-Windows.git
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Windows.git
    cd dotfiles-Windows
    .\install.ps1
    ```

@@ -49,7 +49,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   paragraph stating what Core actually is (the vendored foundation layer — you
   install an OS repo, not this one), and replaced the generic template
   Contributing steps with the repo's real contract (`CONTRIBUTING.md`, keep-it-Core,
-  `make audit`). Fixed broken links along the way: `LICENSE.txt` → `LICENSE`,
+  `make audit`). Sharpened the personal About narrative, and de-hardcoded the
+  install version — the clone commands now use a `vX.Y.Z` placeholder pointing at
+  each repo's Releases page instead of a pinned tag that silently rots.
+  Fixed broken links along the way: `LICENSE.txt` → `LICENSE`,
   `ALIASES.md` → `aliases.md`, the `bug-report---.md` / `feature-request---.md`
   issue-template deep-links → `bug_report.md` / `feature_request.md`, the hero
   screenshot's non-rendering `blob` URL → `raw.githubusercontent.com`, and a
