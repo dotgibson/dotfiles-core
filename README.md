@@ -11,9 +11,7 @@
 -->[![Forks][forks-shield]][forks-url]<!--
 -->[![Stargazers][stars-shield]][stars-url]<!--
 -->[![Issues][issues-shield]][issues-url]<!--
--->[![Showcase][showcase-shield]][showcase-url]<!--
--->[![MIT License][license-shield]][license-url]<!--
--->[![LinkedIn][linkedin-shield]][linkedin-url]
+-->[![MIT License][license-shield]][license-url]
 
 </nobr></div>
 
@@ -29,7 +27,7 @@
   <p align="center">
     The foundation layer of a cross-platform dotfiles system.
     <br />
-    <a href="https://dotgibson.github.io/dotfiles-web/"><strong>Explore the docs »</strong></a>
+    <a href="https://dotgibson.github.io/dotfiles-web/docs"><strong>Explore the docs »</strong></a>
     <br />
     <br />
     <a href="https://dotgibson.github.io/dotfiles-web/playground/">View Demo</a>
@@ -296,7 +294,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 <!-- CONTACT -->
 ## Contact
 
-Garrett Allen - [@gerrrrt](https://x.com/gerrrrt) - <garrettallen2@gmail.com>
+Garrett Allen - [@gerrrrt](https://x.com/gerrrrt) - <garrettallen2@gmail.com> - [LinkedIn](https://linkedin.com/in/garrettallen2)
 
 Project Link: [dotgibson](https://github.com/dotgibson/)
 
@@ -328,14 +326,10 @@ Here are some of my favorite dotfile configurations.
 [stars-url]: https://github.com/dotgibson/dotfiles-core/stargazers
 [issues-shield]: https://img.shields.io/github/issues/dotgibson/dotfiles-core?style=flat-square&logo=github
 [issues-url]: https://github.com/dotgibson/dotfiles-core/issues
-[showcase-shield]: https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square
-[showcase-url]: https://dotgibson.github.io/dotfiles-web
 [license-shield]: https://img.shields.io/github/license/dotgibson/dotfiles-core.svg?style=flat-square
 [license-url]: https://github.com/dotgibson/dotfiles-core/blob/main/LICENSE
-[linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue?style=flat-square&logo=linkedin&logoColor=white
-[linkedin-url]: https://linkedin.com/in/garrettallen2
 [product-screenshot]: assets/demo.gif
-[docs]: https://dotgibson.github.io/dotfiles-web/
+[docs]: https://dotgibson.github.io/dotfiles-web/docs
 [zsh-shield]: https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white
 [zsh-url]: https://github.com/zsh-users/zsh
 [bash-shield]: https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white
