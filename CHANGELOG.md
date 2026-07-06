@@ -67,8 +67,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Fixed broken links along the way: `LICENSE.txt` → `LICENSE`,
   `ALIASES.md` → `aliases.md`, the `bug-report---.md` / `feature-request---.md`
   issue-template deep-links → `bug_report.md` / `feature_request.md`, the hero
-  screenshot's non-rendering `blob` URL → `raw.githubusercontent.com`, and a
-  malformed acknowledgment link.
+  screenshot's non-rendering `blob` URL (the hero now points at the local
+  `assets/demo.gif` — see below), and a malformed acknowledgment link.
 - **`.markdownlint.jsonc`: scoped MD033 instead of leaving it to fail.** The
   showcase README legitimately uses inline HTML (centered badge rows, logo block,
   collapsible TOC, back-to-top links); `allowed_elements` now lists exactly those
