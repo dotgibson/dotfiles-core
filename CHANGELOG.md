@@ -43,6 +43,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **README: leaner public landing page, and a lint-clean one.** Trimmed the
+  verbose per-distro Git-install and Prerequisites blocks down to the essentials
+  (platform specifics now defer to each OS repo and the docs site), added a lead
+  paragraph stating what Core actually is (the vendored foundation layer — you
+  install an OS repo, not this one), and replaced the generic template
+  Contributing steps with the repo's real contract (`CONTRIBUTING.md`, keep-it-Core,
+  `make audit`). Fixed broken links along the way: `LICENSE.txt` → `LICENSE`,
+  `ALIASES.md` → `aliases.md`, the `bug-report---.md` / `feature-request---.md`
+  issue-template deep-links → `bug_report.md` / `feature_request.md`, the hero
+  screenshot's non-rendering `blob` URL → `raw.githubusercontent.com`, and a
+  malformed acknowledgment link.
+- **`.markdownlint.jsonc`: scoped MD033 instead of leaving it to fail.** The
+  showcase README legitimately uses inline HTML (centered badge rows, logo block,
+  collapsible TOC, back-to-top links); `allowed_elements` now lists exactly those
+  tags, so the rule still fires on any _other_ tag — the leaked-template-tag bug it
+  exists to catch — while the intended design passes. The full markdown gate is green.
 - **nvim: the statusline now wears NvChad's rounded block look.** `plugins/lualine-nvim.lua`
   keeps its sections and (intentionally) its existing diagnostic glyphs — which
   stay in lockstep with `utils/diagnostics.lua` and the tabline — but swaps

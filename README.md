@@ -34,9 +34,9 @@
     <br />
     <a href="https://dotgibson.github.io/dotfiles-web/playground/">View Demo</a>
     &middot;
-    <a href="https://github.com/dotgibson/dotfiles-core/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+    <a href="https://github.com/dotgibson/dotfiles-core/issues/new?labels=bug&template=bug_report.md">Report Bug</a>
     &middot;
-    <a href="https://github.com/dotgibson/dotfiles-core/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+    <a href="https://github.com/dotgibson/dotfiles-core/issues/new?labels=enhancement&template=feature_request.md">Request Feature</a>
   </p>
 </div>
 
@@ -72,11 +72,17 @@
 
 [![Product Name Screen Shot][product-screenshot]](https://dotgibson.github.io/dotfiles-web)
 
-There are tons of great examples of dotfiles available online, and I'm pretty sure all of them provided some level of inspiration for this project. Every change to my personal setup lead to me feeling the urge to optimize or refactor something else, and on and on the cycle went. I eventually made enough changes where I felt happy in my terminal setup, and thought it would be great if I could replicate the same setup on multiple systems. That way, if I had to hop around on different machines I wouldn't have any productivity gaps. 
+**`dotfiles-core` is the foundation layer** — the shell, editor, and tooling config
+that stays identical on every machine. It's authored once here and vendored into each
+per-OS repo, so you don't install this repo directly: you clone the repo for your
+platform (macOS, Kali, Fedora, …), which already carries Core inside it. Full docs live
+at the [documentation site][docs].
+
+There are tons of great examples of dotfiles available online, and I'm pretty sure all of them provided some level of inspiration for this project. Every change to my personal setup led to me feeling the urge to optimize or refactor something else, and on and on the cycle went. I eventually made enough changes where I felt happy in my terminal setup, and thought it would be great if I could replicate the same setup on multiple systems. That way, if I had to hop around on different machines I wouldn't have any productivity gaps.
 
 That's when `dotgibson` was born. I think I've finally made something I can call my terminal workflow endgame.
 
-Of course, what works for me won't necessarily work for everyone. Dotfiles are personalized to fit the needs of the user, and different users do different things. So, I'll be adding more in the near future. I'll also be researching different ways of implementing what I currently have to improve efficiency or whatever else. 
+Of course, what works for me won't necessarily work for everyone. Dotfiles are personalized to fit the needs of the user, and different users do different things. So, I'll be adding more in the near future. I'll also be researching different ways of implementing what I currently have to improve efficiency or whatever else.
 
 You may also suggest changes by forking this repo and creating a pull request or opening an issue. Thanks to all who have provided the inspiration or offered advice!
 
@@ -92,6 +98,7 @@ You may also suggest changes by forking this repo and creating a pull request or
 * [![JSON][json-shield]][json-url]
 
 ### Tools
+
 * [![Neovim][neovim-shield]][neovim-url]
 * [![Vim][vim-shield]][vim-url]
 * [![Tmux][tmux-shield]][tmux-url]
@@ -113,80 +120,51 @@ Every repo follows the same shape: clone, optionally dry-run to preview the syml
 
 ### Prerequisites
 
-- Git
-  - Windows
-  ```pwsh
-  # Winget
-  winget install --id Git.Git -e --source winget
+All you need up front is **Git** and your platform's base toolchain — `bootstrap.sh`
+provisions everything else (zsh, tmux, nvim, starship, and friends). Platform-specific
+setup notes live in each OS repo's README and the [docs site][docs]; the essentials:
 
-  # Chocolatey
-  choco install git
-  ```
-  - MacOS
-  ```zsh
-  # Check first, then you'll be prompted to install
-  git --version
-
-  # Homebrew
-  brew install git
-  ```
-  - Linux
-  ```bash
-  # Ubuntu / Debian
-  sudo apt update && sudo apt install git
-
-  # Fedora
-  sudo dnf install git
-
-  # Arch Linux
-  sudo pacman -S git
-
-  # openSUSE
-  sudo zypper install git
-
-  # Alpine
-  apk add git
-  ```
-- MacOS
-  - [Command Line Tools](https://developer.apple.com/documentation/xcode/command-line-tools)
-- Windows
-  - PowerShell 7
-  - Developer Mode
-- Kali
-  - Built for WSL2
-
+* **macOS** — Xcode [Command Line Tools](https://developer.apple.com/documentation/xcode/command-line-tools)
+* **Windows** — PowerShell 7 and Developer Mode
+* **Kali** — built for WSL2
 
 ### Installation
 
 1. Clone the repo
+
    ```sh
    # MacOS
    git clone --branch v3.0.1 https://github.com/dotgibson/dotfiles-MacBook ~/dotfiles-MacBook
    cd ~/dotfiles-MacBook
-   
+
    # Kali
    git clone --branch v3.0.1 https://github.com/dotgibson/dotfiles-Kali ~/dotfiles-Kali
    cd ~/dotfiles-Kali
-   
+
    # Linux distros (Fedora, Arch, openSUSE, Alpine, Gentoo)
    git clone --branch v3.0.1 https://github.com/dotgibson/dotfiles-Fedora ~/dotfiles-Fedora
    cd ~/dotfiles-Fedora
    ```
+
    ```pwsh
    # Windows
    git clone --branch v3.0.1 https://github.com/dotgibson/dotfiles-Windows.git
    cd dotfiles-Windows
    .\install.ps1
    ```
+
 2. Preview the plan (optional)
+
    ```sh
-   #MacOS
+   # MacOS
    ./bootstrap.sh --links-only --dry-run
 
    # Linux distros (Fedora, Arch, openSUSE, Alpine, Gentoo)
    ./bootstrap.sh --links-only
    ```
+
 3. Provision + Wire
+
    ```sh
    # MacOS
    ./bootstrap.sh
@@ -199,10 +177,13 @@ Every repo follows the same shape: clone, optionally dry-run to preview the syml
    ./bootstrap.sh
    exec zsh
    ```
+
    ```pwsh
    .\install.ps1
    ```
+
 4. Optional
+
    ```sh
    # MacOS
    # Apply system defaults
@@ -228,6 +209,7 @@ Every repo follows the same shape: clone, optionally dry-run to preview the syml
    # run as root or with doas
    # enable the community repo
    ```
+
    ```pwsh
    # Windows
    # set name/email in ~/.gitconfig.local
@@ -239,7 +221,7 @@ Every repo follows the same shape: clone, optionally dry-run to preview the syml
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Check out [Aliases](ALIASES.md). This is a cheat sheet for the core repository.
+Check out [Aliases](aliases.md). This is a cheat sheet for the core repository.
 
 _For more examples, please refer to the [Documentation](https://dotgibson.github.io/dotfiles-web)_
 
@@ -248,10 +230,10 @@ _For more examples, please refer to the [Documentation](https://dotgibson.github
 <!-- ROADMAP -->
 ## Roadmap
 
-- [x] Add Changelog
-- [x] Add back to top links
-- [ ] Add Additional tools
-- [ ] README.md overhaul for entire project
+* [x] Add Changelog
+* [x] Add back to top links
+* [ ] Add Additional tools
+* [ ] README.md overhaul for entire project
 
 See the [open issues](https://github.com/dotgibson/dotfiles-core/issues) for a full list of proposed features (and known issues).
 
@@ -260,17 +242,18 @@ See the [open issues](https://github.com/dotgibson/dotfiles-core/issues) for a f
 <!-- CONTRIBUTING -->
 ## Contributing
 
-Any contributions you make are **greatly appreciated**.
+Contributions are **greatly appreciated**. Because Core is vendored into every OS repo,
+a change here fans out to all of them — so see [`CONTRIBUTING.md`](CONTRIBUTING.md) for
+what counts as Core, the manifest contract, and the `make audit` gate. The short version:
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
+1. Fork the project and branch off `main`
+2. Make your change, keeping it Core (identical on every machine, not OS-specific)
+3. Run `make audit` until it's green
+4. Open a pull request with a [Conventional Commits](https://www.conventionalcommits.org/) title
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Prefer a quick idea? Open an issue with the "enhancement" tag.
 
-### Top contributors:
+### Top contributors
 
 <a href="https://github.com/dotgibson/dotfiles-core/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=dotgibson/dotfiles-core" alt="contrib.rocks image" />
@@ -281,14 +264,14 @@ If you have a suggestion that would make this better, please fork the repo and c
 <!-- LICENSE -->
 ## License
 
-Distributed under the MIT License. See `LICENSE.txt` for more information.
+Distributed under the MIT License. See `LICENSE` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- CONTACT -->
 ## Contact
 
-Garrett Allen - [@gerrrrt](https://x.com/gerrrrt) - garrettallen2@gmail.com
+Garrett Allen - [@gerrrrt](https://x.com/gerrrrt) - <garrettallen2@gmail.com>
 
 Project Link: [dotgibson](https://github.com/dotgibson/)
 
@@ -302,7 +285,7 @@ Here are some of my favorite dotfile configurations.
 * [Neovim (Tony, btw.)](https://github.com/tonybanters/nvim)
 * [Dotfiles (omerxx)](https://github.com/omerxx/dotfiles)
 * [Dotfiles (josean-dev)](https://github.com/josean-dev/dev-environment-files)
-* [Dotfiles (hendrikmi](https://github.com/hendrikmi/dotfiles)
+* [Dotfiles (hendrikmi)](https://github.com/hendrikmi/dotfiles)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -323,10 +306,11 @@ Here are some of my favorite dotfile configurations.
 [showcase-shield]: https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square
 [showcase-url]: https://dotgibson.github.io/dotfiles-web
 [license-shield]: https://img.shields.io/github/license/dotgibson/dotfiles-core.svg?style=flat-square
-[license-url]: https://github.com/dotgibson/dotfiles-core/blob/main/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue
+[license-url]: https://github.com/dotgibson/dotfiles-core/blob/main/LICENSE
+[linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue?style=flat-square&logo=linkedin&logoColor=white
 [linkedin-url]: https://linkedin.com/in/garrettallen2
-[product-screenshot]: https://github.com/dotgibson/dotfiles-web/blob/main/public/og.svg
+[product-screenshot]: https://raw.githubusercontent.com/dotgibson/dotfiles-web/main/public/og.svg
+[docs]: https://dotgibson.github.io/dotfiles-web/
 [zsh-shield]: https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white
 [zsh-url]: https://github.com/zsh-users/zsh
 [bash-shield]: https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white
