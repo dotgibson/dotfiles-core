@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.1.0] - 2026-07-06
+
 ### Added
 
 - **`assets/`: a reproducible VHS tape for the README hero demo.**
