@@ -332,7 +332,7 @@ Here are some of my favorite dotfile configurations.
 [showcase-url]: https://dotgibson.github.io/dotfiles-web
 [license-shield]: https://img.shields.io/github/license/dotgibson/dotfiles-core.svg?style=flat-square
 [license-url]: https://github.com/dotgibson/dotfiles-core/blob/main/LICENSE
-[linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue
+[linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue?style=flat-square&logo=linkedin&logoColor=white
 [linkedin-url]: https://linkedin.com/in/garrettallen2
 [product-screenshot]: https://raw.githubusercontent.com/dotgibson/dotfiles-web/main/public/og.svg
 [docs]: https://dotgibson.github.io/dotfiles-web/
