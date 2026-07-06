@@ -20,14 +20,20 @@ Set TypingSpeed 55ms
 
 # --- silent setup: land on a clean prompt ---
 Hide
-Type "cd ~" Enter
+Type "source ~/.config/zsh/.zshrc" Enter
+Type "cd ~/code/dotfiles/dotfiles-MacBook" Enter
 Type "clear" Enter
 Show
+Sleep 3s
 
 # --- the tour: a few marquee moments, then stop ---
 Type "ll"             Sleep 700ms  Enter  Sleep 2s      # eza — icons + git status
 Type "cat README.md"  Sleep 700ms  Enter  Sleep 2s      # bat — syntax highlighting
-Type "z dotfiles"     Sleep 700ms  Enter  Sleep 1500ms  # zoxide — frecency jump
-Type "core help"      Sleep 700ms  Enter  Sleep 2500ms  # the built-in command index
-Type "glog"           Sleep 700ms  Enter  Sleep 2500ms  # pretty git log
+Type "z dotfiles"     Sleep 700ms  Enter  Sleep 2000ms  # zoxide — frecency jump
+Type "core help"      Sleep 700ms  Enter  Sleep 2000ms  # the built-in command index
+Type "q"              Sleep 700ms  Enter  Sleep 2000ms  # quit the help menu
+Type "cd -"           Sleep 700ms  Enter  Sleep 2000ms  # go back a directory
+Type "glog"           Sleep 700ms  Enter  Sleep 2000ms  # pretty git log
+Type "q"              Sleep 700ms  Enter  Sleep 2000ms  # quit the git log
+Type "clear"          Sleep 700ms  Enter  Sleep 2000ms  # clear the screen
 Sleep 1s
