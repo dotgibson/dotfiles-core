@@ -70,7 +70,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![dotgibson dotfiles][product-screenshot]](https://dotgibson.github.io/dotfiles-web)
+[![dotgibson — terminal demo][product-screenshot]](https://dotgibson.github.io/dotfiles-web)
 
 **`dotfiles-core` is the foundation layer** — the shell, editor, and tooling config
 that stays identical on every machine. It's authored once here and vendored into each
@@ -334,7 +334,7 @@ Here are some of my favorite dotfile configurations.
 [license-url]: https://github.com/dotgibson/dotfiles-core/blob/main/LICENSE
 [linkedin-shield]: https://img.shields.io/badge/LinkedIn-blue?style=flat-square&logo=linkedin&logoColor=white
 [linkedin-url]: https://linkedin.com/in/garrettallen2
-[product-screenshot]: https://raw.githubusercontent.com/dotgibson/dotfiles-web/main/public/og.svg
+[product-screenshot]: assets/demo.gif
 [docs]: https://dotgibson.github.io/dotfiles-web/
 [zsh-shield]: https://img.shields.io/badge/Zsh-F15A24?style=flat-square&logo=zsh&logoColor=white
 [zsh-url]: https://github.com/zsh-users/zsh

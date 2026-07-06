@@ -63,7 +63,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   along the way (`LICENSE`, `aliases.md`, the issue-template deep-links, a malformed
   acknowledgment link), and scoped MD033 in `.markdownlint.jsonc` with
   `allowed_elements` so the intentional showcase inline HTML passes the markdown gate
-  while the rule still catches unexpected tags.
+  while the rule still catches unexpected tags. The hero image is now the rendered
+  terminal demo (`assets/demo.gif`, produced from `assets/demo.tape`).
 - **nvim: the statusline now wears NvChad's rounded block look.** `plugins/lualine-nvim.lua`
   keeps its sections and (intentionally) its existing diagnostic glyphs — which
   stay in lockstep with `utils/diagnostics.lua` and the tabline — but swaps
