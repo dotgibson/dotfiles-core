@@ -15,6 +15,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`assets/`: a reproducible VHS tape for the README hero demo.**
+  `assets/demo.tape` scripts a short terminal tour (eza, bat, zoxide, `core help`,
+  `glog`) that renders to `assets/demo.gif` via `vhs assets/demo.tape` — so the hero
+  is regenerated, not hand-recorded, and stays current after tooling changes.
+  `assets/README.md` documents the render/optimize steps; the README hero now points
+  at `assets/demo.gif` (a broken image until the gif is rendered and committed —
+  render before merging). `assets/` is allowlisted in `audit-core.sh` as repo-meta
+  (rides along in the subtree, never symlinked).
 - **README: a structured four-row badge block at the top.** Row 1 is repo
   status & automation — live `ci` and `core-integrity` Actions status,
   open-issue / open-PR counts, repo size, and latest release. Row 2 is the
