@@ -27,7 +27,7 @@ OWNER="${GITHUB_REPOSITORY_OWNER:-dotgibson}"
 while [ $# -gt 0 ]; do
   case "$1" in
   --root) ROOT="${2:?--root needs a directory}"; shift 2 ;;
-  -h | --help) sed -n '2,20p' "$0"; exit 0 ;;
+  -h | --help) sed -n '2,19p' "$0"; exit 0 ;;
   *) echo "freshness-dashboard: unknown arg: $1" >&2; exit 2 ;;
   esac
 done

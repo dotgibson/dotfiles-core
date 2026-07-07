@@ -27,7 +27,9 @@ concurrency:
 jobs:
   dashboard:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # 15 min like freshness.yml: the nvim-pin check drives a full `:Lazy! sync` that
+    # re-clones every pinned plugin, which dominates the runtime.
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
@@ -40,6 +42,17 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+
+      # The nvim-pin check (update-nvim-plugins.sh --check) hard-requires nvim and drives
+      # a real `:Lazy! sync`, so install the SAME pinned neovim freshness.yml uses — else
+      # the "nvim plugin pins" row is a permanently-false ⚠️ ("nvim not found"). The zsh-pin
+      # + drift + integrity checks need only git, already present.
+      - name: Load pinned tool versions
+        run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >> "$GITHUB_ENV"
+      - name: Install neovim (pinned)
+        uses: ./.github/actions/setup-core-tools
+        with:
+          neovim: "true"
 
       - name: Clone the fleet (public, anonymous, shallow)
         run: |
