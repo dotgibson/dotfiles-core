@@ -10,7 +10,7 @@ Draft the release body for the next tag from its Conventional Commits — the re
 preview a maintainer curates into `CHANGELOG.md` before `make release`. Complements
 `/release-readiness` (which decides *whether* to release); this drafts *what goes in it*.
 
-Range for this run: **$ARGUMENTS`..HEAD`** (empty = since the last release).
+Range for this run: **$ARGUMENTS** (empty = since the last release; otherwise the range `$ARGUMENTS..HEAD`).
 
 ## How to draft
 
