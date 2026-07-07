@@ -57,7 +57,7 @@ rather than configuring a machine.
 | `dotfiles-Alpine`   | OS-native        | yes              | musl + busybox + doas; the lean outlier.                   |
 | `dotfiles-Gentoo`   | OS-native        | yes              | emerge from source; USE flags, full atoms.                 |
 | `dotfiles-Kali`     | Role / offensive | yes              | Core + apt OS layer + the offensive role layer.            |
-| `dotfiles-Defense`  | Role / defensive | yes (planned)    | Planned blue Role repo; not yet stood up (absent here).    |
+| `dotfiles-Defense`  | Role / defensive | yes              | Core + OS layer + the defensive detection/hunt role layer. |
 | `dotfiles-Windows`  | Native host      | no               | pwsh / scoop / winget; Core is reimplemented, not ported.  |
 | `dotfiles-web`      | Showcase (none)  | no               | Astro docs site; the system's public face.                 |
 
@@ -65,11 +65,8 @@ The canonical Core-vendoring fleet is `scripts/os-repos.txt` — eight repos.
 `dotfiles-Windows` is deliberately absent from it: its host layer is replicated
 from scratch in PowerShell rather than ported one-to-one from the Unix Core, so
 it carries no vendored `core/` subtree and `sync-core.sh` must never fan out into
-it. `dotfiles-Defense` is one of those eight canonical targets by design but is
-not yet stood up, so it is temporarily commented out in `os-repos.txt` until the
-repo exists — `make sync` with no args fans out into the seven that are live.
-(`dotfiles-Debian` was once planned but is no longer pursued — the Debian family
-is covered by `dotfiles-Kali`'s apt OS layer.)
+it. (`dotfiles-Debian` was once planned but is no longer pursued — the Debian
+family is covered by `dotfiles-Kali`'s apt OS layer.)
 
 ## Vendoring topology
 
