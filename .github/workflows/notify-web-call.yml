@@ -1,0 +1,54 @@
+# .github/workflows/notify-web-call.yml
+# ──────────────────────────────────────────────────────────────────────────────
+# REUSABLE showcase-refresh dispatch (G3). Every source repo carried a byte-identical
+# 43-line notify-web.yml that pings dotfiles-web to rebuild. This is the single
+# definition; each repo collapses to a caller that owns only its `on:` trigger:
+#
+#   jobs:
+#     dispatch:
+#       uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@v2
+#       secrets: inherit
+#
+# The owner guard, the dotfiles-web target, and the {"event_type":"refresh"} payload
+# are constant, so this takes NO inputs — only the WEBHOOK_SECRET, inherited from the
+# caller. Absent secret → the job warns and skips (forks, or before opt-in).
+# First-party only: plain curl + the caller's PAT; no marketplace action.
+# ──────────────────────────────────────────────────────────────────────────────
+name: notify-web (reusable)
+
+on:
+  workflow_call:
+    secrets:
+      WEBHOOK_SECRET:
+        description: "Fine-grained PAT with Contents:Write on dotgibson/dotfiles-web. Absent → the job warns and skips."
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    # Any repo under the canonical owner may dispatch; forks under other owners are
+    # excluded and lack the secret anyway.
+    if: github.repository_owner == 'dotgibson'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify dotfiles-web to rebuild
+        env:
+          TOKEN: ${{ secrets.WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::warning::WEBHOOK_SECRET not set — skipping showcase refresh"
+            exit 0
+          fi
+          curl -fsS -X POST \
+            --max-time 30 --retry 3 --retry-delay 5 --retry-connrefused \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/dotgibson/dotfiles-web/dispatches \
+            -d '{"event_type":"refresh"}'
+          echo "Dispatched refresh to dotfiles-web"
