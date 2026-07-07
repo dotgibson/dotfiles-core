@@ -125,9 +125,10 @@ Roll it out one consumer at a time, canary first, verifying a real run each time
    caller change out to every source repo's `notify-web.yml`.
 
 **Verify** after each: trigger the workflow (a real fan-out / a `refresh` dispatch) and
-confirm the cross-repo write still lands. Because the token is minted per run, the App's
-**installation → Advanced → recent deliveries** and the repo's audit log show exactly what
-it did.
+confirm the cross-repo write still lands. Because the token is minted per run and scoped to
+the target, the repo/org **audit log** shows exactly what it did (the App has no webhook —
+Step 1 — so there are no "recent deliveries" to consult, and minting a token via the REST
+API generates none regardless).
 
 **Retire** once every consumer is migrated and green: delete the `FLEET_SYNC_TOKEN` and
 `WEBHOOK_SECRET` secrets from all repos, remove the `|| secrets.…` fallbacks (and the
