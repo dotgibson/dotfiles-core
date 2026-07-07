@@ -25,6 +25,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`/release-readiness` + `/release-notes` maintenance routines — the judgment layer over the
+  release mechanics.** `/release-readiness` is the go/no-go gate in front of `RELEASE-RUNBOOK.md`:
+  it weighs the unreleased `CHANGELOG` work, the audit status, version coherence, and fleet drift
+  into a **READY-to-cut-vX.Y.Z / HOLD** verdict with the next command to run. `/release-notes`
+  drafts the next release's grouped notes from Conventional Commits (git-cliff, or the first-party
+  `gen-release-notes.sh` when the binary is absent) as raw material to curate into `[Unreleased]`.
+  Both are report-first (they edit nothing). `release-readiness` rides the `claude-routines` rail
+  weekly (Tue 10:00 UTC, last in the Opus stagger); `release-notes` is dispatch-only (you draft at
+  release time, not on a beat). Both `fetch-depth: 0` for the `git log <last-release>..HEAD` range.
+
 - **Real release notes for OS-repo tags — `scripts/gen-release-notes.sh` (G5).** OS-repo
   auto-releases shipped a bare tag with GitHub's raw PR-list (`--generate-notes`); they now
   ship a grouped Conventional-Commit changelog. `auto-tag.sh --release` drafts the notes for

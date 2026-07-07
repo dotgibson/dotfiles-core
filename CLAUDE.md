@@ -74,6 +74,10 @@ On-demand routines that automate the judgment-heavy chores `audit-core.sh` can't
   actions) against upstream changelogs and flag breaking changes.
 - `/modernize` — scout the next CI modernization floor (newly-EOL runners, deprecated
   action runtimes, new hardening dimensions) and propose bumps to `modern-baseline.yml`.
+- `/release-readiness` — go/no-go before a Core release: unreleased work, audit status,
+  version coherence, fleet drift → a READY-to-cut-vX.Y.Z / HOLD verdict.
+- `/release-notes` — draft the next release's notes from Conventional Commits (git-cliff, or
+  the first-party `gen-release-notes.sh`) for curation into `CHANGELOG.md`.
 
 Each routine **reports first** and only proposes changes; nothing is vendored out
 without a green `make audit`.
