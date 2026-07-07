@@ -23,35 +23,40 @@ TO="${3:?usage: gen-release-notes.sh <repo-path> <from-ref-or-empty> <to-ref>}"
 range="$TO"
 [ -n "$FROM" ] && range="$FROM..$TO"
 
-# Oldest-first (cliff sort_commits=oldest), no merges, "<sha7> <subject>". %s is the
-# subject only — a Conventional Commit's `type(scope): summary`. Split on whitespace in
-# awk (the sha is the first token, the subject the rest) — portable, no exotic -F byte.
+# Oldest-first (cliff sort_commits=oldest), no merges, "<full-sha> <subject>". %s is the
+# subject only — a Conventional Commit's `type(scope): summary`. The FULL %H (not %h) so
+# the display SHA is a deterministic truncate-to-7 like cliff's `commit.id | truncate(7)`,
+# never git's auto-lengthened abbreviation. Split on whitespace in awk (sha = first token,
+# subject = the rest) — portable, no exotic -F byte.
 notes="$(
-  git -C "$REPO" log "$range" --no-merges --reverse --format='%h %s' 2>/dev/null | awk '
+  git -C "$REPO" log "$range" --no-merges --reverse --format='%H %s' 2>/dev/null | awk '
     # Map a subject to a group, mirroring cliff.toml commit_parsers (first match wins,
-    # in order). Empty string = drop the commit (unconventional or a skipped release).
+    # in order). Each pattern requires the Conventional-Commit delimiter after the type
+    # — an optional `(scope)`, optional breaking `!`, then `:` — so ordinary prose that
+    # merely starts with a type word ("fixing a flaky test") is NOT grouped but DROPPED,
+    # matching git-cliff conventional_commits + filter_unconventional. "" = drop.
     function group(m) {
-      if (m ~ /^feat/)                return "Features"
-      if (m ~ /^fix/)                 return "Bug Fixes"
-      if (m ~ /^perf/)                return "Performance"
-      if (m ~ /^refactor/)            return "Refactoring"
-      if (m ~ /^docs/)                return "Documentation"
-      if (m ~ /^test/)                return "Tests"
-      if (m ~ /^ci/ || m ~ /^build/)  return "CI / Build"
-      if (m ~ /^chore\(release\)/)    return ""              # skip release commits
-      if (m ~ /^chore\(deps\)/)       return "Dependencies"
-      if (m ~ /^chore/)               return "Chores"
-      if (m ~ /^style/)               return "Styling"
-      return ""                                              # filter_unconventional
+      if (m ~ /^feat(\([^)]*\))?!?:/)       return "Features"
+      if (m ~ /^fix(\([^)]*\))?!?:/)        return "Bug Fixes"
+      if (m ~ /^perf(\([^)]*\))?!?:/)       return "Performance"
+      if (m ~ /^refactor(\([^)]*\))?!?:/)   return "Refactoring"
+      if (m ~ /^docs(\([^)]*\))?!?:/)       return "Documentation"
+      if (m ~ /^test(\([^)]*\))?!?:/)       return "Tests"
+      if (m ~ /^(ci|build)(\([^)]*\))?!?:/) return "CI / Build"
+      if (m ~ /^chore\(release\)!?:/)       return ""              # skip release commits
+      if (m ~ /^chore\(deps\)!?:/)          return "Dependencies"
+      if (m ~ /^chore(\([^)]*\))?!?:/)      return "Chores"
+      if (m ~ /^style(\([^)]*\))?!?:/)      return "Styling"
+      return ""                                                    # filter_unconventional
     }
     BEGIN {
       n = split("Features|Bug Fixes|Performance|Refactoring|Documentation|Tests|CI / Build|Dependencies|Chores|Styling", ORDER, "|")
     }
     {
-      sha = $1
-      msg = substr($0, length(sha) + 2)                      # everything after "<sha> "
+      msg = substr($0, length($1) + 2)                       # everything after "<sha> "
       g = group(msg)
       if (g == "") next
+      sha = substr($1, 1, 7)                                 # cliff: commit.id | truncate(7) — always 7
       msg = toupper(substr(msg, 1, 1)) substr(msg, 2)        # cliff: message | upper_first
       bucket[g] = bucket[g] "- " msg " (" sha ")\n"
       seen[g] = 1

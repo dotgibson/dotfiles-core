@@ -695,6 +695,7 @@ if have git; then
   git -C "$GRNR" commit -q --allow-empty -m "feat(x): add a thing"        # Features (later, but must sort first)
   git -C "$GRNR" commit -q --allow-empty -m "chore(release): v1.1.0"      # must be skipped
   git -C "$GRNR" commit -q --allow-empty -m "totally unconventional line" # must be dropped
+  git -C "$GRNR" commit -q --allow-empty -m "fixing a flaky test"         # prose, no delimiter → dropped
   _grn_out="$("$GRN" "$GRNR" v1.0.0 HEAD 2>/dev/null)"
 
   if grep -q '^### Features$' <<<"$_grn_out" && grep -q '^### Bug Fixes$' <<<"$_grn_out"; then
@@ -708,6 +709,12 @@ if have git; then
   if ! grep -qi 'release' <<<"$_grn_out" && ! grep -qi 'unconventional' <<<"$_grn_out"; then
     pass "gen-notes: skips chore(release) and drops unconventional commits"
   else fail "gen-notes: a skipped/dropped commit leaked into the notes"; fi
+
+  # "fixing a flaky test" starts with 'fix' but has no `:` delimiter → must be filtered,
+  # not grouped under Bug Fixes (the conventional-delimiter anchor; mirrors filter_unconventional).
+  if ! grep -qi 'flaky' <<<"$_grn_out"; then
+    pass "gen-notes: prose starting with a type word (no delimiter) is dropped"
+  else fail "gen-notes: unconventional prose leaked into a group"; fi
 
   # commit_parsers order, not commit order: Features (committed later) must lead Bug Fixes.
   if [[ "$_grn_out" == "### Features"* ]]; then
