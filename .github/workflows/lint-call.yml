@@ -46,6 +46,7 @@ jobs:
   shell:
     name: shell lint (shellcheck · shfmt · syntax)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       EXTRA_EXCLUDES: ${{ inputs.extra_ls_files_excludes }}
     steps:
@@ -74,7 +75,7 @@ jobs:
           echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
 
       - name: Cache pinned gate tools
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/core-tools
           key: core-tools-${{ runner.os }}-${{ hashFiles('scripts/tool-versions.env') }}-shell
@@ -158,6 +159,7 @@ jobs:
   actionlint:
     name: actionlint (workflow self-check)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -179,7 +181,7 @@ jobs:
           echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
 
       - name: Cache pinned gate tools
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/core-tools
           key: core-tools-${{ runner.os }}-${{ hashFiles('scripts/tool-versions.env') }}-actionlint
