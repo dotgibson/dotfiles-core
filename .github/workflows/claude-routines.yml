@@ -22,14 +22,16 @@ on:
     # the others. Staggered an hour apart so no two Opus runs overlap (predictable usage).
     - cron: "0 7 * * 2" # Tue 07:00 UTC — tool-scout + doc-audit (the original pair)
     - cron: "0 8 * * 2" # Tue 08:00 UTC — freshness-triage (after Mon's freshness.yml opened its PRs)
-    - cron: "0 9 * * 2" # Tue 09:00 UTC — modernize (scouts the next CI floor; last in the stagger)
+    - cron: "0 9 * * 2" # Tue 09:00 UTC — modernize (scouts the next CI floor)
+    - cron: "0 10 * * 2" # Tue 10:00 UTC — release-readiness (weekly go/no-go; last in the stagger)
   workflow_dispatch:
     inputs:
       routine:
         description: "which routine to run"
         type: choice
         default: both
-        options: [both, doc-audit, tool-scout, freshness-triage, modernize]
+        # release-notes is dispatch-only (you draft notes AT release time, not weekly).
+        options: [both, doc-audit, tool-scout, freshness-triage, modernize, release-readiness, release-notes]
 
 permissions:
   contents: read
@@ -215,10 +217,83 @@ jobs:
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/modernize.md"
 
+  # The go/no-go gate in front of RELEASE-RUNBOOK.md (command already exists; this schedules
+  # it). Runs an hour after modernize so no two Opus routines overlap. Reads CHANGELOG's
+  # [Unreleased] + the commits since the last release, the audit status, version coherence,
+  # and fleet drift, then files a READY-to-cut-vX.Y.Z / HOLD verdict — report-first, edits
+  # nothing. fetch-depth 0: it reads `git log <last-release>..HEAD`, which a shallow clone lacks.
+  release-readiness:
+    needs: preflight
+    if: >-
+      needs.preflight.outputs.has_key == 'true' &&
+      (github.event.schedule == '0 10 * * 2' ||
+       github.event.inputs.routine == 'release-readiness')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_TITLE: "release-readiness: weekly go/no-go"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Load pinned tool versions
+        run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not loaded from scripts/tool-versions.env}"
+      - name: Run /release-readiness
+        run: |
+          claude -p "/release-readiness" \
+            --model opus \
+            --permission-mode acceptEdits \
+            --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --output-format text | tee "$RUNNER_TEMP/release-readiness.md"
+      - name: File the report as an issue
+        run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/release-readiness.md"
+
+  # Draft the next release's notes from Conventional Commits. DISPATCH-ONLY (no cron) — you
+  # draft notes at release time, not on a weekly beat. Selectable via the workflow_dispatch
+  # `routine` input. fetch-depth 0 for the `git log <range>` the draft needs.
+  release-notes:
+    needs: preflight
+    if: >-
+      needs.preflight.outputs.has_key == 'true' &&
+      github.event.inputs.routine == 'release-notes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_TITLE: "release-notes: draft for the next release"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Load pinned tool versions
+        run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not loaded from scripts/tool-versions.env}"
+      - name: Run /release-notes
+        run: |
+          claude -p "/release-notes" \
+            --model opus \
+            --permission-mode acceptEdits \
+            --allowedTools "Task,Read,Grep,Glob,Bash" \
+            --output-format text | tee "$RUNNER_TEMP/release-notes.md"
+      - name: File the report as an issue
+        run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/release-notes.md"
+
   # Turn a failed routine run into a deduplicated issue (G1). Skipped jobs (no token, or a
   # cron that didn't select them) are NOT failures, so this fires only on a real crash.
   notify-failure:
-    needs: [tool-scout, doc-audit, freshness-triage, modernize]
+    needs: [tool-scout, doc-audit, freshness-triage, modernize, release-readiness, release-notes]
     if: failure()
     permissions:
       contents: read
