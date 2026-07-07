@@ -61,11 +61,22 @@ jobs:
               return 0
             fi
             hdrs="$RUNNER_TEMP/$name.hdr"
+            # Capture curl's TRANSPORT exit status separately from the HTTP code: a
+            # network/DNS/api.github.com blip (curl exit != 0) must NOT be misread as an
+            # invalid token, or a transient outage would page for a needless rotation.
+            # Only a SUCCESSFUL request that returns non-200 is a real auth failure.
+            set +e
             code="$(curl -sS -o /dev/null -D "$hdrs" -w '%{http_code}' \
               -H "Authorization: Bearer $token" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              https://api.github.com/ || echo 000)"
+              https://api.github.com/)"
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning::$name — could not reach api.github.com (curl exit $rc); treating as a transient outage, not a token failure"
+              return 0
+            fi
             if [ "$code" != "200" ]; then
               printf -- '- **%s** — authentication FAILED (HTTP %s). The token is invalid, revoked, or expired. Rotate it now.\n' "$name" "$code" >>"$problems"
               invalid=1
