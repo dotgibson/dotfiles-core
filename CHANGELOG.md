@@ -25,6 +25,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **A weekly fleet freshness dashboard — one hub health board.** `scripts/freshness-dashboard.sh`
+  consolidates the fleet's otherwise-scattered freshness signals — vendoring drift
+  (`fleet-drift.sh`), vendored-`core/` integrity (`core-integrity.sh`), and zsh/nvim
+  plugin-pin freshness (`update-*-plugins.sh --check`) — into a single glanceable markdown
+  board, with links to each repo's Renovate dependency dashboard and the token-health probe.
+  `.github/workflows/freshness-dashboard.yml` runs it Mondays 10:00 UTC (after the morning
+  sweeps settle) and files a deduplicated issue that updates in place. It _reports_, never
+  mutates — the sub-gates still enforce; this is the "how healthy is the fleet this week?"
+  view in one place. Run locally with `make freshness-dashboard`.
+
 - **A `/modernize` maintenance routine — the judgment half of the modernization floor.**
   `check-modern.sh` _enforces_ the current floor (`scripts/modern-baseline.yml`); this
   routine scouts what the _next_ floor should be. It reads the declared floor and the
