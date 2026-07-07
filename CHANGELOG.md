@@ -25,6 +25,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **A modernization floor for CI: `scripts/modern-baseline.yml` + `scripts/check-modern.sh`,
+  gated by `audit-core.sh` (section 8c).** The baseline declares what "modern" means — no
+  removed workflow commands (`::set-output`/`::save-state`/…), no EOL runners, every external
+  action pinned to a 40-hex SHA (the fleet's own `@vN` reusable workflows exempt), and every
+  container image pinned to an `@sha256:` digest — and the checker enforces it so a workflow
+  can't silently regress below it. This generalizes the fleet's existing SHA-pin discipline
+  into one contract and closes the last break in it (mutable container tags: `alpine:3.21` and
+  `archlinux:latest` in `ci.yml` are now digest-pinned). Run standalone with `make check-modern`.
+
 - **difftastic (`difft`): an opt-in, structure-aware diff companion to delta.**
   `tools.zsh` now detects it (`HAVE_DIFFT`), `git/gitconfig` defines a
   `difftool "difftastic"` plus a `git dft` alias, and `aliases.zsh` adds a
