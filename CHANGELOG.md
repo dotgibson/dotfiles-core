@@ -25,6 +25,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Real release notes for OS-repo tags — `scripts/gen-release-notes.sh` (G5).** OS-repo
+  auto-releases shipped a bare tag with GitHub's raw PR-list (`--generate-notes`); they now
+  ship a grouped Conventional-Commit changelog. `auto-tag.sh --release` drafts the notes for
+  the `latest..NEXT` range and feeds them to `gh release create --notes-file`, falling back
+  to `--generate-notes` when a range has no conventional commits. The generator is the
+  **first-party twin of Core's `cliff.toml`** — same grouping (Features / Bug Fixes / … in
+  commit-parser order) and one-bullet-per-commit shape, but pure `git` + `awk` so it needs
+  no git-cliff binary (the fleet's "no third-party CI tool we can't pin" discipline — the
+  same reason zizmor stayed deferred). Also bumps `auto-tag-call.yml`'s internal core
+  checkout from the stale `@v2` to `@v3` (it now carries both release scripts).
+
 - **A weekly fleet freshness dashboard — one hub health board.** `scripts/freshness-dashboard.sh`
   consolidates the fleet's otherwise-scattered freshness signals — vendoring drift
   (`fleet-drift.sh`), vendored-`core/` integrity (`core-integrity.sh`), and zsh/nvim
