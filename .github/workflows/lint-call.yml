@@ -68,13 +68,14 @@ jobs:
           grep -E '^[A-Z0-9_]+=' "$f" >> "$GITHUB_ENV"
 
       - name: Install zsh (for zsh -n on the repo-owned zsh modules)
-        # Restrict `apt-get update` to the base Ubuntu sources (Dir::Etc::sourceparts="-"
-        # ignores /etc/apt/sources.list.d). GitHub's hosted runners ship third-party repos
-        # there (e.g. packages.microsoft.com) that intermittently serve an unsigned
-        # InRelease and fail the whole update with exit 100 — a flaky that has nothing to do
-        # with installing zsh from the base repos.
+        # Drop GitHub's third-party apt repos (packages.microsoft.com / azure) before update:
+        # they intermittently serve an unsigned InRelease and fail the WHOLE `apt-get update`
+        # with exit 100 — a flaky unrelated to installing zsh from the base repos. Targeting
+        # only *microsoft*/*azure* files is safe regardless of where the Ubuntu base lives
+        # (sources.list vs the deb822 sources.list.d).
         run: |
-          sudo apt-get update -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
+          sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
+          sudo apt-get update
           sudo apt-get install -y --no-install-recommends zsh
 
       - name: Put core-tools bin on PATH
