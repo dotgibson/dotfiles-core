@@ -25,6 +25,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Renovate adoption via a shared org preset (replaces Dependabot).** The fleet's
+  dependency-update policy now lives once in `dotgibson/.github` (`default.json`) and
+  every repo opts in with a three-line `renovate.json` that extends it — the same
+  hub-and-spoke centralization Phase 1 applied to reusable workflows, now for
+  dependency management (closes the "no Dependabot/Renovate outside core & Windows"
+  gap). The preset keeps Renovate in lock-step with the modernization floor
+  (`scripts/modern-baseline.yml`): it _maintains_ SHA-pinned actions and `@sha256:`
+  container digests rather than un-pinning them, groups third-party action bumps into
+  one weekly `ci(deps):` PR, and deliberately leaves the fleet's own `dotgibson/**`
+  reusable-workflow refs on their moving `@v3` major tag (advanced by the release
+  process, not a bot). Core retires its standalone `.github/dependabot.yml`;
+  `renovate.json` is allowlisted in `audit-core.sh` as repo-meta.
+
 - **A modernization floor for CI: `scripts/modern-baseline.yml` + `scripts/check-modern.sh`,
   gated by `audit-core.sh` (section 8c).** The baseline declares what "modern" means — no
   removed workflow commands (`::set-output`/`::save-state`/…), no EOL runners, every external

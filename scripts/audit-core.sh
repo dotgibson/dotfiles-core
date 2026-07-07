@@ -247,7 +247,7 @@ META_ALLOWLIST=(
   README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
   ARCHITECTURE.md
   PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md
-  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc
+  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json
   Makefile cliff.toml
   nvim/.luacheckrc
   CODEOWNERS pull_request_template.md
