@@ -16,18 +16,11 @@
 #   dotfiles-Debian — was planned, never created, and is no longer being pursued.
 #     The Debian family is covered by dotfiles-Kali (apt, Debian-family). Do not
 #     re-add unless a standalone Debian OS repo is actually stood up.
-#
-# TEMPORARILY ABSENT — a canonical vendoring target, but not yet stood up:
-#   dotfiles-Defense — the defensive (blue) Role repo. It is one of the eight
-#     canonical fan-out targets by design, but the repo does not exist on disk
-#     yet (see dotfiles-Defense-PLAN.md). Left commented so `make sync` with no
-#     args does not fail on the missing directory. Uncomment the line below the
-#     moment the repo is actually created.
-# dotfiles-Defense
 # ──────────────────────────────────────────────────────────────────────────────
 dotfiles-MacBook
 dotfiles-Alpine
 dotfiles-Arch
+dotfiles-Defense
 dotfiles-Fedora
 dotfiles-Gentoo
 dotfiles-Kali

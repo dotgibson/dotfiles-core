@@ -13,6 +13,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Removed
+
+- **`dotfiles-Defense-PLAN.md` — the pre-build planning skeleton, now obsolete.**
+  The doc was a "ready-to-instantiate skeleton for a future `dotfiles-Defense`
+  repo," written before that repo existed. `dotfiles-Defense` is now a public,
+  released repo (v1.0.x) that actively vendors Core, so the plan is spent — and,
+  worse, it actively misled the `/doc-audit` routine into reporting Defense as
+  "unbuilt/absent." Deleted (git history retains it) and dropped from the
+  `audit-core.sh` META_ALLOWLIST.
+
 ### Added
 
 - **difftastic (`difft`): an opt-in, structure-aware diff companion to delta.**
