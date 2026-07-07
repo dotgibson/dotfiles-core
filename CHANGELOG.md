@@ -25,6 +25,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **A `/modernize` maintenance routine — the judgment half of the modernization floor.**
+  `check-modern.sh` _enforces_ the current floor (`scripts/modern-baseline.yml`); this
+  routine scouts what the _next_ floor should be. It reads the declared floor and the
+  fleet's workflows, researches the latest runner/action deprecations (EOL runner
+  labels, the `node16`→`node20`→`node24` action-runtime treadmill, pinning-discipline
+  gaps, new hardening dimensions), and files a **report-first** proposal — the exact
+  baseline edit, the dated upstream source, and whether it is enforceable today or needs
+  fix-first workflow changes. Runs headless weekly on the `claude-routines` rail (Tue
+  09:00 UTC, last in the Opus stagger) and files a deduplicated issue; edits nothing.
+
 - **Renovate adoption via a shared org preset (replaces Dependabot).** The fleet's
   dependency-update policy now lives once in `dotgibson/.github` (`default.json`) and
   every repo opts in with a three-line `renovate.json` that extends it — the same

@@ -22,13 +22,14 @@ on:
     # the others. Staggered an hour apart so no two Opus runs overlap (predictable usage).
     - cron: "0 7 * * 2" # Tue 07:00 UTC — tool-scout + doc-audit (the original pair)
     - cron: "0 8 * * 2" # Tue 08:00 UTC — freshness-triage (after Mon's freshness.yml opened its PRs)
+    - cron: "0 9 * * 2" # Tue 09:00 UTC — modernize (scouts the next CI floor; last in the stagger)
   workflow_dispatch:
     inputs:
       routine:
         description: "which routine to run"
         type: choice
         default: both
-        options: [both, doc-audit, tool-scout, freshness-triage]
+        options: [both, doc-audit, tool-scout, freshness-triage, modernize]
 
 permissions:
   contents: read
@@ -177,10 +178,47 @@ jobs:
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/freshness-triage.md"
 
+  # The judgment half of the modernization floor (command already exists; this schedules it).
+  # Runs an hour after freshness-triage so no two Opus routines overlap. Reads the declared
+  # floor (scripts/modern-baseline.yml) + the fleet's workflows, researches the latest
+  # runner/action deprecations, then files a report-first proposal for the NEXT floor —
+  # edits nothing. Complements check-modern.sh, which enforces the CURRENT floor.
+  modernize:
+    needs: preflight
+    if: >-
+      needs.preflight.outputs.has_key == 'true' &&
+      (github.event.schedule == '0 9 * * 2' ||
+       github.event.inputs.routine == 'modernize')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_TITLE: "modernize: weekly CI-floor scan"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Load pinned tool versions
+        run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
+      - name: Install Claude Code CLI (pinned)
+        # Fail fast if the pin didn't load — never silently fall back to a floating `latest`.
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not loaded from scripts/tool-versions.env}"
+      - name: Run /modernize
+        run: |
+          claude -p "/modernize" \
+            --model opus \
+            --permission-mode acceptEdits \
+            --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --output-format text | tee "$RUNNER_TEMP/modernize.md"
+      - name: File the report as an issue
+        run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/modernize.md"
+
   # Turn a failed routine run into a deduplicated issue (G1). Skipped jobs (no token, or a
   # cron that didn't select them) are NOT failures, so this fires only on a real crash.
   notify-failure:
-    needs: [tool-scout, doc-audit, freshness-triage]
+    needs: [tool-scout, doc-audit, freshness-triage, modernize]
     if: failure()
     permissions:
       contents: read

@@ -72,6 +72,8 @@ On-demand routines that automate the judgment-heavy chores `audit-core.sh` can't
   features worth adopting. Delegates to the `tool-scout` subagent.
 - `/freshness-triage` — review open dependency-bump PRs (zsh plugins, nvim lock,
   actions) against upstream changelogs and flag breaking changes.
+- `/modernize` — scout the next CI modernization floor (newly-EOL runners, deprecated
+  action runtimes, new hardening dimensions) and propose bumps to `modern-baseline.yml`.
 
 Each routine **reports first** and only proposes changes; nothing is vendored out
 without a green `make audit`.
