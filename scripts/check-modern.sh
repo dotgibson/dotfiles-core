@@ -32,7 +32,10 @@ _yaml_bool() { grep -qE "^$1:[[:space:]]*true([[:space:]]|\$)" "$BASELINE"; }
 _yaml_val()  { sed -nE "s/^$1:[[:space:]]*//p" "$BASELINE" | head -n1 | tr -d '"'; }
 
 # ── the files we gate: workflows + composite actions ─────────────────────────
-mapfile -t FILES < <(git ls-files \
+# Plain read loop, not `mapfile` — macOS ships bash 3.2 (no mapfile), which the audit
+# runs this under, same bash-3.2 discipline as the rest of Core.
+FILES=()
+while IFS= read -r _f; do [ -n "$_f" ] && FILES+=("$_f"); done < <(git ls-files \
   '.github/workflows/*.yml' '.github/workflows/*.yaml' \
   '.github/actions/*/action.yml' '.github/actions/*/action.yaml' 2>/dev/null)
 [ "${#FILES[@]}" -gt 0 ] || { echo "check-modern: no workflow/action files to check"; exit 0; }
