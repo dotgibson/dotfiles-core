@@ -579,6 +579,21 @@ else
   skip "gitleaks (not installed — https://github.com/gitleaks/gitleaks/releases)"
 fi
 
+# ── 8c. modernization floor (check-modern.sh) ────────────────────────────────
+# actionlint (8) proves a workflow is VALID; it says nothing about whether it's MODERN.
+# scripts/modern-baseline.yml declares the floor (no ::set-output, no EOL runners, every
+# external action SHA-pinned, every container image @sha256-pinned) and check-modern.sh
+# enforces it — so a workflow can't silently regress below it (this closes G8: mutable
+# container tags were the one break in the fleet's otherwise-strict pinning). Pure
+# bash+awk, always run (our own script, no `have` gate).
+hdr "modernization floor (check-modern.sh)"
+if _cm_out="$("$HERE/scripts/check-modern.sh" 2>&1)"; then
+  pass "check-modern (CI meets scripts/modern-baseline.yml)"
+else
+  printf '%s\n' "$_cm_out" >&2
+  fail "check-modern found violations (above) — run: ./scripts/check-modern.sh"
+fi
+
 # ── 9. version consistency (tool-versions.env ↔ .pre-commit-config.yaml) ──────
 # scripts/tool-versions.env is the SINGLE SOURCE for the pinned dev-tool versions.
 # CI loads it directly (no literals left in ci.yml), but .pre-commit-config.yaml is
