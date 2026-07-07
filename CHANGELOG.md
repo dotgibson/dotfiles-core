@@ -13,6 +13,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **difftastic (`difft`): an opt-in, structure-aware diff companion to delta.**
+  `tools.zsh` now detects it (`HAVE_DIFFT`), `git/gitconfig` defines a
+  `difftool "difftastic"` plus a `git dft` alias, and `aliases.zsh` adds a
+  `HAVE_DIFFT`-guarded `gdft` shortcut. difftastic diffs by AST (tree-sitter), so
+  formatting-only churn — rewraps, moved elements, trailing commas — shows as no
+  syntactic change. It is deliberately **additive, never the default**: delta stays
+  the `git diff` syntax-highlighting pager and difft is only reached on demand via
+  `git dft`/`gdft`, so nothing changes on a box without the binary. Documented in
+  `PORTING-MATRIX.md` (packaged on Arch/Alpine-musl/Fedora/Gentoo/openSUSE/Homebrew/
+  Debian-Kali; `cargo`/`mise` where unpackaged).
+
 ### Fixed
 
 - **maint: the daily runner now reconciles pinned zsh plugins by CONFIG, not

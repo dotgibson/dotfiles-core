@@ -59,6 +59,7 @@ _Repo status_ at the bottom).
 | ouch             | `ouch`                 | cargo³       | `ouch`       | cargo³                     | cargo³          |
 | jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | cargo³       | `dev-vcs/jujutsu`          | cargo³          |
 | sesh⁹            | AUR⁹                   | go⁹          | go⁹          | go⁹                        | go⁹             |
+| difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic` | `dev-util/difftastic`      | `difftastic`    |
 
 ¹ openSUSE: may be in `devel` repos; if absent, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
@@ -98,6 +99,14 @@ Gentoo, Fedora, or Debian/Kali apt — so most of the fleet uses
 the same build path as starship/yazi/atuin where unpackaged. `go` is already a
 pinned mise runtime, so the install works everywhere; `mise use -g go` first on a
 bare box. The seeded `sesh/sesh.toml.example` config is inert without the binary.
+¹⁰ difftastic (`difft`): OPT-IN structural/AST diff — a **companion to delta, not a
+replacement**. delta stays the default `git diff` pager; difft is wired as an on-demand
+git difftool (`git dft`, and the `gdft` shell alias — see `git/gitconfig`), never as a
+`GIT_EXTERNAL_DIFF`/pager override, so it never shadows delta. Binary is `difft` (Core
+sets `HAVE_DIFFT`). Packaged on Arch (`extra`), Alpine (`community` — a musl build, so the
+usual outlier is covered), Fedora, Gentoo (`dev-util/difftastic`), openSUSE, Homebrew
+(`difftastic`) and Debian/Kali apt; where unpackaged, `cargo install difftastic` or `mise`.
+Inert without the binary — the `gdft` alias is `HAVE_DIFFT`-guarded and `git dft` just errors.
 
 ## Clipboard backend (swap in `os/<distro>.zsh`)
 

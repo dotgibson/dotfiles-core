@@ -109,6 +109,7 @@ _have shellcheck && HAVE_SHELLCHECK=1 # shell linter (own command — no alias)
 _have shfmt && HAVE_SHFMT=1        # shell formatter (own command — no alias)
 _have jj && HAVE_JJ=1              # jujutsu — OPT-IN, colocated git companion (aliases.zsh: jjs/jjl/jjd)
 _have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-G (fzf.zsh) + prefix+f (tmux-sesh.sh); both fall back to find+fzf when unset
+_have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (aliases.zsh: gdft)
 [[ -n ${FD_BIN:-} ]] && HAVE_FD=1
 [[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
 
