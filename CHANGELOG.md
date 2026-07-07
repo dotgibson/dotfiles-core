@@ -25,6 +25,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`GITHUB-APP-AUTH.md` — the runbook to retire the fleet's cross-repo PATs (G2).** Both
+  `FLEET_SYNC_TOKEN` (cross-repo push + PR in `sync-fanout`) and `WEBHOOK_SECRET` (the
+  `repository_dispatch` Bearer to `dotfiles-web`) are broad, hand-rotated PATs that expire
+  on a date nobody watches. The runbook specifies replacing them with **one GitHub App**
+  that mints **short-lived, per-repo-scoped installation tokens** at run time
+  (`actions/create-github-app-token`), a **backward-compatible** workflow pattern (mint when
+  `vars.FLEET_APP_ID` is set, else fall back to the legacy PAT — so merging is inert until
+  the App is registered), and the migrate → verify → retire order. Registering the App and
+  resolving the action's pinned SHA are owner actions; the runbook is the design + the exact
+  steps. Once it lands, the `token-health` probe becomes redundant (a minted token cannot
+  silently expire).
+
 - **`/release-readiness` + `/release-notes` maintenance routines — the judgment layer over the
   release mechanics.** `/release-readiness` is the go/no-go gate in front of `RELEASE-RUNBOOK.md`:
   it weighs the unreleased `CHANGELOG` work, the audit status, version coherence, and fleet drift
