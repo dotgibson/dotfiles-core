@@ -7,7 +7,7 @@
 #
 #   jobs:
 #     vendored-core:
-#       uses: dotgibson/dotfiles-core/.github/workflows/core-freshness-call.yml@v2
+#       uses: dotgibson/dotfiles-core/.github/workflows/core-freshness-call.yml@v3
 #
 # It runs the CALLER's own test/check-core-freshness.sh (which lives per-repo), so this
 # checks out the caller (not Core) and takes NO inputs. The script's exit contract is
