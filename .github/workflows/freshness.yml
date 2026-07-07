@@ -135,3 +135,20 @@ jobs:
               --body "Automated by the freshness bot. \`nvim/lazy-lock.json\` was behind upstream; this refreshes it to current. Review the diff, let CI run, then merge."
           fi
           echo "📦 opened/updated PR on \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # Turn a red run into a deduplicated issue (G1). Scheduled-only: a manual `mode=check`
+  # run exits non-zero BY DESIGN when pins are behind (that's the report, not a crash), so
+  # scoping to schedule avoids paging on that intended signal while still catching a real
+  # scheduled-run failure (a crashed updater, a failed push).
+  notify-failure:
+    needs: [zsh-plugins, nvim-plugins]
+    if: failure() && github.event_name == 'schedule'
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: freshness
+      title: "ci-failure: freshness bot is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly freshness bot failed on a scheduled run (rolling zsh-plugin SHAs / nvim lock forward). The updater may have crashed or the push/PR step failed — the pins are not being kept current."
