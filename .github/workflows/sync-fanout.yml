@@ -234,3 +234,19 @@ jobs:
             echo "::error::one or more repos failed to sync — see the job summary"
             exit 1
           fi
+
+  # Turn a failed fan-out into a deduplicated issue (G1). A release that can't reach the
+  # fleet is exactly the silent break this closes — often a fingerprint of an expired
+  # FLEET_SYNC_TOKEN (G2), which the token-health probe now catches ahead of time.
+  notify-failure:
+    needs: fanout
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: sync-fanout
+      title: "ci-failure: Core fan-out (sync-fanout) is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The release fan-out failed — Core did not reach one or more OS repos. Common cause: an expired or under-scoped FLEET_SYNC_TOKEN (see the token-health probe). The fleet may be sitting a version behind until this is resolved."

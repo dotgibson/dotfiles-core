@@ -17,14 +17,18 @@ name: claude-routines
 
 on:
   schedule:
-    - cron: "0 7 * * 2" # Tuesdays 07:00 UTC (freshness.yml runs Mondays)
+    # Each cron routes to exactly ONE routine via the per-job `github.event.schedule`
+    # gate below — so adding a routine is a new cron + a new job, never a double-fire of
+    # the others. Staggered an hour apart so no two Opus runs overlap (predictable usage).
+    - cron: "0 7 * * 2" # Tue 07:00 UTC — tool-scout + doc-audit (the original pair)
+    - cron: "0 8 * * 2" # Tue 08:00 UTC — freshness-triage (after Mon's freshness.yml opened its PRs)
   workflow_dispatch:
     inputs:
       routine:
         description: "which routine to run"
         type: choice
         default: both
-        options: [both, doc-audit, tool-scout]
+        options: [both, doc-audit, tool-scout, freshness-triage]
 
 permissions:
   contents: read
@@ -57,7 +61,7 @@ jobs:
     needs: preflight
     if: >-
       needs.preflight.outputs.has_key == 'true' &&
-      (github.event_name == 'schedule' ||
+      (github.event.schedule == '0 7 * * 2' ||
        github.event.inputs.routine == 'both' ||
        github.event.inputs.routine == 'tool-scout')
     runs-on: ubuntu-latest
@@ -90,7 +94,7 @@ jobs:
     needs: preflight
     if: >-
       needs.preflight.outputs.has_key == 'true' &&
-      (github.event_name == 'schedule' ||
+      (github.event.schedule == '0 7 * * 2' ||
        github.event.inputs.routine == 'both' ||
        github.event.inputs.routine == 'doc-audit')
     runs-on: ubuntu-latest
@@ -135,3 +139,55 @@ jobs:
       - name: File the report as an issue
         working-directory: dotfiles-core
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/doc-audit.md"
+
+  # The judgment half of the freshness bot (command already exists; this schedules it).
+  # Runs an hour after tool-scout/doc-audit so no two Opus routines overlap. Reads the open
+  # bump PRs (freshness.yml + dependabot) and the `--check` scripts, then files a Merge/Hold
+  # verdict per PR — report-first, edits nothing.
+  freshness-triage:
+    needs: preflight
+    if: >-
+      needs.preflight.outputs.has_key == 'true' &&
+      (github.event.schedule == '0 8 * * 2' ||
+       github.event.inputs.routine == 'freshness-triage')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read # read the open bump PRs it triages
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_TITLE: "freshness-triage: weekly bump-PR review"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Load pinned tool versions
+        run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
+      - name: Install Claude Code CLI (pinned)
+        # Fail fast if the pin didn't load — never silently fall back to a floating `latest`.
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not loaded from scripts/tool-versions.env}"
+      - name: Run /freshness-triage
+        run: |
+          claude -p "/freshness-triage" \
+            --model opus \
+            --permission-mode acceptEdits \
+            --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --output-format text | tee "$RUNNER_TEMP/freshness-triage.md"
+      - name: File the report as an issue
+        run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/freshness-triage.md"
+
+  # Turn a failed routine run into a deduplicated issue (G1). Skipped jobs (no token, or a
+  # cron that didn't select them) are NOT failures, so this fires only on a real crash.
+  notify-failure:
+    needs: [tool-scout, doc-audit, freshness-triage]
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: claude-routines
+      title: "ci-failure: claude-routines is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "A scheduled Claude maintenance routine (tool-scout / doc-audit / freshness-triage) failed to complete — its weekly report was not filed."
