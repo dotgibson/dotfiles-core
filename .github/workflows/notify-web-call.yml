@@ -6,8 +6,9 @@
 #
 #   jobs:
 #     dispatch:
-#       uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@v2
-#       secrets: inherit
+#       uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@v3
+#       secrets:
+#         WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}   # least privilege — not `inherit`
 #
 # The owner guard, the dotfiles-web target, and the {"event_type":"refresh"} payload
 # are constant, so this takes NO inputs — only the WEBHOOK_SECRET, inherited from the
