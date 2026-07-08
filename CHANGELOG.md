@@ -25,6 +25,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`notify-web` dispatch mints a GitHub App token; sync-fanout mint gated on the key (G2).**
+  The reusable `notify-web-call.yml` now mints a short-lived `dotfiles-web`-scoped GitHub App
+  token for the `repository_dispatch` (replacing the `WEBHOOK_SECRET` Bearer PAT) when the
+  fleet App is configured and the caller passes `FLEET_APP_PRIVATE_KEY`, else it falls back to
+  `WEBHOOK_SECRET`. Because `FLEET_APP_ID` is one org-wide variable, the mint is gated on a
+  `HAS_APP_KEY` presence flag (an env derived from a secret comparison — secrets can't be
+  tested in `if:`) so a caller that hasn't been migrated (or a repo the key isn't scoped to)
+  falls back cleanly instead of failing on an empty key. The same defensive gate is added to
+  the Core `sync-fanout` mint. Caller repos pass the key in a follow-up (after `v3` advances).
+
 - **`sync-fanout` mints a GitHub App token for the Core fan-out (G2 canary).** Following
   `GITHUB-APP-AUTH.md`, the Core fan-out now mints a short-lived GitHub App installation
   token (`actions/create-github-app-token`, SHA-pinned), scoped to the App's installed repos
