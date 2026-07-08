@@ -108,7 +108,11 @@ usual outlier is covered), Fedora, Gentoo (`dev-util/difftastic`), openSUSE, Hom
 (`difftastic`) and Debian/Kali apt; where unpackaged, `cargo install difftastic` or `mise`.
 Inert without the binary — the `gdft` alias is `HAVE_DIFFT`-guarded and `git dft` just errors.
 
-## Clipboard backend (swap in `os/<distro>.zsh`)
+## Clipboard packages to install (backends for Core's `clip`)
+
+<!-- Clipboard selection lives in Core's cross-OS clip/clip-paste scripts; each
+     os/<distro>.zsh only aliases pbcopy/pbpaste to them — no distro swaps a
+     backend in its zsh layer. This table is the packages each backend needs. -->
 
 | Distro      | Wayland                                      | X11 fallback                                           |
 | ----------- | -------------------------------------------- | ------------------------------------------------------ |
