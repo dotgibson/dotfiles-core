@@ -53,9 +53,16 @@ repos that RECEIVE cross-repo writes**:
 - The Core-vendoring OS repos + `dotfiles-Kali` (targets of `dotfiles-core`'s fan-out).
 - `dotfiles-Kali` (target of `htpx`'s companion fan-out — already in the list above).
 - `dotfiles-web` (target of the `notify-web` dispatch).
+- **`dotfiles-core`** — for its own **self-PRs**: `freshness.yml` opens a pin-bump PR *in
+  Core*, and a PR opened by `GITHUB_TOKEN` has its CI held at `action_required` (GitHub's
+  recursion guard). Installing the App here lets freshness open that PR as the App bot, so
+  its CI runs without a manual "Approve and run". Without this install the mint step is
+  skipped/fails and freshness falls back to `GITHUB_TOKEN` — the PR still opens, it just
+  needs the one-click approval. (Core is the one repo that is both a *source* and a *target*.)
 
-The App does **not** need to be installed on the *source* repos (`dotfiles-core`,
-`htpx`) — those only mint tokens; the token's reach is decided by the installation.
+Aside from that one self-PR case, the App does **not** need to be installed on the *source*
+repos (`htpx`, and `dotfiles-core` for its *fan-out* minting) — those only mint tokens whose
+reach is decided by the installation on the *other* repos.
 
 ## Step 3 — store the credentials on the source repos
 
