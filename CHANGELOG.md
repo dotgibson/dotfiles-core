@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.2.0] - 2026-07-08
+
 ### Removed
 
 - **`token-health.yml` — the weekly PAT-expiry probe, now redundant (G2 finish line).** The
