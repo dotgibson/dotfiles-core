@@ -33,6 +33,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Cross-platform alias parity is now a data-driven manifest (Track A).** The aligned
+  modern-CLI tool-swap aliases (`ls`→eza, `cat`→bat, `ps`→procs, …) live in a flat
+  `scripts/parity-aliases.txt` manifest; `parity-check.sh` reads it and asserts each row
+  **bidirectionally** — the zsh alias is defined in `zsh/aliases.zsh` AND the pwsh name is
+  in `dotfiles-Windows`'s `00-aliases.ps1` `provides:` contract — so a rename or drop on
+  either shell fails the weekly `parity-check`. Naming exceptions (`ps`→procs is `pss` on
+  pwsh) are recorded in the manifest. Extends the check from a handful of hand-coded
+  needles to the full tool-swap surface; adding an aligned alias is one manifest row.
+
 - **`notify-web` dispatch mints a GitHub App token; sync-fanout mint gated on the key (G2).**
   The reusable `notify-web-call.yml` now mints a short-lived `dotfiles-web`-scoped GitHub App
   token for the `repository_dispatch` (replacing the `WEBHOOK_SECRET` Bearer PAT) when the
