@@ -62,6 +62,11 @@ jobs:
       issues: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # GH_REPO is what lets `gh issue …` resolve the target repo. This job does NOT
+      # check out the caller (it only files an issue), so without GH_REPO `gh` falls
+      # back to inferring the repo from a git remote and dies with "not a git
+      # repository" — silently breaking the whole failure-alerting path.
+      GH_REPO: ${{ github.repository }}
       IN_TITLE: ${{ inputs.title }}
       IN_WORKFLOW: ${{ inputs.workflow }}
       IN_RUN_URL: ${{ inputs.run_url }}
