@@ -6,9 +6,10 @@ Tokens the fleet's automation depends on with a **GitHub App** that mints
 repo owner can execute it end to end — the App registration and the private-key
 handling are owner actions that cannot be automated from CI.
 
-Until this lands, the [`token-health`](.github/workflows/token-health.yml) probe is the
-safety net (it alerts before a PAT expires). Once the App is in place that probe
-becomes redundant — a minted token lives ~1 hour and cannot silently expire.
+**Status: shipped.** Every consumer mints App tokens (verified live), both PATs are deleted,
+and the `token-health` probe that guarded their expiry has been retired — a minted token
+lives ~1 hour and cannot silently expire, so there was nothing left for it to watch. This
+document is retained as the reference for how the auth works and how to extend it.
 
 ## What we are replacing, and why
 

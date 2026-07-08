@@ -264,8 +264,8 @@ jobs:
           fi
 
   # Turn a failed fan-out into a deduplicated issue (G1). A release that can't reach the
-  # fleet is exactly the silent break this closes — often a fingerprint of an expired
-  # FLEET_SYNC_TOKEN (G2), which the token-health probe now catches ahead of time.
+  # fleet is exactly the silent break this closes — often a fleet-App auth problem (G2):
+  # the App not installed on a target repo, or the FLEET_APP_ID / private key not in scope.
   notify-failure:
     needs: fanout
     if: failure()
@@ -277,4 +277,4 @@ jobs:
       workflow: sync-fanout
       title: "ci-failure: Core fan-out (sync-fanout) is red"
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "The release fan-out failed — Core did not reach one or more OS repos. Common cause: an expired or under-scoped FLEET_SYNC_TOKEN (see the token-health probe). The fleet may be sitting a version behind until this is resolved."
+      details: "The release fan-out failed — Core did not reach one or more OS repos. Common cause: the fleet GitHub App is misconfigured — not installed on a target OS repo, or the FLEET_APP_ID variable / FLEET_APP_PRIVATE_KEY secret isn't scoped to dotfiles-core (see GITHUB-APP-AUTH.md). The fleet may be sitting a version behind until this is resolved."

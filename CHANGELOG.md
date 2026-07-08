@@ -15,6 +15,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Removed
 
+- **`token-health.yml` — the weekly PAT-expiry probe, now redundant (G2 finish line).** The
+  probe existed to catch a `FLEET_SYNC_TOKEN` / `WEBHOOK_SECRET` PAT silently expiring before it
+  broke the fan-out or the docs-refresh. With every consumer migrated to GitHub App
+  installation tokens (`GITHUB-APP-AUTH.md`) and both PATs deleted, there is nothing left to
+  probe — a minted token lives ~1 hour and cannot silently expire. Removed the workflow and its
+  references (the freshness dashboard's "Token health" section is now a "Fleet auth" note; the
+  cron-stagger and sync-fanout failure-hint comments no longer mention it).
+
 - **`dotfiles-Defense-PLAN.md` — the pre-build planning skeleton, now obsolete.**
   The doc was a "ready-to-instantiate skeleton for a future `dotfiles-Defense`
   repo," written before that repo existed. `dotfiles-Defense` is now a public,

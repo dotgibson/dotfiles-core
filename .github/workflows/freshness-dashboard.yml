@@ -3,14 +3,14 @@ name: freshness-dashboard
 # The weekly FLEET FRESHNESS DASHBOARD (option A: one hub rollup, not per-repo issues).
 # Consolidates the fleet's scattered freshness signals — vendoring drift, vendored-core
 # integrity, and zsh/nvim plugin-pin freshness — into ONE deduplicated GitHub issue in
-# dotfiles-core, with links to each repo's Renovate dependency dashboard and the
-# token-health probe. It REPORTS; it never mutates. The sub-gates (fleet-drift.yml,
-# core-integrity.yml, freshness.yml, token-health.yml) still enforce; this is the
-# glanceable board that answers "how healthy is the fleet this week?" in one place.
+# dotfiles-core, with links to each repo's Renovate dependency dashboard. It REPORTS; it
+# never mutates. The sub-gates (fleet-drift.yml, core-integrity.yml, freshness.yml) still
+# enforce; this is the glanceable board that answers "how healthy is the fleet this week?"
+# in one place.
 #
 # Runs Monday 10:00 UTC — after the morning sweeps (fleet-drift/freshness 06:00,
-# core-integrity 06:30, token-health 09:00) have settled, so the board reflects that
-# morning's state. Deduped by title (file-routine-issue.sh), so it updates in place.
+# core-integrity 06:30) have settled, so the board reflects that morning's state. Deduped
+# by title (file-routine-issue.sh), so it updates in place.
 
 on:
   schedule:

@@ -6,7 +6,7 @@
 #   • vendoring drift         (scripts/fleet-drift.sh)      — every OS repo on the latest Core tag?
 #   • vendored-core integrity (scripts/core-integrity.sh)   — any repo's core/ hand-edited?
 #   • zsh + nvim plugin pins  (update-*-plugins.sh --check) — are the pinned SHAs behind upstream?
-# plus links to each repo's Renovate dependency dashboard and the token-health probe.
+# plus links to each repo's Renovate dependency dashboard and a note on the fleet App auth.
 #
 # It is a REPORTER, not a mutator, and never fails the build: each sub-check's output is
 # embedded and its exit code becomes a ✅/⚠️ row. .github/workflows/freshness-dashboard.yml
@@ -77,10 +77,10 @@ for r in "${REPOS[@]}"; do
   printf -- '- [%s](https://github.com/%s/%s/issues?q=%s)\n' "$r" "$OWNER" "$r" "$q"
 done
 
-# ── Token health (probed elsewhere — this board only links) ───────────────────
-printf '\n## Token health\n\n'
-printf "This board does not re-probe secrets. The weekly \`token-health\` workflow validates the "
-printf 'fleet PATs and files an issue only when one is invalid or expiring — see its '
-printf '[recent runs](https://github.com/%s/dotfiles-core/actions/workflows/token-health.yml).\n' "$OWNER"
+# ── Fleet auth (GitHub App — nothing to expire) ───────────────────────────────
+printf '\n## Fleet auth\n\n'
+printf "Cross-repo automation authenticates via a GitHub App that mints short-lived, scoped "
+printf 'installation tokens at run time (GITHUB-APP-AUTH.md) — there are no long-lived PATs to '
+printf 'expire, so nothing to probe here.\n'
 
 exit 0

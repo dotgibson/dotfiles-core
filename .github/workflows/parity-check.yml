@@ -13,7 +13,7 @@ on:
   schedule:
     # Mondays 07:00 UTC. Staggered OFF the 06:00 cluster (fleet-drift + freshness) so the
     # fleet-cloning sweeps don't contend: fleet-drift 06:00 → core-integrity 06:30 →
-    # parity-check 07:00 → token-health 09:00 (G1/G2 de-confliction).
+    # parity-check 07:00 (G1 de-confliction).
     - cron: "0 7 * * 1"
   workflow_dispatch: {}
 
