@@ -41,6 +41,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Alpine `community` musl build, Homebrew; else `cargo`/`mise`/`npm`/`pip`). Surfaced
   by `/tool-scout` as the one true capability gap in the stack.
 
+- **ci: raised the modernization floor — banned retired runners + old action runtimes.**
+  `scripts/modern-baseline.yml` now bans `macos-13` (retired 2025-12-04), `windows-2019`
+  (unsupported 2025-06-30), and `ubuntu-22.04` (deprecation opens 2026-09-17) as runner
+  labels, and the `using: node16` / `using: node20` action runtimes (Node 24 is the
+  default since 2026-06-16). Pure no-regression guard — the fleet uses none of these, so
+  `check-modern.sh` stays green; it just bars re-introducing a dead runner or runtime.
+  Surfaced by `/modernize`.
+
 - **Cross-platform alias parity is now a data-driven manifest (Track A).** The aligned
   modern-CLI tool-swap aliases (`ls`→eza, `cat`→bat, `ps`→procs, …) live in a flat
   `scripts/parity-aliases.txt` manifest; `parity-check.sh` reads it and asserts each row
