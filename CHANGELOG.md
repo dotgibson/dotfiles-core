@@ -151,6 +151,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **docs: `PORTING-MATRIX.md` clipboard section claimed the backend is "swapped
+  in `os/<distro>.zsh`".** Clipboard selection actually lives in Core's cross-OS
+  `clip`/`clip-paste` scripts — each `os/*.zsh` only aliases `pbcopy`/`pbpaste` to
+  them. Reworded the heading to "Clipboard packages to install" (the table's
+  package names were always correct); surfaced by `/doc-audit`.
+
 - **ci: `update-nvim-plugins.sh` exited non-zero when the lock was already
   current.** In apply mode the "already current" branch ended on `((CHECK))`
   (exit status 1 when `CHECK=0`), so the script returned 1 with nothing wrong —
