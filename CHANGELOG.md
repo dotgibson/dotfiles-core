@@ -33,7 +33,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `HAS_APP_KEY` presence flag (an env derived from a secret comparison — secrets can't be
   tested in `if:`) so a caller that hasn't been migrated (or a repo the key isn't scoped to)
   falls back cleanly instead of failing on an empty key. The same defensive gate is added to
-  the Core `sync-fanout` mint. Caller repos pass the key in a follow-up (after `v3` advances).
+  the Core `sync-fanout` mint. Core's own standalone `notify-web.yml` dispatcher (not a caller
+  of the reusable) mints the App token inline via the same pattern. Reusable-caller repos pass
+  the key in a follow-up (after `v3` advances).
 
 - **`sync-fanout` mints a GitHub App token for the Core fan-out (G2 canary).** Following
   `GITHUB-APP-AUTH.md`, the Core fan-out now mints a short-lived GitHub App installation
