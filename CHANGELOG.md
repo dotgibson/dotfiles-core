@@ -25,6 +25,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`sync-fanout` mints a GitHub App token for the Core fan-out (G2 canary).** Following
+  `GITHUB-APP-AUTH.md`, the Core fan-out now mints a short-lived, OS-repo-scoped GitHub App
+  installation token (`actions/create-github-app-token`, SHA-pinned) instead of relying on
+  the broad, hand-rotated `FLEET_SYNC_TOKEN` PAT. It is **backward-compatible**: the mint
+  step runs only when the `FLEET_APP_ID` variable is set and otherwise falls back to the PAT,
+  so this is inert until the fleet App is registered. First consumer migrated; `htpx`
+  `sync-fanout` and the `notify-web` dispatch follow the same pattern.
+
 - **`GITHUB-APP-AUTH.md` — the runbook to retire the fleet's cross-repo PATs (G2).** Both
   `FLEET_SYNC_TOKEN` (cross-repo push + PR in `sync-fanout`) and `WEBHOOK_SECRET` (the
   `repository_dispatch` Bearer to `dotfiles-web`) are broad, hand-rotated PATs that expire
