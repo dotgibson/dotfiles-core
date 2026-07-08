@@ -151,6 +151,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **docs: `aliases.md` was missing `gdft`.** The difftastic-backed `git difftool`
+  shortcut (added alongside `HAVE_DIFFT` and `git dft`) landed in `zsh/aliases.zsh`
+  without a matching entry in the cheat sheet — added to the Diff table.
+
 - **maint: the daily runner now reconciles pinned zsh plugins by CONFIG, not
   checkout state.** `maint/dotfiles-maint.sh` decided "pinned vs unpinned" by
   asking whether a plugin's `HEAD` was detached — but a plugin cloned before
