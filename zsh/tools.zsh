@@ -95,6 +95,7 @@ _have glow && HAVE_GLOW=1
 _have doggo && HAVE_DOGGO=1
 _have gron && HAVE_GRON=1
 _have sd && HAVE_SD=1
+_have ast-grep && HAVE_ASTGREP=1    # AST-aware structural search/rewrite — own command, no alias (the syntax-tree complement to rg=text, sd=regex, gron=JSON). Opt-in; inert without the binary.
 _have gum && HAVE_GUM=1
 _have viddy && HAVE_VIDDY=1         # modern watch (aliases.zsh: watch → viddy)
 _have gping && HAVE_GPING=1         # graphical ping (aliases.zsh: ping → gping)

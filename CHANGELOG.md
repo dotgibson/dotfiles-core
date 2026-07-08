@@ -33,6 +33,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`ast-grep` is now a recognized opt-in tool.** AST-aware structural code
+  search/rewrite — the syntax-tree complement to `ripgrep` (text), `sd` (regex), and
+  `gron` (JSON). `tools.zsh` sets `HAVE_ASTGREP` when the binary is present; it's its
+  own command with **no alias** (like `gron`/`sd`), so it shadows nothing and is inert
+  without the binary. `PORTING-MATRIX.md` documents install sources (Arch `extra`,
+  Alpine `community` musl build, Homebrew; else `cargo`/`mise`/`npm`/`pip`). Surfaced
+  by `/tool-scout` as the one true capability gap in the stack.
+
 - **Cross-platform alias parity is now a data-driven manifest (Track A).** The aligned
   modern-CLI tool-swap aliases (`ls`→eza, `cat`→bat, `ps`→procs, …) live in a flat
   `scripts/parity-aliases.txt` manifest; `parity-check.sh` reads it and asserts each row

@@ -60,6 +60,7 @@ _Repo status_ at the bottom).
 | jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | cargo³       | `dev-vcs/jujutsu`          | cargo³          |
 | sesh⁹            | AUR⁹                   | go⁹          | go⁹          | go⁹                        | go⁹             |
 | difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic` | `dev-util/difftastic`      | `difftastic`    |
+| ast-grep¹¹       | `ast-grep`             | cargo³       | `ast-grep`   | cargo³                     | cargo³          |
 
 ¹ openSUSE: may be in `devel` repos; if absent, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
@@ -107,6 +108,12 @@ sets `HAVE_DIFFT`). Packaged on Arch (`extra`), Alpine (`community` — a musl b
 usual outlier is covered), Fedora, Gentoo (`dev-util/difftastic`), openSUSE, Homebrew
 (`difftastic`) and Debian/Kali apt; where unpackaged, `cargo install difftastic` or `mise`.
 Inert without the binary — the `gdft` alias is `HAVE_DIFFT`-guarded and `git dft` just errors.
+¹¹ ast-grep: OPT-IN AST-aware structural search/rewrite — the syntax-tree complement to
+`ripgrep` (text), `sd` (regex), and `gron` (JSON). Own command, **no alias** (like `gron`/`sd`),
+so it shadows nothing; prefer the `ast-grep` binary name over `sg` (which can collide with
+`setgroups`). Core sets `HAVE_ASTGREP` when present. Packaged on Arch (`extra`) and Alpine
+(`community` — a musl build, so the outlier is covered) and Homebrew; elsewhere via
+`cargo install ast-grep` / `mise` / `npm` / `pip`. Inert without the binary — nothing depends on it.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
