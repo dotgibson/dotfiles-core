@@ -151,6 +151,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **ci: `update-nvim-plugins.sh` exited non-zero when the lock was already
+  current.** In apply mode the "already current" branch ended on `((CHECK))`
+  (exit status 1 when `CHECK=0`), so the script returned 1 with nothing wrong —
+  and under the freshness bot's `set -e` that turned a no-op week into a red nvim
+  job (and, now that failure-alerting works, a false issue). It exits 0 explicitly.
+
 - **docs: `aliases.md` was missing `gdft`.** The difftastic-backed `git difftool`
   shortcut (added alongside `HAVE_DIFFT` and `git dft`) landed in `zsh/aliases.zsh`
   without a matching entry in the cheat sheet — added to the Diff table.
