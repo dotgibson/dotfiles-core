@@ -24,13 +24,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   of running the real `diff` on every shell; a live probe still decides correctly when
   the cache dir isn't writable. No behavioural change — same aliases, faster launch.
 - **`docs(zsh)`: make `core-doctor`'s "install missing" hint honest about unpackaged tools.**
-  The batch hint printed a blanket `<pkg-manager> install <all-missing>`, which misleads on
-  distros that don't package every modern-CLI tool — notably Debian/Kali apt and Alpine musl,
-  where `dust`/`carapace`/`sesh`/`doggo`/Go-`yq` aren't in the repos, so pasting the line
-  fails on half its packages. The caveat now states that names differ per distro **and** that
-  unpackaged tools should be installed via mise (`mise use -g <tool>`, the fleet's cross-distro
-  installer) or per `PORTING-MATRIX.md`, instead of implying the package manager can install
-  all of them. Output-only; the package-manager line itself is unchanged.
+  The batch hint printed a blanket `<pkg-manager> install <all-missing>`, implying the package
+  manager can install every tool. On some distros a few modern-CLI tools aren't packaged at
+  all (they're binary-distributed, and the right method — a distro package, `mise use -g`,
+  `go install`, `cargo install`, or a vendor repo — varies per tool and distro), so the line
+  fails on those. The caveat now states that names differ per distro **and** that not every
+  tool is packaged everywhere, pointing to `PORTING-MATRIX.md` for the authoritative per-tool
+  install path instead of implying the package manager covers all of them. Output-only; the
+  package-manager line itself is unchanged.
 
 ## [v3.2.0] - 2026-07-08
 

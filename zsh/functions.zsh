@@ -209,20 +209,19 @@ _core_doctor_render() {
   # — gated on update.zsh's _pkgup_mgr being loaded (it isn't in the unit harness, which
   # sources ui+functions alone) and on a known manager. Two honesty caveats, because a
   # blanket `pkg install <all>` misleads: (1) package NAMES can differ from the command
-  # (rg=ripgrep); (2) several modern-CLI tools aren't PACKAGED on every distro at all —
-  # esp. Debian/Kali apt and Alpine musl, where dust/carapace/sesh/doggo/yq(Go) are not
-  # in the repos. Rather than embed a rot-prone per-distro table here (that's what
-  # PORTING-MATRIX.md is), point the gaps at mise — the fleet's cross-distro installer,
-  # already a Core integration — and at the matrix. `op` is proprietary (vendor apt repo,
-  # not mise), so it stays on the package-manager line only.
+  # (rg=ripgrep); (2) not every modern-CLI tool is PACKAGED on every distro — some are
+  # binary-distributed and the right method varies per tool AND distro (a distro package,
+  # `mise use -g`, `go install`, `cargo install`, or a vendor repo — e.g. `op`). Rather
+  # than embed a rot-prone per-distro table here (that is exactly what PORTING-MATRIX.md
+  # is), point the reader at the matrix for the authoritative per-tool install path.
   if ((${#missing})) && (($+functions[_pkgup_mgr])); then
     local _mgr _pfx
     _mgr="$(_pkgup_mgr)"
     if _pfx="$(_core_install_prefix "$_mgr")"; then
       print -r -- "${c}install missing${r}"
       print -r -- "  ${d}${_pfx} ${missing[*]}${r}"
-      print -r -- "  ${d}names differ per distro (rg=ripgrep, delta=git-delta), and some tools aren't${r}"
-      print -r -- "  ${d}packaged everywhere — install those with mise (mise use -g <tool>) or see core/PORTING-MATRIX.md${r}"
+      print -r -- "  ${d}names differ per distro (rg=ripgrep, delta=git-delta), and some aren't packaged${r}"
+      print -r -- "  ${d}on every distro — see core/PORTING-MATRIX.md for the per-tool install path${r}"
     fi
   fi
 
