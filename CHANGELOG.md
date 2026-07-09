@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.3.0] - 2026-07-09
+
 ### Changed
 
 - **`perf(zsh)`: cut per-shell subprocess forks on the interactive startup path.**
