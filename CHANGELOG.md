@@ -13,6 +13,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **`perf(zsh)`: cut per-shell subprocess forks on the interactive startup path.**
+  `_cache_eval` (`zsh/tools.zsh`) now resolves each tool's binary via zsh's fork-free
+  `$commands` hash instead of `$(command -v …)`, removing one command-substitution fork
+  per cached tool (~8/shell across starship/zoxide/mise/atuin/carapace + the os-layer
+  gh/uv/ty callers). The `diff --color` capability probe (`zsh/aliases.zsh`) is now
+  cached (keyed on the `diff` binary's mtime, invalidated on a toolchain change) instead
+  of running the real `diff` on every shell; a live probe still decides correctly when
+  the cache dir isn't writable. No behavioural change — same aliases, faster launch.
+
 ## [v3.2.0] - 2026-07-08
 
 ### Removed
