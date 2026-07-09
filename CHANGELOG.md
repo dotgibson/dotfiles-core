@@ -33,6 +33,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   install path instead of implying the package manager covers all of them. Output-only; the
   package-manager line itself is unchanged.
 
+### Fixed
+
+- **`fix(tmux)`: scratchpad popup (`prefix + T`) no longer hijacks the main session on close.**
+  `tmux-scratch.sh` runs the scratchpad as a persistent `_popup_scratchpad` session the popup
+  `attach`es to. On close, exiting the shell destroys that session, and the global
+  `detach-on-destroy off` (tmux.conf) made the popup's client jump to the MAIN session instead
+  of closing — attaching a second, popup-sized (80%×80%) client, so tmux clamped the main
+  session to the popup's size and double-drew it (the scratchpad "took over" and the real
+  terminal was left garbled). The scratch session now sets `detach-on-destroy on` for itself,
+  so its client detaches (popup closes cleanly) when it's destroyed; real sessions keep the
+  global jump-don't-exit behaviour.
+
 ## [v3.2.0] - 2026-07-08
 
 ### Removed
