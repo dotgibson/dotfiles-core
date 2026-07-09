@@ -207,15 +207,22 @@ _core_doctor_render() {
   # Actionable: turn the ✗'d tools into a copy-pasteable install line for THIS box's
   # package manager (U2), instead of leaving the reader to look each one up. Best-effort
   # — gated on update.zsh's _pkgup_mgr being loaded (it isn't in the unit harness, which
-  # sources ui+functions alone) and on a known manager. Package names can differ from the
-  # command name, so say so rather than promise an exact incantation.
+  # sources ui+functions alone) and on a known manager. Two honesty caveats, because a
+  # blanket `pkg install <all>` misleads: (1) package NAMES can differ from the command
+  # (rg=ripgrep); (2) several modern-CLI tools aren't PACKAGED on every distro at all —
+  # esp. Debian/Kali apt and Alpine musl, where dust/carapace/sesh/doggo/yq(Go) are not
+  # in the repos. Rather than embed a rot-prone per-distro table here (that's what
+  # PORTING-MATRIX.md is), point the gaps at mise — the fleet's cross-distro installer,
+  # already a Core integration — and at the matrix. `op` is proprietary (vendor apt repo,
+  # not mise), so it stays on the package-manager line only.
   if ((${#missing})) && (($+functions[_pkgup_mgr])); then
     local _mgr _pfx
     _mgr="$(_pkgup_mgr)"
     if _pfx="$(_core_install_prefix "$_mgr")"; then
       print -r -- "${c}install missing${r}"
       print -r -- "  ${d}${_pfx} ${missing[*]}${r}"
-      print -r -- "  ${d}(some package names differ per distro — e.g. rg=ripgrep, delta=git-delta)${r}"
+      print -r -- "  ${d}names differ per distro (rg=ripgrep, delta=git-delta), and some tools aren't${r}"
+      print -r -- "  ${d}packaged everywhere — install those with mise (mise use -g <tool>) or see core/PORTING-MATRIX.md${r}"
     fi
   fi
 

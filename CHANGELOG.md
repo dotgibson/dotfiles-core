@@ -23,6 +23,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   cached (keyed on the `diff` binary's mtime, invalidated on a toolchain change) instead
   of running the real `diff` on every shell; a live probe still decides correctly when
   the cache dir isn't writable. No behavioural change — same aliases, faster launch.
+- **`docs(zsh)`: make `core-doctor`'s "install missing" hint honest about unpackaged tools.**
+  The batch hint printed a blanket `<pkg-manager> install <all-missing>`, which misleads on
+  distros that don't package every modern-CLI tool — notably Debian/Kali apt and Alpine musl,
+  where `dust`/`carapace`/`sesh`/`doggo`/Go-`yq` aren't in the repos, so pasting the line
+  fails on half its packages. The caveat now states that names differ per distro **and** that
+  unpackaged tools should be installed via mise (`mise use -g <tool>`, the fleet's cross-distro
+  installer) or per `PORTING-MATRIX.md`, instead of implying the package manager can install
+  all of them. Output-only; the package-manager line itself is unchanged.
 
 ## [v3.2.0] - 2026-07-08
 
