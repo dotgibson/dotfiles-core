@@ -36,7 +36,7 @@ for d in "${SEARCH_DIRS[@]}"; do [[ -d "$d" ]] && find_args+=("$d"); done
 
 selected=$(find "${find_args[@]}" -mindepth 1 -maxdepth 2 -type d 2>/dev/null |
   fzf --reverse --prompt 'Project ❯ ' \
-    --preview 'eza --icons --tree --level=1 {} 2>/dev/null | head -30')
+    --preview '{ eza --icons --tree --level=1 {} 2>/dev/null || ls -la {} 2>/dev/null; } | head -30')
 [[ -z "$selected" ]] && exit 0
 
 name=$(basename "$selected" | tr '[:upper:] .' '[:lower:]__')
