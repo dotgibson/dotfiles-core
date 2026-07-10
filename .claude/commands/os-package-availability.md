@@ -34,11 +34,15 @@ the list still resolve upstream*.
    Packages / Arch + AUR / openSUSE OBS / Alpine pkgs / Gentoo portage /
    Homebrew formulae). Flag: **renamed** (old → new), **dropped**, or **moved** to
    a secondary repo.
-2. **Cross-check `PORTING-MATRIX.md`.** Compare the caller's list against the
-   matrix's per-distro column **and its footnotes**. Flag a tool the matrix says is
-   packaged that isn't (or vice-versa), and a footnote gone stale — e.g. a "cargo³"
-   note for a tool now first-class in the repos, or a rename the matrix hasn't
-   recorded.
+2. **Cross-check `PORTING-MATRIX.md`.** Its package-name table has columns for
+   **Arch, openSUSE, Alpine, Gentoo, and Kali only** — `fedora` and `macbook` have
+   **no column** (Fedora is the template the others are stamped from; macOS is
+   Homebrew). So for `fedora`/`macbook`, do **not** cite or invent a matrix column —
+   verify names against the upstream index (Fedora Packages / Homebrew formulae) plus
+   the matrix's distro-general **footnotes**. For the other four, compare the caller's
+   list against its column *and* footnotes, and flag a tool the matrix says is packaged
+   that isn't (or vice-versa), or a footnote gone stale — e.g. a "cargo³" note for a
+   tool now first-class in the repos, or a rename the matrix hasn't recorded.
 3. **Respect the "intentionally excluded" convention.** Some tools are
    **deliberately absent** from `packages.txt` because they're not reliably packaged
    (bootstrap installs them: starship, atuin, yazi; lazygit via COPR on Fedora; …).

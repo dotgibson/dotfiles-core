@@ -17,9 +17,10 @@ since the last release tag — `git diff "$(git describe --tags --abbrev=0)"..HE
 
 ## Baseline first — don't re-litigate what CI proves
 
-`lint.yml` already runs `shellcheck` + `bash -n` + `zsh -n` on every change and the
-audit runs the behavioural suite. This routine does **not** re-report a shellcheck
-finding — it reads for *semantics*: what the code will DO on a real box.
+`scripts/audit-core.sh` (run by `ci.yml` and `make audit`) already runs the shell
+gates on every change — `shellcheck`, `bash -n`, `zsh -n`, and the behavioural suite.
+This routine does **not** re-report a shellcheck finding — it reads for *semantics*:
+what the code will DO on a real box.
 
 ## What to check (the footgun classes)
 

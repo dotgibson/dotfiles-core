@@ -13,11 +13,13 @@ and the exact remediation — **ranked** so the most-stale / highest-risk repo i
 
 Scope for this run: **$ARGUMENTS** (empty = whole fleet).
 
-## Baseline first — don't re-litigate what CI proves
+## Baseline first — interpret, don't just echo
 
 `fleet-drift.yml` already computes the drift rows and files/updates the standing
 `"ci-failure: fleet-drift sweep is red"` issue; `core-integrity` gates each vendored
-tree. This routine does **not** re-run the mechanical check — it *interprets* it.
+tree. Re-running `scripts/fleet-drift.sh` here is fine — that's how you *gather* the
+current rows — but the deliverable is the **interpretation** (how far behind, what's
+missing, what to run), never a copy of the sweep's raw output.
 
 ## What to do
 
