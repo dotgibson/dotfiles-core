@@ -13,6 +13,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`feat(routines)`: three new judgment routines + a reusable OS-repo routine workflow.**
+  - `/shell-review` (`.claude/commands/shell-review.md`) — weekly (Tue 11:00) read of the
+    week's changed `zsh`/`bash` for runtime footguns lint can't catch (the tmux-scratchpad
+    and doctor-hint classes), report-first.
+  - `/drift-triage` (`.claude/commands/drift-triage.md`) — weekly (Tue 12:00) interpretation
+    of Monday's `fleet-drift` sweep into ranked per-repo remediation, report-first.
+  - `/os-package-availability` (`.claude/commands/os-package-availability.md`) — audits an OS
+    repo's `install/packages.txt`/`Brewfile` for renamed/dropped/moved packages against
+    upstream + `PORTING-MATRIX.md`. Shipped as a **reusable workflow**
+    (`.github/workflows/claude-routines-call.yml`) so each OS repo consumes it as a ~5-line
+    `@v3` caller (inverted checkout, like `lint-call.yml`) rather than a 6× copy.
+  All inert-by-default (preflight `CLAUDE_CODE_OAUTH_TOKEN` gate) and report-first.
+
 ## [v3.3.0] - 2026-07-09
 
 ### Changed
