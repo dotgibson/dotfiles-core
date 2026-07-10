@@ -58,8 +58,10 @@ GH_OK=0
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then GH_OK=1; fi
 
 # gh_q <jq> <api-path> — jq result on success, empty string on ANY failure (never aborts,
-# so a single unreachable/renamed/rate-limited repo can't sink the board).
-gh_q() { [ "$GH_OK" -eq 1 ] || return 0; gh api "$2" --jq "$1" 2>/dev/null || true; }
+# so a single unreachable/renamed/rate-limited repo can't sink the board). `// empty`
+# normalizes a missing/null field (e.g. `.[0].name` on a tagless repo) to empty output, so
+# callers' `?`/`—` fallbacks fire instead of a literal "null" leaking into the board.
+gh_q() { [ "$GH_OK" -eq 1 ] || return 0; gh api "$2" --jq "$1 // empty" 2>/dev/null || true; }
 
 run "$TMP/drift" ./scripts/fleet-drift.sh --root "$ROOT" --color never;    drift_st=$?
 run "$TMP/integ" ./scripts/core-integrity.sh --root "$ROOT" --color never; integ_st=$?
@@ -94,7 +96,7 @@ REPOS+=(htpx)
 
 # search_count <query...> — total_count for a repo search, or empty on failure. Search API
 # only (rate-limited), so callers gate on GH_OK and fall back to a plain link.
-search_count() { [ "$GH_OK" -eq 1 ] || return 0; gh api -X GET search/issues -f "q=$*" --jq '.total_count' 2>/dev/null || true; }
+search_count() { [ "$GH_OK" -eq 1 ] || return 0; gh api -X GET search/issues -f "q=$*" --jq '.total_count // empty' 2>/dev/null || true; }
 
 # ── Own-tag release drift (live) ──────────────────────────────────────────────
 # Each repo's OWN unreleased work: commits merged since its last release tag. Distinct
