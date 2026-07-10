@@ -46,6 +46,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   linuxbrew, or a large mise-shims `$PATH`, and fanned out to all eight OS repos. Removed; a
   newly-installed binary now surfaces after `hash -r` or a new shell (the maint runner already
   refreshes the command hash after installs). A regression-guard comment records why it stays out.
+- **`chore(bin)`: make `.bin/sync-upstream.sh` overridable for forks/mirrors.**
+  `CORE_REPO_URL` and `TARGET_BRANCH` now read `${VAR:-default}`, so a fork, a mirror, or a
+  renamed org can `gsync` without editing this vendored file.
 
 ### Fixed
 
@@ -62,6 +65,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   QR. Added a `route(8)` + `ipconfig` fallback branch — the same Linux/macOS split
   `tmux/scripts/tmux-netinfo.sh` already uses — so tunnel-first, then default-route LAN discovery
   works on a Mac. No change on Linux/WSL.
+- **`fix(nvim)`: undo dir now derives from `stdpath("state")`, not a hardcoded path.**
+  `options.lua` hardcoded `~/.local/share/nvim/undodir`; it now uses `vim.fn.stdpath("state")`,
+  so undo history lands in the right tree under a relocated `XDG_STATE_HOME` and on macOS.
+- **`fix(nvim)`: drop the no-op `vim.opt.encoding = "UTF-8"`.**
+  Neovim's internal encoding is always UTF-8; setting it post-startup is a no-op at best and a
+  footgun at worst. Removed; a comment records why it stays out.
+- **`fix(tmux)`: popup previews degrade on Debian / a bare box.**
+  `tmux-menu.sh`'s engagement preview now falls back `bat`→`batcat` (Debian renames the binary),
+  and `tmux-sesh.sh`'s project preview falls back `eza`→`ls` when eza is absent — matching how
+  the zsh widgets already resolve these.
+- **`fix(starship)`: the Linux VPN segment uses a portable `ip link show` probe, not `ifconfig`.**
+  `custom.vpn_linux` shelled out to `ifconfig` (net-tools), which modern distros don't ship by
+  default, so the tunnel indicator silently never appeared. It now parses `ip link show` — the
+  common form supported by BOTH iproute2 AND BusyBox's `ip` applet (Alpine's default), so it works
+  on every Linux target including the BusyBox outlier. `custom.vpn_macos` keeps `ifconfig` (native).
+- **`docs(git)`: spell out the `includeIf` work-identity failure mode.**
+  Clarified that a missing `~/.config/git/config-work` makes git silently fall back to your
+  default identity (no error), with the exact commands to seed it.
 
 ## [v3.3.0] - 2026-07-09
 
