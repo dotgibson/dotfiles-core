@@ -15,6 +15,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`feat(freshness)`: the weekly fleet board gains three live cross-repo signals.**
+  `scripts/freshness-dashboard.sh` now queries the GitHub API (best-effort, gated on `gh` +
+  a token — the workflow provides both, a local run degrades to an "unavailable" note) for:
+  **own-tag release drift** (commits each repo has merged since its last release tag — its
+  own unreleased work, distinct from Core-tag vendoring drift), an **open Renovate PR tally**
+  per repo (how many dependency PRs are waiting right now, beside the existing dashboard
+  links), and **judgment-layer routine issues** (links to each repo's open `.claude`-routine
+  issues — doc-audit, os-package-availability, coverage-gap, … — so the board references the
+  stale-docs and coverage-hole signals rather than recomputing them). Still a never-failing
+  reporter (always exits 0).
 - **`feat(routines)`: three new judgment routines + a reusable OS-repo routine workflow.**
   - `/shell-review` (`.claude/commands/shell-review.md`) — weekly (Tue 11:00) read of the
     week's changed `zsh`/`bash` for runtime footguns lint can't catch (the tmux-scratchpad
