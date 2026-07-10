@@ -32,7 +32,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 - **`perf(zsh)`: drop `zstyle ':completion:*' rehash true` — no more per-Tab `$PATH` stat storm.**
   `rehash true` (`zsh/options.zsh`) forced zsh to rebuild its external-command hash — stat every
-  directory in `$PATH` — on *every* completion attempt, which is perceptible on an NFS home,
+  directory in `$PATH` — on _every_ completion attempt, which is perceptible on an NFS home,
   linuxbrew, or a large mise-shims `$PATH`, and fanned out to all eight OS repos. Removed; a
   newly-installed binary now surfaces after `hash -r` or a new shell (the maint runner already
   refreshes the command hash after installs). A regression-guard comment records why it stays out.
