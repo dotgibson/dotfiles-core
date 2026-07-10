@@ -533,8 +533,11 @@ PY
   echo "serving $(pwd) on port ${port}  (Ctrl-C to stop)"
   # `i` is declared local too: under `emulate -L zsh` a `for i …` loop var is NOT
   # auto-scoped, so without this `serve` would leak (and clobber) the caller's $i.
-  local ip i qr_url=""
-  # tunnel IP (callback address) if a tun/wg interface is up, else LAN, via `ip`
+  local ip i qr_url="" dev
+  # tunnel IP (callback address) if a tun/wg interface is up, else LAN. `ip` on
+  # Linux/WSL; macOS ships no ip(8), so fall back to route(8)+ipconfig — the same
+  # split tmux/scripts/tmux-netinfo.sh already uses — so `serve` prints a reachable
+  # URL (and QR) on a Mac instead of degrading to a bare "serving on port N".
   if command -v ip >/dev/null 2>&1; then
     for i in tun0 tun1 wg0 proton0 tailscale0; do
       ip=$(ip -4 -o addr show "$i" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
@@ -545,6 +548,18 @@ PY
       }
     done
     ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}')
+    [[ -n "$ip" ]] && { echo "  → http://${ip}:${port}/   (lan)"; : "${qr_url:=http://${ip}:${port}/}"; }
+  elif command -v ipconfig >/dev/null 2>&1; then # macOS / BSD — no ip(8)
+    for i in tun0 wg0 proton0 nordlynx tailscale0 utun3 utun4 utun5; do
+      ip=$(ipconfig getifaddr "$i" 2>/dev/null)
+      [[ -n "$ip" ]] && {
+        echo "  → http://${ip}:${port}/   (${i})"
+        qr_url="http://${ip}:${port}/"
+        break
+      }
+    done
+    dev=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+    [[ -n "$dev" ]] && ip=$(ipconfig getifaddr "$dev" 2>/dev/null)
     [[ -n "$ip" ]] && { echo "  → http://${ip}:${port}/   (lan)"; : "${qr_url:=http://${ip}:${port}/}"; }
   fi
   # Scan-to-open: this server's whole point is ad-hoc transfer to another device, so when

@@ -28,6 +28,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     `@v3` caller (inverted checkout, like `lint-call.yml`) rather than a 6× copy.
   All inert-by-default (preflight `CLAUDE_CODE_OAUTH_TOKEN` gate) and report-first.
 
+### Changed
+
+- **`perf(zsh)`: drop `zstyle ':completion:*' rehash true` — no more per-Tab `$PATH` stat storm.**
+  `rehash true` (`zsh/options.zsh`) forced zsh to rebuild its external-command hash — stat every
+  directory in `$PATH` — on *every* completion attempt, which is perceptible on an NFS home,
+  linuxbrew, or a large mise-shims `$PATH`, and fanned out to all eight OS repos. Removed; a
+  newly-installed binary now surfaces after `hash -r` or a new shell (the maint runner already
+  refreshes the command hash after installs). A regression-guard comment records why it stays out.
+
+### Fixed
+
+- **`fix(zsh)`: `compinit` block no longer leaks a global `zcd` into every interactive shell.**
+  `zsh/options.zsh` declared `local zcd=…` at the file's sourced top level, where zsh (which has
+  only function scope) silently promotes `local` to an ordinary **global** — polluting the
+  namespace on every shell start across all eight OS repos and contradicting the codebase's own
+  anon-function convention (`zsh/aliases.zsh`) and `loader.zsh`'s "no top-level `local`" rule. The
+  cache body is now wrapped in an anonymous function so `zcd` is genuinely function-scoped;
+  `compinit` declares its state `typeset -g`, so the completion system persists unchanged.
+- **`fix(zsh)`: `serve` now prints a reachable URL and QR on macOS.**
+  `serve` (`zsh/functions.zsh`) gated all tunnel/LAN IP discovery on `command -v ip`, but macOS
+  ships no `ip(8)`, so on a Mac it degraded to a bare "serving on port N" with no LAN URL and no
+  QR. Added a `route(8)` + `ipconfig` fallback branch — the same Linux/macOS split
+  `tmux/scripts/tmux-netinfo.sh` already uses — so tunnel-first, then default-route LAN discovery
+  works on a Mac. No change on Linux/WSL.
+
 ## [v3.3.0] - 2026-07-09
 
 ### Changed
