@@ -77,6 +77,7 @@ CHECKS=(
   "core doctor|zsh/functions.zsh|core-doctor()|powershell/os/48-core.ps1|function global:core-doctor"
   "core help|zsh/functions.zsh|core-help()|powershell/os/48-core.ps1|function global:core-help"
   "core version|zsh/functions.zsh|core-version()|powershell/os/48-core.ps1|function global:core-version"
+  "core update dispatch|zsh/functions.zsh|update) up |powershell/os/48-core.ps1|'^update\$'"
 )
 
 # _has <file> <needle> — fixed-string presence test; non-zero if file missing too.
