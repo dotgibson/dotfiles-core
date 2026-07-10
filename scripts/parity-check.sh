@@ -73,6 +73,10 @@ CHECKS=(
   "sessionizer on Ctrl+G|zsh/bindings.zsh|_tmux_sessionizer|powershell/core/10-tools.ps1|Invoke-DotfilesSessionizer"
   "fuzzy git stage/restore (gaf)|zsh/git.zsh|function gaf|powershell/core/20-functions.ps1|function gaf"
   "cheat command|zsh/functions.zsh|alias cheat=|powershell/core/20-functions.ps1|function cheat"
+  "core front door|zsh/functions.zsh|core() {|powershell/os/48-core.ps1|function global:core {"
+  "core doctor|zsh/functions.zsh|core-doctor()|powershell/os/48-core.ps1|function global:core-doctor"
+  "core help|zsh/functions.zsh|core-help()|powershell/os/48-core.ps1|function global:core-help"
+  "core version|zsh/functions.zsh|core-version()|powershell/os/48-core.ps1|function global:core-version"
 )
 
 # _has <file> <needle> — fixed-string presence test; non-zero if file missing too.
