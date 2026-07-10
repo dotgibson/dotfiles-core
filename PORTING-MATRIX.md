@@ -52,12 +52,12 @@ _Repo status_ at the bottom).
 | tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | cargo³       | cargo³                     | `mise`/`cargo`³ |
 | jq               | `jq`                   | `jq`         | `jq`         | `app-misc/jq`              | `jq`            |
 | yq⁶              | `go-yq`                | `yq`         | `yq-go`      | `app-misc/yq-go`           | `yq-go`         |
-| duf              | `duf`                  | `duf`        | testing¹⁴    | `sys-fs/duf`               | `duf`           |
+| duf              | `duf`                  | `duf`        | `duf`¹⁴      | `sys-fs/duf`               | `duf`           |
 | dust             | `dust`                 | `dust`       | `dust`       | `sys-block/dust`           | `du-dust`⁴      |
 | procs            | `procs`                | `procs`      | `procs`      | `sys-process/procs`        | `procs`         |
 | sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
 | gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
-| glow             | `glow`                 | `glow`       | testing¹⁴    | `app-misc/glow`¹²          | `glow`¹⁵        |
+| glow             | `glow`                 | `glow`       | `glow`¹⁴     | `app-misc/glow`¹²          | `glow`¹⁵        |
 | gum              | `gum`                  | `gum`        | `gum`        | `app-misc/gum`¹²           | `gum`¹⁵         |
 | xh               | `xh`                   | `xh`         | `xh`         | `net-misc/xh`¹²            | `xh`            |
 | doggo            | AUR³                   | go³          | `doggo`      | `net-dns/doggo`            | go³             |
@@ -77,7 +77,7 @@ _Repo status_ at the bottom).
 ³ Not packaged or stale → bootstrap.sh installs it best-effort (upstream
 installer / `cargo install` / `go install` / AUR), the same pattern bootstrap
 already uses on Fedora. Add `cargo`/`rust` (or a `go` toolchain) to packages.
-`go install` targets go land in `~/.local/bin` via `GOBIN` so they're on PATH.
+`go install` targets land in `~/.local/bin` via `GOBIN` so they're on PATH.
 ⁴ Debian/Kali ship these under different binary names — `bat` runs as `batcat`,
 the `fd-find` package installs `fdfind`, and the `du-dust` package installs the
 `dust` command. Core's `tools.zsh` already resolves them, so aliases and config
@@ -136,9 +136,9 @@ which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali)
 (Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
 (Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
 the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
-¹⁴ Alpine **testing** repo (`duf`, `glow`): musl-fine Go tools that live in `testing`, which
-isn't enabled by default on a stable release. bootstrap.sh `go install`s them instead (static,
-musl-safe) rather than force-enabling `testing`.
+¹⁴ Alpine `duf`/`glow`: in `community` on current stable (3.24) — a plain `apk add`. bootstrap.sh
+keeps a guarded `go install` fallback (static, musl-safe) for older snapshots where they were
+still in `testing`, so it works either way.
 ¹⁵ Kali `glow`/`gum`: recent **Debian sid** packages (Kali rolling tracks testing/sid). If they
 haven't migrated to your snapshot, bootstrap falls back to `go install` / the Charm apt repo
 (`repo.charm.sh/apt`).
