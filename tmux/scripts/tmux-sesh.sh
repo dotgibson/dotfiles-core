@@ -9,6 +9,7 @@
 #
 # Bound to: prefix + f (tmux.conf) and Ctrl-G (zsh, via fzf.zsh widget).
 # ──────────────────────────────────────────────────────────────────────────────
+set -u
 
 if command -v sesh >/dev/null 2>&1; then
   # sesh list = configs + running tmux sessions + zoxide dirs; connect creates-or-switches

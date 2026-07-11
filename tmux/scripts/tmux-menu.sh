@@ -14,6 +14,8 @@
 # display field (--with-nth=1) but returns the whole line, which we dispatch on.
 # ──────────────────────────────────────────────────────────────────────────────
 
+set -u
+
 ENGAGEMENTS_DIR="${ENGAGEMENTS_DIR:-$HOME/engagements}"
 
 build_menu() {
