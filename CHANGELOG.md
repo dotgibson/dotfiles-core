@@ -102,6 +102,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   siblings; a typo'd variable would expand to empty silently. Added `set -u` (all three already
   guard `${TMUX:-}`/`${TERM:-}` etc.); `-e`/`pipefail` stay off because the fzf pickers exit
   non-zero on a normal operator cancel.
+- **`fix(scripts)`: the freshness board's live signals honour an env token.**
+  `scripts/freshness-dashboard.sh` gated its GitHub-API "live signals" on `gh auth status`
+  alone, whose exit/output varies by `gh` version — so in CI (which authenticates via
+  `GH_TOKEN`, not `gh auth login`) the release-drift / Renovate-count / routine-issue
+  sections could be mis-detected as unavailable. It now treats a `GH_TOKEN`/`GITHUB_TOKEN`
+  env var as sufficient (what `gh api` actually uses), falling back to `gh auth status`
+  for local runs with stored credentials.
 
 ## [v3.3.0] - 2026-07-09
 
