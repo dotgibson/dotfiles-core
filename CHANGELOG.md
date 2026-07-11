@@ -83,6 +83,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **`docs(git)`: spell out the `includeIf` work-identity failure mode.**
   Clarified that a missing `~/.config/git/config-work` makes git silently fall back to your
   default identity (no error), with the exact commands to seed it.
+- **`fix(git)`: `prune-branches` uses `grep -E`, not deprecated `egrep`.**
+  The `prune-branches` alias (`git/gitconfig`) shelled out to `egrep`, which GNU grep ≥3.8 prints
+  a deprecation warning for on every invocation. Switched to `grep -Ev`; `xargs -r` is kept (GNU
+  needs it to skip empty input, and modern BSD/macOS xargs supports it), so the alias is quiet on
+  the Linux target and unchanged in behaviour on the macOS/BSD target it ships to.
+- **`fix(scripts)`: checksum refresh falls back to `shasum -a 256` off-Linux.**
+  `scripts/update-tool-checksums.sh` hard-called `sha256sum` (GNU coreutils); a run on the macOS
+  box (which ships `shasum -a 256`, not `sha256sum`) died. It now probes and falls back, so the
+  tool works on either platform.
+- **`fix(maint)`: `dotfiles-maint.sh` enables `set -uo pipefail`.**
+  The unattended daily runner had no `set` options, so a typo'd env knob expanded to empty and a
+  mid-pipe failure was masked. Added `set -uo pipefail` (every env knob is already `:=`/`:-`
+  defaulted); `-e` stays deliberately omitted so one failed step never aborts the rest — that
+  remains `step()`'s job.
+- **`fix(tmux)`: the popup scripts enable `set -u`.**
+  `tmux-menu.sh`, `tmux-scratch.sh`, and `tmux-sesh.sh` carried no `set` options, unlike their
+  siblings; a typo'd variable would expand to empty silently. Added `set -u` (all three already
+  guard `${TMUX:-}`/`${TERM:-}` etc.); `-e`/`pipefail` stay off because the fzf pickers exit
+  non-zero on a normal operator cancel.
 
 ## [v3.3.0] - 2026-07-09
 

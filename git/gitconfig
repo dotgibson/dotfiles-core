@@ -176,7 +176,7 @@
 	nuke = !git clean -fd && git reset --hard
 	# remote
 	pushf = push --force-with-lease
-	prune-branches = !git remote prune origin && git branch --merged | egrep -v '(^\\*|main|master|develop)' | xargs -r git branch -d
+	prune-branches = !git remote prune origin && git branch --merged | grep -Ev '(^\\*|main|master|develop)' | xargs -r git branch -d
 	# stash
 	sl = stash list
 	sp = stash pop

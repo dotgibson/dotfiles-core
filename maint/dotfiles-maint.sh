@@ -16,6 +16,11 @@
 #   MAINT_ENABLED=1          # 0 = no-op (e.g. drop a guard on a Kali engagement box)
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Fail on unset vars and broken pipes. `-e` is deliberately omitted: an unattended
+# runner must let one failed step continue to the next (step() handles per-step rc),
+# but nounset catches typo'd env knobs and pipefail surfaces mid-pipe failures.
+set -uo pipefail
+
 # A scheduler hands us a minimal environment — build a sane PATH and find brew/mise/nvim.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 export HOME="${HOME:?}"
