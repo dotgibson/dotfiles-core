@@ -47,7 +47,7 @@ _Repo status_ at the bottom).
 | zsh              | `zsh`                  | `zsh`        | `zsh`²       | `app-shells/zsh`           | `zsh`           |
 | tmux             | `tmux`                 | `tmux`       | `tmux`       | `app-misc/tmux`            | `tmux`          |
 | starship         | `starship`             | script³      | script³      | `app-shells/starship`      | script³         |
-| atuin            | `atuin` (AUR for some) | script³      | `atuin`      | `app-shells/atuin`         | `atuin`³        |
+| atuin            | `atuin`                | script³      | `atuin`      | `app-shells/atuin`         | `atuin`³        |
 | yazi             | `yazi`                 | cargo³       | cargo³       | `app-misc/yazi`¹²          | cargo³          |
 | tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | cargo³       | cargo³                     | `mise`/`cargo`³ |
 | jq               | `jq`                   | `jq`         | `jq`         | `app-misc/jq`              | `jq`            |
@@ -60,7 +60,7 @@ _Repo status_ at the bottom).
 | glow             | `glow`                 | `glow`       | testing¹⁴    | `app-misc/glow`¹²          | `glow`¹⁵        |
 | gum              | `gum`                  | `gum`        | `gum`        | `app-misc/gum`¹²           | `gum`¹⁵         |
 | xh               | `xh`                   | `xh`         | `xh`         | `net-misc/xh`¹²            | `xh`            |
-| doggo            | AUR³                   | go³          | `doggo`      | `net-dns/doggo`            | go³             |
+| doggo            | `doggo`                | go³          | `doggo`      | `net-dns/doggo`            | go³             |
 | carapace         | AUR³                   | go³          | `carapace`   | `app-shells/carapace`¹²    | go³             |
 | op (1Password)¹³ | AUR                    | vendor rpm   | vendor apk   | GURU¹²                     | vendor apt      |
 | hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`  | `app-benchmarks/hyperfine` | `hyperfine`     |
@@ -72,7 +72,7 @@ _Repo status_ at the bottom).
 | difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic` | `dev-util/difftastic`      | `difftastic`    |
 | ast-grep¹¹       | `ast-grep`             | cargo³       | `ast-grep`   | cargo³                     | cargo³          |
 
-¹ openSUSE: may be in `devel` repos; if absent, `cargo install tealdeer`.
+¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
 ³ Not packaged or stale → bootstrap.sh installs it best-effort (upstream
 installer / `cargo install` / `go install` / AUR), the same pattern bootstrap
