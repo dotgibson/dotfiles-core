@@ -66,7 +66,7 @@ _Repo status_ at the bottom).
 | hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`  | `app-benchmarks/hyperfine` | `hyperfine`     |
 | shellcheck       | `shellcheck`           | `ShellCheck` | `shellcheck` | `dev-util/shellcheck`      | `shellcheck`    |
 | shfmt⁷           | `shfmt`                | `shfmt`      | `shfmt`      | `dev-go/shfmt`             | `shfmt`⁷        |
-| ouch             | `ouch`                 | cargo³       | cargo³       | cargo³                     | cargo³          |
+| ouch             | `ouch`                 | cargo³       | testing      | cargo³                     | cargo³          |
 | jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | cargo³       | `dev-vcs/jujutsu`          | cargo³          |
 | sesh⁹            | AUR⁹                   | go⁹          | go⁹          | go⁹                        | go⁹             |
 | difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic` | `dev-util/difftastic`      | `difftastic`    |

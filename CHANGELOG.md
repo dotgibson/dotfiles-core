@@ -55,8 +55,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **`docs(porting)`: correct the `PORTING-MATRIX.md` package cells the `/os-package-availability`
   routine flagged as drifted.** Alpine `duf`/`glow` are back to `testing` (they were never
   promoted to `community` on stable, incl. 3.24 — a July flip that claimed otherwise is reverted,
-  and footnote ¹⁴ restored); Alpine `tldr`/`ouch` now show `cargo³` (both `testing`-only, so
-  bootstrap builds them from source); and Gentoo `tealdeer`/`yazi`/`lazygit` are marked GURU-only
+  and footnote ¹⁴ restored); Alpine `tldr` now shows `cargo³` (`testing`-only → bootstrap builds
+  it from source) and Alpine `ouch` is corrected to `testing` (`testing`-only, not auto-installed);
+  and Gentoo `tealdeer`/`yazi`/`lazygit` are marked GURU-only
   (footnote ¹²) alongside a note that `direnv` is `app-shells/direnv`, not the non-existent
   `dev-util/direnv`. Matches the OS-repo bootstrap reality (Alpine cargo/go-install fallbacks;
   Gentoo `guru_install`).
