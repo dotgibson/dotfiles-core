@@ -52,6 +52,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`docs(porting)`: correct the `PORTING-MATRIX.md` package cells the `/os-package-availability`
+  routine flagged as drifted.** Alpine `duf`/`glow` are back to `testing` (they were never
+  promoted to `community` on stable, incl. 3.24 — a July flip that claimed otherwise is reverted,
+  and footnote ¹⁴ restored); Alpine `tldr` now shows `cargo³` (`testing`-only → bootstrap builds
+  it from source) and Alpine `ouch` is corrected to `testing` (`testing`-only, not auto-installed);
+  and Gentoo `tealdeer`/`yazi`/`lazygit` are marked GURU-only
+  (footnote ¹²) alongside a note that `direnv` is `app-shells/direnv`, not the non-existent
+  `dev-util/direnv`. Matches the OS-repo bootstrap reality (Alpine cargo/go-install fallbacks;
+  Gentoo `guru_install`). Also: Arch `atuin` drops the stale "(AUR for some)" qualifier and Arch
+  `doggo` moves from `AUR³` to `doggo` (both now first-class in `extra`), and the openSUSE
+  `tealdeer` footnote ¹ is de-hedged (it's in Tumbleweed main OSS, not devel-only).
 - **`fix(zsh)`: `compinit` block no longer leaks a global `zcd` into every interactive shell.**
   `zsh/options.zsh` declared `local zcd=…` at the file's sourced top level, where zsh (which has
   only function scope) silently promotes `local` to an ordinary **global** — polluting the
