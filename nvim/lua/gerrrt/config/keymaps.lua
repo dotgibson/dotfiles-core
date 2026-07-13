@@ -12,7 +12,7 @@
 -- opens init.lua on every platform — ~/.config/nvim on Unix, %LOCALAPPDATA%\nvim on
 -- Windows — instead of a hardcoded ~/.config path that never exists on the Windows host.
 vim.keymap.set("n", "<leader>rc", function()
-	vim.cmd.edit(vim.fs.joinpath(vim.fn.stdpath("config"), "init.lua"))
+	vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(vim.fn.stdpath("config"), "init.lua")))
 end, { desc = "Edit config" })
 
 -- Cheatsheet — the full-panel counterpart to which-key. which-key answers "I pressed <leader>,
