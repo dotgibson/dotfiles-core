@@ -13,6 +13,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fix(nvim)`: `<leader>rc` and the alpha dashboard "Config" button open `init.lua`
+  on Windows too.** Both hardcoded `~/.config/nvim/init.lua`, which doesn't exist on the
+  Windows host — Neovim there reads `%LOCALAPPDATA%\nvim` — so the binding opened a phantom
+  path. They now resolve the config dir at runtime via `vim.fn.stdpath("config")`, so the
+  same binding lands on the real `init.lua` on every platform.
+
 ## [v3.4.0] - 2026-07-12
 
 ### Added
