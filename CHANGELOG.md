@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.5.0] - 2026-07-13
+
 ### Changed
 
 - **`fix(git)`: delta's `syntax-theme` is now `ansi` (was `TwoDark`).** delta now follows
