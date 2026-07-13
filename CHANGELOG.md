@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.4.0] - 2026-07-12
+
 ### Added
 
 - **`feat(freshness)`: the weekly fleet board gains three live cross-repo signals.**
