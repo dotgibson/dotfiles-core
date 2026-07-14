@@ -26,9 +26,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **`docs(matrix)`: `watch`→`viddy` is now a first-class, provisioned tool.**
   `PORTING-MATRIX.md` gains a `viddy` row so the `watch`→`viddy` alias Core already
   ships (`HAVE_VIDDY`-guarded in `zsh/aliases.zsh`) is actually installed — macOS
-  already had it via Homebrew; the six Linux/Kali repos now `go install` it best-effort
-  in `bootstrap.sh`, the same pattern as doggo/carapace/sesh/gron. Inert without the
-  binary, so boxes that skip it keep classic `watch`.
+  already had it via Homebrew; the Linux/Kali repos now install it best-effort in
+  `bootstrap.sh` via `cargo install viddy` (viddy is a Rust CLI, so the same cargo path
+  as yazi/dust — Arch, which ships no rust toolchain, prints a `paru -S viddy` hint).
+  Inert without the binary, so boxes that skip it keep classic `watch`.
 
 ## [v3.5.0] - 2026-07-13
 
