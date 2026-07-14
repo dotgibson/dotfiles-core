@@ -12,7 +12,7 @@ the OS-repo rollout is the consumer side of the Core line, not its own version:
 | --- | --- | --- | --- | --- |
 | **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 8 OS repos' `core/` | [1](#1-cut-a-core-release) |
 | **OS-repo rollout** | not versioned (stamped `core.lock`) | merging the fan-out PRs | the live hosts (on bootstrap) | [2](#2-roll-a-core-release-out-to-the-os-repos) |
-| **dotfiles-Windows** | `dotfiles-Windows` (own `vX.Y.Z`) | mirror-sync `nvim/`+`starship/` to `main` | the Windows host (on bootstrap) | [3](#3-cut-a-dotfiles-windows-release) |
+| **dotfiles-Windows** | `dotfiles-Windows` (own `vX.Y.Z`) | mirror-sync `nvim/`+`starship/` (auto-patch) **or** a manual CHANGELOG promotion + tag (minor/major) | the Windows host (on bootstrap) | [3](#3-cut-a-dotfiles-windows-release) |
 | **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Kali` (`companion.lock`) | [4](#4-cut-an-htpx-release) |
 
 These lines are independent and update different files, so they never collide: a Core
@@ -87,11 +87,21 @@ own release line (section 3).
 
 ## 3. Cut a dotfiles-Windows release
 
-`dotfiles-Windows` is standalone (no `core/` subtree) but **versions itself**: when a
-mirror-sync lands new `nvim/` or `starship/` content on `main`, its `auto-tag.yml`
-PATCH-bumps the repo's own `vX.Y.Z` and publishes a Release (delegating to Core's
-reusable `auto-tag-call.yml@v2`) — the host-layer analog of an OS repo consuming a Core
-fan-out. Run these in a clean `dotfiles-Windows` checkout (PowerShell):
+`dotfiles-Windows` is standalone (no `core/` subtree, and it isn't vendored), so a release
+**fans out to nothing** — but it **versions itself two ways**:
+
+- **3a — automatic PATCH**, when a mirror-sync lands new `nvim/`/`starship/` content on `main`.
+- **3b — a deliberate MINOR/MAJOR**, cut by a human for accumulated *host* work (the PowerShell
+  profile & modules, Windows Terminal, the scoop/winget packages, `psmux`, the WSL bridge).
+
+Because auto-tag's patch tags advance mechanically on every mirror-sync, the **tag line runs
+ahead of the `CHANGELOG.md` headings** (e.g. tags at `v1.1.6` while the last `## [vX.Y.Z]`
+heading is still `v1.1.0`). Host work only ever earns a patch from auto-tag until a human
+promotes it — recognizing that moment, and reconciling the two lines, is what 3b is for.
+
+### 3a. Automatic patch (mirror-sync)
+
+Run in a clean `dotfiles-Windows` checkout (PowerShell):
 
 ```powershell
 # 1. Mirror the shared Core assets. Pin an exact Core release for a reproducible sync
@@ -107,14 +117,57 @@ git add nvim/ starship/ ; git commit -m "sync nvim/starship from Core vX.Y.Z"
 ```
 
 After the push, `auto-tag.yml` sees the new `nvim/`/`starship/` content and PATCH-bumps
-Windows' own tag + Release. It is idempotent (a no-op if HEAD is already tagged) and
-deliberately **skips** a `.core-ref`-marker-only change, so a timestamp-only re-sync
-never cuts a spurious tag.
+Windows' own tag + Release (delegating to Core's reusable `auto-tag-call.yml@v3`). It is
+idempotent (a no-op if HEAD is already tagged) and deliberately **skips** a
+`.core-ref`-marker-only change, so a timestamp-only re-sync never cuts a spurious tag.
 
 You usually don't run the sync by hand: the **`nvim-sync` and `starship-sync` bots**
 (weekly, Tuesdays 08:00 UTC, plus `workflow_dispatch`) open a PR when Core's `nvim/` or
 `starship/` actually changed — merging that PR is the whole release. Run the scripts
 manually only to pull a specific Core release immediately (e.g. right after cutting one).
+
+### 3b. Deliberate minor/major (host work)
+
+`auto-tag.yml` **only ever produces a patch**, and it fires on pushes to `main` that touch
+`nvim/`/`starship/` — **not** on a CHANGELOG commit or a tag push. There is no `release.yml`
+on this repo, so a minor/major is a **fully manual** flow that nothing auto-publishes. Run in
+a clean checkout (PowerShell):
+
+```powershell
+# 1. Decide the version. The repo's own routines REPORT (they never tag):
+#      /release-readiness  -> go/no-go + recommended SemVer (meaningful host work vs mechanical churn)
+#      /release-notes      -> drafts the CHANGELOG entry from Conventional Commits
+#    Breaking host change -> major; a feat/perf -> minor; only fix/chore/sync -> patch (let 3a handle it).
+
+# 2. Refresh the package lock so the release ships current pins (also clears the open
+#    package-freshness issue). The generator REBUILDS the lock from scratch:
+.\packages\Update-PackageLock.ps1 -DryRun    # preview, writes nothing
+.\packages\Update-PackageLock.ps1            # regenerate packages.lock.json
+#    Gotcha: versions are resolved via `winget export`, which OMITS an installed app it can't
+#    map to a winget source (even though `winget install`/`upgrade` still see it via ARP) — so
+#    that app is DROPPED from the new lock, not carried over at its old pin. Confirm the real
+#    version with `winget list --id <id>` and re-add its one pin line, or `winget uninstall`
+#    then `winget install --id <id> -e` to register the source so future re-pins capture it.
+git add packages/packages.lock.json ; git commit -m "chore(packages): re-pin scoop/winget lockfile"
+
+# 3. Promote the CHANGELOG: move [Unreleased] under `## [vX.Y.Z] - <today>`, open a fresh
+#    empty [Unreleased] above it, and curate the prose (surface behavior changes loudly, e.g.
+#    the psmux warm/destroy-unattached flip). Optionally run 3a's sync in the same release to
+#    pull the Core version you ship alongside (skip if Core's nvim/starship didn't move —
+#    it'll be a no-op).
+
+# 4. Land the CHANGELOG (+ lock, + any sync) on main via PR, then merge.
+
+# 5. Cut the tag + Release BY HAND — auto-tag won't. The version must also clear the drifted
+#    tag floor (if tags are at v1.1.6, the next deliberate tag is >= v1.1.7; a minor like
+#    v1.2.0 clears it):
+git fetch origin
+git tag -a vX.Y.Z origin/main -m vX.Y.Z
+git push origin vX.Y.Z
+gh release create vX.Y.Z --title vX.Y.Z --notes "<paste the new CHANGELOG section>"
+```
+
+Then close the `release-readiness` / `release-notes` tracking issues for the cut version.
 
 ---
 
