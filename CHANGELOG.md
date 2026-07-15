@@ -19,7 +19,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 - **`fix(tmux)`: trailing space after the copy-mode icon.** The status-bar copy-mode
   indicator was `󰆏#S` (glyph abutting the session name); it is now `󰆏 #S` — a single
-  space keeps the pill readable at a glance without changing layout width.
+  space keeps the pill readable at a glance without otherwise changing the layout.
 
 ### Documentation
 
