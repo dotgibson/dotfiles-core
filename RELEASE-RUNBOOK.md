@@ -159,8 +159,11 @@ git diff packages/packages.lock.json         # review only — it lands with the
 #    separate 3a PR FIRST, let that auto-patch settle, then cut this release touching only
 #    CHANGELOG.md + packages.lock.json.
 
-# 4. Land the CHANGELOG + lock on main via PR (main is protected), then merge:
-git checkout -b release/vX.Y.Z
+# 4. Land the CHANGELOG + lock on main via PR (main is protected). Base the branch on the
+#    LATEST origin/main so a stale checkout can't drop current commits or pull in unrelated
+#    ones — `git switch -c` carries the working-tree edits from steps 2-3 forward:
+git fetch origin
+git switch -c release/vX.Y.Z origin/main
 git add CHANGELOG.md packages/packages.lock.json
 git commit -m "release vX.Y.Z"
 git push -u origin release/vX.Y.Z
@@ -174,7 +177,7 @@ git fetch origin
 git tag -a vX.Y.Z origin/main -m vX.Y.Z
 git push origin vX.Y.Z
 #    save the new CHANGELOG section to notes.md, then pass it via a FILE — the CHANGELOG's
-#    backticks/quotes would be reinterpreted inside a double-quoted PowerShell -Notes string:
+#    backticks/quotes would be reinterpreted inside a double-quoted inline `--notes "..."` arg:
 gh release create vX.Y.Z --title vX.Y.Z --notes-file notes.md
 ```
 
