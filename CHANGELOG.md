@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.5.2] - 2026-07-14
+
 ## [v3.5.1] - 2026-07-14
 
 ### Changed
