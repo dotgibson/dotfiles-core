@@ -320,11 +320,15 @@ separate `on: push: tags` workflow:
 | ---- | ---------- | ------------------ | ------------ |
 | **dotfiles-core** | you (`make tag` → push) | `release.yml` (`on: push: tags`) — fires because *you* pushed the tag | curated `CHANGELOG.md` section |
 | **OS repos** (×8) | `auto-tag.sh` in CI on a `core/**` fan-out | `auto-tag.sh --release`, **in the same job** (the token-pushed tag can't trigger `release.yml`) | `gh release create --generate-notes` |
-| **dotfiles-Windows** | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos (calls `auto-tag-call.yml@v2`) | `gh release create --generate-notes` |
+| **dotfiles-Windows** — auto patch | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos (calls `auto-tag-call.yml@v3`) | `gh release create --generate-notes` |
+| **dotfiles-Windows** — deliberate minor/major | **you**, by hand for host work (`git tag` → push) | **you** (`gh release create --notes-file`) — auto-tag only ever patches and never fires on a CHANGELOG commit or a tag push | curated `CHANGELOG.md` section |
 
-So: Core releases read like the changelog; OS-repo and Windows releases get
-GitHub's auto-generated notes (they carry no per-tag CHANGELOG of their own). All
-three are idempotent and need no manual tag/Release push.
+So: Core releases read like the changelog; OS-repo and Windows **auto-patch** releases get
+GitHub's auto-generated notes (they carry no per-tag CHANGELOG of their own), and those auto
+paths are idempotent and need no manual tag/Release push. The one exception is a **deliberate
+`dotfiles-Windows` minor/major** for accumulated host work: there is no `release.yml` on that
+repo, so a human promotes its `CHANGELOG.md` and cuts the tag + Release by hand. Both Windows
+flows are in `RELEASE-RUNBOOK.md` §3.
 
 ### Still worth doing
 
