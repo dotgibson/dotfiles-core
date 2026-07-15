@@ -17,8 +17,9 @@ the OS-repo rollout is the consumer side of the Core line, not its own version:
 
 These lines are independent and update different files, so they never collide: a Core
 release bumps each OS repo's `core.lock`; an htpx release bumps Kali's `companion.lock`;
-and `dotfiles-Windows` carries its own version, advanced only when the `nvim/`/`starship/`
-assets it mirrors from Core move (it vendors no `core/` subtree).
+and `dotfiles-Windows` carries its own version, advanced **two ways** — an automatic patch when
+the `nvim/`/`starship/` assets it mirrors from Core move, and a deliberate minor/major a human
+cuts for host work (both flows in §3). It vendors no `core/` subtree.
 
 ---
 
@@ -148,15 +149,26 @@ a clean checkout (PowerShell):
 #    that app is DROPPED from the new lock, not carried over at its old pin. Confirm the real
 #    version with `winget list --id <id>` and re-add its one pin line, or `winget uninstall`
 #    then `winget install --id <id> -e` to register the source so future re-pins capture it.
-git add packages/packages.lock.json ; git commit -m "chore(packages): re-pin scoop/winget lockfile"
+git diff packages/packages.lock.json         # review only — it lands with the CHANGELOG in step 4
 
 # 3. Promote the CHANGELOG: move [Unreleased] under `## [vX.Y.Z] - <today>`, open a fresh
 #    empty [Unreleased] above it, and curate the prose (surface behavior changes loudly, e.g.
-#    the psmux warm/destroy-unattached flip). Optionally run 3a's sync in the same release to
-#    pull the Core version you ship alongside (skip if Core's nvim/starship didn't move —
-#    it'll be a no-op).
+#    the psmux warm/destroy-unattached flip). Do NOT fold a real nvim/starship sync into this
+#    release: merging a sync fires auto-tag (3a) and publishes an intervening PATCH tag/Release
+#    that races the manual tag below. If you need the latest Core assets, land them as a
+#    separate 3a PR FIRST, let that auto-patch settle, then cut this release touching only
+#    CHANGELOG.md + packages.lock.json.
 
-# 4. Land the CHANGELOG (+ lock, + any sync) on main via PR, then merge.
+# 4. Land the CHANGELOG + lock on main via PR (main is protected). Base the branch on the
+#    LATEST origin/main so a stale checkout can't drop current commits or pull in unrelated
+#    ones — `git switch -c` carries the working-tree edits from steps 2-3 forward:
+git fetch origin
+git switch -c release/vX.Y.Z origin/main
+git add CHANGELOG.md packages/packages.lock.json
+git commit -m "release vX.Y.Z"
+git push -u origin release/vX.Y.Z
+gh pr create --base main --head release/vX.Y.Z --title "release vX.Y.Z"
+#    ... review, let CI go green, then MERGE ...
 
 # 5. Cut the tag + Release BY HAND — auto-tag won't. The version must also clear the drifted
 #    tag floor (if tags are at v1.1.6, the next deliberate tag is >= v1.1.7; a minor like
@@ -164,7 +176,9 @@ git add packages/packages.lock.json ; git commit -m "chore(packages): re-pin sco
 git fetch origin
 git tag -a vX.Y.Z origin/main -m vX.Y.Z
 git push origin vX.Y.Z
-gh release create vX.Y.Z --title vX.Y.Z --notes "<paste the new CHANGELOG section>"
+#    save the new CHANGELOG section to notes.md, then pass it via a FILE — the CHANGELOG's
+#    backticks/quotes would be reinterpreted inside a double-quoted inline `--notes "..."` arg:
+gh release create vX.Y.Z --title vX.Y.Z --notes-file notes.md
 ```
 
 Then close the `release-readiness` / `release-notes` tracking issues for the cut version.
