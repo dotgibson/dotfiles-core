@@ -14,6 +14,9 @@ return {
 	event = "VeryLazy",
 	opts = {
 		recipe = { "minimalist", { animate = true } },
-		fadelevel = 0.6, -- 0 = fully faded, 1 = no fade; 0.6 dims noticeably without hiding content
+		-- vimade fades inactive-window highlights TOWARD the background by this amount:
+		-- 0.0 = completely faded, 1.0 = not faded at all (upstream default 0.4). 0.6 dims
+		-- noticeably while keeping inactive text readable.
+		fadelevel = 0.6,
 	},
 }
