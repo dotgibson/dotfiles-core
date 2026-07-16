@@ -78,3 +78,49 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.opt_local.concealcursor = "" -- still show markup on the cursor line
   end,
 })
+
+-- Notify when the tracked upstream is ahead of HEAD, so you know to rebase/pull before starting.
+-- Async `git fetch` on VimEnter so startup never blocks. Gated on dotfiles_offline (engagement
+-- boxes) — same switch that already silences lazy's checker and mason, so this never emits
+-- unattended network traffic on a Kali/Defense box. Routes through vim.notify -> mini.notify,
+-- so the toast matches the rest of the UI for free.
+if not vim.g.dotfiles_offline then
+  vim.api.nvim_create_autocmd("VimEnter", {
+    group = vim.api.nvim_create_augroup("GitRemoteAhead", { clear = true }),
+    callback = function()
+      if os.execute("git rev-parse --is-inside-work-tree > /dev/null 2>&1") ~= 0 then
+        return -- not a git repo
+      end
+      vim.fn.jobstart({ "git", "fetch" }, {
+        on_exit = function()
+          local count = vim.fn.system("git rev-list --count HEAD..@{u} 2>/dev/null"):gsub("%s+", "")
+          if count ~= "" and tonumber(count) and tonumber(count) > 0 then
+            vim.schedule(function()
+              -- \u{f0662} nf-md-source_branch_sync, written as an escape so the glyph survives
+              -- transfer (house convention, matches lualine.lua / diagnostics.lua).
+              vim.notify("\u{f0662} " .. count .. " new commit(s) on remote", vim.log.levels.INFO, { title = "Git" })
+            end)
+          end
+        end,
+      })
+    end,
+  })
+end
+
+-- Show cursorline only in the active window. Pairs with vimade (plugins/vimade.lua): vimade fades
+-- inactive splits, this drops their cursorline, together giving a clear "which split is live" cue
+-- for the globalstatus + split-heavy workflow. cursorline defaults ON globally (options.lua); this
+-- just suppresses it on the windows you're not in.
+local active_cursorline_group = vim.api.nvim_create_augroup("ActiveCursorline", { clear = true })
+vim.api.nvim_create_autocmd({ "WinEnter", "BufEnter" }, {
+  group = active_cursorline_group,
+  callback = function()
+    vim.opt_local.cursorline = true
+  end,
+})
+vim.api.nvim_create_autocmd("WinLeave", {
+  group = active_cursorline_group,
+  callback = function()
+    vim.opt_local.cursorline = false
+  end,
+})
