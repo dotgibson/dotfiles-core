@@ -72,6 +72,11 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.opt_local.relativenumber = false
     vim.opt_local.number = false
     vim.opt_local.cursorline = false
+    -- Mark this buffer as opting out of cursorline so the ActiveCursorline toggle (below) won't
+    -- re-enable it on a later BufEnter — FileType only fires once, but BufEnter fires on every
+    -- revisit, and without this flag switching back to a markdown/text/gitcommit buffer would
+    -- clobber the `cursorline = false` set here.
+    vim.b.disable_cursorline = true
     vim.opt_local.colorcolumn = ""
     vim.opt_local.signcolumn = "no"
     vim.opt_local.conceallevel = 2 -- conceal markup (link/bold markers); moved here from global options
@@ -88,21 +93,40 @@ if not vim.g.dotfiles_offline then
   vim.api.nvim_create_autocmd("VimEnter", {
     group = vim.api.nvim_create_augroup("GitRemoteAhead", { clear = true }),
     callback = function()
-      if os.execute("git rev-parse --is-inside-work-tree > /dev/null 2>&1") ~= 0 then
-        return -- not a git repo
+      -- Capture the startup cwd ONCE. Every git call below runs pinned to it (cwd = repo), so a
+      -- later `:cd` can't silently point the fetch/rev-list at a different repository or report
+      -- stale data. vim.system uses argv (no shell) — portable to the Windows host in this config,
+      -- which cmd/pwsh `> /dev/null 2>&1` redirection was not.
+      local repo = vim.fn.getcwd()
+      local function git(args, on_done)
+        vim.system(vim.list_extend({ "git" }, args), { cwd = repo, text = true }, on_done)
       end
-      vim.fn.jobstart({ "git", "fetch" }, {
-        on_exit = function()
-          local count = vim.fn.system("git rev-list --count HEAD..@{u} 2>/dev/null"):gsub("%s+", "")
-          if count ~= "" and tonumber(count) and tonumber(count) > 0 then
-            vim.schedule(function()
-              -- \u{f0662} nf-md-source_branch_sync, written as an escape so the glyph survives
-              -- transfer (house convention, matches lualine.lua / diagnostics.lua).
-              vim.notify("\u{f0662} " .. count .. " new commit(s) on remote", vim.log.levels.INFO, { title = "Git" })
-            end)
+      -- Chain on SUCCESS only: not-a-repo, a failed fetch (offline/no remote), or no upstream
+      -- configured each short-circuit BEFORE we trust a commit count — so we never toast a number
+      -- derived from a fetch that didn't actually happen.
+      git({ "rev-parse", "--is-inside-work-tree" }, function(inside)
+        if inside.code ~= 0 then
+          return -- not a git repo
+        end
+        git({ "fetch" }, function(fetched)
+          if fetched.code ~= 0 then
+            return -- fetch failed (no network / no remote) — don't report a stale count
           end
-        end,
-      })
+          git({ "rev-list", "--count", "HEAD..@{u}" }, function(rev)
+            if rev.code ~= 0 then
+              return -- no upstream tracking branch configured
+            end
+            local count = (rev.stdout or ""):gsub("%s+", "")
+            if count ~= "" and tonumber(count) and tonumber(count) > 0 then
+              vim.schedule(function()
+                -- \u{f0662} nf-md-source_branch_sync, written as an escape so the glyph survives
+                -- transfer (house convention, matches lualine.lua / diagnostics.lua).
+                vim.notify("\u{f0662} " .. count .. " new commit(s) on remote", vim.log.levels.INFO, { title = "Git" })
+              end)
+            end
+          end)
+        end)
+      end)
     end,
   })
 end
@@ -115,7 +139,8 @@ local active_cursorline_group = vim.api.nvim_create_augroup("ActiveCursorline", 
 vim.api.nvim_create_autocmd({ "WinEnter", "BufEnter" }, {
   group = active_cursorline_group,
   callback = function()
-    vim.opt_local.cursorline = true
+    -- Respect a buffer's opt-out (set by MarkdownOptions above); everything else lights up.
+    vim.opt_local.cursorline = not vim.b.disable_cursorline
   end,
 })
 vim.api.nvim_create_autocmd("WinLeave", {
