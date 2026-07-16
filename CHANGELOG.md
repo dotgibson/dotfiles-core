@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.6.0] - 2026-07-16
+
 ### Added
 
 - **`feat(nvim)`: five editor quality-of-life tweaks.** Cherry-picked from an external
