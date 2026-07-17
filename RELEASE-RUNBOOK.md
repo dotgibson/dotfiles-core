@@ -140,8 +140,10 @@ never all at once (per `RELEASE-STRATEGY.md`).
 **If this was a MAJOR release,** the fan-out `core.lock` PRs are not the whole rollout: any
 repo whose CI pins a reusable workflow at the old `@vN` also needs its `uses:` ref bumped to
 the new major (`@v3` → `@v4`) — the deliberate caller edit from §1.1 step 4. `make fleet-drift`
-flags repos still on the old alias. PATCH/MINOR releases skip this entirely: the moving alias
-already carried them.
+won't surface this: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance
+against Core, not its workflow `uses:` pins — so finding the stragglers is a manual sweep
+(e.g. `grep -rl 'uses:.*@v3' .github/workflows` across the repos in `scripts/os-repos.txt`).
+PATCH/MINOR releases skip this entirely: the moving alias already carried them.
 
 If an OS-repo PR's `links-only` job fails on a **mirror timeout** (e.g. openSUSE's OSS
 CDN), just re-run the job — the prep step retries automatically. A genuinely broken
