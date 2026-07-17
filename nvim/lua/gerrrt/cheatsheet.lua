@@ -94,7 +94,7 @@ M.sections = {
 		{ "<leader>fh", "Help tags" },
 		{ "<leader>fk", "Keymaps" },
 		{ "<leader>ft", "Todo comments" },
-		{ "<leader>fd / fD", "Diagnostics doc / workspace" },
+		{ "<leader>fx / fX", "Diagnostics doc / workspace" },
 		{ "<leader>fs / fw", "Symbols doc / workspace" },
 	},
 	{
