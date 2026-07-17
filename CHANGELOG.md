@@ -13,6 +13,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Security
+
+- **session-start hook verifies its tool downloads.** `install_tarball` and the neovim
+  install in `.claude/hooks/session-start.sh` now download to a file and check the pinned
+  SHA-256 from `scripts/tool-versions.env` before extracting — failing closed when a
+  checksum is absent or mismatched — instead of piping `curl … | tar` unverified. Brings the
+  remote-session gate toolchain in line with the CI composite action, which already verifies.
+- **claude-routines run with least-privilege tools.** Each job's `--allowedTools` now mirrors
+  its routine's own `allowed-tools` frontmatter rather than granting unrestricted `Bash`; the
+  web-reading routines (tool-scout, freshness-triage, modernize, release-readiness,
+  drift-triage) no longer pair arbitrary shell with `WebFetch`/`WebSearch`, closing a
+  prompt-injection → `CLAUDE_CODE_OAUTH_TOKEN` exfiltration path. `drift-triage`'s command
+  frontmatter is scoped to match.
+
 ## [v3.6.1] - 2026-07-16
 
 ### Documentation
