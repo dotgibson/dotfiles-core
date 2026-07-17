@@ -183,7 +183,7 @@ jobs:
           claude -p "/freshness-triage" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(./scripts/update-nvim-plugins.sh --check),Bash(git log:*),Bash(git diff:*)" \
+            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(./scripts/update-nvim-plugins.sh --check),Bash(git log:*),Bash(git diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*)" \
             --output-format text | tee "$RUNNER_TEMP/freshness-triage.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/freshness-triage.md"
@@ -258,7 +258,7 @@ jobs:
           claude -p "/release-readiness" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,Bash(./scripts/audit-core.sh:*),Bash(./scripts/fleet-drift.sh:*),Bash(./scripts/update-plugins.sh --check),Bash(./scripts/update-nvim-plugins.sh --check),Bash(git log:*),Bash(git tag:*),Bash(cat core.version)" \
+            --allowedTools "Task,Read,Grep,Glob,Bash(./scripts/audit-core.sh:*),Bash(./scripts/fleet-drift.sh:*),Bash(./scripts/update-plugins.sh --check),Bash(./scripts/update-nvim-plugins.sh --check),Bash(git log:*),Bash(git tag:*),Bash(cat core.version),Bash(gh pr list:*),Bash(gh issue list:*),Bash(gh run list:*)" \
             --output-format text | tee "$RUNNER_TEMP/release-readiness.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/release-readiness.md"
