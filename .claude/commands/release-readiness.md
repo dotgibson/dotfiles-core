@@ -1,7 +1,7 @@
 ---
 description: Go/no-go readiness check before cutting a Core release
 argument-hint: "[target version X.Y.Z — optional]"
-allowed-tools: Task, Read, Grep, Glob, Bash(./scripts/audit-core.sh:*), Bash(./scripts/fleet-drift.sh:*), Bash(./scripts/update-plugins.sh --check), Bash(./scripts/update-nvim-plugins.sh --check), Bash(git log:*), Bash(git tag:*), Bash(cat core.version)
+allowed-tools: Task, Read, Grep, Glob, Bash(./scripts/audit-core.sh:*), Bash(./scripts/fleet-drift.sh:*), Bash(./scripts/update-plugins.sh --check), Bash(./scripts/update-nvim-plugins.sh --check), Bash(git log:*), Bash(git tag:*), Bash(cat core.version), Bash(gh pr list:*), Bash(gh issue list:*), Bash(gh run list:*)
 ---
 
 # /release-readiness
