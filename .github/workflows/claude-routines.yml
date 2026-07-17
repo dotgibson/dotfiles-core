@@ -246,6 +246,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: read # gh pr list — observe the open freshness PR + Hold verdicts
     env:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       GH_TOKEN: ${{ github.token }}
