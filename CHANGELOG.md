@@ -13,6 +13,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **`git_main_branch` resolves the trunk in one call.** It reads `origin/HEAD` directly
+  (`git symbolic-ref`) and only falls back to probing the trunk-name candidate list when
+  that is unset — instead of firing up to 18 `git show-ref` subprocesses every call. It sits
+  on the hot path (`gcom` / `gswm` / `grbm`).
+- **`git_current_branch` uses the git porcelain.** It now reads `git branch --show-current`
+  (git 2.22+) instead of the hand-rolled `symbolic-ref` + return-code dance; the short-SHA
+  fallback on a detached HEAD and the empty result outside a repo are both preserved.
+- **`_core_suggest` no longer forks per candidate.** `_core_lev` gained a fork-free out-var
+  mode, so scoring a mistyped Core verb against the alias/subcommand list runs in-process
+  rather than spawning a command substitution for each candidate (~80+ on a bad `please`).
+- **`pullall` tallies its summary in a single `awk` pass** instead of four `grep -c` scans of
+  the same buffer.
+- **Collapsed a dead `status-left` conditional** in `tmux/tmux.conf` to a constant — all three
+  branches resolved to the same colour.
+- **Decoupled `--help` from header line numbers.** `update-plugins.sh`,
+  `update-nvim-plugins.sh`, and `freshness-dashboard.sh` now print usage from a heredoc rather
+  than `sed -n '<a>,<b>p' "$0"`, which silently mis-printed whenever the header comment moved
+  (the coupling `sync-core.sh` already documents having removed).
+
 ## [v3.6.1] - 2026-07-16
 
 ### Documentation
