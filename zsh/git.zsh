@@ -32,12 +32,15 @@ function git_main_branch() {
   command git rev-parse --git-dir &>/dev/null || return
   local ref
   # Fast path: origin/HEAD names the remote's default branch authoritatively in ONE call
-  # (the usual case for a cloned repo) — no need to probe the candidate list.
-  if ref=$(command git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); then
+  # (the usual case for a cloned repo) — no need to probe the candidate list. symbolic-ref
+  # succeeds even when origin/HEAD is DANGLING (points at a branch pruned/renamed upstream),
+  # so verify the referent actually exists before trusting it; a stale target falls through.
+  if ref=$(command git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) \
+    && command git show-ref -q --verify "refs/remotes/$ref"; then
     echo "${ref#origin/}"
     return 0
   fi
-  # Fallback (origin/HEAD unset): probe the known trunk names locally + on remotes.
+  # Fallback (origin/HEAD unset or stale): probe the known trunk names locally + on remotes.
   for ref in refs/{heads,remotes/{origin,upstream}}/{main,trunk,mainline,default,stable,master}; do
     if command git show-ref -q --verify "$ref"; then
       echo "${ref:t}"
