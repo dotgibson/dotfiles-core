@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.7.0] - 2026-07-17
+
 ### Changed
 
 - **Neovim clipboard gains a gated OSC52 last-resort provider.** When no native clipboard
