@@ -33,6 +33,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `update-nvim-plugins.sh`, and `freshness-dashboard.sh` now print usage from a heredoc rather
   than `sed -n '<a>,<b>p' "$0"`, which silently mis-printed whenever the header comment moved
   (the coupling `sync-core.sh` already documents having removed).
+- **Removed redundant zsh history setopts** (`zsh/history.zsh`): `INC_APPEND_HISTORY` (implied
+  by `SHARE_HISTORY`) and `HIST_IGNORE_DUPS` (superseded by `HIST_IGNORE_ALL_DUPS`) were
+  no-ops, so they are dropped.
+
+### Security
+
+- **`HISTORY_IGNORE` covers more secret shapes** (`zsh/history.zsh`): `--flag=value` forms and
+  env-assignment credentials (`TOKEN=`, `PASSWORD=`, `*ACCESS_KEY=`, `APIKEY`) that the
+  space-only patterns let slip now stay out of the plaintext `$HISTFILE`.
+
+### Fixed
+
+- **Cheatsheet uses a non-deprecated highlight API.** `nvim/lua/gerrrt/cheatsheet.lua` now
+  calls `nvim_buf_set_extmark` instead of the deprecated `nvim_buf_add_highlight` (slated for
+  removal on Neovim nightly), so `:Cheatsheet` / `<leader>?` keeps working on current Neovim.
 
 ## [v3.6.1] - 2026-07-16
 
