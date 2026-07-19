@@ -4,6 +4,74 @@
 -- ================================================================================================
 local on_attach = require("gerrrt.utils.lsp").on_attach
 
+-- ================================================================================================
+-- User FilePost — "a real file is open AND the UI has painted"
+-- ================================================================================================
+-- WHY : BufReadPre/BufReadPost fire BEFORE the first UI paint, so every plugin hung off them sits
+--       between launching nvim and SEEING your file. Measured on this config, that was ~125ms of
+--       nvim-lspconfig + gitsigns + nvim-lint + todo-comments on the critical path. This event
+--       re-hangs that work AFTER the first paint, so the file appears immediately and the machinery
+--       arrives a frame later. (The idea is NvChad's `User FilePost`; the implementation is ours.)
+--
+-- CONTRACT : fires exactly ONCE per session, only when
+--              • the buffer is a real file (non-empty name), and
+--              • it isn't a utility buffer (buftype ~= "" / "help"), and
+--              • the UI has attached (UIEnter has run).
+--            The augroup deletes itself on the first successful fire, so there is zero ongoing cost
+--            — no lingering autocmd re-checking these conditions on every later buffer.
+--
+-- MEASURED on this config (`nvim file.lua`, real TTY): BufReadPre 43ms, BufReadPost 44ms,
+--            VimEnter 126ms, UIEnter 131ms. So the plugins below moved from ~44ms to ~131ms —
+--            ~87ms of work lifted out of the window before the UI is ready.
+--
+-- WHY BOTH UIEnter AND VimEnter : UIEnter is the precise "a UI attached" signal, but it NEVER FIRES
+--            under `nvim --headless` — which is how scripts, CI, and this repo's own audit
+--            (scripts/test-core.sh) run Neovim. Gating on UIEnter alone silently meant no LSP, no
+--            gitsigns and no linting in every headless session. VimEnter fires in both modes and,
+--            measured above, lands 5ms BEFORE UIEnter in a TTY — so taking whichever arrives first
+--            costs nothing in the interactive case and is what makes the headless case work at all.
+--            (NvChad gates on UIEnter only; they don't run headless LSP tests, so they never hit it.)
+--
+-- BOTH ORDERS ARE HANDLED : with `nvim file.lua`, BufReadPost fires long before VimEnter/UIEnter;
+--            with a bare `nvim` it's the reverse (and the empty buffer has no name, so nothing fires
+--            until you actually open something). Whichever event arrives LAST finds the conditions
+--            satisfied and does the work — which is why the startup events only set a flag rather
+--            than firing FilePost directly.
+--
+-- NO FileType REPLAY NEEDED : plugins loading here have missed this buffer's FileType. NvChad
+--            compensates with a blunt global `nvim_exec_autocmds("FileType", {})` re-fire, which on
+--            this config would re-run every FileType handler across 285 registered autocmds. We
+--            deliberately do NOT do that — each migrated plugin already self-attaches to open
+--            buffers, verified individually:
+--              • vim.lsp.enable() re-runs `doautoall nvim.lsp.enable FileType` whenever it's called
+--                after startup (neovim runtime lua/vim/lsp.lua — the `vim_did_enter` branch),
+--              • gitsigns iterates nvim_list_bufs() in its setup,
+--              • todo-comments attaches to all bufs in visible windows,
+--              • nvim-lint is driven by BufWritePost/InsertLeave only — nothing to replay.
+--            A plugin that needs options set AT READ TIME (vim-sleuth) must NOT be moved here, and
+--            one that is already `ft`-gated (nvim-colorizer) is better off staying that way.
+local filepost_group = vim.api.nvim_create_augroup("GerrrtFilePost", { clear = true })
+vim.api.nvim_create_autocmd({ "UIEnter", "VimEnter", "BufReadPost", "BufNewFile" }, {
+  group = filepost_group,
+  callback = function(args)
+    if args.event == "UIEnter" or args.event == "VimEnter" then
+      vim.g.startup_done = true
+    end
+    if not vim.g.startup_done then
+      return
+    end
+    if vim.api.nvim_buf_get_name(args.buf) == "" then
+      return -- scratch / unnamed (e.g. the empty buffer of a bare `nvim`)
+    end
+    local buftype = vim.bo[args.buf].buftype
+    if buftype ~= "" and buftype ~= "help" then
+      return -- terminal, quickfix, prompt, nofile, ...
+    end
+    vim.api.nvim_exec_autocmds("User", { pattern = "FilePost", modeline = false })
+    vim.api.nvim_del_augroup_by_name("GerrrtFilePost")
+  end,
+})
+
 -- Restore last cursor position when reopening a file
 local last_cursor_group = vim.api.nvim_create_augroup("LastCursorGroup", { clear = true })
 vim.api.nvim_create_autocmd("BufReadPost", {
