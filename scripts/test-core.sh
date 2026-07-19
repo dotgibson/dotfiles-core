@@ -307,13 +307,15 @@ for _, f in ipairs(vim.fn.readdir(pdir) or {}) do
     end
   end
 end
--- LSP layer: servers/init.lua wires 13 server configs + the on_attach/diagnostics
+-- LSP layer: servers/init.lua wires 19 server configs + the on_attach/diagnostics
 -- helpers, but ALL of it runs inside a deferred plugin callback (plugins/nvim-lspconfig)
 -- — so the loop above never touches it, and luacheck (static) was its only gate. A bad
 -- vim.lsp.config{} call or a typo'd capability there is luacheck-clean and breaks only on
 -- first file-open, then fans out 9×. Close that: require utils.lsp/diagnostics, and every
--- servers/* LEAF (each returns a `function(capabilities)`; requiring it evaluates the file
--- WITHOUT calling it, so no blink.cmp/lspconfig need be installed). servers/init.lua itself
+-- servers/* LEAF. Each leaf returns a PLAIN CONFIG TABLE (it used to return a
+-- `function(capabilities)` factory; capabilities now come from the "*" wildcard set once in
+-- servers/init.lua, so the leaves are pure data). Requiring one evaluates the file without
+-- registering anything, so no blink.cmp/lspconfig need be installed. servers/init.lua itself
 -- is skipped — it require()s blink.cmp, a plugin absent from this hermetic probe.
 -- utils.ui-highlights has the SAME gap: it's only require()d inside tokyonight's deferred
 -- on_highlights callback (plugins/theme.lua), which the plugins/* loop above never runs — so
@@ -330,8 +332,12 @@ for _, f in ipairs(vim.fn.readdir(sdir) or {}) do
     local ok, res = pcall(require, mod)
     if not ok then
       errs[#errs + 1] = mod .. " → " .. tostring(res)
-    elseif type(res) ~= "function" then
-      errs[#errs + 1] = mod .. " → did not return a function(capabilities)"
+    elseif type(res) ~= "table" then
+      errs[#errs + 1] = mod .. " → did not return a config table (got " .. type(res) .. ")"
+    elseif next(res) == nil then
+      -- An empty table means the file evaluated but configures nothing — almost certainly a
+      -- botched edit rather than intent, and it would silently leave that server on defaults.
+      errs[#errs + 1] = mod .. " → returned an EMPTY config table"
     end
   end
 end
