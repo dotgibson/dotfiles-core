@@ -13,6 +13,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **Neovim: debugging via `nvim-dap` + `nvim-dap-python`.** Breakpoints, stepping, and variable
+  inspection under a new `<leader>d` which-key group, with palette-aware gutter signs and rows in
+  the cheatsheet. Loaded on its keymaps and `Dap*` commands **only** — it costs nothing at startup
+  and nothing on file open, not even the `User FilePost` hook. That required turning off
+  rustaceanvim's `dap.autoload_configurations` (on by default): it calls `require('dap')` on
+  rust-analyzer attach, which lazy.nvim module-autoloads, so merely opening a `.rs` file pulled in
+  the whole DAP stack and could kick off background `cargo` work. The tradeoff is explicit — a bare
+  `<leader>dc` no longer sees rust-analyzer's debuggables, so Rust sessions start from the new
+  `<leader>dR` (`:RustLsp debuggables`), after which the normal `<leader>d*` keys apply.
+  `nvim-dap-ui` is deliberately not
+  included: `dap.ui.widgets` covers scopes/frames/hover (`<leader>ds`/`df`/`dw`) without the extra
+  plugin, its `nvim-nio` dependency, or session-driven window management. The debug adapter is
+  resolved most-preferred-first — Mason's `debugpy` if you installed it, then `uv`, then
+  `python3`. `debugpy` is deliberately **not** in `ensure_installed`: Mason's PyPI installer always
+  runs `python -m venv` then pip, so listing it would fail the install pass on every startup on the
+  Debian/Kali and Alpine hosts that lack `python3-venv`/`py3-pip` — the exact dependency the `uv`
+  fallback exists to avoid. Install it by hand with `:MasonInstall debugpy` where you want it. Verified end to end on a real session via the `uv` path: breakpoint hit,
+  frame `add @ line 2`, locals `a = 2` / `b = 3`.
+  This also revives `plugins/rustaceanvim.lua`'s DAP adapter block, which was dead code — it needs
+  `nvim-dap` present, and `nvim-dap` was never installed.
+
 ### Removed
 
 - **Neovim: the `matchparen`, `rplugin` and `spellfile` runtime plugins are no longer sourced**, and

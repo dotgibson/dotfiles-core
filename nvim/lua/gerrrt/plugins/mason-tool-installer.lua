@@ -61,6 +61,12 @@ return {
 				"cpplint",
 				"luacheck",
 				"solhint",
+				-- NOTE: debugpy is deliberately NOT listed here. Mason's PyPI installer always runs
+				-- `python -m venv` then pip, which needs python3-venv on Debian/Kali and py3-pip on
+				-- Alpine — the exact per-distro dependency plugins/nvim-dap.lua avoids by preferring
+				-- `uv`. Listing it would make the install fail on EVERY startup on those hosts, even
+				-- though uv could run debugpy there perfectly well. Resolution order (Mason's copy if
+				-- you install it by hand with :Mason, else uv, else python3) lives in nvim-dap.lua.
 				"stylelint", -- CSS/SCSS/LESS lint (only runs when a project stylelint config exists)
 				"markdownlint-cli2", -- markdown lint (mirrors the repo's markdown gate)
 				"yamllint", -- yaml lint
