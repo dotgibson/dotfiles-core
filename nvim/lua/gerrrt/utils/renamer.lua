@@ -12,8 +12,11 @@ local M = {}
 
 function M.rename()
 	local cword = vim.fn.expand("<cword>")
-	if cword == "" then
-		vim.lsp.buf.rename() -- nothing under cursor to prefill — fall back to native prompt
+	-- Gate on a rename-capable client so we don't take input into a float that can only end in a
+	-- "no client supports rename" error. No cword to prefill → hand off to the native prompt too.
+	local can_rename = #vim.lsp.get_clients({ bufnr = 0, method = "textDocument/rename" }) > 0
+	if cword == "" or not can_rename then
+		vim.lsp.buf.rename() -- native path: prompts, and reports cleanly if unsupported
 		return
 	end
 
@@ -22,6 +25,7 @@ function M.rename()
 	local from_win = vim.api.nvim_get_current_win()
 
 	local buf = vim.api.nvim_create_buf(false, true)
+	vim.bo[buf].bufhidden = "wipe" -- wipe the scratch buffer when the float closes (no leaked buffers)
 	local win = vim.api.nvim_open_win(buf, true, {
 		relative = "cursor",
 		row = 1,
