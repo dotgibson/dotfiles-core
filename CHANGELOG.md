@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.9.0] - 2026-07-19
+
 ### Added
 
 - **Neovim: shared `utils/palette.lua`** — a single source of truth for the active tokyonight
