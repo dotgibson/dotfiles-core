@@ -60,6 +60,7 @@ return {
 				"cpplint",
 				"luacheck",
 				"solhint",
+				"debugpy", -- Python debug adapter for nvim-dap-python (plugins/nvim-dap.lua)
 				"stylelint", -- CSS/SCSS/LESS lint (only runs when a project stylelint config exists)
 				"markdownlint-cli2", -- markdown lint (mirrors the repo's markdown gate)
 				"yamllint", -- yaml lint

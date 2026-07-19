@@ -13,6 +13,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **Neovim: debugging via `nvim-dap` + `nvim-dap-python`.** Breakpoints, stepping, and variable
+  inspection under a new `<leader>d` which-key group, with palette-aware gutter signs and rows in
+  the cheatsheet. Loaded on its keymaps and `Dap*` commands **only** — it costs nothing at startup
+  and nothing on file open, not even the `User FilePost` hook. `nvim-dap-ui` is deliberately not
+  included: `dap.ui.widgets` covers scopes/frames/hover (`<leader>ds`/`df`/`dw`) without the extra
+  plugin, its `nvim-nio` dependency, or session-driven window management. The debug adapter is
+  resolved most-preferred-first — Mason's `debugpy` (now in `ensure_installed`), then `uv`, then
+  `python3` — because Mason's debugpy needs a working `python3 -m venv`, which would add a
+  per-distro packaging line (`python3-venv` on Debian/Kali, `py3-pip` on Alpine) that the `uv`
+  fallback avoids. Verified end to end on a real session via the `uv` path: breakpoint hit,
+  frame `add @ line 2`, locals `a = 2` / `b = 3`.
+  This also revives `plugins/rustaceanvim.lua`'s DAP adapter block, which was dead code — it needs
+  `nvim-dap` present, and `nvim-dap` was never installed.
+
 ### Removed
 
 - **Neovim: the `matchparen`, `rplugin` and `spellfile` runtime plugins are no longer sourced**, and
