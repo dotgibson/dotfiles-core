@@ -13,7 +13,9 @@
 return {
 	"folke/todo-comments.nvim",
 	dependencies = { "nvim-lua/plenary.nvim" },
-	event = { "BufReadPost", "BufNewFile" },
+	-- `User FilePost` (config/autocmds.lua). Its highlighter attaches to every buffer in a visible
+	-- window on setup, so the triggering buffer gets highlighted without a FileType replay.
+	event = "User FilePost",
 	cmd = { "TodoTrouble", "TodoFzfLua", "TodoQuickFix", "TodoLocList" },
 	keys = {
 		{

@@ -11,7 +11,10 @@
 -- ================================================================================================
 return {
 	"lewis6991/gitsigns.nvim",
-	event = { "BufReadPre", "BufNewFile" },
+	-- `User FilePost` (config/autocmds.lua) — signs appear a frame after the file instead of
+	-- blocking it. gitsigns' setup iterates nvim_list_bufs() and attaches to already-open buffers,
+	-- so the triggering buffer is covered without a replay.
+	event = "User FilePost",
 	opts = {
 		on_attach = function(bufnr)
 			local gs = require("gitsigns")

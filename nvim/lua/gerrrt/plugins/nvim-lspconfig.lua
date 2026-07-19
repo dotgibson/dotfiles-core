@@ -9,7 +9,11 @@
 -- ================================================================================================
 return {
 	"neovim/nvim-lspconfig",
-	event = { "BufReadPre", "BufNewFile" },
+	-- Loads on the custom `User FilePost` event (config/autocmds.lua) rather than BufReadPre, so the
+	-- ~103ms of server configuration lands AFTER the first UI paint instead of in front of it.
+	-- vim.lsp.enable() re-runs `doautoall nvim.lsp.enable FileType` when called post-startup, so the
+	-- buffer that triggered the load still gets its client attached — no manual replay needed.
+	event = "User FilePost",
 	dependencies = {
 		{ "mason-org/mason.nvim", opts = {} },
 	},
