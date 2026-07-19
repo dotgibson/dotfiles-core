@@ -13,7 +13,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Removed
+
+- **Neovim: the `matchparen`, `rplugin` and `spellfile` runtime plugins are no longer sourced**, and
+  `showmatch` is no longer set. `matchparen` was the costly one: it registers 10 autocmds, three of
+  which (`CursorMovedI`, `TextChangedI`, `TextChangedP`) re-scan for a matching bracket on _every
+  keystroke_ in insert mode. `showmatch` doubled that from the other side — it does not highlight
+  the match, it jumps the cursor to it for `matchtime` tenths of a second every time you type a
+  closing bracket. `rplugin` (remote-plugin manifest) is dead weight with the perl/ruby providers
+  already off, and `spellfile` auto-downloads spellfiles over the network — unwanted generally and
+  wrong on a `DOTFILES_OFFLINE` box. **`%` is unaffected**: `matchit` (extended `%` over
+  `if`/`end`, tags, …) and `editorconfig` are deliberately kept, and both the matchit and builtin
+  `%` motions were verified identical before and after. NvChad disables 26 runtime plugins including
+  `matchit`; that list is not copied — each entry here carries a stated reason.
+
 ### Changed
+
+- **Neovim: `lazy.nvim` now defaults specs to `lazy = true`.** Every spec already declares an
+  `event`/`ft`/`cmd`/`keys` trigger, so the loaded-plugin set is byte-identical before and after
+  (verified, 25 plugins on first file open). This is a regression net: a future spec added without a
+  trigger stays lazy instead of silently landing on the startup path.
 
 - **Neovim: file-plugins now load after the UI is ready (`User FilePost`)** — `nvim-lspconfig`,
   `gitsigns`, `nvim-lint` and `todo-comments` hung off `BufReadPre`/`BufReadPost`, which fire
