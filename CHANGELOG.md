@@ -32,6 +32,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Neovim: the SchemaStore catalogues are no longer built unconditionally.** `servers/jsonls.lua`
+  and `servers/yamlls.lua` resolved `require("schemastore").{json,yaml}.schemas()` inline in their
+  `settings`, which ran while the server was being _configured_ — and `servers/init.lua` configures
+  all 19 servers in one pass. That pass runs **once per session** (the `User FilePost` loader is
+  one-shot), so the cost was not per-buffer; the problem is that it was paid **regardless of
+  filetype** — a session that only ever opens Lua files still materialised the entire 1,368-entry
+  JSON schema catalogue. Both now resolve it in `before_init`, which Neovim runs once per client
+  instance, so the cost lands only when a jsonls/yamlls client actually starts. Verified: a Lua
+  buffer no longer loads the `schemastore` module at all, a JSON buffer still gets all 1,368 schemas.
+- **Neovim: treesitter's installed-parser lookup is cached.** `get_installed()` walks two install
+  directories off disk (~0.19ms) and returns a fresh list; it was called inside the `FileType`
+  callback and then scanned linearly, so every buffer open paid a directory walk plus an O(n)
+  search. It is now built once into a set and answered by hash lookup, and invalidated on every
+  parser mutation — including `:TSInstall`/`:TSUpdate`/`:TSUninstall`, which bypass the plugin's own
+  install entry point — so the set can never go stale against what is on disk.
 - **Neovim: `lazy.nvim` now defaults specs to `lazy = true`.** Every spec is already covered — most
   declare an `event`/`ft`/`cmd`/`keys` trigger, and the pure-data/dependency specs
   (`webdev-icons.lua`, `schemastore.lua`, the luvit-meta entry in `lazydev-nvim.lua`) declare
