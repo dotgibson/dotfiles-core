@@ -36,8 +36,12 @@ local function offers_organize_imports(client)
 		if type(kinds) ~= "table" then
 			return true -- provider present but kinds unspecified — allow it
 		end
+		-- Code-action kinds are HIERARCHICAL, so accept descendants too: some servers advertise a more
+		-- specific kind (e.g. ruff → "source.organizeImports.ruff") while still honoring a request for
+		-- the parent "source.organizeImports". Match the bare "source" umbrella, the exact kind, or any
+		-- "source.organizeImports.*" descendant.
 		for _, k in ipairs(kinds) do
-			if k == "source" or k == "source.organizeImports" then
+			if k == "source" or k == "source.organizeImports" or vim.startswith(k, "source.organizeImports.") then
 				return true
 			end
 		end
@@ -121,6 +125,7 @@ M.on_attach = function(event)
 				pcall(vim.lsp.buf.signature_help, {
 					border = "rounded",
 					max_width = 80,
+					max_height = 25, -- same bounded card as manual K/<C-s> so many-overload sigs stay tidy
 					focusable = false,
 					silent = true,
 				})

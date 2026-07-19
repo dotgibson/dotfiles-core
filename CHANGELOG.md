@@ -40,10 +40,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `.git`, giving a lone TOML file outside a repo a cwd root. Replaced with real manifest names
   (`pyproject.toml`, `Cargo.toml`, `foundry.toml`, `taplo.toml`, `.taplo.toml`, `.git`).
 - **Neovim `<leader>oi` (organize imports) no longer binds where it can't work or races the
-  formatter.** It now binds only when the server's advertised code-action kinds include
-  `source.organizeImports` (instead of any code-action support, which nearly every server has and
-  which made the map a silent no-op on e.g. `lua_ls`), and the racy fixed-`50ms` post-format timer
-  is dropped — formatting stays owned by format-on-save and `<leader>cf`.
+  formatter.** A server that ENUMERATES its code-action kinds without `source[.organizeImports]` is
+  now skipped (so the map no longer silently no-ops on e.g. `lua_ls`); a server that only reports a
+  bare `true` or a provider table without kinds still gets the map, since it can't be ruled out. The
+  racy fixed-`50ms` post-format timer is dropped — formatting stays owned by format-on-save and
+  `<leader>cf`.
 - **Neovim cursor-restore skips commit buffers.** `gitcommit`/`gitrebase` buffers open at the top
   again instead of jumping to a stale mark from a previous commit.
 - **Neovim folding has a single owner.** `nvim-ufo` computes folds via its own treesitter+indent

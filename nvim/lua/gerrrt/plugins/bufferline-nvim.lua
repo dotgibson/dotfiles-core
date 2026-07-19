@@ -48,13 +48,17 @@ local function build_highlights()
 		fill = { bg = none },
 		background = dim,
 		buffer_visible = { fg = c.fg_dark, bg = none },
-		buffer_selected = { fg = c.fg, bg = c.bg_highlight, bold = true, italic = false },
+		-- `sp` set here too: for indicator style="underline" bufferline draws the accent line on the
+		-- selected buffer's own highlight using its `sp`, so pin it to the accent explicitly.
+		buffer_selected = { fg = c.fg, bg = c.bg_highlight, bold = true, italic = false, sp = c.blue },
 		-- thin separators kept hairline-subtle, never heavy dividers
 		separator = { fg = c.bg_dark, bg = none },
 		separator_visible = { fg = c.bg_dark, bg = none },
 		separator_selected = { fg = c.bg_dark, bg = c.bg_highlight },
-		-- accent underline under the active buffer (indicator style = "underline")
-		indicator_selected = { fg = c.blue, bg = c.bg_highlight },
+		-- accent underline under the active buffer (indicator style = "underline"). The underline
+		-- color is taken from `sp`, not `fg` — and because setup deep-merges with bufferline's
+		-- defaults, an unset `sp` would keep the default and the blue line wouldn't render. Set both.
+		indicator_selected = { fg = c.blue, sp = c.blue, bg = c.bg_highlight },
 		indicator_visible = { fg = none, bg = none },
 		-- unsaved dot: green when active (matches lualine/incline), amber otherwise
 		modified = { fg = c.orange, bg = none },
