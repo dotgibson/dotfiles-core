@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.8.0] - 2026-07-18
+
 ### Changed
 
 - **Neovim UI moves to an NvChad-styled statusline + bufferline.** `lualine` now uses a
