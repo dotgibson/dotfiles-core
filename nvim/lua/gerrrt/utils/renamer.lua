@@ -40,9 +40,10 @@ function M.rename()
 	vim.wo[win].winhighlight = "Normal:NormalFloat,FloatBorder:GerrrtRenamerBorder"
 
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, { cword })
-	vim.cmd("startinsert")
-	-- park the cursor at end-of-word so you can just start typing / editing the name
-	pcall(vim.api.nvim_win_set_cursor, win, { 1, #cword + 1 })
+	-- `startinsert!` = enter insert at END of line (like `A`), so you can immediately edit/extend the
+	-- prefilled name. Robust across nvim versions — no manual, version-dependent cursor-column math
+	-- (some builds clamp an out-of-range col to EOL, others would error).
+	vim.cmd("startinsert!")
 
 	local function close()
 		vim.cmd("stopinsert")

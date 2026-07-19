@@ -9,7 +9,12 @@
 --         :w". Meanwhile servers enable earlier at BufReadPre and `vim.lsp.enable` silently skips a
 --         server whose binary isn't on PATH yet (servers/init.lua's binary_available guard) — so on a
 --         fresh box the LSP stack stayed dark until a save AND a restart. Loading on VeryLazy runs the
---         install pass near startup on EVERY launch, closing that gap.
+--         install pass near startup on EVERY launch.
+-- SAME-SESSION LSP : the install is async, so the BufReadPre enable pass has already run (and skipped
+--         the not-yet-installed servers) by the time it finishes. The `MasonToolsUpdateCompleted`
+--         handler below re-runs servers/init.lua's enable pass when installs complete —
+--         `vim.lsp.enable` attaches the freshly-installed servers to the already-open buffer, so a
+--         fresh box gets a working LSP stack WITHIN the first session, no restart required.
 -- DELIBERATELY NOT here (installed by other channels — listing them would double-install):
 --   • ruff, ty ......... uv tool install (Astral; see plugins/conform.lua header + servers/ruff.lua)
 --   • rust-analyzer .... rustaceanvim / rustup (plugins/rustaceanvim.lua)
@@ -62,6 +67,17 @@ return {
 			-- Skip the startup install/update pass on engagement boxes (DOTFILES_OFFLINE=1),
 			-- which would otherwise hit the mason registry and download tools. See globals.lua.
 			run_on_start = not vim.g.dotfiles_offline,
+		})
+
+		-- When installs finish, re-run the server enable pass so servers whose binaries the initial
+		-- BufReadPre pass skipped (fresh box) get enabled + attached to the open buffer this session.
+		vim.api.nvim_create_autocmd("User", {
+			pattern = "MasonToolsUpdateCompleted",
+			callback = function()
+				pcall(function()
+					require("gerrrt.servers").enable_available()
+				end)
+			end,
 		})
 	end,
 }

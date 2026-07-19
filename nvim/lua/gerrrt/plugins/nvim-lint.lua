@@ -3,7 +3,7 @@
 -- LINKS : https://github.com/mfussenegger/nvim-lint
 -- ABOUT : Runs a filetype's linter on write / leaving insert mode, surfacing results as
 --         normal diagnostics (Trouble, <leader>cd, [d/]d all work). Binaries installed by
---         mason-tool-installer in conform.lua.
+--         mason-tool-installer in plugins/mason-tool-installer.lua.
 -- ASTRAL: Python is intentionally NOT here — the ruff language server (servers/ruff.lua)
 --         provides Python lint diagnostics AND code actions. Listing ruff here too would
 --         double-report.

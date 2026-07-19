@@ -27,8 +27,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   small cursor-anchored, git-red-bordered prompt prefilled with the symbol (`<CR>` applies across
   the workspace, `<Esc>`/`q` cancels) instead of the bare cmdline prompt.
 - **Neovim: colorify-style colour highlighter** (`nvim-colorizer.lua`, catgoose fork) — inline
-  colour swatches over the visible viewport, including Tailwind/CSS-LSP document colours. ccc.nvim
-  is kept for the interactive `:CccPick` picker (its always-on highlighter is now off).
+  colour swatches over the visible viewport: CSS colour literals (`#rrggbb`, `rgb()/hsl()`) plus
+  Tailwind utility-class colours via the Tailwind LSP. ccc.nvim is kept for the interactive
+  `:CccPick` picker (its always-on highlighter is now off).
 
 ### Changed
 
@@ -47,10 +48,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Removed
 
-- **Neovim: trimmed unused plugins** — neotest, nvim-dap-ui (+ mason-nvim-dap), vim-dadbod,
-  incline.nvim (dropbar's winbar covers split identity), aerial.nvim (Trouble + fzf-lua + dropbar
-  cover symbols), nvim-spectre, git-conflict.nvim, and mini.indentscope, along with their keymaps,
-  which-key groups, and cheatsheet sections. (~18 plugins including transitive dependencies.)
+- **Neovim: trimmed unused plugins** — the full in-editor **debugger stack** (nvim-dap,
+  nvim-dap-ui, nvim-dap-virtual-text, mason-nvim-dap, and every `<leader>d*` keymap), the **test
+  runner** (neotest + neotest-python/-golang), vim-dadbod (DB UI), incline.nvim (dropbar's winbar
+  covers split identity), aerial.nvim (Trouble + fzf-lua + dropbar cover symbols), nvim-spectre,
+  git-conflict.nvim, and mini.indentscope — along with their keymaps, which-key groups, and
+  cheatsheet sections. (16 entries removed from `lazy-lock.json`, including transitive dependencies.)
 
 ### Fixed
 
