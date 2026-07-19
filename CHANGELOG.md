@@ -29,6 +29,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Neovim: the SchemaStore catalogues are no longer built for every buffer.** `servers/jsonls.lua`
+  and `servers/yamlls.lua` resolved `require("schemastore").{json,yaml}.schemas()` inline in their
+  `settings`, which ran while the server was being _configured_ — and `servers/init.lua` configures
+  all 19 servers up front, so opening a Lua file materialised the entire 1,368-entry JSON schema
+  catalogue. Both now resolve it in `before_init`, which Neovim runs once per client instance, so
+  the cost lands only when a jsonls/yamlls client actually starts. Verified: a Lua buffer no longer
+  loads the `schemastore` module at all, a JSON buffer still gets all 1,368 schemas.
+- **Neovim: treesitter's installed-parser lookup is cached.** `get_installed()` walks two install
+  directories off disk (~0.19ms) and returns a fresh list; it was called inside the `FileType`
+  callback and then scanned linearly, so every buffer open paid a directory walk plus an O(n)
+  search. It is now built once into a set and answered by hash lookup, refreshed via the install
+  task's `await` callback so parsers installed mid-session are still picked up.
 - **Neovim: `lazy.nvim` now defaults specs to `lazy = true`.** Every spec already declares an
   `event`/`ft`/`cmd`/`keys` trigger, so the loaded-plugin set is byte-identical before and after
   (verified, 25 plugins on first file open). This is a regression net: a future spec added without a

@@ -38,6 +38,24 @@ return {
 			"vimdoc", -- :help and plugin docs
 		}
 
+		-- Installed-parser lookup, cached as a SET.
+		--
+		-- get_installed() is not a cheap accessor — it reads two directories off disk
+		-- (nvim-treesitter/config.lua walks the `queries/` and `parser/` install dirs with
+		-- vim.fs.dir) and returns a fresh list every call, measured at ~0.19ms. The old code called
+		-- it inside the FileType callback and then did a LINEAR scan of the result, so every buffer
+		-- you opened paid a directory walk plus an O(n) search just to answer "is this parser here?".
+		-- Build the set once and answer from a hash lookup instead.
+		local installed ---@type table<string, true>|nil
+		local function refresh_installed()
+			local set = {}
+			for _, lang in ipairs(treesitter.get_installed()) do
+				set[lang] = true
+			end
+			installed = set
+		end
+		refresh_installed()
+
 		local config = require("nvim-treesitter.config")
 		local already_installed = config.get_installed()
 		local parsers_to_install = {}
@@ -47,13 +65,24 @@ return {
 			end
 		end
 		if #parsers_to_install > 0 then
-			treesitter.install(parsers_to_install)
+			-- install() is async (nvim-treesitter.async). Refresh the cache when it finishes,
+			-- otherwise a parser installed during this session stays invisible to start_ts until the
+			-- next restart. pcall + the `await` guard because this is the `main` branch's evolving
+			-- API: if the task shape ever changes we simply keep the pre-install set rather than error.
+			local ok, task = pcall(treesitter.install, parsers_to_install)
+			if ok and type(task) == "table" and type(task.await) == "function" then
+				pcall(function()
+					task:await(function()
+						refresh_installed()
+					end)
+				end)
+			end
 		end
 
 		-- Start treesitter for a buffer when its filetype's language has an installed parser.
 		local function start_ts(buf, ft)
 			local lang = vim.treesitter.language.get_lang(ft)
-			if lang and vim.list_contains(treesitter.get_installed(), lang) then
+			if lang and installed and installed[lang] then
 				vim.treesitter.start(buf)
 			end
 		end
