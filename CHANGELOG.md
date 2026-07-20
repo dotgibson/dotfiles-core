@@ -125,6 +125,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Neovim: focusing the file tree blanked the whole statusline.** `plugins/lualine-nvim.lua` set
+  both `disabled_filetypes = { statusline = { "NvimTree" } }` and `extensions = { "nvim-tree", … }`.
+  lualine evaluates `disabled_filetypes` and returns `nil` **before** it consults extensions
+  (`lualine.nvim/lua/lualine.lua:298-306`), so the `nvim-tree` extension was permanently unreachable
+  — and because `globalstatus = true` means one shared bar, that `nil` blanked the statusline for
+  _every_ window whenever the tree held focus. Dropped the disable and kept the extension. Verified:
+  with `ft=NvimTree` focused, `lualine.statusline()` returned `nil` before, renders 81 cells now.
+- **Neovim: visual-mode git staging silently staged the entire hunk.** `<leader>gs` / `<leader>gr`
+  were mapped in `{ "n", "v" }` to bare `gs.stage_hunk` / `gs.reset_hunk`. `range` is the **first**
+  parameter of both (`gitsigns.nvim/lua/gitsigns/actions.lua:288`, `:376`) and a Lua keymap rhs is
+  invoked with no arguments, so `range` was always `nil` — partial-hunk staging, the only reason to
+  map visual mode, never happened. (Nothing reads the visual selection implicitly; only the
+  `:Gitsigns` command wrapper populates `range`, from command modifiers.) Normal and visual are now
+  separate mappings, with the visual pair passing `{ line("."), line("v") }` — upstream's documented
+  form — and bound to `x` rather than `v` so they do not also fire in select-mode. Verified end to
+  end in a real repo: staging lines 2-3 of a 3-line hunk staged exactly those two.
+- **Neovim: the Node.js provider is disabled, clearing the config's only health warning.** Its sole
+  consumers are remote plugins, but `config/lazy.lua` disables the `rplugin` manifest loader, no
+  installed plugin ships a manifest, and nothing references `node_host` — so it was unreachable
+  while still emitting a permanent `:checkhealth` WARNING. `:checkhealth` is now **0 errors,
+  0 warnings** across every section. The python3 provider is explicitly left enabled and documented
+  as load-bearing: `vimade` probes `has('python3')` (`vimade/autoload/vimade.vim:80`) and picks a
+  python renderer when present.
+- **Neovim: `gsn` (surround `update_n_lines`) never existed.** `plugins/mini-nvim.lua` passed
+  `update_n_lines = "gsn"` in mini.surround's `mappings`, but that is not a key in its schema
+  (`add`/`delete`/`find`/`find_left`/`highlight`/`replace`/`suffix_last`/`suffix_next`) and unknown
+  keys are accepted silently — `setup()` returned OK and no mapping was created, while every other
+  `gs*` map did exist. Mapped explicitly instead, as upstream's own docs prescribe
+  (`mini/surround.lua:909`), so the prefix the file advertises is real.
+
 - **Neovim: SchemaStore catalogues never reached `jsonls` or `yamlls`.** Both resolved their
   schemas in `before_init` by re-binding `config.settings` with `vim.tbl_deep_extend`. The client
   binds `client.settings = config.settings` in `Client.create()` (runtime

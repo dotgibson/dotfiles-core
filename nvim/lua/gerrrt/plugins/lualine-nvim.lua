@@ -179,7 +179,16 @@ return {
 				-- (an empty string) so each half is one clean run instead of arrow-chevroned.
 				section_separators = { left = "\u{e0b4}", right = "\u{e0b6}" }, -- e0b4  / e0b6
 				component_separators = "",
-				disabled_filetypes = { statusline = { "NvimTree" } },
+				-- NO `disabled_filetypes = { statusline = { "NvimTree" } }` — it is actively harmful
+				-- with globalstatus. lualine checks disabled_filetypes and `return nil`s BEFORE it
+				-- consults extensions (lualine.nvim/lua/lualine.lua:298-306), so listing NvimTree
+				-- there did two bad things at once: it made the "nvim-tree" entry in `extensions`
+				-- (below) permanently unreachable, and — because globalstatus = true means ONE shared
+				-- bar — it blanked the statusline for EVERY window whenever the tree held focus.
+				-- Verified: with ft=NvimTree focused, lualine.statusline() returned nil.
+				-- The extension is the thing that renders a sensible bar for the tree, so keep that
+				-- and drop the disable. If you ever do want the bar to vanish over the tree, remove
+				-- "nvim-tree" from `extensions` too — but do not set both.
 			},
 			sections = {
 				lualine_a = {
