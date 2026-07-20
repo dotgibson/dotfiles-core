@@ -24,12 +24,20 @@ local on_attach = require("gerrrt.utils.lsp").on_attach
 --            VimEnter 126ms, UIEnter 131ms. So the plugins below moved from ~44ms to ~131ms —
 --            ~87ms of work lifted out of the window before the UI is ready.
 --
--- WHY BOTH UIEnter AND VimEnter : UIEnter is the precise "a UI attached" signal, but it NEVER FIRES
---            under `nvim --headless` — which is how scripts, CI, and this repo's own audit
+-- WHY BOTH UIEnter AND VimEnter — AND WHY THEY ARE NOT INTERCHANGEABLE : UIEnter is the precise
+--            "a UI attached" signal and is the one we want interactively, but it NEVER FIRES under
+--            `nvim --headless` — which is how scripts, CI, and this repo's own audit
 --            (scripts/test-core.sh) run Neovim. Gating on UIEnter alone silently meant no LSP, no
---            gitsigns and no linting in every headless session. VimEnter fires in both modes and,
---            measured above, lands 5ms BEFORE UIEnter in a TTY — so taking whichever arrives first
---            costs nothing in the interactive case and is what makes the headless case work at all.
+--            gitsigns and no linting in every headless session.
+--
+--            But VimEnter must NOT be accepted as readiness when a UI exists. Per the timings above
+--            it lands ~5ms BEFORE UIEnter, and with `nvim file.lua` the buffer is already named by
+--            then — so treating it as ready would fire FilePost at ~126ms instead of ~131ms, pulling
+--            all four plugins back in front of the first paint and giving away part of the win this
+--            whole change exists to get. VimEnter is therefore accepted ONLY when there is genuinely
+--            no UI to wait for (`nvim_list_uis()` is empty), i.e. real headless. In a TTY a UI is
+--            already attached well before VimEnter (uis == 1 as early as BufReadPre), so the check
+--            reliably distinguishes the two.
 --            (NvChad gates on UIEnter only; they don't run headless LSP tests, so they never hit it.)
 --
 -- BOTH ORDERS ARE HANDLED : with `nvim file.lua`, BufReadPost fires long before VimEnter/UIEnter;
@@ -54,7 +62,10 @@ local filepost_group = vim.api.nvim_create_augroup("GerrrtFilePost", { clear = t
 vim.api.nvim_create_autocmd({ "UIEnter", "VimEnter", "BufReadPost", "BufNewFile" }, {
   group = filepost_group,
   callback = function(args)
-    if args.event == "UIEnter" or args.event == "VimEnter" then
+    -- UIEnter always means ready. VimEnter only counts when no UI will ever attach (headless) —
+    -- see the "WHY THEY ARE NOT INTERCHANGEABLE" note above; accepting it in a TTY would fire
+    -- FilePost ~5ms early, back in front of the first paint.
+    if args.event == "UIEnter" or (args.event == "VimEnter" and #vim.api.nvim_list_uis() == 0) then
       vim.g.startup_done = true
     end
     if not vim.g.startup_done then

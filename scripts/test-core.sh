@@ -442,6 +442,88 @@ else
   skip "nvim event callbacks (nvim not installed — runs in CI)"
 fi
 
+# ── D3. Neovim `User FilePost` contract (nvim/, headless) ─────────────────────
+# config/autocmds.lua defers nvim-lspconfig, gitsigns, nvim-lint and todo-comments onto
+# a custom `User FilePost` event so they load AFTER startup instead of in front of the
+# first paint. Four plugins now depend on that event, but D2 above only proves the
+# autocmds load and don't throw — it would still pass if FilePost never fired at all
+# (every deferred plugin silently dead: no LSP, no linting, no git signs) or fired
+# repeatedly (every later buffer re-emitting it). Neither shows up as an error, which
+# is exactly the kind of silent breakage that fans out to 9 repos.
+#
+# So assert the CONTRACT, not just the absence of errors — fires EXACTLY ONCE, in both
+# startup shapes:
+#   A. started WITH a file  — the readiness event arrives after the buffer is already named
+#   B. bare start, then :edit two files — readiness arrives first, the first real file
+#      triggers it, and the second must NOT re-fire (the augroup self-deletes)
+# Counting (not just "did it fire") is what catches the fires-more-than-once regression.
+# Headless is the only mode available in CI, and it is also the mode where UIEnter never
+# fires — so this doubles as the guard on the VimEnter fallback that makes headless work.
+hdr "neovim User FilePost contract (nvim/ headless)"
+if ! ((SCOPE_NVIM)); then
+  skip "nvim FilePost contract (out of scope)"
+elif have nvim; then
+  fp_probe="$SANDBOX/nvim-filepost.lua"
+  # The probe drives itself off the event loop rather than via `-c`: `-c` commands run
+  # BEFORE VimEnter (:h VimEnter — it fires "after ... executing the -c cmd arguments"),
+  # so reporting from a `-c` would sample the counter before readiness ever arrives and
+  # report 0 on perfectly good code. vim.defer_fn lands strictly after startup, which is
+  # also the ordering a real session has. Any :edit is deferred for the same reason —
+  # done from `-c` it would run before readiness and test the wrong sequence.
+  cat >"$fp_probe" <<'LUA'
+vim.opt.runtimepath:prepend(vim.env.CORE_NVIM_DIR)
+-- Count BEFORE requiring the module, so a FilePost emitted during startup is caught.
+_G.filepost_count = 0
+vim.api.nvim_create_autocmd("User", {
+  pattern = "FilePost",
+  callback = function()
+    _G.filepost_count = _G.filepost_count + 1
+  end,
+})
+local ok, err = pcall(require, "gerrrt.config.autocmds")
+if not ok then
+  io.stderr:write("require gerrrt.config.autocmds → " .. tostring(err) .. "\n")
+  vim.cmd("cquit 1")
+end
+vim.defer_fn(function()
+  -- Scenario B only: open two real files AFTER startup. The second must not re-fire.
+  local a, b = vim.env.CORE_FP_A, vim.env.CORE_FP_B
+  if a and a ~= "" then
+    pcall(vim.cmd, "edit " .. vim.fn.fnameescape(a))
+    pcall(vim.cmd, "edit " .. vim.fn.fnameescape(b))
+  end
+  vim.defer_fn(function()
+    io.stdout:write(("filepost=%d ready=%s\n"):format(_G.filepost_count, tostring(vim.g.startup_done)))
+    vim.cmd("qa!")
+  end, 200)
+end, 200)
+LUA
+  fp_a="$SANDBOX/fp_a.txt"; printf 'alpha\n' >"$fp_a"
+  fp_b="$SANDBOX/fp_b.txt"; printf 'bravo\n' >"$fp_b"
+  fp_want='filepost=1 ready=true'
+
+  # A. nvim <file> — buffer is named before the readiness event arrives.
+  fp_got_a=$(CORE_NVIM_DIR="$HERE/nvim" nvim --headless -u "$fp_probe" -i NONE -n "$fp_a" \
+    </dev/null 2>/dev/null | tr -d '\r')
+  # B. bare nvim, then open TWO files — readiness first; only the first file may fire.
+  fp_got_b=$(CORE_NVIM_DIR="$HERE/nvim" CORE_FP_A="$fp_a" CORE_FP_B="$fp_b" \
+    nvim --headless -u "$fp_probe" -i NONE -n \
+    </dev/null 2>/dev/null | tr -d '\r')
+
+  if [[ "$fp_got_a" == "$fp_want" ]]; then
+    pass "FilePost fires exactly once when nvim starts with a file"
+  else
+    fail "FilePost contract broken on 'nvim <file>' — want '$fp_want', got '$fp_got_a'"
+  fi
+  if [[ "$fp_got_b" == "$fp_want" ]]; then
+    pass "FilePost fires exactly once on bare start + two :edits (no re-fire)"
+  else
+    fail "FilePost contract broken on bare-then-edit — want '$fp_want', got '$fp_got_b'"
+  fi
+else
+  skip "nvim FilePost contract (nvim not installed — runs in CI)"
+fi
+
 # ── E. CI path classifier (scripts/ci-classify.sh) ────────────────────────────
 # ci.yml's change-detection picks which gates run per push. That logic now lives in
 # scripts/ci-classify.sh (pulled out of the workflow YAML so it can be linted + tested);
