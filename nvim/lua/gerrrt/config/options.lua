@@ -81,11 +81,13 @@ vim.opt.diffopt:append("linematch:60") -- Better diff highlighting (smart line m
 -- Set undo directory and ensure it exists. Derive from Neovim's own state dir
 -- (vim.fn.stdpath("state")) rather than a hardcoded ~/.local/share path, so it lands
 -- in the right tree under a relocated XDG_STATE_HOME and on non-Linux (macOS) nvim.
-local undodir = vim.fn.stdpath("state") .. "/undodir" -- Undo directory path
-vim.opt.undodir = vim.fn.expand(undodir) -- Expand to full path
-local undodir_path = vim.fn.expand(undodir)
-if vim.fn.isdirectory(undodir_path) == 0 then
-  vim.fn.mkdir(undodir_path, "p") -- Create if not exists
+-- No vim.fn.expand() here: stdpath("state") already returns an absolute, fully-expanded path
+-- (it is not a "~/..." string), so expanding it was a no-op — and it was being done twice, into
+-- two variables holding the same value.
+local undodir = vim.fs.joinpath(vim.fn.stdpath("state"), "undodir")
+vim.opt.undodir = undodir
+if vim.fn.isdirectory(undodir) == 0 then
+  vim.fn.mkdir(undodir, "p") -- Create if not exists
 end
 
 -- Behavior Settings
@@ -96,8 +98,8 @@ vim.opt.iskeyword:append("-") -- Treat dash as part of a word
 vim.opt.path:append("**") -- Search into subfolders with `gf`
 vim.opt.selection = "inclusive" -- Use inclusive selection
 vim.opt.mouse = "a" -- Enable mouse support
-vim.keymap.set({ "n", "i", "v" }, "<LeftDrag>", "<Nop>", { silent = true })
-vim.keymap.set({ "n", "i", "v" }, "<LeftRelease>", "<Nop>", { silent = true })
+-- NOTE: the <LeftDrag>/<LeftRelease> <Nop> maps that disable mouse SELECTION (while keeping
+-- click-to-position from 'mouse' above) moved to config/keymaps.lua — this file is options only.
 
 -- NOTE: system clipboard is handled in clipboard.lua via a custom provider and
 -- the "+ register (opt-in). We deliberately do NOT force unnamedplus here, so

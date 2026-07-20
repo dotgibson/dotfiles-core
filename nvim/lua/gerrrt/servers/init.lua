@@ -79,10 +79,57 @@ end
 -- surfaces as a recurring "spawn <server> ENOENT" / "client quit" error on every such buffer. This
 -- guard keeps the stack resilient on any box where a binary isn't present yet (fresh machine,
 -- DOTFILES_OFFLINE, or a uv/npm-provided server like ruff/ty/solidity not installed).
+--
+-- FUNCTION-`cmd` SERVERS : current nvim-lspconfig ships `cmd` as a FUNCTION (a probe that prefers a
+-- project-local node_modules/.bin binary) for exactly the npm-provided servers most likely to be
+-- missing. Verified against the installed lspconfig on 0.12.4:
+--     ts_ls / yamlls / tailwindcss / cssls -> type(cmd) == "function"
+--     gopls / lua_ls                       -> type(cmd) == "table"
+-- The old `type(cmd) ~= "table" -> return true` branch therefore waved those through unconditionally
+-- — they still produced the recurring ENOENT this guard exists to prevent, AND never appeared in the
+-- "not enabled" notification, so the user got no signal in either direction.
+--
+-- WHY THE GLOBAL-BINARY TEST ALONE IS NOT ENOUGH : those launchers look for a PROJECT-LOCAL binary
+-- FIRST and only then fall back to the global one, e.g. lspconfig's lsp/ts_ls.lua:
+--     local local_cmd = vim.fs.joinpath(config.root_dir, 'node_modules/.bin', cmd)
+--     if vim.fn.executable(local_cmd) == 1 then cmd = local_cmd end
+-- This enable pass runs BEFORE any client exists, so there is no root_dir to consult — and if we
+-- answer "unavailable" the server is never enabled, no client ever starts, and that launcher never
+-- runs. A project-local install therefore CANNOT "win at spawn time"; deciding on the global binary
+-- alone would break the very common npm layout of no global install + a devDependency.
+--
+-- So: available if the global binary is on PATH, OR a node_modules/.bin/<binary> is reachable from
+-- the cwd. The second test is a heuristic (cwd is not necessarily the root_dir of a file you open
+-- later), which is why it is biased to FAIL OPEN — an unnecessary enable costs at most the ENOENT
+-- we were already living with, whereas a wrong skip silently removes a working server.
+local fn_cmd_binaries = {
+	ts_ls = "typescript-language-server",
+	yamlls = "yaml-language-server",
+	tailwindcss = "tailwindcss-language-server",
+	cssls = "vscode-css-language-server",
+}
+
+-- Is `binary` installed in a node_modules/.bin reachable upward from the cwd?
+local function project_local_binary(binary)
+	local nm = vim.fs.find("node_modules", { upward = true, path = vim.fn.getcwd(), type = "directory" })[1]
+	if not nm then
+		return false
+	end
+	return vim.fn.executable(vim.fs.joinpath(nm, ".bin", binary)) == 1
+end
+
 local function binary_available(name)
 	local cfg = vim.lsp.config[name]
 	local cmd = cfg and cfg.cmd
-	-- No resolvable cmd (nil) or a function launcher: don't second-guess it, let it try.
+	if type(cmd) == "function" then
+		local binary = fn_cmd_binaries[name]
+		-- Unknown function-cmd server: no name to test, so don't second-guess it — let it try.
+		if binary == nil then
+			return true
+		end
+		return vim.fn.executable(binary) == 1 or project_local_binary(binary)
+	end
+	-- No resolvable cmd at all: same reasoning.
 	if type(cmd) ~= "table" or cmd[1] == nil then
 		return true
 	end

@@ -18,18 +18,22 @@ return {
 	-- actually starts.
 	-- The two project-specific schemas are merged on top of the catalogue, preserving the previous
 	-- behaviour exactly (composer + docker-compose win over any catalogue entry for those globs).
+	--
+	-- MUTATE IN PLACE — do NOT rebind `config.settings`; see the full note in servers/jsonls.lua.
+	-- Client.create() binds client.settings from config.settings BEFORE before_init runs, so a
+	-- rebind is silently discarded. That mattered more here than anywhere else: schemaStore.enable
+	-- is false above, so a dropped injection left yamlls with NEITHER its built-in catalogue nor
+	-- ours — strictly worse than not deferring at all.
 	before_init = function(_, config)
 		local ok, store = pcall(require, "schemastore")
 		if not ok then
 			return
 		end
-		config.settings = vim.tbl_deep_extend("force", config.settings or {}, {
-			yaml = {
-				schemas = vim.tbl_extend("force", store.yaml.schemas(), {
-					["https://json.schemastore.org/composer.json"] = "composer.json",
-					["https://json.schemastore.org/docker-compose.json"] = "docker-compose*.yml",
-				}),
-			},
+		config.settings = config.settings or {}
+		config.settings.yaml = config.settings.yaml or {}
+		config.settings.yaml.schemas = vim.tbl_extend("force", store.yaml.schemas(), {
+			["https://json.schemastore.org/composer.json"] = "composer.json",
+			["https://json.schemastore.org/docker-compose.json"] = "docker-compose*.yml",
 		})
 	end,
 }

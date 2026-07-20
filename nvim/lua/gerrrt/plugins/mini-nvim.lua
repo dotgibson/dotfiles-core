@@ -9,11 +9,19 @@
 return {
 	"echasnovski/mini.nvim",
 	version = "*",
-	-- nvim-treesitter-textobjects ships the `textobjects` queries that mini.ai.gen_spec.treesitter
-	-- reads (see the mini.ai setup below). Declared here so those queries are guaranteed on the
-	-- runtimepath before mini.ai resolves them. The plugin's own spec (motions) is unchanged; lazy
-	-- merges the two entries by name.
-	dependencies = { "nvim-treesitter/nvim-treesitter-textobjects" },
+	-- NO `dependencies = { "nvim-treesitter/nvim-treesitter-textobjects" }` HERE — deliberately.
+	-- lazy.nvim loads a spec's dependencies WITH the parent, so declaring it dragged BOTH
+	-- nvim-treesitter-textobjects AND its own dependency nvim-treesitter in at this spec's
+	-- `VeryLazy`, defeating the `event = { "BufReadPost", "BufNewFile" }` that both of those specs
+	-- declare. Measured in a real PTY: a bare `nvim` (dashboard, no file) loaded 13 plugins
+	-- including nvim-treesitter (7.0ms) and -textobjects (8.5ms), running treesitter's parser-dir
+	-- scan and possible `install` pass on the dashboard. Removing this line: 11 plugins, both back
+	-- on first file open.
+	--
+	-- Safe because the queries are NOT needed at config time. The pcall below wraps only spec
+	-- CONSTRUCTION (it validates the capture format and returns a closure); mini.ai resolves the
+	-- `textobjects` queries lazily at textobject-use time (`ac`/`ao`), which can only happen in a
+	-- real buffer — by which point BufReadPost has loaded textobjects anyway.
 	-- Deferred off the startup critical path: none of these modules are needed before the
 	-- first UI paint. mini.notify only has to replace vim.notify before the first toast, and
 	-- mini.trailspace.trim() only runs in the BufWritePre autocmd (config/autocmds.lua) — both
