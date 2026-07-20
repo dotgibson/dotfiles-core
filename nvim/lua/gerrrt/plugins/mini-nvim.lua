@@ -70,9 +70,20 @@ return {
 				find = "gsf", -- find surround to the right
 				find_left = "gsF", -- find surround to the left
 				highlight = "gsh", -- highlight surround
-				update_n_lines = "gsn", -- update n_lines used for search
+				-- NO `update_n_lines = "gsn"` here: mini.surround has no such `mappings` key. Its
+				-- schema is add/delete/find/find_left/highlight/replace/suffix_last/suffix_next, and
+				-- unknown keys are accepted SILENTLY (setup returns ok, no warning) — so `gsn` was
+				-- never created. Verified: every other gs* map exists at runtime, gsn did not.
+				-- Upstream's own docs (mini/surround.lua:909) say to map it yourself — see below.
 			},
 		})
+		-- `gsn` — the mapping the table above could not create. MiniSurround.update_n_lines() prompts
+		-- for a new `n_lines` (how far surround searches); keeping it on gsn honours the prefix this
+		-- config advertises. No conflict: the generated "next/last" variants are gs<action>n/l
+		-- (gsdn, gsfn, …), none of which is a prefix of gsn.
+		vim.keymap.set("n", "gsn", function()
+			require("mini.surround").update_n_lines()
+		end, { desc = "Update surround n_lines" })
 		require("mini.cursorword").setup({})
 		require("mini.pairs").setup({})
 		require("mini.trailspace").setup({})
