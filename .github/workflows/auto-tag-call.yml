@@ -54,7 +54,7 @@ jobs:
       # latest vX.Y.Z resolves and the new tag is reachable); persisted credentials
       # (checkout default) let the script push the tag.
       - name: Check out the calling repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: osrepo
           fetch-depth: 0
@@ -64,7 +64,7 @@ jobs:
       # drift from the pinned workflow definition — deterministic between releases, advancing
       # only when v3 moves (the @vN policy; RELEASE-STRATEGY.md).
       - name: Check out dotfiles-core (reference, pinned to v3)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/dotfiles-core
           ref: v3
