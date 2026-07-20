@@ -35,6 +35,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   frame `add @ line 2`, locals `a = 2` / `b = 3`.
   This also revives `plugins/rustaceanvim.lua`'s DAP adapter block, which was dead code — it needs
   `nvim-dap` present, and `nvim-dap` was never installed.
+- **Neovim: the statusline shows the active Python virtual environment.** A new block left of the
+  LSP server list renders the uv/venv name (`.venv`) in Python buffers, resolving
+  `VIRTUAL_ENV` → `UV_PROJECT_ENVIRONMENT` → `<project root>/.venv`, probing `pyvenv.cfg` so it is
+  correct on every platform. Absolute `UV_PROJECT_ENVIRONMENT` values are detected in all three
+  forms — POSIX `/…`, Windows drive-qualified `C:\…`, and UNC `\\server\share` — since a
+  leading-`/` test alone would misread the latter two as relative and silently report the wrong env. It walks upward from the buffer, so a file in a subdirectory still
+  reports the project's env, and it collapses to nothing outside Python so no width is spent
+  elsewhere. The lookup is memoised in `vim.b` — a statusline component is re-evaluated on every
+  redraw, so the filesystem walk runs once per buffer, never inline. Display only: it does not
+  configure ty, which already discovers `.venv` on its own.
 
 ### Removed
 
@@ -55,6 +65,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Neovim: statusline components now read the statusline's window, not the current one.** With
+  `globalstatus = true` one bar is shared by every window, so `bufnr = 0` was subtly wrong whenever
+  the bar was redrawn for a window you weren't in. Custom components now resolve through
+  `vim.g.statusline_winid` (the discipline NvChad's `stl/utils.lua` uses). The attached-server list
+  is also width-gated at 100 columns, since the diagnostic counts beside it carry the actionable
+  information on a narrow window.
 - **Neovim: LSP server modules are now plain config tables, and the server list exists once.**
   Each `lua/gerrrt/servers/<name>.lua` returned a `function(capabilities)` factory that called
   `vim.lsp.config()` itself; `servers/init.lua` then invoked all 19 by hand and re-listed the same
