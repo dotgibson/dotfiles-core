@@ -999,11 +999,15 @@ _mkv4_fixture() {
   ln -s /nonexistent/core/zsh/tools.zsh "$zdir/tools.zsh" # stale unnumbered Core symlink
   : >"$zdir/tools.zsh.zwc"
   : >"$zdir/.zcompdump"
+  mkdir -p "$zdir/plugins/zsh-defer"                      # pre-v4 plugin checkout
+  : >"$zdir/plugins/zsh-defer/zsh-defer.plugin.zsh"
   printf '%s' "$root"
 }
-# run migrate in a SUBSHELL so BLIB_DRY / XDG_STATE_HOME don't leak into the suite shell
-# (a var-prefixed function call would persist in bash). Filesystem effects still persist.
-_run_migrate() { ( export XDG_STATE_HOME="$2"; BLIB_DRY="$1"; blib_migrate_v4 "$3" ) >/dev/null 2>&1; }
+# run migrate in a SUBSHELL so BLIB_DRY / XDG_* don't leak into the suite shell (a
+# var-prefixed function call would persist in bash). XDG_DATA_HOME is derived from the
+# state path's sibling so the plugins move stays inside the throwaway root (never the real
+# HOME). Filesystem effects still persist.
+_run_migrate() { ( export XDG_STATE_HOME="$2" XDG_DATA_HOME="${2%/state}/share"; BLIB_DRY="$1"; blib_migrate_v4 "$3" ) >/dev/null 2>&1; }
 
 # 1) real run relocates + cleans up.
 _v4root="$(_mkv4_fixture)"; _zd="$_v4root/.config/zsh"
@@ -1015,6 +1019,8 @@ if [[ -f "$_zd/99-local.zsh" ]] && grep -q 'FOO=bar' "$_zd/99-local.zsh" && [[ !
 if [[ ! -e "$_zd/tools.zsh" && ! -e "$_zd/tools.zsh.zwc" ]]; then
   pass "migrate: stale unnumbered symlink + .zwc removed"; else fail "migrate: stale symlink/.zwc lingered"; fi
 if [[ ! -e "$_zd/.zcompdump" ]]; then pass "migrate: stale pre-v4 compdump removed"; else fail "migrate: compdump lingered"; fi
+if [[ -f "$_v4root/.local/share/zsh/plugins/zsh-defer/zsh-defer.plugin.zsh" && ! -e "$_zd/plugins" ]]; then
+  pass "migrate: plugins dir relocated to \$XDG_DATA_HOME"; else fail "migrate: plugins not relocated"; fi
 
 # 2) idempotence: a second run changes nothing and returns 0.
 _run_migrate 0 "$_v4root/.local/state" "$_v4root/.config"; _mig_rc=$?
@@ -1024,7 +1030,7 @@ if [[ $_mig_rc -eq 0 && -f "$_zd/99-local.zsh" && ! -e "$_zd/.zsh_history" ]]; t
 # 3) dry-run (BLIB_DRY=1) mutates NOTHING — fresh fixture, every pre-v4 file untouched.
 _v4dry="$(_mkv4_fixture)"; _dzd="$_v4dry/.config/zsh"
 _run_migrate 1 "$_v4dry/.local/state" "$_v4dry/.config"
-if [[ -f "$_dzd/.zsh_history" && -e "$_dzd/local.zsh" && ! -e "$_dzd/99-local.zsh" && -L "$_dzd/tools.zsh" && ! -e "$_v4dry/.local/state/zsh/history" ]]; then
+if [[ -f "$_dzd/.zsh_history" && -e "$_dzd/local.zsh" && ! -e "$_dzd/99-local.zsh" && -L "$_dzd/tools.zsh" && -d "$_dzd/plugins" && ! -e "$_v4dry/.local/state/zsh/history" && ! -e "$_v4dry/.local/share/zsh/plugins" ]]; then
   pass "migrate: dry-run (BLIB_DRY=1) changes nothing"; else fail "migrate: dry-run mutated the fixture"; fi
 
 # 4) partial-migration CONFLICT: when the v4 destinations already exist, migrate must WARN
@@ -1037,9 +1043,10 @@ printf 'old\n' >"$_cfzd/.zsh_history"
 printf 'new\n' >"$_v4cf/.local/state/zsh/history"
 printf 'old\n' >"$_cfzd/local.zsh"
 printf 'new\n' >"$_cfzd/99-local.zsh"
+mkdir -p "$_cfzd/plugins/old-plugin" "$_v4cf/.local/share/zsh/plugins/new-plugin"
 _run_migrate 0 "$_v4cf/.local/state" "$_v4cf/.config"
 _cf_rc=$?
-if [[ $_cf_rc -eq 0 && -f "$_cfzd/.zsh_history" && "$(cat "$_v4cf/.local/state/zsh/history")" == new && -e "$_cfzd/local.zsh" && "$(cat "$_cfzd/99-local.zsh")" == new ]]; then
+if [[ $_cf_rc -eq 0 && -f "$_cfzd/.zsh_history" && "$(cat "$_v4cf/.local/state/zsh/history")" == new && -e "$_cfzd/local.zsh" && "$(cat "$_cfzd/99-local.zsh")" == new && -d "$_cfzd/plugins/old-plugin" && -d "$_v4cf/.local/share/zsh/plugins/new-plugin" ]]; then
   pass "migrate: conflicting destinations preserved (no clobber, no silent drop)"; else fail "migrate: conflict handling wrong (rc=$_cf_rc)"; fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────

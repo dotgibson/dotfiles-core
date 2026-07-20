@@ -153,8 +153,9 @@ rest of the codebase already knows better. `loader.zsh:27-28` even carries a
 
 ### 4.2 Proposed
 
-Finish the split — config stays symlinked and immutable; everything mutable moves
-to its XDG home:
+Finish the split — the symlinked config tree keeps config **and** the byte-compiled
+`.zwc` wordcode (the one deliberate exception, see §4.3); the other mutable state
+(history, compdump, plugins) moves to its XDG home:
 
 | Data | From | To |
 | --- | --- | --- |
@@ -305,9 +306,9 @@ two `BREAKING (v4.0.0)` bullets (the numbered-fragment loader over one flat
    *accepts and ignores* legacy args so a not-yet-updated caller doesn't error.
 3. **Bands are conventions, so width is not a hard constraint.** Core keeps
    `00`–`69` and the outer bands stay `70`–`99`; because any layer may use a Core
-   gap when it genuinely needs mid-chain insertion (numeric-sort + layer-precedence
-   tiebreak), the 15-slot OS band is a default home, not a ceiling. No compression
-   needed.
+   gap when it genuinely needs mid-chain insertion (ordering is a numeric sort on the
+   `NN` prefix, with a lexical same-`NN` tiebreak — the loader has no layer metadata),
+   the 15-slot OS band is a default home, not a ceiling. No compression needed.
 4. **`CORE_PROFILE` stays a pure loader concern — it does NOT gate bootstrap
    provisioning.** Install-time selection (which groups get symlinked — zsh, nvim,
    tmux) is already owned by `bootstrap.sh`'s `--only`/`--skip` (`blib_want`), a

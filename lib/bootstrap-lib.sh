@@ -210,6 +210,9 @@ blib_selected_note() {
 #   • history is now mutable STATE: move ~/.config/zsh/.zsh_history → $XDG_STATE_HOME/zsh/history
 #   • a host-local override is now a numbered fragment: rename local.zsh → 99-local.zsh so
 #     the loader's NN-*.zsh glob picks it up (an un-renamed local.zsh would silently stop loading)
+#   • plugins are now DATA: move ~/.config/zsh/plugins → $XDG_DATA_HOME/zsh/plugins so an
+#     upgraded host keeps its existing checkouts (an offline host would otherwise re-clone
+#     the whole stack — and, with no network, simply lose its plugins).
 #   • Core modules are now NN-name.zsh and the OS layer is 80-os.zsh: drop the stale
 #     unnumbered symlinks (tools.zsh … update.zsh, os.zsh) + their .zwc so they don't linger
 #     as dangling links. blib_link_core/blib_link_os_layer relink the new names right after.
@@ -218,6 +221,7 @@ blib_migrate_v4() {
   local config="$1" m
   local zdir="$config/zsh"
   local state="${XDG_STATE_HOME:-$HOME/.local/state}/zsh"
+  local data="${XDG_DATA_HOME:-$HOME/.local/share}/zsh"
   # history → $XDG_STATE_HOME (only when the old file exists and the new one doesn't yet). If
   # BOTH exist (a partial migration), the v4 shell reads ONLY $state/history — do NOT clobber
   # it, and do NOT silently leave the pre-v4 file to rot: warn so its lines are merged, not lost.
@@ -241,6 +245,18 @@ blib_migrate_v4() {
     fi
   elif [[ -e "$zdir/local.zsh" && -e "$zdir/99-local.zsh" ]]; then
     blib_warn "both local.zsh and 99-local.zsh exist in $zdir — the v4 loader sources ONLY 99-local.zsh; merge your overrides from local.zsh into it (left in place, not removed)."
+  fi
+  # plugins dir → $XDG_DATA_HOME (v4 moved ZPLUGINDIR out of the config tree). Move the whole
+  # checkout so an upgraded host keeps its cloned plugins instead of re-cloning them (which an
+  # offline host cannot do). If BOTH exist, leave the pre-v4 one in place and warn.
+  if [[ -d "$zdir/plugins" && ! -e "$data/plugins" ]]; then
+    if _blib_dry; then
+      blib_say "would move plugins/ → $data/plugins"
+    else
+      mkdir -p "$data" && mv "$zdir/plugins" "$data/plugins" && blib_ok "plugins moved to $data/plugins"
+    fi
+  elif [[ -d "$zdir/plugins" && -e "$data/plugins" ]]; then
+    blib_warn "both $zdir/plugins (pre-v4) and $data/plugins exist — v4 uses the latter; remove the stale $zdir/plugins once you have confirmed the move."
   fi
   _blib_dry && return 0
   # stale unnumbered Core module symlinks (+ their .zwc) and the old flat os.zsh.

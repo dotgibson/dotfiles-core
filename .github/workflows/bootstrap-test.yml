@@ -116,10 +116,15 @@ jobs:
             # NOTE: keep this block apostrophe-free — it lives inside the single-quoted sh -euc script.
 
             grep -q "dotfiles-managed v4" "$HOME/.zshrc" || { echo "~/.zshrc not managed" >&2; exit 1; }
-            # v4: the .zshrc no longer lists modules — it sets CORE_PROFILE and sources the
-            # vendored loader, which globs the numbered fragments itself.
-            grep -q "CORE_PROFILE" "$HOME/.zshrc" || { echo "~/.zshrc missing CORE_PROFILE" >&2; exit 1; }
+            # v4: the .zshrc no longer lists modules — it just sources the vendored loader,
+            # which globs the numbered fragments itself.
             grep -q "source .*loader.zsh" "$HOME/.zshrc" || { echo "~/.zshrc does not source the vendored loader" >&2; exit 1; }
+            # It must NOT assign CORE_PROFILE (only mention it in a comment): the loader owns
+            # resolution (env, else $ZSH_CFG/profile, else full), and a pre-set would disable
+            # the profile file. Strip comment lines first, then reject any CORE_PROFILE= / :=.
+            if grep -vE "^[[:space:]]*#" "$HOME/.zshrc" | grep -qE "CORE_PROFILE[[:space:]]*:?="; then
+              echo "~/.zshrc must NOT assign CORE_PROFILE (v4 leaves resolution to the loader)" >&2; exit 1
+            fi
 
             if [ "$OFFENSIVE" = "true" ]; then
               # v4: the offensive role stage is the numbered fragment 85-offensive.zsh (band

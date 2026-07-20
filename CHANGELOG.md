@@ -90,17 +90,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   breaks lexically by filename. This aligns the zsh module structure with the
   PowerShell host layer's `NN-name` convention (`PARITY.md`). **Every OS/Role repo must
   re-vendor and update its `bootstrap.sh` loader stanza** — `blib_write_zshrc_loader` now
-  emits a `CORE_PROFILE` + `source "$ZSH_CFG/loader.zsh"` stanza (managed marker
-  `dotfiles-managed v4`) and takes no module list; `blib_migrate_v4` relocates the
-  pre-v4 layout automatically on re-bootstrap. Design + per-repo runbook in `V4-PROPOSAL.md`.
+  emits a stanza that simply `source`s `$ZSH_CFG/loader.zsh` (managed marker
+  `dotfiles-managed v4`) and takes no module list; it deliberately does **not** assign
+  `CORE_PROFILE`, leaving resolution to the loader (env → `$ZSH_CFG/profile` one-liner →
+  `full`). `blib_migrate_v4` relocates the pre-v4 layout automatically on re-bootstrap.
+  Design + per-repo runbook in `V4-PROPOSAL.md`.
 - **BREAKING (v4.0.0) — mutable zsh state moves to XDG dirs.** History
   (`$XDG_STATE_HOME/zsh/history`), the completion dump (`$XDG_CACHE_HOME/zsh/zcompdump`),
   and plugins (`$XDG_DATA_HOME/zsh/plugins`) leave the symlinked `$ZDOTDIR` config tree,
-  which is now immutable config only. `bootstrap.sh` (`blib_migrate_v4`) relocates an
-  existing `~/.config/zsh/.zsh_history` on re-bootstrap so no history is lost, and drops
-  the stale pre-v4 symlinks/compdump. Byte-compiled `.zwc` deliberately stays beside each
-  fragment symlink in `$ZSH_CFG` — that is how zsh's automatic wordcode pickup works.
-  Hosts must **re-bootstrap**, not just re-source.
+  which now holds config **plus** the byte-compiled `.zwc` wordcode written beside each
+  fragment symlink — the one deliberate exception, because that is how zsh's automatic
+  wordcode pickup works (`source file` loads `file.zwc` only when it sits beside `file`).
+  `bootstrap.sh` (`blib_migrate_v4`) relocates an existing `~/.config/zsh/.zsh_history`,
+  `plugins/`, and drops the stale pre-v4 symlinks/compdump on re-bootstrap so nothing is
+  lost. Hosts must **re-bootstrap**, not just re-source.
 - **Neovim: statusline components now read the statusline's window, not the current one.** With
   `globalstatus = true` one bar is shared by every window, so `bufnr = 0` was subtly wrong whenever
   the bar was redrawn for a window you weren't in. Custom components now resolve through
