@@ -10,6 +10,12 @@
 > its `bootstrap.sh`) per `RELEASE-RUNBOOK.md`. The open questions in [§9](#9-non-goals-and-open-questions)
 > are now **resolved** (see there). When a claim here drifts from
 > `RELEASE-STRATEGY.md` or `CONTRIBUTING.md`, those win.
+>
+> This is still written in RFC "Current → Proposed" voice: the **"Current"**
+> subsections (§3.1, §4.1) describe the **pre-v4 baseline the design replaced**,
+> and **"Proposed"** describes **what shipped** — a flat `$ZSH_CFG` glob, not the
+> separate layer directories an early draft floated. Read them as before/after, not
+> as two live designs.
 
 ## 1. Summary
 
@@ -74,10 +80,11 @@ smuggled into an existing module.
 
 ### 3.2 Proposed
 
-Rename Core modules to `NN-` prefixes and have the loader **glob `NN-*.zsh`
-across a set of layer directories, merge, sort numerically, and source** (still
-inline at caller scope, still byte-compiling each fragment to `.zwc` first —
-`loader.zsh`'s mechanics are preserved, only its input changes).
+Rename Core modules to `NN-` prefixes and have the loader **glob `NN-*.zsh` in one
+flat `$ZSH_CFG`, sort numerically, and source** (still inline at caller scope, still
+byte-compiling each fragment to `.zwc` first — `loader.zsh`'s mechanics are preserved,
+only its input changes). All layers symlink their fragments into that single dir, so
+the band number — not a directory — is what places a fragment in the chain.
 
 Each layer has a **recommended default band**, but the numeric prefix — not the
 band — is what orders a fragment, so any layer *may* use a Core gap when it
@@ -122,9 +129,9 @@ shells structure their module load differently; this change makes them
 
 - Every `zsh/*.zsh` **manifest path is renamed** → `core.manifest` rewrite.
 - The `_CORE_MODULES` name-list contract in `loader.zsh` is replaced by a
-  layer-directory + glob contract.
+  glob over one flat `$ZSH_CFG` (all layers symlink their fragments into it).
 - `blib_write_zshrc_loader` in `lib/bootstrap-lib.sh` emits a different `.zshrc`
-  stanza (points the loader at directories, no longer a hand-listed module set).
+  stanza (just sources the loader, no hand-listed module set).
 - Each OS/Role repo's appended-stage file is renamed into its band.
 
 ## 4. Change 2 — XDG state/cache/data split
