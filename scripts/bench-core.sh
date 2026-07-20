@@ -84,6 +84,9 @@ fi
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-bench.XXXXXX")"
 trap 'rm -rf "$SANDBOX"' EXIT
 
+# The sandbox ZDOTDIR (holds the generated .zshrc). v4: plugins moved to $XDG_DATA_HOME,
+# so seeding them no longer creates $SANDBOX/zdot as a side effect — make it explicitly.
+mkdir -p "$SANDBOX/zdot"
 # Pre-seed empty plugin dirs so 45-plugins.zsh's first-run `git clone` is a no-op
 # (hermetic, no network) — v4: plugins live under $XDG_DATA_HOME/zsh/plugins, not $ZDOTDIR.
 _seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
