@@ -13,9 +13,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.0.0] - 2026-07-20
+
 ### Added
 
-- **`CORE_PROFILE` (`minimal` / `standard` / `full`), destined for v4.0.0.** Selects which
+- **`CORE_PROFILE` (`minimal` / `standard` / `full`).** Selects which
   Core-band fragments (`00`–`69`) the loader sources — `minimal` stops after `30-functions`,
   `standard` after `50-op`, `full` loads all Core — so a headless box can skip the
   interactive-heavy stages `minimal` omits: fzf widgets (`35`), vi-mode bindings (`40`), the
