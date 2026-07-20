@@ -23,13 +23,21 @@ return {
 	--
 	-- pcall'd: on a box where schemastore isn't installed yet we keep validate=true and simply
 	-- go without the catalogue, rather than erroring out of client startup.
+	--
+	-- MUTATE IN PLACE — do NOT rebind `config.settings`. Client.create() binds
+	-- `self.settings = config.settings` (runtime lua/vim/lsp/client.lua:409) BEFORE before_init is
+	-- invoked (:571). vim.tbl_deep_extend returns a NEW table, so `config.settings = ...` leaves
+	-- client.settings pointing at the original and the catalogue is silently dropped — both the
+	-- push path (workspace/didChangeConfiguration sends self.settings) and the pull path
+	-- (handlers.lua lookup_section(client.settings, ...)) read the client's copy.
+	-- Neovim's own docs demonstrate the rebinding form (client.lua:36-41); it does not work.
 	before_init = function(_, config)
 		local ok, store = pcall(require, "schemastore")
 		if not ok then
 			return
 		end
-		config.settings = vim.tbl_deep_extend("force", config.settings or {}, {
-			json = { schemas = store.json.schemas() },
-		})
+		config.settings = config.settings or {}
+		config.settings.json = config.settings.json or {}
+		config.settings.json.schemas = store.json.schemas()
 	end,
 }

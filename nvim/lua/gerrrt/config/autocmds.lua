@@ -108,11 +108,19 @@ vim.api.nvim_create_autocmd("TextYankPost", {
   group = highlight_yank_group,
   pattern = "*",
   callback = function()
-    -- vim.hl.on_yank is the current API (it succeeded vim.highlight.on_yank when the
-    -- highlight helpers moved to the vim.hl namespace). TextYankPost fires on yanks
-    -- AND deletes, so a bad call here throws E5108 on every such edit — the op still
-    -- runs, but a red error trails it. There is no vim.hl.hl_op.
-    vim.hl.on_yank({
+    -- TextYankPost fires on yanks AND deletes, so a bad call here throws E5108 on every such
+    -- edit — the op still runs, but a red error trails it. Hence the capability probe rather
+    -- than a hard-coded name.
+    --
+    -- VERSION-GATED, NOT SWAPPED. `vim.hl.on_yank` is correct on 0.12 and is what this config
+    -- has always called. On Neovim HEAD (0.13-dev) it is deprecated in favour of `vim.hl.hl_op`
+    -- (runtime lua/vim/hl.lua: `vim.deprecate('vim.hl.on_yank', 'vim.hl.hl_op', '0.14')`), which
+    -- also serves the new TextPutPost event. But hl_op does NOT exist on 0.12.4 — verified — so
+    -- a straight rename would break every machine still on stable. Core is vendored to a
+    -- ten-repo fleet that will not upgrade in lockstep, so probe for the new name and fall back.
+    -- When the whole fleet is on 0.13+, collapse this to a bare vim.hl.hl_op call.
+    local hl = vim.hl.hl_op or vim.hl.on_yank
+    hl({
       higroup = "IncSearch",
       timeout = 200,
     })

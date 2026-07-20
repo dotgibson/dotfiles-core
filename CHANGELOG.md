@@ -123,6 +123,61 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   four self-attaches to already-open buffers (`vim.lsp.enable()` re-runs `doautoall`, gitsigns
   iterates `nvim_list_bufs()`, todo-comments attaches to visible windows, nvim-lint is write-driven).
 
+### Fixed
+
+- **Neovim: SchemaStore catalogues never reached `jsonls` or `yamlls`.** Both resolved their
+  schemas in `before_init` by re-binding `config.settings` with `vim.tbl_deep_extend`. The client
+  binds `client.settings = config.settings` in `Client.create()` (runtime
+  `lua/vim/lsp/client.lua:409`) **before** `before_init` runs (`:571`), and `tbl_deep_extend`
+  returns a _new_ table — so the client kept the original and the catalogue was silently dropped.
+  Both delivery paths (`workspace/didChangeConfiguration` push and the `lookup_section` pull) read
+  `client.settings`. `yamlls` was the worse case: it disables its own built-in store
+  (`schemaStore.enable = false`) and so ended up with _neither_ catalogue. Now mutated in place.
+  Verified live: `jsonls` 0 → **1368** schemas, `yamlls` 0 → **1279** with the built-in store still
+  off. Note Neovim's own docs demonstrate the broken re-binding form (`client.lua:36-41`).
+- **Neovim: the `gr*` default-keymap cleanup deleted nothing, so `gr` still waited `timeoutlen`.**
+  `utils/lsp.lua` called `vim.keymap.del("n", lhs, { buffer = bufnr })`, but Neovim creates
+  `grn`/`gra`/`grr`/`gri`/`grt`/`grx` as **global** maps (`lua/vim/_core/defaults.lua`). Every
+  delete raised `E31: No such mapping`, swallowed by the `pcall`. Dropped the `buffer` key, added
+  the two 0.12 additions (`grt`, `grx`) that were missing, and hoisted the loop out of `on_attach`
+  — it is global state that was being re-attempted per attaching client (twice on a Python buffer:
+  `ruff` + `ty`). Verified: all six now report unmapped after boot.
+- **Neovim: `binary_available()` was a no-op for `ts_ls`, `yamlls` and `tailwindcss`.** Current
+  nvim-lspconfig ships `cmd` as a _function_ (a project-local `node_modules/.bin` probe) for those,
+  and the guard's `type(cmd) ~= "table" → return true` branch waved them straight through. They
+  were enabled unconditionally, still produced the recurring `spawn … ENOENT` the guard exists to
+  suppress, and never appeared in the "LSP not enabled" notice. Falls back to the well-known global
+  binary name; a project-local install still wins at spawn time.
+- **Neovim: `mini.nvim` dragged the whole treesitter stack onto the startup path.** It declared
+  `nvim-treesitter-textobjects` as a `dependencies` entry, and lazy.nvim loads dependencies _with_
+  the parent — so mini's `VeryLazy` overrode the `BufReadPost`/`BufNewFile` trigger that both
+  nvim-treesitter and -textobjects declare, running treesitter's parser-directory scan and possible
+  `install` pass on the dashboard. Removed; mini.ai resolves the `textobjects` queries lazily at
+  textobject-use time, by which point `BufReadPost` has loaded them. Measured in a real PTY: a bare
+  `nvim` went from **13 loaded plugins to 11**, dropping ~15.5 ms of post-`UIEnter` work.
+  (Time-to-`NVIM STARTED` is unchanged — this work always landed _after_ that marker.)
+- **Neovim: `vim.hl.on_yank` is version-gated rather than hard-coded.** It is deprecated on Neovim
+  HEAD (0.13-dev) in favour of `vim.hl.hl_op`, which does **not** exist on 0.12.4 — so a rename
+  would break every machine still on stable. Probes for the new name and falls back, and the
+  adjacent comment asserting "there is no `vim.hl.hl_op`" is corrected.
+- **Neovim: `blink.cmp` is now a declared dependency of `nvim-lspconfig`.** `servers/init.lua`
+  calls `require("blink.cmp").get_lsp_capabilities()`, which lazy's require-hook already pulled
+  blink (and `friendly-snippets`) in at `User FilePost` — so blink's own `event = "InsertEnter"`
+  was never the trigger that loaded it. This declares what already happened; it is not a speed-up,
+  and blink cannot be deferred further because capabilities must be advertised in `initialize`.
+
+### Changed (internal)
+
+- **Neovim: `keymaps.lua` Ex-command maps use `<Cmd>…<CR>` instead of `:…<CR>`** (11 split/tab/
+  resize maps). `:` switches to cmdline-mode first — it echoes, is subject to cmdline mappings and
+  abbreviations, and clobbers a pending count or visual selection; `<Cmd>` does not.
+- **Neovim: `<leader>pa` reports via `vim.notify`, not `print`**, so the copied path lands in the
+  mini.notify toast like every other message instead of the message area (and no longer risks a
+  hit-enter prompt on a long path). Also handles the no-file case.
+- **Neovim: the `<LeftDrag>`/`<LeftRelease>` maps moved from `options.lua` to `keymaps.lua`**, and
+  the undodir setup dropped two redundant `vim.fn.expand()` calls on an already-absolute
+  `stdpath("state")` path (now built with `vim.fs.joinpath`).
+
 ## [v3.9.0] - 2026-07-19
 
 ### Added

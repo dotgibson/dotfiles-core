@@ -79,10 +79,33 @@ end
 -- surfaces as a recurring "spawn <server> ENOENT" / "client quit" error on every such buffer. This
 -- guard keeps the stack resilient on any box where a binary isn't present yet (fresh machine,
 -- DOTFILES_OFFLINE, or a uv/npm-provided server like ruff/ty/solidity not installed).
+--
+-- FUNCTION-`cmd` SERVERS : current nvim-lspconfig ships `cmd` as a FUNCTION (a probe that prefers a
+-- project-local node_modules/.bin binary) for exactly the npm-provided servers most likely to be
+-- missing. Verified against the installed lspconfig on 0.12.4:
+--     ts_ls / yamlls / tailwindcss / cssls -> type(cmd) == "function"
+--     gopls / lua_ls                       -> type(cmd) == "table"
+-- The old `type(cmd) ~= "table" -> return true` branch therefore waved those through unconditionally
+-- — they still produced the recurring ENOENT this guard exists to prevent, AND never appeared in the
+-- "not enabled" notification, so the user got no signal in either direction. We can't invoke the
+-- probe (it wants dispatchers and would spawn), so fall back to the server's well-known global
+-- binary name. A project-local install still wins at spawn time; this only decides whether to try.
+local fn_cmd_binaries = {
+	ts_ls = "typescript-language-server",
+	yamlls = "yaml-language-server",
+	tailwindcss = "tailwindcss-language-server",
+	cssls = "vscode-css-language-server",
+}
+
 local function binary_available(name)
 	local cfg = vim.lsp.config[name]
 	local cmd = cfg and cfg.cmd
-	-- No resolvable cmd (nil) or a function launcher: don't second-guess it, let it try.
+	if type(cmd) == "function" then
+		local binary = fn_cmd_binaries[name]
+		-- Unknown function-cmd server: no name to test, so don't second-guess it — let it try.
+		return binary == nil or vim.fn.executable(binary) == 1
+	end
+	-- No resolvable cmd at all: same reasoning.
 	if type(cmd) ~= "table" or cmd[1] == nil then
 		return true
 	end

@@ -41,6 +41,22 @@ local function offers_organize_imports(client)
 	return false
 end
 
+-- Neovim 0.11+/0.12 ships default LSP maps grn/gra/grr/gri/grt/grx. Our `gr`=references (below)
+-- is a *complete* mapping, so leaving these in place makes `gr` wait timeoutlen (500ms) before
+-- firing. We have <leader>rn / <leader>ca / gr / gi for these already, so clear the defaults.
+--
+-- GLOBAL, NOT BUFFER-LOCAL, AND DONE ONCE. These are created with a plain `vim.keymap.set('n', ...)`
+-- in the runtime (lua/vim/_core/defaults.lua), so they live in the global map table. The previous
+-- form passed `{ buffer = bufnr }`, which raises E31 ("No such mapping") for every one of them —
+-- swallowed by the pcall, so the maps survived and `gr` kept waiting. Deleting global state also
+-- doesn't belong in on_attach, which re-runs per attaching client (twice on a Python buffer:
+-- ruff + ty). grt (type_definition) and grx (codelens.run) were missing from the old list; any
+-- remaining gr* keeps `gr` ambiguous, so all six must go.
+-- pcall'd only to tolerate a future Neovim that stops shipping one of them.
+for _, lhs in ipairs({ "grn", "gra", "grr", "gri", "grt", "grx" }) do
+	pcall(vim.keymap.del, "n", lhs)
+end
+
 M.on_attach = function(event)
 	if not event.data then
 		return
@@ -65,14 +81,6 @@ M.on_attach = function(event)
 	if client.name == "bashls" then
 		client.server_capabilities.documentFormattingProvider = false
 		client.server_capabilities.documentRangeFormattingProvider = false
-	end
-
-	-- Neovim 0.11+/0.12 ships default LSP maps grn/gra/grr/gri. Our `gr`=references
-	-- below is a *complete* mapping, so leaving these in place makes `gr` wait
-	-- timeoutlen (500ms) before firing. We have <leader>rn / <leader>ca / gr / gi
-	-- for these already, so clear the defaults to make `gr` instant.
-	for _, lhs in ipairs({ "grn", "gra", "grr", "gri" }) do
-		pcall(vim.keymap.del, "n", lhs, { buffer = bufnr })
 	end
 
 	local keymap = vim.keymap.set
