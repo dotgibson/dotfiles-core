@@ -60,7 +60,11 @@ return {
 			-- (nvim-tree.lua/lua/nvim-tree/legacy.lua:73-81): with no explicit width it produces
 			-- `width = { min = nil }`, i.e. exactly `{}`. Verified equivalent by running the
 			-- migration: `{ adaptive_size = true }` and `{ width = {} }` compare deep-equal.
-			-- An empty width table means "size to content, no fixed min/max".
+			-- An empty width table does NOT mean "unbounded": nvim-tree fills in its own defaults
+			-- for the absent keys (view-state.lua:5-6,77-78) — `width.min or DEFAULT_MIN_WIDTH` (30)
+			-- and `width.max or DEFAULT_MAX_WIDTH` (-1, i.e. no cap). So the pane sizes to its
+			-- content but never narrower than 30 columns. Set `{ min = N }` / `{ max = N }` to
+			-- change either bound.
 			view = { width = {} },
 		})
 	end,

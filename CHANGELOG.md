@@ -237,7 +237,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   - `nvim-tree`: `view = { adaptive_size = true }` → `view = { width = {} }`. `adaptive_size` is a
     2023-01-15 legacy key that nvim-tree silently rewrites (`legacy.lua:73-81`); with no explicit
     width it produces `{ min = nil }`, i.e. `{}`. Verified equivalent by running the migration and
-    comparing deep-equal.
+    comparing deep-equal. Note `{}` is not "unbounded" — nvim-tree fills the absent keys with its
+    own defaults (`view-state.lua:5-6,77-78`), so the pane sizes to content but never narrower than
+    30 columns; confirmed at runtime as `width = 30`, `max_width = -1`.
   - `fidget`: `winblend = 0` → `100` (its default). The old comment said this matched "transparent
     floats" — backwards; fidget's docs (`notification/window.lua:33-49`) describe `100` as the
     see-through setting and anything less as blending with what's underneath.

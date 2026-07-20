@@ -204,7 +204,8 @@ M.sections = {
 		{ "<C-e>", "Hide menu" },
 		{ "<C-b> / <C-f>", "Scroll docs up / down" },
 		{ "<Tab> / <S-Tab>", "Snippet: next / prev placeholder" },
-		{ "<C-s>", "Signature help (insert)" },
+		-- NOT <C-s>: that is signature help, mapped in utils/lsp.lua (LSP & Code card above), not by
+		-- blink. blink's signature window is automatic (signature.enabled) with no key of its own.
 	},
 	{
 		"Sessions",
