@@ -91,9 +91,12 @@ fragments usually live, not a hard partition:
 | `85`–`94` | Role layer | `85-offensive` |
 | `95`–`99` | Host-local | `99-local` |
 
-Ordering is a numeric sort on the `NN` prefix; ties (two layers claiming the same
-`NN`) break by layer precedence — Core, then OS, then Role, then local — then
-lexically by filename, so the merged stream is deterministic.
+Ordering is a pure numeric sort on the `NN` prefix; a same-`NN` tie (two fragments
+claiming the same number — a misconfiguration) breaks lexically by filename, so
+the merged stream is deterministic. Note the loader carries **no owner metadata** —
+everything flattens into one `$ZSH_CFG` — so the *band number* is what determines
+both order and profile-gating (see §5). A fragment a layer places in a Core gap is
+therefore gated as Core; always-load OS/role/host setup belongs at `>=70`.
 
 Concrete Core numbering (gaps of 5 leave room to inject; every ordering
 constraint in the current `core.manifest` header is preserved):
@@ -191,9 +194,10 @@ bootstrap wiring.)
 ### 5.2 Proposed
 
 A `CORE_PROFILE` (env var, or a `$XDG_CONFIG_HOME/zsh/profile` one-liner) that the
-loader reads to **filter which Core-owned fragments (`00`–`69`) load**. It never
-filters the outer layers — OS, Role, and host-local fragments (`70`–`99`) always
-load, so essential OS setup and `99-local.zsh` are never skipped by a profile:
+loader reads to **filter which Core-band fragments (`00`–`69`) load** — gating is by
+band number, not authorship. It never filters the outer bands — fragments numbered
+`70`–`99` (OS, Role, host-local) always load, so essential OS setup and `99-local.zsh`
+are never skipped by a profile (which is why always-load setup must live at `>=70`):
 
 | Profile | Includes (Core bands) | Use |
 | --- | --- | --- |
@@ -292,8 +296,8 @@ Kept here for reference:
 
 ### Added
 
-- **`CORE_PROFILE` (`minimal` / `standard` / `full`).** Selects which Core-owned
-  fragment bands (`00`–`69`) load, so a headless box can skip the
+- **`CORE_PROFILE` (`minimal` / `standard` / `full`).** Selects which Core-band
+  fragments (`00`–`69`) load, so a headless box can skip the
   interactive-heavy zsh stages (history sync, completion plugins, the update
   nudge); it never filters the OS/Role/local layers. Defaults to `full` (today's
   behaviour).

@@ -1,7 +1,7 @@
 # Core Aliases Cheat Sheet
 
-Most aliases sourced from `zsh/aliases.zsh` and `zsh/git.zsh`; exception: `cheat` is
-defined in `zsh/functions.zsh` (alias for `core-help`). Tool aliases are guarded
+Most aliases sourced from `zsh/20-aliases.zsh` and `zsh/25-git.zsh`; exception: `cheat` is
+defined in `zsh/30-functions.zsh` (alias for `core-help`). Tool aliases are guarded
 by detection flags — if the tool is not installed, the classic command is used instead.
 Load order: `tools.zsh` sets `HAVE_*` flags first, then `aliases.zsh` reads them.
 
@@ -87,8 +87,8 @@ A function (not an alias), so it works from inside any OS repo's vendored
 
 ## Git Aliases
 
-Sourced from `zsh/git.zsh` (OMZ-compatible). Three interactive fuzzy helpers
-(`gaf`, `grf`, `grsf`) are functions, not aliases — see `zsh/git.zsh` for details.
+Sourced from `zsh/25-git.zsh` (OMZ-compatible). Three interactive fuzzy helpers
+(`gaf`, `grf`, `grsf`) are functions, not aliases — see `zsh/25-git.zsh` for details.
 
 ### Core
 

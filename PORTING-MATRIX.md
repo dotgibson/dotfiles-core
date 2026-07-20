@@ -148,7 +148,7 @@ release. bootstrap.sh `go install`s them instead (static, musl-safe) rather than
 haven't migrated to your snapshot, bootstrap falls back to `go install` / the Charm apt repo
 (`repo.charm.sh/apt`).
 ¹⁶ viddy: the `watch` replacement — Core aliases `watch`→`viddy` (`HAVE_VIDDY`-guarded in
-`zsh/aliases.zsh`), so a box without the binary just keeps classic `watch`. viddy is a
+`zsh/20-aliases.zsh`), so a box without the binary just keeps classic `watch`. viddy is a
 **Rust** CLI (rewritten from Go upstream), so it installs via `cargo install viddy`, **not**
 `go install`. Packaged on Homebrew (`viddy`, already in the macOS `Brewfile`) and the AUR;
 **not** in Arch-official, openSUSE, Gentoo, or Debian/Kali apt — so `bootstrap.sh` builds it

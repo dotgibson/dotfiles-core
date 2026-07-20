@@ -982,6 +982,51 @@ if [[ "$( blib_select --skip tmux; blib_selected_note )" == " (skipped: tmux)" ]
 # only-mode (showing a skipped suffix that's actually ignored would be misleading).
 if [[ "$( blib_select --only zsh; blib_select --skip nvim; blib_selected_note )" == " (only: zsh)" ]]; then pass "blib_selected_note: --only wins, --skip not shown"; else fail "blib_selected_note: should report only-mode when both set"; fi
 
+# ── H. v4 layout migration (lib/bootstrap-lib.sh blib_migrate_v4) ─────────────
+# The destructive pre-v4 → v4 migration: relocate history to $XDG_STATE_HOME, rename a
+# host local.zsh → 99-local.zsh, and drop the stale unnumbered Core symlinks + compdump.
+# Hermetic (temp dirs, no network). Covers relocation, cleanup, second-run idempotence,
+# and dry-run (must change NOTHING) — so a re-bootstrap cannot silently lose host state.
+hdr "v4 layout migration (blib_migrate_v4)"
+# fixture: a realistic pre-v4 ~/.config/zsh under a throwaway root. Prints the root.
+_mkv4_fixture() {
+  local root zdir
+  root="$(mktemp -d "$SANDBOX/v4mig.XXXXXX")"
+  zdir="$root/.config/zsh"
+  mkdir -p "$zdir"
+  printf 'old history\n' >"$zdir/.zsh_history"
+  printf 'export FOO=bar\n' >"$zdir/local.zsh"
+  ln -s /nonexistent/core/zsh/tools.zsh "$zdir/tools.zsh" # stale unnumbered Core symlink
+  : >"$zdir/tools.zsh.zwc"
+  : >"$zdir/.zcompdump"
+  printf '%s' "$root"
+}
+# run migrate in a SUBSHELL so BLIB_DRY / XDG_STATE_HOME don't leak into the suite shell
+# (a var-prefixed function call would persist in bash). Filesystem effects still persist.
+_run_migrate() { ( export XDG_STATE_HOME="$2"; BLIB_DRY="$1"; blib_migrate_v4 "$3" ) >/dev/null 2>&1; }
+
+# 1) real run relocates + cleans up.
+_v4root="$(_mkv4_fixture)"; _zd="$_v4root/.config/zsh"
+_run_migrate 0 "$_v4root/.local/state" "$_v4root/.config"
+if [[ -f "$_v4root/.local/state/zsh/history" ]] && grep -q 'old history' "$_v4root/.local/state/zsh/history" && [[ ! -e "$_zd/.zsh_history" ]]; then
+  pass "migrate: history relocated to \$XDG_STATE_HOME"; else fail "migrate: history not relocated"; fi
+if [[ -f "$_zd/99-local.zsh" ]] && grep -q 'FOO=bar' "$_zd/99-local.zsh" && [[ ! -e "$_zd/local.zsh" ]]; then
+  pass "migrate: local.zsh → 99-local.zsh (contents preserved)"; else fail "migrate: local.zsh not renamed"; fi
+if [[ ! -e "$_zd/tools.zsh" && ! -e "$_zd/tools.zsh.zwc" ]]; then
+  pass "migrate: stale unnumbered symlink + .zwc removed"; else fail "migrate: stale symlink/.zwc lingered"; fi
+if [[ ! -e "$_zd/.zcompdump" ]]; then pass "migrate: stale pre-v4 compdump removed"; else fail "migrate: compdump lingered"; fi
+
+# 2) idempotence: a second run changes nothing and returns 0.
+_run_migrate 0 "$_v4root/.local/state" "$_v4root/.config"; _mig_rc=$?
+if [[ $_mig_rc -eq 0 && -f "$_zd/99-local.zsh" && ! -e "$_zd/.zsh_history" ]]; then
+  pass "migrate: second run is an idempotent no-op"; else fail "migrate: not idempotent (rc=$_mig_rc)"; fi
+
+# 3) dry-run (BLIB_DRY=1) mutates NOTHING — fresh fixture, every pre-v4 file untouched.
+_v4dry="$(_mkv4_fixture)"; _dzd="$_v4dry/.config/zsh"
+_run_migrate 1 "$_v4dry/.local/state" "$_v4dry/.config"
+if [[ -f "$_dzd/.zsh_history" && -e "$_dzd/local.zsh" && ! -e "$_dzd/99-local.zsh" && -L "$_dzd/tools.zsh" && ! -e "$_v4dry/.local/state/zsh/history" ]]; then
+  pass "migrate: dry-run (BLIB_DRY=1) changes nothing"; else fail "migrate: dry-run mutated the fixture"; fi
+
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall
 # through to the shared summary, so a Section-C failure still surfaces as exit 1.

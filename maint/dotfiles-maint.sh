@@ -124,7 +124,7 @@ fi
 # a rolled pin is actually applied here; only genuinely unpinned plugins fast-forward.
 # Pins are read from plugins.zsh (the sourced Core module in $ZDOTDIR) with the same
 # grep update-plugins.sh uses — no bash-4 assoc array, so this stays macOS bash-3.2 safe.
-PLUGINS_ZSH="${ZDOTDIR:-$HOME/.config/zsh}/plugins.zsh"
+PLUGINS_ZSH="${ZDOTDIR:-$HOME/.config/zsh}/45-plugins.zsh"
 # _pin_for <plugin-dir-name> → prints the 40-hex pin for owner/<name>, or nothing.
 # The trailing whitespace+sha in the pattern anchors the match to a full pin row, so a
 # name can't partial-match a longer sibling slug.

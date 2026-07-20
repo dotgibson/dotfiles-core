@@ -18,10 +18,15 @@
 # shell. So the loop runs inline; the only state it leaves behind (the `_cl_*` scratch
 # vars) is unset at the end.
 #
-# CORE_PROFILE gates ONLY Core-owned fragments (bands 00-69): `minimal` stops after
-# 30-functions, `standard` after 50-op, `full` loads all Core. Outer fragments (>=70:
-# OS at 80, role at 85-94, host-local at 99) ALWAYS load regardless of profile, so a
-# lean profile can never drop essential OS setup or 99-local.zsh.
+# CORE_PROFILE gates by BAND NUMBER, not authorship (the loader has no owner metadata —
+# everything is flattened into one $ZSH_CFG). Fragments numbered 00-69 are the "Core band"
+# and are profile-gated: `minimal` stops after 30-functions, `standard` after 50-op, `full`
+# loads all of 00-69. Fragments >=70 (OS at 80, role at 85-94, host-local at 99) ALWAYS
+# load regardless of profile — so essential OS/host setup lives there and a lean profile
+# can never drop it. COROLLARY: a fragment an OS/role repo deliberately places in a Core
+# gap (e.g. 22-foo.zsh, to run mid-chain between 20-aliases and 25-git) rides the Core band
+# and is therefore profile-gated too. If it must always load, number it >=70. Ordering is a
+# pure numeric sort on NN; a same-NN tie (a misconfiguration) breaks lexically by filename.
 #
 # Each fragment is byte-compiled to a sibling .zwc before sourcing: `source file`
 # auto-loads `file.zwc` wordcode when it is present and current, skipping a re-parse —

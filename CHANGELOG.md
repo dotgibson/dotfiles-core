@@ -80,8 +80,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the hand-declared `_CORE_MODULES` name array an OS `.zshrc` used to pass. The `NN`
   prefix is the ordering contract; bands are Core `00`–`69`, OS-native `70`–`84`, role
   `85`–`94`, host-local `95`–`99` (the OS layer is now `80-os.zsh`, a role stage `85-*.zsh`,
-  host tweaks `99-local.zsh`). Any layer may use a Core gap to insert mid-chain; ties break
-  by layer precedence then filename. This aligns the zsh module structure with the
+  host tweaks `99-local.zsh`). A layer may still place a fragment in a Core gap to run
+  mid-chain, but gating and ordering key off the `NN` number, not authorship: a fragment in
+  `00`–`69` is profile-gated as Core (number always-load setup `>=70`), and a same-`NN` tie
+  breaks lexically by filename. This aligns the zsh module structure with the
   PowerShell host layer's `NN-name` convention (`PARITY.md`). **Every OS/Role repo must
   re-vendor and update its `bootstrap.sh` loader stanza** — `blib_write_zshrc_loader` now
   emits a `CORE_PROFILE` + `source "$ZSH_CFG/loader.zsh"` stanza (managed marker
