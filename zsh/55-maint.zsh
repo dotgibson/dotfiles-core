@@ -14,7 +14,7 @@
 #   maint-uninstall         remove the schedule
 #
 # LOAD ORDER: anywhere after tools; it only defines functions. (Pairs with
-# update.zsh — that's the per-shell nudge; this is the scheduled apply.)
+# 60-update.zsh — that's the per-shell nudge; this is the scheduled apply.)
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Absolute path to the runner, resolved relative to THIS file (survives the

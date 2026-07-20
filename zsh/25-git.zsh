@@ -136,7 +136,7 @@ alias gma='git merge --abort'
 # ── fzf-assisted staging / restore ────────────────────────────────────────────
 # Interactive counterparts to the static aliases above: fuzzy multi-select instead
 # of typing paths. Portable (depend only on git + fzf, both in the Core stack); each
-# guards on fzf like the zle widgets in fzf.zsh, so a bare box degrades cleanly. NUL
+# guards on fzf like the zle widgets in 35-fzf.zsh, so a bare box degrades cleanly. NUL
 # piping via tr keeps paths with spaces intact through xargs.
 function gaf() {  # fuzzy `git add` — pick from modified + untracked
   _core_have fzf || { _core_warn "gaf: needs fzf"; return 1; }
