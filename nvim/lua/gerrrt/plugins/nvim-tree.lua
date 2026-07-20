@@ -55,7 +55,13 @@ return {
 				auto_open = true,
 			},
 			filters = { dotfiles = false },
-			view = { adaptive_size = true },
+			-- `width = {}` is the current spelling of the old `adaptive_size = true` (a 2023-01-15
+			-- legacy key). nvim-tree still accepts the old name but silently rewrites it
+			-- (nvim-tree.lua/lua/nvim-tree/legacy.lua:73-81): with no explicit width it produces
+			-- `width = { min = nil }`, i.e. exactly `{}`. Verified equivalent by running the
+			-- migration: `{ adaptive_size = true }` and `{ width = {} }` compare deep-equal.
+			-- An empty width table means "size to content, no fixed min/max".
+			view = { width = {} },
 		})
 	end,
 }
