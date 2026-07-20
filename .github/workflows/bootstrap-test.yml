@@ -15,10 +15,14 @@
 #                    is already covered hermetically by dotfiles-core's test-core.sh,
 #                    so this asserts the part bootstrap.sh OWNS: the wiring it produces.
 #
-# A caller stub (in an OS repo) looks like:
+# A caller stub (in an OS repo) looks like — pinned to the moving MAJOR tag @vN per the
+# `@vN` policy in RELEASE-STRATEGY.md, NOT @main: a caller's contract then changes only via
+# a Core release, and a MAJOR bump (this v4 assertion switch) is the one intentional,
+# reviewed caller edit — so an OS repo on @v3 keeps the v3 assertions until it deliberately
+# moves to @v4 as part of the fan-out (re-vendoring v4 Core + updating its bootstrap together):
 #   jobs:
 #     test:
-#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@main
+#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v3
 #       with:
 #         image: alpine:3.20
 #         prep:  apk add --no-cache bash zsh
