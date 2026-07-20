@@ -24,15 +24,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   already off, and `spellfile` auto-downloads spellfiles over the network — unwanted generally and
   wrong on a `DOTFILES_OFFLINE` box. **`%` is unaffected**: `matchit` (extended `%` over
   `if`/`end`, tags, …) and `editorconfig` are deliberately kept, and both the matchit and builtin
-  `%` motions were verified identical before and after. NvChad disables 26 runtime plugins including
+  `%` motions were verified identical before and after. What this does give up is the automatic
+  highlight of the bracket paired with the one under the cursor — `rainbow-delimiters` colors by
+  nesting depth and only where a treesitter parser is installed, so it is a different cue, not a
+  replacement. NvChad disables 26 runtime plugins including
   `matchit`; that list is not copied — each entry here carries a stated reason.
 
 ### Changed
 
-- **Neovim: `lazy.nvim` now defaults specs to `lazy = true`.** Every spec already declares an
-  `event`/`ft`/`cmd`/`keys` trigger, so the loaded-plugin set is byte-identical before and after
-  (verified, 25 plugins on first file open). This is a regression net: a future spec added without a
-  trigger stays lazy instead of silently landing on the startup path.
+- **Neovim: `lazy.nvim` now defaults specs to `lazy = true`.** Every spec is already covered — most
+  declare an `event`/`ft`/`cmd`/`keys` trigger, and the pure-data/dependency specs
+  (`webdev-icons.lua`, `schemastore.lua`, the luvit-meta entry in `lazydev-nvim.lua`) declare
+  `lazy = true` explicitly and load via `require` or another spec's `dependencies`. So the
+  loaded-plugin set is byte-identical before and after (verified, 25 plugins on first file open).
+  This is a regression net: a future spec added with neither a trigger nor an explicit `lazy` stays
+  lazy instead of silently landing on the startup path.
 
 - **Neovim: file-plugins now load after the UI is ready (`User FilePost`)** — `nvim-lspconfig`,
   `gitsigns`, `nvim-lint` and `todo-comments` hung off `BufReadPre`/`BufReadPost`, which fire

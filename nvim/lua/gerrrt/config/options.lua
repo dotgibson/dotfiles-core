@@ -35,11 +35,18 @@ vim.opt.signcolumn = "yes" -- Always show sign column
 vim.opt.colorcolumn = "100" -- Show column at 100 characters
 -- NOTE: 'showmatch' is deliberately NOT set. It does not "highlight" the matching bracket — it
 -- physically JUMPS THE CURSOR to the match for 'matchtime' tenths of a second every time you type a
--- closing bracket, then jumps back. That is a visible stutter while typing, and it was redundant:
--- the runtime matchparen plugin already highlighted the pair without moving the cursor. matchparen
--- is now disabled outright (config/lazy.lua — it cost 3 autocmds on every insert-mode keystroke),
--- so bracket matching is handled by treesitter/rainbow-delimiters highlighting instead of either.
--- Want a static highlight back? Re-enable matchparen there rather than setting showmatch here.
+-- closing bracket, then jumps back. That is a visible stutter while typing, and it was redundant
+-- with the runtime matchparen plugin, which highlighted the pair without moving the cursor.
+--
+-- matchparen is now disabled outright (config/lazy.lua — it cost 3 autocmds on EVERY insert-mode
+-- keystroke). Be clear about what that gives up: the automatic highlight of the bracket PAIRED WITH
+-- THE ONE UNDER YOUR CURSOR is gone, and nothing else restores it. rainbow-delimiters colors
+-- delimiters by NESTING DEPTH, and only in buffers whose language has an installed treesitter
+-- parser — useful, but a different cue, and absent in parserless buffers. What remains everywhere is
+-- the `%` motion (matchit + builtin), which jumps to the match on demand.
+-- That trade is deliberate: a per-keystroke cost in every insert session, for a passive cue.
+-- Want the automatic pair highlight back? Re-enable matchparen in config/lazy.lua — do NOT set
+-- showmatch here, which is the cursor-jumping variant, not a highlight.
 vim.opt.completeopt = "menuone,noinsert,noselect" -- Completion options
 vim.opt.showmode = false -- Don't show mode in command line
 vim.opt.pumheight = 10 -- Popup menu height

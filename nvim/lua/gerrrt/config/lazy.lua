@@ -46,11 +46,16 @@ require("lazy").setup({
 		enabled = false,
 	},
 	-- Invert lazy.nvim's default: a spec is lazy UNLESS it opts out with `lazy = false`. Today every
-	-- spec here already declares an event/ft/cmd/keys trigger, so this changes nothing at present —
-	-- it is a REGRESSION NET, so a future spec added without a trigger stays lazy instead of silently
-	-- landing on the startup path. The one spec that must load eagerly (tokyonight, plugins/theme.lua)
-	-- already says `lazy = false, priority = 1000` explicitly. Verified: the set of plugins loaded at
-	-- startup and on first file open is identical before and after this line.
+	-- spec here is already covered one of two ways, so this changes nothing at present:
+	--   • most declare an event/ft/cmd/keys trigger;
+	--   • the pure-data / dependency specs declare `lazy = true` explicitly and are pulled in by a
+	--     `require` or by another spec's `dependencies` — webdev-icons.lua, schemastore.lua, and the
+	--     luvit-meta entry in lazydev-nvim.lua.
+	-- It is a REGRESSION NET: a future spec added with NEITHER a trigger nor an explicit `lazy` stays
+	-- lazy instead of silently landing on the startup path. The one spec that must load eagerly
+	-- (tokyonight, plugins/theme.lua) already says `lazy = false, priority = 1000` explicitly.
+	-- Verified: the set of plugins loaded at startup and on first file open is identical before and
+	-- after this line.
 	defaults = { lazy = true },
 	-- Auto-check for plugin updates, but don't spam notifications on every startup.
 	-- Disabled when DOTFILES_OFFLINE=1 (engagement boxes) — the checker does background
