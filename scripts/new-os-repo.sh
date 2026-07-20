@@ -146,7 +146,9 @@ w "$TARGET/zsh/zshrc" <<'EOF'
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
 ZSH_CFG="${ZDOTDIR:-$HOME/.config/zsh}"
-: "${CORE_PROFILE:=full}"   # minimal | standard | full — gates Core fragments (bands 00-69)
+# CORE_PROFILE (minimal | standard | full) gates Core fragments (bands 00-69). The loader
+# resolves it: environment wins, else a one-liner in "$ZSH_CFG/profile", else full. Do not
+# pre-set it here, or that file could never take effect.
 if [[ -r "$ZSH_CFG/loader.zsh" ]]; then
   source "$ZSH_CFG/loader.zsh"
 else

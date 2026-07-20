@@ -16,10 +16,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 ### Added
 
 - **`CORE_PROFILE` (`minimal` / `standard` / `full`), destined for v4.0.0.** Selects which
-  Core-owned fragment bands (`00`–`69`) the loader sources — `minimal` stops after
-  `30-functions`, `standard` after `50-op`, `full` loads all Core — so a headless box can
-  skip the interactive-heavy zsh stages (history sync, completion plugins, the update
-  nudge). It gates **only** Core fragments; OS/role/host fragments (`>=70`) always load, so
+  Core-band fragments (`00`–`69`) the loader sources — `minimal` stops after `30-functions`,
+  `standard` after `50-op`, `full` loads all Core — so a headless box can skip the
+  interactive-heavy stages `minimal` omits: fzf widgets (`35`), vi-mode bindings (`40`), the
+  plugin stack (`45` — autosuggestions/syntax-highlighting/carapace/fzf-tab), the 1Password
+  helpers (`50`), and the maintenance + update surface (`55`/`60`). (Atuin/history and the
+  aliases live in `00`–`30`, so they still load under `minimal`.) It resolves from the
+  environment or a `$ZSH_CFG/profile` one-liner, and gates **only** Core fragments;
+  OS/role/host fragments (`>=70`) always load, so
   a lean profile never drops essential OS setup or `99-local.zsh`. It is a pure loader
   concern — install-time provisioning selection stays with `bootstrap.sh`'s existing
   `--only`/`--skip` (`blib_want`) groups, so `bootstrap.sh --only zsh` + `CORE_PROFILE=minimal`

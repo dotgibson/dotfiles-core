@@ -1166,6 +1166,34 @@ else
   pass "Core + 80-os + 99-local loaded via the loader (Core→OS contract holds)"
 fi
 
+# ── A3. profile filtering (CORE_PROFILE ceilings + env/file resolution) ───────
+# A2 proves the FULL chain; this proves the minimal/standard ceilings, that outer
+# fragments (>=70) ALWAYS load regardless of profile, that an unknown/unset profile falls
+# back to full, and that CORE_PROFILE resolves from the environment (wins) or a persistent
+# $ZSH_CFG/profile one-liner. Uses lightweight STUB fragments (each echoes its NN) so it is
+# fast and asserts the EXACT loaded set — independent of the real modules' side effects.
+hdr "profile filtering (CORE_PROFILE ceilings + resolution)"
+PROF="$SANDBOX/prof"
+mkdir -p "$PROF"
+ln -s "$HERE/zsh/loader.zsh" "$PROF/loader.zsh"
+for nn in 00 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99; do
+  printf 'print -r -- "F%s"\n' "$nn" >"$PROF/$nn-stub.zsh"
+done
+# _prof_load <pre-source snippet> → space-joined NN list actually loaded. The snippet runs
+# before `source loader.zsh`, so it can set CORE_PROFILE in the env or leave it unset.
+_prof_load() { zsh -f -c "ZSH_CFG='$PROF'; $1; source '$PROF/loader.zsh'" 2>/dev/null | tr '\n' ' ' | sed 's/F//g; s/ *$//'; }
+_prof_is() { if [[ "$2" == "$3" ]]; then pass "profile: $1"; else fail "profile: $1 — got [$2] want [$3]"; fi; }
+_ALL="00 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99"
+_prof_is "full loads every band"          "$(_prof_load 'CORE_PROFILE=full')"     "$_ALL"
+_prof_is "minimal = 00-30 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=minimal')"  "00 05 10 15 20 25 30 80 85 99"
+_prof_is "standard = 00-50 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+_prof_is "unknown value falls back to full" "$(_prof_load 'CORE_PROFILE=bogus')"   "$_ALL"
+_prof_is "unset defaults to full"         "$(_prof_load 'true')"                  "$_ALL"
+printf 'minimal\n' >"$PROF/profile"                       # persistent one-liner
+_prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 05 10 15 20 25 30 80 85 99"
+_prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+rm -f "$PROF/profile"
+
 # ── B. function unit tests ────────────────────────────────────────────────────
 hdr "function unit tests (functions.zsh)"
 FN="$HERE/zsh/30-functions.zsh"

@@ -226,13 +226,17 @@ blib_migrate_v4() {
       mkdir -p "$state" && mv "$zdir/.zsh_history" "$state/history" && blib_ok "history moved to $state/history"
     fi
   fi
-  # local.zsh → 99-local.zsh (preserve the host's overrides under the new glob).
+  # local.zsh → 99-local.zsh (preserve the host's overrides under the new glob). If BOTH
+  # exist (a partial/manual migration), the v4 loader sources ONLY 99-local.zsh — do NOT
+  # silently orphan the old file; warn so the operator merges it rather than losing overrides.
   if [[ -e "$zdir/local.zsh" && ! -e "$zdir/99-local.zsh" ]]; then
     if _blib_dry; then
       blib_say "would rename local.zsh → 99-local.zsh"
     else
       mv "$zdir/local.zsh" "$zdir/99-local.zsh" && blib_ok "local.zsh → 99-local.zsh"
     fi
+  elif [[ -e "$zdir/local.zsh" && -e "$zdir/99-local.zsh" ]]; then
+    blib_warn "both local.zsh and 99-local.zsh exist in $zdir — the v4 loader sources ONLY 99-local.zsh; merge your overrides from local.zsh into it (left in place, not removed)."
   fi
   _blib_dry && return 0
   # stale unnumbered Core module symlinks (+ their .zwc) and the old flat os.zsh.
@@ -429,9 +433,10 @@ export NOTES_DIR="${NOTES_DIR:-$HOME/Notes}"
 export ZDOTDIR
 ZSH_CFG="$ZDOTDIR"
 
-# CORE_PROFILE: minimal | standard | full. Gates which Core fragments (bands 00-69) load;
-# OS/role/host fragments (>=70) always load. Default full = every Core module (today's set).
-: "${CORE_PROFILE:=full}"
+# CORE_PROFILE (minimal | standard | full) gates which Core fragments (bands 00-69) load;
+# OS/role/host fragments (>=70) always load. Leave it to the loader to resolve — set it in
+# the environment (wins), or drop a one-liner in "$ZSH_CFG/profile"; unset ⇒ full (today's
+# behaviour). Do NOT pre-set it here, or the $ZSH_CFG/profile file could never take effect.
 
 if [[ -r "$ZSH_CFG/loader.zsh" ]]; then
   source "$ZSH_CFG/loader.zsh"

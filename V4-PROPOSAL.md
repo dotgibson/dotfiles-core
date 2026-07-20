@@ -29,9 +29,10 @@ same seam:
    the codebase had already started unevenly. (Byte-compiled `.zwc` wordcode stays
    beside its fragment — zsh's auto-pickup requires it; see §4.3.)
 3. **Opt-in module profiles** — a `CORE_PROFILE` (`minimal` / `standard` /
-   `full`) derives which Core fragments load, so a headless box can skip the
-   interactive-heavy zsh stages (history sync, completion plugins, the update
-   nudge) cleanly.
+   `full`) derives which Core-band fragments load, so a headless box can skip the
+   interactive-heavy stages `minimal` omits: fzf, vi-mode bindings, the plugin
+   stack, the 1Password helpers, and the maintenance + update surface (atuin and
+   aliases live in `00`–`30`, so they still load).
 
 They are bundled because they touch the **same two contracts**. Shipping them as
 three separate majors would hammer every OS repo with three consecutive
@@ -184,9 +185,10 @@ there. That is the one implementation deviation from the original four-item list
 ### 5.1 Current
 
 Every module always loads. The only knob is `DOTFILES_OFFLINE`. A headless
-server or minimal container pays for atuin (history sync), `plugins.zsh`
-(carapace/fzf-tab), the `fzf` widgets, and the `update.zsh` nudge — whether it
-wants them or not. (Neovim is deliberately out of scope: it is provisioned by
+server or minimal container pays for the `plugins.zsh` stack (carapace/fzf-tab/
+autosuggestions/syntax-highlighting), the `fzf` widgets + vi-mode bindings, the
+1Password helpers, and the maintenance + `update.zsh` nudge — whether it wants
+them or not. (Neovim is deliberately out of scope: it is provisioned by
 `blib_link_core` at bootstrap and loaded by nvim itself, not by any zsh stage, so
 a zsh-fragment profile cannot govern it — see §9 for extending profiles to
 bootstrap wiring.)
@@ -297,10 +299,11 @@ Kept here for reference:
 ### Added
 
 - **`CORE_PROFILE` (`minimal` / `standard` / `full`).** Selects which Core-band
-  fragments (`00`–`69`) load, so a headless box can skip the
-  interactive-heavy zsh stages (history sync, completion plugins, the update
-  nudge); it never filters the OS/Role/local layers. Defaults to `full` (today's
-  behaviour).
+  fragments (`00`–`69`) load, so a headless box can skip the interactive-heavy
+  stages `minimal` omits — fzf, vi-mode bindings, the plugin stack, the 1Password
+  helpers, and the maintenance + update surface (atuin/history + aliases in
+  `00`–`30` still load); it never filters the OS/Role/local layers. Resolved from
+  the environment or a `$ZSH_CFG/profile` one-liner; defaults to `full`.
 ```
 
 ## 9. Non-goals and open questions

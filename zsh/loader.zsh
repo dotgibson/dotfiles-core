@@ -8,8 +8,10 @@
 # each in order:
 #
 #     ZSH_CFG="${ZDOTDIR:-$HOME/.config/zsh}"
-#     CORE_PROFILE=full            # minimal | standard | full (default full)
 #     source "$ZSH_CFG/loader.zsh"
+#
+# The profile is resolved by this file (not the caller): an explicit CORE_PROFILE in the
+# environment wins; else a one-liner in $ZSH_CFG/profile (minimal|standard|full); else full.
 #
 # CRITICAL — this is SOURCED at the caller's scope, NOT wrapped in a function. The
 # fragments set options (setopt), define aliases, and run compinit; those must persist
@@ -43,11 +45,18 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 : "${ZSH_CFG:=${ZDOTDIR:-$HOME/.config/zsh}}"
-: "${CORE_PROFILE:=full}"
 # Nothing to do without a config dir — keeps a bare source (e.g. a tool that sources
 # this file with no fragments present) a clean no-op, even under `setopt nounset`.
 [[ -d "$ZSH_CFG" ]] || return 0
 
+# Profile resolution — THIS file is the single point of truth (the managed .zshrc no
+# longer pre-sets it): an explicit CORE_PROFILE in the environment wins; else the first
+# line of a persistent $ZSH_CFG/profile one-liner; else the `full` default below.
+if [[ -z ${CORE_PROFILE:-} && -r "$ZSH_CFG/profile" ]]; then
+  read -r CORE_PROFILE < "$ZSH_CFG/profile"
+fi
+
+: "${CORE_PROFILE:=full}"
 # Core-band ceiling per profile: Core fragments (00-69) numbered ABOVE it are skipped;
 # outer fragments (>=70) always load. An unknown value falls through to `full` (safest).
 case "$CORE_PROFILE" in
@@ -59,9 +68,10 @@ esac
 # Plain (not `local`) scratch vars + an explicit unset at the end: this file is SOURCED
 # at the caller's top level, where `local` is an error — mirroring the inline loop it
 # replaces. Glob qualifiers: `N` nullglob (no fragments → clean no-op), `n` numeric sort
-# (so 05 precedes 40 precedes 99). `<->` matches the leading NN prefix, so loader.zsh
-# itself (no NN- prefix) is never globbed and never sources itself.
-for _cl_f in "$ZSH_CFG"/<->-*.zsh(Nn); do
+# (so 05 precedes 40 precedes 99). `[0-9][0-9]-` matches EXACTLY the two-digit NN prefix
+# the band contract requires — loader.zsh itself (no NN- prefix) is never globbed, and a
+# malformed `1-`/`100-` name is ignored rather than mis-banded.
+for _cl_f in "$ZSH_CFG"/[0-9][0-9]-*.zsh(Nn); do
   [[ -r "$_cl_f" ]] || continue
   _cl_nn=$(( 10#${${_cl_f:t}%%-*} ))                   # leading NN as base-10 (leading-zero safe)
   (( _cl_nn < 70 && _cl_nn > _cl_ceil )) && continue   # profile gate — Core band only
