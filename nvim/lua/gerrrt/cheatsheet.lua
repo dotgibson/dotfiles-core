@@ -111,6 +111,7 @@ M.sections = {
 		{ "<C-s>", "Signature help (i)" },
 		{ "<leader>oi", "Organize imports" },
 		{ "<leader>cf", "Format buffer / range" },
+		{ "<leader>cL", "Run CodeLens" },
 		{ "<leader>cs", "Symbols (Trouble)" },
 		{ "<leader>cn", "Annotation (Neogen)" },
 		{ "<leader>;", "Breadcrumb pick (dropbar)" },

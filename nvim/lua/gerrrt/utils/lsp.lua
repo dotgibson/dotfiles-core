@@ -52,6 +52,11 @@ end
 -- doesn't belong in on_attach, which re-runs per attaching client (twice on a Python buffer:
 -- ruff + ty). grt (type_definition) and grx (codelens.run) were missing from the old list; any
 -- remaining gr* keeps `gr` ambiguous, so all six must go.
+--
+-- EVERY DELETED DEFAULT HAS A REPLACEMENT — check this before adding to the list. grn -> <leader>rn,
+-- gra -> <leader>ca, grr -> gr, gri -> gi, grt -> gy, grx -> <leader>cl (added with grx itself;
+-- codelens was the one default with no prior equivalent here). Deleting a default with no
+-- replacement silently removes a working LSP action.
 -- pcall'd only to tolerate a future Neovim that stops shipping one of them.
 for _, lhs in ipairs({ "grn", "gra", "grr", "gri", "grt", "grx" }) do
 	pcall(vim.keymap.del, "n", lhs)
@@ -103,6 +108,16 @@ M.on_attach = function(event)
 		require("gerrrt.utils.renamer").rename()
 	end, opts("Rename symbol"))
 	keymap({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts("Code action"))
+	-- REPLACEMENT for the deleted `grx` default (vim.lsp.codelens.run — see the deletion loop at
+	-- the top of this file). Unlike the other five defaults we delete, grx had NO equivalent
+	-- anywhere in this config: grn -> <leader>rn, gra -> <leader>ca, grr -> gr, gri -> gi,
+	-- grt -> gy, but codelens had nothing. Deleting it without this line would have silently
+	-- dropped a working LSP action.
+	--
+	-- <leader>cL, NOT <leader>cl: lowercase cl is Trouble's "LSP refs/defs" (plugins/trouble-nvim.lua).
+	-- These maps are BUFFER-LOCAL and buffer-local wins over global, so taking cl here would have
+	-- shadowed Trouble's binding on precisely the LSP-attached buffers where it is used.
+	keymap("n", "<leader>cL", vim.lsp.codelens.run, opts("Run CodeLens"))
 	keymap("i", "<C-s>", function()
 		vim.lsp.buf.signature_help(float_opts)
 	end, opts("Signature help"))

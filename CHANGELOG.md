@@ -141,13 +141,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   delete raised `E31: No such mapping`, swallowed by the `pcall`. Dropped the `buffer` key, added
   the two 0.12 additions (`grt`, `grx`) that were missing, and hoisted the loop out of `on_attach`
   — it is global state that was being re-attempted per attaching client (twice on a Python buffer:
-  `ruff` + `ty`). Verified: all six now report unmapped after boot.
+  `ruff` + `ty`). Verified: all six now report unmapped after boot. `grx` (`vim.lsp.codelens.run`)
+  was the one default with no existing equivalent in this config, so it gains a replacement under
+  the `<leader>c` "code" prefix: **`<leader>cL` runs CodeLens** (capital L — lowercase
+  `<leader>cl` is Trouble's LSP refs/defs, and these maps are buffer-local, so taking it would have
+  shadowed Trouble on every LSP-attached buffer). The others already had
+  one (`grn` → `<leader>rn`, `gra` → `<leader>ca`, `grr` → `gr`, `gri` → `gi`, `grt` → `gy`).
 - **Neovim: `binary_available()` was a no-op for `ts_ls`, `yamlls` and `tailwindcss`.** Current
   nvim-lspconfig ships `cmd` as a _function_ (a project-local `node_modules/.bin` probe) for those,
   and the guard's `type(cmd) ~= "table" → return true` branch waved them straight through. They
   were enabled unconditionally, still produced the recurring `spawn … ENOENT` the guard exists to
-  suppress, and never appeared in the "LSP not enabled" notice. Falls back to the well-known global
-  binary name; a project-local install still wins at spawn time.
+  suppress, and never appeared in the "LSP not enabled" notice. Now available if the well-known
+  global binary is on `PATH` **or** a `node_modules/.bin/<binary>` is reachable from the cwd. Both
+  tests are needed: those launchers prefer a project-local binary and only then fall back to the
+  global one, but this enable pass runs before any client (so before `root_dir` exists) — answering
+  "unavailable" means no client ever starts and the launcher never runs, so a global-only test would
+  break the common "no global install, just a devDependency" layout. The local test is a heuristic
+  and is deliberately biased to fail open.
 - **Neovim: `mini.nvim` dragged the whole treesitter stack onto the startup path.** It declared
   `nvim-treesitter-textobjects` as a `dependencies` entry, and lazy.nvim loads dependencies _with_
   the parent — so mini's `VeryLazy` overrode the `BufReadPost`/`BufNewFile` trigger that both
