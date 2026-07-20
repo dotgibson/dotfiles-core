@@ -70,9 +70,28 @@ return {
 			}
 		end
 
-		-- Show the language servers attached to the current buffer.
+		-- The buffer the STATUSLINE is describing — not necessarily the current one.
+		-- Neovim sets vim.g.statusline_winid while evaluating a statusline; with globalstatus=true
+		-- (set below) there is one bar shared by every window, so reading `0`/current buffer is
+		-- subtly wrong whenever the bar is redrawn for a window you aren't in. This is the one
+		-- discipline worth taking from NvChad's statusline modules (nvchad/stl/utils.lua does the
+		-- same via its stbufnr()). Falls back to the current buffer when the global isn't set.
+		local function stbuf()
+			local win = vim.g.statusline_winid
+			if win and vim.api.nvim_win_is_valid(win) then
+				return vim.api.nvim_win_get_buf(win)
+			end
+			return vim.api.nvim_get_current_buf()
+		end
+
+		-- Show the language servers attached to the statusline's buffer.
+		-- Width-gated like NvChad does: on a narrow window the server list is the first thing worth
+		-- dropping, since the diagnostics counts next to it carry the actionable information.
 		local function lsp_servers()
-			local clients = vim.lsp.get_clients({ bufnr = 0 })
+			if vim.o.columns < 100 then
+				return ""
+			end
+			local clients = vim.lsp.get_clients({ bufnr = stbuf() })
 			if #clients == 0 then
 				return ""
 			end
@@ -81,6 +100,59 @@ return {
 				names[#names + 1] = client.name
 			end
 			return "\u{f085} " .. table.concat(names, ", ") -- f085 nf-fa-cogs
+		end
+
+		-- Active Python virtual environment (uv / venv), shown only in Python buffers.
+		--
+		-- DISPLAY ONLY: this does not configure ty or ruff. ty already discovers <root>/.venv on its
+		-- own, so nothing here needs to feed it — this block just answers "which env am I actually
+		-- in?" at a glance, which is the thing that silently differs between projects.
+		--
+		-- CACHED PER BUFFER (vim.b): a statusline component is re-evaluated on every redraw, so the
+		-- filesystem walk below must never run inline. It runs once per buffer and the answer is
+		-- memoised in vim.b[buf]; everything after that is a table read. Resolution order matches
+		-- uv's own: an activated VIRTUAL_ENV wins, then UV_PROJECT_ENVIRONMENT (absolute as-is,
+		-- relative to the project root), then <root>/.venv. Presence is probed via pyvenv.cfg rather
+		-- than bin/python because that file exists on every platform and cannot be faked by a stray
+		-- directory that happens to be named `venv`.
+		local function venv_name()
+			local buf = stbuf()
+			if vim.bo[buf].filetype ~= "python" or vim.o.columns < 90 then
+				return ""
+			end
+			local cached = vim.b[buf].gerrrt_venv
+			if cached == nil then
+				local resolved = ""
+				local ok = pcall(function()
+					local active = vim.env.VIRTUAL_ENV
+					if active and active ~= "" then
+						resolved = active
+						return
+					end
+					local root = vim.fs.root(buf, { { "uv.lock", "pyproject.toml" }, ".git" })
+					if not root then
+						return
+					end
+					local candidates = {}
+					local upe = vim.env.UV_PROJECT_ENVIRONMENT
+					if upe and upe ~= "" then
+						candidates[#candidates + 1] = vim.startswith(upe, "/") and upe or vim.fs.joinpath(root, upe)
+					end
+					candidates[#candidates + 1] = vim.fs.joinpath(root, ".venv")
+					for _, dir in ipairs(candidates) do
+						if vim.uv.fs_stat(vim.fs.joinpath(dir, "pyvenv.cfg")) then
+							resolved = dir
+							return
+						end
+					end
+				end)
+				cached = ok and resolved or ""
+				vim.b[buf].gerrrt_venv = cached
+			end
+			if cached == "" then
+				return ""
+			end
+			return "\u{f0320} " .. vim.fn.fnamemodify(cached, ":t") -- f0320 nf-md-language_python
 		end
 
 		-- Current working directory basename — NvChad shows this on the right; it's the fast
@@ -138,6 +210,10 @@ return {
 				},
 				lualine_x = {
 					{ "searchcount" },
+					-- venv sits immediately left of the server list: both answer "what is analysing
+					-- this buffer", and in a Python buffer the environment is the more surprising of
+					-- the two. Collapses to nothing outside Python, so no width is spent elsewhere.
+					{ venv_name, color = { gui = "italic" } },
 					{
 						lsp_servers,
 						color = { gui = "italic" },
