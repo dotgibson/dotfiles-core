@@ -24,6 +24,7 @@ return {
 		spec = {
 			{ "<leader>b", group = "buffer" },
 			{ "<leader>c", group = "code / LSP" },
+			{ "<leader>d", group = "debug (dap)" },
 			{ "<leader>f", group = "find (fzf)" },
 			{ "<leader>g", group = "git" },
 			{ "<leader>h", group = "harpoon" },
