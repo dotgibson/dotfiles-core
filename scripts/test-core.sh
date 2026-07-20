@@ -1427,6 +1427,11 @@ check "core doctor routes to core-doctor" \
   'out=$(NO_COLOR=1 core doctor 2>&1); (( $? == 0 )) && [[ $out == *"modern CLI"* ]]'
 check "core rejects an unknown subcommand with a did-you-mean" \
   'out=$(core verzion 2>&1); (( $? != 0 )) && [[ $out == *"did you mean core version"* ]]'
+# Profile awareness (B1): under minimal/standard, 60-update is not loaded, so `up` is
+# undefined. `core update` must report cleanly (mentioning CORE_PROFILE) rather than reach a
+# missing command. Simulate the gated state by unfunction-ing `up` in a subshell.
+check "core update reports cleanly when up is gated by CORE_PROFILE" \
+  '( unfunction up 2>/dev/null; out=$(core update 2>&1); (( $? != 0 )) && [[ $out == *CORE_PROFILE* ]] )'
 # U5: a usage error points back at the discoverability surface — `see: core-help <verb>`,
 # the verb derived from the synopsis's first token, so every verb gets it for free.
 check "usage errors carry a 'see: core-help <verb>' footer (U5)" \
