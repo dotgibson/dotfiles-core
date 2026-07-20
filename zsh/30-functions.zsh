@@ -1,4 +1,4 @@
-# core/zsh/functions.zsh
+# core/zsh/30-functions.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Cross-OS shell functions. Pure POSIX-ish where possible so they behave the
 # same on macOS zsh, Linux zsh, and Alpine's busybox-adjacent environment.

@@ -1,4 +1,4 @@
-# git.zsh — curated git aliases + helpers
+# 25-git.zsh — curated git aliases + helpers
 #
 # Provenance: a hand-picked subset of the oh-my-zsh `git` plugin, with the
 # framework, auto-updater, and ~100 rarely-used aliases stripped out. Drop this

@@ -1,4 +1,4 @@
-# core/zsh/fzf.zsh
+# core/zsh/35-fzf.zsh
 # fzf config + custom zle widgets. Promoted from the Mac; portable across boxes
 # (needs fzf + fd + bat + eza; all in the Core stack). The zle widgets defined
 # here are bound to keys in bindings.zsh, so load this BEFORE bindings/plugins.

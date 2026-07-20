@@ -1,4 +1,4 @@
-# core/zsh/maint.zsh
+# core/zsh/55-maint.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Control surface for the daily maintenance job (core/maint/dotfiles-maint.sh).
 # Wires that script to whatever scheduler the box has, at a time you pick:

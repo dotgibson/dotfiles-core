@@ -1,4 +1,4 @@
-# core/zsh/ui.zsh
+# core/zsh/05-ui.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Shared terminal-UX primitives for Core's interactive commands — one consistent
 # voice for errors, hints, confirms, and progress, so functions.zsh / op.zsh /

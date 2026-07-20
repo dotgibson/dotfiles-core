@@ -1,4 +1,4 @@
-# core/zsh/plugins.zsh
+# core/zsh/45-plugins.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Lightweight zsh plugin loader — no Oh My Zsh, no Zinit. Plugins are auto-cloned
 # to $XDG_DATA_HOME/zsh/plugins on first launch (v4: cloned code is DATA, not config —

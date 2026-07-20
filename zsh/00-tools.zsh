@@ -1,4 +1,4 @@
-# core/zsh/tools.zsh
+# core/zsh/00-tools.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Tool detection + the single place every shell-hook tool is initialised. Load
 # this FIRST (before options/history/aliases/fzf/bindings/plugins/op).

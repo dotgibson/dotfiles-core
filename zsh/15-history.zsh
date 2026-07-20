@@ -1,4 +1,4 @@
-# core/zsh/history.zsh
+# core/zsh/15-history.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Portable zsh history config. NEW in the 2026 refresh, and it matters even with
 # atuin: atuin IMPORTS from and (by default) shadows zsh history, and

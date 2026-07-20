@@ -1,4 +1,4 @@
-# core/zsh/options.zsh
+# core/zsh/10-options.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Portable zsh options + the completion system. NEW in the 2026 refresh: this
 # centralizes setopts and `compinit` that previously had to live in each OS repo's

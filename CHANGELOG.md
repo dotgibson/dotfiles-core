@@ -13,6 +13,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Docs/comments: finish the v4 numbered-fragment rename.** Every Core zsh fragment's
+  self-header comment now names its numbered file (`# core/zsh/00-tools.zsh` … `60-update.zsh`)
+  instead of the pre-v4 flat name; `aliases.md` gains a **Named Directories** section for the
+  `~dots`/`~proj` `hash -d` shortcuts; and `PORTING-MATRIX.md` clarifies that `Defense` is a
+  distro-agnostic Role repo (absent from the OS-stamp table by design, not omission).
+  Comment/doc only — no behavior change.
+
 ## [v4.0.1] - 2026-07-20
 
 ### Fixed

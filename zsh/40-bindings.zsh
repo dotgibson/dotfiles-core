@@ -1,4 +1,4 @@
-# core/zsh/bindings.zsh
+# core/zsh/40-bindings.zsh
 # Vi-mode keybindings. zsh-vi-mode resets all bindings on init, so we register
 # them via its zvm_after_init hook. Load this BEFORE plugins.zsh (which sources
 # zsh-vi-mode) so the hook is defined before vi-mode fires it. Most widgets it

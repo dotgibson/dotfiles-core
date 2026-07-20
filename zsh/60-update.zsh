@@ -1,4 +1,4 @@
-# core/zsh/update.zsh
+# core/zsh/60-update.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # "Tell me when there are updates, don't make me remember." A throttled,
 # fully-backgrounded check on shell start that prints a single one-line nudge if

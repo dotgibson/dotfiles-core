@@ -1,4 +1,4 @@
-# core/zsh/aliases.zsh
+# core/zsh/20-aliases.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Aliases for the modern CLI stack. Every alias touching an optional tool is
 # GUARDED by a HAVE_* flag from tools.zsh, so on a bare box (fresh server, rescue
