@@ -299,6 +299,14 @@ two `BREAKING (v4.0.0)` bullets (the numbered-fragment loader over one flat
   and offline-first vendored plugins — separate candidates, not bundled here.
 - Any change to keybindings, aliases, or the tmux prefix. Public muscle-memory
   surface is untouched.
+- **Profile-aware discovery surface.** Under `minimal`/`standard`, `core-help` and
+  the `did-you-mean` suggestions still list the full Core verb set (`up`, `maint-*`,
+  `fif`, …) even though those fragments aren't loaded — help stays a complete
+  reference. Invoking a gated verb is what's made availability-aware: `core update`
+  reports cleanly ("not loaded under CORE_PROFILE=…") rather than reaching a missing
+  command. Filtering help rows/footer + suggestion candidates by the live profile is
+  a deliberate follow-up (it reworks the tested `core-help`/`_core_suggest` machinery),
+  not folded into this major.
 
 **Resolved decisions (as implemented):**
 
