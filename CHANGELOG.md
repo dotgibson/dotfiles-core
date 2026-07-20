@@ -141,13 +141,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   separate mappings, with the visual pair passing `{ line("."), line("v") }` — upstream's documented
   form — and bound to `x` rather than `v` so they do not also fire in select-mode. Verified end to
   end in a real repo: staging lines 2-3 of a 3-line hunk staged exactly those two.
-- **Neovim: the Node.js provider is disabled, clearing the config's only health warning.** Its sole
-  consumers are remote plugins, but `config/lazy.lua` disables the `rplugin` manifest loader, no
-  installed plugin ships a manifest, and nothing references `node_host` — so it was unreachable
-  while still emitting a permanent `:checkhealth` WARNING. `:checkhealth` is now **0 errors,
-  0 warnings** across every section. The python3 provider is explicitly left enabled and documented
-  as load-bearing: `vimade` probes `has('python3')` (`vimade/autoload/vimade.vim:80`) and picks a
-  python renderer when present.
+- **Neovim: the Node.js and python3 providers are disabled, clearing the config's only health
+  warning.** The node provider's sole consumers are remote plugins, but `config/lazy.lua` disables
+  the `rplugin` manifest loader, no installed plugin ships a manifest, and nothing references
+  `node_host` — so it was unreachable while still emitting a permanent `:checkhealth` WARNING.
+  python3 goes too: `vimade` is the only thing in the tree that mentions python, and it never
+  reaches that path here. `vimade#SetupRenderer()` (`vimade/autoload/vimade.vim:30-43`)
+  short-circuits to the Lua renderer whenever `renderer == 'auto'` and `supports_lua_renderer`, and
+  only the _else_ branch calls `SetupPython()`; `supports_lua_renderer` needs
+  `nvim_get_hl` + `nvim_win_set_hl_ns`, present since 0.11, and nvim-treesitter's main branch
+  already hard-requires 0.12 here — so the python fallback is unreachable. Confirmed at runtime:
+  `ACTIVE renderer = lua`, `vimade_python_setup = 0`, and `has('python3')` was never evaluated.
+  (nvim-dap-python spawns debugpy as an external DAP adapter — a subprocess, not this provider.)
+  Disabling both makes the cleanup portable: otherwise any fleet machine without `pynvim` keeps
+  emitting the same warning. `:checkhealth` is now **0 errors, 0 warnings** across every section.
 - **Neovim: `gsn` (surround `update_n_lines`) never existed.** `plugins/mini-nvim.lua` passed
   `update_n_lines = "gsn"` in mini.surround's `mappings`, but that is not a key in its schema
   (`add`/`delete`/`find`/`find_left`/`highlight`/`replace`/`suffix_last`/`suffix_next`) and unknown
