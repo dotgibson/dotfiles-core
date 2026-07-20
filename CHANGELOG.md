@@ -15,6 +15,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`CORE_PROFILE` (`minimal` / `standard` / `full`), destined for v4.0.0.** Selects which
+  Core-band fragments (`00`–`69`) the loader sources — `minimal` stops after `30-functions`,
+  `standard` after `50-op`, `full` loads all Core — so a headless box can skip the
+  interactive-heavy stages `minimal` omits: fzf widgets (`35`), vi-mode bindings (`40`), the
+  plugin stack (`45` — autosuggestions/syntax-highlighting/carapace/fzf-tab), the 1Password
+  helpers (`50`), and the maintenance + update surface (`55`/`60`). (Atuin/history and the
+  aliases live in `00`–`30`, so they still load under `minimal`.) It resolves from the
+  environment or a `$ZSH_CFG/profile` one-liner, and gates **only** Core fragments;
+  OS/role/host fragments (`>=70`) always load, so
+  a lean profile never drops essential OS setup or `99-local.zsh`. It is a pure loader
+  concern — install-time provisioning selection stays with `bootstrap.sh`'s existing
+  `--only`/`--skip` (`blib_want`) groups, so `bootstrap.sh --only zsh` + `CORE_PROFILE=minimal`
+  compose orthogonally. Defaults to `full` (today's behaviour).
 - **Neovim: debugging via `nvim-dap` + `nvim-dap-python`.** Breakpoints, stepping, and variable
   inspection under a new `<leader>d` which-key group, with palette-aware gutter signs and rows in
   the cheatsheet. Loaded on its keymaps and `Dap*` commands **only** — it costs nothing at startup
@@ -65,6 +78,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **BREAKING (v4.0.0) — loader & layout overhaul.** Core's zsh modules are renamed to
+  numbered fragments (`00-tools` … `60-update`), and the loader (`zsh/loader.zsh`) now
+  globs `NN-*.zsh` in `$ZSH_CFG`, sorts by the `NN` prefix, and sources each — replacing
+  the hand-declared `_CORE_MODULES` name array an OS `.zshrc` used to pass. The `NN`
+  prefix is the ordering contract; bands are Core `00`–`69`, OS-native `70`–`84`, role
+  `85`–`94`, host-local `95`–`99` (the OS layer is now `80-os.zsh`, a role stage `85-*.zsh`,
+  host tweaks `99-local.zsh`). A layer may still place a fragment in a Core gap to run
+  mid-chain, but gating and ordering key off the `NN` number, not authorship: a fragment in
+  `00`–`69` is profile-gated as Core (number always-load setup `>=70`), and a same-`NN` tie
+  breaks lexically by filename. This aligns the zsh module structure with the
+  PowerShell host layer's `NN-name` convention (`PARITY.md`). **Every OS/Role repo must
+  re-vendor and update its `bootstrap.sh` loader stanza** — `blib_write_zshrc_loader` now
+  emits a stanza that simply `source`s `$ZSH_CFG/loader.zsh` (managed marker
+  `dotfiles-managed v4`) and takes no module list; it deliberately does **not** assign
+  `CORE_PROFILE`, leaving resolution to the loader (env → `$ZSH_CFG/profile` one-liner →
+  `full`). `blib_migrate_v4` relocates the pre-v4 layout automatically on re-bootstrap.
+  Design + per-repo runbook in `V4-PROPOSAL.md`.
+- **BREAKING (v4.0.0) — mutable zsh state moves to XDG dirs.** History
+  (`$XDG_STATE_HOME/zsh/history`), the completion dump (`$XDG_CACHE_HOME/zsh/zcompdump`),
+  and plugins (`$XDG_DATA_HOME/zsh/plugins`) leave the symlinked `$ZDOTDIR` config tree,
+  which now holds config **plus** the byte-compiled `.zwc` wordcode written beside each
+  fragment symlink — the one deliberate exception, because that is how zsh's automatic
+  wordcode pickup works (`source file` loads `file.zwc` only when it sits beside `file`).
+  `bootstrap.sh` (`blib_migrate_v4`) relocates an existing `~/.config/zsh/.zsh_history`,
+  `plugins/`, and drops the stale pre-v4 symlinks/compdump on re-bootstrap so nothing is
+  lost. Hosts must **re-bootstrap**, not just re-source.
 - **Neovim: statusline components now read the statusline's window, not the current one.** With
   `globalstatus = true` one bar is shared by every window, so `bufnr = 0` was subtly wrong whenever
   the bar was redrawn for a window you weren't in. Custom components now resolve through
