@@ -13,6 +13,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Neovim: file-plugins now load after the UI is ready (`User FilePost`)** — `nvim-lspconfig`,
+  `gitsigns`, `nvim-lint` and `todo-comments` hung off `BufReadPre`/`BufReadPost`, which fire
+  _before_ Neovim finishes starting. Measured on a real TTY, `BufReadPost` lands at ~44ms while the
+  UI isn't ready until ~131ms, so ~87ms of plugin work sat in front of the editor appearing. A new
+  self-deleting autocmd in `config/autocmds.lua` emits a `User FilePost` event once startup is done
+  and a real file buffer is open, and those four specs now load on it.
+  **Opening a file: 165.9ms → 99.0ms (-40%).** Bare `nvim` is unchanged (~37ms).
+  The event waits for `UIEnter` when a UI exists, and falls back to `VimEnter` only when there is
+  genuinely no UI (`nvim --headless`), where `UIEnter` never fires — gating on `UIEnter` alone (as
+  NvChad does) would silently disable LSP, linting and git signs in every headless/CI session,
+  including this repo's own audit, while accepting `VimEnter` in a TTY would fire ~5ms early and pull
+  the plugins back in front of the first paint. `scripts/test-core.sh` asserts the exactly-once
+  contract in both startup shapes. No `FileType` replay is needed; each of the
+  four self-attaches to already-open buffers (`vim.lsp.enable()` re-runs `doautoall`, gitsigns
+  iterates `nvim_list_bufs()`, todo-comments attaches to visible windows, nvim-lint is write-driven).
+
 ## [v3.9.0] - 2026-07-19
 
 ### Added

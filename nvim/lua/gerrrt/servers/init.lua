@@ -83,8 +83,9 @@ local M = {}
 -- Safe to call REPEATEDLY: vim.lsp.enable is idempotent and, on 0.11+, attaches a newly-enabled
 -- server to already-open matching buffers. That is what lets the post-install hook in
 -- plugins/mason-tool-installer.lua (User MasonToolsUpdateCompleted) bring a fresh box's LSP up in
--- the SAME session — the initial pass ran at BufReadPre before the binaries existed and skipped
--- them; re-running after the install attaches them without a restart.
+-- the SAME session — the initial pass ran at `User FilePost` (just after startup, see
+-- config/autocmds.lua) before the binaries existed and skipped them; re-running after the install
+-- attaches them without a restart.
 function M.enable_available()
 	local to_enable, missing = {}, {}
 	for _, name in ipairs(wanted) do

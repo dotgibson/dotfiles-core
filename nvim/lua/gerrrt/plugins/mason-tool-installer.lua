@@ -6,13 +6,14 @@
 --         toolchain after a start.
 -- WHY ITS OWN SPEC (not inside conform): this used to live in conform.nvim's `config`, but conform
 --         is lazy (`event = BufWritePre`), so `run_on_start = true` really meant "run on the first
---         :w". Meanwhile servers enable earlier at BufReadPre and `vim.lsp.enable` silently skips a
---         server whose binary isn't on PATH yet (servers/init.lua's binary_available guard) — so on a
---         fresh box the LSP stack stayed dark until a save AND a restart. Loading on VeryLazy runs the
---         install pass near startup on EVERY launch.
--- SAME-SESSION LSP : the install is async, so the BufReadPre enable pass has already run (and skipped
---         the not-yet-installed servers) by the time it finishes. The `MasonToolsUpdateCompleted`
---         handler below re-runs servers/init.lua's enable pass when installs complete —
+--         :w". Meanwhile servers enable earlier at `User FilePost` and `vim.lsp.enable` silently
+--         skips a server whose binary isn't on PATH yet (servers/init.lua's binary_available guard) —
+--         so on a fresh box the LSP stack stayed dark until a save AND a restart. Loading on VeryLazy
+--         runs the install pass near startup on EVERY launch.
+-- SAME-SESSION LSP : the install is async, so the `User FilePost` enable pass has already run (and
+--         skipped the not-yet-installed servers) by the time it finishes. The
+--         `MasonToolsUpdateCompleted` handler below re-runs servers/init.lua's enable pass when
+--         installs complete —
 --         `vim.lsp.enable` attaches the freshly-installed servers to the already-open buffer, so a
 --         fresh box gets a working LSP stack WITHIN the first session, no restart required.
 -- DELIBERATELY NOT here (installed by other channels — listing them would double-install):
@@ -70,7 +71,7 @@ return {
 		})
 
 		-- When installs finish, re-run the server enable pass so servers whose binaries the initial
-		-- BufReadPre pass skipped (fresh box) get enabled + attached to the open buffer this session.
+		-- `User FilePost` pass skipped (fresh box) get enabled + attached to the open buffer this session.
 		vim.api.nvim_create_autocmd("User", {
 			pattern = "MasonToolsUpdateCompleted",
 			callback = function()
