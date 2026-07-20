@@ -307,13 +307,15 @@ for _, f in ipairs(vim.fn.readdir(pdir) or {}) do
     end
   end
 end
--- LSP layer: servers/init.lua wires 13 server configs + the on_attach/diagnostics
+-- LSP layer: servers/init.lua wires 19 server configs + the on_attach/diagnostics
 -- helpers, but ALL of it runs inside a deferred plugin callback (plugins/nvim-lspconfig)
 -- — so the loop above never touches it, and luacheck (static) was its only gate. A bad
 -- vim.lsp.config{} call or a typo'd capability there is luacheck-clean and breaks only on
 -- first file-open, then fans out 9×. Close that: require utils.lsp/diagnostics, and every
--- servers/* LEAF (each returns a `function(capabilities)`; requiring it evaluates the file
--- WITHOUT calling it, so no blink.cmp/lspconfig need be installed). servers/init.lua itself
+-- servers/* LEAF. Each leaf returns a PLAIN CONFIG TABLE (it used to return a
+-- `function(capabilities)` factory; capabilities now come from the "*" wildcard set once in
+-- servers/init.lua, so the leaves are pure data). Requiring one evaluates the file without
+-- registering anything, so no blink.cmp/lspconfig need be installed. servers/init.lua itself
 -- is skipped — it require()s blink.cmp, a plugin absent from this hermetic probe.
 -- utils.ui-highlights has the SAME gap: it's only require()d inside tokyonight's deferred
 -- on_highlights callback (plugins/theme.lua), which the plugins/* loop above never runs — so
@@ -330,8 +332,12 @@ for _, f in ipairs(vim.fn.readdir(sdir) or {}) do
     local ok, res = pcall(require, mod)
     if not ok then
       errs[#errs + 1] = mod .. " → " .. tostring(res)
-    elseif type(res) ~= "function" then
-      errs[#errs + 1] = mod .. " → did not return a function(capabilities)"
+    elseif type(res) ~= "table" then
+      errs[#errs + 1] = mod .. " → did not return a config table (got " .. type(res) .. ")"
+    elseif next(res) == nil then
+      -- An empty table means the file evaluated but configures nothing — almost certainly a
+      -- botched edit rather than intent, and it would silently leave that server on defaults.
+      errs[#errs + 1] = mod .. " → returned an EMPTY config table"
     end
   end
 end
@@ -522,6 +528,117 @@ LUA
   fi
 else
   skip "nvim FilePost contract (nvim not installed — runs in CI)"
+fi
+
+# ── D4. Neovim LSP server registry (servers/init.lua, headless) ───────────────
+# Section D requires every servers/* LEAF but deliberately SKIPS servers/init.lua, because it
+# require()s blink.cmp — absent from that hermetic probe. That left the registry itself
+# untested: the "*" wildcard capability registration, the per-server vim.lsp.config calls,
+# the failed-module isolation, and which names actually get enabled could all regress while
+# the leaf probe stayed green. It is the file that decides whether you have LSP at all, and
+# it fans out to 9 repos.
+#
+# Close it by stubbing the two things that made it untestable — blink.cmp (via package.preload)
+# and the vim.lsp surface — then require the real module and assert what it registered. No
+# plugins, no servers, no network. Also injects a deliberately broken module to prove one bad
+# server file degrades to "that server is unconfigured" instead of taking the editor down.
+hdr "neovim LSP server registry (servers/init.lua, headless)"
+if ! ((SCOPE_NVIM)); then
+  skip "nvim LSP registry (out of scope)"
+elif have nvim; then
+  reg_probe="$SANDBOX/nvim-registry.lua"
+  cat >"$reg_probe" <<'LUA'
+vim.opt.runtimepath:prepend(vim.env.CORE_NVIM_DIR)
+
+-- Stub blink.cmp so the registry's capabilities call resolves without the plugin.
+package.preload["blink.cmp"] = function()
+  return { get_lsp_capabilities = function() return { STUB_CAPS = true } end }
+end
+-- Break ONE server module to prove failures are isolated, not fatal.
+package.preload["gerrrt.servers.gopls"] = function()
+  error("deliberate probe failure")
+end
+
+-- Pin the binary gate. binary_available() calls vim.fn.executable(), so without this the
+-- enabled count would depend on which language servers happen to be installed on the host —
+-- different locally vs each CI runner. CORE_REG_EXE drives both directions of the gate.
+local exe_result = tonumber(vim.env.CORE_REG_EXE) or 1
+local real_executable = vim.fn.executable
+vim.fn.executable = function() return exe_result end
+
+local registered, enabled = {}, {}
+local real_config, real_enable = vim.lsp.config, vim.lsp.enable
+vim.lsp.config = setmetatable({}, {
+  __call = function(_, name, cfg) registered[name] = cfg end,
+  -- binary_available() reads vim.lsp.config[name]; hand back what was registered.
+  __index = function(_, name) return registered[name] end,
+})
+vim.lsp.enable = function(names)
+  for _, n in ipairs(type(names) == "table" and names or { names }) do enabled[#enabled + 1] = n end
+end
+
+local ok, err = pcall(require, "gerrrt.servers")
+vim.lsp.config, vim.lsp.enable = real_config, real_enable
+vim.fn.executable = real_executable
+if not ok then
+  io.stderr:write("require gerrrt.servers → " .. tostring(err) .. "\n")
+  vim.cmd("cquit 1")
+end
+
+local n_servers, n_nocmd = 0, 0
+for name, cfg in pairs(registered) do
+  if name ~= "*" then
+    n_servers = n_servers + 1
+    -- binary_available() deliberately does NOT second-guess a config without a literal cmd list
+    -- (nil, or a function launcher) — those bypass the executable check entirely.
+    if type(cfg) ~= "table" or type(cfg.cmd) ~= "table" then n_nocmd = n_nocmd + 1 end
+  end
+end
+-- The broken module registered nothing, so its cmd resolves to nil and it bypasses the gate too.
+if registered["gopls"] == nil then n_nocmd = n_nocmd + 1 end
+io.stdout:write(("wildcard=%s caps=%s servers=%d broken_registered=%s enabled=%d nocmd=%d\n"):format(
+  tostring(registered["*"] ~= nil),
+  tostring(registered["*"] and registered["*"].capabilities and registered["*"].capabilities.STUB_CAPS or false),
+  n_servers,
+  tostring(registered["gopls"] ~= nil),
+  #enabled,
+  n_nocmd))
+vim.cmd("qa!")
+LUA
+  reg_err="$SANDBOX/nvim-registry.err"
+  _reg_field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"; }
+
+  # A. every binary present. The wildcard must carry the stubbed capabilities; the deliberately
+  #    broken module must NOT be registered (isolated) while the module still completes; and every
+  #    configured server must end up enabled — registered ones plus the broken one, which falls
+  #    back to nvim-lspconfig's own defaults rather than disappearing.
+  reg_a=$(CORE_NVIM_DIR="$HERE/nvim" CORE_REG_EXE=1 nvim --headless -u "$reg_probe" -i NONE -n \
+    </dev/null 2>"$reg_err" | tr -d '\r')
+  a_servers=$(_reg_field "$reg_a" servers); a_enabled=$(_reg_field "$reg_a" enabled)
+  if [[ "$(_reg_field "$reg_a" wildcard)" == "true" && "$(_reg_field "$reg_a" caps)" == "true" \
+        && "$(_reg_field "$reg_a" broken_registered)" == "false" \
+        && -n "$a_servers" && "$a_enabled" -eq $((a_servers + 1)) ]]; then
+    pass "LSP registry: wildcard caps set, broken module isolated, all $a_enabled servers enabled"
+  else
+    fail "LSP registry contract broken — got '$reg_a' (expected caps+wildcard true, broken_registered false, enabled = servers+1)"
+    [[ -s "$reg_err" ]] && sed 's/^/    /' "$reg_err" >&2
+  fi
+
+  # B. no binary present. Only configs that bypass the gate by design may remain — those with no
+  #    literal `cmd` list, which binary_available() deliberately does not second-guess. Asserted
+  #    against the probe's own count rather than a magic number, so adding a server can't silently
+  #    invalidate it. Anything more would mean a missing binary gets enabled and then respawn-errors
+  #    on every matching buffer, which is exactly what that guard exists to prevent.
+  reg_b=$(CORE_NVIM_DIR="$HERE/nvim" CORE_REG_EXE=0 nvim --headless -u "$reg_probe" -i NONE -n \
+    </dev/null 2>/dev/null | tr -d '\r')
+  b_enabled=$(_reg_field "$reg_b" enabled); b_nocmd=$(_reg_field "$reg_b" nocmd)
+  if [[ -n "$b_enabled" && "$b_enabled" == "$b_nocmd" ]]; then
+    pass "LSP registry: binary gate enables only the $b_nocmd cmd-less configs when no binary exists"
+  else
+    fail "LSP registry binary gate broken — got '$reg_b' (expected enabled == nocmd)"
+  fi
+else
+  skip "nvim LSP registry (nvim not installed — runs in CI)"
 fi
 
 # ── E. CI path classifier (scripts/ci-classify.sh) ────────────────────────────

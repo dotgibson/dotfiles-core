@@ -8,19 +8,11 @@
 -- ================================================================================================
 local M = {}
 
--- Return a COPY of `capabilities` with completionItem.snippetSupport advertised. Servers whose
--- completions ship as snippets (html-lsp, css-lsp) need this or their items arrive as plain text.
--- Extracted here so servers/html.lua and servers/cssls.lua stop hand-rolling the identical
--- deepcopy + nested-table dance (kept them in lockstep was pure drift risk). deepcopy so a server
--- flipping this can never mutate the shared `capabilities` table the other servers were built from.
-function M.with_snippets(capabilities)
-	local caps = vim.deepcopy(capabilities)
-	caps.textDocument = caps.textDocument or {}
-	caps.textDocument.completion = caps.textDocument.completion or {}
-	caps.textDocument.completion.completionItem = caps.textDocument.completion.completionItem or {}
-	caps.textDocument.completion.completionItem.snippetSupport = true
-	return caps
-end
+-- NOTE: M.with_snippets() was removed. It hand-deepcopied the shared capabilities table just to
+-- flip completionItem.snippetSupport for html-lsp/css-lsp. Capabilities are now advertised once on
+-- the "*" wildcard (servers/init.lua) and vim.lsp.config deep-merges each server's table over it,
+-- so those two servers set only the snippetSupport LEAF and inherit everything else — no copy, no
+-- risk of mutating the shared table. See servers/html.lua for the shape.
 
 -- True when the server's advertised code-action support could include source.organizeImports.
 -- A server that enumerates its codeActionKinds without a "source"/"source.organizeImports" kind is

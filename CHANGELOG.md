@@ -32,6 +32,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Neovim: LSP server modules are now plain config tables, and the server list exists once.**
+  Each `lua/gerrrt/servers/<name>.lua` returned a `function(capabilities)` factory that called
+  `vim.lsp.config()` itself; `servers/init.lua` then invoked all 19 by hand and re-listed the same
+  19 names in a separate `wanted` table, so every name was written twice. The leaves are now pure
+  data, capabilities are advertised once on the `vim.lsp.config("*")` wildcard, and one `servers`
+  list drives both registration and enabling. `utils/lsp.lua`'s `with_snippets()` is gone —
+  html/cssls set only the `snippetSupport` leaf and inherit the rest via the wildcard deep-merge.
+  Verified by diffing the fully-resolved config of all 19 servers before and after: **identical**.
+  Note the configs deliberately stay on explicit `vim.lsp.config(name, …)` calls rather than moving
+  to `lsp/<name>.lua` on the runtimepath: rtp files are merged in rtp order with the user config dir
+  _first_, so nvim-lspconfig's own `lsp/<name>.lua` would override ours (verified — a probe setting
+  `cmd = { "PROBE_CMD" }` resolved to `cmd = { "gopls" }`). Explicit calls always win.
+  `scripts/test-core.sh` is updated to assert the new contract (a non-empty table, not a function).
 - **Neovim: the SchemaStore catalogues are no longer built unconditionally.** `servers/jsonls.lua`
   and `servers/yamlls.lua` resolved `require("schemastore").{json,yaml}.schemas()` inline in their
   `settings`, which ran while the server was being _configured_ — and `servers/init.lua` configures
