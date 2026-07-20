@@ -244,12 +244,13 @@ For each repo in `scripts/os-repos.txt` (which already includes the Role repos
    `git subtree pull --prefix=core <core-remote> v4.0.0 --squash`
 2. **Update `bootstrap.sh`:** call the vendored `blib_write_zshrc_loader` (now
    param-less — it no longer takes a module list). It emits the managed
-   `dotfiles-managed v4` `.zshrc`, which sets `CORE_PROFILE` and sources the loader;
-   the loader globs the numbered fragments from **one flat `$ZSH_CFG`** (all layers
-   symlink into it), so there is no `_CORE_LAYER_DIRS` list to pass:
+   `dotfiles-managed v4` `.zshrc`, which sources the loader and leaves `CORE_PROFILE`
+   resolution **to the loader** (env var wins, else a `$ZSH_CFG/profile` one-liner,
+   else `full`) — the `.zshrc` must NOT pre-set it, or that file could never take
+   effect. The loader globs the numbered fragments from **one flat `$ZSH_CFG`** (all
+   layers symlink into it), so there is no `_CORE_LAYER_DIRS` list to pass:
 
    ```zsh
-   : "${CORE_PROFILE:=full}"
    source "$ZSH_CFG/loader.zsh"
    ```
 
@@ -274,37 +275,13 @@ Roll out **canary-first** (one OS repo, bake, then fan out) per
 
 ## 8. CHANGELOG entry
 
-The breaking-change entries below have **landed** under `## [Unreleased]` in
-`CHANGELOG.md` (they move under a `## [v4.0.0]` heading when the release is cut).
-Kept here for reference:
-
-```markdown
-### Changed
-
-- **BREAKING — loader & layout overhaul.** Core's zsh modules are renamed to
-  numbered fragments (`00-tools` … `60-update`) and the loader now globs-and-sorts
-  `NN-*.zsh` across the Core, OS, and local layer directories instead of sourcing a
-  hand-declared `_CORE_MODULES` name list. OS/Role repos gain default bands
-  (`70`–`84` OS, `85`–`94` role, `95`–`99` local) and can inject a fragment at any
-  point in the chain rather than only appending — and the zsh module structure now
-  matches the PowerShell host layer's `NN-name` convention (PARITY.md). Every OS
-  repo must re-vendor and update its `bootstrap.sh` loader stanza; see V4-PROPOSAL.md.
-- **BREAKING — mutable state moves to XDG dirs.** History
-  (`$XDG_STATE_HOME/zsh/history`), the compdump and byte-compiled `.zwc`
-  (`$XDG_CACHE_HOME/zsh/…`), and plugins (`$XDG_DATA_HOME/zsh/plugins`) leave the
-  symlinked config tree, which is now immutable. `bootstrap.sh` relocates an
-  existing history file on re-bootstrap so nothing is lost. Hosts must
-  re-bootstrap, not just re-source.
-
-### Added
-
-- **`CORE_PROFILE` (`minimal` / `standard` / `full`).** Selects which Core-band
-  fragments (`00`–`69`) load, so a headless box can skip the interactive-heavy
-  stages `minimal` omits — fzf, vi-mode bindings, the plugin stack, the 1Password
-  helpers, and the maintenance + update surface (atuin/history + aliases in
-  `00`–`30` still load); it never filters the OS/Role/local layers. Resolved from
-  the environment or a `$ZSH_CFG/profile` one-liner; defaults to `full`.
-```
+The breaking-change entries have **landed** under `## [Unreleased]` in
+`CHANGELOG.md` — that file is the single source of truth (they move under a
+`## [v4.0.0]` heading when the release is cut). They are deliberately **not**
+duplicated here, to avoid the two-copies-drift this proposal already had: see the
+two `BREAKING (v4.0.0)` bullets (the numbered-fragment loader over one flat
+`$ZSH_CFG`, and the XDG split with `.zwc` staying beside each fragment) plus the
+`CORE_PROFILE` addition in `CHANGELOG.md`.
 
 ## 9. Non-goals and open questions
 

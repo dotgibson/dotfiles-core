@@ -11,7 +11,7 @@
 # the shared half lives here, vendored under core/lib/, and each bootstrap.sh shrinks
 # to its genuinely OS-specific part (the package install) plus calls into these helpers.
 #
-# zsh/ui.zsh is the zsh-runtime UX lib; lib/ux.sh is its bash sibling; this is the bash
+# zsh/05-ui.zsh is the zsh-runtime UX lib; lib/ux.sh is its bash sibling; this is the bash
 # PROVISIONING sibling. Like ux.sh it IS vendored into every OS repo (it's in
 # core.manifest) precisely so bootstrap.sh — which runs before any zsh config — can
 # `source core/lib/bootstrap-lib.sh` instead of duplicating it.
@@ -35,7 +35,7 @@
 #   wire_links() {
 #     blib_link_core      "$DOTFILES" "$CONFIG"
 #     blib_link_os_layer  "$DOTFILES" "$CONFIG" fedora
-#     blib_write_zshrc_loader        # default module set; Kali passes its own (see below)
+#     blib_write_zshrc_loader        # param-less (v4): the loader globs the numbered fragments
 #     blib_set_login_shell
 #   }
 # ──────────────────────────────────────────────────────────────────────────────
@@ -218,13 +218,17 @@ blib_migrate_v4() {
   local config="$1" m
   local zdir="$config/zsh"
   local state="${XDG_STATE_HOME:-$HOME/.local/state}/zsh"
-  # history → $XDG_STATE_HOME (only when the old file exists and the new one doesn't yet).
+  # history → $XDG_STATE_HOME (only when the old file exists and the new one doesn't yet). If
+  # BOTH exist (a partial migration), the v4 shell reads ONLY $state/history — do NOT clobber
+  # it, and do NOT silently leave the pre-v4 file to rot: warn so its lines are merged, not lost.
   if [[ -f "$zdir/.zsh_history" && ! -e "$state/history" ]]; then
     if _blib_dry; then
       blib_say "would move .zsh_history → $state/history"
     else
       mkdir -p "$state" && mv "$zdir/.zsh_history" "$state/history" && blib_ok "history moved to $state/history"
     fi
+  elif [[ -f "$zdir/.zsh_history" && -e "$state/history" ]]; then
+    blib_warn "both $zdir/.zsh_history (pre-v4) and $state/history exist — the v4 shell reads ONLY the latter; the pre-v4 file is left in place to merge (e.g. cat it into $state/history), not discarded."
   fi
   # local.zsh → 99-local.zsh (preserve the host's overrides under the new glob). If BOTH
   # exist (a partial/manual migration), the v4 loader sources ONLY 99-local.zsh — do NOT

@@ -67,11 +67,15 @@ esac
 
 # Plain (not `local`) scratch vars + an explicit unset at the end: this file is SOURCED
 # at the caller's top level, where `local` is an error — mirroring the inline loop it
-# replaces. Glob qualifiers: `N` nullglob (no fragments → clean no-op), `n` numeric sort
-# (so 05 precedes 40 precedes 99). `[0-9][0-9]-` matches EXACTLY the two-digit NN prefix
-# the band contract requires — loader.zsh itself (no NN- prefix) is never globbed, and a
-# malformed `1-`/`100-` name is ignored rather than mis-banded.
-for _cl_f in "$ZSH_CFG"/[0-9][0-9]-*.zsh(Nn); do
+# replaces. `[0-9][0-9]-` matches EXACTLY the two-digit NN prefix the band contract requires,
+# so loader.zsh itself (no NN- prefix) is never globbed and a malformed `1-`/`100-` name is
+# ignored rather than mis-banded; `N` is nullglob (no fragments → clean no-op).
+# Sort EXPLICITLY with the `(o)` parameter flag — a lexical sort independent of the caller's
+# NUMERIC_GLOB_SORT option — NOT the glob's own `n`/numeric sort. The fixed-width 2-digit NN
+# still orders correctly lexically, and a same-NN tie breaks lexically by filename exactly as
+# the contract promises (numeric sort would instead put `85-r10` AFTER `85-r2`, natural order).
+_cl_frags=("$ZSH_CFG"/[0-9][0-9]-*.zsh(N))
+for _cl_f in "${(@o)_cl_frags}"; do
   [[ -r "$_cl_f" ]] || continue
   _cl_nn=$(( 10#${${_cl_f:t}%%-*} ))                   # leading NN as base-10 (leading-zero safe)
   (( _cl_nn < 70 && _cl_nn > _cl_ceil )) && continue   # profile gate — Core band only
@@ -80,4 +84,4 @@ for _cl_f in "$ZSH_CFG"/[0-9][0-9]-*.zsh(Nn); do
   [[ -s "$_cl_f.zwc" && ! "$_cl_f" -nt "$_cl_f.zwc" ]] || zcompile -R -- "$_cl_f" 2>/dev/null
   source "$_cl_f"
 done
-unset _cl_f _cl_nn _cl_ceil
+unset _cl_frags _cl_f _cl_nn _cl_ceil

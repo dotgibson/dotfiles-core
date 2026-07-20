@@ -3,7 +3,7 @@
 Most aliases sourced from `zsh/20-aliases.zsh` and `zsh/25-git.zsh`; exception: `cheat` is
 defined in `zsh/30-functions.zsh` (alias for `core-help`). Tool aliases are guarded
 by detection flags — if the tool is not installed, the classic command is used instead.
-Load order: `tools.zsh` sets `HAVE_*` flags first, then `aliases.zsh` reads them.
+Load order: `00-tools.zsh` sets `HAVE_*` flags first, then `20-aliases.zsh` reads them.
 
 ## Modern CLI Replacements
 
@@ -65,7 +65,7 @@ Load order: `tools.zsh` sets `HAVE_*` flags first, then `aliases.zsh` reads them
 
 ## Jujutsu
 
-Active when `jj` is installed — `tools.zsh` detects the binary and sets `HAVE_JJ`
+Active when `jj` is installed — `00-tools.zsh` detects the binary and sets `HAVE_JJ`
 automatically. No manual config required; install `jj` and these aliases appear.
 
 | Alias | Expands To |

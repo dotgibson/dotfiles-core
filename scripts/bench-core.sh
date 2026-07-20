@@ -91,14 +91,21 @@ mkdir -p "$SANDBOX/zdot"
 # (hermetic, no network) — v4: plugins live under $XDG_DATA_HOME/zsh/plugins, not $ZDOTDIR.
 _seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
 
-# The numbered Core fragments in load order (no os/local — those belong to OS repos).
+# The numbered Core fragments in load order (no os/local — those belong to OS repos). Used
+# by the --profile per-module attribution below (which times each source individually).
 CORE_MODULES=(00-tools 05-ui 10-options 15-history 20-aliases 25-git 30-functions 35-fzf 40-bindings 45-plugins 50-op 55-maint 60-update)
 export CORE_DIR="$HERE/zsh"
-# The `$CORE_DIR/$_m` here is expanded by the zsh CHILD reading this .zshrc, not by
-# this bash parent — so SC2016 (un-expanded `$` in single quotes) is intended.
+
+# AGGREGATE benchmark: drive the REAL v4 loader against a symlinked $ZSH_CFG (like the smoke
+# test), so the number includes glob + profile resolution + the compile/wordcode fast path —
+# a faithful production startup, and a regression in the loader itself is now visible. (The
+# --profile mode below keeps direct per-fragment sourcing, which is what per-module timing needs.)
+ln -s "$HERE/zsh/loader.zsh" "$SANDBOX/zdot/loader.zsh"
+for f in "$HERE"/zsh/[0-9][0-9]-*.zsh; do ln -s "$f" "$SANDBOX/zdot/$(basename "$f")"; done
+# $ZDOTDIR/$ZSH_CFG stay LITERAL in the written .zshrc (expanded by the zsh child at startup,
+# not this bash parent) — so the single quotes are intentional. shellcheck disable=SC2016
 # shellcheck disable=SC2016
-printf 'for _m in %s; do source "$CORE_DIR/$_m.zsh"; done\n' "${CORE_MODULES[*]}" \
-  >"$SANDBOX/zdot/.zshrc"
+printf 'ZSH_CFG="$ZDOTDIR"\nsource "$ZSH_CFG/loader.zsh"\n' >"$SANDBOX/zdot/.zshrc"
 
 # ── --profile: per-module cost attribution (B11) ──────────────────────────────
 # The aggregate mean tells you startup got slower; it doesn't tell you WHICH module. This

@@ -2,7 +2,7 @@
 # core/maint/dotfiles-maint.sh — the daily "update everything (that's safe)" runner.
 # ──────────────────────────────────────────────────────────────────────────────
 # Invoked by a scheduler (systemd user timer / launchd / cron) at a fixed time —
-# install it with `maint-install` (see core/zsh/maint.zsh). Designed to run
+# install it with `maint-install` (see core/zsh/55-maint.zsh). Designed to run
 # UNATTENDED and NON-INTERACTIVE: every step is guarded, time-limited, and failure
 # of one step never aborts the rest. Updates the USER-SPACE stack (brew, plugin
 # managers, editor) automatically — those are low-risk. SYSTEM packages are only

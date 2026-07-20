@@ -1027,6 +1027,21 @@ _run_migrate 1 "$_v4dry/.local/state" "$_v4dry/.config"
 if [[ -f "$_dzd/.zsh_history" && -e "$_dzd/local.zsh" && ! -e "$_dzd/99-local.zsh" && -L "$_dzd/tools.zsh" && ! -e "$_v4dry/.local/state/zsh/history" ]]; then
   pass "migrate: dry-run (BLIB_DRY=1) changes nothing"; else fail "migrate: dry-run mutated the fixture"; fi
 
+# 4) partial-migration CONFLICT: when the v4 destinations already exist, migrate must WARN
+# and leave the pre-v4 files in place — never clobber the new file, never silently drop the
+# old one (a re-bootstrap must not lose host state). rc stays 0 (a warning is not a failure).
+_v4cf="$(mktemp -d "$SANDBOX/v4cf.XXXXXX")"
+_cfzd="$_v4cf/.config/zsh"
+mkdir -p "$_cfzd" "$_v4cf/.local/state/zsh"
+printf 'old\n' >"$_cfzd/.zsh_history"
+printf 'new\n' >"$_v4cf/.local/state/zsh/history"
+printf 'old\n' >"$_cfzd/local.zsh"
+printf 'new\n' >"$_cfzd/99-local.zsh"
+_run_migrate 0 "$_v4cf/.local/state" "$_v4cf/.config"
+_cf_rc=$?
+if [[ $_cf_rc -eq 0 && -f "$_cfzd/.zsh_history" && "$(cat "$_v4cf/.local/state/zsh/history")" == new && -e "$_cfzd/local.zsh" && "$(cat "$_cfzd/99-local.zsh")" == new ]]; then
+  pass "migrate: conflicting destinations preserved (no clobber, no silent drop)"; else fail "migrate: conflict handling wrong (rc=$_cf_rc)"; fi
+
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall
 # through to the shared summary, so a Section-C failure still surfaces as exit 1.
@@ -1193,6 +1208,13 @@ printf 'minimal\n' >"$PROF/profile"                       # persistent one-liner
 _prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 05 10 15 20 25 30 80 85 99"
 _prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
 rm -f "$PROF/profile"
+# same-NN tiebreak: two 85- fragments must load in LEXICAL order (85-r10 before 85-r2), NOT
+# numeric/natural order — the loader's contract, and it must hold even under NUMERIC_GLOB_SORT.
+printf 'print -r -- r2\n' >"$PROF/85-r2.zsh"
+printf 'print -r -- r10\n' >"$PROF/85-r10.zsh"
+_tie="$(zsh -f -c "ZSH_CFG='$PROF'; setopt numericglobsort; source '$PROF/loader.zsh'" 2>/dev/null | grep -E '^r(2|10)$' | tr '\n' ' ' | sed 's/ *$//')"
+if [[ "$_tie" == "r10 r2" ]]; then pass "profile: same-NN tie breaks lexically (r10 before r2), even under NUMERIC_GLOB_SORT"; else fail "profile: same-NN tiebreak wrong — got [$_tie] want [r10 r2]"; fi
+rm -f "$PROF/85-r2.zsh" "$PROF/85-r10.zsh"
 
 # ── B. function unit tests ────────────────────────────────────────────────────
 hdr "function unit tests (functions.zsh)"

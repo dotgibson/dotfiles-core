@@ -81,7 +81,7 @@ already uses on Fedora. Add `cargo`/`rust` (or a `go` toolchain) to packages.
 `go install` targets land in `~/.local/bin` via `GOBIN` so they're on PATH.
 ⁴ Debian/Kali ship these under different binary names — `bat` runs as `batcat`,
 the `fd-find` package installs `fdfind`, and the `du-dust` package installs the
-`dust` command. Core's `tools.zsh` already resolves them, so aliases and config
+`dust` command. Core's `00-tools.zsh` already resolves them, so aliases and config
 work unchanged.
 ⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. **Mac:**
 `tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
@@ -103,10 +103,10 @@ openSUSE (`jujutsu`), Gentoo (`dev-vcs/jujutsu`), Fedora (`jujutsu`), Homebrew
 or stable Debian/Kali apt (`cargo install jujutsu`) — same cargo pattern as
 yazi/ouch. The config (`jujutsu/config.toml`) is inert without the binary.
 ⁹ sesh: smart tmux session manager that Core already drives from the `Ctrl-G`
-shell widget (`fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); both
+shell widget (`35-fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); both
 degrade to a `find`+`fzf` sessionizer when it's absent. `core-doctor` already
 reports `sesh` via its own `command -v` probe (it does not read `HAVE_SESH`);
-`tools.zsh` now also sets `HAVE_SESH` for parity with the other detected tools.
+`00-tools.zsh` now also sets `HAVE_SESH` for parity with the other detected tools.
 Packaged in the AUR (`sesh`), Homebrew
 (`sesh`), and nixpkgs (`sesh`); **not** in Arch-official, openSUSE, Alpine,
 Gentoo, Fedora, or Debian/Kali apt — so most of the fleet uses
