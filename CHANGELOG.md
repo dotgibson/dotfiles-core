@@ -215,6 +215,42 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed (internal)
 
+- **Neovim: the cheatsheet now covers what it claims to.** An audit against the real keymaps found
+  the panel had drifted from the config it documents. Added a **Completion (blink.cmp)** card — the
+  seven completion-menu keys had no row at all — and a **Move lines (mini.move)** card for
+  `<A-hjkl>`, another whole feature that was absent. Also added `<leader>bn`/`bp`, `<leader>cl`
+  (Trouble LSP refs/defs), `]t`/`[t`, `gsh` and `gsn`; corrected two descriptions (`<leader>rc` said
+  "Edit init.lua" where the keymap's `desc` is "Edit config"; `<leader>e` dropped the load-bearing
+  "closes Zen if active" side effect). The header's "EVERY curated binding" claim is now scoped to
+  say what is deliberately excluded (transient-UI keys: the rename float, oil buffers, alpha's
+  buttons, the panel's own `q`/`<Esc>`) rather than overstating.
+- **Neovim: which-key names three prefixes that rendered as unnamed.** `<leader>r` (edit config,
+  rename symbol), `<leader>o` (organize imports) and `<leader>p` (copy file path) had real children
+  but no `group` entry. `<leader>p` is declared for normal mode only — in visual it is itself a
+  mapping (paste-without-yank), not a prefix.
+- **Neovim: removed dead and misleading plugin config.** Each verified against the installed plugin
+  source, not assumed:
+  - `bufferline`: dropped `hover.reveal = { "close" }`. `get_close_icon()`
+    (`bufferline.nvim/lua/bufferline/ui.lua:263-270`) consults `reveal` and then unconditionally
+    bails on `if not options.show_buffer_close_icons then return end` — which is `false` here, so
+    there was never a close icon to reveal. `hover` stays on for hover highlighting.
+  - `nvim-tree`: `view = { adaptive_size = true }` → `view = { width = {} }`. `adaptive_size` is a
+    2023-01-15 legacy key that nvim-tree silently rewrites (`legacy.lua:73-81`); with no explicit
+    width it produces `{ min = nil }`, i.e. `{}`. Verified equivalent by running the migration and
+    comparing deep-equal. Note `{}` is not "unbounded" — nvim-tree fills the absent keys with its
+    own defaults (`view-state.lua:5-6,77-78`), so the pane sizes to content but never narrower than
+    30 columns; confirmed at runtime as `width = 30`, `max_width = -1`.
+  - `fidget`: `winblend = 0` → `100` (its default). The old comment said this matched "transparent
+    floats" — backwards; fidget's docs (`notification/window.lua:33-49`) describe `100` as the
+    see-through setting and anything less as blending with what's underneath.
+  - `nvim-treesitter-context`: dropped `separator = nil` — assigning `nil` in a table literal omits
+    the key, and `nil` is already the default, so it read as a setting but did nothing.
+  - `conform`: dropped a `config` function that re-implemented lazy.nvim's default for a spec with
+    `opts`. Verified the 20 `formatters_by_ft` entries still apply without it.
+  - `blink.cmp`: corrected a comment claiming the snippet keys use native `vim.snippet` — with
+    `preset = "luasnip"` they route to LuaSnip; blink picks the engine by preset.
+- **Neovim: `<leader>ha` refuses an unnamed buffer.** harpoon keys its list by file path, so adding
+  a scratch buffer stored an unnavigable empty entry and toasted a bare `"Harpoon: added "`.
 - **Neovim: `keymaps.lua` Ex-command maps use `<Cmd>…<CR>` instead of `:…<CR>`** (11 split/tab/
   resize maps). `:` switches to cmdline-mode first — it echoes, is subject to cmdline mappings and
   abbreviations, and clobbers a pending count or visual selection; `<Cmd>` does not.
