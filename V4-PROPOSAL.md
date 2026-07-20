@@ -24,8 +24,9 @@ same seam:
    `$XDG_STATE_HOME` / `$XDG_CACHE_HOME` / `$XDG_DATA_HOME`, finishing a
    migration the codebase has already started unevenly.
 3. **Opt-in module profiles** — a `CORE_PROFILE` (`minimal` / `standard` /
-   `full`) derives the fragment set, so a headless box can skip the
-   interactive-heavy and editor-heavy stages cleanly.
+   `full`) derives which Core fragments load, so a headless box can skip the
+   interactive-heavy zsh stages (history sync, completion plugins, the update
+   nudge) cleanly.
 
 They are bundled because they touch the **same two contracts**. Shipping them as
 three separate majors would hammer every OS repo with three consecutive
@@ -72,14 +73,22 @@ across a set of layer directories, merge, sort numerically, and source** (still
 inline at caller scope, still byte-compiling each fragment to `.zwc` first —
 `loader.zsh`'s mechanics are preserved, only its input changes).
 
-Reserved bands keep ownership unambiguous:
+Each layer has a **recommended default band**, but the numeric prefix — not the
+band — is what orders a fragment, so any layer *may* use a Core gap when it
+genuinely needs to insert mid-chain (an OS repo dropping `22-foo.zsh` between
+`20-aliases` and `25-git` — the §3.1 use case). Bands are a convention for where
+fragments usually live, not a hard partition:
 
-| Band      | Owner            | Example fragments |
-| --------- | ---------------- | ----------------- |
-| `00`–`69` | Core             | `00-tools`, `10-options`, `25-git`, `45-plugins`, `60-update` |
-| `70`–`84` | OS-native layer  | `80-os-fedora.zsh` |
-| `85`–`94` | Role layer       | `85-offensive.zsh` (Kali), `85-defense.zsh` (Defense) |
-| `95`–`99` | Host-local       | `99-local.zsh` |
+| Band | Default owner | Example |
+| --- | --- | --- |
+| `00`–`69` | Core | `25-git` |
+| `70`–`84` | OS-native layer | `80-os-fedora` |
+| `85`–`94` | Role layer | `85-offensive` |
+| `95`–`99` | Host-local | `99-local` |
+
+Ordering is a numeric sort on the `NN` prefix; ties (two layers claiming the same
+`NN`) break by layer precedence — Core, then OS, then Role, then local — then
+lexically by filename, so the merged stream is deterministic.
 
 Concrete Core numbering (gaps of 5 leave room to inject; every ordering
 constraint in the current `core.manifest` header is preserved):
@@ -162,16 +171,21 @@ degraded one.
 ### 5.1 Current
 
 Every module always loads. The only knob is `DOTFILES_OFFLINE`. A headless
-server or minimal container pays for atuin, `plugins.zsh` (carapace/fzf-tab),
-the `update.zsh` nudge, and (via the editor stack) an increasingly heavy Neovim
-payload — whether it wants them or not.
+server or minimal container pays for atuin (history sync), `plugins.zsh`
+(carapace/fzf-tab), the `fzf` widgets, and the `update.zsh` nudge — whether it
+wants them or not. (Neovim is deliberately out of scope: it is provisioned by
+`blib_link_core` at bootstrap and loaded by nvim itself, not by any zsh stage, so
+a zsh-fragment profile cannot govern it — see §9 for extending profiles to
+bootstrap wiring.)
 
 ### 5.2 Proposed
 
 A `CORE_PROFILE` (env var, or a `$XDG_CONFIG_HOME/zsh/profile` one-liner) that the
-loader reads to **filter the fragment set** by band:
+loader reads to **filter which Core-owned fragments (`00`–`69`) load**. It never
+filters the outer layers — OS, Role, and host-local fragments (`70`–`99`) always
+load, so essential OS setup and `99-local.zsh` are never skipped by a profile:
 
-| Profile | Includes | Use |
+| Profile | Includes (Core bands) | Use |
 | --- | --- | --- |
 | `minimal` | `00`–`30` (tools, ui, options, history, aliases, git, functions) | fast headless / container shell |
 | `standard` | `minimal` + `35`–`50` (fzf, bindings, plugins, op) | interactive workstation without the maintenance surface |
@@ -197,13 +211,18 @@ independent opt-in gates from `RELEASE-STRATEGY.md §4` — nothing is pushed:
 3. The host **re-bootstraps** to pick up the renamed fragments and the relocated
    state dirs.
 
-Skip any gate and the host stays on `v3.x`. Roll back per OS by re-pulling
-`v3.9.0` in just that repo.
+Skip any gate and the host stays on `v3.x`. Roll back per OS by **reverting** the
+v4-adoption commit in that repo (its `core.lock` + `bootstrap.sh` changes) and
+re-bootstrapping — a `git subtree pull` of the older tag does *not* reverse an
+already-merged newer subtree (it reports the tree as up to date), so revert is
+the correct mechanism. This refines the "re-pull the previous tag" shorthand in
+`RELEASE-STRATEGY.md §4`, which holds for a repo still *ahead* of a tag but not
+for undoing an adopted newer one.
 
 ## 7. Per-OS-repo migration runbook
 
-For each repo in `scripts/os-repos.txt` (plus the Role repos), after `v4.0.0` is
-tagged:
+For each repo in `scripts/os-repos.txt` (which already includes the Role repos
+`dotfiles-Kali` and `dotfiles-Defense`), after `v4.0.0` is tagged:
 
 1. **Adopt the tag:**
    `git subtree pull --prefix=core <core-remote> v4.0.0 --squash`
@@ -243,9 +262,9 @@ To paste under a new `## [v4.0.0]` heading **when the work lands** (not before):
 - **BREAKING — loader & layout overhaul.** Core's zsh modules are renamed to
   numbered fragments (`00-tools` … `60-update`) and the loader now globs-and-sorts
   `NN-*.zsh` across the Core, OS, and local layer directories instead of sourcing a
-  hand-declared `_CORE_MODULES` name list. OS/Role repos gain reserved bands
-  (`70`–`84` OS, `85`–`94` role, `95`–`99` local) and can inject a fragment between
-  any two stages rather than only appending — and the zsh module structure now
+  hand-declared `_CORE_MODULES` name list. OS/Role repos gain default bands
+  (`70`–`84` OS, `85`–`94` role, `95`–`99` local) and can inject a fragment at any
+  point in the chain rather than only appending — and the zsh module structure now
   matches the PowerShell host layer's `NN-name` convention (PARITY.md). Every OS
   repo must re-vendor and update its `bootstrap.sh` loader stanza; see V4-PROPOSAL.md.
 - **BREAKING — mutable state moves to XDG dirs.** History
@@ -257,9 +276,11 @@ To paste under a new `## [v4.0.0]` heading **when the work lands** (not before):
 
 ### Added
 
-- **`CORE_PROFILE` (`minimal` / `standard` / `full`).** Selects which module bands
-  load, so a headless box can skip the interactive- and editor-heavy stages.
-  Defaults to `full` (today's behaviour).
+- **`CORE_PROFILE` (`minimal` / `standard` / `full`).** Selects which Core-owned
+  fragment bands (`00`–`69`) load, so a headless box can skip the
+  interactive-heavy zsh stages (history sync, completion plugins, the update
+  nudge); it never filters the OS/Role/local layers. Defaults to `full` (today's
+  behaviour).
 ```
 
 ## 9. Non-goals and open questions
@@ -279,3 +300,9 @@ To paste under a new `## [v4.0.0]` heading **when the work lands** (not before):
    `_CORE_MODULES` name list for one minor, or hard-cut at `v4.0.0`?
 3. Band width — is `70`–`84` (15 slots) enough headroom for the OS layer, or
    should Core compress into `00`–`49` to give the outer layers more room?
+   (Lower stakes now that bands are conventions, not hard walls, but it still
+   sets the default homes.)
+4. Should `CORE_PROFILE` also gate **bootstrap provisioning** — e.g. skip
+   `blib_link_core`'s Neovim symlink under `minimal` — so a profile governs the
+   editor payload too, not just the zsh fragments? That widens the scope from a
+   loader concern to a bootstrap one; left out of this draft deliberately.
