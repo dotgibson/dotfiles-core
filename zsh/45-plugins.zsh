@@ -1,8 +1,9 @@
 # core/zsh/plugins.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Lightweight zsh plugin loader — no Oh My Zsh, no Zinit. Plugins are auto-cloned
-# to ${ZDOTDIR:-~/.config/zsh}/plugins on first launch (gitignored). Portable:
-# needs git + network on first run only. Load AFTER fzf.zsh + bindings.zsh so the
+# to $XDG_DATA_HOME/zsh/plugins on first launch (v4: cloned code is DATA, not config —
+# it leaves the symlinked $ZDOTDIR tree). Portable: needs git + network on first run
+# only. Load AFTER fzf.zsh + bindings.zsh so the
 # vi-mode init fires the binding hook with the widgets already defined, and AFTER
 # options.zsh (which ran compinit — required by fzf-tab AND carapace).
 #
@@ -27,7 +28,7 @@
 # disabling deferral and the fzf-tab styling. Keep them exactly as written.
 # ──────────────────────────────────────────────────────────────────────────────
 
-ZPLUGINDIR="${ZDOTDIR:-$HOME/.config/zsh}/plugins"
+ZPLUGINDIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
 
 # ── Pinned plugin revisions ───────────────────────────────────────────────────
 # These plugins are the ONLY third-party CODE that runs in every interactive shell

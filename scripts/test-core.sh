@@ -659,14 +659,14 @@ _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
     fail "$1 (got: ${got//$'\n'/ }; want shell=$3 nvim=$4)"
   fi
 }
-_classify_is "zsh/ change → shell gate only" 'zsh/ui.zsh' true false
+_classify_is "zsh/ change → shell gate only" 'zsh/05-ui.zsh' true false
 _classify_is "nvim/ change → nvim gate only" 'nvim/init.lua' false true
 _classify_is "docs (*.md) change → no gate" 'README.md' false false
 _classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true
 _classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true
 _classify_is "__ALL__ sentinel → full run" '__ALL__' true true
 _classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true
-_classify_is "mixed shell+nvim set → union of both" $'zsh/ui.zsh\nnvim/init.lua' true true
+_classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true
 
 # ── F. core/ pre-commit guard (lib/bootstrap-lib.sh blib_install_core_guard) ───
 # The guard hook (installed by sync-core.sh on every fan-out, and by a bootstrap on a
@@ -1001,98 +1001,110 @@ if ! ((SCOPE_SHELL)) || ! have zsh; then
   exit 0
 fi
 
-# ── A. load-order smoke test ──────────────────────────────────────────────────
-hdr "load-order smoke test (canonical .zshrc chain)"
-# The README/manifest canonical order. There is no os/local module here — those
-# are supplied by each OS repo's loader and are out of Core's scope.
-CORE_MODULES=(tools ui options history aliases git functions fzf bindings plugins op maint update)
+# ── A. load-order smoke test (drives the v4 numbered-fragment loader) ─────────
+hdr "load-order smoke test (v4 numbered-fragment loader)"
+# v4: an OS .zshrc sets ZSH_CFG + CORE_PROFILE and sources the vendored loader, which
+# globs the numbered fragments (NN-*.zsh) in ZSH_CFG, sorts by NN, and sources each. We
+# build a sandbox ZSH_CFG of SYMLINKS to the repo's Core fragments + the loader, then
+# drive it exactly as a host would — exercising the REAL glob/sort/profile path, not a
+# hand-rolled source loop. The .zwc land beside the symlinks in the sandbox, never the repo.
+ZDOT="$SANDBOX/zdot"
+mkdir -p "$ZDOT"
+ln -s "$HERE/zsh/loader.zsh" "$ZDOT/loader.zsh"
+core_frags=("$HERE"/zsh/[0-9][0-9]-*.zsh)
+for f in "${core_frags[@]}"; do ln -s "$f" "$ZDOT/$(basename "$f")"; done
 
-# Pre-seed empty plugin dirs so plugins.zsh's first-run clone is a no-op (hermetic,
-# no network). _zplugin_load finds the dir, skips the clone, finds no source file,
-# and moves on — exercising the load-order logic without pulling from GitHub. The dir
-# list lives once in common.sh (_seed_plugin_dirs), shared with the integration + bench.
-_seed_plugin_dirs "$SANDBOX/zdot/plugins"
+# Pre-seed empty plugin dirs at the v4 location ($XDG_DATA_HOME/zsh/plugins) so
+# 45-plugins.zsh's first-run clone is a hermetic no-op (no network). The dir list lives
+# once in common.sh (_seed_plugin_dirs), shared with the integration + bench.
+_seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
 
-# Generate the sandbox .zshrc: source every Core module in canonical order, then
-# print a sentinel. We deliberately do NOT key success on each module's exit code —
-# a module whose LAST statement is a false guard (e.g. aliases.zsh ends on
-# `[[ -n $HAVE_GPING ]] && alias ping=gping`, false on a bare box) returns non-zero
-# while having loaded perfectly. The real signal of a broken load-order contract is
-# a RUNTIME error on stderr (a module using a fn/widget/var an EARLIER module must
-# define first) — so we assert: the chain REACHED THE END (sentinel) with CLEAN
-# stderr. Parse errors are already caught per-file by audit-core.sh's `zsh -n`.
-export CORE_DIR="$HERE/zsh"
+# Generate the sandbox .zshrc the v4 way: set ZSH_CFG + CORE_PROFILE, source the loader,
+# print a sentinel. We deliberately do NOT key success on each fragment's exit code — a
+# fragment whose LAST statement is a false guard (e.g. 20-aliases.zsh ends on
+# `[[ -n $HAVE_GPING ]] && alias ping=gping`, false on a bare box) returns non-zero while
+# having loaded perfectly. The real signal of a broken load-order contract is a RUNTIME
+# error on stderr (a fragment using a fn/widget/var an EARLIER one must define first) — so
+# we assert: the chain REACHED THE END (sentinel) with CLEAN stderr. Parse errors are
+# already caught per-file by audit-core.sh's `zsh -n`.
 {
-  printf 'for _m in %s; do source "$CORE_DIR/$_m.zsh"; done\n' "${CORE_MODULES[*]}"
+  printf 'ZSH_CFG=%q\n' "$ZDOT"
+  printf 'CORE_PROFILE=full\n'
+  printf 'source "$ZSH_CFG/loader.zsh"\n'
   printf 'print -r -- "SMOKE_OK"\n'
-} >"$SANDBOX/zdot/.zshrc"
+} >"$ZDOT/.zshrc"
 
 # Run one interactive zsh against the sandbox rc. We do NOT rely on zsh auto-sourcing
 # $ZDOTDIR/.zshrc: a global /etc/zshenv can force ZDOTDIR (overriding the env we pass), and
 # auto-load doesn't fire when stdout is captured (non-TTY). So -f disables rc auto-load, we
 # set ZDOTDIR INSIDE -c (after /etc/zshenv ran) and `source` the rc explicitly; -i keeps the
-# modules' `[[ $- == *i* ]]` guards live. MISE_TRUSTED_CONFIG_PATHS pre-trusts the vendored
+# fragments' `[[ $- == *i* ]]` guards live. MISE_TRUSTED_CONFIG_PATHS pre-trusts the vendored
 # mise config so `mise activate` doesn't abort under the sandbox HOME.
 smoke_out="$(
-  HOME="$SANDBOX" CORE_DIR="$CORE_DIR" \
+  HOME="$SANDBOX" \
     XDG_CACHE_HOME="$SANDBOX/cache" XDG_STATE_HOME="$SANDBOX/state" \
+    XDG_DATA_HOME="$SANDBOX/data" \
     XDG_RUNTIME_DIR="$SANDBOX/run" MISE_TRUSTED_CONFIG_PATHS="$HERE" \
-    zsh -f -i -c "ZDOTDIR='$SANDBOX/zdot'; source \"\$ZDOTDIR/.zshrc\"" 2>"$SANDBOX/smoke.err"
+    zsh -f -i -c "ZDOTDIR='$ZDOT'; source \"\$ZDOTDIR/.zshrc\"" 2>"$SANDBOX/smoke.err"
 )"
 # High-signal zsh runtime-error markers — what a real load-order break looks like.
 smoke_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|bad pattern|bad math expression|maximum nested' \
   "$SANDBOX/smoke.err" 2>/dev/null || true)"
 if ! printf '%s' "$smoke_out" | grep -q '^SMOKE_OK$'; then
-  fail "load-order chain did not reach the end (no SMOKE_OK sentinel — a module aborted)"
+  fail "load-order chain did not reach the end (no SMOKE_OK sentinel — a fragment aborted)"
   [[ -s "$SANDBOX/smoke.err" ]] && sed 's/^/    /' "$SANDBOX/smoke.err" >&2
 elif [[ -n "$smoke_errs" ]]; then
   fail "runtime errors during canonical load (load-order contract broken):"
   printf '%s\n' "$smoke_errs" | sed 's/^/    /' >&2
 else
-  pass "all ${#CORE_MODULES[@]} modules loaded in canonical order (clean stderr)"
+  pass "all ${#core_frags[@]} fragments loaded in NN order via the loader (clean stderr)"
 fi
 
-# ── A2. consumer integration (Core + os/local layers) ─────────────────────────
-# Core NEVER loads alone in production: each OS repo's .zshrc sources it in canonical
-# order and THEN its own os.zsh + local.zsh (README: tools→…→update→os→local). Section
-# A proves Core-in-isolation; this proves the documented CONSUMPTION — that the Core→OS
-# CONTRACT holds at the real 9-repo fan-out shape. The os.zsh stub here uses exactly
-# what an OS layer relies on Core to have left defined: _cache_eval (tools.zsh's API for
-# the OS layer's gh/uv/ty inits — NOT unfunctioned like _have is), the _core_* UX
-# primitives, and an alias override (the macOS rm→trash pattern). local.zsh overrides a
-# Core default. If Core ever stops exporting one of those, this fails — where Section A,
-# loading Core alone, would stay green.
-hdr "consumer integration (Core + os/local layers, canonical loader)"
+# ── A2. consumer integration (Core + 80-os + 99-local via the loader) ─────────
+# Core NEVER loads alone in production: a host also carries the OS layer (80-os.zsh) and
+# any machine overrides (99-local.zsh), both globbed by the loader from ZSH_CFG (bands
+# >=70 always load, independent of CORE_PROFILE). Section A proves Core-in-isolation;
+# this proves the documented CONSUMPTION — the Core→OS CONTRACT at the real fan-out shape.
+# The 80-os stub uses exactly what an OS layer relies on Core to have left defined:
+# _cache_eval (00-tools's API for the OS layer's gh/uv/ty inits — NOT unfunctioned like
+# _have is), the _core_* UX primitives (05-ui), and an alias override (the macOS rm→trash
+# pattern). 99-local overrides a Core default. If Core ever stops exporting one of those,
+# this fails — where Section A, loading Core alone, would stay green.
+hdr "consumer integration (Core + 80-os + 99-local, v4 loader)"
 INTEG="$SANDBOX/integ"
-_seed_plugin_dirs "$INTEG/plugins"
-# os.zsh: realistic OS-layer file. Exercises the Core helpers an OS repo depends on;
-# any reference to an undefined helper prints to stderr (the failure signal below).
-cat >"$INTEG/os.zsh" <<'OSZSH'
-# stub os.zsh — must be able to use the API Core promises the OS layer.
-(( $+functions[_cache_eval] )) || print -u2 "os.zsh: _cache_eval missing (tools.zsh API gone)"
-(( $+functions[_core_ok]    )) || print -u2 "os.zsh: _core_ok missing (ui.zsh API gone)"
-# the documented gh/uv/ty pattern: _cache_eval a tool AFTER options.zsh set NO_CLOBBER.
+mkdir -p "$INTEG"
+ln -s "$HERE/zsh/loader.zsh" "$INTEG/loader.zsh"
+for f in "${core_frags[@]}"; do ln -s "$f" "$INTEG/$(basename "$f")"; done
+_seed_plugin_dirs "$SANDBOX/integ-data/zsh/plugins"
+# 80-os.zsh: realistic OS-layer fragment. Exercises the Core helpers an OS repo depends
+# on; any reference to an undefined helper prints to stderr (the failure signal below).
+cat >"$INTEG/80-os.zsh" <<'OSZSH'
+# stub 80-os.zsh — must be able to use the API Core promises the OS layer.
+(( $+functions[_cache_eval] )) || print -u2 "80-os.zsh: _cache_eval missing (00-tools API gone)"
+(( $+functions[_core_ok]    )) || print -u2 "80-os.zsh: _core_ok missing (05-ui API gone)"
+# the documented gh/uv/ty pattern: _cache_eval a tool AFTER 10-options.zsh set NO_CLOBBER.
 # The generator must emit SOURCEABLE zsh (real tools emit an init script); a comment is
 # a valid no-op init and proves the generate→cache→source path works under NO_CLOBBER.
 _cache_eval faketool printf '# faketool cached init (integration stub)\n' >/dev/null
 alias rm='rm -i'   # OS layer overriding a safety net (macOS does rm→trash here)
 OSZSH
-# local.zsh: machine-specific overrides (identity/toggles). Overriding a Core default
-# is the whole reason it loads LAST.
-cat >"$INTEG/local.zsh" <<'LOCALZSH'
-# stub local.zsh — last word on this machine.
+# 99-local.zsh: machine-specific overrides (identity/toggles). Overriding a Core default
+# is the whole reason it loads LAST (band 99).
+cat >"$INTEG/99-local.zsh" <<'LOCALZSH'
+# stub 99-local.zsh — last word on this machine.
 UPDATE_CHECK_ENABLED=0
 LOCALZSH
 {
-  printf 'for _m in %s; do source "$CORE_DIR/$_m.zsh"; done\n' "${CORE_MODULES[*]}"
-  printf 'source "$ZDOTDIR/os.zsh"\n'
-  printf 'source "$ZDOTDIR/local.zsh"\n'
+  printf 'ZSH_CFG=%q\n' "$INTEG"
+  printf 'CORE_PROFILE=full\n'
+  printf 'source "$ZSH_CFG/loader.zsh"\n'
   printf 'print -r -- "INTEG_OK"\n'
 } >"$INTEG/.zshrc"
 integ_out="$(
-  HOME="$SANDBOX" CORE_DIR="$CORE_DIR" \
+  HOME="$SANDBOX" \
     XDG_CACHE_HOME="$SANDBOX/integ-cache" XDG_STATE_HOME="$SANDBOX/integ-state" \
+    XDG_DATA_HOME="$SANDBOX/integ-data" \
     XDG_RUNTIME_DIR="$SANDBOX/run" MISE_TRUSTED_CONFIG_PATHS="$HERE" \
     zsh -f -i -c "ZDOTDIR='$INTEG'; source \"\$ZDOTDIR/.zshrc\"" 2>"$INTEG/integ.err"
 )"
@@ -1100,22 +1112,22 @@ integ_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|missing|bad pattern|bad math expression|maximum nested' \
   "$INTEG/integ.err" 2>/dev/null || true)"
 if ! printf '%s' "$integ_out" | grep -q '^INTEG_OK$'; then
-  fail "consumer load (Core+os+local) did not reach the end — a layer aborted"
+  fail "consumer load (Core+80-os+99-local) did not reach the end — a layer aborted"
   [[ -s "$INTEG/integ.err" ]] && sed 's/^/    /' "$INTEG/integ.err" >&2
 elif [[ -n "$integ_errs" ]]; then
   fail "errors during consumer load (Core→OS contract broken):"
   printf '%s\n' "$integ_errs" | sed 's/^/    /' >&2
 else
-  pass "Core + os + local loaded in canonical order (Core→OS contract holds)"
+  pass "Core + 80-os + 99-local loaded via the loader (Core→OS contract holds)"
 fi
 
 # ── B. function unit tests ────────────────────────────────────────────────────
 hdr "function unit tests (functions.zsh)"
-FN="$HERE/zsh/functions.zsh"
+FN="$HERE/zsh/30-functions.zsh"
 # functions.zsh now routes its errors through ui.zsh's _core_* helpers, so the
 # unit shell must source ui.zsh FIRST — the same ordering the real loader uses
 # (tools → ui → … → functions). It loads before functions in every assertion below.
-UI="$HERE/zsh/ui.zsh"
+UI="$HERE/zsh/05-ui.zsh"
 
 # Run an assertion under zsh; $1 = label, $2 = zsh body that must exit 0.
 # On FAILURE we capture the child's combined stdout+stderr and print it INDENTED
@@ -1375,8 +1387,8 @@ check_dep "extract guards the gz output at the archive's path, not \$PWD" gzip \
 # actually installed there.
 hdr "detection + UX unit tests (ui / update / maint)"
 _real_zsh="$(command -v zsh)"
-UPD="$HERE/zsh/update.zsh"
-MNT="$HERE/zsh/maint.zsh"
+UPD="$HERE/zsh/60-update.zsh"
+MNT="$HERE/zsh/55-maint.zsh"
 # A fake bin dir holding ONE stub command, used to pin a detection ladder's answer.
 PMBIN="$SANDBOX/pmbin"
 _pm_only() {
@@ -1532,7 +1544,7 @@ ucheck "core-help annotates an unavailable tool (needs fzf when fzf absent)" \
 # fzf.zsh verbs (fif/fbr) must degrade in Core's voice on a bare box — a raw "command
 # not found" is the bug this guards (fcd already did; fif/fbr/zoxide-jump did not).
 # Drive on an isolated PATH (fzf guaranteed absent) so the error path is deterministic.
-FZF_FILE="$HERE/zsh/fzf.zsh"
+FZF_FILE="$HERE/zsh/35-fzf.zsh"
 _pm_only ""
 ucheck "fif rejects cleanly without fzf (Core error voice, not 'command not found')" \
   "source '$UI'; source '$FZF_FILE' 2>/dev/null; out=\$(fif foo 2>&1); (( \$? != 0 )) && [[ \$out == *'fif: requires fzf'* ]]" \
@@ -1695,8 +1707,8 @@ _flag_drift() { # _flag_drift <verb> <completion-file> <source-file>
   done
   ((miss)) || pass "completion '$verb' flags all still present in its source"
 }
-_flag_drift serve "$HERE/zsh/completions/_serve" "$HERE/zsh/functions.zsh"
-_flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/update.zsh"
+_flag_drift serve "$HERE/zsh/completions/_serve" "$HERE/zsh/30-functions.zsh"
+_flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/60-update.zsh"
 
 # ── git helper unit tests (git.zsh) (B2) ──────────────────────────────────────
 # git.zsh's trunk/branch resolution (git_main_branch's 6-way ref search, git_current_branch's
@@ -1708,7 +1720,7 @@ hdr "git helper unit tests (git.zsh)"
 if ! have git; then
   skip "git helpers (git not installed)"
 else
-  GITZSH="$HERE/zsh/git.zsh"
+  GITZSH="$HERE/zsh/25-git.zsh"
   gcheck() { # gcheck <label> <zsh-body that must exit 0>
     local out
     if out="$(HOME="$SANDBOX" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
@@ -1789,7 +1801,7 @@ ucheck "update: _pkgup_list parses pacman package names" \
 # technique as the clip ladder — and assert the verbs' input-guards, the op:// path
 # construction, and optoken's clip dependency. No real 1Password, no network, no secrets.
 hdr "op.zsh 1Password helpers (hermetic stubs)"
-OPZSH="$HERE/zsh/op.zsh"
+OPZSH="$HERE/zsh/50-op.zsh"
 OPBIN="$SANDBOX/opbin"
 _op_reset() { # _op_reset [with-clip]
   rm -rf "$OPBIN"
@@ -1895,7 +1907,7 @@ else fail "tmux-netinfo should be silent with no net, printed: $out"; fi
 # platform-specific path is testable without the blocking http.server. macOS ships
 # no ip(8), so we isolate PATH to a stub bin WITHOUT `ip` (forcing the route+ipconfig
 # branch), stub ipconfig/route to canned answers, and assert the advertised URLs —
-# mirroring the tmux-netinfo hermetic tests above. ui.zsh/functions.zsh are pure
+# mirroring the tmux-netinfo hermetic tests above. ui.zsh/30-functions.zsh are pure
 # definitions (no source-time forks), so they source cleanly under the isolated PATH.
 hdr "serve macOS IP discovery (_serve_advertise, hermetic)"
 SRVBIN="$SANDBOX/srvbin"

@@ -84,12 +84,12 @@ fi
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-bench.XXXXXX")"
 trap 'rm -rf "$SANDBOX"' EXIT
 
-# Pre-seed empty plugin dirs so plugins.zsh's first-run `git clone` is a no-op
-# (hermetic, no network) — the dir list lives once in common.sh, shared with test-core.sh.
-_seed_plugin_dirs "$SANDBOX/zdot/plugins"
+# Pre-seed empty plugin dirs so 45-plugins.zsh's first-run `git clone` is a no-op
+# (hermetic, no network) — v4: plugins live under $XDG_DATA_HOME/zsh/plugins, not $ZDOTDIR.
+_seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
 
-# The README/manifest canonical order (no os/local — those belong to OS repos).
-CORE_MODULES=(tools ui options history aliases git functions fzf bindings plugins op maint update)
+# The numbered Core fragments in load order (no os/local — those belong to OS repos).
+CORE_MODULES=(00-tools 05-ui 10-options 15-history 20-aliases 25-git 30-functions 35-fzf 40-bindings 45-plugins 50-op 55-maint 60-update)
 export CORE_DIR="$HERE/zsh"
 # The `$CORE_DIR/$_m` here is expanded by the zsh CHILD reading this .zshrc, not by
 # this bash parent — so SC2016 (un-expanded `$` in single quotes) is intended.
@@ -116,7 +116,7 @@ if ((PROFILE)); then
     printf "%8.1f ms  %s\n" $total "TOTAL"'
   HOME="$SANDBOX" ZDOTDIR="$SANDBOX/zdot" \
     XDG_CACHE_HOME="$SANDBOX/cache" XDG_STATE_HOME="$SANDBOX/state" \
-    XDG_RUNTIME_DIR="$SANDBOX/run" CORE_DIR="$CORE_DIR" \
+    XDG_RUNTIME_DIR="$SANDBOX/run" XDG_DATA_HOME="$SANDBOX/data" CORE_DIR="$CORE_DIR" \
     zsh -ic "$prof_body" 2>/dev/null | sort -rn | sed "s/^/  /"
   printf '%s(per-module wall time; TOTAL sorts to the top — run twice, the 2nd is warm)%s\n' "$c_blu" "$c_rst"
   exit 0
@@ -133,7 +133,7 @@ BUDGET="${CORE_BENCH_BUDGET_MS:-}"
 json="$SANDBOX/bench.json"
 HOME="$SANDBOX" ZDOTDIR="$SANDBOX/zdot" \
   XDG_CACHE_HOME="$SANDBOX/cache" XDG_STATE_HOME="$SANDBOX/state" \
-  XDG_RUNTIME_DIR="$SANDBOX/run" CORE_DIR="$CORE_DIR" \
+  XDG_RUNTIME_DIR="$SANDBOX/run" XDG_DATA_HOME="$SANDBOX/data" CORE_DIR="$CORE_DIR" \
   hyperfine --warmup 3 --min-runs "$runs" --export-json "$json" 'zsh -i -c exit'
 
 # ── optional budget gate ──────────────────────────────────────────────────────

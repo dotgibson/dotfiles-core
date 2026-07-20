@@ -1,11 +1,15 @@
 # v4 proposal — the loader & layout overhaul
 
-> **Status: DRAFT PROPOSAL.** This document is a design RFC on the
-> `claude/dotfiles-core-v4-breaking` branch. Nothing here is implemented or
-> shipped yet — it does **not** describe the current behaviour of Core, and the
-> drafted CHANGELOG block in [§8](#8-drafted-changelog-entry) must not be pasted
-> into `CHANGELOG.md` until the work actually lands. When a claim here drifts
-> from `RELEASE-STRATEGY.md` or `CONTRIBUTING.md`, those win.
+> **Status: IMPLEMENTED (under `[Unreleased]`), pending the v4.0.0 release cut.**
+> The Core-side implementation of this design has landed on the
+> `claude/dotfiles-core-v4-breaking` branch — the numbered fragments, the glob
+> loader, the XDG split, and `CORE_PROFILE` are live, with the breaking changes
+> recorded under `## [Unreleased]` in `CHANGELOG.md`. What has **not** happened is
+> the deliberate release ceremony: bumping `core.version` to `4.0.0`, tagging, and
+> the canary-first fan-out to the OS/Role repos (each re-vendors Core and updates
+> its `bootstrap.sh`) per `RELEASE-RUNBOOK.md`. The open questions in [§9](#9-non-goals-and-open-questions)
+> are now **resolved** (see there). When a claim here drifts from
+> `RELEASE-STRATEGY.md` or `CONTRIBUTING.md`, those win.
 
 ## 1. Summary
 
@@ -19,10 +23,11 @@ same seam:
    prefixes and the loader globs-and-sorts fragments across layers, so OS/Role
    repos can inject *between* stages instead of only appending. Also closes a
    documented zsh↔pwsh divergence.
-2. **XDG state/cache/data split** — mutable runtime state (history, compdump,
-   byte-compiled `.zwc`, plugins) moves out of the symlinked *config* tree into
-   `$XDG_STATE_HOME` / `$XDG_CACHE_HOME` / `$XDG_DATA_HOME`, finishing a
-   migration the codebase has already started unevenly.
+2. **XDG state/cache/data split** — mutable runtime state (history → state,
+   compdump → cache, plugins → data) moves out of the symlinked *config* tree into
+   `$XDG_STATE_HOME` / `$XDG_CACHE_HOME` / `$XDG_DATA_HOME`, finishing a migration
+   the codebase had already started unevenly. (Byte-compiled `.zwc` wordcode stays
+   beside its fragment — zsh's auto-pickup requires it; see §4.3.)
 3. **Opt-in module profiles** — a `CORE_PROFILE` (`minimal` / `standard` /
    `full`) derives which Core fragments load, so a headless box can skip the
    interactive-heavy zsh stages (history sync, completion plugins, the update
@@ -151,11 +156,16 @@ to its XDG home:
 | --- | --- | --- |
 | History (+ atuin flat file) | `$ZDOTDIR/.zsh_history` | `$XDG_STATE_HOME/zsh/history` |
 | Compdump | `$ZDOTDIR/.zcompdump` | `$XDG_CACHE_HOME/zsh/zcompdump` |
-| `.zwc` wordcode | `$ZSH_CFG/*.zwc` | `$XDG_CACHE_HOME/zsh/zwc/` |
+| `.zwc` wordcode | `$ZSH_CFG/*.zwc` | **stays in `$ZSH_CFG`** (see §4.3) |
 | Plugins | `$ZDOTDIR/plugins` | `$XDG_DATA_HOME/zsh/plugins` |
 
-The "read-only `$ZSH_CFG`" path in `loader.zsh` becomes the normal case, not a
-degraded one.
+History, compdump, and plugins move; **byte-compiled `.zwc` wordcode does not**.
+zsh's automatic wordcode pickup fires only when `file.zwc` sits *beside* the
+sourced `file` (`source file` loads `file.zwc` when it is current), so relocating
+it to `$XDG_CACHE_HOME` would break the fast path or force sourcing digests (which
+`source` can't use as wordcode). `$ZSH_CFG` is a real, writable directory of
+symlinks — not an immutable tree — so wordcode-beside-source is fine and stays
+there. That is the one implementation deviation from the original four-item list.
 
 ### 4.3 What breaks
 
@@ -226,22 +236,26 @@ For each repo in `scripts/os-repos.txt` (which already includes the Role repos
 
 1. **Adopt the tag:**
    `git subtree pull --prefix=core <core-remote> v4.0.0 --squash`
-2. **Update `bootstrap.sh`:** the `blib_write_zshrc_loader` call takes the new
-   signature (layer dirs + `CORE_PROFILE`, not a module-name list). The emitted
-   `.zshrc` stanza becomes roughly:
+2. **Update `bootstrap.sh`:** call the vendored `blib_write_zshrc_loader` (now
+   param-less — it no longer takes a module list). It emits the managed
+   `dotfiles-managed v4` `.zshrc`, which sets `CORE_PROFILE` and sources the loader;
+   the loader globs the numbered fragments from **one flat `$ZSH_CFG`** (all layers
+   symlink into it), so there is no `_CORE_LAYER_DIRS` list to pass:
 
    ```zsh
-   CORE_PROFILE="${CORE_PROFILE:-full}"
-   _CORE_LAYER_DIRS=("$ZSH_CFG" "$ZSH_CFG/os" "$ZSH_CFG/local")
+   : "${CORE_PROFILE:=full}"
    source "$ZSH_CFG/loader.zsh"
    ```
 
-3. **Rename the OS/Role layer fragment** into its band: `os/<name>.zsh` is
-   symlinked as `80-os-<name>.zsh`; Kali's appended stage becomes
-   `85-offensive.zsh`, Defense's `85-defense.zsh`.
-4. **Relocate host state on re-bootstrap:** `bootstrap.sh` moves an existing
-   `~/.config/zsh/.zsh_history` to `$XDG_STATE_HOME/zsh/history` (idempotent;
-   skips when already moved) and creates the cache/data/state dirs.
+3. **Symlink the OS/Role layer fragment** into its band: `blib_link_os_layer` links
+   `os/<name>.zsh` → `$ZSH_CFG/80-os.zsh`; a role repo links its stage into the 85
+   band (Kali `85-offensive.zsh`, Defense `85-defense.zsh`) — the loader picks it up
+   by glob, no module-list entry needed.
+4. **Migration is automatic:** `blib_migrate_v4` (called from `blib_link_core`) moves
+   an existing `~/.config/zsh/.zsh_history` → `$XDG_STATE_HOME/zsh/history`, renames a
+   host `local.zsh` → `99-local.zsh`, and drops the stale pre-v4 unnumbered symlinks +
+   compdump — all idempotent. The XDG state/cache/data subdirs are created on first
+   shell start by the fragments themselves.
 5. **Verify:** OS-repo bootstrap dry-run is clean; `make fleet-drift` in Core
    confirms the repo converged on `v4.0.0`; commit the new `core.lock`.
 
@@ -252,9 +266,11 @@ For each repo in `scripts/os-repos.txt` (which already includes the Role repos
 Roll out **canary-first** (one OS repo, bake, then fan out) per
 `RELEASE-STRATEGY.md §4`.
 
-## 8. Drafted CHANGELOG entry
+## 8. CHANGELOG entry
 
-To paste under a new `## [v4.0.0]` heading **when the work lands** (not before):
+The breaking-change entries below have **landed** under `## [Unreleased]` in
+`CHANGELOG.md` (they move under a `## [v4.0.0]` heading when the release is cut).
+Kept here for reference:
 
 ```markdown
 ### Changed
@@ -292,17 +308,28 @@ To paste under a new `## [v4.0.0]` heading **when the work lands** (not before):
 - Any change to keybindings, aliases, or the tmux prefix. Public muscle-memory
   surface is untouched.
 
-**Open questions for review:**
+**Resolved decisions (as implemented):**
 
-1. Should `v4.0.0` default `CORE_PROFILE` to `full` (safest) or `standard`
-   (nudges the fleet toward the lighter shell)? Draft assumes `full`.
-2. Deprecation window: ship a `loader.zsh` shim that still accepts the old
-   `_CORE_MODULES` name list for one minor, or hard-cut at `v4.0.0`?
-3. Band width — is `70`–`84` (15 slots) enough headroom for the OS layer, or
-   should Core compress into `00`–`49` to give the outer layers more room?
-   (Lower stakes now that bands are conventions, not hard walls, but it still
-   sets the default homes.)
-4. Should `CORE_PROFILE` also gate **bootstrap provisioning** — e.g. skip
-   `blib_link_core`'s Neovim symlink under `minimal` — so a profile governs the
-   editor payload too, not just the zsh fragments? That widens the scope from a
-   loader concern to a bootstrap one; left out of this draft deliberately.
+1. **Default `CORE_PROFILE` = `full`.** Chosen so an un-migrated or unspecified
+   host behaves exactly as it does today; a lean shell is opt-in, never a surprise
+   default. The loader treats any unknown value as `full` (safest) too.
+2. **Hard-cut — no compat shim.** A shim can't help once the module *files* are
+   renamed: `_CORE_MODULES=(tools …)` would resolve to `$ZSH_CFG/tools.zsh`, which
+   no longer exists, so keeping it working would require carrying both filenames.
+   Since a coordinated major re-vendors and updates every OS `bootstrap.sh` in the
+   same rollout, the honest move is to cut cleanly. `blib_write_zshrc_loader` still
+   *accepts and ignores* legacy args so a not-yet-updated caller doesn't error.
+3. **Bands are conventions, so width is not a hard constraint.** Core keeps
+   `00`–`69` and the outer bands stay `70`–`99`; because any layer may use a Core
+   gap when it genuinely needs mid-chain insertion (numeric-sort + layer-precedence
+   tiebreak), the 15-slot OS band is a default home, not a ceiling. No compression
+   needed.
+4. **`CORE_PROFILE` stays a pure loader concern — it does NOT gate bootstrap
+   provisioning.** Install-time selection (which groups get symlinked — zsh, nvim,
+   tmux) is already owned by `bootstrap.sh`'s `--only`/`--skip` (`blib_want`), a
+   purpose-built, audit-tested mechanism. Overloading the runtime `CORE_PROFILE`
+   onto it would duplicate that and introduce a footgun (bootstrap runs once; the
+   env var is per-shell and mutable, so a profile that skipped the nvim symlink
+   would leave nvim broken after switching to `full` until re-bootstrap). The two
+   compose orthogonally: `bootstrap.sh --only zsh` (persistent, on-disk) +
+   `CORE_PROFILE=minimal` (per-shell, cheap to change).
