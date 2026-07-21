@@ -40,6 +40,12 @@ while IFS= read -r _f; do [ -n "$_f" ] && FILES+=("$_f"); done < <(git ls-files 
   '.github/actions/*/action.yml' '.github/actions/*/action.yaml' 2>/dev/null)
 [ "${#FILES[@]}" -gt 0 ] || { echo "check-modern: no workflow/action files to check"; exit 0; }
 
+# Workflows alone — rule 5 gates a key that only exists at workflow scope, so it must
+# not see the composite action.yml files above.
+WORKFLOWS=()
+while IFS= read -r _f; do [ -n "$_f" ] && WORKFLOWS+=("$_f"); done < <(git ls-files \
+  '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null)
+
 violations=0
 note() { printf '  ✗ %s\n' "$*" >&2; violations=$((violations + 1)); }
 
@@ -84,6 +90,16 @@ if _yaml_bool require_container_digest_pin; then
       note "container image not digest-pinned ($img): $line"
     done < <(printf '%s\n' "$content" | grep -oE "$img_re" 2>/dev/null || true)
   done < <(grep -HnE '(^[[:space:]]*image:[[:space:]]|docker[[:space:]]+(run|build|pull))' "${FILES[@]}" 2>/dev/null || true)
+fi
+
+# ── 5) every workflow declares a top-level permissions: block ────────────────
+# Anchored at column 0 so a job-level `  permissions:` doesn't satisfy the rule —
+# a job grant narrows the workflow default, it doesn't establish one.
+if _yaml_bool require_workflow_permissions && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  for wf in "${WORKFLOWS[@]}"; do
+    grep -qE '^permissions:[[:space:]]*$|^permissions:[[:space:]]+' "$wf" \
+      || note "no top-level permissions: block (least-privilege): $wf"
+  done
 fi
 
 if [ "$violations" -eq 0 ]; then

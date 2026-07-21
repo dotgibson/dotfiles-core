@@ -13,6 +13,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Security
+
+- **CI floor raised: every workflow must declare a top-level `permissions:` block, and the
+  node20 opt-out is banned.** Two additions to `scripts/modern-baseline.yml`, both of which
+  the fleet already satisfied — this encodes existing practice as a floor rather than asking
+  for a migration. (1) New `require_workflow_permissions` dimension: without a top-level
+  block a job inherits the repo-wide default token scope, so naming it makes the
+  least-privilege grant a deliberate, reviewable line. `check-modern.sh` anchors the match at
+  column 0 — a job-level `permissions:` narrows a default, it doesn't establish one — and
+  scopes the rule to `.github/workflows/` since the key is invalid in a composite
+  `action.yml`. (2) `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION` joins `banned_patterns`: it
+  forces a node20 action to keep running on node20, which stops working outright when node20
+  leaves the runners in fall 2026, so it's a dead end worth closing before something lands on
+  it. Fleet-wide via the `lint-call.yml@v3` reusable workflow the OS repos inherit.
+
 ### Changed
 
 - **Docs/comments: finish the v4 numbered-fragment rename.** The v4.0.0 rename moved the
