@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.0.2] - 2026-07-21
+
 ### Added
 
 - **`aliases.md` documents the shell functions, not just the aliases.** The cheat sheet
