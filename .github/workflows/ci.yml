@@ -247,7 +247,7 @@ jobs:
           echo "audit scope: $scope ${strict:+(strict)}"
           ./scripts/audit-core.sh --scope "$scope" $strict
 
-  # Alpine (musl libc + busybox coreutils) is a named target repo, and functions.zsh
+  # Alpine (musl libc + busybox coreutils) is a named target repo, and 30-functions.zsh
   # + the maint/test scripts explicitly claim busybox compatibility — yet the matrix
   # above only proves glibc Ubuntu and BSD macOS, never musl/busybox. This leg closes
   # that asserted-but-unverified gap. We deliberately do NOT use `container: alpine`
@@ -348,7 +348,7 @@ jobs:
         run: pre-commit run --all-files --show-diff-on-failure
 
   # Startup-perf REGRESSION GATE. Core invests in startup speed (cached tool-init in
-  # tools.zsh, deferred plugins in plugins.zsh); a gross regression — re-introducing a
+  # 00-tools.zsh, deferred plugins in 45-plugins.zsh); a gross regression — re-introducing a
   # per-shell subprocess, un-deferring heavy work, an uncached eval — would fan out to
   # all 9 repos silently. This job now ENFORCES a budget instead of only reporting:
   # bench-core.sh fails the build when the canonical-chain MEAN exceeds

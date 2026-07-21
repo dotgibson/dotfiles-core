@@ -56,6 +56,16 @@ Load order: `00-tools.zsh` sets `HAVE_*` flags first, then `20-aliases.zsh` read
 | `mv` | `mv -i` (interactive) |
 | `mkdir` | `mkdir -p` (create parents) |
 
+## Named Directories
+
+Zsh named directories (from `zsh/20-aliases.zsh` via `hash -d`) — type them anywhere a
+path is expected, e.g. `cd ~dots` or `nvim ~proj/foo`:
+
+| Shortcut | Expands To |
+| ------- | ------------ |
+| `~dots` | `$HOME/.config` |
+| `~proj` | `$HOME/Projects` |
+
 ## Network
 
 | Alias | Expands To |
