@@ -102,6 +102,41 @@ if _yaml_bool require_workflow_permissions && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
   done
 fi
 
+# ── 6) every actions/checkout states persist-credentials: explicitly ─────────
+# Needs the step's `with:` block associated with its `uses:`, which a line-at-a-time
+# grep can't do — so walk each checkout back to the `- ` that opens its step, forward to
+# the next sibling `- ` (or any dedent past it), and look for the key inside that window.
+# Both orderings work: the key is found whether `with:` precedes or follows `uses:`.
+if _yaml_bool require_explicit_persist_credentials && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  for wf in "${WORKFLOWS[@]}"; do
+    while IFS= read -r hit; do
+      [ -n "$hit" ] && note "checkout without an explicit persist-credentials: $hit"
+    done < <(awk '
+      { l[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (l[i] !~ /uses:[[:space:]]*actions\/checkout@/) continue
+          s = i
+          while (s > 1 && l[s] !~ /^[[:space:]]*-[[:space:]]/) s--
+          match(l[s], /^[[:space:]]*/); ind = RLENGTH
+          e = s + 1
+          while (e <= NR) {
+            if (l[e] ~ /^[[:space:]]*$/) { e++; continue }
+            match(l[e], /^[[:space:]]*/); ii = RLENGTH
+            if (ii < ind) break
+            if (ii == ind && l[e] ~ /^[[:space:]]*-[[:space:]]/) break
+            e++
+          }
+          ok = 0
+          for (j = s; j < e; j++)
+            if (l[j] ~ /^[[:space:]]*persist-credentials:[[:space:]]*(true|false)([[:space:]]|$)/) ok = 1
+          if (!ok) printf "%s:%d\n", FILENAME, i
+        }
+      }
+    ' "$wf" 2>/dev/null || true)
+  done
+fi
+
 if [ "$violations" -eq 0 ]; then
   echo "check-modern: CI meets the modern baseline (${#FILES[@]} workflow/action files)"
   exit 0

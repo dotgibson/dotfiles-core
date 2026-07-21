@@ -35,6 +35,7 @@ jobs:
       - name: Check out the calling repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: osrepo
           fetch-depth: 1
       # dotfiles-core is the reference: full history (fetch-depth 0) so the caller's
@@ -50,6 +51,7 @@ jobs:
       - name: Check out dotfiles-core (reference)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
           path: dotfiles-core
           fetch-depth: 0

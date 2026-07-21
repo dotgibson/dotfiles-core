@@ -43,6 +43,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Security
 
+- **`actions/checkout` no longer leaves the job token in `.git/config` on 32 of 35 steps.**
+  Checkout persists the token by default, so any later step in the job — a third-party
+  linter, a scripted tool, one of the LLM routines reading the tree — can read it back out
+  of the working copy. Every checkout in the repo now states `persist-credentials:`
+  explicitly: `false` on the 32 that only read code, `true` on the three that genuinely
+  push (auto-tag's tag push and the freshness bot's two branch pushes), each carrying a
+  comment saying why. The eight `claude-routines` checkouts are the biggest win — those
+  jobs run an agent over repository content, so the persisted token was a standing
+  exfiltration target alongside the `--allowedTools` restriction already in place. Enforced
+  by a new `require_explicit_persist_credentials` dimension in
+  `scripts/modern-baseline.yml`; `check-modern.sh` associates each `with:` block with its
+  own `uses:` by walking step bounds, so a `persist-credentials:` on a neighbouring step
+  cannot satisfy the rule. Requiring the _key_ rather than the _value_ `false` is what
+  keeps the pushers' exemptions at the call site instead of in a drift-prone list.
 - **CI floor raised: every workflow must declare a top-level `permissions:` block, and the
   node20 opt-out is banned.** Two additions to `scripts/modern-baseline.yml`, both of which
   the fleet already satisfied — this encodes existing practice as a floor rather than asking

@@ -82,12 +82,14 @@ jobs:
       #    file-routine-issue.sh. (v3 = the current major, matching the @v3 callers.)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
           ref: v3
       # 2) The caller OS repo into caller/ — its install/packages.txt / Brewfile is
       #    what the routine reads (exposed to the CLI via --add-dir).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: caller
       - name: Load the pinned Claude Code version (Core single source)
         run: |

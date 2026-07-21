@@ -43,6 +43,7 @@ jobs:
       # (a shallow checkout of Core would only ever let it report "DIFFERS", not "BEHIND N").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       # The nvim-pin check (update-nvim-plugins.sh --check) hard-requires nvim and drives

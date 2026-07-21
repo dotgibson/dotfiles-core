@@ -56,6 +56,7 @@ jobs:
       - name: Check out the calling repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: true  # auto-tag.sh pushes the cut tag to the calling repo
           path: osrepo
           fetch-depth: 0
       # dotfiles-core carries the scripts (auto-tag.sh + gen-release-notes.sh); depth 1 is
@@ -66,6 +67,7 @@ jobs:
       - name: Check out dotfiles-core (reference, pinned to v3)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
           ref: v3
           path: dotfiles-core
