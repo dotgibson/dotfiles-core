@@ -68,3 +68,15 @@ require_container_digest_pin: true
 #    a valid key in a composite action.yml, so check-modern.sh scopes this rule to
 #    .github/workflows/ and skips .github/actions/.
 require_workflow_permissions: true
+
+# 6) Every `actions/checkout` step must state `persist-credentials:` explicitly. Left
+#    unset it defaults to TRUE, writing the job's token into .git/config where any later
+#    step — a third-party linter, a scripted tool, an LLM routine reading the tree — can
+#    read it back out. Nearly every checkout here only reads code and wants `false`.
+#
+#    Requiring the KEY rather than hard-requiring the VALUE `false` is deliberate: it is
+#    the exemption path. The few steps that genuinely push (auto-tag's tag push, the
+#    freshness bot's branch push) carry `persist-credentials: true` plus a comment saying
+#    why, right at the call site — so the exemption is reviewed in the diff that needs it
+#    instead of living in a list here that silently drifts out of sync with the workflows.
+require_explicit_persist_credentials: true
