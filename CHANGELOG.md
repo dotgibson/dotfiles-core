@@ -29,7 +29,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   any read chain). Fix: fire FilePost via `vim.schedule()` so the deferred-plugin
   burst lands after the read chain completes — filetype detection runs unpoisoned,
   and the exactly-once contract is preserved by deleting the augroup _before_
-  scheduling. (`nvim/lua/gerrrt/config/autocmds.lua`)
+  scheduling. The D3 contract test now also asserts the first file ends up with a
+  non-empty filetype, simulating vim.lsp.enable's group-scoped FileType replay in
+  the hermetic probe so the poisoning path stays covered (verified red on the
+  pre-fix code, green after). (`nvim/lua/gerrrt/config/autocmds.lua`,
+  `scripts/test-core.sh`)
 
 ## [v4.0.2] - 2026-07-21
 
