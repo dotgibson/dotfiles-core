@@ -26,7 +26,12 @@ set -uo pipefail
 # PATH — append any inherited PATH only when it's set, so a stripped cron/systemd env
 # (which may omit PATH entirely) doesn't trip nounset before we've built one.
 export HOME="${HOME:?}"
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+# ${CARGO_HOME:-$HOME/.cargo}/bin is where rustup drops the `rustup`/`cargo` shims
+# (mise's rust backend installs rustup there too). A scheduler's minimal PATH omits
+# it, so without this the `have rustup` guard below is false and the rust step
+# silently skips — the exact unattended case it exists to cover. `:-` default keeps
+# it nounset-safe when CARGO_HOME is unset.
+export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_STATE_HOME:=$HOME/.local/state}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
