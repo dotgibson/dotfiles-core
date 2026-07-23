@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.1.0] - 2026-07-23
+
 ### Changed
 
 - **Forced a steady block cursor in tmux.** `tmux/tmux.conf` now sets
