@@ -13,6 +13,7 @@
 #   MAINT_SYSTEM_UPGRADE=0   # 1 = also apply system pkgs (apt/dnf/zypper/brew ONLY)
 #   ZPLUGINDIR=~/.local/share/zsh/plugins
 #   MAINT_NVIM_TIMEOUT=600    MAINT_BREW_TIMEOUT=900    MAINT_TS_TIMEOUT=300
+#   MAINT_RUSTUP_TIMEOUT=600 # seconds `rustup update` may block
 #   MAINT_ENABLED=1          # 0 = no-op (e.g. drop a guard on a Kali engagement box)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,19 @@ fi
 if have mise; then
   step "mise plugins update" mise plugins update
   step "mise upgrade" mise upgrade --yes
+fi
+
+# ── rust toolchains (mise delegates rolling channels to rustup) ───────────────
+# mise's rust support doesn't install a standalone toolchain — it sets
+# RUSTUP_TOOLCHAIN and hands off to rustup. So a rolling channel (stable/beta/
+# nightly, as in mise/config.toml's `rust = "stable"`) is ALWAYS "satisfied" from
+# mise's view: `mise upgrade` above is a no-op for it and never advances the
+# toolchain. Moving stable forward (1.88 → 1.89 …) is rustup's job, so do it here
+# — otherwise rust silently falls behind until someone runs `rustup update` by
+# hand. Guarded on `have rustup`: no-op on boxes where the package manager owns
+# rust (the distro note in mise/config.toml) and rustup isn't installed.
+if have rustup; then
+  step "rustup update" _to "${MAINT_RUSTUP_TIMEOUT:-600}" rustup update
 fi
 
 # ── zsh plugins (mirrors your zplugin-update) ─────────────────────────────────

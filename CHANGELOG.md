@@ -15,6 +15,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Scheduled maintenance now advances the Rust toolchain.** The daily runner ran
+  `mise upgrade --yes`, but mise's rust support delegates to rustup (it sets
+  `RUSTUP_TOOLCHAIN` rather than installing a standalone toolchain), so a rolling
+  channel like `mise/config.toml`'s `rust = "stable"` reads as always-satisfied —
+  `mise upgrade` never moved it forward and Rust silently fell behind until someone
+  ran `rustup update` by hand. `dotfiles-maint.sh` now runs `rustup update` after
+  the mise step, guarded on `have rustup` (no-op where the package manager owns
+  rust and rustup isn't installed) and time-limited by `MAINT_RUSTUP_TIMEOUT`
+  (default 600s). (`maint/dotfiles-maint.sh`)
+
 - **`sync-core.sh` summary now counts repos, not ✓ lines.** The footer printed the
   line-level `$PASS` counter as "updated" — the pre-flight audit ✓ plus two `ok()`
   per healthy repo (subtree pull + core.lock) — so a clean 8-repo fan-out reported
