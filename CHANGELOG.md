@@ -13,6 +13,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Bumped the pinned Python and Ruby runtimes off their security-only lines.**
+  `mise/config.toml`: `python = "3.12"` → `"3.14"` and `ruby = "3.3"` → `"3.4"`.
+  Both pins had aged into security-only maintenance, so they no longer receive
+  bugfix releases: Python 3.12's bugfix window ended ~2025-04 (security-only until
+  2028-10), and Ruby 3.3 dropped to security maintenance on 2026-04-01 (EOL
+  ~2027-03). Targets chosen for runway, not just currency: **Python 3.14** (GA
+  2025-10-07) has bugfix support through 2027-10 — 3.13 was skipped because its
+  bugfix window ends 2026-10-06, only months out; **Ruby 3.4** (GA 2024-12-25) is
+  in normal maintenance (the next line is 4.0, too fresh to point security tooling
+  at). Both are supported by the pentest tooling the intent comments name
+  (impacket/bloodhound-python, evil-winrm). Java (`temurin-21`, still a current
+  LTS) and Lua (`5.4`, current stable) stay put. Regenerate `mise.lock` on a real
+  box with `mise install` after syncing. (`mise/config.toml`)
+
 ### Added
 
 - **New `/runtime-freshness` routine.** On-demand `.claude/` routine (report-first,
