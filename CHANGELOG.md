@@ -24,8 +24,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the line-level counters remain on a second `checks:` row for cross-referencing
   the per-line output above. (`scripts/sync-core.sh`)
 
-### Fixed
-
 - **nvim: first file opened in a bare session got no filetype — no syntax/treesitter
   highlighting, no LSP, no linter.** When Neovim started without a file argument
   (dashboard, `nvim` then `:e`, any picker), the first real buffer's `BufReadPost`
