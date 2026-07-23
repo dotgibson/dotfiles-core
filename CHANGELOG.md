@@ -13,6 +13,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **Scheduled maintenance now surfaces cross-pin runtime bumps.** `mise upgrade`
+  keeps each runtime current only _within_ its configured constraint
+  (`python = "3.12"` tracks 3.12.x); crossing a pin to a new minor/major is a
+  deliberate call and stays manual. The daily runner now logs `mise outdated
+  --bump` after the upgrade step — a report-only nudge listing runtimes with a
+  newer version available beyond their pin (apply with `mise up --bump <tool>`),
+  mirroring the existing "system packages: N upgradable (apply with `up`)" line.
+  (`maint/dotfiles-maint.sh`)
+
 ### Fixed
 
 - **Scheduled maintenance now advances the Rust toolchain.** The daily runner ran

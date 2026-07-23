@@ -114,6 +114,20 @@ fi
 if have mise; then
   step "mise plugins update" mise plugins update
   step "mise upgrade" mise upgrade --yes
+  # `mise upgrade` keeps each tool current WITHIN its configured constraint
+  # (python="3.12" tracks 3.12.x) but never crosses a pin — moving 3.12→3.13 is a
+  # deliberate call (breakage risk for pinned tooling), so it stays manual. Surface
+  # the cross-pin bumps that are available so they don't go unnoticed: `--bump`
+  # compares against the latest version BEYOND the pin (plain `outdated` only shows
+  # within-constraint staleness, which the upgrade just cleared). Report-only, like
+  # the `up` nudge for system packages below — apply with `mise up --bump <tool>`.
+  bump="$(mise outdated --bump --no-header 2>/dev/null)"
+  if [[ -n "$bump" ]]; then
+    log "mise: bumps available beyond your pins (apply manually: mise up --bump <tool>):"
+    printf '%s\n' "$bump" | tee -a "$LOG"
+  else
+    log "mise: all runtimes current within their pins (no cross-pin bumps available)"
+  fi
 fi
 
 # ── rust toolchains (mise delegates rolling channels to rustup) ───────────────
