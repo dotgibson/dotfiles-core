@@ -15,6 +15,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **New `/runtime-freshness` routine.** On-demand `.claude/` routine (report-first,
+  like `/freshness-triage`) that decides whether the _pinned_ runtimes in
+  `mise/config.toml` (python/ruby/java/lua) are due to cross a pin — weighing EOL
+  calendars and tooling compatibility, the judgment the maint job's `mise outdated
+  --bump` nudge can't make. Registered in `CLAUDE.md`'s routines list.
+  (`.claude/commands/runtime-freshness.md`)
+
 - **Scheduled maintenance now surfaces cross-pin runtime bumps.** `mise upgrade`
   keeps each runtime current only _within_ its configured constraint
   (`python = "3.12"` tracks 3.12.x); crossing a pin to a new minor/major is a
