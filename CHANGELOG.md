@@ -15,6 +15,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Forced a steady block cursor in tmux.** `tmux/tmux.conf` now sets
+  `cursor-style block`, so panes render a non-blinking block cursor regardless of
+  the terminal's own default. (`tmux/tmux.conf`)
+
 - **Bumped the pinned Python and Ruby runtimes off their security-only lines.**
   `mise/config.toml`: `python = "3.12"` → `"3.14"` and `ruby = "3.3"` → `"3.4"`.
   Both pins had aged into security-only maintenance, so they no longer receive
