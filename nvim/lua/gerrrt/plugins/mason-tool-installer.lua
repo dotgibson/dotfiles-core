@@ -109,8 +109,7 @@ return {
 				"sqlfluff", -- SQL (needs a dialect → gated on .sqlfluff)
 				"protolint", -- Protobuf
 				"tflint", -- Terraform
-				"statix", -- Nix anti-patterns
-				"deadnix", -- Nix dead code
+				"statix", -- Nix anti-patterns (deadnix, its dead-code companion, is not in the Mason registry — install via nix/cargo if wanted)
 				-- ── SAST (nvim-lint, gated on a project semgrep config) ──
 				"semgrep",
 			},
