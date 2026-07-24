@@ -50,6 +50,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   dropped the unregistered `markdown.mdx` filetype from marksman.
   (`nvim/lua/gerrrt/plugins/render-markdown.lua`, `nvim/lua/gerrrt/servers/marksman.lua`)
 
+- **The sesh session picker no longer prints raw ANSI codes around its icons.**
+  `sesh list --icons` colour-codes its glyphs (blue for sessions/tmux, cyan for zoxide
+  dirs), but the two `fzf` callers lacked `--ansi`, so the escape sequences rendered
+  literally (`[34m…[39m`) instead of colouring the icon. Added `--ansi` to both entry
+  points — the Ctrl-G shell widget and the `prefix+f` tmux picker.
+  (`zsh/35-fzf.zsh`, `tmux/scripts/tmux-sesh.sh`)
+
 ## [v4.1.0] - 2026-07-23
 
 ### Changed
