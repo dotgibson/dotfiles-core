@@ -13,6 +13,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Linters now run on file open, not only on save.** nvim-lint fired only on
+  `BufWritePost`/`InsertLeave`, so an opened file showed no lint diagnostics until you
+  saved it or toggled in/out of insert mode. Added `BufReadPost` to the trigger events
+  (plus a one-shot replay of the first buffer, which loads just after its own
+  `BufReadPost`), so diagnostics surface on open. Heavy whole-package/repo linters
+  (golangci-lint, cpplint, checkstyle, phpstan, sqlfluff, tflint, semgrep) stay
+  save-only — they run on `BufWritePost` and nowhere else.
+  (`nvim/lua/gerrrt/plugins/nvim-lint.lua`)
+
 ### Fixed
 
 - **`nil` (Nix LSP) no longer breaks the Mason install pass.** Mason only cargo-builds
