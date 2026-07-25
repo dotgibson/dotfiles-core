@@ -100,7 +100,6 @@ return {
 			sql = { "sqlfluff" }, -- needs a dialect → gated on .sqlfluff
 			proto = { "protolint" },
 			terraform = { "tflint" },
-			nix = { "statix" }, -- anti-patterns; config-optional & fast. (deadnix — dead code — isn't Mason-installable, so it's left out; add it here if you install it via nix/cargo.)
 			-- NOTE: no zsh entry. shellcheck only supports sh/bash/dash/ksh and emits SC1071
 			-- ("ShellCheck only supports sh/bash/dash/ksh scripts") on a zsh file — i.e. a useless
 			-- error diagnostic on every zsh buffer. Nothing reliably lints zsh, so we don't.

@@ -22,13 +22,6 @@
 --   • nomicfoundation-solidity-language-server — npm i -g @nomicfoundation/solidity-language-server
 --     (not carried in the Mason registry under a stable name; servers/solidity_*.lua expects the
 --      binary on PATH). solhint (its linter) IS mason-managed, below.
---   • nil (Nix LSP) — Mason only offers a cargo-from-source recipe, and nil's `builtin` crate
---     build.rs shells out to the `nix` binary to generate builtins metadata, so `cargo install`
---     fails (exit 101) on any box without Nix — which would break the install pass on every
---     non-Nix host in the fleet. Install it the Nix-native way once Nix is set up:
---         nix profile install github:oxalica/nil     (or `cargo install` with `nix` on PATH)
---     servers/nil_ls.lua's binary-guard leaves it dark until then. statix (lint) + alejandra
---     (fmt), both pure-Rust, ARE mason-managed below, so Nix still gets lint+format+treesitter.
 -- ================================================================================================
 return {
 	"WhoIsSethDaniel/mason-tool-installer.nvim",
@@ -78,7 +71,7 @@ return {
 				"markdownlint-cli2", -- markdown lint (mirrors the repo's markdown gate)
 				"yamllint", -- yaml lint
 				-- ── added languages: Ruby / Java / Kotlin / PHP / Zig / SQL / Protobuf / GraphQL /
-				--    Terraform / Nix. Grouped here (rather than split across the sections above) so
+				--    Terraform. Grouped here (rather than split across the sections above) so
 				--    the whole new surface is legible in one place. Servers are enabled in
 				--    servers/init.lua; formatters live in conform.lua; linters (all gated) in
 				--    nvim-lint.lua; parsers in nvim-treesitter.lua.
@@ -102,23 +95,18 @@ return {
 				"buf", -- Protobuf: buf CLI provides the LSP (buf lsp) AND the formatter (buf format)
 				"graphql-language-service-cli",
 				"terraform-ls",
-				-- nil (Nix LSP) is intentionally absent — cargo-only in Mason and its build needs the
-				-- `nix` binary, so it fails to install without Nix. See the "DELIBERATELY NOT here"
-				-- header note for the `nix profile install github:oxalica/nil` path.
 				-- ── formatters (conform) ──
 				"rubocop", -- Ruby: formats AND lints (also the nvim-lint entry)
 				"google-java-format",
 				"ktlint", -- Kotlin: formats AND lints
 				"php-cs-fixer",
 				"sql-formatter",
-				"alejandra", -- Nix formatter
 				-- ── linters (nvim-lint, gated) ──
 				"checkstyle", -- Java
 				"phpstan", -- PHP
 				"sqlfluff", -- SQL (needs a dialect → gated on .sqlfluff)
 				"protolint", -- Protobuf
 				"tflint", -- Terraform
-				"statix", -- Nix anti-patterns (deadnix, its dead-code companion, is not in the Mason registry — install via nix/cargo if wanted)
 				-- ── SAST (nvim-lint, gated on a project semgrep config) ──
 				"semgrep",
 			},
