@@ -26,6 +26,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Cleared the rustaceanvim `vim.lsp.get_buffers_by_client_id()` deprecation warning
+  (removed in Nvim 0.13).** The v6 line still calls it, so the fix required bumping the
+  version spec from `^6` to `^8` (the fix landed in v7.0.0) and the lockfile to v8.0.5.
+  Chose `^8` over `^9` on purpose — v9's only breaking change is dropping Neovim 0.11
+  support, and Core vendors to a fleet that may not all be on 0.12; v8 keeps the fix and
+  `neovim >= 0.11`. The v7/v8 breaking changes (ra-multiplex → lspmux, drop
+  `.vscode/settings.json`) don't affect this config. (The remaining `vim.validate{}`
+  warning is from diffview.nvim, which upstream hasn't fixed — removal isn't until
+  Nvim 1.0, so it's benign.)
+  (`nvim/lua/gerrrt/plugins/rustaceanvim.lua`, `nvim/lazy-lock.json`)
+
 - **`nil` (Nix LSP) no longer breaks the Mason install pass.** Mason only cargo-builds
   `nil` from source, and its `builtin` crate build script needs the `nix` binary to
   generate builtins metadata — so `:MasonToolsUpdate` failed (cargo exit 101) on every
