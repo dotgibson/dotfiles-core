@@ -26,6 +26,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Cleared the rustaceanvim `vim.lsp.get_buffers_by_client_id()` deprecation warning.**
+  Rolled the rustaceanvim pin forward (`88575b9` → `3296956`) to the upstream commit that
+  replaced the deprecated call with `vim.lsp.get_client_by_id(id).attached_buffers`, so
+  `:checkhealth vim.deprecated` no longer flags it. (The remaining `vim.validate{}`
+  warning comes from diffview.nvim, which upstream hasn't fixed yet — nothing to bump
+  there. Removal isn't until Nvim 1.0, so it's benign.) (`nvim/lazy-lock.json`)
+
 - **`nil` (Nix LSP) no longer breaks the Mason install pass.** Mason only cargo-builds
   `nil` from source, and its `builtin` crate build script needs the `nix` binary to
   generate builtins metadata — so `:MasonToolsUpdate` failed (cargo exit 101) on every
