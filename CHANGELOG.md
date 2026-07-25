@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.2.0] - 2026-07-24
+
 ### Added
 
 - **Ten new languages get the full editor toolchain — Ruby, Java, Kotlin, PHP, Zig,
