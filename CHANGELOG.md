@@ -24,6 +24,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   save-only — they run on `BufWritePost` and nowhere else.
   (`nvim/lua/gerrrt/plugins/nvim-lint.lua`)
 
+### Removed
+
+- **Dropped Nix language support** (added in v4.2.0) — unused in practice, and the only
+  language of that batch with ongoing install cost. Removed the `nil_ls` server config,
+  the `alejandra` formatter, the `statix` linter, the `nix` treesitter parser, and the
+  `alejandra`/`statix` Mason packages (so they no longer install on every box). No `.nix`
+  tooling remains; re-add per the v4.2.0 pattern if Nix ever comes back.
+  (`nvim/lua/gerrrt/servers/nil_ls.lua`, `nvim/lua/gerrrt/servers/init.lua`,
+  `nvim/lua/gerrrt/plugins/{conform,nvim-lint,nvim-treesitter,mason-tool-installer}.lua`)
+
 ### Fixed
 
 - **Cleared the rustaceanvim `vim.lsp.get_buffers_by_client_id()` deprecation warning
