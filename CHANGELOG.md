@@ -47,15 +47,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Nvim 1.0, so it's benign.)
   (`nvim/lua/gerrrt/plugins/rustaceanvim.lua`, `nvim/lazy-lock.json`)
 
-- **`nil` (Nix LSP) no longer breaks the Mason install pass.** Mason only cargo-builds
-  `nil` from source, and its `builtin` crate build script needs the `nix` binary to
-  generate builtins metadata — so `:MasonToolsUpdate` failed (cargo exit 101) on every
-  host without Nix. Moved `nil` out of `ensure_installed` into the manifest's
-  "installed by other channels" note (`nix profile install github:oxalica/nil`); the
-  `nil_ls` server config stays and lights up via the binary-guard once `nil` is on PATH.
-  `statix` + `alejandra` keep Nix linting/formatting Mason-managed.
-  (`nvim/lua/gerrrt/plugins/mason-tool-installer.lua`, `nvim/lua/gerrrt/servers/nil_ls.lua`)
-
 ## [v4.2.0] - 2026-07-24
 
 ### Added
