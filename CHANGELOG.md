@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.4.0] - 2026-07-27
+
 ### Added
 
 - **Terminal web browser wiring.** `00-tools.zsh` now resolves a `BROWSER_BIN`
