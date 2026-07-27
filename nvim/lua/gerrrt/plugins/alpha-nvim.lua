@@ -47,14 +47,20 @@ return {
 			startify.button("q", "\u{f057}  Quit", "<cmd>qa<cr>"), -- f057 times-circle
 		}
 
-		-- N9: quiet footer (plugin count + nvim version)
+		-- N9: quiet footer (plugin count + nvim version).
+		-- startify's `footer` is a `group`, whose `val` must be element tables (each with a
+		-- `.type`), not raw strings — so replace it with a `text` element rather than assigning
+		-- strings into the group (which makes alpha call layout_element[nil] → nil-call crash).
 		local ok2, lazy = pcall(require, "lazy")
 		local pcount = ok2 and lazy.stats().count or 0
 		local ver = vim.version()
-		startify.section.footer.val = {
-			("\u{f0e7} %d plugins   \u{f419} nvim %d.%d.%d"):format(pcount, ver.major, ver.minor, ver.patch), -- f0e7 bolt, f419 nvim
+		startify.section.footer = {
+			type = "text",
+			val = {
+				("\u{f0e7} %d plugins   \u{f419} nvim %d.%d.%d"):format(pcount, ver.major, ver.minor, ver.patch), -- f0e7 bolt, f419 nvim
+			},
+			opts = { position = "center", hl = "AlphaFooter" },
 		}
-		startify.section.footer.opts = { position = "center", hl = "AlphaFooter" }
 
 		require("alpha").setup(startify.config)
 	end,
