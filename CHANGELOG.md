@@ -13,6 +13,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **alpha-nvim greeter crash on `nvim` launch.** The dashboard footer was built by
+  assigning raw strings into startify's `footer` section, but that section is a
+  `group` whose `val` must hold element tables — alpha then called
+  `layout_element[nil]` and threw a `VimEnter` autocommand error (nil-call at
+  `alpha.lua:362`). The footer is now a `text` element, mutated in place so the
+  layout's captured reference renders it. (`nvim/lua/gerrrt/plugins/alpha-nvim.lua`)
+
 ## [v4.4.0] - 2026-07-27
 
 ### Added
