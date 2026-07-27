@@ -56,9 +56,11 @@ if [[ -n ${HAVE_DUF:-} ]]; then alias df='duf'; else alias df='df -h'; fi
 }
 
 # ── terminal web browser (w3m preferred; BROWSER_BIN resolved in 00-tools.zsh) ──
-# `web <url>` is always available. $BROWSER is only claimed on a headless box
-# (SSH / server / WSL-no-X) so it doesn't hijack GUI-opening tools on a desktop;
-# macOS ($OSTYPE=darwin*) always has a GUI, so it's skipped too.
+# When a browser is present, `web <url>` is defined; with none installed this whole
+# block is skipped — no alias, no export (the "no browser" row of the PR's table).
+# $BROWSER is claimed only on a headless box (SSH / server / WSL-no-X) so it never
+# hijacks GUI-opening tools on a desktop; macOS ($OSTYPE=darwin*) always has a GUI,
+# so it's skipped too.
 if [[ -n ${HAVE_BROWSER:-} ]]; then
   alias web="$BROWSER_BIN"
   if [[ -z ${DISPLAY:-} && -z ${WAYLAND_DISPLAY:-} && $OSTYPE != darwin* ]]; then
