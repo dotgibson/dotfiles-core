@@ -170,6 +170,31 @@ if [[ -n ${HAVE_STARSHIP:-} && -n ${RPROMPT:-} ]]; then
   add-zsh-hook precmd _starship_keep_rprompt
 fi
 
+# ── Command-block separators (Pass 2, P12) ────────────────────────────────────
+# A thin full-width rule drawn above each prompt that FOLLOWED a command, colored by
+# that command's exit status: dim (#414868) on success, red (#f7768e) on failure. It
+# turns scrollback into visually delimited "blocks" — scan the left edge for red to
+# find what broke. Pure precmd/preexec output (NO ZLE widget), so unlike a transient
+# prompt it cannot collide with zsh-vi-mode. A bare Enter draws no rule (the preexec
+# flag gates it), so idle prompts don't stack rules.
+if [[ -n ${HAVE_STARSHIP:-} ]]; then
+  autoload -Uz add-zsh-hook
+  typeset -gi _CMD_BLOCK_RAN=0
+  _cmd_block_preexec() { _CMD_BLOCK_RAN=1 }
+  _cmd_block_precmd() {
+    local ec=$?                               # captured FIRST — real command exit code
+    (( _CMD_BLOCK_RAN )) || return            # nothing ran → no rule
+    _CMD_BLOCK_RAN=0
+    local w=${COLUMNS:-80} col
+    if (( ec == 0 )); then col='%F{#414868}'; else col='%F{#f7768e}'; fi
+    print -rP -- "${col}${(l:w::─:)}%f"
+  }
+  add-zsh-hook preexec _cmd_block_preexec
+  add-zsh-hook precmd  _cmd_block_precmd
+  # Run our precmd FIRST so $? is the command's exit code, not starship_precmd's.
+  precmd_functions=(_cmd_block_precmd ${precmd_functions:#_cmd_block_precmd})
+fi
+
 [[ -n ${HAVE_ZOXIDE:-} ]] && _cache_eval zoxide zoxide init zsh
 # mise: the chpwd-hook activation, now cached. The hook still resolves tools live
 # per-dir; only the activation script's *generation* is cached. (If you'd rather
