@@ -79,6 +79,13 @@ if _have bat; then
   BAT_BIN=bat
 elif _have batcat; then BAT_BIN=batcat; fi
 
+# Terminal web browser: prefer w3m (the one we package fleet-wide), but fall back
+# to any other text browser already on the box so a bare machine still gets one.
+for _b in w3m lynx links2 links elinks; do
+  if _have "$_b"; then BROWSER_BIN=$_b; break; fi
+done
+unset _b
+
 # ── HAVE_* flags consumed by 20-aliases.zsh / 30-functions.zsh / 35-fzf.zsh ────────────
 _have eza && HAVE_EZA=1
 _have rg && HAVE_RG=1
@@ -117,6 +124,7 @@ _have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-
 _have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (20-aliases.zsh: gdft)
 [[ -n ${FD_BIN:-} ]] && HAVE_FD=1
 [[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
+[[ -n ${BROWSER_BIN:-} ]] && HAVE_BROWSER=1  # terminal web browser (20-aliases.zsh: web + headless BROWSER)
 
 # ── Tool env — set BEFORE the init evals below ────────────────────────────────
 # starship reads its theme from the default ~/.config/starship.toml (bootstrap

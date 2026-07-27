@@ -55,6 +55,17 @@ if [[ -n ${HAVE_DUF:-} ]]; then alias df='duf'; else alias df='df -h'; fi
   alias y='yazi'
 }
 
+# ── terminal web browser (w3m preferred; BROWSER_BIN resolved in 00-tools.zsh) ──
+# `web <url>` is always available. $BROWSER is only claimed on a headless box
+# (SSH / server / WSL-no-X) so it doesn't hijack GUI-opening tools on a desktop;
+# macOS ($OSTYPE=darwin*) always has a GUI, so it's skipped too.
+if [[ -n ${HAVE_BROWSER:-} ]]; then
+  alias web="$BROWSER_BIN"
+  if [[ -z ${DISPLAY:-} && -z ${WAYLAND_DISPLAY:-} && $OSTYPE != darwin* ]]; then
+    export BROWSER="$BROWSER_BIN"
+  fi
+fi
+
 # ── 2026 modern stack additions (all guarded; classics untouched) ────────────
 # xh: Rust HTTPie — for poking APIs / web targets. curl stays for scripts.
 [[ -n ${HAVE_XH:-} ]] && {
