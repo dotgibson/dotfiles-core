@@ -31,49 +31,49 @@ _Repo status_ at the bottom).
 
 ## Package names (modern CLI stack)
 
-| Tool             | Arch                   | openSUSE     | Alpine       | Gentoo (atom)              | Kali (apt)      |
-| ---------------- | ---------------------- | ------------ | ------------ | -------------------------- | --------------- |
-| eza              | `eza`                  | `eza`        | `eza`        | `sys-apps/eza`             | `eza`           |
-| bat              | `bat`                  | `bat`        | `bat`        | `sys-apps/bat`             | `bat`⁴          |
-| fd               | `fd`                   | `fd`         | `fd`         | `sys-apps/fd`              | `fd-find`⁴      |
-| ripgrep          | `ripgrep`              | `ripgrep`    | `ripgrep`    | `sys-apps/ripgrep`         | `ripgrep`       |
-| zoxide           | `zoxide`               | `zoxide`     | `zoxide`     | `app-shells/zoxide`        | `zoxide`        |
-| fzf              | `fzf`                  | `fzf`        | `fzf`        | `app-shells/fzf`           | `fzf`           |
-| git-delta        | `git-delta`            | `git-delta`  | `delta`      | `dev-util/git-delta`       | `git-delta`     |
-| btop             | `btop`                 | `btop`       | `btop`       | `sys-process/btop`         | `btop`          |
-| tldr             | `tealdeer`             | `tealdeer`¹  | cargo³       | `app-misc/tealdeer`¹²      | `tealdeer`      |
-| neovim           | `neovim`               | `neovim`     | `neovim`     | `app-editors/neovim`       | `neovim`        |
-| lazygit          | `lazygit`              | `lazygit`    | `lazygit`    | `dev-vcs/lazygit`¹²        | `lazygit`       |
-| zsh              | `zsh`                  | `zsh`        | `zsh`²       | `app-shells/zsh`           | `zsh`           |
-| tmux             | `tmux`                 | `tmux`       | `tmux`       | `app-misc/tmux`            | `tmux`          |
-| starship         | `starship`             | script³      | `starship`   | `app-shells/starship`      | script³         |
-| atuin            | `atuin`                | script³      | `atuin`      | `app-shells/atuin`         | `atuin`³        |
-| yazi             | `yazi`                 | cargo³       | `yazi`       | `app-misc/yazi`¹²          | cargo³          |
-| tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | community    | cargo³                     | `mise`/`cargo`³ |
-| jq               | `jq`                   | `jq`         | `jq`         | `app-misc/jq`              | `jq`            |
-| yq⁶              | `go-yq`                | go³          | `yq-go`      | `app-misc/yq-go`           | `yq-go`         |
-| duf              | `duf`                  | `duf`        | testing¹⁴    | `sys-fs/duf`               | `duf`           |
-| dust             | `dust`                 | `dust`       | `dust`       | `sys-block/dust`           | `du-dust`⁴      |
-| procs            | `procs`                | `procs`      | `procs`      | `sys-process/procs`        | `procs`         |
-| viddy¹⁶          | AUR¹⁶                  | cargo³       | `viddy`      | cargo³                     | cargo³          |
-| sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
-| gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
-| jnv¹⁷            | AUR                    | cargo        | cargo        | cargo                      | cargo           |
-| glow             | `glow`                 | `glow`       | testing¹⁴    | `app-misc/glow`¹²          | `glow`¹⁵        |
-| gum              | `gum`                  | `gum`        | `gum`        | `app-misc/gum`¹²           | `gum`¹⁵         |
-| xh               | `xh`                   | `xh`         | `xh`         | `net-misc/xh`¹²            | `xh`            |
-| doggo            | `doggo`                | go³          | `doggo`      | `net-dns/doggo`            | go³             |
-| carapace         | AUR³                   | go³          | `carapace`   | `app-shells/carapace`¹²    | go³             |
-| op (1Password)¹³ | AUR                    | vendor rpm   | vendor apk   | GURU¹²                     | vendor apt      |
-| hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`  | `app-benchmarks/hyperfine` | `hyperfine`     |
-| shellcheck       | `shellcheck`           | `ShellCheck` | `shellcheck` | `dev-util/shellcheck`      | `shellcheck`    |
-| shfmt⁷           | `shfmt`                | `shfmt`      | `shfmt`      | `dev-go/shfmt`             | `shfmt`⁷        |
-| ouch             | `ouch`                 | cargo³       | testing      | cargo³                     | cargo³          |
-| jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | `jujutsu`    | `dev-vcs/jujutsu`          | cargo³          |
-| sesh⁹            | AUR⁹                   | go⁹          | go⁹          | go⁹                        | go⁹             |
-| difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic` | `dev-util/difftastic`      | `difftastic`    |
-| ast-grep¹¹       | `ast-grep`             | cargo³       | `ast-grep`   | cargo³                     | cargo³          |
-| w3m              | `w3m`                  | `w3m`        | `w3m`        | `www-client/w3m`           | `w3m`           |
+| Tool             | Arch                   | openSUSE     | Alpine            | Gentoo (atom)              | Kali (apt)      |
+| ---------------- | ---------------------- | ------------ | ----------------- | -------------------------- | --------------- |
+| eza              | `eza`                  | `eza`        | `eza`             | `sys-apps/eza`             | `eza`           |
+| bat              | `bat`                  | `bat`        | `bat`             | `sys-apps/bat`             | `bat`⁴          |
+| fd               | `fd`                   | `fd`         | `fd`              | `sys-apps/fd`              | `fd-find`⁴      |
+| ripgrep          | `ripgrep`              | `ripgrep`    | `ripgrep`         | `sys-apps/ripgrep`         | `ripgrep`       |
+| zoxide           | `zoxide`               | `zoxide`     | `zoxide`          | `app-shells/zoxide`        | `zoxide`        |
+| fzf              | `fzf`                  | `fzf`        | `fzf`             | `app-shells/fzf`           | `fzf`           |
+| git-delta        | `git-delta`            | `git-delta`  | `delta`           | `dev-util/git-delta`       | `git-delta`     |
+| btop             | `btop`                 | `btop`       | `btop`            | `sys-process/btop`         | `btop`          |
+| tldr             | `tealdeer`             | `tealdeer`¹  | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`      |
+| neovim           | `neovim`               | `neovim`     | `neovim`          | `app-editors/neovim`       | `neovim`        |
+| lazygit          | `lazygit`              | `lazygit`    | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`       |
+| zsh              | `zsh`                  | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`           |
+| tmux             | `tmux`                 | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`          |
+| starship         | `starship`             | script³      | `starship`        | `app-shells/starship`      | script³         |
+| atuin            | `atuin`                | script³      | `atuin`           | `app-shells/atuin`         | `atuin`³        |
+| yazi             | `yazi`                 | cargo³       | `yazi`            | `app-misc/yazi`¹²          | cargo³          |
+| tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | `tree-sitter-cli` | cargo³                     | `mise`/`cargo`³ |
+| jq               | `jq`                   | `jq`         | `jq`              | `app-misc/jq`              | `jq`            |
+| yq⁶              | `go-yq`                | go³          | `yq-go`           | `app-misc/yq-go`           | `yq-go`         |
+| duf              | `duf`                  | `duf`        | testing¹⁴         | `sys-fs/duf`               | `duf`           |
+| dust             | `dust`                 | `dust`       | `dust`            | `sys-block/dust`           | `du-dust`⁴      |
+| procs            | `procs`                | `procs`      | `procs`           | `sys-process/procs`        | `procs`         |
+| viddy¹⁶          | AUR¹⁶                  | cargo³       | `viddy`           | cargo³                     | cargo³          |
+| sd               | `sd`                   | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`            |
+| gron             | `gron`                 | `gron`       | `gron`            | go³                        | `gron`          |
+| jnv¹⁷            | AUR                    | cargo        | cargo             | cargo                      | cargo           |
+| glow             | `glow`                 | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵        |
+| gum              | `gum`                  | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵         |
+| xh               | `xh`                   | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`            |
+| doggo            | `doggo`                | go³          | `doggo`           | `net-dns/doggo`            | go³             |
+| carapace         | AUR³                   | go³          | `carapace`        | `app-shells/carapace`¹²    | go³             |
+| op (1Password)¹³ | AUR                    | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt      |
+| hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`     |
+| shellcheck       | `shellcheck`           | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`    |
+| shfmt⁷           | `shfmt`                | `shfmt`      | `shfmt`           | `dev-go/shfmt`             | `shfmt`⁷        |
+| ouch             | `ouch`                 | cargo³       | testing           | cargo³                     | cargo³          |
+| jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | `jujutsu`         | `dev-vcs/jujutsu`          | cargo³          |
+| sesh⁹            | AUR⁹                   | go⁹          | go⁹               | go⁹                        | go⁹             |
+| difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`    |
+| ast-grep¹¹       | `ast-grep`             | cargo³       | `ast-grep`        | cargo³                     | cargo³          |
+| w3m              | `w3m`                  | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`           |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
