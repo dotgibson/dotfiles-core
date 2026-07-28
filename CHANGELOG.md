@@ -45,6 +45,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `layout_element[nil]` and threw a `VimEnter` autocommand error (nil-call at
   `alpha.lua:362`). The footer is now a `text` element, mutated in place so the
   layout's captured reference renders it. (`nvim/lua/gerrrt/plugins/alpha-nvim.lua`)
+- **`PORTING-MATRIX.md` Alpine column caught up with `community`.** starship, yazi,
+  tree-sitter-cli and viddy have landed in Alpine's `community` repo (native musl
+  builds) since these rows were written — the matrix now shows the apk package for
+  each instead of `script³`/`cargo³`, footnote ⁵ notes the `community` tree-sitter-cli
+  is the musl build that clears the ≥ 0.26.1 floor, and footnotes ⁸/¹⁶ drop the stale
+  "not in Alpine" claim for jujutsu/viddy. Availability doc only; `dotfiles-Alpine`
+  carries the matching `packages.txt` move. (`PORTING-MATRIX.md`)
+- **`PORTING-MATRIX.md` openSUSE `yq` corrected to the Go-install path.** The row
+  claimed stock `yq` on openSUSE is mikefarah's Go build, but the main OSS `yq` is
+  kislyuk's separate **Python** `yq` (the Go build ships only from a personal OBS
+  repo) — so a stock `zypper in yq` lands the wrong tool. The openSUSE cell is now
+  `go³` and footnote ⁶ explains it; `dotfiles-openSUSE` go-installs the mikefarah
+  build in `bootstrap.sh` alongside doggo/carapace/sesh. (`PORTING-MATRIX.md`)
 
 ### Security
 
