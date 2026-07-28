@@ -20,20 +20,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   "explore an unfamiliar API/JSON response" gap between `jq` (transform), `gron`
   (grep), and `yq` (YAML). It's its own command with no alias (like `jq`/`gron`/
   `ast-grep`) and is inert without the binary. A Rust CLI (embeds `jaq`, no external
-  `jq` dependency); packaged on Homebrew/AUR/Nix, elsewhere `cargo install --locked
-  jnv` — the same cargo-fallback path as viddy/yazi/ouch. New `PORTING-MATRIX.md` row
-  and footnote. (`zsh/00-tools.zsh`, `zsh/20-aliases.zsh`, `PORTING-MATRIX.md`)
+  `jq` dependency). **Detect-only for now** — Core lights up `HAVE_JNV` when the binary
+  is present, but `jnv` is not yet wired into any OS repo's `Brewfile`/`packages.txt`/
+  `bootstrap.sh` (install it via `brew`/AUR/Nix or `cargo install --locked jnv`);
+  fleet auto-install is a tracked follow-up. New `PORTING-MATRIX.md` row and footnote.
+  (`zsh/00-tools.zsh`, `zsh/20-aliases.zsh`, `PORTING-MATRIX.md`)
 
 ### Fixed
 
 - **`fleet-drift` false red on `dotfiles-Windows`.** The sweep measures every repo
-  against the latest Core **release tag**, but `dotfiles-Windows` tracks Core's
-  **main tip** (its `nvim/` is synced from `-Branch main` by the nvim-sync bot, not
-  pinned to a release), so between releases it legitimately runs _ahead_ of the tag —
-  and `fleet-drift.sh` flagged that "AHEAD by N" as drift, failing the run and filing
-  a spurious ci-failure issue. `dotfiles-Windows` is now marked as a main-tip tracker:
-  being AHEAD of the release tag is treated as current, while falling BEHIND still
-  fails (genuinely stale `nvim/`). (`scripts/fleet-drift.sh`)
+  against the latest Core **release tag**, but `dotfiles-Windows` vendors only the
+  `nvim/` subtree and tracks Core's **main tip** (synced by the nvim-sync bot, which
+  re-stamps its marker only when `nvim/` actually changes). So its recorded commit can
+  legitimately be a _descendant_ of the release tag (an unreleased `nvim/` commit pulled
+  between releases) or an _ancestor_ of it (a release that changed no `nvim/` files
+  leaves the marker behind while the vendored tree is byte-identical) — and the old
+  commit-vs-tag comparison flagged both as drift, failing the run and filing a spurious
+  ci-failure issue. `dotfiles-Windows` is now judged against `nvim/`'s last change
+  reachable from the reference (`git rev-list -1 REF -- nvim`), so both states read as
+  current while a genuinely stale `nvim/` tree still fails. (`scripts/fleet-drift.sh`)
 - **alpha-nvim greeter crash on `nvim` launch.** The dashboard footer was built by
   assigning raw strings into startify's `footer` section, but that section is a
   `group` whose `val` must hold element tables — alpha then called
@@ -43,15 +48,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Security
 
-- **Container digest-pin rule now covers the `container:` shorthand and `uses:
-  docker://` actions.** Rule 4 in `check-modern.sh` only anchored on an `image:`
-  value or a `docker run|build|pull` command, so an unpinned `container: node:20`
-  shorthand (value on the key's line) or a `uses: docker://alpine:3.21` container
-  action slipped the floor — neither is `owner/repo@sha` form, so the action sha-pin
-  rule (3) misses them too. The rule's grep anchor now also matches both surfaces, so
-  every way an image reaches CI must carry an `@sha256:` digest. No live violations in
-  the fleet today — this is pre-emptive, closing the gap before an OS/role repo (which
-  inherit the `*-call.yml@v3` workflows) reaches for one. (`scripts/check-modern.sh`,
+- **Container digest-pin rule now covers every image surface, tightly.** Rule 4 in
+  `check-modern.sh` only anchored on an `image:` value or a `docker run|build|pull`
+  command, so an unpinned `container: node:20` shorthand or a `uses: docker://alpine:3.21`
+  container action slipped the floor — neither is `owner/repo@sha` form, so the action
+  sha-pin rule (3) misses them too. The rule now extracts the single image reference from
+  each clean surface (`image:`, `container:` shorthand, `uses: docker://`) and requires an
+  `@sha256:` digest on it: this also catches a bare `container: alpine` / `docker://alpine`
+  (implicit mutable `latest`, which a `name:tag` regex missed) and correctly accepts a
+  digest-only `alpine@sha256:…` (previously mis-flagged), while `docker run` keeps its
+  tolerant token scan. No live violations in the fleet today — pre-emptive, closing the gap
+  before an OS/role repo (which inherit the `*-call.yml@v3` workflows) reaches for one.
+  (`scripts/check-modern.sh`,
   `scripts/modern-baseline.yml`)
 
 ## [v4.4.0] - 2026-07-27

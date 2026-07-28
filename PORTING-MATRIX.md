@@ -58,7 +58,7 @@ _Repo status_ at the bottom).
 | viddy¹⁶          | AUR¹⁶                  | cargo³       | cargo³       | cargo³                     | cargo³          |
 | sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
 | gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
-| jnv¹⁷            | AUR³                   | cargo³       | cargo³       | cargo³                     | cargo³          |
+| jnv¹⁷            | AUR                    | cargo        | cargo        | cargo                      | cargo           |
 | glow             | `glow`                 | `glow`       | testing¹⁴    | `app-misc/glow`¹²          | `glow`¹⁵        |
 | gum              | `gum`                  | `gum`        | `gum`        | `app-misc/gum`¹²           | `gum`¹⁵         |
 | xh               | `xh`                   | `xh`         | `xh`         | `net-misc/xh`¹²            | `xh`            |
@@ -163,12 +163,13 @@ auto-installing. Inert without the binary.
 unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep), and `yq`
 (YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), `HAVE_JNV`-guarded in
 `zsh/00-tools.zsh`, inert without the binary. A **Rust** CLI (embeds `jaq`, so no external
-`jq` needed): packaged on Homebrew (`jnv`, in the macOS `Brewfile`), the AUR, and Nix; **not**
-in Arch-official, openSUSE, Alpine, Gentoo, or Debian/Kali — so the fleet builds it best-effort
-via `cargo install --locked jnv` (musl-safe on Alpine), the same cargo path as viddy/yazi/ouch.
-No confirmed Gentoo GURU atom yet — verify on the next Gentoo stamp and promote the cell if one
-lands. **Arch** ships no rust toolchain (see its `packages.txt`), so bootstrap hints `paru -S
-jnv` rather than auto-building.
+`jq` needed). **Detect-only for now — unlike the ³ tools, `jnv` is NOT yet added to any
+`Brewfile` / `install/packages.txt` / `bootstrap.sh`, so Core lights up `HAVE_JNV` only once
+you install it yourself.** The cells above name where each platform gets it when you opt in —
+macOS `brew install jnv`, Arch `paru -S jnv` (AUR), Nix, or elsewhere `cargo install --locked
+jnv` (musl-safe on Alpine) — not an automatic install. Wiring it into the per-repo bootstrap
+(the ³ best-effort path viddy/yazi/ouch use) is a tracked follow-up in the OS repos; there is
+no confirmed Gentoo GURU atom yet either, so verify on the next Gentoo stamp.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
