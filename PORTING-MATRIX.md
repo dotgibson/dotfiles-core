@@ -46,16 +46,16 @@ _Repo status_ at the bottom).
 | lazygit          | `lazygit`              | `lazygit`    | `lazygit`    | `dev-vcs/lazygit`¹²        | `lazygit`       |
 | zsh              | `zsh`                  | `zsh`        | `zsh`²       | `app-shells/zsh`           | `zsh`           |
 | tmux             | `tmux`                 | `tmux`       | `tmux`       | `app-misc/tmux`            | `tmux`          |
-| starship         | `starship`             | script³      | script³      | `app-shells/starship`      | script³         |
+| starship         | `starship`             | script³      | `starship`   | `app-shells/starship`      | script³         |
 | atuin            | `atuin`                | script³      | `atuin`      | `app-shells/atuin`         | `atuin`³        |
-| yazi             | `yazi`                 | cargo³       | cargo³       | `app-misc/yazi`¹²          | cargo³          |
-| tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | cargo³       | cargo³                     | `mise`/`cargo`³ |
+| yazi             | `yazi`                 | cargo³       | `yazi`       | `app-misc/yazi`¹²          | cargo³          |
+| tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | community    | cargo³                     | `mise`/`cargo`³ |
 | jq               | `jq`                   | `jq`         | `jq`         | `app-misc/jq`              | `jq`            |
-| yq⁶              | `go-yq`                | `yq`         | `yq-go`      | `app-misc/yq-go`           | `yq-go`         |
+| yq⁶              | `go-yq`                | go³          | `yq-go`      | `app-misc/yq-go`           | `yq-go`         |
 | duf              | `duf`                  | `duf`        | testing¹⁴    | `sys-fs/duf`               | `duf`           |
 | dust             | `dust`                 | `dust`       | `dust`       | `sys-block/dust`           | `du-dust`⁴      |
 | procs            | `procs`                | `procs`      | `procs`      | `sys-process/procs`        | `procs`         |
-| viddy¹⁶          | AUR¹⁶                  | cargo³       | cargo³       | cargo³                     | cargo³          |
+| viddy¹⁶          | AUR¹⁶                  | cargo³       | `viddy`      | cargo³                     | cargo³          |
 | sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
 | gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
 | jnv¹⁷            | AUR                    | cargo        | cargo        | cargo                      | cargo           |
@@ -69,7 +69,7 @@ _Repo status_ at the bottom).
 | shellcheck       | `shellcheck`           | `ShellCheck` | `shellcheck` | `dev-util/shellcheck`      | `shellcheck`    |
 | shfmt⁷           | `shfmt`                | `shfmt`      | `shfmt`      | `dev-go/shfmt`             | `shfmt`⁷        |
 | ouch             | `ouch`                 | cargo³       | testing      | cargo³                     | cargo³          |
-| jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | cargo³       | `dev-vcs/jujutsu`          | cargo³          |
+| jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | `jujutsu`    | `dev-vcs/jujutsu`          | cargo³          |
 | sesh⁹            | AUR⁹                   | go⁹          | go⁹          | go⁹                        | go⁹             |
 | difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic` | `dev-util/difftastic`      | `difftastic`    |
 | ast-grep¹¹       | `ast-grep`             | cargo³       | `ast-grep`   | cargo³                     | cargo³          |
@@ -89,11 +89,15 @@ work unchanged.
 `tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
 **Fedora:** `tree-sitter-cli` via dnf (verify ≥ 0.26.1, else mise/cargo).
 **Arch:** `extra` carries 0.26.9 (clears the floor). Where unpackaged:
-`mise use -g tree-sitter` or `cargo install tree-sitter-cli`. On **Alpine** it
-must be a musl build — prefer cargo over any prebuilt binary.
+`mise use -g tree-sitter` or `cargo install tree-sitter-cli`. On **Alpine** the
+`community` package **is** the musl build (0.26.7, clears the floor) — prefer it
+over cargo/any prebuilt binary.
 ⁶ yq: this matrix targets **mikefarah's Go `yq`** (the jq-for-YAML). Distros also
 ship **Python `yq`** (kislyuk) under the same `yq` name; if you land the wrong
 one, install the Go build via `mise use -g yq` or the upstream release binary.
+On **openSUSE** the main OSS `yq` is the kislyuk **Python** build (the Go build
+only ships from a personal OBS repo), so `dotfiles-openSUSE` go-installs the
+mikefarah build in `bootstrap.sh` (`go³`) rather than packaging the wrong `yq`.
 ⁷ shfmt: not always in stable apt (Debian/Kali) and the Gentoo atom is
 `dev-go/shfmt`. If the package is missing, `mise use -g shfmt` or
 `go install mvdan.cc/sh/v3/cmd/shfmt@latest`. (These mid-2026 rows are
@@ -101,9 +105,11 @@ best-effort — verify the exact package on first stamp of each distro.)
 ⁸ jujutsu (jj): OPT-IN, additive git companion — never replaces git, so a box
 without it just skips the HAVE_JJ-gated aliases. Packaged on Arch (`jujutsu`),
 openSUSE (`jujutsu`), Gentoo (`dev-vcs/jujutsu`), Fedora (`jujutsu`), Homebrew
-(`jj`) and nixpkgs (`jujutsu`); not in Alpine (musl — `cargo install jujutsu`)
-or stable Debian/Kali apt (`cargo install jujutsu`) — same cargo pattern as
-yazi/ouch. The config (`jujutsu/config.toml`) is inert without the binary.
+(`jj`), nixpkgs (`jujutsu`) and Alpine (`community` — a native musl build); not
+in stable Debian/Kali apt (`cargo install jujutsu`) — same cargo pattern as
+yazi/ouch. As an opt-in tool it is availability-documented here but not carried
+in any OS repo's `packages.txt` yet. The config (`jujutsu/config.toml`) is inert
+without the binary.
 ⁹ sesh: smart tmux session manager that Core already drives from the `Ctrl-G`
 shell widget (`35-fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); both
 degrade to a `find`+`fzf` sessionizer when it's absent. `core-doctor` already
@@ -153,9 +159,10 @@ haven't migrated to your snapshot, bootstrap falls back to `go install` / the Ch
 `zsh/20-aliases.zsh`), so a box without the binary just keeps classic `watch`. viddy is a
 **Rust** CLI (rewritten from Go upstream), so it installs via `cargo install viddy`, **not**
 `go install`. Packaged on Homebrew (`viddy`, already in the macOS `Brewfile`) and the AUR;
-**not** in Arch-official, openSUSE, Gentoo, or Debian/Kali apt — so `bootstrap.sh` builds it
-best-effort via `cargo install --locked viddy` (musl-safe on Alpine; the same cargo path as
-yazi/dust/tealdeer). **Arch** is the exception: it ships no rust toolchain and builds no AUR
+**not** in Arch-official, openSUSE, Gentoo, or Debian/Kali apt, but now in **Alpine**
+`community` (a native musl build — apk-installed, with the cargo build kept as a fallback).
+Where unpackaged, `bootstrap.sh` builds it best-effort via `cargo install --locked viddy`
+(the same cargo path as yazi/dust/tealdeer). **Arch** is the exception: it ships no rust toolchain and builds no AUR
 helper (see its `packages.txt`), so bootstrap prints a hint to `paru -S viddy` instead of
 auto-installing. Inert without the binary.
 
