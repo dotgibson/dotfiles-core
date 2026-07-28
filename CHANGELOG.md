@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.5.0] - 2026-07-28
+
 ### Added
 
 - **`jnv` — interactive JSON explorer.** `00-tools.zsh` now detects `jnv` and sets
