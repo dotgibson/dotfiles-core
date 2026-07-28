@@ -77,8 +77,17 @@ if _yaml_bool require_action_sha_pin; then
 fi
 
 # ── 4) container images must pin an @sha256: digest ──────────────────────────
-# Scope to the two places images appear (an `image:` value or a `docker run|build|pull`
-# command) so arbitrary `key:value` text in run-scripts isn't mistaken for an image.
+# Scope to the places an image appears so arbitrary `key:value` text in run-scripts
+# isn't mistaken for an image:
+#   • an `image:` value (the expanded `container:\n  image: …` form and compose/services),
+#   • the `container: <img>` SHORTHAND (value on the same line as the key — the block form's
+#     `image:` line is already caught above),
+#   • a container action referenced via the `uses: docker://<img>` scheme, and
+#   • a `docker run|build|pull <image>` command.
+# The shorthand and `docker://` surfaces slip both the sha-pin rule (3) — not owner/repo form —
+# and the bare `image:`/`docker run` anchor, so an unpinned `container: node:20` or
+# `uses: docker://alpine:3.21` would otherwise pass the floor. No live uses in the fleet today;
+# this keeps the pinning contract airtight before an OS/role repo reaches for one.
 if _yaml_bool require_container_digest_pin; then
   img_re='([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*:[a-z0-9][a-z0-9._-]*(@sha256:[0-9a-f]+)?'
   while IFS= read -r line; do
@@ -89,7 +98,7 @@ if _yaml_bool require_container_digest_pin; then
       case "$img" in *@sha256:*) continue ;; esac       # already digest-pinned
       note "container image not digest-pinned ($img): $line"
     done < <(printf '%s\n' "$content" | grep -oE "$img_re" 2>/dev/null || true)
-  done < <(grep -HnE '(^[[:space:]]*image:[[:space:]]|docker[[:space:]]+(run|build|pull))' "${FILES[@]}" 2>/dev/null || true)
+  done < <(grep -HnE '(^[[:space:]]*image:[[:space:]]|^[[:space:]]*container:[[:space:]]*[^[:space:]#]|uses:[[:space:]]*docker://|docker[[:space:]]+(run|build|pull))' "${FILES[@]}" 2>/dev/null || true)
 fi
 
 # ── 5) every workflow declares a top-level permissions: block ────────────────
