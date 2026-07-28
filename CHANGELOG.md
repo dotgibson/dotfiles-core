@@ -13,12 +13,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`jnv` — interactive JSON explorer.** `00-tools.zsh` now detects `jnv` and sets
+  `HAVE_JNV`: a dual-pane jq-filter editor + collapsible JSON viewer that fills the
+  "explore an unfamiliar API/JSON response" gap between `jq` (transform), `gron`
+  (grep), and `yq` (YAML). It's its own command with no alias (like `jq`/`gron`/
+  `ast-grep`) and is inert without the binary. A Rust CLI (embeds `jaq`, no external
+  `jq` dependency); packaged on Homebrew/AUR/Nix, elsewhere `cargo install --locked
+  jnv` — the same cargo-fallback path as viddy/yazi/ouch. New `PORTING-MATRIX.md` row
+  and footnote. (`zsh/00-tools.zsh`, `zsh/20-aliases.zsh`, `PORTING-MATRIX.md`)
+
 ### Fixed
 
 - **`fleet-drift` false red on `dotfiles-Windows`.** The sweep measures every repo
   against the latest Core **release tag**, but `dotfiles-Windows` tracks Core's
   **main tip** (its `nvim/` is synced from `-Branch main` by the nvim-sync bot, not
-  pinned to a release), so between releases it legitimately runs *ahead* of the tag —
+  pinned to a release), so between releases it legitimately runs _ahead_ of the tag —
   and `fleet-drift.sh` flagged that "AHEAD by N" as drift, failing the run and filing
   a spurious ci-failure issue. `dotfiles-Windows` is now marked as a main-tip tracker:
   being AHEAD of the release tag is treated as current, while falling BEHIND still
@@ -29,6 +40,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `layout_element[nil]` and threw a `VimEnter` autocommand error (nil-call at
   `alpha.lua:362`). The footer is now a `text` element, mutated in place so the
   layout's captured reference renders it. (`nvim/lua/gerrrt/plugins/alpha-nvim.lua`)
+
+### Security
+
+- **Container digest-pin rule now covers the `container:` shorthand and `uses:
+  docker://` actions.** Rule 4 in `check-modern.sh` only anchored on an `image:`
+  value or a `docker run|build|pull` command, so an unpinned `container: node:20`
+  shorthand (value on the key's line) or a `uses: docker://alpine:3.21` container
+  action slipped the floor — neither is `owner/repo@sha` form, so the action sha-pin
+  rule (3) misses them too. The rule's grep anchor now also matches both surfaces, so
+  every way an image reaches CI must carry an `@sha256:` digest. No live violations in
+  the fleet today — this is pre-emptive, closing the gap before an OS/role repo (which
+  inherit the `*-call.yml@v3` workflows) reaches for one. (`scripts/check-modern.sh`,
+  `scripts/modern-baseline.yml`)
 
 ## [v4.4.0] - 2026-07-27
 

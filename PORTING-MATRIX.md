@@ -58,6 +58,7 @@ _Repo status_ at the bottom).
 | viddy¹⁶          | AUR¹⁶                  | cargo³       | cargo³       | cargo³                     | cargo³          |
 | sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
 | gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
+| jnv¹⁷            | AUR³                   | cargo³       | cargo³       | cargo³                     | cargo³          |
 | glow             | `glow`                 | `glow`       | testing¹⁴    | `app-misc/glow`¹²          | `glow`¹⁵        |
 | gum              | `gum`                  | `gum`        | `gum`        | `app-misc/gum`¹²           | `gum`¹⁵         |
 | xh               | `xh`                   | `xh`         | `xh`         | `net-misc/xh`¹²            | `xh`            |
@@ -157,6 +158,17 @@ best-effort via `cargo install --locked viddy` (musl-safe on Alpine; the same ca
 yazi/dust/tealdeer). **Arch** is the exception: it ships no rust toolchain and builds no AUR
 helper (see its `packages.txt`), so bootstrap prints a hint to `paru -S viddy` instead of
 auto-installing. Inert without the binary.
+
+¹⁷ jnv: OPT-IN interactive jq-filter editor + collapsible JSON viewer — the "explore an
+unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep), and `yq`
+(YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), `HAVE_JNV`-guarded in
+`zsh/00-tools.zsh`, inert without the binary. A **Rust** CLI (embeds `jaq`, so no external
+`jq` needed): packaged on Homebrew (`jnv`, in the macOS `Brewfile`), the AUR, and Nix; **not**
+in Arch-official, openSUSE, Alpine, Gentoo, or Debian/Kali — so the fleet builds it best-effort
+via `cargo install --locked jnv` (musl-safe on Alpine), the same cargo path as viddy/yazi/ouch.
+No confirmed Gentoo GURU atom yet — verify on the next Gentoo stamp and promote the cell if one
+lands. **Arch** ships no rust toolchain (see its `packages.txt`), so bootstrap hints `paru -S
+jnv` rather than auto-building.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
