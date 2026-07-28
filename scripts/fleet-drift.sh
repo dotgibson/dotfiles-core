@@ -11,7 +11,10 @@
 # against each other or against Core's tip, so a repo could silently sit on a stale
 # Core for weeks (exactly how dotfiles-MacBook's nvim lockfile drifted). This is that
 # missing check: it reads every marker and flags any repo behind (or ahead of) the
-# reference Core commit.
+# reference Core commit. Exception: dotfiles-Windows tracks Core's main tip (its nvim/
+# is synced from `-Branch main`, not a release tag), so it is EXPECTED to run ahead of
+# the latest release tag between releases — being AHEAD there is not drift, only BEHIND
+# is (see _check_repo's tracks-main handling).
 #
 # It is a REPORTER, not a mutator — it never writes to a repo. Run it locally against
 # your checked-out fleet, or in CI (.github/workflows/fleet-drift.yml) which shallow-
@@ -159,8 +162,8 @@ hdr "Fleet drift vs Core ${REF:0:12} ($(git -C "$HERE" rev-parse --abbrev-ref HE
 printf '%-22s %-14s %s\n' "REPO" "RECORDED" "STATUS"
 printf '%-22s %-14s %s\n' "----" "--------" "------"
 
-_check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [tag-key]
-  local name="$1" marker="$2" key="$3" tagkey="${4:-core_tag}" dir="$ROOT/$1" file rec status tag shown
+_check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [tag-key] [tracks-main]
+  local name="$1" marker="$2" key="$3" tagkey="${4:-core_tag}" tracks_main="${5:-0}" dir="$ROOT/$1" file rec status tag shown
   if [[ ! -d "$dir" ]]; then
     if ((STRICT)); then fail "$(printf '%-22s %-14s %s' "$name" "-" "NOT CHECKED OUT")"
     else skip "$(printf '%-22s %-14s %s' "$name" "-" "not checked out")"; fi
@@ -181,6 +184,14 @@ _check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [
   status="$(_classify "$rec")"
   if [[ "$status" == "current" ]]; then
     pass "$(printf '%-22s %-14s %s' "$name" "$shown" "$status")"
+  elif ((tracks_main)) && [[ "$status" == AHEAD* ]]; then
+    # A repo that tracks Core's main tip (dotfiles-Windows: nvim-sync.ps1 syncs the
+    # nvim/ tree from `-Branch main`'s tip, NOT a release tag) legitimately runs
+    # AHEAD of the latest release tag between releases — every unreleased nvim commit
+    # on main puts it one step further ahead. That is "more current", never the stale
+    # Core this sweep exists to catch, so it is NOT drift. (BEHIND still fails — that
+    # would mean its nvim/ genuinely lags the released Core.)
+    pass "$(printf '%-22s %-14s %s' "$name" "$shown" "$status (tracks main; OK)")"
   else
     fail "$(printf '%-22s %-14s %s' "$name" "$shown" "$status")"
     DRIFT=1
@@ -192,8 +203,11 @@ for _r in "${OS_REPOS[@]}"; do
 done
 # Windows is the outlier: no core/ subtree, only nvim/ mirrored — its provenance
 # lives in nvim/.core-ref (sha under `commit`, release name under `tag`). Include it
-# so the dashboard covers the whole fleet, labelled by tag like the Unix repos.
-_check_repo "dotfiles-Windows" "nvim/.core-ref" "commit" "tag"
+# so the dashboard covers the whole fleet, labelled by tag like the Unix repos. Unlike
+# the Unix repos (pinned to a release tag by `make sync`), it tracks main's tip via the
+# nvim-sync bot, so pass tracks-main=1: being AHEAD of the release tag is expected, not
+# drift (see _check_repo). It still fails if it falls BEHIND the released Core.
+_check_repo "dotfiles-Windows" "nvim/.core-ref" "commit" "tag" 1
 
 echo
 if ((DRIFT)); then

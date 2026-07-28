@@ -15,6 +15,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`fleet-drift` false red on `dotfiles-Windows`.** The sweep measures every repo
+  against the latest Core **release tag**, but `dotfiles-Windows` tracks Core's
+  **main tip** (its `nvim/` is synced from `-Branch main` by the nvim-sync bot, not
+  pinned to a release), so between releases it legitimately runs *ahead* of the tag —
+  and `fleet-drift.sh` flagged that "AHEAD by N" as drift, failing the run and filing
+  a spurious ci-failure issue. `dotfiles-Windows` is now marked as a main-tip tracker:
+  being AHEAD of the release tag is treated as current, while falling BEHIND still
+  fails (genuinely stale `nvim/`). (`scripts/fleet-drift.sh`)
 - **alpha-nvim greeter crash on `nvim` launch.** The dashboard footer was built by
   assigning raw strings into startify's `footer` section, but that section is a
   `group` whose `val` must hold element tables — alpha then called
