@@ -58,6 +58,7 @@ _Repo status_ at the bottom).
 | viddy¹⁶          | AUR¹⁶                  | cargo³       | cargo³       | cargo³                     | cargo³          |
 | sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
 | gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
+| jnv¹⁷            | AUR                    | cargo        | cargo        | cargo                      | cargo           |
 | glow             | `glow`                 | `glow`       | testing¹⁴    | `app-misc/glow`¹²          | `glow`¹⁵        |
 | gum              | `gum`                  | `gum`        | `gum`        | `app-misc/gum`¹²           | `gum`¹⁵         |
 | xh               | `xh`                   | `xh`         | `xh`         | `net-misc/xh`¹²            | `xh`            |
@@ -157,6 +158,18 @@ best-effort via `cargo install --locked viddy` (musl-safe on Alpine; the same ca
 yazi/dust/tealdeer). **Arch** is the exception: it ships no rust toolchain and builds no AUR
 helper (see its `packages.txt`), so bootstrap prints a hint to `paru -S viddy` instead of
 auto-installing. Inert without the binary.
+
+¹⁷ jnv: OPT-IN interactive jq-filter editor + collapsible JSON viewer — the "explore an
+unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep), and `yq`
+(YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), `HAVE_JNV`-guarded in
+`zsh/00-tools.zsh`, inert without the binary. A **Rust** CLI (embeds `jaq`, so no external
+`jq` needed). **Detect-only for now — unlike the ³ tools, `jnv` is NOT yet added to any
+`Brewfile` / `install/packages.txt` / `bootstrap.sh`, so Core lights up `HAVE_JNV` only once
+you install it yourself.** The cells above name where each platform gets it when you opt in —
+macOS `brew install jnv`, Arch `paru -S jnv` (AUR), Nix, or elsewhere `cargo install --locked
+jnv` (musl-safe on Alpine) — not an automatic install. Wiring it into the per-repo bootstrap
+(the ³ best-effort path viddy/yazi/ouch use) is a tracked follow-up in the OS repos; there is
+no confirmed Gentoo GURU atom yet either, so verify on the next Gentoo stamp.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
