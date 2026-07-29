@@ -43,12 +43,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **`:checkhealth gerrrt` clipboard false alarm on native Windows.** On the Windows host
   (where `dotfiles-Windows` vendors only `nvim/` and never runs Core's bootstrap), the
   clipboard section warned "Core's cross-OS clipboard scripts are not on PATH (clip: found,
-  clip-paste: missing)" — misleading twice over: `clip` only "found" because it spuriously
-  resolves to Windows' built-in `clip.exe`, and Neovim's own provider (win32yank / clip.exe)
-  is the *correct* backend there, not a degraded fallback. `nvim/lua/gerrrt/health.lua` now
-  detects native Windows (`has("win32")`, which is false under WSL) and reports the built-in
-  provider as healthy instead of running the Unix/WSL `clip`/`clip-paste` probe.
-  (`nvim/lua/gerrrt/health.lua`)
+  clip-paste: missing)" — misleading, because `clip` only "found" as Windows' built-in
+  `clip.exe` and the Unix/WSL `clip`/`clip-paste` ladder simply does not apply there:
+  `config/clipboard.lua` wires an OS-appropriate provider instead (the `clip-windows`
+  provider — `clip.exe` copy + PowerShell paste — when `clip.exe` is present, else the OSC52
+  fallback). `nvim/lua/gerrrt/health.lua` now detects native Windows (`has("win32")`, false
+  under WSL), records that the Unix probe is inapplicable, and defers to `:checkhealth
+  vim.provider` for the live backend rather than running the ladder or re-deriving the
+  provider itself. (`nvim/lua/gerrrt/health.lua`)
 - **noice.nvim cmdline regex highlighting.** Added the `regex` Tree-sitter parser to
   `ensure_installed` in `nvim/lua/gerrrt/plugins/nvim-treesitter.lua`. noice runs a
   floating command line (`cmdline_popup`), which uses the `regex` parser to syntax-
