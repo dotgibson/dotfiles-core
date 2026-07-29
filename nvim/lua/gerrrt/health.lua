@@ -18,6 +18,19 @@ local M = {}
 local function check_clipboard(h)
   h.start("dotfiles-core: clipboard")
 
+  -- Native Windows (NOT WSL — there has("win32") is false, it's Linux) never runs Core's
+  -- bootstrap and has no clip/clip-paste scripts: dotfiles-Windows vendors only nvim/, so the
+  -- unified Unix/WSL provider simply does not apply here. Worse, `clip` spuriously resolves to
+  -- Windows' built-in clip.exe, so the generic ladder below reports "clip: found, clip-paste:
+  -- missing" and warns about a provider the host was never meant to use. On this host Neovim's
+  -- own auto-detection (win32yank / clip.exe) is the CORRECT backend, not a degraded fallback —
+  -- report that plainly and skip the Unix probe. (:checkhealth vim.provider covers the real tool.)
+  if vim.fn.has("win32") == 1 then
+    h.ok("native Windows — Neovim's built-in clipboard provider (win32yank / clip.exe) is in use")
+    h.info("Core's clip/clip-paste ladder is a Unix/WSL concern and does not apply on the Windows host.")
+    return
+  end
+
   local have_clip = vim.fn.executable("clip") == 1
   local have_paste = vim.fn.executable("clip-paste") == 1
 

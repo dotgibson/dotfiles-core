@@ -40,6 +40,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`:checkhealth gerrrt` clipboard false alarm on native Windows.** On the Windows host
+  (where `dotfiles-Windows` vendors only `nvim/` and never runs Core's bootstrap), the
+  clipboard section warned "Core's cross-OS clipboard scripts are not on PATH (clip: found,
+  clip-paste: missing)" — misleading twice over: `clip` only "found" because it spuriously
+  resolves to Windows' built-in `clip.exe`, and Neovim's own provider (win32yank / clip.exe)
+  is the *correct* backend there, not a degraded fallback. `nvim/lua/gerrrt/health.lua` now
+  detects native Windows (`has("win32")`, which is false under WSL) and reports the built-in
+  provider as healthy instead of running the Unix/WSL `clip`/`clip-paste` probe.
+  (`nvim/lua/gerrrt/health.lua`)
 - **noice.nvim cmdline regex highlighting.** Added the `regex` Tree-sitter parser to
   `ensure_installed` in `nvim/lua/gerrrt/plugins/nvim-treesitter.lua`. noice runs a
   floating command line (`cmdline_popup`), which uses the `regex` parser to syntax-
