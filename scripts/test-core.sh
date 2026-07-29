@@ -378,10 +378,17 @@ LUA
     -c 'checkhealth gerrrt' \
     -c 'execute "write!" fnameescape($CORE_CK_REP)' \
     -c 'qa!' >/dev/null 2>"$ckerr"
-  if grep -q "dotfiles-core" "$ckrep" 2>/dev/null; then
-    pass "checkhealth gerrrt ran (health report rendered)"
+  # Assert ALL FOUR sections rendered — each helper's h.start() runs before any early return, so a
+  # header proves that helper ran without throwing (a bad vim.health call in any of them would drop
+  # its header). The LSP/formatters/linters sections show their "not loaded — open a file" info here
+  # (hermetic: no plugins, no file opened), which is the correct side-effect-free behavior.
+  if grep -q "dotfiles-core: clipboard" "$ckrep" 2>/dev/null \
+     && grep -q "dotfiles-core: LSP servers" "$ckrep" 2>/dev/null \
+     && grep -q "dotfiles-core: formatters" "$ckrep" 2>/dev/null \
+     && grep -q "dotfiles-core: linters" "$ckrep" 2>/dev/null; then
+    pass "checkhealth gerrrt ran (clipboard + LSP + formatters + linters sections rendered)"
   else
-    fail "checkhealth gerrrt did not render its section (check() missing or threw):"
+    fail "checkhealth gerrrt did not render all sections (a check() helper missing or threw):"
     [[ -s "$ckrep" ]] && sed 's/^/    /' "$ckrep" >&2
     [[ -s "$ckerr" ]] && sed 's/^/    /' "$ckerr" >&2
   fi
@@ -609,11 +616,30 @@ vim.lsp.enable = function(names)
   for _, n in ipairs(type(names) == "table" and names or { names }) do enabled[#enabled + 1] = n end
 end
 
-local ok, err = pcall(require, "gerrrt.servers")
+local ok, mod = pcall(require, "gerrrt.servers")
+
+-- Exercise the read-only status() export (feeds :checkhealth gerrrt) WHILE the stubs are still
+-- active, so the binary gate stays pinned and get_clients() is the real (empty, headless) surface.
+-- Asserts the states health.lua renders: a broken override reports registered=false (NOT masked by
+-- an upstream default); a good server reports registered+enabled+available; clients is a count.
+local st_ok, st_gopls_reg, st_luals_reg, st_luals_en, st_luals_av, st_luals_cl = false
+if ok and type(mod) == "table" and type(mod.status) == "function" then
+  local oks, rows = pcall(mod.status)
+  if oks and type(rows) == "table" then
+    st_ok = true
+    for _, s in ipairs(rows) do
+      if s.name == "gopls" then st_gopls_reg = s.registered end
+      if s.name == "lua_ls" then
+        st_luals_reg, st_luals_en, st_luals_av, st_luals_cl = s.registered, s.enabled, s.available, s.clients
+      end
+    end
+  end
+end
+
 vim.lsp.config, vim.lsp.enable = real_config, real_enable
 vim.fn.executable = real_executable
 if not ok then
-  io.stderr:write("require gerrrt.servers → " .. tostring(err) .. "\n")
+  io.stderr:write("require gerrrt.servers → " .. tostring(mod) .. "\n")
   vim.cmd("cquit 1")
 end
 
@@ -628,13 +654,20 @@ for name, cfg in pairs(registered) do
 end
 -- The broken module registered nothing, so its cmd resolves to nil and it bypasses the gate too.
 if registered["gopls"] == nil then n_nocmd = n_nocmd + 1 end
-io.stdout:write(("wildcard=%s caps=%s servers=%d broken_registered=%s enabled=%d nocmd=%d\n"):format(
+io.stdout:write(("wildcard=%s caps=%s servers=%d broken_registered=%s enabled=%d nocmd=%d"):format(
   tostring(registered["*"] ~= nil),
   tostring(registered["*"] and registered["*"].capabilities and registered["*"].capabilities.STUB_CAPS or false),
   n_servers,
   tostring(registered["gopls"] ~= nil),
   #enabled,
   n_nocmd))
+io.stdout:write((" status_ok=%s st_gopls_reg=%s st_luals_reg=%s st_luals_en=%s st_luals_av=%s st_luals_cl=%s\n"):format(
+  tostring(st_ok),
+  tostring(st_gopls_reg),
+  tostring(st_luals_reg),
+  tostring(st_luals_en),
+  tostring(st_luals_av),
+  tostring(st_luals_cl)))
 vim.cmd("qa!")
 LUA
   reg_err="$SANDBOX/nvim-registry.err"
@@ -654,6 +687,21 @@ LUA
   else
     fail "LSP registry contract broken — got '$reg_a' (expected caps+wildcard true, broken_registered false, enabled = servers+1)"
     [[ -s "$reg_err" ]] && sed 's/^/    /' "$reg_err" >&2
+  fi
+
+  # status() export (feeds :checkhealth gerrrt). The broken gopls override must report
+  # registered=false — the whole point of tracking it separately from vim.lsp.config[name], which
+  # would resolve an upstream default and hide the failure. A good server (lua_ls) must report
+  # registered + enabled + available, and clients must be a number (0 in this headless probe).
+  if [[ "$(_reg_field "$reg_a" status_ok)" == "true" \
+        && "$(_reg_field "$reg_a" st_gopls_reg)" == "false" \
+        && "$(_reg_field "$reg_a" st_luals_reg)" == "true" \
+        && "$(_reg_field "$reg_a" st_luals_en)" == "true" \
+        && "$(_reg_field "$reg_a" st_luals_av)" == "true" \
+        && "$(_reg_field "$reg_a" st_luals_cl)" == "0" ]]; then
+    pass "LSP registry: status() separates registered/enabled/available (broken override → registered=false)"
+  else
+    fail "LSP registry status() contract broken — got '$reg_a' (expected status_ok, gopls reg=false, lua_ls reg/en/av=true, clients=0)"
   fi
 
   # B. no binary present. Only configs that bypass the gate by design may remain — those with no
