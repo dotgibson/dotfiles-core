@@ -173,6 +173,28 @@ function M.enable_available()
 	return missing
 end
 
+-- Per-server readiness snapshot for `:checkhealth gerrrt` (see gerrrt/health.lua). Reuses the
+-- WANTED `servers` list and the SAME `binary_available()` decision the enable pass uses, so the
+-- health report can never disagree with what actually got enabled — no second server list to drift.
+--   • configured : the gerrrt/servers/<name>.lua require succeeded (config registered)
+--   • available  : binary is on PATH (or a project-local node_modules/.bin) ⇒ it was enabled
+--   • clients    : clients attached RIGHT NOW (a point-in-time snapshot; servers attach per-filetype)
+-- `available` is gated on `configured` so a server whose config failed to load isn't mislabeled
+-- available by binary_available()'s deliberate fail-open on a nil cmd.
+function M.status()
+	local out = {}
+	for _, name in ipairs(servers) do
+		local configured = type(vim.lsp.config[name]) == "table"
+		out[#out + 1] = {
+			name = name,
+			configured = configured,
+			available = configured and binary_available(name) or false,
+			clients = #vim.lsp.get_clients({ name = name }),
+		}
+	end
+	return out
+end
+
 -- Initial pass at load. Surface (once) which servers were skipped so a missing binary is
 -- discoverable, not silent. Suppressed on engagement/offline boxes (DOTFILES_OFFLINE=1, see
 -- config/globals.lua), where tools are intentionally not installed and the warning would be noise.

@@ -13,6 +13,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`:checkhealth gerrrt` now reports LSP-server readiness.** The built-in
+  `:checkhealth vim.lsp` only lists clients _attached to the live session_, so run from the
+  dashboard it reads "No active clients" and says nothing about whether your configured
+  servers are installed. A new **"LSP servers"** section in `nvim/lua/gerrrt/health.lua`
+  reports every wanted server (from `nvim/lua/gerrrt/servers/init.lua`) as
+  attached / installed-&-enabled / binary-not-found / config-failed, plus a summary line
+  noting that "attached" is a point-in-time snapshot (servers attach per-filetype). It
+  reuses the servers module's own wanted-list and `binary_available()` via a new
+  `M.status()` export, so the report can't drift from what actually gets enabled; missing
+  binaries are downgraded to info on `DOTFILES_OFFLINE` boxes.
+  (`nvim/lua/gerrrt/health.lua`, `nvim/lua/gerrrt/servers/init.lua`)
+
 ### Fixed
 
 - **noice.nvim cmdline regex highlighting.** Added the `regex` Tree-sitter parser to
