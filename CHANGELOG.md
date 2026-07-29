@@ -15,17 +15,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
-- **`:checkhealth gerrrt` now reports LSP-server readiness.** The built-in
+- **`:checkhealth gerrrt` now reports LSP / formatter / linter readiness.** The built-in
   `:checkhealth vim.lsp` only lists clients _attached to the live session_, so run from the
-  dashboard it reads "No active clients" and says nothing about whether your configured
-  servers are installed. A new **"LSP servers"** section in `nvim/lua/gerrrt/health.lua`
-  reports every wanted server (from `nvim/lua/gerrrt/servers/init.lua`) as
-  attached / installed-&-enabled / binary-not-found / config-failed, plus a summary line
-  noting that "attached" is a point-in-time snapshot (servers attach per-filetype). It
-  reuses the servers module's own wanted-list and `binary_available()` via a new
-  `M.status()` export, so the report can't drift from what actually gets enabled; missing
-  binaries are downgraded to info on `DOTFILES_OFFLINE` boxes.
-  (`nvim/lua/gerrrt/health.lua`, `nvim/lua/gerrrt/servers/init.lua`)
+  dashboard it reads "No active clients" and says nothing about whether your configured tools
+  are installed. Three new sections in `nvim/lua/gerrrt/health.lua` report per-tool state:
+  - **LSP servers** — every wanted server (from `nvim/lua/gerrrt/servers/init.lua`) as
+    attached / enabled-idle / pending-enable / binary-missing / override-failed, via a new
+    read-only `M.status()` export that reuses the module's own wanted-list and
+    `binary_available()`. It tracks _registered_ (our override loaded) and _enabled_ (we called
+    `vim.lsp.enable`) as **distinct** facts — not inferred from `vim.lsp.config[name]`, which
+    also resolves upstream lspconfig defaults — so a failed override or an installed-but-not-yet-
+    enabled binary is reported accurately.
+  - **Formatters (conform)** — rendered from conform's own `list_all_formatters()` availability.
+  - **Linters (nvim-lint)** — from `linters_by_ft` + the SAST `semgrep`, checking each linter's
+    real builtin `cmd`.
+
+  All three are **side-effect-free**: they observe `package.loaded` and never `require()` a plugin
+  (which would force-load it and, for the LSP stack, register/enable servers before nvim-lspconfig's
+  defaults are on the runtimepath), so from the dashboard they say "open a file, then re-run" rather
+  than mutating the session. Missing binaries are info (not warnings) on `DOTFILES_OFFLINE` boxes.
+  Covered by new assertions in `scripts/test-core.sh` (the D4 registry probe exercises `status()`;
+  the checkhealth probe asserts all four sections render).
+  (`nvim/lua/gerrrt/health.lua`, `nvim/lua/gerrrt/servers/init.lua`, `scripts/test-core.sh`)
 
 ### Fixed
 
