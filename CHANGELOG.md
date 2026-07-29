@@ -13,6 +13,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **noice.nvim cmdline regex highlighting.** Added the `regex` Tree-sitter parser to
+  `ensure_installed` in `nvim/lua/gerrrt/plugins/nvim-treesitter.lua`. noice runs a
+  floating command line (`cmdline_popup`), which uses the `regex` parser to syntax-
+  highlight the pattern in `:s/…/` substitutions and searches; without it, `:checkhealth
+  noice` warned "`regex` parser is not installed. Highlighting of the cmdline for `regex`
+  might be broken." It installs on next launch via the existing `ensure_installed` diff.
+
 ## [v4.5.0] - 2026-07-28
 
 ### Added
