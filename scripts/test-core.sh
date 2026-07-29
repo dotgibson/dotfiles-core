@@ -392,6 +392,68 @@ LUA
     [[ -s "$ckrep" ]] && sed 's/^/    /' "$ckrep" >&2
     [[ -s "$ckerr" ]] && sed 's/^/    /' "$ckerr" >&2
   fi
+
+  # Native-Windows clipboard branch (headless, has("win32") stubbed). The Neovim CI matrix is
+  # Ubuntu/macOS, so check_clipboard's has("win32") early return never runs under the gate — a
+  # regression in it (running the Unix clip/clip-paste probe on the host, or a bad vim.health
+  # call) would otherwise pass the full audit. This stubs vim.fn.has→win32 and CAPTURES the
+  # vim.health calls (rather than rendering a report), asserting the clipboard section reports OK
+  # (never warn/error) AND that the branch skips the executable()/system() probe entirely. The
+  # whole body is pcall-guarded so even a bad stub cquits (fails) instead of hanging on a prompt.
+  winprobe="$SANDBOX/nvim-health-win32.lua"
+  cat >"$winprobe" <<'LUA'
+local function run()
+  local calls = {}
+  vim.health = {
+    start = function(s) calls[#calls + 1] = { "start", s } end,
+    ok    = function(s) calls[#calls + 1] = { "ok", s } end,
+    warn  = function(s) calls[#calls + 1] = { "warn", s } end,
+    info  = function(s) calls[#calls + 1] = { "info", s } end,
+    error = function(s) calls[#calls + 1] = { "error", s } end,
+  }
+  -- Force the native-Windows branch; trip a flag if the Unix probe is ever run.
+  local probed = false
+  vim.fn.has = function(f) return (f == "win32") and 1 or 0 end
+  vim.fn.executable = function(_) probed = true; return 0 end
+  vim.fn.system = function(_) probed = true; return "" end
+  assert(vim.fn.has("win32") == 1, "stub failed: vim.fn.has('win32') did not return 1")
+
+  local M = dofile(vim.env.CORE_HEALTH_LUA)
+  assert(type(M) == "table" and type(M.check) == "function", "health.lua did not return a module with check()")
+  M.check()
+
+  -- The clipboard section's calls run from its start() up to the next start().
+  local in_clip, saw_start, saw_ok = false, false, false
+  for _, c in ipairs(calls) do
+    local kind, text = c[1], c[2] or ""
+    if kind == "start" then
+      in_clip = text:find("dotfiles%-core: clipboard", 1) ~= nil
+      if in_clip then saw_start = true end
+    elseif in_clip then
+      assert(kind ~= "warn" and kind ~= "error", "clipboard section emitted a " .. kind .. " on native Windows: " .. text)
+      if kind == "ok" then saw_ok = true end
+    end
+  end
+  assert(saw_start, "clipboard section did not run (no start)")
+  assert(saw_ok, "clipboard section did not report OK on native Windows")
+  assert(not probed, "native-Windows branch called executable()/system() — it must skip the Unix probe")
+end
+
+local ok, err = pcall(run)
+if not ok then
+  io.stderr:write(tostring(err) .. "\n")
+  vim.cmd("cquit 1")
+end
+vim.cmd("quitall!")
+LUA
+  win_err="$SANDBOX/nvim-health-win32.err"
+  if CORE_HEALTH_LUA="$HERE/nvim/lua/gerrrt/health.lua" \
+     nvim --headless -u "$winprobe" -i NONE -n +qa >/dev/null 2>"$win_err"; then
+    pass "checkhealth gerrrt: native-Windows clipboard branch skips the Unix probe (has('win32') stubbed)"
+  else
+    fail "checkhealth gerrrt native-Windows clipboard branch probe failed:"
+    [[ -s "$win_err" ]] && sed 's/^/    /' "$win_err" >&2
+  fi
 else
   skip "nvim config load (nvim not installed — runs in CI)"
 fi
