@@ -54,7 +54,7 @@ repos:
   # the audit's "secrets" section (scripts/audit-core.sh) is the CI mirror. Pinned
   # rev kept in step with GITLEAKS_VERSION by the audit's version-consistency gate.
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.0
+    rev: v8.30.1
     hooks:
       - id: gitleaks
 
