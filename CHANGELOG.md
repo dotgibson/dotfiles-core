@@ -38,6 +38,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the checkhealth probe asserts all four sections render).
   (`nvim/lua/gerrrt/health.lua`, `nvim/lua/gerrrt/servers/init.lua`, `scripts/test-core.sh`)
 
+### Changed
+
+- **Dev toolchain and plugin pins rolled forward.** Routine freshness sweep. The gate
+  toolchain was bumped in `scripts/tool-versions.env` (the single source — `ci.yml` and
+  `make setup` read it, and the audit's consistency gate enforces the `.pre-commit-config.yaml`
+  revs match it): **shellcheck** `0.10.0 → 0.11.0` (with its `SHELLCHECK_SHA256` recomputed
+  via `scripts/update-tool-checksums.sh`), **markdownlint-cli2** `0.22.1 → 0.23.2`, and
+  **pre-commit-hooks** `v5.0.0 → v6.0.0`. Plugin pins were rolled to upstream: the zsh
+  `zsh-transient-prompt` pin (`zsh/45-plugins.zsh`) and four Neovim plugins in
+  `nvim/lazy-lock.json` (`nvim-lspconfig`, `package-info.nvim`, `rainbow-delimiters.nvim`,
+  `schemastore.nvim`). (`scripts/tool-versions.env`, `.pre-commit-config.yaml`,
+  `zsh/45-plugins.zsh`, `nvim/lazy-lock.json`)
+
 ### Fixed
 
 - **`:checkhealth gerrrt` clipboard false alarm on native Windows.** On the Windows host
