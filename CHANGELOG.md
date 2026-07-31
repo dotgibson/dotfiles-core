@@ -13,6 +13,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`mise` now supplies the `zig`, `terraform`, and `foundry` toolchains.** `plugins/conform.lua`
+  declares `zigfmt`, `terraform_fmt`, and `forge_fmt` fleet-wide, so `:checkhealth` (and
+  `:checkhealth gerrrt`) reported them as "unavailable — command not found" on every box lacking the
+  binary. Adding them to `mise/config.toml` means `mise install` provides `zig fmt`, `terraform fmt`,
+  and `forge fmt` (via foundry's `forge`) everywhere Core lands, with a note that foundry's
+  glibc-linked prebuilt needs a local override on Alpine (musl).
+
+### Fixed
+
+- **`buf-config` is now a known filetype, silencing the `:checkhealth vim.lsp` "Unknown filetype"
+  warning.** `nvim/lua/gerrrt/servers/buf_ls.lua` advertises `buf-config` as one of buf_ls's
+  filetypes, but nothing mapped buf's config files to it — so the health check flagged it and buf_ls
+  never attached to `buf.yaml` / `buf.gen.yaml`. `nvim/lua/gerrrt/config/autocmds.lua` now registers
+  those buf-specific filenames (`buf.yaml`, `buf.gen.yaml`, `buf.work.yaml`, `buf.lock`) via
+  `vim.filetype.add`, so the filetype is known (warning gone) and buf_ls serves them with buf-aware
+  completion/diagnostics. A `FileType buf-config` autocmd starts the yaml treesitter parser so the
+  files keep their highlighting.
+
 ## [v4.6.0] - 2026-07-30
 
 ### Added

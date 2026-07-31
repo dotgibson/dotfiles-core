@@ -180,6 +180,33 @@ vim.api.nvim_create_autocmd("LspAttach", {
   callback = on_attach,
 })
 
+-- Teach Neovim the `buf-config` filetype that buf_ls advertises (servers/buf_ls.lua lists
+-- `filetypes = { "proto", "buf-config" }`). Nothing in stock Neovim maps buf's own config files to
+-- that name, so two things were true at once: `:checkhealth vim.lsp` flagged `buf-config` as an
+-- "Unknown filetype" (its known-set comes from vim.filetype._get_known_filetypes(), which DOES read
+-- vim.filetype.add() registrations), AND buf_ls never attached to buf.yaml / buf.gen.yaml because
+-- they stayed `yaml`. Mapping the buf-specific filenames fixes both: the ft becomes known (the
+-- health warning is gone) and buf_ls now serves these files with buf-aware completion/diagnostics —
+-- the language server's intended job. They no longer load as `yaml`, so yamlls and the yaml
+-- treesitter parser step aside here (buf_ls is the better fit for buf config); highlighting is kept
+-- by starting the yaml parser on the buffer directly. pcall — the yaml parser may be absent on a
+-- fresh box, and a bare start() would throw on the FileType event.
+vim.filetype.add({
+  filename = {
+    ["buf.yaml"] = "buf-config",
+    ["buf.gen.yaml"] = "buf-config",
+    ["buf.work.yaml"] = "buf-config",
+    ["buf.lock"] = "buf-config",
+  },
+})
+vim.api.nvim_create_autocmd("FileType", {
+  group = vim.api.nvim_create_augroup("BufConfigHighlight", { clear = true }),
+  pattern = "buf-config",
+  callback = function(args)
+    pcall(vim.treesitter.start, args.buf, "yaml")
+  end,
+})
+
 -- custom options for text/markdown files
 local markdown_options = vim.api.nvim_create_augroup("MarkdownOptions", { clear = true })
 vim.api.nvim_create_autocmd("FileType", {
