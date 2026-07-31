@@ -187,25 +187,26 @@ vim.api.nvim_create_autocmd("LspAttach", {
 -- vim.filetype.add() registrations), AND buf_ls never attached to buf.yaml / buf.gen.yaml because
 -- they stayed `yaml`. Mapping the buf-specific filenames fixes both: the ft becomes known (the
 -- health warning is gone) and buf_ls now serves these files with buf-aware completion/diagnostics —
--- the language server's intended job. They no longer load as `yaml`, so yamlls and the yaml
--- treesitter parser step aside here (buf_ls is the better fit for buf config); highlighting is kept
--- by starting the yaml parser on the buffer directly. pcall — the yaml parser may be absent on a
--- fresh box, and a bare start() would throw on the FileType event.
+-- the language server's intended job. The set is buf's full v2 config surface (buf.yaml,
+-- buf.gen.yaml, buf.work.yaml, buf.policy.yaml) plus the buf.lock dependency lock. They no longer
+-- load as `yaml`, so yamlls steps aside here (buf_ls is the better fit for buf config).
 vim.filetype.add({
   filename = {
     ["buf.yaml"] = "buf-config",
     ["buf.gen.yaml"] = "buf-config",
     ["buf.work.yaml"] = "buf-config",
+    ["buf.policy.yaml"] = "buf-config",
     ["buf.lock"] = "buf-config",
   },
 })
-vim.api.nvim_create_autocmd("FileType", {
-  group = vim.api.nvim_create_augroup("BufConfigHighlight", { clear = true }),
-  pattern = "buf-config",
-  callback = function(args)
-    pcall(vim.treesitter.start, args.buf, "yaml")
-  end,
-})
+-- Highlighting: these are all YAML, so alias the buf-config filetype to the yaml PARSER rather than
+-- starting treesitter ourselves. plugins/nvim-treesitter.lua (main branch) drives highlighting from
+-- its OWN FileType handler via `vim.treesitter.language.get_lang(ft)` → start-if-installed; with
+-- this register call get_lang resolves buf-config→yaml, so that existing install/start lifecycle
+-- lights these buffers up — including its already-loaded-buffer sweep and a yaml parser that only
+-- lands after a fresh-box ensure_installed pass. Starting the parser here on FileType instead would
+-- miss the not-yet-installed case (FileType fires before the parser arrives, and never retries).
+vim.treesitter.language.register("yaml", "buf-config")
 
 -- custom options for text/markdown files
 local markdown_options = vim.api.nvim_create_augroup("MarkdownOptions", { clear = true })

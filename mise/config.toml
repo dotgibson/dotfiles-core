@@ -26,8 +26,11 @@ zig       = "latest" # `zig fmt` (conform: zigfmt) + zls; also a real compiler
 terraform = "latest" # `terraform fmt` (conform: terraform_fmt) + terraform-ls
 foundry   = "latest" # provides forge/cast/anvil/chisel — `forge fmt` (conform: forge_fmt) for Solidity
 # Distro note: mise pulls foundry as a prebuilt (ubi:foundry-rs/foundry) that is glibc-linked, so it
-# won't run on Alpine's musl — drop the `foundry` line in a local override there and install via the
-# distro/foundryup instead. zig and terraform ship self-contained binaries and run everywhere.
+# won't run on Alpine's musl. Omitting it from a local config does NOT drop it — mise MERGES the
+# global + local [tools], so the inherited `foundry` still installs. Exclude it explicitly instead:
+# `disable_tools = ["foundry"]` under [settings] in a machine-local mise config, or export
+# MISE_DISABLE_TOOLS=foundry from local shell config (the ENV-var idiom already used for
+# MISE_TRUSTED_CONFIG_PATHS below). zig and terraform ship self-contained binaries and run everywhere.
 
 # Distro note: on boxes where bootstrap installs `cargo` via the package manager
 # (e.g. Fedora, for building yazi/dust), mise's `rust` here will take PATH
