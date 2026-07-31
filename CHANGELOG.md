@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.6.0] - 2026-07-30
+
 ### Added
 
 - **`:checkhealth gerrrt` now reports LSP / formatter / linter readiness.** The built-in
