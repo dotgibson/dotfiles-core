@@ -173,6 +173,41 @@ vim.api.nvim_create_autocmd("BufWritePre", {
   end,
 })
 
+-- Python: buffer-local pytest runners via uv. Plugin-free ON PURPOSE — this config avoids the
+-- heavy test-runner stack (no neotest, matching the no-dap-ui/no-toggleterm stance elsewhere); a
+-- split `:terminal` running `uv run pytest` covers the daily "run this" loop and complements the
+-- DAP "debug test method" (<leader>dm, plugins/nvim-dap.lua). BUFFER-LOCAL (attached on FileType
+-- python) so the <leader>t prefix stays free for every other filetype. uv resolves the project's
+-- .venv itself, so there is no venv to activate first; `update` writes a modified buffer before
+-- running (like vim-test) so pytest sees the latest edits — format-on-save above still applies.
+local py_test_group = vim.api.nvim_create_augroup("PyTestRunner", { clear = true })
+vim.api.nvim_create_autocmd("FileType", {
+  group = py_test_group,
+  pattern = "python",
+  callback = function(args)
+    local function pytest(target)
+      vim.cmd("update")
+      local cmd = "uv run pytest"
+      if target then
+        cmd = cmd .. " " .. vim.fn.fnameescape(target)
+      end
+      -- botright split keeps the terminal out of the way; startinsert so output scrolls live.
+      vim.cmd("botright split | resize 15 | terminal " .. cmd)
+      vim.cmd("startinsert")
+    end
+    local function map(lhs, fn, desc)
+      vim.keymap.set("n", lhs, fn, { buffer = args.buf, silent = true, desc = desc })
+    end
+    map("<leader>tt", function()
+      pytest(nil)
+    end, "Test: pytest (whole suite)")
+    map("<leader>tf", function()
+      -- Resolve the path NOW, before the split changes the current buffer.
+      pytest(vim.fn.expand("%:p"))
+    end, "Test: pytest (current file)")
+  end,
+})
+
 -- on attach function shortcuts
 local lsp_on_attach_group = vim.api.nvim_create_augroup("LspMappings", { clear = true })
 vim.api.nvim_create_autocmd("LspAttach", {
