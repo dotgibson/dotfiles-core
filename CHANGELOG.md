@@ -150,14 +150,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   install/start lifecycle. Covered by a new assertion in `scripts/test-core.sh` (each buf basename
   resolves to `buf-config`; the parser alias resolves to `yaml`).
 - **`PORTING-MATRIX.md`'s openSUSE column no longer understates what Tumbleweed packages.** Seven
-  tools were marked bootstrap-only (`script³`/`cargo³`/`go³`) that main OSS (`src-oss`) now ships
-  first-class — `starship`, `atuin`, `yazi`, `viddy`, `ouch`, `doggo`, `ast-grep` — so anyone
-  stamping or maintaining `dotfiles-openSUSE` from the matrix was being told to build from source
-  what `zypper in` already provides. Each now names its real package under a new footnote ¹⁸, which
-  also records the caveat the audit could not close: **Leap 15.x was not separately audited** and
-  rolls slower, so verify with `zypper se` there. Footnote ¹⁶ (viddy) dropped openSUSE from its
-  "not packaged" list to match. Docs-only — no `bootstrap.sh` or `packages.txt` behavior changes,
-  and the ³ installs stay correct because each is presence-guarded.
+  tools were marked bootstrap-only (`script³`/`cargo³`/`go³`) that the main OSS binary repo
+  (`repo-oss`) now ships first-class — `starship`, `atuin`, `yazi`, `viddy`, `ouch`, `doggo`,
+  `ast-grep` — so anyone stamping or maintaining `dotfiles-openSUSE` from the matrix was being
+  told to build from source what `zypper in` already provides. Each now names its real package
+  under a new footnote ¹⁸, which also records the caveat the audit could not close: **Leap 15.x
+  was not separately audited** and rolls slower, so verify with `zypper se` there. Footnote ¹⁶
+  (viddy) dropped openSUSE from its "not packaged" list to match. Docs-only — no `bootstrap.sh`
+  or `packages.txt` behavior changes.
+  The correction also surfaced a **latent overclaim**: of the seven, only `starship`, `atuin`,
+  `yazi`, `viddy` and `doggo` are actually installed by `dotfiles-openSUSE`'s `bootstrap.sh`
+  (presence-guarded, so a packaged binary short-circuits them). **`ouch` and `ast-grep` have no
+  installer there at all**, so their old `cargo³` cells promised a ³ fallback that never existed —
+  footnote ¹⁸ now says so, and names packaging as their only automatic path.
 
 ## [v4.6.0] - 2026-07-30
 

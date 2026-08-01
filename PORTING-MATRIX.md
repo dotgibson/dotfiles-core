@@ -161,7 +161,7 @@ haven't migrated to your snapshot, bootstrap falls back to `go install` / the Ch
 `go install`. Packaged on Homebrew (`viddy`, already in the macOS `Brewfile`) and the AUR;
 **not** in Arch-official, Gentoo, or Debian/Kali apt, but now in **Alpine**
 `community` (a native musl build — apk-installed, with the cargo build kept as a fallback)
-and **openSUSE** Tumbleweed `src-oss` (see ¹⁸).
+and **openSUSE** Tumbleweed `repo-oss` (see ¹⁸).
 Where unpackaged, `bootstrap.sh` builds it best-effort via `cargo install --locked viddy`
 (the same cargo path as yazi/dust/tealdeer). **Arch** is the exception: it ships no rust toolchain and builds no AUR
 helper (see its `packages.txt`), so bootstrap prints a hint to `paru -S viddy` instead of
@@ -179,16 +179,22 @@ jnv` (musl-safe on Alpine) — not an automatic install. Wiring it into the per-
 (the ³ best-effort path viddy/yazi/ouch use) is a tracked follow-up in the OS repos; there is
 no confirmed Gentoo GURU atom yet either, so verify on the next Gentoo stamp.
 
-¹⁸ openSUSE **Tumbleweed** now ships these first-class in main OSS (`src-oss`, mirroring
-OBS `openSUSE:Factory`), so `zypper in` beats the upstream-installer/cargo/go fallback these
-rows used to prescribe: `starship`, `atuin`, `yazi`, `viddy`, `ouch`, `doggo`, `ast-grep`.
+¹⁸ openSUSE **Tumbleweed** now ships these first-class in the main OSS **binary** repo
+(`repo-oss`, i.e. `.../tumbleweed/repo/oss` — built from OBS `openSUSE:Factory`; note
+`src-oss` is the _source_-RPM repo and is not what `zypper in` resolves against), so
+`zypper in` beats the upstream-installer/cargo/go fallback these rows used to prescribe:
+`starship`, `atuin`, `yazi`, `viddy`, `ouch`, `doggo`, `ast-grep`.
 **Leap 15.x was not separately audited** and rolls slower — on Leap, verify with
 `zypper se <pkg>` and fall back to the ³ path if it's absent. The rows are named for
-Tumbleweed because that's the flavor this fleet targets; `dotfiles-openSUSE`'s
-`bootstrap.sh` still installs the ³ way, which is correct and harmless either way (each
-install is presence-guarded, so a packaged binary just short-circuits it). Moving any of
-these into `install/packages.txt` is a separate judgment call — it trades upstream-latest
-for the distro build — and is deliberately **not** done here.
+Tumbleweed because that's the flavor this fleet targets.
+Five of the seven (`starship`, `atuin`, `yazi`, `viddy`, `doggo`) are also installed by
+`dotfiles-openSUSE`'s `bootstrap.sh`, which stays correct and harmless either way — each
+install is presence-guarded, so a packaged binary just short-circuits it. **`ouch` and
+`ast-grep` are not**: that bootstrap has no installer for them, so the old `cargo³` cells
+promised a fallback that never existed and the package name above is their only automatic
+path. Moving any of these into `install/packages.txt` is a separate judgment call — it
+trades upstream-latest for the distro build — and is deliberately **not** done here; for
+`ouch`/`ast-grep` it is the _only_ way to get them installed without doing it by hand.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
