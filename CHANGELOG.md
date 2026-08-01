@@ -15,6 +15,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`prefix + a` opens Claude Code in a tmux popup — `tmux/scripts/tmux-claude.sh` (new).** The
+  nvim integration gives you Claude _coupled to an editing session_ (buffers, selection,
+  diagnostics, diffs); this is the other half — Claude from a shell pane, mid-rebase, or in a
+  directory with no editor open. Same shape as the `prefix + g` lazygit popup, rooted at
+  `#{pane_current_path}`, and gated on the `claude` binary the way `tmux-sesh.sh` gates on `sesh`
+  (absent, it puts the reason on the status line rather than doing a silent nothing).
+
+  It is deliberately **not** `display-popup -E claude`, the way lazygit is bound. lazygit is
+  stateless, so killing its popup costs nothing — a conversation is not, and dismissing a raw
+  `-E claude` popup would take the thread with it. So this follows `tmux-scratch.sh` instead: a
+  persistent detached session the popup attaches to, making `prefix + a` toggle _visibility_
+  rather than lifetime. It inherits that script's three hard-won fixes — per-session
+  `detach-on-destroy on` (or quitting hops the popup client onto your main session at popup
+  dimensions and double-draws the real terminal), the `TERM` repair (`display-popup` launches with
+  `TERM` unset, so a nested `tmux attach` otherwise dies with "terminal does not support clear"),
+  and `status off` / `prefix None` / `key-table popup` so every keystroke reaches Claude's TUI.
+
+  Sessions are keyed on the **git root**, not the cwd: every pane inside a repo shares one
+  conversation, which is the granularity the work actually has, and a single global session would
+  hand you `dotfiles-Kali`'s thread while you sat in `dotfiles-core`. The name carries a `cksum`
+  hash of the full path so two repos sharing a basename cannot collide onto one conversation —
+  `cksum` rather than `md5sum`/`md5`, which diverge between Linux and macOS.
 - **`<C-y>` in fzf-lua sends the selection to Claude Code as @-mentions.** The tree-based
   @-mention (`<leader>as` in nvim-tree/oil) adds one file, so putting six files in context meant six
   navigations. fzf is already multi-select — `--multi` is on for the file pickers, `<Tab>` marks and
