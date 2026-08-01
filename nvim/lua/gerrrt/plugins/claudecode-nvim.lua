@@ -88,18 +88,9 @@ return {
 		require("claudecode").setup(opts)
 
 		-- ── terminal-mode escape hatch ─────────────────────────────────────────────────────────
-		-- A Neovim terminal buffer forwards EVERY keystroke to the program inside it, and
-		-- auto_insert drops you straight into that mode. So Core's <C-h/j/k/l> (vim-tmux-navigator,
-		-- normal mode only) never reach Neovim, Claude swallows them, and the split reads as a trap
-		-- whose only exit is Neovim's one reserved key, <C-\><C-n>. That key is documented in
-		-- cheatsheet.lua now; these maps make the common case one keystroke instead of two.
-		--
-		-- NOT by widening the navigator's own maps into terminal mode: <C-h> is ASCII 8 (backspace)
-		-- and <C-j> is ASCII 10 (newline), so claiming them would break editing in Claude's prompt.
-		-- <C-w> is out for the same reason (delete-word-backward). <M-…> is unclaimed by the TUI, so
-		-- it carries these instead. mini.move owns <A-h/j/k/l> in normal/visual only — a different
-		-- mode, so no real collision — and the overload here is deliberate and reads the same way:
-		-- "move in that direction".
+		-- auto_insert drops you into terminal mode, where Claude swallows Core's <C-h/j/k/l> and the
+		-- split reads as a trap. utils/term.lua owns the rule and the reasoning (why <M-…> and not
+		-- the navigator's own keys); this just applies it to the buffer the plugin opened.
 		vim.api.nvim_create_autocmd("TermOpen", {
 			group = vim.api.nvim_create_augroup("gerrrt_claudecode_term", { clear = true }),
 			callback = function(ev)
@@ -118,22 +109,7 @@ return {
 					if not ok or terminal.get_active_terminal_bufnr() ~= ev.buf then
 						return
 					end
-					for _, nav in ipairs({
-						{ "h", "Left" },
-						{ "j", "Down" },
-						{ "k", "Up" },
-						{ "l", "Right" },
-					}) do
-						vim.keymap.set(
-							"t",
-							("<M-%s>"):format(nav[1]),
-							([[<C-\><C-n><cmd>TmuxNavigate%s<cr>]]):format(nav[2]),
-							{
-								buffer = ev.buf,
-								desc = ("Leave Claude, window/pane %s"):format(nav[2]:lower()),
-							}
-						)
-					end
+					require("gerrrt.utils.term").map_navigation(ev.buf, "Claude")
 				end)
 			end,
 		})
