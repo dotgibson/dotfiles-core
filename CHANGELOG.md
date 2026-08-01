@@ -15,6 +15,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`<C-y>` in fzf-lua sends the selection to Claude Code as @-mentions.** The tree-based
+  @-mention (`<leader>as` in nvim-tree/oil) adds one file, so putting six files in context meant six
+  navigations. fzf is already multi-select — `--multi` is on for the file pickers, `<Tab>` marks and
+  `<A-a>` toggles all — so `plugins/fzf-lua.lua` now turns "the files involved in this change" into
+  one gesture. From the grep pickers each entry carries a line number, so a hit is sent as its own
+  location rather than the whole file (fzf-lua reports 1-indexed lines; `send_at_mention` documents
+  its range as 0-indexed, so the action converts). Entries are parsed with `fzf-lua.path
+  .entry_to_file` rather than by hand, since they carry devicon prefixes and grep entries are
+  `file:line:col:text`. Covers `<leader>ff` / `fg` / `fb` / `fr` from one `actions.files` entry, and
+  is documented in `cheatsheet.lua` alongside the multi-select keys.
+
+  Three details worth recording. The action table carries a **leading `true`** — fzf-lua's
+  inheritance marker (`config.lua` switches the merge to `tbl_deep_extend("keep", yours, defaults)`
+  when `[1] == true`, then strips it). Without it a user action table _replaces_ fzf-lua's defaults
+  wholesale, silently dropping `enter`, `ctrl-s/v/t` and `alt-q/Q/i/h/f` — i.e. opening a file at
+  all. Line forwarding is **restricted to the grep family** (resume key containing `grep`), because
+  `entry_to_file` also reports a positive line for buffer entries — `providers/buffers.lua`
+  serializes each buffer's current cursor `lnum` — so forwarding it everywhere would make
+  `<leader>fb` send the one line you were parked on instead of the file. And unlike
+  `plugins/claudecode-nvim.lua` this is **not** `cond`-gated: fzf-lua is a core finder that must
+  load everywhere, so gating the spec would mean an `executable()` probe at startup on every box in
+  the fleet. The action fails soft instead, and since it only runs on a keypress it can afford to
+  probe properly and name which failure it hit — CLI absent, CLI installed after Neovim started (the
+  `cond` is evaluated once at startup, so a restart is needed), or the plugin genuinely failing to
+  load, in which case the real error is shown rather than swallowed.
+
 - **Claude Code IDE integration for Neovim (`coder/claudecode.nvim`).** `nvim/lua/gerrrt/plugins/claudecode-nvim.lua`
   adds the first runtime Claude surface in the fleet — until now Claude Code existed only as pinned
   CI automation (`scripts/tool-versions.env`, `.github/workflows/claude-routines.yml`). The plugin
