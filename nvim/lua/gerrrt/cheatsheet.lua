@@ -189,6 +189,12 @@ M.sections = {
 		{ "<leader>aa / ad", "Accept / deny diff" },
 		{ "<leader>am", "Select model" },
 		{ "<leader>aS", "Server status" },
+		-- Terminal mode forwards EVERY key to Claude, so Core's <C-h/j/k/l> never reach Neovim.
+		-- <C-\><C-n> is Neovim's one reserved way out; <M-h/j/k/l> does that and navigates in one
+		-- go (buffer-local, set in plugins/claudecode-nvim.lua).
+		{ "<C-\\><C-n>", "Exit term mode" },
+		{ "<M-h/j/k/l>", "Exit + navigate" },
+		{ "i / a", "Back to typing" },
 	},
 	{
 		"Folds (ufo)",

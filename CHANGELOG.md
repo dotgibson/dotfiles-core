@@ -41,6 +41,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     file) so an absent `<leader>a` reads as intentional rather than broken.
 
   Installing the CLI itself stays out of Core: it is an npm/brew install and therefore OS-native.
+
+  A follow-up closed the terminal-mode gap this opened. A Neovim terminal buffer forwards every
+  keystroke to the program inside it, and `auto_insert` lands you there, so Core's `<C-h/j/k/l>`
+  (vim-tmux-navigator, normal mode only) never reached Neovim — Claude swallowed them and the split
+  read as a trap. Neovim's reserved `<C-\><C-n>` was always the way out, but nothing in the config
+  said so — Core ships no terminal-mode keymaps at all (`mode = "t"` appears nowhere under `nvim/`).
+  The pytest runner in `config/autocmds.lua` already opened a terminal split and shares that gap;
+  it simply never surfaced there, because it is read-only output you glance at and close rather than
+  a prompt you sit inside. `cheatsheet.lua` now documents `<C-\><C-n>` / `i` alongside buffer-local
+  `<M-h/j/k/l>` maps that leave terminal mode and navigate in one keystroke, set by a `TermOpen`
+  autocmd in `plugins/claudecode-nvim.lua`. The navigator's own `<C-h/j/k/l>` are deliberately
+  **not** widened into terminal mode: `<C-h>` is backspace and `<C-j>` is newline, so claiming them
+  would break editing at Claude's prompt (`<C-w>`, delete-word, is out for the same reason). The
+  maps are scoped by asking the plugin which buffer is its own
+  (`claudecode.terminal.get_active_terminal_bufnr()`) rather than matching the `term://` name, so
+  the pytest split and any other `:terminal` keep their keys untouched.
 - **Python workflow ergonomics for the Astral stack (uv/ruff/ty).** Three small, additive changes
   that make the already-wired Python setup easier to drive day-to-day:
   - `zsh/20-aliases.zsh` adds `uvr` (`uv run`) and `uvs` (`uv sync`), guarded by a new `HAVE_UV`
