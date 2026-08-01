@@ -104,6 +104,10 @@ M.sections = {
 		{ "]t / [t", "Next / prev todo comment" },
 		{ "<leader>fx / fX", "Diagnostics doc / workspace" },
 		{ "<leader>fs / fw", "Symbols doc / workspace" },
+		-- Inside the picker. <Tab>/<A-a> are fzf's own multi-select; <C-y> is ours
+		-- (plugins/fzf-lua.lua) and needs the `claude` CLI, otherwise it just says so.
+		{ "<Tab> / <A-a>", "Mark one / toggle all" },
+		{ "<C-y>", "Send marked to Claude" },
 	},
 	{
 		"LSP & Code",
