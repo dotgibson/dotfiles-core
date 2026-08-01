@@ -18,25 +18,50 @@
 -- The tree-based @-mention (<leader>as in nvim-tree/oil) adds ONE file, so putting six files in
 -- context means six navigations. fzf is already multi-select (`--multi` is on for the file pickers;
 -- <Tab> marks, <A-a> toggles all), so this turns "the files involved in this change" into one
--- gesture. From `live_grep` the entry carries a line number, so each hit is sent as its own
+-- gesture. From the grep pickers the entry carries a line number, so each hit is sent as its own
 -- location rather than the whole file.
 --
 -- NOT gated at spec level, unlike plugins/claudecode-nvim.lua: fzf-lua is a core finder that must
--- load everywhere, and probing for `claude` while building this spec would cost a startup
--- `executable()` on every box AND miss a mid-session install. The action instead fails soft — on a
--- box without the CLI, claudecode is not on the runtimepath, `require` fails, and you get one
--- notify saying why rather than a stack trace.
+-- load everywhere, so conditioning this spec on `claude` would mean an `executable()` probe at
+-- startup on every box in the fleet. The action fails soft instead, and because it only runs on a
+-- keypress it can afford to probe properly and say WHICH failure it hit.
+local function claude_unavailable_reason(load_err)
+	if vim.fn.executable("claude") ~= 1 then
+		return "the `claude` CLI is not installed on this machine, so plugins/claudecode-nvim.lua is "
+			.. "gated off (see :checkhealth gerrrt)."
+	end
+	-- The binary is here but the module would not load. Usually that means it was installed AFTER
+	-- this Neovim started: the spec's `cond` is evaluated once at startup, so lazy never put the
+	-- plugin on the runtimepath (see the header of plugins/claudecode-nvim.lua). Distinguish that
+	-- from a genuinely broken plugin by asking lazy whether the spec exists at all — reporting a
+	-- load failure as "not installed" would send you looking for the wrong problem.
+	local ok_lazy, lazy_cfg = pcall(require, "lazy.core.config")
+	if ok_lazy and not (lazy_cfg.plugins or {})["claudecode.nvim"] then
+		return "`claude` is on PATH but was not there when Neovim started, and the plugin's `cond` is "
+			.. "evaluated once at startup. Restart Neovim to enable it."
+	end
+	return "claudecode.nvim failed to load: " .. tostring(load_err)
+end
+
 local function send_to_claude(selected, opts)
 	local ok, claudecode = pcall(require, "claudecode")
 	if not ok then
 		vim.notify(
-			"Claude Code is not available — the `claude` CLI is not installed on this machine, "
-				.. "so plugins/claudecode-nvim.lua is gated off (see :checkhealth gerrrt).",
+			"Claude Code is not available — " .. claude_unavailable_reason(claudecode),
 			vim.log.levels.WARN,
 			{ title = "fzf-lua" }
 		)
 		return
 	end
+
+	-- Only the grep family yields a MEANINGFUL location. entry_to_file returns a positive line for
+	-- buffers too — providers/buffers.lua serializes each buffer's current cursor `lnum` into the
+	-- entry — so forwarding it unconditionally would make <leader>fb send the one line you happen to
+	-- be parked on instead of the file. Every grep variant normalizes to a resume key containing
+	-- "grep" (live_grep routes through M.grep → "grep"; also "grep_curbuf"), while files/buffers/
+	-- oldfiles do not. Conservative by design: when in doubt send the whole file, since over-sending
+	-- context is recoverable and silently sending one wrong line is not.
+	local sends_location = tostring(opts and opts.__resume_key or ""):find("grep", 1, true) ~= nil
 
 	local path = require("fzf-lua.path")
 	local sent, failed = 0, 0
@@ -46,8 +71,8 @@ local function send_to_claude(selected, opts)
 		local file = path.entry_to_file(entry, opts)
 		if file and file.path and file.path ~= "" then
 			-- fzf-lua reports 1-indexed lines; send_at_mention documents its range as 0-indexed for
-			-- Claude. `files` entries have no line (0 here) — pass nil so it means the whole file.
-			local line = (file.line and file.line > 0) and (file.line - 1) or nil
+			-- Claude. nil means the whole file.
+			local line = (sends_location and file.line and file.line > 0) and (file.line - 1) or nil
 			if claudecode.send_at_mention(file.path, line, line, "fzf-lua") then
 				sent = sent + 1
 			else
@@ -170,7 +195,7 @@ return {
 		-- beginning-of-line and alt-a to toggle-all, and fzf-lua's default file actions never claim
 		-- ctrl-y (only the git pickers do, for yank-commit — a different action set).
 		--
-		-- THE LEADING `true` IS LOad-BEARING. An action table without it REPLACES fzf-lua's defaults
+		-- THE LEADING `true` IS LOAD-BEARING. An action table without it REPLACES fzf-lua's defaults
 		-- wholesale rather than extending them — dropping enter, ctrl-s/v/t and alt-q/Q/i/h/f, i.e.
 		-- opening a file at all. `[1] == true` is fzf-lua's inheritance marker (config.lua: it
 		-- switches the merge to `tbl_deep_extend("keep", yours, defaults)` and then strips the [1]).
