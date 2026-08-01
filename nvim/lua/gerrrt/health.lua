@@ -276,9 +276,29 @@ local function check_claude(h)
   -- The plugin owns its own connection state and :ClaudeCodeStatus is its single authority; we
   -- report the lock file instead because it is the thing the CLI actually reads to find us, and
   -- it is observable without touching the plugin's internals.
-  -- expand("~"), not vim.env.HOME: native Windows frequently has no HOME set, where the
-  -- concatenation would throw and take the whole :checkhealth report down with it.
-  local lock_dir = (vim.env.CLAUDE_CONFIG_DIR or (vim.fn.expand("~") .. "/.claude")) .. "/ide"
+  --
+  -- ASK, don't re-derive: claudecode.lockfile resolves this once at load and is the authority on
+  -- where it actually wrote. Re-deriving it here means two copies of the same rule drifting apart
+  -- on the next plugin bump — and a health check that confidently reports the wrong directory is
+  -- worse than no health check. READ-ONLY peek, same discipline as the package.loaded check above.
+  local lockfile = package.loaded["claudecode.lockfile"]
+  local lock_dir = type(lockfile) == "table" and lockfile.lock_dir or nil
+  if type(lock_dir) ~= "string" then
+    -- Fallback mirroring lockfile.get_lock_dir() exactly. Three details are load-bearing:
+    --   • os.getenv, NOT vim.env — vim.env normalizes a set-but-EMPTY var to nil while os.getenv
+    --     returns "", so the two disagree on `CLAUDE_CONFIG_DIR=`. Match the plugin's source.
+    --   • the explicit `~= ""` guard, so that empty value falls back instead of yielding "/ide".
+    --   • expand() on BOTH branches, so a `~` or `$VAR` in the override resolves the way the
+    --     plugin resolved it (otherwise the glob searches a literal `~` and finds nothing).
+    -- expand("~/.claude/ide") also avoids vim.env.HOME, which native Windows frequently leaves
+    -- unset — concatenating nil there would throw and take the whole :checkhealth report down.
+    local dir = os.getenv("CLAUDE_CONFIG_DIR")
+    if dir and dir ~= "" then
+      lock_dir = vim.fn.expand(dir .. "/ide")
+    else
+      lock_dir = vim.fn.expand("~/.claude/ide")
+    end
+  end
   local locks = vim.fn.glob(lock_dir .. "/*.lock", true, true)
   if #locks == 0 then
     h.warn(("loaded, but no lock file under %s"):format(lock_dir), {
