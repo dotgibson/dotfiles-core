@@ -248,12 +248,59 @@ local function check_linters(h)
     .. " their config (see plugins/nvim-lint.lua). Python lint is ruff's LSP, not listed here.")
 end
 
+local function check_claude(h)
+  h.start("dotfiles-core: Claude Code (claudecode.nvim)")
+
+  -- plugins/claudecode-nvim.lua is `cond`-gated on this binary. Without the probe below, a box
+  -- without the CLI just silently has no <leader>a maps and no :ClaudeCode* commands, which reads
+  -- as a broken config rather than the deliberate default it is. Say so explicitly.
+  if vim.fn.executable("claude") ~= 1 then
+    h.ok("`claude` not on PATH — the plugin is gated off, as intended on a box without the CLI")
+    h.info(
+      "This is the expected state fleet-wide: the Claude Code CLI is in no OS repo's package list, "
+        .. "so <leader>a and the :ClaudeCode* commands simply do not exist here. Install the CLI to "
+        .. "enable them (it is an npm/brew install, not a Core concern)."
+    )
+    return
+  end
+
+  h.ok("`claude` found on PATH — the plugin is enabled")
+
+  -- READ-ONLY: peek package.loaded, never require(). Requiring would force-load the plugin, which
+  -- starts a WebSocket server and writes a lock file — side effects a health check must not cause.
+  if type(package.loaded["claudecode"]) ~= "table" then
+    h.info("not loaded yet — it is cmd/keys-lazy, so press <leader>ac (or run :ClaudeCodeStart) first")
+    return
+  end
+
+  -- The plugin owns its own connection state and :ClaudeCodeStatus is its single authority; we
+  -- report the lock file instead because it is the thing the CLI actually reads to find us, and
+  -- it is observable without touching the plugin's internals.
+  -- expand("~"), not vim.env.HOME: native Windows frequently has no HOME set, where the
+  -- concatenation would throw and take the whole :checkhealth report down with it.
+  local lock_dir = (vim.env.CLAUDE_CONFIG_DIR or (vim.fn.expand("~") .. "/.claude")) .. "/ide"
+  local locks = vim.fn.glob(lock_dir .. "/*.lock", true, true)
+  if #locks == 0 then
+    h.warn(("loaded, but no lock file under %s"):format(lock_dir), {
+      "The CLI discovers this Neovim via that file, so `claude` will not see it.",
+      "Run :ClaudeCodeStatus for the server's own view, then :ClaudeCodeStart if it is stopped.",
+    })
+  else
+    h.ok(("%d IDE lock file(s) under %s"):format(#locks, lock_dir))
+    h.info(
+      "A lock file only means SOME editor is advertising itself — it may be another Neovim. "
+        .. ":ClaudeCodeStatus is the authority on this session's server and its connections."
+    )
+  end
+end
+
 function M.check()
   local h = vim.health
   check_clipboard(h)
   check_lsp(h)
   check_formatters(h)
   check_linters(h)
+  check_claude(h)
 end
 
 return M
