@@ -41,6 +41,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     file) so an absent `<leader>a` reads as intentional rather than broken.
 
   Installing the CLI itself stays out of Core: it is an npm/brew install and therefore OS-native.
+
+- **Terminal buffers are escapable and navigable — `nvim/lua/gerrrt/utils/term.lua` (new).** A
+  Neovim terminal buffer forwards every keystroke to the program inside it, and both of Core's
+  terminals call `startinsert`, so you land in terminal mode where Core's `<C-h/j/k/l>`
+  (vim-tmux-navigator, normal mode only) never reach Neovim. The split reads as a trap. Neovim's
+  reserved `<C-\><C-n>` was always the way out, but nothing in the config said so — Core shipped no
+  terminal-mode keymaps at all (`mode = "t"` appeared nowhere under `nvim/`). The defect was
+  discoverability, not behavior.
+
+  `utils/term.lua` now owns the rule, and both terminals opt in: Claude's split
+  (`plugins/claudecode-nvim.lua`) and the **pytest split** (`config/autocmds.lua`), which shared the
+  gap all along — it just never surfaced there, since that split is read-only output you glance at
+  rather than a prompt you sit inside. Note `:q` needs normal mode too, so even closing one starts
+  with `<C-\><C-n>`. Buffer-local `<M-h/j/k/l>` leave terminal mode and navigate in one keystroke;
+  `cheatsheet.lua` documents all of it as one **Terminal buffers** card rather than a copy per
+  terminal, since the panel shows every card at once.
+
+  The navigator's own `<C-h/j/k/l>` are deliberately **not** widened into terminal mode: `<C-h>` is
+  ASCII 8 (backspace) and `<C-j>` is ASCII 10 (newline), so claiming them would break editing at an
+  interactive prompt — `<C-w>` (delete-word) is out for the same reason. `<M-…>` is unclaimed by the
+  TUIs involved; mini.move owns `<A-h/j/k/l>` in normal/visual only, a different mode. The maps stay
+  buffer-local so a terminal Core did not open (`:terminal`, a plugin's own) keeps its keys
+  untouched — for Claude's, the buffer is identified by asking the plugin
+  (`claudecode.terminal.get_active_terminal_bufnr()`) rather than matching the `term://` name, which
+  would also hit a plain shell started in a directory containing the word "claude".
 - **Python workflow ergonomics for the Astral stack (uv/ruff/ty).** Three small, additive changes
   that make the already-wired Python setup easier to drive day-to-day:
   - `zsh/20-aliases.zsh` adds `uvr` (`uv run`) and `uvs` (`uv sync`), guarded by a new `HAVE_UV`
