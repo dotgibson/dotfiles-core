@@ -149,6 +149,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   yaml parser (`vim.treesitter.language.register`), which hands the buffers to nvim-treesitter's own
   install/start lifecycle. Covered by a new assertion in `scripts/test-core.sh` (each buf basename
   resolves to `buf-config`; the parser alias resolves to `yaml`).
+- **`PORTING-MATRIX.md`'s openSUSE column no longer understates what Tumbleweed packages.** Seven
+  tools were marked bootstrap-only (`script³`/`cargo³`/`go³`) that main OSS (`src-oss`) now ships
+  first-class — `starship`, `atuin`, `yazi`, `viddy`, `ouch`, `doggo`, `ast-grep` — so anyone
+  stamping or maintaining `dotfiles-openSUSE` from the matrix was being told to build from source
+  what `zypper in` already provides. Each now names its real package under a new footnote ¹⁸, which
+  also records the caveat the audit could not close: **Leap 15.x was not separately audited** and
+  rolls slower, so verify with `zypper se` there. Footnote ¹⁶ (viddy) dropped openSUSE from its
+  "not packaged" list to match. Docs-only — no `bootstrap.sh` or `packages.txt` behavior changes,
+  and the ³ installs stay correct because each is presence-guarded.
 
 ## [v4.6.0] - 2026-07-30
 
