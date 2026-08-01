@@ -47,13 +47,29 @@ session="_popup_claude_${stem}_${hash}"
 
 if ! tmux has-session -t "=$session" 2>/dev/null; then
   # -P -F gives us the session id, which is a stable target even if the name is later changed.
-  session_id="$(tmux new-session -dP -s "$session" -c "$root" -F '#{session_id}' claude)"
-  # Make the nested session inert to tmux so every keystroke reaches Claude's TUI: no status
-  # bar, no prefix, and an empty key table. Same treatment tmux-scratch.sh gives its shell.
-  tmux set-option -s -t "$session_id" key-table popup
-  tmux set-option -s -t "$session_id" status off
-  tmux set-option -s -t "$session_id" prefix None
-  session="$session_id"
+  session_id="$(tmux new-session -dP -s "$session" -c "$root" -F '#{session_id}' claude 2>/dev/null)" ||
+    session_id=""
+
+  if [[ -n "$session_id" ]]; then
+    # Make the nested session inert to tmux so every keystroke reaches Claude's TUI: no status
+    # bar, no prefix, and an empty key table. Same treatment tmux-scratch.sh gives its shell.
+    tmux set-option -s -t "$session_id" key-table popup
+    tmux set-option -s -t "$session_id" status off
+    tmux set-option -s -t "$session_id" prefix None
+    session="$session_id"
+  elif tmux has-session -t "=$session" 2>/dev/null; then
+    # LOST A RACE, which is a success: two clients can both see no session, and the one that
+    # loses `new-session` gets "duplicate session". This script has no `set -e` (a failed
+    # set-option must never strand you without a popup), so without this branch the loser would
+    # carry an EMPTY session_id into every command below and spray errors instead of opening the
+    # conversation its sibling just created. The winner already applied the options.
+    : # fall through and attach by name
+  else
+    # Creation genuinely failed and nothing exists to attach to — say so rather than handing
+    # `tmux attach` an empty target and letting it produce the confusing error.
+    tmux display-message "could not start a Claude session for $root"
+    exit 1
+  fi
 fi
 
 # Force THIS session to detach its client when the session is destroyed, overriding the global
