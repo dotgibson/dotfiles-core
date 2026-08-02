@@ -13,6 +13,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/os-package-availability` no longer files column-shifted matrix findings.** The
+  Alpine run on 2026-08-02 reported four `PORTING-MATRIX.md` cells as stale
+  (`starship`/`yazi`/`tree-sitter-cli`/`viddy` still on `script³`/`cargo³`) and asked
+  for two footnote rewrites. All six were already correct: the routine had read the
+  **Kali (apt)** column — the last cell on each row — as if it were Alpine, and
+  re-proposed footnote wording the footnotes already carried. A report-first routine
+  that flags a correct table is worse than one that finds nothing, since it invites a
+  "fix" that introduces the drift it claimed to catch.
+
+  The prompt now anchors both reads: count columns from the header row (`Arch |
+  openSUSE | Alpine | Gentoo | Kali`, last cell is Kali), quote the whole row and name
+  the column header before citing a cell, and quote a footnote's current text before
+  calling it stale. Reporting rules require that evidence in the issue body, so a
+  misalignment is visible to a reader instead of shipping as a finding.
+
 ## [v4.7.0] - 2026-08-01
 
 ### Added
