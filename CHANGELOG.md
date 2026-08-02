@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.7.0] - 2026-08-01
+
 ### Added
 
 - **`prefix + a` opens Claude Code in a tmux popup — `tmux/scripts/tmux-claude.sh` (new).** The
