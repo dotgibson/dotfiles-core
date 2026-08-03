@@ -1154,6 +1154,16 @@ case "$*" in
   esac ;;
 *compare*)          printf '7\n' ;;
 *search/issues*)
+  # GH_SEARCH=flaky — limited on attempts 1-2, healthy on 3-6, limited again from 7. Two
+  # DISTINCT episodes: the first clears mid-ladder (must recover), the second never does
+  # (must exhaust and latch). One episode alone cannot tell latch-on-exhaustion from
+  # latch-on-ladder-start; the second episode is what separates them. The attempt counter
+  # is GH_CALLS itself (appended above), so it survives the separate stub processes a
+  # single ladder spawns.
+  if [ "${GH_SEARCH:-limited}" = flaky ]; then
+    _n="$(grep -c 'search/issues' "$GH_CALLS")"
+    [ "$_n" -ge 3 ] && [ "$_n" -le 6 ] && { printf '4\n'; exit 0; }
+  fi
   printf '{"message":"You have exceeded a secondary rate limit.","status":"403"}\n'
   echo 'gh: You have exceeded a secondary rate limit (HTTP 403)' >&2; exit 1 ;;
 esac
@@ -1162,10 +1172,16 @@ GHSTUB
 chmod +x "$FDBIN/gh"
 
 # _fd_run — board on stdout, script's rc in $?. Pace/backoff zeroed so the ladder is
-# exercised without sleeping through it.
+# exercised without sleeping through it. GITHUB_REPOSITORY_OWNER is PINNED, not inherited:
+# the script defaults OWNER from it, GitHub Actions always sets it, and on a fork it is the
+# fork owner — so an inherited value would fail the URL assertions below in a fork's CI
+# even with the dashboard behaving correctly. A fixture owner (not the real `dotgibson`)
+# keeps that pin honest: drop it and the assertions fail immediately, anywhere.
 _fd_run() {
   PATH="$FDBIN:$PATH" GH_TOKEN=stub GH_CALLS="$SANDBOX/gh.calls" GH_TAGS="${GH_TAGS:-ok}" \
-    DASH_SEARCH_PACE=0 DASH_RETRY_BASE=0 \
+    GH_SEARCH="${GH_SEARCH:-limited}" GITHUB_REPOSITORY_OWNER=fixtureowner \
+    DASH_SEARCH_PACE=0 DASH_RETRY_BASE="${DASH_RETRY_BASE:-0}" \
+    DASH_RETRY_BUDGET="${DASH_RETRY_BUDGET:-60}" \
     bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null
 }
 
@@ -1187,7 +1203,7 @@ else fail "dashboard: '— (no tags)' branch still unreachable"; fi
 # A rate-limited search must degrade to `?` in BOTH live tallies — the Renovate cell and
 # the judgment-layer link text (the latter is the exact cell that rendered htpx's 403).
 if grep -q '| dotfiles-core | ? |' <<<"$_fd_board" &&
-  grep -qF '[?](https://github.com/dotgibson/dotfiles-core/issues' <<<"$_fd_board"; then
+  grep -qF '[?](https://github.com/fixtureowner/dotfiles-core/issues' <<<"$_fd_board"; then
   pass "dashboard: a rate-limited search renders '?' in both tallies"
 else fail "dashboard: a failed search did not degrade to '?'"; fi
 
@@ -1212,6 +1228,36 @@ if grep -q '| dotfiles-web | ? | ? |' <<<"$_fd_board_fail" &&
   ! grep -q -- '(no tags)' <<<"$_fd_board_fail"; then
   pass "dashboard: a failed tag probe renders '?', not '— (no tags)'"
 else fail "dashboard: a failed tag probe was reported as 'no tags'"; fi
+
+# A TRANSIENT limit that clears must RECOVER, not latch — the ladder exists precisely so a
+# blip still yields the real number — while a limit that never clears must still exhaust
+# and latch. Two episodes (see the stub): the Renovate tally's first 4 repos ride out
+# episode 1 and report real counts, htpx opens episode 2 and exhausts, and the judgment
+# tally is latched from there on.
+#
+# The call count is what pins the DESIGN. 15 = 3 (episode-1 ladder recovers) + 3 (healthy)
+# + 4 (episode-2 ladder exhausts) + 6 (latched). Latching when a ladder STARTS instead of
+# when it is exhausted gives 12, because episode 2 would be refused without ever retrying —
+# i.e. one recoverable blip would permanently downgrade the rest of the run.
+: >"$SANDBOX/gh.calls"
+_fd_flaky="$(GH_SEARCH=flaky GH_TAGS=none _fd_run)"
+_fd_flaky_calls="$(grep -c 'search/issues' "$SANDBOX/gh.calls")"
+if [ "$_fd_flaky_calls" -eq 15 ] &&
+  grep -q '| dotfiles-core | 4 |' <<<"$_fd_flaky" && grep -q '| htpx | ? |' <<<"$_fd_flaky"; then
+  pass "dashboard: a transient 403 recovers; only an exhausted ladder latches"
+else fail "dashboard: recover-vs-latch wrong (calls=$_fd_flaky_calls, expected 15)"; fi
+
+# Cumulative-sleep ceiling. The exhausted-ladder latch cannot bound a run where every
+# ladder RECOVERS, so DASH_RETRY_BUDGET caps total backoff instead. Budget 0 proves the
+# gate: the very first 403 exceeds it, so no call ever sleeps and each of the 10 makes
+# exactly one invocation (vs 13 when the budget allows one full ladder).
+: >"$SANDBOX/gh.calls"
+_fd_budget="$(DASH_RETRY_BASE=1 DASH_RETRY_BUDGET=0 _fd_run)"
+_fd_budget_rc=$?
+_fd_budget_calls="$(grep -c 'search/issues' "$SANDBOX/gh.calls")"
+if [ "$_fd_budget_calls" -eq 10 ] && [ "$_fd_budget_rc" -eq 0 ]; then
+  pass "dashboard: the cumulative backoff budget caps total sleep across ladders"
+else fail "dashboard: backoff budget not enforced (calls=$_fd_budget_calls, expected 10)"; fi
 
 # Without gh/token the board must still compose, with the unavailable note.
 _fd_degraded="$(env -u GH_TOKEN -u GITHUB_TOKEN PATH="$FDBIN:$PATH" \

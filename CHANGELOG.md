@@ -46,10 +46,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   from "we never got an answer" (`?`), a distinction it was previously asserting without
   evidence. The ~24 search-API calls are paced under GitHub's 30/minute authenticated
   ceiling (the workflow authenticates with the stock `GITHUB_TOKEN` and its lower shared
-  quota), and a 403/429 gets one widening backoff ladder per run — latched in a file, since
-  the helpers run inside command substitution and a shell variable would not survive the
-  subshell. `scripts/test-core.sh` now drives all of it against a `gh` stub reproducing the
-  real error shape; the script had no behavioral coverage before.
+  quota), and a 403/429 gets a widening backoff under two brakes: an **exhausted** ladder
+  latches, so the remaining calls stop re-waiting on a limit that demonstrably isn't
+  clearing, while total backoff sleep is capped for the whole run — a ladder that *recovers*
+  must not latch, but 24 calls each riding out a fresh transient limit would otherwise sleep
+  for 12 minutes against a 15-minute job timeout. Both brakes are files, not variables, since
+  the helpers run inside command substitution and a variable would not survive the subshell.
+  `scripts/test-core.sh` now drives all of it against a `gh` stub reproducing the real error
+  shape; the script had no behavioral coverage before.
 
 ## [v4.7.0] - 2026-08-01
 

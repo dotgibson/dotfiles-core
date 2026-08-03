@@ -85,8 +85,13 @@ fi
 # release-drift table are NOT paced: core REST's budget is orders of magnitude larger and
 # 36 sequential GETs never approach it. Both are overridable so the hermetic test in
 # scripts/test-core.sh can drive the retry ladder without sleeping through it.
+#
+# DASH_RETRY_BUDGET is the ceiling on TOTAL backoff sleep for the whole run (see _gh_api):
+# 60s leaves room for two full ladders — enough to ride out a normal ~60s secondary limit —
+# while keeping the worst case nowhere near the workflow's 15-minute timeout.
 : "${DASH_SEARCH_PACE:=3}"
 : "${DASH_RETRY_BASE:=5}"
+: "${DASH_RETRY_BUDGET:=60}"
 
 # _gh_api <gh-api-args...> — gh's stdout ONLY when the call actually SUCCEEDED; empty
 # output and a non-zero status otherwise.
@@ -100,13 +105,25 @@ fi
 # trustworthy (non-zero on any HTTP >= 400), so gate on it and drop stdout when it fails.
 #
 # 403/429 (the secondary rate limit) is the one answer worth waiting on — a 404 or 422 will
-# never change — so it gets a widening backoff. The ladder runs ONCE PER RUN: a secondary
-# limit is a property of the token, not of this endpoint, so re-running it on the remaining
-# calls only burns the workflow's 15-minute budget. The latch is a FILE, not a variable:
-# callers invoke this inside `$( )`, and a variable set in that subshell never reaches the
-# parent, so every later call would re-ladder.
+# never change — so it gets a widening backoff. TWO separate brakes stop that from eating
+# the workflow's 15-minute budget, because they catch different failures:
+#
+#   • An EXHAUSTED ladder latches. Waiting demonstrably didn't help, and a secondary limit
+#     is a property of the token rather than of this endpoint, so the remaining ~50 calls
+#     give up immediately instead of re-laddering.
+#   • Cumulative sleep is CAPPED (DASH_RETRY_BUDGET). A ladder that RECOVERS must not latch
+#     — waiting worked, and a later limit deserves the same courtesy — but that alone is
+#     unbounded: 24 search calls each hitting a fresh transient limit and recovering on the
+#     last retry is 24 × (5+10+15) = 12 minutes of sleeping, with no ladder ever exhausted
+#     to trip the first brake. The budget bounds the whole run instead of each ladder.
+#
+# Latching on ladder START would collapse both into one and is wrong: it turns the first
+# recoverable blip into a permanent `?` for every later call.
+#
+# Both brakes are FILES, not variables: callers invoke this inside `$( )`, and a variable
+# set in that subshell never reaches the parent, so every later call would re-ladder.
 _gh_api() {
-  local out rc try=0
+  local out rc try=0 spent
   while :; do
     out="$(gh api "$@" 2>"$TMP/gh.err")"
     rc=$?
@@ -115,6 +132,11 @@ _gh_api() {
     [ -e "$TMP/rate-limited" ] && return 1
     try=$((try + 1))
     if [ "$try" -gt 3 ]; then : >"$TMP/rate-limited"; return 1; fi
+    spent=0
+    [ -f "$TMP/backoff-spent" ] && spent="$(cat "$TMP/backoff-spent")"
+    spent=$((spent + try * DASH_RETRY_BASE))
+    if [ "$spent" -gt "$DASH_RETRY_BUDGET" ]; then : >"$TMP/rate-limited"; return 1; fi
+    printf '%s\n' "$spent" >"$TMP/backoff-spent"
     sleep $((try * DASH_RETRY_BASE))
   done
 }
