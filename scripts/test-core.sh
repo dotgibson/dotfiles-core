@@ -1112,6 +1112,116 @@ else
   skip "release-notes drafting (git unavailable)"
 fi
 
+# ── F4. dashboard live-signal error handling (scripts/freshness-dashboard.sh) ─
+# The weekly board embeds LIVE GitHub API answers, and `gh api` does something surprising
+# on an HTTP error: it SKIPS --jq and copies the raw error BODY to STDOUT, summarising only
+# to stderr. So the old `2>/dev/null || true` silenced the wrong stream, threw away the one
+# reliable signal (the exit code), and let {"message":"Not Found",…} through as if it were
+# a value — every `// empty` and `[ -n "$n" ]` guard downstream waved it past (issue #324:
+# a 404 body rendered as dotfiles-web's release tag, a 403 body as htpx's issue count).
+# Shellcheck cannot see any of that, so drive it hermetically: a programmable `gh` stub
+# reproducing gh's real error shape (body on stdout, `(HTTP NNN)` on stderr, non-zero rc),
+# in a throwaway repo root whose four sub-check scripts are stubs — the real
+# update-nvim-plugins.sh --check drives a full `:Lazy! sync` (minutes, network).
+hdr "dashboard live-signal error handling (scripts/freshness-dashboard.sh)"
+FDR="$SANDBOX/fdrepo"
+FDBIN="$SANDBOX/fdbin"
+rm -rf "$FDR" "$FDBIN"
+mkdir -p "$FDR/scripts" "$FDBIN" "$SANDBOX/fdfleet"
+cp "$HERE/scripts/freshness-dashboard.sh" "$FDR/scripts/"
+for _fd_s in fleet-drift core-integrity update-plugins update-nvim-plugins; do
+  printf '#!/bin/sh\nexit 0\n' >"$FDR/scripts/$_fd_s.sh"
+  chmod +x "$FDR/scripts/$_fd_s.sh"
+done
+# One OS repo → REPOS is 5 (core, Windows, web, MacBook, htpx) → 10 search calls, which is
+# what the ladder-latch count below is derived from.
+printf 'dotfiles-MacBook\n' >"$FDR/scripts/os-repos.txt"
+
+cat >"$FDBIN/gh" <<'GHSTUB'
+#!/bin/sh
+printf '%s\n' "$*" >>"$GH_CALLS"
+case "$*" in
+"auth status"*)     exit 1 ;;   # so the GH_OK=0 degradation case is reachable
+*releases/latest*)  # never-released repo: gh prints the 404 BODY to stdout, rc 1
+  printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}\n'
+  echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
+*/tags*)
+  case "${GH_TAGS:-ok}" in
+  none) exit 0 ;;               # genuinely tagless: rc 0, --jq yields empty
+  fail) printf '{"message":"Bad credentials","status":"401"}\n'
+        echo 'gh: Bad credentials (HTTP 401)' >&2; exit 1 ;;
+  *)    printf 'v1.2.3\n' ;;
+  esac ;;
+*compare*)          printf '7\n' ;;
+*search/issues*)
+  printf '{"message":"You have exceeded a secondary rate limit.","status":"403"}\n'
+  echo 'gh: You have exceeded a secondary rate limit (HTTP 403)' >&2; exit 1 ;;
+esac
+exit 0
+GHSTUB
+chmod +x "$FDBIN/gh"
+
+# _fd_run — board on stdout, script's rc in $?. Pace/backoff zeroed so the ladder is
+# exercised without sleeping through it.
+_fd_run() {
+  PATH="$FDBIN:$PATH" GH_TOKEN=stub GH_CALLS="$SANDBOX/gh.calls" GH_TAGS="${GH_TAGS:-ok}" \
+    DASH_SEARCH_PACE=0 DASH_RETRY_BASE=0 \
+    bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null
+}
+
+: >"$SANDBOX/gh.calls"
+_fd_board="$(GH_TAGS=none _fd_run)"
+_fd_rc=$?
+
+# The #324 regression itself: not one byte of an API error body may reach the board.
+if ! grep -qE '"message"|documentation_url|"status":"40' <<<"$_fd_board"; then
+  pass "dashboard: no GitHub API error body reaches the board"
+else fail "dashboard: an API error body leaked into the rendered board"; fi
+
+# `— (no tags)` was UNREACHABLE before the fix for any repo whose 404 body carries a
+# `message` key, because the blob made `tag` non-empty and skipped the /tags fallback.
+if grep -q -- '— (no tags)' <<<"$_fd_board"; then
+  pass "dashboard: a genuinely tagless repo renders '— (no tags)'"
+else fail "dashboard: '— (no tags)' branch still unreachable"; fi
+
+# A rate-limited search must degrade to `?` in BOTH live tallies — the Renovate cell and
+# the judgment-layer link text (the latter is the exact cell that rendered htpx's 403).
+if grep -q '| dotfiles-core | ? |' <<<"$_fd_board" &&
+  grep -qF '[?](https://github.com/dotgibson/dotfiles-core/issues' <<<"$_fd_board"; then
+  pass "dashboard: a rate-limited search renders '?' in both tallies"
+else fail "dashboard: a failed search did not degrade to '?'"; fi
+
+# A reporter never fails the build, even with every live call erroring.
+if [ "$_fd_rc" -eq 0 ]; then
+  pass "dashboard: still exits 0 with every live call failing"
+else fail "dashboard: exited $_fd_rc with failing live calls (must always be 0)"; fi
+
+# The ladder must run ONCE and then latch. 10 search calls → 4 invocations for the first
+# (initial + 3 retries) + 1 each for the other 9 = 13. A variable latch would re-ladder
+# every call (40) because the helpers run inside `$( )`; no latch at all, also 40.
+_fd_calls="$(grep -c 'search/issues' "$SANDBOX/gh.calls")"
+if [ "$_fd_calls" -eq 13 ]; then
+  pass "dashboard: 403 backoff ladder runs once per run, then latches (13 search calls)"
+else fail "dashboard: expected 13 search calls (one ladder + 9 latched), got $_fd_calls"; fi
+
+# A FAILED tag probe must not masquerade as a confident "this repo has no tags" — that is
+# the distinction the propagated exit status buys, and the board asserted it without
+# evidence before.
+_fd_board_fail="$(GH_TAGS=fail _fd_run)"
+if grep -q '| dotfiles-web | ? | ? |' <<<"$_fd_board_fail" &&
+  ! grep -q -- '(no tags)' <<<"$_fd_board_fail"; then
+  pass "dashboard: a failed tag probe renders '?', not '— (no tags)'"
+else fail "dashboard: a failed tag probe was reported as 'no tags'"; fi
+
+# Without gh/token the board must still compose, with the unavailable note.
+_fd_degraded="$(env -u GH_TOKEN -u GITHUB_TOKEN PATH="$FDBIN:$PATH" \
+  GH_CALLS="$SANDBOX/gh.calls" \
+  bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null)"
+_fd_deg_rc=$?
+if [ "$_fd_deg_rc" -eq 0 ] && grep -q 'Unavailable in this run' <<<"$_fd_degraded"; then
+  pass "dashboard: degrades to the 'unavailable' note without gh/token"
+else fail "dashboard: GH_OK=0 degradation path broken (rc=$_fd_deg_rc)"; fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link

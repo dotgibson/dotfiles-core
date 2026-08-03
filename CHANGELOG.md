@@ -30,6 +30,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   calling it stale. Reporting rules require that evidence in the issue body, so a
   misalignment is visible to a reader instead of shipping as a finding.
 
+- **The freshness dashboard no longer renders GitHub API error bodies as data.** The
+  2026-08-03 board (#324) printed `{"message":"Not Found",…,"status":"404"}` as
+  `dotfiles-web`'s release tag and a 403 secondary-rate-limit body as `htpx`'s open-issue
+  count. Cause: on an HTTP error `gh api` **skips the `--jq` filter and copies the raw
+  response body to stdout**, writing only its one-line summary to stderr — so the helpers'
+  `2>/dev/null || true` silenced the wrong stream and discarded the one reliable signal,
+  the exit code. The error JSON became "the value", and every `// empty` and emptiness
+  guard downstream waved it through; the `— (no tags)` branch was unreachable for any repo
+  whose 404 body carries a `message` key, and a third site (the Renovate tally) had the
+  same latent defect.
+
+  The helpers now capture stdout, test the exit code, and drop stdout on failure — and they
+  propagate that status, so the board can tell "the API answered: none" (`— (no tags)`)
+  from "we never got an answer" (`?`), a distinction it was previously asserting without
+  evidence. The ~24 search-API calls are paced under GitHub's 30/minute authenticated
+  ceiling (the workflow authenticates with the stock `GITHUB_TOKEN` and its lower shared
+  quota), and a 403/429 gets one widening backoff ladder per run — latched in a file, since
+  the helpers run inside command substitution and a shell variable would not survive the
+  subshell. `scripts/test-core.sh` now drives all of it against a `gh` stub reproducing the
+  real error shape; the script had no behavioral coverage before.
+
 ## [v4.7.0] - 2026-08-01
 
 ### Added
