@@ -48,7 +48,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   ceiling (the workflow authenticates with the stock `GITHUB_TOKEN` and its lower shared
   quota), and a 403/429 gets a widening backoff under two brakes: an **exhausted** ladder
   latches, so the remaining calls stop re-waiting on a limit that demonstrably isn't
-  clearing, while total backoff sleep is capped for the whole run — a ladder that *recovers*
+  clearing, while total backoff sleep is capped for the whole run — a ladder that _recovers_
   must not latch, but 24 calls each riding out a fresh transient limit would otherwise sleep
   for 12 minutes against a 15-minute job timeout. Both brakes are files, not variables, since
   the helpers run inside command substitution and a variable would not survive the subshell.
