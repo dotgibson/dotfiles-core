@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.7.1] - 2026-08-03
+
 ### Fixed
 
 - **`/os-package-availability` no longer files column-shifted matrix findings.** The
