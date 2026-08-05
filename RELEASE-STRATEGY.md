@@ -285,8 +285,9 @@ available for drafting a body by hand if you want to edit it before publishing.
 ### Tag baseline
 
 The fleet has carried annotated `vX.Y.Z` tags since `v1.0.0`, so there is no
-one-time adoption step — `core.version` (currently `3.6.0`) matches the latest
-tag, and the next release just runs the checklist above to cut `v3.6.1` / `v3.7.0`.
+one-time adoption step — `core.version` matches the latest tag (read it there rather
+than trusting a number copied into prose), and the next release just runs the checklist
+above to cut the next patch or minor.
 The `core_tag` provenance only appears in each `core.lock` on the next `make sync`,
 which is when `git describe` first has a tag to resolve against the vendored
 commit.
