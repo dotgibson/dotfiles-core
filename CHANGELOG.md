@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.9.0] - 2026-08-05
+
 ### Removed
 
 - **The per-repo `core-freshness` watcher is retired** — `core-freshness-call.yml` is deleted
