@@ -1062,9 +1062,16 @@ fi
 # gen-release-notes.sh turns an OS repo's Conventional Commits in a range into the grouped
 # markdown body auto-tag.sh feeds `gh release create --notes-file` (G5 — a real changelog,
 # not a bare tag). Assert hermetically: the right groups appear in cliff.toml order, the
-# subject is upper-firsted with a 7-char SHA, a chore(release) commit is skipped and an
+# subject is rendered as cliff renders it, a chore(release) commit is skipped and an
 # unconventional subject is dropped, and a range with no conventional commits prints
 # NOTHING (exit 0 → the caller falls back to gh --generate-notes). Pure bash + git.
+#
+# "as cliff renders it" is load-bearing and was the one thing this block got wrong: it used
+# to assert `Feat(x): add a thing`, pinning the prefix-retaining bug rather than the twin's
+# contract. cliff.toml sets conventional_commits = true, so git-cliff's `commit.message` is
+# the DESCRIPTION alone — the type/scope/`!` are parsed off — and the bullet reads
+# "Add a thing" under a heading that already says Features. Both directions are asserted now
+# (description present AND prefix absent), so the bug cannot come back green.
 if have git; then
   hdr "release-notes drafting (scripts/gen-release-notes.sh)"
   GRN="$HERE/scripts/gen-release-notes.sh"
@@ -1077,18 +1084,40 @@ if have git; then
   git -C "$GRNR" tag v1.0.0
   git -C "$GRNR" commit -q --allow-empty -m "fix: correct a bug"          # Bug Fixes
   git -C "$GRNR" commit -q --allow-empty -m "feat(x): add a thing"        # Features (later, but must sort first)
+  git -C "$GRNR" commit -q --allow-empty -m "feat(y)!: upend a contract"  # breaking → must stay visible
   git -C "$GRNR" commit -q --allow-empty -m "chore(release): v1.1.0"      # must be skipped
   git -C "$GRNR" commit -q --allow-empty -m "totally unconventional line" # must be dropped
   git -C "$GRNR" commit -q --allow-empty -m "fixing a flaky test"         # prose, no delimiter → dropped
+  git -C "$GRNR" commit -q --allow-empty -m "refactor:"                   # no description → dropped
   _grn_out="$("$GRN" "$GRNR" v1.0.0 HEAD 2>/dev/null)"
 
   if grep -q '^### Features$' <<<"$_grn_out" && grep -q '^### Bug Fixes$' <<<"$_grn_out"; then
     pass "gen-notes: groups feat + fix under cliff.toml headings"
   else fail "gen-notes: expected Features + Bug Fixes headings"; fi
 
-  if grep -q 'Feat(x): add a thing' <<<"$_grn_out" && grep -qE '\([0-9a-f]{7}\)' <<<"$_grn_out"; then
-    pass "gen-notes: upper-firsts the subject and appends a 7-char SHA"
+  if grep -q 'Add a thing' <<<"$_grn_out" && grep -qE '\([0-9a-f]{7}\)' <<<"$_grn_out"; then
+    pass "gen-notes: upper-firsts the description and appends a 7-char SHA"
   else fail "gen-notes: subject/sha format wrong"; fi
+
+  # The regression this block used to enshrine: cliff strips type/scope, so no bullet may
+  # carry a Conventional prefix. Asserted over the whole body, not just the one subject.
+  if ! grep -qiE '^- (\*\*BREAKING\*\* )?(feat|fix|docs|chore|perf|refactor|test|ci|build|style)(\([^)]*\))?!?:' <<<"$_grn_out"; then
+    pass "gen-notes: strips the Conventional prefix (cliff conventional_commits=true)"
+  else fail "gen-notes: a bullet kept its type(scope): prefix"; fi
+
+  # Deliberate divergence from cliff (which renders breaking commits indistinguishably,
+  # since the template interpolates commit.message and never commit.breaking): a `!` must
+  # survive into the draft, because it is what drives the SemVer major bump.
+  if grep -q '^- \*\*BREAKING\*\* Upend a contract' <<<"$_grn_out"; then
+    pass "gen-notes: marks a breaking (!) commit instead of flattening it"
+  else fail "gen-notes: breaking marker lost"; fi
+
+  # A type with no description ("refactor:") is unparseable to git-conventional, so cliff's
+  # filter_unconventional drops it — verified against git-cliff 2.13.1, which emits no
+  # Refactoring group for that input. It must not surface as a bare or empty bullet.
+  if ! grep -q '^### Refactoring$' <<<"$_grn_out" && ! grep -qE '^- (Refactor:)?$' <<<"$_grn_out"; then
+    pass "gen-notes: a prefix-only subject (no description) is dropped, not an empty bullet"
+  else fail "gen-notes: a description-less commit leaked into the notes"; fi
 
   if ! grep -qi 'release' <<<"$_grn_out" && ! grep -qi 'unconventional' <<<"$_grn_out"; then
     pass "gen-notes: skips chore(release) and drops unconventional commits"

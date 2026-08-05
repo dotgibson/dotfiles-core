@@ -13,6 +13,46 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`gen-release-notes.sh` kept the Conventional-Commit prefix that `cliff.toml` tells
+  git-cliff to strip.** The script bills itself as the first-party twin of `make
+  release-notes` — same grouping, same bullets, no git-cliff binary — but rendered
+  `- Fix(ci): point core-freshness at the released tag (0e85561)` where git-cliff renders
+  `- Point core-freshness at the released tag (0e85561)`. Two things were wrong with that:
+  the type repeated the heading it sat under (`### Bug Fixes` → `Fix(ci):`), and
+  `upper_first` was applied to the raw subject, capitalising the type into a `Fix(ci):`
+  that is not a valid Conventional type. The cause was a one-line mismatch —
+  `cliff.toml` sets `conventional_commits = true`, which makes git-cliff parse each subject
+  and expose `commit.message` as the **description alone**, with type, scope and the
+  breaking `!` split off into `commit.scope` / `commit.breaking`. The twin never did that
+  parse, so `{{ commit.message | upper_first }}` and its awk equivalent were not the same
+  expression.
+
+  Verified rather than reasoned: git-cliff **2.13.1** was built and run against this repo's
+  own `cliff.toml`, and the twin's bullets are now byte-identical to it over
+  `v4.8.0..v4.9.0`, `v4.7.0..v4.9.0` (21 bullets), and a synthetic repo covering scoped,
+  breaking, skipped and unconventional subjects. That run also corrected a second, subtler
+  case: a subject that is nothing but a prefix (`refactor:`) is **dropped**, because
+  git-conventional requires a description and `filter_unconventional` discards what it
+  cannot parse — git-cliff emits no Refactoring group at all for that input, so neither
+  does the twin.
+
+  **One deliberate divergence, and it is the reason this was worth fixing carefully:**
+  git-cliff renders a breaking commit indistinguishably from an ordinary one, because this
+  template interpolates only `commit.message` and never `commit.breaking` — confirmed
+  against the real binary, which turns `feat(y)!: upend a contract` into a bullet with no
+  marker at all. Stripping the prefix would have made that invisible here too, collapsing
+  `feat!:` and `feat:` into the same line. A release-notes draft is the one document where
+  a breaking change must not be silent — it is what drives the SemVer major bump — so the
+  twin now prefixes those bullets with `**BREAKING**` instead of losing them.
+
+  `scripts/test-core.sh`'s block for this script had **pinned the bug**: it asserted
+  `Feat(x): add a thing`, so the prefix-retaining output was the tested contract rather
+  than an escape. It now asserts both directions (the description is present _and_ no
+  bullet carries a `type(scope):` prefix), plus the breaking marker and the
+  description-less drop — four new assertions, nine in the block.
+
 ## [v4.9.0] - 2026-08-05
 
 ### Removed
