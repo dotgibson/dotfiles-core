@@ -15,6 +15,43 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`make release-notes` emitted its sections alphabetically, so Bug Fixes led and Features
+  came fourth.** Tera's `group_by` sorts groups by their key string, and `cliff.toml` gave it
+  bare names — so git-cliff rendered `Bug Fixes` → `Chores` → `Documentation` → `Features`,
+  burying what a release _added_ under what it _repaired_. `scripts/gen-release-notes.sh`,
+  the no-git-cliff twin, has always emitted `commit_parsers` order (Features first), which is
+  the more useful order for a release body — so this converges the two by moving git-cliff to
+  the twin's order rather than degrading the twin to alphabetical.
+
+  Each `commit_parsers` group now carries a `<N>` sort-key prefix (`group = "<0> Features"`),
+  and the template strips it back out with `striptags` — git-cliff's own documented idiom for
+  ordered groups, so headings still render as `### Features`. Verified against git-cliff
+  **2.13.1**: over a synthetic repo exercising all groups and over `v4.8.0..v4.9.0`, the twin
+  and git-cliff now produce identical output — same sections, same order, same bullets.
+
+  **Two guards, because the order is now written down twice** (`cliff.toml`'s `<N>` keys and
+  the twin's `ORDER` array). `scripts/test-core.sh` parses both and diffs them, so a change to
+  one without the other fails the audit instead of drifting silently; and it pins the ceiling
+  those single-digit keys carry — at ten groups the list is exactly full, and an eleventh
+  would need two-digit keys throughout, since `<10>` sorts between `<1>` and `<2>`. Both
+  assertions were negative-tested (perturb the config, watch them fail) rather than assumed.
+
+  The order guard **sorts before comparing**, which is the whole of its value: git-cliff
+  renders the lexical order of the full group strings, so a line's position in
+  `commit_parsers` decides nothing. A guard that read the file top-to-bottom would have
+  passed while `<0>` and `<1>` were swapped in place — and git-cliff 2.13.1 confirms that
+  swap really does put Bug Fixes back ahead of Features. It now extracts each group with its
+  key, sorts as Tera does (`LC_ALL=C`, so the runner's locale cannot move it), and strips the
+  keys only afterwards, so what is compared is the effective output order.
+
+  **A boundary this does _not_ cross, now documented in the script header:** given a range
+  that spans an intermediate tag, git-cliff segments its output per release — `v4.7.0..v4.9.0`
+  renders three blocks with repeating headings — while the twin flattens the range into one
+  set of groups. Neither caller ever asks for such a range (`make release-notes` passes the
+  commits since the last `release vX` commit; `auto-tag.sh` passes `<last-tag>..<new-tag>`),
+  so on every range either tool is actually given they agree exactly. Teaching awk to segment
+  by tag would be real complexity for a shape no caller produces.
+
 - **`gen-release-notes.sh` kept the Conventional-Commit prefix that `cliff.toml` tells
   git-cliff to strip.** The script bills itself as the first-party twin of `make
   release-notes` — same grouping, same bullets, no git-cliff binary — but rendered

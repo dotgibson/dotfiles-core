@@ -1139,6 +1139,45 @@ if have git; then
   if _grn_empty="$("$GRN" "$GRNR" v1.1.0 HEAD)"; [[ -z "$_grn_empty" ]]; then
     pass "gen-notes: a no-conventional-commit range prints nothing (caller falls back)"
   else fail "gen-notes: expected empty output for a non-conventional range"; fi
+
+  # The section order now lives in TWO places: cliff.toml's `<N>` sort keys (which the
+  # template strips back out) and this script's ORDER array. They must not drift — that is
+  # the whole point of the `<N>` keys, which exist only to make git-cliff emit the twin's
+  # order instead of Tera's alphabetical group_by.
+  #
+  # SORT, don't read in file order. What git-cliff renders is the LEXICAL order of the full
+  # group strings — Tera's group_by sorts by the attribute value — so the position of a line
+  # in commit_parsers is not what decides anything. Reading the file top-to-bottom would pass
+  # happily while `<0>` and `<1>` were swapped in place, i.e. while cliff emitted Bug Fixes
+  # ahead of Features again. So: extract each group WITH its key, sort exactly as Tera does
+  # (LC_ALL=C for a byte-order sort that does not drift with the runner's locale), and only
+  # then strip the keys. The result is the effective output order, which is the thing that
+  # has to match ORDER. (chore(release) is skip=true and contributes no group.)
+  #
+  # `sed -E`, not BRE `\+`: BSD sed has no `\+`, so the BRE form silently matched nothing on
+  # macOS and this guard reported a phantom drift against an empty string. -E is understood
+  # by both GNU and BSD sed.
+  if [[ -f "$HERE/cliff.toml" ]]; then
+    _cliff_order="$(sed -n -E 's/.*group = "(<[0-9]+> [^"]*)".*/\1/p' "$HERE/cliff.toml" |
+      LC_ALL=C sort | sed -E 's/^<[0-9]+> //' | paste -sd'|' -)"
+    _twin_order="$(sed -n -E 's/.*split\("([^"]*)", ORDER.*/\1/p' "$GRN")"
+    if [[ -n "$_cliff_order" && "$_cliff_order" == "$_twin_order" ]]; then
+      pass "gen-notes: group order matches cliff.toml's <N> sort keys"
+    else
+      fail "gen-notes: group order drifted — cliff.toml '$_cliff_order' vs twin '$_twin_order'"
+    fi
+
+    # The `<N>` keys are single-digit, so they sort correctly only up to ten groups:
+    # "<10>" would land between "<1>" and "<2>" and silently reorder the notes.
+    _cliff_groups="$(grep -cE 'group = "<[0-9]+>' "$HERE/cliff.toml")"
+    if ((_cliff_groups <= 10)) && ! grep -q 'group = "<[0-9][0-9]' "$HERE/cliff.toml"; then
+      pass "gen-notes: cliff.toml stays within the single-digit <N> sort ceiling ($_cliff_groups/10)"
+    else
+      fail "gen-notes: cliff.toml has >10 groups or a two-digit <N> — the sort key needs widening"
+    fi
+  else
+    skip "gen-notes: cliff.toml order cross-check (no cliff.toml)"
+  fi
 else
   skip "release-notes drafting (git unavailable)"
 fi
