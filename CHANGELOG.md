@@ -36,6 +36,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   would need two-digit keys throughout, since `<10>` sorts between `<1>` and `<2>`. Both
   assertions were negative-tested (perturb the config, watch them fail) rather than assumed.
 
+  The order guard **sorts before comparing**, which is the whole of its value: git-cliff
+  renders the lexical order of the full group strings, so a line's position in
+  `commit_parsers` decides nothing. A guard that read the file top-to-bottom would have
+  passed while `<0>` and `<1>` were swapped in place — and git-cliff 2.13.1 confirms that
+  swap really does put Bug Fixes back ahead of Features. It now extracts each group with its
+  key, sorts as Tera does (`LC_ALL=C`, so the runner's locale cannot move it), and strips the
+  keys only afterwards, so what is compared is the effective output order.
+
   **A boundary this does _not_ cross, now documented in the script header:** given a range
   that spans an intermediate tag, git-cliff segments its output per release — `v4.7.0..v4.9.0`
   renders three blocks with repeating headings — while the twin flattens the range into one
