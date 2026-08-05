@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.9.2] - 2026-08-05
+
 ### Changed
 
 - **`RELEASE-RUNBOOK.md` §1.1 now branches _before_ staging, so a cut never touches `main`.**
