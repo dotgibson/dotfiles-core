@@ -57,7 +57,29 @@ notes="$(
       g = group(msg)
       if (g == "") next
       sha = substr($1, 1, 7)                                 # cliff: commit.id | truncate(7) — always 7
+      # Strip the Conventional-Commit prefix before rendering. cliff.toml sets
+      # conventional_commits = true, which makes git-cliff parse each subject and expose
+      # `commit.message` as the DESCRIPTION alone — type, scope and the breaking `!` are
+      # parsed off into commit.scope/commit.breaking. So `{{ commit.message | upper_first }}`
+      # renders "Point core-freshness at the released tag", never "Fix(ci): point …".
+      # Keeping the prefix here both repeated the group heading ("Bug Fixes" → "Fix(ci):")
+      # and upper-cased the type into a non-Conventional "Fix(ci):". group() has already
+      # proven the subject starts with a known type + delimiter, so this strip cannot eat
+      # ordinary prose. A subject that is nothing BUT a prefix ("refactor:") is DROPPED, not
+      # rendered as an empty bullet: git-conventional requires a description, so git-cliff
+      # fails to parse it and filter_unconventional discards it — verified against the real
+      # binary (2.13.1), which emits no Refactoring group at all for that input.
+      breaking = (msg ~ /^[a-z]+(\([^)]*\))?!:/)
+      sub(/^[a-z]+(\([^)]*\))?!?:[ \t]*/, "", msg)
+      if (msg == "") next
       msg = toupper(substr(msg, 1, 1)) substr(msg, 2)        # cliff: message | upper_first
+      # DELIBERATE DIVERGENCE from cliff.toml, and the only one: git-cliff would render a
+      # breaking commit identically to a normal one, because this template interpolates only
+      # `commit.message` and never `commit.breaking`. Dropping the prefix is what would make
+      # that invisible here too — `feat!: …` and `feat: …` collapse to the same bullet — and a
+      # release-notes draft is the one document where a breaking change must not be silent
+      # (it is what drives the SemVer major bump). Mark it instead of losing it.
+      if (breaking) msg = "**BREAKING** " msg
       bucket[g] = bucket[g] "- " msg " (" sha ")\n"
       seen[g] = 1
     }
