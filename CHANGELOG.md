@@ -13,6 +13,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Documentation
+
+- **`aliases.md` now documents the three aliases it had been silently missing.** `web`
+  (→ `$BROWSER_BIN`, `zsh/20-aliases.zsh:65`), `uvr` (→ `uv run`) and `uvs` (→ `uv sync`)
+  (:144-145) have all shipped for a while, tool-gated like every other modern-CLI swap, but
+  none appeared in the alias reference — so the doc undersold what a box actually gets. `web`
+  joins _Editors & Launchers_ with a note on the `w3m → lynx → links2 → links → elinks`
+  resolution order and on why `$BROWSER` is exported only on a headless box; `uvr`/`uvs` get
+  their own **uv (Python)** section mirroring how the `jj` aliases are documented.
+- **`PORTING-MATRIX.md` now has a `gping` row, so the `ping` alias has an install path.**
+  `zsh/00-tools.zsh` has set `HAVE_GPING` and `zsh/20-aliases.zsh` has aliased `ping`→`gping`
+  since v3, and both `aliases.md` and `PARITY.md` advertise it — but the matrix listed no
+  package for any distro, making it the one aliased tool with no documented way to get it.
+  New footnote ¹⁹ records what the audit turned up: gping is in **no** repo's
+  `install/packages.txt` and no `bootstrap.sh`, so like `jnv`¹⁷ it is **detect-only** — the row
+  is the path for when you install it yourself. Packaging verified per-distro rather than
+  assumed: Arch `extra`, Alpine `community` (native musl), Debian/Kali apt (source
+  `rust-gping`, **binary** `gping`), Homebrew, nixpkgs; Gentoo is GURU-only
+  (`net-analyzer/gping`, added to footnote ¹²); openSUSE Leap 15.6 ships 1.16.1 in `main/oss`
+  while Tumbleweed builds from Factory, so that cell says verify-then-fall-back rather than
+  claiming a binary this fleet has not confirmed.
+
+  Reported by the 2026-08-04 `/doc-audit` sweep (S1, S2) — see #328.
+
 ## [v4.7.1] - 2026-08-03
 
 ### Fixed

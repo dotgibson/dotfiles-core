@@ -63,6 +63,7 @@ _Repo status_ at the bottom).
 | gum              | `gum`                  | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵         |
 | xh               | `xh`                   | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`            |
 | doggo            | `doggo`                | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³             |
+| gping¹⁹          | `gping`                | `gping`¹⁹    | `gping`           | GURU¹²·¹⁹                  | `gping`¹⁹       |
 | carapace         | AUR³                   | go³          | `carapace`        | `app-shells/carapace`¹²    | go³             |
 | op (1Password)¹³ | AUR                    | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt      |
 | hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`     |
@@ -137,7 +138,7 @@ so it shadows nothing; prefer the `ast-grep` binary name over `sg` (which can co
 (`community` — a musl build, so the outlier is covered) and Homebrew; elsewhere via
 `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert without the binary — nothing depends on it.
 ¹² Gentoo **GURU overlay** (`sd`, `glow`, `gum`, `xh`, `carapace`, `1password-cli`, `tealdeer`,
-`yazi`, `lazygit`, `direnv`): not in the main `::gentoo` tree. Enable once with `eselect
+`yazi`, `lazygit`, `direnv`, `gping`): not in the main `::gentoo` tree. Enable once with `eselect
 repository enable guru && emaint sync -r guru`, then `emerge` the atom. bootstrap.sh does this
 best-effort, per-atom (one masked atom doesn't block the rest), in its `guru_install` pass —
 which runs AFTER the main-tree emerge, so these must not sit in the main `packages.txt` blocks
@@ -195,6 +196,20 @@ promised a fallback that never existed and the package name above is their only 
 path. Moving any of these into `install/packages.txt` is a separate judgment call — it
 trades upstream-latest for the distro build — and is deliberately **not** done here; for
 `ouch`/`ast-grep` it is the _only_ way to get them installed without doing it by hand.
+
+¹⁹ gping: the `ping` replacement — Core aliases `ping`→`gping` (`HAVE_GPING`-guarded in
+`zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only,
+like `jnv`¹⁷: gping is in NO repo's `install/packages.txt` and no `bootstrap.sh` installs it**,
+so the alias only lights up once you install it yourself — this row exists so there is a
+documented path when you do. (`aliases.md` and `PARITY.md` have advertised the alias since
+v3; the matrix row is what was missing.) A **Rust** CLI → `cargo install gping` anywhere
+unpackaged. Packaged: Arch `extra`, Alpine `community` (a native musl build, so the outlier is
+covered), Homebrew (`gping`), nixpkgs, and Debian/Kali apt — where the **source** package is
+`rust-gping` but the **binary** you install is plain `gping` (Debian trixie 1.19.0, sid/Kali
+rolling 1.20.4). openSUSE: **Leap 15.6** carries it first-class in `main/oss` but well behind
+(1.16.1); **Tumbleweed** builds it from Factory, so verify with `zypper se gping` and fall back
+to cargo if your snapshot lacks it. Gentoo is **GURU-only** (`net-analyzer/gping`, see ¹²) —
+there is no main-tree atom. Inert without the binary; nothing depends on it.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
