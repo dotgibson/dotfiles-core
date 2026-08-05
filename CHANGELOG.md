@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.10.0] - 2026-08-05
+
 ### Fixed
 
 - **`make release-notes` emitted its sections alphabetically, so Bug Fixes led and Features
