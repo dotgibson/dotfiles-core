@@ -233,9 +233,16 @@ it early is worth more than doing it last), then the rest.
 
 Whatever the launcher, `zsh/00-tools.zsh` probes the socket once before the first prompt and
 forces the daemon **off for that shell** when nothing is listening: an absent — or stale,
-i.e. left behind by a crashed daemon — socket otherwise blocks atuin's client on every
-command (upstream `atuinsh/atuin#3382`). So a dead daemon costs the lock relief, never the
-terminal. `core-doctor` shows the degraded state; nothing else says a word.
+i.e. left behind by a crashed daemon — socket otherwise costs atuin a failed connect on every
+command. So a dead daemon costs the lock relief, not every prompt. `core-doctor` shows the
+degraded state; nothing else says a word.
+
+The probe's limit, because it decides which unit you should install: it cannot tell an
+**accept-but-silent** socket from a healthy one. systemd **socket activation** produces
+exactly that state when the daemon behind the socket is dead — the socket keeps accepting,
+the client waits, and that is the indefinite freeze in `atuinsh/atuin#3382`. Prefer the plain
+always-running service above; if you do use a `.socket` unit with `systemd_socket = true`,
+you are outside what Core can protect.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

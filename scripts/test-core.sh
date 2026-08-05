@@ -2094,9 +2094,10 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
 # Two things were ungated here. (1) ATUIN_NOBIND=true is what keeps atuin from grabbing
 # the keys 40-bindings.zsh/35-fzf.zsh own (Ctrl+E is OURS, Ctrl+R stays on the fzf widget),
 # and it doubles as the _cache_eval salt — yet nothing asserted it. (2) The daemon guard:
-# with the daemon enabled and its socket absent or STALE, atuin's client blocks and every
-# shell command freezes (atuinsh/atuin#3382), so Core probes the socket once before the
-# first prompt and forces the daemon off for that shell. Both are hermetic — no atuin
+# with the daemon enabled and its socket absent or STALE, every atuin call pays a failed
+# connect, so Core probes the socket once before the first prompt and forces the daemon off
+# for that shell. Case (d) below pins the OTHER half of that contract — the accept-but-silent
+# state it deliberately does not claim to catch. Both are hermetic — no atuin
 # binary needed: the guard is defined unconditionally (only its precmd registration is
 # HAVE_ATUIN-gated), and a real listener comes from zsh's own zsocket.
 ATBIN="$SANDBOX/atbin"
@@ -2129,7 +2130,7 @@ ucheck "atuin daemon: no precmd hook on a box without atuin (fully inert)" \
 ucheck "atuin daemon: guard is a no-op when the daemon was never opted into" \
   "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ -z \${ATUIN_DAEMON__ENABLED:-} && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]"
 # (b) OPTED IN, socket unreachable — degrade to direct SQLite writes instead of hanging.
-ucheck "atuin daemon: an unreachable socket degrades the daemon off (never wedges the shell)" \
+ucheck "atuin daemon: an unreachable socket degrades the daemon off (no failed connect per command)" \
   "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == false && -n \$_CORE_ATUIN_DAEMON_DEGRADED ]]" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
 # (c) A STALE socket FILE (bound then closed — no listener) is the case a plain -S test
@@ -2137,9 +2138,13 @@ ucheck "atuin daemon: an unreachable socket degrades the daemon off (never wedge
 ucheck "atuin daemon: a stale socket file (no listener) degrades too, not just an absent one" \
   "rm -f '$SANDBOX/stale-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/stale-atuin.sock'; exec {REPLY}>&-; source '$TOOLS_FILE'; [[ -S '$SANDBOX/stale-atuin.sock' ]] && { _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == false ]] }" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/stale-atuin.sock"
-# (d) A LIVE socket must be left alone — the guard exists to catch a dead daemon, not to
-#     second-guess a working one. zsocket -l gives a real listener with no atuin involved.
-ucheck "atuin daemon: a live socket keeps the daemon enabled" \
+# (d) A LISTENING socket must be left alone — the guard exists to catch a dead daemon, not
+#     to second-guess a working one. zsocket -l gives a real listener with no atuin involved.
+#     Note what this listener also IS: accept-but-silent, i.e. the exact blind spot named in
+#     00-tools.zsh (a socket-activated socket in front of a dead daemon looks like this). The
+#     assertion therefore pins the guard's DOCUMENTED scope in both directions — it must not
+#     claim to catch a state a connect cannot distinguish.
+ucheck "atuin daemon: a listening socket keeps the daemon enabled (accept-but-silent is out of scope)" \
   "rm -f '$SANDBOX/live-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/live-atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/live-atuin.sock"
 # (e) AUTOSTART — atuin supervises its own daemon there (the no-systemd answer for

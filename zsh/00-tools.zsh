@@ -216,13 +216,22 @@ fi
 # ATUIN_DAEMON__ENABLED=true, plus ATUIN_DAEMON__AUTOSTART=true where nothing else
 # supervises the daemon (Alpine/macOS). The LAUNCHER is OS-native and lives there too.
 #
-# What this guards: with the daemon enabled and its socket absent — or STALE, i.e. the
-# file survived a crashed daemon — the client blocks, and upstream (atuinsh/atuin#3382)
-# reports shells freezing on EVERY command until Ctrl-C. So probe the socket once and,
-# when nothing is listening, force the daemon off for THIS shell; atuin then writes
-# SQLite directly. Silent by design: a missing daemon must cost latency, never a wedged
-# terminal. (A daemon that is listening but WEDGED still accepts the connect — no cheap
-# probe can catch that; `autostart = true`, atuin's own health-checking, is the answer.)
+# What this guards, precisely — the distinction matters, so no overclaiming: with the
+# daemon enabled and its socket ABSENT or STALE (the file survived a crashed daemon,
+# nothing listening), every atuin call pays a failed connect and an error, on every
+# command. So probe once and, when nothing is listening, force the daemon off for THIS
+# shell; atuin then writes SQLite directly. Silent by design: a missing daemon must cost
+# latency, never noise on every prompt.
+#
+# What it does NOT guard: an ACCEPT-BUT-SILENT socket — something is listening (systemd
+# socket activation holding the socket while the daemon behind it is dead or wedged) and
+# the connect succeeds, so no cheap shell-side probe can tell it from a healthy daemon.
+# That is the shape of upstream atuinsh/atuin#3382's indefinite freeze, and it is why
+# core/atuin/config.toml recommends the plain always-running unit over the .socket
+# variant, and `autostart = true` (atuin health-checks its own daemon) where there is no
+# service manager. Proving liveness would mean a bounded application-level request on the
+# startup path — a fork and a timeout per shell, which this file exists to avoid.
+#
 # It is a startup probe, NOT a watchdog: a daemon that dies later still costs that shell.
 # Re-probing every precmd would put a connect(2) in the prompt path, which is the trade
 # this repo's startup-cost discipline says no to.
@@ -253,11 +262,16 @@ _core_atuin_daemon_guard() {
   # on success it hands back an open fd in $REPLY that we close right away. REPLY is
   # LOCAL: zsocket writes it, and clobbering the caller's REPLY from a precmd hook would
   # be a nasty little cross-talk bug. `--` because the path comes from the environment.
+  #
+  # The daemon stays on ONLY when a connect actually succeeded. If zsh/net/socket is
+  # missing (it ships with zsh everywhere the fleet runs, so this is near-dead code), we
+  # fall through to the disable path rather than settling for `[[ -S $sock ]]` — trusting
+  # the existence test would leave the daemon enabled on exactly the stale socket this
+  # guard exists to catch. Cost of being wrong that way is the lock relief, and
+  # core-doctor says so; cost of the other way is the failure mode itself.
   local REPLY
   if zmodload -F zsh/net/socket +b:zsocket 2>/dev/null; then
     zsocket -- "$sock" 2>/dev/null && { exec {REPLY}>&-; return 0 }
-  elif [[ -S $sock ]]; then
-    return 0                                                   # no module → existence is all we can prove
   fi
   export ATUIN_DAEMON__ENABLED=false                           # degrade to direct SQLite writes
   typeset -g _CORE_ATUIN_DAEMON_DEGRADED=1                     # core-doctor reports it; the shell stays quiet

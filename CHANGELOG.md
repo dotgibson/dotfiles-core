@@ -32,16 +32,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `examples/atuin-daemon.service` is the ready-to-copy unit. Fedora first, Alpine second.
 
   **`00-tools.zsh` gains `_core_atuin_daemon_guard`** — a one-shot precmd hook that probes the
-  daemon socket and forces the daemon off for that shell when nothing is listening. Upstream
-  (`atuinsh/atuin#3382`) reports every shell command freezing indefinitely when the daemon is
-  enabled and its socket is absent **or stale** (the file survives a crashed daemon), so this
-  is the difference between "the daemon is down" and "the terminal is wedged". It connects
-  rather than stat-ing, because a stale socket file passes `[[ -S … ]]` — that is precisely
-  the hanging case. It runs at the first prompt (the OS/host fragments load after `00-tools`),
-  stands down under `autostart` (atuin health-checks its own daemon there), unhooks itself
-  after one run, and says nothing; `core-doctor` reports the degraded state. The `atuin init
-  zsh` call is deliberately **not** gated — that script is daemon-agnostic, so gating it would
-  only cost the Ctrl+E TUI.
+  daemon socket and forces the daemon off for that shell when nothing is listening, so an
+  absent or **stale** socket (the file survives a crashed daemon) costs the lock relief
+  instead of a failed connect and an error on every command. It connects rather than
+  stat-ing, because a stale socket file passes `[[ -S … ]]`; equally, when `zsh/net/socket`
+  is unavailable it degrades rather than fall back to that same existence test — the daemon
+  stays on only where a connect actually succeeded. It runs at the first prompt (the OS/host
+  fragments load after `00-tools`), stands down under `autostart` (atuin health-checks its
+  own daemon there), unhooks itself after one run, and says nothing; `core-doctor` reports
+  the degraded state. Scope, stated plainly: it cannot detect an **accept-but-silent** socket
+  — systemd socket activation holding the socket while the daemon behind it is dead — which
+  is the shape of the indefinite freeze in `atuinsh/atuin#3382`; no cheap shell-side probe
+  can, which is why the shipped guidance prefers the plain always-running unit over the
+  `.socket` variant. The `atuin init zsh` call is deliberately **not** gated — that script is
+  daemon-agnostic, so gating it would only cost the Ctrl+E TUI.
 
   Other settings in the new config are explicit versions of what Core already asserts
   elsewhere: `enter_accept = false` (the TUI hands the command back for review — the same
@@ -49,9 +53,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   zsh-vi-mode), `secrets_filter` + a `history_filter` mirroring `HISTORY_IGNORE` — which
   `15-history.zsh` has promised atuin does since it was written, with nowhere to put it — and
   `update_check = false` (Core owns update nudges; no second network call on the hot path).
-  Account/sync settings are deliberately absent. `scripts/test-core.sh` gains seven assertions
-  (six for the guard, plus the `ATUIN_NOBIND` export that was never pinned), all hermetic —
-  the live/stale sockets come from zsh's own `zsocket`, so no atuin binary is needed.
+  Account/sync settings are deliberately absent. `scripts/test-core.sh` gains **ten** atuin
+  assertions (six for the guard, two for its registration/inertness, and the `ATUIN_NOBIND`
+  export + `_cache_eval --salt` contract that were never pinned) plus two `ci-classify` rows,
+  all hermetic — the live and stale sockets come from zsh's own `zsocket`, so no atuin binary
+  is needed.
 
   **On upgrade — read this one.** atuin writes its own `~/.config/atuin/config.toml` on first
   run, so unlike jujutsu/lazygit this is the Core link that will routinely find a **real file**

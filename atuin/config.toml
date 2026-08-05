@@ -48,15 +48,19 @@ secrets_filter = true
 
 # The atuin-side mirror of HISTORY_IGNORE in zsh/15-history.zsh — that file's comment
 # already promises "atuin has its own richer filtering (history_filter in config.toml)",
-# and until now that promise had nowhere to live. These are Rust regexes (not zsh globs),
-# matched against the command line; `(?i)` makes each one case-insensitive. Operator
-# habit still wins over any list: prefix anything spicy with a space (HIST_IGNORE_SPACE)
-# and it lands in neither history.
+# and until now that promise had nowhere to live. These are Rust regexes (not zsh globs)
+# matched against the command line, and they mirror that pattern ENTRY FOR ENTRY, including
+# its case sensitivity: the last group is bare (an `API_KEY` or `SECRET` anywhere in the
+# line is enough), while PASSWORD/TOKEN/ACCESS_KEY are the assignment forms only — a
+# case-insensitive bare `secret` would swallow ordinary work like `kubectl get secret`.
+# If you change one list, change the other. Operator habit still beats both: prefix
+# anything spicy with a space (HIST_IGNORE_SPACE) and it lands in neither history.
 history_filter = [
-  "(?i)^pass (show|read|insert) ",
-  "(?i)^op read",
-  "(?i)--(password|token|api-key)[ =]",
-  "(?i)(PASSWORD|TOKEN|API_?KEY|SECRET|ACCESS_KEY)=",
+  "^pass (show|read|insert) ",
+  "^op read",
+  "--(password|token|api-key)[ =]",
+  "(PASSWORD|TOKEN|ACCESS_KEY)=",
+  "(API_KEY|APIKEY|SECRET)",
 ]
 
 # Core owns update nudges (`up` + the once/day check in zsh/60-update.zsh), and this
@@ -79,9 +83,12 @@ update_check = false
 #                     daemon (autostart is NOT compatible with systemd_socket).
 #   Windows         — out of scope; dotfiles-Windows vendors no core/.
 #
-# Safety net: zsh/00-tools.zsh probes the socket once, before the first prompt, and
-# forces the daemon OFF for that shell when nothing is listening — an absent or STALE
-# socket otherwise blocks the client on every command (atuinsh/atuin#3382).
+# Safety net: zsh/00-tools.zsh probes the socket once, before the first prompt, and forces
+# the daemon OFF for that shell when nothing is listening — an absent or stale socket
+# otherwise costs a failed connect on every command. It cannot detect an ACCEPT-BUT-SILENT
+# socket, which is the shape of the indefinite freeze in atuinsh/atuin#3382 — so prefer the
+# plain always-running unit over systemd SOCKET ACTIVATION: activation keeps the socket
+# accepting while the daemon behind it is dead, which is precisely the undetectable state.
 [daemon]
 enabled = false   # flip per machine with ATUIN_DAEMON__ENABLED=true, never by editing this file
 autostart = false # let atuin start/health-check the daemon itself (the no-systemd answer)
