@@ -47,7 +47,7 @@ _Repo status_ at the bottom).
 | zsh              | `zsh`                  | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`           |
 | tmux             | `tmux`                 | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`          |
 | starship         | `starship`             | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³         |
-| atuin            | `atuin`                | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³        |
+| atuin²⁰          | `atuin`                | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³        |
 | yazi             | `yazi`                 | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³          |
 | tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | `tree-sitter-cli` | cargo³                     | `mise`/`cargo`³ |
 | jq               | `jq`                   | `jq`         | `jq`              | `app-misc/jq`              | `jq`            |
@@ -210,6 +210,32 @@ rolling 1.20.4). openSUSE: **Leap 15.6** carries it first-class in `main/oss` bu
 (1.16.1); **Tumbleweed** builds it from Factory, so verify with `zypper se gping` and fall back
 to cargo if your snapshot lacks it. Gentoo is **GURU-only** (`net-analyzer/gping`, see ¹²) —
 there is no main-tree atom. Inert without the binary; nothing depends on it.
+
+²⁰ atuin **daemon mode** — the one part of the atuin story that is NOT Core's to decide.
+Core ships `atuin/config.toml` (symlinked to `~/.config/atuin/config.toml`) with the
+`[daemon]` block **off**; the daemon owns the SQLite writes so shells stop contending for
+the DB lock, which is where atuin's tail latency comes from on a busy multi-pane box. What
+differs per machine is how the daemon gets **launched**, so that half lives in the OS repo:
+
+| Machine | How the daemon runs | What the OS layer exports |
+| --- | --- | --- |
+| Fedora · Arch · openSUSE · Gentoo (systemd) · Kali · Defense | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true` |
+| Alpine (musl, no systemd) | atuin supervises its own daemon — no unit, no service manager, nothing to install | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| macOS | same as Alpine: `autostart` beats hand-writing a launchd plist, and `XDG_RUNTIME_DIR` is unset there so the socket lands in the data dir — which atuin resolves itself | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| Windows | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell | — |
+
+The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
+config: Core is vendored identically to every repo, so a per-machine value there would be
+wrong on the other seven. `autostart` is mutually exclusive with `systemd_socket = true` —
+pick the unit or pick autostart, not both. Adoption order is Fedora first (the template the
+Linux repos are stamped from), Alpine second (it is the design's real constraint, so proving
+it early is worth more than doing it last), then the rest.
+
+Whatever the launcher, `zsh/00-tools.zsh` probes the socket once before the first prompt and
+forces the daemon **off for that shell** when nothing is listening: an absent — or stale,
+i.e. left behind by a crashed daemon — socket otherwise blocks atuin's client on every
+command (upstream `atuinsh/atuin#3382`). So a dead daemon costs the lock relief, never the
+terminal. `core-doctor` shows the degraded state; nothing else says a word.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

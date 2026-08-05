@@ -13,6 +13,54 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **atuin gets a Core config, and its daemon becomes an OPT-IN capability (#335).** Core has
+  initialised atuin since v3 (`zsh/00-tools.zsh`) while shipping **no atuin config at all** —
+  every setting was whatever atuin defaulted to that release. New `atuin/config.toml`
+  (symlinked to `~/.config/atuin/config.toml`, the default path, in `core.manifest`) closes
+  that, and carries the `[daemon]` block the adoption is about.
+
+  **The daemon ships OFF.** atuin's daemon owns the SQLite writes so shells stop contending
+  for the DB lock — the tail latency a busy multi-pane box pays — but a shell that starts a
+  background daemon as a side effect of being opened is a behaviour change on eight machines.
+  A machine opts in from its own OS layer with atuin's native env overrides
+  (`ATUIN_DAEMON__ENABLED=true`, plus `ATUIN_DAEMON__AUTOSTART=true` where nothing else
+  supervises it), never by editing the vendored Core file. The **launcher is OS-native** and
+  stays in the OS repos: `PORTING-MATRIX.md` footnote 20 gives the per-machine table
+  (systemd user unit · Alpine/macOS via atuin's own autostart · Windows out of scope) and
+  `examples/atuin-daemon.service` is the ready-to-copy unit. Fedora first, Alpine second.
+
+  **`00-tools.zsh` gains `_core_atuin_daemon_guard`** — a one-shot precmd hook that probes the
+  daemon socket and forces the daemon off for that shell when nothing is listening. Upstream
+  (`atuinsh/atuin#3382`) reports every shell command freezing indefinitely when the daemon is
+  enabled and its socket is absent **or stale** (the file survives a crashed daemon), so this
+  is the difference between "the daemon is down" and "the terminal is wedged". It connects
+  rather than stat-ing, because a stale socket file passes `[[ -S … ]]` — that is precisely
+  the hanging case. It runs at the first prompt (the OS/host fragments load after `00-tools`),
+  stands down under `autostart` (atuin health-checks its own daemon there), unhooks itself
+  after one run, and says nothing; `core-doctor` reports the degraded state. The `atuin init
+  zsh` call is deliberately **not** gated — that script is daemon-agnostic, so gating it would
+  only cost the Ctrl+E TUI.
+
+  Other settings in the new config are explicit versions of what Core already asserts
+  elsewhere: `enter_accept = false` (the TUI hands the command back for review — the same
+  contract as `HIST_VERIFY` in `15-history.zsh`), `keymap_mode = "auto"` (the fleet runs
+  zsh-vi-mode), `secrets_filter` + a `history_filter` mirroring `HISTORY_IGNORE` — which
+  `15-history.zsh` has promised atuin does since it was written, with nowhere to put it — and
+  `update_check = false` (Core owns update nudges; no second network call on the hot path).
+  Account/sync settings are deliberately absent. `scripts/test-core.sh` gains seven assertions
+  (six for the guard, plus the `ATUIN_NOBIND` export that was never pinned), all hermetic —
+  the live/stale sockets come from zsh's own `zsocket`, so no atuin binary is needed.
+
+  **On upgrade — read this one.** atuin writes its own `~/.config/atuin/config.toml` on first
+  run, so unlike jujutsu/lazygit this is the Core link that will routinely find a **real file**
+  on a box that has already used atuin. Bootstrap moves it to `…config.toml.pre-dotfiles.<epoch>`
+  before linking (a pre-existing **symlink** is replaced without a backup — that is `blib_link`'s
+  long-standing behaviour, not new here). atuin has no `include` directive, so port anything you
+  had customised — `sync_address`, `auto_sync`, `filter_mode` — to `ATUIN_*` env overrides in your
+  OS or `99-local` layer rather than editing the vendored file.
+
 ### Changed
 
 - **Audited every pin in `scripts/tool-versions.env` and bumped five.** This is the class

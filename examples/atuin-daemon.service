@@ -1,0 +1,39 @@
+# examples/atuin-daemon.service — systemd USER unit for atuin's history daemon.
+#
+# Copy, do not symlink (this file is a reference, not Core-managed wiring):
+#     mkdir -p ~/.config/systemd/user
+#     cp core/examples/atuin-daemon.service ~/.config/systemd/user/
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now atuin-daemon
+#     loginctl enable-linger "$USER"      # optional: keep it alive outside a login session
+#
+# Then tell atuin to USE it, from the OS layer (os/<os>.zsh — never from Core's
+# atuin/config.toml, which is identical on every machine):
+#     export ATUIN_DAEMON__ENABLED=true
+#
+# This is the systemd half of the story only. On Alpine and macOS there is no unit at all:
+# export ATUIN_DAEMON__ENABLED=true together with ATUIN_DAEMON__AUTOSTART=true and let atuin
+# start and health-check the daemon itself. See footnote 20 in PORTING-MATRIX.md.
+#
+# Socket-activation variant: add an atuin-daemon.socket with ListenStream=%t/atuin.sock,
+# enable THAT instead of this service, and set systemd_socket = true. It buys on-demand
+# start; it is mutually exclusive with autostart, and the plain always-running service
+# below is the simpler default.
+
+[Unit]
+Description=atuin shell-history daemon
+Documentation=https://docs.atuin.sh/reference/daemon/
+
+[Service]
+# `atuin daemon` runs in the foreground and is its own supervisor target. %h/.local/bin is
+# where the fleet's bootstrap puts binary-distributed tools (the same place starship/mise/
+# carapace land); on a distro that PACKAGES atuin, point this at /usr/bin/atuin instead —
+# systemd needs the absolute path, and a user unit does not inherit your shell PATH.
+ExecStart=%h/.local/bin/atuin daemon
+Restart=on-failure
+RestartSec=3
+# The daemon exists to remove SQLite lock contention, not to add it back: one instance.
+KillMode=mixed
+
+[Install]
+WantedBy=default.target
