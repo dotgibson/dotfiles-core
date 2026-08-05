@@ -72,7 +72,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   | sh` — because atuin is not reliably packaged on Fedora. A user unit inherits none of your
   shell PATH, so `ExecStart=/bin/sh -c 'exec atuin daemon'` would have failed **`status=127`**
   on the first box to copy it: systemd starts `/bin/sh` fine, and the shell exits 127 when
-  `exec` cannot resolve `atuin`. (The neighbouring `203/EXEC` is the *other* failure — what
+  `exec` cannot resolve `atuin`. (The neighbouring `203/EXEC` is the _other_ failure — what
   systemd reports when it cannot execute `ExecStart` itself, i.e. the hard-coded absolute path
   this unit deliberately avoids.) `%h/.atuin/bin` now leads the unit's PATH, and the comment
   names all three real locations rather than two. Found by `/doc-audit`.
