@@ -13,6 +13,41 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Audited every pin in `scripts/tool-versions.env` and bumped four.** This is the class
+  neither bot touches — `/freshness-triage` covers zsh/nvim plugin locks and dependabot PRs,
+  Renovate covers manifests, and the CLI gate pins sit in the gap between them, which is how
+  `pre-commit` drifted six minors and the Claude Code CLI thirty-seven patches behind. Audited
+  all ten against upstream:
+
+  | Pin | Was | Now | |
+  | --- | --- | --- | --- |
+  | `NVIM_VERSION` | 0.12.3 | **0.12.4** | one patch |
+  | `ACTIONLINT_VERSION` | 1.7.8 | **1.7.12** | four patches |
+  | `PRECOMMIT_VERSION` | 4.0.1 | **4.6.1** | six minors |
+  | `CLAUDE_CODE_VERSION` | 2.1.185 | **2.1.222** | the routine bots' own CLI |
+  | `SHFMT_VERSION` | 3.8.0 | 3.8.0 | **held — see below** |
+  | shellcheck · luacheck · markdownlint-cli2 · gitleaks · pre-commit-hooks | | | already current |
+
+  `NVIM_SHA256` and `ACTIONLINT_SHA256` recomputed with `make update-tool-checksums`, then
+  **cross-checked against upstream independently** rather than trusted from our own download —
+  these hashes are the supply-chain trust anchor for the whole gate toolchain, so a
+  self-computed hash proves only that the download was self-consistent. actionlint matches its
+  published `actionlint_1.7.12_checksums.txt`; neovim matches the `digest` GitHub reports for
+  the release asset. The three unbumped hashes re-derived byte-identical, which is its own
+  integrity signal. No `.pre-commit-config.yaml` change was needed — all four hook `rev:`s
+  (pre-commit-hooks, shellcheck, markdownlint-cli2, gitleaks) were already current, so the
+  audit's version-consistency section stays green.
+
+  **`shfmt` is deliberately held at 3.8.0 despite 3.13.1 being out.** Core does not gate shfmt
+  (`CONTRIBUTING.md` says so — the compact one-liner style here is exactly what shfmt would
+  expand), so this pin exists *only* to give `setup-core-tools` one verified shfmt for its
+  OS-repo consumers. Core's CI therefore cannot verify a shfmt bump at all: it would ship
+  five minor versions of formatter change, unexercised, straight into the MacBook and
+  distro/role lint workflows. That needs a run in a consumer repo first, not a green tick here
+  that proves nothing.
+
 ### Documentation
 
 - **`aliases.md` now documents the three aliases it had been silently missing.** `web`
