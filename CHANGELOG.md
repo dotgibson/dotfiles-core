@@ -13,6 +13,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Removed
+
+- **The per-repo `core-freshness` watcher is retired** — `core-freshness-call.yml` is deleted
+  here, and the seven callers plus their seven copies of `test/check-core-freshness.sh` are
+  removed in the OS repos. It answered a question that is now answered twice over, better:
+
+  - **`fleet-drift.yml`** already runs the same comparison centrally, Mondays 06:00 UTC — an
+    hour _before_ the per-repo watchers ran — against the latest **released** Core tag, failing
+    red with a summary when any repo lags. One job, whole fleet, including `dotfiles-Defense`,
+    which never had a watcher at all and so was silently unwatched by the old design.
+  - **`sync-fanout.yml`** opens a `core.lock`-bump PR in every OS repo the moment a release
+    publishes, so a weekly "you are behind" nudge restates what the bot already did and left
+    a PR for.
+
+  The watcher was also wrong for most of its life, which is what surfaced all this: it compared
+  against `refs/heads/main`, so any commit landing on Core between releases reported the whole
+  fleet behind while every repo sat on the newest release. The entry above fixed that
+  comparison; retiring the job supersedes it. The duplication it left behind — seven
+  hand-maintained copies, MacBook's already drifted from the other six — was filed as #341 and
+  is closed by this removal rather than by consolidating copies of something redundant.
+
+  Ordering matters and is worth recording: the **callers go first**. They pin
+  `uses: …/core-freshness-call.yml@v4`, so deleting the definition while a caller still
+  references it turns a retired job into a failing one. This deletion only reaches the fleet
+  when the `v4` alias next moves, by which time the callers are gone.
+
+  `core-integrity.yml` is untouched in every repo — the vendored `core/` is still verified
+  against the commit its `core.lock` pins.
+
 ### Fixed
 
 - **`core-freshness` compares against the released tag, not `main` — it had been red across the
