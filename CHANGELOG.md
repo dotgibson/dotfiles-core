@@ -42,7 +42,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   **`shfmt` is deliberately held at 3.8.0 despite 3.13.1 being out.** Core does not gate shfmt
   (`CONTRIBUTING.md` says so — the compact one-liner style here is exactly what shfmt would
-  expand), so this pin exists *only* to give `setup-core-tools` one verified shfmt for its
+  expand), so this pin exists _only_ to give `setup-core-tools` one verified shfmt for its
   OS-repo consumers. Core's CI therefore cannot verify a shfmt bump at all: it would ship
   five minor versions of formatter change, unexercised, straight into the MacBook and
   distro/role lint workflows. That needs a run in a consumer repo first, not a green tick here
