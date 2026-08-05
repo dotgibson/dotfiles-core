@@ -38,10 +38,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   script compares SHAs verbatim — an annotated alias would report false drift forever.
   `tag-release.sh` already creates it peeled (`git tag -f "$MAJOR" "$TAG^{commit}"`).
 
-  The drift remediation in the same step was wrong in the same direction and is fixed with it:
-  it printed `git subtree pull … main --squash`, i.e. it told the operator to vendor
-  **unreleased** Core into a live host. It now points at the released tag, and says first what
-  is usually true — the fan-out already opened a sync PR, so merge that.
+  The drift remediation in the same step was wrong in the same direction, and is replaced
+  rather than patched. It printed `git subtree pull … main --squash`, telling the operator to
+  vendor **unreleased** Core into a live host — but retargeting it at the tag would still have
+  left a recipe that does not work: a raw subtree pull updates `core/` and **not** `core.lock`,
+  so it leaves this very check red (it reads `core_sha`) and makes `core-integrity.sh` report
+  the freshly-synced tree as `TAMPERED`, because that compares the vendored tree against the
+  commit the lock pins. The documented repair (`make core-lock`) is not portable either —
+  `dotfiles-Alpine` has no root `Makefile` at all. `sync-core.sh` commits the subtree pull and
+  the lock together, so the step now points at the machinery instead: merge the sync PR the
+  fan-out already opened, or re-dispatch `sync-fanout` for that one repo.
 
   Reaches the fleet when the `v4` alias next moves (callers pin `@v4`), i.e. on the next release.
 

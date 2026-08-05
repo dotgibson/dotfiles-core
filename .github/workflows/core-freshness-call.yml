@@ -81,17 +81,19 @@ jobs:
                 printf '%s\n' "$out"
                 echo '```'
                 echo ""
-                echo "Normally there is nothing to do by hand: a release opens a sync PR in"
-                echo "every OS repo automatically (sync-fanout.yml). Merge that PR — this run"
-                echo "means it is still open, or the fan-out did not reach this repo."
+                echo "There is nothing to run by hand. A release opens a sync PR in every OS"
+                echo "repo automatically (sync-fanout.yml), so this run means that PR is still"
+                echo "open — merge it, then re-run ./bootstrap.sh on the host."
                 echo ""
-                echo "To pull it manually, take the RELEASED tag (never main — that vendors"
-                echo "unreleased Core into a live host), then relink:"
+                echo "If no sync PR exists, re-dispatch the fan-out for this repo instead:"
+                echo "dotfiles-core → Actions → sync-fanout → Run workflow, with the released"
+                echo "tag and this repo name."
                 echo ""
-                echo '```'
-                echo "git subtree pull --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v4 --squash"
-                echo "./bootstrap.sh --links-only"
-                echo '```'
+                echo "Deliberately NOT a raw 'git subtree pull' recipe: that updates core/ but"
+                echo "not core.lock, which leaves this very check red (it reads core_sha) AND"
+                echo "makes core-integrity.sh report the fresh subtree as TAMPERED, since it"
+                echo "compares the vendored tree against the commit the lock pins. sync-core.sh"
+                echo "commits both together; that is why the fan-out is the supported path."
               } >> "$GITHUB_STEP_SUMMARY"
               exit 1
               ;;
