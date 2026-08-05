@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.8.0] - 2026-08-05
+
 ### Added
 
 - **atuin gets a Core config, and its daemon becomes an OPT-IN capability (#335).** Core has
