@@ -70,9 +70,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   hard-codes `$HOME/.atuin/bin` (`install.sh`, `ATUIN_BIN="$HOME/.atuin/bin/atuin"`), and
   `dotfiles-Fedora`'s bootstrap installs it exactly that way — `curl -fsSL https://setup.atuin.sh
   | sh` — because atuin is not reliably packaged on Fedora. A user unit inherits none of your
-  shell PATH, so `ExecStart=/bin/sh -c 'exec atuin daemon'` would have failed `203/EXEC` on the
-  first box to copy it. `%h/.atuin/bin` now leads the unit's PATH, and the comment names all
-  three real locations rather than two. Found by `/doc-audit`.
+  shell PATH, so `ExecStart=/bin/sh -c 'exec atuin daemon'` would have failed **`status=127`**
+  on the first box to copy it: systemd starts `/bin/sh` fine, and the shell exits 127 when
+  `exec` cannot resolve `atuin`. (The neighbouring `203/EXEC` is the *other* failure — what
+  systemd reports when it cannot execute `ExecStart` itself, i.e. the hard-coded absolute path
+  this unit deliberately avoids.) `%h/.atuin/bin` now leads the unit's PATH, and the comment
+  names all three real locations rather than two. Found by `/doc-audit`.
 
   **A related gap this does _not_ close**, because it needs checking on live hardware first:
   `zsh/00-tools.zsh` adds only `~/.local/bin` to PATH, and `dotfiles-Fedora`'s `os/fedora.zsh`
