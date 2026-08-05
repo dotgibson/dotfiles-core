@@ -1139,6 +1139,33 @@ if have git; then
   if _grn_empty="$("$GRN" "$GRNR" v1.1.0 HEAD)"; [[ -z "$_grn_empty" ]]; then
     pass "gen-notes: a no-conventional-commit range prints nothing (caller falls back)"
   else fail "gen-notes: expected empty output for a non-conventional range"; fi
+
+  # The section order now lives in TWO places: cliff.toml's `<N>` sort keys (which the
+  # template strips back out) and this script's ORDER array. They must not drift — that is
+  # the whole point of the `<N>` keys, which exist only to make git-cliff emit the twin's
+  # order instead of Tera's alphabetical group_by. Compare them directly rather than
+  # trusting a comment: strip `<N> ` off each cliff.toml group in file order, and diff
+  # against ORDER. (chore(release) is skip=true and contributes no group.)
+  if [[ -f "$HERE/cliff.toml" ]]; then
+    _cliff_order="$(sed -n 's/.*group = "<[0-9]\+> \([^"]*\)".*/\1/p' "$HERE/cliff.toml" | paste -sd'|' -)"
+    _twin_order="$(sed -n 's/.*split("\([^"]*\)", ORDER.*/\1/p' "$GRN")"
+    if [[ -n "$_cliff_order" && "$_cliff_order" == "$_twin_order" ]]; then
+      pass "gen-notes: group order matches cliff.toml's <N> sort keys"
+    else
+      fail "gen-notes: group order drifted — cliff.toml '$_cliff_order' vs twin '$_twin_order'"
+    fi
+
+    # The `<N>` keys are single-digit, so they sort correctly only up to ten groups:
+    # "<10>" would land between "<1>" and "<2>" and silently reorder the notes.
+    _cliff_groups="$(grep -c 'group = "<[0-9]\+>' "$HERE/cliff.toml")"
+    if ((_cliff_groups <= 10)) && ! grep -q 'group = "<[0-9][0-9]' "$HERE/cliff.toml"; then
+      pass "gen-notes: cliff.toml stays within the single-digit <N> sort ceiling ($_cliff_groups/10)"
+    else
+      fail "gen-notes: cliff.toml has >10 groups or a two-digit <N> — the sort key needs widening"
+    fi
+  else
+    skip "gen-notes: cliff.toml order cross-check (no cliff.toml)"
+  fi
 else
   skip "release-notes drafting (git unavailable)"
 fi

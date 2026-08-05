@@ -13,6 +13,18 @@
 #   from-ref empty → all history up to <to-ref> (a repo's first release)
 # Prints the markdown body to stdout. Exit 0 WITH output on success; exit 0 with NO output
 # when the range holds no conventional commits (the caller then falls back). 2 = usage.
+#
+# WHERE THE TWIN STOPS BEING A TWIN — one axis, and it is outside both callers' contract.
+# Given a range that CROSSES AN INTERMEDIATE TAG, git-cliff segments its output per release:
+# `v4.7.0..v4.9.0` renders three blocks (one each for v4.7.1, v4.8.0, v4.9.0), so headings
+# repeat and "### Bug Fixes" can appear three times. This script has no notion of a release
+# boundary and flattens the whole range into ONE set of groups. Neither caller ever asks for
+# such a range — `make release-notes` passes the commits since the last `release vX` commit,
+# and auto-tag.sh passes <last-tag>..<new-tag> — so on every range either tool is actually
+# given, the two agree exactly (verified against git-cliff 2.13.1: identical structure,
+# group order and bullets over v4.8.0..v4.9.0 and a synthetic all-groups repo). Documented
+# rather than implemented: teaching awk to segment by tag would add real complexity for a
+# shape no caller produces. If a multi-tag range is ever wanted, use git-cliff itself.
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
