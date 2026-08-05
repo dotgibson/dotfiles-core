@@ -84,6 +84,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   whole atuin integration silently absent. The unit is fixed either way; the shell-side PATH is
   a separate question to answer on a real Fedora box.
 
+- **`PORTING-MATRIX.md` promised the atuin socket guard "whatever the launcher" — it stands
+  down on two of the eight machines.** The footnote's own table sends **Alpine and macOS** down
+  the `autostart` path, and `zsh/00-tools.zsh` deliberately returns early there: under
+  `autostart` an absent socket is the client's _cue to start one_, so disabling the daemon
+  would permanently defeat the only launcher those machines have. The guard's scope was stated
+  correctly in `atuin/config.toml`, in the code comment, and in the v4.8.0 changelog entry —
+  the matrix was the one place that overclaimed, and it is the sentence an operator reads while
+  deciding how to run the daemon. It now scopes the paragraph to the systemd-unit launcher and
+  says plainly what covers the other two. `scripts/test-core.sh` already pinned the stand-down,
+  so the code was never in doubt.
+
+- **Three surfaces said `fleet-drift` measures against Core's tip; it measures against the
+  latest released tag.** `Makefile`'s `fleet-drift` help, `RELEASE-STRATEGY.md`'s Monday-sweep
+  bullet, and `scripts/core-integrity.sh`'s "INTEGRITY companion" note all said "tip".
+  `scripts/fleet-drift.sh` has defaulted to the newest `vX.Y.Z` since it was written, and its
+  header records why: measuring against tip "reported a false 'BEHIND by N' for every
+  unreleased commit on main". This matters more than a word choice now — the entry above
+  retires the per-repo watcher _because_ `fleet-drift` compares against the released tag, so a
+  doc saying "tip" undercut the stated rationale.
+
+  Both found by `/doc-audit`.
+
 ## [v4.8.0] - 2026-08-05
 
 ### Added

@@ -69,7 +69,8 @@ vendor anything on their own. They run on two offset slots so the reviews don't
 all land at once:
 
 - **Mondays 06:00 UTC** — `freshness.yml` (rolls the zsh-plugin + nvim pins
-  forward as a PR) and `fleet-drift.yml` (flags any OS repo lagging Core's tip).
+  forward as a PR) and `fleet-drift.yml` (flags any OS repo lagging the latest **released**
+  Core tag — not `main`'s tip, which would report every unreleased commit as drift).
 - **Tuesdays 07:00 UTC** — `claude-routines.yml` (`/doc-audit` + `/tool-scout`),
   deliberately offset a day behind freshness so its findings issue lands after
   that week's pin PR.
