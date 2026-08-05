@@ -10,7 +10,9 @@
 #       uses: dotgibson/dotfiles-core/.github/workflows/core-freshness-call.yml@v3
 #
 # It runs the CALLER's own test/check-core-freshness.sh (which lives per-repo), so this
-# checks out the caller (not Core) and takes NO inputs. The script's exit contract is
+# checks out the caller (not Core) and takes NO inputs — the one thing it DOES set is
+# CORE_BRANCH (see the step below): the watcher compares against the released tag, not
+# main, because the fan-out vendors releases. The script's exit contract is
 # the interface: 0 = current/skip, 2 = behind (the nudge), 1 = hard failure. MacBook's
 # migration onto this reusable definition (replacing its pre-core.lock variant) also
 # adopts the standard `git subtree pull` remediation below, retiring the old
@@ -34,6 +36,26 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # core.lock is the fast path; keep full history so the subtree-split fallback still resolves
       - name: Check vendored core/ against upstream
+        env:
+          # Compare against the RELEASED tip, not main. The fan-out (sync-fanout.yml) vendors
+          # the commit a release TAG points at — RELEASE-STRATEGY.md's "what a host runs is a
+          # frozen version" — so comparing core.lock against refs/heads/main reported every
+          # repo as "behind" the moment ANY commit landed on Core between releases. That is
+          # not drift: the repo is on the newest release with nothing to pull. It made this
+          # scheduled run red for most of its life (the fleet failed 6/29, 7/6, 7/20, 7/27 and
+          # 8/3 identically), which is how a nudge stops being read.
+          #
+          # refs/tags/vN is the moving MAJOR alias — the same ref callers pin their `uses:` to,
+          # force-advanced to each release by tag-release.sh. So this now asks the question the
+          # watcher was always meant to ask: is there a NEWER RELEASE this repo has not taken?
+          #
+          # It must stay LIGHTWEIGHT: `ls-remote refs/tags/v4` returns a commit SHA for a
+          # lightweight tag but the TAG OBJECT's SHA for an annotated one, and the script
+          # compares SHAs verbatim — an annotated alias would report false drift forever.
+          # tag-release.sh creates it as `git tag -f "$MAJOR" "$TAG^{commit}"` (lightweight,
+          # peeled), and RELEASE-RUNBOOK.md §1.1 step 4 does the same by hand. Keep it that way.
+          # This pin moves with the major: the copy of this file on the v5 tag will say v5.
+          CORE_BRANCH: refs/tags/v4
         run: |
           # Capture output + exit code and branch on it: the script exits 0 for
           # current/skip, 2 for drift (the nudge), 1 for a hard failure (e.g. a malformed
@@ -59,10 +81,15 @@ jobs:
                 printf '%s\n' "$out"
                 echo '```'
                 echo ""
-                echo "Pull Core, then relink:"
+                echo "Normally there is nothing to do by hand: a release opens a sync PR in"
+                echo "every OS repo automatically (sync-fanout.yml). Merge that PR — this run"
+                echo "means it is still open, or the fan-out did not reach this repo."
+                echo ""
+                echo "To pull it manually, take the RELEASED tag (never main — that vendors"
+                echo "unreleased Core into a live host), then relink:"
                 echo ""
                 echo '```'
-                echo "git subtree pull --prefix=core https://github.com/dotgibson/dotfiles-core main --squash"
+                echo "git subtree pull --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v4 --squash"
                 echo "./bootstrap.sh --links-only"
                 echo '```'
               } >> "$GITHUB_STEP_SUMMARY"

@@ -13,6 +13,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`core-freshness` compares against the released tag, not `main` — it had been red across the
+  whole fleet for most of its life.** The consumer-side watcher took each repo's `core.lock`
+  and compared it, by strict equality, against `refs/heads/main` of dotfiles-core. But the
+  fan-out vendors **releases**: `sync-fanout.yml` pins every sync PR to the commit a release
+  tag points at, and `RELEASE-STRATEGY.md` is explicit that what a host runs is a frozen
+  version. So the instant any commit landed on Core between releases, every OS repo was
+  reported "behind" while sitting on the newest release with nothing to pull. Not drift — a
+  false alarm, and a weekly one: MacBook and Fedora failed the identical scheduled runs on
+  2026-06-29, 07-06, 07-20, 07-27 and 08-03, with a single green week (07-13) where a sync
+  happened to land near main's tip. Five months of red is how a nudge stops being read.
+
+  The watcher now runs with `CORE_BRANCH=refs/tags/v4` — the moving MAJOR alias, the same ref
+  callers pin their `uses:` to, force-advanced to each release by `tag-release.sh`. That asks
+  the question it was always meant to ask: **is there a newer RELEASE this repo has not taken?**
+  Verified against the live fleet: `ls-remote refs/tags/v4` resolves to `84c632b`, byte-identical
+  to the `core_sha` every repo's `core.lock` now records.
+
+  The alias must stay **lightweight**, and the comment says so at the point of use: `ls-remote`
+  returns a commit SHA for a lightweight tag but the **tag object's** SHA for an annotated one
+  (`refs/tags/v4.8.0` → `69901b3`, which matches no `core.lock` anywhere), and the per-repo
+  script compares SHAs verbatim — an annotated alias would report false drift forever.
+  `tag-release.sh` already creates it peeled (`git tag -f "$MAJOR" "$TAG^{commit}"`).
+
+  The drift remediation in the same step was wrong in the same direction and is fixed with it:
+  it printed `git subtree pull … main --squash`, i.e. it told the operator to vendor
+  **unreleased** Core into a live host. It now points at the released tag, and says first what
+  is usually true — the fan-out already opened a sync PR, so merge that.
+
+  Reaches the fleet when the `v4` alias next moves (callers pin `@v4`), i.e. on the next release.
+
 ## [v4.8.0] - 2026-08-05
 
 ### Added
