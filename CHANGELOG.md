@@ -15,7 +15,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
-- **Audited every pin in `scripts/tool-versions.env` and bumped four.** This is the class
+- **Audited every pin in `scripts/tool-versions.env` and bumped five.** This is the class
   neither bot touches — `/freshness-triage` covers zsh/nvim plugin locks and dependabot PRs,
   Renovate covers manifests, and the CLI gate pins sit in the gap between them, which is how
   `pre-commit` drifted six minors and the Claude Code CLI thirty-seven patches behind. Audited
@@ -27,7 +27,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   | `ACTIONLINT_VERSION` | 1.7.8 | **1.7.12** | four patches |
   | `PRECOMMIT_VERSION` | 4.0.1 | **4.6.1** | six minors |
   | `CLAUDE_CODE_VERSION` | 2.1.185 | **2.1.222** | the routine bots' own CLI |
-  | `SHFMT_VERSION` | 3.8.0 | 3.8.0 | **held — see below** |
+  | `SHFMT_VERSION` | 3.8.0 | **3.13.1** | five minors — see below |
   | shellcheck · luacheck · markdownlint-cli2 · gitleaks · pre-commit-hooks | | | already current |
 
   `NVIM_SHA256` and `ACTIONLINT_SHA256` recomputed with `make update-tool-checksums`, then
@@ -40,13 +40,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (pre-commit-hooks, shellcheck, markdownlint-cli2, gitleaks) were already current, so the
   audit's version-consistency section stays green.
 
-  **`shfmt` is deliberately held at 3.8.0 despite 3.13.1 being out.** Core does not gate shfmt
-  (`CONTRIBUTING.md` says so — the compact one-liner style here is exactly what shfmt would
-  expand), so this pin exists _only_ to give `setup-core-tools` one verified shfmt for its
-  OS-repo consumers. Core's CI therefore cannot verify a shfmt bump at all: it would ship
-  five minor versions of formatter change, unexercised, straight into the MacBook and
-  distro/role lint workflows. That needs a run in a consumer repo first, not a green tick here
-  that proves nothing.
+  **`shfmt` 3.8.0 → 3.13.1 was verified by hand, because Core's own CI genuinely can't check
+  it.** Core does not gate shfmt (`CONTRIBUTING.md` says so — the compact one-liner style here
+  is exactly what shfmt would expand), so this pin exists _only_ to give `setup-core-tools` one
+  verified shfmt for its OS-repo consumers, and a green tick on a Core PR proves nothing about
+  it. Two things make the bump safe, both checked rather than assumed:
+
+  1. **The consumer step is advisory.** `lint-call.yml`'s shfmt step wraps the run in an
+     `if/else` that swallows the drift exit and emits `::warning::` instead — deliberately
+     non-blocking without `continue-on-error`, so a genuine _install_ failure still reds. A
+     formatter behaviour change therefore cannot turn an OS repo red; only a bad SHA or a
+     missing release asset could.
+  2. **3.13.1 formats identically to 3.8.0 here.** Both binaries were run with the exact flags
+     the consumer uses (`-i 2`) over all 33 shell scripts in this repo. Both flag the same 10
+     files, and formatting each corpus with `-w` produced **byte-identical** trees. The only
+     difference between the two versions' `-d` output is presentational: 3.13.1 adds a
+     `diff a b` header line and splits hunks more finely.
+
+  `SHFMT_SHA256` refreshed and cross-checked against the `digest` GitHub publishes for
+  `shfmt_v3.13.1_linux_amd64` (`fb096c5d…`).
 
 ### Documentation
 
