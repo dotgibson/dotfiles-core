@@ -106,6 +106,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   Both found by `/doc-audit`.
 
+- **The rest of that `/doc-audit` sweep — nine more places where prose had drifted from the
+  code.** Grouped by what was wrong, not by file:
+
+  **Counts and pins that were simply stale.** "9 OS repos" survived in **32 comments across 11
+  files** (`ci.yml`, `audit-core.sh`, `test-core.sh`, `45-plugins.zsh`, `CODEOWNERS`, …) after
+  an earlier audit corrected only the prose; the fleet is **eight** (`scripts/os-repos.txt`).
+  Every caller-stub example and "current major" note said `@v3`; the fleet actually pins
+  **`@v4`** — verified against `core-integrity.yml`, `lint.yml` and `bootstrap.yml` in three
+  repos, so the `@v3`→`@v4` bump _was_ performed and only the docs lagged.
+  `RELEASE-RUNBOOK.md`'s major-bump walkthrough now uses `v4`→`v5` as its example, and
+  `RELEASE-STRATEGY.md` no longer hard-codes a `core.version` (it said `3.6.0`).
+
+  **`PARITY.md` listed a divergence as alignment.** It claimed `grep`→rg was aligned across
+  shells. It is not, and the reason matters: pwsh defines `grep`→rg
+  (`dotfiles-Windows/powershell/core/00-aliases.ps1`), while Core deliberately leaves `grep`
+  POSIX because shadowing it on a Unix box changes what every script in `$PATH` gets. That is
+  a `deliberate` divergence — the status PARITY.md already has for exactly this — so it is now
+  recorded as one rather than quietly listed as the same. Its source pointer also still named
+  the pre-v4 unnumbered fragments (`zsh/{aliases,git,…}.zsh`).
+
+  **Invariants that stopped being true.** `20-aliases.zsh` and `core.manifest` both asserted
+  that the aliases module "intentionally carries no git aliases" — nine lines above a
+  `HAVE_DIFFT`-gated `gdft`; both now name the two tool-detection exceptions (`lg`, `gdft`),
+  and `aliases.md` stops filing `gdft` under a heading that says it comes from `25-git.zsh`.
+  `10-options.zsh` and `15-history.zsh` claimed to load "SECOND" and "THIRD"; `05-ui.zsh`
+  displaced both, so they now cite the `NN` prefix as the contract instead of a hand-counted
+  position — which is what `core.manifest` already says.
+
+  **A self-invalidating instruction.** `/doc-audit`'s own check #1 told auditors to compare a
+  README "Layout" tree that no longer exists, so it could neither pass nor fail. It now points
+  at the real three-way inventory: `core.manifest` ↔ `git ls-files` ↔ `blib_link_core`.
+
+  **Guidance that contradicted the entry above.** `RELEASE-STRATEGY.md`'s two `git subtree
+  pull` recipes carried the stale-`core.lock` trap this changelog had just documented; both now
+  carry the caveat, and the rollback one notes that pulling an older tag merges backwards
+  rather than un-merging. Also: `aliases.md` promised the user-facing `30-functions.zsh` verbs
+  but omitted `core`, `core-doctor` and `core-version`; `ARCHITECTURE.md`'s definition of Core
+  read as a closed list that omitted six manifest entries; `CLAUDE.md`'s load chain dropped the
+  role band; `RELEASE-STRATEGY.md` named 2 of the 7 reusable workflows; and `sync-core.sh` had
+  one surviving reference to the retired freshness watcher.
+
 ## [v4.8.0] - 2026-08-05
 
 ### Added
