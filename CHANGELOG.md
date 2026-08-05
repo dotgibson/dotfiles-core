@@ -44,6 +44,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   deleted commit. Found by running the recipe against both cases in a throwaway clone, not
   by reading it.
 
+  There is now **one** cleanup recipe, not two. The troubleshooting table carried its own,
+  written for the old flow — delete `vX.Y.Z`, `git reset --hard HEAD~1` — which under
+  branch-first leaves the release branch standing and `vN` still on the abandoned commit. It
+  now points at the section instead of competing with it. The same `vN` omission was in
+  `tag-release.sh`'s printed guidance, which claimed to undo "both local artefacts" while
+  naming only one; both found in review by Copilot. The genuinely distinct cases the table
+  covered are kept: staging without committing is still a plain
+  `git checkout -- core.version CHANGELOG.md`, and abandoning **after the tag reached
+  origin** — the `PUSH=1` path, where a Release is published and the fan-out has already
+  fired — is now written out in the section, with the advice to cut the intended version
+  forward rather than unwind a published one.
+
 ## [v4.9.1] - 2026-08-05
 
 ### Fixed

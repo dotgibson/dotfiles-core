@@ -206,8 +206,11 @@ else
   the tag one commit behind and needs a re-point — the trap PUSH=1 falls into.)
 
   Also note $MAJOR was just force-moved LOCALLY onto this not-yet-merged commit, so it
-  disagrees with origin's $MAJOR until step 2 below. Abandoning the cut? 'git tag -d $TAG'
-  and 'git fetch --tags --force origin' undo both local artefacts.
+  disagrees with origin's $MAJOR until step 2 below. Abandoning the cut?
+  'git tag -d $TAG $MAJOR' then 'git fetch --tags --force origin' undoes both. Delete
+  $MAJOR explicitly — a fetch only UPDATES tags origin already has, so on a MAJOR (where
+  $MAJOR is newly minted and origin has never seen it) fetching leaves it behind, pointing
+  at the commit you just dropped. Full recipe: RELEASE-RUNBOOK.md §"Abandoning a cut".
 
   --no-follow-tags below is LOAD-BEARING: $TAG already exists locally, and with
   \`push.followTags = true\` set a plain push carries it to origin — putting the tag on the

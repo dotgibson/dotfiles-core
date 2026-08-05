@@ -126,6 +126,14 @@ kept every tag local, so no Release was published and no fan-out fired. Confirm 
 `git ls-remote --tags origin 'refs/tags/vX.Y.Z'` — empty is what you want. The abandoned
 `release/vX.Y.Z` branch on origin is inert; delete it or leave it, the fleet ignores it.
 
+**If that check is *not* empty**, the tag reached origin — `make tag PUSH=1`, or a plain push
+with `push.followTags = true`. Then `release.yml` has already published a Release and
+`sync-fanout.yml` has opened `core.lock` PRs across the fleet, and abandoning is no longer a
+local matter: delete the remote tag (`git push origin :refs/tags/vX.Y.Z`), delete the
+published Release in the GitHub UI, and close the fan-out PRs. Cutting the intended version
+forward is usually less disruptive than unwinding a published one — prefer it unless the
+fleet has already merged the bad `core.lock`.
+
 #### Step 5, by bump type — the moving `@vN` major alias
 
 Every reusable workflow in the fleet pins its caller to `@vN` (currently `@v4` — verified
@@ -386,7 +394,7 @@ This catches the auth-scope, argument, and resolve-path bugs that PR CI cannot s
 | fan-out fails `could not read Username for 'https://github.com'` | a git op reading a private repo without auth | the read must be authenticated (built-in token for own repo, `FLEET_SYNC_TOKEN` for cross-repo) |
 | fan-out aborts `core.lock differs ...` | an htpx sync touched Core | by design — htpx fan-out must never change `core.lock`; investigate the sync |
 | `make tag` refuses: `no '## [vX.Y.Z]' heading` | `make release` wasn't run | run `make release VERSION=X.Y.Z` first |
-| staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, first `git tag -d vX.Y.Z` then `git reset --hard HEAD~1` (confirm `git show --stat HEAD` is the release commit). If you already pushed the tag, also `git push origin :refs/tags/vX.Y.Z` |
+| staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, use §1.1 ["Abandoning a cut"](#abandoning-a-cut) — it is the one recipe, and it clears the `vN` alias that `make tag` moved |
 
 For the policy behind all of this — cadence, canary order, why only Core is versioned —
 see `RELEASE-STRATEGY.md`.
