@@ -2225,6 +2225,25 @@ ucheck "atuin daemon: guard removes itself from precmd after one run" \
   "source '$TOOLS_FILE'; [[ -n \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] && { _core_atuin_daemon_guard; [[ -z \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] }" \
   PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE"
 
+# atuin/config.toml must NOT write `enabled`/`autostart` into [daemon]. atuin layers the
+# config FILE after the Environment source (settings.rs), so the later file source wins and
+# any key written here SHADOWS its ATUIN_* override — which silently disabled the entire
+# per-machine opt-in the OS layers rely on (verified against 18.19.0: zero connect() calls
+# to the socket with the key present, one with it absent). Upstream's own defaults are
+# already false/false, so leaving them unset ships the same OFF default AND lets the
+# override through. A static assertion because the behavioural proof needs an atuin binary,
+# which CI does not have.
+if [[ -f "$HERE/atuin/config.toml" ]]; then
+  _atd="$(sed -n '/^\[daemon\]/,/^\[/p' "$HERE/atuin/config.toml" | grep -E '^[[:space:]]*(enabled|autostart)[[:space:]]*=' || true)"
+  if [[ -z "$_atd" ]]; then
+    pass "atuin config: [daemon] enabled/autostart stay unset (ATUIN_* override not shadowed)"
+  else
+    fail "atuin config: [daemon] writes ${_atd//$'\n'/, } — this shadows the ATUIN_DAEMON__* override and disables the opt-in"
+  fi
+else
+  skip "atuin config: [daemon] override check (no atuin/config.toml)"
+fi
+
 # maint.zsh: _maint_scheduler must always resolve to a REAL scheduler token, never empty
 # or garbage. With systemctl absent (isolated PATH) and crontab present as the fallback,
 # it lands on cron (Linux/Alpine) or launchd (macOS, OSTYPE-driven) — both valid — so the
