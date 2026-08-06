@@ -136,7 +136,7 @@ fleet has already merged the bad `core.lock`.
 
 #### Step 5, by bump type — the moving `@vN` major alias
 
-Every reusable workflow in the fleet pins its caller to `@vN` (currently `@v4` — verified
+Reusable-workflow callers in the fleet pin to `@vN` by default (currently `@v4` — verified
 against the callers, not just documented here: 27 of 28), and step 5
 is where that alias moves. The one exception is deliberate — `dotfiles-Windows` SHA-pins its
 `auto-tag-call` caller so a moved tag cannot change what runs there, and must be bumped by
@@ -239,7 +239,8 @@ git add nvim/ starship/ ; git commit -m "sync nvim/starship from Core vX.Y.Z"
 ```
 
 After the push, `auto-tag.yml` sees the new `nvim/`/`starship/` content and PATCH-bumps
-Windows' own tag + Release (delegating to Core's reusable `auto-tag-call.yml@v4`). It is
+Windows' own tag + Release (delegating to Core's reusable `auto-tag-call.yml`, SHA-pinned
+there rather than tracking `@v4` — see the callout in §1.1 step 5). It is
 idempotent (a no-op if HEAD is already tagged) and deliberately **skips** a
 `.core-ref`-marker-only change, so a timestamp-only re-sync never cuts a spurious tag.
 

@@ -63,7 +63,7 @@ _Repo status_ at the bottom).
 | gum              | `gum`             | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵           |
 | xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              |
 | doggo            | `doggo`           | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³               |
-| gping¹⁹          | `gping`           | `gping`¹⁹    | `gping`           | GURU¹²·¹⁹                  | `gping`¹⁹         |
+| gping¹⁹          | `gping`           | `gping`¹⁹    | `gping`           | GURU¹⁹                     | `gping`¹⁹         |
 | carapace         | AUR³              | go³          | `carapace`        | `app-shells/carapace`¹²    | go³               |
 | op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        |
 | hyperfine        | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       |
@@ -209,8 +209,9 @@ covered), Homebrew (`gping`), nixpkgs, and Debian/Kali apt — where the **sourc
 `rust-gping` but the **binary** you install is plain `gping` (Debian trixie 1.19.0, sid/Kali
 rolling 1.20.4). openSUSE: **Leap 15.6** carries it first-class in `main/oss` but well behind
 (1.16.1); **Tumbleweed** builds it from Factory, so verify with `zypper se gping` and fall back
-to cargo if your snapshot lacks it. Gentoo is **GURU-only** (`net-analyzer/gping`, see ¹²) —
-there is no main-tree atom. Inert without the binary; nothing depends on it.
+to cargo if your snapshot lacks it. Gentoo is **GURU-only** (`net-analyzer/gping`) — there is
+no main-tree atom, and unlike the ¹² atoms `bootstrap.sh` does **not** emerge it, so enable
+GURU per ¹² and `emerge net-analyzer/gping` by hand. Inert without the binary; nothing depends on it.
 
 ²⁰ atuin **daemon mode** — the one part of the atuin story that is NOT Core's to decide.
 Core ships `atuin/config.toml` (symlinked to `~/.config/atuin/config.toml`) with the
