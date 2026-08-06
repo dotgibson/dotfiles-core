@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.9.3] - 2026-08-06
+
 ### Fixed
 
 - **The atuin daemon opt-in never worked. `ATUIN_DAEMON__ENABLED=true` was silently
