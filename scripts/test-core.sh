@@ -2233,12 +2233,19 @@ ucheck "atuin daemon: guard removes itself from precmd after one run" \
 # already false/false, so leaving them unset ships the same OFF default AND lets the
 # override through. A static assertion because the behavioural proof needs an atuin binary,
 # which CI does not have.
+# BOTH TOML spellings are checked. Scanning only inside a literal `[daemon]` table would
+# miss the equally valid dotted form `daemon.enabled = false` written at top level, which
+# recreates the bug while passing the guard — an invariant a guard cannot see is not pinned.
 if [[ -f "$HERE/atuin/config.toml" ]]; then
-  _atd="$(sed -n '/^\[daemon\]/,/^\[/p' "$HERE/atuin/config.toml" | grep -E '^[[:space:]]*(enabled|autostart)[[:space:]]*=' || true)"
+  _atd="$(
+    sed -n '/^[[:space:]]*\[daemon\]/,/^[[:space:]]*\[/p' "$HERE/atuin/config.toml" |
+      grep -E '^[[:space:]]*(enabled|autostart)[[:space:]]*='
+    grep -E '^[[:space:]]*daemon\.(enabled|autostart)[[:space:]]*=' "$HERE/atuin/config.toml"
+  )" || true
   if [[ -z "$_atd" ]]; then
-    pass "atuin config: [daemon] enabled/autostart stay unset (ATUIN_* override not shadowed)"
+    pass "atuin config: daemon enabled/autostart stay unset, both TOML spellings (ATUIN_* override not shadowed)"
   else
-    fail "atuin config: [daemon] writes ${_atd//$'\n'/, } — this shadows the ATUIN_DAEMON__* override and disables the opt-in"
+    fail "atuin config: daemon block writes ${_atd//$'\n'/, } — this shadows the ATUIN_DAEMON__* override and disables the opt-in"
   fi
 else
   skip "atuin config: [daemon] override check (no atuin/config.toml)"

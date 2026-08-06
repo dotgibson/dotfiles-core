@@ -55,6 +55,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   per-machine key — asserting even its default disables the override — which is now stated
   in the config header, `PORTING-MATRIX.md` footnote 20, and beside the block itself.
 
+  **Three follow-ups from review, all of them the same defect wearing other hats:**
+
+  - The guard scanned only inside a literal `[daemon]` table, so the equally valid dotted
+    form `daemon.enabled = false` at top level recreated the bug and passed green. Both
+    spellings are checked now, each negative-tested.
+  - The config header advertised `export ATUIN_SEARCH_MODE=prefix` as its example of an
+    override — while the same file writes `search_mode = "fuzzy"`, which makes that export
+    silently ignored. Documenting the precedence trap and then demonstrating it was the
+    worst of both. The example now uses `sync_address`, a key the file genuinely leaves
+    unset, and the header names the ten settings that are deliberately **not** overridable
+    so the distinction is explicit rather than inferred.
+  - The v4.8.0 upgrade note told adopters to port `sync_address`, `auto_sync` and
+    `filter_mode` to `ATUIN_*` overrides. The first two work; `filter_mode` is written by
+    this file and cannot. That entry now carries the correction inline rather than being
+    quietly rewritten — it was wrong when shipped, and the record should say so.
+
+  Verified against atuin 18.19.0 rather than assumed: with Core's config in place,
+  `ATUIN_SEARCH_MODE=prefix` still resolves to `fuzzy` and `ATUIN_FILTER_MODE=prefix` still
+  resolves to `global`.
+
 ## [v4.9.2] - 2026-08-05
 
 ### Changed
@@ -370,6 +390,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   long-standing behaviour, not new here). atuin has no `include` directive, so port anything you
   had customised — `sync_address`, `auto_sync`, `filter_mode` — to `ATUIN_*` env overrides in your
   OS or `99-local` layer rather than editing the vendored file.
+  **[Corrected later:** that works for `sync_address` and `auto_sync`, which this file leaves
+  unset, but **not** for `filter_mode`, which it writes — a key the Core config sets cannot be
+  env-overridden at all. To vary one of those per machine, delete it from `atuin/config.toml`.
+  See the `[Unreleased]` entry on the daemon opt-in for why.**
 
 ### Changed
 
