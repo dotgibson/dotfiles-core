@@ -245,11 +245,15 @@ out automatically; a major bump is the one intentional, reviewed caller edit. Th
 GitHub's own recommended pattern for reusable workflows.
 
 - **Authoring:** new callers use `@vN` for the current major (not `@main`, not a bare SHA).
+  One deliberate exception: `dotfiles-Windows` SHA-pins its `auto-tag-call` caller, trading the
+  auto-fan-out for immunity to a moved tag. It vendors no `core/`, so it is outside the
+  `scripts/os-repos.txt` sweep and needs a hand bump.
 - **Bootstrapping a major:** `vN` is created/advanced by `make tag PUSH=1`; the very first
   `vN` can also be stamped by hand (`git tag -f vN vN.0.0 && git push -f origin vN`).
 - **Trade vs. exact-SHA pinning:** a SHA is maximally deterministic but needs a manual
   caller bump fleet-wide on every change — rejected as too high-churn for a first-party,
-  same-owner reusable workflow.
+  same-owner reusable workflow. `dotfiles-Windows` takes the opposite side of that trade for
+  its one caller, and pays exactly that cost: it currently sits several releases behind.
 
 ### What CI must prove before a tag
 
