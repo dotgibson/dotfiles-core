@@ -348,7 +348,10 @@ blib_link_core() {
     # ATUIN_CONFIG_DIR needed), linked unconditionally like the two above; inert without
     # the binary. NOTE: a hand-written ~/.config/atuin/config.toml is BACKED UP by
     # blib_link (…pre-dotfiles.<epoch>) — re-apply anything local via ATUIN_* env in the
-    # OS/host layer, which is also how a machine turns the daemon on.
+    # OS/host layer, which is also how a machine turns the daemon on. CAVEAT: an ATUIN_*
+    # override only reaches atuin for a key the Core config does NOT itself set (atuin adds
+    # the config file as a source AFTER the environment, so the file wins). See that file's
+    # header for the ten it sets; varying one of those means deleting it, not exporting.
     [[ -f "$dotfiles/core/atuin/config.toml" ]] && blib_link "$dotfiles/core/atuin/config.toml" "$config/atuin/config.toml"
     # portable sesh config, seeded ONCE (edited locally, never tracked back).
     blib_seed "$dotfiles/core/sesh/sesh.toml.example" "$config/sesh/sesh.toml" \

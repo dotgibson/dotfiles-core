@@ -13,6 +13,50 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`core.manifest` advertised a keybinding that does not exist.** Its `zsh/35-fzf.zsh`
+  stanza named `Ctrl-F/R` for the fzf widgets; `zsh/40-bindings.zsh` binds `^T`, and there is
+  no `^F` binding anywhere in Core — `PARITY.md` even records that zsh moved off `Ctrl+F`.
+  A one-token error, but in the file the system calls its contract, vendored verbatim into
+  eight repos, so it misinformed eight copies at once. Now `Ctrl-T/R`.
+
+- **Three `PORTING-MATRIX.md` footnotes asserted "nothing installs this" against repos that
+  do**, and two of them contradicted each other:
+
+  - ¹⁷ said `jnv` is in no `Brewfile`; `dotfiles-MacBook/Brewfile` carries it. Scoped to
+    Linux, with macOS named as the exception.
+  - ¹⁹ said no repo installs `gping`; the same `Brewfile` carries it. Same scoping.
+  - ¹² listed `gping` among Gentoo's GURU-overlay atoms while ¹⁹ said nothing installs it.
+    ¹⁹ was right: `gping` appears nowhere in `dotfiles-Gentoo`'s `guru_install` list, its
+    `packages.txt`, or its `bootstrap.sh` at all. Dropped from ¹².
+
+- **The matrix sent Kali to `mise`/`cargo` for `tree-sitter-cli`, which it apt-installs.**
+  `dotfiles-Kali/install/packages.txt` carries the plain apt name and its `bootstrap.sh` has
+  no tree-sitter installer, so the ³ footnote pointed at a path the repo never takes.
+
+- **`lib/bootstrap-lib.sh` still gave the atuin advice v4.9.3 corrected.** It told you to
+  re-apply a backed-up local config "via `ATUIN_*` env" with no carve-out — the exact pattern
+  that release proved does not work for the ten keys `atuin/config.toml` sets. This was the
+  last surviving instance; `PORTING-MATRIX.md`, `examples/README.md` and both OS layers were
+  already correct.
+
+- **A cross-reference dangled one release after it was written.** The v4.8.0 correction note
+  pointed at "the `[Unreleased]` entry on the daemon opt-in"; cutting v4.9.3 promoted that
+  entry, leaving the pointer aimed at an empty section. Now names `[v4.9.3]` — the hazard of
+  referring to `[Unreleased]` from a dated section at all.
+
+### Changed
+
+- **The `@vN` pinning policy is no longer stated as universal, because it is 27 of 28.**
+  `dotfiles-Windows` SHA-pins its `auto-tag-call` caller on purpose — immunity to a moved tag,
+  traded against the auto-fan-out — and both `RELEASE-RUNBOOK.md` and `RELEASE-STRATEGY.md`
+  read as though every caller tracks `@v4`. Worse, the runbook's own straggler sweep
+  (`grep -rl 'uses:.*@v4'` across `scripts/os-repos.txt`) **structurally cannot find it**:
+  Windows vendors no `core/`, so it is not in that list. It is therefore invisible to the
+  grep and unmoved by the alias — currently several releases behind. Both documents now name
+  the exception and say to check it by hand.
+
 ## [v4.9.3] - 2026-08-06
 
 ### Fixed
@@ -401,7 +445,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   **Corrected later:** that works for `sync_address` and `auto_sync`, which this file leaves
   unset, but **not** for `filter_mode`, which it writes — a key the Core config sets cannot be
   env-overridden at all. To vary one of those per machine, delete it from `atuin/config.toml`.
-  See the `[Unreleased]` entry on the daemon opt-in for why.
+  See the `[v4.9.3]` entry on the daemon opt-in for why.
 
 ### Changed
 
