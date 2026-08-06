@@ -2233,22 +2233,33 @@ ucheck "atuin daemon: guard removes itself from precmd after one run" \
 # already false/false, so leaving them unset ships the same OFF default AND lets the
 # override through. A static assertion because the behavioural proof needs an atuin binary,
 # which CI does not have.
-# BOTH TOML spellings are checked. Scanning only inside a literal `[daemon]` table would
-# miss the equally valid dotted form `daemon.enabled = false` written at top level, which
-# recreates the bug while passing the guard — an invariant a guard cannot see is not pinned.
-if [[ -f "$HERE/atuin/config.toml" ]]; then
-  _atd="$(
-    sed -n '/^[[:space:]]*\[daemon\]/,/^[[:space:]]*\[/p' "$HERE/atuin/config.toml" |
-      grep -E '^[[:space:]]*(enabled|autostart)[[:space:]]*='
-    grep -E '^[[:space:]]*daemon\.(enabled|autostart)[[:space:]]*=' "$HERE/atuin/config.toml"
-  )" || true
-  if [[ -z "$_atd" ]]; then
-    pass "atuin config: daemon enabled/autostart stay unset, both TOML spellings (ATUIN_* override not shadowed)"
-  else
-    fail "atuin config: daemon block writes ${_atd//$'\n'/, } — this shadows the ATUIN_DAEMON__* override and disables the opt-in"
-  fi
+# PARSE the TOML rather than pattern-match its text. Grep can only ever cover the spellings
+# someone thought of: a `[daemon]` table, the dotted `daemon.enabled = false`, the inline
+# table `daemon = { enabled = false }`, and `daemon . enabled = false` (TOML permits
+# whitespace around the dots) all deserialize to the same key, and a regex that catches two
+# of them reports green on the other two. What matters is the key atuin ends up resolving,
+# so ask the parser. `tomllib` is stdlib since 3.11 and is already how audit-core.sh's
+# config gate works; the graceful skip mirrors that gate too.
+if [[ ! -f "$HERE/atuin/config.toml" ]]; then
+  skip "atuin config: daemon override check (no atuin/config.toml)"
+elif ! have python3 || ! python3 -c 'import tomllib' 2>/dev/null; then
+  skip "atuin config: daemon override check (python3 tomllib unavailable)"
 else
-  skip "atuin config: [daemon] override check (no atuin/config.toml)"
+  _atd="$(python3 -c '
+import tomllib, sys
+d = tomllib.load(open(sys.argv[1], "rb")).get("daemon") or {}
+print(" ".join(f"{k}={d[k]!r}" for k in ("enabled", "autostart") if k in d))
+' "$HERE/atuin/config.toml" 2>/dev/null)" || _atd="__PARSE_FAILED__"
+  if [[ "$_atd" == "__PARSE_FAILED__" ]]; then
+    # Distinct from "key present": a file that will not parse is a different defect, owned by
+    # audit-core.sh's config gate. Still red here — this assertion cannot vouch for a file it
+    # could not read, and failing closed is the only safe reading.
+    fail "atuin config: atuin/config.toml does not parse as TOML — cannot verify the daemon keys"
+  elif [[ -z "$_atd" ]]; then
+    pass "atuin config: daemon.enabled/autostart absent from the parsed TOML (ATUIN_* override not shadowed)"
+  else
+    fail "atuin config: parsed TOML sets daemon $_atd — this shadows the ATUIN_DAEMON__* override and disables the opt-in"
+  fi
 fi
 
 # maint.zsh: _maint_scheduler must always resolve to a REAL scheduler token, never empty

@@ -58,8 +58,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   **Three follow-ups from review, all of them the same defect wearing other hats:**
 
   - The guard scanned only inside a literal `[daemon]` table, so the equally valid dotted
-    form `daemon.enabled = false` at top level recreated the bug and passed green. Both
-    spellings are checked now, each negative-tested.
+    form `daemon.enabled = false` at top level recreated the bug and passed green. Widening
+    the regex was still the wrong shape — `daemon = { enabled = false }` and
+    `daemon . enabled = false` are also valid and also deserialize to the same key, so a
+    pattern match can only ever cover the spellings someone thought of. The guard now
+    **parses** the TOML with `tomllib` (the idiom `audit-core.sh`'s config gate already
+    uses) and inspects the resolved `daemon` table, which is what atuin itself resolves.
+    All four spellings negative-tested; an unparseable file fails distinctly rather than
+    being read as clean.
   - The config header advertised `export ATUIN_SEARCH_MODE=prefix` as its example of an
     override — while the same file writes `search_mode = "fuzzy"`, which makes that export
     silently ignored. Documenting the precedence trap and then demonstrating it was the
@@ -390,10 +396,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   long-standing behaviour, not new here). atuin has no `include` directive, so port anything you
   had customised — `sync_address`, `auto_sync`, `filter_mode` — to `ATUIN_*` env overrides in your
   OS or `99-local` layer rather than editing the vendored file.
-  **[Corrected later:** that works for `sync_address` and `auto_sync`, which this file leaves
+  **Corrected later:** that works for `sync_address` and `auto_sync`, which this file leaves
   unset, but **not** for `filter_mode`, which it writes — a key the Core config sets cannot be
   env-overridden at all. To vary one of those per machine, delete it from `atuin/config.toml`.
-  See the `[Unreleased]` entry on the daemon opt-in for why.**
+  See the `[Unreleased]` entry on the daemon opt-in for why.
 
 ### Changed
 
