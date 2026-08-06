@@ -13,6 +13,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The atuin daemon opt-in never worked. `ATUIN_DAEMON__ENABLED=true` was silently
+  ignored on every machine.** Core shipped `atuin/config.toml` with `[daemon] enabled =
+  false` written out explicitly, and that assertion is what broke it: atuin builds its
+  config as defaults → **environment** → config **file**, adding the file source last
+  (`settings.rs` — the `Environment` source goes in at the builder, the file at
+  `build_config()` afterwards), and in the `config` crate the later source wins. So any key
+  this file mentions **shadows its `ATUIN_*` override**. The one key the whole per-OS design
+  depends on being overridable was the one Core asserted.
+
+  The fix is to write no value: `enabled` and `autostart` are now left unset. Upstream's own
+  defaults are already `false`/`false` (`settings.rs:1515-1516`), so Core still ships the
+  daemon **off** — off by default rather than off by assertion — and the override reaches it.
+
+  **Measured, not reasoned**, against atuin **18.19.0** built from crates.io. `atuin doctor`
+  reports the resolved `daemon_enabled`, and the client was straced for `connect()` on the
+  socket, which is the only thing that distinguishes the two paths — exit codes cannot,
+  because the client degrades silently to direct SQLite when the daemon is unreachable,
+  which is exactly why this went unnoticed:
+
+  | Config | `daemon_enabled` | `connect(atuin.sock)` |
+  | --- | --- | --- |
+  | `enabled = false` written + `ATUIN_DAEMON__ENABLED=true` | `false` | **0 calls** |
+  | key absent + `ATUIN_DAEMON__ENABLED=true` | `true` | 1 call |
+  | no config file at all + `ATUIN_DAEMON__ENABLED=true` | `true` | — |
+  | **after this change**, no env | `false` | — |
+  | **after this change**, `ATUIN_DAEMON__ENABLED=true` | `true` | 1 call |
+
+  What this was costing the fleet: `dotfiles-Fedora`'s bootstrap installed and enabled a
+  systemd unit that started a daemon **no client ever talked to**, and `dotfiles-Alpine`'s
+  exports were inert. Core's guard made it quieter still — it reads `ATUIN_DAEMON__ENABLED`
+  from the environment, where it _was_ set, so on Fedora it found the unit's socket present,
+  stood down satisfied, and reported healthy while every write went straight to SQLite.
+  Nothing was broken for a user; the feature simply did not exist.
+
+  `scripts/test-core.sh` now asserts the two keys stay unset, negative-tested by putting
+  `enabled = false` back and watching it fail. The check is static because the behavioural
+  proof needs an atuin binary CI does not have. The same trap applies to any future
+  per-machine key — asserting even its default disables the override — which is now stated
+  in the config header, `PORTING-MATRIX.md` footnote 20, and beside the block itself.
+
 ## [v4.9.2] - 2026-08-05
 
 ### Changed
