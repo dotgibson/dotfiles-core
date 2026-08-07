@@ -269,7 +269,7 @@ if daemon_start; then
   run_writers "$SB/on" ATUIN_DAEMON__ENABLED=true
 else
   printf '   %s✗%s daemon did not come up — see %s\n' "$c_red" "$c_rst" "$SB/daemon.log"
-  cat "$SB/daemon.log" 2>/dev/null | sed 's/^/     /'
+  sed 's/^/     /' "$SB/daemon.log" 2>/dev/null
 fi
 
 # ── arm 3: autostart, FIRST command in a fresh shell (the Alpine-only cost) ────
