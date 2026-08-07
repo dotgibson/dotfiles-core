@@ -13,6 +13,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/bench-atuin-daemon.sh` — the atuin daemon's latency claim is no longer purely
+  borrowed.** Adoption's whole justification is that the daemon owns the SQLite writes so
+  shells stop contending for the DB lock, and that was cited from upstream, never measured
+  here. The script measures the per-command pair a shell hook actually runs
+  (`history start` + `history end`) under N concurrent writers sharing one seeded history
+  DB, daemon off vs on, reported as p50/p95/p99 — plus the daemon-spawn cost the **first**
+  command pays on the autostart path, which is unique to machines with no service manager.
+  Report-only and deliberately **not** part of `make audit` (it needs a real atuin binary and
+  starts a background daemon); `make bench-atuin` runs it, and it SKIPs cleanly on a box
+  without atuin. It also asserts behaviourally something the hermetic suite can only take on
+  faith from upstream's `settings.rs`: that atuin, with `XDG_RUNTIME_DIR` unset, binds
+  exactly the socket path `_core_atuin_daemon_guard` probes.
+
 ### Fixed
 
 - **`core.manifest` advertised a keybinding that does not exist.** Its `zsh/35-fzf.zsh`
@@ -56,6 +71,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Windows vendors no `core/`, so it is not in that list. It is therefore invisible to the
   grep and unmoved by the alias — currently several releases behind. Both documents now name
   the exception and say to check it by hand.
+
+- **The daemon rationale in `atuin/config.toml` and `zsh/00-tools.zsh` now reports what was
+  measured, and it is not the whole pitch.** A container run reproducing the topology of the
+  Alpine path (no systemd, `XDG_RUNTIME_DIR` unset) puts the median and p95 win at
+  1.3–1.5× and 1.2–1.3× — real, and steady across runs. But **p99 flips sign run to run and
+  the maximum is consistently ~2× worse with the daemon on**: it trades frequent small lock
+  waits for rarer, larger stalls. "Removes the tail latency" was therefore an overclaim in
+  both files and is now scoped to the typical command rather than the worst one. The
+  autostart path's first command additionally pays ~+42 ms for the spawn. Still unmeasured
+  and still needing hardware nobody has to hand: musl, the systemd-unit path, and a network
+  home — where the claim is strongest and least tested.
 
 ## [v4.9.3] - 2026-08-06
 
