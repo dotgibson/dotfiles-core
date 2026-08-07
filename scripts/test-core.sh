@@ -1469,11 +1469,21 @@ hdr "managed .zshrc entry (blib_write_zshrc_loader)"
 # Drive the writer against a throwaway HOME in a SUBSHELL so HOME/XDG_*/BLIB_* never leak
 # into the suite shell. BLIB_ONLY/BLIB_SKIP are reset because Section G leaves them set,
 # and blib_want gates this function on the zsh group.
+#
+# ZDOTDIR MUST be unset: the managed shell EXPORTS it, so running this suite from a
+# configured machine would otherwise make the writer resolve $ZDOTDIR to the developer's
+# REAL ~/.config/zsh and replace their .zshrc with a link into a sandbox that is deleted
+# on exit. Unsetting it is what keeps the fixture hermetic — and honest, since the fresh
+# box this models has no ZDOTDIR in the environment either.
+#
 # SC2030/SC2031: the subshell-local HOME/XDG_CONFIG_HOME is the POINT — the writer targets
 # $HOME, and leaking a throwaway HOME into the suite shell would send later sections at the
 # real one. Confining it to the subshell is the isolation, not a lost assignment.
 # shellcheck disable=SC2030,SC2031
-_run_zrc() { ( export HOME="$1" XDG_CONFIG_HOME="$1/.config"; BLIB_DRY="${2:-0}"; BLIB_ONLY=""; BLIB_SKIP=""; blib_write_zshrc_loader ) >/dev/null 2>&1; }
+_run_zrc() { ( unset ZDOTDIR; export HOME="$1" XDG_CONFIG_HOME="$1/.config"; BLIB_DRY="${2:-0}"; BLIB_ONLY=""; BLIB_SKIP=""; blib_write_zshrc_loader ) >/dev/null 2>&1; }
+# Same, but capturing stdout so the dry-run PLAN can be asserted.
+# shellcheck disable=SC2030,SC2031
+_run_zrc_out() { ( unset ZDOTDIR; export HOME="$1" XDG_CONFIG_HOME="$1/.config"; BLIB_DRY="${2:-0}"; BLIB_ONLY=""; BLIB_SKIP=""; blib_write_zshrc_loader ) 2>&1; }
 
 # 1) fresh box: both entry points exist, and the ZDOTDIR one resolves to ~/.zshrc.
 _zr="$(mktemp -d "$SANDBOX/zrc.XXXXXX")"
@@ -1506,13 +1516,36 @@ _run_zrc "$_zr"
 if [[ -L "$_zr/.config/zsh/.zshrc" && "$(readlink "$_zr/.config/zsh/.zshrc")" == "$_zr/.zshrc" ]] && ! compgen -G "$_zr/.config/zsh/.zshrc.pre-dotfiles.*" >/dev/null; then
   pass "zshrc: second run is an idempotent no-op (no backup churn)"; else fail "zshrc: not idempotent"; fi
 
-# 5) dry-run mutates NOTHING.
+# 5) dry-run mutates NOTHING…
 _zdry="$(mktemp -d "$SANDBOX/zdry.XXXXXX")"
-_run_zrc "$_zdry" 1
+_zdry_out="$(_run_zrc_out "$_zdry" 1)"
 if [[ ! -e "$_zdry/.zshrc" && ! -e "$_zdry/.config/zsh/.zshrc" ]]; then
   pass "zshrc: BLIB_DRY=1 writes nothing"; else fail "zshrc: dry run mutated the tree"; fi
+# …and PREVIEWS the whole plan. BLIB_DRY's contract is the full set of actions, so the
+# seeded $ZDOTDIR entry — a second file the real run creates — has to appear too, or a
+# --dry-run reader is told less than will happen.
+if [[ "$_zdry_out" == *".zshrc"* && "$_zdry_out" == *"$_zdry/.config/zsh"* ]]; then
+  pass "zshrc: BLIB_DRY=1 previews the \$ZDOTDIR seeding too"; else fail "zshrc: dry-run plan omits the \$ZDOTDIR seeding (got: $_zdry_out)"; fi
 
-# 6) ZDOTDIR already pointing at $HOME — ~/.zshrc IS the entry, so nothing to seed and
+# 6) INVERTED LAYOUT: ~/.zshrc is itself a symlink TO $ZDOTDIR/.zshrc. The two path
+#    strings differ but resolve to one file — linking would move the real file aside and
+#    leave the symlinks pointing at each other (ELOOP, every shell broken). Must no-op.
+_zinv="$(mktemp -d "$SANDBOX/zinv.XXXXXX")"
+mkdir -p "$_zinv/.config/zsh"
+printf '# dotfiles-managed v4 — real file lives in ZDOTDIR\n' >"$_zinv/.config/zsh/.zshrc"
+ln -s "$_zinv/.config/zsh/.zshrc" "$_zinv/.zshrc"
+_run_zrc "$_zinv"
+if [[ -f "$_zinv/.config/zsh/.zshrc" ]] && grep -q 'real file lives in ZDOTDIR' "$_zinv/.config/zsh/.zshrc" \
+   && [[ "$(readlink "$_zinv/.zshrc")" == "$_zinv/.config/zsh/.zshrc" ]] \
+   && ! compgen -G "$_zinv/.config/zsh/.zshrc.pre-dotfiles.*" >/dev/null; then
+  pass "zshrc: inverted layout (~/.zshrc → \$ZDOTDIR/.zshrc) left intact — no symlink cycle"; else fail "zshrc: inverted layout clobbered or cycled"; fi
+# and prove it: a real zsh must still start from it rather than dying on ELOOP.
+if have zsh && zsh -f -c "ZDOTDIR='$_zinv/.config/zsh'; source \"\$ZDOTDIR/.zshrc\"" 2>/dev/null; then
+  pass "zshrc: inverted layout still sources (no ELOOP)"; else
+  if have zsh; then fail "zshrc: inverted layout no longer sources"; else skip "zshrc: ELOOP check (zsh absent)"; fi
+fi
+
+# 7) ZDOTDIR already pointing at $HOME — ~/.zshrc IS the entry, so nothing to seed and
 #    certainly no self-referential link.
 _zh="$(mktemp -d "$SANDBOX/zh.XXXXXX")"
 # shellcheck disable=SC2030,SC2031  # subshell-local by design — see _run_zrc above
@@ -2084,11 +2117,15 @@ ucheck "update: _pkgup_notice nudge is prompt_subst-safe (mentions up, never run
   "source '$UPD'; setopt prompt_subst; up(){ print RAN_UP }; mkdir -p \${_PKGUP_CACHE:h}; print -rl -- 3 \$EPOCHSECONDS >| \$_PKGUP_CACHE; out=\$(_pkgup_notice); [[ \$out == *\"run 'up'\"* && \$out != *RAN_UP* ]]" \
   XDG_CACHE_HOME="$SANDBOX/psubst-notice" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
 # REGRESSION (positional cache parse): _PKGUP_CACHE is "<count>\n<epoch>", read with a
-# (f) split. Unquoted, zsh DROPS empty fields — so a cache written with an empty count
-# (an offline refresh, or a package manager that prompted and produced nothing) collapses
-# to one element and the EPOCH shifts into the count slot. It then passes the <1-> test
-# (an epoch IS a positive integer) and renders as "1786128391 updates available". Seed
-# exactly that shape and assert the nudge stays SILENT.
+# (f) split. Unquoted, zsh DROPS empty fields — so a cache whose count line is empty
+# collapses to one element and the EPOCH shifts into the count slot. It then passes the
+# <1-> test (an epoch IS a positive integer) and renders as "1786128391 updates available".
+#
+# Where the empty count comes from: NOT _pkgup_refresh, which normalises an empty result
+# to -1 (`: "${n:=-1}"`). It is the startup hook's claim-slot write — on the first shell of
+# a fresh box there is no cache, so $count is empty and the claim persists "\n<epoch>"
+# while the background refresh is still in flight. Seed exactly that shape and assert the
+# nudge stays SILENT.
 ucheck "update: _pkgup_notice ignores an empty-count cache (epoch must not become the count)" \
   "source '$UPD'; mkdir -p \${_PKGUP_CACHE:h}; print -rl -- '' \$EPOCHSECONDS >| \$_PKGUP_CACHE; out=\$(_pkgup_notice); [[ -z \$out ]]" \
   XDG_CACHE_HOME="$SANDBOX/emptycount-notice" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
@@ -2096,6 +2133,22 @@ ucheck "update: _pkgup_notice ignores an empty-count cache (epoch must not becom
 ucheck "update: _pkgup_notice still renders a real cached count" \
   "source '$UPD'; mkdir -p \${_PKGUP_CACHE:h}; print -rl -- 7 \$EPOCHSECONDS >| \$_PKGUP_CACHE; out=\$(_pkgup_notice); [[ \$out == *'7 updates available'* ]]" \
   XDG_CACHE_HOME="$SANDBOX/goodcount-notice" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+# The STARTUP HOOK has its own copy of the same positional read, and it is the one that
+# matters: it decides the throttle AND writes the count back when it claims the slot, so an
+# unquoted split there both re-fires the check every shell and PERSISTS the epoch as the
+# count. _pkgup_notice tests cannot see that — they'd pass with this reader still broken.
+# Seed the poisoned shape with a RECENT epoch: parsed correctly, `last` is now and the
+# throttle must suppress any refresh, leaving the cache byte-identical. Parsed unquoted,
+# `last` collapses to empty ⇒ 0, the window looks elapsed, and the claim-slot write fires
+# and rewrites the file. Assert it is untouched.
+ucheck "update: startup hook reads the cache positionally (empty count can't defeat the throttle)" \
+  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- '' \$EPOCHSECONDS >| \$_c; _before=\$(<\$_c); source '$UPD'; sleep 0.3; [[ \$(<\$_c) == \$_before ]]" \
+  XDG_CACHE_HOME="$SANDBOX/hook-emptycount" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0
+# Control: with a STALE epoch the same hook SHOULD claim the slot, so the assertion above
+# is proving the throttle works, not that the hook is inert.
+ucheck "update: startup hook still refreshes once the throttle window has elapsed" \
+  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- 5 1 >| \$_c; _before=\$(<\$_c); source '$UPD'; sleep 0.3; [[ \$(<\$_c) != \$_before ]]" \
+  XDG_CACHE_HOME="$SANDBOX/hook-stale" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0
 # up --dry-run (#8): the non-destructive inspect — list what WOULD upgrade and exit 0,
 # applying nothing. Same apt stub as above; assert the names print and the rc is 0.
 ucheck "update: up --dry-run lists pending packages and exits 0 (applies nothing)" \
@@ -2237,9 +2290,11 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
 # Two things were ungated here. (1) ATUIN_NOBIND=true is what keeps atuin from grabbing
 # the keys 40-bindings.zsh/35-fzf.zsh own (Ctrl+E is OURS, Ctrl+R stays on the fzf widget),
 # and it doubles as the _cache_eval salt — yet nothing asserted it. (2) The daemon guard:
-# with the daemon enabled and its socket absent or STALE, every atuin call pays a failed
-# connect, so Core probes the socket once before the first prompt and forces the daemon off
-# for that shell. Case (d) below pins the OTHER half of that contract — the accept-but-silent
+# with the daemon enabled and its socket absent or STALE, atuin does not fall back — measured
+# on 18.19.0 it exits 0, prints a well-formed id, writes nothing to stderr and DISCARDS the
+# entry. So Core probes the socket once before the first prompt and forces the daemon off for
+# that shell, which is what makes atuin really write SQLite. The stake is the history itself,
+# not per-command latency. Case (d) below pins the OTHER half of that contract — the accept-but-silent
 # state it deliberately does not claim to catch. Both are hermetic — no atuin
 # binary needed: the guard is defined unconditionally (only its precmd registration is
 # HAVE_ATUIN-gated), and a real listener comes from zsh's own zsocket.
@@ -2272,12 +2327,14 @@ ucheck "atuin daemon: no precmd hook on a box without atuin (fully inert)" \
 #     socket probe, no surprise export on the eight machines that never asked for it).
 ucheck "atuin daemon: guard is a no-op when the daemon was never opted into" \
   "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ -z \${ATUIN_DAEMON__ENABLED:-} && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]"
-# (b) OPTED IN, socket unreachable — degrade to direct SQLite writes instead of hanging.
-ucheck "atuin daemon: an unreachable socket degrades the daemon off (no failed connect per command)" \
+# (b) OPTED IN, socket unreachable — degrade to direct SQLite writes, which is what stops
+#     atuin silently dropping every command it is handed.
+ucheck "atuin daemon: an unreachable socket degrades the daemon off (no silently discarded history)" \
   "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == false && -n \$_CORE_ATUIN_DAEMON_DEGRADED ]]" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
 # (c) A STALE socket FILE (bound then closed — no listener) is the case a plain -S test
-#     passes and the one that actually hangs. The connect probe must still degrade.
+#     passes, and the one that silently eats history rather than erroring. The connect
+#     probe must still degrade.
 ucheck "atuin daemon: a stale socket file (no listener) degrades too, not just an absent one" \
   "rm -f '$SANDBOX/stale-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/stale-atuin.sock'; exec {REPLY}>&-; source '$TOOLS_FILE'; [[ -S '$SANDBOX/stale-atuin.sock' ]] && { _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == false ]] }" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/stale-atuin.sock"

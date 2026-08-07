@@ -199,6 +199,10 @@ _pkgup_notice() {
   # zsh drops empty fields, so a cache whose count line is empty ("\n<epoch>") collapses to
   # one element and the EPOCH lands in _l[1], the count slot. It then passes the <1-> test
   # below (an epoch is a positive integer) and prints as "1786128391 updates available".
+  # The empty count is NOT something _pkgup_refresh can write — it normalises an empty
+  # result to -1 (see `: "${n:=-1}"`). It comes from the startup hook below, which claims
+  # the throttle slot by writing the count it just read (empty, on a box with no cache yet)
+  # alongside a fresh timestamp, while its background refresh is still in flight.
   local -a _l
   _l=("${(@f)$(<"$_PKGUP_CACHE")}")
   local count=${_l[1]:-}
@@ -233,9 +237,11 @@ if ((UPDATE_CHECK_ENABLED)); then
       last=${_l[2]:-0}
     fi
     [[ "$last" == <-> ]] || last=0
-    # Same fail-closed treatment for the count. It is written back verbatim when we claim
-    # the slot below, so a single bad refresh (offline, a package manager that prompted and
-    # produced nothing) would otherwise persist into every later shell's cache.
+    # Same fail-closed treatment for the count, because the claim-slot write below persists
+    # whatever is in $count. On the FIRST shell of a fresh box there is no cache, so $count
+    # is empty and the claim writes "\n<epoch>" — which, read back unquoted, is precisely
+    # how the epoch used to become the count. Normalising here closes the race from the
+    # writer side as well as the reader side.
     [[ "$count" == (-|)<-> ]] || count=
     # Throttle FIRST (cheap: a clock read + a cache read, both fork-free), then — only when
     # due — pay for the manager probe. No elapsed window → no probe, the common per-shell path.

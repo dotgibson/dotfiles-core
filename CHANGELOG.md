@@ -49,13 +49,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **The update nudge could report a Unix timestamp as the package count** — e.g.
   `󰚰 1786128391 updates available`. `_PKGUP_CACHE` is positional (`"<count>\n<epoch>"`) but
   both readers split it with an _unquoted_ `${(f)…}`, and zsh drops empty fields from an
-  unquoted expansion. So whenever a refresh produced an empty count (offline, or a package
-  manager that stopped on a prompt), the leading empty field vanished and the epoch shifted
-  into the count slot — where it passed the `<1->` positive-integer check and rendered. It
-  was self-perpetuating too: `last` shifted to empty ⇒ `0`, which defeated the once-a-day
-  throttle so the check re-fired on _every_ shell, and the claim-the-slot write persisted the
-  bogus count into the cache. Both reads are now quoted (`"${(@f)…}"`), and a non-numeric
-  count is discarded before it can be written back.
+  unquoted expansion. The empty count is not something `_pkgup_refresh` can write — it
+  normalises an empty result to `-1`. It comes from the startup hook itself: on the first
+  shell of a fresh box there is no cache, so the count it reads is empty, and claiming the
+  throttle slot persists that empty field alongside a fresh timestamp while the background
+  refresh is still in flight. Read back unquoted, the leading empty field vanishes and the
+  epoch shifts into the count slot — where it passes the `<1->` positive-integer check and
+  renders. From there it is self-sustaining: `last` shifts to empty ⇒ `0`, which defeats the
+  once-a-day throttle so the check re-fires on _every_ shell, each one rewriting the bogus
+  count. Both reads are now quoted (`"${(@f)…}"`), and a non-numeric count is discarded
+  before it can be written back, closing the race from the writer side too.
 
 - **`zsh/00-tools.zsh` documented an atuin fallback that does not exist.** The comment on
   `_core_atuin_daemon_guard` said an absent or stale daemon socket makes "every atuin call

@@ -442,6 +442,9 @@ blib_write_zshrc_loader() {
   fi
   if _blib_dry; then
     blib_say "would write managed ~/.zshrc loader (v4 numbered-fragment glob)"
+    # Preview the seeding too — BLIB_DRY's contract is the FULL plan, and this is a
+    # second file the real run creates.
+    _blib_seed_zdotdir_rc "$rc"
     return 0
   fi
   blib_say "writing .zshrc loader"
@@ -509,7 +512,26 @@ _blib_seed_zdotdir_rc() {
   # ZDOTDIR pointing at $HOME means ~/.zshrc IS the $ZDOTDIR entry — nothing to seed, and
   # linking would make it its own target.
   [[ -n "$zdot" && "$zdot" != "$HOME" ]] || return 0
-  blib_link "$rc" "$zdot/.zshrc"
+  local dst="$zdot/.zshrc"
+  # INVERTED LAYOUT: some setups point ~/.zshrc AT $ZDOTDIR/.zshrc rather than the other
+  # way round. The two path STRINGS still differ, so a string compare sees nothing wrong,
+  # but they are one file — and blib_link would move the real file aside and leave the two
+  # symlinks referring to each other. That is an ELOOP on the next shell: zsh resolves
+  # $ZDOTDIR/.zshrc → ~/.zshrc → $ZDOTDIR/.zshrc and gives up. Compare RESOLVED files
+  # (-ef is dev+inode, symlinks followed), gated on rc actually being a link so the normal
+  # layout — where dst is our own symlink back to a real rc — still reaches blib_link and
+  # keeps its idempotent no-op accounting.
+  if [[ -L "$rc" && "$rc" -ef "$dst" ]]; then
+    blib_warn "$dst already resolves to $rc — leaving it alone (linking would make a symlink cycle)"
+    return 0
+  fi
+  # On a FRESH dry run ~/.zshrc has not been written yet, so blib_link would report the
+  # source missing rather than previewing the link. Say what the real run would do.
+  if _blib_dry && [[ ! -e "$rc" ]]; then
+    blib_say "would seed $dst -> ~/.zshrc"
+    return 0
+  fi
+  blib_link "$rc" "$dst"
 }
 
 # ── privilege escalation ──────────────────────────────────────────────────────
