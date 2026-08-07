@@ -75,11 +75,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **The daemon rationale in `atuin/config.toml` and `zsh/00-tools.zsh` now reports what was
   measured, and it is not the whole pitch.** A container run reproducing the topology of the
   Alpine path (no systemd, `XDG_RUNTIME_DIR` unset) puts the median and p95 win at
-  1.3–1.5× and 1.2–1.3× — real, and steady across runs. But **p99 flips sign run to run and
+  ~1.4× and 1.2–1.3× — real, and steady across runs. But **p99 flips sign run to run and
   the maximum is consistently ~2× worse with the daemon on**: it trades frequent small lock
   waits for rarer, larger stalls. "Removes the tail latency" was therefore an overclaim in
   both files and is now scoped to the typical command rather than the worst one. The
-  autostart path's first command additionally pays ~+42 ms for the spawn. Still unmeasured
+  autostart path's first command additionally pays ~+41 ms for the spawn. Still unmeasured
   and still needing hardware nobody has to hand: musl, the systemd-unit path, and a network
   home — where the claim is strongest and least tested.
 

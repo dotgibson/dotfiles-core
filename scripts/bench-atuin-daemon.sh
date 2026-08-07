@@ -122,9 +122,27 @@ SB="$(mktemp -d /tmp/atbench.XXXXXX)" || {
   exit 0
 }
 DAEMON_PID=""
+# Ask the daemon in OUR SANDBOX to shut down, via its own socket. Never `pkill atuin`:
+# the pattern is process-wide, so a developer running `make bench-atuin` on their
+# workstation would kill the real daemon their shells are using. Everything here is
+# scoped by AT_ENV (defined below) to the throwaway HOME, so it can only ever reach the
+# daemon this script started. Safe before AT_ENV exists — the guard makes it a no-op.
+daemon_stop() {
+  [[ ${#AT_ENV[@]} -gt 0 ]] &&
+    "${AT_ENV[@]}" ATUIN_DAEMON__ENABLED=true atuin daemon stop >/dev/null 2>&1
+  if [[ -n "$DAEMON_PID" ]]; then
+    kill "$DAEMON_PID" 2>/dev/null
+    wait "$DAEMON_PID" 2>/dev/null
+    DAEMON_PID=""
+  fi
+  rm -f "$SOCK"
+}
+# The autostart arm has atuin spawn a daemon this script never learns the PID of, so a
+# PID-only cleanup would leave it running against a HOME that is about to be deleted.
+# Stopping through the socket first catches that one too.
+AT_ENV=()
 cleanup() {
-  [[ -n "$DAEMON_PID" ]] && kill "$DAEMON_PID" 2>/dev/null
-  wait "$DAEMON_PID" 2>/dev/null
+  daemon_stop
   rm -rf "$SB"
 }
 trap cleanup EXIT
@@ -145,9 +163,24 @@ fi
 mkdir -p "$SB/.config/atuin"
 cp "$HERE/atuin/config.toml" "$SB/.config/atuin/config.toml"
 
-# `env -u XDG_RUNTIME_DIR` on every atuin call: unset is the Alpine/no-systemd condition
-# this reproduces, and it is what forces the data-dir socket fallback.
-AT_ENV=(env -u XDG_RUNTIME_DIR "HOME=$SB")
+# `env -i` — an EMPTY environment, not merely HOME reassigned. Setting HOME alone is not
+# hermetic and the failure is destructive rather than cosmetic: a caller who exports
+# XDG_DATA_HOME (common) would send atuin's data dir OUTSIDE the sandbox, so the seeding
+# step below would import 20k synthetic rows straight into THEIR REAL history DB. An
+# inherited ATUIN_DAEMON__ENABLED would likewise run the "off" arm with the daemon on and
+# quietly invalidate the comparison. Starting from nothing and naming every variable makes
+# both impossible, and it is also what guarantees the topology this reproduces:
+# XDG_RUNTIME_DIR cannot be set, so atuin must fall back to the data-dir socket.
+AT_ENV=(
+  env -i
+  "PATH=$PATH"
+  "HOME=$SB"
+  "XDG_DATA_HOME=$SB/.local/share"
+  "XDG_CONFIG_HOME=$SB/.config"
+  "XDG_CACHE_HOME=$SB/.cache"
+  "XDG_STATE_HOME=$SB/.local/state"
+  "TERM=${TERM:-dumb}"
+)
 
 printf '\n%s== atuin daemon: per-command write latency under contention ==%s\n' "$c_blu" "$c_rst"
 printf '   %s writers x %s commands, %s-row seeded DB, XDG_RUNTIME_DIR unset\n' \
@@ -176,6 +209,16 @@ if [[ ! -s "$DB" ]]; then
   skip "atuin daemon bench skipped (seeding the history DB produced nothing)"
   exit 0
 fi
+# FOLD THE WAL BACK IN before anything snapshots this file. atuin opens SQLite in WAL
+# mode, so a freshly-imported history.db is only half the story — the rest, INCLUDING the
+# _sqlx_migrations rows, is in history.db-wal. Copying the main file alone (as db_reset
+# does) yields a DB that looks seeded but reads as UN-MIGRATED, and then every writer
+# races to apply the migrations at once and loses on
+# `UNIQUE constraint failed: _sqlx_migrations.version`. That is a defect in the harness,
+# not a property of atuin, and it would otherwise be measured as if it were one.
+python3 -c 'import sqlite3,sys
+c = sqlite3.connect(sys.argv[1]); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()' \
+  "$DB" 2>/dev/null
 rows="$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select count(*) from history").fetchone()[0])' "$DB" 2>/dev/null)"
 printf '   seeded: %s rows (%s)\n' "${rows:-?}" "$(du -h "$DB" | cut -f1)"
 
@@ -186,6 +229,12 @@ cp "$DB" "$SB/seed.db"
 db_reset() {
   rm -f "$DB" "$DB-wal" "$DB-shm"
   cp "$SB/seed.db" "$DB"
+  # One SERIAL write before the concurrent ones. Whatever a first-open still has to do to
+  # this file (WAL re-creation, any migration bookkeeping) then happens once, in a single
+  # process, instead of being raced N ways by the writers — which is a property of a cold
+  # file, not of the daemon, and would otherwise land inside the measurement.
+  "${AT_ENV[@]}" "ATUIN_SESSION=$(printf '%032x' 0)" \
+    atuin history start -- "bench-warmup" >/dev/null 2>&1
 }
 
 # ── the writer ────────────────────────────────────────────────────────────────
@@ -195,15 +244,28 @@ db_reset() {
 #
 # ATUIN_SESSION is set per writer because a real shell has one (atuin init exports it) and
 # distinct sessions are what distinct tmux panes look like to atuin.
+#
+# A FAILED call must never be recorded as a fast one. `atuin history start` against a dead
+# daemon errors in a millisecond, and timing that would produce a beautiful low-latency
+# table for work that never happened — the most dangerous possible output from a benchmark,
+# because it looks like the result you were hoping for. So each command's status is
+# checked, the writer aborts on the first failure, and the caller below refuses any arm
+# that did not return exactly WRITERS x ITERS samples.
 cat >"$SB/writer.zsh" <<'ZSH'
 zmodload zsh/datetime
 typeset -F t0 t1
-local out=$1 iters=$2 tag=$3 id
+typeset out=$1 iters=$2 tag=$3 id
 : >| $out
 for i in {1..$iters}; do
   t0=$EPOCHREALTIME
-  id=$(atuin history start -- "bench-$tag-$i --flag value")
-  atuin history end --exit 0 $id >/dev/null 2>&1
+  if ! id=$(atuin history start -- "bench-$tag-$i --flag value" 2>/dev/null) || [[ -z $id ]]; then
+    print -ru2 -- "writer $tag: 'history start' failed at iteration $i"
+    exit 1
+  fi
+  if ! atuin history end --exit 0 $id >/dev/null 2>&1; then
+    print -ru2 -- "writer $tag: 'history end' failed at iteration $i"
+    exit 1
+  fi
   t1=$EPOCHREALTIME
   printf '%.6f\n' $(( (t1 - t0) * 1000 )) >> $out
 done
@@ -211,17 +273,29 @@ ZSH
 
 # run_writers <outdir> [extra env assignments...] — fan out $WRITERS concurrent writers
 # and wait for all of them. Contention is the point, so they must overlap.
+#
+# Returns non-zero if ANY writer failed or the arm came up short of
+# WRITERS x ITERS samples, so the caller can refuse to report a partial arm rather than
+# quietly average whatever survived.
 run_writers() {
   local outdir="$1"
   shift
   mkdir -p "$outdir"
-  local w pids=()
+  local w pids=() rc=0
   for ((w = 1; w <= WRITERS; w++)); do
     "${AT_ENV[@]}" "$@" "ATUIN_SESSION=$(printf '%032x' "$w")" \
-      zsh "$SB/writer.zsh" "$outdir/$w.txt" "$ITERS" "$w" >/dev/null 2>&1 &
-    pids+=($!)
+      zsh "$SB/writer.zsh" "$outdir/$w.txt" "$ITERS" "$w" >>"$SB/writer.log" 2>&1 &
+    pids+=("$!")
   done
-  wait "${pids[@]}" 2>/dev/null
+  for w in "${pids[@]}"; do wait "$w" || rc=1; done
+  local want=$((WRITERS * ITERS)) got
+  got="$(cat "$outdir"/*.txt 2>/dev/null | grep -c .)"
+  if ((rc != 0)) || [[ "$got" != "$want" ]]; then
+    printf '   %s✗%s arm incomplete: %s/%s samples — not reporting it (see %s)\n' \
+      "$c_red" "$c_rst" "${got:-0}" "$want" "$SB/writer.log" >&2
+    return 1
+  fi
+  return 0
 }
 
 daemon_start() {
@@ -234,39 +308,32 @@ daemon_start() {
   done
   return 1
 }
-daemon_stop() {
-  [[ -n "$DAEMON_PID" ]] || return 0
-  "${AT_ENV[@]}" ATUIN_DAEMON__ENABLED=true atuin daemon stop >/dev/null 2>&1
-  kill "$DAEMON_PID" 2>/dev/null
-  wait "$DAEMON_PID" 2>/dev/null
-  DAEMON_PID=""
-  rm -f "$SOCK"
-}
+# (daemon_stop is defined up with cleanup — it must exist before the EXIT trap can fire.)
 
 # ── arm 1: daemon OFF (Core's shipped default) ────────────────────────────────
 printf '\n%s-- arm: daemon OFF (direct SQLite writes) --%s\n' "$c_blu" "$c_rst"
 db_reset
-run_writers "$SB/off"
+OFF_OK=0
+run_writers "$SB/off" && OFF_OK=1
 
 # ── arm 2: daemon ON, already running (the supervised shape) ──────────────────
 printf '%s-- arm: daemon ON (writes via the unix socket) --%s\n' "$c_blu" "$c_rst"
 db_reset
 DAEMON_OK=0
 if daemon_start; then
-  DAEMON_OK=1
   # The socket-path agreement check the behavioral suite cannot make: atuin, with
   # XDG_RUNTIME_DIR unset, must bind the SAME path _core_atuin_daemon_guard probes. If
   # these ever diverge, the guard silently probes a path nothing listens on and disables
   # the daemon on every shell of a machine that correctly opted in.
   printf '   %s✓%s socket-path agreement: atuin bound %s\n' "$c_grn" "$c_rst" \
-    "${SOCK/#$SB/\$HOME}"
+    "${SOCK/#"$SB"/\$HOME}"
   # The ${...} below is QUOTED PROSE — the guard's expression reproduced verbatim so the
   # two can be compared by eye. Expanding it here would print this sandbox's path twice.
   # shellcheck disable=SC2016
   printf '     %s\n' \
     '(= ${XDG_DATA_HOME:-$HOME/.local/share}/atuin/atuin.sock — the expression' \
     ' _core_atuin_daemon_guard resolves in zsh/00-tools.zsh)'
-  run_writers "$SB/on" ATUIN_DAEMON__ENABLED=true
+  run_writers "$SB/on" ATUIN_DAEMON__ENABLED=true && DAEMON_OK=1
 else
   printf '   %s✗%s daemon did not come up — see %s\n' "$c_red" "$c_rst" "$SB/daemon.log"
   sed 's/^/     /' "$SB/daemon.log" 2>/dev/null
@@ -284,27 +351,32 @@ mkdir -p "$SB/first"
 : >"$SB/first/first.txt"
 : >"$SB/first/steady.txt"
 for ((r = 1; r <= REPS; r++)); do
+  # Stop the daemon this rep's predecessor autostarted BEFORE resetting the DB — swapping
+  # the file out from under a live daemon is not a cold start, it is a corrupt one. Via
+  # the socket, never `pkill`: the process-wide pattern would reach the real daemon a
+  # developer's own shells are using.
+  daemon_stop
   db_reset
-  pkill -f 'atuin daemon' 2>/dev/null
-  rm -f "$SOCK"
   # iters=6: line 1 is the cold first command (it pays the spawn), lines 2-6 are the
   # steady state immediately after — same process topology, so the delta IS the spawn.
   "${AT_ENV[@]}" ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__AUTOSTART=true \
     "ATUIN_SESSION=$(printf '%032x' "$((900 + r))")" \
-    zsh "$SB/writer.zsh" "$SB/first/rep$r.txt" 6 "first$r" >/dev/null 2>&1
-  head -1 "$SB/first/rep$r.txt" >>"$SB/first/first.txt" 2>/dev/null
-  tail -n +2 "$SB/first/rep$r.txt" >>"$SB/first/steady.txt" 2>/dev/null
+    zsh "$SB/writer.zsh" "$SB/first/rep$r.txt" 6 "first$r" >>"$SB/writer.log" 2>&1 &&
+    {
+      head -1 "$SB/first/rep$r.txt" >>"$SB/first/first.txt" 2>/dev/null
+      tail -n +2 "$SB/first/rep$r.txt" >>"$SB/first/steady.txt" 2>/dev/null
+    }
 done
-pkill -f 'atuin daemon' 2>/dev/null
+daemon_stop
 
 # ── results ───────────────────────────────────────────────────────────────────
 # Percentiles, not a mean: the daemon is adopted for the TAIL, and a mean hides exactly
 # the lock-wait spikes that motivate it.
 printf '\n%s== results (ms per command: history start + history end) ==%s\n' "$c_blu" "$c_rst"
-python3 - "$SB" "$DAEMON_OK" <<'PY'
-import glob, os, sys
+python3 - "$SB" "$OFF_OK" "$DAEMON_OK" <<'PY'
+import glob, math, os, sys
 
-sb, daemon_ok = sys.argv[1], sys.argv[2] == '1'
+sb, off_ok, daemon_ok = sys.argv[1], sys.argv[2] == '1', sys.argv[3] == '1'
 
 def load(pattern):
     vals = []
@@ -314,9 +386,11 @@ def load(pattern):
     return sorted(vals)
 
 def pct(xs, p):
-    # Nearest-rank. With n in the thousands the interpolation choice is noise, and
-    # nearest-rank has the virtue of always being a value that was actually observed.
-    return xs[min(len(xs) - 1, int(round(p / 100.0 * len(xs) + 0.5)) - 1)]
+    # Nearest-rank, ceil(p/100 * n) — always a value that was actually observed, and no
+    # interpolation choice to argue about. NOT round(p/100*n + 0.5): Python rounds halves
+    # to even, so an exact .5 rank (n=10 at p50, n=50 at p50 — both of which the autostart
+    # arm hits by default) picked the rank ABOVE and biased the reported spawn cost upward.
+    return xs[min(len(xs) - 1, max(0, math.ceil(p / 100.0 * len(xs)) - 1))]
 
 def row(label, xs):
     if not xs:
@@ -325,7 +399,9 @@ def row(label, xs):
     print('  %-18s %7d %9.2f %9.2f %9.2f %9.2f %9.2f' % (
         label, len(xs), sum(xs) / len(xs), pct(xs, 50), pct(xs, 95), pct(xs, 99), xs[-1]))
 
-off = load(os.path.join(sb, 'off', '*.txt'))
+# An arm that did not complete is dropped entirely rather than reported short: a
+# half-populated latency table is indistinguishable from a real one once it is quoted.
+off = load(os.path.join(sb, 'off', '*.txt')) if off_ok else []
 on = load(os.path.join(sb, 'on', '*.txt')) if daemon_ok else []
 
 print('  %-18s %7s %9s %9s %9s %9s %9s' % ('arm', 'n', 'mean', 'p50', 'p95', 'p99', 'max'))
@@ -358,12 +434,35 @@ if first:
               % (pct(first, 50) - pct(steady, 50)))
 PY
 
+# The caveats have to describe THIS run, not the run that happened to be done first.
+# `make bench-atuin` is runnable on macOS, on musl, and on a systemd host, so hardcoding
+# "a glibc container" would eventually stamp that label on a run where it is simply false
+# — the precise kind of unearned claim this whole exercise exists to remove. Detect and
+# report what is actually true here; only the socket topology is enforced by the script.
+host_os="$(uname -s 2>/dev/null || echo unknown)"
+host_arch="$(uname -m 2>/dev/null || echo unknown)"
+host_libc="unknown libc"
+if have ldd && ldd --version 2>&1 | grep -qi musl; then
+  host_libc="musl"
+elif have ldd && ldd --version 2>&1 | grep -qiE 'glibc|gnu libc'; then
+  host_libc="glibc"
+elif [[ "$host_os" == Darwin ]]; then
+  host_libc="Darwin libc"
+fi
+host_init="no systemd"
+[[ -d /run/systemd/system ]] && host_init="systemd present (but unused: this bench never
+takes the unit path)"
+
 cat <<EOF
 
-$(printf '%s' "$c_yel")These numbers narrow the gap; they do not close it.$(printf '%s' "$c_rst") They were taken in a
-container reproducing the TOPOLOGY of the Alpine path only. Not covered, and still
-needing real hardware: musl (this is glibc), the systemd-unit path, a network home
-(where the contention claim is strongest), and any real multi-pane session.
+Measured on: $host_os/$host_arch, $host_libc, $host_init, atuin $(atuin --version 2>/dev/null |
+  awk '{print $2}'). The socket topology is the one thing this script ENFORCES — an empty
+environment, so XDG_RUNTIME_DIR is unset and atuin must use the data-dir socket.
+
+$(printf '%s' "$c_yel")These numbers narrow the gap; they do not close it.$(printf '%s' "$c_rst") Whatever this host is, the
+run did not cover: the systemd-unit path, a network home (where the contention claim is
+strongest), or any real multi-pane session on real hardware$([[ $host_libc == musl ]] ||
+  printf '%s' ", nor musl").
 
 Run it twice before believing the tail. p50 and p95 settle quickly; p99 and max are
 the last to, and a single run's p99 can flip sign. If two runs disagree on a

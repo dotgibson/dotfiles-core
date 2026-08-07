@@ -93,16 +93,16 @@ update_check = false
 # back to the data dir). 8 concurrent writers, one 20k-row DB, 1600 samples per arm,
 # timing the `history start` + `history end` pair a shell hook actually runs:
 #
-#     p50    ~43 ms -> ~31 ms       1.3-1.5x faster   (steady across runs)
+#     p50    ~43 ms -> ~31 ms       ~1.4x faster      (steady across runs)
 #     p95    ~57 ms -> ~46 ms       1.2-1.3x faster   (steady across runs)
-#     p99    ~64 ms -> 58-95 ms     FLIPS SIGN run to run — unresolved
-#     max    ~78 ms -> 137-184 ms   consistently WORSE with the daemon
+#     p99    ~65 ms -> 57-106 ms    FLIPS SIGN run to run — unresolved
+#     max    ~77 ms -> 140-180 ms   consistently WORSE with the daemon
 #
 # Read that carefully before repeating the pitch: the median and p95 win is real, but
 # "removes the TAIL latency" is NOT what the far tail did. The daemon traded frequent
 # small lock waits for rarer, larger stalls. Adopt it for the typical command, not the
 # worst one. On the autostart path the FIRST command of a fresh shell additionally pays
-# ~+42 ms for the daemon spawn (p50, steady across runs); later commands do not.
+# ~+41 ms for the daemon spawn (p50, steady across runs); later commands do not.
 #
 # Still unmeasured, still needing machines nobody has to hand: musl (the above is
 # glibc), the systemd-unit path, and a network home — which is where the contention
