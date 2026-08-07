@@ -195,8 +195,12 @@ update-check() {
 _pkgup_notice() {
   [[ -r "$_PKGUP_CACHE" ]] || return 0
   # fork-free read: $(<file) is a zsh builtin; (f) splits the 2-line cache on newlines.
+  # The split MUST be quoted — "${(@f)...}" — because this cache is POSITIONAL. Unquoted,
+  # zsh drops empty fields, so a cache whose count line is empty ("\n<epoch>") collapses to
+  # one element and the EPOCH lands in _l[1], the count slot. It then passes the <1-> test
+  # below (an epoch is a positive integer) and prints as "1786128391 updates available".
   local -a _l
-  _l=(${(f)"$(<"$_PKGUP_CACHE")"})
+  _l=("${(@f)$(<"$_PKGUP_CACHE")}")
   local count=${_l[1]:-}
   [[ "$count" == <1-> ]] || return 0 # zsh numeric-range glob: only positive ints
   # NOTE: no backticks in a `print -P` string — under PROMPT_SUBST (which starship and
@@ -219,13 +223,20 @@ if ((UPDATE_CHECK_ENABLED)); then
     local now last=0 count=
     now=${EPOCHSECONDS:-$(date +%s)}
     # fork-free read of the 2-line cache ("<count>\n<epoch>") — $(<file) is a builtin.
+    # Quoted split (see _pkgup_notice): unquoted, an empty count line is elided and BOTH
+    # fields shift — count becomes the epoch and `last` becomes empty, i.e. 0, which also
+    # defeats the once-a-day throttle below and re-fires the check on every single shell.
     if [[ -r "$_PKGUP_CACHE" ]]; then
       local -a _l
-      _l=(${(f)"$(<"$_PKGUP_CACHE")"})
+      _l=("${(@f)$(<"$_PKGUP_CACHE")}")
       count=${_l[1]:-}
       last=${_l[2]:-0}
     fi
     [[ "$last" == <-> ]] || last=0
+    # Same fail-closed treatment for the count. It is written back verbatim when we claim
+    # the slot below, so a single bad refresh (offline, a package manager that prompted and
+    # produced nothing) would otherwise persist into every later shell's cache.
+    [[ "$count" == (-|)<-> ]] || count=
     # Throttle FIRST (cheap: a clock read + a cache read, both fork-free), then — only when
     # due — pay for the manager probe. No elapsed window → no probe, the common per-shell path.
     if ((now - last >= UPDATE_CHECK_INTERVAL)) && [[ "$(_pkgup_mgr)" != none ]]; then

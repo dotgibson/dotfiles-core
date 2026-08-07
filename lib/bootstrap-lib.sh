@@ -427,11 +427,17 @@ blib_wire_summary() {
 # already in place; backs up any prior ~/.zshrc first (incl. a pre-v4 "v2" one, which no
 # longer matches, so it is upgraded). The heredocs are single-quoted, so $HOME/$ZDOTDIR/
 # etc. stay LITERAL in the written file (evaluated at shell start, not at write time).
+#
+# The entry file EXPORTS ZDOTDIR (see the heredoc below), so it must also exist AT
+# $ZDOTDIR/.zshrc — see _blib_seed_zdotdir_rc.
 blib_write_zshrc_loader() {
   blib_want zsh || return 0   # the .zshrc loader belongs to the zsh group
   local rc="$HOME/.zshrc"
 
   if [[ -f "$rc" ]] && grep -q "dotfiles-managed v4" "$rc" 2>/dev/null; then
+    # Already managed — but a box bootstrapped before the seeding below existed still
+    # has no $ZDOTDIR/.zshrc, so reconcile that here rather than only on a fresh write.
+    _blib_seed_zdotdir_rc "$rc"
     return 0
   fi
   if _blib_dry; then
@@ -475,6 +481,35 @@ else
   print -u2 -- "zshrc: Core loader not found at $ZSH_CFG/loader.zsh — re-run the dotfiles bootstrap to (re)link Core."
 fi
 ZRC
+  _blib_seed_zdotdir_rc "$rc"
+}
+
+# _blib_seed_zdotdir_rc <managed-rc> — make the entry file reachable AT $ZDOTDIR too.
+#
+# The managed ~/.zshrc EXPORTS ZDOTDIR=$XDG_CONFIG_HOME/zsh. That is fine for the shell
+# that reads ~/.zshrc (ZDOTDIR is unset at that point, so zsh looks in $HOME), but every
+# zsh started from inside it INHERITS the export and looks in $ZDOTDIR instead — where,
+# without this, there is no .zshrc/.zshenv/.zprofile/.zlogin at all. zsh then treats the
+# user as brand new and runs zsh-newuser-install, and none of Core loads. `exec zsh` is
+# the documented first step after a bootstrap (README "Getting Started"), so the very
+# first thing a fresh box is told to do walked straight into the wizard.
+#
+# Worse than the wizard: on a non-TTY there is no wizard, just a shell with no Core.
+# And the wizard's own option (0) writes a comment-only $ZDOTDIR/.zshrc, which silences
+# it permanently while leaving the shell empty — the failure becomes invisible.
+#
+# Seed it as a LINK, not a copy, so it tracks ~/.zshrc when the loader is regenerated.
+# Re-entrant by construction: the file resolves ZDOTDIR with := (a no-op when already
+# exported) and loader.zsh globs [0-9][0-9]-*.zsh, which ".zshrc" cannot match — so being
+# read via $ZDOTDIR sources the fragments exactly once, same as via $HOME.
+_blib_seed_zdotdir_rc() {
+  local rc="$1"
+  # Resolve ZDOTDIR the same way the written entry file does.
+  local zdot="${ZDOTDIR:-${XDG_CONFIG_HOME:-$HOME/.config}/zsh}"
+  # ZDOTDIR pointing at $HOME means ~/.zshrc IS the $ZDOTDIR entry — nothing to seed, and
+  # linking would make it its own target.
+  [[ -n "$zdot" && "$zdot" != "$HOME" ]] || return 0
+  blib_link "$rc" "$zdot/.zshrc"
 }
 
 # ── privilege escalation ──────────────────────────────────────────────────────
