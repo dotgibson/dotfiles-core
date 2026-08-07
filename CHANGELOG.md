@@ -31,7 +31,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 ### Fixed
 
 - **`exec zsh` — the documented first step after a bootstrap — dropped you into
-  `zsh-newuser-install` with no Core loaded.** The managed `~/.zshrc` *exports*
+  `zsh-newuser-install` with no Core loaded.** The managed `~/.zshrc` _exports_
   `ZDOTDIR=$XDG_CONFIG_HOME/zsh`, but nothing ever created `$ZDOTDIR/.zshrc`. The first
   shell was fine (`ZDOTDIR` unset ⇒ zsh reads `~/.zshrc`); every zsh started from inside it
   inherited the export, found none of `.zshenv`/`.zprofile`/`.zshrc`/`.zlogin` there, and was
@@ -48,12 +48,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 - **The update nudge could report a Unix timestamp as the package count** — e.g.
   `󰚰 1786128391 updates available`. `_PKGUP_CACHE` is positional (`"<count>\n<epoch>"`) but
-  both readers split it with an *unquoted* `${(f)…}`, and zsh drops empty fields from an
+  both readers split it with an _unquoted_ `${(f)…}`, and zsh drops empty fields from an
   unquoted expansion. So whenever a refresh produced an empty count (offline, or a package
   manager that stopped on a prompt), the leading empty field vanished and the epoch shifted
   into the count slot — where it passed the `<1->` positive-integer check and rendered. It
   was self-perpetuating too: `last` shifted to empty ⇒ `0`, which defeated the once-a-day
-  throttle so the check re-fired on *every* shell, and the claim-the-slot write persisted the
+  throttle so the check re-fired on _every_ shell, and the claim-the-slot write persisted the
   bogus count into the cache. Both reads are now quoted (`"${(@f)…}"`), and a non-numeric
   count is discarded before it can be written back.
 
