@@ -30,6 +30,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`exec zsh` — the documented first step after a bootstrap — dropped you into
+  `zsh-newuser-install` with no Core loaded.** The managed `~/.zshrc` _exports_
+  `ZDOTDIR=$XDG_CONFIG_HOME/zsh`, but nothing ever created `$ZDOTDIR/.zshrc`. The first
+  shell was fine (`ZDOTDIR` unset ⇒ zsh reads `~/.zshrc`); every zsh started from inside it
+  inherited the export, found none of `.zshenv`/`.zprofile`/`.zshrc`/`.zlogin` there, and was
+  treated as a brand-new user. The wizard was the visible half — the real damage was a shell
+  with no fragments, no plugins, no prompt. On a non-TTY there was no wizard at all, just a
+  silently empty shell; and the wizard's own option `(0)` writes a comment-only
+  `$ZDOTDIR/.zshrc`, permanently suppressing it while permanently keeping the shell empty.
+  `blib_write_zshrc_loader` now seeds `$ZDOTDIR/.zshrc` as a link to `~/.zshrc` (via
+  `blib_link`, so it backs up, is dry-run aware, and is idempotent) — including on the
+  already-managed early-return path, so boxes bootstrapped before this fix are reconciled on
+  the next run rather than only on a fresh write. Note `scripts/bench-core.sh` and
+  `scripts/new-os-repo.sh` already built the coherent `$ZDOTDIR` model, which is exactly why
+  the suite never caught this; Section I of `scripts/test-core.sh` now asserts it.
+
+- **The update nudge could report a Unix timestamp as the package count** — e.g.
+  `󰚰 1786128391 updates available`. `_PKGUP_CACHE` is positional (`"<count>\n<epoch>"`) but
+  both readers split it with an _unquoted_ `${(f)…}`, and zsh drops empty fields from an
+  unquoted expansion. The empty count is not something `_pkgup_refresh` can write — it
+  normalises an empty result to `-1`. It comes from the startup hook itself: on the first
+  shell of a fresh box there is no cache, so the count it reads is empty, and claiming the
+  throttle slot persists that empty field alongside a fresh timestamp while the background
+  refresh is still in flight. Read back unquoted, the leading empty field vanishes and the
+  epoch shifts into the count slot — where it passes the `<1->` positive-integer check and
+  renders. From there it is self-sustaining: `last` shifts to empty ⇒ `0`, which defeats the
+  once-a-day throttle so the check re-fires on _every_ shell, each one rewriting the bogus
+  count. Both reads are now quoted (`"${(@f)…}"`), and a non-numeric count is discarded
+  before it can be written back, closing the race from the writer side too.
+
+- **`zsh/00-tools.zsh` documented an atuin fallback that does not exist.** The comment on
+  `_core_atuin_daemon_guard` said an absent or stale daemon socket makes "every atuin call
+  pay a failed connect and an error" and that "atuin then writes SQLite directly" — so a
+  missing daemon "must cost latency". Measured against atuin 18.19.0, none of that holds:
+  `atuin history start` exits 0, prints a well-formed history id, writes nothing to stderr,
+  and **discards the entry** (verified for an absent socket, a stale socket file, and with
+  and without `--hook`; the daemon-off control writes every row). The guard is therefore
+  data-loss prevention, not a latency optimisation, and the "startup probe, not a watchdog"
+  caveat is correspondingly sharper: a daemon that dies mid-session costs that shell every
+  subsequent command, unrecorded and unannounced. Comment corrected; no behaviour change.
+
 - **`core.manifest` advertised a keybinding that does not exist.** Its `zsh/35-fzf.zsh`
   stanza named `Ctrl-F/R` for the fzf widgets; `zsh/40-bindings.zsh` binds `^T`, and there is
   no `^F` binding anywhere in Core — `PARITY.md` even records that zsh moved off `Ctrl+F`.
