@@ -34,9 +34,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
   points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
   and unreachable, atuin exits 0, prints a well-formed history id, writes nothing to stderr
-  and discards the entry. So the day the old spelling is removed, `ExecStart` fails,
-  `Restart=on-failure`/`RestartSec=3` retries it forever, and every shell on a machine that
-  enabled the unit records nothing, quietly, until someone notices their history stopped.
+  and discards the entry. So the day the old spelling is removed, `ExecStart` fails and
+  `Restart=on-failure`/`RestartSec=3` retries it forever with nothing ever listening.
+  Scoped honestly: a Core shell started _after_ that is fine — `_core_atuin_daemon_guard`
+  probes the socket at its first `precmd`, finds nothing, and forces the daemon off so atuin
+  writes SQLite directly. The exposure is shells that had already completed that one-shot
+  probe while the daemon was alive, and anyone consuming this unit _without_ Core's guard —
+  which, `examples/` being a copy-paste target, is precisely who it is written for.
   The unit now asks the binary which spelling it has and execs that, because the subcommand
   does not exist on older atuin and this file is copy-pasted onto machines Core does not
   control. Two things that do _not_ work and are pinned by tests: `exec A || exec B` (once

@@ -1565,14 +1565,37 @@ if [[ ! -f "$_UNIT" ]]; then
   skip "atuin unit (examples/atuin-daemon.service absent)"
 else
   _ux="$(grep -E '^ExecStart=' "$_UNIT" || true)"
-  # The modern spelling must be reachable — `atuin daemon` alone is deprecated (18.19.0
-  # warns) and will eventually be removed.
-  if [[ "$_ux" == *"daemon start"* ]]; then
-    pass "atuin unit: ExecStart uses the non-deprecated 'daemon start'"; else fail "atuin unit: ExecStart still uses only the deprecated bare 'atuin daemon'"; fi
-  # …and the old spelling must remain reachable as a fallback, because the subcommand does
-  # not exist on older atuin and this file is copy-pasted onto machines we do not control.
-  if [[ "$_ux" == *"daemon start --help"* ]]; then
-    pass "atuin unit: ExecStart probes for the subcommand before choosing"; else fail "atuin unit: ExecStart picks a spelling outright — breaks one atuin generation"; fi
+  # RUN the ExecStart payload against stub atuins rather than pattern-matching it. String
+  # assertions are too weak here: "contains daemon start" is satisfied by the PROBE alone,
+  # so a unit that probes correctly and then execs the bare form in BOTH branches would
+  # pass while being exactly the bug this fixes. Executing it pins the actual choice.
+  _uxcmd="$(sed -n "s|^ExecStart=/bin/sh -c '\(.*\)'\$|\1|p" "$_UNIT")"
+  if [[ -z "$_uxcmd" ]]; then
+    fail "atuin unit: could not extract the sh -c payload from ExecStart (format changed?)"
+  else
+    _ustub="$(mktemp -d "$SANDBOX/unitstub.XXXXXX")"
+    mkdir -p "$_ustub/new" "$_ustub/old"
+    # NEW atuin: `daemon start` exists, so the probe succeeds and start must be chosen.
+    printf '%s\n' '#!/bin/sh' \
+      '[ "$1" = daemon ] && [ "$2" = start ] && [ "$3" = --help ] && exit 0' \
+      '[ "$1" = daemon ] && [ "$2" = start ] && { echo START >"$UNIT_MARK"; exit 0; }' \
+      '[ "$1" = daemon ] && [ -z "$2" ] && { echo BARE >"$UNIT_MARK"; exit 0; }' \
+      'exit 2' >"$_ustub/new/atuin"
+    # OLD atuin: no `start` subcommand — the probe must fail and the bare form be chosen.
+    printf '%s\n' '#!/bin/sh' \
+      '[ "$1" = daemon ] && [ "$2" = start ] && exit 2' \
+      '[ "$1" = daemon ] && { echo BARE >"$UNIT_MARK"; exit 0; }' \
+      'exit 2' >"$_ustub/old/atuin"
+    chmod +x "$_ustub/new/atuin" "$_ustub/old/atuin"
+
+    UNIT_MARK="$_ustub/mark.new" PATH="$_ustub/new:$PATH" sh -c "$_uxcmd" >/dev/null 2>&1
+    if [[ "$(cat "$_ustub/mark.new" 2>/dev/null)" == START ]]; then
+      pass "atuin unit: on an atuin WITH 'daemon start', ExecStart runs the non-deprecated form"; else fail "atuin unit: modern atuin did not get 'daemon start' (got: $(cat "$_ustub/mark.new" 2>/dev/null || echo nothing))"; fi
+
+    UNIT_MARK="$_ustub/mark.old" PATH="$_ustub/old:$PATH" sh -c "$_uxcmd" >/dev/null 2>&1
+    if [[ "$(cat "$_ustub/mark.old" 2>/dev/null)" == BARE ]]; then
+      pass "atuin unit: on an atuin WITHOUT it, ExecStart falls back to the bare form"; else fail "atuin unit: old atuin got no working fallback (got: $(cat "$_ustub/mark.old" 2>/dev/null || echo nothing))"; fi
+  fi
   # `exec A || exec B` LOOKS like a fallback but is not: once exec succeeds the process is
   # replaced, so atuin exiting non-zero can never reach the `||`. Pin that it is not used.
   if [[ "$_ux" != *"|| exec"* ]]; then
