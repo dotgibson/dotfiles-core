@@ -1553,6 +1553,39 @@ _zh="$(mktemp -d "$SANDBOX/zh.XXXXXX")"
 if [[ -f "$_zh/.zshrc" && ! -L "$_zh/.zshrc" ]]; then
   pass "zshrc: ZDOTDIR=\$HOME leaves ~/.zshrc a real file (no self-link)"; else fail "zshrc: ZDOTDIR=\$HOME produced a self-referential link"; fi
 
+# ── J. shipped example systemd unit (examples/atuin-daemon.service) ───────────
+# This file is classified repo-meta by ci-classify (nothing links it, so it cannot break a
+# shell) and was consequently never validated at all. It still ships onto real machines by
+# copy-paste, and its failure mode is quiet: with the daemon enabled and unreachable, atuin
+# exits 0 and DISCARDS the entry, so a unit whose ExecStart the binary rejects becomes a
+# 3s restart loop while shells silently record nothing. Cheap assertions, pure bash.
+hdr "example systemd unit (examples/atuin-daemon.service)"
+_UNIT="$HERE/examples/atuin-daemon.service"
+if [[ ! -f "$_UNIT" ]]; then
+  skip "atuin unit (examples/atuin-daemon.service absent)"
+else
+  _ux="$(grep -E '^ExecStart=' "$_UNIT" || true)"
+  # The modern spelling must be reachable — `atuin daemon` alone is deprecated (18.19.0
+  # warns) and will eventually be removed.
+  if [[ "$_ux" == *"daemon start"* ]]; then
+    pass "atuin unit: ExecStart uses the non-deprecated 'daemon start'"; else fail "atuin unit: ExecStart still uses only the deprecated bare 'atuin daemon'"; fi
+  # …and the old spelling must remain reachable as a fallback, because the subcommand does
+  # not exist on older atuin and this file is copy-pasted onto machines we do not control.
+  if [[ "$_ux" == *"daemon start --help"* ]]; then
+    pass "atuin unit: ExecStart probes for the subcommand before choosing"; else fail "atuin unit: ExecStart picks a spelling outright — breaks one atuin generation"; fi
+  # `exec A || exec B` LOOKS like a fallback but is not: once exec succeeds the process is
+  # replaced, so atuin exiting non-zero can never reach the `||`. Pin that it is not used.
+  if [[ "$_ux" != *"|| exec"* ]]; then
+    pass "atuin unit: no 'exec … || exec …' pseudo-fallback"; else fail "atuin unit: 'exec … || exec …' cannot fall back — exec replaces the process"; fi
+  # Syntax, when the tool is around (Linux CI; absent on macOS runners).
+  if have systemd-analyze; then
+    if systemd-analyze verify "$_UNIT" >/dev/null 2>&1; then
+      pass "atuin unit: systemd-analyze verify clean"; else fail "atuin unit: systemd-analyze verify reported problems"; fi
+  else
+    skip "atuin unit: systemd-analyze verify (not installed)"
+  fi
+fi
+
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall
 # through to the shared summary, so a Section-C failure still surfaces as exit 1.

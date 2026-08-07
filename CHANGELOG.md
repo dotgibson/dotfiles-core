@@ -30,6 +30,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
+  failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
+  points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
+  and unreachable, atuin exits 0, prints a well-formed history id, writes nothing to stderr
+  and discards the entry. So the day the old spelling is removed, `ExecStart` fails,
+  `Restart=on-failure`/`RestartSec=3` retries it forever, and every shell on a machine that
+  enabled the unit records nothing, quietly, until someone notices their history stopped.
+  The unit now asks the binary which spelling it has and execs that, because the subcommand
+  does not exist on older atuin and this file is copy-pasted onto machines Core does not
+  control. Two things that do _not_ work and are pinned by tests: `exec A || exec B` (once
+  `exec` succeeds the process is replaced, so a non-zero exit can never reach the `||`), and
+  probing with `atuin daemon --help` (exits 0 on both spellings, so it proves nothing —
+  which is why `dotfiles-Fedora`'s existing capability probe would have installed a unit the
+  binary rejects). New `scripts/test-core.sh` Section J covers the file, including
+  `systemd-analyze verify`; note it remains classified repo-meta by `ci-classify`, so an
+  examples-only change still gates nothing.
+
 - **`exec zsh` — the documented first step after a bootstrap — dropped you into
   `zsh-newuser-install` with no Core loaded.** The managed `~/.zshrc` _exports_
   `ZDOTDIR=$XDG_CONFIG_HOME/zsh`, but nothing ever created `$ZDOTDIR/.zshrc`. The first
