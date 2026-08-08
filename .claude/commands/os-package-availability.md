@@ -34,6 +34,27 @@ the list still resolve upstream*.
    Packages / Arch + AUR / openSUSE OBS / Alpine pkgs / Gentoo portage /
    Homebrew formulae). Flag: **renamed** (old → new), **dropped**, or **moved** to
    a secondary repo.
+
+   **Query every release users are actually on, not just one.** A single-release
+   check cannot tell "present everywhere" apart from "already dropped in the next
+   release" — and the second is precisely what this routine exists to catch. For a
+   versioned distro (Fedora, openSUSE Leap, Alpine, Kali) that means each
+   currently-supported stable release **and** the development branch (rawhide /
+   Tumbleweed / edge / sid). Rolling distros (Arch, Gentoo, Homebrew) have a single
+   target, so one query is the whole answer.
+
+   Two anchors, because a single-release check has already filed a false "Clean":
+
+   - **Name the release every version came from.** A version resolved in one release
+     is not evidence the name resolves in another. Report per release — `tealdeer
+     1.7.3 on F43/F44, absent from rawhide` — never as one unqualified ✓. If you
+     quote a version, you must be able to say which release you read it from.
+   - **Still in stable but gone from the development branch is a finding, not a
+     pass.** It is a scheduled break, and reporting it while the package still
+     installs is the entire value of an availability audit — by the time it fails,
+     it is no longer early. Treat it as **Drifted (likely)**, say which release it
+     disappears in, and check whether the package is orphaned or unmaintained
+     upstream, which is what normally precedes a drop.
 2. **Cross-check `PORTING-MATRIX.md`.** Its package-name table has columns for
    **Arch, openSUSE, Alpine, Gentoo, and Kali only** — `fedora` and `macbook` have
    **no column** (Fedora is the template the others are stamped from; macOS is
@@ -72,11 +93,20 @@ about `PORTING-MATRIX.md`, put the evidence in the report: quote the full matrix
 row (or the footnote's current text) alongside the `file:line`, so a reader can
 check the column without opening the file:
 
-- **Broken (fix needed)** — a name that no longer resolves as written.
-- **Drifted (likely)** — renamed / moved but still installable under an alias, or a
+- **Broken (fix needed)** — a name that no longer resolves as written on a
+  currently-supported release.
+- **Drifted (likely)** — renamed / moved but still installable under an alias; a name
+  that still resolves on stable but has vanished from the development branch; or a
   stale matrix footnote.
 - **Clean** — what was checked and still resolves, so a green run is trustworthy.
-  Quantify: N packages checked, which distro index was queried.
+  Quantify: N packages checked, which distro index was queried, and **which releases**
+  — a verdict that doesn't name its release coverage isn't a Clean, it's an untested
+  claim. If every entry was checked on one release only, say so and call the run
+  partial rather than Clean.
+
+Account for the whole list. State N checked against the N in the list, and if those
+differ, name the entries you skipped and why — a tally that silently omits entries
+reads as full coverage without having it.
 
 Report-first. Fixes to a package list land in the **OS repo**
 (`install/packages.txt` / `Brewfile`); fixes to the matrix land in **dotfiles-core**

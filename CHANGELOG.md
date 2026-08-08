@@ -30,6 +30,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`/os-package-availability` could query a single release and still return "Clean" —
+  the one verdict the routine exists to rule out.** Step 1 said to confirm each name
+  "still exists in this distro's repos" without ever saying _which_ releases to look in,
+  so a run against one release could not distinguish "present everywhere" from "already
+  dropped in the next release" — and would report a version read from stable as evidence
+  the name resolves, full stop. That is not hypothetical: the Fedora run filed a Clean
+  verdict while `tealdeer` and `procs` had both gone orphan and neither had been rebuilt
+  for rawhide/F45, quoting their F43/F44 versions as passes. Both still install today and
+  break on the F45 upgrade, which is exactly the early warning this audit is for. The
+  routine now requires every currently-supported stable release **plus** the development
+  branch on versioned distros (rawhide / Tumbleweed / edge / sid), one query on rolling
+  ones; requires every quoted version to name the release it came from; classifies
+  "in stable, gone from the development branch" as **Drifted**, not a pass; and requires a
+  Clean verdict to state its release coverage and reconcile N-checked against N-in-list,
+  so a partial run has to call itself partial. Prompt-only — no workflow or caller change,
+  so OS repos pick it up on their next `@v4` run with no edit on their side.
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
   points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
