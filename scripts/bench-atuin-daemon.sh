@@ -133,8 +133,15 @@ done
 for _k in WRITERS ITERS SEED REPS; do
   eval "_v=\${CORE_ATBENCH_$_k:-}"
   [[ -z "$_v" ]] && continue
-  if [[ ! "$_v" =~ ^[0-9]+$ ]] || ((_v < 1)); then
-    printf 'bench-atuin-daemon.sh: CORE_ATBENCH_%s must be a positive integer: %s\n' \
+  # ^[1-9][0-9]*$ — canonical positive integers ONLY, in one test. `^[0-9]+$` plus an
+  # arithmetic `< 1` looks equivalent and is not: `08` passes the digit class, and bash then
+  # reads it as OCTAL, so `((_v < 1))` dies with "value too great for base" instead of
+  # producing the promised exit 2 — and the bad value goes on to break the writer loops.
+  # Rejecting the zero-padded form outright also rejects `0` and non-numerics, so this one
+  # pattern replaces all three checks. (scripts/auto-tag.sh carries an octal-safety test for
+  # the same trap.)
+  if [[ ! "$_v" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'bench-atuin-daemon.sh: CORE_ATBENCH_%s must be a positive integer with no leading zero: %s\n' \
       "$_k" "$_v" >&2
     exit 2
   fi
@@ -224,6 +231,9 @@ LOCALDIR="$(mktemp -d /tmp/atbench.XXXXXX)" || {
 }
 if [[ -n "$BASE" ]]; then
   SB="$(mktemp -d "$BASE/atbench.XXXXXX")" || {
+    # LOCALDIR already exists and the EXIT trap is not installed yet, so clean it up by hand
+    # or every failed network-home setup leaves a /tmp/atbench.* behind.
+    rm -rf "$LOCALDIR"
     skip "atuin daemon bench skipped (could not create a sandbox under $BASE)"
     exit 0
   }
@@ -508,9 +518,9 @@ db_rows() { python3 -c "$ROWCOUNT_PY" "$DB" "${1:-1=1}" 2>/dev/null; }
 BASE_ROWS=0
 # Same, counting only FINISHED rows. atuin's model, verified against 18.19.0: `history
 # start` inserts with duration = -1 and `history end` overwrites it with the real duration.
-# db_reset's warmup calls start with no matching end, so it contributes a permanent -1 row
-# and BOTH expected deltas are WRITERS x ITERS — the warmup is inside the baseline for the
-# first and never enters the second.
+# db_reset's warmup runs a COMPLETE pair, so its row is finished by the time both baselines
+# are taken — it sits inside each of them, and both expected deltas are therefore exactly
+# WRITERS x ITERS.
 BASE_DONE=0
 # Whether the sentinel model above actually holds on the atuin in front of us. Confirmed
 # per-run rather than assumed, so a future atuin that changes it degrades to "cannot check
@@ -620,11 +630,15 @@ db_reset() {
   BASE_DONE="$(db_rows 'duration >= 0')"
   # A baseline that failed to read poisons every delta after it, so refuse outright rather
   # than measure against garbage.
+  # A baseline that failed to read poisons every delta after it. Note that EVERY call site
+  # must gate on this status — a `return 1` nothing checks is not a fail-closed check, it is
+  # a comment.
   if ((BASE_ROWS < 0)) || ((BASE_DONE < 0)); then
     printf '   %s✗%s could not read a row-count baseline from %s\n' \
       "$c_red" "$c_rst" "$DB" >&2
     return 1
   fi
+  return 0
 }
 
 # ── the writer ────────────────────────────────────────────────────────────────
@@ -722,16 +736,24 @@ daemon_start() {
 # it would either fail to find the bus, or point a real daemon at the sandbox.
 unit_start() {
   UNIT="atbench-daemon-${LOCALDIR##*.}"
-  local atuin_bin kv i
-  # A unit inherits none of our PATH, so resolve the binary here.
+  local atuin_bin env_bin i
+  # A unit inherits none of our PATH, so resolve both binaries to absolute paths here.
   atuin_bin="$(command -v atuin)"
+  env_bin="$(command -v env)"
   local sdrun=(
     systemd-run --user --quiet --collect --unit="$UNIT"
     --description='atuin daemon (bench sandbox — transient, not your real unit)'
     --property=Restart=no --property=TimeoutStopSec=5
   )
-  for kv in "${AT_VARS[@]}"; do sdrun+=("--setenv=$kv"); done
-  sdrun+=(--setenv=ATUIN_DAEMON__ENABLED=true -- "$atuin_bin" daemon start)
+  # The payload runs under `env -i "${AT_VARS[@]}"`, NOT via a list of --setenv flags.
+  # --setenv only ADDS or OVERRIDES: the unit still inherits the user manager's whole
+  # environment, so anything AT_VARS does not happen to name — ATUIN_CONFIG_DIR,
+  # ATUIN_DAEMON__SOCKET_PATH, a stray ATUIN_DB_PATH — reaches the daemon and can point it
+  # at the developer's real files. That is the same non-hermeticity `env -i` exists to
+  # prevent for the writers, and it is worse here, because this process is the one doing
+  # the writing. systemd-run itself still runs in OUR environment: it needs the real
+  # XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS to reach the bus. Only the payload is scrubbed.
+  sdrun+=(-- "$env_bin" -i "${AT_VARS[@]}" ATUIN_DAEMON__ENABLED=true "$atuin_bin" daemon start)
   "${sdrun[@]}" >"$SB/daemon.log" 2>&1 || return 1
   for ((i = 0; i < 100; i++)); do
     [[ -S "$SOCK" ]] && return 0
@@ -745,9 +767,20 @@ unit_start() {
 # LISTEN), field 7 the SOCKET inode (not the filesystem inode — for AF_UNIX they differ, and
 # `stat -c %i` gives the wrong one), and the last field the path.
 #
-# A MISMATCH is a defect and refuses the arm. An UNMEASURABLE ownership is a missing tool,
-# and this script's whole contract is that missing tools skip rather than fail — so that
-# case prints a note and lets the arm through, labelled.
+# Three outcomes, not two, because "wrong" and "unmeasurable" are different facts:
+#
+#   MISMATCH          — a defect. Refuses the arm.
+#   NO LISTEN ENTRY   — also refuses. This is NOT a missing tool: /proc/net/unix is readable
+#                       and unit_start already waited for the socket to exist, so a socket
+#                       with no listener behind it is precisely the accept-but-dead shape
+#                       this assertion is for. Letting it through would report numbers for a
+#                       daemon nothing proved was serving them.
+#   NO PROCFS         — genuinely unmeasurable (a capability gap, not a finding), so the
+#                       script's missing-tool contract applies: note it, let the arm run —
+#                       but SET A FLAG so the results-table label carries the caveat. An
+#                       unverified arm that looks identical to a verified one in the table is
+#                       how an unproven number gets quoted as a proven one.
+OWNERSHIP_UNVERIFIED=0
 unit_owns_socket() {
   local mainpid ino fd
   mainpid="$(systemctl --user show -p MainPID --value "$UNIT" 2>/dev/null)"
@@ -757,12 +790,14 @@ unit_owns_socket() {
   }
   [[ -r /proc/net/unix ]] || {
     printf '   –  unit↔socket ownership unverified (no /proc/net/unix)\n'
+    OWNERSHIP_UNVERIFIED=1
     return 0
   }
   ino="$(awk -v p="$SOCK" '$6=="01" && $NF==p {print $7; exit}' /proc/net/unix 2>/dev/null)"
   [[ -n "$ino" ]] || {
-    printf '   –  unit↔socket ownership unverified (no LISTEN entry for %s)\n' "$SOCK"
-    return 0
+    printf '   %s✗%s no LISTEN entry for %s, though the socket exists — nothing is serving it\n' \
+      "$c_red" "$c_rst" "$SOCK" >&2
+    return 1
   }
   for fd in "/proc/$mainpid/fd"/*; do
     [[ "$(readlink "$fd" 2>/dev/null)" == "socket:[$ino]" ]] && {
@@ -783,15 +818,14 @@ unit_owns_socket() {
 # same file would inflate the direct writers and make the off arm look worse than it is.
 # That property is load-bearing and otherwise invisible — do not reorder the arms.
 printf '\n%s-- arm: daemon OFF (direct SQLite writes) --%s\n' "$c_blu" "$c_rst"
-db_reset
 OFF_OK=0
-run_writers "$SB/off" && arm_wrote "$((WRITERS * ITERS))" "daemon off" && OFF_OK=1
+db_reset &&
+  run_writers "$SB/off" && arm_wrote "$((WRITERS * ITERS))" "daemon off" && OFF_OK=1
 
 # ── arm 2: daemon ON, already running (the supervised shape) ──────────────────
 printf '%s-- arm: daemon ON (writes via the unix socket) --%s\n' "$c_blu" "$c_rst"
-db_reset
 DAEMON_OK=0
-if daemon_start; then
+if db_reset && daemon_start; then
   # The socket-path agreement check the behavioral suite cannot make: atuin must bind the
   # SAME path _core_atuin_daemon_guard probes. If these ever diverge, the guard silently
   # probes a path nothing listens on and disables the daemon on every shell of a machine
@@ -811,7 +845,6 @@ if daemon_start; then
     printf '     %s\n' \
       '(= $XDG_RUNTIME_DIR/atuin.sock — the FIRST branch of the expression' \
       ' _core_atuin_daemon_guard resolves, the one the default mode cannot reach)'
-    unit_owns_socket || DAEMON_FAIL=1
   else
     printf '   %s✓%s socket-path agreement: atuin bound %s\n' "$c_grn" "$c_rst" \
       "${SOCK/#"$SB"/\$HOME}"
@@ -822,6 +855,12 @@ if daemon_start; then
       '(= ${XDG_DATA_HOME:-$HOME/.local/share}/atuin/atuin.sock — the expression' \
       ' _core_atuin_daemon_guard resolves in zsh/00-tools.zsh)'
   fi
+  # Ownership is a property of the MODE, not of which socket-agreement claim was printable,
+  # so it runs whenever a unit is supervising the daemon. Hanging it off the `elif` above
+  # meant CORE_ATBENCH_BASE + --systemd took the first branch and silently skipped the
+  # MainPID assertion — the two modes are documented as composable, so that combination has
+  # to keep the invariant the flag advertises.
+  ((SYSTEMD)) && { unit_owns_socket || DAEMON_FAIL=1; }
   # The row check matters MOST on this arm: it is the one where a dead-or-wedged socket
   # produces fast, plausible, entirely fictional numbers.
   ((${DAEMON_FAIL:-0})) ||
@@ -872,7 +911,7 @@ for ((r = 1; r <= REPS; r++)); do
   # the socket, never `pkill`: the process-wide pattern would reach the real daemon a
   # developer's own shells are using.
   daemon_stop
-  db_reset
+  db_reset || continue
   # iters=6: line 1 is the cold first command (it pays the spawn), lines 2-6 are the
   # steady state immediately after — same process topology, so the delta IS the spawn.
   # The row check is not optional here either — and this arm is the likeliest to need it,
@@ -904,6 +943,7 @@ printf '\n%s== results (ms per command: history start + history end) ==%s\n' "$c
 ON_LABEL="daemon on"
 ((SYSTEMD)) && ON_LABEL="daemon on (systemd unit) [UNVALIDATED]"
 [[ -n "$SOCK_FORCED" ]] && ON_LABEL="$ON_LABEL (socket forced)"
+((OWNERSHIP_UNVERIFIED)) && ON_LABEL="$ON_LABEL (ownership unverified)"
 python3 - "$SB" "$OFF_OK" "$DAEMON_OK" "$ON_LABEL" <<'PY'
 import glob, math, os, sys
 

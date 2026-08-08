@@ -1695,14 +1695,22 @@ else
   # 5. Knob validation. WRITERS=0 is the one that matters: it makes every arm vacuously
   #    complete AND vacuously row-correct (0 samples, 0 rows) — a green run that measured
   #    nothing, which is precisely the outcome the row rule exists to make impossible.
+  #    `08` is the third leg and the subtle one: it passes a `^[0-9]+$` digit class, and bash
+  #    then reads it as OCTAL, so an arithmetic range check dies with "value too great for
+  #    base" rather than producing the promised exit 2 — and the bad value goes on to break
+  #    the writer loops. Assert the exit code AND that no arithmetic error leaked to stderr.
   _b_run "CORE_ATBENCH_WRITERS=abc" --
   _rc_nan=$_brc
   _b_run "CORE_ATBENCH_WRITERS=0" --
   _rc_zero=$_brc
-  if ((_rc_nan == 2)) && ((_rc_zero == 2)); then
-    pass "atuin bench: a non-numeric or zero CORE_ATBENCH_WRITERS exits 2"
+  _b_run "CORE_ATBENCH_WRITERS=08" --
+  _rc_oct=$_brc
+  _oct_out="$_bout"
+  if ((_rc_nan == 2)) && ((_rc_zero == 2)) && ((_rc_oct == 2)) &&
+    [[ "$_oct_out" != *"value too great for base"* ]]; then
+    pass "atuin bench: non-numeric, zero and octal-looking (08) CORE_ATBENCH_WRITERS exit 2"
   else
-    fail "atuin bench: knob validation should exit 2 (abc=$_rc_nan zero=$_rc_zero)"
+    fail "atuin bench: knob validation should exit 2 (abc=$_rc_nan zero=$_rc_zero 08=$_rc_oct)"
   fi
 
   # 6. EXECUTE the row-count SQL rather than pattern-match it — Section J's philosophy applied
