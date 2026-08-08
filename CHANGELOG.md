@@ -47,7 +47,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (exit 0, no findings either way) and actionlint 1.7.8 → 1.7.12 likewise. `shfmt` is
   advisory by construction — the step wraps it in an `if/else` that swallows the drift exit
   rather than setting `continue-on-error` (`lint-call.yml:156-170`), so new formatting
-  opinions in 3.13.1 can only warn; note that a genuine shfmt *install* failure still reds
+  opinions in 3.13.1 can only warn; note that a genuine shfmt _install_ failure still reds
   the step, which is the point of not using `continue-on-error`. So the bump is expected to
   be a no-op for the blocking legs rather than a new-findings event — verified on one repo,
   not all eight.
