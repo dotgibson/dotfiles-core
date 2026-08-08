@@ -55,6 +55,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   differs between the two, so every scheduled run has been executing the v3.9.0 prompt no
   matter what shipped in v4 — including the fix above. Bumped to `v4` so the callers and the
   content they run agree.
+- **`lint-call.yml` and `auto-tag-call.yml` ran the fleet from the same frozen `v3`
+  checkout.** The defect above was not confined to the routines workflow — these two
+  reusable workflows carry it in the three remaining pins, and the lint one is the
+  consequential half. Both check out dotfiles-core for the pinned
+  `scripts/tool-versions.env`, the `setup-core-tools` composite and the release scripts, and
+  pinned that checkout to `ref: v3` while every comment beside them declared v4
+  (`lint-call.yml:57` reads "v4 = the current major, matching the `@v4` callers"; the
+  auto-tag step said "pin to the SAME major line callers pin this workflow to (@v4)" and
+  then pinned v3 in the same breath). So every OS repo's lint gate has been running v3.9.0's
+  pinned tools — shellcheck 0.10.0, shfmt 3.8.0, actionlint 1.7.8 — while Core lints itself
+  with 0.11.0 / 3.13.1 / 1.7.12: the fleet was held to a weaker gate than the repo defining
+  it. Bumped all three pins to the moving `v4` alias.
+
+  Measured before bumping, against `dotfiles-Fedora` with the gate's exact
+  `SHELLCHECK_OPTS` and file selection: shellcheck 0.10.0 → 0.11.0 is **byte-identical**
+  (exit 0, no findings either way) and actionlint 1.7.8 → 1.7.12 likewise. `shfmt` is
+  advisory by construction — the step wraps it in an `if/else` that swallows the drift exit
+  rather than setting `continue-on-error` (`lint-call.yml:156-170`), so new formatting
+  opinions in 3.13.1 can only warn; note that a genuine shfmt _install_ failure still reds
+  the step, which is the point of not using `continue-on-error`. So the bump is expected to
+  be a no-op for the blocking legs rather than a new-findings event — verified on one repo,
+  not all eight.
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
   points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
