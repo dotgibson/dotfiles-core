@@ -30,17 +30,43 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
-- **`lint-call.yml` and `auto-tag-call.yml` ran the fleet from a frozen `v3` checkout.**
-  Both reusable workflows check out dotfiles-core to get the pinned
-  `scripts/tool-versions.env`, the `setup-core-tools` composite and the release scripts —
-  and pinned that checkout to `ref: v3` while every comment beside them declared v4
+- **`/os-package-availability` could query a single release and still return "Clean" —
+  the one verdict the routine exists to rule out.** Step 1 said to confirm each name
+  "still exists in this distro's repos" without ever saying _which_ releases to look in,
+  so a run against one release could not distinguish "present everywhere" from "already
+  dropped in the next release" — and would report a version read from stable as evidence
+  the name resolves, full stop. That is not hypothetical: the Fedora run filed a Clean
+  verdict while `tealdeer` and `procs` had both gone orphan and neither had been rebuilt
+  for rawhide/F45, quoting their F43/F44 versions as passes. Both still install today and
+  break on the F45 upgrade, which is exactly the early warning this audit is for. The
+  routine now picks targets by **release model**: versioned distros (Fedora, openSUSE Leap,
+  Alpine stable) need every currently-supported stable release plus that distro's own
+  development branch where one exists, while rolling targets (Arch, Gentoo, Homebrew, Kali,
+  Tumbleweed) have a single current repo that is itself full coverage. It also requires
+  every quoted version to name the release it came from; classifies "in stable, gone from
+  that distro's development branch" as **Drifted** rather than a pass; and requires a Clean
+  verdict to state its release coverage and reconcile N-checked against N-in-list, so a
+  partial run has to call itself partial.
+- **`claude-routines-call.yml` ran the routines from a frozen `v3` checkout.** The reusable
+  workflow checks out dotfiles-core to get the routine prompt, `PORTING-MATRIX.md` and the
+  pinned CLI, and pinned that checkout to `ref: v3` — directly under a comment reading
+  "Core@v4 at ROOT … (v4 = the current major, matching the `@v4` callers)". `v3` is frozen
+  at v3.9.0 (2026-07-19) while the line has since reached v4.9.3, and the routine prompt
+  differs between the two, so every scheduled run has been executing the v3.9.0 prompt no
+  matter what shipped in v4 — including the fix above. Bumped to `v4` so the callers and the
+  content they run agree.
+- **`lint-call.yml` and `auto-tag-call.yml` ran the fleet from the same frozen `v3`
+  checkout.** The defect above was not confined to the routines workflow — these two
+  reusable workflows carry it in the three remaining pins, and the lint one is the
+  consequential half. Both check out dotfiles-core for the pinned
+  `scripts/tool-versions.env`, the `setup-core-tools` composite and the release scripts, and
+  pinned that checkout to `ref: v3` while every comment beside them declared v4
   (`lint-call.yml:57` reads "v4 = the current major, matching the `@v4` callers"; the
   auto-tag step said "pin to the SAME major line callers pin this workflow to (@v4)" and
-  then pinned v3 in the same breath). `v3` is frozen at v3.9.0 (2026-07-19) and the line has
-  since reached v4.9.3, so every OS repo's lint gate has been running v3.9.0's pinned tools
-  — shellcheck 0.10.0, shfmt 3.8.0, actionlint 1.7.8 — while Core lints itself with 0.11.0 /
-  3.13.1 / 1.7.12. Bumped all three pins to the moving `v4` alias so the fleet is gated by
-  the same tools Core is.
+  then pinned v3 in the same breath). So every OS repo's lint gate has been running v3.9.0's
+  pinned tools — shellcheck 0.10.0, shfmt 3.8.0, actionlint 1.7.8 — while Core lints itself
+  with 0.11.0 / 3.13.1 / 1.7.12: the fleet was held to a weaker gate than the repo defining
+  it. Bumped all three pins to the moving `v4` alias.
 
   Measured before bumping, against `dotfiles-Fedora` with the gate's exact
   `SHELLCHECK_OPTS` and file selection: shellcheck 0.10.0 → 0.11.0 is **byte-identical**
