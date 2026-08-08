@@ -1633,7 +1633,11 @@ else
       shift
     done
     shift || true
-    _bout="$(env CORE_COLOR=never "${envs[@]}" "$_BENCH" "$@" 2>&1)"
+    # ${envs[@]+"${envs[@]}"}, not "${envs[@]}" — macOS ships bash 3.2, where expanding an
+    # EMPTY array under `set -u` is an "unbound variable" error rather than zero words. The
+    # calls that pass no env vars are exactly the ones that tripped it, so the bug only ever
+    # showed on macOS. scripts/lib/common.sh pins the same 3.2 constraint for the same reason.
+    _bout="$(env CORE_COLOR=never ${envs[@]+"${envs[@]}"} "$_BENCH" "$@" 2>&1)"
     _brc=$?
   }
 
