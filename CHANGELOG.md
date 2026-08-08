@@ -87,6 +87,74 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   run where that was false, and on the cheapest of the remaining gaps. Now the output is
   captured and matched as a string.
 
+- **The showcase was never told a release had happened, and had not been since the
+  notification was written.** `notify-web.yml` listens for `release: published`, but the
+  Release is created by `release.yml` running `gh release create` under the built-in
+  `GITHUB_TOKEN` — and an event raised by `GITHUB_TOKEN` never starts another workflow run
+  (the same recursion guard that stops a `GITHUB_TOKEN` push from firing `pull_request`).
+  So the Release published, the event was inert, and dotfiles-web's
+  `repository_dispatch: types: [core-release]` received not one POST in its lifetime.
+  Nothing about the dispatch itself was broken — right event type, right target, working
+  token — which is why it read as healthy from both ends. User-visible downstream: the
+  site's only remaining refresh was a Tuesday cron, so its committed `generated.json` sat
+  two releases behind (v4.7.1 against Core's 4.9.3) and every published install command was
+  pinned to a stale `--branch`. `release.yml` now dispatches `core-release` itself from a
+  job after `publish`, where no guard applies; `notify-web-call.yml` grew an `event_type`
+  input (default `refresh`, so the `@v4` callers across the fleet are untouched), validated
+  against an allowlist because a typo'd type POSTs 204 and triggers nothing. That job is
+  `best_effort`, because `sync-fanout` gates on this workflow's overall conclusion and a
+  failed notification must never be able to stop a published tag from reaching the OS
+  repos. `notify-web.yml` keeps its `release:` trigger for a Release published by hand from
+  the UI, and now documents the trap so the dead path isn't mistaken for the live one.
+
+- **`/os-package-availability` could query a single release and still return "Clean" —
+  the one verdict the routine exists to rule out.** Step 1 said to confirm each name
+  "still exists in this distro's repos" without ever saying _which_ releases to look in,
+  so a run against one release could not distinguish "present everywhere" from "already
+  dropped in the next release" — and would report a version read from stable as evidence
+  the name resolves, full stop. That is not hypothetical: the Fedora run filed a Clean
+  verdict while `tealdeer` and `procs` had both gone orphan and neither had been rebuilt
+  for rawhide/F45, quoting their F43/F44 versions as passes. Both still install today and
+  break on the F45 upgrade, which is exactly the early warning this audit is for. The
+  routine now picks targets by **release model**: versioned distros (Fedora, openSUSE Leap,
+  Alpine stable) need every currently-supported stable release plus that distro's own
+  development branch where one exists, while rolling targets (Arch, Gentoo, Homebrew, Kali,
+  Tumbleweed) have a single current repo that is itself full coverage. It also requires
+  every quoted version to name the release it came from; classifies "in stable, gone from
+  that distro's development branch" as **Drifted** rather than a pass; and requires a Clean
+  verdict to state its release coverage and reconcile N-checked against N-in-list, so a
+  partial run has to call itself partial.
+- **`claude-routines-call.yml` ran the routines from a frozen `v3` checkout.** The reusable
+  workflow checks out dotfiles-core to get the routine prompt, `PORTING-MATRIX.md` and the
+  pinned CLI, and pinned that checkout to `ref: v3` — directly under a comment reading
+  "Core@v4 at ROOT … (v4 = the current major, matching the `@v4` callers)". `v3` is frozen
+  at v3.9.0 (2026-07-19) while the line has since reached v4.9.3, and the routine prompt
+  differs between the two, so every scheduled run has been executing the v3.9.0 prompt no
+  matter what shipped in v4 — including the fix above. Bumped to `v4` so the callers and the
+  content they run agree.
+- **`lint-call.yml` and `auto-tag-call.yml` ran the fleet from the same frozen `v3`
+  checkout.** The defect above was not confined to the routines workflow — these two
+  reusable workflows carry it in the three remaining pins, and the lint one is the
+  consequential half. Both check out dotfiles-core for the pinned
+  `scripts/tool-versions.env`, the `setup-core-tools` composite and the release scripts, and
+  pinned that checkout to `ref: v3` while every comment beside them declared v4
+  (`lint-call.yml:57` reads "v4 = the current major, matching the `@v4` callers"; the
+  auto-tag step said "pin to the SAME major line callers pin this workflow to (@v4)" and
+  then pinned v3 in the same breath). So every OS repo's lint gate has been running v3.9.0's
+  pinned tools — shellcheck 0.10.0, shfmt 3.8.0, actionlint 1.7.8 — while Core lints itself
+  with 0.11.0 / 3.13.1 / 1.7.12: the fleet was held to a weaker gate than the repo defining
+  it. Bumped all three pins to the moving `v4` alias.
+
+  Measured before bumping, against `dotfiles-Fedora` with the gate's exact
+  `SHELLCHECK_OPTS` and file selection: shellcheck 0.10.0 → 0.11.0 is **byte-identical**
+  (exit 0, no findings either way) and actionlint 1.7.8 → 1.7.12 likewise. `shfmt` is
+  advisory by construction — the step wraps it in an `if/else` that swallows the drift exit
+  rather than setting `continue-on-error` (`lint-call.yml:156-170`), so new formatting
+  opinions in 3.13.1 can only warn; note that a genuine shfmt _install_ failure still reds
+  the step, which is the point of not using `continue-on-error`. So the bump is expected to
+  be a no-op for the blocking legs rather than a new-findings event — verified on one repo,
+  not all eight.
+
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
   points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
@@ -168,6 +236,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **The matrix sent Kali to `mise`/`cargo` for `tree-sitter-cli`, which it apt-installs.**
   `dotfiles-Kali/install/packages.txt` carries the plain apt name and its `bootstrap.sh` has
   no tree-sitter installer, so the ³ footnote pointed at a path the repo never takes.
+
+- **Footnote ⁹ named an AUR package that does not exist.** It said sesh is "Packaged in the
+  AUR (`sesh`)"; the AUR has no package under that bare name. The real one is `sesh-bin`,
+  which declares `provides`/`conflicts` on `sesh` — so `paru -S sesh` resolves anyway, which
+  is precisely why the wrong name read as correct. Confirmed against the AUR RPC: an `info`
+  lookup for `sesh` returns nothing, and a name search returns eight packages, none of them a
+  bare `sesh`, ruling out a source-build entry alongside `sesh-bin`. The Arch cell on the
+  sesh row still reads `AUR`, which was always accurate; only the footnote was wrong.
 
 - **`lib/bootstrap-lib.sh` still gave the atuin advice v4.9.3 corrected.** It told you to
   re-apply a backed-up local config "via `ATUIN_*` env" with no carve-out — the exact pattern
