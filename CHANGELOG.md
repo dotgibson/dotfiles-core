@@ -45,9 +45,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Measured before bumping, against `dotfiles-Fedora` with the gate's exact
   `SHELLCHECK_OPTS` and file selection: shellcheck 0.10.0 → 0.11.0 is **byte-identical**
   (exit 0, no findings either way) and actionlint 1.7.8 → 1.7.12 likewise. `shfmt` is
-  advisory (`continue-on-error`) and cannot red a run. So the bump is expected to be a
-  no-op for the blocking legs rather than a new-findings event — verified on one repo, not
-  all eight.
+  advisory by construction — the step wraps it in an `if/else` that swallows the drift exit
+  rather than setting `continue-on-error` (`lint-call.yml:156-170`), so new formatting
+  opinions in 3.13.1 can only warn; note that a genuine shfmt *install* failure still reds
+  the step, which is the point of not using `continue-on-error`. So the bump is expected to
+  be a no-op for the blocking legs rather than a new-findings event — verified on one repo,
+  not all eight.
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
   points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
