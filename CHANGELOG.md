@@ -112,6 +112,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `dotfiles-Kali/install/packages.txt` carries the plain apt name and its `bootstrap.sh` has
   no tree-sitter installer, so the ³ footnote pointed at a path the repo never takes.
 
+- **Footnote ⁹ named an AUR package that does not exist.** It said sesh is "Packaged in the
+  AUR (`sesh`)"; the AUR has no package under that bare name. The real one is `sesh-bin`,
+  which declares `provides`/`conflicts` on `sesh` — so `paru -S sesh` resolves anyway, which
+  is precisely why the wrong name read as correct. Confirmed against the AUR RPC: an `info`
+  lookup for `sesh` returns nothing, and a name search returns eight packages, none of them a
+  bare `sesh`, ruling out a source-build entry alongside `sesh-bin`. The Arch cell on the
+  sesh row still reads `AUR`, which was always accurate; only the footnote was wrong.
+
 - **`lib/bootstrap-lib.sh` still gave the atuin advice v4.9.3 corrected.** It told you to
   re-apply a backed-up local config "via `ATUIN_*` env" with no carve-out — the exact pattern
   that release proved does not work for the ten keys `atuin/config.toml` sets. This was the
