@@ -30,6 +30,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`lint-call.yml` and `auto-tag-call.yml` ran the fleet from a frozen `v3` checkout.**
+  Both reusable workflows check out dotfiles-core to get the pinned
+  `scripts/tool-versions.env`, the `setup-core-tools` composite and the release scripts —
+  and pinned that checkout to `ref: v3` while every comment beside them declared v4
+  (`lint-call.yml:57` reads "v4 = the current major, matching the `@v4` callers"; the
+  auto-tag step said "pin to the SAME major line callers pin this workflow to (@v4)" and
+  then pinned v3 in the same breath). `v3` is frozen at v3.9.0 (2026-07-19) and the line has
+  since reached v4.9.3, so every OS repo's lint gate has been running v3.9.0's pinned tools
+  — shellcheck 0.10.0, shfmt 3.8.0, actionlint 1.7.8 — while Core lints itself with 0.11.0 /
+  3.13.1 / 1.7.12. Bumped all three pins to the moving `v4` alias so the fleet is gated by
+  the same tools Core is.
+
+  Measured before bumping, against `dotfiles-Fedora` with the gate's exact
+  `SHELLCHECK_OPTS` and file selection: shellcheck 0.10.0 → 0.11.0 is **byte-identical**
+  (exit 0, no findings either way) and actionlint 1.7.8 → 1.7.12 likewise. `shfmt` is
+  advisory (`continue-on-error`) and cannot red a run. So the bump is expected to be a
+  no-op for the blocking legs rather than a new-findings event — verified on one repo, not
+  all eight.
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
   points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
