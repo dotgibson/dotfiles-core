@@ -50,6 +50,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   repos. `notify-web.yml` keeps its `release:` trigger for a Release published by hand from
   the UI, and now documents the trap so the dead path isn't mistaken for the live one.
 
+- **`/os-package-availability` could query a single release and still return "Clean" —
+  the one verdict the routine exists to rule out.** Step 1 said to confirm each name
+  "still exists in this distro's repos" without ever saying _which_ releases to look in,
+  so a run against one release could not distinguish "present everywhere" from "already
+  dropped in the next release" — and would report a version read from stable as evidence
+  the name resolves, full stop. That is not hypothetical: the Fedora run filed a Clean
+  verdict while `tealdeer` and `procs` had both gone orphan and neither had been rebuilt
+  for rawhide/F45, quoting their F43/F44 versions as passes. Both still install today and
+  break on the F45 upgrade, which is exactly the early warning this audit is for. The
+  routine now picks targets by **release model**: versioned distros (Fedora, openSUSE Leap,
+  Alpine stable) need every currently-supported stable release plus that distro's own
+  development branch where one exists, while rolling targets (Arch, Gentoo, Homebrew, Kali,
+  Tumbleweed) have a single current repo that is itself full coverage. It also requires
+  every quoted version to name the release it came from; classifies "in stable, gone from
+  that distro's development branch" as **Drifted** rather than a pass; and requires a Clean
+  verdict to state its release coverage and reconcile N-checked against N-in-list, so a
+  partial run has to call itself partial.
+- **`claude-routines-call.yml` ran the routines from a frozen `v3` checkout.** The reusable
+  workflow checks out dotfiles-core to get the routine prompt, `PORTING-MATRIX.md` and the
+  pinned CLI, and pinned that checkout to `ref: v3` — directly under a comment reading
+  "Core@v4 at ROOT … (v4 = the current major, matching the `@v4` callers)". `v3` is frozen
+  at v3.9.0 (2026-07-19) while the line has since reached v4.9.3, and the routine prompt
+  differs between the two, so every scheduled run has been executing the v3.9.0 prompt no
+  matter what shipped in v4 — including the fix above. Bumped to `v4` so the callers and the
+  content they run agree.
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
   points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
