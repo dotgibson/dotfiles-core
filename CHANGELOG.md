@@ -28,7 +28,64 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   faith from upstream's `settings.rs`: that atuin, with `XDG_RUNTIME_DIR` unset, binds
   exactly the socket path `_core_atuin_daemon_guard` probes.
 
+  The harness now also covers the two paths it structurally could not, and enforces a rule
+  that stops it lying. **`--systemd`** measures the systemd-unit path: `env -i` guaranteed
+  `XDG_RUNTIME_DIR` was unset, so atuin's default `$XDG_RUNTIME_DIR/atuin.sock` — the Fedora
+  shape, and the _other_ branch of `_core_atuin_daemon_guard`'s expression — was unreachable
+  by construction. It runs the daemon from a sandbox-scoped **transient** unit
+  (`systemd-run --user`), never your `atuin-daemon.service`, points `XDG_RUNTIME_DIR` at the
+  sandbox so it cannot collide with a real daemon, asserts the unit's `MainPID` actually
+  holds the listening socket, and **skips rather than degrades** without a user bus —
+  reporting no-systemd numbers under a systemd label is the one thing the flag exists to
+  prevent. _It is **UNVALIDATED**: it was written where `systemd-run --user` cannot reach a
+  bus, so only its fail-closed skip path has ever executed, and it says so in `--help`, on
+  every run, and on the results table itself._ **`CORE_ATBENCH_BASE`** puts the sandbox HOME
+  and history DB on a network home, with the socket deliberately decoupled onto a short local
+  path — `AF_UNIX` does not work on NFS/SMB and `sun_path` caps near 108 bytes — and discloses
+  the cost of that, which is that such a run no longer exercises atuin's default socket
+  resolution, so the socket-agreement claim is **withdrawn** rather than weakened. And every
+  arm must now prove its writes landed: the DB's row delta has to equal the samples the arm
+  claims, or the arm is not reported. That is not hypothetical — with the daemon enabled and
+  unreachable, atuin 18.19.0 exits 0, prints a well-formed history id, writes nothing to
+  stderr and discards the entry (`atuinsh/atuin#3561`), which is the fastest table this
+  script can produce for work that never happened. The check covers both halves, since
+  `history end` _updates_ the row rather than inserting one and a pure row count would sail
+  past a silently-discarded `end`.
+
+- **The atuin daemon bench's fail-closed surface is now pinned by the suite**
+  (`scripts/test-core.sh` Section J2). `make audit` can never run the bench itself — it needs
+  a real atuin, a real zsh and a background daemon — which is precisely why the parts that
+  _are_ hermetic are worth asserting: that `--help` documents every knob including the
+  unvalidated marker, that an unknown argument still exits 2, that a malformed
+  `CORE_ATBENCH_WRITERS` or `CORE_ATBENCH_BASE` exits 2 rather than skipping (`WRITERS=0`
+  otherwise makes every arm vacuously complete _and_ vacuously row-correct), and that
+  `--systemd` against a stubbed busless `systemctl` skips with **no results table** — the
+  no-degradation requirement expressed executably rather than asserted in prose. The
+  row-count SQL is extracted from the script and _executed_ against a synthetic table, the
+  same "run it, don't pattern-match it" idiom Section J uses on the example unit's `ExecStart`.
+
 ### Fixed
+
+- **The atuin bench dropped an arm roughly one run in eight, and the reason looked like
+  atuin misbehaving under contention.** `history start` is not the only write a command
+  makes: `meta.db` (and the `key` beside it) are created lazily by the first `history end`.
+  The warmup in `db_reset` ran `history start` _alone_, so `meta.db` did not exist when the
+  writers launched and all N of them raced to create and migrate it on their first
+  `history end` — one losing on `UNIQUE constraint failed: _sqlx_migrations.version`, which
+  aborted that writer at iteration 1 and cost the whole arm. It was always the _first_ arm,
+  because `meta.db` survived a `db_reset` that only ever removed `history.db`. The warmup now
+  runs a complete `start`+`end` pair, and the snapshot/restore covers the whole data
+  directory rather than one file — which also delivers what the old comment already claimed:
+  `records.db` grew monotonically across arms before this, so each arm was measured against a
+  bigger sync store than the one before it, exactly the variable being controlled for.
+
+- **The bench could never detect musl, and mislabelled the one run where that mattered.**
+  `ldd --version 2>&1 | grep -qi musl` looks right but cannot work under the `set -o pipefail`
+  in force at the top of the script: musl's `ldd` exits non-zero after printing its banner, so
+  the pipeline fails even though `grep` matched. Every musl run therefore reported
+  `unknown libc` _and_ went on to list musl among the things it had not covered — on the one
+  run where that was false, and on the cheapest of the remaining gaps. Now the output is
+  captured and matched as a string.
 
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
@@ -124,6 +181,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   referring to `[Unreleased]` from a dated section at all.
 
 ### Changed
+
+- **The daemon's contention claim now has a musl number.** Measured in an Alpine 3.21
+  container (real Alpine userland, real musl, no systemd) against a glibc control on the same
+  host, atuin 18.19.0, two runs each. The p50 win holds and is the most robust result so far
+  (~1.4x on both libcs), but the far tail is where they **diverge**: on musl the p99 was worse
+  with the daemon on _both_ runs — a stable sign, where glibc gives a coin flip. That is the
+  strongest evidence yet against selling the daemon as a tail fix, and it lands on the path
+  Alpine actually ships. `atuin/config.toml` carries the table and the caveat that a container
+  is not real hardware.
 
 - **The `@vN` pinning policy is no longer stated as universal, because it is 27 of 28.**
   `dotfiles-Windows` SHA-pins its `auto-tag-call` caller on purpose — immunity to a moved tag,
