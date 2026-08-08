@@ -11,8 +11,11 @@
 #         WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}                 # legacy PAT (fallback)
 #         FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }}   # App auth (G2)
 #
-# The owner guard, the dotfiles-web target, and the {"event_type":"refresh"} payload are
-# constant, so this takes NO inputs — only secrets. AUTH (G2, GITHUB-APP-AUTH.md): when the
+# The owner guard and the dotfiles-web target are constant; the payload's event_type is the
+# one thing that varies, and it DEFAULTS to "refresh" so every existing caller is untouched.
+# "core-release" is the other side of the contract — it wakes dotfiles-web's fleet-sync (the
+# bot that regenerates AND COMMITS generated.json) rather than deploy.yml's cache-purge
+# rebuild. AUTH (G2, GITHUB-APP-AUTH.md): when the
 # fleet App is configured (the FLEET_APP_ID variable is set AND the caller passes the
 # private key), it mints a short-lived dotfiles-web-scoped installation token for the
 # dispatch; otherwise it falls back to the caller's WEBHOOK_SECRET PAT. Absent both → the
@@ -23,6 +26,12 @@ name: notify-web (reusable)
 
 on:
   workflow_call:
+    inputs:
+      event_type:
+        description: "repository_dispatch event_type to POST: 'refresh' (deploy.yml — cache-purge rebuild) or 'core-release' (fleet-sync — regenerate + commit generated.json)."
+        type: string
+        required: false
+        default: refresh
     secrets:
       WEBHOOK_SECRET:
         description: "Legacy fine-grained PAT with Contents:Write on dotgibson/dotfiles-web (the fallback). Absent + no App → the job warns and skips."
@@ -65,12 +74,25 @@ jobs:
       - name: Notify dotfiles-web to rebuild
         env:
           TOKEN: ${{ steps.app.outputs.token || secrets.WEBHOOK_SECRET }}
+          # Via env, never interpolated into the script body — a caller-supplied string
+          # must not be able to write shell. The allowlist below is the real gate.
+          EVENT_TYPE: ${{ inputs.event_type }}
         run: |
           set -euo pipefail
           if [ -z "${TOKEN:-}" ]; then
             echo "::warning::no dispatch token (neither the fleet App nor WEBHOOK_SECRET) — skipping showcase refresh"
             exit 0
           fi
+          # Only the two events dotfiles-web actually listens for. A typo'd event_type
+          # would otherwise POST successfully (the API accepts any string) and silently
+          # trigger nothing — the exact failure mode this dispatch path already suffered.
+          case "${EVENT_TYPE}" in
+            refresh | core-release) ;;
+            *)
+              echo "::error::unknown event_type '${EVENT_TYPE}' — dotfiles-web listens for 'refresh' or 'core-release'"
+              exit 1
+              ;;
+          esac
           curl -fsS -X POST \
             --max-time 30 --retry 3 --retry-delay 5 --retry-connrefused \
             -H "Authorization: Bearer ${TOKEN}" \
@@ -78,5 +100,5 @@ jobs:
             -H "Content-Type: application/json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/dotgibson/dotfiles-web/dispatches \
-            -d '{"event_type":"refresh"}'
-          echo "Dispatched refresh to dotfiles-web"
+            -d "$(printf '{"event_type":"%s"}' "${EVENT_TYPE}")"
+          echo "Dispatched ${EVENT_TYPE} to dotfiles-web"
