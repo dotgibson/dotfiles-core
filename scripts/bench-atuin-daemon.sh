@@ -767,20 +767,22 @@ unit_start() {
 # LISTEN), field 7 the SOCKET inode (not the filesystem inode — for AF_UNIX they differ, and
 # `stat -c %i` gives the wrong one), and the last field the path.
 #
-# Three outcomes, not two, because "wrong" and "unmeasurable" are different facts:
+# FAIL CLOSED, WITHOUT EXCEPTION: the arm is reported only when MainPID is positively shown
+# to hold the listening socket. Every other outcome — mismatch, no LISTEN entry, no MainPID,
+# no procfs, an unreadable fd table — refuses it.
 #
-#   MISMATCH          — a defect. Refuses the arm.
-#   NO LISTEN ENTRY   — also refuses. This is NOT a missing tool: /proc/net/unix is readable
-#                       and unit_start already waited for the socket to exist, so a socket
-#                       with no listener behind it is precisely the accept-but-dead shape
-#                       this assertion is for. Letting it through would report numbers for a
-#                       daemon nothing proved was serving them.
-#   NO PROCFS         — genuinely unmeasurable (a capability gap, not a finding), so the
-#                       script's missing-tool contract applies: note it, let the arm run —
-#                       but SET A FLAG so the results-table label carries the caveat. An
-#                       unverified arm that looks identical to a verified one in the table is
-#                       how an unproven number gets quoted as a proven one.
-OWNERSHIP_UNVERIFIED=0
+# There WAS a carve-out here for an unreadable /proc/net/unix, on the reasoning that a
+# missing capability is not a finding and this script's contract is that missing tools skip
+# rather than fail. It is gone, for two reasons. It defended a state the mode cannot reach:
+# --systemd only gets past its preflight when a systemd USER BUS answers, which means Linux
+# with a mounted /proc, so "has a user manager but no readable /proc/net/unix" is very nearly
+# impossible. And it was the single remaining route by which this harness could print a
+# systemd latency number that nothing had verified — the exact shape of unearned claim the
+# whole exercise exists to remove. A mode that cannot prove what it measured should decline
+# to measure, not annotate.
+#
+# Because every branch now refuses, the ONLY thing distinguishing them is the message, so
+# each one has to name the real cause — see the fd-table case below.
 unit_owns_socket() {
   local mainpid ino fd
   mainpid="$(systemctl --user show -p MainPID --value "$UNIT" 2>/dev/null)"
@@ -789,14 +791,25 @@ unit_owns_socket() {
     return 1
   }
   [[ -r /proc/net/unix ]] || {
-    printf '   –  unit↔socket ownership unverified (no /proc/net/unix)\n'
-    OWNERSHIP_UNVERIFIED=1
-    return 0
+    printf '   %s✗%s cannot read /proc/net/unix — unit↔socket ownership is unprovable here,\n' \
+      "$c_red" "$c_rst" >&2
+    printf '     so this arm is not reported rather than reported unverified\n' >&2
+    return 1
   }
   ino="$(awk -v p="$SOCK" '$6=="01" && $NF==p {print $7; exit}' /proc/net/unix 2>/dev/null)"
   [[ -n "$ino" ]] || {
     printf '   %s✗%s no LISTEN entry for %s, though the socket exists — nothing is serving it\n' \
       "$c_red" "$c_rst" "$SOCK" >&2
+    return 1
+  }
+  # An unreadable or absent fd table would otherwise fall through to the "something else is
+  # listening" verdict below — a refusal for a WRONG stated reason, because the glob stays
+  # literal and every readlink comes back empty. Both outcomes refuse; only one of them is
+  # true, and a benchmark that misreports why it refused is a benchmark that gets debugged in
+  # the wrong place.
+  [[ -r "/proc/$mainpid/fd" ]] || {
+    printf '   %s✗%s cannot read /proc/%s/fd — cannot prove the unit holds the socket\n' \
+      "$c_red" "$c_rst" "$mainpid" >&2
     return 1
   }
   for fd in "/proc/$mainpid/fd"/*; do
@@ -943,7 +956,9 @@ printf '\n%s== results (ms per command: history start + history end) ==%s\n' "$c
 ON_LABEL="daemon on"
 ((SYSTEMD)) && ON_LABEL="daemon on (systemd unit) [UNVALIDATED]"
 [[ -n "$SOCK_FORCED" ]] && ON_LABEL="$ON_LABEL (socket forced)"
-((OWNERSHIP_UNVERIFIED)) && ON_LABEL="$ON_LABEL (ownership unverified)"
+# No "(ownership unverified)" variant any more: unit_owns_socket refuses the arm outright
+# rather than letting an unproven one through with a caveat on the label, so that state
+# cannot reach this table.
 python3 - "$SB" "$OFF_OK" "$DAEMON_OK" "$ON_LABEL" <<'PY'
 import glob, math, os, sys
 
