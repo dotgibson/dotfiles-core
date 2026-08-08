@@ -30,6 +30,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The showcase was never told a release had happened, and had not been since the
+  notification was written.** `notify-web.yml` listens for `release: published`, but the
+  Release is created by `release.yml` running `gh release create` under the built-in
+  `GITHUB_TOKEN` — and an event raised by `GITHUB_TOKEN` never starts another workflow run
+  (the same recursion guard that stops a `GITHUB_TOKEN` push from firing `pull_request`).
+  So the Release published, the event was inert, and dotfiles-web's
+  `repository_dispatch: types: [core-release]` received not one POST in its lifetime.
+  Nothing about the dispatch itself was broken — right event type, right target, working
+  token — which is why it read as healthy from both ends. User-visible downstream: the
+  site's only remaining refresh was a Tuesday cron, so its committed `generated.json` sat
+  two releases behind (v4.7.1 against Core's 4.9.3) and every published install command was
+  pinned to a stale `--branch`. `release.yml` now dispatches `core-release` itself from a
+  job after `publish`, where no guard applies; `notify-web-call.yml` grew an `event_type`
+  input (default `refresh`, so the `@v4` callers across the fleet are untouched), validated
+  against an allowlist because a typo'd type POSTs 204 and triggers nothing. That job is
+  `best_effort`, because `sync-fanout` gates on this workflow's overall conclusion and a
+  failed notification must never be able to stop a published tag from reaching the OS
+  repos. `notify-web.yml` keeps its `release:` trigger for a Release published by hand from
+  the UI, and now documents the trap so the dead path isn't mistaken for the live one.
+
 - **`/os-package-availability` could query a single release and still return "Clean" —
   the one verdict the routine exists to rule out.** Step 1 said to confirm each name
   "still exists in this distro's repos" without ever saying _which_ releases to look in,
