@@ -32,6 +32,11 @@ on:
         type: string
         required: false
         default: refresh
+      best_effort:
+        description: "Downgrade a failed dispatch from an error to a warning. For callers whose own run conclusion is load-bearing downstream (release.yml — sync-fanout gates on it). Default false: a caller that only notifies should still go red when it can't."
+        type: boolean
+        required: false
+        default: false
     secrets:
       WEBHOOK_SECRET:
         description: "Legacy fine-grained PAT with Contents:Write on dotgibson/dotfiles-web (the fallback). Absent + no App → the job warns and skips."
@@ -77,6 +82,7 @@ jobs:
           # Via env, never interpolated into the script body — a caller-supplied string
           # must not be able to write shell. The allowlist below is the real gate.
           EVENT_TYPE: ${{ inputs.event_type }}
+          BEST_EFFORT: ${{ inputs.best_effort }}
         run: |
           set -euo pipefail
           if [ -z "${TOKEN:-}" ]; then
@@ -86,6 +92,9 @@ jobs:
           # Only the two events dotfiles-web actually listens for. A typo'd event_type
           # would otherwise POST successfully (the API accepts any string) and silently
           # trigger nothing — the exact failure mode this dispatch path already suffered.
+          # Deliberately NOT covered by best_effort: this is a config error in the caller,
+          # checked against a literal, so it can only appear when someone edits a caller —
+          # and it must go red then. best_effort is for the transient half (below).
           case "${EVENT_TYPE}" in
             refresh | core-release) ;;
             *)
@@ -93,12 +102,23 @@ jobs:
               exit 1
               ;;
           esac
-          curl -fsS -X POST \
+          if curl -fsS -X POST \
             --max-time 30 --retry 3 --retry-delay 5 --retry-connrefused \
             -H "Authorization: Bearer ${TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/dotgibson/dotfiles-web/dispatches \
-            -d "$(printf '{"event_type":"%s"}' "${EVENT_TYPE}")"
-          echo "Dispatched ${EVENT_TYPE} to dotfiles-web"
+            -d "$(printf '{"event_type":"%s"}' "${EVENT_TYPE}")"; then
+            echo "Dispatched ${EVENT_TYPE} to dotfiles-web"
+            exit 0
+          fi
+          # curl already retried 3×, so this is a durable failure, not a blip.
+          if [ "${BEST_EFFORT}" = "true" ]; then
+            echo "::warning::could not dispatch ${EVENT_TYPE} to dotfiles-web — continuing" \
+                 "(best-effort). dotfiles-web polls hourly for a Core release it missed, so" \
+                 "the showcase self-heals within the hour."
+            exit 0
+          fi
+          echo "::error::could not dispatch ${EVENT_TYPE} to dotfiles-web"
+          exit 1
