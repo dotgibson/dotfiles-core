@@ -110,10 +110,13 @@ without it just skips the HAVE_JJ-gated aliases. Packaged on Arch (`jujutsu`),
 openSUSE (`jujutsu`), Fedora (`jujutsu`), Homebrew (`jj`), nixpkgs (`jujutsu`)
 and Alpine (`community` — a native musl build); **not** in stable Debian/Kali
 apt, and **not on Gentoo** — absent from `::gentoo` **and** from GURU — so both
-take `cargo install jujutsu`, the same cargo pattern as yazi/ouch. As an opt-in
-tool it is availability-documented here but not carried in any OS repo's
-`packages.txt` yet. The config (`jujutsu/config.toml`) is inert without the
-binary.
+take `cargo install --locked jj-cli`, the same cargo pattern as yazi/ouch. The
+crate is **`jj-cli`**, not `jujutsu`: the `jujutsu` crate is a stub pinned at
+0.7.2 whose own description reads "You don't want this crate - you want the
+`jj-cli` crate", so `cargo install jujutsu` lands a redirect rather than the
+VCS. As an opt-in tool it is availability-documented here but not carried in any
+OS repo's `packages.txt` yet. The config (`jujutsu/config.toml`) is inert
+without the binary.
 ⁹ sesh: smart tmux session manager that Core already drives from the `Ctrl-G`
 shell widget (`35-fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); both
 degrade to a `find`+`fzf` sessionizer when it's absent. `core-doctor` already

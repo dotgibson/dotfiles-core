@@ -98,6 +98,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   shfmt are opt-in/dev tooling and were already carried in none of them, so nothing was ever
   installing the wrong name.
 
+  The same pass caught a second, older error in footnote 8 that had nothing to do with Gentoo:
+  the cargo fallback was written as `cargo install jujutsu`, and **`jujutsu` is not the crate
+  that installs `jj`.** It is a stub pinned at 0.7.2 whose own description reads "You don't want
+  this crate - you want the `jj-cli` crate"; the real one is `jj-cli` (0.44.0). That fallback is
+  what the Debian/Kali `cargo³` cell points at too, so the one wrong crate name had been the
+  documented install route for every unpackaged distro, not just the two rows this change
+  touches. It now reads `cargo install --locked jj-cli`, matching the `--locked` form the OS
+  bootstraps already use for their own cargo builds.
+
 - **Every atuin bench figure ever produced was labelled latency and was not.** The harness
   timed `history start` and `history end` in one span, but a shell hook does not pay for the
   two calls the same way: atuin's `_atuin_preexec` takes `start` in a command substitution,
