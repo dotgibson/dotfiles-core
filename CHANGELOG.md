@@ -80,6 +80,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   numbers is the corrosive case: it invites the reader to distrust the citations that are
   correct, which is the whole value of an availability audit.
 
+- **`PORTING-MATRIX.md` claimed two Gentoo atoms that do not exist.** The Gentoo run of
+  `/os-package-availability` on 2026-08-09 (dotfiles-Gentoo#80) returned a clean verdict for
+  `install/packages.txt` — every atom in the Gentoo install list still resolves — but caught
+  the matrix asserting main-tree packaging for two tools that are not in `::gentoo` at all:
+  `dev-vcs/jujutsu` (row + footnote 8) and `dev-go/shfmt` (row + footnote 7). Both 404 on
+  packages.gentoo.org and return nothing on search. Re-verification went one step further than
+  the report and closed off the obvious fallback: **neither is in GURU either** — the overlay
+  carries no `dev-vcs/jj`, and the `dev-go/shfmt` atom exists in no repository anywhere (the
+  third-party overlays that ship shfmt call it `dev-util/shfmt`). Both Gentoo cells now render
+  as `cargo³`/`go³`, the footnote-3 convention already used for `ouch`, `ast-grep`, and `sesh`,
+  and footnotes 7 and 8 say plainly that the tool is absent from the main tree **and** the
+  overlay rather than naming an atom a reader would try to `emerge`. Footnote 7 had hedged
+  ("verify the exact package on first stamp"), which is exactly the hedge that lets a wrong
+  atom survive a review — a name in the Gentoo column reads as a promise that `emerge <atom>`
+  works, and for these two it never did. No OS repo's `packages.txt` needed an edit: jj and
+  shfmt are opt-in/dev tooling and were already carried in none of them, so nothing was ever
+  installing the wrong name.
+
 - **Every atuin bench figure ever produced was labelled latency and was not.** The harness
   timed `history start` and `history end` in one span, but a shell hook does not pay for the
   two calls the same way: atuin's `_atuin_preexec` takes `start` in a command substitution,
