@@ -66,6 +66,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Every atuin bench figure ever produced was labelled latency and was not.** The harness
+  timed `history start` and `history end` in one span, but a shell hook does not pay for the
+  two calls the same way: atuin's `_atuin_preexec` takes `start` in a command substitution,
+  so the prompt blocks on it, while `_atuin_precmd` fires `end` into a detached background
+  subshell — `(atuin history end ... &)` — where it costs the box and nothing else. Timing
+  the pair measures total write work; only `start` is time a human waits. The writer now
+  takes a timestamp **between** the two calls (both metrics from one pass, so the tables are
+  strictly comparable — same samples, same contention) and the results print as two clearly
+  separated tables, latency first, each saying what it may be quoted for.
+
+  This is not a presentational fix: **it puts the far-tail conclusion back in question.** The
+  recorded finding that the daemon trades frequent small waits for rarer, larger stalls comes
+  entirely from pair-timed runs, while the one measurement that timed only the blocking call
+  (real Fedora hardware, systemd unit) found p99 improving 49–69%. `end` is precisely where
+  the two would diverge — with the daemon off it is the slower call, and with it on they
+  equalise. `atuin/config.toml` and `zsh/00-tools.zsh` now relabel their figures as total
+  write work and mark the tail question **open in both directions** rather than settled
+  against the daemon; the p50/p95 win is unaffected and still holds on every host tried.
+  No new measurements are claimed here — this change makes the re-measurement possible.
+
+  The parser is the risky half and is tested accordingly (`test-core.sh` Section J2): the
+  previous one split each file on all whitespace, so two-column input would have flattened
+  into one distribution of double the length — a table that looks completely normal and is
+  completely wrong. The stats block is now extracted and _executed_ against synthetic samples
+  whose two columns differ, pinning that each table reports its own, and a malformed sample
+  line refuses the arm instead of being coerced.
+
 - **The atuin bench dropped an arm roughly one run in eight, and the reason looked like
   atuin misbehaving under contention.** `history start` is not the only write a command
   makes: `meta.db` (and the `key` beside it) are created lazily by the first `history end`.
