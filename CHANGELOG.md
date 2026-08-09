@@ -76,7 +76,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   it, and neighbours look alike — and the routine's reporting rules asked for `file:line`
   without ever saying to confirm the line. The prompt now requires reading the line before
   citing it, and forbids carrying a number over from a previous run's report, inferring it
-  from a nearby entry, or quoting an unre-checked grep hit. A green run with wrong line
+  from a nearby entry, or quoting a grep hit it has not re-checked. A green run with wrong line
   numbers is the corrosive case: it invites the reader to distrust the citations that are
   correct, which is the whole value of an availability audit.
 
