@@ -36,10 +36,34 @@
 # row deltas were exact. `git grep UNVALIDATED-SYSTEMD` enumerates every place that claim is
 # made, which is the set to update once it has actually run.
 #
-# WHAT IT MEASURES. The per-command round trip a shell hook actually pays —
-# `atuin history start` then `atuin history end` — under N concurrent writers sharing
-# one already-busy history DB, reported as p50/p95/p99 so the TAIL (the thing the
-# daemon is adopted for) is visible and not averaged away. Three arms:
+# WHAT IT MEASURES — TWO METRICS, AND THE DIFFERENCE IS NOT COSMETIC. Every run reports
+# both, because a shell hook does not pay for the two calls the same way:
+#
+#   PROMPT LATENCY   `atuin history start` alone. atuin's `_atuin_preexec` runs it in a
+#                    COMMAND SUBSTITUTION — `id=$(atuin history start --hook ...)` — so the
+#                    shell blocks on it. This is what a human waits for, and the only
+#                    metric that may be quoted as "per-command latency".
+#   TOTAL WRITE WORK `start` + `end` together. `_atuin_precmd` fires `end` into a detached
+#                    background subshell — `(atuin history end ... &)` — so it costs the
+#                    box, never the prompt. Real load; NOT latency.
+#
+# Until this split existed the harness timed the two together and printed one table, so
+# every figure it had ever produced was TOTAL WRITE WORK wearing a latency label. That is
+# not a hypothetical mislabelling: this repo's own records disagree about the tail, and the
+# disagreement lines up exactly with the metric. The runs that timed the pair concluded the
+# far tail got WORSE with the daemon; the one run that timed only the blocking call (real
+# Fedora, systemd) measured p99 improving 49-69%. `end` is where the two diverge — with the
+# daemon off it is the slower of the two calls (the UPDATE costs more than the INSERT) and
+# with it on they equalise — so folding it into a "latency" number moves the metric most
+# precisely where the daemon is being judged. Treat the pre-split figures recorded in
+# atuin/config.toml as total-write-work, and re-measure before restating any tail claim.
+#
+# Both are computed from ONE timed pass, not two runs: the writer takes a timestamp between
+# the calls. So the two tables are strictly comparable — same samples, same contention.
+#
+# Reported as p50/p95/p99 so the TAIL (the thing the daemon is adopted for) is visible and
+# not averaged away, under N concurrent writers sharing one already-busy history DB.
+# Three arms:
 #   off              Core's shipped default: every writer opens the DB itself
 #   on               daemon enabled and already running (the supervised shape)
 #   autostart-first  no daemon running, autostart=true — isolates the daemon-SPAWN
@@ -85,8 +109,16 @@ while (($#)); do
     cat <<'EOF'
 usage: bench-atuin-daemon.sh [--systemd] [-h|--help]
 
-Measure atuin's per-command write latency with the daemon OFF vs ON, under concurrent
+Measure atuin's per-command write cost with the daemon OFF vs ON, under concurrent
 writers sharing one busy history DB. Hermetic (throwaway HOME) and report-only.
+
+TWO METRICS, from one timed pass, reported as two tables:
+  PROMPT LATENCY     `history start` alone — the call _atuin_preexec blocks the prompt
+                     on. The only figure that may be quoted as per-command latency.
+  TOTAL WRITE WORK   `start` + `end` — _atuin_precmd backgrounds `end`, so this is load
+                     on the box, not time at the prompt.
+Keep them apart when reporting: timing the pair and calling it latency is what left this
+repo's own records disagreeing about whether the daemon helps or hurts the tail.
 
 By default this reproduces the TOPOLOGY of the Alpine/no-systemd path only — not musl,
 not real hardware, not a network home. Results carry those caveats.
@@ -655,9 +687,14 @@ db_reset() {
 # because it looks like the result you were hoping for. So each command's status is
 # checked, the writer aborts on the first failure, and the caller below refuses any arm
 # that did not return exactly WRITERS x ITERS samples.
+# THE INTERMEDIATE TIMESTAMP IS THE POINT. `start` is what the prompt blocks on; `end` is
+# backgrounded by the real hook. Timing only the outer span — which is what this did until
+# the split — cannot separate them afterwards, so every arm has to take t1 as it goes.
+# Two columns per line, `start_ms pair_ms`, one line per iteration (run_writers counts
+# lines, so the sample-count rule is unaffected).
 cat >"$SB/writer.zsh" <<'ZSH'
 zmodload zsh/datetime
-typeset -F t0 t1
+typeset -F t0 t1 t2
 typeset out=$1 iters=$2 tag=$3 id
 : >| $out
 for i in {1..$iters}; do
@@ -666,12 +703,13 @@ for i in {1..$iters}; do
     print -ru2 -- "writer $tag: 'history start' failed at iteration $i"
     exit 1
   fi
+  t1=$EPOCHREALTIME
   if ! atuin history end --exit 0 $id >/dev/null 2>&1; then
     print -ru2 -- "writer $tag: 'history end' failed at iteration $i"
     exit 1
   fi
-  t1=$EPOCHREALTIME
-  printf '%.6f\n' $(( (t1 - t0) * 1000 )) >> $out
+  t2=$EPOCHREALTIME
+  printf '%.6f %.6f\n' $(( (t1 - t0) * 1000 )) $(( (t2 - t0) * 1000 )) >> $out
 done
 ZSH
 
@@ -952,7 +990,7 @@ fi
 # ── results ───────────────────────────────────────────────────────────────────
 # Percentiles, not a mean: the daemon is adopted for the TAIL, and a mean hides exactly
 # the lock-wait spikes that motivate it.
-printf '\n%s== results (ms per command: history start + history end) ==%s\n' "$c_blu" "$c_rst"
+printf '\n%s== results (ms per command) ==%s\n' "$c_blu" "$c_rst"
 ON_LABEL="daemon on"
 ((SYSTEMD)) && ON_LABEL="daemon on (systemd unit) [UNVALIDATED]"
 [[ -n "$SOCK_FORCED" ]] && ON_LABEL="$ON_LABEL (socket forced)"
@@ -965,11 +1003,31 @@ import glob, math, os, sys
 sb, off_ok, daemon_ok = sys.argv[1], sys.argv[2] == '1', sys.argv[3] == '1'
 
 def load(pattern):
-    vals = []
+    """-> (latency, total), each sorted. Column 0 is `history start` ALONE — the call
+    atuin's _atuin_preexec blocks the prompt on. Column 1 is start+end, which
+    _atuin_precmd backgrounds. Both come back from ONE pass so the two tables are the
+    same samples, and so a malformed file is reported once rather than per-table."""
+    lat, tot, bad = [], [], 0
     for path in sorted(glob.glob(pattern)):
         with open(path) as fh:
-            vals += [float(x) for x in fh.read().split() if x]
-    return sorted(vals)
+            for line in fh:
+                if not line.strip():
+                    continue
+                parts = line.split()
+                # Fail closed on a malformed line rather than coercing whatever is there.
+                # The pre-split parser split the WHOLE file on whitespace, so two-column
+                # input would have been read as twice as many single samples — silently
+                # interleaving the two metrics into one distribution and printing a table
+                # that looks entirely normal. Refusing the arm is the only safe response.
+                if len(parts) != 2:
+                    bad += 1
+                    continue
+                lat.append(float(parts[0]))
+                tot.append(float(parts[1]))
+    if bad:
+        print('  !! %d malformed sample line(s) under %s — arm refused' % (bad, pattern))
+        return [], []
+    return sorted(lat), sorted(tot)
 
 def pct(xs, p):
     # Nearest-rank, ceil(p/100 * n) — always a value that was actually observed, and no
@@ -988,34 +1046,59 @@ def row(label, xs, width=18):
 
 # An arm that did not complete is dropped entirely rather than reported short: a
 # half-populated latency table is indistinguishable from a real one once it is quoted.
-off = load(os.path.join(sb, 'off', '*.txt')) if off_ok else []
-on = load(os.path.join(sb, 'on', '*.txt')) if daemon_ok else []
+off_lat, off_tot = load(os.path.join(sb, 'off', '*.txt')) if off_ok else ([], [])
+on_lat, on_tot = load(os.path.join(sb, 'on', '*.txt')) if daemon_ok else ([], [])
 
 # The arm LABEL is where the caveats have to live, because the table is what gets pasted
 # into an issue and every other marker in this script is upstream of the copy buffer.
 on_label = sys.argv[4]
 w = max(18, len(on_label))
-print('  %-*s %7s %9s %9s %9s %9s %9s' % (w, 'arm', 'n', 'mean', 'p50', 'p95', 'p99', 'max'))
-print('  ' + '-' * (74 + w - 18))
-row('daemon off', off, w)
-row(on_label, on, w)
 
-if off and on:
+
+def table(heading, note, off, on):
     print()
-    for name, p in (('p50', 50), ('p95', 95), ('p99', 99)):
-        a, b = pct(off, p), pct(on, p)
-        # Report the direction honestly. The daemon is SUPPOSED to win on the tail; if it
-        # does not, that is the finding, and dressing it up would defeat the point of
-        # measuring at all.
-        verb = 'faster' if b < a else 'SLOWER'
-        print('  %-4s  off %8.2f ms -> on %8.2f ms   (%.2fx %s with the daemon)'
-              % (name, a, b, (a / b if b else 0) if b < a else (b / a if a else 0), verb))
+    print('  %s' % heading)
+    for line in note:
+        print('  %s' % line)
+    print()
+    print('  %-*s %7s %9s %9s %9s %9s %9s'
+          % (w, 'arm', 'n', 'mean', 'p50', 'p95', 'p99', 'max'))
+    print('  ' + '-' * (74 + w - 18))
+    row('daemon off', off, w)
+    row(on_label, on, w)
+    if off and on:
+        print()
+        for name, p in (('p50', 50), ('p95', 95), ('p99', 99)):
+            a, b = pct(off, p), pct(on, p)
+            # Report the direction honestly. The daemon is SUPPOSED to win on the tail; if
+            # it does not, that is the finding, and dressing it up would defeat the point
+            # of measuring at all.
+            verb = 'faster' if b < a else 'SLOWER'
+            print('  %-4s  off %8.2f ms -> on %8.2f ms   (%.2fx %s with the daemon)'
+                  % (name, a, b, (a / b if b else 0) if b < a else (b / a if a else 0), verb))
 
-first = load(os.path.join(sb, 'first', 'first.txt'))
-steady = load(os.path.join(sb, 'first', 'steady.txt'))
+
+# Latency first, deliberately: it is the metric the adoption argument is about, so it is
+# the one that should be under the cursor when someone copies a table out of here.
+table('PROMPT LATENCY — `atuin history start` only.',
+      ['The call the shell BLOCKS on (_atuin_preexec takes it in a command',
+       'substitution). This is the only table that may be quoted as per-command',
+       'latency — the time a human actually waits at the prompt.'],
+      off_lat, on_lat)
+
+table('TOTAL WRITE WORK — `history start` + `history end`.',
+      ['_atuin_precmd fires `end` into a detached background subshell, so this is',
+       'load on the box, NOT time at the prompt. Real, and worth watching for DB',
+       'contention — but quoting it as latency is what produced this repo\'s',
+       'contradictory tail results.'],
+      off_tot, on_tot)
+
+first, first_tot = load(os.path.join(sb, 'first', 'first.txt'))
+steady, steady_tot = load(os.path.join(sb, 'first', 'steady.txt'))
 if first:
     print()
     print('  autostart path — the cost unique to a machine with no service manager:')
+    print('  (prompt latency — the spawn is paid on the blocking `start` call)')
     print('  %-18s %7s %9s %9s %9s %9s %9s' % ('', 'n', 'mean', 'p50', 'p95', 'p99', 'max'))
     row('first command', first)
     row('then steady', steady)
@@ -1023,6 +1106,9 @@ if first:
         print()
         print('  the spawn costs the first command %+.2f ms vs steady state (p50)'
               % (pct(first, 50) - pct(steady, 50)))
+        if first_tot and steady_tot:
+            print('  (%+.2f ms measured as total write work — same samples, both calls)'
+                  % (pct(first_tot, 50) - pct(steady_tot, 50)))
 PY
 
 # The caveats have to describe THIS run, not the run that happened to be done first.
@@ -1096,4 +1182,8 @@ treating any figure here as data.")
 Run it twice before believing the tail. p50 and p95 settle quickly; p99 and max are
 the last to, and a single run's p99 can flip sign. If two runs disagree on a
 percentile, that percentile is noise — report it as unresolved, not as a result.
+
+Quote the PROMPT LATENCY table when the claim is about what a command costs the user.
+The TOTAL WRITE WORK table includes \`history end\`, which the shell hook backgrounds —
+real load, but nobody waits for it. Say which table a number came from.
 EOF

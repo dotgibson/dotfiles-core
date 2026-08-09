@@ -1745,6 +1745,50 @@ con.commit(); con.close()' "$_rcdb"
       fail "atuin bench: row-count SQL must return -1 when it cannot read the DB"
     fi
   fi
+
+  # 7. The two-metric split, EXECUTED rather than grepped. The writer emits `start_ms
+  #    pair_ms` per line; the stats block must read one column per table. This needs a real
+  #    test because the failure is invisible: the previous parser split the whole file on
+  #    whitespace, so two-column input would flatten into a single distribution of double
+  #    the length — a table that looks entirely normal and is entirely wrong. Feed it
+  #    samples whose two columns differ and pin that each table reports its own.
+  # Anchored on the stats INVOCATION, not on `<<'PY'`: the seeder above it uses the same
+  # heredoc tag, so the generic pattern silently extracted the wrong block. Avoids `$` in
+  # the pattern so BSD and GNU sed agree on it.
+  _stats="$(sed -n '/^python3 - .*OFF_OK/,/^PY$/p' "$_BENCH" | sed -e '1d' -e '$d')"
+  if [[ -z "$_stats" ]]; then
+    fail "atuin bench: could not extract the stats block from the script (format changed?)"
+  elif ! have python3; then
+    skip "atuin bench: two-metric split (python3 not installed)"
+  else
+    _sdir="$(mktemp -d "$SANDBOX/stats.XXXXXX")"
+    mkdir -p "$_sdir/off" "$_sdir/on"
+    # start: off 10 ms, on 5 ms  (p50 ratio 2.00x).  pair: off 30 ms, on 25 ms  (1.20x).
+    # The ratios are the assertion, and 1.20x is the load-bearing one: a flattened parse
+    # yields the SAME distribution for both tables, so it can still produce 2.00x — but it
+    # can never produce a second, different ratio.
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+      printf '10.000000 30.000000\n' >>"$_sdir/off/1.txt"
+      printf '5.000000 25.000000\n' >>"$_sdir/on/1.txt"
+    done
+    _sout="$(python3 -c "$_stats" "$_sdir" 1 1 'daemon on' 2>&1)"
+    if [[ "$_sout" == *"PROMPT LATENCY"* && "$_sout" == *"TOTAL WRITE WORK"* &&
+      "$_sout" == *"2.00x faster"* && "$_sout" == *"1.20x faster"* ]]; then
+      pass "atuin bench: prompt-latency and total-write-work tables read separate columns"
+    else
+      fail "atuin bench: the two-metric split did not report both columns independently"
+    fi
+
+    # 8. A malformed sample line must REFUSE the arm, not coerce it. Same standing rule as
+    #    the row count: a half-parsed latency table is indistinguishable from a real one.
+    printf 'only-one-column\n' >"$_sdir/off/1.txt"
+    _sout="$(python3 -c "$_stats" "$_sdir" 1 1 'daemon on' 2>&1)"
+    if [[ "$_sout" == *"arm refused"* ]]; then
+      pass "atuin bench: a malformed sample line refuses the arm"
+    else
+      fail "atuin bench: a malformed sample line must refuse the arm, not be coerced"
+    fi
+  fi
 fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
