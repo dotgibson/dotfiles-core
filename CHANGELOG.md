@@ -66,6 +66,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`/os-package-availability` cited line numbers it never read.** The macbook run on
+  2026-08-09 (dotfiles-MacBook#120) filed a correct green verdict — all 76 `Brewfile`
+  entries re-verified as resolving — but pointed two of its citations at the wrong
+  entries: `dust` at `Brewfile:53` when `:53` is `duf`, and `gnu-sed` at `:64` when `:64`
+  is `visidata`. The names were right and the packages resolve, so nothing was
+  mis-diagnosed; the reference was simply to a neighbouring line. Package lists make this
+  the cheapest possible error — they are dense, every entry inserted above a name shifts
+  it, and neighbours look alike — and the routine's reporting rules asked for `file:line`
+  without ever saying to confirm the line. The prompt now requires reading the line before
+  citing it, and forbids carrying a number over from a previous run's report, inferring it
+  from a nearby entry, or quoting a grep hit it has not re-checked. A green run with wrong line
+  numbers is the corrosive case: it invites the reader to distrust the citations that are
+  correct, which is the whole value of an availability audit.
+
 - **Every atuin bench figure ever produced was labelled latency and was not.** The harness
   timed `history start` and `history end` in one span, but a shell hook does not pay for the
   two calls the same way: atuin's `_atuin_preexec` takes `start` in a command substitution,
