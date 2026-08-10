@@ -2730,6 +2730,77 @@ else
   skip "maint launchd plist (python3 absent — cannot parse plist XML)"
 fi
 
+# ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
+# The runner is unattended but inherits whatever stdin started it (a terminal, via
+# `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question
+# where nobody can see it and then blocks on the tty forever — the run stops dead after the
+# last ✓ with no error. Two separate redirects prevent that, in two different shapes, and
+# both are easy to drop in a refactor without any other test noticing:
+#
+#   step()          `"$@" </dev/null >>"$LOG" 2>&1`   — covers every labelled step
+#   package count   `fi </dev/null` on the if/elif    — that chain is NOT a step()
+#
+# These extract the REAL definitions out of the runner rather than restating them, so the
+# assertions track the shipped code: delete a redirect and the extracted text changes and
+# the check fails. The extractors match the block boundaries only (`^step() {`..`^}` and
+# `^count=-1`..`^fi`), never the redirect itself — matching on `</dev/null` would make the
+# test vacuously pass by finding nothing once the fix was gone.
+hdr "maint runner stdin contract (unpromptable steps, hermetic)"
+_MAINT_SH="$HERE/maint/dotfiles-maint.sh"
+_MRT="$SANDBOX/maint-runner"
+rm -rf "$_MRT"
+mkdir -p "$_MRT/bin"
+
+# A step that tries to eat a line of the caller's stdin. If step() has no redirect it
+# succeeds and swallows the sentinel; with the redirect it reads EOF and the sentinel
+# survives for the caller. Asserting on the SENTINEL (not on a hang) keeps a regression a
+# fast failure — this suite has no timeout anywhere, so a test that detected the hang by
+# hanging would wedge the run instead of reporting it.
+if sed -n '/^step() {/,/^}/p' "$_MAINT_SH" >"$_MRT/step.bash" && [[ -s "$_MRT/step.bash" ]]; then
+  if out="$(printf 'sentinel\n' | bash -c '
+      LOG=/dev/null; log() { :; }
+      . "'"$_MRT/step.bash"'"
+      step "eats stdin" sh -c "read -r stolen; echo \"STOLE=\$stolen\" >&2"
+      read -r survivor || survivor=GONE
+      printf "%s\n" "$survivor"
+    ' 2>/dev/null)" && [[ "$out" == sentinel ]]; then
+    pass "maint: step() cannot consume the caller's stdin (unpromptable)"
+  else
+    fail "maint: step() cannot consume the caller's stdin (unpromptable) — got '${out:-}'"
+  fi
+else
+  fail "maint: could not extract step() from ${_MAINT_SH##*/}"
+fi
+
+# Same contract, different construct: the upgradable-count chain is a bare if/elif, so it
+# carries its own `</dev/null` on the `fi`. Driven with a prompting stub manager (the live
+# case is dnf5 asking to import a repo_gpgcheck key into the per-user keyring, forever,
+# because a declined import is never persisted).
+printf '#!/bin/sh\nprintf "Import key? [y/N]: "\nread -r a\nprintf "pkg-alpha 1.0 updates\\n"\n' >"$_MRT/bin/stubmgr"
+chmod +x "$_MRT/bin/stubmgr"
+if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" && [[ -s "$_MRT/count.bash" ]]; then
+  if out="$(printf 'sentinel\n' | bash -c '
+      have() { [ "$1" = brew ] && return 1; command -v "$1" >/dev/null 2>&1; }
+      _to() { shift; "$@"; }
+      MAINT_PKGCOUNT_TIMEOUT=30
+      PATH="'"$_MRT/bin"'":$PATH
+      # Shadow every manager arm onto the prompting stub so the chain is deterministic
+      # regardless of which package managers the host actually has.
+      for m in checkupdates pacman dnf zypper apt-get apk; do
+        eval "$m() { stubmgr \"\$@\"; }"
+      done
+      . "'"$_MRT/count.bash"'" >/dev/null 2>&1
+      read -r survivor || survivor=GONE
+      printf "%s\n" "$survivor"
+    ' 2>/dev/null)" && [[ "$out" == sentinel ]]; then
+    pass "maint: package-count chain cannot consume the caller's stdin (unpromptable)"
+  else
+    fail "maint: package-count chain cannot consume the caller's stdin (unpromptable) — got '${out:-}'"
+  fi
+else
+  fail "maint: could not extract the package-count chain from ${_MAINT_SH##*/}"
+fi
+
 # update.zsh: the first-run welcome (U2 — the cheat-sheet discoverability hint) must
 # greet EXACTLY ONCE per machine. Drive _core_welcome directly (the TTY gate lives at
 # its call site, so a captured run can exercise the greet+sentinel logic): first call
