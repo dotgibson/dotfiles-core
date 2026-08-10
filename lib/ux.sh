@@ -184,9 +184,19 @@ ux_spin() {
   printf '\e[?25l' # hide cursor while spinning
   # Elapsed-time readout in the frame so a long step reads as PROGRESS, not a hang (U1).
   # Delta against the (read-only) global SECONDS — a localised SECONDS loses its magic in bash.
+  # Same busy-spin guard as zsh/05-ui.zsh's _core_spin (these two are deliberate mirrors).
+  # `sleep 0.1` is the only thing pacing this loop, and a `sleep` that is absent, non-numeric
+  # (some minimal/BusyBox builds reject fractional seconds), or otherwise failing returns
+  # instantly — turning a 100ms tick into an unthrottled spin that pegs a core for the whole
+  # run. The animation is cosmetic and `wait` is what matters, so stop ANIMATING and fall
+  # through to the blocking wait: no CPU, same exit status. 200 iterations inside 5s cannot
+  # happen with a working tick (that would take ~20s), so a slow command never trips it.
+  local _spins=0
   while kill -0 "$pid" 2>/dev/null; do
     printf '\r  %s%s%s %s %s(%ds)%s' "$UX_YEL" "${frames:i++%${#frames}:1}" "$UX_RST" "$label" "$UX_DIM" "$((SECONDS - _t0))" "$UX_RST"
     sleep 0.1
+    _spins=$((_spins + 1))
+    if ((_spins > 200 && SECONDS - _t0 < 5)); then break; fi
   done
   printf '\e[?25h\r\033[K'           # restore cursor, column 0, clear line
   eval "${_prev_int:-trap - INT}"    # restore the caller's prior INT trap (or clear if none)

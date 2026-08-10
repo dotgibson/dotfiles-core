@@ -2295,6 +2295,60 @@ ucheck "ui: _core_confirm declines with no TTY (fail-safe)" \
 ucheck "ui: _core_spin propagates the wrapped command's exit code" \
   "source '$UI'; _core_spin t true 2>/dev/null && ! _core_spin t false 2>/dev/null"
 
+# ui.zsh: the spinner's animation loop must not become a BUSY loop when its pacing
+# primitive stops pacing. _core_nap cannot report failure — it swallows both arms
+# (`zselect … 2>/dev/null`, `sleep 0.1 2>/dev/null`) and always returns 0 — so a box with
+# neither zsh/zselect nor a usable `sleep` silently turns a 100ms tick into an unthrottled
+# spin that pegs a core for the whole wrapped command. Measured before the guard: 100% CPU
+# for the command's full duration; after: 0%, same wall time, same exit status.
+#
+# Needs a REAL pty: _core_spin returns early unless stderr is a tty (`[[ ! -t 2 ]]` runs the
+# command directly), so a captured run never reaches the loop at all — which is exactly how
+# this went unnoticed. The command must also be a FUNCTION: with gum installed _core_spin
+# delegates real binaries to `gum spin` and the hand-rolled loop is skipped.
+#
+# Asserted on the ITERATION COUNT, not on CPU%: deterministic and CI-safe. With the guard,
+# the loop stops animating just past 200; without it a broken nap runs six figures of
+# iterations in the same window.
+if have python3; then
+  _spinout="$(python3 - "$UI" <<'PYSPIN' 2>/dev/null
+import pty, os, sys, select, time, re
+ui = sys.argv[1]
+body = (
+    "source %s; typeset -g NAPS=0; _core_nap(){ (( NAPS++ )); return 0 }; "
+    "slowfn(){ sleep 3; return 7 }; _core_spin t slowfn; print RC=$?; print NAPS=$NAPS"
+) % ui
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("zsh", ["zsh", "-f", "-i", "-c", body]); os._exit(1)
+out, start = b"", time.time()
+while time.time() - start < 60:
+    r, _, _ = select.select([fd], [], [], 0.01)
+    if r:
+        try: d = os.read(fd, 262144)
+        except OSError: break
+        if not d: break
+        out += d
+    p, _st = os.waitpid(pid, os.WNOHANG)
+    if p: break
+else:
+    os.kill(pid, 9)
+txt = out.decode(errors="replace")
+rc = re.findall(r"RC=(\d+)", txt)
+naps = re.findall(r"NAPS=(\d+)", txt)
+print("%s %s" % (rc[-1] if rc else "x", naps[-1] if naps else "x"))
+PYSPIN
+  )"
+  _srrc="${_spinout%% *}" _srnaps="${_spinout##* }"
+  if [[ "$_srrc" == 7 && "$_srnaps" =~ ^[0-9]+$ ]] && ((_srnaps <= 250)); then
+    pass "ui: _core_spin stops animating instead of busy-spinning when _core_nap cannot pace (naps=$_srnaps, rc=$_srrc)"
+  else
+    fail "ui: _core_spin busy-spins when _core_nap cannot pace (rc=$_srrc naps=$_srnaps; want rc=7 and naps<=250)"
+  fi
+else
+  skip "_core_spin busy-loop guard (python3 absent — needs a pty to reach the animation loop)"
+fi
+
 # ui.zsh: _core_nap is the spinner's per-frame delay primitive — it must return 0
 # (the while-loop relies on it not aborting) and complete promptly via zselect WITHOUT
 # forking a fractional `sleep` that busybox may reject. We can't time it portably here,
