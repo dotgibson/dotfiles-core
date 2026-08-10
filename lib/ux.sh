@@ -191,10 +191,20 @@ ux_spin() {
   # run. The animation is cosmetic and `wait` is what matters, so stop ANIMATING and fall
   # through to the blocking wait: no CPU, same exit status. 200 iterations inside 5s cannot
   # happen with a working tick (that would take ~20s), so a slow command never trips it.
+  # Both statements in the loop body are NORMALISED (`|| :`) because this file is SOURCED by
+  # callers running `set -euo pipefail` — bootstrap.sh is one — so a bare command that fails
+  # kills the caller outright. That is not hypothetical: with a `sleep` that exits non-zero,
+  # an unnormalised `sleep 0.1` aborts the whole shell at exit 127 BEFORE `_spins` is ever
+  # incremented, so the guard below can never run, the wrapped child is left running, and the
+  # cursor stays hidden. Verified under a pty: SHELL_EXIT=127, no UX_RC, no end marker.
+  # Normalising is also what lets a failing tick reach the guard rather than abort. stderr is
+  # dropped so a missing `sleep` cannot emit 200 "command not found" lines on the way there.
+  # (The printf gets the same treatment: this animation is decoration, and decoration must
+  # never take down its caller — a closed or dead terminal makes it fail the same way.)
   local _spins=0
   while kill -0 "$pid" 2>/dev/null; do
-    printf '\r  %s%s%s %s %s(%ds)%s' "$UX_YEL" "${frames:i++%${#frames}:1}" "$UX_RST" "$label" "$UX_DIM" "$((SECONDS - _t0))" "$UX_RST"
-    sleep 0.1
+    printf '\r  %s%s%s %s %s(%ds)%s' "$UX_YEL" "${frames:i++%${#frames}:1}" "$UX_RST" "$label" "$UX_DIM" "$((SECONDS - _t0))" "$UX_RST" 2>/dev/null || :
+    sleep 0.1 2>/dev/null || :
     _spins=$((_spins + 1))
     if ((_spins > 200 && SECONDS - _t0 < 5)); then break; fi
   done
