@@ -2343,6 +2343,48 @@ ln -s "$(command -v awk)" "$PMBIN/awk"
 ucheck "update: _pkgup_list surfaces upgradable package names (apt)" \
   "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *foo* && \$out == *bar* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+
+# REGRESSION (stdin): the probes must be UNPROMPTABLE. They run with stdout captured by
+# $(...) and stderr discarded, so a package manager that stops to ask a question writes it
+# where nobody can see and then blocks on the terminal forever — `up` printing "Complete!"
+# and never returning, because _pkgup_refresh runs _pkgup_count in the FOREGROUND after the
+# upgrade. (Live case: dnf5 keys repos per user under <cachedir>/<repo>/pubring, so a repo
+# with repo_gpgcheck=1 whose key only reached root's keyring re-prompts every non-root
+# --refresh, forever, since a declined import is never persisted.)
+#
+# The guard is `esac </dev/null` INSIDE each function. It deliberately is not on the function
+# definition: `f() { ... } </dev/null` binds at definition time in zsh and does nothing at
+# call time, which looks identical in review and fixes nothing — these tests are what tell
+# the two apart.
+#
+# Asserted as "the probe did not EAT the caller's stdin" rather than "the probe did not
+# hang": same property (an unpinned probe reaches the caller's stdin; a pinned one cannot),
+# but it FAILS on regression instead of hanging. This harness has no timeout, so a test that
+# detected the hang by hanging would wedge the suite rather than report it. The stub reads a
+# line, so an unpinned probe swallows the sentinel and the outer read comes up empty.
+rm -rf "$PMBIN"
+mkdir -p "$PMBIN"
+printf '#!/bin/sh\nprintf "Import key? [y/N]: "\nread -r a\nprintf "Inst foo [1.0] (1.1)\\n"\n' >"$PMBIN/apt-get"
+chmod +x "$PMBIN/apt-get"
+ln -s "$(command -v awk)" "$PMBIN/awk"
+ln -s "$(command -v grep)" "$PMBIN/grep"
+ucheck "update: _pkgup_count cannot consume the caller's stdin (unpromptable)" \
+  "source '$UPD'; printf 'sentinel\\n' | { _pkgup_count >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+ucheck "update: _pkgup_list cannot consume the caller's stdin (unpromptable)" \
+  "source '$UPD'; printf 'sentinel\\n' | { _pkgup_list >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+# Put the fixture back the way the checks below expect it. $PMBIN is shared state, and the
+# stub above is the one thing in this file that BLOCKS: leaving it in place hands a prompting
+# apt-get to every later check, including the startup-hook ones that run _pkgup_refresh with
+# UPDATE_CHECK_ENABLED=1. With the stdin pin they survive it; without it they wedge the whole
+# suite instead of failing the two tests above — which is exactly backwards for a regression
+# test whose job is to report this bug.
+rm -rf "$PMBIN"
+mkdir -p "$PMBIN"
+printf '#!/bin/sh\ncase "$*" in *"-s upgrade"*) printf "Inst foo [1.0] (1.1)\\nInst bar [2.0] (2.1)\\n";; esac\n' >"$PMBIN/apt-get"
+chmod +x "$PMBIN/apt-get"
+ln -s "$(command -v awk)" "$PMBIN/awk"
 # REGRESSION (prompt_subst): _pkgup_notice prints its 'run up to apply' nudge via
 # `print -P`. Under `setopt prompt_subst` (starship and any substitution prompt enable
 # it) print -P performs command substitution on a backtick'd word — so a literal \`up\`
