@@ -152,7 +152,7 @@ trap 'rm -rf "$SANDBOX"' EXIT
 
 # ── C. clipboard detection ladder (bin/clip / bin/clip-paste) ─────────────────
 # bin/clip is the single highest-fan-out runtime artifact in Core — used by zsh
-# (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all 9 OS
+# (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all 8 OS
 # repos — yet its WSL→macOS→Wayland→X11 ladder had no test, only `bash -n`. We drive
 # the ladder HERMETICALLY: PATH is pointed at a fake bin holding a stub `uname` that
 # reports the OS we want, a stub `grep` that answers the /proc/version probe, and
