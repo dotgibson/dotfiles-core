@@ -65,7 +65,7 @@ hooks: ## Install the pre-commit hooks into this clone
 	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit not found: pip install pre-commit"; exit 1; }
 	@pre-commit install
 
-update-hooks: ## Bump pinned pre-commit hook revisions (dependabot has no pre-commit ecosystem)
+update-hooks: ## Bump pinned pre-commit hook revisions to upstream latest (pre-commit autoupdate)
 	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit not found: pip install pre-commit"; exit 1; }
 	@pre-commit autoupdate
 
