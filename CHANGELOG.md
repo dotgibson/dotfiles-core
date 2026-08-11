@@ -82,6 +82,57 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The weekly `fleet-drift` sweep reported the fleet's ordinary state as a failure.** The
+  sweep anchors to the latest **released** Core tag — deliberately, to avoid a false
+  "BEHIND by N" on every unreleased commit — but `make sync` has never fanned out from a tag:
+  `sync-core.sh` resolves `git ls-remote <remote> main` and vendors the branch **tip**, which
+  is why the `core_tag` it stamps looks like `v4.9.3-56-g44a44fc`. Those two facts contradict
+  each other on every day between releases. `_classify` treated anything not byte-identical to
+  the reference as drift, so a single sync in an unreleased week put all eight Unix repos at
+  "AHEAD by N", exit 1, a red run and a filed issue — while printing "run `make sync`", the
+  one action guaranteed to push them further ahead. Green was only ever the accident of the
+  fleet happening to sit exactly on a tag commit.
+
+  A recorded commit ahead of the reference **and** an ancestor of `origin/main` (falling back
+  to `main`) now reads as current: it carries newer Core off the released lineage, the
+  opposite of the staleness this dashboard exists to find. The tolerance is deliberately
+  narrow — ahead but **not** on main means the repo was synced from something that is not
+  Core's release lineage, and still fails, as do behind, diverged, and a marker this clone
+  cannot measure. With no mainline ref resolvable at all it fails closed and says so rather
+  than green-lighting a lineage it could not check. This is the same false positive `dd4f529`
+  fixed for `dotfiles-Windows` in `_classify_subtree`; the Unix repos had carried it since.
+
+  Two things that made the red run hard to read are fixed with it. The header printed the
+  reference's **sha** beside the **current branch** — `Fleet drift vs Core f95fc2b88218
+  (main)` — so a sweep anchored to `v4.9.3` looked like a comparison against main's tip; it
+  now names what was actually resolved. And `make sync` is advised only for repos that
+  genuinely lag, since it would overwrite an off-lineage marker rather than reconcile it.
+  `scripts/test-core.sh` now drives the classifier hermetically against a throwaway Core —
+  a tag, commits past it, and an off-main commit — pinning every verdict, including that real
+  staleness still fails.
+
+  Green is not the same as finished, so ahead-on-main rows get their **own** verdict rather
+  than a plain `✓`: a yellow `•`, plus a closing `N repo(s) carrying UNRELEASED Core` tally
+  that prints even under `--quiet`. That tally — not the exit code — is now where "the fleet
+  is running Core newer than any release" lives. It is a state that is fine to run and wrong
+  to leave indefinitely, and flattening it into the same green as a properly pinned fleet
+  would have traded one bad signal for a missing one. The fix it names is a release, not a
+  sync.
+
+- **`--strict` printed a red row and still exited 0.** It is documented — in the header and
+  in `Exit:` — to turn a not-checked-out repo from a skip into a failure, and it did bump the
+  counter and print red, but it never set the drift flag, so the script returned success and
+  every caller read the run as clean. A repo that was never cloned is now drift; it is
+  deliberately **not** counted as stale, because `make sync` cannot repair a repo that isn't
+  there, and the closing advice no longer offers a recipe that would not work.
+
+- **An unresolvable `--ref` was silently answered with a different question.** `--ref
+  nosuchref` fell through the resolution ladder to `origin/main` and reported against it,
+  while the banner still named `nosuchref` — the same class of mislabel as the header bug
+  above, and worse, because the caller had been explicit. The fallback ladder exists for the
+  _default_ path (no tags yet, or a clone too shallow to reach one); an explicit ref that
+  does not resolve is now a usage error (exit 2).
+
 - **A shell that outlived atuin's daemon recorded nothing, silently, for the rest of its
   life.** `_core_atuin_daemon_guard` was a startup probe: one `zsocket` connect at the first
   `precmd`, then it unhooked itself. That covers a shell started _after_ the daemon went away

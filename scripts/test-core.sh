@@ -1338,6 +1338,136 @@ if [ "$_fd_deg_rc" -eq 0 ] && grep -q 'Unavailable in this run' <<<"$_fd_degrade
   pass "dashboard: degrades to the 'unavailable' note without gh/token"
 else fail "dashboard: GH_OK=0 degradation path broken (rc=$_fd_deg_rc)"; fi
 
+# ── F5. fleet drift classifier (scripts/fleet-drift.sh) ───────────────────────
+# The sweep's verdict function had never been driven by a test. It flagged ANY recorded
+# commit that wasn't byte-identical to the reference — but the reference DEFAULTS to the
+# latest release tag while `make sync` fans out main's TIP, so every repo synced between
+# releases was reported "AHEAD by N" and the sweep advised `make sync`, the one action that
+# would push it further ahead (#371). The fix — ahead-of-tag but on main's lineage is
+# CURRENT, ahead but off it is still drift — is pure git-reachability logic that shellcheck
+# cannot see and that the real checkout cannot exercise (it needs a tag, commits past it, and
+# an off-main commit, none of which may be created here). So build a throwaway Core: copy the
+# script plus the two libs it sources into a sandbox repo root, git init a small history, and
+# drive one fixture OS repo through every verdict by rewriting its core.lock.
+if have git; then
+  hdr "fleet drift classifier (scripts/fleet-drift.sh)"
+  FDC="$SANDBOX/fdcore"    # the throwaway "Core" ($HERE, as fleet-drift.sh computes it)
+  FDF="$SANDBOX/fdriftfleet"   # its fleet root (--root)
+  rm -rf "$FDC" "$FDF"
+  mkdir -p "$FDC/scripts/lib" "$FDC/lib" "$FDF/dotfiles-Test"
+  cp "$HERE/scripts/fleet-drift.sh" "$FDC/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$FDC/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$FDC/lib/" # common.sh sources ../../lib/ux.sh
+  printf 'dotfiles-Test\n' >"$FDC/scripts/os-repos.txt" # a one-repo fleet
+  # Neutralise host git config: a global commit.gpgsign or init.defaultBranch must not reach
+  # into the fixture (signing would block the commits; the branch name is load-bearing here).
+  _fdg() { git -C "$FDC" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "$@"; }
+  _fdc() { _fdg commit -q --allow-empty -m "$1"; }
+  _fdg init -q >/dev/null 2>&1
+  _fdg symbolic-ref HEAD refs/heads/main # not `init -b main` (needs git >= 2.28)
+  _fdc c0; FD_OLD="$(_fdg rev-parse HEAD)"  # before the tag → genuinely stale
+  _fdc c1; _fdg tag -a v1.0.0 -m v1.0.0     # ← becomes the default reference
+  FD_REL="$(_fdg rev-parse 'v1.0.0^{commit}')"
+  _fdc c2; _fdc c3; FD_TIP="$(_fdg rev-parse HEAD)" # main, 2 past the tag
+  _fdg checkout -q -b feat v1.0.0
+  _fdc f1; FD_OFF="$(_fdg rev-parse HEAD)"  # ahead of the tag but NOT on main
+  _fdg checkout -q -b side "$FD_OLD"
+  _fdc g1; FD_DIV="$(_fdg rev-parse HEAD)"  # behind AND ahead → diverged
+  _fdg checkout -q main
+
+  _fdd_lock() { printf '%s\n' "$@" >"$FDF/dotfiles-Test/core.lock"; }
+  _fdd_run() { bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --color never 2>&1; }
+  _fdd_is() { # _fdd_is <label> <want-rc> <status-regex>
+    local out rc row
+    out="$(_fdd_run)"; rc=$?
+    row="$(grep 'dotfiles-Test' <<<"$out" | head -n1)"
+    if [[ "$rc" == "$2" ]] && grep -qE "$3" <<<"$row"; then pass "$1"
+    else fail "$1 (rc=$rc want=$2; row='$row')"; fi
+  }
+
+  _fdd_lock "core_sha=$FD_REL"
+  _fdd_is "drift: sha identical to the reference tag is current" 0 'current *$'
+  _fdd_lock "core_sha=$FD_OLD"
+  # THE guard on the fix: tolerating AHEAD must not have tolerated real staleness.
+  _fdd_is "drift: a sha behind the reference still FAILS" 1 'BEHIND by 1 commit'
+  _fdd_lock "core_sha=$FD_TIP"
+  # #371 itself — the fleet's ordinary between-releases state must be green.
+  _fdd_is "drift: ahead of the tag but on main is current (#371)" 0 'current \(ahead of v1.0.0 by 2 commit\(s\), on main\)'
+  _fdd_lock "core_sha=$FD_OFF"
+  # ...and the tolerance must stay narrow: ahead off the released lineage is still drift.
+  _fdd_is "drift: ahead of the tag but OFF main still FAILS" 1 'OFF-LINEAGE'
+  _fdd_lock "core_sha=$FD_DIV"
+  _fdd_is "drift: a diverged sha still FAILS" 1 'DIVERGED \(behind 1, ahead 1\)'
+  _fdd_lock "core_tag=v1.0.0" # marker present, but no core_sha key
+  _fdd_is "drift: a marker with no recorded sha FAILS" 1 'no provenance recorded'
+  _fdd_lock "core_sha=$(printf '0%.0s' {1..40})" # a sha this clone has never seen
+  _fdd_is "drift: an unknown sha degrades to DIFFERS, not a crash" 1 'DIFFERS'
+  rm -f "$FDF/dotfiles-Test/core.lock"
+  _fdd_is "drift: a missing core.lock FAILS" 1 'missing core.lock'
+
+  # The header must name the RESOLVED REFERENCE (a tag), not the checkout's branch: the old
+  # form printed "(main)" beside the tag's sha, which read as a comparison against main's tip.
+  _fdd_lock "core_sha=$FD_REL"
+  _fdd_hdr="$(_fdd_run | grep 'Fleet drift vs Core')"
+  if [[ "$_fdd_hdr" == *"v1.0.0 (${FD_REL:0:12})"* ]]; then
+    pass "drift: header names the resolved reference tag, not the current branch"
+  else fail "drift: header is '$_fdd_hdr'"; fi
+
+  # The closing advice must fit the verdict. `make sync` brings a LAGGING repo forward; it
+  # would overwrite an off-lineage marker rather than reconcile it, so it must not be offered.
+  _fdd_lock "core_sha=$FD_OLD"; _fdd_behind="$(_fdd_run)"
+  _fdd_lock "core_sha=$FD_OFF"; _fdd_off="$(_fdd_run)"
+  if grep -q "make sync" <<<"$_fdd_behind" && ! grep -q "make sync" <<<"$_fdd_off"; then
+    pass "drift: 'make sync' is advised only for repos that actually lag"
+  else fail "drift: remediation text does not match the verdict"; fi
+  # An unstamped repo IS sync-fixable — but its branch returns before the verdict arm that
+  # buckets the rest, so it needs its own assertion or the advice silently regresses.
+  rm -f "$FDF/dotfiles-Test/core.lock"
+  if grep -q "make sync" <<<"$(_fdd_run)"; then
+    pass "drift: a missing marker is advised to re-sync"
+  else fail "drift: a missing core.lock did not advise 'make sync'"; fi
+
+  # The ahead-on-main state is GREEN but not FINISHED, so it must not render as a plain ✓ —
+  # the whole reason it stopped being a failure is that the tally now carries the signal.
+  _fdd_lock "core_sha=$FD_TIP"; _fdd_ahead="$(_fdd_run)"
+  if grep -qE '^•.*current \(ahead of v1\.0\.0' <<<"$_fdd_ahead" &&
+    grep -q '1 repo(s) carrying UNRELEASED Core' <<<"$_fdd_ahead"; then
+    pass "drift: unreleased-Core rows render as a third state and are tallied"
+  else fail "drift: third state not distinguished from a plain pass"; fi
+  # ...and the tally must stay silent when the fleet really is pinned, or it becomes noise.
+  _fdd_lock "core_sha=$FD_REL"
+  if ! grep -q 'UNRELEASED Core' <<<"$(_fdd_run)"; then
+    pass "drift: a fleet pinned to the tag reports no unreleased Core"
+  else fail "drift: unreleased tally fired on a pinned fleet"; fi
+
+  # An explicit --ref that doesn't resolve must be a usage error, not a silent fallback to
+  # origin/main — the banner would otherwise name a ref that was never compared against.
+  bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --ref nosuchref --color never >/dev/null 2>&1
+  if [[ $? -eq 2 ]]; then pass "drift: an unresolvable --ref exits 2 instead of falling back"
+  else fail "drift: unresolvable --ref did not exit 2"; fi
+
+  # --strict is documented to FAIL on a repo that isn't checked out. It printed red but
+  # returned 0, so every caller read the run as clean. The root must EXIST and merely be
+  # empty — a missing root is a separate usage error (exit 2) and would mask the regression.
+  mkdir -p "$SANDBOX/fdempty"
+  bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --strict --color never >/dev/null 2>&1
+  _fdd_strict=$?
+  bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --color never >/dev/null 2>&1
+  _fdd_plain=$?
+  if [[ $_fdd_strict -eq 1 && $_fdd_plain -eq 0 ]]; then
+    pass "drift: --strict fails on a not-checked-out repo, plain mode still skips"
+  else fail "drift: --strict exit code wrong (strict=$_fdd_strict plain=$_fdd_plain)"; fi
+
+  # Fail-CLOSED leg: with no mainline ref at all, an ahead-only marker is unverifiable and
+  # must NOT be waved through as current. Last — it deletes the branch the fixture rides on.
+  _fdg checkout -q --detach main
+  _fdg branch -D main >/dev/null 2>&1
+  _fdd_lock "core_sha=$FD_TIP"
+  _fdd_is "drift: ahead with no mainline ref fails closed" 1 'no mainline ref'
+else
+  skip "fleet drift classifier (git unavailable)"
+fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link
