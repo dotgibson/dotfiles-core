@@ -481,6 +481,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`pre-commit` moved off a known-broken patch: `4.6.1 → 4.6.2`.** 4.6.2's sole content is a
+  fix for a 4.6.1 regression in `language: node` hooks whose `package.json` declares a
+  `scripts.build` key, under npm 11.x (pre-commit#3737). It is **not** fixing a live failure
+  here — markdownlint-cli2 is Core's only node hook, and v0.23.2's manifest carries
+  `build-docker-image` and friends but no plain `build`, so it misses the trigger condition.
+  Taken anyway, on the principle that sitting on a patch upstream has already superseded is a
+  bet the next hook addition doesn't collect. One line in `scripts/tool-versions.env`; the
+  three consumers (`ci.yml`, `scripts/setup.sh`, `.devcontainer/devcontainer.json`) all read
+  the variable, so no literal moved with it. **No checksum refresh applies** — `PRECOMMIT` is a
+  pip install, not a raw release download, so it carries no `*_SHA256` and is absent from both
+  `scripts/update-tool-checksums.sh` and the audit's section 9b. No `.pre-commit-config.yaml`
+  change either: the audit's version-consistency section gates `PRECOMMIT_HOOKS_VERSION` (the
+  hook repo's `rev:`), never the pre-commit binary. The remaining nine pins were checked
+  against upstream in the same pass and are all current.
+
 - **The daemon's contention claim now has a musl number.** Measured in an Alpine 3.21
   container (real Alpine userland, real musl, no systemd) against a glibc control on the same
   host, atuin 18.19.0, two runs each. The p50 win holds and is the most robust result so far
