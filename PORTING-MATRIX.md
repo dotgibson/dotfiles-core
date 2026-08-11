@@ -239,12 +239,17 @@ config: Core is vendored identically to every repo, so a per-machine value there
 wrong on the other seven. `autostart` is mutually exclusive with `systemd_socket = true` —
 pick the unit or pick autostart, not both.
 
-**✔ marks the machines where the exports are actually wired today — Fedora and Alpine.**
-Every other row is the documented recipe, not a shipped state: follow the rollout order
-below (Fedora first as the template, Alpine second as the design's real constraint, then
-the rest) rather than assuming your repo already does this. **`Defense` has no row here
-by design** — it is distro-agnostic and carries no `os/` layer, so its atuin exports come
-from whichever OS repo is underneath it (see "Repo status").
+**✔ marks the machines where the exports are actually wired today — Fedora and Alpine, two
+of the seven Core-vendoring machines this table covers.** The marker is per **machine**, not
+per row: the systemd row holds a wired Fedora alongside four unwired ones. For the other
+five — Arch, openSUSE, Gentoo and Kali (sharing that row with Fedora) plus macOS — the cell
+is the documented recipe, not a shipped state, so follow the rollout order below (Fedora
+first as the template, Alpine second as the design's real constraint, then the rest) rather
+than assuming your repo already does this. The `Windows` row is neither wired nor pending:
+it is out of scope, vendoring no `core/` at all. **`Defense` has no row here by design** —
+it is distro-agnostic and carries no `os/` layer, so its atuin exports come from whichever
+OS repo is underneath it (see "Repo status"). Seven machines + `Defense` = the eight
+Core-vendoring repos in `scripts/os-repos.txt`.
 
 **For those exports to work at all, `atuin/config.toml` must leave `enabled` and `autostart`
 unset** — and it does. atuin builds its config as defaults → environment → config **file**,

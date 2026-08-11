@@ -470,8 +470,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   cell already had. (`PORTING-MATRIX.md`)
 
 - **The atuin-daemon table read as shipped state when it is mostly a recipe.** The exports are
-  wired on two of six machines (Fedora, Alpine) — now marked `✔`, with the rest explicitly
-  labelled as the documented recipe. `Defense` is dropped from the systemd row: that row tells
+  wired on two of the seven Core-vendoring machines the table covers (Fedora, Alpine) — now
+  marked `✔`, with the other five labelled as the documented recipe and `Windows` called out as
+  neither, being out of scope. The marker is per machine rather than per row, since the systemd
+  row holds a wired Fedora next to four unwired ones. `Defense` is dropped from the systemd row:
+  that row tells
   you to put exports in `os/<os>.zsh`, and Defense is distro-agnostic with no `os/` layer, as
   the same file says under "Repo status". The `Built:` list also omitted `Defense` entirely.
   (`PORTING-MATRIX.md`)
