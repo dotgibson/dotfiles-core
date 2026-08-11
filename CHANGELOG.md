@@ -142,9 +142,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   dashboard knew better. `CONTRIBUTING.md` sent contributors to `dependabot.yml` for the
   commit-prefix convention, a file that has not existed since v3.2.0. The rest were comments
   in `freshness.yml`, `claude-routines.yml`, and `update-plugins.sh` explaining the freshness
-  bot's reason for existing by contrast with the wrong bot. All six now name Renovate,
-  `renovate.json`, and the `ci(deps):` / `app/renovate` signature a triage run should actually
-  look for. The routine brief additionally gains what #377's own caveat exposed: Renovate
+  bot's reason for existing by contrast with the wrong bot. All six now name Renovate, and
+  those that pointed at a config file point at `renovate.json`; the triage brief — the one
+  document that has to act on the answer — additionally carries the `ci(deps):` prefix and the
+  `app/renovate` author signature a run should look for, which the passing mentions elsewhere
+  do not need. The routine brief additionally gains what #377's own caveat exposed: Renovate
   parks bumps on a **Dependency Dashboard** issue that opens no PR, so an empty PR queue is
   not an empty bump queue — and since reading it needs `gh issue list`, outside this command's
   `allowed-tools`, the brief now says to report the dashboard as unchecked rather than
@@ -520,8 +522,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   pip install, not a raw release download, so it carries no `*_SHA256` and is absent from both
   `scripts/update-tool-checksums.sh` and the audit's section 9b. No `.pre-commit-config.yaml`
   change either: the audit's version-consistency section gates `PRECOMMIT_HOOKS_VERSION` (the
-  hook repo's `rev:`), never the pre-commit binary. The remaining nine pins were checked
-  against upstream in the same pass and are all current.
+  hook repo's `rev:`), never the pre-commit binary. Of the nine remaining pins, the eight gate
+  tools were checked against upstream in the same pass and are current; `CLAUDE_CODE_VERSION`
+  is the one exception, deliberately left at `2.1.222` with `2.1.227` available — it changes
+  the scheduled routine bots' behavior, and moving it alongside an unrelated fix would make a
+  later routine regression ambiguous to bisect. It moves on its own.
 
 - **The daemon's contention claim now has a musl number.** Measured in an Alpine 3.21
   container (real Alpine userland, real musl, no systemd) against a glibc control on the same
