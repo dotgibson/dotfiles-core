@@ -428,6 +428,65 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   entry, leaving the pointer aimed at an empty section. Now names `[v4.9.3]` — the hazard of
   referring to `[Unreleased]` from a dated section at all.
 
+- **Core told you it fans out to nine OS repos. It fans out to eight.** `scripts/os-repos.txt`
+  has been the canonical fleet — and has documented `dotfiles-Windows` and `dotfiles-Debian` as
+  deliberately absent — for several releases, but five comments still asserted the old count:
+  `.github/workflows/release.yml`, `.github/workflows/ci.yml`, `scripts/update-nvim-plugins.sh`,
+  `scripts/test-core.sh`, and `scripts/audit-core.sh`. `ARCHITECTURE.md` is deliberately
+  **unchanged**: "one Core plus nine machine repos" counts machine repos _including_ Windows and
+  is correct — the two numbers are both right in their own sentence, which is exactly why a
+  find-and-replace would have broken it. (`.github/workflows/release.yml`,
+  `.github/workflows/ci.yml`, `scripts/update-nvim-plugins.sh`, `scripts/test-core.sh`,
+  `scripts/audit-core.sh`)
+
+- **`gsync` was documented as an alias in a file deleted in v4.** It is a _function_ —
+  `zsh/20-aliases.zsh` says so two lines above the definition, and explains why (a dotfiles path
+  containing whitespace must stay one word). Three places carried the stale `zsh/aliases.zsh`
+  path, a filename that has not existed since the v4 `NN-name.zsh` renumbering.
+  (`core.manifest`, `zsh/completions/_gsync`, `.bin/sync-upstream.sh`)
+
+- **`blib_link_core`'s own comments under-sold what it links.** The doc header omitted lazygit,
+  jujutsu and the seeded sesh config; the `tools` group banner omitted jujutsu and atuin —
+  both of which the code directly beneath it links. The complete enumeration already existed at
+  the top of the file, so both now point at it as the canonical list. (`lib/bootstrap-lib.sh`)
+
+- **Pre-v4 module names in comments that describe _current_ behaviour.** `tools.zsh`,
+  `options.zsh`, `ui.zsh` and `maint.zsh` have been `00-tools.zsh`, `10-options.zsh`,
+  `05-ui.zsh` and `55-maint.zsh` since v4. Note `blib_migrate_v4` deliberately **keeps** the
+  unnumbered names — it exists to delete stale pre-v4 symlinks, so there the old spelling is
+  the correct one. (`core.manifest`, `lib/bootstrap-lib.sh`)
+
+- **`PORTING-MATRIX.md` promised bootstrap installs that do not exist.** The `³` marker means
+  "bootstrap.sh installs it best-effort", but six cells carried it with no installer behind
+  them — `ouch` and `jujutsu` on Gentoo and Kali, `ast-grep` and `shfmt` on Gentoo — verified
+  against each repo's `bootstrap.sh` and `install/packages.txt`. Kali _does_ install `ast-grep`,
+  so that cell keeps its `³`. A new `²¹` marker records the honest state, reusing the
+  detect-only shape `jnv`¹⁷ and `gping`¹⁹ already established: **available, not installed**.
+  It also covers four rows that are macOS-Brewfile-only in practice (`hyperfine`, `shellcheck`,
+  `shfmt`, `ouch` — no Linux repo installs any of them), and `lazygit` on Kali, the sharpest
+  case: every other Linux repo installs it, Kali installs it nowhere, and Core ships
+  `alias lg='lazygit'` regardless. This is the same overclaim already corrected once for
+  openSUSE. Alpine's `ouch` cell also gains the `¹⁴` testing-repo footnote every comparable
+  cell already had. (`PORTING-MATRIX.md`)
+
+- **The atuin-daemon table read as shipped state when it is mostly a recipe.** The exports are
+  wired on two of six machines (Fedora, Alpine) — now marked `✔`, with the rest explicitly
+  labelled as the documented recipe. `Defense` is dropped from the systemd row: that row tells
+  you to put exports in `os/<os>.zsh`, and Defense is distro-agnostic with no `os/` layer, as
+  the same file says under "Repo status". The `Built:` list also omitted `Defense` entirely.
+  (`PORTING-MATRIX.md`)
+
+- **`dotfiles-Defense` is now recorded as the documented scaffold exception.** `core.manifest`
+  claimed `lib/bootstrap-lib.sh` is sourced by _each_ OS repo's `bootstrap.sh`; Defense
+  hand-rolls its own `link()` and `.zshrc` heredoc instead. That is deliberate — Defense is a
+  role layer stacking onto an already-provisioned host, where the OS repo underneath has
+  already run the scaffold — so the claim is narrowed rather than the code changed.
+  (`core.manifest`, `PORTING-MATRIX.md`)
+
+- **`README.md` billed `aliases.md` as the "full" cheat sheet.** It omits the function verbs
+  `core help` indexes (`fif`, `fbr`, `maint-*`, `op*`). `core help` is the complete index and
+  now says so; `aliases.md` is described as the curated companion. (`README.md`)
+
 ### Changed
 
 - **The daemon's contention claim now has a musl number.** Measured in an Alpine 3.21
@@ -458,6 +517,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   autostart path's first command additionally pays ~+41 ms for the spawn. Still unmeasured
   and still needing hardware nobody has to hand: musl, the systemd-unit path, and a network
   home — where the claim is strongest and least tested.
+
+- **Plugin pins rolled forward.** Routine freshness sweep, landed by the bot and previously
+  unrecorded here. Six Neovim plugins in `nvim/lazy-lock.json` (`fzf-lua`, `nvim-lspconfig`,
+  `nvim-tree.lua`, `nvim-treesitter`, `package-info.nvim`, `schemastore.nvim`) and the zsh
+  `zsh-syntax-highlighting` pin in `zsh/45-plugins.zsh`. Pins are what stop plugins floating
+  silently into eight repos, so every roll is a change those repos receive on their next sync
+  — `CONTRIBUTING.md` requires it in the changelog, and there is no carve-out for automation.
+  (`nvim/lazy-lock.json`, `zsh/45-plugins.zsh`)
 
 ## [v4.9.3] - 2026-08-06
 
