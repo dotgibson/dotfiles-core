@@ -231,10 +231,10 @@ fi
 # every row. (It also makes the dead-socket path benchmark FASTER than a direct write,
 # 4.17 ms vs 8.27 ms mean, because it is timing a no-op.)
 #
-# So this guard is DATA-LOSS PREVENTION, not a latency optimisation: probe once and, when
-# nothing is listening, force the daemon off for THIS shell so atuin really does write
-# SQLite directly. Silent by design — but what a missing daemon would otherwise cost is
-# the history itself, not milliseconds.
+# So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
+# throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
+# so atuin really does write SQLite directly. Mostly silent by design — but what a missing daemon
+# would otherwise cost is the history itself, not milliseconds.
 #
 # What it does NOT guard: an ACCEPT-BUT-SILENT socket — something is listening (systemd
 # socket activation holding the socket while the daemon behind it is dead or wedged) and
@@ -304,12 +304,17 @@ fi
 # test that has to construct the state it then asserts on proves nothing. Two typesets, ~1us
 # each: the entire startup cost of turning the probe into a watchdog.
 #   _INTERVAL  seconds between real connects — and, in the gate below, the largest clock jump the
-#              throttle will believe. Read ONCE, here. A garbage or negative CORE_ATUIN_PROBE_-
-#              INTERVAL evaluates to <= 0 under `typeset -gi`, which means "probe every prompt":
-#              fail-safe, in the direction that keeps history.
+#              throttle will believe. Seeded with the DEFAULT here and re-resolved from
+#              CORE_ATUIN_PROBE_INTERVAL inside the guard, NOT read from the environment at this
+#              point: os/<os>.zsh (80) and 99-local.zsh (99) load AFTER this file, so a
+#              per-machine knob is not set yet while 00-tools.zsh is being sourced — the same
+#              load-order fact that puts the whole probe on the first precmd. Reading it here
+#              would silently ignore every override written in the layer that would actually
+#              write one. A garbage or negative value evaluates to <= 0 under `typeset -gi`,
+#              which means "probe every prompt": fail-safe, in the direction that keeps history.
 #   _NEXT      earliest clock value at which the next connect may happen. 0 = due now, which is
 #              why the FIRST precmd probes undelayed. The tests back-date it to time-travel.
-typeset -gi _CORE_ATUIN_DAEMON_INTERVAL=${CORE_ATUIN_PROBE_INTERVAL:-60}
+typeset -gi _CORE_ATUIN_DAEMON_INTERVAL=60
 typeset -gi _CORE_ATUIN_DAEMON_NEXT=0
 _core_atuin_daemon_guard() {
   local -i _rc=$? # FIRST line: emulate resets $?. The hook is PERSISTENT now, so a precmd an OS
@@ -341,6 +346,13 @@ _core_atuin_daemon_guard() {
     precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard})
     return $_rc
   fi
+  # Resolve the window HERE rather than at source time, for the same load-order reason the whole
+  # probe is deferred to the first precmd: 80/99 have not been sourced yet while this file is,
+  # so a per-machine CORE_ATUIN_PROBE_INTERVAL would be invisible to a source-time read. Once per
+  # PROBE (not per prompt), immediately before a zmodload and a connect(2) — so one parameter
+  # expansion is free here, while the throttle gate above stays expansion-free. Re-resolving each
+  # probe also means the knob can be changed mid-session and takes effect at the next window.
+  typeset -gi _CORE_ATUIN_DAEMON_INTERVAL=${CORE_ATUIN_PROBE_INTERVAL:-60}
   # Same default atuin resolves: $XDG_RUNTIME_DIR/atuin.sock, falling back to the data dir
   # where XDG_RUNTIME_DIR is unset (macOS). Re-resolved on EVERY probe, never cached: if
   # XDG_RUNTIME_DIR is torn down mid-session (systemd removes /run/user/$UID at the last logout —

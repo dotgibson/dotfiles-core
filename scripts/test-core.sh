@@ -2128,7 +2128,10 @@ check "core-doctor renders a health report and returns 0" \
 check "core-doctor --help returns 0 (not mis-read)" \
   'out=$(core-doctor --help); (( $? == 0 )) && [[ $out == *"usage: core-doctor"* ]]'
 # core-doctor --json (B12): a machine-readable object on stdout that actually parses and
-# carries the tools/wired/resolved keys — so a statusline/editor/CI can consume health.
+# carries the tools/wired/atuin_daemon/resolved keys — so a statusline/editor/CI can consume
+# health. atuin_daemon's shape is asserted exactly (not just present): it is the one field here
+# describing state that can change under a LIVE shell, so a consumer polling it needs both
+# booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
   'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
 # core-doctor "install missing" hint: the block is gated on _pkgup_mgr (from update.zsh,
@@ -2834,11 +2837,18 @@ ucheck "atuin daemon: a deadline beyond one window means the clock moved — pro
 # (l) THE WINDOW is a real number with a real escape hatch — the knob is what makes a box where
 #     connect(2) on that path is NOT cheap (a socket on a networked or wedged FS) tunable without
 #     patching Core, and what makes the manual repro take 5s instead of 60.
+#     The override is set AFTER sourcing, which is the only test of it worth having: os/<os>.zsh
+#     (80) and 99-local.zsh (99) load after 00-tools.zsh, so that is where a per-machine knob is
+#     actually written. Setting it BEFORE the source — the obvious way to write this — passes
+#     even when the guard reads the env at source time and therefore ignores every real override.
 ucheck "atuin daemon: the probe window defaults to 60s and the first precmd is due immediately" \
   "source '$TOOLS_FILE'; (( _CORE_ATUIN_DAEMON_INTERVAL == 60 && _CORE_ATUIN_DAEMON_NEXT == 0 ))"
-ucheck "atuin daemon: CORE_ATUIN_PROBE_INTERVAL overrides the probe window" \
-  "source '$TOOLS_FILE'; (( _CORE_ATUIN_DAEMON_INTERVAL == 5 ))" \
-  CORE_ATUIN_PROBE_INTERVAL=5
+ucheck "atuin daemon: CORE_ATUIN_PROBE_INTERVAL set by a LATER fragment still overrides the window" \
+  "source '$TOOLS_FILE'
+   CORE_ATUIN_PROBE_INTERVAL=5           # as os/<os>.zsh or 99-local.zsh would: after 00, not before
+   _core_atuin_daemon_guard
+   (( _CORE_ATUIN_DAEMON_INTERVAL == 5 ))" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
 # (m) \$REPLY CROSS-TALK — `local REPLY` inside the guard was a nicety when it ran once before the
 #     first prompt. As a persistent hook it runs between every pair of commands, where
 #     read/vared/zsocket/completion all live in \$REPLY, so dropping it would produce an
@@ -2846,6 +2856,29 @@ ucheck "atuin daemon: CORE_ATUIN_PROBE_INTERVAL overrides the probe window" \
 ucheck "atuin daemon: the guard does not clobber the caller's \$REPLY" \
   "source '$TOOLS_FILE'; REPLY=mine; _core_atuin_daemon_guard; [[ \$REPLY == mine ]]" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (n)-(p) \$? TRANSPARENCY, on all four exit paths. As a one-shot the guard could return whatever
+#     it liked: it ran once, before the first prompt, and unhooked. As a PERSISTENT precmd it sits
+#     in the hook list for the life of the shell, so any precmd an OS (80) or host (99) fragment
+#     appends AFTER it would see the guard's status instead of the user's command — a prompt that
+#     never shows a failure again, and nothing in Core would notice. That is why the guard opens
+#     with `local -i _rc=\$?` (before `emulate -L zsh`, which resets it) and returns \$_rc from
+#     every exit. Four paths, so four exits: throttled, healthy, degrade, stand-down.
+ucheck "atuin daemon: \$? survives the guard on the healthy and throttled paths" \
+  "zmodload zsh/net/socket
+   rm -f '$SANDBOX/rc-live.sock'; zsocket -l '$SANDBOX/rc-live.sock'
+   source '$TOOLS_FILE'
+   false; _core_atuin_daemon_guard; (( \$? == 1 )) || exit 1   # healthy probe: arms the window
+   (( _CORE_ATUIN_DAEMON_NEXT > 0 )) || exit 1
+   false; _core_atuin_daemon_guard; (( \$? == 1 )) || exit 1   # throttled: the gate's early return
+   true;  _core_atuin_daemon_guard; (( \$? == 0 ))             # and a success survives too" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/rc-live.sock"
+ucheck "atuin daemon: \$? survives the guard on the degrade path" \
+  "source '$UI'; source '$TOOLS_FILE'
+   false; _core_atuin_daemon_guard; (( \$? == 1 )) || exit 1
+   [[ -n \$_CORE_ATUIN_DAEMON_DEGRADED ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+ucheck "atuin daemon: \$? survives the guard on the stand-down path" \
+  "source '$TOOLS_FILE'; false; _core_atuin_daemon_guard; (( \$? == 1 ))"
 
 # atuin/config.toml must NOT write `enabled`/`autostart` into [daemon]. atuin layers the
 # config FILE after the Environment source (settings.rs), so the later file source wins and

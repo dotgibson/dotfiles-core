@@ -118,7 +118,8 @@ _core_wired() {
 
 # _core_doctor_json — machine-readable health (B12). The gate scripts emit --json; the
 # RUNTIME health verb did not, so a statusline/editor/CI could not consume it. One object
-# on stdout, never paged: {version, tools{name:bool}, wired{name:bool}, resolved{…}}.
+# on stdout, never paged: {version, tools{name:bool}, wired{name:bool},
+# atuin_daemon{degraded:bool, was_up:bool}, resolved{…}}.
 # Pure zsh (no python): tool names are fixed identifiers, so no escaping is needed.
 _core_doctor_json() {
   emulate -L zsh
