@@ -58,46 +58,44 @@ one a workaround was verified against is a finding in its own right, not a footn
   that single fact — and it has already changed once, in the direction that makes it
   harder to notice (18.16.1 failed loudly; 18.19.0 fails silently).
 
-  **The trigger is an upstream RELEASE, not the local install.** Compare the verified-
-  against version above (grep it out of `zsh/00-tools.zsh`) with atuin's latest release
-  — which you are already looking up for "Direct upgrades" — and report a re-verification
-  as **required** when upstream has moved past it. Deliberately *not* keyed on the atuin
-  installed here: this command has no `Bash` in `allowed-tools`, so it cannot read a local
-  version, and it should not try. atuin is installed per-OS across eight machines, so
-  there is no single "version in use" to compare against anyway — the fleet-correct
-  question is whether a newer atuin exists that any of those machines could be on. The
-  operator's own run of the recipe reports the version it measured, which is what closes
-  the loop.
+  **The measurement is automated, and this command must not re-implement it.**
+  `.github/workflows/atuin-guard-verify.yml` runs `scripts/verify-atuin-guard.sh` every
+  Tuesday at 13:00 UTC against **whatever atuin upstream ships that week** — resolved and
+  downloaded at run time, checksum- and provenance-verified in a job that executes nothing,
+  then measured in a job that holds no token. Three verdicts; two of them file a
+  deduplicated issue:
 
-  ```bash
-  (                                        # subshell: HOME/XDG never leak into your shell
-    set -u
-    SBOX=$(mktemp -d) || exit 1
-    trap 'rm -rf "$SBOX"' EXIT             # and the sandbox always goes away
-    export HOME=$SBOX XDG_RUNTIME_DIR=$SBOX/run XDG_DATA_HOME=$SBOX/share XDG_CONFIG_HOME=$SBOX/cfg
-    mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME/atuin"
-    export ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SBOX/not-listening.sock"
-    DB="$XDG_DATA_HOME/atuin/history.db"
-    rows() { python3 -c "import sqlite3;print(sqlite3.connect('$DB').execute('select count(*) from history').fetchone()[0])" 2>/dev/null || echo 0; }
-    atuin history start -- seed >/dev/null 2>&1          # creates the DB
-    before=$(rows)
-    atuin history start -- canary >/dev/null 2>"$SBOX/err"; rc=$?
-    after=$(rows)
-    printf '%s\nrc=%s  stderr=%s  rows %s -> %s (delta %s)\n' \
-      "$(atuin --version)" "$rc" \
-      "$([ -s "$SBOX/err" ] && echo NONEMPTY || echo empty)" \
-      "$before" "$after" "$((after - before))"
-  )
-  ```
+  | verdict | meaning | filed as |
+  | --- | --- | --- |
+  | `holds` | delta 0, rc 0, empty stderr, id printed — on **both** the absent-socket and stale-socket shapes | nothing (job summary only) |
+  | `moved` | anything else — `zsh/00-tools.zsh`'s rationale is now overclaiming | `atuin-guard-verify: the silent-discard premise has MOVED` |
+  | `unmeasurable` | the apparatus could not be trusted — **never** reported as `holds` | `atuin-guard-verify: the premise could not be measured` |
 
-  A throwaway `HOME`, so it never touches a real history DB, and it prints the version it
-  measured, the exit code, whether stderr was empty, and the row delta — the four facts
-  the verdict turns on. **Delta 0 with `rc=0` and empty stderr ⇒ the premise holds** and
-  the guard still earns its place. Anything else
-  — a non-zero exit, a message on stderr, or rows landing — means `zsh/00-tools.zsh`'s
-  rationale block is now overclaiming, and the guard needs retiring, version-gating, or
-  reshaping. Say which, and weigh it as an eight-repo change: retiring it removes a
-  `precmd` hook from every interactive shell in the fleet.
+  There used to be a copy of the recipe here. It is gone on purpose, and the reason is the
+  point of the third verdict: it seeded its DB through the unreachable-daemon path, so on a
+  build that discards, the DB was never created, every row count fell back to `0`, and it
+  printed *"the premise holds"* from an apparatus that had never written a row. It was right
+  by luck. A second copy of a measurement is a second thing to get wrong, and this one
+  shipped wrong. The script seeds with the daemon **off**, runs a daemon-off control arm that
+  must write exactly one row before any verdict is allowed, and **proves** each socket is
+  unreachable before believing a delta of zero.
+
+  **So what is left for THIS command is the part a script cannot do:** judgment, and the
+  version signal.
+
+  1. **Compare versions.** Grep the anchor out of `zsh/00-tools.zsh` — one machine-readable
+     line, `# CORE_ATUIN_GUARD_VERIFIED_AGAINST=<version>` — and compare it to atuin's latest
+     release, which you are already looking up for "Direct upgrades". A release past the
+     anchor is a finding in its own right. Deliberately *not* keyed on the atuin installed
+     here: you have no `Bash` in `allowed-tools`, atuin is installed per-OS across eight
+     machines, so there is no single "version in use", and the fleet-correct question is
+     whether a newer atuin exists that any of them could be on.
+  2. **If a verdict issue is open, lead with it.** It is a claim in this repo that has gone
+     stale, and a stale one costs history rather than convenience.
+  3. **If the premise has `moved`, weigh the remedy** — retire, version-gate, or reshape —
+     as an **eight-repo change**: retiring the guard removes a `precmd` hook from every
+     interactive shell in the fleet. That is the judgment call the workflow deliberately does
+     not make.
 
   Also watch **`atuinsh/atuin#3382`** (the accept-but-silent socket — something is
   listening while the daemon behind it is dead, so a `connect(2)` succeeds and no cheap
@@ -111,10 +109,11 @@ one a workaround was verified against is a finding in its own right, not a footn
 Lead with any **required re-verification** from the section above — before the
 shortlist, not inside it. It is not a proposal competing for attention on merit; it is
 a claim in the repo that may have gone stale, and a stale one costs history rather than
-convenience. State the version it was verified against, the newest upstream release you
-found, and the recipe — those are the two versions you can actually establish; do not
-assert what is installed on this or any other machine, because you cannot see it. If
-nothing is due, say so in one line: silence reads the same as forgetting.
+convenience. State the version it was verified against and the newest upstream release you
+found — those are the two versions you can actually establish; do not assert what is
+installed on this or any other machine, because you cannot see it, and do not paste a
+recipe (the measurement lives in `scripts/verify-atuin-guard.sh`). If nothing is due, say
+so in one line: silence reads the same as forgetting.
 
 Then a ranked shortlist, each with:
 

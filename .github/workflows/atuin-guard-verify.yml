@@ -1,0 +1,282 @@
+name: atuin-guard-verify
+
+# Does the ONE upstream fact _core_atuin_daemon_guard (zsh/00-tools.zsh) is premised on
+# still hold? With the daemon enabled and its socket unreachable, atuin 18.19.0 exits 0,
+# prints a history id, writes nothing to stderr and DISCARDS the entry
+# (atuinsh/atuin#3561). A persistent precmd hook, a throttled connect(2) on the prompt
+# path, and a one-way degrade in every interactive shell across eight repos are justified
+# by that fact ALONE — and it has already moved once, in the direction that makes it harder
+# to notice (18.16.1 failed loudly). Nothing watched it: atuin is not pinned in
+# mise/config.toml, has no renovate.json entry, and /tool-scout's allowed-tools carry no
+# Bash, so it can compare version NUMBERS and never measure. This measures, weekly.
+#
+# ── WHY THIS ONE THING IS NOT PINNED ─────────────────────────────────────────────────
+# Everything else the fleet downloads is pinned to a version AND a SHA-256
+# (scripts/tool-versions.env, .github/actions/setup-core-tools), and that discipline is not
+# being relaxed here — it is INVERTED on purpose, for one job, because the subject of the
+# measurement IS "whatever upstream ships now". A pinned atuin would re-measure a version
+# whose behaviour is already recorded in zsh/00-tools.zsh: it would prove the thing nobody
+# doubts and miss the thing that actually costs history — the NEXT release, arriving
+# silently on whichever of eight machines updates first. A pin here is a detector that can
+# only confirm the past.
+#
+# The cost of that inversion is real, and it is bounded structurally rather than by trust:
+# this workflow downloads and EXECUTES an unpinned upstream binary, so the job that runs it
+# holds nothing worth stealing (see the split below), and the binary runs under `env -i`
+# inside scripts/verify-atuin-guard.sh, on an ephemeral runner, with no secret and no write
+# scope anywhere in reach.
+#
+# ── THE SECURITY SPLIT, AND WHY IT IS THREE JOBS ─────────────────────────────────────
+# .github/workflows/claude-routines.yml states this repo's own rule: a job that fetches or
+# executes untrusted upstream content must NOT also hold a token, because that is a
+# supply-chain path to the secret. It is the same reason freshness-triage is denied
+# `update-nvim-plugins.sh --check`, which runs upstream plugin build hooks. This workflow
+# is the sharpest case of that rule, so it is obeyed by construction:
+#
+#   resolve   holds a token (contents: read) and VERIFIES the download — the published
+#             checksum, then the GitHub build-provenance attestation. It downloads bytes
+#             and hashes them. It never extracts the archive and never runs a byte of it.
+#             `gh attestation verify` needs a token even for a public repo — there is no
+#             anonymous mode — and that single fact is what forces this job to exist
+#             separately at all. The choice was "verify provenance in a token-bearing job
+#             that executes nothing" or "execute in a token-bearing job"; only the first is
+#             defensible.
+#   measure   holds NOTHING. No GH_TOKEN in any step, no App key, no CLAUDE token. It
+#             re-downloads the SAME asset anonymously and refuses to continue unless it
+#             hashes to the digest `resolve` already attested — so the handoff across the
+#             job boundary is a pinned digest, and an asset swapped between the two jobs is
+#             caught rather than measured. This is the ONLY job that runs upstream code.
+#   report    holds issues: write, and never sees the binary. It consumes exactly one thing:
+#             a base64 blob of markdown that `measure` emitted. Base64 because the blob
+#             contains upstream-derived TEXT (a version string, an stderr excerpt) — the
+#             code does not cross the boundary but the data does, so it crosses as opaque
+#             bytes, decoded straight to a file, never through a shell expansion or a
+#             workflow expression.
+#
+# Report-first, like every routine in .claude/: it never mutates the repo, never opens a
+# PR, and files findings as a DEDUPLICATED issue with a stable, date-free title.
+#
+# TIMING: Tuesday 13:00 UTC. The Claude routine ladder in claude-routines.yml ends at 12:00
+# and Monday 06:00-10:00 is the mechanical fleet-sweep cluster; 13:00 stays clear of both,
+# which is the stagger this repo already documents.
+
+on:
+  schedule:
+    - cron: "0 13 * * 2" # Tue 13:00 UTC — after the Claude ladder (…12:00) closes
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atuin-guard-verify
+  cancel-in-progress: true
+
+env:
+  ATUIN_REPO: atuinsh/atuin
+  # x86_64 gnu: the runner's own architecture, and the shape the Fedora/Arch/openSUSE/
+  # Gentoo half of the fleet installs. The musl half (Alpine) is NOT covered, and the
+  # report says so rather than letting a green run imply fleet-wide coverage.
+  ASSET: atuin-x86_64-unknown-linux-gnu.tar.gz
+
+jobs:
+  # ── 1. resolve + verify. Token-bearing. Executes nothing it downloaded. ──────────────
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      ok: ${{ steps.r.outputs.ok }}
+      tag: ${{ steps.r.outputs.tag }}
+      digest: ${{ steps.r.outputs.digest }}
+      reason: ${{ steps.r.outputs.reason }}
+    env:
+      # contents: read on a public repo. Used ONLY by `gh attestation verify`, which has no
+      # anonymous mode. Nothing in this job executes downloaded code, which is exactly the
+      # property that makes holding a token here acceptable under the rule quoted above.
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - id: r
+        name: Resolve the latest atuin release, download it, verify it
+        # NEVER exits non-zero for an upstream problem: an unresolvable release, a renamed
+        # asset or a bad checksum is a REPORTABLE finding (`unmeasurable`), not a crashed
+        # workflow — the same reasoning freshness.yml applies to its `--check` mode, where
+        # an intended non-zero is "the report, not a crash". A red run here would page
+        # through notify-failure AND file nothing, which is the worst of both.
+        run: |
+          set -uo pipefail
+          bail() { { echo "ok=false"; echo "reason=$1"; } >>"$GITHUB_OUTPUT"; exit 0; }
+
+          # Resolve via the releases/latest REDIRECT, not the REST API. Deliberate: the
+          # unauthenticated API is 60 requests/hour PER IP and Actions runners share egress
+          # addresses, so an API call is the one step here that could fail for a reason
+          # having nothing to do with atuin. The redirect is a plain fetch of a public page
+          # and carries no such budget.
+          url="$(curl -sSI -o /dev/null -w '%{url_effective}' --retry 3 --max-time 60 \
+                 -L "https://github.com/${ATUIN_REPO}/releases/latest")" \
+            || bail "could not resolve the latest atuin release (network)"
+          tag="${url##*/tag/}"
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) bail "the releases/latest redirect did not yield a vX.Y.Z tag (got '$tag') — atuin's release naming may have changed" ;;
+          esac
+
+          base="https://github.com/${ATUIN_REPO}/releases/download/${tag}"
+          curl -fsSL --retry 3 --max-time 300 -o asset.tgz "${base}/${ASSET}" \
+            || bail "could not download ${ASSET} from ${tag} — atuin's release ASSET NAMING may have changed (it ships cargo-dist target-triple names; a rename is a finding, not a crash)"
+          curl -fsSL --retry 3 --max-time 60 -o asset.sha256 "${base}/${ASSET}.sha256" \
+            || bail "${tag} publishes no ${ASSET}.sha256 — refusing to measure an unverified binary"
+
+          # atuin (cargo-dist) publishes a per-asset `<name>.sha256` as `<64hex> *<name>`.
+          # Compare the hex only: the ` *` marker is BSD/GNU-dependent and `sha256sum -c`
+          # is fussy about it.
+          want="$(cut -d' ' -f1 <asset.sha256)"
+          got="$(sha256sum asset.tgz | cut -d' ' -f1)"
+          case "$want" in
+            [0-9a-f]*) ;;
+            *) bail "the published checksum for ${ASSET} is not hex — refusing to measure" ;;
+          esac
+          [ "$want" = "$got" ] || bail "CHECKSUM MISMATCH on ${ASSET}@${tag} (published $want, downloaded $got). Not measured. Investigate."
+
+          # The real trust anchor. A checksum published beside the artifact by the same
+          # account proves the bytes survived the wire; it proves NOTHING about who built
+          # them. atuin sets github_attestations in its cargo-dist manifest, so a Sigstore
+          # build-provenance bundle ties this exact digest to a workflow run in the upstream
+          # repo. Fail CLOSED: no attestation, or a failed verification, means no measurement.
+          gh attestation verify asset.tgz --repo "$ATUIN_REPO" \
+            || bail "build-provenance attestation FAILED or is absent for ${ASSET}@${tag} — refusing to measure an unattested binary"
+
+          { echo "ok=true"; echo "tag=$tag"; echo "digest=$got"; echo "reason="; } >>"$GITHUB_OUTPUT"
+          echo "### atuin \`$tag\` — checksum + provenance verified (\`$got\`)" >>"$GITHUB_STEP_SUMMARY"
+
+  # ── 2. measure. Holds nothing. The ONLY job that runs upstream code. ─────────────────
+  measure:
+    needs: resolve
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout only. No issues: write, no App key, no CLAUDE token.
+    outputs:
+      verdict: ${{ steps.m.outputs.verdict }}
+      report_b64: ${{ steps.m.outputs.report_b64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # false, and load-bearing here rather than merely conventional: `true` writes the
+          # job's token into .git/config, and a later step in this job executes an unpinned
+          # upstream binary from a working directory rooted at that checkout.
+          persist-credentials: false
+
+      - name: Fetch the verified asset (digest-pinned across the job boundary)
+        if: needs.resolve.outputs.ok == 'true'
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          DIGEST: ${{ needs.resolve.outputs.digest }}
+        # NOTE the absence of GH_TOKEN — here and in every step below. This job downloads
+        # anonymously, and the only thing it trusts is DIGEST, which the token-bearing job
+        # already checked a provenance attestation against.
+        run: |
+          set -uo pipefail
+          curl -fsSL --retry 3 --max-time 300 -o asset.tgz \
+            "https://github.com/${ATUIN_REPO}/releases/download/${TAG}/${ASSET}" || exit 0
+          got="$(sha256sum asset.tgz | cut -d' ' -f1)"
+          if [ "$got" != "$DIGEST" ]; then
+            echo "digest drift between jobs: $got != $DIGEST" >&2
+            rm -f asset.tgz
+            exit 0   # falls through to --unmeasurable below; never a silent measurement
+          fi
+          mkdir -p at && tar -xzf asset.tgz -C at --strip-components=1
+          find at -type f -name atuin -perm -u+x -print -quit >atuin.path
+
+      - id: m
+        name: Measure the premise
+        env:
+          RESOLVE_OK: ${{ needs.resolve.outputs.ok }}
+          RESOLVE_REASON: ${{ needs.resolve.outputs.reason }}
+        run: |
+          set -uo pipefail
+          bin="$(cat atuin.path 2>/dev/null || true)"
+          # Every path reports through the SCRIPT's one renderer, never by composing prose
+          # in YAML — so the wording a human reads cannot drift from the code producing it.
+          if [ "$RESOLVE_OK" != "true" ]; then
+            ./scripts/verify-atuin-guard.sh --color never \
+              --unmeasurable "$RESOLVE_REASON" --report report.md --json >verdict.json
+          elif [ -z "$bin" ]; then
+            ./scripts/verify-atuin-guard.sh --color never \
+              --unmeasurable "the verified tarball contained no executable named 'atuin' — upstream's archive LAYOUT may have changed" \
+              --report report.md --json >verdict.json
+          else
+            ./scripts/verify-atuin-guard.sh --color never \
+              --atuin "$PWD/$bin" --report report.md --json >verdict.json
+          fi
+          # rc 1 (`moved`) and rc 3 (`unmeasurable`) are THE REPORT, NOT A CRASH — the
+          # freshness.yml precedent. Read the verdict from the JSON, never from $?.
+          v="$(python3 -c 'import json;print(json.load(open("verdict.json"))["verdict"])')"
+          echo "verdict=$v" >>"$GITHUB_OUTPUT"
+          # One line, no newlines: safe as a job output, and opaque to anything downstream.
+          echo "report_b64=$(base64 -w0 <report.md)" >>"$GITHUB_OUTPUT"
+          {
+            echo "### atuin guard premise: \`$v\`"
+            echo ""
+            echo '```json'
+            cat verdict.json
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  # ── 3. report. Holds issues: write. Never sees the binary. ───────────────────────────
+  report:
+    needs: [resolve, measure]
+    # `holds` files nothing, deliberately: a bot that opens an issue every week to say
+    # nothing changed gets muted, and a muted channel is worse than no channel. The job
+    # summary carries the good news.
+    if: always() && needs.measure.result == 'success' && needs.measure.outputs.verdict != 'holds'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERDICT: ${{ needs.measure.outputs.verdict }}
+      REPORT_B64: ${{ needs.measure.outputs.report_b64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: File / update the deduplicated issue
+        run: |
+          set -euo pipefail
+          # Decoded straight to a FILE. Never into a variable, never through an expression:
+          # this content derives from an upstream binary's output, and although the code
+          # never crossed the job boundary, the data did.
+          printf '%s' "$REPORT_B64" | base64 -d >"$RUNNER_TEMP/atuin-guard.md"
+          # STABLE, date-free titles — file-routine-issue.sh dedups on an EXACT open-issue
+          # title match. Two titles, not one: `moved` and `unmeasurable` need different
+          # actions (re-decide the guard vs repair the detector), so they get separate
+          # threads instead of interleaving in one.
+          if [ "$VERDICT" = "moved" ]; then
+            title="atuin-guard-verify: the silent-discard premise has MOVED"
+          else
+            title="atuin-guard-verify: the premise could not be measured"
+          fi
+          bash .github/workflows/file-routine-issue.sh "$title" "$RUNNER_TEMP/atuin-guard.md"
+
+  # ── 4. a genuinely crashed sweep still pages a human. ────────────────────────────────
+  # Scoped to `schedule` for the freshness.yml reason: `moved` and `unmeasurable` are
+  # intended outcomes routed to their own issues, so the only thing that should reach here
+  # is the workflow itself breaking — and a manual dispatch that goes red is a human who is
+  # already watching the tab.
+  notify-failure:
+    needs: [resolve, measure, report]
+    if: failure() && github.event_name == 'schedule'
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: atuin-guard-verify
+      title: "ci-failure: atuin-guard-verify is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly re-verification of `_core_atuin_daemon_guard`'s upstream premise crashed. `moved` and `unmeasurable` are routed to their own issues and do NOT come here — so this means the workflow itself is broken, and the guard's justification is going unchecked."

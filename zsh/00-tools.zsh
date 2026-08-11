@@ -232,9 +232,18 @@ fi
 # 4.17 ms vs 8.27 ms mean, because it is timing a no-op.) Upstream: atuinsh/atuin#3561 —
 # and note the direction of travel, because everything below is premised on this ONE fact:
 # 18.16.1 failed LOUDLY (empty ATUIN_HISTORY_ID, which then crashed `history end`), 18.19.0
-# fails silently. It has moved once, so it can move again. /tool-scout carries the standing
-# re-verification: when the atuin in use is newer than the 18.19.0 named above, re-measure
-# before trusting any of this.
+# fails silently. It has moved once, so it can move again, so it is MEASURED rather than
+# assumed: .github/workflows/atuin-guard-verify.yml runs scripts/verify-atuin-guard.sh every
+# Tuesday against whatever atuin upstream ships that week, and files an issue when the answer
+# changes. /tool-scout carries the judgment half.
+#
+# The line below is the MACHINE-READABLE anchor both of them compare against — one line, at
+# column 0, with nothing but the value after the `=`. It exists because grepping the prose
+# above is how a detector silently starts comparing against the wrong number: that paragraph
+# also names 18.16.1, and a re-verification that measures against the wrong version is worse
+# than one that never runs. Editing it is a CLAIM that the premise was re-measured at that
+# version — not a version bump.
+# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0
 #
 # So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
 # throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
