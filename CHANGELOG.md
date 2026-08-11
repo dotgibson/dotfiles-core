@@ -15,6 +15,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The atuin daemon's systemd path is measured, and the tail claim holds on it**
+  (`dotgibson/dotfiles-core#352`). Adoption's whole justification was that the daemon owning
+  the SQLite writes removes the DB-lock contention every shell and tmux pane pays, and it had
+  never been measured here for want of a systemd box. `--systemd` has now run — seven times, on
+  Fedora 44 under WSL2 with a real user manager, a real transient unit, glibc 2.43 and atuin
+  18.19.0 — and every run passed the three checks a first real run had to: the unit stayed
+  active for the whole arm, its `MainPID` owned the listening socket, and the row deltas were
+  exact. On **prompt latency** — `history start` alone, the call `_atuin_preexec` blocks the
+  shell on, and the only figure quotable as latency — with the history DB on a local ext4 home,
+  three runs: **p50 1.55× / 1.55× / 1.60×, p95 2.50× / 2.33× / 2.17×, p99 2.91× / 3.25× /
+  1.35× faster**. The median win was already known; the tail win is the part that was borrowed
+  from upstream and is now measured — with the caveat the third run makes plain, that the p99
+  _sign_ is stable while its _magnitude_ is not, so the tail belongs in the record as "faster
+  in every run, 1.4–3.3×" rather than as a number. It agrees with the one earlier
+  blocking-call run (real Fedora hardware, p99 improving 49–69%), so two independent systemd
+  hosts now point the same way. Total write work (`start` + `end`, which the hook backgrounds)
+  improves at p50/p95 too, but its p99 remains unresolved — expected, since `end` is exactly
+  where the two metrics diverge.
+
+  **Storage backing turned out to be the confounder**, which is the part worth carrying
+  forward. Same harness, same host, same day, prompt-latency p99: **tmpfs** flips sign run to
+  run (2.23× slower, then 1.48× and 2.04× faster), **ext4** wins in every run (1.35–3.25×), and a
+  high-latency **non-local filesystem** wins 26–43× — daemon-off p99 there is 0.8–1.1 _seconds_
+  while daemon-on stays flat at ~27 ms. Without a real fsync there is barely a lock to contend
+  over, so the mechanism only becomes visible where storage is slow enough for lock hold time
+  to matter. That is the likeliest explanation for this repo's contradictory older figures,
+  whose storage was never recorded — likeliest, not established, since nobody re-ran them. The
+  harness now prints the sandbox filesystem on **every** run, not only under
+  `CORE_ATBENCH_BASE`, and adds "durable storage" to the not-covered list when the DB lands on
+  tmpfs, because the default sandbox lives in `/tmp` — which is precisely where the tail is
+  least readable. `atuin/config.toml` records all of it, relabels the older pair-timed and
+  unknown-storage tables as the weaker evidence they are, and names the cheap re-run that would
+  settle the musl question (the same Alpine container with the DB on real disk). The
+  `UNVALIDATED-SYSTEMD` marker is retired across the harness, `Makefile` and the suite; what
+  replaces it on the user-visible surface is the caveat that outlives the runs — not bare
+  metal, not a real multi-pane session, not musl on hardware, and a 9p mount is a proxy for a
+  network home rather than one. The autostart spawn cost reproduced on real disk at **+42.16 ms**
+  (p50), in line with the ~+41/+45 ms seen in containers.
+
 - **`scripts/bench-atuin-daemon.sh` — the atuin daemon's latency claim is no longer purely
   borrowed.** Adoption's whole justification is that the daemon owns the SQLite writes so
   shells stop contending for the DB lock, and that was cited from upstream, never measured
@@ -37,9 +76,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   sandbox so it cannot collide with a real daemon, asserts the unit's `MainPID` actually
   holds the listening socket, and **skips rather than degrades** without a user bus —
   reporting no-systemd numbers under a systemd label is the one thing the flag exists to
-  prevent. _It is **UNVALIDATED**: it was written where `systemd-run --user` cannot reach a
-  bus, so only its fail-closed skip path has ever executed, and it says so in `--help`, on
-  every run, and on the results table itself._ **`CORE_ATBENCH_BASE`** puts the sandbox HOME
+  prevent. _It shipped **unvalidated** — written where `systemd-run --user` could not reach a
+  bus, so only its fail-closed skip path had ever executed — and has since been validated
+  against a real user manager; see the entry below._ **`CORE_ATBENCH_BASE`** puts the sandbox HOME
   and history DB on a network home, with the socket deliberately decoupled onto a short local
   path — `AF_UNIX` does not work on NFS/SMB and `sun_path` caps near 108 bytes — and discloses
   the cost of that, which is that such a run no longer exercises atuin's default socket
@@ -56,7 +95,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (`scripts/test-core.sh` Section J2). `make audit` can never run the bench itself — it needs
   a real atuin, a real zsh and a background daemon — which is precisely why the parts that
   _are_ hermetic are worth asserting: that `--help` documents every knob including the
-  unvalidated marker, that an unknown argument still exits 2, that a malformed
+  scope caveat a figure must be quoted with, that an unknown argument still exits 2, that a malformed
   `CORE_ATBENCH_WRITERS` or `CORE_ATBENCH_BASE` exits 2 rather than skipping (`WRITERS=0`
   otherwise makes every arm vacuously complete _and_ vacuously row-correct), and that
   `--systemd` against a stubbed busless `systemctl` skips with **no results table** — the

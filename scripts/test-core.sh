@@ -1772,14 +1772,16 @@ else
   }
 
   # 1. --help documents the new surface. This is what stops a flag landing undocumented, and
-  #    — more to the point — stops the UNVALIDATED marker being dropped from the USER-VISIBLE
-  #    surface while surviving only in a source comment.
+  #    — more to the point — stops the SCOPE CAVEAT being dropped from the USER-VISIBLE surface
+  #    while surviving only in a source comment. It pinned the UNVALIDATED marker until the
+  #    seven runs that retired it; "not real hardware" is the caveat that outlives those runs,
+  #    since a synthetic container/WSL2 figure is still not a real multi-pane box.
   _b_run -- --help
   if ((_brc == 0)) && [[ "$_bout" == *"--systemd"* && "$_bout" == *"CORE_ATBENCH_BASE"* &&
-    "$_bout" == *"UNVALIDATED-SYSTEMD"* ]]; then
-    pass "atuin bench: --help documents --systemd, CORE_ATBENCH_BASE and the UNVALIDATED marker"
+    "$_bout" == *"not real hardware"* ]]; then
+    pass "atuin bench: --help documents --systemd, CORE_ATBENCH_BASE and the scope caveat"
   else
-    fail "atuin bench: --help is missing one of --systemd / CORE_ATBENCH_BASE / UNVALIDATED-SYSTEMD (rc=$_brc)"
+    fail "atuin bench: --help is missing one of --systemd / CORE_ATBENCH_BASE / 'not real hardware' (rc=$_brc)"
   fi
 
   # 2. The fail-closed arg contract still holds now that a flag exists which does not exit.
