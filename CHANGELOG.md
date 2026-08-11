@@ -133,6 +133,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   _default_ path (no tags yet, or a clone too shallow to reach one); an explicit ref that
   does not resolve is now a usage error (exit 2).
 
+- **Six documents still described a bot deleted a month earlier — including the routine whose
+  job is to watch it.** Core retired `.github/dependabot.yml` when the fleet moved to the
+  shared Renovate preset in v3.2.0, but the prose never followed.
+  `.claude/commands/freshness-triage.md` told the triage routine to expect `dependabot.yml`
+  PRs, while `scripts/freshness-dashboard.sh` was already counting `author:app/renovate` — so
+  the routine was briefed to hunt for an author that can never appear, in the same repo whose
+  dashboard knew better. `CONTRIBUTING.md` sent contributors to `dependabot.yml` for the
+  commit-prefix convention, a file that has not existed since v3.2.0. The rest were comments
+  in `freshness.yml`, `claude-routines.yml`, and `update-plugins.sh` explaining the freshness
+  bot's reason for existing by contrast with the wrong bot. All six now name Renovate,
+  `renovate.json`, and the `ci(deps):` / `app/renovate` signature a triage run should actually
+  look for. The routine brief additionally gains what #377's own caveat exposed: Renovate
+  parks bumps on a **Dependency Dashboard** issue that opens no PR, so an empty PR queue is
+  not an empty bump queue — and since reading it needs `gh issue list`, outside this command's
+  `allowed-tools`, the brief now says to report the dashboard as unchecked rather than
+  conclude "nothing to triage".
+
+  `Makefile`'s `update-hooks` help was corrected differently, by **deletion**: it justified
+  the target with "dependabot has no pre-commit ecosystem", and Renovate _does_ ship a
+  `pre-commit` manager. The dependency dashboard (#186) settles it — Renovate detects only
+  `devcontainer`, `github-actions`, `mise`, and `renovate-config` here, so the target is still
+  load-bearing — but that is a fact about the org preset's current configuration, living in
+  `dotgibson/.github`, and encoding it in a help string is how the previous claim rotted. The
+  line now states what the target does and nothing about which bot doesn't do it.
+
+  Historical `CHANGELOG.md` entries are left alone — they were true when written.
+
 - **A shell that outlived atuin's daemon recorded nothing, silently, for the rest of its
   life.** `_core_atuin_daemon_guard` was a startup probe: one `zsocket` connect at the first
   `precmd`, then it unhooked itself. That covers a shell started _after_ the daemon went away
