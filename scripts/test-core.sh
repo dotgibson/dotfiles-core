@@ -1983,45 +1983,11 @@ STUB
   }
   _v_verdict() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["verdict"])' 2>/dev/null; }
 
-  # 1. HOLDS — the control arm writes, both unreachable shapes discard. rc 0.
-  _mkstub atuin-discards off-only
-  _v_run atuin-discards --json
-  if [[ "$(_v_verdict "$_vout")" == holds ]] && ((_vrc == 0)); then
-    pass "atuin verify: an atuin that still discards on an unreachable socket → holds (rc 0)"
-  else
-    fail "atuin verify: expected holds/rc0, got $(_v_verdict "$_vout")/rc$_vrc"
-  fi
-
-  # 2. The control arm is REPORTED, not merely run. `holds` without a proven-working
-  #    apparatus is exactly the old recipe's failure, so the number is in the output.
-  if [[ "$_vout" == *'"control_delta":1'* ]]; then
-    pass "atuin verify: holds is reported alongside a control arm that actually wrote"
-  else
-    fail "atuin verify: a holds verdict must carry control_delta 1 (got: $_vout)"
-  fi
-
-  # 3. MOVED — an atuin that writes on the unreachable path. rc 1, and the reason names
-  #    WHICH property changed (a bare "it changed" is not actionable).
-  _mkstub atuin-fixed yes 19.0.0
-  _v_run atuin-fixed --json
-  if [[ "$(_v_verdict "$_vout")" == moved ]] && ((_vrc == 1)) && [[ "$_vout" == *"no longer discards"* ]]; then
-    pass "atuin verify: an atuin that writes on an unreachable socket → moved (rc 1), naming the change"
-  else
-    fail "atuin verify: expected moved/rc1 naming the change, got $(_v_verdict "$_vout")/rc$_vrc"
-  fi
-
-  # 4. THE LOAD-BEARING ONE. An apparatus that cannot write at all must be UNMEASURABLE,
-  #    never holds. Both produce "the row count did not go up"; only one of them means the
-  #    premise held. Deleting this assertion is how the fail-open bug comes back.
-  _mkstub atuin-dead no
-  _v_run atuin-dead --json
-  if [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && ((_vrc == 3)); then
-    pass "atuin verify: an atuin that never writes is UNMEASURABLE (rc 3), never holds"
-  else
-    fail "atuin verify: a non-writing apparatus must be unmeasurable/rc3, got $(_v_verdict "$_vout")/rc$_vrc"
-  fi
-
-  # 5. A bare box must not be able to produce a green "holds". This is the one place the
+  # ── apparatus-FREE assertions. These hold on any box, because none of them needs the
+  #    stub to be able to write a row — so a platform where the apparatus cannot run still
+  #    pins the script's contract surface.
+  #
+  # A. A bare box must not be able to produce a green "holds". This is the one place the
   #    repo's skip-and-exit-0 idiom is deliberately broken, so it is pinned.
   _vout="$(CORE_COLOR=never "$_VERIFY" --atuin /nonexistent/atuin --json 2>&1)"
   _vrc=$?
@@ -2031,60 +1997,7 @@ STUB
     fail "atuin verify: a missing atuin must exit 3, got rc$_vrc"
   fi
 
-  # 6. The anchor is read from ONE machine-readable line, and a file that disagrees with
-  #    itself (or has lost the line) is unmeasurable rather than defaulted. Drive it by
-  #    running from a sandbox repo whose zsh/00-tools.zsh is doctored.
-  _vrepo="$(mktemp -d "$SANDBOX/vrepo.XXXXXX")"
-  # lib/ux.sh too: scripts/lib/common.sh sources it as ../../lib/ux.sh, and without it the
-  # script dies under `set -u` before it ever reads the anchor — which would make this
-  # assertion pass for the wrong reason (a crash, not a refusal).
-  mkdir -p "$_vrepo/scripts/lib" "$_vrepo/lib" "$_vrepo/zsh" "$_vrepo/atuin"
-  cp "$_VERIFY" "$_vrepo/scripts/"
-  cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/atuin-db.sh" "$_vrepo/scripts/lib/"
-  cp "$HERE/lib/ux.sh" "$_vrepo/lib/"
-  cp "$HERE/atuin/config.toml" "$_vrepo/atuin/"
-  for _case in none dupe; do
-    if [[ "$_case" == none ]]; then
-      printf '# no anchor here\n' >"$_vrepo/zsh/00-tools.zsh"
-    else
-      printf '# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0\n# CORE_ATUIN_GUARD_VERIFIED_AGAINST=19.0.0\n' \
-        >"$_vrepo/zsh/00-tools.zsh"
-    fi
-    _vout="$(CORE_COLOR=never "$_vrepo/scripts/verify-atuin-guard.sh" --atuin "$_vstub/atuin-discards" --json 2>&1)"
-    _vrc=$?
-    if ((_vrc == 3)) && [[ "$_vout" == *"anchor"* ]]; then
-      pass "atuin verify: a $_case anchor in zsh/00-tools.zsh is unmeasurable, not a default"
-    else
-      fail "atuin verify: a $_case anchor must be unmeasurable (rc3), got rc$_vrc"
-    fi
-  done
-
-  # 7. The --json object carries every field a consumer reads (the workflow parses
-  #    `verdict`; a human reads the rest). Asserted by SHAPE, not by grep.
-  _v_run atuin-discards --json
-  if printf '%s' "$_vout" | python3 -c '
-import json,sys
-d = json.load(sys.stdin)
-need = {"verdict","reason","atuin_version","anchor","anchor_relation","control_delta","absent","stale"}
-assert need <= set(d), sorted(need - set(d))
-for arm in ("absent","stale"):
-    assert {"rc","delta","stderr_empty","id_present"} <= set(d[arm]), arm
-' 2>/dev/null; then
-    pass "atuin verify: --json carries verdict/reason/versions/control_delta and both arms"
-  else
-    fail "atuin verify: --json shape is missing fields consumers depend on"
-  fi
-
-  # 8. A newer atuin than the anchor is REPORTED as such — that relation is the signal
-  #    /tool-scout cannot compute for itself and the issue body leads with.
-  _v_run atuin-fixed --json
-  if [[ "$_vout" == *'"anchor_relation":"newer"'* ]]; then
-    pass "atuin verify: an atuin newer than the anchor reports anchor_relation=newer"
-  else
-    fail "atuin verify: anchor_relation must say 'newer' when the measured atuin outranks the anchor"
-  fi
-
-  # 9. Usage errors stay distinct from verdicts: 2 is the caller's fault, 1 and 3 are
+  # B. Usage errors stay distinct from verdicts: 2 is the caller's fault, 1 and 3 are
   #    findings. A workflow that conflated them would file an issue about a typo.
   CORE_COLOR=never "$_VERIFY" --definitely-not-a-flag >/dev/null 2>&1
   _vrc=$?
@@ -2096,8 +2009,8 @@ for arm in ("absent","stale"):
     fail "atuin verify: usage errors must exit 2 (unknown=$_vrc missing-value=$_vrc2)"
   fi
 
-  # 10. --unmeasurable renders through the SAME one path as a real run, so the workflow
-  #     never hand-rolls prose at the call site and the two cannot drift.
+  # C. --unmeasurable renders through the SAME one path as a real run, so the workflow
+  #    never hand-rolls prose at the call site and the two cannot drift.
   _vout="$(CORE_COLOR=never "$_VERIFY" --unmeasurable "download failed" --json 2>&1)"
   _vrc=$?
   if ((_vrc == 3)) && [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && [[ "$_vout" == *"download failed"* ]]; then
@@ -2106,16 +2019,121 @@ for arm in ("absent","stale"):
     fail "atuin verify: --unmeasurable must render a real unmeasurable verdict, got rc$_vrc"
   fi
 
-  # 11. The report is issue-ready: no title heading (file-routine-issue.sh supplies one),
-  #     and it states the coverage it does NOT have, so a green run cannot be read as
-  #     fleet-wide. musl is the gap that matters — it is where the autostart path lives.
-  _vrep="$SANDBOX/atverify-report.md"
-  CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/atuin-discards" --report "$_vrep" >/dev/null 2>&1
-  if [[ -s "$_vrep" ]] && [[ "$(head -c 1 "$_vrep")" != "#" ]] &&
-    grep -qi 'musl' "$_vrep" && grep -q '3382' "$_vrep"; then
-    pass "atuin verify: --report is issue-ready (no title heading) and states its musl/#3382 blind spots"
+  # D. The --json object carries every field a consumer reads (the workflow parses
+  #    `verdict`; a human reads the rest). Asserted by SHAPE, not by grep, and on the
+  #    apparatus-free path so it holds everywhere.
+  if printf '%s' "$_vout" | python3 -c '
+import json,sys
+d = json.load(sys.stdin)
+need = {"verdict","reason","atuin_version","anchor","anchor_relation","control_delta","bounded","absent","stale"}
+assert need <= set(d), sorted(need - set(d))
+for arm in ("absent","stale"):
+    assert {"rc","delta","stderr_empty","id_present"} <= set(d[arm]), arm
+' 2>/dev/null; then
+    pass "atuin verify: --json carries verdict/reason/versions/control_delta/bounded and both arms"
   else
-    fail "atuin verify: --report must omit a title heading and name the coverage it lacks"
+    fail "atuin verify: --json shape is missing fields consumers depend on"
+  fi
+
+  # ── APPARATUS SELF-CHECK. Everything below drives a stub that must actually write a row
+  #    into a real SQLite file and be measured through it. A box where that cannot work —
+  #    a python3 built without the sqlite3 module, a coreutils that cannot bound a call,
+  #    a busybox whose tools differ — would fail every assertion below for a reason that
+  #    has nothing to do with the code under test. So prove the apparatus FIRST and SKIP
+  #    if it cannot be built, which is the same contract check_dep applies to a missing
+  #    binary. The skip carries the verdict AND the reason, because a skip that does not
+  #    say why is how a platform-specific breakage stays invisible.
+  _mkstub atuin-discards off-only
+  _v_run atuin-discards --json
+  _vapp="$(_v_verdict "$_vout")"
+  if [[ "$_vapp" != holds ]]; then
+    _vwhy="$(printf '%s' "$_vout" | python3 -c 'import json,sys; print(json.load(sys.stdin)["reason"][:160])' 2>/dev/null)"
+    skip "atuin guard detector: measurement assertions (apparatus unusable here — verdict=${_vapp:-<unparseable>}: ${_vwhy:-no reason parsed})"
+  else
+    # 1. HOLDS — the control arm writes, both unreachable shapes discard. rc 0.
+    _v_run atuin-discards --json
+    if [[ "$(_v_verdict "$_vout")" == holds ]] && ((_vrc == 0)); then
+      pass "atuin verify: an atuin that still discards on an unreachable socket → holds (rc 0)"
+    else
+      fail "atuin verify: expected holds/rc0, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 2. The control arm is REPORTED, not merely run. `holds` without a proven-working
+    #    apparatus is exactly the old recipe's failure, so the number is in the output.
+    if [[ "$_vout" == *'"control_delta":1'* ]]; then
+      pass "atuin verify: holds is reported alongside a control arm that actually wrote"
+    else
+      fail "atuin verify: a holds verdict must carry control_delta 1 (got: $_vout)"
+    fi
+
+    # 3. MOVED — an atuin that writes on the unreachable path. rc 1, and the reason names
+    #    WHICH property changed (a bare "it changed" is not actionable).
+    _mkstub atuin-fixed yes 19.0.0
+    _v_run atuin-fixed --json
+    if [[ "$(_v_verdict "$_vout")" == moved ]] && ((_vrc == 1)) && [[ "$_vout" == *"no longer discards"* ]]; then
+      pass "atuin verify: an atuin that writes on an unreachable socket → moved (rc 1), naming the change"
+    else
+      fail "atuin verify: expected moved/rc1 naming the change, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 4. A newer atuin than the anchor is REPORTED as such — the signal /tool-scout cannot
+    #    compute for itself and the issue body leads with.
+    if [[ "$_vout" == *'"anchor_relation":"newer"'* ]]; then
+      pass "atuin verify: an atuin newer than the anchor reports anchor_relation=newer"
+    else
+      fail "atuin verify: anchor_relation must say 'newer' when the measured atuin outranks the anchor"
+    fi
+
+    # 5. THE LOAD-BEARING ONE. An apparatus that cannot write at all must be UNMEASURABLE,
+    #    never holds. Both produce "the row count did not go up"; only one of them means the
+    #    premise held. Deleting this assertion is how the fail-open bug comes back.
+    _mkstub atuin-dead no
+    _v_run atuin-dead --json
+    if [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && ((_vrc == 3)); then
+      pass "atuin verify: an atuin that never writes is UNMEASURABLE (rc 3), never holds"
+    else
+      fail "atuin verify: a non-writing apparatus must be unmeasurable/rc3, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 6. The anchor is read from ONE machine-readable line, and a file that disagrees with
+    #    itself (or has lost the line) is unmeasurable rather than defaulted. Driven from a
+    #    sandbox repo whose zsh/00-tools.zsh is doctored.
+    _vrepo="$(mktemp -d "$SANDBOX/vrepo.XXXXXX")"
+    # lib/ux.sh too: scripts/lib/common.sh sources it as ../../lib/ux.sh, and without it the
+    # script dies under `set -u` before it ever reads the anchor — which would make this
+    # assertion pass for the wrong reason (a crash, not a refusal).
+    mkdir -p "$_vrepo/scripts/lib" "$_vrepo/lib" "$_vrepo/zsh" "$_vrepo/atuin"
+    cp "$_VERIFY" "$_vrepo/scripts/"
+    cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/atuin-db.sh" "$_vrepo/scripts/lib/"
+    cp "$HERE/lib/ux.sh" "$_vrepo/lib/"
+    cp "$HERE/atuin/config.toml" "$_vrepo/atuin/"
+    for _case in none dupe; do
+      if [[ "$_case" == none ]]; then
+        printf '# no anchor here\n' >"$_vrepo/zsh/00-tools.zsh"
+      else
+        printf '# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0\n# CORE_ATUIN_GUARD_VERIFIED_AGAINST=19.0.0\n' \
+          >"$_vrepo/zsh/00-tools.zsh"
+      fi
+      _vout="$(CORE_COLOR=never "$_vrepo/scripts/verify-atuin-guard.sh" --atuin "$_vstub/atuin-discards" --json 2>&1)"
+      _vrc=$?
+      if ((_vrc == 3)) && [[ "$_vout" == *"anchor"* ]]; then
+        pass "atuin verify: a $_case anchor in zsh/00-tools.zsh is unmeasurable, not a default"
+      else
+        fail "atuin verify: a $_case anchor must be unmeasurable (rc3), got rc$_vrc"
+      fi
+    done
+
+    # 7. The report is issue-ready: no title heading (file-routine-issue.sh supplies one),
+    #    and it states the coverage it does NOT have, so a green run cannot be read as
+    #    fleet-wide. musl is the gap that matters — it is where the autostart path lives.
+    _vrep="$SANDBOX/atverify-report.md"
+    CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/atuin-discards" --report "$_vrep" >/dev/null 2>&1
+    if [[ -s "$_vrep" ]] && [[ "$(head -c 1 "$_vrep")" != "#" ]] &&
+      grep -qi 'musl' "$_vrep" && grep -q '3382' "$_vrep"; then
+      pass "atuin verify: --report is issue-ready (no title heading) and states its musl/#3382 blind spots"
+    else
+      fail "atuin verify: --report must omit a title heading and name the coverage it lacks"
+    fi
   fi
 fi
 

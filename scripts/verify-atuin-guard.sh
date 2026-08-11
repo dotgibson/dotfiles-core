@@ -202,6 +202,8 @@ CTL_DELTA=-1
 ABSENT_RC=-1 ABSENT_DELTA=-1 ABSENT_ERR="" ABSENT_ID=""
 STALE_RC=-1 STALE_DELTA=-1 STALE_ERR="" STALE_ID=""
 SB="" LOCALDIR=""
+BOUNDED=true            # false when neither timeout(1) nor gtimeout(1) exists (see measure())
+TIMEOUT_CMD=()          # the bounding prefix, empty when unbounded
 
 # The ONLY two ways this script reaches a non-`holds` conclusion. Never `holds` by omission:
 # VERDICT starts empty and is set explicitly, so a path that forgets to decide cannot fall
@@ -329,7 +331,7 @@ run_one() {
   }
   id="$("${AT_ENV[@]}" "${env_extra[@]}" \
     "ATUIN_SESSION=$(printf '%032x' 1)" \
-    timeout "$TIMEOUT_S" "$ATUIN_BIN" history start -- "verify-$mode" 2>"$SB/err.$mode")"
+    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history start -- "verify-$mode" 2>"$SB/err.$mode")"
   rc=$?
   err="$(tr -d '\n' <"$SB/err.$mode" 2>/dev/null | cut -c1-200)"
   # A daemon-owned write can be committed slightly after the client returns, so give the
@@ -357,10 +359,23 @@ measure() {
     unmeasurable "no executable atuin to measure (looked for --atuin, then PATH)"
     return
   }
-  have timeout || {
-    unmeasurable "coreutils timeout(1) is not available — refusing to run an unbounded atuin (atuinsh/atuin#3382 can hang it)"
-    return
-  }
+  # BOUNDING THE CALL, PORTABLY. macOS ships coreutils' timeout as `gtimeout` and has no
+  # plain `timeout` at all — maint/dotfiles-maint.sh's _to() exists for exactly this — so a
+  # hard requirement on `timeout` would make this script permanently `unmeasurable` on the
+  # macOS third of the fleet, which is a broken detector rather than a cautious one.
+  # Where neither exists we still measure, unbounded, and SAY SO: the bound guards against
+  # a wedged atuin (the accept-but-silent shape of atuinsh/atuin#3382) hanging a scheduled
+  # job, which is a real but narrow hazard — narrower than never measuring at all.
+  # `${arr[@]+"${arr[@]}"}`, not `"${arr[@]}"`: macOS ships bash 3.2, where expanding an
+  # EMPTY array under `set -u` is an "unbound variable" error rather than zero words.
+  if have timeout; then
+    TIMEOUT_CMD=(timeout "$TIMEOUT_S")
+  elif have gtimeout; then
+    TIMEOUT_CMD=(gtimeout "$TIMEOUT_S")
+  else
+    TIMEOUT_CMD=()
+    BOUNDED=false
+  fi
   read_anchor || {
     unmeasurable "could not read exactly one '# CORE_ATUIN_GUARD_VERIFIED_AGAINST=' line from zsh/00-tools.zsh — the anchor was renamed, deleted, or duplicated"
     return
@@ -419,7 +434,7 @@ measure() {
   # is never created at all, and every later count reads 0 — which then looks like "the rows
   # did not land", i.e. the premise holding, from an apparatus that never worked.
   "${AT_ENV[@]}" ATUIN_DAEMON__ENABLED=false "ATUIN_SESSION=$(printf '%032x' 0)" \
-    timeout "$TIMEOUT_S" "$ATUIN_BIN" history start -- "verify-seed" >/dev/null 2>&1
+    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history start -- "verify-seed" >/dev/null 2>&1
   [[ -s "$DB" ]] || {
     unmeasurable "the daemon-off seed did not create a history DB at all — this atuin cannot write in the sandbox, so nothing measured here would mean anything"
     return
@@ -488,7 +503,7 @@ json_escape() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps
 emit_json() {
   printf '{"verdict":"%s","reason":"%s","atuin_version":"%s","anchor":"%s","anchor_relation":"%s",' \
     "$VERDICT" "$(json_escape "$REASON")" "$AT_VER" "$ANCHOR" "$ANCHOR_REL"
-  printf '"control_delta":%s,' "${CTL_DELTA:--1}"
+  printf '"control_delta":%s,"bounded":%s,' "${CTL_DELTA:--1}" "$BOUNDED"
   printf '"absent":{"rc":%s,"delta":%s,"stderr_empty":%s,"id_present":%s},' \
     "${ABSENT_RC:--1}" "${ABSENT_DELTA:--1}" \
     "$([[ -z "$ABSENT_ERR" ]] && echo true || echo false)" \
@@ -510,6 +525,8 @@ emit_report() {
     printf '| atuin measured | `%s` |\n' "$AT_VER"
     printf '| verified-against anchor (`zsh/00-tools.zsh`) | `%s` (%s) |\n' "$ANCHOR" "$ANCHOR_REL"
     printf '| daemon-off control arm | wrote %s row(s) — must be 1 |\n' "$CTL_DELTA"
+    [[ "$BOUNDED" == true ]] ||
+      printf '| call bound | **none** — no `timeout`/`gtimeout` on this box, so a wedged atuin could not have been cut short |\n'
     printf '| absent socket | rc %s, delta %s, stderr %s, id %s |\n' \
       "$ABSENT_RC" "$ABSENT_DELTA" \
       "$([[ -z "$ABSENT_ERR" ]] && echo empty || echo "\"$ABSENT_ERR\"")" \
