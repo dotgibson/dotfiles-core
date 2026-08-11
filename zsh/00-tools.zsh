@@ -229,7 +229,12 @@ fi
 # stderr — and DISCARDS the entry. No error, no fallback, no row. Verified for an absent
 # socket, a stale socket file, and with and without --hook; the daemon-off control writes
 # every row. (It also makes the dead-socket path benchmark FASTER than a direct write,
-# 4.17 ms vs 8.27 ms mean, because it is timing a no-op.)
+# 4.17 ms vs 8.27 ms mean, because it is timing a no-op.) Upstream: atuinsh/atuin#3561 —
+# and note the direction of travel, because everything below is premised on this ONE fact:
+# 18.16.1 failed LOUDLY (empty ATUIN_HISTORY_ID, which then crashed `history end`), 18.19.0
+# fails silently. It has moved once, so it can move again. /tool-scout carries the standing
+# re-verification: when the atuin in use is newer than the 18.19.0 named above, re-measure
+# before trusting any of this.
 #
 # So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
 # throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
