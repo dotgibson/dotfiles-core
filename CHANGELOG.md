@@ -64,6 +64,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   row-count SQL is extracted from the script and _executed_ against a synthetic table, the
   same "run it, don't pattern-match it" idiom Section J uses on the example unit's `ExecStart`.
 
+- **`/tool-scout` now re-checks the workarounds whose justification can expire.**
+  `_core_atuin_daemon_guard` is not a preference — it is a workaround for one measured
+  upstream fact (atuin 18.19.0 discards a history entry when the daemon is enabled and
+  its socket is unreachable, `atuinsh/atuin#3561`), and every millisecond it spends on
+  the prompt path is justified by that fact alone. Nothing was watching whether it stayed
+  true: atuin is not pinned in `mise/config.toml` and has no `renovate.json` entry, so a
+  version bump arrives silently on whichever machine updates first, and the behaviour has
+  already changed once in the direction that makes it harder to notice (18.16.1 failed
+  loudly; 18.19.0 fails silently). The routine now carries a standing re-verification
+  list, the version each workaround was verified against, and a two-minute throwaway-`HOME`
+  recipe that answers "does the premise still hold?" by measurement rather than by reading
+  a changelog — because a changelog that does not mention the bug is not evidence the bug
+  is gone. Re-verifications lead the report rather than competing inside the ranked
+  shortlist, and "nothing is due" must be said out loud, since silence reads the same as
+  forgetting.
+
 ### Fixed
 
 - **A shell that outlived atuin's daemon recorded nothing, silently, for the rest of its
