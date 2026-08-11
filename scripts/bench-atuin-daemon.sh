@@ -27,14 +27,14 @@
 # TWO OF THOSE ROWS NOW HAVE A LEVER. `--systemd` measures the systemd-unit path, and
 # CORE_ATBENCH_BASE moves the sandbox onto a network home. See --help for both.
 #
-# UNVALIDATED-SYSTEMD. `--systemd` has NEVER been executed against a real systemd user bus:
-# it was written where `systemd-run --user` cannot connect to one, so only its fail-closed
-# skip path has ever run. It is shipped anyway because the alternative — leaving the Fedora
-# box with a harness that structurally cannot test its own path — is worse, but a first real
-# run is VALIDATION, not data. Check three things before believing any figure it prints:
-# the unit stayed `active` for the whole arm, MainPID owned the listening socket, and the
-# row deltas were exact. `git grep UNVALIDATED-SYSTEMD` enumerates every place that claim is
-# made, which is the set to update once it has actually run.
+# `--systemd` HAS NOW RUN, and what it found is in atuin/config.toml. It was written where
+# `systemd-run --user` could not reach a bus, so for a while only its fail-closed skip path had
+# ever executed; seven runs on Fedora 44 under WSL2 (real user manager, real transient unit,
+# glibc, atuin 18.19.0) validated it. The three checks a first run had to pass all passed on
+# every one: the unit stayed `active` for the whole arm, MainPID owned the listening socket,
+# and the row deltas were exact. Those checks still print on every run — they are the flag's
+# fail-closed surface, not a one-off ceremony, so read them before believing any figure.
+# Not covered by that: bare metal rather than WSL2, and a real multi-pane session.
 #
 # WHAT IT MEASURES — TWO METRICS, AND THE DIFFERENCE IS NOT COSMETIC. Every run reports
 # both, because a shell hook does not pay for the two calls the same way:
@@ -51,12 +51,20 @@
 # every figure it had ever produced was TOTAL WRITE WORK wearing a latency label. That is
 # not a hypothetical mislabelling: this repo's own records disagree about the tail, and the
 # disagreement lines up exactly with the metric. The runs that timed the pair concluded the
-# far tail got WORSE with the daemon; the one run that timed only the blocking call (real
-# Fedora, systemd) measured p99 improving 49-69%. `end` is where the two diverge — with the
-# daemon off it is the slower of the two calls (the UPDATE costs more than the INSERT) and
+# far tail got WORSE with the daemon; every run that has timed only the blocking call found
+# the opposite — p99 improving 49-69% on real Fedora hardware, and 1.35-3.25x faster across
+# three runs on the systemd path with a local-disk home. `end` is where the two diverge — with
+# the daemon off it is the slower of the two calls (the UPDATE costs more than the INSERT) and
 # with it on they equalise — so folding it into a "latency" number moves the metric most
 # precisely where the daemon is being judged. Treat the pre-split figures recorded in
 # atuin/config.toml as total-write-work, and re-measure before restating any tail claim.
+#
+# AND CHECK WHAT THE SANDBOX IS SITTING ON, which the runs above also turned up: the same
+# harness on the same host gives a p99 that FLIPS SIGN on tmpfs, is faster in every run on ext4,
+# and wins 26-43x on a high-latency non-local filesystem — because without a real fsync there is
+# barely a lock to contend over. `/tmp` is tmpfs on most boxes, so the DEFAULT sandbox is the one
+# place the tail is least readable. Every run prints its filesystem for that reason; use
+# CORE_ATBENCH_BASE to put the DB somewhere durable before drawing a tail conclusion.
 #
 # Both are computed from ONE timed pass, not two runs: the writer takes a timestamp between
 # the calls. So the two tables are strictly comparable — same samples, same contention.
@@ -121,7 +129,11 @@ Keep them apart when reporting: timing the pair and calling it latency is what l
 repo's own records disagreeing about whether the daemon helps or hurts the tail.
 
 By default this reproduces the TOPOLOGY of the Alpine/no-systemd path only — not musl,
-not real hardware, not a network home. Results carry those caveats.
+not real hardware, not a network home. Results carry those caveats. The default sandbox
+also lands in /tmp, which is tmpfs on most boxes: with no real fsync there is barely a DB
+lock to contend over, and the tail becomes unreadable. Every run prints the filesystem it
+used; put the DB on durable storage with CORE_ATBENCH_BASE before concluding anything
+about p99.
 
   --systemd   Measure the SYSTEMD-UNIT path instead: run the daemon from a sandbox-scoped
               TRANSIENT unit (systemd-run --user), with XDG_RUNTIME_DIR pointed at the
@@ -130,9 +142,9 @@ not real hardware, not a network home. Results carry those caveats.
               atuin-daemon.service. Without a systemd user bus it SKIPs; it never falls back
               to the no-systemd path, because those numbers under a systemd label are the
               one thing this flag exists to prevent. The autostart arm is skipped (autostart
-              and a supervised unit are mutually exclusive).
-              UNVALIDATED-SYSTEMD: written where no user bus exists, so only the fail-closed
-              skip path has ever executed. Treat a first real run as validation, not data.
+              and a supervised unit are mutually exclusive). Validated on a real user bus
+              (Fedora 44 under WSL2); it still asserts the unit stayed active and that its
+              MainPID owns the socket on every run, and refuses the arm otherwise.
 
 Tuning via environment:
   CORE_ATBENCH_WRITERS=<n>   concurrent writer processes (default 8 — a busy tmux)
@@ -218,7 +230,6 @@ if ((SYSTEMD)); then
     printf '   Refusing to fall back to the no-systemd path: those numbers would be reported\n'
     printf '   under a systemd label, which is the one thing --systemd exists to prevent.\n'
     printf '   Run without --systemd for the no-systemd topology.\n'
-    printf '   (UNVALIDATED-SYSTEMD: to date only this skip path has ever executed.)\n'
     exit 0
   fi
 fi
@@ -412,19 +423,23 @@ printf '\n%s== atuin daemon: per-command write latency under contention ==%s\n' 
 if ((SYSTEMD)); then
   printf '   %s writers x %s commands, %s-row seeded DB, XDG_RUNTIME_DIR=%s\n' \
     "$WRITERS" "$ITERS" "$SEED" "$RUNDIR"
-  printf '%s   !! UNVALIDATED-SYSTEMD: this mode has never been executed against a real\n' "$c_yel"
-  printf '      systemd user bus. It was written where one does not exist, so only its\n'
-  printf '      fail-closed skip path has ever run. Treat this run as its first\n'
-  printf '      validation, not as data.%s\n' "$c_rst"
 else
   printf '   %s writers x %s commands, %s-row seeded DB, XDG_RUNTIME_DIR unset\n' \
     "$WRITERS" "$ITERS" "$SEED"
 fi
 if [[ -n "$BASE" ]]; then
-  printf '   base override: HOME + history DB under %s (%s)\n' "$BASE" "$(fs_type "$SB")"
+  printf '   base override: sandbox HOME under %s too\n' "$BASE"
   printf '   socket forced to %s\n' "$SOCK_FORCED"
   printf '%s   ATUIN_DAEMON__SOCKET_PATH is set, so this run does NOT exercise atuin'"'"'s DEFAULT\n' "$c_yel"
   printf '   socket resolution — the same flaw the earlier Fedora run had. It is unavoidable:\n'
+# Printed on EVERY run, not only under --base. Storage decides whether the tail is readable at
+# all — the same harness on one host gives a p99 that flips sign on tmpfs and wins 3x on ext4 —
+# and the default sandbox lands in /tmp, which is tmpfs on most boxes. A run whose output does
+# not say what it wrote to cannot be compared with another one. Resolved once, here, and reused
+# by the closing caveats: two `stat -f` calls could not disagree today, but a banner and a
+# footer that can drift apart about what the run wrote to is the exact defect this line fixes.
+sb_fs="$(fs_type "$SB")"
+printf '   history DB on %s (%s)\n' "$sb_fs" "${BASE:-/tmp}"
   printf '   AF_UNIX does not work on NFS/SMB and sun_path caps near 108 bytes, so a\n'
   printf '   network-home sandbox cannot host the socket. What this measures is DB contention\n'
   printf '   on that storage; what it does not measure is where atuin decides to put its\n'
@@ -992,7 +1007,7 @@ fi
 # the lock-wait spikes that motivate it.
 printf '\n%s== results (ms per command) ==%s\n' "$c_blu" "$c_rst"
 ON_LABEL="daemon on"
-((SYSTEMD)) && ON_LABEL="daemon on (systemd unit) [UNVALIDATED]"
+((SYSTEMD)) && ON_LABEL="daemon on (systemd unit)"
 [[ -n "$SOCK_FORCED" ]] && ON_LABEL="$ON_LABEL (socket forced)"
 # No "(ownership unverified)" variant any more: unit_owns_socket refuses the arm outright
 # rather than letting an unproven one through with a caveat on the label, so that state
@@ -1143,6 +1158,17 @@ fi
 # What the socket topology actually was — the old text asserted "XDG_RUNTIME_DIR is unset",
 # which BOTH new modes falsify.
 if ((SYSTEMD)); then
+# The tail row, and the one most likely to be missed: a memory-backed sandbox never pays for an
+# fsync, so the DB lock is held for a fraction of the time it is on disk and the percentile the
+# daemon is adopted for degenerates into noise. Named types rather than an allowlist of durable
+# ones, for the same reason fs_type's network check is written that way — an allowlist silently
+# passes whatever it has not heard of, and here that fails in the direction of a false result.
+case "$sb_fs" in
+  tmpfs | ramfs)
+    notcovered+=("durable storage — the DB was on $sb_fs, where there is no fsync to
+    contend over; treat this run's p99 as unreadable and re-run with CORE_ATBENCH_BASE")
+    ;;
+esac
   topology="XDG_RUNTIME_DIR was pointed at $RUNDIR (mode 0700) — deliberately not your real
 runtime dir — so atuin resolved its default runtime-dir socket inside the sandbox, and no
 real daemon could be reached, started or stopped."
@@ -1169,15 +1195,11 @@ notcovered_str="$(printf '\n  · %s' "${notcovered[@]}")"
 cat <<EOF
 
 Measured on: $host_os/$host_arch, $host_libc, $host_init, atuin $(atuin --version 2>/dev/null |
-  awk '{print $2}')$([[ -n "$BASE" ]] && printf ', history DB on %s at %s' "$(fs_type "$SB")" "$BASE").
+  awk '{print $2}'), history DB on $sb_fs at ${BASE:-/tmp}.
 For this run, $topology
 
 $(printf '%s' "$c_yel")These numbers narrow the gap; they do not close it.$(printf '%s' "$c_rst") Whatever this host is, the
 run did not cover:$notcovered_str
-$( ((SYSTEMD)) && printf '\n%s\n' "UNVALIDATED-SYSTEMD: --systemd itself has never been validated against a real systemd
-user bus. If this run produced numbers, it is the first — check that the unit stayed active
-for the whole arm, that MainPID owned the socket, and that the row deltas were exact, before
-treating any figure here as data.")
 
 Run it twice before believing the tail. p50 and p95 settle quickly; p99 and max are
 the last to, and a single run's p99 can flip sign. If two runs disagree on a

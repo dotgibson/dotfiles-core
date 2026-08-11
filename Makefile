@@ -38,7 +38,7 @@ profile: ## Per-module zsh startup breakdown (attributes the total cost; slowest
 bench-atuin: ## Measure atuin write latency, daemon off vs on, under contention (needs atuin; skips if absent)
 	@./scripts/bench-atuin-daemon.sh
 
-bench-atuin-systemd: ## Same, but through a transient systemd user unit (UNVALIDATED; skips without a user bus)
+bench-atuin-systemd: ## Same, but through a transient systemd user unit (skips without a user bus)
 	@./scripts/bench-atuin-daemon.sh --systemd
 
 lint: audit ## Alias for `audit` (the audit IS the lint+test gate)
