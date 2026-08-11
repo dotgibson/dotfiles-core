@@ -427,19 +427,20 @@ else
   printf '   %s writers x %s commands, %s-row seeded DB, XDG_RUNTIME_DIR unset\n' \
     "$WRITERS" "$ITERS" "$SEED"
 fi
+# Resolved and printed on EVERY run, not only under --base, and BEFORE any branch that might
+# skip it. Storage decides whether the tail is readable at all — the same harness on one host
+# gives a p99 that flips sign on tmpfs and wins 3x on ext4 — and the default sandbox lands in
+# /tmp, which is tmpfs on most boxes. A run whose output does not say what it wrote to cannot be
+# compared with another one. Resolved once, here, and reused by the closing caveats: two
+# `stat -f` calls could not disagree today, but a banner and a footer that can drift apart about
+# what the run wrote to is the exact defect this line fixes.
+sb_fs="$(fs_type "$SB")"
+printf '   history DB on %s (%s)\n' "$sb_fs" "${BASE:-/tmp}"
 if [[ -n "$BASE" ]]; then
   printf '   base override: sandbox HOME under %s too\n' "$BASE"
   printf '   socket forced to %s\n' "$SOCK_FORCED"
   printf '%s   ATUIN_DAEMON__SOCKET_PATH is set, so this run does NOT exercise atuin'"'"'s DEFAULT\n' "$c_yel"
   printf '   socket resolution — the same flaw the earlier Fedora run had. It is unavoidable:\n'
-# Printed on EVERY run, not only under --base. Storage decides whether the tail is readable at
-# all — the same harness on one host gives a p99 that flips sign on tmpfs and wins 3x on ext4 —
-# and the default sandbox lands in /tmp, which is tmpfs on most boxes. A run whose output does
-# not say what it wrote to cannot be compared with another one. Resolved once, here, and reused
-# by the closing caveats: two `stat -f` calls could not disagree today, but a banner and a
-# footer that can drift apart about what the run wrote to is the exact defect this line fixes.
-sb_fs="$(fs_type "$SB")"
-printf '   history DB on %s (%s)\n' "$sb_fs" "${BASE:-/tmp}"
   printf '   AF_UNIX does not work on NFS/SMB and sun_path caps near 108 bytes, so a\n'
   printf '   network-home sandbox cannot host the socket. What this measures is DB contention\n'
   printf '   on that storage; what it does not measure is where atuin decides to put its\n'
@@ -1158,17 +1159,6 @@ fi
 # What the socket topology actually was — the old text asserted "XDG_RUNTIME_DIR is unset",
 # which BOTH new modes falsify.
 if ((SYSTEMD)); then
-# The tail row, and the one most likely to be missed: a memory-backed sandbox never pays for an
-# fsync, so the DB lock is held for a fraction of the time it is on disk and the percentile the
-# daemon is adopted for degenerates into noise. Named types rather than an allowlist of durable
-# ones, for the same reason fs_type's network check is written that way — an allowlist silently
-# passes whatever it has not heard of, and here that fails in the direction of a false result.
-case "$sb_fs" in
-  tmpfs | ramfs)
-    notcovered+=("durable storage — the DB was on $sb_fs, where there is no fsync to
-    contend over; treat this run's p99 as unreadable and re-run with CORE_ATBENCH_BASE")
-    ;;
-esac
   topology="XDG_RUNTIME_DIR was pointed at $RUNDIR (mode 0700) — deliberately not your real
 runtime dir — so atuin resolved its default runtime-dir socket inside the sandbox, and no
 real daemon could be reached, started or stopped."
@@ -1188,6 +1178,19 @@ notcovered=("any real multi-pane session on real hardware")
 ((SYSTEMD)) || notcovered+=("the systemd-unit path")
 [[ -n "$BASE" ]] || notcovered+=("a network home (where the contention claim is strongest)")
 [[ "$host_libc" == musl ]] || notcovered+=("musl")
+# The tail row, and the one most likely to be missed: a memory-backed sandbox never pays for an
+# fsync, so the DB lock is held for a fraction of the time it is on disk and the percentile the
+# daemon is adopted for degenerates into noise. Named types rather than an allowlist of durable
+# ones, for the same reason fs_type's network check is written that way — an allowlist silently
+# passes whatever it has not heard of, and here that fails in the direction of a false result.
+# Appended AFTER the array is initialised above: an append before that line is discarded by it,
+# which is exactly how this row went missing between the run that tested it and the commit.
+case "$sb_fs" in
+  tmpfs | ramfs)
+    notcovered+=("durable storage — the DB was on $sb_fs, where there is no fsync to
+    contend over; treat this run's p99 as unreadable and re-run with CORE_ATBENCH_BASE")
+    ;;
+esac
 # One per line: the joined sentence ran well past any sane width once three of the four
 # entries could be present at once.
 notcovered_str="$(printf '\n  · %s' "${notcovered[@]}")"
