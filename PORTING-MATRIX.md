@@ -56,7 +56,7 @@ _Repo status_ at the bottom).
 | dust             | `dust`            | `dust`       | `dust`            | `sys-block/dust`           | `du-dust`⁴        |
 | procs            | `procs`           | `procs`      | `procs`           | `sys-process/procs`        | `procs`           |
 | viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸    | `viddy`           | cargo³                     | cargo³            |
-| sd               | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              |
+| sd²²             | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              |
 | gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            |
 | jnv¹⁷            | AUR               | cargo        | cargo             | cargo                      | cargo             |
 | glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          |
@@ -312,6 +312,19 @@ lights the `HAVE_*` probe only once you install it yourself.
 This is the same overclaim already corrected once for openSUSE (`ouch`/`ast-grep`): ³ means
 "bootstrap.sh installs it best-effort", so a ³ with no installer behind it reads as "you
 have this" when you do not.
+
+²² sd **changed its default in 1.1.0**: it now processes input **line by line**, and the old
+whole-file behaviour moved behind `--across` / `-A`. The failure mode is **silent** — a pattern
+that spans a newline (`sd 'foo\nbar' baz`) matches nothing, leaves the input unchanged, and
+still **exits 0**, so a script carries on as though it had rewritten the file. Confirmed
+behaviourally here rather than taken from the release notes. Worse, **`sd --version` cannot
+tell you which behaviour you have** — the Homebrew 1.1.0 build self-reports `sd 1.0.0` — so
+version sniffing is useless and a `HAVE_SD` version gate is not an option. Probe the flag
+instead: `sd --help | grep -q -- --across`. Core itself is **unaffected**: `sd` is detect-only
+(`HAVE_SD` in `zsh/00-tools.zsh`) with deliberately no alias (`zsh/20-aliases.zsh` — never
+shadow `sed` in scripts), and nothing in Core shells out to it. This is a warning for muscle
+memory and for the role layers: any multiline `sd` pattern in a `dotfiles-Kali` /
+`dotfiles-Defense` script needs `-A` adding.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
