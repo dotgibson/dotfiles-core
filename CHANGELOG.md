@@ -686,7 +686,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `sudo pacman -Sy` was listed with no note, while `dotfiles-Arch`'s `os/arch.zsh` explains at
   length that there is no `-Sy` alias **on purpose** — refresh-then-install is the
   partial-upgrade footgun, so it ships `pacu` (full `-Syu`) and `pacout` (`checkupdates`,
-  which never touches the sync DB). New footnote `²²` records that the cell is completeness,
+  which never touches the sync DB). New footnote `²³` records that the cell is completeness,
   not a recommendation. (`PORTING-MATRIX.md`)
 
 ### Changed
