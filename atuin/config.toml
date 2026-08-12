@@ -173,8 +173,11 @@ update_check = false
 #
 # WHAT WILL NEVER BE MEASURED HERE, AND WHY THAT IS A DECISION RATHER THAN A BACKLOG. The
 # rows below need machines this project does not have and is not going to get; WSL2 is the
-# closest it will ever come to a real box. So they are CLOSED as accepted-from-upstream, not
-# left open as a promise (dotgibson/dotfiles-core#352):
+# closest it will ever come to a real box. So they are ACCEPTED from upstream rather than
+# pursued — a decision, not a promise. Stated as the decision itself and not as the state of
+# a tracker: an issue can be reopened, relabelled or migrated, and a config comment asserting
+# "this is closed" would then be quietly false. The reasoning, the numbers and the four rows
+# are recorded in dotgibson/dotfiles-core#352, which this supersedes rather than depends on:
 #
 #   musl on REAL HARDWARE     the musl figures are an Alpine container, which does not
 #                             settle scheduling or storage behaviour on a real Alpine box

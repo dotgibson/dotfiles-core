@@ -384,7 +384,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   This is not a presentational fix: **it puts the far-tail conclusion back in question.** The
   recorded finding that the daemon trades frequent small waits for rarer, larger stalls comes
   entirely from pair-timed runs, while the one measurement that timed only the blocking call
-  (real Fedora hardware, systemd unit) found p99 improving 49–69%. `end` is precisely where
+  (Fedora 44 under WSL2, systemd unit) found p99 improving 49–69%. `end` is precisely where
   the two would diverge — with the daemon off it is the slower call, and with it on they
   equalise. `atuin/config.toml` and `zsh/00-tools.zsh` now relabel their figures as total
   write work and mark the tail question **open in both directions** rather than settled
@@ -690,7 +690,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   figures. It is the **same machine** — Fedora 44 / kernel 6.18.33.2 (WSL2) — measured days
   apart. That is reproducibility over time, not independent corroboration, and every figure
   in the record comes from one WSL2 host. Overstating corroboration is precisely the failure
-  #352 was filed to catch, so it is fixed at all three sites that made the claim.
+  #352 was filed to catch, so it is fixed at every site that made the claim: `atuin/config.toml`,
+  `scripts/bench-atuin-daemon.sh`'s header, and **both** unreleased entries in this file — the
+  one above and the earlier `bench(fix)` entry, which described the same run as "real Fedora
+  hardware" too. That fourth site was missed on the first pass because the check that was
+  supposed to prove the claim filtered CHANGELOG line numbers by a guessed section boundary
+  instead of the actual `## [Unreleased]` extent, and so excluded the line it needed to catch.
 
 - **`sd` silently stopped matching across newlines, and its `--version` won't tell you.**
   Upstream 1.1.0 made **line-by-line** processing the default and moved the old whole-file
