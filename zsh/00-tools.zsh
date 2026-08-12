@@ -120,6 +120,7 @@ _have lnav && HAVE_LNAV=1          # log reader — merges timelines, autodetect
 _have duf && HAVE_DUF=1             # modern df (20-aliases.zsh: df → duf, with df -h fallback)
 _have ouch && HAVE_OUCH=1          # one-binary archive (un)packer (30-functions.zsh: extract prefers it)
 _have hyperfine && HAVE_HYPERFINE=1 # benchmarking (the perf note at the top of this file uses it)
+_have watchexec && HAVE_WATCHEXEC=1 # run a command when files change — own command, no alias (the EVENT-driven sibling to viddy's time-driven watch and hyperfine's measured repeat). Opt-in; inert without the binary.
 _have shellcheck && HAVE_SHELLCHECK=1 # shell linter (own command — no alias)
 _have shfmt && HAVE_SHFMT=1        # shell formatter (own command — no alias)
 _have jj && HAVE_JJ=1              # jujutsu — OPT-IN, colocated git companion (20-aliases.zsh: jjs/jjl/jjd)

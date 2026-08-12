@@ -68,6 +68,7 @@ _Repo status_ at the bottom).
 | carapace         | AUR³              | go³          | `carapace`        | `app-shells/carapace`¹²    | go³               |
 | op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        |
 | hyperfine²¹      | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       |
+| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`  | `watchexec`       | GURU²⁵                     | cargo²⁵           |
 | shellcheck²¹     | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      |
 | shfmt⁷ ²¹        | `shfmt`           | `shfmt`      | `shfmt`           | go²¹                       | `shfmt`⁷          |
 | ouch²¹           | `ouch`            | `ouch`¹⁸     | testing¹⁴         | cargo²¹                    | cargo²¹           |
@@ -394,6 +395,36 @@ track one and two minors back respectively. Two targets lag enough to be worth n
 - **Kali/Debian `lnav` is 0.13.2** — one minor behind, the smaller gap of the two.
 
 On either, the upstream static musl zip above is the way to 0.14.0 without waiting.
+
+²⁵ watchexec: OPT-IN **event**-driven repetition — the third corner of a triangle Core
+already had two of. `viddy` re-runs on a **timer** (`watch`), `hyperfine` re-runs a fixed
+**count** and measures; `watchexec` re-runs when **files change** (`watchexec -e py --
+pytest`). Its own command, `HAVE_WATCHEXEC`-guarded in `zsh/00-tools.zsh`, inert without
+the binary. Deliberately **not** aliased to `watch` — `zsh/20-aliases.zsh` already points
+`watch` at `viddy`, and collapsing "re-run on a timer" into "re-run on a change" would
+silently hand you the wrong one.
+
+**The only tool in this table that nothing in the fleet installs — including macOS.**
+Unlike `lnav`²⁴ and the rest of ²¹'s "macOS-only in practice" bullet, the MacBook
+`Brewfile` does not carry `watchexec` either, so every machine is opt-in. Availability,
+verified 2026-08-12:
+
+- **Arch `extra`, openSUSE Tumbleweed, Homebrew, nixpkgs** — 2.5.1, current.
+- **Alpine `community`** — 2.5.1-r0, a native musl build.
+- **Gentoo: GURU only**, at 2.5.0 — there is no `::gentoo` atom. Note this is **not** in
+  ¹²'s GURU list on purpose: that footnote enumerates what `dotfiles-Gentoo`'s
+  `guru_install` pass actually installs, and it does not install this. Same shape as
+  `gping`¹⁹'s `GURU¹⁹` cell.
+- **Fedora and Debian/Kali do not package it at all** (confirmed: Fedora's package search
+  returns no results across F43/44/45/Rawhide/EPEL). Those two take
+  `cargo install --locked watchexec-cli` — note the crate is **`watchexec-cli`**; plain
+  `watchexec` on crates.io is the library, and installing that gives you no binary.
+
+Do **not** read the `cargo` cells as a `³`: no `bootstrap.sh` installs this, and
+`maint/dotfiles-maint.sh` runs `rustup update` but has no `cargo install-update` step, so
+a hand-`cargo`-installed `watchexec` is never refreshed by the maintenance job. That is
+already true of `ouch`/`jj`/`ast-grep` — a documentation gap this footnote records rather
+than a new one.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

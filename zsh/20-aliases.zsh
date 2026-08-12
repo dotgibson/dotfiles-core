@@ -79,10 +79,14 @@ fi
 # doggo: modern dig (DNS recon). dig stays as-is; this is a distinct verb.
 [[ -n ${HAVE_DOGGO:-} ]] && alias dns='doggo'
 # gron / sd are their own commands (no alias — never shadow sed in scripts).
-# jq / yq / jnv / lnav / hyperfine / shellcheck / shfmt are likewise their own commands:
-# they shadow nothing classic, so they get HAVE_* detection in 00-tools.zsh but no alias.
+# jq / yq / jnv / lnav / hyperfine / watchexec / shellcheck / shfmt are likewise their own
+# commands: they shadow nothing classic, so they get HAVE_* detection in 00-tools.zsh but
+# no alias.
 # (jnv is the interactive JSON explorer — you run `jnv file.json` or pipe into it.)
 # (lnav is the log reader — `lnav /var/log/...` or a directory; it merges and follows.)
+# (watchexec re-runs a command on file changes — `watchexec -e py -- pytest`. NOT aliased
+#  to `watch`: 20-aliases.zsh already points `watch` at viddy, and conflating "re-run on a
+#  timer" with "re-run on a change" would silently give you the wrong one.)
 
 # ── editor + misc QoL ─────────────────────────────────────────────────────────
 alias vim='nvim'

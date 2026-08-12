@@ -15,6 +15,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`watchexec` — event-driven repetition, the third corner of a triangle Core had two of**
+  (`dotgibson/dotfiles-core#393`). `00-tools.zsh` now detects `watchexec` and sets
+  `HAVE_WATCHEXEC`. `viddy` re-runs a command on a **timer** and `hyperfine` re-runs it a
+  fixed **count** while measuring; nothing re-ran it when **files changed** — the
+  "re-run the tests when I save" verb (`watchexec -e py -- pytest`). Own command, inert
+  without the binary, and deliberately **not** aliased to `watch`: `20-aliases.zsh` already
+  points `watch` at `viddy`, and collapsing "re-run on a timer" into "re-run on a change"
+  would silently hand you the wrong one. It also opens a new `dev / repo` group in both of
+  `core-doctor`'s inventories.
+
+  **It is the one tool in the matrix that nothing in the fleet installs, macOS included** —
+  unlike `lnav`, the MacBook `Brewfile` doesn't carry it either, so every machine is opt-in.
+  Arch `extra`, openSUSE Tumbleweed, Alpine `community` (native musl) and Homebrew are all
+  on 2.5.1; **Gentoo has it in GURU only** at 2.5.0 — and it is deliberately kept out of
+  footnote ¹²'s GURU list, which enumerates what `dotfiles-Gentoo` actually installs, not
+  what exists (the `gping`¹⁹ precedent). **Fedora and Debian/Kali don't package it at all**
+  — confirmed against Fedora's own package search, not a repology snapshot — so those two
+  take `cargo install --locked watchexec-cli`; note the crate is `watchexec-cli`, because
+  plain `watchexec` on crates.io is the library and installs no binary. New
+  `PORTING-MATRIX.md` row and footnote ²⁵. (`zsh/00-tools.zsh`, `zsh/20-aliases.zsh`,
+  `zsh/30-functions.zsh`, `PORTING-MATRIX.md`)
+
 - **`lnav` — the missing "read a log as a log" verb** (`dotgibson/dotfiles-core#392`).
   `00-tools.zsh` now detects `lnav` and sets `HAVE_LNAV`. Core had no tool for this
   category at all: `bat`/`rg` read a log as **lines**, `jq`/`gron`/`jnv` read it as
