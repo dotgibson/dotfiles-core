@@ -103,6 +103,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   sees the binary, consuming only an opaque base64 blob. `holds` files nothing — a bot that opens
   an issue weekly to say nothing changed gets muted.
 
+  Review hardening, because the first cut of this got three of them wrong in ways that
+  matter. The detector now measures **four** arms, not two — `{absent, stale}` x
+  `{--hook, plain}` — because atuin's own `init zsh` emits
+  `atuin history start --hook -- "$1"`, so the plain form is a path no shell in the fleet
+  actually runs and a change scoped to hook mode could have broken every prompt while the
+  detector reported `holds`. An **unreadable database mid-run is now `unmeasurable`, not
+  `moved`**: `atuin_db_rows` returns `-1` on a failed read, `after - before` then goes
+  negative, and the verdict block read that as "the row count changed" — the same
+  apparatus-versus-upstream conflation the control arm exists to prevent, pointing the
+  other way. And a history id is checked for **shape**, not merely non-emptiness: the
+  premise is that the shell gets an id it can hand to `history end`, so a deprecation
+  notice on stdout must not read as a pass. In the workflow, a value derived from an
+  upstream file can no longer forge job outputs (a multi-line `.sha256` could append
+  `ok=true` after `ok=false` and get an unattested asset measured), and a verifier that
+  exits outside the documented 0/1/3 — or leaves an unparseable `verdict.json` — now fails
+  the job instead of passing for a quiet week.
+
   The row-count SQL and its fail-closed `-1` now live in `scripts/lib/atuin-db.sh`, shared with
   `scripts/bench-atuin-daemon.sh`: both rest on the same claim about atuin's schema, so a forked
   copy would let one gate keep believing a model the other had already found stale.

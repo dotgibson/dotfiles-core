@@ -123,7 +123,15 @@ while (($#)); do
       printf 'verify-atuin-guard.sh: --color needs auto|always|never\n' >&2
       exit 2
     }
-    _core_set_color "$1"
+    # Checked, not merely called. _core_set_color returns nonzero on a value outside
+    # auto|always|never, and this script deliberately does not run under `set -e`, so an
+    # unchecked call let `--color banana` fall through to a MEASUREMENT — turning a typo in
+    # the caller's flags into a verdict about upstream. Every other bad flag here exits 2;
+    # this one has to as well, or the usage contract is only true for some of the flags.
+    _core_set_color "$1" || {
+      printf 'verify-atuin-guard.sh: --color needs auto|always|never (got %s)\n' "$1" >&2
+      exit 2
+    }
     ;;
   -h | --help)
     cat <<'EOF'
@@ -199,8 +207,11 @@ AT_VER="unknown"
 ANCHOR="unknown"
 ANCHOR_REL="unknown" # same | newer | older | unknown
 CTL_DELTA=-1
-ABSENT_RC=-1 ABSENT_DELTA=-1 ABSENT_ERR="" ABSENT_ID=""
-STALE_RC=-1 STALE_DELTA=-1 STALE_ERR="" STALE_ID=""
+# Parallel indexed arrays, one entry per measured arm — bash 3.2 has no associative arrays
+# (scripts/lib/common.sh pins that constraint), and four arms x five facts as flat scalars
+# was twenty names to keep in step. The index is the arm; ARM_NAME[i] is "shape_hookmode".
+ARM_NAME=() ARM_RC=() ARM_DELTA=() ARM_IDOK=() ARM_ERR=()
+_ok="" _rc="" _delta="" _idok="" _err=""   # run_one record fields, read via IFS
 SB="" LOCALDIR=""
 BOUNDED=true            # false when neither timeout(1) nor gtimeout(1) exists (see measure())
 TIMEOUT_CMD=()          # the bounding prefix, empty when unbounded
@@ -240,7 +251,12 @@ trap cleanup EXIT
 # both are `unmeasurable` rather than a default.
 read_anchor() {
   local hits n
-  hits="$(sed -n 's/^# CORE_ATUIN_GUARD_VERIFIED_AGAINST=\([0-9][0-9.]*\)[[:space:]]*$/\1/p' \
+  # Exactly three integer components, not `[0-9][0-9.]*`. The loose pattern matched `18`,
+  # `18.` and `18..19`, and ver_cmp then treats a missing or non-numeric field as 0 — so a
+  # typo'd anchor did not fail, it silently compared against a DIFFERENT version and the run
+  # still produced a verdict. Fail closed instead: an anchor that is not X.Y.Z matches
+  # nothing here, read_anchor returns 1, and the run is `unmeasurable` with a named reason.
+  hits="$(sed -n 's/^# CORE_ATUIN_GUARD_VERIFIED_AGAINST=\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)[[:space:]]*$/\1/p' \
     zsh/00-tools.zsh 2>/dev/null)"
   n="$(printf '%s\n' "$hits" | grep -c '^[0-9]')"
   [[ "$n" == 1 ]] || return 1
@@ -323,36 +339,75 @@ PY
 # sandbox env, capturing rc, stdout (the history id) and stderr, and the row delta it caused.
 # An empty socket path means the daemon-OFF control arm.
 DB=""
+# run_one <mode> <socket-or-empty> <hook:yes|no>
+#   -> "readok|rc|delta|idok|err"   (5 fields, `|`-joined; err has | and newlines stripped)
+#
+# An empty socket path is the daemon-OFF control arm.
+#
+# readok is NOT cosmetic. atuin_db_rows returns -1 when it cannot read the DB, and -1 is
+# indistinguishable from a legitimate count in arithmetic: `after - before` with an
+# unreadable `after` yields a NEGATIVE delta, which the verdict block would then read as
+# "the row count changed" and report as `moved`. That is the design's central conflation
+# pointing the other way — an apparatus failure rendered as a finding about upstream — so
+# a failed read is flagged here and turned into `unmeasurable` by the caller. It also
+# BREAKS the poll immediately: retrying a read that just spent SQLite's 30-second busy
+# timeout, twenty times, is ten minutes of a scheduled job proving nothing.
 run_one() {
-  local mode="$1" sock="$2" before after rc id err
-  local -a env_extra=()
+  local mode="$1" sock="$2" hook="$3" before after rc id err idok=0 i
+  local -a env_extra=() hookarg=()
   if [[ -n "$sock" ]]; then
     env_extra=("ATUIN_DAEMON__ENABLED=true" "ATUIN_DAEMON__SOCKET_PATH=$sock")
   else
     env_extra=("ATUIN_DAEMON__ENABLED=false")
   fi
+  # --hook is what REAL SHELLS RUN: atuin's own `init zsh` emits
+  # `atuin history start --hook -- "$1"` from _atuin_preexec. Measuring only the plain
+  # form would measure a code path no shell in the fleet takes, so an upstream change
+  # scoped to hook mode could break every prompt while this still reported `holds`.
+  [[ "$hook" == yes ]] && hookarg=(--hook)
   before="$(atuin_db_rows "$DB")"
   ((before < 0)) && {
-    printf -- '-1|-1||\n'
+    printf '0|-1|-1|0|\n'
     return 0
   }
   id="$("${AT_ENV[@]}" "${env_extra[@]}" \
     "ATUIN_SESSION=$(printf '%032x' 1)" \
-    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history start -- "verify-$mode" 2>"$SB/err.$mode")"
+    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history start \
+    ${hookarg[@]+"${hookarg[@]}"} -- "verify-$mode" 2>"$SB/err.$mode")"
   rc=$?
-  err="$(tr -d '\n' <"$SB/err.$mode" 2>/dev/null | cut -c1-200)"
+  # `|` stripped as well as newlines: this string is a FIELD in the record below, and an
+  # stderr line containing a pipe would otherwise shift every field after it.
+  err="$(tr -d '\n|' <"$SB/err.$mode" 2>/dev/null | cut -c1-200)"
   # A daemon-owned write can be committed slightly after the client returns, so give the
   # row a bounded moment to appear before concluding it never did. Bounded and short: the
   # expected delta here is 0, and waiting long for a 0 proves nothing, but NOT waiting at
   # all would manufacture a false `holds` on a build that writes asynchronously.
-  local i
+  after=-1
   for ((i = 0; i < 20; i++)); do
     after="$(atuin_db_rows "$DB")"
+    ((after < 0)) && break
     ((after > before)) && break
     sleep 0.1
   done
-  printf '%s|%s|%s|%s\n' "$rc" "$((after - before))" "$err" "$id"
+  ((after < 0)) && {
+    printf '0|%s|-1|0|%s\n' "$rc" "$err"
+    return 0
+  }
+  # A WELL-FORMED id, not merely a non-empty line. The premise this script measures says
+  # atuin "prints a well-formed history id", and the shell then hands that id to
+  # `history end` — an empty or malformed one is exactly what crashed 18.16.1. Warning
+  # text on stdout would satisfy "non-empty" and produce a false `holds`. atuin emits
+  # UUIDv7 in simple hex form: 32 lowercase hex digits, no dashes.
+  is_history_id "$id" && idok=1
+  printf '1|%s|%s|%s|%s\n' "$rc" "$((after - before))" "$idok" "$err"
 }
+
+# A history id as atuin actually emits one: UUIDv7 in 32-character simple-hex form. The
+# premise is not "stdout was non-empty" — it is that the shell gets an id it can hand to
+# `history end`, which is what 18.16.1's EMPTY id broke. A warning line, a deprecation
+# notice or any other stray stdout would satisfy a mere -n test and produce `holds` for a
+# build whose output would then fail in a real shell.
+is_history_id() { [[ "$1" =~ ^[0-9a-f]{32}$ ]]; }
 
 measure() {
   local line
@@ -388,7 +443,14 @@ measure() {
     return
   }
 
-  AT_VER="$("$ATUIN_BIN" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
+  # Bounded by the SAME per-call timeout as the measurement arms. This is the FIRST call the
+  # script makes into the binary under test, so an atuin wedged the way atuinsh/atuin#3382
+  # wedges one hung here — before any arm ran — until the scheduled job's own 15-minute
+  # timeout killed it, producing no verdict at all rather than the promised `unmeasurable`.
+  # A timed-out or empty result falls through to AT_VER=unknown, which the anchor comparison
+  # below already handles, so the bound costs nothing when the binary is healthy.
+  AT_VER="$(${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" --version 2>/dev/null |
+    grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
   [[ -n "$AT_VER" ]] || AT_VER="unknown"
   if [[ "$AT_VER" != unknown ]]; then
     case "$(ver_cmp "$AT_VER" "$ANCHOR")" in
@@ -449,58 +511,79 @@ measure() {
   atuin_db_checkpoint "$DB"
 
   # ── control arm: daemon OFF must write exactly one row ──────────────────────
-  line="$(run_one control "")"
-  CTL_DELTA="${line#*|}"
-  CTL_DELTA="${CTL_DELTA%%|*}"
-  if [[ "$CTL_DELTA" != 1 ]]; then
-    unmeasurable "the daemon-OFF control arm wrote ${CTL_DELTA} rows, not 1 — the apparatus cannot be trusted, so neither can any verdict drawn from it (a row-count of -1 means the DB could not be read; anything else means this atuin's per-command row model is not the one this script encodes)"
+  # Plain (no --hook) on purpose: this arm proves the APPARATUS can write, and keeping it
+  # on the same form the original #366 measurement used keeps the two comparable.
+  line="$(run_one control "" no)"
+  IFS='|' read -r _ok _rc CTL_DELTA _idok _err <<<"$line"
+  if [[ "$_ok" != 1 || "$CTL_DELTA" != 1 ]]; then
+    unmeasurable "the daemon-OFF control arm wrote ${CTL_DELTA} rows, not 1 — the apparatus cannot be trusted, so neither can any verdict drawn from it (readok=${_ok}: 0 means the history DB could not be read at all; a delta other than 1 means this atuin's per-command row model is not the one this script encodes)"
     return
   fi
 
-  # ── arm 1: an ABSENT socket ─────────────────────────────────────────────────
-  local absent="$LOCALDIR/absent.sock"
-  prove_unreachable "$absent" || {
-    unmeasurable "something is listening on the socket path that is supposed to be absent — refusing to measure"
-    return
-  }
-  line="$(run_one absent "$absent")"
-  IFS='|' read -r ABSENT_RC ABSENT_DELTA ABSENT_ERR ABSENT_ID <<<"$line"
-
-  # ── arm 2: a STALE socket file with nothing behind it ───────────────────────
-  local stale="$LOCALDIR/stale.sock"
-  if ! make_stale "$stale"; then
-    unmeasurable "could not manufacture a stale socket file — the shape a crashed daemon leaves is half of what the guard claims to catch, and an unmeasured half is not a pass"
-    return
-  fi
-  prove_unreachable "$stale" || {
-    unmeasurable "the stale socket still has a listener behind it — refusing to measure"
-    return
-  }
-  line="$(run_one stale "$stale")"
-  IFS='|' read -r STALE_RC STALE_DELTA STALE_ERR STALE_ID <<<"$line"
+  # ── the measurement matrix: {absent, stale} x {hook, plain} ─────────────────
+  # FOUR arms, not two. --hook is the form atuin's own `init zsh` emits from
+  # _atuin_preexec, i.e. the only one a real shell in this fleet ever runs; the plain form
+  # is what #366 measured and what keeps this comparable to that record. An upstream change
+  # scoped to hook mode would break every prompt while a plain-only detector still said
+  # `holds`, and a hook-only detector would lose the tie to the original measurement — so
+  # both, and `holds` requires all four.
+  local shape sock hook
+  for shape in absent stale; do
+    case "$shape" in
+    absent)
+      sock="$LOCALDIR/absent.sock"
+      ;;
+    stale)
+      sock="$LOCALDIR/stale.sock"
+      make_stale "$sock" || {
+        unmeasurable "could not manufacture a stale socket file — the shape a crashed daemon leaves is half of what the guard claims to catch, and an unmeasured half is not a pass"
+        return
+      }
+      ;;
+    esac
+    prove_unreachable "$sock" || {
+      unmeasurable "the ${shape} socket is not actually unreachable — something answered a connect, so a row delta of zero here would mean 'the daemon took it', not 'atuin discarded it'"
+      return
+    }
+    for hook in hook plain; do
+      local h=no
+      [[ "$hook" == hook ]] && h=yes
+      line="$(run_one "${shape}-${hook}" "$sock" "$h")"
+      IFS='|' read -r _ok _rc _delta _idok _err <<<"$line"
+      [[ "$_ok" == 1 ]] || {
+        unmeasurable "the ${shape}/${hook} arm could not read the history DB (row count -1) — an unreadable DB is an apparatus failure, not evidence that upstream changed"
+        return
+      }
+      ARM_NAME+=("${shape}_${hook}")
+      ARM_RC+=("$_rc")
+      ARM_DELTA+=("$_delta")
+      ARM_IDOK+=("$_idok")
+      ARM_ERR+=("$_err")
+    done
+  done
 
   # ── the verdict ─────────────────────────────────────────────────────────────
-  # `holds` is the CONJUNCTION of every property zsh/00-tools.zsh claims, on both shapes.
+  # `holds` is the CONJUNCTION of every property zsh/00-tools.zsh claims, on every arm.
   # Written as an explicit list of failures rather than one boolean, so the report can say
-  # WHICH property moved — "it changed" is not actionable, and the remedy differs.
+  # WHICH property moved on WHICH arm — "it changed" is not actionable, and the remedy
+  # differs depending on whether it now errors, now writes, or now says something.
   local -a diffs=()
-  [[ "$ABSENT_RC" == 0 ]] || diffs+=("absent-socket: exit code is $ABSENT_RC, was 0")
-  [[ "$STALE_RC" == 0 ]] || diffs+=("stale-socket: exit code is $STALE_RC, was 0")
-  [[ "$ABSENT_DELTA" == 0 ]] || diffs+=("absent-socket: the row count changed by $ABSENT_DELTA, was 0 (it no longer discards)")
-  [[ "$STALE_DELTA" == 0 ]] || diffs+=("stale-socket: the row count changed by $STALE_DELTA, was 0 (it no longer discards)")
-  [[ -z "$ABSENT_ERR" ]] || diffs+=("absent-socket: it now writes to stderr — \"$ABSENT_ERR\"")
-  [[ -z "$STALE_ERR" ]] || diffs+=("stale-socket: it now writes to stderr — \"$STALE_ERR\"")
-  [[ -n "$ABSENT_ID" ]] || diffs+=("absent-socket: no history id on stdout, and an empty id is what crashed \`history end\` on 18.16.1")
-  [[ -n "$STALE_ID" ]] || diffs+=("stale-socket: no history id on stdout, and an empty id is what crashed \`history end\` on 18.16.1")
+  local n
+  for ((n = 0; n < ${#ARM_NAME[@]}; n++)); do
+    local a="${ARM_NAME[n]//_/ }"
+    [[ "${ARM_RC[n]}" == 0 ]] || diffs+=("${a}: exit code is ${ARM_RC[n]}, was 0")
+    [[ "${ARM_DELTA[n]}" == 0 ]] || diffs+=("${a}: the row count changed by ${ARM_DELTA[n]}, was 0 (it no longer discards)")
+    [[ -z "${ARM_ERR[n]}" ]] || diffs+=("${a}: it now writes to stderr — \"${ARM_ERR[n]}\"")
+    [[ "${ARM_IDOK[n]}" == 1 ]] || diffs+=("${a}: stdout is not a well-formed history id (32 hex digits), and a malformed id is what crashed \`history end\` on 18.16.1")
+  done
 
   if ((${#diffs[@]})); then
-    local joined=""
-    local d
+    local joined="" d
     for d in "${diffs[@]}"; do joined+="; $d"; done
     moved "${joined#; }"
   else
     VERDICT=holds
-    REASON="both unreachable shapes still exit 0, print an id, stay silent on stderr, and discard the entry"
+    REASON="all four arms (absent/stale x hook/plain) still exit 0, print a well-formed id, stay silent on stderr, and discard the entry"
   fi
 }
 
@@ -510,15 +593,17 @@ json_escape() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps
 emit_json() {
   printf '{"verdict":"%s","reason":"%s","atuin_version":"%s","anchor":"%s","anchor_relation":"%s",' \
     "$VERDICT" "$(json_escape "$REASON")" "$AT_VER" "$ANCHOR" "$ANCHOR_REL"
-  printf '"control_delta":%s,"bounded":%s,' "${CTL_DELTA:--1}" "$BOUNDED"
-  printf '"absent":{"rc":%s,"delta":%s,"stderr_empty":%s,"id_present":%s},' \
-    "${ABSENT_RC:--1}" "${ABSENT_DELTA:--1}" \
-    "$([[ -z "$ABSENT_ERR" ]] && echo true || echo false)" \
-    "$([[ -n "$ABSENT_ID" ]] && echo true || echo false)"
-  printf '"stale":{"rc":%s,"delta":%s,"stderr_empty":%s,"id_present":%s}}\n' \
-    "${STALE_RC:--1}" "${STALE_DELTA:--1}" \
-    "$([[ -z "$STALE_ERR" ]] && echo true || echo false)" \
-    "$([[ -n "$STALE_ID" ]] && echo true || echo false)"
+  printf '"control_delta":%s,"bounded":%s,"arms":{' "${CTL_DELTA:--1}" "$BOUNDED"
+  local n first=1
+  for ((n = 0; n < ${#ARM_NAME[@]}; n++)); do
+    ((first)) || printf ','
+    first=0
+    printf '"%s":{"rc":%s,"delta":%s,"stderr_empty":%s,"id_wellformed":%s}' \
+      "${ARM_NAME[n]}" "${ARM_RC[n]}" "${ARM_DELTA[n]}" \
+      "$([[ -z "${ARM_ERR[n]}" ]] && echo true || echo false)" \
+      "$([[ "${ARM_IDOK[n]}" == 1 ]] && echo true || echo false)"
+  done
+  printf '}}\n'
 }
 
 # shellcheck disable=SC2016  # the backticks below are MARKDOWN code spans in the report,
@@ -534,14 +619,14 @@ emit_report() {
     printf '| daemon-off control arm | wrote %s row(s) — must be 1 |\n' "$CTL_DELTA"
     [[ "$BOUNDED" == true ]] ||
       printf '| call bound | **none** — no `timeout`/`gtimeout` on this box, so a wedged atuin could not have been cut short |\n'
-    printf '| absent socket | rc %s, delta %s, stderr %s, id %s |\n' \
-      "$ABSENT_RC" "$ABSENT_DELTA" \
-      "$([[ -z "$ABSENT_ERR" ]] && echo empty || echo "\"$ABSENT_ERR\"")" \
-      "$([[ -n "$ABSENT_ID" ]] && echo present || echo MISSING)"
-    printf '| stale socket | rc %s, delta %s, stderr %s, id %s |\n\n' \
-      "$STALE_RC" "$STALE_DELTA" \
-      "$([[ -z "$STALE_ERR" ]] && echo empty || echo "\"$STALE_ERR\"")" \
-      "$([[ -n "$STALE_ID" ]] && echo present || echo MISSING)"
+    local n
+    for ((n = 0; n < ${#ARM_NAME[@]}; n++)); do
+      printf '| %s | rc %s, delta %s, stderr %s, id %s |\n' \
+        "${ARM_NAME[n]//_/ / }" "${ARM_RC[n]}" "${ARM_DELTA[n]}" \
+        "$([[ -z "${ARM_ERR[n]}" ]] && echo empty || echo "\"${ARM_ERR[n]}\"")" \
+        "$([[ "${ARM_IDOK[n]}" == 1 ]] && echo well-formed || echo MALFORMED)"
+    done
+    printf '\n'
     case "$VERDICT" in
     moved)
       printf 'The premise `_core_atuin_daemon_guard` rests on has changed, so the rationale block in `zsh/00-tools.zsh` is now overclaiming. Decide deliberately whether the guard should be **retired**, **version-gated**, or **reshaped** — and weigh it as an eight-repo change: retiring it removes a `precmd` hook from every interactive shell in the fleet. Re-measure by hand before deciding; do not act on this report alone.\n\n'

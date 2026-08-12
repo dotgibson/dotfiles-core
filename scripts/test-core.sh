@@ -1958,7 +1958,7 @@ case "\$1" in --version) echo "atuin $ver"; exit 0 ;; esac
 _w=0
 case "$mode" in
   yes) _w=1 ;;
-  off-only) [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]] || _w=1 ;;
+  off-only|badid|corrupt) [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]] || _w=1 ;;
 esac
 if (( _w )); then
   db="\${XDG_DATA_HOME}/atuin/history.db"; mkdir -p "\$(dirname "\$db")"
@@ -1970,7 +1970,21 @@ c.execute("insert into history values ('x', -1)")
 c.commit(); c.close()
 PY
 fi
-echo "0192deadbeefcafe0000000000000000"
+# corrupt: after the daemon-on call, leave the DB unreadable — the shape that made an
+# apparatus failure read as a MOVED verdict (a negative delta) before the readok sentinel.
+# NOTE: no backticks anywhere in this heredoc body. The delimiter is unquoted (so \$mode and
+# \$ver interpolate), which means a backtick here is COMMAND SUBSTITUTION at stub-generation
+# time, not decoration.
+if [ "$mode" = corrupt ] && [ "\${ATUIN_DAEMON__ENABLED:-false}" = true ]; then
+  printf 'this is not a sqlite database' >"\${XDG_DATA_HOME}/atuin/history.db"
+fi
+# badid: exit 0, write nothing, and print something that is NOT a 32-hex history id —
+# a deprecation notice on stdout is the realistic shape.
+if [ "$mode" = badid ]; then
+  echo "warning: atuin history start is deprecated"
+else
+  echo "0192deadbeefcafe0000000000000000"
+fi
 STUB
     chmod +x "$_vstub/$name"
   }
@@ -2025,12 +2039,11 @@ STUB
   if printf '%s' "$_vout" | python3 -c '
 import json,sys
 d = json.load(sys.stdin)
-need = {"verdict","reason","atuin_version","anchor","anchor_relation","control_delta","bounded","absent","stale"}
+need = {"verdict","reason","atuin_version","anchor","anchor_relation","control_delta","bounded","arms"}
 assert need <= set(d), sorted(need - set(d))
-for arm in ("absent","stale"):
-    assert {"rc","delta","stderr_empty","id_present"} <= set(d[arm]), arm
+assert isinstance(d["arms"], dict), type(d["arms"])
 ' 2>/dev/null; then
-    pass "atuin verify: --json carries verdict/reason/versions/control_delta/bounded and both arms"
+    pass "atuin verify: --json carries verdict/reason/versions/control_delta/bounded/arms"
   else
     fail "atuin verify: --json shape is missing fields consumers depend on"
   fi
@@ -2133,6 +2146,47 @@ for arm in ("absent","stale"):
       pass "atuin verify: --report is issue-ready (no title heading) and states its musl/#3382 blind spots"
     else
       fail "atuin verify: --report must omit a title heading and name the coverage it lacks"
+    fi
+
+    # 8. FOUR arms, and the hook ones by name. atuin's own `init zsh` emits
+    #    `atuin history start --hook -- "$1"`, so the plain form is a path no shell in the
+    #    fleet actually runs; a detector that measured only it could report `holds` while an
+    #    upstream change scoped to hook mode broke every prompt.
+    _v_run atuin-discards --json
+    if printf '%s' "$_vout" | python3 -c '
+import json,sys
+a = json.load(sys.stdin)["arms"]
+want = {"absent_hook","absent_plain","stale_hook","stale_plain"}
+assert want == set(a), sorted(set(a) ^ want)
+for name, arm in a.items():
+    assert {"rc","delta","stderr_empty","id_wellformed"} <= set(arm), name
+' 2>/dev/null; then
+      pass "atuin verify: all four arms are measured — absent/stale x hook/plain"
+    else
+      fail "atuin verify: --json must carry absent/stale x hook/plain arms (got: $_vout)"
+    fi
+
+    # 9. A malformed id is a FINDING, not a pass. "stdout was non-empty" is not the premise —
+    #    the shell hands that id to `history end`, and 18.16.1's empty id is what crashed it.
+    _mkstub atuin-badid badid
+    _v_run atuin-badid --json
+    if [[ "$(_v_verdict "$_vout")" == moved ]] && [[ "$_vout" == *"well-formed history id"* ]]; then
+      pass "atuin verify: stdout that is not a 32-hex id is moved, not holds"
+    else
+      fail "atuin verify: a malformed history id must be a finding, got $(_v_verdict "$_vout")"
+    fi
+
+    # 10. THE OTHER HALF OF THE CENTRAL RULE. An unreadable DB must be `unmeasurable`, never
+    #     `moved`. atuin_db_rows returns -1 on a failed read, and `after - before` then goes
+    #     NEGATIVE — which the verdict block reads as "the row count changed". That renders an
+    #     apparatus failure as a finding about upstream: the same conflation the control arm
+    #     exists to prevent, pointing the other way.
+    _mkstub atuin-corrupt corrupt
+    _v_run atuin-corrupt --json
+    if [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && ((_vrc == 3)); then
+      pass "atuin verify: an unreadable DB mid-run is unmeasurable (rc 3), never moved"
+    else
+      fail "atuin verify: an unreadable DB must be unmeasurable, got $(_v_verdict "$_vout")/rc$_vrc"
     fi
   fi
 fi
