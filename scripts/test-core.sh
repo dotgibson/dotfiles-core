@@ -3309,9 +3309,13 @@ ucheck "osc133: re-marking an already-marked PROMPT does not stack marks" \
   "source '$TOOLS_FILE'; repeat 3 _core_osc133_prompt; p=\${PROMPT/']133;A'/}; [[ \$p != *']133;A'* ]]" \
   TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
 # (a3) APPENDED, not prepended: starship_precmd re-sets PROMPT wholesale, so a mark applied
-#      before it would be discarded again on every prompt. Last position is the contract.
-ucheck "osc133: the PROMPT hook runs LAST (after starship_precmd re-sets PROMPT)" \
-  "source '$TOOLS_FILE'; [[ \$precmd_functions[-1] == _core_osc133_prompt ]]" \
+#      before it would be discarded again on every prompt. The contract is RELATIVE — after
+#      starship — not "last": the atuin guard appends itself after us at the end of this
+#      file, and an OS (80) or host (99) fragment may append more. A stand-in starship_precmd
+#      is seeded before sourcing (PATH has no real starship, so nothing else registers one),
+#      which is what makes the ordering assertable at all on a box without the binary.
+ucheck "osc133: the PROMPT hook is ordered AFTER starship_precmd (which re-sets PROMPT)" \
+  "starship_precmd() { : }; precmd_functions=(starship_precmd); source '$TOOLS_FILE'; [[ -n \${precmd_functions[(r)_core_osc133_prompt]} ]] && (( \$precmd_functions[(i)_core_osc133_prompt] > \$precmd_functions[(i)starship_precmd] ))" \
   TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
 # (a4) …and it must be transparent to \$?, since it now sits between the command and any
 #      hook an OS (80) or host (99) fragment appends after it.
@@ -3360,9 +3364,9 @@ ucheck "osc133: stands down on TERM=dumb (no literal escape garbage)" \
   "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; _cmd_block_precmd >'$OSCOUT'; [[ -z \$_CORE_OSC133_MARK && \$PROMPT != *']133;'* && \"\$(<'$OSCOUT')\" != *']133;'* ]]" \
   TERM=dumb TMUX=
 # (h) THE HOIST: on a box with no starship the hooks must still be registered (marks are
-#     not a prompt cosmetic) — and _cmd_block_precmd must stay FIRST, which is the whole
-#     reason it can read the command's \$? at all.
-ucheck "osc133: hooks registered without starship, and precmd stays first (\$? ordering)" \
+#     not a prompt cosmetic) — and _cmd_block_precmd stays FIRST, so the rule and the D mark
+#     land above whatever a later hook prints instead of interleaved with it.
+ucheck "osc133: hooks registered without starship, and precmd stays first (output order)" \
   "source '$TOOLS_FILE'; [[ -z \${HAVE_STARSHIP:-} && \$precmd_functions[1] == _cmd_block_precmd && -n \${preexec_functions[(r)_cmd_block_preexec]} ]]" \
   TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
 # (i) The other side of that gate: marks stood down AND no starship means neither hook has

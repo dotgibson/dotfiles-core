@@ -271,10 +271,13 @@ if [[ -n ${HAVE_STARSHIP:-} || -n ${_CORE_OSC133:-} ]]; then
         print -rP -- "${col}${(l:w::─:)}%f"
       fi
     fi
-    # RESTORE $?. Without this, every later precmd hook — starship_precmd included — sees
-    # this function's status instead of the command's. It was always wrong; emitting
-    # D;<exit> makes exit-code correctness load-bearing, so it is fixed here. Same
-    # discipline _core_atuin_daemon_guard applies with `return $_rc` on every path.
+    # Hand back the command's status rather than the last print's. BELT AND BRACES, and
+    # measured as such rather than assumed: zsh saves and restores $? around EACH hook in
+    # precmd_functions, so on 5.9 a later hook (starship_precmd included) sees the command's
+    # code no matter what this one returns, a non-zero return does NOT stop the rest of the
+    # chain, and it does not reach the prompt's own %(?..) either. So this fixes nothing
+    # today — it states the contract the D;<exit> mark above depends on, in the same shape
+    # _core_atuin_daemon_guard already uses, and costs one integer.
     return $ec
   }
   # Registered by editing the hook arrays DIRECTLY rather than via add-zsh-hook: the
@@ -282,7 +285,10 @@ if [[ -n ${HAVE_STARSHIP:-} || -n ${_CORE_OSC133:-} ]]; then
   # starship, autoloading add-zsh-hook for the preexec line would be the ~1ms of startup
   # the atuin guard below refuses to pay for a single registration.
   preexec_functions=(${preexec_functions:#_cmd_block_preexec} _cmd_block_preexec)
-  # Run our precmd FIRST so $? is the command's exit code, not starship_precmd's.
+  # Our precmd runs FIRST. The reason this line has always given — "so $? is the command's
+  # exit code, not starship_precmd's" — does not survive measurement: zsh restores $? around
+  # every hook, so position buys nothing there. What it does buy is OUTPUT order — the rule
+  # and the D mark belong above whatever a later hook prints, not interleaved with it.
   precmd_functions=(_cmd_block_precmd ${precmd_functions:#_cmd_block_precmd})
 fi
 

@@ -46,7 +46,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `GHOSTTY_SHELL_FEATURES` is exported and reaches the tmux server, while Ghostty injects into
   the initial shell only, so guarding on the variable alone would have silenced the marks in
   exactly the place they are spent — and on `TERM=dumb`, which would render them as literal
-  `]133;A` garbage. Twelve behavioural cases in `scripts/test-core.sh` pin all of it.
+  `]133;A` garbage. Fourteen behavioural cases in `scripts/test-core.sh` pin all of it.
+
+  One premise of #391 did **not** survive measurement and is recorded here so it is not
+  re-derived: that `_cmd_block_precmd` returning its last `print`'s status rather than the
+  command's left `starship_precmd` reading the wrong `$?`. zsh saves and restores `$?` around
+  **each** hook in `precmd_functions` — measured on 5.9, every hook sees the command's code
+  regardless of what the one before it returned, a non-zero return does not stop the rest of
+  the chain, and it never reaches the prompt's own `%(?..)`. The hook now returns `$ec`
+  anyway, as the contract the `D;<exit>` mark is written against, but nothing was broken and
+  nothing user-visible changed — including starship's error indicator, which was always
+  correct. The same correction applies to the "run our precmd FIRST so `$?` is the command's"
+  comment that line has carried since P12: the ordering is worth keeping for OUTPUT order,
+  not for `$?`.
 
 - **The atuin daemon's systemd path is measured, and the tail claim holds on it**
   (`dotgibson/dotfiles-core#352`). Adoption's whole justification was that the daemon owning
@@ -268,17 +280,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   "nothing is due" must be said out loud, since silence reads the same as forgetting.
 
 ### Fixed
-
-- **The command-block precmd hook swallowed `$?`, so every later precmd read its status
-  instead of the command's** (`dotgibson/dotfiles-core#391`). `_cmd_block_precmd`
-  (`zsh/00-tools.zsh`) captured the true exit code as its first statement to colour the
-  separator rule, then returned whatever its last `print` did — and it runs FIRST in
-  `precmd_functions`, so `starship_precmd` and anything an OS (80) or host (99) fragment
-  appends were reading that instead. It now `return $ec`s on every path, the same discipline
-  `_core_atuin_daemon_guard` already applies with `return $_rc`. Found while adding the
-  `D;<exit>` status mark above, which made exit-code correctness load-bearing rather than
-  cosmetic; the visible effect is that starship's error indicator now reflects the command
-  that actually ran.
 
 - **A timed-out package probe was logged as "0 upgradable" — an up-to-date box — instead of
   "unknown"** (`dotgibson/dotfiles-core#380`). Every arm of the maint runner's upgradable-count
