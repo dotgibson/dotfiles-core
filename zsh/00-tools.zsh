@@ -286,7 +286,12 @@ fi
 # is decided on. That is also why a probe landing in the shipped unit's RestartSec=3 gap is allowed
 # to degrade a shell that would have recovered: during that gap atuin IS discarding, so degrading
 # is the right answer even when it is early. Re-enabling would mean trusting, on the prompt path
-# and for the rest of the session, a socket we just watched lie.
+# and for the rest of the session, a socket we just watched lie. Note what that rests on: DISCARDING,
+# not merely "the row does not land now". An atuin that SPOOLED the entries and replayed them on the
+# next successful write would leave the same absence behind and invert this reasoning — one-way would
+# then be the wrong default. verify-atuin-guard.sh's closing daemon-off arm is what watches for that
+# (a delta above one), and it is the cheapest half: a spool only a live daemon would drain is out of
+# reach without spawning one, so /tool-scout carries the rest as an upstream question (#383).
 #
 # IT WARNS EXACTLY ONCE, AND ONLY MID-SESSION. A shell already degraded at its first prompt says
 # nothing — nothing changed under the user, and the machines that simply do not run the daemon
@@ -359,6 +364,11 @@ _core_atuin_daemon_guard() {
   # someone who writes ATUIN_DAEMON__ENABLED=1 has opted in as far as atuin is concerned,
   # so the guard must agree or it silently sits out exactly when it is needed. AUTOSTART means
   # atuin supervises the daemon itself, so an absent socket there is a cue to start one, not a fault.
+  # That last clause is the one premise here that is ASSUMED, not measured: the weekly detector
+  # never sets AUTOSTART (measuring it means spawning a real daemon and owning its teardown), and
+  # it covers Alpine and macOS — two of the eight machines, for whom it is the ONLY mitigation. If
+  # upstream's autostart ever becomes fire-and-forget, they lose their net with no symptom, so
+  # /tool-scout watches for it as a standing upstream question (#383).
   if [[ ${ATUIN_DAEMON__ENABLED:l} != (1|t|true|y|yes|on) ]] ||
     [[ ${ATUIN_DAEMON__AUTOSTART:l} == (1|t|true|y|yes|on) ]]; then
     precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard})

@@ -284,7 +284,12 @@ the daemon back up until you start a shell from a clean parent.
 rows above, so on two of the eight machines this safety net is not the thing keeping you out
 of trouble. It stands down because an absent socket is then the client's _cue to start one_,
 not a fault; disabling the daemon there would permanently defeat the only launcher those
-machines have. atuin's own health-checking is what covers them.
+machines have. atuin's own health-checking is what covers them. Note that this is the one
+premise in the whole arrangement that is **assumed rather than measured**: the weekly
+re-verification (`scripts/verify-atuin-guard.sh`) never sets `ATUIN_DAEMON__AUTOSTART`, so a
+green run says nothing about these two rows — measuring it would mean spawning a real daemon
+and owning its teardown. `/tool-scout` carries it as a standing upstream question instead
+(`dotgibson/dotfiles-core#383`).
 
 The probe's limit, because it decides which unit you should install: it cannot tell an
 **accept-but-silent** socket from a healthy one. systemd **socket activation** produces

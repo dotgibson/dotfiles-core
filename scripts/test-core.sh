@@ -1951,24 +1951,51 @@ else
   # _mkstub <name> <writes?> [version] — a fake atuin. `writes=yes` inserts a row on EVERY
   # invocation (an upstream that no longer discards); `writes=off-only` inserts one only
   # when the daemon is off (today's real 18.19.0 behaviour); `writes=no` never writes at
-  # all (a broken apparatus — the case that used to read as "holds").
+  # all (a broken apparatus — the case that used to read as "holds"); `writes=stops` writes
+  # on the daemon-off path only until the DB exists and the opening control has run, then
+  # stops for good (an apparatus that dies MID-run); `writes=replay` discards nothing — it
+  # SPOOLS the daemon-on entries and flushes them on the next daemon-off write, the upstream
+  # shape that would invert the guard's one-way degrade.
+  #
+  # _w is a COUNT, not a flag: `replay` has to land more than one row in a single call, and
+  # every other mode simply leaves it at 1.
   _mkstub() {
     local name="$1" mode="$2" ver="${3:-18.19.0}"
     cat >"$_vstub/$name" <<STUB
 #!/usr/bin/env bash
 case "\$1" in --version) echo "atuin $ver"; exit 0 ;; esac
 _w=0
+_spool="\${XDG_DATA_HOME}/stub-spool"
 case "$mode" in
   yes) _w=1 ;;
   off-only|badid|corrupt) [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]] || _w=1 ;;
+  stops)
+    # Two daemon-off writes are allowed: the seed (which creates the DB) and the opening
+    # control arm. After that this apparatus is dead — but it still READS fine, which is
+    # exactly why the closing control arm has to exist.
+    _n=\$(cat "\${XDG_DATA_HOME}/stub-writes" 2>/dev/null || echo 0)
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" != true ]] && ((_n < 2)); then
+      _w=1
+      mkdir -p "\${XDG_DATA_HOME}"; echo \$((_n + 1)) >"\${XDG_DATA_HOME}/stub-writes"
+    fi
+    ;;
+  replay)
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]]; then
+      mkdir -p "\${XDG_DATA_HOME}"; echo q >>"\$_spool"   # buffered, not discarded
+    else
+      _w=\$((1 + \$(wc -l <"\$_spool" 2>/dev/null || echo 0)))
+      : >"\$_spool"
+    fi
+    ;;
 esac
 if (( _w )); then
   db="\${XDG_DATA_HOME}/atuin/history.db"; mkdir -p "\$(dirname "\$db")"
-  python3 - "\$db" <<'PY'
+  python3 - "\$db" "\$_w" <<'PY'
 import sqlite3,sys
 c=sqlite3.connect(sys.argv[1])
 c.execute("create table if not exists history (id text, duration integer)")
-c.execute("insert into history values ('x', -1)")
+for _ in range(int(sys.argv[2])):
+    c.execute("insert into history values ('x', -1)")
 c.commit(); c.close()
 PY
 fi
@@ -2041,11 +2068,11 @@ STUB
   if printf '%s' "$_vout" | python3 -c '
 import json,sys
 d = json.load(sys.stdin)
-need = {"verdict","reason","atuin_version","anchor","anchor_relation","control_delta","bounded","arms"}
+need = {"verdict","reason","atuin_version","anchor","anchor_relation","control_delta","drain_delta","bounded","arms"}
 assert need <= set(d), sorted(need - set(d))
 assert isinstance(d["arms"], dict), type(d["arms"])
 ' 2>/dev/null; then
-    pass "atuin verify: --json carries verdict/reason/versions/control_delta/bounded/arms"
+    pass "atuin verify: --json carries verdict/reason/versions/control+drain deltas/bounded/arms"
   else
     fail "atuin verify: --json shape is missing fields consumers depend on"
   fi
@@ -2139,15 +2166,51 @@ assert isinstance(d["arms"], dict), type(d["arms"])
     done
 
     # 7. The report is issue-ready: no title heading (file-routine-issue.sh supplies one),
-    #    and it states the coverage it does NOT have, so a green run cannot be read as
-    #    fleet-wide. musl is the gap that matters — it is where the autostart path lives.
+    #    and its prose AGREES WITH THE MATRIX THAT RAN. The blind spots it must still name —
+    #    musl, autostart, #3382 — are pinned as before, but the coverage half is checked for
+    #    COHERENCE rather than for keywords, because keywords are what let the last bug
+    #    through: the scope paragraph went on saying "`--hook` is not exercised" after the
+    #    matrix was widened to four arms, and the assertion that should have caught it grepped
+    #    for two nouns the false sentence also contained.
+    #
+    #    Both renderers run from ONE invocation — emit_report runs before emit_json — so the
+    #    two can never be compared across different runs. The comparison targets the DERIVED
+    #    coverage sentence SPECIFICALLY, and that precision is the whole assertion: the
+    #    per-arm table already lists every arm, so a check that merely looks for arm names
+    #    somewhere in the report is satisfied by the table alone and never reads the claim.
     _vrep="$SANDBOX/atverify-report.md"
-    CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/atuin-discards" --report "$_vrep" >/dev/null 2>&1
+    _vrepjson="$SANDBOX/atverify-report.json"
+    CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/atuin-discards" --report "$_vrep" --json \
+      >"$_vrepjson" 2>/dev/null
     if [[ -s "$_vrep" ]] && [[ "$(head -c 1 "$_vrep")" != "#" ]] &&
-      grep -qi 'musl' "$_vrep" && grep -q '3382' "$_vrep"; then
-      pass "atuin verify: --report is issue-ready (no title heading) and states its musl/#3382 blind spots"
+      grep -qi 'musl' "$_vrep" && grep -qi 'autostart' "$_vrep" && grep -q '3382' "$_vrep" &&
+      python3 - "$_vrep" "$_vrepjson" <<'PY' 2>/dev/null; then
+import json, re, sys
+rep = open(sys.argv[1]).read()
+arms = set(json.load(open(sys.argv[2]))["arms"])
+
+# The coverage claim, parsed and compared as a SET. emit_report renders "absent_hook" as
+# "absent / hook", so the claim is mapped back rather than the arms mapped forward.
+m = re.search(r"^\*\*Measured here:\*\* (.+)\.$", rep, re.M)
+assert m, "the report states no coverage claim at all"
+if arms:
+    claimed = {a.strip().replace(" / ", "_") for a in m.group(1).split(",")}
+    assert claimed == arms, sorted(claimed ^ arms)
+else:
+    assert m.group(1).startswith("nothing"), m.group(1)
+
+# The scope section is BY CONSTRUCTION about what was not measured, so it may name neither an
+# arm nor either hook mode — every arm is measured in both. That is the general form of the
+# bug that shipped, where "`--hook` is not exercised" sat here while four hook arms ran; the
+# previous exact-wording ban would have missed any reworded version of the same claim.
+scope = rep.rsplit("\n---\n", 1)[-1]
+named = [a for a in arms if a.replace("_", " / ") in scope]
+assert not named, "the scope section names measured arms: %s" % named
+assert "hook" not in scope.lower(), "the scope section disclaims hook coverage the matrix has"
+PY
+      pass "atuin verify: --report is issue-ready, names its musl/autostart/#3382 blind spots, and its prose matches the arms that ran"
     else
-      fail "atuin verify: --report must omit a title heading and name the coverage it lacks"
+      fail "atuin verify: --report must omit a title heading, name the coverage it lacks, and not disclaim an arm it measured"
     fi
 
     # 8. FOUR arms, and the hook ones by name. atuin's own `init zsh` emits
@@ -2189,6 +2252,36 @@ for name, arm in a.items():
       pass "atuin verify: an unreadable DB mid-run is unmeasurable (rc 3), never moved"
     else
       fail "atuin verify: an unreadable DB must be unmeasurable, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 11. THE SAME RULE, ONE STEP LATER IN THE RUN. #10 covers a DB that stops being
+    #     READABLE; this covers one that stops being WRITABLE, which the -1 sentinel cannot
+    #     see at all — the reads keep succeeding, so all four arms report an honest-looking
+    #     delta of 0 and the run would report `holds` from an apparatus that died after the
+    #     opening control. Only the CLOSING control arm can tell those apart. Deleting this
+    #     assertion is how that fail-open comes back, the same way #5 guards the first one.
+    _mkstub atuin-stops stops
+    _v_run atuin-stops --json
+    if [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && ((_vrc == 3)) && [[ "$_vout" == *CLOSING* ]]; then
+      pass "atuin verify: an apparatus that stops writing mid-run is unmeasurable (rc 3), never holds"
+    else
+      fail "atuin verify: a mid-run write failure must be unmeasurable naming the closing arm, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 12. BUFFER-AND-REPLAY IS A FINDING, and it is invisible to the four arms: a spooled
+    #     entry and a discarded one both leave the row count at 0 while the socket is
+    #     unreachable. It matters because the guard degrades a shell PERMANENTLY on the first
+    #     failed connect, and that is only correct while atuin is discarding — an atuin that
+    #     replays inverts the reasoning (dotgibson/dotfiles-core#383). The stub spools its
+    #     four daemon-on entries and flushes them with the next daemon-off write, so the
+    #     closing arm lands 5 rows instead of 1.
+    _mkstub atuin-replay replay
+    _v_run atuin-replay --json
+    if [[ "$(_v_verdict "$_vout")" == moved ]] && ((_vrc == 1)) &&
+      [[ "$_vout" == *'"drain_delta":5'* ]] && [[ "$_vout" == *BUFFERS* ]]; then
+      pass "atuin verify: an atuin that spools and replays is moved (rc 1), naming the inverted premise"
+    else
+      fail "atuin verify: buffer-and-replay must be moved/rc1 with drain_delta 5, got $(_v_verdict "$_vout")/rc$_vrc"
     fi
   fi
 fi
