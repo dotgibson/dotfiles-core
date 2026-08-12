@@ -22,12 +22,18 @@ _Repo status_ at the bottom).
 
 | Action    | Arch                     | openSUSE                                         | Alpine                    | Gentoo                          | Kali (apt)                   |
 | --------- | ------------------------ | ------------------------------------------------ | ------------------------- | ------------------------------- | ---------------------------- |
-| refresh   | `sudo pacman -Sy`        | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        |
+| refresh   | `sudo pacman -Sy`²²      | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        |
 | upgrade   | `sudo pacman -Syu`       | Leap: `zypper up` · **Tumbleweed: `zypper dup`** | `doas apk upgrade`        | `sudo emerge -uDN @world`       | `sudo apt-get full-upgrade`  |
 | install   | `sudo pacman -S <pkg>`   | `sudo zypper in <pkg>`                           | `doas apk add <pkg>`      | `sudo emerge <atom>`            | `sudo apt-get install <pkg>` |
 | remove    | `sudo pacman -Rns <pkg>` | `sudo zypper rm <pkg>`                           | `doas apk del <pkg>`      | `sudo emerge --depclean <atom>` | `sudo apt-get remove <pkg>`  |
 | search    | `pacman -Ss <term>`      | `zypper se <term>`                               | `apk search <term>`       | `emerge -s <term>`              | `apt-cache search <term>`    |
 | owns-file | `pacman -Qo <path>`      | `zypper se --provides <f>`                       | `apk info --who-owns <f>` | `equery belongs <path>`         | `dpkg -S <path>`             |
+
+²² Arch `refresh` is listed for completeness — **`dotfiles-Arch` deliberately ships no
+alias for it.** A bare `pacman -Sy` is safe, but refreshing the sync DB and then
+installing is the partial-upgrade footgun, so `os/arch.zsh` provides only `pacu`
+(a full `-Syu`) and `pacout` (`checkupdates`, which lists updates without touching the
+sync DB at all). There is no `-Sy <pkg>` alias **on purpose**; see "Distro quirks" below.
 
 ## Package names (modern CLI stack)
 
