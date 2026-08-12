@@ -2167,14 +2167,17 @@ assert isinstance(d["arms"], dict), type(d["arms"])
 
     # 7. The report is issue-ready: no title heading (file-routine-issue.sh supplies one),
     #    and its prose AGREES WITH THE MATRIX THAT RAN. The blind spots it must still name —
-    #    musl, autostart, #3382 — are pinned as before, but the coverage half is now checked
-    #    for COHERENCE rather than for keywords, because keywords are what let the last bug
+    #    musl, autostart, #3382 — are pinned as before, but the coverage half is checked for
+    #    COHERENCE rather than for keywords, because keywords are what let the last bug
     #    through: the scope paragraph went on saying "`--hook` is not exercised" after the
     #    matrix was widened to four arms, and the assertion that should have caught it grepped
-    #    for two nouns the false sentence also contained. So: every arm the run reports in
-    #    --json must appear in the report, and the report may not claim an arm is unexercised.
+    #    for two nouns the false sentence also contained.
+    #
     #    Both renderers run from ONE invocation — emit_report runs before emit_json — so the
-    #    two can never be compared across different runs.
+    #    two can never be compared across different runs. The comparison targets the DERIVED
+    #    coverage sentence SPECIFICALLY, and that precision is the whole assertion: the
+    #    per-arm table already lists every arm, so a check that merely looks for arm names
+    #    somewhere in the report is satisfied by the table alone and never reads the claim.
     _vrep="$SANDBOX/atverify-report.md"
     _vrepjson="$SANDBOX/atverify-report.json"
     CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/atuin-discards" --report "$_vrep" --json \
@@ -2182,13 +2185,28 @@ assert isinstance(d["arms"], dict), type(d["arms"])
     if [[ -s "$_vrep" ]] && [[ "$(head -c 1 "$_vrep")" != "#" ]] &&
       grep -qi 'musl' "$_vrep" && grep -qi 'autostart' "$_vrep" && grep -q '3382' "$_vrep" &&
       python3 - "$_vrep" "$_vrepjson" <<'PY' 2>/dev/null; then
-import json, sys
+import json, re, sys
 rep = open(sys.argv[1]).read()
-arms = json.load(open(sys.argv[2]))["arms"]
-# emit_report renders an arm name "absent_hook" as "absent / hook".
-missing = [a for a in arms if a.replace("_", " / ") not in rep]
-assert not missing, missing
-assert "not exercised" not in rep.lower(), "the scope paragraph disclaims an arm that ran"
+arms = set(json.load(open(sys.argv[2]))["arms"])
+
+# The coverage claim, parsed and compared as a SET. emit_report renders "absent_hook" as
+# "absent / hook", so the claim is mapped back rather than the arms mapped forward.
+m = re.search(r"^\*\*Measured here:\*\* (.+)\.$", rep, re.M)
+assert m, "the report states no coverage claim at all"
+if arms:
+    claimed = {a.strip().replace(" / ", "_") for a in m.group(1).split(",")}
+    assert claimed == arms, sorted(claimed ^ arms)
+else:
+    assert m.group(1).startswith("nothing"), m.group(1)
+
+# The scope section is BY CONSTRUCTION about what was not measured, so it may name neither an
+# arm nor either hook mode — every arm is measured in both. That is the general form of the
+# bug that shipped, where "`--hook` is not exercised" sat here while four hook arms ran; the
+# previous exact-wording ban would have missed any reworded version of the same claim.
+scope = rep.rsplit("\n---\n", 1)[-1]
+named = [a for a in arms if a.replace("_", " / ") in scope]
+assert not named, "the scope section names measured arms: %s" % named
+assert "hook" not in scope.lower(), "the scope section disclaims hook coverage the matrix has"
 PY
       pass "atuin verify: --report is issue-ready, names its musl/autostart/#3382 blind spots, and its prose matches the arms that ran"
     else

@@ -648,7 +648,10 @@ measure() {
     moved "${joined#; }"
   else
     VERDICT=holds
-    REASON="all ${#ARM_NAME[@]} arms ($(arms_sentence)) still exit 0, print a well-formed id, stay silent on stderr, and discard the entry — and the daemon-off write that followed them landed exactly 1 row, so nothing was spooled and replayed"
+    # Scoped to what the closing arm actually established. "Nothing was spooled" would be the
+    # same overclaim this run's scope paragraph exists to prevent: a delta of 1 rules out a
+    # spool that a daemon-off write DRAINS, and says nothing about one only a live daemon would.
+    REASON="all ${#ARM_NAME[@]} arms ($(arms_sentence)) still exit 0, print a well-formed id, stay silent on stderr, and discard the entry — and the daemon-off write that followed them landed exactly 1 row, so nothing was replayed into it"
   fi
 }
 
