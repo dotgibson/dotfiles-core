@@ -22,7 +22,7 @@ _Repo status_ at the bottom).
 
 | Action    | Arch                     | openSUSE                                         | Alpine                    | Gentoo                          | Kali (apt)                   |
 | --------- | ------------------------ | ------------------------------------------------ | ------------------------- | ------------------------------- | ---------------------------- |
-| refresh   | `sudo pacman -Sy`        | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        |
+| refresh   | `sudo pacman -Sy`²³      | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        |
 | upgrade   | `sudo pacman -Syu`       | Leap: `zypper up` · **Tumbleweed: `zypper dup`** | `doas apk upgrade`        | `sudo emerge -uDN @world`       | `sudo apt-get full-upgrade`  |
 | install   | `sudo pacman -S <pkg>`   | `sudo zypper in <pkg>`                           | `doas apk add <pkg>`      | `sudo emerge <atom>`            | `sudo apt-get install <pkg>` |
 | remove    | `sudo pacman -Rns <pkg>` | `sudo zypper rm <pkg>`                           | `doas apk del <pkg>`      | `sudo emerge --depclean <atom>` | `sudo apt-get remove <pkg>`  |
@@ -335,6 +335,14 @@ list, rather than assuming either default:
 sd_across=(); sd --help 2>/dev/null | grep -q -- --across && sd_across=(-A)
 sd "${sd_across[@]}" 'foo\nbar' baz file
 ```
+
+²³ Arch `refresh` (the **Package-manager commands** table above) is listed for
+completeness — **`dotfiles-Arch` deliberately ships no alias for it.** A bare
+`pacman -Sy` is safe on its own, but refreshing the sync DB and then installing is
+the partial-upgrade footgun, so `os/arch.zsh` provides only `pacu` (a full `-Syu`)
+and `pacout` (`checkupdates`, which lists updates without touching the sync DB at
+all). There is no `-Sy <pkg>` alias **on purpose** — see "Distro quirks" below. Do
+not "helpfully" add one.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

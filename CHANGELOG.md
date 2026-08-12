@@ -692,6 +692,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `core help` indexes (`fif`, `fbr`, `maint-*`, `op*`). `core help` is the complete index and
   now says so; `aliases.md` is described as the curated companion. (`README.md`)
 
+- **`/doc-audit` compared a release-pinned mirror against `main`, and reported a false
+  positive.** `dotfiles-web`'s `porting-matrix.md` is diffed by its own CI against Core at
+  `releases/latest` — the newest **release tag**, not `main`. The routine had no such
+  carve-out, so it measured the page against `main` and called it "a pre-correction
+  snapshot". It was not: it was byte-identical to Core at `v4.9.3` and its check was green.
+  Acting on that report re-mirrored `main` into a file whose contract is the tag and turned a
+  passing check red, which is how it was caught. The routine now states the reference frame
+  explicitly, and that a mirror lagging `main` while matching the newest release is
+  **correct, not drift**. (`.claude/commands/doc-audit.md`)
+
+- **The `refresh` row implied Arch has a refresh alias. It deliberately does not.**
+  `sudo pacman -Sy` was listed with no note, while `dotfiles-Arch`'s `os/arch.zsh` explains at
+  length that there is no `-Sy` alias **on purpose** — refresh-then-install is the
+  partial-upgrade footgun, so it ships `pacu` (full `-Syu`) and `pacout` (`checkupdates`,
+  which never touches the sync DB). New footnote `²³` records that the cell is completeness,
+  not a recommendation. (`PORTING-MATRIX.md`)
+
 ### Changed
 
 - **The atuin latency question is closed, and the part that will never be measured is now
