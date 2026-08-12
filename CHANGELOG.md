@@ -15,6 +15,40 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`git-absorb` — auto-route staged hunks into the earlier commit each belongs to**
+  (`dotgibson/dotfiles-core#394`). `00-tools.zsh` now detects `git-absorb` and sets
+  `HAVE_GIT_ABSORB`. It works out which earlier commit each **staged hunk** belongs to and
+  writes the `fixup!` commits for you; `git/gitconfig` already sets
+  `rebase.autosquash = true`, so `git rebase -i` folds them in without further ceremony. It
+  is the automatic counterpart to the `git fix` alias Core has always shipped — `git fix
+  <sha>` when you know the target commit, `git absorb` when you don't. That `[alias]` line
+  now carries a comment saying so.
+
+  **This is the house-style ideal: a tool that needs no alias at all.** It installs as
+  `git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand, so it shadows
+  nothing and `20-aliases.zsh` gains only a note explaining why there's nothing to add.
+  Detection exists purely so `core-doctor` can report it, where it joins the `dev / repo`
+  group. One documented caveat: the probe is `command -v git-absorb`, so a distro that
+  installed the binary into git's `libexec/git-core` instead of a `PATH` directory would
+  give a working `git absorb` and an unset flag — no mainstream package does, and probing
+  `git absorb --version` would add a `git` fork to every interactive shell, which
+  `00-tools.zsh` exists to avoid.
+
+  It is also the first `core-doctor --json` key that is not a bare identifier, so the
+  function's docstring now says which parsers care: the key is emitted quoted and the JSON
+  is valid, but jq's dot shorthand reads `.tools.git-absorb` as a subtraction — consumers
+  write `.tools["git-absorb"]`.
+
+  Packaged essentially everywhere and installed nowhere on Linux, so it takes the ²¹
+  "available, not installed" shape and joins that footnote's macOS-only bullet alongside
+  `lnav`. Verified against each distro's own package pages: Arch `extra`, Alpine
+  `community`, **Gentoo `dev-vcs/git-absorb` stable on amd64 in the main tree** (no GURU),
+  Homebrew and Debian/Kali all on 0.9.0 — note repology reports the Debian **source**
+  package as `rust-git-absorb` while the **binary** you install is `git-absorb`. **openSUSE
+  Tumbleweed is the one laggard at 0.6.17**, the gap #394 flagged, now confirmed rather than
+  snapshotted. New `PORTING-MATRIX.md` row and footnote ²⁶. (`zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `zsh/30-functions.zsh`, `git/gitconfig`, `PORTING-MATRIX.md`)
+
 - **`watchexec` — event-driven repetition, the third corner of a triangle Core had two of**
   (`dotgibson/dotfiles-core#393`). `00-tools.zsh` now detects `watchexec` and sets
   `HAVE_WATCHEXEC`. `viddy` re-runs a command on a **timer** and `hyperfine` re-runs it a

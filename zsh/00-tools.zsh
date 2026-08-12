@@ -126,6 +126,7 @@ _have shfmt && HAVE_SHFMT=1        # shell formatter (own command — no alias)
 _have jj && HAVE_JJ=1              # jujutsu — OPT-IN, colocated git companion (20-aliases.zsh: jjs/jjl/jjd)
 _have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-G (35-fzf.zsh) + prefix+f (tmux-sesh.sh); both fall back to find+fzf when unset
 _have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (20-aliases.zsh: gdft)
+_have git-absorb && HAVE_GIT_ABSORB=1 # routes staged hunks into the earlier commit each belongs to, as fixup!s (git/gitconfig already sets rebase.autosquash). Installs as the `git absorb` SUBCOMMAND, so it shadows nothing and needs no alias. Detected on PATH only — a box that puts it in git's libexec dir instead has a working `git absorb` and an unset flag; probing `git absorb` would cost a fork per shell, which this file exists to avoid.
 [[ -n ${FD_BIN:-} ]] && HAVE_FD=1
 [[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
 [[ -n ${BROWSER_BIN:-} ]] && HAVE_BROWSER=1  # terminal web browser (20-aliases.zsh: web + headless BROWSER)

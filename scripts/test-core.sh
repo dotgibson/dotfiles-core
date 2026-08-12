@@ -2649,6 +2649,22 @@ keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
 assert shown, \"parsed no tools out of the rendered report\"
 assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
 "'
+# git-absorb is the first --json tools key that is NOT a bare identifier, and the JSON is
+# hand-rolled by _core_doctor_json rather than produced by a serialiser — so the hyphen has
+# to survive quoting on its own merit. The set-equality check above cannot see this: it
+# compares the render against the JSON, so dropping the tool from BOTH literals still passes,
+# and it never exercises a `true` value. Pin the key by name AND by value, with _core_have
+# stubbed to match only git-absorb so one tool is true and the rest false — that also proves
+# the emitter tracks detection per tool instead of painting the whole object one way.
+check_dep "core-doctor --json emits the hyphenated git-absorb key and tracks its detection" python3 \
+  '_core_have() { [[ "$1" == git-absorb ]]; }
+   _CD_J="$(core-doctor --json)" python3 -c "
+import json, os
+tools = json.loads(os.environ[\"_CD_J\"])[\"tools\"]
+assert \"git-absorb\" in tools, sorted(tools)
+assert tools[\"git-absorb\"] is True, tools[\"git-absorb\"]
+assert tools[\"eza\"] is False, tools[\"eza\"]
+"'
 # core-doctor "install missing" hint: the block is gated on _pkgup_mgr (from update.zsh,
 # absent in this ui+functions harness) so the default render never reaches it. Stub the
 # manager + force every tool ✗ (missing), then assert the copy-paste line renders AND the

@@ -75,6 +75,7 @@ _Repo status_ at the bottom).
 | jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | cargo²¹                    | cargo²¹           |
 | sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               |
 | difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      |
+| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb` | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo³            |
 | w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             |
 
@@ -305,10 +306,10 @@ the counterpart to ³. These cells name where the tool comes from **when you opt
 Linux repo's `install/packages.txt` carries it and no `bootstrap.sh` installs it, so Core
 lights the `HAVE_*` probe only once you install it yourself.
 
-- `hyperfine`, `shellcheck`, `shfmt`, `ouch`, `lnav`²⁴ are **macOS-only in practice**: the
-  MacBook `Brewfile` carries them; **no** Linux repo does. The packaged names in their rows
-  are what you would install by hand, not what a bootstrap gives you. (Deliberately not a
-  counted list — "all four" went stale the first time this family grew.)
+- `hyperfine`, `shellcheck`, `shfmt`, `ouch`, `lnav`²⁴, `git-absorb`²⁶ are **macOS-only in
+  practice**: the MacBook `Brewfile` carries them; **no** Linux repo does. The packaged
+  names in their rows are what you would install by hand, not what a bootstrap gives you.
+  (Deliberately not a counted list — "all four" went stale the first time this family grew.)
 - The cells that previously showed **³** here — `ouch` and `jujutsu` on Gentoo **and** Kali,
   `ast-grep` and `shfmt` on Gentoo, `lazygit` on Kali — promised a best-effort bootstrap
   install that **does not exist**, verified against each repo's `bootstrap.sh` and
@@ -425,6 +426,39 @@ Do **not** read the `cargo` cells as a `³`: no `bootstrap.sh` installs this, an
 a hand-`cargo`-installed `watchexec` is never refreshed by the maintenance job. That is
 already true of `ouch`/`jj`/`ast-grep` — a documentation gap this footnote records rather
 than a new one.
+
+²⁶ git-absorb: OPT-IN — works out which earlier commit each **staged hunk** belongs to and
+writes the `fixup!` commits for you; `git rebase -i --autosquash` then folds them in, and
+`git/gitconfig` already sets `rebase.autosquash = true`, so the second half is automatic.
+It is the **automatic** counterpart to `git fix` (`commit --fixup`, `git/gitconfig`'s
+`[alias]` block), which is the **manual** form: with `git fix <sha>` you name the target
+commit yourself, and `git absorb` works one out per hunk. Reach for `git fix` when you know
+where a change belongs and `git absorb` when you would otherwise go looking.
+
+**The house-style ideal for a new tool: it needs no alias at all.** git-absorb installs as
+`git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand — so it shadows
+nothing classic and `zsh/20-aliases.zsh` gains no entry, only a note saying why.
+`HAVE_GIT_ABSORB` exists purely so `core-doctor` can report it. One detection caveat: the
+probe is `command -v git-absorb`, so a distro that installs the binary into git's
+`libexec/git-core` rather than a `PATH` directory would give you a working `git absorb` and
+an unset flag. No mainstream package does this — the distro packages (Arch, Debian/Kali,
+Alpine, Gentoo) land it in `/usr/bin`, and Homebrew links it into its own prefix `bin`
+(`/opt/homebrew/bin` on Apple silicon, `/usr/local/bin` on Intel), which is a different
+directory but equally on `PATH`. Probing `git absorb --version` instead would add a `git`
+fork to every interactive shell — which `zsh/00-tools.zsh` exists to avoid.
+
+**Detect-only on Linux**, and packaged essentially everywhere — the ²¹ shape, not `jnv`¹⁷'s.
+The MacBook `Brewfile` carries it; no Linux `install/packages.txt` does. Verified 2026-08-12
+against each distro's own package pages:
+
+- **Arch `extra`** 0.9.0-2, **Alpine `community`** 0.9.0-r0, **Gentoo `dev-vcs/git-absorb`**
+  0.9.0 (**stable on amd64**, in the main tree — no GURU needed), **Homebrew** 0.9.0.
+- **Debian/Kali `git-absorb`** 0.9.0-2. Note repology reports the **source** package as
+  `rust-git-absorb`; the **binary** package you install is `git-absorb`, confirmed on
+  packages.debian.org. Fedora is the same shape (`rust-git-absorb` source, `git-absorb`
+  binary).
+- **openSUSE Tumbleweed is the one laggard, at 0.6.17** — the gap #394 flagged, confirmed
+  here rather than left as a repology snapshot. Re-check on the next openSUSE stamp.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

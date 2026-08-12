@@ -120,7 +120,11 @@ _core_wired() {
 # RUNTIME health verb did not, so a statusline/editor/CI could not consume it. One object
 # on stdout, never paged: {version, tools{name:bool}, wired{name:bool},
 # atuin_daemon{degraded:bool, was_up:bool}, resolved{…}}.
-# Pure zsh (no python): tool names are fixed identifiers, so no escaping is needed.
+# Pure zsh (no python): tool names are a fixed list of literals with no quotes, backslashes
+# or control characters in them, so no escaping is needed. They are NOT all bare identifiers
+# — `git-absorb` has a hyphen. The key is emitted quoted, so the JSON is valid and any real
+# parser is fine; only jq's dot shorthand isn't, because it reads `.tools.git-absorb` as a
+# subtraction. Consumers write `.tools["git-absorb"]`.
 _core_doctor_json() {
   emulate -L zsh
   local ver="unknown"
@@ -128,7 +132,7 @@ _core_doctor_json() {
   local -a alltools=(
     eza bat fd rg fzf zoxide delta dust duf procs btop yazi
     starship atuin mise carapace gum sesh jq yq gron sd xh doggo glow lnav op
-    watchexec
+    watchexec git-absorb
   )
   local -a wir=(starship atuin mise zoxide carapace)
   local t first=1
@@ -206,7 +210,7 @@ _core_doctor_render() {
     "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi"
     "integrations" "starship atuin mise carapace gum sesh"
     "data / net"   "jq yq gron sd xh doggo glow lnav op"
-    "dev / repo"   "watchexec"
+    "dev / repo"   "watchexec git-absorb"
   )
   local gi tool line
   local -a missing=()
