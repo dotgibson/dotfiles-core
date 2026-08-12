@@ -2914,20 +2914,33 @@ ucheck "update: _pkgup_mgr reports none on a bare PATH" \
 # and _pkgup_count calls it twice, so the claim write is what is on disk when we look. The
 # stub dir is PREPENDED to the real PATH (not isolated to it) because the hook needs `mkdir`;
 # brew is first in _pkgup_mgr's ladder, so the stub still wins on any host.
+#
+# NOT ucheck, deliberately — this is the one update.zsh case that leaves the startup hook
+# ENABLED, so it is the only one that forks the refresh. ucheck captures with `$(…)`, and a
+# command substitution reads until the pipe's LAST writer closes: the disowned `&|` refresh
+# inherits that pipe, so bash would sit there for as long as the stub sleeps even though the
+# assertion finished in microseconds. Measured: 60.0s via ucheck, 8ms redirected to a file,
+# same verdict — and it would have been paid on every leg of the CI matrix. Redirecting to a
+# file means the parent waits only for the zsh it actually started. The stub's sleep is now
+# just "comfortably longer than the assertion window", not a cost.
 _PKGUPT="$SANDBOX/pkgup-claim"
 rm -rf "$_PKGUPT"
 mkdir -p "$_PKGUPT/bin" "$_PKGUPT/cache/zsh"
-printf '#!/bin/sh\nsleep 30\n' >"$_PKGUPT/bin/brew"
+printf '#!/bin/sh\nsleep 10\n' >"$_PKGUPT/bin/brew"
 chmod +x "$_PKGUPT/bin/brew"
-ucheck "update: the claim-slot write leaves a well-formed cache (-1, not an empty count)" \
-  "source '$UPD'
+if HOME="$SANDBOX" env PATH="$_PKGUPT/bin:$PATH" XDG_CACHE_HOME="$_PKGUPT/cache" CORE_WELCOME=0 \
+  "$_real_zsh" -fic "source '$UPD'
    c=\$XDG_CACHE_HOME/zsh/pkg-updates
    [[ -r \$c ]] || { print -u2 'no cache written'; exit 1 }
    local -a l; l=(\"\${(@f)\$(<\$c)}\")
    [[ \${l[1]} == -1 ]] || { print -u2 \"count slot is '\${l[1]}', want -1\"; exit 1 }
    [[ \${l[2]} == <-> ]] || { print -u2 \"epoch slot is '\${l[2]}'\"; exit 1 }
-   [[ -z \$(_pkgup_notice) ]]" \
-  PATH="$_PKGUPT/bin:$PATH" XDG_CACHE_HOME="$_PKGUPT/cache" CORE_WELCOME=0
+   [[ -z \$(_pkgup_notice) ]]" >"$_PKGUPT/out" 2>&1; then
+  pass "update: the claim-slot write leaves a well-formed cache (-1, not an empty count)"
+else
+  fail "update: the claim-slot write leaves a well-formed cache (-1, not an empty count)"
+  [[ -s "$_PKGUPT/out" ]] && sed 's/^/    /' "$_PKGUPT/out" >&2
+fi
 # up --help must print usage and return 0 WITHOUT attempting an update — the bug the
 # help guard fixes (it used to fall through, not being -y, and run the upgrade). Run
 # on a bare PATH so a regressed guard reaching _pkgup_mgr → none → returns 1, failing
