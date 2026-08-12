@@ -95,18 +95,28 @@ _to() {
 # (a mirror that accepts the connection and then stalls), and the daily log asserts the box
 # is up to date when nothing was measured.
 #
-# Capture first, then gate on TIMEOUT's status (124, or 137 if it escalated to KILL) and
-# deliberately NOT on the manager's: these managers use exit status to MEAN things — dnf
-# check-update exits 100 when updates EXIST, pacman -Qu / checkupdates exit non-zero when
-# there are NONE — so a general non-zero gate would report "unknown" on the healthy path.
-# When neither timeout nor gtimeout is installed _to runs the command bare and 124 cannot
-# arise, so this degrades to the old behaviour rather than misreading anything.
+# Capture first, then gate on how the probe DIED and deliberately NOT on the manager's own
+# status: these managers use exit status to MEAN things — dnf check-update exits 100 when
+# updates EXIST, pacman -Qu / checkupdates exit non-zero when there are NONE — so a general
+# non-zero gate would report "unknown" on the healthy path.
+#
+# Two shapes count as "no answer", because `timeout` does not report one way everywhere:
+#   · 124 — GNU coreutils (and macOS gtimeout) on expiry.
+#   · >=128 — killed by a signal (128+n). BUSYBOX timeout reports its SIGTERM this way, as
+#     143, NOT as 124; Alpine's audit caught exactly that, having reported a stalled manager
+#     as 0 upgradable with the 124-only test. 137 is the same story if it escalates to KILL.
+# The >=128 arm is safe to be broad: no manager in the ladder above exits anywhere near
+# there on its own (dnf tops out at 100, zypper ~107, apk 99), and a probe that any signal
+# cut short genuinely did not answer, whoever sent it.
+#
+# When neither timeout nor gtimeout is installed _to runs the command bare; nothing can then
+# expire, and only a real signal reaches the >=128 arm — which is still the honest answer.
 _pkgcount() {
   local secs="$1" pat="$2" out rc
   shift 2
   out="$(_to "$secs" "$@" 2>/dev/null)"
   rc=$?
-  if ((rc == 124 || rc == 137)); then
+  if ((rc == 124 || rc >= 128)); then
     echo -1
     return 0
   fi

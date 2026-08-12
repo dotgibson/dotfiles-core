@@ -213,16 +213,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   precisely the failure the timeout had been added to survive (a mirror that accepts the
   connection and then stalls), and the daily log asserted the box was current when nothing
   had been measured. Counting now goes through a `_pkgcount` helper that captures first and
-  gates on **timeout's own status** (124, or 137 if it escalated to KILL) rather than on the
-  manager's — deliberately, because these managers use exit status to mean things: `dnf
-  check-update` exits 100 when updates **exist**, `pacman -Qu` and `checkupdates` exit non-zero
-  when there are **none**, so a general non-zero gate would have reported "unknown" on the
-  healthy path. The `pacman -Qu` arm stays unwrapped and counted directly: it reads the local
-  DB, cannot stall, and its `0` is real. The log line now says `count UNAVAILABLE` with the
-  bound that was exceeded, instead of printing the sentinel as `-1 upgradable`. The nudge was
-  never affected either way — it needs a positive count — so this was a log-and-cache honesty
-  defect, which is the whole reason the sentinel exists. Covered by a new test that drives the
-  real `timeout` against a manager that stalls; the existing case stubs `_to` away by design.
+  gates on **how the probe died** — 124, the GNU/`gtimeout` expiry status, or `>=128`, killed
+  by a signal — rather than on the manager's status. That second arm is not belt-and-braces:
+  **BusyBox `timeout` reports its SIGTERM as 143, not as 124**, so a 124-only gate was green
+  on every leg of the CI matrix except Alpine, where it still logged a stalled manager as `0`.
+  Gating on the manager's status instead would have been wrong in the other direction, because
+  these managers use exit status to mean things: `dnf check-update` exits 100 when updates
+  **exist**, `pacman -Qu` and `checkupdates` exit non-zero when there are **none**, so a general
+  non-zero gate would have reported "unknown" on the healthy path. The `pacman -Qu` arm stays
+  unwrapped and counted directly: it reads the local DB, cannot stall, and its `0` is real. The
+  log line now says `count UNAVAILABLE` with the bound that was exceeded, instead of printing
+  the sentinel as `-1 upgradable`. The nudge was never affected either way — it needs a positive
+  count — so this was a log-and-cache honesty defect, which is the whole reason the sentinel
+  exists. Two new tests cover it: one drives the real `timeout` against a manager that stalls
+  (the pre-existing case stubs `_to` away by design) and reports the observed status, and one
+  pins the BusyBox spelling on every host rather than only on the Alpine leg.
 
 - **The `up` nudge's cache could still be written malformed by the shell that claims the
   throttle slot** (`dotgibson/dotfiles-core#380`). The writer-side normalisation added with the

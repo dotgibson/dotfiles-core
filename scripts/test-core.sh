@@ -3551,15 +3551,21 @@ fi
 # is discarded by the assignment. So the daily log asserted "0 upgradable" (an up-to-date
 # box) on exactly the failure the timeout was added to survive, and the sentinel two lines
 # above the chain could never fire. This drives the REAL _to and _pkgcount (no stubs — the
-# whole point is timeout's own exit status, 124) against a manager that stalls forever,
+# whole point is the status `timeout` itself reports) against a manager that stalls forever,
 # with the bound turned down to 1s so the case costs about a second.
 #
+# That status is NOT one number across the fleet, which is why the observed rc is carried
+# into the failure message: GNU coreutils reports expiry as 124, while BUSYBOX reports its
+# SIGTERM as 143. A 124-only gate passed everywhere except Alpine, where this case caught it
+# reporting a stalled manager as 0 — so if a future userland picks a third spelling, the
+# failure here names it instead of just saying "want -1".
+#
 # The stall stub is a REAL EXECUTABLE named `brew`, not a shell function like the stdin case
-# above: `timeout` execs its argument, so it cannot run a function (it would fail 127, never
-# 124, and the case would pass for the wrong reason). `exec sleep` so the stub process IS the
-# sleep and takes the SIGTERM directly instead of orphaning a 30s child. brew is first in the
-# chain, and the stub dir is prepended, so this arm wins on any host — and it is an arm that
-# goes through _to (the pacman arm deliberately does not).
+# above: `timeout` execs its argument, so it cannot run a function (it would fail 127 and the
+# case would pass for the wrong reason). `exec sleep` so the stub process IS the sleep and
+# takes the SIGTERM directly instead of orphaning a 30s child. brew is first in the chain,
+# and the stub dir is prepended, so this arm wins on any host — and it is an arm that goes
+# through _to (the pacman arm deliberately does not).
 if have timeout; then
   printf '#!/bin/sh\nexec sleep 30\n' >"$_MRT/bin/brew"
   chmod +x "$_MRT/bin/brew"
@@ -3572,11 +3578,14 @@ if have timeout; then
         . "'"$_MRT/pkgcount.bash"'"
         MAINT_PKGCOUNT_TIMEOUT=1
         . "'"$_MRT/count.bash"'" >/dev/null 2>&1
-        printf "%s\n" "$count"
-      ' 2>/dev/null)" && [[ "$out" == -1 ]]; then
-      pass "maint: a timed-out package probe reports the -1 sentinel, not 0 upgradable"
+        # The raw status too, so a userland whose timeout reports neither 124 nor 128+n is
+        # named by the failure rather than merely disagreeing with it.
+        _to 1 brew >/dev/null 2>&1
+        printf "%s %s\n" "$count" "$?"
+      ' 2>/dev/null)" && [[ "${out%% *}" == -1 ]]; then
+      pass "maint: a timed-out package probe reports the -1 sentinel, not 0 upgradable (timeout rc=${out##* })"
     else
-      fail "maint: a timed-out package probe reports '${out:-}' (want -1 — 0 would log the box as up to date)"
+      fail "maint: a timed-out package probe reports count='${out%% *}' at timeout rc=${out##* } (want count -1 — 0 would log the box as up to date)"
     fi
   else
     fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
@@ -3584,6 +3593,35 @@ if have timeout; then
 else
   skip "maint timed-out package probe (no \`timeout\` — _to runs the command unbounded)"
 fi
+
+# …and pin the BUSYBOX spelling on EVERY host, not just the Alpine leg of the matrix. The
+# case above asserts whatever the local timeout happens to report, so on a GNU box it only
+# ever proves the 124 arm — which is exactly how a 124-only gate reached CI green here and
+# red on Alpine. A fake `timeout` that exits 143 (128+SIGTERM, busybox's spelling) makes the
+# other arm deterministic and instant: no sleeping, and `brew` succeeds immediately, so the
+# ONLY thing that can produce -1 is _pkgcount reading the wrapper's status.
+printf '#!/bin/sh\nexit 143\n' >"$_MRT/bin/timeout"
+printf '#!/bin/sh\nexit 0\n' >"$_MRT/bin/brew"
+chmod +x "$_MRT/bin/timeout" "$_MRT/bin/brew"
+sed -n '/^_to() {/,/^}/p' "$_MAINT_SH" >"$_MRT/to.bash"
+if [[ -s "$_MRT/to.bash" && -s "$_MRT/pkgcount.bash" && -s "$_MRT/count.bash" ]]; then
+  if out="$(bash -c '
+      PATH="'"$_MRT/bin"'":$PATH
+      have() { command -v "$1" >/dev/null 2>&1; }
+      . "'"$_MRT/to.bash"'"
+      . "'"$_MRT/pkgcount.bash"'"
+      MAINT_PKGCOUNT_TIMEOUT=1
+      . "'"$_MRT/count.bash"'" >/dev/null 2>&1
+      printf "%s\n" "$count"
+    ' 2>/dev/null)" && [[ "$out" == -1 ]]; then
+    pass "maint: a busybox-style timeout (143, not 124) also reports the -1 sentinel"
+  else
+    fail "maint: a busybox-style timeout (143) reports '${out:-}' (want -1 — this is the Alpine regression)"
+  fi
+else
+  fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
+fi
+rm -f "$_MRT/bin/timeout" "$_MRT/bin/brew"
 
 # update.zsh: the first-run welcome (U2 — the cheat-sheet discoverability hint) must
 # greet EXACTLY ONCE per machine. Drive _core_welcome directly (the TTY gate lives at
