@@ -28,9 +28,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   1.35× faster**. The median win was already known; the tail win is the part that was borrowed
   from upstream and is now measured — with the caveat the third run makes plain, that the p99
   _sign_ is stable while its _magnitude_ is not, so the tail belongs in the record as "faster
-  in every run, 1.4–3.3×" rather than as a number. It agrees with the one earlier
-  blocking-call run (real Fedora hardware, p99 improving 49–69%), so two independent systemd
-  hosts now point the same way. Total write work (`start` + `end`, which the hook backgrounds)
+  in every run, 1.4–3.3×" rather than as a number. It agrees in direction with the one earlier
+  blocking-call run (p99 improving 49–69%) — but that was **the same machine** days earlier,
+  not a second host, so it is reproducibility over time and not independent corroboration.
+  Total write work (`start` + `end`, which the hook backgrounds)
   improves at p50/p95 too, but its p99 remains unresolved — expected, since `end` is exactly
   where the two metrics diverge.
 
@@ -402,7 +403,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   This is not a presentational fix: **it puts the far-tail conclusion back in question.** The
   recorded finding that the daemon trades frequent small waits for rarer, larger stalls comes
   entirely from pair-timed runs, while the one measurement that timed only the blocking call
-  (real Fedora hardware, systemd unit) found p99 improving 49–69%. `end` is precisely where
+  (Fedora 44 under WSL2, systemd unit) found p99 improving 49–69%. `end` is precisely where
   the two would diverge — with the daemon off it is the slower call, and with it on they
   equalise. `atuin/config.toml` and `zsh/00-tools.zsh` now relabel their figures as total
   write work and mark the tail question **open in both directions** rather than settled
@@ -692,6 +693,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   now says so; `aliases.md` is described as the curated companion. (`README.md`)
 
 ### Changed
+
+- **The atuin latency question is closed, and the part that will never be measured is now
+  recorded as a decision rather than a backlog** (`dotgibson/dotfiles-core#352`). The
+  measurable half is measured — see the `bench-atuin-daemon.sh` entries under **Added**. The
+  remaining four rows (musl on real
+  hardware, a real NFS/SMB home, bare metal, a real multi-pane session) need machines this
+  project does not have and will not get, so `atuin/config.toml` now states plainly that
+  their rationale stays **borrowed from upstream** on purpose. The mechanism is measured;
+  what is borrowed is its magnitude on hardware nobody here runs. An open issue promising
+  numbers that cannot arrive is worse than a documented decision not to chase them.
+
+  Also corrects an overclaim this changelog and `atuin/config.toml` both carried: the earlier
+  systemd-unit run was described as a second, independent Fedora host corroborating the new
+  figures. It is the **same machine** — Fedora 44 / kernel 6.18.33.2 (WSL2) — measured days
+  apart. That is reproducibility over time, not independent corroboration, and every figure
+  in the record comes from one WSL2 host. Overstating corroboration is precisely the failure
+  #352 was filed to catch, so it is fixed at every site that made the claim: `atuin/config.toml`,
+  `scripts/bench-atuin-daemon.sh`'s header, and **both** unreleased entries in this file — the
+  one above and the earlier `bench(fix)` entry, which described the same run as "real Fedora
+  hardware" too. That fourth site was missed on the first pass because the check that was
+  supposed to prove the claim filtered CHANGELOG line numbers by a guessed section boundary
+  instead of the actual `## [Unreleased]` extent, and so excluded the line it needed to catch.
 
 - **`sd` silently stopped matching across newlines, and its `--version` won't tell you.**
   Upstream 1.1.0 made **line-by-line** processing the default and moved the old whole-file

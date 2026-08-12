@@ -52,8 +52,9 @@
 # not a hypothetical mislabelling: this repo's own records disagree about the tail, and the
 # disagreement lines up exactly with the metric. The runs that timed the pair concluded the
 # far tail got WORSE with the daemon; every run that has timed only the blocking call found
-# the opposite — p99 improving 49-69% on real Fedora hardware, and 1.35-3.25x faster across
-# three runs on the systemd path with a local-disk home. `end` is where the two diverge — with
+# the opposite — p99 improving 49-69% on the systemd-unit path, and 1.35-3.25x faster across
+# three runs on that path with a local-disk home. Both on ONE WSL2 host, days apart: same
+# machine, not two. `end` is where the two diverge — with
 # the daemon off it is the slower of the two calls (the UPDATE costs more than the INSERT) and
 # with it on they equalise — so folding it into a "latency" number moves the metric most
 # precisely where the daemon is being judged. Treat the pre-split figures recorded in

@@ -115,10 +115,14 @@ update_check = false
 # Do not quote a total-write-work figure as latency; that mislabelling is what left this
 # repo's own records contradicting each other on the tail.
 #
-# One earlier measurement agrees, and is worth keeping now that it is no longer alone: a run
-# on real Fedora hardware with a systemd unit, timing only the blocking call, found p99
-# improving 49-69% with spread collapsing from 2.86x to 1.28x at 16 writers. Two independent
-# systemd hosts, same direction, same metric.
+# One earlier measurement agrees in DIRECTION: a systemd-unit run timing only the blocking
+# call found p99 improving 49-69%, with spread collapsing from 2.86x to 1.28x at 16 writers.
+# It is the SAME MACHINE, days apart — Fedora 44 / kernel 6.18.33.2 (WSL2) is this host, and
+# an earlier revision of this block called it a second one. That is reproducibility over
+# time, NOT independent corroboration, and the distinction is the whole point of the block
+# below: every figure here comes from one WSL2 host. It also timed `history start --hook`,
+# the form atuin's zsh hook actually runs, where the figures above time the plain form —
+# adjacent, not identical (scripts/verify-atuin-guard.sh measures both since #389).
 #
 # STORAGE BACKING IS THE CONFOUNDER, and it is the most useful thing these runs turned up.
 # The SAME harness, same host, same day, PROMPT LATENCY p99, daemon off -> on:
@@ -167,12 +171,26 @@ update_check = false
 # (local ext4, prompt latency, p50) for the daemon spawn. It is unique to machines with no
 # service manager, and it is paid on the blocking call.
 #
-# STILL UNMEASURED, still needing machines nobody has to hand: musl on REAL HARDWARE (the
-# above is a container, so it does not settle scheduling or storage behaviour on a real
-# Alpine box), a real NFS/SMB network home (the 9p figures are a high-latency non-local
-# filesystem, which is a proxy for one, not one), bare metal rather than WSL2, and a real
-# multi-pane session rather than synthetic writers. This narrows the gap a long way; it does
-# not close it.
+# WHAT WILL NEVER BE MEASURED HERE, AND WHY THAT IS A DECISION RATHER THAN A BACKLOG. The
+# rows below need machines this project does not have and is not going to get; WSL2 is the
+# closest it will ever come to a real box. So they are ACCEPTED from upstream rather than
+# pursued — a decision, not a promise. Stated as the decision itself and not as the state of
+# a tracker: an issue can be reopened, relabelled or migrated, and a config comment asserting
+# "this is closed" would then be quietly false. The reasoning, the numbers and the four rows
+# are recorded in dotgibson/dotfiles-core#352, which this supersedes rather than depends on:
+#
+#   musl on REAL HARDWARE     the musl figures are an Alpine container, which does not
+#                             settle scheduling or storage behaviour on a real Alpine box
+#   a real NFS/SMB home       the 9p figures are a high-latency non-local filesystem — a
+#                             proxy for a network home, not one, and this is the row where
+#                             upstream's contention claim is strongest
+#   bare metal                every figure above is one WSL2 host
+#   a real multi-pane session synthetic concurrent writers, not humans in tmux panes
+#
+# For those four, the rationale stays BORROWED from upstream, deliberately and on the record.
+# The mechanism itself is measured — that is what the tables above are — so what is borrowed
+# is its magnitude on hardware nobody here will run, not whether it exists. Anyone who does
+# have such a box can settle a row with `scripts/bench-atuin-daemon.sh`; nobody is waiting.
 #
 # HOW A MACHINE OPTS IN (the launcher is OS-native, so it lives in the OS repo, not here):
 #   systemd distros — install the user unit (examples/atuin-daemon.service),
