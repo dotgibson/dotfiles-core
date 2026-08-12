@@ -15,6 +15,51 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **OSC 133 semantic prompt marks — `[` / `]` jump between prompts in tmux copy mode**
+  (`dotgibson/dotfiles-core#391`). Core emitted no OSC sequences at all, while tmux has parsed
+  OSC 133 since 3.4 and exposed `previous-prompt` / `next-prompt` in copy mode the whole time —
+  the capability was already paid for on every machine (the fleet floor is Gentoo's 3.6a) and
+  simply unused. `zsh/00-tools.zsh` now marks prompts and `tmux/tmux.reset.conf` binds `[` / `]`
+  in `copy-mode-vi` to jump between them, turning "scroll up hunting for where that command
+  started" into a keypress. No new file, no binary, no `core.manifest` change; `{` / `}` are
+  deliberately left alone (vi previous/next-paragraph), and no version gate is needed.
+
+  **The `A` mark lives in `$PROMPT`, and that is measured rather than preferred.** The obvious
+  implementation — emit `\e]133;A\e\\` from `precmd`, next to the command-block rule that
+  already runs there — does not work, and fails silently: zsh's prompt preamble ends in `ED`
+  (`\e[J`, "erase to end of screen") over the very line the mark was just written to, and tmux
+  drops a line's prompt flag when that line is cleared. Measured on tmux 3.7b, `previous-prompt`
+  then does not move at all — the feature looks implemented and does nothing. Embedding it in
+  `PROMPT` as a zero-width `%{…%}` escape means it is re-emitted on every prompt _draw_, after
+  that `ED`, which is also why every other shell integration marks prompts this way. The hook
+  that applies it is APPENDED to `precmd_functions`, so it runs after `starship_precmd` re-sets
+  `PROMPT` wholesale, and is idempotent for the box where `PROMPT` is static and would otherwise
+  grow one mark per prompt. `45-plugins.zsh` carries the same mark on the transient prompt:
+  collapsing a finished prompt to `❖` redraws that line too, and scrollback is exactly what
+  `previous-prompt` jumps _through_.
+
+  Only `A` and `C` are marks tmux documents a dependence on, so that is the subset;
+  `D;<exit>` is emitted anyway because it is free from the exit code already captured and is
+  what non-tmux OSC 133 consumers read for per-command status. `C`/`D` stay hook output — being
+  cleared costs them nothing, since nothing reads them back off the grid. The marks **stand
+  down** in two places: under Ghostty's own shell integration, but only OUTSIDE tmux —
+  `GHOSTTY_SHELL_FEATURES` is exported and reaches the tmux server, while Ghostty injects into
+  the initial shell only, so guarding on the variable alone would have silenced the marks in
+  exactly the place they are spent — and on `TERM=dumb`, which would render them as literal
+  `]133;A` garbage. Fourteen behavioural cases in `scripts/test-core.sh` pin all of it.
+
+  One premise of #391 did **not** survive measurement and is recorded here so it is not
+  re-derived: that `_cmd_block_precmd` returning its last `print`'s status rather than the
+  command's left `starship_precmd` reading the wrong `$?`. zsh saves and restores `$?` around
+  **each** hook in `precmd_functions` — measured on 5.9, every hook sees the command's code
+  regardless of what the one before it returned, a non-zero return does not stop the rest of
+  the chain, and it never reaches the prompt's own `%(?..)`. The hook now returns `$ec`
+  anyway, as the contract the `D;<exit>` mark is written against, but nothing was broken and
+  nothing user-visible changed — including starship's error indicator, which was always
+  correct. The same correction applies to the "run our precmd FIRST so `$?` is the command's"
+  comment that line has carried since P12: the ordering is worth keeping for OUTPUT order,
+  not for `$?`.
+
 - **The atuin daemon's systemd path is measured, and the tail claim holds on it**
   (`dotgibson/dotfiles-core#352`). Adoption's whole justification was that the daemon owning
   the SQLite writes removes the DB-lock contention every shell and tmux pane pays, and it had

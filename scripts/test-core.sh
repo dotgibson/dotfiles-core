@@ -3279,6 +3279,102 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
   "DISPLAY=''; WAYLAND_DISPLAY=''; OSTYPE=darwin24; source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[web] )) && [[ -z \${BROWSER:-} ]]" \
   PATH="$BRBIN"
 
+# ── OSC 133 prompt marks + the command-block rule (00-tools.zsh) ─────────────
+# The marks are what tmux's next-prompt/previous-prompt (bound to ] / [ in
+# tmux.reset.conf) read, so a regression here silently costs the keybinding its meaning
+# with nothing to see on screen — precisely the shape a behavioral gate must catch. The
+# hooks also moved OUT of the HAVE_STARSHIP gate (the marks must work on a bare box and
+# over SSH, where the rule is starship-only), which is what cases (h)/(i) below pin.
+#
+# MECHANICS. Capture by REDIRECTING TO A FILE, never `$(…)`: the exit-code cases need $?
+# to reach the hook intact, and a file redirect leaves it untouched with no subshell
+# question to reason about. `(exit 7)` sets that status with no external binary, so the
+# cases stay valid under an isolated PATH. TERM and TMUX are passed EXPLICITLY wherever
+# they matter — this suite may itself be running inside tmux, under any terminal, and
+# `env` would otherwise leak the real values into the assertion.
+OSCOUT="$SANDBOX/osc133.out"
+OSCEMPTY="$SANDBOX/oscempty" # an EMPTY PATH: no starship, so the rule cannot be drawn
+mkdir -p "$OSCEMPTY"
+# (a) THE A MARK IS IN $PROMPT, and it is there because a hook-emitted one does not
+#     survive: zsh's prompt preamble ends in ED (\e[J) over the line the mark was just
+#     written to, and tmux drops that line's prompt flag when it is cleared — measured on
+#     3.7b, previous-prompt would not move at all. Zero-width %{…%}, or every prompt's
+#     width math is off by the length of an escape sequence.
+ucheck "osc133: the A mark is carried in \$PROMPT as a zero-width %{…%} escape" \
+  "source '$TOOLS_FILE'; _core_osc133_prompt; [[ \$PROMPT == '%{'*']133;A'*'%}'* ]]" \
+  TERM=xterm-256color TMUX=
+# (a2) IDEMPOTENT — starship re-sets PROMPT every precmd, but on a box WITHOUT starship it
+#      is static, so a hook that prepended unconditionally would grow a mark per prompt.
+ucheck "osc133: re-marking an already-marked PROMPT does not stack marks" \
+  "source '$TOOLS_FILE'; repeat 3 _core_osc133_prompt; p=\${PROMPT/']133;A'/}; [[ \$p != *']133;A'* ]]" \
+  TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
+# (a3) APPENDED, not prepended: starship_precmd re-sets PROMPT wholesale, so a mark applied
+#      before it would be discarded again on every prompt. The contract is RELATIVE — after
+#      starship — not "last": the atuin guard appends itself after us at the end of this
+#      file, and an OS (80) or host (99) fragment may append more. A stand-in starship_precmd
+#      is seeded before sourcing (PATH has no real starship, so nothing else registers one),
+#      which is what makes the ordering assertable at all on a box without the binary.
+ucheck "osc133: the PROMPT hook is ordered AFTER starship_precmd (which re-sets PROMPT)" \
+  "starship_precmd() { : }; precmd_functions=(starship_precmd); source '$TOOLS_FILE'; [[ -n \${precmd_functions[(r)_core_osc133_prompt]} ]] && (( \$precmd_functions[(i)_core_osc133_prompt] > \$precmd_functions[(i)starship_precmd] ))" \
+  TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
+# (a4) …and it must be transparent to \$?, since it now sits between the command and any
+#      hook an OS (80) or host (99) fragment appends after it.
+ucheck "osc133: the PROMPT hook preserves \$? for later precmd hooks" \
+  "source '$TOOLS_FILE'; (exit 7); _core_osc133_prompt; (( \$? == 7 ))" \
+  TERM=xterm-256color TMUX=
+# (a5) The transient prompt is the other half: collapsing a finished prompt REDRAWS that
+#      line and clears its flag, and scrollback is what previous-prompt jumps THROUGH.
+check "osc133: the transient prompt carries the mark too (scrollback stays jumpable)" \
+  "grep -q 'TRANSIENT_PROMPT_TRANSIENT_PROMPT=\"\${_CORE_OSC133_MARK:-}\"' '$HERE/zsh/45-plugins.zsh'"
+# (b) D carries the REAL exit code — the mark non-tmux OSC 133 consumers read for status.
+ucheck "osc133: the D mark carries the real exit code (]133;D;7)" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; (exit 7); _cmd_block_precmd >'$OSCOUT'; [[ \"\$(<'$OSCOUT')\" == *']133;D;7'* ]]" \
+  TERM=xterm-256color TMUX=
+# (c) The hook must RESTORE \$? — every later precmd (starship_precmd included) reads it,
+#     and emitting a status mark makes that correctness load-bearing rather than cosmetic.
+ucheck "osc133: _cmd_block_precmd returns the command's exit code, not its own" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; (exit 7); _cmd_block_precmd >/dev/null; (( \$? == 7 ))" \
+  TERM=xterm-256color TMUX=
+# (b2) C is emitted at COMMAND START — the mark tmux's `-o` "jump to the output" variant
+#      reads. Same -rn discipline: it must not open a line of its own.
+ucheck "osc133: preexec emits the command-output mark (]133;C) and nothing else" \
+  "source '$TOOLS_FILE'; _cmd_block_preexec >'$OSCOUT'; [[ \"\$(<'$OSCOUT')\" == *']133;C'* ]] && (( \$(wc -l <'$OSCOUT') == 0 ))" \
+  TERM=xterm-256color TMUX=
+# (d) A bare Enter: NO D and NO rule (both describe a command that ran) — the A mark is in
+#     PROMPT, so an idle prompt is still a jump target without emitting anything. Pins the
+#     _CMD_BLOCK_RAN gating the restructure moved. Empty PATH ⇒ no starship ⇒ the "no rule"
+#     half is deterministic on any CI box.
+ucheck "osc133: a bare prompt emits nothing — no D mark, no rule" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=0; _cmd_block_precmd >'$OSCOUT'; [[ ! -s '$OSCOUT' ]]" \
+  TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
+# (e) Ghostty injects its OWN prompt marking, so outside tmux Core stands down rather than
+#     double-mark: no mark in PROMPT, and no C/D on the wire either.
+ucheck "osc133: stands down under Ghostty's own shell integration (outside tmux)" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; _cmd_block_precmd >'$OSCOUT'; [[ -z \$_CORE_OSC133_MARK && \$PROMPT != *']133;'* && \"\$(<'$OSCOUT')\" != *']133;'* ]]" \
+  TERM=xterm-256color TMUX= GHOSTTY_SHELL_FEATURES=cursor,title
+# (f) …but GHOSTTY_SHELL_FEATURES is EXPORTED and reaches the tmux server, while Ghostty
+#     injects into the INITIAL shell only. Inside tmux Core is the only emitter — and tmux
+#     copy mode is where the marks are actually spent — so it must NOT stand down there.
+ucheck "osc133: still marks inside tmux under Ghostty (its integration isn't in the pane)" \
+  "source '$TOOLS_FILE'; _core_osc133_prompt; [[ \$PROMPT == *']133;A'* ]]" \
+  TERM=xterm-256color TMUX=/tmp/tmux-0/default,1,0 GHOSTTY_SHELL_FEATURES=cursor,title
+# (g) A consumer that does not parse OSC (Emacs M-x shell) would render the sequence as
+#     literal garbage in the prompt and above every command's output.
+ucheck "osc133: stands down on TERM=dumb (no literal escape garbage)" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; _cmd_block_precmd >'$OSCOUT'; [[ -z \$_CORE_OSC133_MARK && \$PROMPT != *']133;'* && \"\$(<'$OSCOUT')\" != *']133;'* ]]" \
+  TERM=dumb TMUX=
+# (h) THE HOIST: on a box with no starship the hooks must still be registered (marks are
+#     not a prompt cosmetic) — and _cmd_block_precmd stays FIRST, so the rule and the D mark
+#     land above whatever a later hook prints instead of interleaved with it.
+ucheck "osc133: hooks registered without starship, and precmd stays first (output order)" \
+  "source '$TOOLS_FILE'; [[ -z \${HAVE_STARSHIP:-} && \$precmd_functions[1] == _cmd_block_precmd && -n \${preexec_functions[(r)_cmd_block_preexec]} ]]" \
+  TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
+# (i) The other side of that gate: marks stood down AND no starship means neither hook has
+#     any work at all, so a shell must not carry either of them for the life of the session.
+ucheck "osc133: no hooks at all when the marks stand down and starship is absent" \
+  "source '$TOOLS_FILE'; [[ -z \${precmd_functions[(r)_cmd_block_precmd]} && -z \${preexec_functions[(r)_cmd_block_preexec]} && -z \${precmd_functions[(r)_core_osc133_prompt]} ]]" \
+  TERM=dumb TMUX= PATH="$OSCEMPTY"
+
 # ── atuin: ATUIN_NOBIND + the OPT-IN daemon guard (00-tools.zsh) ──────────────
 # Two things were ungated here. (1) ATUIN_NOBIND=true is what keeps atuin from grabbing
 # the keys 40-bindings.zsh/35-fzf.zsh own (Ctrl+E is OURS, Ctrl+R stays on the fzf widget),
