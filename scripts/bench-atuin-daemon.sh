@@ -252,6 +252,18 @@ for _t in atuin zsh python3; do
   fi
 done
 
+# Which spelling starts the daemon on THIS build — the same probe, for the same reason, as
+# examples/atuin-daemon.service. `atuin daemon` is deprecated in favour of `atuin daemon
+# start` (18.19.0 warns on every start), but the subcommand does not exist on older builds,
+# and a bench is run on whatever atuin the box happens to have. Hardcoding `daemon start`
+# there fails closed — the socket never appears, the ON arm is dropped as "daemon did not
+# come up" — so no wrong number is printed, but the diagnostic blames the daemon instead of
+# the spelling, on exactly the machines most likely to hit it. The probe must be `daemon
+# start --help`, not `daemon --help`: the latter exits 0 on both spellings and proves
+# nothing. One short-lived fork, resolved once here and reused by both starters below.
+AT_DAEMON_ARGV=(daemon)
+atuin daemon start --help >/dev/null 2>&1 && AT_DAEMON_ARGV=(daemon start)
+
 WRITERS="${CORE_ATBENCH_WRITERS:-8}"
 # 200 x 8 writers = 1600 samples per arm. Sized for the METRIC THAT MATTERS: p99 of 400
 # samples is the 4th-worst observation, which moves by tens of percent between runs — a
@@ -312,6 +324,10 @@ daemon_stop() {
   # socket. It is also the belt to that braces: if the sandboxed runtime dir is ever
   # relaxed, this no-op is what still stops the generic path reaching a real daemon.
   ((SYSTEMD)) && return 0
+  # No AT_DAEMON_ARGV probe here, deliberately: `daemon stop` is absent on the same old
+  # builds that lack `daemon start`, but this call is already best-effort (both streams
+  # discarded) and the `kill "$DAEMON_PID"` below is what actually stops the process. The
+  # probe matters at START — a wrong spelling there means no daemon at all — not here.
   [[ ${#AT_ENV[@]} -gt 0 ]] &&
     "${AT_ENV[@]}" ATUIN_DAEMON__ENABLED=true atuin daemon stop >/dev/null 2>&1
   if [[ -n "$DAEMON_PID" ]]; then
@@ -743,7 +759,7 @@ daemon_start() {
     unit_start
     return
   }
-  "${AT_ENV[@]}" ATUIN_DAEMON__ENABLED=true atuin daemon start >"$SB/daemon.log" 2>&1 &
+  "${AT_ENV[@]}" ATUIN_DAEMON__ENABLED=true atuin "${AT_DAEMON_ARGV[@]}" >"$SB/daemon.log" 2>&1 &
   DAEMON_PID=$!
   local i
   for ((i = 0; i < 100; i++)); do
@@ -789,7 +805,7 @@ unit_start() {
   # prevent for the writers, and it is worse here, because this process is the one doing
   # the writing. systemd-run itself still runs in OUR environment: it needs the real
   # XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS to reach the bus. Only the payload is scrubbed.
-  sdrun+=(-- "$env_bin" -i "${AT_VARS[@]}" ATUIN_DAEMON__ENABLED=true "$atuin_bin" daemon start)
+  sdrun+=(-- "$env_bin" -i "${AT_VARS[@]}" ATUIN_DAEMON__ENABLED=true "$atuin_bin" "${AT_DAEMON_ARGV[@]}")
   "${sdrun[@]}" >"$SB/daemon.log" 2>&1 || return 1
   for ((i = 0; i < 100; i++)); do
     [[ -S "$SOCK" ]] && return 0

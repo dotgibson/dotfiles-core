@@ -204,6 +204,69 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A timed-out package probe was logged as "0 upgradable" — an up-to-date box — instead of
+  "unknown"** (`dotgibson/dotfiles-core#380`). Every arm of the maint runner's upgradable-count
+  chain was `count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" <mgr> | grep -c …)`, and that shape cannot
+  tell the two apart: when `timeout` SIGTERMs a stalled manager there is no output, `grep -c`
+  prints `0`, and grep's non-zero status — the pipeline's, since it is the last stage — is
+  discarded by the assignment. So the `count=-1` "we don't know" sentinel was bypassed on
+  precisely the failure the timeout had been added to survive (a mirror that accepts the
+  connection and then stalls), and the daily log asserted the box was current when nothing
+  had been measured. Counting now goes through a `_pkgcount` helper that captures first and
+  gates on **how the probe died** — 124, the GNU/`gtimeout` expiry status, or `>=128`, killed
+  by a signal — rather than on the manager's status. That second arm is not belt-and-braces:
+  **BusyBox `timeout` reports its SIGTERM as 143, not as 124**, so a 124-only gate was green
+  on every leg of the CI matrix except Alpine, where it still logged a stalled manager as `0`.
+  Gating on the manager's status instead would have been wrong in the other direction, because
+  these managers use exit status to mean things: `dnf check-update` exits 100 when updates
+  **exist**, `pacman -Qu` and `checkupdates` exit non-zero when there are **none**, so a general
+  non-zero gate would have reported "unknown" on the healthy path. The `pacman -Qu` arm stays
+  unwrapped and counted directly: it reads the local DB, cannot stall, and its `0` is real. The
+  log line now says `count UNAVAILABLE` with the bound that was exceeded, instead of printing
+  the sentinel as `-1 upgradable`. The nudge was never affected either way — it needs a positive
+  count — so this was a log-and-cache honesty defect, which is the whole reason the sentinel
+  exists. Two new tests cover it: one drives the real `timeout` against a manager that stalls
+  (the pre-existing case stubs `_to` away by design) and reports the observed status, and one
+  pins the BusyBox spelling on every host rather than only on the Alpine leg.
+
+- **The `up` nudge's cache could still be written malformed by the shell that claims the
+  throttle slot** (`dotgibson/dotfiles-core#380`). The writer-side normalisation added with the
+  reader-side quoting set `count` to **empty** on a fresh box, and the claim-slot write then
+  persisted that empty value — producing exactly the `"\n<epoch>"` file the fix was supposed to
+  prevent, whose unquoted `(f)` split slides the epoch into the count slot and prints
+  "1786128391 updates available". Only the quoted `"${(@f)…}"` read was actually holding the
+  line. It now normalises to the `-1` sentinel, so the cache is well-formed at rest: it reads
+  back cleanly, `_pkgup_notice`'s `<1->` gate rejects it, and the nudge stays silent until the
+  backgrounded refresh lands a real number. The comments claiming the race was closed from both
+  ends now describe what the code does.
+
+- **`ux_spin` could take down a `set -euo pipefail` caller after its animation loop, and went
+  silent when its busy-spin guard fired** (`dotgibson/dotfiles-core#380`). The loop body was
+  normalised (`|| :`) on the ground that this library is _sourced_ — `bootstrap.sh` runs under
+  `set -euo pipefail` — but every statement after `done` was still bare. A failed cursor-restore
+  `printf` therefore aborted the caller with the cursor still hidden and the wrapped child still
+  running: the identical end state documented for the unnormalised `sleep`. A failure in either
+  result branch aborted between `wait` and `rm -f`, leaking the mktemp file. All of them are
+  normalised now; `rc` is captured and returned explicitly, so nothing the caller sees changed.
+  Separately, both spinners now leave one **static `(still running…)` frame** when the busy-spin
+  guard trips. `ux_spin` cleared the line before the blocking `wait`, so a long command on a box
+  with a broken pacing primitive showed _nothing at all_ for the rest of the run —
+  indistinguishable from the hang the elapsed-time readout exists to rule out — while
+  `_core_spin` left a frozen glyph, which reads as "wedged". The wording, not the glyph, is what
+  distinguishes "the animation gave up" from "the command did"; the glyph itself comes from the
+  existing frame set, so the non-UTF-8 fallback is honoured rather than a hardcoded braille cell.
+  The two mirrors agree again.
+
+- **`bench-atuin-daemon.sh` started the daemon with a spelling the shipped unit deliberately
+  probes for** (`dotgibson/dotfiles-core#380`). Both starters ran `atuin daemon start`
+  unconditionally, while `examples/atuin-daemon.service` goes to real trouble to ask the binary
+  which spelling it has, because the subcommand does not exist on older builds. The bench failed
+  closed there — socket never appears, ON arm dropped, no wrong number printed — but the
+  diagnostic blamed the daemon rather than the spelling, on exactly the machines most likely to
+  hit it. The bench now runs the same probe once at startup and reuses the answer in both the
+  plain and `--systemd` paths. `daemon stop` in the teardown is left alone on purpose: it is
+  already best-effort and the `kill` below it is what actually stops the process.
+
 - **The weekly `fleet-drift` sweep reported the fleet's ordinary state as a failure.** The
   sweep anchors to the latest **released** Core tag — deliberately, to avoid a false
   "BEHIND by N" on every unreleased commit — but `make sync` has never fanned out from a tag:
