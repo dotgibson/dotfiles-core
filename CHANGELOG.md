@@ -674,6 +674,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`sd` silently stopped matching across newlines, and its `--version` won't tell you.**
+  Upstream 1.1.0 made **line-by-line** processing the default and moved the old whole-file
+  behaviour behind `--across` / `-A`. Nothing in Core breaks — `sd` is detect-only
+  (`HAVE_SD`) and deliberately un-aliased, and no Core code shells out to it — but a
+  multiline pattern in muscle memory or in a role script now matches nothing, leaves the
+  input untouched, and **still exits 0**, so the caller carries on as if it had rewritten
+  the file. Verified behaviourally rather than read off the release notes:
+  `sd 'alpha\nbeta' X` on two-line input returns rc=0 with the input unchanged, and
+  `sd --across` matches.
+
+  The reason this earns a `PORTING-MATRIX.md` footnote (²²) rather than a detection change
+  is that **it cannot be detected**: the Homebrew **1.1.0** build self-reports `sd 1.0.0`,
+  so version sniffing is useless and a `HAVE_SD` version gate is not an option. The
+  supported probe is the flag itself — `sd --help | grep -q -- --across`. Same class of
+  footnote as `batcat` (⁴) and the mikefarah-vs-kislyuk `yq` split (⁶): the command is not
+  quite what its name implies. Found by the weekly `/tool-scout` scan (#376).
+
 - **`pre-commit` moved off a known-broken patch: `4.6.1 → 4.6.2`.** 4.6.2's sole content is a
   fix for a 4.6.1 regression in `language: node` hooks whose `package.json` declares a
   `scripts.build` key, under npm 11.x (pre-commit#3737). It is **not** fixing a live failure
