@@ -85,6 +85,34 @@ _to() {
   else "$@"; fi
 }
 
+# _pkgcount <secs> <grep-ere> <cmd...> — count matching lines from a network-touching
+# package probe, distinguishing "0 upgradable" from "we never got an answer".
+#
+# A bare `count=$(_to … <mgr> | grep -c …)` cannot make that distinction: when timeout
+# SIGTERMs a stalled manager there is no output, `grep -c` prints 0, and grep's non-zero
+# status — the pipeline's, since grep is the last stage — is discarded by the assignment.
+# So the -1 sentinel below is bypassed on the exact failure the timeout exists to survive
+# (a mirror that accepts the connection and then stalls), and the daily log asserts the box
+# is up to date when nothing was measured.
+#
+# Capture first, then gate on TIMEOUT's status (124, or 137 if it escalated to KILL) and
+# deliberately NOT on the manager's: these managers use exit status to MEAN things — dnf
+# check-update exits 100 when updates EXIST, pacman -Qu / checkupdates exit non-zero when
+# there are NONE — so a general non-zero gate would report "unknown" on the healthy path.
+# When neither timeout nor gtimeout is installed _to runs the command bare and 124 cannot
+# arise, so this degrades to the old behaviour rather than misreading anything.
+_pkgcount() {
+  local secs="$1" pat="$2" out rc
+  shift 2
+  out="$(_to "$secs" "$@" 2>/dev/null)"
+  rc=$?
+  if ((rc == 124 || rc == 137)); then
+    echo -1
+    return 0
+  fi
+  printf '%s\n' "$out" | grep -cE "$pat"
+}
+
 # run a labeled step, capture rc, never abort the script
 #
 # </dev/null is load-bearing, not tidiness. This runner is unattended by design, but it
@@ -287,25 +315,37 @@ count=-1
 # it — and since the answer never arrives it is never persisted, so it prompts again forever.
 # EOF makes that a declined key and a slightly-low count instead of a dead run.
 #
-# _to bounds the ones that touch the network, for the other failure: a mirror that accepts
-# the connection and then stalls. pacman -Qu reads the local DB only, so it stays unwrapped.
+# _pkgcount bounds the ones that touch the network (via _to), for the other failure: a
+# mirror that accepts the connection and then stalls — and, unlike a bare `… | grep -c`,
+# reports -1 rather than 0 when the bound actually fires (see its comment above).
+# pacman -Qu reads the local DB only: it cannot stall, so it stays unwrapped and counted
+# directly — a 0 from it is a real 0.
 if have brew; then
-  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" brew outdated --quiet 2>/dev/null | grep -c .)
+  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '.' brew outdated --quiet)
 elif have checkupdates; then
-  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" checkupdates 2>/dev/null | grep -c .)
+  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '.' checkupdates)
 elif have pacman; then
   count=$(pacman -Qu 2>/dev/null | grep -c .)
 elif have dnf; then
-  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" dnf -q --refresh check-update 2>/dev/null | grep -cE '^[a-zA-Z0-9][^ ]*[[:space:]]')
+  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '^[a-zA-Z0-9][^ ]*[[:space:]]' dnf -q --refresh check-update)
 elif have zypper; then
-  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" zypper -q list-updates 2>/dev/null | grep -c '^v ')
+  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '^v ' zypper -q list-updates)
 elif have apt-get; then
-  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" apt-get -s upgrade 2>/dev/null | grep -cE '^Inst ')
+  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '^Inst ' apt-get -s upgrade)
 elif have apk; then
-  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" apk list -u 2>/dev/null | grep -c .)
+  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '.' apk list -u)
 fi </dev/null
 printf '%s\n%s\n' "${count:--1}" "$(date +%s)" >"$PKG_CACHE"
-log "system packages: ${count} upgradable (cache refreshed; apply with \`up\`)"
+# Log the sentinel as UNKNOWN, not as "-1 upgradable". -1 is how the cache spells "we did
+# not get an answer" (no supported manager, or the probe hit MAINT_PKGCOUNT_TIMEOUT), and
+# the whole point of keeping it distinct from 0 is that the daily log must not assert the
+# box is up to date when nothing was measured. The nudge stays silent either way — it
+# needs a positive count — so this is the only place the difference is visible.
+if [[ "${count:--1}" == -* ]]; then
+  log "system packages: count UNAVAILABLE (no supported manager, or the probe exceeded ${MAINT_PKGCOUNT_TIMEOUT}s) — nudge stays silent"
+else
+  log "system packages: ${count} upgradable (cache refreshed; apply with \`up\`)"
+fi
 
 # ── Optional system apply (opt-in, and only where unattended is sane) ─────────
 if [[ "$MAINT_SYSTEM_UPGRADE" == 1 ]]; then

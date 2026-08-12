@@ -2712,6 +2712,10 @@ ucheck "ui: _core_spin propagates the wrapped command's exit code" \
 # this went unnoticed. The command must also be a FUNCTION: with gum installed _core_spin
 # delegates real binaries to `gum spin` and the hand-rolled loop is skipped.
 #
+# Also asserted: the guard leaves a STATIC "(still running…)" frame on its way out. Giving
+# up on the animation must not mean going silent for the rest of the run — a stopped spinner
+# and a wedged one look identical, and the wrapped command here still has seconds to go.
+#
 # Asserted on the ITERATION COUNT, not on CPU%: deterministic and CI-safe. With the guard,
 # the loop stops animating just past 200; without it a broken nap runs six figures of
 # iterations in the same window.
@@ -2741,14 +2745,20 @@ else:
 txt = out.decode(errors="replace")
 rc = re.findall(r"RC=(\d+)", txt)
 naps = re.findall(r"NAPS=(\d+)", txt)
-print("%s %s" % (rc[-1] if rc else "x", naps[-1] if naps else "x"))
+print("%s %s %s" % (rc[-1] if rc else "x", naps[-1] if naps else "x",
+                    "STILL" if "still running" in txt else "SILENT"))
 PYSPIN
   )"
-  _srrc="${_spinout%% *}" _srnaps="${_spinout##* }"
+  read -r _srrc _srnaps _srstill <<<"$_spinout"
   if [[ "$_srrc" == 7 && "$_srnaps" =~ ^[0-9]+$ ]] && ((_srnaps <= 250)); then
     pass "ui: _core_spin stops animating instead of busy-spinning when _core_nap cannot pace (naps=$_srnaps, rc=$_srrc)"
   else
     fail "ui: _core_spin busy-spins when _core_nap cannot pace (rc=$_srrc naps=$_srnaps; want rc=7 and naps<=250)"
+  fi
+  if [[ "$_srstill" == STILL ]]; then
+    pass "ui: _core_spin leaves a '(still running…)' frame when the busy-spin guard fires"
+  else
+    fail "ui: _core_spin goes silent after the busy-spin guard fires (want a static '(still running…)' frame)"
   fi
 else
   skip "_core_spin busy-loop guard (python3 absent — needs a pty to reach the animation loop)"
@@ -2798,13 +2808,70 @@ else:
     os.kill(pid, 9)
 txt = out.decode(errors="replace")
 rc = re.findall(r"UXRC=(\d+)", txt)
-print("%s %s" % (rc[-1] if rc else "x", "END" if "UXEND" in txt else "NOEND"))
+print("%s %s %s" % (rc[-1] if rc else "x", "END" if "UXEND" in txt else "NOEND",
+                    "STILL" if "still running" in txt else "SILENT"))
 PYUX
   )"
-  if [[ "$_uxout" == "0 END" ]]; then
+  read -r _uxrc _uxend _uxstill <<<"$_uxout"
+  if [[ "$_uxrc $_uxend" == "0 END" ]]; then
     pass "ux: ux_spin survives a failing pacing primitive under a 'set -e' sourcer"
   else
-    fail "ux: a failing pacing primitive kills a 'set -e' caller of ux_spin (got '${_uxout}', want '0 END')"
+    fail "ux: a failing pacing primitive kills a 'set -e' caller of ux_spin (got '${_uxrc} ${_uxend}', want '0 END')"
+  fi
+  # Same guard-trip, same requirement as _core_spin's mirror above: ux_spin CLEARS the line
+  # before `wait`, so without a static frame it shows nothing at all for the rest of the run
+  # — the hang it cannot distinguish itself from. This is the stricter of the two cases.
+  if [[ "$_uxstill" == STILL ]]; then
+    pass "ux: ux_spin leaves a '(still running…)' frame when the busy-spin guard fires"
+  else
+    fail "ux: ux_spin goes silent after the busy-spin guard fires (want a static '(still running…)' frame)"
+  fi
+
+  # …and the COMMON path — a working `sleep`, guard never trips — must survive `set -e` too.
+  # The case above only ever exercises the degraded branch, so every post-loop statement on
+  # the happy path (cursor restore, the guard's own test, the ✓ frame, `rm -f`) was untested
+  # under the very discipline this file is written for. That gap is not theoretical: an
+  # arithmetic guard written as `((_degraded)) && { … }` returns 1 whenever _degraded is 0,
+  # which is the normal case, and a future edit that moves it out of &&-list position (into a
+  # bare statement, or a `local x=$((…))`) kills the caller on every successful spin.
+  if have python3; then
+    _uxok="$(python3 - "$HERE/lib/ux.sh" <<'PYUXOK' 2>/dev/null
+import pty, os, sys, select, time, re
+ux = sys.argv[1]
+script = (
+    "set -euo pipefail\n"
+    "source %s\n"
+    "fn() { command sleep 1; return 0; }\n"   # real sleep: the guard must NOT trip
+    "ux_spin lbl fn\n"                        # BARE: set -e stays in force
+    "echo UXRC=$?\n"
+    "echo UXEND\n"
+) % ux
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("bash", ["bash", "-c", script]); os._exit(1)
+out, start = b"", time.time()
+while time.time() - start < 60:
+    r, _, _ = select.select([fd], [], [], 0.01)
+    if r:
+        try: d = os.read(fd, 262144)
+        except OSError: break
+        if not d: break
+        out += d
+    p, _st = os.waitpid(pid, os.WNOHANG)
+    if p: break
+else:
+    os.kill(pid, 9)
+txt = out.decode(errors="replace")
+rc = re.findall(r"UXRC=(\d+)", txt)
+print("%s %s %s" % (rc[-1] if rc else "x", "END" if "UXEND" in txt else "NOEND",
+                    "STILL" if "still running" in txt else "QUIET"))
+PYUXOK
+    )"
+    if [[ "$_uxok" == "0 END QUIET" ]]; then
+      pass "ux: a normal ux_spin run survives 'set -e' and prints no degraded frame"
+    else
+      fail "ux: a normal ux_spin run under 'set -e' (got '${_uxok}', want '0 END QUIET')"
+    fi
   fi
 else
   skip "ux_spin set -e normalisation (python3 absent — needs a pty to reach the animation loop)"
@@ -2836,6 +2903,31 @@ _pm_only ""
 ucheck "update: _pkgup_mgr reports none on a bare PATH" \
   "source '$UPD'; [[ \$(_pkgup_mgr) == none ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+# The startup hook's CLAIM-SLOT write must leave a POSITIONALLY WELL-FORMED cache, i.e.
+# "-1\n<epoch>" and never "\n<epoch>". The hook persists whatever $count holds, and on the
+# first shell of a fresh box there is no cache at all, so an unnormalised (or normalised-to-
+# empty) count wrote a file whose first line was blank — the exact shape that, read back
+# with an UNQUOTED (f) split, slides the epoch into the count slot and prints "1786128391
+# updates available". The reader-side quoting is one half of the fix; this asserts the other.
+#
+# Deterministic against the refresh the hook backgrounds a line later: the stub `brew` sleeps,
+# and _pkgup_count calls it twice, so the claim write is what is on disk when we look. The
+# stub dir is PREPENDED to the real PATH (not isolated to it) because the hook needs `mkdir`;
+# brew is first in _pkgup_mgr's ladder, so the stub still wins on any host.
+_PKGUPT="$SANDBOX/pkgup-claim"
+rm -rf "$_PKGUPT"
+mkdir -p "$_PKGUPT/bin" "$_PKGUPT/cache/zsh"
+printf '#!/bin/sh\nsleep 30\n' >"$_PKGUPT/bin/brew"
+chmod +x "$_PKGUPT/bin/brew"
+ucheck "update: the claim-slot write leaves a well-formed cache (-1, not an empty count)" \
+  "source '$UPD'
+   c=\$XDG_CACHE_HOME/zsh/pkg-updates
+   [[ -r \$c ]] || { print -u2 'no cache written'; exit 1 }
+   local -a l; l=(\"\${(@f)\$(<\$c)}\")
+   [[ \${l[1]} == -1 ]] || { print -u2 \"count slot is '\${l[1]}', want -1\"; exit 1 }
+   [[ \${l[2]} == <-> ]] || { print -u2 \"epoch slot is '\${l[2]}'\"; exit 1 }
+   [[ -z \$(_pkgup_notice) ]]" \
+  PATH="$_PKGUPT/bin:$PATH" XDG_CACHE_HOME="$_PKGUPT/cache" CORE_WELCOME=0
 # up --help must print usage and return 0 WITHOUT attempting an update — the bug the
 # help guard fixes (it used to fall through, not being -y, and run the upgrade). Run
 # on a bare PATH so a regressed guard reaching _pkgup_mgr → none → returns 1, failing
@@ -3423,10 +3515,17 @@ fi
 # because a declined import is never persisted).
 printf '#!/bin/sh\nprintf "Import key? [y/N]: "\nread -r a\nprintf "pkg-alpha 1.0 updates\\n"\n' >"$_MRT/bin/stubmgr"
 chmod +x "$_MRT/bin/stubmgr"
-if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" && [[ -s "$_MRT/count.bash" ]]; then
+#
+# The chain's arms now go through _pkgcount, so that helper is extracted alongside the chain
+# (same block-boundary rule as step()). _to stays STUBBED here — this case is about stdin,
+# and the real timeout is exercised by the separate case below.
+sed -n '/^_pkgcount() {/,/^}/p' "$_MAINT_SH" >"$_MRT/pkgcount.bash"
+if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" &&
+  [[ -s "$_MRT/count.bash" && -s "$_MRT/pkgcount.bash" ]]; then
   if out="$(printf 'sentinel\n' | bash -c '
       have() { [ "$1" = brew ] && return 1; command -v "$1" >/dev/null 2>&1; }
       _to() { shift; "$@"; }
+      . "'"$_MRT/pkgcount.bash"'"
       MAINT_PKGCOUNT_TIMEOUT=30
       PATH="'"$_MRT/bin"'":$PATH
       # Shadow every manager arm onto the prompting stub so the chain is deterministic
@@ -3444,6 +3543,46 @@ if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" && [[ -s "$_MRT
   fi
 else
   fail "maint: could not extract the package-count chain from ${_MAINT_SH##*/}"
+fi
+
+# A package probe that TIMES OUT must leave the -1 "we don't know" sentinel, not 0.
+# The old chain was `count=$(_to … <mgr> | grep -c …)`: when timeout SIGTERMs a stalled
+# manager there is no output, grep prints 0, and grep's non-zero status — the pipeline's —
+# is discarded by the assignment. So the daily log asserted "0 upgradable" (an up-to-date
+# box) on exactly the failure the timeout was added to survive, and the sentinel two lines
+# above the chain could never fire. This drives the REAL _to and _pkgcount (no stubs — the
+# whole point is timeout's own exit status, 124) against a manager that stalls forever,
+# with the bound turned down to 1s so the case costs about a second.
+#
+# The stall stub is a REAL EXECUTABLE named `brew`, not a shell function like the stdin case
+# above: `timeout` execs its argument, so it cannot run a function (it would fail 127, never
+# 124, and the case would pass for the wrong reason). `exec sleep` so the stub process IS the
+# sleep and takes the SIGTERM directly instead of orphaning a 30s child. brew is first in the
+# chain, and the stub dir is prepended, so this arm wins on any host — and it is an arm that
+# goes through _to (the pacman arm deliberately does not).
+if have timeout; then
+  printf '#!/bin/sh\nexec sleep 30\n' >"$_MRT/bin/brew"
+  chmod +x "$_MRT/bin/brew"
+  sed -n '/^_to() {/,/^}/p' "$_MAINT_SH" >"$_MRT/to.bash"
+  if [[ -s "$_MRT/to.bash" && -s "$_MRT/pkgcount.bash" && -s "$_MRT/count.bash" ]]; then
+    if out="$(bash -c '
+        PATH="'"$_MRT/bin"'":$PATH
+        have() { command -v "$1" >/dev/null 2>&1; }
+        . "'"$_MRT/to.bash"'"
+        . "'"$_MRT/pkgcount.bash"'"
+        MAINT_PKGCOUNT_TIMEOUT=1
+        . "'"$_MRT/count.bash"'" >/dev/null 2>&1
+        printf "%s\n" "$count"
+      ' 2>/dev/null)" && [[ "$out" == -1 ]]; then
+      pass "maint: a timed-out package probe reports the -1 sentinel, not 0 upgradable"
+    else
+      fail "maint: a timed-out package probe reports '${out:-}' (want -1 — 0 would log the box as up to date)"
+    fi
+  else
+    fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
+  fi
+else
+  skip "maint timed-out package probe (no \`timeout\` — _to runs the command unbounded)"
 fi
 
 # update.zsh: the first-run welcome (U2 — the cheat-sheet discoverability hint) must
