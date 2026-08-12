@@ -217,7 +217,14 @@ moved() {
   REASON="$1"
 }
 
-# shellcheck disable=SC2329  # invoked indirectly, by the EXIT trap below
+# BOTH codes, deliberately: shellcheck renamed this diagnostic between the versions the
+# fleet actually runs. 0.11.0 (the pin in scripts/tool-versions.env, used by CI's ubuntu and
+# macOS legs) reports a trap-only function as SC2329 "never invoked"; 0.10.0 — which is what
+# `apk add shellcheck` gives the Alpine leg — reports the same thing as SC2317 "unreachable"
+# on the body instead. Disabling only the pinned version's code passes locally and on ubuntu
+# and still fails Alpine, which is exactly how this went red the first time. An unknown code
+# in a disable directive is ignored, so naming both is safe in either direction.
+# shellcheck disable=SC2329,SC2317  # invoked indirectly, by the EXIT trap below
 cleanup() {
   [[ -n "$LOCALDIR" ]] && rm -rf "$LOCALDIR"
   return 0
