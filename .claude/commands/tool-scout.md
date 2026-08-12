@@ -97,12 +97,31 @@ one a workaround was verified against is a finding in its own right, not a footn
      interactive shell in the fleet. That is the judgment call the workflow deliberately does
      not make.
 
-  Also watch **`atuinsh/atuin#3382`** (the accept-but-silent socket — something is
-  listening while the daemon behind it is dead, so a `connect(2)` succeeds and no cheap
-  shell-side probe can tell it from health). That is the guard's documented blind spot
-  and the reason `atuin/config.toml`, `examples/atuin-daemon.service` and
-  `PORTING-MATRIX.md` all steer to the plain always-running unit over socket activation.
-  If it is fixed, that steer can be relaxed. Refs #366, #382.
+  **Three upstream questions the weekly measurement cannot answer**, so they are yours. Each
+  is answerable from upstream's docs, source or release notes — none needs a shell, which is
+  why they live here and not in the script:
+
+  - **`atuinsh/atuin#3382`** — the accept-but-silent socket: something is listening while the
+    daemon behind it is dead, so a `connect(2)` succeeds and no cheap shell-side probe can
+    tell it from health. That is the guard's documented blind spot and the reason
+    `atuin/config.toml`, `examples/atuin-daemon.service` and `PORTING-MATRIX.md` all steer to
+    the plain always-running unit over socket activation. If it is fixed, that steer can be
+    relaxed.
+  - **Does atuin still health-check its own daemon under `autostart`?** The guard stands down
+    *entirely* under `ATUIN_DAEMON__AUTOSTART` (`zsh/00-tools.zsh`), on exactly that premise —
+    an absent socket there is a cue for atuin to start one, not a fault. That covers Alpine and
+    macOS, two of the eight machines, and it is their **only** mitigation. If autostart ever
+    becomes fire-and-forget — spawn once, never re-check — those two lose their net with no
+    symptom. Nothing measures this: the weekly run never sets the variable, because measuring
+    it means spawning a real daemon and owning its teardown.
+  - **Has atuin gained a client-side buffer or queue for the daemon path?** The guard degrades
+    a shell **permanently** on the first failed connect, and that is only correct while atuin
+    is *discarding* during the outage. An atuin that spools and replays inverts the reasoning,
+    and one-way becomes the wrong default. The weekly run probes this only indirectly, with a
+    closing daemon-off arm that must land exactly one row — an upstream design note would beat
+    that probe, so read for one.
+
+  Refs #366, #382, #383.
 
 ## How to report
 

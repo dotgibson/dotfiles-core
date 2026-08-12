@@ -124,7 +124,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   same "run it, don't pattern-match it" idiom Section J uses on the example unit's `ExecStart`.
 
 - **The guard's upstream premise is now measured weekly in CI — and the check it replaces
-  could report "all clear" from an apparatus that had never written a row.**
+  could report "all clear" from an apparatus that had never written a row**
+  (`dotgibson/dotfiles-core#383`).
   `_core_atuin_daemon_guard` is a workaround for one measured fact: on atuin 18.19.0, with the
   daemon enabled and its socket unreachable, `atuin history start` exits 0, prints an id, stays
   silent on stderr and **discards the entry** (`atuinsh/atuin#3561`). A persistent `precmd` hook,
@@ -179,6 +180,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   exits outside the documented 0/1/3 — or leaves an unparseable `verdict.json` — now fails
   the job instead of passing for a quiet week.
 
+  A **second control arm runs last**, and it closes two holes at once. The opening control
+  proves the apparatus at `t=0` only — but a database that stops being **writable** mid-run
+  still **reads** fine, so the `-1` sentinel never fires, all four arms report an
+  honest-looking delta of `0`, and the run reports `holds` from an apparatus that had quietly
+  died. It also probes the premise the four arms structurally cannot see: the one-way degrade
+  is correct only while atuin **discards** during the outage, and an atuin that **spooled**
+  those entries would leave exactly the same absence behind — then flush them on the next
+  successful write, landing five rows on the closing arm instead of one. That would invert the
+  reasoning `zsh/00-tools.zsh` degrades on, so `> 1` is a `moved` finding and `< 1` is
+  `unmeasurable`; the verdict vocabulary is unchanged, and the only new outcomes are ways to
+  **not** reach `holds`. What it still cannot see is stated rather than implied: a spool only a
+  live daemon would drain needs a daemon spawned to observe.
+
+  Finally, the report no longer disclaims coverage it has. Its scope paragraph went on saying
+  "`--hook` is not exercised" after the matrix was widened to four arms — in the same output as
+  a reason that said "all four arms (absent/stale x hook/plain)" — and the assertion that
+  should have caught it grepped for two nouns the false sentence also contained. The coverage
+  claim is now **derived** from the arms that actually ran, in both renderers, because a
+  hand-written one is a second copy of the matrix and the second copy is the one that rots; the
+  test checks the report and the JSON from a single run for **agreement** rather than for
+  keywords.
+
   The row-count SQL and its fail-closed `-1` now live in `scripts/lib/atuin-db.sh`, shared with
   `scripts/bench-atuin-daemon.sh`: both rest on the same claim about atuin's schema, so a forked
   copy would let one gate keep believing a model the other had already found stale.
@@ -186,7 +209,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   because grepping the surrounding prose — which also names 18.16.1 — is how a detector silently
   starts comparing against the wrong version.
 
-- **`/tool-scout` now re-checks the workarounds whose justification can expire.**
+- **`/tool-scout` now re-checks the workarounds whose justification can expire**
+  (`dotgibson/dotfiles-core#383`).
   `_core_atuin_daemon_guard` is not a preference — it is a workaround for one measured
   upstream fact (atuin 18.19.0 discards a history entry when the daemon is enabled and
   its socket is unreachable, `atuinsh/atuin#3561`), and every millisecond it spends on
@@ -194,13 +218,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   true: atuin is not pinned in `mise/config.toml` and has no `renovate.json` entry, so a
   version bump arrives silently on whichever machine updates first, and the behaviour has
   already changed once in the direction that makes it harder to notice (18.16.1 failed
-  loudly; 18.19.0 fails silently). The routine now carries a standing re-verification
-  list, the version each workaround was verified against, and a two-minute throwaway-`HOME`
-  recipe that answers "does the premise still hold?" by measurement rather than by reading
-  a changelog — because a changelog that does not mention the bug is not evidence the bug
-  is gone. Re-verifications lead the report rather than competing inside the ranked
-  shortlist, and "nothing is due" must be said out loud, since silence reads the same as
-  forgetting.
+  loudly; 18.19.0 fails silently). The routine now carries a standing re-verification list
+  and the version each workaround was verified against.
+
+  The **measurement** is deliberately not there and must not be copied back: that is what
+  `scripts/verify-atuin-guard.sh` and its weekly job are for (entry above), and the recipe
+  that used to live in the routine is the one that failed open. What is left is the half a
+  script cannot do — compare the anchor in `zsh/00-tools.zsh` to atuin's newest release, lead
+  with any open verdict issue, and weigh the remedy as an eight-repo change — plus the
+  upstream questions no measurement here can reach: whether atuin still health-checks its own
+  daemon under `autostart` (the guard stands down entirely there, and that is the **only**
+  mitigation on Alpine and macOS), and whether it has gained a client-side buffer that would
+  invert the one-way degrade. A changelog that does not mention the bug is still not evidence
+  the bug is gone, so a release past the anchor is a finding in its own right.
+  Re-verifications lead the report rather than competing inside the ranked shortlist, and
+  "nothing is due" must be said out loud, since silence reads the same as forgetting.
 
 ### Fixed
 

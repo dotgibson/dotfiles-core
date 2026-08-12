@@ -17,16 +17,18 @@
 # THREE VERDICTS, NEVER TWO. The two-verdict version of this check is the one that already
 # shipped and was wrong, so the third is the whole point:
 #
-#   holds         the control arm wrote, and BOTH unreachable shapes gave rc 0, an id on
-#                 stdout, empty stderr, and a row delta of exactly 0. The guard still earns
-#                 its place on every prompt in the fleet.
-#   moved         the control arm wrote, and something about an unreachable shape is now
-#                 different. zsh/00-tools.zsh's rationale block is OVERCLAIMING, and the
-#                 guard needs retiring, version-gating or reshaping — a human decision,
-#                 weighed as an eight-repo change.
+#   holds         BOTH control arms wrote exactly one row, and BOTH unreachable shapes gave
+#                 rc 0, an id on stdout, empty stderr, and a row delta of exactly 0. The
+#                 guard still earns its place on every prompt in the fleet.
+#   moved         the control arms wrote, and something about an unreachable shape is now
+#                 different — or the closing control wrote MORE than one row, meaning the
+#                 unreachable entries were spooled and replayed rather than discarded.
+#                 zsh/00-tools.zsh's rationale block is OVERCLAIMING, and the guard needs
+#                 retiring, version-gating or reshaping — a human decision, weighed as an
+#                 eight-repo change.
 #   unmeasurable  the apparatus could not be trusted: no atuin, no python3, the anchor could
 #                 not be read, the sandbox could not be built, the row count came back -1,
-#                 unreachability could not be PROVEN, or the control arm did not write.
+#                 unreachability could not be PROVEN, or either control arm did not write.
 #                 This is NOT `holds`. A detector that quietly stops detecting is
 #                 indistinguishable from good news, and that is the failure this exists to
 #                 prevent — so declining is a first-class outcome with its own exit code.
@@ -38,6 +40,16 @@
 # back to 0, and it printed the premise-holds signature from an apparatus that had never
 # written a row. It was right by luck. So here a daemon-OFF write runs FIRST and must land
 # exactly one row; if it cannot, nothing observed afterwards means anything.
+#
+# WHY A SECOND ONE, AT THE END. The opening control proves the apparatus at t=0 only, and an
+# apparatus can stop writing MID-RUN — a DB that goes unwritable still READS fine, so the
+# -1 sentinel never fires and four honest-looking zeros produce a `holds` from a run that
+# measured nothing. The closing arm also probes the ONE-WAY-DEGRADE premise, which the four
+# arms structurally cannot: Core degrades a shell permanently on the first failed connect
+# because atuin is DISCARDING during the outage, and a build that instead SPOOLED those
+# entries would leave the same delta of 0 behind — but flush them on the next successful
+# write, landing 5 rows here instead of 1. That would INVERT the reasoning one-way rests on
+# (dotgibson/dotfiles-core#383).
 #
 # WHY UNREACHABILITY IS PROVEN, NOT ASSUMED. A delta of zero against a socket that was
 # quietly healthy would read as "still discarding" when the truth is "the daemon took it".
@@ -149,16 +161,20 @@ run creates and deletes. It never touches your real history.
 Two unreachable shapes are measured, because the guard's rationale claims both:
   absent   the socket path does not exist
   stale    a real AF_UNIX socket file with nothing listening (a crashed daemon)
-Each is PROVEN unreachable before anything is written, so a verdict can never rest on a
-socket that was quietly healthy.
+Each is measured with and without --hook (the form atuin's own `init zsh` emits, and so the
+only one a real shell runs), and each is PROVEN unreachable before anything is written, so a
+verdict can never rest on a socket that was quietly healthy.
 
 A daemon-OFF control arm runs first and must write exactly one row. It is the apparatus
 check: if the control cannot write, nothing observed afterwards means anything, and the
-verdict is `unmeasurable` rather than a guess.
+verdict is `unmeasurable` rather than a guess. A second one runs LAST and must also write
+exactly one row: it proves the apparatus was still writable after the arms ran, and a delta
+above 1 means atuin spooled the unreachable entries and replayed them rather than discarding
+them — which would invert the premise the guard's one-way degrade rests on.
 
 VERDICTS AND EXIT CODES
-  0  holds         control wrote; both shapes: rc 0, id printed, empty stderr, delta 0
-  1  moved         control wrote; something differs — the rationale now overclaims
+  0  holds         controls wrote 1 each; all arms: rc 0, id printed, empty stderr, delta 0
+  1  moved         the controls wrote; something differs — the rationale now overclaims
   2  usage error
   3  unmeasurable  the apparatus could not be trusted. NOT "holds".
 
@@ -207,6 +223,10 @@ AT_VER="unknown"
 ANCHOR="unknown"
 ANCHOR_REL="unknown" # same | newer | older | unknown
 CTL_DELTA=-1
+# The CLOSING daemon-off control arm's delta. A flat scalar beside CTL_DELTA and deliberately
+# NOT an entry in ARM_NAME below: it is a control, not a measurement of the premise, and the
+# report table and the JSON `arms` object both mean "an unreachable shape we measured".
+DRAIN_DELTA=-1
 # Parallel indexed arrays, one entry per measured arm — bash 3.2 has no associative arrays
 # (scripts/lib/common.sh pins that constraint), and four arms x five facts as flat scalars
 # was twenty names to keep in step. The index is the arm; ARM_NAME[i] is "shape_hookmode".
@@ -335,11 +355,10 @@ PY
 }
 
 # ── the measurement ───────────────────────────────────────────────────────────
-# run_one <label-var-prefix> <socket-path-or-empty> — one `atuin history start` under the
-# sandbox env, capturing rc, stdout (the history id) and stderr, and the row delta it caused.
-# An empty socket path means the daemon-OFF control arm.
+# One `atuin history start` under the sandbox env, capturing rc, stdout (the history id)
+# and stderr, and the row delta it caused.
 DB=""
-# run_one <mode> <socket-or-empty> <hook:yes|no>
+# run_one <mode> <socket-or-empty> <hook:yes|no> [settle_s]
 #   -> "readok|rc|delta|idok|err"   (5 fields, `|`-joined; err has | and newlines stripped)
 #
 # An empty socket path is the daemon-OFF control arm.
@@ -353,7 +372,7 @@ DB=""
 # BREAKS the poll immediately: retrying a read that just spent SQLite's 30-second busy
 # timeout, twenty times, is ten minutes of a scheduled job proving nothing.
 run_one() {
-  local mode="$1" sock="$2" hook="$3" before after rc id err idok=0 i
+  local mode="$1" sock="$2" hook="$3" settle="${4:-0}" before after rc id err idok=0 i
   local -a env_extra=() hookarg=()
   if [[ -n "$sock" ]]; then
     env_extra=("ATUIN_DAEMON__ENABLED=true" "ATUIN_DAEMON__SOCKET_PATH=$sock")
@@ -389,6 +408,17 @@ run_one() {
     ((after > before)) && break
     sleep 0.1
   done
+  # SETTLE — only the drain arm passes this, and only the drain arm needs it. The poll above
+  # breaks the instant the count goes UP, which is exactly right for an arm whose expected
+  # delta is 0 but wrong for the one arm expecting 1: a build that replays a spool would very
+  # plausibly commit this command's own row first and the spooled ones a moment later, and
+  # breaking on the first increment would read that as a delta of 1 — the discard signature —
+  # from the arm that exists to catch it. One sleep, once, on one arm: the four measurement
+  # arms' timing is untouched.
+  if [[ "$settle" != 0 ]] && ((after >= 0)); then
+    sleep "$settle"
+    after="$(atuin_db_rows "$DB")"
+  fi
   ((after < 0)) && {
     printf '0|%s|-1|0|%s\n' "$rc" "$err"
     return 0
@@ -562,6 +592,36 @@ measure() {
     done
   done
 
+  # ── closing control arm: daemon OFF must STILL write exactly one row ────────
+  # Two jobs the opening control cannot do, and the second is why #383 asked for it.
+  #
+  # (a) It proves the apparatus was still writable AFTER the arms ran. The opening control
+  #     proves it at t=0 only, and a DB that goes UNWRITABLE mid-run still READS fine — so
+  #     `readok` never fires, all four arms report a delta of 0, and the run reports `holds`
+  #     from an apparatus that had quietly stopped working. That is the same
+  #     apparatus-versus-upstream conflation the opening control exists to prevent, one step
+  #     further along the timeline.
+  #
+  # (b) It is the cheapest probe of the ONE-WAY-DEGRADE premise (zsh/00-tools.zsh). Core
+  #     degrades a shell PERMANENTLY on the first failed connect specifically because atuin
+  #     is DISCARDING during the outage, so degrading early is still correct. If atuin ever
+  #     buffers and replays instead, that reasoning INVERTS and one-way becomes the wrong
+  #     default — and the four arms cannot see the difference, because a spooled entry and a
+  #     discarded one both leave the row count at 0 while the socket is unreachable. A build
+  #     that spools the four and flushes them on the next successful write lands HERE as a
+  #     delta of 5, not 1. A delta of exactly 1 does not DISPROVE buffering — a spool only a
+  #     live daemon would drain is out of reach without spawning one — and the report says so
+  #     rather than implying coverage.
+  #
+  # Plain, no --hook, matching the opening control: this arm measures the apparatus, and
+  # keeping the two controls on the same form makes their deltas directly comparable.
+  line="$(run_one drain "" no 1)"
+  IFS='|' read -r _ok _rc DRAIN_DELTA _idok _err <<<"$line"
+  if [[ "$_ok" != 1 ]] || ((DRAIN_DELTA < 1)); then
+    unmeasurable "the CLOSING daemon-off control arm wrote ${DRAIN_DELTA} rows, not 1 — the apparatus stopped writing partway through this run, so the zeros the four arms reported are not evidence about upstream (readok=${_ok}: 0 means the history DB could not be read at all)"
+    return
+  fi
+
   # ── the verdict ─────────────────────────────────────────────────────────────
   # `holds` is the CONJUNCTION of every property zsh/00-tools.zsh claims, on every arm.
   # Written as an explicit list of failures rather than one boolean, so the report can say
@@ -576,6 +636,11 @@ measure() {
     [[ -z "${ARM_ERR[n]}" ]] || diffs+=("${a}: it now writes to stderr — \"${ARM_ERR[n]}\"")
     [[ "${ARM_IDOK[n]}" == 1 ]] || diffs+=("${a}: stdout is not a well-formed history id (32 hex digits), and a malformed id is what crashed \`history end\` on 18.16.1")
   done
+  # The drain arm reads as a `moved` finding only ABOVE 1 — below it is an apparatus failure
+  # and was already turned into `unmeasurable` above. Routed through the same `diffs` list as
+  # the arms so the "say WHICH property moved" reporting is reused rather than forked, and so
+  # a run where both the arms AND the drain moved reports both.
+  ((DRAIN_DELTA == 1)) || diffs+=("drain: the first successful write after four unreachable ones landed ${DRAIN_DELTA} rows, not 1 — this atuin BUFFERS and replays rather than discarding, which INVERTS the premise the one-way degrade in zsh/00-tools.zsh rests on")
 
   if ((${#diffs[@]})); then
     local joined="" d
@@ -583,17 +648,36 @@ measure() {
     moved "${joined#; }"
   else
     VERDICT=holds
-    REASON="all four arms (absent/stale x hook/plain) still exit 0, print a well-formed id, stay silent on stderr, and discard the entry"
+    REASON="all ${#ARM_NAME[@]} arms ($(arms_sentence)) still exit 0, print a well-formed id, stay silent on stderr, and discard the entry — and the daemon-off write that followed them landed exactly 1 row, so nothing was spooled and replayed"
   fi
 }
 
 # ── render ────────────────────────────────────────────────────────────────────
+# What this run actually measured, DERIVED from ARM_NAME rather than written out beside the
+# loop that fills it. Both prose claims about coverage — the `holds` reason and the report —
+# read from here, because a hand-written coverage claim is a second copy of the matrix and the
+# second copy is the one that rots: the arm list was extended to four in review, and the
+# report's scope paragraph went on saying `--hook` was not exercised while two hook arms ran,
+# in the same output as a reason that said "all four arms (absent/stale x hook/plain)".
+# An empty list is a legitimate answer — an `unmeasurable` run measured nothing, and saying
+# that is more useful than inheriting a list from a run that did.
+arms_sentence() {
+  local n out=""
+  ((${#ARM_NAME[@]})) || {
+    printf 'nothing — no arm ran'
+    return
+  }
+  for ((n = 0; n < ${#ARM_NAME[@]}; n++)); do out+=", ${ARM_NAME[n]//_/ / }"; done
+  printf '%s' "${out#, }"
+}
+
 json_escape() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])' 2>/dev/null; }
 
 emit_json() {
   printf '{"verdict":"%s","reason":"%s","atuin_version":"%s","anchor":"%s","anchor_relation":"%s",' \
     "$VERDICT" "$(json_escape "$REASON")" "$AT_VER" "$ANCHOR" "$ANCHOR_REL"
-  printf '"control_delta":%s,"bounded":%s,"arms":{' "${CTL_DELTA:--1}" "$BOUNDED"
+  printf '"control_delta":%s,"drain_delta":%s,"bounded":%s,"arms":{' \
+    "${CTL_DELTA:--1}" "${DRAIN_DELTA:--1}" "$BOUNDED"
   local n first=1
   for ((n = 0; n < ${#ARM_NAME[@]}; n++)); do
     ((first)) || printf ','
@@ -616,7 +700,8 @@ emit_report() {
     printf '| | |\n| --- | --- |\n'
     printf '| atuin measured | `%s` |\n' "$AT_VER"
     printf '| verified-against anchor (`zsh/00-tools.zsh`) | `%s` (%s) |\n' "$ANCHOR" "$ANCHOR_REL"
-    printf '| daemon-off control arm | wrote %s row(s) — must be 1 |\n' "$CTL_DELTA"
+    printf '| daemon-off control arm (opening) | wrote %s row(s) — must be 1 |\n' "$CTL_DELTA"
+    printf '| daemon-off control arm (closing) | wrote %s row(s) — must be 1; above 1 means the unreachable arms were spooled and replayed |\n' "$DRAIN_DELTA"
     [[ "$BOUNDED" == true ]] ||
       printf '| call bound | **none** — no `timeout`/`gtimeout` on this box, so a wedged atuin could not have been cut short |\n'
     local n
@@ -639,7 +724,8 @@ emit_report() {
       printf 'No action needed. The guard still earns its place.\n\n'
       ;;
     esac
-    printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage: Linux x86_64 **glibc only** — the Alpine/musl half of the fleet is unmeasured, and musl is exactly where the `autostart` path lives. `--hook` is not exercised. The accept-but-silent socket (`atuinsh/atuin#3382`) is structurally out of scope: this measures *unreachable*, and that shape is *reachable and lying*.\n'
+    printf -- '**Measured here:** %s.\n\n' "$(arms_sentence)"
+    printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. Linux x86_64 **glibc only** — the Alpine/musl half of the fleet is unmeasured. The **`autostart` stand-down** is unmeasured too, and it is the ONLY mitigation on the two machines that take it (Alpine, macOS): this run never sets `ATUIN_DAEMON__AUTOSTART`, so "atuin health-checks its own daemon" stays an assumption here rather than a measurement, and testing it would mean spawning a real daemon and owning its teardown. **Buffer-and-replay** is probed only by the closing daemon-off control arm above; a spool that only a live daemon would drain is out of reach for the same reason. The accept-but-silent socket (`atuinsh/atuin#3382`) is structurally out of scope: this measures *unreachable*, and that shape is *reachable and lying*.\n'
   } >"$REPORT"
 }
 
