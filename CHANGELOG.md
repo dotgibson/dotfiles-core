@@ -54,6 +54,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   network home rather than one. The autostart spawn cost reproduced on real disk at **+42.16 ms**
   (p50), in line with the ~+41/+45 ms seen in containers.
 
+- **The modernization floor now bans `allow-unsafe-pr-checkout`, the one input that can
+  re-open a "pwn request" in this fleet.** `actions/checkout` v7 (2026-06-18) started
+  refusing to check out fork-PR code under `pull_request_target` / `workflow_run` — a
+  `repository:`, `ref:`, or head SHA resolving to the fork — and backported that enforcement
+  on 2026-07-20 to v3.7.0/v4.4.0/v5.1.0/v6.1.0/v7.0.1. The single escape hatch is an input
+  GitHub deliberately named to be easy to spot in code review and static analysis, so
+  `scripts/modern-baseline.yml` now greps for it as a rule-1 banned pattern. Nothing had to
+  be fixed first: the string appears nowhere, there is no `pull_request_target` in the fleet,
+  and the lone `workflow_run` trigger (`sync-fanout.yml`) checks out a released tag rather
+  than a fork ref — so this is purely preventative, and it fans out N-way to the OS and role
+  repos that consume `lint-call.yml@v4` and friends. `dotfiles-Kali` / `dotfiles-Defense` are
+  exactly the repos where someone might one day reach for `pull_request_target`. Rule 1's
+  existing `grep -HnF` sweep already covers both `.github/workflows/` and
+  `.github/actions/`, so no new enforcement branch was needed in `check-modern.sh`.
+  Also refreshes the `banned_runners` rationale with `ubuntu-22.04`'s now-fully-published
+  schedule — deprecation opens 2026-09-17, brownouts 2027-03-23/03-30/04-06/04-13, fully
+  unsupported 2027-04-17 (`actions/runner-images#14254`); comment-only, the ban itself has
+  been in place since it was added pre-emptively.
+
 - **`scripts/bench-atuin-daemon.sh` — the atuin daemon's latency claim is no longer purely
   borrowed.** Adoption's whole justification is that the daemon owns the SQLite writes so
   shells stop contending for the DB lock, and that was cited from upstream, never measured
