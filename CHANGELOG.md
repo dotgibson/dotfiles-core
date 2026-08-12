@@ -684,12 +684,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `sd 'alpha\nbeta' X` on two-line input returns rc=0 with the input unchanged, and
   `sd --across` matches.
 
-  The reason this earns a `PORTING-MATRIX.md` footnote (²²) rather than a detection change
-  is that **it cannot be detected**: the Homebrew **1.1.0** build self-reports `sd 1.0.0`,
-  so version sniffing is useless and a `HAVE_SD` version gate is not an option. The
-  supported probe is the flag itself — `sd --help | grep -q -- --across`. Same class of
-  footnote as `batcat` (⁴) and the mikefarah-vs-kislyuk `yq` split (⁶): the command is not
-  quite what its name implies. Found by the weekly `/tool-scout` scan (#376).
+  This earns a `PORTING-MATRIX.md` footnote (²²) rather than a detection change for two
+  separate reasons. **Core needs no runtime change**: nothing here calls `sd`, so there is
+  nothing to gate. And **the version string could not carry a gate anyway** — the Homebrew
+  **1.1.0** build self-reports `sd 1.0.0`, so `HAVE_SD` could never have keyed off it.
+  Consumers that genuinely must know — a role script targeting both builds — **feature**-detect
+  instead, with `sd --help | grep -q -- --across`, and add `-A` only when the probe says the
+  flag exists; hard-coding it breaks the pre-1.1.0 builds this matrix tracks, which already
+  match whole-file. Same class of footnote as `batcat` (⁴) and the mikefarah-vs-kislyuk `yq`
+  split (⁶): the command is not quite what its name implies. Found by the weekly
+  `/tool-scout` scan (#376).
 
 - **`pre-commit` moved off a known-broken patch: `4.6.1 → 4.6.2`.** 4.6.2's sole content is a
   fix for a 4.6.1 regression in `language: node` hooks whose `package.json` declares a
