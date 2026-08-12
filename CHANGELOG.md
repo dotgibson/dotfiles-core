@@ -103,6 +103,69 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   row-count SQL is extracted from the script and _executed_ against a synthetic table, the
   same "run it, don't pattern-match it" idiom Section J uses on the example unit's `ExecStart`.
 
+- **The guard's upstream premise is now measured weekly in CI — and the check it replaces
+  could report "all clear" from an apparatus that had never written a row.**
+  `_core_atuin_daemon_guard` is a workaround for one measured fact: on atuin 18.19.0, with the
+  daemon enabled and its socket unreachable, `atuin history start` exits 0, prints an id, stays
+  silent on stderr and **discards the entry** (`atuinsh/atuin#3561`). A persistent `precmd` hook,
+  a throttled `connect(2)` on the prompt path, and a one-way degrade in every interactive shell
+  across eight repos are justified by that fact alone.
+
+  The copy-paste recipe that carried the standing re-verification **failed open**. It seeded its
+  database through the unreachable-daemon path, so on a build that discards, the database was
+  never created; its row count masked every failure as `0`; and before and after were therefore
+  both `0`, which is the premise-holds signature. It was right by luck, not by measurement — and
+  any apparatus failure at all, a missing `python3` or an unreadable DB, read the same way.
+  Measuring "the row count did not go up" without first proving the apparatus _can_ write
+  measures nothing.
+
+  `scripts/verify-atuin-guard.sh` replaces it and reports **three** verdicts rather than two,
+  because the third is the one that matters: `holds`, `moved`, and `unmeasurable` — the last
+  meaning the apparatus could not be trusted, which is emphatically **not** good news and never
+  collapses into `holds`. A daemon-**off** control arm runs first and must write exactly one row
+  before any verdict is allowed. Both unreachable shapes the guard claims to catch are measured —
+  an absent socket and a stale socket file left by a crashed daemon — and each is **proven**
+  unreachable first, by a bounded `connect(2)` and the `/proc/net/unix` LISTEN scan, so a delta
+  of zero can never rest on a socket that was quietly healthy. Exit codes are the verdict
+  (`0`/`1`/`3`), which deliberately breaks this repo's skip-and-exit-0 idiom in one place: exit 0
+  is a positive assertion about upstream, so a bare box must not be able to produce it.
+
+  `.github/workflows/atuin-guard-verify.yml` runs it every Tuesday at 13:00 UTC against
+  **whatever atuin upstream ships that week** — the one thing in this repo deliberately _not_
+  pinned, because a pinned atuin would re-measure a version whose behaviour is already recorded
+  and miss the next release, which is the one that actually costs history. That inversion is
+  bounded structurally rather than by trust, in three jobs: `resolve` holds a token and verifies
+  the download's checksum and GitHub build-provenance attestation but never executes a byte of it
+  (`gh attestation verify` has no anonymous mode, which is what forces the split); `measure` holds
+  **no** token at all and is the only job that runs upstream code, refusing to proceed unless the
+  asset still hashes to the digest `resolve` attested; `report` holds `issues: write` and never
+  sees the binary, consuming only an opaque base64 blob. `holds` files nothing — a bot that opens
+  an issue weekly to say nothing changed gets muted.
+
+  Review hardening, because the first cut of this got three of them wrong in ways that
+  matter. The detector now measures **four** arms, not two — `{absent, stale}` x
+  `{--hook, plain}` — because atuin's own `init zsh` emits
+  `atuin history start --hook -- "$1"`, so the plain form is a path no shell in the fleet
+  actually runs and a change scoped to hook mode could have broken every prompt while the
+  detector reported `holds`. An **unreadable database mid-run is now `unmeasurable`, not
+  `moved`**: `atuin_db_rows` returns `-1` on a failed read, `after - before` then goes
+  negative, and the verdict block read that as "the row count changed" — the same
+  apparatus-versus-upstream conflation the control arm exists to prevent, pointing the
+  other way. And a history id is checked for **shape**, not merely non-emptiness: the
+  premise is that the shell gets an id it can hand to `history end`, so a deprecation
+  notice on stdout must not read as a pass. In the workflow, a value derived from an
+  upstream file can no longer forge job outputs (a multi-line `.sha256` could append
+  `ok=true` after `ok=false` and get an unattested asset measured), and a verifier that
+  exits outside the documented 0/1/3 — or leaves an unparseable `verdict.json` — now fails
+  the job instead of passing for a quiet week.
+
+  The row-count SQL and its fail-closed `-1` now live in `scripts/lib/atuin-db.sh`, shared with
+  `scripts/bench-atuin-daemon.sh`: both rest on the same claim about atuin's schema, so a forked
+  copy would let one gate keep believing a model the other had already found stale.
+  `zsh/00-tools.zsh` gains a machine-readable `# CORE_ATUIN_GUARD_VERIFIED_AGAINST=` anchor,
+  because grepping the surrounding prose — which also names 18.16.1 — is how a detector silently
+  starts comparing against the wrong version.
+
 - **`/tool-scout` now re-checks the workarounds whose justification can expire.**
   `_core_atuin_daemon_guard` is not a preference — it is a workaround for one measured
   upstream fact (atuin 18.19.0 discards a history entry when the daemon is enabled and

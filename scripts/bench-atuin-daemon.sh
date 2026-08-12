@@ -104,6 +104,11 @@ cd "$HERE" || exit 1
 # Shared palette + have()/skip() (this script keeps its own result-table printfs).
 # shellcheck source=scripts/lib/common.sh
 source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+# ROWCOUNT_PY / atuin_db_rows / atuin_db_checkpoint. Shared with
+# scripts/verify-atuin-guard.sh, which rests on the SAME claim about atuin's schema that
+# the row rule below does — so the two cannot quietly diverge (see the lib's header).
+# shellcheck source=scripts/lib/atuin-db.sh
+source "${BASH_SOURCE[0]%/*}/lib/atuin-db.sh"
 
 # Tuning is via env (see header). Parse EVERY arg and reject an unknown one (or a stray
 # extra) rather than ignore it — the same fail-closed contract as the gates.
@@ -495,15 +500,9 @@ fi
 # Fold a database's WAL back into its main file. Only ever called where no daemon holds the
 # file open — at seed time and inside db_reset — so it cannot contend with the process under
 # measurement. (db_rows deliberately does NOT checkpoint, for exactly that reason.)
-db_checkpoint() {
-  python3 -c 'import sqlite3, sys
-try:
-    con = sqlite3.connect(sys.argv[1], timeout=30)
-    con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    con.close()
-except Exception:
-    pass' "$1" 2>/dev/null
-}
+# A thin wrapper over scripts/lib/atuin-db.sh so every call site below reads unchanged.
+# The rationale for the checkpoint (and for db_rows NOT checkpointing) now lives in the lib.
+db_checkpoint() { atuin_db_checkpoint "$1"; }
 db_checkpoint "$DB"
 rows="$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select count(*) from history").fetchone()[0])' "$DB" 2>/dev/null)"
 printf '   seeded: %s rows (%s)\n' "${rows:-?}" "$(du -h "$DB" | cut -f1)"
@@ -537,29 +536,11 @@ SEEDDIR="$SB/seed-datadir"
 for _d in "$DATADIR"/*.db; do db_checkpoint "$_d"; done
 cp -a "$DATADIR" "$SEEDDIR"
 
-# Row count as SQLite sees it RIGHT NOW, optionally filtered. Kept in a variable, not
-# inlined, so scripts/test-core.sh can EXTRACT and execute this exact SQL against a
-# synthetic table — the same "run it, don't pattern-match it" idiom Section J uses on the
-# example unit's ExecStart. The trailing newline before the closing quote is what the
-# extraction sed keys on; don't collapse it.
-#
-# Deliberately NO wal_checkpoint here, unlike the seeding step above: a reader on a WAL
-# database already sees committed WAL frames, and asking for a checkpoint while the daemon
-# still holds the file open would pick a lock fight with the very process just measured.
-# (db_checkpoint serves a different purpose — making the data-dir SNAPSHOT self-contained,
-# since a directory copy captures the main files as they are.) A plain read-write connect, not
-# `mode=ro`: read-only access to a WAL DB needs a usable -shm, and a crashed writer can
-# leave a -wal without one, which would fail the open and wrongly condemn a good arm.
-# Any failure prints -1, which can only ever FAIL a comparison, never satisfy one.
-ROWCOUNT_PY='import sqlite3, sys
-try:
-    con = sqlite3.connect(sys.argv[1], timeout=30)
-    print(con.execute("select count(*) from history where " + sys.argv[2]).fetchone()[0])
-    con.close()
-except Exception:
-    print(-1)
-'
-db_rows() { python3 -c "$ROWCOUNT_PY" "$DB" "${1:-1=1}" 2>/dev/null; }
+# Row count as SQLite sees it RIGHT NOW, optionally filtered — a thin wrapper over
+# scripts/lib/atuin-db.sh, which holds the SQL, the -1 fail-closed contract, and the
+# reasoning for both. This file's DB path is fixed; the lib takes it as an argument so a
+# second gate can share it.
+db_rows() { atuin_db_rows "$DB" "${1:-1=1}"; }
 
 # Rows present after db_reset (the seed plus its one warmup write), so an arm's expected
 # delta is exactly WRITERS x ITERS. Set by db_reset; declared here for `set -u`.
