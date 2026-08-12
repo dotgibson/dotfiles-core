@@ -59,6 +59,7 @@ _Repo status_ at the bottom).
 | sd²²             | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              |
 | gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            |
 | jnv¹⁷            | AUR               | cargo        | cargo             | cargo                      | cargo             |
+| lnav²¹ ²⁴        | `lnav`            | `lnav`       | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          |
 | glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          |
 | gum              | `gum`             | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵           |
 | xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              |
@@ -303,9 +304,10 @@ the counterpart to ³. These cells name where the tool comes from **when you opt
 Linux repo's `install/packages.txt` carries it and no `bootstrap.sh` installs it, so Core
 lights the `HAVE_*` probe only once you install it yourself.
 
-- `hyperfine`, `shellcheck`, `shfmt`, `ouch` are **macOS-only in practice**: the MacBook
-  `Brewfile` carries all four; **no** Linux repo does. The packaged names in their rows are
-  what you would install by hand, not what a bootstrap gives you.
+- `hyperfine`, `shellcheck`, `shfmt`, `ouch`, `lnav`²⁴ are **macOS-only in practice**: the
+  MacBook `Brewfile` carries them; **no** Linux repo does. The packaged names in their rows
+  are what you would install by hand, not what a bootstrap gives you. (Deliberately not a
+  counted list — "all four" went stale the first time this family grew.)
 - The cells that previously showed **³** here — `ouch` and `jujutsu` on Gentoo **and** Kali,
   `ast-grep` and `shfmt` on Gentoo, `lazygit` on Kali — promised a best-effort bootstrap
   install that **does not exist**, verified against each repo's `bootstrap.sh` and
@@ -348,6 +350,50 @@ the partial-upgrade footgun, so `os/arch.zsh` provides only `pacu` (a full `-Syu
 and `pacout` (`checkupdates`, which lists updates without touching the sync DB at
 all). There is no `-Sy <pkg>` alias **on purpose** — see "Distro quirks" below. Do
 not "helpfully" add one.
+
+²⁴ lnav: OPT-IN log reader — the verb Core had no tool for. `bat`/`rg` read a log as
+**lines**, `jq`/`gron`/`jnv` read it as **JSON**, `glow` as markdown; `lnav` reads it as a
+**log**: it autodetects common formats, merges several files into one timeline ordered by
+timestamp, follows like `tail -f`, and exposes the parsed records to SQL. Its own command
+(no alias, like `jq`/`gron`/`jnv`), `HAVE_LNAV`-guarded in `zsh/00-tools.zsh`, inert
+without the binary. A **C++** CLI, so it has no `cargo`/`go install` escape hatch like the
+Rust/Go tools above — but it does not need one: upstream publishes **static musl binaries**
+per release (`lnav-0.14.0-linux-musl-x86_64.zip`, and an `arm64` twin), so the fallback on
+an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
+the cleanest way to get 0.14.0 onto Gentoo or Debian/Kali without waiting for the package.
+**Detect-only on Linux, like `jnv`¹⁷ and `gping`¹⁹**: it is in no Linux repo's
+`install/packages.txt` and no `bootstrap.sh` installs it, so Core lights `HAVE_LNAV` only
+once you install it yourself. **macOS is the exception — the MacBook `Brewfile` carries
+it** (added 2026-07-15), which puts `lnav` squarely in ²¹'s "macOS-only in practice" family
+rather than jnv's "barely packaged anywhere" one: every distro in the table above ships it,
+none of them installs it for you.
+
+Versions **verified against each distro's own package pages** on 2026-08-12, not taken from
+a repology snapshot. Upstream is 0.14.0 (2026-04-12). Rolling targets get one query each,
+because that query is the complete answer; **Fedora is versioned, so every supported stable
+release is named separately** rather than collapsed into one unqualified ✓:
+
+| Target | Release | lnav |
+| --- | --- | --- |
+| Arch | `extra` (rolling) | 0.14.0-1 |
+| openSUSE | Tumbleweed (rolling) | 0.14.0 |
+| Alpine | `edge/community` — **native musl build** | 0.14.0-r0 |
+| Homebrew | rolling | 0.14.0 |
+| **Fedora** | **Rawhide / F45** | **0.14.0-3.fc45** |
+| **Fedora** | **F44** | **0.13.2-2.fc44** |
+| **Fedora** | **F43** | **0.12.4-2.fc43** |
+| **Kali/Debian** | rolling / sid | **0.13.2** |
+| **Gentoo** | `app-admin/lnav` | **0.11.2** |
+
+So "Fedora has it" is true but "Fedora is current" is only true on F45/Rawhide — F44 and F43
+track one and two minors back respectively. Two targets lag enough to be worth naming:
+
+- **Gentoo `app-admin/lnav` is 0.11.2** — the only version in the tree, stable on amd64/x86,
+  and the package is flagged as **needing a new maintainer**, so do not expect it to close
+  the gap on its own. Three minor releases behind. Re-check on the next Gentoo stamp.
+- **Kali/Debian `lnav` is 0.13.2** — one minor behind, the smaller gap of the two.
+
+On either, the upstream static musl zip above is the way to 0.14.0 without waiting.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

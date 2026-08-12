@@ -116,6 +116,7 @@ _have tldr  && HAVE_TLDR=1          # tealdeer binary (20-aliases.zsh: help → 
 _have jq && HAVE_JQ=1               # JSON processor (gron greps; jq transforms — complements)
 _have yq && HAVE_YQ=1              # YAML/JSON/XML processor (the jq of YAML)
 _have jnv && HAVE_JNV=1            # interactive jq-filter editor + collapsible JSON viewer — own command, no alias (the "explore" verb to jq's "transform"/gron's "grep"). Opt-in; inert without the binary.
+_have lnav && HAVE_LNAV=1          # log reader — merges timelines, autodetects formats, runs SQL over records; own command, no alias (bat/rg read lines, jq/gron read JSON; nothing else reads a log AS a log). Opt-in; inert without the binary.
 _have duf && HAVE_DUF=1             # modern df (20-aliases.zsh: df → duf, with df -h fallback)
 _have ouch && HAVE_OUCH=1          # one-binary archive (un)packer (30-functions.zsh: extract prefers it)
 _have hyperfine && HAVE_HYPERFINE=1 # benchmarking (the perf note at the top of this file uses it)

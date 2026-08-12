@@ -15,6 +15,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`lnav` — the missing "read a log as a log" verb** (`dotgibson/dotfiles-core#392`).
+  `00-tools.zsh` now detects `lnav` and sets `HAVE_LNAV`. Core had no tool for this
+  category at all: `bat`/`rg` read a log as **lines**, `jq`/`gron`/`jnv` read it as
+  **JSON**, `glow` as markdown — none of them knows that a log is a sequence of
+  timestamped records. `lnav` autodetects the common formats, merges several files into
+  one timeline ordered by timestamp, follows like `tail -f`, and exposes the parsed
+  records to SQL. It's its own command with no alias (like `jq`/`gron`/`jnv`) and is inert
+  without the binary, so nothing changes on a box that doesn't have it.
+
+  Unlike the Rust/Go tools already in the matrix it is a **C++** CLI, so there is no
+  `cargo install`/`go install` escape hatch — but it doesn't need one: upstream ships
+  **static musl binaries** each release (`lnav-0.14.0-linux-musl-x86_64.zip` plus an
+  `arm64` twin), so the fallback on an unpackaged or lagging box is "unzip the official
+  build", not "compile it". It is **detect-only on Linux**: no Linux repo's `install/packages.txt` carries
+  it and no `bootstrap.sh` installs it, so the flag lights up only once you install it
+  yourself; **macOS is the exception, where the `Brewfile` has carried it since
+  2026-07-15**. That is `hyperfine`/`shellcheck`/`shfmt`/`ouch`'s situation, so `lnav`
+  joins that bullet in footnote ²¹ and its row carries ²¹ alongside its own ²⁴.
+
+  Every version was read off the distro's own package page rather than a repology snapshot,
+  and **Fedora is reported per release** because it is a versioned distro and one
+  unqualified "current" hides the answer: **F45/Rawhide 0.14.0, F44 0.13.2, F43 0.12.4**.
+  Arch `extra`, openSUSE Tumbleweed and Homebrew are on 0.14.0, and **Alpine has a native
+  musl build in `community`**. Two targets lag enough to name: **Gentoo at 0.11.2** — the
+  only version in the tree, and the package needs a new maintainer — and **Kali/Debian at
+  0.13.2**. On any of them the upstream static musl zip gets you 0.14.0 without waiting for
+  the package. New `PORTING-MATRIX.md` row and footnote ²⁴, and `lnav` joins the
+  `data / net` group in both of `core-doctor`'s inventories. (`zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `zsh/30-functions.zsh`, `PORTING-MATRIX.md`)
+
 - **OSC 133 semantic prompt marks — `[` / `]` jump between prompts in tmux copy mode**
   (`dotgibson/dotfiles-core#391`). Core emitted no OSC sequences at all, while tmux has parsed
   OSC 133 since 3.4 and exposed `previous-prompt` / `next-prompt` in copy mode the whole time —

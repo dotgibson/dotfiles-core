@@ -127,7 +127,7 @@ _core_doctor_json() {
   [[ -r "$_CORE_VERSION_FILE" ]] && ver="$(<"$_CORE_VERSION_FILE")"
   local -a alltools=(
     eza bat fd rg fzf zoxide delta dust duf procs btop yazi
-    starship atuin mise carapace gum sesh jq yq gron sd xh doggo glow op
+    starship atuin mise carapace gum sesh jq yq gron sd xh doggo glow lnav op
   )
   local -a wir=(starship atuin mise zoxide carapace)
   local t first=1
@@ -204,7 +204,7 @@ _core_doctor_render() {
   local -a groups=(
     "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi"
     "integrations" "starship atuin mise carapace gum sesh"
-    "data / net"   "jq yq gron sd xh doggo glow op"
+    "data / net"   "jq yq gron sd xh doggo glow lnav op"
   )
   local gi tool line
   local -a missing=()
