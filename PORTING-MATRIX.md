@@ -323,8 +323,18 @@ version sniffing is useless and a `HAVE_SD` version gate is not an option. Probe
 instead: `sd --help | grep -q -- --across`. Core itself is **unaffected**: `sd` is detect-only
 (`HAVE_SD` in `zsh/00-tools.zsh`) with deliberately no alias (`zsh/20-aliases.zsh` — never
 shadow `sed` in scripts), and nothing in Core shells out to it. This is a warning for muscle
-memory and for the role layers: any multiline `sd` pattern in a `dotfiles-Kali` /
-`dotfiles-Defense` script needs `-A` adding.
+memory and for the role layers.
+
+Do **not** blanket-add `-A` to role scripts. The flag does not exist before 1.1.0, and this
+matrix exists precisely because distros lag (Gentoo takes `sd` from the GURU overlay), so a
+script that hard-codes it **breaks on the older build** — which already matches whole-file
+and needs no flag. A script that must run against both feature-detects and builds the flag
+list, rather than assuming either default:
+
+```sh
+sd_across=(); sd --help 2>/dev/null | grep -q -- --across && sd_across=(-A)
+sd "${sd_across[@]}" 'foo\nbar' baz file
+```
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
