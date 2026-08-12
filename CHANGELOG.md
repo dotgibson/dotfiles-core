@@ -15,6 +15,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **OSC 133 semantic prompt marks — `[` / `]` jump between prompts in tmux copy mode**
+  (`dotgibson/dotfiles-core#391`). Core emitted no OSC sequences at all, while tmux has parsed
+  OSC 133 since 3.4 and exposed `previous-prompt` / `next-prompt` in copy mode the whole time —
+  the capability was already paid for on every machine (the fleet floor is Gentoo's 3.6a) and
+  simply unused. `zsh/00-tools.zsh` now marks prompts and `tmux/tmux.reset.conf` binds `[` / `]`
+  in `copy-mode-vi` to jump between them, turning "scroll up hunting for where that command
+  started" into a keypress. No new file, no binary, no `core.manifest` change; `{` / `}` are
+  deliberately left alone (vi previous/next-paragraph), and no version gate is needed.
+
+  **The `A` mark lives in `$PROMPT`, and that is measured rather than preferred.** The obvious
+  implementation — emit `\e]133;A\e\\` from `precmd`, next to the command-block rule that
+  already runs there — does not work, and fails silently: zsh's prompt preamble ends in `ED`
+  (`\e[J`, "erase to end of screen") over the very line the mark was just written to, and tmux
+  drops a line's prompt flag when that line is cleared. Measured on tmux 3.7b, `previous-prompt`
+  then does not move at all — the feature looks implemented and does nothing. Embedding it in
+  `PROMPT` as a zero-width `%{…%}` escape means it is re-emitted on every prompt _draw_, after
+  that `ED`, which is also why every other shell integration marks prompts this way. The hook
+  that applies it is APPENDED to `precmd_functions`, so it runs after `starship_precmd` re-sets
+  `PROMPT` wholesale, and is idempotent for the box where `PROMPT` is static and would otherwise
+  grow one mark per prompt. `45-plugins.zsh` carries the same mark on the transient prompt:
+  collapsing a finished prompt to `❖` redraws that line too, and scrollback is exactly what
+  `previous-prompt` jumps _through_.
+
+  Only `A` and `C` are marks tmux documents a dependence on, so that is the subset;
+  `D;<exit>` is emitted anyway because it is free from the exit code already captured and is
+  what non-tmux OSC 133 consumers read for per-command status. `C`/`D` stay hook output — being
+  cleared costs them nothing, since nothing reads them back off the grid. The marks **stand
+  down** in two places: under Ghostty's own shell integration, but only OUTSIDE tmux —
+  `GHOSTTY_SHELL_FEATURES` is exported and reaches the tmux server, while Ghostty injects into
+  the initial shell only, so guarding on the variable alone would have silenced the marks in
+  exactly the place they are spent — and on `TERM=dumb`, which would render them as literal
+  `]133;A` garbage. Twelve behavioural cases in `scripts/test-core.sh` pin all of it.
+
 - **The atuin daemon's systemd path is measured, and the tail claim holds on it**
   (`dotgibson/dotfiles-core#352`). Adoption's whole justification was that the daemon owning
   the SQLite writes removes the DB-lock contention every shell and tmux pane pays, and it had
@@ -235,6 +268,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   "nothing is due" must be said out loud, since silence reads the same as forgetting.
 
 ### Fixed
+
+- **The command-block precmd hook swallowed `$?`, so every later precmd read its status
+  instead of the command's** (`dotgibson/dotfiles-core#391`). `_cmd_block_precmd`
+  (`zsh/00-tools.zsh`) captured the true exit code as its first statement to colour the
+  separator rule, then returned whatever its last `print` did — and it runs FIRST in
+  `precmd_functions`, so `starship_precmd` and anything an OS (80) or host (99) fragment
+  appends were reading that instead. It now `return $ec`s on every path, the same discipline
+  `_core_atuin_daemon_guard` already applies with `return $_rc`. Found while adding the
+  `D;<exit>` status mark above, which made exit-code correctness load-bearing rather than
+  cosmetic; the visible effect is that starship's error indicator now reflects the command
+  that actually ran.
 
 - **A timed-out package probe was logged as "0 upgradable" — an up-to-date box — instead of
   "unknown"** (`dotgibson/dotfiles-core#380`). Every arm of the maint runner's upgradable-count

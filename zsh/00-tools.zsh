@@ -172,27 +172,116 @@ if [[ -n ${HAVE_STARSHIP:-} && -n ${RPROMPT:-} ]]; then
   add-zsh-hook precmd _starship_keep_rprompt
 fi
 
-# ── Command-block separators (Pass 2, P12) ────────────────────────────────────
-# A thin full-width rule drawn above each prompt that FOLLOWED a command, colored by
-# that command's exit status: dim (#414868) on success, red (#f7768e) on failure. It
-# turns scrollback into visually delimited "blocks" — scan the left edge for red to
-# find what broke. Pure precmd/preexec output (NO ZLE widget), so unlike a transient
-# prompt it cannot collide with zsh-vi-mode. A bare Enter draws no rule (the preexec
-# flag gates it), so idle prompts don't stack rules.
-if [[ -n ${HAVE_STARSHIP:-} ]]; then
-  autoload -Uz add-zsh-hook
+# ── Command blocks: OSC 133 prompt marks + the separator rule ─────────────────
+# ONE preexec/precmd pair with two jobs, because both need the SAME state — "did a
+# command run" and that command's true exit code. (The A mark is the one piece that
+# cannot live in a hook at all; it has its own block below, and its own reason.)
+#
+# (1) OSC 133 SEMANTIC PROMPT MARKS. tmux has parsed these since 3.4 and exposes
+#     next-prompt / previous-prompt in copy mode (bound to ] / [ in tmux.reset.conf),
+#     so "scroll up hunting for where that command started" becomes a keypress. The
+#     capability is already paid for fleet-wide (the floor is Gentoo's 3.6a) and was
+#     simply unused: Core emitted no OSC at all.
+#
+#     Only A and C are emitted, and the SUBSET is the point. `man tmux` documents a
+#     dependence on exactly those two — A (\e]133;A\e\\) for previous/next-prompt, C for
+#     the -o "jump to command output" variant. B (end-of-prompt) is skipped: nothing
+#     documented consumes it, and it would be a second thing to keep in PROMPT.
+#     D;<exit> is emitted anyway: it is free from the exit code captured below, and is
+#     what non-tmux OSC 133 consumers read for per-command status.
+#
+#     C and D are HOOK OUTPUT — `print` is a builtin, so emission is fork-free; -rn,
+#     since a trailing newline would open a blank line above every prompt; ST terminator
+#     (\e\\), which is what tmux documents, not BEL; and NOT wrapped in %{…%}, because
+#     this is output and not a prompt string. A is the exception and lives in $PROMPT —
+#     see the block below for why that is measured rather than preferred. No ZLE widget
+#     anywhere, so none of this can collide with zsh-vi-mode.
+#
+# (2) The SEPARATOR RULE (Pass 2, P12): a thin full-width rule above each prompt that
+#     FOLLOWED a command, colored by its exit status — dim (#414868) on success, red
+#     (#f7768e) on failure. Scan the left edge for red to find what broke. STARSHIP-ONLY
+#     (it is a prompt cosmetic), where the marks must work on a bare box and over SSH —
+#     so the hooks live OUTSIDE the HAVE_STARSHIP gate and only the rule stays inside it.
+#     One code path, two independently-gated outputs.
+#
+# A bare Enter is still a jump target (the A mark is in PROMPT, so every prompt carries
+# it) but emits no D and draws no rule — those describe a command that actually ran.
+#
+# WHERE THE MARKS STAND DOWN — decided ONCE here, so the per-prompt cost is one
+# parameter test:
+typeset -g _CORE_OSC133=1
+# Ghostty auto-injects its own shell integration, which already marks prompts — but into
+# the INITIAL shell ONLY, while GHOSTTY_SHELL_FEATURES is EXPORTED and therefore reaches
+# the tmux server and every pane it spawns. Standing down on the variable alone would
+# silence Core's marks in exactly the place they are used, with nothing else marking
+# there. So stand down only OUTSIDE tmux, where Ghostty's marks really are present to be
+# doubled; inside tmux Core is the only emitter and keeps the job.
+[[ -n ${GHOSTTY_SHELL_FEATURES:-} && -z ${TMUX:-} ]] && _CORE_OSC133=
+# A consumer that does not parse OSC (TERM=dumb — Emacs M-x shell) would render the
+# sequence as literal `]133;A` garbage above every prompt.
+[[ ${TERM:-} == dumb ]] && _CORE_OSC133=
+
+# ── The A mark lives in $PROMPT, not in a hook — MEASURED, not preference ─────
+# zsh's prompt preamble is \r, SGR resets, then ED (\e[J — "erase from the cursor to the
+# end of the screen"), and tmux drops a line's prompt flag when that line is cleared. An A
+# emitted from precmd lands on the very line the prompt is about to be drawn on, so the ED
+# that follows wipes the mark before the prompt is even visible: measured on tmux 3.7b,
+# previous-prompt then does not move AT ALL — the feature looks implemented and does
+# nothing. Embedding it in PROMPT as a ZERO-WIDTH %{…%} escape means it is re-emitted on
+# every prompt DRAW, after that ED, so the flag survives; it is also why every other shell
+# integration marks prompts this way. C and D are unaffected and stay in the hooks:
+# nothing reads them back off the grid, so being cleared costs them nothing.
+#
+# The companion half is in 45-plugins.zsh: zsh-transient-prompt REDRAWS each finished
+# prompt as a collapsed ❖, which is a fresh ED over the line that carried the mark — so
+# the transient string carries $_CORE_OSC133_MARK too, or scrollback (the thing you jump
+# THROUGH) would lose every mark the moment its command finished.
+typeset -g _CORE_OSC133_MARK=
+if [[ -n ${_CORE_OSC133:-} ]]; then
+  _CORE_OSC133_MARK=$'%{\e]133;A\e\\%}'
+  # APPENDED, so it runs AFTER starship_precmd: starship re-sets PROMPT wholesale on every
+  # precmd, so a mark applied before it would be discarded again each time. Idempotent —
+  # the compare is QUOTED, matching the mark as a literal string rather than as a pattern —
+  # because on a box without starship PROMPT is static and would otherwise grow one mark
+  # per prompt, forever.
+  _core_osc133_prompt() {
+    local -i rc=$? # transparent to $?, like _core_atuin_daemon_guard below
+    [[ $PROMPT == "$_CORE_OSC133_MARK"* ]] || PROMPT=${_CORE_OSC133_MARK}${PROMPT}
+    return $rc
+  }
+  precmd_functions=(${precmd_functions:#_core_osc133_prompt} _core_osc133_prompt)
+fi
+
+# Register only when the pair has work to do: marks stood down AND no starship means a
+# box must not carry the hooks at all.
+if [[ -n ${HAVE_STARSHIP:-} || -n ${_CORE_OSC133:-} ]]; then
   typeset -gi _CMD_BLOCK_RAN=0
-  _cmd_block_preexec() { _CMD_BLOCK_RAN=1 }
+  _cmd_block_preexec() {
+    [[ -n ${_CORE_OSC133:-} ]] && print -rn -- $'\e]133;C\e\\' # command output starts here
+    _CMD_BLOCK_RAN=1                                           # last, so the hook returns 0
+  }
   _cmd_block_precmd() {
     local ec=$?                               # captured FIRST — real command exit code
-    (( _CMD_BLOCK_RAN )) || return            # nothing ran → no rule
-    _CMD_BLOCK_RAN=0
-    local w=${COLUMNS:-80} col
-    if (( ec == 0 )); then col='%F{#414868}'; else col='%F{#f7768e}'; fi
-    print -rP -- "${col}${(l:w::─:)}%f"
+    if (( _CMD_BLOCK_RAN )); then
+      _CMD_BLOCK_RAN=0
+      [[ -n ${_CORE_OSC133:-} ]] && print -rn -- $'\e]133;D;'"$ec"$'\e\\'
+      if [[ -n ${HAVE_STARSHIP:-} ]]; then
+        local w=${COLUMNS:-80} col
+        if (( ec == 0 )); then col='%F{#414868}'; else col='%F{#f7768e}'; fi
+        print -rP -- "${col}${(l:w::─:)}%f"
+      fi
+    fi
+    # RESTORE $?. Without this, every later precmd hook — starship_precmd included — sees
+    # this function's status instead of the command's. It was always wrong; emitting
+    # D;<exit> makes exit-code correctness load-bearing, so it is fixed here. Same
+    # discipline _core_atuin_daemon_guard applies with `return $_rc` on every path.
+    return $ec
   }
-  add-zsh-hook preexec _cmd_block_preexec
-  add-zsh-hook precmd  _cmd_block_precmd
+  # Registered by editing the hook arrays DIRECTLY rather than via add-zsh-hook: the
+  # precmd line already had to, for ORDER, and now that this block runs on a box with no
+  # starship, autoloading add-zsh-hook for the preexec line would be the ~1ms of startup
+  # the atuin guard below refuses to pay for a single registration.
+  preexec_functions=(${preexec_functions:#_cmd_block_preexec} _cmd_block_preexec)
   # Run our precmd FIRST so $? is the command's exit code, not starship_precmd's.
   precmd_functions=(_cmd_block_precmd ${precmd_functions:#_cmd_block_precmd})
 fi
