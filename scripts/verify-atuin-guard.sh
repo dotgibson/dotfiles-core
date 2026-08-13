@@ -727,17 +727,7 @@ stop_settled() {
   socket_quiet_within "$1" "$2" || return 1
   owner_gone "$2" || return 1
   groups_quiet || reap_tracked_groups
-  groups_quiet || return 1
-  # Last: anything still carrying this run's sandbox. Reaped rather than waited on, for the
-  # same reason as the groups — a detached survivor that never bound will not leave on its own.
-  # Status 2 means the platform cannot answer, which is NOT an answer of "none": treating it
-  # as one is exactly the fail-open the owner lookup used to have, so it fails the proof and
-  # the sandbox is preserved with the usual loud message.
-  local strays
-  strays="$(sandbox_strays)" || return 1
-  [[ -z "$strays" ]] || reap_sandbox_strays
-  strays="$(sandbox_strays)" || return 1
-  [[ -z "$strays" ]]
+  groups_quiet
 }
 
 # owner_gone <tries> — the pid that owned the socket BEFORE the stop must actually be gone.
@@ -818,63 +808,6 @@ socket_owner_pid() {
   ino="$(lsof -t -- "$p" 2>/dev/null | head -n1)"
   [[ -n "$ino" ]] || return 1
   printf '%s' "$ino"
-}
-
-# sandbox_strays — pids of processes still carrying THIS RUN's sandbox in their environment,
-# excluding us. The handle of last resort, and the only one that survives a child which
-# detached BEFORE it bound anything: such a process is in no group we hold (it called setsid)
-# and owns no socket (it never got that far), so neither of the other two handles can name it.
-# Every process this script starts is launched under `env -i` with XDG_DATA_HOME inside a
-# mktemp'd directory, so that path is a unique marker no unrelated process can carry.
-#
-# PLATFORM COVERAGE, stated precisely rather than papered over. Linux is EXACT
-# (/proc/PID/environ) and is both the scheduled job's runner and one of the two machines this
-# premise protects. macOS is TARGETED: processes running the binary under test that also hold
-# a file inside this run's sandbox — which catches a daemon that got as far as opening the DB
-# and misses one that hung before opening anything. Where neither route exists the function
-# says so with status 2, and stop_settled refuses rather than reading silence as proof.
-sandbox_strays() {
-  local d pid out="" cand
-  [[ -n "$LOCALDIR" ]] || return 0
-  # LINUX: exact. Every process this script starts is launched under `env -i` with
-  # XDG_DATA_HOME inside a mktemp'd directory, so that path is a marker no unrelated process
-  # can carry, and /proc/PID/environ reads it back for any process we own.
-  if [[ -r /proc/self/environ ]]; then
-    for d in /proc/[0-9]*; do
-      pid="${d#/proc/}"
-      [[ "$pid" == "$$" ]] && continue
-      tr '\0' '\n' <"$d/environ" 2>/dev/null | grep -qF "$LOCALDIR" && out+=" $pid"
-    done
-    printf '%s' "${out# }"
-    return 0
-  fi
-  # macOS: TARGETED, not a tree walk. Candidates are processes running the binary under test;
-  # each is then kept only if it holds a file inside THIS run's sandbox, which is what makes
-  # it safe — a developer's own atuin daemon matches the first test and never the second.
-  # `lsof -p` on a handful of pids is cheap, unlike the `lsof +D` sweep this replaced.
-  #
-  # Returns 2, not 0, when neither route is available: "this platform cannot look" is NOT
-  # "nothing is there", and the caller must not read one as the other. That conflation is the
-  # same fail-open the owner lookup had, and it is why it is a distinct status here.
-  if have lsof && have pgrep; then
-    for cand in $(pgrep -f "$ATUIN_BIN" 2>/dev/null); do
-      [[ "$cand" == "$$" ]] && continue
-      lsof -p "$cand" 2>/dev/null | grep -qF "$LOCALDIR" && out+=" $cand"
-    done
-    printf '%s' "${out# }"
-    return 0
-  fi
-  return 2
-}
-
-# reap_sandbox_strays — signal anything sandbox_strays can still see.
-# shellcheck disable=SC2329,SC2317  # reached through cleanup, which the traps invoke
-reap_sandbox_strays() {
-  local p
-  for p in $(sandbox_strays); do kill -TERM "$p" 2>/dev/null; done
-  sleep 0.2
-  for p in $(sandbox_strays); do kill -KILL "$p" 2>/dev/null; done
-  return 0
 }
 
 # daemon_start_manual <sock> — start a daemon OURSELVES and wait for it to answer.
@@ -1080,13 +1013,21 @@ run_one() {
   # daemon would be untracked for exactly the same reason `start` was, and the fix would have
   # covered only the half that happened to be noticed first.
   #
-  # WHAT THIS DOES AND DOES NOT COVER. A real atuin daemon DETACHES (measured: arm group
-  # 88291, daemon group 88299), so the group never holds it — the pid captured before the stop
-  # is what covers that one. The group covers a child that forked and hung BEFORE binding
-  # while still in our group, which owns no socket and can never be looked up. A child that
-  # detached AND never bound escapes both, and is why there is a third handle:
-  # sandbox_strays, which identifies processes by the unique sandbox path in their
-  # environment. Three handles, three disjoint cases, and the stop proof requires all three.
+  # WHAT THIS DOES AND DOES NOT COVER. TWO handles, and they are disjoint. A real atuin daemon
+  # DETACHES (measured: arm group 88291, daemon group 88299), so the group never holds it —
+  # the pid captured from the socket before the stop is what covers that one. The group covers
+  # a child that forked and hung BEFORE binding while still in our group, which owns no socket
+  # and so can never be looked up.
+  #
+  # THE RESIDUAL, stated rather than chased: a child that detached AND never bound escapes
+  # both, because it is in no group we hold and owns no socket to be named by. A third handle
+  # for it existed briefly — matching processes by the sandbox path in their environment — and
+  # was removed deliberately. It was exact only on Linux, needed a different mechanism on
+  # macOS, and in two consecutive reviews it was itself the source of fail-open defects: it
+  # read "this platform cannot look" as "nothing is there", and the reap it required cleared
+  # the very list the proof then consulted. It was adding more risk than the case it covered.
+  # The failure it leaves behind is bounded and loud: the run still reports, and cleanup still
+  # refuses to delete a tree whose teardown it could not prove.
   _tracked() {
     local _r
     set -m
@@ -1772,7 +1713,7 @@ emit_report() {
     esac
     printf -- '**Measured here:** %s.\n\n' "$(arms_sentence)"
     if [[ "$PREMISE" == autostart ]]; then
-      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`, and the two machines this premise protects are **Alpine/musl and macOS** — so weigh it accordingly: a run on one of those two is direct evidence for that row and still says nothing about the other, while a run on glibc Linux (what the scheduled job uses) is the *weakest* evidence in this whole arrangement for either of them. It measures a **fresh client** spawning a daemon from an unreachable socket; a long-lived shell whose daemon dies mid-session is not exercised. A daemon that wedges (`atuinsh/atuin#3382`) escapes only if it wedges **after** completing the measured pair: one that wedges during it shows up here as an expired bound (`unmeasurable`) or a row that never landed (`moved`), because every arm must also exit 0 and land exactly one row. The **silent-discard** premise is a separate mode (`--premise discard`) and is not measured by this run. stderr is recorded but never judged: the spawned daemon inherits this process'"'"'s descriptor, so its tracing and the client'"'"'s are not separable.\n' "$HOST_KIND"
+      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`, and the two machines this premise protects are **Alpine/musl and macOS** — so weigh it accordingly: a run on one of those two is direct evidence for that row and still says nothing about the other, while a run on glibc Linux (what the scheduled job uses) is the *weakest* evidence in this whole arrangement for either of them. It measures a **fresh client** spawning a daemon from an unreachable socket; a long-lived shell whose daemon dies mid-session is not exercised. Teardown is proven two ways — the pid that owned the socket before the stop, and the process group each arm ran in — which between them cover a daemon that detached after binding and a child that hung before it; a child that did **both** (detached, then never bound) would be left running, and the run says so by preserving its sandbox rather than deleting one it could not account for. A daemon that wedges (`atuinsh/atuin#3382`) escapes only if it wedges **after** completing the measured pair: one that wedges during it shows up here as an expired bound (`unmeasurable`) or a row that never landed (`moved`), because every arm must also exit 0 and land exactly one row. The **silent-discard** premise is a separate mode (`--premise discard`) and is not measured by this run. stderr is recorded but never judged: the spawned daemon inherits this process'"'"'s descriptor, so its tracing and the client'"'"'s are not separable.\n' "$HOST_KIND"
     else
       printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`; the scheduled job runs it on Linux x86_64 glibc, and the Alpine/musl half of the fleet is unmeasured either way. The **`autostart` stand-down** is not measured by *this* run: it is a separate premise with its own mode (`--premise autostart`, `make verify-atuin-guard-autostart`), its own anchor and its own verdict, because measuring it means spawning a real daemon and owning its teardown — so a green run here says nothing about it in either direction. **Buffer-and-replay** is probed only by the closing daemon-off control arm above; a spool that only a live daemon would drain is out of reach for the same reason. The accept-but-silent socket (`atuinsh/atuin#3382`) is structurally out of scope: this measures *unreachable*, and that shape is *reachable and lying*.\n' "$HOST_KIND"
     fi

@@ -2356,9 +2356,6 @@ else
   #                            escalation must still leave nothing running.
   #   no-daemon-subcommand     no `daemon start`.                               → unmeasurable
   #   no-stop-subcommand       no `daemon stop`.                                → unmeasurable
-  #   fork-hang-detached       autostart forks a child that setsid()s AND never binds: it is
-  #                            in no group we hold and owns no socket, so only the sandbox
-  #                            environment can still name it.
   #   fork-hang                autostart forks a child that NEVER binds and never exits —
   #                            invisible to every socket-based teardown path there is.
   #   manual-fork-nobind       `daemon start` forks a child that never binds and then EXITS,
@@ -2533,15 +2530,6 @@ history)
     if [[ "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]] && ! daemon_up; then
       case "\$MODE" in
       never-spawns) : ;;
-      fork-hang-detached)
-        # setsid FIRST, then hang without ever binding -- the case that escapes both the
-        # process group (it left ours) and the socket owner lookup (it owns none).
-        python3 -c "
-import os, time
-os.setsid()
-time.sleep(300)" &
-        printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
-        ;;
       fork-hang)
         # Forks a child that never binds and never exits. This is the shape the socket-based
         # teardown structurally cannot see: nothing ever answers, so the stop proof succeeds
@@ -2849,27 +2837,14 @@ J4PROBE
       fail "atuin autostart: $_dalive of $_dforked never-bound children survived the run — cleanup deleted the sandbox around a live process"
     fi
 
-    # 13. THE CHILD THAT ESCAPES BOTH OTHER HANDLES. atuin daemonizes before it binds, so a
-    #     child can setsid() out of our process group AND never own a socket — invisible to
-    #     the group reap and to the owner lookup alike. Only the sandbox can still name it,
-    #     and how well depends on the platform: Linux reads it exactly out of
-    #     /proc/PID/environ, while macOS can only match processes holding a sandbox FILE — so
-    #     this stub, whose child opens nothing at all, is deliberately the worst case and
-    #     SKIPS there rather than passing on a weaker claim.
-    _mkdstub atuin-forkdet fork-hang-detached
-    _d_run atuin-forkdet --premise autostart --json
-    _dalive="$(_d_forks_alive atuin-forkdet)"
-    _dforked="$(grep -c . "$_dstub/atuin-forkdet.forked" 2>/dev/null || echo 0)"
-    _dreap
-    if ((_dforked > 0)) && ((_dalive == 0)); then
-      pass "atuin autostart: a child that detaches AND never binds is still reaped ($_dforked forked, 0 alive) — the sandbox environment names what neither the group nor the socket can"
-    elif ((_dforked == 0)); then
-      fail "atuin autostart: the fork-hang-detached stub never forked, so the assertion proved nothing"
-    else
-      skip "atuin autostart: detached pre-bind strays ($_dalive of $_dforked alive — this platform has only the TARGETED handle, which finds a stray by the sandbox files it holds and so cannot see one that hung before opening any; exact on Linux, see sandbox_strays)"
-    fi
+    # (There is no case here for a child that DETACHES and never binds. The handle that
+    #  covered it — matching processes by the sandbox path in their environment — was removed
+    #  deliberately: exact only on Linux, a different mechanism on macOS, and in two
+    #  consecutive reviews the source of fail-open defects of its own. The residual is
+    #  documented at daemon_stop_proven and in the report's scope note rather than half-tested
+    #  here.)
 
-    # 14. THE SAME HOLE IN THE CLOSING HALF OF THE PAIR. Tracking only `history start` would
+    # 13. THE SAME HOLE IN THE CLOSING HALF OF THE PAIR. Tracking only `history start` would
     #     pass case 12 while leaving an `end`-spawned child untracked, and `end` runs with the
     #     same AUTOSTART env down the same autostarting path — so it is asserted separately
     #     rather than assumed to be covered by its sibling.
@@ -2886,7 +2861,7 @@ J4PROBE
       fail "atuin autostart: $_dalive of $_dforked children forked by 'history end' survived — only the opening half of the pair is tracked"
     fi
 
-    # 15. THE MANUAL CONTROL HAS THE SAME HOLE, and it was the last untracked spawn here. If
+    # 14. THE MANUAL CONTROL HAS THE SAME HOLE, and it was the last untracked spawn here. If
     #     `daemon start` forks a child that never binds and its parent exits, the recorded pid
     #     is a corpse, wait_reachable fails, cleanup sees an absent socket and calls it
     #     stopped, and reap_manual has nothing left to kill. The verdict must still be
@@ -2906,13 +2881,22 @@ J4PROBE
       fail "atuin autostart: manual-fork-nobind gave $_dv/rc$_drc with $_dalive of $_dforked orphans alive — the manual control is not process-group tracked"
     fi
 
-    # 16. A BOUND THAT EXPIRES ON THE CLOSING HALF IS STILL AN APPARATUS LIMIT. The row lands
+    # 15. A BOUND THAT EXPIRES ON THE CLOSING HALF IS STILL AN APPARATUS LIMIT. The row lands
     #     on `history end` when a daemon is serving, so `end` is the verdict-bearing call —
     #     and its status used to be discarded, leaving a timed-out `end` looking like a
     #     successful `start` with a missing row, which the verdict block reported as
     #     "the entry did not land". A finding about upstream, manufactured by this run's own
     #     timeout. The wedge is on the autostart path only, so the manual control passes and
     #     the arms are actually reached.
+    # GUARDED ON A TIMEOUT UTILITY, because this case's whole mechanism is the bound. Where
+    # neither timeout(1) nor gtimeout(1) exists the verifier deliberately measures UNBOUNDED
+    # and discloses it — which is right for a real run and fatal here: TIMEOUT_CMD is empty, so
+    # nothing cuts the stub's four 300-second wedges and the suite runs to the job timeout
+    # instead of failing. A stock macOS box has neither utility, and the macOS audit leg runs
+    # this section.
+    if ! have timeout && ! have gtimeout; then
+      skip "atuin autostart: wedged 'history end' (no timeout(1)/gtimeout(1) here, so the verifier measures unbounded by design and the case's own wedge would never be cut)"
+    else
     _mkdstub atuin-endhangs end-hangs
     CORE_ATVERIFY_TIMEOUT=2 _d_run atuin-endhangs --premise autostart --json
     _dv="$(_d_get "$_dout" verdict)"
@@ -2923,8 +2907,9 @@ J4PROBE
     else
       fail "atuin autostart: a wedged 'history end' must be unmeasurable/rc3 naming the bound, got ${_dv:-<unparseable>}/rc$_drc${_dstderr:+ (stderr: $_dstderr)}"
     fi
+    fi
 
-    # 17. "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED". atuin unlinks its socket early in
+    # 16. "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED". atuin unlinks its socket early in
     #     shutdown and `daemon stop` can return while teardown is still running, so a
     #     socket-only proof accepts a daemon that is gone from the socket and still HOLDING
     #     THE DB. The harm is not a leak — cleanup's group reap would catch that — it is
@@ -2948,7 +2933,7 @@ J4PROBE
       fail "atuin autostart: a socket-only stop let a zombie daemon keep committing into later arms (verdict=$_dv, survived=$_dleft) — its writes would be reported as an upstream finding"
     fi
 
-    # 18. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
+    # 17. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
     #     of /tmp. The verifier DELIBERATELY preserves a sandbox when a stop cannot be proven,
     #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
     #     fail this for a run that cleaned up perfectly. Only paths this run created count.
@@ -2990,7 +2975,7 @@ J4PROBE
       fi
     fi
 
-    # 19. A MALFORMED ANCHOR IS NOT AN ABSENT ONE. Absence is legitimate for THIS premise —
+    # 18. A MALFORMED ANCHOR IS NOT AN ABSENT ONE. Absence is legitimate for THIS premise —
     #     nobody has written the line until a human measures it — which is exactly why the two
     #     must not be conflated: `=18.19`, or a valid value with a trailing token, would
     #     otherwise sail through as `unanchored` and the run would report a verdict against
@@ -3024,7 +3009,7 @@ J4PROBE
       fail "atuin autostart: a malformed autostart anchor was treated as absent, so the run reported a verdict against nothing"
     fi
 
-    # 20. THE LIBC MARKER MUST SURVIVE musl's EXIT STATUS. musl's ldd prints its banner and
+    # 19. THE LIBC MARKER MUST SURVIVE musl's EXIT STATUS. musl's ldd prints its banner and
     #     then exits NON-ZERO, and this script runs under `set -o pipefail` — so the obvious
     #     `ldd --version | grep -qi musl` is false even when grep matched, and every musl run
     #     loses the one marker that says which half of the fleet it spoke for. This repo has
@@ -3044,7 +3029,7 @@ J4PROBE
       fail "atuin autostart: a musl host reported host='$(_d_get "$_dout" host)' — the libc marker was lost to pipefail"
     fi
 
-    # 21. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+    # 20. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
       #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
       #   true until this mode existed and is exactly the kind of prose that rots — and must
       #   name the machines a green run here does and does not speak for.
