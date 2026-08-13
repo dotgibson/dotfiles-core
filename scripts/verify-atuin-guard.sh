@@ -129,7 +129,9 @@ PREMISE=discard
 TIMEOUT_S="${CORE_ATVERIFY_TIMEOUT:-30}"
 # How many 0.1s ticks an autostart arm waits for its row. 100 (10s) is the default and is what
 # CI uses — bench gives its equivalent check the same, because a cold-spawned daemon may be
-# doing first-open migration work before it commits anything.
+# doing first-open migration work before it commits anything. The same bound is reused for
+# waiting on a spawn to answer and on a stop to settle: all three are "how long may a daemon
+# reasonably take", and three separate knobs would be three things to get out of step.
 #
 # LOWERING THIS MANUFACTURES FINDINGS, so it is documented as the test affordance it is rather
 # than offered as tuning: an arm that gives up early reports delta 0, and the verdict block
@@ -257,9 +259,17 @@ moved before — because a daemon that cannot be stopped would be left writing i
 script is about to delete. If a stop cannot be proven even after escalating to a signal, the
 sandbox is PRESERVED and its path printed.
 
-VERDICTS AND EXIT CODES
-  0  holds         controls wrote 1 each; all arms: rc 0, id printed, empty stderr, delta 0
-  1  moved         the controls wrote; something differs — the rationale now overclaims
+VERDICTS AND EXIT CODES. The codes are shared; what `holds` REQUIRES is not, because the two
+premises assert opposite things about the same four arms:
+  0  holds         --premise discard:   controls wrote 1 each; every arm rc 0, id printed,
+                                        empty stderr, and a row delta of 0 (it discarded).
+                   --premise autostart: both controls passed; every arm rc 0, id printed, a
+                                        daemon that ANSWERS on the socket, and a row delta of
+                                        1 (the entry landed). stderr is recorded but NOT
+                                        judged — a spawned daemon inherits this process's
+                                        descriptor, so its output and the client's cannot be
+                                        told apart.
+  1  moved         the controls passed; something above differs — the rationale now overclaims
   2  usage error
   3  unmeasurable  the apparatus could not be trusted. NOT "holds".
 
@@ -429,7 +439,7 @@ cleanup() {
   # re-check cleanup would keep the sandbox and print a "STILL answering" warning about a
   # process that is by then gone. The preserve path has to be a genuine last resort, or the
   # one message that must always be true stops being true.
-  if ((stopped == 0)) && [[ -n "$SOCK" ]] && wait_unreachable "$SOCK" 30; then
+  if ((stopped == 0)) && [[ -n "$SOCK" ]] && stop_settled "$SOCK" "$((POLL_N < 30 ? POLL_N : 30))"; then
     stopped=1
   fi
   if ((stopped == 0)); then
@@ -640,16 +650,58 @@ wait_reachable() {
   done
   return 1
 }
-# The negation of prove_reachable, NOT prove_unreachable: during teardown a vanished socket
-# file is a perfectly good way for a daemon to have shut down, and prove_unreachable's
-# `[[ -e ]]` short-circuit would conflate that with "the file was unlinked out from under us".
-wait_unreachable() {
+
+# groups_quiet — 0 when no process group we started still has a living member. `kill -0` on a
+# NEGATED pgid asks about the whole group, and succeeds while any member remains.
+groups_quiet() {
+  local g
+  for g in $TRACKED_PGIDS; do
+    kill -0 -- "-$g" 2>/dev/null && return 1
+  done
+  return 0
+}
+
+# stop_settled <sock> <tries> — the stop is settled only when the socket has stopped answering
+# AND every group we started is empty.
+#
+# "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED", and the gap between them is not theoretical:
+# a daemon that unlinks its socket early in shutdown, or a `daemon stop` that returns while
+# teardown is still running, both leave a process that no longer answers and still HOLDS THE
+# DB. A socket-only proof accepts that as stopped — after which the next arm measures against
+# a daemon it did not start, and cleanup rm -rf's a tree that process is still writing into.
+# The group check is what closes it: for a daemon we started by hand we would have a pid, but
+# for one atuin forked we never do, and the group covers both.
+# socket_quiet_within <path> <tries> — poll until nothing answers. The negation of
+# prove_reachable, NOT prove_unreachable: during teardown a vanished socket file is a
+# perfectly good way for a daemon to have shut down, and prove_unreachable's `[[ -e ]]`
+# short-circuit would conflate that with "the file was unlinked out from under us".
+socket_quiet_within() {
   local p="$1" tries="$2" i
   for ((i = 0; i < tries; i++)); do
     prove_reachable "$p" || return 0
     sleep 0.1
   done
   return 1
+}
+
+# stop_settled <sock> <tries> — the two-part stop proof, and the ONLY thing that may conclude
+# a daemon is gone.
+#
+# "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED", and the gap is not theoretical: a daemon that
+# unlinks its socket early in shutdown, or a `daemon stop` that returns while teardown is
+# still running, both leave a process that no longer answers and still HOLDS THE DB. A
+# socket-only proof accepts that as stopped — after which the next arm measures against a
+# daemon it did not start, and cleanup rm -rf's a tree that process is still writing into.
+#
+# The two halves are treated differently ON PURPOSE. The socket is POLLED, because a daemon
+# legitimately takes a moment to go down. The process groups are NOT: anything still alive in
+# one is a detached daemon with no socket left to resolve an owner from, so it will not exit
+# on its own and waiting for it just spends the whole bound before the signal that was always
+# going to be needed. Reap, then re-ask.
+stop_settled() {
+  socket_quiet_within "$1" "$2" || return 1
+  groups_quiet || reap_tracked_groups
+  groups_quiet
 }
 
 # Which spelling drives the daemon on THIS build — the same probe, for the same reason, as
@@ -724,7 +776,7 @@ daemon_start_manual() {
   MANUAL_DAEMON_PID=$!
   TRACKED_PGIDS="$TRACKED_PGIDS $MANUAL_DAEMON_PID"
   set +m
-  wait_reachable "$sock" 100
+  wait_reachable "$sock" "$POLL_N"
 }
 
 # daemon_stop_proven <sock> — stop whatever serves <sock>, and PROVE it stopped. Non-zero only
@@ -761,7 +813,7 @@ daemon_stop_proven() {
   ((DAEMON_MAYBE_UP)) || return 0
   ${AT_ENV[@]+"${AT_ENV[@]}"} ATUIN_DAEMON__ENABLED=true \
     ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" daemon stop >/dev/null 2>&1
-  if wait_unreachable "$sock" 100; then
+  if stop_settled "$sock" "$POLL_N"; then
     DAEMON_MAYBE_UP=0
     reap_manual
     return 0
@@ -769,7 +821,7 @@ daemon_stop_proven() {
   if [[ -n "$MANUAL_DAEMON_PID" ]]; then
     for pid in TERM KILL; do
       kill "-$pid" "$MANUAL_DAEMON_PID" 2>/dev/null
-      if wait_unreachable "$sock" 50; then
+      if stop_settled "$sock" "$((POLL_N / 2 + 1))"; then
         DAEMON_MAYBE_UP=0
         reap_manual
         return 0
@@ -779,12 +831,12 @@ daemon_stop_proven() {
   pid="$(socket_owner_pid "$sock")" || pid=""
   if [[ -n "$pid" ]]; then
     kill -TERM "$pid" 2>/dev/null
-    wait_unreachable "$sock" 50 && {
+    stop_settled "$sock" "$((POLL_N / 2 + 1))" && {
       DAEMON_MAYBE_UP=0
       return 0
     }
     kill -KILL "$pid" 2>/dev/null
-    wait_unreachable "$sock" 50 && {
+    stop_settled "$sock" "$((POLL_N / 2 + 1))" && {
       DAEMON_MAYBE_UP=0
       return 0
     }

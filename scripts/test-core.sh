@@ -2346,6 +2346,9 @@ else
   #                            inode. THE headline regression this premise exists to catch.
   #   spawns-but-discards      daemon comes up, entry never lands.              → moved
   #   manual-spawn-impossible  nothing can host a daemon here.                  → unmeasurable
+  #   stop-unlinks-only        `daemon stop` removes the SOCKET and leaves the process alive
+  #                            and holding the DB — atuin unlinks early in shutdown, so
+  #                            "nothing answers" is not "the daemon exited".
   #   stop-noop                `daemon stop` accepts and does nothing — the teardown
   #                            escalation must still leave nothing running.
   #   no-daemon-subcommand     no `daemon start`.                               → unmeasurable
@@ -2401,9 +2404,9 @@ PY
 # refuses over an existing inode, which is what 18.19.0 really does:
 #   Error: Address already in use (os error 48)  crates/atuin-daemon/src/server.rs:72
 serve_fg() {
-  exec python3 - "\$SOCK" "\$PIDF" <<'PY'
-import socket, sys, os
-sock, pidf = sys.argv[1], sys.argv[2]
+  exec python3 - "\$SOCK" "\$PIDF" "\$MODE" "\$DB" <<'PY'
+import socket, sys, os, sqlite3
+sock, pidf, mode, db = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
     s.bind(sock)
@@ -2412,10 +2415,23 @@ except OSError:
     sys.exit(98)
 s.listen(8)
 open(pidf, "w").write(str(os.getpid()))
+s.settimeout(0.3)
 while True:
     try:
         c, _ = s.accept()
         c.close()
+    except socket.timeout:
+        # stop-unlinks-only: once the socket is gone this daemon KEEPS COMMITTING. That is
+        # what makes "nothing answers" different from "the daemon exited" — and it is only
+        # observable because the extra rows land in arms that come after the fake stop.
+        if mode == "stop-unlinks-only" and not os.path.exists(sock):
+            try:
+                con = sqlite3.connect(db, timeout=5)
+                con.execute("insert into history values ('zombie',-1)")
+                con.commit()
+                con.close()
+            except Exception:
+                pass
     except Exception:
         pass
 PY
@@ -2445,9 +2461,9 @@ spawn_bg() {
   printf 'spawn\n' >>"\$SPAWNMARK" 2>/dev/null
   ( serve_fg 2>/dev/null ) &
   local i
-  for i in 1 2 3 4 5 6 7 8 9 10; do
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     daemon_up && return 0
-    sleep 0.2
+    sleep 0.05
   done
   return 1
 }
@@ -2480,6 +2496,10 @@ daemon)
     # stop-noop ACCEPTS and does nothing, which is the realistic bad shape: a stop whose exit
     # status says yes while the process lives on. Proof-not-exit-status is why it is caught.
     [[ "\$MODE" == stop-noop ]] && exit 0
+    # Unlink the socket and leave the daemon running -- it then starts committing rows. A
+    # socket-only stop proof accepts this as stopped, after which every later arm measures
+    # against a daemon it did not start and whose writes it will attribute to upstream.
+    [[ "\$MODE" == stop-unlinks-only ]] && { rm -f "\$SOCK"; exit 0; }
     [[ -f "\$PIDF" ]] && kill "\$(cat "\$PIDF")" 2>/dev/null
     rm -f "\$SOCK" "\$PIDF"
     exit 0
@@ -2546,14 +2566,17 @@ STUB
     chmod +x "$_dstub/$name"
   }
 
-  # POLL low on purpose, and only here. The stubs are deterministic and several are SUPPOSED
-  # never to write, so the default 10s row wait would be spent four times per such case
-  # proving something already known. Lowering it in a real run manufactures findings — see the
-  # knob's own comment in verify-atuin-guard.sh.
+  # POLL very low on purpose, and only here. Every stub writes its row, binds its socket and
+  # unlinks it SYNCHRONOUSLY before the call returns, so a positive case is satisfied on the
+  # first tick and the bound is pure waiting for the cases that are SUPPOSED never to write —
+  # of which there are several, four arms each. 3 ticks is therefore not a flakiness risk
+  # here, and it is the difference between J4 costing seconds and costing minutes. Lowering it
+  # against a REAL atuin manufactures findings; see the knob's own comment in
+  # verify-atuin-guard.sh.
   _d_run() { # _d_run <stub> [extra args...] → sets _dout/_drc
     local stub="$1"
     shift
-    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL=8 "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>&1)"
+    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL=3 "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>&1)"
     _drc=$?
   }
   _d_get() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"$2\"])" 2>/dev/null; }
@@ -2820,7 +2843,31 @@ J4PROBE
       fail "atuin autostart: manual-fork-nobind gave $_dv/rc$_drc with $_dalive of $_dforked orphans alive — the manual control is not process-group tracked"
     fi
 
-    # 15. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
+    # 15. "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED". atuin unlinks its socket early in
+    #     shutdown and `daemon stop` can return while teardown is still running, so a
+    #     socket-only proof accepts a daemon that is gone from the socket and still HOLDING
+    #     THE DB. The harm is not a leak — cleanup's group reap would catch that — it is
+    #     CONTAMINATION: every later arm then measures against a daemon it did not start, and
+    #     attributes that daemon's writes to upstream. This stub's zombie keeps committing
+    #     once its socket is unlinked, so a socket-only proof yields extra rows and a FALSE
+    #     `moved`; the group half of the proof kills it at the inter-arm stop and the run
+    #     stays clean. Asserted on the VERDICT, because that is where the damage would show.
+    _mkdstub atuin-stopunlink stop-unlinks-only
+    _d_run atuin-stopunlink --premise autostart --json
+    _dv="$(_d_get "$_dout" verdict)"
+    _dleft=0
+    _dpf="$_dstub/atuin-stopunlink.pid"
+    if [[ -f "$_dpf" ]] && kill -0 "$(cat "$_dpf" 2>/dev/null)" 2>/dev/null; then
+      _dleft=1
+    fi
+    _dreap
+    if [[ "$_dv" == holds ]] && ((_dleft == 0)); then
+      pass "atuin autostart: a daemon that outlives its own socket is stopped before the next arm — it cannot write rows the run would blame on upstream"
+    else
+      fail "atuin autostart: a socket-only stop let a zombie daemon keep committing into later arms (verdict=$_dv, survived=$_dleft) — its writes would be reported as an upstream finding"
+    fi
+
+    # 16. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
     #     of /tmp. The verifier DELIBERATELY preserves a sandbox when a stop cannot be proven,
     #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
     #     fail this for a run that cleaned up perfectly. Only paths this run created count.
@@ -2862,7 +2909,7 @@ J4PROBE
       fi
     fi
 
-    # 16. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+    # 17. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
       #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
       #   true until this mode existed and is exactly the kind of prose that rots — and must
       #   name the machines a green run here does and does not speak for.
