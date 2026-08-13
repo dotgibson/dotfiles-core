@@ -704,7 +704,11 @@ stop_settled() {
   socket_quiet_within "$1" "$2" || return 1
   groups_quiet || reap_tracked_groups
   groups_quiet || return 1
-  owner_gone "$2"
+  owner_gone "$2" || return 1
+  # Last: anything still carrying this run's sandbox. Reaped rather than waited on, for the
+  # same reason as the groups — a detached survivor will not leave on its own.
+  [[ -z "$(sandbox_strays)" ]] || reap_sandbox_strays
+  [[ -z "$(sandbox_strays)" ]]
 }
 
 # owner_gone <tries> — the pid that owned the socket BEFORE the stop must actually be gone.
@@ -785,6 +789,50 @@ socket_owner_pid() {
   ino="$(lsof -t -- "$p" 2>/dev/null | head -n1)"
   [[ -n "$ino" ]] || return 1
   printf '%s' "$ino"
+}
+
+# sandbox_strays — pids of processes still carrying THIS RUN's sandbox in their environment,
+# excluding us. The handle of last resort, and the only one that survives a child which
+# detached BEFORE it bound anything: such a process is in no group we hold (it called setsid)
+# and owns no socket (it never got that far), so neither of the other two handles can name it.
+# Every process this script starts is launched under `env -i` with XDG_DATA_HOME inside a
+# mktemp'd directory, so that path is a unique marker no unrelated process can carry.
+#
+# PLATFORM LIMIT, stated rather than papered over: /proc/PID/environ makes this exact on
+# Linux — which is the scheduled job's runner and one of the two machines this premise
+# protects. macOS restricts reading another process's environment even for your own children
+# (ps -E returns nothing under SIP), so there it falls back to lsof for anything holding a
+# file under the sandbox — which catches a daemon that opened the DB and misses one that
+# hung before opening anything. That residual is why cleanup still refuses to delete a tree
+# it cannot prove is unused, rather than trusting this to be exhaustive.
+sandbox_strays() {
+  local d pid out=""
+  [[ -n "$LOCALDIR" ]] || return 0
+  # LINUX ONLY, deliberately. /proc/PID/environ makes this exact, and Linux is the scheduled
+  # job's runner and one of the two machines this premise protects. macOS has no equivalent:
+  # SIP blocks reading another process's environment even for your own children (`ps -E`
+  # returns nothing), and the obvious substitute — lsof +D over the sandbox — walks the whole
+  # tree on every teardown for an answer that is still incomplete, since a child that hung
+  # before opening anything holds no file to find. Slow AND partial is the worst trade, so it
+  # is not attempted: on macOS the captured pid and the process group remain the two handles,
+  # and this one case is reported as uncovered rather than papered over.
+  [[ -r /proc/self/environ ]] || return 0
+  for d in /proc/[0-9]*; do
+    pid="${d#/proc/}"
+    [[ "$pid" == "$$" ]] && continue
+    tr '\0' '\n' <"$d/environ" 2>/dev/null | grep -qF "$LOCALDIR" && out+=" $pid"
+  done
+  printf '%s' "${out# }"
+}
+
+# reap_sandbox_strays — signal anything sandbox_strays can still see.
+# shellcheck disable=SC2329,SC2317  # reached through cleanup, which the traps invoke
+reap_sandbox_strays() {
+  local p
+  for p in $(sandbox_strays); do kill -TERM "$p" 2>/dev/null; done
+  sleep 0.2
+  for p in $(sandbox_strays); do kill -KILL "$p" 2>/dev/null; done
+  return 0
 }
 
 # daemon_start_manual <sock> — start a daemon OURSELVES and wait for it to answer.
@@ -988,9 +1036,11 @@ run_one() {
   #
   # WHAT THIS DOES AND DOES NOT COVER. A real atuin daemon DETACHES (measured: arm group
   # 88291, daemon group 88299), so the group never holds it — the pid captured before the stop
-  # is what covers that one. The group covers what the pid cannot: a child that forked and
-  # then hung or died BEFORE binding, which owns no socket and so can never be looked up.
-  # Neither alone is sufficient, which is why the stop proof requires both.
+  # is what covers that one. The group covers a child that forked and hung BEFORE binding
+  # while still in our group, which owns no socket and can never be looked up. A child that
+  # detached AND never bound escapes both, and is why there is a third handle:
+  # sandbox_strays, which identifies processes by the unique sandbox path in their
+  # environment. Three handles, three disjoint cases, and the stop proof requires all three.
   _tracked() {
     local _r
     set -m
