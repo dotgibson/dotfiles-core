@@ -708,12 +708,19 @@ socket_quiet_within() {
 # on its own and waiting for it just spends the whole bound before the signal that was always
 # going to be needed. Reap, then re-ask.
 stop_settled() {
+  # ORDER IS LOAD-BEARING: the KNOWN owner is waited for, and only then are survivors treated
+  # as strays. A daemon we asked to stop is not a stray — it is a process legitimately
+  # shutting down, and the manual control's daemon sits in a tracked group, so reaping first
+  # sent it SIGTERM 200ms after its socket vanished, mid final-flush. That control's row delta
+  # is verdict-bearing, which means a corrupted flush there would not merely lose data: it
+  # would manufacture a verdict. Give the owner its whole configured bound; whatever is left
+  # afterwards never asked to leave and never will.
   socket_quiet_within "$1" "$2" || return 1
+  owner_gone "$2" || return 1
   groups_quiet || reap_tracked_groups
   groups_quiet || return 1
-  owner_gone "$2" || return 1
   # Last: anything still carrying this run's sandbox. Reaped rather than waited on, for the
-  # same reason as the groups — a detached survivor will not leave on its own.
+  # same reason as the groups — a detached survivor that never bound will not leave on its own.
   [[ -z "$(sandbox_strays)" ]] || reap_sandbox_strays
   [[ -z "$(sandbox_strays)" ]]
 }
@@ -805,13 +812,13 @@ socket_owner_pid() {
 # Every process this script starts is launched under `env -i` with XDG_DATA_HOME inside a
 # mktemp'd directory, so that path is a unique marker no unrelated process can carry.
 #
-# PLATFORM LIMIT, stated rather than papered over: /proc/PID/environ makes this exact on
-# Linux — which is the scheduled job's runner and one of the two machines this premise
-# protects. macOS restricts reading another process's environment even for your own children
-# (ps -E returns nothing under SIP), so there it falls back to lsof for anything holding a
-# file under the sandbox — which catches a daemon that opened the DB and misses one that
-# hung before opening anything. That residual is why cleanup still refuses to delete a tree
-# it cannot prove is unused, rather than trusting this to be exhaustive.
+# PLATFORM LIMIT, stated rather than papered over: this handle exists on LINUX ONLY.
+# /proc/PID/environ makes it exact there, and Linux is the scheduled job's runner and one of
+# the two machines this premise protects. On macOS it returns nothing at all — see the body
+# for why no substitute is attempted — so that platform has two handles rather than three,
+# and the pre-bind-detached case is uncovered there. That residual is why cleanup still
+# refuses to delete a tree it cannot prove is unused, rather than trusting this to be
+# exhaustive.
 sandbox_strays() {
   local d pid out=""
   [[ -n "$LOCALDIR" ]] || return 0
