@@ -17,8 +17,13 @@ don't assume red:
 | Row | Meaning | Remediation |
 | --- | --- | --- |
 | `✓ current` | pinned to the reference tag | none |
-| `• current (ahead of vX.Y.Z …, on origin/main)` | carries **unreleased** Core — newer than the tag, still on main's lineage. **Not drift**; exits 0 | **cut a release** (see below) |
-| `✗ BEHIND` / `DIFFERS` / `OFF-LINEAGE` / `DIVERGED` / `missing …` | genuine drift; exits 1 | `make sync`, or investigate the recorded sha |
+| `• current (ahead of vX.Y.Z …, on origin/main)` | carries **unreleased** Core — newer than the tag, still on main's lineage. **Not drift**; does not fail the sweep on its own | **cut a release** (see below) |
+| `✗ BEHIND` / `DIFFERS` / `OFF-LINEAGE` / `DIVERGED` / `missing …` | genuine drift; forces exit **1** | `make sync`, or investigate the recorded sha |
+
+The states **mix**. A sweep can be stale in one repo and unpinned in seven: the `•`
+rows and the unreleased tally still print on a red run, and the exit code is 1
+because of the `✗` rows. Read the exit code from the run itself, not from which row
+types you can see.
 
 A `•` row carries **two** numbers, and they mean different things:
 
@@ -85,7 +90,10 @@ Ranked, most-stale / highest-risk first:
   the remediation command.
 - **Unreleased** — the `•` rows: how far ahead of the tag, whether they're also
   behind main's tip, and that the fix is a release cut. Say plainly that these are
-  **not** drift and that the sweep exited 0.
+  **not** drift — but do **not** infer the exit code from them. A `•` row does not
+  fail the sweep *on its own*; it coexists with `✗` rows in a mixed run, which exits
+  **1** and still prints the unreleased tally. Report the exit code you actually
+  observed, never one deduced from the row types.
 - **Current** — the repos already up to date, so a green run is trustworthy.
 
 If the sweep exited 0 with no `•` rows, say so in one line — a fully-pinned fleet is
