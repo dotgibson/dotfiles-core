@@ -3052,6 +3052,13 @@ scope = rep.split("---\n\n", 1)[1]
 assert "stand-down** is unmeasured" not in scope, "the autostart report still claims the premise is unmeasured"
 for want in ("musl", "macOS", "3382", "--premise discard"):
     assert want in scope, want
+# The teardown residual must be described as what it IS. An earlier version of this note
+# claimed the run "preserves its sandbox rather than deleting one it could not account for"
+# for a case NOTHING DETECTS — every check passes, the stop is accepted, and the tree is
+# deleted around a live child. A scope note that promises a safety behaviour the code does not
+# perform is the exact defect this section exists to catch, so the honest wording is pinned.
+assert "undetected leak" in scope, "the scope note no longer names the teardown residual as undetected"
+assert "preserving its sandbox rather than deleting" not in scope, "the scope note has re-acquired the preservation claim for a case nothing detects"
 named = [a for a in arms if a.replace("_", " / ") in scope]
 assert not named, "the scope section names measured arms: %s" % named
 ' "$_drep" 2>/dev/null; then
