@@ -2690,6 +2690,19 @@ check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpack
    _core_have() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
      && [[ $out == *"install missing"* && $out == *"sudo apt install"* && $out == *"PORTING-MATRIX.md"* ]]'
+# ...and the hint must NOT concatenate the manager verb with the tool list. That form read as
+# paste-ready but never was: apt/dnf/zypper/pacman abort the whole transaction on one
+# unresolvable name, and most of the inventory carries a package name that differs from the
+# command (rg=ripgrep) or is unpackaged on some target. With _core_have false every tool is
+# missing, so the old shape would render `sudo apt install eza bat …` — assert the verb is
+# only ever followed by the <pkg> placeholder, and that the first tool name never trails it.
+check "core-doctor's install hint offers a per-tool template, not a paste-ready batch command" \
+  '_pkgup_mgr() { print -r -- apt; }
+   _core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out == *"sudo apt install <pkg>"* ]] \
+     && [[ $out != *"sudo apt install eza"* ]] \
+     && [[ $out == *"command names"* ]]'
 # _core_wired (U1): presence != wired. The probe is true ONLY when the integration's hook
 # function is actually defined in this shell, and false for an idle/unknown one — that gap
 # is exactly what the doctor's "integrations wired" line surfaces.
