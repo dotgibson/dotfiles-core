@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.10.0] - 2026-08-13
+
 ### Added
 
 - **The `autostart` stand-down is measured now, not assumed** (`dotgibson/dotfiles-core#402`).
