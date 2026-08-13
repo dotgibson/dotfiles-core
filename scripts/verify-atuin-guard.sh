@@ -484,23 +484,24 @@ trap 'cleanup; exit 143' TERM
 # run silently re-date the silent-discard claim that eight repos' prompt hooks rest on.
 # The autostart key is allowed to be ABSENT: see anchor_optional below.
 read_anchor() {
-  local key="$1" hits n
-  # Exactly three integer components, not `[0-9][0-9.]*`. The loose pattern matched `18`,
-  # `18.` and `18..19`, and ver_cmp then treats a missing or non-numeric field as 0 — so a
-  # typo'd anchor did not fail, it silently compared against a DIFFERENT version and the run
-  # still produced a verdict. Fail closed instead: an anchor that is not X.Y.Z matches
-  # nothing here, read_anchor returns 1, and the run is `unmeasurable` with a named reason.
-  hits="$(sed -n "s/^# ${key}=\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)[[:space:]]*\$/\1/p" \
+  local key="$1" raw valid
+  # RAW occurrences of the key — whatever follows it — counted SEPARATELY from occurrences
+  # with a well-formed value. Counting only well-formed ones made `# KEY=18.19` indis-
+  # tinguishable from no key at all, and for the autostart premise, where absence is
+  # legitimate, that turns a typo into a silent `unanchored` run instead of the `unmeasurable`
+  # this function's whole contract promises. It also hid a valid line paired with a malformed
+  # duplicate — a file disagreeing with itself, which is never anything but unmeasurable.
+  #
+  # Deliberately NOT a grep for a bare version pattern anywhere in the file: that rationale
+  # paragraph also names 18.16.1, and a detector comparing against the wrong number is worse
+  # than one that never runs.
+  raw="$(grep -c "^# ${key}=" zsh/00-tools.zsh 2>/dev/null || true)"
+  valid="$(grep -c "^# ${key}=[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*[[:space:]]*\$" zsh/00-tools.zsh 2>/dev/null || true)"
+  ((raw == 0)) && return 1  # absent — legitimate for autostart, fatal for discard
+  ((raw > 1)) && return 2   # stated more than once: the file contradicts itself
+  ((valid == 1)) || return 3
+  ANCHOR="$(sed -n "s/^# ${key}=\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)[[:space:]]*\$/\1/p" \
     zsh/00-tools.zsh 2>/dev/null)"
-  n="$(printf '%s\n' "$hits" | grep -c '^[0-9]')"
-  # THREE outcomes, not two. "Nobody has written this anchor yet" and "the file states it
-  # twice" are different facts, and the autostart premise treats them differently: the first
-  # is a legitimate first measurement, the second is a file disagreeing with itself and is
-  # never anything but `unmeasurable`. Collapsing them would make a contradictory anchor
-  # silently produce a verdict.
-  ((n == 0)) && return 1
-  ((n > 1)) && return 2
-  ANCHOR="$hits"
   return 0
 }
 
@@ -528,17 +529,23 @@ anchor_key() {
 # has always disclaimed. `ldd --version` prints to stderr on glibc and stdout on musl, so both
 # streams are read; anything unrecognised stays unnamed rather than guessed at.
 detect_host() {
-  local s m libc=""
+  local s m ldd_out=""
   s="$(uname -s 2>/dev/null)" || s="unknown"
   m="$(uname -m 2>/dev/null)" || m="unknown"
-  if [[ "$s" == Linux ]]; then
-    if ldd --version 2>&1 | grep -qi musl; then
-      libc=" musl"
-    elif ldd --version 2>&1 | grep -qiE 'gnu|glibc'; then
-      libc=" glibc"
-    fi
+  # CAPTURE, THEN MATCH ON THE STRING — never `ldd --version | grep`. `set -o pipefail` is in
+  # force at the top of this script, and musl's ldd exits NON-ZERO after printing its banner,
+  # so the pipe form fails the whole pipeline even when grep matched. Every musl run would
+  # report no libc at all, on the one machine where that marker is the evidence. This repo has
+  # already paid for that exact mistake once: scripts/bench-atuin-daemon.sh carries the same
+  # capture-first idiom and the same warning. The `|| true` is load-bearing, not habit.
+  if [[ "$s" == Linux ]] && have ldd; then
+    ldd_out="$(ldd --version 2>&1 || true)"
   fi
-  HOST_KIND="${s:-unknown} ${m:-unknown}${libc}"
+  case "$ldd_out" in
+  *[Mm]usl*) HOST_KIND="${s} ${m} musl" ;;
+  *GLIBC* | *[Gg]libc* | *"GNU libc"*) HOST_KIND="${s} ${m} glibc" ;;
+  *) HOST_KIND="${s:-unknown} ${m:-unknown}" ;;
+  esac
 }
 
 ver_cmp() {
@@ -1349,8 +1356,6 @@ arms_autostart() {
 }
 
 measure() {
-
-  detect_host
   have python3 || {
     unmeasurable "python3 is not installed — the row count is what the whole verdict rests on"
     return
@@ -1395,7 +1400,10 @@ measure() {
   akey="$(anchor_key)"
   read_anchor "$akey"
   arc=$?
-  if ((arc == 2)); then
+  if ((arc == 3)); then
+    unmeasurable "zsh/00-tools.zsh has a '# ${akey}=' line whose value is not an X.Y.Z version — a malformed anchor is not the same as an absent one, and this run will not silently treat it as unanchored"
+    return
+  elif ((arc == 2)); then
     unmeasurable "zsh/00-tools.zsh states '# ${akey}=' more than once — the file disagrees with itself about what was measured, and a detector that picks one of two contradictory anchors is worse than one that declines"
     return
   elif ((arc == 1)); then
@@ -1733,6 +1741,12 @@ emit_report() {
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
+# BEFORE the branch, not inside measure(): the forced-unmeasurable path skips measure()
+# entirely, and it is the path the scheduled job takes whenever a download or checksum fails —
+# so leaving it here is the difference between a report that says where it ran and one that
+# says `unknown` on exactly the runs a human is most likely to be reading closely.
+detect_host
+
 if [[ -n "$FORCED_UNMEASURABLE" ]]; then
   # A caller that failed before a binary ever existed (a download, a checksum, an
   # attestation) reports through this same renderer, so the wording a human reads cannot

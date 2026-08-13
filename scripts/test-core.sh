@@ -2989,7 +2989,61 @@ J4PROBE
       fi
     fi
 
-    # 19. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+    # 19. A MALFORMED ANCHOR IS NOT AN ABSENT ONE. Absence is legitimate for THIS premise —
+    #     nobody has written the line until a human measures it — which is exactly why the two
+    #     must not be conflated: `=18.19`, or a valid value with a trailing token, would
+    #     otherwise sail through as `unanchored` and the run would report a verdict against
+    #     nothing. Cheap to assert: read_anchor runs before the sandbox is built, so no daemon
+    #     is spawned on this path.
+    _dvrepo="$(mktemp -d "$SANDBOX/dvrepo.XXXXXX")"
+    mkdir -p "$_dvrepo/zsh" "$_dvrepo/scripts/lib" "$_dvrepo/lib" "$_dvrepo/atuin"
+    cp "$_DVERIFY" "$_dvrepo/scripts/"
+    cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/atuin-db.sh" "$_dvrepo/scripts/lib/"
+    cp "$HERE/lib/ux.sh" "$_dvrepo/lib/" 2>/dev/null || true
+    cp "$HERE/atuin/config.toml" "$_dvrepo/atuin/"
+    _dbad=0
+    for _dcase in "18.19" "18.19.0 EXTRA"; do
+      {
+        echo "# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0"
+        echo "# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=$_dcase"
+      } >"$_dvrepo/zsh/00-tools.zsh"
+      _dout="$(cd "$_dvrepo" && CORE_COLOR=never "./scripts/verify-atuin-guard.sh" \
+        --premise autostart --atuin "$_dstub/atuin-heals" --json 2>/dev/null)"
+      [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] || _dbad=1
+    done
+    # Absence, by contrast, must still be allowed through as unanchored.
+    echo "# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0" >"$_dvrepo/zsh/00-tools.zsh"
+    _dout="$(cd "$_dvrepo" && CORE_COLOR=never CORE_ATVERIFY_POLL=3 "./scripts/verify-atuin-guard.sh" \
+      --premise autostart --atuin "$_dstub/atuin-heals" --json 2>/dev/null)"
+    [[ "$(_d_get "$_dout" anchor_relation)" == unanchored ]] || _dbad=1
+    _dreap
+    if ((_dbad == 0)); then
+      pass "atuin autostart: a malformed anchor is unmeasurable while an ABSENT one is still unanchored — the two are not conflated"
+    else
+      fail "atuin autostart: a malformed autostart anchor was treated as absent, so the run reported a verdict against nothing"
+    fi
+
+    # 20. THE LIBC MARKER MUST SURVIVE musl's EXIT STATUS. musl's ldd prints its banner and
+    #     then exits NON-ZERO, and this script runs under `set -o pipefail` — so the obvious
+    #     `ldd --version | grep -qi musl` is false even when grep matched, and every musl run
+    #     loses the one marker that says which half of the fleet it spoke for. This repo has
+    #     already paid for that exact mistake once (see CHANGELOG and bench-atuin-daemon.sh),
+    #     which is why it is pinned here rather than left to a comment.
+    _dshim="$(mktemp -d "$SANDBOX/dshim.XXXXXX")"
+    for _dt in bash sh python3 sed grep awk tr cut head sleep mktemp rm cat kill ls chmod mkdir printf env find sort wc dirname basename readlink cp comm; do
+      _dp="$(command -v "$_dt" 2>/dev/null)" && ln -sf "$_dp" "$_dshim/$_dt" 2>/dev/null
+    done
+    printf '#!/bin/sh\necho "musl libc (x86_64)" >&2\nexit 1\n' >"$_dshim/ldd"
+    printf '#!/bin/sh\ncase "$1" in -m) echo x86_64 ;; *) echo Linux ;; esac\n' >"$_dshim/uname"
+    chmod +x "$_dshim/ldd" "$_dshim/uname"
+    _dout="$(PATH="$_dshim" CORE_COLOR=never "$_DVERIFY" --unmeasurable probe --json 2>/dev/null)"
+    if [[ "$(_d_get "$_dout" host)" == *musl* ]]; then
+      pass "atuin autostart: musl is detected even though its ldd exits non-zero (the pipefail trap this repo has hit before)"
+    else
+      fail "atuin autostart: a musl host reported host='$(_d_get "$_dout" host)' — the libc marker was lost to pipefail"
+    fi
+
+    # 21. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
       #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
       #   true until this mode existed and is exactly the kind of prose that rots — and must
       #   name the machines a green run here does and does not speak for.
