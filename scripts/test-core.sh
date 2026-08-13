@@ -2352,6 +2352,9 @@ else
   #   no-stop-subcommand       no `daemon stop`.                                → unmeasurable
   #   fork-hang                autostart forks a child that NEVER binds and never exits —
   #                            invisible to every socket-based teardown path there is.
+  #   manual-fork-nobind       `daemon start` forks a child that never binds and then EXITS,
+  #                            so MANUAL_DAEMON_PID names a corpse and the socket never
+  #                            answers — the manual control's version of fork-hang.
   #   fork-hang-end            the same, but the fork happens on `history end` rather than on
   #                            `history start`. atuin reaches its daemon through the same
   #                            autostarting path from both, so tracking only the opening half
@@ -2459,6 +2462,14 @@ daemon)
       echo "usage: atuin daemon start"; exit 0
     fi
     [[ "\$MODE" == manual-spawn-impossible ]] && { echo "Error: no" >&2; exit 1; }
+    if [[ "\$MODE" == manual-fork-nobind ]]; then
+      # Forks a child that never binds, then EXITS 0. The pid the caller recorded is dead a
+      # moment later, nothing ever answers the socket, and no inode exists to resolve an
+      # owner from -- only the process group knows about the survivor.
+      sleep 300 &
+      printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+      exit 0
+    fi
     serve_fg
     ;;
   stop)
@@ -2600,16 +2611,44 @@ STUB
   fi
   _dreap
 
-  # ── APPARATUS SELF-CHECK, same contract as §J3's. Everything below needs the stub to bind
-  #    a real AF_UNIX socket and be measured through it. A sandbox that forbids that (a
-  #    container without /tmp, a path past sun_path, a python3 without AF_UNIX) would fail
-  #    every case below for reasons that have nothing to do with the code under test.
-  _d_run atuin-heals --premise autostart --json
-  _dapp="$(_d_get "$_dout" verdict)"
-  _dreap
-  if [[ "$_dapp" != holds ]]; then
-    skip "atuin autostart: measurement assertions (apparatus unusable here — verdict=${_dapp:-<unparseable>}: $(_d_get "$_dout" reason))"
+  # ── APPARATUS SELF-CHECK — and deliberately NOT through the subject under test.
+  #    The obvious form of this gate ("run the known-good stub; skip everything if it does not
+  #    say holds") uses the code under test as its own apparatus check, so ANY regression that
+  #    made the healthy stub report `moved` or `unmeasurable` would skip every assertion below
+  #    and leave the audit GREEN — the regression suite going blind to exactly the failures it
+  #    exists to catch. So the box is proven FIRST, with python3 alone: bind an AF_UNIX socket
+  #    under /tmp and connect to it, which is the only capability these cases need that an
+  #    ordinary box might lack. Only if THAT fails is a skip honest.
+  if ! python3 - "/tmp/j4probe.$$.sock" <<'J4PROBE' 2>/dev/null
+import socket, sys, os
+p = sys.argv[1]
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.bind(p)
+    s.listen(1)
+    c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    c.settimeout(2)
+    c.connect(p)
+    c.close()
+    s.close()
+    os.unlink(p)
+except Exception:
+    sys.exit(1)
+J4PROBE
+  then
+    rm -f "/tmp/j4probe.$$.sock"
+    skip "atuin autostart: measurement assertions (this box cannot bind and connect an AF_UNIX socket under /tmp)"
   else
+    rm -f "/tmp/j4probe.$$.sock"
+    # The apparatus is established WITHOUT the subject's help, so a known-good stub that does
+    # not report `holds` is a regression in the detector — a FAILURE, never a skip.
+    _d_run atuin-heals --premise autostart --json
+    _dapp="$(_d_get "$_dout" verdict)"
+    _dreap
+    if [[ "$_dapp" != holds ]]; then
+      fail "atuin autostart: this box can bind AF_UNIX sockets, yet the known-good stub reported ${_dapp:-<unparseable>} rather than holds — that is a regression in verify-atuin-guard.sh, not an unusable apparatus: $(_d_get "$_dout" reason)"
+    else
+
     # 4. The happy path, and the shape real 18.19.0 has: all four arms spawn and land a row.
     if ((_drc == 0)) && [[ "$_dout" == *'"spawned":"no"'* ]]; then
       fail "atuin autostart: a healing atuin reported an arm that did not spawn"
@@ -2761,7 +2800,27 @@ STUB
       fail "atuin autostart: $_dalive of $_dforked children forked by 'history end' survived — only the opening half of the pair is tracked"
     fi
 
-    # 14. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
+    # 14. THE MANUAL CONTROL HAS THE SAME HOLE, and it was the last untracked spawn here. If
+    #     `daemon start` forks a child that never binds and its parent exits, the recorded pid
+    #     is a corpse, wait_reachable fails, cleanup sees an absent socket and calls it
+    #     stopped, and reap_manual has nothing left to kill. The verdict must still be
+    #     `unmeasurable` (this box could not host a daemon -- never a finding about upstream),
+    #     AND the survivor must be reaped.
+    _mkdstub atuin-manualfork manual-fork-nobind
+    _d_run atuin-manualfork --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-manualfork)"
+    _dforked="$(grep -c . "$_dstub/atuin-manualfork.forked" 2>/dev/null || echo 0)"
+    _dv="$(_d_get "$_dout" verdict)"
+    _dreap
+    if [[ "$_dv" == unmeasurable ]] && ((_drc == 3)) && ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a manual spawn that forks without binding is unmeasurable AND its orphan is reaped ($_dforked forked, 0 alive)"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the manual-fork-nobind stub never forked, so the assertion proved nothing"
+    else
+      fail "atuin autostart: manual-fork-nobind gave $_dv/rc$_drc with $_dalive of $_dforked orphans alive — the manual control is not process-group tracked"
+    fi
+
+    # 15. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
     #     of /tmp. The verifier DELIBERATELY preserves a sandbox when a stop cannot be proven,
     #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
     #     fail this for a run that cleaned up perfectly. Only paths this run created count.
@@ -2771,8 +2830,19 @@ STUB
     #     version of this did: on macOS /tmp is a symlink to private/tmp and `find /tmp`
     #     without -L does not descend it, so both snapshots were empty and the assertion was
     #     vacuous on a third of the fleet. Prove the snapshot can see a directory before
-    #     trusting it to notice one.
-    _dsnap() { find -L /tmp -maxdepth 1 -name 'atverify.*' 2>/dev/null | sort; }
+    #     trusting it to notice one. (The fault there was the unfollowed symlink, not a
+    #     missing -maxdepth.)
+    # The shell's own one-level glob, not find(1) and not ls(1). BSD find on macOS does
+    # support -maxdepth (checked against /usr/bin/find, which is what the macOS CI leg runs),
+    # so the earlier version was not broken for that reason — but a glob needs no portability
+    # argument at all, and this check has already been silently blind once.
+    _dsnap() {
+      local d
+      local -a out=()
+      for d in /tmp/atverify.*; do [[ -d "$d" ]] && out+=("$d"); done
+      ((${#out[@]})) && printf '%s\n' "${out[@]}" | sort
+      return 0
+    }
     mkdir -p "/tmp/atverify.selfcheck$$"
     if ! _dsnap | grep -q "atverify.selfcheck$$"; then
       rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
@@ -2792,7 +2862,7 @@ STUB
       fi
     fi
 
-    # 15. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+    # 16. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
       #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
       #   true until this mode existed and is exactly the kind of prose that rots — and must
       #   name the machines a green run here does and does not speak for.
@@ -2822,7 +2892,8 @@ assert not named, "the scope section names measured arms: %s" % named
     else
       fail "atuin autostart: the autostart report's prose does not match what it measured"
     fi
-  fi
+    fi  # known-good stub held
+  fi    # apparatus probe
   _dreap
 fi
 

@@ -131,8 +131,11 @@ one a workaround was verified against is a finding in its own right, not a footn
   answer by reading release notes is the weakest kind of watch — it catches a documented
   change and misses a silent one. #402 built the measurement, so it is no longer yours: the
   `autostart` rows of the verdict table above are what watch it now. What remains genuinely
-  unanswerable by measurement is narrower, and belongs to the `#3382` bullet: a daemon that
-  comes up and then **wedges** answers a connect, so the autostart leg scores it as healthy.
+  unanswerable by measurement is narrower than it first looks, and belongs to the `#3382`
+  bullet: every autostart arm must exit 0 and land exactly one row, so a daemon that wedges
+  *during* the measured pair already shows up as `unmeasurable` or `moved`. Only one that
+  wedges **after** completing the pair escapes — which is the shape upstream reading, not a
+  shell, would have to settle.
 
   Refs #366, #382, #383, #402.
 

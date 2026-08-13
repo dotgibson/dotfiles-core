@@ -351,7 +351,7 @@ DAEMON_MAYBE_UP=0         # 1 from the instant a spawn is attempted until a stop
 MANUAL_DAEMON_PID=""      # set only for daemons WE start; an autostart one has no PID for us
 CLEANED=0                 # cleanup() idempotence — INT and EXIT both reach it on a Ctrl-C
 _label=""                 # premise name for the one-line human verdict at the very bottom
-AUTO_PGIDS=""             # process groups the autostart arms ran in; reaped by cleanup()
+TRACKED_PGIDS=""          # every process group we started; reaped by cleanup()
 RUN_REC=""                # run_one's record — a global precisely so no subshell eats it
 _pgid=""
 _ok="" _rc="" _delta="" _idok="" _err=""   # run_one record fields, read via IFS
@@ -389,23 +389,23 @@ moved() {
 # naming a command, not command substitution — single quotes are exactly right for a printf
 # format string, the same call emit_report makes further down.
 # shellcheck disable=SC2329,SC2317,SC2016  # invoked indirectly, by the EXIT trap below
-# reap_auto_groups — kill anything still alive in the process groups the autostart arms ran
-# in. Runs AFTER the proven stop, never between arms: the daemon an arm just spawned is in
+# reap_tracked_groups — kill anything still alive in the process groups we started: the four
+# autostart arms AND the manual-spawn control. Runs AFTER the proven stop, never between arms: the daemon an arm just spawned is in
 # that group too, and killing it early would destroy the very thing prove_reachable is about
 # to ask about. Both signals are best-effort — an empty or already-dead group is the normal
 # case, and `kill` failing on one is not news.
 # shellcheck disable=SC2329,SC2317  # invoked from cleanup, which the traps invoke
-reap_auto_groups() {
+reap_tracked_groups() {
   local g
-  [[ -n "$AUTO_PGIDS" ]] || return 0
-  for g in $AUTO_PGIDS; do kill -TERM "-$g" 2>/dev/null; done
+  [[ -n "$TRACKED_PGIDS" ]] || return 0
+  for g in $TRACKED_PGIDS; do kill -TERM "-$g" 2>/dev/null; done
   sleep 0.2
-  for g in $AUTO_PGIDS; do kill -KILL "-$g" 2>/dev/null; done
-  AUTO_PGIDS=""
+  for g in $TRACKED_PGIDS; do kill -KILL "-$g" 2>/dev/null; done
+  TRACKED_PGIDS=""
   return 0
 }
 
-# Same both-codes disable as reap_auto_groups above, and SC2016 for the markdown-ish backticks
+# Same both-codes disable as reap_tracked_groups above, and SC2016 for the markdown-ish backticks
 # in the preserved-sandbox message: single quotes are right for a printf format string.
 # shellcheck disable=SC2329,SC2317,SC2016  # invoked indirectly, by the traps below
 cleanup() {
@@ -423,8 +423,8 @@ cleanup() {
   # Unconditionally, and after the stop attempt rather than instead of it: this catches the
   # forked-but-never-bound children the socket-based teardown cannot see, and it must still
   # run on the preserve path below — a tree we are keeping is no reason to keep processes.
-  reap_auto_groups
-  # RE-PROVE AFTER REAPING. The daemon is in the arm's process group, so reap_auto_groups can
+  reap_tracked_groups
+  # RE-PROVE AFTER REAPING. The daemon is in the arm's process group, so reap_tracked_groups can
   # be the step that finally kills what the socket-scoped stop could not — and without this
   # re-check cleanup would keep the sandbox and print a "STILL answering" warning about a
   # process that is by then gone. The preserve path has to be a genuine last resort, or the
@@ -435,7 +435,7 @@ cleanup() {
   if ((stopped == 0)); then
     # The one path that leaves state behind, so it must never be quiet. Refusing to delete is
     # NOT the first response — daemon_stop_proven has already asked, signalled and SIGKILLed,
-    # and reap_auto_groups has had its turn, by the time we get here. Keeping the tree is the
+    # and reap_tracked_groups has had its turn, by the time we get here. Keeping the tree is the
     # least-bad end state: an orphaned daemon still holding the files it believes it owns
     # beats an orphaned daemon plus a half-deleted tree.
     printf 'verify-atuin-guard.sh: a daemon is STILL answering on %s after `atuin daemon stop`, SIGTERM and SIGKILL.\n' "$SOCK" >&2
@@ -711,10 +711,19 @@ socket_owner_pid() {
 daemon_start_manual() {
   local sock="$1"
   DAEMON_MAYBE_UP=1
+  # TRACKED LIKE THE ARMS ARE, and for the same reason. A PID is not enough here either: if
+  # this build forks a child that hangs before binding and the parent then exits,
+  # MANUAL_DAEMON_PID names a corpse, wait_reachable fails, cleanup sees an absent socket and
+  # calls it stopped, and reap_manual has nothing to kill — the sandbox goes while that child
+  # lives. The process group is the only handle that covers it. No `wait` here, unlike the
+  # arms: this process is meant to outlive the call.
+  set -m
   "${AT_ENV[@]}" ATUIN_DAEMON__ENABLED=true \
     "$ATUIN_BIN" ${AT_DAEMON_ARGV[@]+"${AT_DAEMON_ARGV[@]}"} \
     </dev/null >>"$SB/daemon.log" 2>&1 &
   MANUAL_DAEMON_PID=$!
+  TRACKED_PGIDS="$TRACKED_PGIDS $MANUAL_DAEMON_PID"
+  set +m
   wait_reachable "$sock" 100
 }
 
@@ -794,8 +803,8 @@ DB=""
 # A GLOBAL, NOT STDOUT, and that is load-bearing rather than stylistic. `line="$(run_one ...)"`
 # runs the whole function in a COMMAND-SUBSTITUTION SUBSHELL, so every assignment it makes is
 # discarded when that subshell exits — which silently defeated the process-group tracking
-# below: AUTO_PGIDS was appended to in the child and read as empty in the parent, so
-# reap_auto_groups had nothing to reap and the whole guard was inert. Anything run_one needs to
+# below: TRACKED_PGIDS was appended to in the child and read as empty in the parent, so
+# reap_tracked_groups had nothing to reap and the whole guard was inert. Anything run_one needs to
 # tell the parent has to come back this way.
 #
 # ALL SIX REQUIRED, none optional. `settle` and `poll_n` used to be trailing defaults, and two
@@ -883,7 +892,7 @@ run_one() {
     set -m
     "$1" &
     _pgid=$!
-    AUTO_PGIDS="$AUTO_PGIDS $_pgid"
+    TRACKED_PGIDS="$TRACKED_PGIDS $_pgid"
     wait "$_pgid"
     _r=$?
     set +m
@@ -1200,7 +1209,7 @@ measure() {
   # 15189, forked child's group 15194.) `--foreground` suppresses that regrouping.
   #
   # What it gives up is timeout's own group-kill on expiry — it then signals only its direct
-  # child. That is covered here and was not covered before: reap_auto_groups kills the arm's
+  # child. That is covered here and was not covered before: reap_tracked_groups kills the arm's
   # group at cleanup, so a grandchild that outlives an expired bound is caught either way.
   # Probed rather than assumed, because busybox timeout has no such flag (and does not
   # regroup, so it needs none) — the same reason the gtimeout branch exists at all.
