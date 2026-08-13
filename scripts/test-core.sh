@@ -2400,7 +2400,8 @@ PY
 
 # EXEC, not a child: MANUAL_DAEMON_PID and socket_owner_pid both have to be able to signal
 # this process, and a bash wrapper holding a python child would swallow the SIGKILL the
-# teardown escalation depends on. Binds in the FOREGROUND so a failure is immediate — and
+# teardown escalation depends on. The daemon then setsid()s below, so it leaves our process
+# group the way a real one does. Binds in the FOREGROUND so a failure is immediate — and
 # refuses over an existing inode, which is what 18.19.0 really does:
 #   Error: Address already in use (os error 48)  crates/atuin-daemon/src/server.rs:72
 serve_fg() {
@@ -2414,6 +2415,15 @@ except OSError:
     sys.stderr.write("Error: Address already in use (os error 48)\n")
     sys.exit(98)
 s.listen(8)
+# DETACH, exactly as a real atuin daemon does. Measured on 18.19.0: the arm ran in process
+# group 88291 and the daemon it spawned landed in 88299. A stub that stayed in the group
+# would be reachable by the group reap and every teardown assertion here would pass for a
+# reason that does not apply to atuin -- the stub has to be at least as hard to kill as the
+# thing it stands in for.
+try:
+    os.setsid()
+except OSError:
+    pass
 open(pidf, "w").write(str(os.getpid()))
 s.settimeout(0.3)
 while True:

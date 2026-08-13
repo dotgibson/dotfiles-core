@@ -359,6 +359,8 @@ SOCK=""                   # atuin's own default socket path inside the sandbox
 AT_DAEMON_ARGV=()         # `daemon` vs `daemon start`, resolved once by daemon_probe_argv
 DAEMON_MAYBE_UP=0         # 1 from the instant a spawn is attempted until a stop is PROVEN
 MANUAL_DAEMON_PID=""      # set only for daemons WE start; an autostart one has no PID for us
+LAST_OWNER_PID=""         # who owned the socket BEFORE the last stop — the only handle on a
+                          # detached daemon, and resolvable only while the socket still exists
 CLEANED=0                 # cleanup() idempotence — INT and EXIT both reach it on a Ctrl-C
 _label=""                 # premise name for the one-line human verdict at the very bottom
 TRACKED_PGIDS=""          # every process group we started; reaped by cleanup()
@@ -701,7 +703,31 @@ socket_quiet_within() {
 stop_settled() {
   socket_quiet_within "$1" "$2" || return 1
   groups_quiet || reap_tracked_groups
-  groups_quiet
+  groups_quiet || return 1
+  owner_gone "$2"
+}
+
+# owner_gone <tries> — the pid that owned the socket BEFORE the stop must actually be gone.
+#
+# THIS IS THE ONLY HALF THAT REACHES A REAL AUTOSTART DAEMON, and the reason the other two are
+# not enough. Measured on 18.19.0: a client-spawned daemon DETACHES — the arm ran in process
+# group 88291 and the daemon it started landed in 88299 — so `groups_quiet` answers "nothing
+# left" about a group the daemon was never in, and the socket goes silent the moment shutdown
+# unlinks it, which can be well before the final DB flush. Both halves therefore say "stopped"
+# while the process is alive and still writing. Only the pid settles it, and the pid can only
+# be looked up while the socket it owns still exists — which is why it is captured BEFORE the
+# stop rather than after.
+owner_gone() {
+  local tries="$1" i
+  [[ -n "$LAST_OWNER_PID" ]] || return 0
+  for ((i = 0; i < tries; i++)); do
+    kill -0 "$LAST_OWNER_PID" 2>/dev/null || {
+      LAST_OWNER_PID=""
+      return 0
+    }
+    sleep 0.1
+  done
+  return 1
 }
 
 # Which spelling drives the daemon on THIS build — the same probe, for the same reason, as
@@ -809,8 +835,14 @@ reap_manual() {
 }
 
 daemon_stop_proven() {
-  local sock="$1" pid
+  local sock="$1" sig half
   ((DAEMON_MAYBE_UP)) || return 0
+  # CAPTURE THE OWNER FIRST. This is the only window in which a detached autostart daemon is
+  # identifiable at all: it is not in any group we hold, and once shutdown unlinks the socket
+  # there is nothing left to resolve it by. Looking it up AFTER the stop — which is what this
+  # did — can only ever find a daemon that failed to remove its socket, i.e. never the case
+  # that matters.
+  LAST_OWNER_PID="$(socket_owner_pid "$sock")" || LAST_OWNER_PID=""
   ${AT_ENV[@]+"${AT_ENV[@]}"} ATUIN_DAEMON__ENABLED=true \
     ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" daemon stop >/dev/null 2>&1
   if stop_settled "$sock" "$POLL_N"; then
@@ -818,28 +850,28 @@ daemon_stop_proven() {
     reap_manual
     return 0
   fi
+  half=$((POLL_N / 2 + 1))
+  # A daemon we started by hand: we hold its pid directly.
   if [[ -n "$MANUAL_DAEMON_PID" ]]; then
-    for pid in TERM KILL; do
-      kill "-$pid" "$MANUAL_DAEMON_PID" 2>/dev/null
-      if stop_settled "$sock" "$((POLL_N / 2 + 1))"; then
+    for sig in TERM KILL; do
+      kill "-$sig" "$MANUAL_DAEMON_PID" 2>/dev/null
+      if stop_settled "$sock" "$half"; then
         DAEMON_MAYBE_UP=0
         reap_manual
         return 0
       fi
     done
   fi
-  pid="$(socket_owner_pid "$sock")" || pid=""
-  if [[ -n "$pid" ]]; then
-    kill -TERM "$pid" 2>/dev/null
-    stop_settled "$sock" "$((POLL_N / 2 + 1))" && {
-      DAEMON_MAYBE_UP=0
-      return 0
-    }
-    kill -KILL "$pid" 2>/dev/null
-    stop_settled "$sock" "$((POLL_N / 2 + 1))" && {
-      DAEMON_MAYBE_UP=0
-      return 0
-    }
+  # A detached one: the pid captured before the stop is the only thing that can still name it.
+  if [[ -n "$LAST_OWNER_PID" ]]; then
+    for sig in TERM KILL; do
+      kill "-$sig" "$LAST_OWNER_PID" 2>/dev/null
+      if stop_settled "$sock" "$half"; then
+        DAEMON_MAYBE_UP=0
+        reap_manual
+        return 0
+      fi
+    done
   fi
   return 1
 }
@@ -937,8 +969,11 @@ run_one() {
   # daemon would be untracked for exactly the same reason `start` was, and the fix would have
   # covered only the half that happened to be noticed first.
   #
-  # HONEST LIMIT: a daemon that calls setsid() leaves the group and is out of reach again.
-  # This ADDS a case socket_owner_pid structurally cannot cover; it does not replace it.
+  # WHAT THIS DOES AND DOES NOT COVER. A real atuin daemon DETACHES (measured: arm group
+  # 88291, daemon group 88299), so the group never holds it — the pid captured before the stop
+  # is what covers that one. The group covers what the pid cannot: a child that forked and
+  # then hung or died BEFORE binding, which owns no socket and so can never be looked up.
+  # Neither alone is sufficient, which is why the stop proof requires both.
   _tracked() {
     local _r
     set -m
