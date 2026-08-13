@@ -7,9 +7,31 @@ allowed-tools: Read, Grep, Glob, WebSearch, Bash(./scripts/fleet-drift.sh:*), Ba
 # /drift-triage
 
 `fleet-drift.yml` reports **which** repos have drifted from the latest Core release,
-but only as red rows — it doesn't judge *how far behind* or *what to do*. Answer
-that: for each lagging repo, how many Core releases behind it is, what it's missing,
-and the exact remediation — **ranked** so the most-stale / highest-risk repo is first.
+but it doesn't judge *how far behind* or *what to do*. Answer that: for each repo,
+how far off it is, what it's missing, and the exact remediation — **ranked** so the
+most-stale / highest-risk repo is first.
+
+The sweep has **three** states, and they take different remediations. Read the row,
+don't assume red:
+
+| Row | Meaning | Remediation |
+| --- | --- | --- |
+| `✓ current` | pinned to the reference tag | none |
+| `• current (ahead of vX.Y.Z …, on origin/main)` | carries **unreleased** Core — newer than the tag, still on main's lineage. **Not drift**; exits 0 | **cut a release** (see below) |
+| `✗ BEHIND` / `DIFFERS` / `OFF-LINEAGE` / `DIVERGED` / `missing …` | genuine drift; exits 1 | `make sync`, or investigate the recorded sha |
+
+A `•` row carries **two** numbers, and they mean different things:
+
+- **`ahead of vX.Y.Z by N`** — a **release** is owed. `make sync` alone cannot fix
+  this: it re-vendors the same lineage and stamps another `git describe` string, so
+  the tag stays missing.
+- **`N behind its tip`** — the fleet has not been re-synced since Core moved on, so
+  a **sync** is owed as well. No such clause means the row sits exactly on main's
+  tip and only the release is outstanding.
+
+When both appear, the order is release **then** sync (`RELEASE-RUNBOOK.md`): syncing
+first just re-stamps another untagged `describe` string, while the post-release sync
+closes the unvendored commits *and* re-pins `core_tag` to a clean `vX.Y.Z`.
 
 Scope for this run: **$ARGUMENTS** (empty = whole fleet).
 
@@ -17,23 +39,43 @@ Scope for this run: **$ARGUMENTS** (empty = whole fleet).
 
 `fleet-drift.yml` already computes the drift rows and files/updates the standing
 `"ci-failure: fleet-drift sweep is red"` issue; `core-integrity` gates each vendored
-tree. Re-running `scripts/fleet-drift.sh` here is fine — that's how you *gather* the
-current rows — but the deliverable is the **interpretation** (how far behind, what's
-missing, what to run), never a copy of the sweep's raw output.
+tree. Re-running the sweep here is fine — that's how you *gather* the current rows —
+but the deliverable is the **interpretation** (how far behind, what's missing, what
+to run), never a copy of the sweep's raw output.
+
+**Run the sweep; never reconstruct it.** If the command below fails or is denied,
+say so plainly in the report and stop — an unrun sweep is a finding, not a gap to
+fill in by hand. Do **not** re-derive the verdict by reading `core.lock` markers and
+applying the classifier's logic yourself: that has already produced a confident
+report that contradicted the script (`dotgibson/dotfiles-core#381`).
 
 ## What to do
 
-1. **Read the current state.** Run `scripts/fleet-drift.sh` against the fleet checked
-   out beside this repo (siblings via `--add-dir`; the drift baseline is the latest
-   released Core tag). Also read this repo's `core.version` + latest `vX.Y.Z` tag.
-2. **Compute the gap** per lagging repo: its `core.lock` `core_tag` / `core_sha`
-   (Windows: `nvim/.core-ref`) vs the latest tag → how many releases it skipped.
+1. **Read the current state.** Run the sweep from this repo's root:
+
+   ```bash
+   ./scripts/fleet-drift.sh --color never
+   ```
+
+   The leading `./` is required — it's what the tool allowlist matches. No other flag
+   is needed: `--root` defaults to this repo's *parent*, which is where the fleet is
+   checked out (in CI too), and the baseline defaults to the latest released Core
+   tag. Pass `--root DIR` only if the fleet lives somewhere else. `--add-dir` is a
+   Claude Code flag, not a script flag — passing it to the script is a usage error.
+
+   Also read this repo's `core.version` + latest `vX.Y.Z` tag.
+2. **Compute the gap** per repo: its `core.lock` `core_tag` / `core_sha`
+   (Windows: `nvim/.core-ref`) vs the latest tag → how many releases it skipped. For
+   a `•` row, the gap that matters is the two numbers in the row itself: commits
+   ahead of the tag (a release is owed) and `behind its tip` (a sync is owed).
 3. **Weigh what it's missing:** read `CHANGELOG.md` across the skipped range. A
    security / hardening fix outranks a docs-only bump — rank by that, not just by
    count-behind.
-4. **Give the exact remediation** per repo: `make sync` (Unix vendoring repos),
-   `nvim-sync.ps1` + `starship-sync.ps1` (Windows), and flag any that would need a
-   manual conflict resolution.
+4. **Give the exact remediation** per repo, matched to its state: `make sync` for a
+   repo that genuinely **lags**; `nvim-sync.ps1` + `starship-sync.ps1` (Windows); a
+   **release cut** for `•` unreleased rows, followed by `make sync` only if the row
+   also reported `behind its tip` — in that order, per the table above. Flag any repo
+   that would need manual conflict resolution.
 
 ## How to report
 
@@ -41,7 +83,14 @@ Ranked, most-stale / highest-risk first:
 
 - **`<repo>` — N releases behind (vX.Y.Z → vA.B.C)** · what it's missing (1 line) ·
   the remediation command.
+- **Unreleased** — the `•` rows: how far ahead of the tag, whether they're also
+  behind main's tip, and that the fix is a release cut. Say plainly that these are
+  **not** drift and that the sweep exited 0.
 - **Current** — the repos already up to date, so a green run is trustworthy.
 
-Report-first — this routine *proposes* the sync; it does not run it. Do not edit
-anything unless I explicitly ask.
+If the sweep exited 0 with no `•` rows, say so in one line — a fully-pinned fleet is
+the whole point, and a routine that manufactures concern from a green run is worse
+than one that says nothing.
+
+Report-first — this routine *proposes* the sync or the release; it does not run
+either. Do not edit anything unless I explicitly ask.

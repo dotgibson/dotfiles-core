@@ -41,6 +41,11 @@
 # ref resolved. This is the Unix-side counterpart of the same fix _classify_subtree already
 # made for dotfiles-Windows.
 #
+# That row also reports how far BEHIND main's tip it still is, when that distance is non-zero:
+# "on main" is true both AT the tip and many commits back from it, so without the number a
+# fan-out that stalled mid-cycle renders identically to one that ran this morning. REPORT-ONLY
+# — it changes no verdict, no tally and no exit code.
+#
 # Usage:
 #   ./scripts/fleet-drift.sh                 # check siblings against the latest Core tag
 #   ./scripts/fleet-drift.sh --root ~/src    # fleet lives elsewhere
@@ -221,7 +226,7 @@ UNRELEASED=0
 # neither stale nor off-lineage, and must not inherit either recommendation.
 OFFLINEAGE=0
 _classify() { # _classify <recorded-sha>
-  local rec="$1" ahead behind
+  local rec="$1" ahead behind behind_main lag=""
   if [[ -z "$rec" ]]; then echo "no provenance recorded"; return; fi
   if [[ "$rec" == "$REF" ]]; then echo "current"; return; fi
   # Try to quantify; objects may be absent (shallow clone) → fall back to "differs".
@@ -239,8 +244,24 @@ _classify() { # _classify <recorded-sha>
       if [[ -z "$_MAIN_REF" ]]; then
         echo "AHEAD by $ahead commit(s) (no mainline ref — lineage unverifiable)"
       elif git -C "$HERE" merge-base --is-ancestor "$rec" "$_MAIN_REF" 2>/dev/null; then
-        # --is-ancestor is reflexive, so a repo synced exactly at the tip counts.
-        echo "current (ahead of $REF_NAME by $ahead commit(s), on $_MAIN_NAME)"
+        # --is-ancestor is reflexive, so a repo synced exactly at the tip counts. But it is
+        # reflexive at BOTH ends: "on $_MAIN_NAME" is equally true of a repo sitting exactly
+        # at the tip and one dozens of commits back from it, and printing the identical string
+        # for both is how a STALLED FAN-OUT stays silent — every row reads `current (…)`, the
+        # sweep exits 0, and nothing says the last sync landed weeks ago. So measure the
+        # remaining gap and name it. REPORT-ONLY: the `current` prefix, the UNRELEASED tally,
+        # DRIFT/STALE/OFFLINEAGE and the exit code are all unchanged — this adds a number to
+        # a row that was already green, and a green run stays green.
+        #
+        # Degrades like behind/ahead above: rev-list exits 128 with empty stdout on an object
+        # this clone lacks. An empty OR zero count drops the clause rather than printing
+        # "0 behind its tip" — noise on the one ahead-on-main state that is actually finished,
+        # and the omission is what keeps the at-tip string byte-identical to the old one.
+        behind_main="$(git -C "$HERE" rev-list --count "${rec}..${_MAIN_REF}" 2>/dev/null)" || behind_main=""
+        [[ -n "$behind_main" && "$behind_main" != 0 ]] && lag=", $behind_main behind its tip"
+        # Inside the parens on purpose: it keeps the verdict one clause, and it makes the
+        # suite's `…, on main\)` regex a live oracle for the zero case above.
+        echo "current (ahead of $REF_NAME by $ahead commit(s), on $_MAIN_NAME$lag)"
       else
         echo "AHEAD by $ahead commit(s) OFF-LINEAGE (not on $_MAIN_NAME)"
       fi
