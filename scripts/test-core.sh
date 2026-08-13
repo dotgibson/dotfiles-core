@@ -2618,6 +2618,18 @@ check "core-version --help returns 0 (not mis-read)" \
   'out=$(core-version --help); (( $? == 0 )) && [[ $out == *"usage: core-version"* ]]'
 # core-doctor (#9): the shell-side health report. Must render and return 0 even on a
 # bare box (every tool ✗) — it's read-only diagnostics, never a hard failure.
+# Every group label must render, and a tool must land under the group it was filed in. The
+# parity check below compares tool NAMES between the two inventories, so deleting a whole
+# group — label and members, from both — slips past it; and the render test underneath only
+# greps for "modern CLI", which predates the `data / net` and `dev / repo` groups. Assert all
+# four labels, then that watchexec renders AFTER the `dev / repo` heading rather than merely
+# somewhere in the report. (Parity then carries this to --json: render set == tools keys.)
+check "core-doctor renders every group label and files watchexec under dev / repo" \
+  '_core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out == *"modern CLI"* && $out == *"integrations"* ]] \
+     && [[ $out == *"data / net"* && $out == *"dev / repo"* ]] \
+     && [[ ${out#*"dev / repo"} == *watchexec* ]]'
 check "core-doctor renders a health report and returns 0" \
   'out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) && [[ $out == *dotfiles-core* && $out == *"modern CLI"* ]]'
 # core-doctor -v (#9): the version readout. Regression guard for a leak that made the whole
@@ -2690,6 +2702,19 @@ check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpack
    _core_have() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
      && [[ $out == *"install missing"* && $out == *"sudo apt install"* && $out == *"PORTING-MATRIX.md"* ]]'
+# ...and the hint must NOT concatenate the manager verb with the tool list. That form read as
+# paste-ready but never was: apt/dnf/zypper/pacman abort the whole transaction on one
+# unresolvable name, and most of the inventory carries a package name that differs from the
+# command (rg=ripgrep) or is unpackaged on some target. With _core_have false every tool is
+# missing, so the old shape would render `sudo apt install eza bat …` — assert the verb is
+# only ever followed by the <pkg> placeholder, and that the first tool name never trails it.
+check "core-doctor's install hint offers a per-tool template, not a paste-ready batch command" \
+  '_pkgup_mgr() { print -r -- apt; }
+   _core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out == *"sudo apt install <pkg>"* ]] \
+     && [[ $out != *"sudo apt install eza"* ]] \
+     && [[ $out == *"command names"* ]]'
 # _core_wired (U1): presence != wired. The probe is true ONLY when the integration's hook
 # function is actually defined in this shell, and false for an idle/unknown one — that gap
 # is exactly what the doctor's "integrations wired" line surfaces.
