@@ -2629,6 +2629,42 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
   'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
+# core-doctor's two inventories are INDEPENDENT literals: `groups` drives the human report,
+# `alltools` drives --json, and nothing derives one from the other. Adding a tool to one and
+# forgetting the other silently desyncs `core-doctor` from `core-doctor --json` — a drift no
+# other check here can see, because the render test only greps for a group heading and the
+# --json test only asserts top-level keys. Assert the two NAME SETS are equal, so the next
+# tool adoption cannot half-land. _core_have is stubbed false so the render is deterministic:
+# every tool prints as a plain ✗ (no --version forks), the "integrations wired" block skips
+# every entry, and "resolved" carries no ✓/✗ markers — leaving the group lists as the only
+# thing the regex can match. Skips rather than fails without python3, like the linters above.
+check_dep "core-doctor's rendered tool set == --json tools (the two inventories can't drift)" python3 \
+  '_core_have() { return 1; }
+   _r=$(NO_COLOR=1 core-doctor 2>&1); _j=$(core-doctor --json)
+   _CD_R="$_r" _CD_J="$_j" python3 -c "
+import json, os, re
+body  = os.environ[\"_CD_R\"].split(chr(10), 1)[1]   # drop line 1: the header legend, not tools
+shown = set(re.findall(r\"[✓✗] ([A-Za-z0-9_.-]+)\", body))
+keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
+assert shown, \"parsed no tools out of the rendered report\"
+assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
+"'
+# git-absorb is the first --json tools key that is NOT a bare identifier, and the JSON is
+# hand-rolled by _core_doctor_json rather than produced by a serialiser — so the hyphen has
+# to survive quoting on its own merit. The set-equality check above cannot see this: it
+# compares the render against the JSON, so dropping the tool from BOTH literals still passes,
+# and it never exercises a `true` value. Pin the key by name AND by value, with _core_have
+# stubbed to match only git-absorb so one tool is true and the rest false — that also proves
+# the emitter tracks detection per tool instead of painting the whole object one way.
+check_dep "core-doctor --json emits the hyphenated git-absorb key and tracks its detection" python3 \
+  '_core_have() { [[ "$1" == git-absorb ]]; }
+   _CD_J="$(core-doctor --json)" python3 -c "
+import json, os
+tools = json.loads(os.environ[\"_CD_J\"])[\"tools\"]
+assert \"git-absorb\" in tools, sorted(tools)
+assert tools[\"git-absorb\"] is True, tools[\"git-absorb\"]
+assert tools[\"eza\"] is False, tools[\"eza\"]
+"'
 # core-doctor "install missing" hint: the block is gated on _pkgup_mgr (from update.zsh,
 # absent in this ui+functions harness) so the default render never reaches it. Stub the
 # manager + force every tool ✗ (missing), then assert the copy-paste line renders AND the

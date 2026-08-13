@@ -15,6 +15,92 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`git-absorb` — auto-route staged hunks into the earlier commit each belongs to**
+  (`dotgibson/dotfiles-core#394`). `00-tools.zsh` now detects `git-absorb` and sets
+  `HAVE_GIT_ABSORB`. It works out which earlier commit each **staged hunk** belongs to and
+  writes the `fixup!` commits for you; `git/gitconfig` already sets
+  `rebase.autosquash = true`, so `git rebase -i` folds them in without further ceremony. It
+  is the automatic counterpart to the `git fix` alias Core has always shipped — `git fix
+  <sha>` when you know the target commit, `git absorb` when you don't. That `[alias]` line
+  now carries a comment saying so.
+
+  **This is the house-style ideal: a tool that needs no alias at all.** It installs as
+  `git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand, so it shadows
+  nothing and `20-aliases.zsh` gains only a note explaining why there's nothing to add.
+  Detection exists purely so `core-doctor` can report it, where it joins the `dev / repo`
+  group. One documented caveat: the probe is `command -v git-absorb`, so a distro that
+  installed the binary into git's `libexec/git-core` instead of a `PATH` directory would
+  give a working `git absorb` and an unset flag — no mainstream package does, and probing
+  `git absorb --version` would add a `git` fork to every interactive shell, which
+  `00-tools.zsh` exists to avoid.
+
+  It is also the first `core-doctor --json` key that is not a bare identifier, so the
+  function's docstring now says which parsers care: the key is emitted quoted and the JSON
+  is valid, but jq's dot shorthand reads `.tools.git-absorb` as a subtraction — consumers
+  write `.tools["git-absorb"]`.
+
+  Packaged essentially everywhere and installed nowhere on Linux, so it takes the ²¹
+  "available, not installed" shape and joins that footnote's macOS-only bullet alongside
+  `lnav`. Verified against each distro's own package pages: Arch `extra`, Alpine
+  `community`, **Gentoo `dev-vcs/git-absorb` stable on amd64 in the main tree** (no GURU),
+  Homebrew and Debian/Kali all on 0.9.0 — note repology reports the Debian **source**
+  package as `rust-git-absorb` while the **binary** you install is `git-absorb`. **openSUSE
+  Tumbleweed is the one laggard at 0.6.17**, the gap #394 flagged, now confirmed rather than
+  snapshotted. New `PORTING-MATRIX.md` row and footnote ²⁶. (`zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `zsh/30-functions.zsh`, `git/gitconfig`, `PORTING-MATRIX.md`)
+
+- **`watchexec` — event-driven repetition, the third corner of a triangle Core had two of**
+  (`dotgibson/dotfiles-core#393`). `00-tools.zsh` now detects `watchexec` and sets
+  `HAVE_WATCHEXEC`. `viddy` re-runs a command on a **timer** and `hyperfine` re-runs it a
+  fixed **count** while measuring; nothing re-ran it when **files changed** — the
+  "re-run the tests when I save" verb (`watchexec -e py -- pytest`). Own command, inert
+  without the binary, and deliberately **not** aliased to `watch`: `20-aliases.zsh` already
+  points `watch` at `viddy`, and collapsing "re-run on a timer" into "re-run on a change"
+  would silently hand you the wrong one. It also opens a new `dev / repo` group in both of
+  `core-doctor`'s inventories.
+
+  **It is the one tool in the matrix that nothing in the fleet installs, macOS included** —
+  unlike `lnav`, the MacBook `Brewfile` doesn't carry it either, so every machine is opt-in.
+  Arch `extra`, openSUSE Tumbleweed, Alpine `community` (native musl) and Homebrew are all
+  on 2.5.1; **Gentoo has it in GURU only** at 2.5.0 — and it is deliberately kept out of
+  footnote ¹²'s GURU list, which enumerates what `dotfiles-Gentoo` actually installs, not
+  what exists (the `gping`¹⁹ precedent). **Fedora and Debian/Kali don't package it at all**
+  — confirmed against Fedora's own package search, not a repology snapshot — so those two
+  take `cargo install --locked watchexec-cli`; note the crate is `watchexec-cli`, because
+  plain `watchexec` on crates.io is the library and installs no binary. New
+  `PORTING-MATRIX.md` row and footnote ²⁵. (`zsh/00-tools.zsh`, `zsh/20-aliases.zsh`,
+  `zsh/30-functions.zsh`, `PORTING-MATRIX.md`)
+
+- **`lnav` — the missing "read a log as a log" verb** (`dotgibson/dotfiles-core#392`).
+  `00-tools.zsh` now detects `lnav` and sets `HAVE_LNAV`. Core had no tool for this
+  category at all: `bat`/`rg` read a log as **lines**, `jq`/`gron`/`jnv` read it as
+  **JSON**, `glow` as markdown — none of them knows that a log is a sequence of
+  timestamped records. `lnav` autodetects the common formats, merges several files into
+  one timeline ordered by timestamp, follows like `tail -f`, and exposes the parsed
+  records to SQL. It's its own command with no alias (like `jq`/`gron`/`jnv`) and is inert
+  without the binary, so nothing changes on a box that doesn't have it.
+
+  Unlike the Rust/Go tools already in the matrix it is a **C++** CLI, so there is no
+  `cargo install`/`go install` escape hatch — but it doesn't need one: upstream ships
+  **static musl binaries** each release (`lnav-0.14.0-linux-musl-x86_64.zip` plus an
+  `arm64` twin), so the fallback on an unpackaged or lagging box is "unzip the official
+  build", not "compile it". It is **detect-only on Linux**: no Linux repo's `install/packages.txt` carries
+  it and no `bootstrap.sh` installs it, so the flag lights up only once you install it
+  yourself; **macOS is the exception, where the `Brewfile` has carried it since
+  2026-07-15**. That is `hyperfine`/`shellcheck`/`shfmt`/`ouch`'s situation, so `lnav`
+  joins that bullet in footnote ²¹ and its row carries ²¹ alongside its own ²⁴.
+
+  Every version was read off the distro's own package page rather than a repology snapshot,
+  and **Fedora is reported per release** because it is a versioned distro and one
+  unqualified "current" hides the answer: **F45/Rawhide 0.14.0, F44 0.13.2, F43 0.12.4**.
+  Arch `extra`, openSUSE Tumbleweed and Homebrew are on 0.14.0, and **Alpine has a native
+  musl build in `community`**. Two targets lag enough to name: **Gentoo at 0.11.2** — the
+  only version in the tree, and the package needs a new maintainer — and **Kali/Debian at
+  0.13.2**. On any of them the upstream static musl zip gets you 0.14.0 without waiting for
+  the package. New `PORTING-MATRIX.md` row and footnote ²⁴, and `lnav` joins the
+  `data / net` group in both of `core-doctor`'s inventories. (`zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `zsh/30-functions.zsh`, `PORTING-MATRIX.md`)
+
 - **OSC 133 semantic prompt marks — `[` / `]` jump between prompts in tmux copy mode**
   (`dotgibson/dotfiles-core#391`). Core emitted no OSC sequences at all, while tmux has parsed
   OSC 133 since 3.4 and exposed `previous-prompt` / `next-prompt` in copy mode the whole time —

@@ -59,6 +59,7 @@ _Repo status_ at the bottom).
 | sd²²             | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              |
 | gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            |
 | jnv¹⁷            | AUR               | cargo        | cargo             | cargo                      | cargo             |
+| lnav²¹ ²⁴        | `lnav`            | `lnav`       | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          |
 | glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          |
 | gum              | `gum`             | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵           |
 | xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              |
@@ -67,12 +68,14 @@ _Repo status_ at the bottom).
 | carapace         | AUR³              | go³          | `carapace`        | `app-shells/carapace`¹²    | go³               |
 | op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        |
 | hyperfine²¹      | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       |
+| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`  | `watchexec`       | GURU²⁵                     | cargo²⁵           |
 | shellcheck²¹     | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      |
 | shfmt⁷ ²¹        | `shfmt`           | `shfmt`      | `shfmt`           | go²¹                       | `shfmt`⁷          |
 | ouch²¹           | `ouch`            | `ouch`¹⁸     | testing¹⁴         | cargo²¹                    | cargo²¹           |
 | jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | cargo²¹                    | cargo²¹           |
 | sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               |
 | difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      |
+| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb` | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo³            |
 | w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             |
 
@@ -303,9 +306,10 @@ the counterpart to ³. These cells name where the tool comes from **when you opt
 Linux repo's `install/packages.txt` carries it and no `bootstrap.sh` installs it, so Core
 lights the `HAVE_*` probe only once you install it yourself.
 
-- `hyperfine`, `shellcheck`, `shfmt`, `ouch` are **macOS-only in practice**: the MacBook
-  `Brewfile` carries all four; **no** Linux repo does. The packaged names in their rows are
-  what you would install by hand, not what a bootstrap gives you.
+- `hyperfine`, `shellcheck`, `shfmt`, `ouch`, `lnav`²⁴, `git-absorb`²⁶ are **macOS-only in
+  practice**: the MacBook `Brewfile` carries them; **no** Linux repo does. The packaged
+  names in their rows are what you would install by hand, not what a bootstrap gives you.
+  (Deliberately not a counted list — "all four" went stale the first time this family grew.)
 - The cells that previously showed **³** here — `ouch` and `jujutsu` on Gentoo **and** Kali,
   `ast-grep` and `shfmt` on Gentoo, `lazygit` on Kali — promised a best-effort bootstrap
   install that **does not exist**, verified against each repo's `bootstrap.sh` and
@@ -348,6 +352,113 @@ the partial-upgrade footgun, so `os/arch.zsh` provides only `pacu` (a full `-Syu
 and `pacout` (`checkupdates`, which lists updates without touching the sync DB at
 all). There is no `-Sy <pkg>` alias **on purpose** — see "Distro quirks" below. Do
 not "helpfully" add one.
+
+²⁴ lnav: OPT-IN log reader — the verb Core had no tool for. `bat`/`rg` read a log as
+**lines**, `jq`/`gron`/`jnv` read it as **JSON**, `glow` as markdown; `lnav` reads it as a
+**log**: it autodetects common formats, merges several files into one timeline ordered by
+timestamp, follows like `tail -f`, and exposes the parsed records to SQL. Its own command
+(no alias, like `jq`/`gron`/`jnv`), `HAVE_LNAV`-guarded in `zsh/00-tools.zsh`, inert
+without the binary. A **C++** CLI, so it has no `cargo`/`go install` escape hatch like the
+Rust/Go tools above — but it does not need one: upstream publishes **static musl binaries**
+per release (`lnav-0.14.0-linux-musl-x86_64.zip`, and an `arm64` twin), so the fallback on
+an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
+the cleanest way to get 0.14.0 onto Gentoo or Debian/Kali without waiting for the package.
+**Detect-only on Linux, like `jnv`¹⁷ and `gping`¹⁹**: it is in no Linux repo's
+`install/packages.txt` and no `bootstrap.sh` installs it, so Core lights `HAVE_LNAV` only
+once you install it yourself. **macOS is the exception — the MacBook `Brewfile` carries
+it** (added 2026-07-15), which puts `lnav` squarely in ²¹'s "macOS-only in practice" family
+rather than jnv's "barely packaged anywhere" one: every distro in the table above ships it,
+none of them installs it for you.
+
+Versions **verified against each distro's own package pages** on 2026-08-12, not taken from
+a repology snapshot. Upstream is 0.14.0 (2026-04-12). Rolling targets get one query each,
+because that query is the complete answer; **Fedora is versioned, so every supported stable
+release is named separately** rather than collapsed into one unqualified ✓:
+
+| Target | Release | lnav |
+| --- | --- | --- |
+| Arch | `extra` (rolling) | 0.14.0-1 |
+| openSUSE | Tumbleweed (rolling) | 0.14.0 |
+| Alpine | `edge/community` — **native musl build** | 0.14.0-r0 |
+| Homebrew | rolling | 0.14.0 |
+| **Fedora** | **Rawhide / F45** | **0.14.0-3.fc45** |
+| **Fedora** | **F44** | **0.13.2-2.fc44** |
+| **Fedora** | **F43** | **0.12.4-2.fc43** |
+| **Kali/Debian** | rolling / sid | **0.13.2** |
+| **Gentoo** | `app-admin/lnav` | **0.11.2** |
+
+So "Fedora has it" is true but "Fedora is current" is only true on F45/Rawhide — F44 and F43
+track one and two minors back respectively. Two targets lag enough to be worth naming:
+
+- **Gentoo `app-admin/lnav` is 0.11.2** — the only version in the tree, stable on amd64/x86,
+  and the package is flagged as **needing a new maintainer**, so do not expect it to close
+  the gap on its own. Three minor releases behind. Re-check on the next Gentoo stamp.
+- **Kali/Debian `lnav` is 0.13.2** — one minor behind, the smaller gap of the two.
+
+On either, the upstream static musl zip above is the way to 0.14.0 without waiting.
+
+²⁵ watchexec: OPT-IN **event**-driven repetition — the third corner of a triangle Core
+already had two of. `viddy` re-runs on a **timer** (`watch`), `hyperfine` re-runs a fixed
+**count** and measures; `watchexec` re-runs when **files change** (`watchexec -e py --
+pytest`). Its own command, `HAVE_WATCHEXEC`-guarded in `zsh/00-tools.zsh`, inert without
+the binary. Deliberately **not** aliased to `watch` — `zsh/20-aliases.zsh` already points
+`watch` at `viddy`, and collapsing "re-run on a timer" into "re-run on a change" would
+silently hand you the wrong one.
+
+**The only tool in this table that nothing in the fleet installs — including macOS.**
+Unlike `lnav`²⁴ and the rest of ²¹'s "macOS-only in practice" bullet, the MacBook
+`Brewfile` does not carry `watchexec` either, so every machine is opt-in. Availability,
+verified 2026-08-12:
+
+- **Arch `extra`, openSUSE Tumbleweed, Homebrew, nixpkgs** — 2.5.1, current.
+- **Alpine `community`** — 2.5.1-r0, a native musl build.
+- **Gentoo: GURU only**, at 2.5.0 — there is no `::gentoo` atom. Note this is **not** in
+  ¹²'s GURU list on purpose: that footnote enumerates what `dotfiles-Gentoo`'s
+  `guru_install` pass actually installs, and it does not install this. Same shape as
+  `gping`¹⁹'s `GURU¹⁹` cell.
+- **Fedora and Debian/Kali do not package it at all** (confirmed: Fedora's package search
+  returns no results across F43/44/45/Rawhide/EPEL). Those two take
+  `cargo install --locked watchexec-cli` — note the crate is **`watchexec-cli`**; plain
+  `watchexec` on crates.io is the library, and installing that gives you no binary.
+
+Do **not** read the `cargo` cells as a `³`: no `bootstrap.sh` installs this, and
+`maint/dotfiles-maint.sh` runs `rustup update` but has no `cargo install-update` step, so
+a hand-`cargo`-installed `watchexec` is never refreshed by the maintenance job. That is
+already true of `ouch`/`jj`/`ast-grep` — a documentation gap this footnote records rather
+than a new one.
+
+²⁶ git-absorb: OPT-IN — works out which earlier commit each **staged hunk** belongs to and
+writes the `fixup!` commits for you; `git rebase -i --autosquash` then folds them in, and
+`git/gitconfig` already sets `rebase.autosquash = true`, so the second half is automatic.
+It is the **automatic** counterpart to `git fix` (`commit --fixup`, `git/gitconfig`'s
+`[alias]` block), which is the **manual** form: with `git fix <sha>` you name the target
+commit yourself, and `git absorb` works one out per hunk. Reach for `git fix` when you know
+where a change belongs and `git absorb` when you would otherwise go looking.
+
+**The house-style ideal for a new tool: it needs no alias at all.** git-absorb installs as
+`git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand — so it shadows
+nothing classic and `zsh/20-aliases.zsh` gains no entry, only a note saying why.
+`HAVE_GIT_ABSORB` exists purely so `core-doctor` can report it. One detection caveat: the
+probe is `command -v git-absorb`, so a distro that installs the binary into git's
+`libexec/git-core` rather than a `PATH` directory would give you a working `git absorb` and
+an unset flag. No mainstream package does this — the distro packages (Arch, Debian/Kali,
+Alpine, Gentoo) land it in `/usr/bin`, and Homebrew links it into its own prefix `bin`
+(`/opt/homebrew/bin` on Apple silicon, `/usr/local/bin` on Intel), which is a different
+directory but equally on `PATH`. Probing `git absorb --version` instead would add a `git`
+fork to every interactive shell — which `zsh/00-tools.zsh` exists to avoid.
+
+**Detect-only on Linux**, and packaged essentially everywhere — the ²¹ shape, not `jnv`¹⁷'s.
+The MacBook `Brewfile` carries it; no Linux `install/packages.txt` does. Verified 2026-08-12
+against each distro's own package pages:
+
+- **Arch `extra`** 0.9.0-2, **Alpine `community`** 0.9.0-r0, **Gentoo `dev-vcs/git-absorb`**
+  0.9.0 (**stable on amd64**, in the main tree — no GURU needed), **Homebrew** 0.9.0.
+- **Debian/Kali `git-absorb`** 0.9.0-2. Note repology reports the **source** package as
+  `rust-git-absorb`; the **binary** package you install is `git-absorb`, confirmed on
+  packages.debian.org. Fedora is the same shape (`rust-git-absorb` source, `git-absorb`
+  binary).
+- **openSUSE Tumbleweed is the one laggard, at 0.6.17** — the gap #394 flagged, confirmed
+  here rather than left as a repology snapshot. Re-check on the next openSUSE stamp.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
