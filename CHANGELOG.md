@@ -367,6 +367,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`core-doctor` was silently blind to twelve tools Core already detects.** `00-tools.zsh`
+  probes 38 binaries into `HAVE_*` flags, but the health report only ever knew about 29 —
+  **`ast-grep`, `difft`, `gping`, `hyperfine`, `jj`, `jnv`, `ouch`, `shellcheck`, `shfmt`,
+  `tldr`, `uv`, `viddy`** were detected and then reported by neither the human report nor
+  `--json`. Every one of them had been adopted without touching the doctor, over several
+  releases, and nothing caught it. All twelve are now reported.
+
+  **The two inventories are one inventory.** `groups` (human) and `alltools` (`--json`) were
+  hand-synced literals; both now derive from a single `_CORE_DOCTOR_GROUPS` definition, so
+  they cannot disagree by construction. The parity test is kept as the guard against a
+  second literal reappearing. A new test closes the gap parity structurally cannot see — it
+  reads the `_have` lines out of `zsh/00-tools.zsh` and requires the inventory to cover
+  them, so a future adoption that skips the doctor fails the suite by name. (Direction is
+  one-way on purpose: `op` has no `HAVE_OP`, and `fd`/`bat` are set from `FD_BIN`/`BAT_BIN`
+  after resolving `fdfind`/`batcat`.) The group definition now carries the membership rule,
+  so additions land somewhere defensible instead of at the end.
+
+  **The legend was scoped to what is true.** It read `✗ falls back to classic`, which held
+  when the report was mostly command replacements. Most of the inventory is now opt-in
+  tooling that shadows nothing — there is no classic `ast-grep` or `jj` — so it now reads
+  `✗ absent; the replacements below fall back to the classic command`. The terminal browser
+  stays deliberately absent from the report: `BROWSER_BIN` picks from w3m/lynx/links2/links/
+  elinks, so a fixed `w3m` row would read ✗ on a box running lynx perfectly well.
+  (`zsh/30-functions.zsh`, `scripts/test-core.sh`)
+
 - **`core-doctor`'s install hint advertised a paste-ready command that could not run.** It
   printed `<manager> <every missing tool>` as one line — `sudo dnf install rg lnav …`. But
   apt/dnf/zypper/pacman all abort the **whole transaction** on a single unresolvable name,

@@ -116,6 +116,32 @@ _core_wired() {
   esac
 }
 
+# ── The doctor's tool inventory — ONE definition, read by BOTH renderers ──────────────
+# Flat label/list pairs: even index = group label, odd = that group's tools. The human
+# report iterates it directly; _core_doctor_json flattens it. It used to be TWO hand-synced
+# literals, and they drifted in both directions at once: twelve tools that 00-tools.zsh
+# detects — ast-grep, difft, gping, hyperfine, jj, jnv, ouch, shellcheck, shfmt, tldr, uv,
+# viddy — were reported by neither, while the pair could also disagree with each other with
+# nothing to catch it. One source removes the second failure by construction; the parity
+# test in scripts/test-core.sh now guards against a second literal being reintroduced.
+#
+# Membership rule, so additions land somewhere defensible rather than at the end:
+#   modern CLI   — replaces a classic Unix command (ls, cat, du, ps, top, df, watch, man)
+#   integrations — wires into the shell itself: prompt, hooks, widgets, completion, sessions
+#   data / net   — reads/transforms data, or talks to the network
+#   dev / repo   — writing and versioning code: lint, format, benchmark, search, diff, VCS
+# fd/bat appear under their CANONICAL names; 00-tools.zsh resolves fdfind/batcat into
+# FD_BIN/BAT_BIN and the "resolved" line at the bottom of the report shows which one won.
+# The terminal browser is deliberately absent: BROWSER_BIN picks from w3m/lynx/links2/links/
+# elinks, so there is no single name to probe — a fixed `w3m` row would read ✗ on a box
+# that has lynx and is working fine.
+typeset -ga _CORE_DOCTOR_GROUPS=(
+  "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi viddy tldr ouch"
+  "integrations" "starship atuin mise carapace gum sesh"
+  "data / net"   "jq yq jnv gron sd xh doggo gping glow lnav op"
+  "dev / repo"   "ast-grep shellcheck shfmt hyperfine watchexec uv jj difft git-absorb"
+)
+
 # _core_doctor_json — machine-readable health (B12). The gate scripts emit --json; the
 # RUNTIME health verb did not, so a statusline/editor/CI could not consume it. One object
 # on stdout, never paged: {version, tools{name:bool}, wired{name:bool},
@@ -129,11 +155,14 @@ _core_doctor_json() {
   emulate -L zsh
   local ver="unknown"
   [[ -r "$_CORE_VERSION_FILE" ]] && ver="$(<"$_CORE_VERSION_FILE")"
-  local -a alltools=(
-    eza bat fd rg fzf zoxide delta dust duf procs btop yazi
-    starship atuin mise carapace gum sesh jq yq gron sd xh doggo glow lnav op
-    watchexec git-absorb
-  )
+  # Flattened from _CORE_DOCTOR_GROUPS rather than restated, so this object and the human
+  # report cannot disagree. Group order is preserved, which keeps the key order stable for
+  # anything diffing successive --json runs.
+  local -a alltools=()
+  local _gi
+  for ((_gi = 2; _gi <= ${#_CORE_DOCTOR_GROUPS}; _gi += 2)); do
+    alltools+=(${=_CORE_DOCTOR_GROUPS[_gi]})
+  done
   local -a wir=(starship atuin mise zoxide carapace)
   local t first=1
   print -rn -- "{\"version\":\"${ver}\",\"tools\":{"
@@ -202,16 +231,17 @@ _core_doctor_render() {
   fi
   local ver="unknown"
   [[ -r "$_CORE_VERSION_FILE" ]] && ver="$(<"$_CORE_VERSION_FILE")"
-  print -r -- "${c}dotfiles-core ${ver}${r} ${d}— core-doctor (✓ present · ✗ falls back to classic)${r}"
+  # Legend scoped to what is actually true. "✗ falls back to classic" held when the report
+  # was mostly command replacements, but most of the inventory is now opt-in tooling that
+  # shadows nothing — there is no classic `ast-grep` or `jj` to degrade to, so a blanket
+  # promise of a fallback misread every ✗ outside the first group.
+  print -r -- "${c}dotfiles-core ${ver}${r} ${d}— core-doctor (✓ present · ✗ absent; the replacements below fall back to the classic command)${r}"
 
-  # Grouped tool report: "group label" then a space-separated tool list. A tool is
-  # ✓ when it resolves on PATH, ✗ (dimmed) when Core degrades to the classic command.
-  local -a groups=(
-    "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi"
-    "integrations" "starship atuin mise carapace gum sesh"
-    "data / net"   "jq yq gron sd xh doggo glow lnav op"
-    "dev / repo"   "watchexec git-absorb"
-  )
+  # Grouped tool report, straight off the one inventory defined above _core_doctor_json.
+  # A tool is ✓ when it resolves on PATH, ✗ (dimmed) when it is absent — which for the
+  # replacements in "modern CLI" means Core degrades to the classic command, and for the
+  # opt-in tools elsewhere simply means the verb is unavailable.
+  local -a groups=("${_CORE_DOCTOR_GROUPS[@]}")
   # _v is declared HERE, not at its use site inside the loop below. zsh prints `name=value`
   # when `local` re-declares a parameter that already holds one (TYPESET_SILENT is off under
   # `emulate -L zsh`), so a `local _v` inside the loop dumped a literal `_v=0.26.1` line into

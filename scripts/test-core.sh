@@ -2656,12 +2656,12 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
   'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
-# core-doctor's two inventories are INDEPENDENT literals: `groups` drives the human report,
-# `alltools` drives --json, and nothing derives one from the other. Adding a tool to one and
-# forgetting the other silently desyncs `core-doctor` from `core-doctor --json` — a drift no
-# other check here can see, because the render test only greps for a group heading and the
-# --json test only asserts top-level keys. Assert the two NAME SETS are equal, so the next
-# tool adoption cannot half-land. _core_have is stubbed false so the render is deterministic:
+# The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
+# construction and this assertion should be tautological. It is kept precisely for that
+# reason: it is the guard that stays red if someone reintroduces a second literal — which is
+# how these two lived before, and they did silently desync. Treat a failure here as "the
+# single source was forked", not as a missing tool. Assert the two NAME SETS are equal.
+# _core_have is stubbed false so the render is deterministic:
 # every tool prints as a plain ✗ (no --version forks), the "integrations wired" block skips
 # every entry, and "resolved" carries no ✓/✗ markers — leaving the group lists as the only
 # thing the regex can match. Skips rather than fails without python3, like the linters above.
@@ -2675,6 +2675,25 @@ shown = set(re.findall(r\"[✓✗] ([A-Za-z0-9_.-]+)\", body))
 keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
 assert shown, \"parsed no tools out of the rendered report\"
 assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
+"'
+# The invariant that would have caught the drift this backfill fixed: every binary
+# 00-tools.zsh probes must be REPORTED by the doctor. Twelve were not — ast-grep, difft,
+# gping, hyperfine, jj, jnv, ouch, shellcheck, shfmt, tldr, uv, viddy were detected into
+# HAVE_* flags and appeared in neither renderer, silently, for releases. Parity (above) only
+# compares the doctor against itself, so it can never see this; the two lists agreed
+# perfectly about a tool neither of them mentioned. Read the probe list straight out of the
+# source file and require the inventory to cover it.
+# Direction is deliberately one-way: probed ⊆ reported. The reverse would fail on `op` (no
+# HAVE_OP — the doctor probes it live) and on `fd`/`bat`, which 00-tools.zsh sets from
+# FD_BIN/BAT_BIN after resolving fdfind/batcat rather than with a bare `_have` line.
+check_dep "core-doctor reports every tool 00-tools.zsh probes (no silently undetected tools)" python3 \
+  '_TOOLS_SRC="'"$HERE"'/zsh/00-tools.zsh" _CD_J="$(core-doctor --json)" python3 -c "
+import json, os, re
+probed   = set(re.findall(r\"(?m)^_have ([A-Za-z0-9_.-]+)\", open(os.environ[\"_TOOLS_SRC\"]).read()))
+reported = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
+missing  = sorted(probed - reported)
+assert probed, \"parsed no _have lines out of 00-tools.zsh\"
+assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\" % missing
 "'
 # git-absorb is the first --json tools key that is NOT a bare identifier, and the JSON is
 # hand-rolled by _core_doctor_json rather than produced by a serialiser — so the hyphen has
