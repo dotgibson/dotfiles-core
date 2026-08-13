@@ -2325,6 +2325,13 @@ else
       kill -9 "$(cat "$pf" 2>/dev/null)" 2>/dev/null
       rm -f "$pf"
     done
+    for pf in "$_dstub"/*.forked; do
+      [[ -f "$pf" ]] || continue
+      while read -r _dp; do
+        [[ -n "$_dp" ]] && kill -9 "$_dp" 2>/dev/null
+      done <"$pf"
+      rm -f "$pf"
+    done
     rm -f "$_dstub"/*.spawned "$_dstub"/*.calls
     return 0
   }
@@ -2343,6 +2350,8 @@ else
   #                            escalation must still leave nothing running.
   #   no-daemon-subcommand     no `daemon start`.                               → unmeasurable
   #   no-stop-subcommand       no `daemon stop`.                                → unmeasurable
+  #   fork-hang                autostart forks a child that NEVER binds and never exits —
+  #                            invisible to every socket-based teardown path there is.
   #
   # Every invocation is appended to stub-calls, which is how the "discard never spawns" and
   # "refused builds are never spawned on" assertions are made by CONSTRUCTION rather than by
@@ -2362,6 +2371,7 @@ DH="\${XDG_DATA_HOME:-/nonexistent}"
 # absence. Interpolated at generation time; only SOCK and DB belong to the measured tree.
 LOG="$_dstub/$name.calls"
 SPAWNMARK="$_dstub/$name.spawned"
+FORKMARK="$_dstub/$name.forked"
 SOCK="\$DH/atuin/atuin.sock"
 PIDF="$_dstub/$name.pid"
 DB="\$DH/atuin/history.db"
@@ -2472,6 +2482,14 @@ history)
     if [[ "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]] && ! daemon_up; then
       case "\$MODE" in
       never-spawns) : ;;
+      fork-hang)
+        # Forks a child that never binds and never exits. This is the shape the socket-based
+        # teardown structurally cannot see: nothing ever answers, so the stop proof succeeds
+        # instantly and socket_owner_pid has no inode to resolve a pid from. Only the arm's
+        # process group knows about it. The pid is recorded so the test can check it died.
+        sleep 300 &
+        printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+        ;;
       heals-absent-not-stale)
         # Spawns only onto a CLEAR path. A crashed daemon's leftover inode defeats it — the
         # silent net-loss on Alpine and macOS, and invisible to an absent-socket-only test.
@@ -2523,6 +2541,14 @@ STUB
   # Did this stub ever FORK a daemon, by any route? Survives the sandbox, and unlike the call
   # log it is about the thing that matters rather than the command that usually causes it.
   _d_spawned() { [[ -s "$_dstub/$1.spawned" ]]; }
+  # _d_forks_alive <stub> — how many of the children that stub forked are STILL running.
+  _d_forks_alive() {
+    local n=0 pid
+    while read -r pid; do
+      [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && n=$((n + 1))
+    done <"$_dstub/$1.forked" 2>/dev/null
+    printf '%s' "$n"
+  }
 
   # ── apparatus-free: the flag contract, assertable with no daemon anywhere ──
   # 1. An unknown premise is a USAGE error, not a measurement. The --color lesson applied to
@@ -2687,16 +2713,42 @@ STUB
       fail "atuin autostart: a no-op 'daemon stop' left a daemon alive; teardown escalation did not work"
     fi
 
-    # 12. The sandbox is REMOVED on a normal run. The one path that keeps it is a stop that
-    #     could not be proven even after SIGKILL, and that path prints where it went — a
-    #     silent leak of a /tmp tree with a history DB in it is not acceptable either way.
-    if compgen -G '/tmp/atverify.*' >/dev/null; then
-      fail "atuin autostart: a completed run left its sandbox behind in /tmp"
+    # 12. THE CHILD NO SOCKET CAN SEE. autostart may fork a daemon that hangs or dies before
+    #     it ever binds: nothing answers, so the stop proof succeeds instantly and
+    #     socket_owner_pid has no inode to resolve a pid from. The arm's PROCESS GROUP is the
+    #     only handle on it, which is why the arms run under `set -m` — and why run_one returns
+    #     its record in a global rather than on stdout, since a command substitution would run
+    #     the whole function in a subshell and discard the group id before cleanup ever saw it.
+    _mkdstub atuin-forkhang fork-hang
+    _d_run atuin-forkhang --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-forkhang)"
+    _dforked="$(grep -c . "$_dstub/atuin-forkhang.forked" 2>/dev/null || echo 0)"
+    _dreap
+    if ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a child that forks and never binds is still reaped ($_dforked forked, 0 alive) — the process group catches what the socket cannot"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the fork-hang stub never forked, so the reaping assertion proved nothing"
     else
-      pass "atuin autostart: a completed run removes its sandbox, daemon stopped first"
+      fail "atuin autostart: $_dalive of $_dforked never-bound children survived the run — cleanup deleted the sandbox around a live process"
     fi
 
-    # 13. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+    # 13. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
+    #     of /tmp. The verifier DELIBERATELY preserves a sandbox when a stop cannot be proven,
+    #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
+    #     fail this for a run that cleaned up perfectly. Only paths this run created count.
+    _dpre="$(find /tmp -maxdepth 1 -name 'atverify.*' 2>/dev/null | sort)"
+    _d_run atuin-heals --premise autostart --json
+    _dreap
+    _dpost="$(find /tmp -maxdepth 1 -name 'atverify.*' 2>/dev/null | sort)"
+    _dnew="$(comm -13 <(printf '%s\n' "$_dpre" | grep -v '^$') \
+      <(printf '%s\n' "$_dpost" | grep -v '^$') | grep -c . || true)"
+    if ((_dnew == 0)); then
+      pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first"
+    else
+      fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp"
+    fi
+
+    # 14. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
       #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
       #   true until this mode existed and is exactly the kind of prose that rots — and must
       #   name the machines a green run here does and does not speak for.

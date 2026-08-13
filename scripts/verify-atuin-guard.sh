@@ -352,6 +352,7 @@ MANUAL_DAEMON_PID=""      # set only for daemons WE start; an autostart one has 
 CLEANED=0                 # cleanup() idempotence — INT and EXIT both reach it on a Ctrl-C
 _label=""                 # premise name for the one-line human verdict at the very bottom
 AUTO_PGIDS=""             # process groups the autostart arms ran in; reaped by cleanup()
+RUN_REC=""                # run_one's record — a global precisely so no subshell eats it
 _pgid=""
 _ok="" _rc="" _delta="" _idok="" _err=""   # run_one record fields, read via IFS
 SB="" LOCALDIR=""
@@ -779,7 +780,15 @@ daemon_stop_proven() {
 # and stderr, and the row delta it caused.
 DB=""
 # run_one <mode> <sock> <hook:yes|no> <settle_s> <poll_n> <dmode>
-#   -> "readok|rc|delta|idok|err"   (5 fields, `|`-joined; err has | and newlines stripped)
+#   -> sets RUN_REC to "readok|rc|delta|idok|err" (5 fields, `|`-joined; err has | and
+#      newlines stripped)
+#
+# A GLOBAL, NOT STDOUT, and that is load-bearing rather than stylistic. `line="$(run_one ...)"`
+# runs the whole function in a COMMAND-SUBSTITUTION SUBSHELL, so every assignment it makes is
+# discarded when that subshell exits — which silently defeated the process-group tracking
+# below: AUTO_PGIDS was appended to in the child and read as empty in the parent, so
+# reap_auto_groups had nothing to reap and the whole guard was inert. Anything run_one needs to
+# tell the parent has to come back this way.
 #
 # ALL SIX REQUIRED, none optional. `settle` and `poll_n` used to be trailing defaults, and two
 # optional trailing positionals of the same type is precisely how a caller ends up passing a
@@ -823,7 +832,7 @@ run_one() {
   [[ "$hook" == yes ]] && hookarg=(--hook)
   before="$(atuin_db_rows "$DB")"
   ((before < 0)) && {
-    printf '0|-1|-1|0|\n'
+    RUN_REC='0|-1|-1|0|'
     return 0
   }
   # STDOUT TO A FILE, NOT A COMMAND SUBSTITUTION, and stdin from /dev/null. `id="$(…)"` reads
@@ -930,7 +939,7 @@ run_one() {
     after="$(atuin_db_rows "$DB")"
   fi
   ((after < 0)) && {
-    printf '0|%s|-1|0|%s\n' "$rc" "$err"
+    RUN_REC="0|${rc}|-1|0|${err}"
     return 0
   }
   # A WELL-FORMED id, not merely a non-empty line. The premise this script measures says
@@ -939,7 +948,7 @@ run_one() {
   # text on stdout would satisfy "non-empty" and produce a false `holds`. atuin emits
   # UUIDv7 in simple hex form: 32 lowercase hex digits, no dashes.
   is_history_id "$id" && idok=1
-  printf '1|%s|%s|%s|%s\n' "$rc" "$((after - before))" "$idok" "$err"
+  RUN_REC="1|${rc}|$((after - before))|${idok}|${err}"
 }
 
 # record_arm <name> <expected-delta> <spawned:yes|no|na> — append one arm to the parallel
@@ -971,7 +980,7 @@ is_history_id() { [[ "$1" =~ ^[0-9a-f]{32}$ ]]; }
 # break every prompt while a plain-only detector still said `holds`, and a hook-only detector
 # would lose the tie to the original measurement — so both, and `holds` requires all four.
 arms_discard() {
-  local shape sock hook h line
+  local shape sock hook h
   for shape in absent stale; do
     case "$shape" in
     absent)
@@ -992,8 +1001,8 @@ arms_discard() {
     for hook in hook plain; do
       h=no
       [[ "$hook" == hook ]] && h=yes
-      line="$(run_one "${shape}-${hook}" "$sock" "$h" 0 20 sock)"
-      IFS='|' read -r _ok _rc _delta _idok _err <<<"$line"
+      run_one "${shape}-${hook}" "$sock" "$h" 0 20 sock
+      IFS='|' read -r _ok _rc _delta _idok _err <<<"$RUN_REC"
       [[ "$_ok" == 1 ]] || {
         unmeasurable "the ${shape}/${hook} arm could not read the history DB (row count -1) — an unreadable DB is an apparatus failure, not evidence that upstream changed"
         return 1
@@ -1011,7 +1020,7 @@ arms_discard() {
 # checking" — it can only mean that a dead daemon's leftover socket inode defeats the spawn,
 # which is precisely what a crashed daemon leaves behind on Alpine and macOS.
 arms_autostart() {
-  local shape hook h line rc
+  local shape hook h rc
 
   SOCK="$SB/.local/share/atuin/atuin.sock"
   # AF_UNIX sun_path caps near 108 bytes, and a bind past it fails with a diagnostic that
@@ -1040,8 +1049,8 @@ arms_autostart() {
     unmeasurable "a daemon started by hand ('atuin ${AT_DAEMON_ARGV[*]}') never answered on ${SOCK} — this sandbox cannot host a daemon, so nothing here can be said about whether autostart would have started one. An apparatus limit, not a finding"
     return 1
   }
-  line="$(run_one spawnctl "$SOCK" no 1 "$POLL_N" on)"
-  IFS='|' read -r _ok _rc SPAWN_CTL_DELTA _idok _err <<<"$line"
+  run_one spawnctl "$SOCK" no 1 "$POLL_N" on
+  IFS='|' read -r _ok _rc SPAWN_CTL_DELTA _idok _err <<<"$RUN_REC"
   if [[ "$_ok" != 1 ]] || ((SPAWN_CTL_DELTA != 1)); then
     unmeasurable "with a hand-started daemon up and answering, a write landed ${SPAWN_CTL_DELTA} rows rather than 1 (readok=${_ok}) — the daemon-backed write path does not work in this sandbox, so an autostart arm landing no row would prove nothing about autostart"
     return 1
@@ -1104,8 +1113,8 @@ arms_autostart() {
       # may have forked a daemon, and a run killed between here and the next line must still
       # reach the teardown path in cleanup().
       DAEMON_MAYBE_UP=1
-      line="$(run_one "auto-${shape}-${hook}" "$SOCK" "$h" 1 "$POLL_N" auto)"
-      IFS='|' read -r _ok _rc _delta _idok _err <<<"$line"
+      run_one "auto-${shape}-${hook}" "$SOCK" "$h" 1 "$POLL_N" auto
+      IFS='|' read -r _ok _rc _delta _idok _err <<<"$RUN_REC"
       [[ "$_ok" == 1 ]] || {
         unmeasurable "the ${shape}/${hook} arm could not read the history DB (row count -1) — an unreadable DB is an apparatus failure, not evidence about upstream"
         return 1
@@ -1135,7 +1144,6 @@ arms_autostart() {
 }
 
 measure() {
-  local line
 
   detect_host
   have python3 || {
@@ -1156,10 +1164,24 @@ measure() {
   # job, which is a real but narrow hazard — narrower than never measuring at all.
   # `${arr[@]+"${arr[@]}"}`, not `"${arr[@]}"`: macOS ships bash 3.2, where expanding an
   # EMPTY array under `set -u` is an "unbound variable" error rather than zero words.
+  # --foreground WHERE SUPPORTED, and not as a nicety. GNU timeout puts the command it runs
+  # into a NEW PROCESS GROUP of its own, so that it can signal the whole group on expiry —
+  # which means atuin and everything it forks land in timeout's group, not in the group the
+  # autostart arm created. `kill -- -$pgid` then reaches the subshell and timeout and nothing
+  # else, and the whole process-group teardown silently reaps nothing. (Measured: arm group
+  # 15189, forked child's group 15194.) `--foreground` suppresses that regrouping.
+  #
+  # What it gives up is timeout's own group-kill on expiry — it then signals only its direct
+  # child. That is covered here and was not covered before: reap_auto_groups kills the arm's
+  # group at cleanup, so a grandchild that outlives an expired bound is caught either way.
+  # Probed rather than assumed, because busybox timeout has no such flag (and does not
+  # regroup, so it needs none) — the same reason the gtimeout branch exists at all.
   if have timeout; then
     TIMEOUT_CMD=(timeout "$TIMEOUT_S")
+    timeout --foreground 1 true >/dev/null 2>&1 && TIMEOUT_CMD=(timeout --foreground "$TIMEOUT_S")
   elif have gtimeout; then
     TIMEOUT_CMD=(gtimeout "$TIMEOUT_S")
+    gtimeout --foreground 1 true >/dev/null 2>&1 && TIMEOUT_CMD=(gtimeout --foreground "$TIMEOUT_S")
   else
     TIMEOUT_CMD=()
     BOUNDED=false
@@ -1254,8 +1276,8 @@ measure() {
   # ── control arm: daemon OFF must write exactly one row ──────────────────────
   # Plain (no --hook) on purpose: this arm proves the APPARATUS can write, and keeping it
   # on the same form the original #366 measurement used keeps the two comparable.
-  line="$(run_one control "" no 0 20 off)"
-  IFS='|' read -r _ok _rc CTL_DELTA _idok _err <<<"$line"
+  run_one control "" no 0 20 off
+  IFS='|' read -r _ok _rc CTL_DELTA _idok _err <<<"$RUN_REC"
   if [[ "$_ok" != 1 || "$CTL_DELTA" != 1 ]]; then
     unmeasurable "the daemon-OFF control arm wrote ${CTL_DELTA} rows, not 1 — the apparatus cannot be trusted, so neither can any verdict drawn from it (readok=${_ok}: 0 means the history DB could not be read at all; a delta other than 1 means this atuin's per-command row model is not the one this script encodes)"
     return
@@ -1295,8 +1317,8 @@ measure() {
   #
   # Plain, no --hook, matching the opening control: this arm measures the apparatus, and
   # keeping the two controls on the same form makes their deltas directly comparable.
-  line="$(run_one drain "" no 1 20 off)"
-  IFS='|' read -r _ok _rc DRAIN_DELTA _idok _err <<<"$line"
+  run_one drain "" no 1 20 off
+  IFS='|' read -r _ok _rc DRAIN_DELTA _idok _err <<<"$RUN_REC"
   if [[ "$_ok" != 1 ]] || ((DRAIN_DELTA < 1)); then
     unmeasurable "the CLOSING daemon-off control arm wrote ${DRAIN_DELTA} rows, not 1 — the apparatus stopped writing partway through this run, so the zeros the four arms reported are not evidence about upstream (readok=${_ok}: 0 means the history DB could not be read at all)"
     return
