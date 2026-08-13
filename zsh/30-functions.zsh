@@ -212,7 +212,12 @@ _core_doctor_render() {
     "data / net"   "jq yq gron sd xh doggo glow lnav op"
     "dev / repo"   "watchexec git-absorb"
   )
-  local gi tool line
+  # _v is declared HERE, not at its use site inside the loop below. zsh prints `name=value`
+  # when `local` re-declares a parameter that already holds one (TYPESET_SILENT is off under
+  # `emulate -L zsh`), so a `local _v` inside the loop dumped a literal `_v=0.26.1` line into
+  # the report on every iteration after the first — `core-doctor -v` rendered garbage instead
+  # of versions. Nothing caught it because no test drove the -v path.
+  local gi tool line _v
   local -a missing=()
   for ((gi = 1; gi <= ${#groups}; gi += 2)); do
     print -r -- "${c}${groups[gi]}${r}"
@@ -221,8 +226,8 @@ _core_doctor_render() {
       if _core_have "$tool"; then
         if ((show_versions)); then
           # Best-effort, like setup.sh's _doctor: pull the first semver-ish token from
-          # the tool's own --version. Unparseable → just the ✓ (never an error).
-          local _v
+          # the tool's own --version. Unparseable → just the ✓ (never an error). Assigned,
+          # never re-declared: see the `local … _v` note above the loop.
           _v="$("$tool" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
           line+="  ${g}✓${r} ${tool}${_v:+ ${d}${_v}${r}}"
         else

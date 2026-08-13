@@ -367,6 +367,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`core-doctor -v` printed `_v=0.26.1` garbage instead of version annotations — the flag
+  never worked.** `local _v` sat inside the per-tool loop in `_core_doctor_render`, and zsh
+  prints `name=value` when `local` re-declares a parameter that already holds one
+  (`TYPESET_SILENT` is off, including under `emulate -L zsh`). So the first tool annotated
+  its `✓` correctly and **every tool after it emitted a bare `_v=…` line into the report**,
+  which is why the leak needs two present tools to show up at all. Declaring `_v` once
+  alongside `gi`/`tool`/`line` fixes it; the assignment inside the loop is unchanged.
+
+  This shipped broken and survived because **nothing drove the `-v` path** — the suite only
+  asserted that the default render emits a group heading and that `--json` carries its
+  top-level keys. There is now a hermetic case that stubs `_core_have` plus two shadowing
+  tool functions and asserts both that versions render and that no `_v=` line appears. It
+  uses **two** tools deliberately: a single-tool version of the same test passes against the
+  unfixed code and would have guarded nothing. (`zsh/30-functions.zsh`,
+  `scripts/test-core.sh`)
+
 - **A timed-out package probe was logged as "0 upgradable" — an up-to-date box — instead of
   "unknown"** (`dotgibson/dotfiles-core#380`). Every arm of the maint runner's upgradable-count
   chain was `count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" <mgr> | grep -c …)`, and that shape cannot

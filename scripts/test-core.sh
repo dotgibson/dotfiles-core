@@ -2620,6 +2620,21 @@ check "core-version --help returns 0 (not mis-read)" \
 # bare box (every tool ✗) — it's read-only diagnostics, never a hard failure.
 check "core-doctor renders a health report and returns 0" \
   'out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) && [[ $out == *dotfiles-core* && $out == *"modern CLI"* ]]'
+# core-doctor -v (#9): the version readout. Regression guard for a leak that made the whole
+# flag useless — `local _v` sat INSIDE the per-tool loop, and zsh prints `name=value` when
+# `local` re-declares a parameter that already holds one (TYPESET_SILENT is off under
+# `emulate -L zsh`), so every tool after the first emitted a bare `_v=0.26.1` line into the
+# report instead of annotating the ✓. Nothing drove -v, so it shipped broken. Hermetic: stub
+# _core_have to admit specific tools and shadow those tools with functions (zsh resolves them
+# for the `"$tool" --version` probe), so this asserts real rendering rather than whatever is
+# on PATH. TWO tools, deliberately: the leak only fires on the SECOND re-declaration, so a
+# single-tool version of this test passes against the unfixed code and guards nothing.
+check "core-doctor -v annotates versions and leaks no _v= lines" \
+  '_core_have() { [[ "$1" == (eza|bat) ]]; }
+   eza() { print -r -- "eza 9.9.9"; }
+   bat() { print -r -- "bat 8.8.8"; }
+   out=$(NO_COLOR=1 core-doctor -v 2>&1); (( $? == 0 )) \
+     && [[ $out == *"✓ eza 9.9.9"* ]] && [[ $out == *"✓ bat 8.8.8"* ]] && [[ $out != *"_v="* ]]'
 check "core-doctor --help returns 0 (not mis-read)" \
   'out=$(core-doctor --help); (( $? == 0 )) && [[ $out == *"usage: core-doctor"* ]]'
 # core-doctor --json (B12): a machine-readable object on stdout that actually parses and
