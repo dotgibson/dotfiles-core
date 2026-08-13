@@ -367,6 +367,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`core-doctor`'s install hint advertised a paste-ready command that could not run.** It
+  printed `<manager> <every missing tool>` as one line — `sudo dnf install rg lnav …`. But
+  apt/dnf/zypper/pacman all abort the **whole transaction** on a single unresolvable name,
+  and unresolvable names are the common case here, not the edge: these are **command**
+  names, while the package is frequently called something else (`rg`=`ripgrep`,
+  `delta`=`git-delta`, `fd`=`fd-find` on Debian, `dust`=`du-dust`, `yq`=`go-yq`,
+  `op`=`1password-cli`), and several tools are not packaged at all on some targets (`sesh`
+  anywhere, `watchexec` on Fedora/Kali, `carapace` and `yazi` on Kali). So one bad entry
+  silently blocked the good ones — `sudo dnf install rg` alone already failed.
+
+  At least 12 of the inventory names break the line on some box, which is why this is not
+  fixed with an exclusion list; and the alternative, a per-distro command→package map, is a
+  rot-prone duplicate of `PORTING-MATRIX.md`. The hint now prints the missing tools **as
+  names**, states that they are command names and that packages differ, gives the manager
+  verb as a per-tool template (`sudo dnf install <pkg>`), and points at the matrix for the
+  authoritative name. A new test asserts the template form is present and that the verb is
+  never followed by a real tool name, so the batch form cannot come back.
+  (`zsh/30-functions.zsh`, `scripts/test-core.sh`)
+
 - **`core-doctor -v` printed `_v=0.26.1` garbage instead of version annotations — the flag
   never worked.** `local _v` sat inside the per-tool loop in `_core_doctor_render`, and zsh
   prints `name=value` when `local` re-declares a parameter that already holds one

@@ -238,24 +238,31 @@ _core_doctor_render() {
     print -r -- " $line"
   done
 
-  # Actionable: turn the ✗'d tools into a copy-pasteable install line for THIS box's
-  # package manager (U2), instead of leaving the reader to look each one up. Best-effort
-  # — gated on 60-update.zsh's _pkgup_mgr being loaded (it isn't in the unit harness, which
-  # sources ui+functions alone) and on a known manager. Two honesty caveats, because a
-  # blanket `pkg install <all>` misleads: (1) package NAMES can differ from the command
-  # (rg=ripgrep); (2) not every modern-CLI tool is PACKAGED on every distro — some are
-  # binary-distributed and the right method varies per tool AND distro (a distro package,
-  # `mise use -g`, `go install`, `cargo install`, or a vendor repo — e.g. `op`). Rather
-  # than embed a rot-prone per-distro table here (that is exactly what PORTING-MATRIX.md
-  # is), point the reader at the matrix for the authoritative per-tool install path.
+  # Name the ✗'d tools and give THIS box's install verb (U2), so the reader is not left
+  # looking each one up. Gated on 60-update.zsh's _pkgup_mgr being loaded (it isn't in the
+  # unit harness, which sources ui+functions alone) and on a known manager.
+  #
+  # What this deliberately does NOT print is `<prefix> <every missing tool>` as one line.
+  # That read as paste-ready and was not: apt/dnf/zypper/pacman all abort the WHOLE
+  # transaction on a single unresolvable name, so one bad entry blocked the good ones too.
+  # And bad entries are the common case, not the edge — these are COMMAND names, while the
+  # package is often called something else (rg=ripgrep, delta=git-delta, fd=fd-find on
+  # Debian, dust=du-dust, yq=go-yq, op=1password-cli), and several tools are not packaged
+  # at all on some targets (sesh anywhere, watchexec on Fedora/Kali, carapace and yazi on
+  # Kali). At least 12 of the names in `groups` above break the line on some box, so an
+  # exclusion list cannot rescue it — and the alternative, a command→package map per
+  # distro, is a rot-prone duplicate of PORTING-MATRIX.md, which is where that data lives.
+  # So: print the names as names, the verb as a template, and point at the matrix.
   if ((${#missing})) && (($+functions[_pkgup_mgr])); then
     local _mgr _pfx
     _mgr="$(_pkgup_mgr)"
     if _pfx="$(_core_install_prefix "$_mgr")"; then
       print -r -- "${c}install missing${r}"
-      print -r -- "  ${d}${_pfx} ${missing[*]}${r}"
-      print -r -- "  ${d}names differ per distro (rg=ripgrep, delta=git-delta), and some aren't packaged${r}"
-      print -r -- "  ${d}on every distro — see core/PORTING-MATRIX.md for the per-tool install path${r}"
+      print -r -- "  ${d}${missing[*]}${r}"
+      print -r -- "  ${d}those are command names — the package is often called something else${r}"
+      print -r -- "  ${d}(rg=ripgrep, delta=git-delta) and some aren't packaged on every distro,${r}"
+      print -r -- "  ${d}so install per tool: ${_pfx} <pkg>${r}"
+      print -r -- "  ${d}see core/PORTING-MATRIX.md for the per-tool name and install path${r}"
     fi
   fi
 
