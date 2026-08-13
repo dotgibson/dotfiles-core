@@ -351,6 +351,8 @@ DAEMON_MAYBE_UP=0         # 1 from the instant a spawn is attempted until a stop
 MANUAL_DAEMON_PID=""      # set only for daemons WE start; an autostart one has no PID for us
 CLEANED=0                 # cleanup() idempotence — INT and EXIT both reach it on a Ctrl-C
 _label=""                 # premise name for the one-line human verdict at the very bottom
+AUTO_PGIDS=""             # process groups the autostart arms ran in; reaped by cleanup()
+_pgid=""
 _ok="" _rc="" _delta="" _idok="" _err=""   # run_one record fields, read via IFS
 SB="" LOCALDIR=""
 # FILE SCOPE, not measure()-local, even though measure() is what fills them. The EXIT trap
@@ -386,26 +388,51 @@ moved() {
 # naming a command, not command substitution — single quotes are exactly right for a printf
 # format string, the same call emit_report makes further down.
 # shellcheck disable=SC2329,SC2317,SC2016  # invoked indirectly, by the EXIT trap below
+# reap_auto_groups — kill anything still alive in the process groups the autostart arms ran
+# in. Runs AFTER the proven stop, never between arms: the daemon an arm just spawned is in
+# that group too, and killing it early would destroy the very thing prove_reachable is about
+# to ask about. Both signals are best-effort — an empty or already-dead group is the normal
+# case, and `kill` failing on one is not news.
+# shellcheck disable=SC2329,SC2317  # invoked from cleanup, which the traps invoke
+reap_auto_groups() {
+  local g
+  [[ -n "$AUTO_PGIDS" ]] || return 0
+  for g in $AUTO_PGIDS; do kill -TERM "-$g" 2>/dev/null; done
+  sleep 0.2
+  for g in $AUTO_PGIDS; do kill -KILL "-$g" 2>/dev/null; done
+  AUTO_PGIDS=""
+  return 0
+}
+
+# Same both-codes disable as reap_auto_groups above, and SC2016 for the markdown-ish backticks
+# in the preserved-sandbox message: single quotes are right for a printf format string.
+# shellcheck disable=SC2329,SC2317,SC2016  # invoked indirectly, by the traps below
 cleanup() {
   ((CLEANED)) && return 0
   CLEANED=1
+  local stopped=1
   # STOP BEFORE REMOVE, and only remove once the stop is proven. Under --premise autostart a
   # daemon may still hold this tree open, and `rm -rf` on a directory a live process is
   # committing SQLite into leaves it writing to unlinked inodes — a corrupted DB and a
   # stranded process, from the cleanup step. Nothing in the default premise ever spawns, so
   # DAEMON_MAYBE_UP is 0 and this whole branch is skipped.
   if ((DAEMON_MAYBE_UP)) && [[ -n "$SOCK" ]]; then
-    daemon_stop_proven "$SOCK" || {
-      # The one path that leaves state behind, so it must never be quiet. Refusing to delete
-      # is NOT the first response — daemon_stop_proven has already asked, signalled and
-      # SIGKILLed by the time we get here. Keeping the tree is the least-bad end state: an
-      # orphaned daemon still holding the files it believes it owns beats an orphaned daemon
-      # plus a half-deleted tree.
-      printf 'verify-atuin-guard.sh: a daemon is STILL answering on %s after `atuin daemon stop`, SIGTERM and SIGKILL.\n' "$SOCK" >&2
-      printf 'verify-atuin-guard.sh: the sandbox has been PRESERVED rather than deleted, because removing a tree a live daemon is writing into would corrupt it.\n' >&2
-      printf 'verify-atuin-guard.sh: stop that process, then: rm -rf %s\n' "$LOCALDIR" >&2
-      return 0
-    }
+    daemon_stop_proven "$SOCK" || stopped=0
+  fi
+  # Unconditionally, and after the stop attempt rather than instead of it: this catches the
+  # forked-but-never-bound children the socket-based teardown cannot see, and it must still
+  # run on the preserve path below — a tree we are keeping is no reason to keep processes.
+  reap_auto_groups
+  if ((stopped == 0)); then
+    # The one path that leaves state behind, so it must never be quiet. Refusing to delete is
+    # NOT the first response — daemon_stop_proven has already asked, signalled and SIGKILLed,
+    # and reap_auto_groups has had its turn, by the time we get here. Keeping the tree is the
+    # least-bad end state: an orphaned daemon still holding the files it believes it owns
+    # beats an orphaned daemon plus a half-deleted tree.
+    printf 'verify-atuin-guard.sh: a daemon is STILL answering on %s after `atuin daemon stop`, SIGTERM and SIGKILL.\n' "$SOCK" >&2
+    printf 'verify-atuin-guard.sh: the sandbox has been PRESERVED rather than deleted, because removing a tree a live daemon is writing into would corrupt it.\n' >&2
+    printf 'verify-atuin-guard.sh: stop that process, then: rm -rf %s\n' "$LOCALDIR" >&2
+    return 0
   fi
   [[ -n "$LOCALDIR" ]] && rm -rf "$LOCALDIR"
   return 0
@@ -781,7 +808,7 @@ DB=""
 # timeout, twenty times, is ten minutes of a scheduled job proving nothing.
 run_one() {
   local mode="$1" sock="$2" hook="$3" settle="$4" poll_n="$5" dmode="$6"
-  local before after rc id err idok=0 i
+  local before after rc end_rc id err idok=0 i
   local -a env_extra=() hookarg=()
   case "$dmode" in
   auto) env_extra=("ATUIN_DAEMON__ENABLED=true" "ATUIN_DAEMON__AUTOSTART=true") ;;
@@ -808,12 +835,37 @@ run_one() {
   # scheduled job with no verdict, and this was the one hole it did not cover. Costs nothing
   # on today's builds; the `--premise autostart` arms below spawn a daemon on purpose, which
   # is what turns this from theoretical into the likely first failure.
-  "${AT_ENV[@]}" "${env_extra[@]}" \
-    "ATUIN_SESSION=$(printf '%032x' 1)" \
-    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history start \
-    ${hookarg[@]+"${hookarg[@]}"} -- "verify-$mode" \
-    </dev/null >"$SB/out.$mode" 2>"$SB/err.$mode"
-  rc=$?
+  # One definition of the invocation, called from both branches below, so the bounded
+  # foreground form and the process-grouped form cannot drift apart.
+  _start_call() {
+    "${AT_ENV[@]}" "${env_extra[@]}" \
+      "ATUIN_SESSION=$(printf '%032x' 1)" \
+      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history start \
+      ${hookarg[@]+"${hookarg[@]}"} -- "verify-$mode" \
+      </dev/null >"$SB/out.$mode" 2>"$SB/err.$mode"
+  }
+  if [[ "$dmode" == auto ]]; then
+    # THE AUTOSTART ARMS RUN IN THEIR OWN PROCESS GROUP, and only they need to. atuin forks a
+    # daemon this script is never told the PID of, and socket_owner_pid can only recover one
+    # that actually BOUND — so a child that forks and then hangs, or dies, before binding is
+    # invisible to every teardown path there is: nothing answers the socket, wait_unreachable
+    # succeeds instantly, DAEMON_MAYBE_UP is cleared, and the sandbox is removed with that
+    # child still alive. `set -m` puts an asynchronous job in a new process group, which makes
+    # the group id a handle on the whole tree rather than just the client.
+    #
+    # HONEST LIMIT: a daemon that calls setsid() leaves the group and is out of reach again.
+    # This ADDS a case socket_owner_pid structurally cannot cover; it does not replace it.
+    set -m
+    _start_call &
+    _pgid=$!
+    AUTO_PGIDS="$AUTO_PGIDS $_pgid"
+    wait "$_pgid"
+    rc=$?
+    set +m
+  else
+    _start_call
+    rc=$?
+  fi
   # Newlines stripped rather than only the trailing one `$( )` would have eaten: is_history_id
   # demands exactly 32 hex characters, so any build that prints more than the bare id fails
   # the check either way — and joining the lines keeps a multi-line surprise visible in the
@@ -836,6 +888,14 @@ run_one() {
     "${AT_ENV[@]}" "${env_extra[@]}" \
       ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history end --exit 0 "$id" \
       </dev/null >/dev/null 2>>"$SB/err.$mode"
+    end_rc=$?
+    # THE PAIR'S STATUS, not just the opening half's. Under these two dmodes the row lands on
+    # `end`, which makes `end` the verdict-bearing call — and discarding its status left a
+    # BOUNDED `end` that timed out looking like a success: rc stayed at the `start`'s 0, the
+    # row was missing, and the verdict block read that as "the entry did not land". An
+    # apparatus limit filed as an upstream regression, arriving through the one door the
+    # timeout guard below could not see, because the timeout never reached `rc`.
+    ((rc == 0)) && rc=$end_rc
   fi
   # `|` stripped as well as newlines: this string is a FIELD in the record below, and an
   # stderr line containing a pipe would otherwise shift every field after it.
@@ -1251,16 +1311,21 @@ measure() {
   local n
   for ((n = 0; n < ${#ARM_NAME[@]}; n++)); do
     local a="${ARM_NAME[n]//_/ }"
-    # A HIT BOUND IS NOT A FINDING. timeout(1) reports 124 when its own SIGTERM lands and 137
-    # when it escalates to SIGKILL, and the plain `rc != 0` test below rendered either as
+    # A HIT BOUND IS NOT A FINDING. Three statuses, not one, because the expiry status is NOT
+    # one number across this fleet: GNU coreutils reports 124, BUSYBOX reports its SIGTERM as
+    # 143, and an escalation to SIGKILL surfaces as 137. This repo has already paid for that
+    # difference once — scripts/test-core.sh's `_to` case documents a 124-only gate that
+    # passed everywhere except Alpine — and Alpine is one of the two machines THIS premise
+    # exists to protect, so a 124-only gate here would go wrong exactly where it matters most.
+    # The plain `rc != 0` test below rendered any of them as
     # "exit code is 124, was 0" — an APPARATUS LIMIT dressed up as an upstream change, filed
     # under a title that says the premise moved. That is the exact conflation the control arms
     # exist to prevent, arriving through the one door they do not watch. A call that never
     # returns is still a real observation (it is atuinsh/atuin#3382's shape), so it is named
     # rather than swallowed — but as `unmeasurable`, which is what "we could not tell" means.
     case "${ARM_RC[n]}" in
-    124 | 137)
-      unmeasurable "the ${a} arm did not return within CORE_ATVERIFY_TIMEOUT=${TIMEOUT_S}s and was killed (rc ${ARM_RC[n]}) — a wedged atuin is the accept-but-silent shape of atuinsh/atuin#3382, not evidence that the premise moved, so this run measured nothing rather than found something"
+    124 | 137 | 143)
+      unmeasurable "the ${a} arm did not return within CORE_ATVERIFY_TIMEOUT=${TIMEOUT_S}s and was killed (rc ${ARM_RC[n]}; GNU reports expiry as 124, busybox as 143, an escalated SIGKILL as 137) — a wedged atuin is the accept-but-silent shape of atuinsh/atuin#3382, not evidence that the premise moved, so this run measured nothing rather than found something"
       return
       ;;
     esac

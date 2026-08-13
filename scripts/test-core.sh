@@ -2325,6 +2325,7 @@ else
       kill -9 "$(cat "$pf" 2>/dev/null)" 2>/dev/null
       rm -f "$pf"
     done
+    rm -f "$_dstub"/*.spawned "$_dstub"/*.calls
     return 0
   }
 
@@ -2360,6 +2361,7 @@ DH="\${XDG_DATA_HOME:-/nonexistent}"
 # and "grep found no spawn" would pass for a deleted file exactly as it does for a real
 # absence. Interpolated at generation time; only SOCK and DB belong to the measured tree.
 LOG="$_dstub/$name.calls"
+SPAWNMARK="$_dstub/$name.spawned"
 SOCK="\$DH/atuin/atuin.sock"
 PIDF="$_dstub/$name.pid"
 DB="\$DH/atuin/history.db"
@@ -2417,6 +2419,13 @@ s.close()" 2>/dev/null
 # run_one's \$( ) capture forever, so every autostart arm here regression-tests that fix
 # instead of merely trusting it.
 spawn_bg() {
+  # The marker is the assertion's real subject. A call-log check only ever proved the CLI
+  # spelling "daemon start" was not used -- and in this stub, as in atuin, the autostart
+  # spawn happens INSIDE "history start", so a regression that turned autostart on in the
+  # default premise would fork a daemon, log no "daemon start", and pass. Recorded outside
+  # the sandbox, which the script deletes before any assertion runs. (No backticks here: the
+  # heredoc delimiter is unquoted, so one would be command substitution at generation time.)
+  printf 'spawn\n' >>"\$SPAWNMARK" 2>/dev/null
   ( serve_fg 2>/dev/null ) &
   local i
   for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -2511,6 +2520,9 @@ STUB
   # outlives the sandbox, so "no spawn was attempted" is a real absence rather than a
   # deleted file.
   _d_calls() { cat "$_dstub/$1.calls" 2>/dev/null; }
+  # Did this stub ever FORK a daemon, by any route? Survives the sandbox, and unlike the call
+  # log it is about the thing that matters rather than the command that usually causes it.
+  _d_spawned() { [[ -s "$_dstub/$1.spawned" ]]; }
 
   # ── apparatus-free: the flag contract, assertable with no daemon anywhere ──
   # 1. An unknown premise is a USAGE error, not a measurement. The --color lesson applied to
@@ -2543,10 +2555,10 @@ STUB
   #    receives, so this reads the log rather than believing a comment.
   _mkdstub atuin-heals heals
   _d_run atuin-heals --json >/dev/null 2>&1
-  if _d_calls atuin-heals | grep -qE '^daemon start( |$)'; then
-    fail "atuin autostart: --premise discard invoked 'daemon start' — the default target must start no daemon"
+  if _d_calls atuin-heals | grep -qE '^daemon start( |$)' || _d_spawned atuin-heals; then
+    fail "atuin autostart: --premise discard started a daemon — the default target must spawn nothing, by any route"
   else
-    pass "atuin autostart: --premise discard never invokes 'daemon start' (the default target stays spawn-free)"
+    pass "atuin autostart: --premise discard forks no daemon at all (not via 'daemon start', not via autostart inside 'history start')"
   fi
   _dreap
 
@@ -2641,7 +2653,7 @@ STUB
       _d_run "atuin-$_dcase" --premise autostart --json
       _dreap
       if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
-        ! _d_calls "atuin-$_dcase" | grep -qE '^daemon start$'; then
+        ! _d_calls "atuin-$_dcase" | grep -qE '^daemon start$' && ! _d_spawned "atuin-$_dcase"; then
         pass "atuin autostart: $_dcase is unmeasurable (rc 3) and nothing was spawned on it"
       else
         fail "atuin autostart: $_dcase must be unmeasurable/rc3 with no spawn attempted, got $(_d_get "$_dout" verdict)/rc$_drc"
