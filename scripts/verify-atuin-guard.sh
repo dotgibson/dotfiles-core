@@ -408,12 +408,21 @@ moved() {
 # case, and `kill` failing on one is not news.
 # shellcheck disable=SC2329,SC2317  # invoked from cleanup, which the traps invoke
 reap_tracked_groups() {
-  local g
+  local g keep=""
   [[ -n "$TRACKED_PGIDS" ]] || return 0
   for g in $TRACKED_PGIDS; do kill -TERM "-$g" 2>/dev/null; done
   sleep 0.2
   for g in $TRACKED_PGIDS; do kill -KILL "-$g" 2>/dev/null; done
-  TRACKED_PGIDS=""
+  sleep 0.1
+  # RETAIN WHAT IS STILL ALIVE. Clearing the list unconditionally made the groups_quiet check
+  # that follows every call to this function succeed BY CONSTRUCTION — it was asking an empty
+  # list whether anything remained. A SIGKILL that failed, or a process that had not finished
+  # exiting, was then read as a proven teardown and its sandbox deleted around it. The list IS
+  # the evidence; a reap may only drop what it can show is gone.
+  for g in $TRACKED_PGIDS; do
+    kill -0 -- "-$g" 2>/dev/null && keep+=" $g"
+  done
+  TRACKED_PGIDS="${keep# }"
   return 0
 }
 
@@ -721,8 +730,14 @@ stop_settled() {
   groups_quiet || return 1
   # Last: anything still carrying this run's sandbox. Reaped rather than waited on, for the
   # same reason as the groups — a detached survivor that never bound will not leave on its own.
-  [[ -z "$(sandbox_strays)" ]] || reap_sandbox_strays
-  [[ -z "$(sandbox_strays)" ]]
+  # Status 2 means the platform cannot answer, which is NOT an answer of "none": treating it
+  # as one is exactly the fail-open the owner lookup used to have, so it fails the proof and
+  # the sandbox is preserved with the usual loud message.
+  local strays
+  strays="$(sandbox_strays)" || return 1
+  [[ -z "$strays" ]] || reap_sandbox_strays
+  strays="$(sandbox_strays)" || return 1
+  [[ -z "$strays" ]]
 }
 
 # owner_gone <tries> — the pid that owned the socket BEFORE the stop must actually be gone.
@@ -812,31 +827,44 @@ socket_owner_pid() {
 # Every process this script starts is launched under `env -i` with XDG_DATA_HOME inside a
 # mktemp'd directory, so that path is a unique marker no unrelated process can carry.
 #
-# PLATFORM LIMIT, stated rather than papered over: this handle exists on LINUX ONLY.
-# /proc/PID/environ makes it exact there, and Linux is the scheduled job's runner and one of
-# the two machines this premise protects. On macOS it returns nothing at all — see the body
-# for why no substitute is attempted — so that platform has two handles rather than three,
-# and the pre-bind-detached case is uncovered there. That residual is why cleanup still
-# refuses to delete a tree it cannot prove is unused, rather than trusting this to be
-# exhaustive.
+# PLATFORM COVERAGE, stated precisely rather than papered over. Linux is EXACT
+# (/proc/PID/environ) and is both the scheduled job's runner and one of the two machines this
+# premise protects. macOS is TARGETED: processes running the binary under test that also hold
+# a file inside this run's sandbox — which catches a daemon that got as far as opening the DB
+# and misses one that hung before opening anything. Where neither route exists the function
+# says so with status 2, and stop_settled refuses rather than reading silence as proof.
 sandbox_strays() {
-  local d pid out=""
+  local d pid out="" cand
   [[ -n "$LOCALDIR" ]] || return 0
-  # LINUX ONLY, deliberately. /proc/PID/environ makes this exact, and Linux is the scheduled
-  # job's runner and one of the two machines this premise protects. macOS has no equivalent:
-  # SIP blocks reading another process's environment even for your own children (`ps -E`
-  # returns nothing), and the obvious substitute — lsof +D over the sandbox — walks the whole
-  # tree on every teardown for an answer that is still incomplete, since a child that hung
-  # before opening anything holds no file to find. Slow AND partial is the worst trade, so it
-  # is not attempted: on macOS the captured pid and the process group remain the two handles,
-  # and this one case is reported as uncovered rather than papered over.
-  [[ -r /proc/self/environ ]] || return 0
-  for d in /proc/[0-9]*; do
-    pid="${d#/proc/}"
-    [[ "$pid" == "$$" ]] && continue
-    tr '\0' '\n' <"$d/environ" 2>/dev/null | grep -qF "$LOCALDIR" && out+=" $pid"
-  done
-  printf '%s' "${out# }"
+  # LINUX: exact. Every process this script starts is launched under `env -i` with
+  # XDG_DATA_HOME inside a mktemp'd directory, so that path is a marker no unrelated process
+  # can carry, and /proc/PID/environ reads it back for any process we own.
+  if [[ -r /proc/self/environ ]]; then
+    for d in /proc/[0-9]*; do
+      pid="${d#/proc/}"
+      [[ "$pid" == "$$" ]] && continue
+      tr '\0' '\n' <"$d/environ" 2>/dev/null | grep -qF "$LOCALDIR" && out+=" $pid"
+    done
+    printf '%s' "${out# }"
+    return 0
+  fi
+  # macOS: TARGETED, not a tree walk. Candidates are processes running the binary under test;
+  # each is then kept only if it holds a file inside THIS run's sandbox, which is what makes
+  # it safe — a developer's own atuin daemon matches the first test and never the second.
+  # `lsof -p` on a handful of pids is cheap, unlike the `lsof +D` sweep this replaced.
+  #
+  # Returns 2, not 0, when neither route is available: "this platform cannot look" is NOT
+  # "nothing is there", and the caller must not read one as the other. That conflation is the
+  # same fail-open the owner lookup had, and it is why it is a distinct status here.
+  if have lsof && have pgrep; then
+    for cand in $(pgrep -f "$ATUIN_BIN" 2>/dev/null); do
+      [[ "$cand" == "$$" ]] && continue
+      lsof -p "$cand" 2>/dev/null | grep -qF "$LOCALDIR" && out+=" $cand"
+    done
+    printf '%s' "${out# }"
+    return 0
+  fi
+  return 2
 }
 
 # reap_sandbox_strays — signal anything sandbox_strays can still see.
@@ -916,9 +944,13 @@ daemon_stop_proven() {
     # Something IS serving it, so "no owner" is not an available answer — it is a failed
     # lookup, and it fails closed.
     [[ -n "$LAST_OWNER_PID" ]] || LAST_OWNER_PID="unknown"
-  else
-    LAST_OWNER_PID=""
   fi
+  # NO `else` CLEARING IT, deliberately. A vanished socket does not retract an owner captured
+  # earlier — on a retry it is the only thing still known about that process. This function
+  # runs again from the EXIT trap after a failed inter-arm stop, by which point the socket is
+  # long gone; an else-branch reset made owner_gone pass on that second call and the sandbox be
+  # deleted around the very daemon the first call had failed to account for. owner_gone clears
+  # the state itself once the pid is CONFIRMED gone, which is the only correct place to.
   ${AT_ENV[@]+"${AT_ENV[@]}"} ATUIN_DAEMON__ENABLED=true \
     ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" daemon stop >/dev/null 2>&1
   if stop_settled "$sock" "$POLL_N"; then

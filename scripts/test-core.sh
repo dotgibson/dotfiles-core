@@ -2851,10 +2851,11 @@ J4PROBE
 
     # 13. THE CHILD THAT ESCAPES BOTH OTHER HANDLES. atuin daemonizes before it binds, so a
     #     child can setsid() out of our process group AND never own a socket — invisible to
-    #     the group reap and to the owner lookup alike. Only the unique sandbox path in its
-    #     environment can still name it. On Linux that is exact (/proc/PID/environ); the
-    #     assertion runs there and on macOS falls back to lsof, which is why the report still
-    #     refuses to delete a tree it cannot prove is unused.
+    #     the group reap and to the owner lookup alike. Only the sandbox can still name it,
+    #     and how well depends on the platform: Linux reads it exactly out of
+    #     /proc/PID/environ, while macOS can only match processes holding a sandbox FILE — so
+    #     this stub, whose child opens nothing at all, is deliberately the worst case and
+    #     SKIPS there rather than passing on a weaker claim.
     _mkdstub atuin-forkdet fork-hang-detached
     _d_run atuin-forkdet --premise autostart --json
     _dalive="$(_d_forks_alive atuin-forkdet)"
@@ -2865,7 +2866,7 @@ J4PROBE
     elif ((_dforked == 0)); then
       fail "atuin autostart: the fork-hang-detached stub never forked, so the assertion proved nothing"
     else
-      skip "atuin autostart: detached pre-bind strays ($_dalive of $_dforked alive — this platform cannot enumerate a process by its environment; see sandbox_strays)"
+      skip "atuin autostart: detached pre-bind strays ($_dalive of $_dforked alive — this platform has only the TARGETED handle, which finds a stray by the sandbox files it holds and so cannot see one that hung before opening any; exact on Linux, see sandbox_strays)"
     fi
 
     # 14. THE SAME HOLE IN THE CLOSING HALF OF THE PAIR. Tracking only `history start` would
