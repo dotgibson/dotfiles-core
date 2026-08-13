@@ -2300,7 +2300,7 @@ fi
 # are these — but the conflation is sharper here, because this premise cannot be measured by
 # observing: something has to be SPAWNED. "autostart did not start a daemon" and "this box
 # cannot host a daemon" are the same observation, and only one of them is a fact about
-# upstream. The manual-spawn control is what separates them, and case 5 below is the assertion
+# upstream. The manual-spawn control is what separates them, and case 9 below is the assertion
 # that it actually does. A future simplification that deletes it would turn every CI sandbox
 # problem into an issue titled "the autostart self-healing premise has MOVED".
 #
@@ -2346,6 +2346,9 @@ else
   #                            inode. THE headline regression this premise exists to catch.
   #   spawns-but-discards      daemon comes up, entry never lands.              → moved
   #   manual-spawn-impossible  nothing can host a daemon here.                  → unmeasurable
+  #   end-hangs                `history end` wedges on the autostart path only, so the manual
+  #                            control still passes and the arms are reached — the bound then
+  #                            expires on the half that carries the row.
   #   stop-unlinks-only        `daemon stop` removes the SOCKET and leaves the process alive
   #                            and holding the DB — atuin unlinks early in shutdown, so
   #                            "nothing answers" is not "the daemon exited".
@@ -2551,6 +2554,12 @@ history)
     echo "0192deadbeefcafe0000000000000000"; exit 0
     ;;
   end)
+    # end-hangs: wedge the CLOSING half only, and only on the autostart path. Keyed that way
+    # so the manual-spawn control (which does not set AUTOSTART) still passes and the run
+    # actually reaches the arms, where the bound is supposed to fire.
+    if [[ "\$MODE" == end-hangs && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then
+      sleep 300
+    fi
     # fork-hang-end: the closing half of the pair forks its own never-binding child. Recorded
     # in the same marker file, so one assertion covers however many halves forked.
     if [[ "\$MODE" == fork-hang-end && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then
@@ -2761,13 +2770,16 @@ J4PROBE
     for _dcase in no-daemon-subcommand no-stop-subcommand; do
       _mkdstub "atuin-$_dcase" "$_dcase"
       _d_run "atuin-$_dcase" --premise autostart --json
-      _dreap
+      # REAP AFTER THE ASSERTION, not before: _dreap deletes the .calls and .spawned markers,
+      # and reading them afterwards is reading files that are already gone — both checks would
+      # then pass for a build that DID spawn.
       if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
         ! _d_calls "atuin-$_dcase" | grep -qE '^daemon start$' && ! _d_spawned "atuin-$_dcase"; then
         pass "atuin autostart: $_dcase is unmeasurable (rc 3) and nothing was spawned on it"
       else
         fail "atuin autostart: $_dcase must be unmeasurable/rc3 with no spawn attempted, got $(_d_get "$_dout" verdict)/rc$_drc"
       fi
+      _dreap
     done
 
     # 11. TEARDOWN IS THE KNOWN-HARD PART. A `daemon stop` that returns 0 and does nothing is
@@ -2853,7 +2865,26 @@ J4PROBE
       fail "atuin autostart: manual-fork-nobind gave $_dv/rc$_drc with $_dalive of $_dforked orphans alive — the manual control is not process-group tracked"
     fi
 
-    # 15. "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED". atuin unlinks its socket early in
+    # 15. A BOUND THAT EXPIRES ON THE CLOSING HALF IS STILL AN APPARATUS LIMIT. The row lands
+    #     on `history end` when a daemon is serving, so `end` is the verdict-bearing call —
+    #     and its status used to be discarded, leaving a timed-out `end` looking like a
+    #     successful `start` with a missing row, which the verdict block reported as
+    #     "the entry did not land". A finding about upstream, manufactured by this run's own
+    #     timeout. The wedge is on the autostart path only, so the manual control passes and
+    #     the arms are actually reached.
+    _mkdstub atuin-endhangs end-hangs
+    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL=3 CORE_ATVERIFY_TIMEOUT=2 \
+      "$_DVERIFY" --atuin "$_dstub/atuin-endhangs" --premise autostart --json 2>&1)"
+    _drc=$?
+    _dv="$(_d_get "$_dout" verdict)"
+    _dreap
+    if [[ "$_dv" == unmeasurable ]] && ((_drc == 3)) && [[ "$_dout" == *"did not return within"* ]]; then
+      pass "atuin autostart: a 'history end' that wedges is unmeasurable (rc 3), never a finding that the entry did not land"
+    else
+      fail "atuin autostart: a wedged 'history end' must be unmeasurable/rc3, got $_dv/rc$_drc — an expired bound was reported as an upstream change"
+    fi
+
+    # 16. "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED". atuin unlinks its socket early in
     #     shutdown and `daemon stop` can return while teardown is still running, so a
     #     socket-only proof accepts a daemon that is gone from the socket and still HOLDING
     #     THE DB. The harm is not a leak — cleanup's group reap would catch that — it is
@@ -2877,7 +2908,7 @@ J4PROBE
       fail "atuin autostart: a socket-only stop let a zombie daemon keep committing into later arms (verdict=$_dv, survived=$_dleft) — its writes would be reported as an upstream finding"
     fi
 
-    # 16. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
+    # 17. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
     #     of /tmp. The verifier DELIBERATELY preserves a sandbox when a stop cannot be proven,
     #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
     #     fail this for a run that cleaned up perfectly. Only paths this run created count.
@@ -2919,7 +2950,7 @@ J4PROBE
       fi
     fi
 
-    # 17. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+    # 18. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
       #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
       #   true until this mode existed and is exactly the kind of prose that rots — and must
       #   name the machines a green run here does and does not speak for.

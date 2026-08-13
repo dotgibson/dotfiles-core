@@ -719,7 +719,14 @@ stop_settled() {
 # stop rather than after.
 owner_gone() {
   local tries="$1" i
+  # Empty means the socket was ALREADY unowned when we looked — nothing to wait for.
   [[ -n "$LAST_OWNER_PID" ]] || return 0
+  # `unknown` means a socket WAS being served and this box could not say by whom (no lsof, an
+  # unreadable /proc). That is not the same fact, and treating it as one is fail-OPEN in the
+  # single place this file cannot afford it: the socket and group checks both pass for a
+  # detached daemon, so an unresolvable owner is the only remaining evidence, and calling it
+  # "no owner" deletes the sandbox around a live process. Never settles.
+  [[ "$LAST_OWNER_PID" == unknown ]] && return 1
   for ((i = 0; i < tries; i++)); do
     kill -0 "$LAST_OWNER_PID" 2>/dev/null || {
       LAST_OWNER_PID=""
@@ -842,7 +849,14 @@ daemon_stop_proven() {
   # there is nothing left to resolve it by. Looking it up AFTER the stop — which is what this
   # did — can only ever find a daemon that failed to remove its socket, i.e. never the case
   # that matters.
-  LAST_OWNER_PID="$(socket_owner_pid "$sock")" || LAST_OWNER_PID=""
+  if prove_reachable "$sock"; then
+    LAST_OWNER_PID="$(socket_owner_pid "$sock")" || LAST_OWNER_PID=""
+    # Something IS serving it, so "no owner" is not an available answer — it is a failed
+    # lookup, and it fails closed.
+    [[ -n "$LAST_OWNER_PID" ]] || LAST_OWNER_PID="unknown"
+  else
+    LAST_OWNER_PID=""
+  fi
   ${AT_ENV[@]+"${AT_ENV[@]}"} ATUIN_DAEMON__ENABLED=true \
     ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" daemon stop >/dev/null 2>&1
   if stop_settled "$sock" "$POLL_N"; then
@@ -855,6 +869,9 @@ daemon_stop_proven() {
   if [[ -n "$MANUAL_DAEMON_PID" ]]; then
     for sig in TERM KILL; do
       kill "-$sig" "$MANUAL_DAEMON_PID" 2>/dev/null
+      # A daemon WE started is accounted for by its own pid, so an unresolvable socket owner
+      # is not an outstanding question here the way it is for a detached one.
+      kill -0 "$MANUAL_DAEMON_PID" 2>/dev/null || [[ "$LAST_OWNER_PID" != unknown ]] || LAST_OWNER_PID=""
       if stop_settled "$sock" "$half"; then
         DAEMON_MAYBE_UP=0
         reap_manual
@@ -1173,6 +1190,20 @@ arms_autostart() {
     unmeasurable "a daemon started by hand ('atuin ${AT_DAEMON_ARGV[*]}') never answered on ${SOCK} — this sandbox cannot host a daemon, so nothing here can be said about whether autostart would have started one. An apparatus limit, not a finding"
     return 1
   }
+  # CAN THIS BOX NAME THE OWNER OF A SOCKET? The arms spawn daemons that DETACH, so the pid
+  # captured before a stop is the only handle on them — and without it no stop could ever be
+  # proven, leaving four unreapable daemons behind a run that then refuses to delete its own
+  # sandbox. Same rule as the `daemon stop` probe, applied one layer down: do not start what
+  # you cannot prove you can stop. Checked HERE, against a daemon whose pid we do hold, so
+  # declining costs one controlled teardown and nothing else.
+  if ! socket_owner_pid "$SOCK" >/dev/null 2>&1; then
+    reap_manual
+    reap_tracked_groups
+    DAEMON_MAYBE_UP=0
+    rm -f "$SOCK"
+    unmeasurable "a daemon is answering on ${SOCK} and this box cannot say which process owns it (no lsof, or an unreadable /proc) — an autostart daemon DETACHES, so that pid is the only way a stop could ever be proven, and spawning four of them here would leave daemons this run could not reap"
+    return 1
+  fi
   run_one spawnctl "$SOCK" no 1 "$POLL_N" on
   IFS='|' read -r _ok _rc SPAWN_CTL_DELTA _idok _err <<<"$RUN_REC"
   if [[ "$_ok" != 1 ]] || ((SPAWN_CTL_DELTA != 1)); then
