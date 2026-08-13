@@ -2352,6 +2352,10 @@ else
   #   no-stop-subcommand       no `daemon stop`.                                → unmeasurable
   #   fork-hang                autostart forks a child that NEVER binds and never exits —
   #                            invisible to every socket-based teardown path there is.
+  #   fork-hang-end            the same, but the fork happens on `history end` rather than on
+  #                            `history start`. atuin reaches its daemon through the same
+  #                            autostarting path from both, so tracking only the opening half
+  #                            of the pair would leave this one untracked.
   #
   # Every invocation is appended to stub-calls, which is how the "discard never spawns" and
   # "refused builds are never spawned on" assertions are made by CONSTRUCTION rather than by
@@ -2496,6 +2500,8 @@ history)
         [[ -e "\$SOCK" ]] || spawn_bg
         ;;
       *)
+        # heals and fork-hang-end both take this path: a real daemon must come up, or the arm
+        # never gets a well-formed id and "history end" is never called.
         rm -f "\$SOCK"   # the real client clears a stale inode before spawning
         spawn_bg
         ;;
@@ -2504,6 +2510,12 @@ history)
     echo "0192deadbeefcafe0000000000000000"; exit 0
     ;;
   end)
+    # fork-hang-end: the closing half of the pair forks its own never-binding child. Recorded
+    # in the same marker file, so one assertion covers however many halves forked.
+    if [[ "\$MODE" == fork-hang-end && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then
+      sleep 300 &
+      printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+    fi
     # With a daemon serving, the row lands on END, not on start. Measured on 18.19.0.
     if [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]] && daemon_up; then
       # Keyed on AUTOSTART, not on the mode alone: the manual-spawn control writes through a
@@ -2732,23 +2744,55 @@ STUB
       fail "atuin autostart: $_dalive of $_dforked never-bound children survived the run — cleanup deleted the sandbox around a live process"
     fi
 
-    # 13. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
+    # 13. THE SAME HOLE IN THE CLOSING HALF OF THE PAIR. Tracking only `history start` would
+    #     pass case 12 while leaving an `end`-spawned child untracked, and `end` runs with the
+    #     same AUTOSTART env down the same autostarting path — so it is asserted separately
+    #     rather than assumed to be covered by its sibling.
+    _mkdstub atuin-forkhangend fork-hang-end
+    _d_run atuin-forkhangend --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-forkhangend)"
+    _dforked="$(grep -c . "$_dstub/atuin-forkhangend.forked" 2>/dev/null || echo 0)"
+    _dreap
+    if ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a child forked by the CLOSING half of the pair is reaped too ($_dforked forked, 0 alive)"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the fork-hang-end stub never forked on 'history end', so the assertion proved nothing"
+    else
+      fail "atuin autostart: $_dalive of $_dforked children forked by 'history end' survived — only the opening half of the pair is tracked"
+    fi
+
+    # 14. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
     #     of /tmp. The verifier DELIBERATELY preserves a sandbox when a stop cannot be proven,
     #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
     #     fail this for a run that cleaned up perfectly. Only paths this run created count.
-    _dpre="$(find /tmp -maxdepth 1 -name 'atverify.*' 2>/dev/null | sort)"
-    _d_run atuin-heals --premise autostart --json
-    _dreap
-    _dpost="$(find /tmp -maxdepth 1 -name 'atverify.*' 2>/dev/null | sort)"
-    _dnew="$(comm -13 <(printf '%s\n' "$_dpre" | grep -v '^$') \
-      <(printf '%s\n' "$_dpost" | grep -v '^$') | grep -c . || true)"
-    if ((_dnew == 0)); then
-      pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first"
+    #
+    #     THE SELF-CHECK IS NOT OPTIONAL. A delta over a directory listing that silently
+    #     returns nothing passes for every run, forever — and that is precisely what the first
+    #     version of this did: on macOS /tmp is a symlink to private/tmp and `find /tmp`
+    #     without -L does not descend it, so both snapshots were empty and the assertion was
+    #     vacuous on a third of the fleet. Prove the snapshot can see a directory before
+    #     trusting it to notice one.
+    _dsnap() { find -L /tmp -maxdepth 1 -name 'atverify.*' 2>/dev/null | sort; }
+    mkdir -p "/tmp/atverify.selfcheck$$"
+    if ! _dsnap | grep -q "atverify.selfcheck$$"; then
+      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+      fail "atuin autostart: the sandbox-leak check cannot enumerate /tmp — it would pass vacuously, so it is reported as broken rather than green"
     else
-      fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp"
+      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+      _dpre="$(_dsnap)"
+      _d_run atuin-heals --premise autostart --json
+      _dreap
+      _dpost="$(_dsnap)"
+      _dnew="$(comm -13 <(printf '%s\n' "$_dpre" | grep -v '^$') \
+        <(printf '%s\n' "$_dpost" | grep -v '^$') | grep -c . || true)"
+      if ((_dnew == 0)); then
+        pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first"
+      else
+        fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp"
+      fi
     fi
 
-    # 14. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+    # 15. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
       #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
       #   true until this mode existed and is exactly the kind of prose that rots — and must
       #   name the machines a green run here does and does not speak for.

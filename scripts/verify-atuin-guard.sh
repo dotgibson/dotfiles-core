@@ -424,6 +424,14 @@ cleanup() {
   # forked-but-never-bound children the socket-based teardown cannot see, and it must still
   # run on the preserve path below — a tree we are keeping is no reason to keep processes.
   reap_auto_groups
+  # RE-PROVE AFTER REAPING. The daemon is in the arm's process group, so reap_auto_groups can
+  # be the step that finally kills what the socket-scoped stop could not — and without this
+  # re-check cleanup would keep the sandbox and print a "STILL answering" warning about a
+  # process that is by then gone. The preserve path has to be a genuine last resort, or the
+  # one message that must always be true stops being true.
+  if ((stopped == 0)) && [[ -n "$SOCK" ]] && wait_unreachable "$SOCK" 30; then
+    stopped=1
+  fi
   if ((stopped == 0)); then
     # The one path that leaves state behind, so it must never be quiet. Refusing to delete is
     # NOT the first response — daemon_stop_proven has already asked, signalled and SIGKILLed,
@@ -844,8 +852,8 @@ run_one() {
   # scheduled job with no verdict, and this was the one hole it did not cover. Costs nothing
   # on today's builds; the `--premise autostart` arms below spawn a daemon on purpose, which
   # is what turns this from theoretical into the likely first failure.
-  # One definition of the invocation, called from both branches below, so the bounded
-  # foreground form and the process-grouped form cannot drift apart.
+  # One definition per call, invoked through _tracked or directly, so the bounded foreground
+  # form and the process-grouped form cannot drift apart.
   _start_call() {
     "${AT_ENV[@]}" "${env_extra[@]}" \
       "ATUIN_SESSION=$(printf '%032x' 1)" \
@@ -853,24 +861,37 @@ run_one() {
       ${hookarg[@]+"${hookarg[@]}"} -- "verify-$mode" \
       </dev/null >"$SB/out.$mode" 2>"$SB/err.$mode"
   }
-  if [[ "$dmode" == auto ]]; then
-    # THE AUTOSTART ARMS RUN IN THEIR OWN PROCESS GROUP, and only they need to. atuin forks a
-    # daemon this script is never told the PID of, and socket_owner_pid can only recover one
-    # that actually BOUND — so a child that forks and then hangs, or dies, before binding is
-    # invisible to every teardown path there is: nothing answers the socket, wait_unreachable
-    # succeeds instantly, DAEMON_MAYBE_UP is cleared, and the sandbox is removed with that
-    # child still alive. `set -m` puts an asynchronous job in a new process group, which makes
-    # the group id a handle on the whole tree rather than just the client.
-    #
-    # HONEST LIMIT: a daemon that calls setsid() leaves the group and is out of reach again.
-    # This ADDS a case socket_owner_pid structurally cannot cover; it does not replace it.
+  # _tracked <fn> — run <fn> in its OWN PROCESS GROUP and record the group id, so anything it
+  # forks can be reaped later even if that child never binds a socket. atuin forks a daemon
+  # this script is never told the PID of, and socket_owner_pid can only recover one that
+  # actually BOUND — so a child that forks and then hangs, or dies, before binding is
+  # invisible to every other teardown path there is: nothing answers the socket,
+  # wait_unreachable succeeds instantly, DAEMON_MAYBE_UP is cleared, and the sandbox is
+  # removed with that child still alive. `set -m` puts an asynchronous job in a new process
+  # group, which makes the group id a handle on the whole tree rather than just the client.
+  #
+  # BOTH HALVES OF THE PAIR go through this under `auto`, not just `start`. atuin reaches its
+  # daemon through the same autostarting path from `history end` as from `history start`, and
+  # both run here with the same AUTOSTART env — so an `end` that forks its own never-binding
+  # daemon would be untracked for exactly the same reason `start` was, and the fix would have
+  # covered only the half that happened to be noticed first.
+  #
+  # HONEST LIMIT: a daemon that calls setsid() leaves the group and is out of reach again.
+  # This ADDS a case socket_owner_pid structurally cannot cover; it does not replace it.
+  _tracked() {
+    local _r
     set -m
-    _start_call &
+    "$1" &
     _pgid=$!
     AUTO_PGIDS="$AUTO_PGIDS $_pgid"
     wait "$_pgid"
-    rc=$?
+    _r=$?
     set +m
+    return "$_r"
+  }
+  if [[ "$dmode" == auto ]]; then
+    _tracked _start_call
+    rc=$?
   else
     _start_call
     rc=$?
@@ -894,9 +915,16 @@ run_one() {
   # already in — and the discard premise has measured start-only since #366; changing what
   # those four arms issue would silently redefine the record they are compared against.
   if [[ "$dmode" == on || "$dmode" == auto ]] && is_history_id "$id"; then
-    "${AT_ENV[@]}" "${env_extra[@]}" \
-      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history end --exit 0 "$id" \
-      </dev/null >/dev/null 2>>"$SB/err.$mode"
+    _end_call() {
+      "${AT_ENV[@]}" "${env_extra[@]}" \
+        ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" history end --exit 0 "$id" \
+        </dev/null >/dev/null 2>>"$SB/err.$mode"
+    }
+    if [[ "$dmode" == auto ]]; then
+      _tracked _end_call
+    else
+      _end_call
+    fi
     end_rc=$?
     # THE PAIR'S STATUS, not just the opening half's. Under these two dmodes the row lands on
     # `end`, which makes `end` the verdict-bearing call — and discarding its status left a
@@ -1520,7 +1548,7 @@ emit_report() {
     esac
     printf -- '**Measured here:** %s.\n\n' "$(arms_sentence)"
     if [[ "$PREMISE" == autostart ]]; then
-      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`, and the two machines this premise protects are **Alpine/musl and macOS** — so weigh it accordingly: a run on one of those two is direct evidence for that row and still says nothing about the other, while a run on glibc Linux (what the scheduled job uses) is the *weakest* evidence in this whole arrangement for either of them. It measures a **fresh client** spawning a daemon from an unreachable socket; a long-lived shell whose daemon dies mid-session is not exercised. A daemon that comes up and then **wedges** (`atuinsh/atuin#3382`) answers a connect and would read here as healthy. The **silent-discard** premise is a separate mode (`--premise discard`) and is not measured by this run. stderr is recorded but never judged: the spawned daemon inherits this process'"'"'s descriptor, so its tracing and the client'"'"'s are not separable.\n' "$HOST_KIND"
+      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`, and the two machines this premise protects are **Alpine/musl and macOS** — so weigh it accordingly: a run on one of those two is direct evidence for that row and still says nothing about the other, while a run on glibc Linux (what the scheduled job uses) is the *weakest* evidence in this whole arrangement for either of them. It measures a **fresh client** spawning a daemon from an unreachable socket; a long-lived shell whose daemon dies mid-session is not exercised. A daemon that wedges (`atuinsh/atuin#3382`) escapes only if it wedges **after** completing the measured pair: one that wedges during it shows up here as an expired bound (`unmeasurable`) or a row that never landed (`moved`), because every arm must also exit 0 and land exactly one row. The **silent-discard** premise is a separate mode (`--premise discard`) and is not measured by this run. stderr is recorded but never judged: the spawned daemon inherits this process'"'"'s descriptor, so its tracing and the client'"'"'s are not separable.\n' "$HOST_KIND"
     else
       printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`; the scheduled job runs it on Linux x86_64 glibc, and the Alpine/musl half of the fleet is unmeasured either way. The **`autostart` stand-down** is not measured by *this* run: it is a separate premise with its own mode (`--premise autostart`, `make verify-atuin-guard-autostart`), its own anchor and its own verdict, because measuring it means spawning a real daemon and owning its teardown — so a green run here says nothing about it in either direction. **Buffer-and-replay** is probed only by the closing daemon-off control arm above; a spool that only a live daemon would drain is out of reach for the same reason. The accept-but-silent socket (`atuinsh/atuin#3382`) is structurally out of scope: this measures *unreachable*, and that shape is *reachable and lying*.\n' "$HOST_KIND"
     fi
