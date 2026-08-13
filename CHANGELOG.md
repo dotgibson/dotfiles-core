@@ -1046,6 +1046,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`fleet-drift` now says how far behind main's tip an unreleased row still is**
+  (`dotgibson/dotfiles-core#381`). `_classify` measured the recorded sha against the release
+  **tag** only, and `git merge-base --is-ancestor` is reflexive at both ends — so "on
+  `origin/main`" was equally true of a repo synced this morning and one synced five weeks
+  ago, and both printed the identical `current (ahead of vX.Y.Z by N, on origin/main)`. A
+  **stalled fan-out was therefore invisible inside a green sweep**: at the time of writing the
+  whole fleet sat 56 commits past `v4.9.3` while main had moved 111 past it, and nothing in
+  the report named the 55 unvendored commits. The ahead-on-main row now appends
+  `, N behind its tip` when that distance is non-zero.
+
+  **Report-only, and deliberately so.** The `current` prefix, the `•` third state, the
+  `UNRELEASED` tally, `DRIFT`/`STALE`/`OFFLINEAGE` and every exit code are unchanged — a green
+  run stays green. The previous entry in this file taught readers that a fleet-drift wording
+  change implied a verdict change; this one does not. Re-reddening the sweep once the fleet
+  drifts far enough from main was considered and rejected: that is exactly the #371 failure
+  mode where the fleet's ordinary between-release state pages a human, and the threshold would
+  be unjustifiable. The two numbers now read as a pair — _ahead of the tag_ says a release is
+  owed, _behind its tip_ says a `make sync` is owed.
+
+  Zero omits the clause entirely rather than printing `0 behind its tip`, which keeps an
+  at-tip row byte-identical to its old wording — and makes the suite's existing `…, on main)`
+  regex a live oracle for that case. `_classify_subtree` (dotfiles-Windows) deliberately gets
+  nothing: its marker is re-stamped only when `nvim/` changes, so a behind-main count there
+  would report a lag for every Core commit that touched anything else — the exact false-BEHIND
+  that the subtree path exists to eliminate.
+
+- **`/drift-triage` can run the sweep it is built to interpret** (`dotgibson/dotfiles-core#381`).
+  The routine's own step 1 told it to run `scripts/fleet-drift.sh` — without the leading `./`
+  that `Bash(./scripts/fleet-drift.sh:*)` matches, so every invocation was **denied** — and to
+  pass the sibling fleet "via `--add-dir`", a Claude Code flag the script's parser rejects with
+  a usage error. Neither is needed: `--root` already defaults to this repo's parent, which is
+  where the fleet is checked out in CI too. The command is now spelled out literally as
+  `./scripts/fleet-drift.sh --color never`.
+
+  The consequence was not a missing section but a **wrong report**: blocked from its primary
+  tool, the routine reconstructed `_classify`'s logic by hand from the `core.lock` markers,
+  reached the opposite verdict from the script (red, when the sweep exits 0), and shipped it
+  without a hedge. The command now forbids that explicitly — an unrun sweep is a finding to
+  report, not a gap to fill in — and documents the three row states with the remediation each
+  one actually takes, since a `•` unreleased row is fixed by **cutting a release**, never by
+  the `make sync` the old text prescribed for everything.
+
 - **The atuin latency question is closed, and the part that will never be measured is now
   recorded as a decision rather than a backlog** (`dotgibson/dotfiles-core#352`). The
   measurable half is measured — see the `bench-atuin-daemon.sh` entries under **Added**. The

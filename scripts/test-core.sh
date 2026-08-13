@@ -1368,7 +1368,11 @@ if have git; then
   _fdc c0; FD_OLD="$(_fdg rev-parse HEAD)"  # before the tag → genuinely stale
   _fdc c1; _fdg tag -a v1.0.0 -m v1.0.0     # ← becomes the default reference
   FD_REL="$(_fdg rev-parse 'v1.0.0^{commit}')"
-  _fdc c2; _fdc c3; FD_TIP="$(_fdg rev-parse HEAD)" # main, 2 past the tag
+  # FD_MID: on main and ahead of the tag, but NOT at main's tip — the stalled-fan-out shape,
+  # which _classify rendered identically to FD_TIP before the behind-main clause existed.
+  # Only the sha differs between the two rows, so together they isolate that clause alone.
+  _fdc c2; FD_MID="$(_fdg rev-parse HEAD)"          # main, 1 past the tag, 1 behind the tip
+  _fdc c3; FD_TIP="$(_fdg rev-parse HEAD)"          # main, 2 past the tag
   _fdg checkout -q -b feat v1.0.0
   _fdc f1; FD_OFF="$(_fdg rev-parse HEAD)"  # ahead of the tag but NOT on main
   _fdg checkout -q -b side "$FD_OLD"
@@ -1393,6 +1397,20 @@ if have git; then
   _fdd_lock "core_sha=$FD_TIP"
   # #371 itself — the fleet's ordinary between-releases state must be green.
   _fdd_is "drift: ahead of the tag but on main is current (#371)" 0 'current \(ahead of v1.0.0 by 2 commit\(s\), on main\)'
+  # ...and the row must say how far it still is from main's TIP. `--is-ancestor` is reflexive
+  # at both ends, so "on main" alone read identically for a repo synced this morning and one
+  # synced five weeks ago — a stalled fan-out hid inside a green sweep (#381). REPORT-ONLY, so
+  # the rc stays 0: this must add a number, never a verdict.
+  _fdd_lock "core_sha=$FD_MID"
+  _fdd_is "drift: ahead-of-tag but behind main's tip reports the lag and stays green" 0 \
+    'current \(ahead of v1\.0\.0 by 1 commit\(s\), on main, 1 behind its tip\)'
+  # At the tip the clause must VANISH, not read "0 behind its tip". The assertion above for
+  # FD_TIP already enforces it (its regex ends `on main\)`), but only incidentally — name the
+  # invariant, because it is the sole reason a finished row keeps its pre-#381 wording.
+  _fdd_lock "core_sha=$FD_TIP"
+  if ! grep -q 'behind its tip' <<<"$(_fdd_run)"; then
+    pass "drift: a repo AT main's tip omits the behind-main clause"
+  else fail "drift: behind-main clause printed for a repo already at main's tip"; fi
   _fdd_lock "core_sha=$FD_OFF"
   # ...and the tolerance must stay narrow: ahead off the released lineage is still drift.
   _fdd_is "drift: ahead of the tag but OFF main still FAILS" 1 'OFF-LINEAGE'
