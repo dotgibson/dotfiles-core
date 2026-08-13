@@ -117,8 +117,10 @@ _core_wired() {
 }
 
 # ── The doctor's tool inventory — ONE definition, read by BOTH renderers ──────────────
-# Flat label/list pairs: even index = group label, odd = that group's tools. The human
-# report iterates it directly; _core_doctor_json flattens it. It used to be TWO hand-synced
+# Flat label/list pairs. zsh arrays are 1-based, so the ODD indices (1, 3, …) hold the group
+# labels and the EVEN ones (2, 4, …) hold that group's space-separated tools — which is why
+# the human report walks it from 1 and the --json flattener walks it from 2, both stepping 2.
+# The report iterates it directly; _core_doctor_json flattens it. It used to be TWO hand-synced
 # literals, and they drifted in both directions at once: twelve tools that 00-tools.zsh
 # detects — ast-grep, difft, gping, hyperfine, jj, jnv, ouch, shellcheck, shfmt, tldr, uv,
 # viddy — were reported by neither, while the pair could also disagree with each other with
