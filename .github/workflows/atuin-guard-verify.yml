@@ -26,7 +26,24 @@ name: atuin-guard-verify
 # inside scripts/verify-atuin-guard.sh, on an ephemeral runner, with no secret and no write
 # scope anywhere in reach.
 #
-# ── THE SECURITY SPLIT, AND WHY IT IS THREE JOBS ─────────────────────────────────────
+# ── TWO PREMISES, TWO MEASURE/REPORT PAIRS ───────────────────────────────────────────
+# The guard rests on two upstream facts, and each gets its own measurement, its own verdict
+# and its own issue title (dotgibson/dotfiles-core#402):
+#
+#   measure  / report             the SILENT-DISCARD premise. Starts no daemon.
+#   measure-autostart / report-autostart
+#                                 the AUTOSTART SELF-HEALING premise — does atuin start its
+#                                 own daemon when the socket is unreachable? The guard stands
+#                                 DOWN entirely under ATUIN_DAEMON__AUTOSTART on that
+#                                 assumption, and on Alpine and macOS it is the only
+#                                 mitigation those machines have. This leg spawns a real
+#                                 daemon and owns its teardown.
+#
+# They are separate jobs rather than a matrix because a matrix cannot give the two legs
+# distinct outputs for the two report jobs to file under, and because the spawning leg must
+# not be able to hang the leg carrying the fleet's primary safety verdict.
+#
+# ── THE SECURITY SPLIT, AND WHY IT IS SPLIT AT ALL ───────────────────────────────────
 # .github/workflows/claude-routines.yml states this repo's own rule: a job that fetches or
 # executes untrusted upstream content must NOT also hold a token, because that is a
 # supply-chain path to the secret. It is the same reason freshness-triage is denied
@@ -45,7 +62,10 @@ name: atuin-guard-verify
 #             re-downloads the SAME asset anonymously and refuses to continue unless it
 #             hashes to the digest `resolve` already attested — so the handoff across the
 #             job boundary is a pinned digest, and an asset swapped between the two jobs is
-#             caught rather than measured. This is the ONLY job that runs upstream code.
+#             caught rather than measured. This and `measure-autostart` are the ONLY jobs
+#             that run upstream code, and both hold nothing; `measure-autostart` additionally
+#             lets that upstream binary FORK a daemon, which is why its teardown is proven
+#             inside the script rather than left to the runner tearing down.
 #   report    holds issues: write, and never sees the binary. It consumes exactly one thing:
 #             a base64 blob of markdown that `measure` emitted. Base64 because the blob
 #             contains upstream-derived TEXT (a version string, an stderr excerpt) — the
@@ -297,13 +317,138 @@ jobs:
           fi
           bash .github/workflows/file-routine-issue.sh "$title" "$RUNNER_TEMP/atuin-guard.md"
 
-  # ── 4. a genuinely crashed sweep still pages a human. ────────────────────────────────
+  # ── 4. measure-autostart. The OTHER premise. Holds nothing, same as `measure`. ───────
+  # A SEPARATE JOB, not a second invocation inside `measure` and not a matrix leg, for two
+  # reasons. This one SPAWNS A REAL DAEMON, so it is the leg most able to hang; sharing a job
+  # (and therefore a timeout) with the silent-discard measurement would let a wedged daemon
+  # here cost the fleet's PRIMARY safety verdict, which nothing about this premise justifies.
+  # And a matrix cannot give the two legs distinct job outputs, which the two report jobs
+  # below need in order to file under two different titles.
+  #
+  # It re-downloads independently rather than sharing `measure`'s working directory — jobs do
+  # not share a filesystem — and applies the same digest pin, so the same
+  # asset-swapped-between-jobs check protects both legs.
+  measure-autostart:
+    needs: resolve
+    if: always()
+    runs-on: ubuntu-latest
+    # 20, not 15. Four arms each spawn a daemon, wait for it to answer, write, and then prove
+    # it stopped; the pathological case is four wedged clients hitting CORE_ATVERIFY_TIMEOUT
+    # in turn plus their stop polls. Still far under, but the margin is cheap and a timeout
+    # here produces no verdict at all rather than an `unmeasurable` one.
+    timeout-minutes: 20
+    permissions:
+      contents: read # checkout only. No issues: write, no App key, no CLAUDE token.
+    outputs:
+      verdict: ${{ steps.ma.outputs.verdict }}
+      report_b64: ${{ steps.ma.outputs.report_b64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the verified asset (digest-pinned across the job boundary)
+        if: needs.resolve.outputs.ok == 'true'
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          DIGEST: ${{ needs.resolve.outputs.digest }}
+        run: |
+          set -uo pipefail
+          curl -fsSL --retry 3 --max-time 300 -o asset.tgz \
+            "https://github.com/${ATUIN_REPO}/releases/download/${TAG}/${ASSET}" || exit 0
+          got="$(sha256sum asset.tgz | cut -d' ' -f1)"
+          if [ "$got" != "$DIGEST" ]; then
+            echo "digest drift between jobs: $got != $DIGEST" >&2
+            rm -f asset.tgz
+            exit 0   # falls through to --unmeasurable below; never a silent measurement
+          fi
+          mkdir -p at && tar -xzf asset.tgz -C at --strip-components=1
+          find at -type f -name atuin -perm -u+x -print -quit >atuin.path
+
+      - id: ma
+        name: Measure the autostart self-healing premise
+        env:
+          RESOLVE_OK: ${{ needs.resolve.outputs.ok }}
+          RESOLVE_REASON: ${{ needs.resolve.outputs.reason }}
+        run: |
+          set -uo pipefail
+          bin="$(cat atuin.path 2>/dev/null || true)"
+          # --premise autostart on EVERY path, including the two that measure nothing: the
+          # forced-unmeasurable renderer emits this premise's prose and scope, so a download
+          # failure reported here cannot arrive worded as if it were about silent discard.
+          if [ "$RESOLVE_OK" != "true" ]; then
+            ./scripts/verify-atuin-guard.sh --premise autostart --color never \
+              --unmeasurable "$RESOLVE_REASON" --report report.md --json >verdict.json
+          elif [ -z "$bin" ]; then
+            ./scripts/verify-atuin-guard.sh --premise autostart --color never \
+              --unmeasurable "the verified tarball contained no executable named 'atuin' — upstream's archive LAYOUT may have changed" \
+              --report report.md --json >verdict.json
+          else
+            ./scripts/verify-atuin-guard.sh --premise autostart --color never \
+              --atuin "$PWD/$bin" --report report.md --json >verdict.json
+          fi
+          vrc=$?
+          case "$vrc" in
+            0 | 1 | 3) ;;
+            *) echo "::error::verify-atuin-guard.sh --premise autostart exited $vrc — not one of the documented 0/1/3"; exit 1 ;;
+          esac
+          # The premise is asserted as well as the verdict. These two legs run the same script
+          # with the same flags but one word different, and a copy-paste that dropped
+          # `--premise autostart` would otherwise measure silent discard twice and file the
+          # result under the autostart title — a confident report about the wrong premise,
+          # which is the single failure this whole separate-mode design exists to prevent.
+          v="$(python3 -c 'import json; d=json.load(open("verdict.json")); assert d["premise"]=="autostart", d["premise"]; v=d["verdict"]; assert v in ("holds","moved","unmeasurable"), v; print(v)')" ||
+            { echo "::error::verdict.json is missing, truncated, carries no known verdict, or is not the autostart premise"; exit 1; }
+          [ -s report.md ] || { echo "::error::report.md was not written"; exit 1; }
+          echo "verdict=$v" >>"$GITHUB_OUTPUT"
+          echo "report_b64=$(base64 -w0 <report.md)" >>"$GITHUB_OUTPUT"
+          {
+            echo "### atuin autostart self-healing premise: \`$v\`"
+            echo ""
+            echo '```json'
+            cat verdict.json
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  # ── 5. report-autostart. Holds issues: write. Never sees the binary. ─────────────────
+  report-autostart:
+    needs: [resolve, measure-autostart]
+    if: always() && needs.measure-autostart.result == 'success' && needs.measure-autostart.outputs.verdict != 'holds'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERDICT: ${{ needs.measure-autostart.outputs.verdict }}
+      REPORT_B64: ${{ needs.measure-autostart.outputs.report_b64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: File / update the deduplicated issue
+        run: |
+          set -euo pipefail
+          printf '%s' "$REPORT_B64" | base64 -d >"$RUNNER_TEMP/atuin-autostart.md"
+          # DISTINCT FROM THE DISCARD TITLES, both of them. file-routine-issue.sh dedups on an
+          # exact open-issue title match, so reusing "the premise could not be measured" would
+          # interleave two unrelated premises into one thread — and the reader would act on a
+          # report written about the other one. One premise, one verdict, one title.
+          if [ "$VERDICT" = "moved" ]; then
+            title="atuin-guard-verify: the autostart self-healing premise has MOVED"
+          else
+            title="atuin-guard-verify: the autostart premise could not be measured"
+          fi
+          bash .github/workflows/file-routine-issue.sh "$title" "$RUNNER_TEMP/atuin-autostart.md"
+
+  # ── 6. a genuinely crashed sweep still pages a human. ────────────────────────────────
   # Scoped to `schedule` for the freshness.yml reason: `moved` and `unmeasurable` are
   # intended outcomes routed to their own issues, so the only thing that should reach here
   # is the workflow itself breaking — and a manual dispatch that goes red is a human who is
   # already watching the tab.
   notify-failure:
-    needs: [resolve, measure, report]
+    needs: [resolve, measure, report, measure-autostart, report-autostart]
     if: failure() && github.event_name == 'schedule'
     permissions:
       contents: read

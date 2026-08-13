@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -41,8 +41,11 @@ bench-atuin: ## Measure atuin write latency, daemon off vs on, under contention 
 bench-atuin-systemd: ## Same, but through a transient systemd user unit (skips without a user bus)
 	@./scripts/bench-atuin-daemon.sh --systemd
 
-verify-atuin-guard: ## Re-measure the upstream premise _core_atuin_daemon_guard rests on (0 holds / 1 moved / 3 unmeasurable)
+verify-atuin-guard: ## Re-measure the silent-discard premise _core_atuin_daemon_guard rests on (0 holds / 1 moved / 3 unmeasurable)
 	@./scripts/verify-atuin-guard.sh
+
+verify-atuin-guard-autostart: ## Same three verdicts for the OTHER premise: does atuin self-heal its daemon under ATUIN_DAEMON__AUTOSTART? (SPAWNS a real daemon)
+	@./scripts/verify-atuin-guard.sh --premise autostart
 
 lint: audit ## Alias for `audit` (the audit IS the lint+test gate)
 

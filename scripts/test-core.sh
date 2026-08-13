@@ -2068,11 +2068,15 @@ STUB
   if printf '%s' "$_vout" | python3 -c '
 import json,sys
 d = json.load(sys.stdin)
-need = {"verdict","reason","atuin_version","anchor","anchor_relation","control_delta","drain_delta","bounded","arms"}
+need = {"premise","verdict","reason","atuin_version","host","anchor","anchor_relation","control_delta","drain_delta","bounded","arms"}
 assert need <= set(d), sorted(need - set(d))
 assert isinstance(d["arms"], dict), type(d["arms"])
+# `premise` defaults to discard and the workflow ASSERTS it per leg: the two legs differ by
+# one flag, and a copy-paste that dropped it would file a silent-discard measurement under
+# the autostart title. A default that silently changed would defeat that check.
+assert d["premise"] == "discard", d["premise"]
 ' 2>/dev/null; then
-    pass "atuin verify: --json carries verdict/reason/versions/control+drain deltas/bounded/arms"
+    pass "atuin verify: --json carries premise/verdict/reason/versions/host/deltas/bounded/arms"
   else
     fail "atuin verify: --json shape is missing fields consumers depend on"
   fi
@@ -2284,6 +2288,787 @@ for name, arm in a.items():
       fail "atuin verify: buffer-and-replay must be moved/rc1 with drain_delta 5, got $(_v_verdict "$_vout")/rc$_vrc"
     fi
   fi
+fi
+
+# ── J4. the AUTOSTART premise of the same detector (--premise autostart) ──────
+# The other premise _core_atuin_daemon_guard rests on: under ATUIN_DAEMON__AUTOSTART the guard
+# stands DOWN entirely — unhooks itself, never probes — because atuin is supposed to supervise
+# its own daemon. That covers Alpine and macOS, and on those two it is the ONLY mitigation
+# (dotgibson/dotfiles-core#402).
+#
+# WHAT THIS SECTION IS REALLY FOR. §J3's assertions are mostly about the third verdict, and so
+# are these — but the conflation is sharper here, because this premise cannot be measured by
+# observing: something has to be SPAWNED. "autostart did not start a daemon" and "this box
+# cannot host a daemon" are the same observation, and only one of them is a fact about
+# upstream. The manual-spawn control is what separates them, and case 9 below is the assertion
+# that it actually does. A future simplification that deletes it would turn every CI sandbox
+# problem into an issue titled "the autostart self-healing premise has MOVED".
+#
+# Hermetic, and genuinely so: the stub runs a REAL bindable AF_UNIX daemon (python3, exec'd so
+# the process is signal-addressable), but no atuin, no systemd and no network are involved.
+_DVERIFY="$HERE/scripts/verify-atuin-guard.sh"
+if [[ ! -x "$_DVERIFY" ]]; then
+  skip "atuin autostart premise (scripts/verify-atuin-guard.sh absent or not executable)"
+elif ! have python3; then
+  skip "atuin autostart premise (python3 not installed)"
+else
+  hdr "atuin autostart self-healing premise (--premise autostart, hermetic)"
+  _dstub="$(mktemp -d "$SANDBOX/dstub.XXXXXX")"
+  # Section-local reaping. Every stub daemon writes its pid where the stub can find it, but a
+  # test that fails midway can leave one behind — and unlike the script under test, this
+  # harness has no EXIT trap of its own for them. The SANDBOX trap removes the files; this
+  # removes the processes, which the files cannot do.
+  _dreap() {
+    local pf
+    for pf in "$_dstub"/*.pid; do
+      [[ -f "$pf" ]] || continue
+      kill -9 "$(cat "$pf" 2>/dev/null)" 2>/dev/null
+      rm -f "$pf"
+    done
+    for pf in "$_dstub"/*.forked; do
+      [[ -f "$pf" ]] || continue
+      while read -r _dp; do
+        [[ -n "$_dp" ]] && kill -9 "$_dp" 2>/dev/null
+      done <"$pf"
+      rm -f "$pf"
+    done
+    rm -f "$_dstub"/*.spawned "$_dstub"/*.calls
+    return 0
+  }
+
+  # _mkdstub <name> <mode> [version] — a fake atuin whose daemon really binds and really
+  # answers, so prove_reachable's connect(2) has something to succeed against. Modes:
+  #   heals                    everything works. Mirrors real 18.19.0 exactly, INCLUDING that
+  #                            `daemon start` refuses over a stale inode while the autostart
+  #                            CLIENT unlinks it first — measured, not assumed.
+  #   never-spawns             manual works, autostart never spawns.            → moved
+  #   heals-absent-not-stale   spawns on a clear path, not over a crashed daemon's leftover
+  #                            inode. THE headline regression this premise exists to catch.
+  #   spawns-but-discards      daemon comes up, entry never lands.              → moved
+  #   manual-spawn-impossible  nothing can host a daemon here.                  → unmeasurable
+  #   end-hangs                `history end` wedges on the autostart path only, so the manual
+  #                            control still passes and the arms are reached — the bound then
+  #                            expires on the half that carries the row.
+  #   stop-unlinks-only        `daemon stop` removes the SOCKET and leaves the process alive
+  #                            and holding the DB — atuin unlinks early in shutdown, so
+  #                            "nothing answers" is not "the daemon exited".
+  #   stop-noop                `daemon stop` accepts and does nothing — the teardown
+  #                            escalation must still leave nothing running.
+  #   no-daemon-subcommand     no `daemon start`.                               → unmeasurable
+  #   no-stop-subcommand       no `daemon stop`.                                → unmeasurable
+  #   fork-hang                autostart forks a child that NEVER binds and never exits —
+  #                            invisible to every socket-based teardown path there is.
+  #   manual-fork-nobind       `daemon start` forks a child that never binds and then EXITS,
+  #                            so MANUAL_DAEMON_PID names a corpse and the socket never
+  #                            answers — the manual control's version of fork-hang.
+  #   fork-hang-end            the same, but the fork happens on `history end` rather than on
+  #                            `history start`. atuin reaches its daemon through the same
+  #                            autostarting path from both, so tracking only the opening half
+  #                            of the pair would leave this one untracked.
+  #
+  # Every invocation is appended to stub-calls, which is how the "discard never spawns" and
+  # "refused builds are never spawned on" assertions are made by CONSTRUCTION rather than by
+  # trusting a comment.
+  #
+  # NOTE, as in §J3: the delimiter is unquoted so $mode and $ver interpolate, which means no
+  # backticks may appear in this body and every runtime $ must be escaped.
+  _mkdstub() {
+    local name="$1" mode="$2" ver="${3:-18.19.0}"
+    cat >"$_dstub/$name" <<STUB
+#!/usr/bin/env bash
+MODE="$mode"
+DH="\${XDG_DATA_HOME:-/nonexistent}"
+# LOG and PIDF live in the STUB dir, not the sandbox: verify-atuin-guard.sh removes its
+# sandbox on the way out, so a log kept in there is gone by the time an assertion reads it —
+# and "grep found no spawn" would pass for a deleted file exactly as it does for a real
+# absence. Interpolated at generation time; only SOCK and DB belong to the measured tree.
+LOG="$_dstub/$name.calls"
+SPAWNMARK="$_dstub/$name.spawned"
+FORKMARK="$_dstub/$name.forked"
+SOCK="\$DH/atuin/atuin.sock"
+PIDF="$_dstub/$name.pid"
+DB="\$DH/atuin/history.db"
+mkdir -p "\$DH/atuin" 2>/dev/null
+printf '%s\n' "\$*" >>"\$LOG" 2>/dev/null
+
+row() {
+  python3 - "\$DB" <<'PY'
+import sqlite3,sys
+c=sqlite3.connect(sys.argv[1])
+c.execute("create table if not exists history (id text, duration integer)")
+c.execute("insert into history values ('x',-1)")
+c.commit(); c.close()
+PY
+}
+
+# EXEC, not a child: MANUAL_DAEMON_PID and socket_owner_pid both have to be able to signal
+# this process, and a bash wrapper holding a python child would swallow the SIGKILL the
+# teardown escalation depends on. The daemon then setsid()s below, so it leaves our process
+# group the way a real one does. Binds in the FOREGROUND so a failure is immediate — and
+# refuses over an existing inode, which is what 18.19.0 really does:
+#   Error: Address already in use (os error 48)  crates/atuin-daemon/src/server.rs:72
+serve_fg() {
+  exec python3 - "\$SOCK" "\$PIDF" "\$MODE" "\$DB" <<'PY'
+import socket, sys, os, sqlite3
+sock, pidf, mode, db = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    s.bind(sock)
+except OSError:
+    sys.stderr.write("Error: Address already in use (os error 48)\n")
+    sys.exit(98)
+s.listen(8)
+# DETACH, exactly as a real atuin daemon does. Measured on 18.19.0: the arm ran in process
+# group 88291 and the daemon it spawned landed in 88299. A stub that stayed in the group
+# would be reachable by the group reap and every teardown assertion here would pass for a
+# reason that does not apply to atuin -- the stub has to be at least as hard to kill as the
+# thing it stands in for.
+try:
+    os.setsid()
+except OSError:
+    pass
+open(pidf, "w").write(str(os.getpid()))
+s.settimeout(0.3)
+while True:
+    try:
+        c, _ = s.accept()
+        c.close()
+    except socket.timeout:
+        # stop-unlinks-only: once the socket is gone this daemon KEEPS COMMITTING. That is
+        # what makes "nothing answers" different from "the daemon exited" — and it is only
+        # observable because the extra rows land in arms that come after the fake stop.
+        if mode == "stop-unlinks-only" and not os.path.exists(sock):
+            try:
+                con = sqlite3.connect(db, timeout=5)
+                con.execute("insert into history values ('zombie',-1)")
+                con.commit()
+                con.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+PY
+}
+
+daemon_up() {
+  [[ -S "\$SOCK" ]] || return 1
+  python3 -c "
+import socket,sys
+s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); s.settimeout(2)
+try: s.connect('\$SOCK')
+except OSError: sys.exit(1)
+s.close()" 2>/dev/null
+}
+
+# What the autostart CLIENT does. stderr is silenced but STDOUT IS DELIBERATELY INHERITED:
+# a spawned daemon holding the caller's fd 1 open is exactly the shape that used to hang
+# run_one's \$( ) capture forever, so every autostart arm here regression-tests that fix
+# instead of merely trusting it.
+spawn_bg() {
+  # The marker is the assertion's real subject. A call-log check only ever proved the CLI
+  # spelling "daemon start" was not used -- and in this stub, as in atuin, the autostart
+  # spawn happens INSIDE "history start", so a regression that turned autostart on in the
+  # default premise would fork a daemon, log no "daemon start", and pass. Recorded outside
+  # the sandbox, which the script deletes before any assertion runs. (No backticks here: the
+  # heredoc delimiter is unquoted, so one would be command substitution at generation time.)
+  printf 'spawn\n' >>"\$SPAWNMARK" 2>/dev/null
+  ( serve_fg 2>/dev/null ) &
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    daemon_up && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
+case "\$1" in
+--version) echo "atuin $ver"; exit 0 ;;
+daemon)
+  case "\$2" in
+  start)
+    if [[ "\$3" == --help ]]; then
+      [[ "\$MODE" == no-daemon-subcommand ]] && exit 1
+      echo "usage: atuin daemon start"; exit 0
+    fi
+    [[ "\$MODE" == manual-spawn-impossible ]] && { echo "Error: no" >&2; exit 1; }
+    if [[ "\$MODE" == manual-fork-nobind ]]; then
+      # Forks a child that never binds, then EXITS 0. The pid the caller recorded is dead a
+      # moment later, nothing ever answers the socket, and no inode exists to resolve an
+      # owner from -- only the process group knows about the survivor.
+      sleep 300 &
+      printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+      exit 0
+    fi
+    serve_fg
+    ;;
+  stop)
+    if [[ "\$3" == --help ]]; then
+      [[ "\$MODE" == no-stop-subcommand ]] && exit 1
+      echo "usage: atuin daemon stop"; exit 0
+    fi
+    # stop-noop ACCEPTS and does nothing, which is the realistic bad shape: a stop whose exit
+    # status says yes while the process lives on. Proof-not-exit-status is why it is caught.
+    [[ "\$MODE" == stop-noop ]] && exit 0
+    # Unlink the socket and leave the daemon running -- it then starts committing rows. A
+    # socket-only stop proof accepts this as stopped, after which every later arm measures
+    # against a daemon it did not start and whose writes it will attribute to upstream.
+    [[ "\$MODE" == stop-unlinks-only ]] && { rm -f "\$SOCK"; exit 0; }
+    [[ -f "\$PIDF" ]] && kill "\$(cat "\$PIDF")" 2>/dev/null
+    rm -f "\$SOCK" "\$PIDF"
+    exit 0
+    ;;
+  esac
+  exit 1
+  ;;
+history)
+  case "\$2" in
+  start)
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" != true ]]; then
+      row   # daemon OFF: the row lands on start, and history end updates it in place
+      echo "0192deadbeefcafe0000000000000000"; exit 0
+    fi
+    if [[ "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]] && ! daemon_up; then
+      case "\$MODE" in
+      never-spawns) : ;;
+      fork-hang)
+        # Forks a child that never binds and never exits. This is the shape the socket-based
+        # teardown structurally cannot see: nothing ever answers, so the stop proof succeeds
+        # instantly and socket_owner_pid has no inode to resolve a pid from. Only the arm's
+        # process group knows about it. The pid is recorded so the test can check it died.
+        sleep 300 &
+        printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+        ;;
+      heals-absent-not-stale)
+        # Spawns only onto a CLEAR path. A crashed daemon's leftover inode defeats it — the
+        # silent net-loss on Alpine and macOS, and invisible to an absent-socket-only test.
+        [[ -e "\$SOCK" ]] || spawn_bg
+        ;;
+      *)
+        # heals and fork-hang-end both take this path: a real daemon must come up, or the arm
+        # never gets a well-formed id and "history end" is never called.
+        rm -f "\$SOCK"   # the real client clears a stale inode before spawning
+        spawn_bg
+        ;;
+      esac
+    fi
+    echo "0192deadbeefcafe0000000000000000"; exit 0
+    ;;
+  end)
+    # end-hangs: wedge the CLOSING half only, and only on the autostart path. Keyed that way
+    # so the manual-spawn control (which does not set AUTOSTART) still passes and the run
+    # actually reaches the arms, where the bound is supposed to fire.
+    if [[ "\$MODE" == end-hangs && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then
+      sleep 300
+    fi
+    # fork-hang-end: the closing half of the pair forks its own never-binding child. Recorded
+    # in the same marker file, so one assertion covers however many halves forked.
+    if [[ "\$MODE" == fork-hang-end && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then
+      sleep 300 &
+      printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+    fi
+    # With a daemon serving, the row lands on END, not on start. Measured on 18.19.0.
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]] && daemon_up; then
+      # Keyed on AUTOSTART, not on the mode alone: the manual-spawn control writes through a
+      # hand-started daemon, and if THAT is broken too the run is honestly unmeasurable rather
+      # than a finding. This models the narrower, real shape — the daemon works, but entries
+      # issued down the autostart path are dropped.
+      if [[ "\$MODE" == spawns-but-discards && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then :; else row; fi
+    fi
+    exit 0
+    ;;
+  esac
+  exit 1
+  ;;
+esac
+exit 1
+STUB
+    chmod +x "$_dstub/$name"
+  }
+
+  # POLL very low on purpose, and only here. Every stub writes its row, binds its socket and
+  # unlinks it SYNCHRONOUSLY before the call returns, so a positive case is satisfied on the
+  # first tick and the bound is pure waiting for the cases that are SUPPOSED never to write —
+  # of which there are several, four arms each. 3 ticks is therefore not a flakiness risk
+  # here, and it is the difference between J4 costing seconds and costing minutes. Lowering it
+  # against a REAL atuin manufactures findings; see the knob's own comment in
+  # verify-atuin-guard.sh.
+  _d_run() { # _d_run <stub> [extra args...] → sets _dout (stdout) / _dstderr / _drc
+    local stub="$1"
+    shift
+    # STDOUT AND STDERR KEPT SEPARATE, unlike §J3's helper. Every case here passes --json and
+    # the JSON is on stdout, so merging the two means any stray line — a busybox timeout
+    # notice, a shell job-control message — lands inside the text being parsed and the
+    # assertion fails for a reason that has nothing to do with the behaviour under test. That
+    # is exactly how this first went red on Alpine: the exit code was a correct 3 and the
+    # verdict came back empty, because something musl-side wrote to stderr and json.load then
+    # choked on it. stderr is still captured, so a genuine crash still reaches the message.
+    _dstderr=""
+    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL=3 "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>"$SANDBOX/derr.txt")"
+    _drc=$?
+    _dstderr="$(head -c 400 "$SANDBOX/derr.txt" 2>/dev/null | tr '\n' ' ')"
+  }
+  _d_get() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"$2\"])" 2>/dev/null; }
+  # _d_calls <stub> — every invocation that stub received. Read from the stub dir, which
+  # outlives the sandbox, so "no spawn was attempted" is a real absence rather than a
+  # deleted file.
+  _d_calls() { cat "$_dstub/$1.calls" 2>/dev/null; }
+  # Did this stub ever FORK a daemon, by any route? Survives the sandbox, and unlike the call
+  # log it is about the thing that matters rather than the command that usually causes it.
+  _d_spawned() { [[ -s "$_dstub/$1.spawned" ]]; }
+  # _d_forks_alive <stub> — how many of the children that stub forked are STILL running.
+  _d_forks_alive() {
+    local n=0 pid
+    while read -r pid; do
+      [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && n=$((n + 1))
+    done <"$_dstub/$1.forked" 2>/dev/null
+    printf '%s' "$n"
+  }
+
+  # ── apparatus-free: the flag contract, assertable with no daemon anywhere ──
+  # 1. An unknown premise is a USAGE error, not a measurement. The --color lesson applied to
+  #    the one flag that selects which upstream fact is being asserted: a typo that fell
+  #    through would measure the default premise and report it under the caller's title.
+  CORE_COLOR=never "$_DVERIFY" --premise banana >/dev/null 2>&1
+  _drc=$?
+  CORE_COLOR=never "$_DVERIFY" --premise >/dev/null 2>&1
+  _drc2=$?
+  if ((_drc == 2 && _drc2 == 2)); then
+    pass "atuin autostart: an unknown --premise and a --premise with no value both exit 2 (usage, not a finding)"
+  else
+    fail "atuin autostart: --premise must exit 2 on a bad value (got rc$_drc) and on a missing one (got rc$_drc2)"
+  fi
+
+  # 2. The premise travels in the JSON. The workflow's two legs differ by ONE flag and both
+  #    file issues under different titles, so it asserts this field rather than trusting the
+  #    flag reached the script — this is the assertion that makes that check meaningful.
+  _d_run nonexistent-stub --premise autostart --json
+  if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+    [[ "$(_d_get "$_dout" premise)" == autostart ]]; then
+    pass "atuin autostart: --premise autostart is carried in --json, and a missing atuin is still rc 3"
+  else
+    fail "atuin autostart: expected unmeasurable/rc3/premise=autostart, got $(_d_get "$_dout" verdict)/rc$_drc/$(_d_get "$_dout" premise)"
+  fi
+
+  # 3. THE DEFAULT TARGET MUST STAY LAPTOP-SAFE. `make verify-atuin-guard` starts no
+  #    background process today, and adding one silently would change what that target costs
+  #    on a developer's machine. Asserted by CONSTRUCTION — the stub logs every invocation it
+  #    receives, so this reads the log rather than believing a comment.
+  _mkdstub atuin-heals heals
+  _d_run atuin-heals --json >/dev/null 2>&1
+  if _d_calls atuin-heals | grep -qE '^daemon start( |$)' || _d_spawned atuin-heals; then
+    fail "atuin autostart: --premise discard started a daemon — the default target must spawn nothing, by any route"
+  else
+    pass "atuin autostart: --premise discard forks no daemon at all (not via 'daemon start', not via autostart inside 'history start')"
+  fi
+  _dreap
+
+  # ── APPARATUS SELF-CHECK — and deliberately NOT through the subject under test.
+  #    The obvious form of this gate ("run the known-good stub; skip everything if it does not
+  #    say holds") uses the code under test as its own apparatus check, so ANY regression that
+  #    made the healthy stub report `moved` or `unmeasurable` would skip every assertion below
+  #    and leave the audit GREEN — the regression suite going blind to exactly the failures it
+  #    exists to catch. So the box is proven FIRST, with python3 alone: bind an AF_UNIX socket
+  #    under /tmp and connect to it, which is the only capability these cases need that an
+  #    ordinary box might lack. Only if THAT fails is a skip honest.
+  if ! python3 - "/tmp/j4probe.$$.sock" <<'J4PROBE' 2>/dev/null
+import socket, sys, os
+p = sys.argv[1]
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.bind(p)
+    s.listen(1)
+    c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    c.settimeout(2)
+    c.connect(p)
+    c.close()
+    s.close()
+    os.unlink(p)
+except Exception:
+    sys.exit(1)
+J4PROBE
+  then
+    rm -f "/tmp/j4probe.$$.sock"
+    skip "atuin autostart: measurement assertions (this box cannot bind and connect an AF_UNIX socket under /tmp)"
+  else
+    rm -f "/tmp/j4probe.$$.sock"
+    # The apparatus is established WITHOUT the subject's help, so a known-good stub that does
+    # not report `holds` is a regression in the detector — a FAILURE, never a skip.
+    _d_run atuin-heals --premise autostart --json
+    _dapp="$(_d_get "$_dout" verdict)"
+    _dreap
+    if [[ "$_dapp" != holds ]]; then
+      fail "atuin autostart: this box can bind AF_UNIX sockets, yet the known-good stub reported ${_dapp:-<unparseable>} rather than holds — that is a regression in verify-atuin-guard.sh, not an unusable apparatus: $(_d_get "$_dout" reason)"
+    else
+
+    # 4. The happy path, and the shape real 18.19.0 has: all four arms spawn and land a row.
+    if ((_drc == 0)) && [[ "$_dout" == *'"spawned":"no"'* ]]; then
+      fail "atuin autostart: a healing atuin reported an arm that did not spawn"
+    elif ((_drc == 0)); then
+      pass "atuin autostart: an atuin that self-heals its daemon → holds (rc 0), every arm spawned"
+    else
+      fail "atuin autostart: expected holds/rc0 for a healing atuin, got rc$_drc"
+    fi
+
+    # 5. Expected delta is 1 here and 0 under discard, on arms with IDENTICAL names. Without
+    #    expected_delta in the JSON a reader has no way to tell a healthy autostart arm from a
+    #    discard arm that just broke.
+    if [[ "$_dout" == *'"expected_delta":1'* ]] && [[ "$_dout" != *'"expected_delta":0'* ]]; then
+      pass "atuin autostart: every arm records expected_delta 1, so an identically-named discard arm cannot be misread"
+    else
+      fail "atuin autostart: arms must carry expected_delta 1 under this premise"
+    fi
+
+    # 6. An atuin that never spawns is a FINDING, and the reason must say so in the words the
+    #    remedy depends on — "no daemon became reachable", not merely "the row count changed".
+    _mkdstub atuin-nospawn never-spawns
+    _d_run atuin-nospawn --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *"no daemon became reachable"* ]]; then
+      pass "atuin autostart: an atuin that never spawns a daemon → moved (rc 1), naming the absent spawn"
+    else
+      fail "atuin autostart: expected moved/rc1 naming the absent spawn, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 7. THE HEADLINE SHAPE. Spawns onto a clear path, not over a crashed daemon's leftover
+    #    inode. Every `atuin history start` is a fresh process, so this is what
+    #    "fire-and-forget" can actually mean — and an absent-socket-only detector would call
+    #    it healthy while Alpine and macOS quietly lost their net.
+    _mkdstub atuin-halfheal heals-absent-not-stale
+    _d_run atuin-halfheal --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *'"stale_hook":{"rc":0,"delta":0'* ]] &&
+      [[ "$_dout" == *'"absent_hook":{"rc":0,"delta":1'* ]]; then
+      pass "atuin autostart: spawning on an absent socket but NOT over a stale one is moved — the stale arm is why it is measured"
+    else
+      fail "atuin autostart: half-healing must be moved with stale arms failing and absent arms passing, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 8. A daemon that comes up and drops the entry is a DIFFERENT finding from one that never
+    #    came up, and both leave delta 0 — which is exactly why `spawned` is recorded per arm
+    #    rather than inferred from the row count.
+    _mkdstub atuin-nowrite spawns-but-discards
+    _d_run atuin-nowrite --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *'"spawned":"yes"'* ]] && [[ "$_dout" == *"did not land"* ]]; then
+      pass "atuin autostart: a daemon that spawns but drops the entry is moved, and is distinguished from one that never spawned"
+    else
+      fail "atuin autostart: spawn-but-discard must be moved naming the unlanded entry, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 9. THE LOAD-BEARING ONE, and §J3 case 5's counterpart. A box that cannot host a daemon
+    #    AT ALL must be `unmeasurable` — never a finding about upstream. This is the whole
+    #    reason the manual-spawn control exists, and the assertion a future simplification
+    #    that deletes it would trip.
+    _mkdstub atuin-nodaemon manual-spawn-impossible
+    _d_run atuin-nodaemon --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+      [[ "$_dout" == *"cannot host a daemon"* ]]; then
+      pass "atuin autostart: a box where NO daemon can start is unmeasurable (rc 3), never a finding about upstream"
+    else
+      fail "atuin autostart: a failed spawn CONTROL must be unmeasurable/rc3, got $(_d_get "$_dout" verdict)/rc$_drc — an apparatus limit was rendered as an upstream finding"
+    fi
+
+    # 10. A build this script cannot cleanly stop is one it must not start. atuin has moved
+    #     the daemon subcommand spelling before (#380), and unlike the bench — which holds a
+    #     PID to kill — an autostart daemon's PID is never handed to us. Refusing costs an
+    #     unmeasurable run; spawning anyway costs a process writing into a deleted tree.
+    for _dcase in no-daemon-subcommand no-stop-subcommand; do
+      _mkdstub "atuin-$_dcase" "$_dcase"
+      _d_run "atuin-$_dcase" --premise autostart --json
+      # REAP AFTER THE ASSERTION, not before: _dreap deletes the .calls and .spawned markers,
+      # and reading them afterwards is reading files that are already gone — both checks would
+      # then pass for a build that DID spawn.
+      if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+        ! _d_calls "atuin-$_dcase" | grep -qE '^daemon start$' && ! _d_spawned "atuin-$_dcase"; then
+        pass "atuin autostart: $_dcase is unmeasurable (rc 3) and nothing was spawned on it"
+      else
+        fail "atuin autostart: $_dcase must be unmeasurable/rc3 with no spawn attempted, got $(_d_get "$_dout" verdict)/rc$_drc"
+      fi
+      _dreap
+    done
+
+    # 11. TEARDOWN IS THE KNOWN-HARD PART. A `daemon stop` that returns 0 and does nothing is
+    #     the realistic bad shape — which is why the stop is PROVEN by a connect rather than
+    #     believed from an exit status. The escalation must still leave nothing running and
+    #     nothing behind, or the next arm measures a daemon it did not start and the EXIT
+    #     trap rm -rf's a tree a live process is writing into.
+    #
+    #     WHAT THIS DOES NOT COVER, stated so the gap is not mistaken for coverage: the branch
+    #     where the stop can never be proven at all, which PRESERVES the sandbox and prints its
+    #     path. No portable stub can reach it — a process that survives SIGKILL does not exist,
+    #     and the escalation's PID lookup is what would have to fail instead (/proc on Linux,
+    #     lsof on macOS), which is platform-specific rather than something a stub can arrange.
+    #     It was verified by hand on macOS by running this same stub with lsof off PATH:
+    #     verdict `unmeasurable`, sandbox kept, and the exact `rm -rf` printed to stderr.
+    _mkdstub atuin-stopnoop stop-noop
+    _d_run atuin-stopnoop --premise autostart --json
+    _dleft=0
+    _dpf="$_dstub/atuin-stopnoop.pid"
+    if [[ -f "$_dpf" ]] && kill -0 "$(cat "$_dpf" 2>/dev/null)" 2>/dev/null; then
+      _dleft=1
+    fi
+    _dreap
+    if ((_dleft == 0)) && [[ -n "$(_d_get "$_dout" verdict)" ]]; then
+      pass "atuin autostart: a 'daemon stop' that lies still leaves no daemon running — the stop is proven, not believed"
+    else
+      fail "atuin autostart: a no-op 'daemon stop' left a daemon alive; teardown escalation did not work"
+    fi
+
+    # 12. THE CHILD NO SOCKET CAN SEE. autostart may fork a daemon that hangs or dies before
+    #     it ever binds: nothing answers, so the stop proof succeeds instantly and
+    #     socket_owner_pid has no inode to resolve a pid from. The arm's PROCESS GROUP is the
+    #     only handle on it, which is why the arms run under `set -m` — and why run_one returns
+    #     its record in a global rather than on stdout, since a command substitution would run
+    #     the whole function in a subshell and discard the group id before cleanup ever saw it.
+    _mkdstub atuin-forkhang fork-hang
+    _d_run atuin-forkhang --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-forkhang)"
+    _dforked="$(grep -c . "$_dstub/atuin-forkhang.forked" 2>/dev/null || echo 0)"
+    _dreap
+    if ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a child that forks and never binds is still reaped ($_dforked forked, 0 alive) — the process group catches what the socket cannot"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the fork-hang stub never forked, so the reaping assertion proved nothing"
+    else
+      fail "atuin autostart: $_dalive of $_dforked never-bound children survived the run — cleanup deleted the sandbox around a live process"
+    fi
+
+    # (There is no case here for a child that DETACHES and never binds. The handle that
+    #  covered it — matching processes by the sandbox path in their environment — was removed
+    #  deliberately: exact only on Linux, a different mechanism on macOS, and in two
+    #  consecutive reviews the source of fail-open defects of its own. The residual is
+    #  documented at daemon_stop_proven and in the report's scope note rather than half-tested
+    #  here.)
+
+    # 13. THE SAME HOLE IN THE CLOSING HALF OF THE PAIR. Tracking only `history start` would
+    #     pass case 12 while leaving an `end`-spawned child untracked, and `end` runs with the
+    #     same AUTOSTART env down the same autostarting path — so it is asserted separately
+    #     rather than assumed to be covered by its sibling.
+    _mkdstub atuin-forkhangend fork-hang-end
+    _d_run atuin-forkhangend --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-forkhangend)"
+    _dforked="$(grep -c . "$_dstub/atuin-forkhangend.forked" 2>/dev/null || echo 0)"
+    _dreap
+    if ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a child forked by the CLOSING half of the pair is reaped too ($_dforked forked, 0 alive)"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the fork-hang-end stub never forked on 'history end', so the assertion proved nothing"
+    else
+      fail "atuin autostart: $_dalive of $_dforked children forked by 'history end' survived — only the opening half of the pair is tracked"
+    fi
+
+    # 14. THE MANUAL CONTROL HAS THE SAME HOLE, and it was the last untracked spawn here. If
+    #     `daemon start` forks a child that never binds and its parent exits, the recorded pid
+    #     is a corpse, wait_reachable fails, cleanup sees an absent socket and calls it
+    #     stopped, and reap_manual has nothing left to kill. The verdict must still be
+    #     `unmeasurable` (this box could not host a daemon -- never a finding about upstream),
+    #     AND the survivor must be reaped.
+    _mkdstub atuin-manualfork manual-fork-nobind
+    _d_run atuin-manualfork --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-manualfork)"
+    _dforked="$(grep -c . "$_dstub/atuin-manualfork.forked" 2>/dev/null || echo 0)"
+    _dv="$(_d_get "$_dout" verdict)"
+    _dreap
+    if [[ "$_dv" == unmeasurable ]] && ((_drc == 3)) && ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a manual spawn that forks without binding is unmeasurable AND its orphan is reaped ($_dforked forked, 0 alive)"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the manual-fork-nobind stub never forked, so the assertion proved nothing"
+    else
+      fail "atuin autostart: manual-fork-nobind gave $_dv/rc$_drc with $_dalive of $_dforked orphans alive — the manual control is not process-group tracked"
+    fi
+
+    # 15. A BOUND THAT EXPIRES ON THE CLOSING HALF IS STILL AN APPARATUS LIMIT. The row lands
+    #     on `history end` when a daemon is serving, so `end` is the verdict-bearing call —
+    #     and its status used to be discarded, leaving a timed-out `end` looking like a
+    #     successful `start` with a missing row, which the verdict block reported as
+    #     "the entry did not land". A finding about upstream, manufactured by this run's own
+    #     timeout. The wedge is on the autostart path only, so the manual control passes and
+    #     the arms are actually reached.
+    # GUARDED ON A TIMEOUT UTILITY, because this case's whole mechanism is the bound. Where
+    # neither timeout(1) nor gtimeout(1) exists the verifier deliberately measures UNBOUNDED
+    # and discloses it — which is right for a real run and fatal here: TIMEOUT_CMD is empty, so
+    # nothing cuts the stub's four 300-second wedges and the suite runs to the job timeout
+    # instead of failing. A stock macOS box has neither utility, and the macOS audit leg runs
+    # this section.
+    if ! have timeout && ! have gtimeout; then
+      skip "atuin autostart: wedged 'history end' (no timeout(1)/gtimeout(1) here, so the verifier measures unbounded by design and the case's own wedge would never be cut)"
+    else
+    _mkdstub atuin-endhangs end-hangs
+    CORE_ATVERIFY_TIMEOUT=2 _d_run atuin-endhangs --premise autostart --json
+    _dv="$(_d_get "$_dout" verdict)"
+    _dwhy="$(_d_get "$_dout" reason)"
+    _dreap
+    if [[ "$_dv" == unmeasurable ]] && ((_drc == 3)) && [[ "$_dwhy" == *"did not return within"* ]]; then
+      pass "atuin autostart: a 'history end' that wedges is unmeasurable (rc 3), never a finding that the entry did not land"
+    else
+      fail "atuin autostart: a wedged 'history end' must be unmeasurable/rc3 naming the bound, got ${_dv:-<unparseable>}/rc$_drc${_dstderr:+ (stderr: $_dstderr)}"
+    fi
+    fi
+
+    # 16. "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED". atuin unlinks its socket early in
+    #     shutdown and `daemon stop` can return while teardown is still running, so a
+    #     socket-only proof accepts a daemon that is gone from the socket and still HOLDING
+    #     THE DB. The harm is not a leak — cleanup's group reap would catch that — it is
+    #     CONTAMINATION: every later arm then measures against a daemon it did not start, and
+    #     attributes that daemon's writes to upstream. This stub's zombie keeps committing
+    #     once its socket is unlinked, so a socket-only proof yields extra rows and a FALSE
+    #     `moved`; the group half of the proof kills it at the inter-arm stop and the run
+    #     stays clean. Asserted on the VERDICT, because that is where the damage would show.
+    _mkdstub atuin-stopunlink stop-unlinks-only
+    _d_run atuin-stopunlink --premise autostart --json
+    _dv="$(_d_get "$_dout" verdict)"
+    _dleft=0
+    _dpf="$_dstub/atuin-stopunlink.pid"
+    if [[ -f "$_dpf" ]] && kill -0 "$(cat "$_dpf" 2>/dev/null)" 2>/dev/null; then
+      _dleft=1
+    fi
+    _dreap
+    if [[ "$_dv" == holds ]] && ((_dleft == 0)); then
+      pass "atuin autostart: a daemon that outlives its own socket is stopped before the next arm — it cannot write rows the run would blame on upstream"
+    else
+      fail "atuin autostart: a socket-only stop let a zombie daemon keep committing into later arms (verdict=$_dv, survived=$_dleft) — its writes would be reported as an upstream finding"
+    fi
+
+    # 17. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
+    #     of /tmp. The verifier DELIBERATELY preserves a sandbox when a stop cannot be proven,
+    #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
+    #     fail this for a run that cleaned up perfectly. Only paths this run created count.
+    #
+    #     THE SELF-CHECK IS NOT OPTIONAL. A delta over a directory listing that silently
+    #     returns nothing passes for every run, forever — and that is precisely what the first
+    #     version of this did: on macOS /tmp is a symlink to private/tmp and `find /tmp`
+    #     without -L does not descend it, so both snapshots were empty and the assertion was
+    #     vacuous on a third of the fleet. Prove the snapshot can see a directory before
+    #     trusting it to notice one. (The fault there was the unfollowed symlink, not a
+    #     missing -maxdepth.)
+    # The shell's own one-level glob, not find(1) and not ls(1). BSD find on macOS does
+    # support -maxdepth (checked against /usr/bin/find, which is what the macOS CI leg runs),
+    # so the earlier version was not broken for that reason — but a glob needs no portability
+    # argument at all, and this check has already been silently blind once.
+    _dsnap() {
+      local d
+      local -a out=()
+      for d in /tmp/atverify.*; do [[ -d "$d" ]] && out+=("$d"); done
+      ((${#out[@]})) && printf '%s\n' "${out[@]}" | sort
+      return 0
+    }
+    mkdir -p "/tmp/atverify.selfcheck$$"
+    if ! _dsnap | grep -q "atverify.selfcheck$$"; then
+      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+      fail "atuin autostart: the sandbox-leak check cannot enumerate /tmp — it would pass vacuously, so it is reported as broken rather than green"
+    else
+      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+      _dpre="$(_dsnap)"
+      _d_run atuin-heals --premise autostart --json
+      _dreap
+      _dpost="$(_dsnap)"
+      _dnew="$(comm -13 <(printf '%s\n' "$_dpre" | grep -v '^$') \
+        <(printf '%s\n' "$_dpost" | grep -v '^$') | grep -c . || true)"
+      if ((_dnew == 0)); then
+        pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first"
+      else
+        fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp"
+      fi
+    fi
+
+    # 18. A MALFORMED ANCHOR IS NOT AN ABSENT ONE. Absence is legitimate for THIS premise —
+    #     nobody has written the line until a human measures it — which is exactly why the two
+    #     must not be conflated: `=18.19`, or a valid value with a trailing token, would
+    #     otherwise sail through as `unanchored` and the run would report a verdict against
+    #     nothing. Cheap to assert: read_anchor runs before the sandbox is built, so no daemon
+    #     is spawned on this path.
+    _dvrepo="$(mktemp -d "$SANDBOX/dvrepo.XXXXXX")"
+    mkdir -p "$_dvrepo/zsh" "$_dvrepo/scripts/lib" "$_dvrepo/lib" "$_dvrepo/atuin"
+    cp "$_DVERIFY" "$_dvrepo/scripts/"
+    cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/atuin-db.sh" "$_dvrepo/scripts/lib/"
+    cp "$HERE/lib/ux.sh" "$_dvrepo/lib/" 2>/dev/null || true
+    cp "$HERE/atuin/config.toml" "$_dvrepo/atuin/"
+    _dbad=0
+    for _dcase in "18.19" "18.19.0 EXTRA"; do
+      {
+        echo "# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0"
+        echo "# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=$_dcase"
+      } >"$_dvrepo/zsh/00-tools.zsh"
+      _dout="$(cd "$_dvrepo" && CORE_COLOR=never "./scripts/verify-atuin-guard.sh" \
+        --premise autostart --atuin "$_dstub/atuin-heals" --json 2>/dev/null)"
+      [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] || _dbad=1
+    done
+    # Absence, by contrast, must still be allowed through as unanchored.
+    echo "# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0" >"$_dvrepo/zsh/00-tools.zsh"
+    _dout="$(cd "$_dvrepo" && CORE_COLOR=never CORE_ATVERIFY_POLL=3 "./scripts/verify-atuin-guard.sh" \
+      --premise autostart --atuin "$_dstub/atuin-heals" --json 2>/dev/null)"
+    [[ "$(_d_get "$_dout" anchor_relation)" == unanchored ]] || _dbad=1
+    _dreap
+    if ((_dbad == 0)); then
+      pass "atuin autostart: a malformed anchor is unmeasurable while an ABSENT one is still unanchored — the two are not conflated"
+    else
+      fail "atuin autostart: a malformed autostart anchor was treated as absent, so the run reported a verdict against nothing"
+    fi
+
+    # 19. THE LIBC MARKER MUST SURVIVE musl's EXIT STATUS. musl's ldd prints its banner and
+    #     then exits NON-ZERO, and this script runs under `set -o pipefail` — so the obvious
+    #     `ldd --version | grep -qi musl` is false even when grep matched, and every musl run
+    #     loses the one marker that says which half of the fleet it spoke for. This repo has
+    #     already paid for that exact mistake once (see CHANGELOG and bench-atuin-daemon.sh),
+    #     which is why it is pinned here rather than left to a comment.
+    _dshim="$(mktemp -d "$SANDBOX/dshim.XXXXXX")"
+    for _dt in bash sh python3 sed grep awk tr cut head sleep mktemp rm cat kill ls chmod mkdir printf env find sort wc dirname basename readlink cp comm; do
+      _dp="$(command -v "$_dt" 2>/dev/null)" && ln -sf "$_dp" "$_dshim/$_dt" 2>/dev/null
+    done
+    printf '#!/bin/sh\necho "musl libc (x86_64)" >&2\nexit 1\n' >"$_dshim/ldd"
+    printf '#!/bin/sh\ncase "$1" in -m) echo x86_64 ;; *) echo Linux ;; esac\n' >"$_dshim/uname"
+    chmod +x "$_dshim/ldd" "$_dshim/uname"
+    _dout="$(PATH="$_dshim" CORE_COLOR=never "$_DVERIFY" --unmeasurable probe --json 2>/dev/null)"
+    if [[ "$(_d_get "$_dout" host)" == *musl* ]]; then
+      pass "atuin autostart: musl is detected even though its ldd exits non-zero (the pipefail trap this repo has hit before)"
+    else
+      fail "atuin autostart: a musl host reported host='$(_d_get "$_dout" host)' — the libc marker was lost to pipefail"
+    fi
+
+    # 20. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+      #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
+      #   true until this mode existed and is exactly the kind of prose that rots — and must
+      #   name the machines a green run here does and does not speak for.
+    _drep="$SANDBOX/atverify-auto.md"
+    _d_run atuin-heals --premise autostart --report "$_drep" --json
+    _dreap
+    if [[ -s "$_drep" ]] && printf '%s' "$_dout" | python3 -c '
+import json,re,sys
+d = json.load(sys.stdin)
+rep = open(sys.argv[1]).read()
+arms = set(d["arms"])
+m = re.search(r"^\*\*Measured here:\*\* (.+)\.$", rep, re.M)
+assert m, "no derived coverage sentence"
+claimed = {a.strip().replace(" / ", "_") for a in m.group(1).split(",")}
+assert claimed == arms, sorted(claimed ^ arms)
+assert "premise: `autostart`" in rep, "the report does not say which premise it measured"
+scope = rep.split("---\n\n", 1)[1]
+# The claim this whole section retires. If it survives here, the report is telling a reader
+# that nothing measures the thing the report is a measurement of.
+assert "stand-down** is unmeasured" not in scope, "the autostart report still claims the premise is unmeasured"
+for want in ("musl", "macOS", "3382", "--premise discard"):
+    assert want in scope, want
+# The teardown residual must be described as what it IS. An earlier version of this note
+# claimed the run "preserves its sandbox rather than deleting one it could not account for"
+# for a case NOTHING DETECTS — every check passes, the stop is accepted, and the tree is
+# deleted around a live child. A scope note that promises a safety behaviour the code does not
+# perform is the exact defect this section exists to catch, so the honest wording is pinned.
+assert "undetected leak" in scope, "the scope note no longer names the teardown residual as undetected"
+assert "preserving its sandbox rather than deleting" not in scope, "the scope note has re-acquired the preservation claim for a case nothing detects"
+named = [a for a in arms if a.replace("_", " / ") in scope]
+assert not named, "the scope section names measured arms: %s" % named
+' "$_drep" 2>/dev/null; then
+      pass "atuin autostart: --report names this premise, matches the arms that ran, and no longer calls autostart unmeasured"
+    else
+      fail "atuin autostart: the autostart report's prose does not match what it measured"
+    fi
+    fi  # known-good stub held
+  fi    # apparatus probe
+  _dreap
 fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────

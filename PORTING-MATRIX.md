@@ -287,12 +287,26 @@ the daemon back up until you start a shell from a clean parent.
 rows above, so on two of the eight machines this safety net is not the thing keeping you out
 of trouble. It stands down because an absent socket is then the client's _cue to start one_,
 not a fault; disabling the daemon there would permanently defeat the only launcher those
-machines have. atuin's own health-checking is what covers them. Note that this is the one
-premise in the whole arrangement that is **assumed rather than measured**: the weekly
-re-verification (`scripts/verify-atuin-guard.sh`) never sets `ATUIN_DAEMON__AUTOSTART`, so a
-green run says nothing about these two rows — measuring it would mean spawning a real daemon
-and owning its teardown. `/tool-scout` carries it as a standing upstream question instead
-(`dotgibson/dotfiles-core#383`).
+machines have. atuin's own health-checking is what covers them — and that is now **measured
+rather than assumed** (`dotgibson/dotfiles-core#402`). It is a second premise with its own
+mode, its own anchor line in `zsh/00-tools.zsh` and its own issue title:
+`scripts/verify-atuin-guard.sh --premise autostart` (or `make verify-atuin-guard-autostart`)
+spawns a real daemon, checks that one appears and that the entry lands from each unreachable
+shape, and proves the teardown before deleting anything. The weekly workflow runs it as a
+separate job from the silent-discard one.
+
+Two things that measurement established on 18.19.0, both worth knowing before you touch these
+rows. The **stale-socket shape is the load-bearing one** — every `atuin history start` is a
+fresh process, so "fire-and-forget" can only mean that a crashed daemon's leftover inode
+defeats the spawn, and a check that only tried an absent socket would miss it. And the healing
+lives in the **client**: `atuin daemon start` on its own refuses over a stale inode with
+`Address already in use`, while the autostart path unlinks it first.
+
+Still not covered, so the default `--premise discard` caveats are not the only ones: the
+scheduled job runs on glibc Linux, which is neither of the two machines this premise protects,
+and a run that is green there is the weakest evidence in the whole arrangement for these rows.
+Running `make verify-atuin-guard-autostart` on the Alpine or macOS box itself is what actually
+speaks for it.
 
 The probe's limit, because it decides which unit you should install: it cannot tell an
 **accept-but-silent** socket from a healthy one. systemd **socket activation** produces

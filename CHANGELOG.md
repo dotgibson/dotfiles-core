@@ -15,6 +15,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The `autostart` stand-down is measured now, not assumed** (`dotgibson/dotfiles-core#402`).
+  `_core_atuin_daemon_guard` stands down _entirely_ under `ATUIN_DAEMON__AUTOSTART` — it
+  unhooks itself from `precmd_functions` and never probes — because atuin is supposed to
+  supervise its own daemon there. That covers **Alpine and macOS**, two of the eight machines,
+  and on those two it was the only mitigation. Nothing measured it: the weekly detector never
+  set the variable, so a green run said nothing about those rows, and an upstream regression
+  would have cost them their history with no symptom — the same failure mode as #366.
+
+  `scripts/verify-atuin-guard.sh` gains `--premise discard|autostart` (default `discard`) plus
+  `make verify-atuin-guard-autostart`, and the weekly workflow gains `measure-autostart` and
+  `report-autostart` jobs with their own issue titles. **One premise, one verdict, one title**:
+  an autostart finding needs a different remedy from a discard one, and would otherwise arrive
+  under a heading that misdescribes it. The default target still starts no background process —
+  asserted by construction, since the stub logs every invocation it receives.
+
+  The measurement's own discipline is the interesting part. Because this premise is _caused_
+  rather than observed, "autostart did not spawn a daemon" and "this box cannot host a daemon"
+  are the same observation — so a **manual-spawn control** runs first and its failure is
+  `unmeasurable`, never a finding about upstream. A second control tries a manual bind over a
+  _stale_ socket and records the answer, which is what separates "the client will not re-spawn
+  after a crash" from "the daemon cannot bind over a leftover inode". Teardown goes through
+  `atuin daemon stop` and is **proven** by a connect rather than believed from an exit status,
+  escalating to the socket's owning PID and then a signal; the run refuses to spawn at all on a
+  build lacking either subcommand, because a daemon it cannot reap would be left writing into a
+  tree the exit trap is about to delete.
+
+  Two upstream facts this established on 18.19.0, both recorded in `PORTING-MATRIX.md`: the
+  **stale-socket shape is the load-bearing one** — every `atuin history start` is a fresh
+  process, so "fire-and-forget" can only mean a crashed daemon's leftover inode defeats the
+  spawn — and the healing lives in the **client**, since `atuin daemon start` alone refuses over
+  a stale inode with `Address already in use` while the autostart path unlinks it first. Also
+  measured, and load-bearing for the arms: with a daemon serving, `history start` writes nothing
+  and the row lands on `history end`.
+
+  `/tool-scout` loses a standing upstream question it could only ever have answered from release
+  notes, and the report names the trap in its own remedy: "make the guard stop standing down" is
+  the fix that breaks those two machines, because the degrade path sets
+  `ATUIN_DAEMON__ENABLED=false` and under autostart that removes the spawn itself.
+
 - **`git-absorb` — auto-route staged hunks into the earlier commit each belongs to**
   (`dotgibson/dotfiles-core#394`). `00-tools.zsh` now detects `git-absorb` and sets
   `HAVE_GIT_ABSORB`. It works out which earlier commit each **staged hunk** belongs to and
@@ -366,6 +405,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   "nothing is due" must be said out loud, since silence reads the same as forgetting.
 
 ### Fixed
+
+- **Three latent faults in `scripts/verify-atuin-guard.sh`**, each harmless while nothing
+  spawned and each load-bearing once something does (`dotgibson/dotfiles-core#402`). `run_one`
+  captured stdout with `$( )`, which blocks on **pipe EOF rather than child exit** — a client
+  that daemonized without reopening stdio would have hung the arm forever, and `timeout` could
+  not have cut it, since it signals only its direct child. A hit bound rendered as a **finding**:
+  `rc 124` reached the verdict block as "exit code is 124, was 0" and reported an apparatus limit
+  as `moved`; it is now `unmeasurable` with a named reason. And `AT_ENV` was assigned inside
+  `measure()`, so under `set -u` any trap reading it after an early return died exactly when
+  cleanup mattered most.
 
 - **`core-doctor` was silently blind to twelve tools Core already detects.** `00-tools.zsh`
   probes 38 binaries into `HAVE_*` flags, but the health report only ever knew about 29 —

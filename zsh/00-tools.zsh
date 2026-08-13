@@ -347,6 +347,12 @@ fi
 # version — not a version bump.
 # CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0
 #
+# ONE ANCHOR PER PREMISE. The stand-down below rests on a DIFFERENT upstream fact, measured by
+# a different mode (`--premise autostart`) and reported under its own issue title, so it gets
+# its own line rather than borrowing this one — otherwise re-measuring either premise would
+# silently re-date the claim about the other.
+# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.19.0
+#
 # So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
 # throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
 # so atuin really does write SQLite directly. Mostly silent by design — but what a missing daemon
@@ -462,11 +468,18 @@ _core_atuin_daemon_guard() {
   # someone who writes ATUIN_DAEMON__ENABLED=1 has opted in as far as atuin is concerned,
   # so the guard must agree or it silently sits out exactly when it is needed. AUTOSTART means
   # atuin supervises the daemon itself, so an absent socket there is a cue to start one, not a fault.
-  # That last clause is the one premise here that is ASSUMED, not measured: the weekly detector
-  # never sets AUTOSTART (measuring it means spawning a real daemon and owning its teardown), and
-  # it covers Alpine and macOS — two of the eight machines, for whom it is the ONLY mitigation. If
-  # upstream's autostart ever becomes fire-and-forget, they lose their net with no symptom, so
-  # /tool-scout watches for it as a standing upstream question (#383).
+  # That last clause covers Alpine and macOS — two of the eight machines, for whom it is the ONLY
+  # mitigation — and it is now MEASURED rather than assumed (#402). It has its own mode, its own
+  # anchor above and its own issue title, because its remedy is nothing like the discard premise's:
+  # `scripts/verify-atuin-guard.sh --premise autostart` spawns a real daemon and owns its teardown,
+  # and the weekly workflow runs it as a separate job. On 18.19.0 all four arms spawn and land a
+  # row, INCLUDING over the stale socket a crashed daemon leaves — the client unlinks it first,
+  # which `atuin daemon start` on its own does not.
+  #
+  # If that ever regresses, the fix is NOT to delete this stand-down. The degrade path below
+  # exports ATUIN_DAEMON__ENABLED=false, which under autostart removes the spawn itself and
+  # permanently defeats the only launcher these two machines have — worse than the failure it
+  # would be reacting to. Warn without disabling, or stand down only after N failed spawns.
   if [[ ${ATUIN_DAEMON__ENABLED:l} != (1|t|true|y|yes|on) ]] ||
     [[ ${ATUIN_DAEMON__AUTOSTART:l} == (1|t|true|y|yes|on) ]]; then
     precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard})
