@@ -16,7 +16,7 @@ don't assume red:
 
 | Row | Meaning | Remediation |
 | --- | --- | --- |
-| `✓ current` | pinned to the reference tag | none |
+| `✓ current` | nothing owed. Either pinned exactly to the reference tag, or — for `✓ current (nvim up to date)` on Windows — a `nvim/` subtree already byte-identical to the release's, whatever its marker reads | none |
 | `• current (ahead of vX.Y.Z …, on origin/main)` | carries **unreleased** Core — newer than the tag, still on main's lineage. **Not drift**; does not fail the sweep on its own | **cut a release** (see below) |
 | `✗ BEHIND` / `DIFFERS` / `OFF-LINEAGE` / `DIVERGED` / `missing …` | genuine drift; forces exit **1** | `make sync`, or investigate the recorded sha |
 
@@ -48,11 +48,23 @@ tree. Re-running the sweep here is fine — that's how you *gather* the current 
 but the deliverable is the **interpretation** (how far behind, what's missing, what
 to run), never a copy of the sweep's raw output.
 
-**Run the sweep; never reconstruct it.** If the command below fails or is denied,
-say so plainly in the report and stop — an unrun sweep is a finding, not a gap to
-fill in by hand. Do **not** re-derive the verdict by reading `core.lock` markers and
-applying the classifier's logic yourself: that has already produced a confident
-report that contradicted the script (`dotgibson/dotfiles-core#381`).
+**Run the sweep; never reconstruct it.** Do **not** re-derive the verdict by reading
+`core.lock` markers and applying the classifier's logic yourself: that has already
+produced a confident report that contradicted the script
+(`dotgibson/dotfiles-core#381`).
+
+**A non-zero exit is not a failure to run.** Read the exit code before deciding:
+
+| Exit | Meaning | What to do |
+| --- | --- | --- |
+| `0` | no repo lags (may still carry `•` unreleased rows) | interpret the rows |
+| `1` | **drift found — the sweep ran fine.** This is the case the routine exists for | **interpret the rows**; never treat it as a failed run |
+| `2` | usage error (bad `--root`/`--ref`/`--color`) | the invocation is wrong — fix it and re-run |
+| denied / not executed | the tool call never produced a sweep | say so plainly and **stop** |
+
+Only the last two rows mean "no sweep". An **unrun** sweep is a finding to report,
+not a gap to fill in by hand — but a **red** sweep is the deliverable's raw material,
+so stopping on exit 1 would refuse exactly the job this routine was written to do.
 
 ## What to do
 
@@ -69,10 +81,25 @@ report that contradicted the script (`dotgibson/dotfiles-core#381`).
    Claude Code flag, not a script flag — passing it to the script is a usage error.
 
    Also read this repo's `core.version` + latest `vX.Y.Z` tag.
-2. **Compute the gap** per repo: its `core.lock` `core_tag` / `core_sha`
-   (Windows: `nvim/.core-ref`) vs the latest tag → how many releases it skipped. For
-   a `•` row, the gap that matters is the two numbers in the row itself: commits
-   ahead of the tag (a release is owed) and `behind its tip` (a sync is owed).
+2. **Compute the gap** per repo. For the eight Core-vendoring repos: `core.lock`'s
+   `core_tag` / `core_sha` vs the latest tag → how many releases it skipped. For a
+   `•` row, the gap that matters is the two numbers in the row itself: commits ahead
+   of the tag (a release is owed) and `behind its tip` (a sync is owed).
+
+   **dotfiles-Windows is not measured that way.** It vendors only the `nvim/`
+   subtree, and `_classify_subtree` deliberately calls an *older* `.core-ref`
+   **current** when no later release touched `nvim/` — the marker is only re-stamped
+   when that subtree actually changes. Subtracting its marker tag from the latest
+   Core tag therefore manufactures a "N releases behind" that isn't real; that is
+   exactly the false diagnosis `#381` reached. **Trust the row's verdict**, and if you
+   need to quantify, count only releases that actually changed the subtree:
+
+   ```bash
+   git log --oneline <marker-commit>..<latest-tag> -- nvim/
+   ```
+
+   Empty output means the vendored tree is byte-identical to the release's — current,
+   with nothing owed.
 3. **Weigh what it's missing:** read `CHANGELOG.md` across the skipped range. A
    security / hardening fix outranks a docs-only bump — rank by that, not just by
    count-behind.
@@ -94,7 +121,9 @@ Ranked, most-stale / highest-risk first:
   fail the sweep *on its own*; it coexists with `✗` rows in a mixed run, which exits
   **1** and still prints the unreleased tally. Report the exit code you actually
   observed, never one deduced from the row types.
-- **Current** — the repos already up to date, so a green run is trustworthy.
+- **Current** — the repos with nothing owed, so a green run is trustworthy. Report
+  Windows from its subtree verdict, not from its marker's tag: `✓ current (nvim up
+  to date)` means done, even when `.core-ref` names an older release.
 
 If the sweep exited 0 with no `•` rows, say so in one line — a fully-pinned fleet is
 the whole point, and a routine that manufactures concern from a green run is worse
