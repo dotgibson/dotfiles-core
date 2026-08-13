@@ -62,14 +62,26 @@ one a workaround was verified against is a finding in its own right, not a footn
   `.github/workflows/atuin-guard-verify.yml` runs `scripts/verify-atuin-guard.sh` every
   Tuesday at 13:00 UTC against **whatever atuin upstream ships that week** — resolved and
   downloaded at run time, checksum- and provenance-verified in a job that executes nothing,
-  then measured in a job that holds no token. Three verdicts; two of them file a
-  deduplicated issue:
+  then measured in a job that holds no token.
 
-  | verdict | meaning | filed as |
-  | --- | --- | --- |
-  | `holds` | delta 0, rc 0, empty stderr, id printed — on **both** the absent-socket and stale-socket shapes | nothing (job summary only) |
-  | `moved` | anything else — `zsh/00-tools.zsh`'s rationale is now overclaiming | `atuin-guard-verify: the silent-discard premise has MOVED` |
-  | `unmeasurable` | the apparatus could not be trusted — **never** reported as `holds` | `atuin-guard-verify: the premise could not be measured` |
+  **TWO premises, measured separately, one verdict and one issue title each** — because their
+  remedies differ and a reader must never act on prose written for the other one. Three
+  verdicts apiece; two of the three file a deduplicated issue:
+
+  | premise | verdict | meaning | filed as |
+  | --- | --- | --- | --- |
+  | discard | `holds` | delta 0, rc 0, empty stderr, id printed — on **both** the absent-socket and stale-socket shapes | nothing (job summary only) |
+  | discard | `moved` | anything else — `zsh/00-tools.zsh`'s rationale is now overclaiming | `atuin-guard-verify: the silent-discard premise has MOVED` |
+  | discard | `unmeasurable` | the apparatus could not be trusted — **never** reported as `holds` | `atuin-guard-verify: the premise could not be measured` |
+  | autostart | `holds` | every arm spawned a daemon and landed exactly one row, from both unreachable shapes | nothing (job summary only) |
+  | autostart | `moved` | no daemon appeared, or the entry did not land — the stand-down is now unbacked | `atuin-guard-verify: the autostart self-healing premise has MOVED` |
+  | autostart | `unmeasurable` | including the manual-spawn control failing, i.e. the runner could not host a daemon at all | `atuin-guard-verify: the autostart premise could not be measured` |
+
+  The `autostart` leg (`--premise autostart`, `make verify-atuin-guard-autostart`) spawns a
+  real daemon and owns its teardown, so it runs as its own job. If it reports `moved`, read
+  the report's remedy paragraph before proposing anything: the obvious fix — make the guard
+  stop standing down — is the one that breaks Alpine and macOS, because the degrade path sets
+  `ATUIN_DAEMON__ENABLED=false` and under autostart that deletes the spawn itself.
 
   There used to be a copy of the recipe here. It is gone on purpose, and the reason is the
   point of the third verdict: it seeded its DB through the unreachable-daemon path, so on a
@@ -97,7 +109,7 @@ one a workaround was verified against is a finding in its own right, not a footn
      interactive shell in the fleet. That is the judgment call the workflow deliberately does
      not make.
 
-  **Three upstream questions the weekly measurement cannot answer**, so they are yours. Each
+  **Two upstream questions the weekly measurement cannot answer**, so they are yours. Each
   is answerable from upstream's docs, source or release notes — none needs a shell, which is
   why they live here and not in the script:
 
@@ -107,13 +119,6 @@ one a workaround was verified against is a finding in its own right, not a footn
     `atuin/config.toml`, `examples/atuin-daemon.service` and `PORTING-MATRIX.md` all steer to
     the plain always-running unit over socket activation. If it is fixed, that steer can be
     relaxed.
-  - **Does atuin still health-check its own daemon under `autostart`?** The guard stands down
-    *entirely* under `ATUIN_DAEMON__AUTOSTART` (`zsh/00-tools.zsh`), on exactly that premise —
-    an absent socket there is a cue for atuin to start one, not a fault. That covers Alpine and
-    macOS, two of the eight machines, and it is their **only** mitigation. If autostart ever
-    becomes fire-and-forget — spawn once, never re-check — those two lose their net with no
-    symptom. Nothing measures this: the weekly run never sets the variable, because measuring
-    it means spawning a real daemon and owning its teardown.
   - **Has atuin gained a client-side buffer or queue for the daemon path?** The guard degrades
     a shell **permanently** on the first failed connect, and that is only correct while atuin
     is *discarding* during the outage. An atuin that spools and replays inverts the reasoning,
@@ -121,7 +126,15 @@ one a workaround was verified against is a finding in its own right, not a footn
     closing daemon-off arm that must land exactly one row — an upstream design note would beat
     that probe, so read for one.
 
-  Refs #366, #382, #383.
+  There used to be a third: *does atuin still health-check its own daemon under `autostart`?*
+  It was here because measuring it meant spawning a real daemon, and a question you can only
+  answer by reading release notes is the weakest kind of watch — it catches a documented
+  change and misses a silent one. #402 built the measurement, so it is no longer yours: the
+  `autostart` rows of the verdict table above are what watch it now. What remains genuinely
+  unanswerable by measurement is narrower, and belongs to the `#3382` bullet: a daemon that
+  comes up and then **wedges** answers a connect, so the autostart leg scores it as healthy.
+
+  Refs #366, #382, #383, #402.
 
 ## How to report
 

@@ -2068,11 +2068,15 @@ STUB
   if printf '%s' "$_vout" | python3 -c '
 import json,sys
 d = json.load(sys.stdin)
-need = {"verdict","reason","atuin_version","anchor","anchor_relation","control_delta","drain_delta","bounded","arms"}
+need = {"premise","verdict","reason","atuin_version","host","anchor","anchor_relation","control_delta","drain_delta","bounded","arms"}
 assert need <= set(d), sorted(need - set(d))
 assert isinstance(d["arms"], dict), type(d["arms"])
+# `premise` defaults to discard and the workflow ASSERTS it per leg: the two legs differ by
+# one flag, and a copy-paste that dropped it would file a silent-discard measurement under
+# the autostart title. A default that silently changed would defeat that check.
+assert d["premise"] == "discard", d["premise"]
 ' 2>/dev/null; then
-    pass "atuin verify: --json carries verdict/reason/versions/control+drain deltas/bounded/arms"
+    pass "atuin verify: --json carries premise/verdict/reason/versions/host/deltas/bounded/arms"
   else
     fail "atuin verify: --json shape is missing fields consumers depend on"
   fi
@@ -2284,6 +2288,434 @@ for name, arm in a.items():
       fail "atuin verify: buffer-and-replay must be moved/rc1 with drain_delta 5, got $(_v_verdict "$_vout")/rc$_vrc"
     fi
   fi
+fi
+
+# ── J4. the AUTOSTART premise of the same detector (--premise autostart) ──────
+# The other premise _core_atuin_daemon_guard rests on: under ATUIN_DAEMON__AUTOSTART the guard
+# stands DOWN entirely — unhooks itself, never probes — because atuin is supposed to supervise
+# its own daemon. That covers Alpine and macOS, and on those two it is the ONLY mitigation
+# (dotgibson/dotfiles-core#402).
+#
+# WHAT THIS SECTION IS REALLY FOR. §J3's assertions are mostly about the third verdict, and so
+# are these — but the conflation is sharper here, because this premise cannot be measured by
+# observing: something has to be SPAWNED. "autostart did not start a daemon" and "this box
+# cannot host a daemon" are the same observation, and only one of them is a fact about
+# upstream. The manual-spawn control is what separates them, and case 5 below is the assertion
+# that it actually does. A future simplification that deletes it would turn every CI sandbox
+# problem into an issue titled "the autostart self-healing premise has MOVED".
+#
+# Hermetic, and genuinely so: the stub runs a REAL bindable AF_UNIX daemon (python3, exec'd so
+# the process is signal-addressable), but no atuin, no systemd and no network are involved.
+_DVERIFY="$HERE/scripts/verify-atuin-guard.sh"
+if [[ ! -x "$_DVERIFY" ]]; then
+  skip "atuin autostart premise (scripts/verify-atuin-guard.sh absent or not executable)"
+elif ! have python3; then
+  skip "atuin autostart premise (python3 not installed)"
+else
+  hdr "atuin autostart self-healing premise (--premise autostart, hermetic)"
+  _dstub="$(mktemp -d "$SANDBOX/dstub.XXXXXX")"
+  # Section-local reaping. Every stub daemon writes its pid where the stub can find it, but a
+  # test that fails midway can leave one behind — and unlike the script under test, this
+  # harness has no EXIT trap of its own for them. The SANDBOX trap removes the files; this
+  # removes the processes, which the files cannot do.
+  _dreap() {
+    local pf
+    for pf in "$_dstub"/*.pid; do
+      [[ -f "$pf" ]] || continue
+      kill -9 "$(cat "$pf" 2>/dev/null)" 2>/dev/null
+      rm -f "$pf"
+    done
+    return 0
+  }
+
+  # _mkdstub <name> <mode> [version] — a fake atuin whose daemon really binds and really
+  # answers, so prove_reachable's connect(2) has something to succeed against. Modes:
+  #   heals                    everything works. Mirrors real 18.19.0 exactly, INCLUDING that
+  #                            `daemon start` refuses over a stale inode while the autostart
+  #                            CLIENT unlinks it first — measured, not assumed.
+  #   never-spawns             manual works, autostart never spawns.            → moved
+  #   heals-absent-not-stale   spawns on a clear path, not over a crashed daemon's leftover
+  #                            inode. THE headline regression this premise exists to catch.
+  #   spawns-but-discards      daemon comes up, entry never lands.              → moved
+  #   manual-spawn-impossible  nothing can host a daemon here.                  → unmeasurable
+  #   stop-noop                `daemon stop` accepts and does nothing — the teardown
+  #                            escalation must still leave nothing running.
+  #   no-daemon-subcommand     no `daemon start`.                               → unmeasurable
+  #   no-stop-subcommand       no `daemon stop`.                                → unmeasurable
+  #
+  # Every invocation is appended to stub-calls, which is how the "discard never spawns" and
+  # "refused builds are never spawned on" assertions are made by CONSTRUCTION rather than by
+  # trusting a comment.
+  #
+  # NOTE, as in §J3: the delimiter is unquoted so $mode and $ver interpolate, which means no
+  # backticks may appear in this body and every runtime $ must be escaped.
+  _mkdstub() {
+    local name="$1" mode="$2" ver="${3:-18.19.0}"
+    cat >"$_dstub/$name" <<STUB
+#!/usr/bin/env bash
+MODE="$mode"
+DH="\${XDG_DATA_HOME:-/nonexistent}"
+# LOG and PIDF live in the STUB dir, not the sandbox: verify-atuin-guard.sh removes its
+# sandbox on the way out, so a log kept in there is gone by the time an assertion reads it —
+# and "grep found no spawn" would pass for a deleted file exactly as it does for a real
+# absence. Interpolated at generation time; only SOCK and DB belong to the measured tree.
+LOG="$_dstub/$name.calls"
+SOCK="\$DH/atuin/atuin.sock"
+PIDF="$_dstub/$name.pid"
+DB="\$DH/atuin/history.db"
+mkdir -p "\$DH/atuin" 2>/dev/null
+printf '%s\n' "\$*" >>"\$LOG" 2>/dev/null
+
+row() {
+  python3 - "\$DB" <<'PY'
+import sqlite3,sys
+c=sqlite3.connect(sys.argv[1])
+c.execute("create table if not exists history (id text, duration integer)")
+c.execute("insert into history values ('x',-1)")
+c.commit(); c.close()
+PY
+}
+
+# EXEC, not a child: MANUAL_DAEMON_PID and socket_owner_pid both have to be able to signal
+# this process, and a bash wrapper holding a python child would swallow the SIGKILL the
+# teardown escalation depends on. Binds in the FOREGROUND so a failure is immediate — and
+# refuses over an existing inode, which is what 18.19.0 really does:
+#   Error: Address already in use (os error 48)  crates/atuin-daemon/src/server.rs:72
+serve_fg() {
+  exec python3 - "\$SOCK" "\$PIDF" <<'PY'
+import socket, sys, os
+sock, pidf = sys.argv[1], sys.argv[2]
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    s.bind(sock)
+except OSError:
+    sys.stderr.write("Error: Address already in use (os error 48)\n")
+    sys.exit(98)
+s.listen(8)
+open(pidf, "w").write(str(os.getpid()))
+while True:
+    try:
+        c, _ = s.accept()
+        c.close()
+    except Exception:
+        pass
+PY
+}
+
+daemon_up() {
+  [[ -S "\$SOCK" ]] || return 1
+  python3 -c "
+import socket,sys
+s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); s.settimeout(2)
+try: s.connect('\$SOCK')
+except OSError: sys.exit(1)
+s.close()" 2>/dev/null
+}
+
+# What the autostart CLIENT does. stderr is silenced but STDOUT IS DELIBERATELY INHERITED:
+# a spawned daemon holding the caller's fd 1 open is exactly the shape that used to hang
+# run_one's \$( ) capture forever, so every autostart arm here regression-tests that fix
+# instead of merely trusting it.
+spawn_bg() {
+  ( serve_fg 2>/dev/null ) &
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    daemon_up && return 0
+    sleep 0.2
+  done
+  return 1
+}
+
+case "\$1" in
+--version) echo "atuin $ver"; exit 0 ;;
+daemon)
+  case "\$2" in
+  start)
+    if [[ "\$3" == --help ]]; then
+      [[ "\$MODE" == no-daemon-subcommand ]] && exit 1
+      echo "usage: atuin daemon start"; exit 0
+    fi
+    [[ "\$MODE" == manual-spawn-impossible ]] && { echo "Error: no" >&2; exit 1; }
+    serve_fg
+    ;;
+  stop)
+    if [[ "\$3" == --help ]]; then
+      [[ "\$MODE" == no-stop-subcommand ]] && exit 1
+      echo "usage: atuin daemon stop"; exit 0
+    fi
+    # stop-noop ACCEPTS and does nothing, which is the realistic bad shape: a stop whose exit
+    # status says yes while the process lives on. Proof-not-exit-status is why it is caught.
+    [[ "\$MODE" == stop-noop ]] && exit 0
+    [[ -f "\$PIDF" ]] && kill "\$(cat "\$PIDF")" 2>/dev/null
+    rm -f "\$SOCK" "\$PIDF"
+    exit 0
+    ;;
+  esac
+  exit 1
+  ;;
+history)
+  case "\$2" in
+  start)
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" != true ]]; then
+      row   # daemon OFF: the row lands on start, and history end updates it in place
+      echo "0192deadbeefcafe0000000000000000"; exit 0
+    fi
+    if [[ "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]] && ! daemon_up; then
+      case "\$MODE" in
+      never-spawns) : ;;
+      heals-absent-not-stale)
+        # Spawns only onto a CLEAR path. A crashed daemon's leftover inode defeats it — the
+        # silent net-loss on Alpine and macOS, and invisible to an absent-socket-only test.
+        [[ -e "\$SOCK" ]] || spawn_bg
+        ;;
+      *)
+        rm -f "\$SOCK"   # the real client clears a stale inode before spawning
+        spawn_bg
+        ;;
+      esac
+    fi
+    echo "0192deadbeefcafe0000000000000000"; exit 0
+    ;;
+  end)
+    # With a daemon serving, the row lands on END, not on start. Measured on 18.19.0.
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]] && daemon_up; then
+      # Keyed on AUTOSTART, not on the mode alone: the manual-spawn control writes through a
+      # hand-started daemon, and if THAT is broken too the run is honestly unmeasurable rather
+      # than a finding. This models the narrower, real shape — the daemon works, but entries
+      # issued down the autostart path are dropped.
+      if [[ "\$MODE" == spawns-but-discards && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then :; else row; fi
+    fi
+    exit 0
+    ;;
+  esac
+  exit 1
+  ;;
+esac
+exit 1
+STUB
+    chmod +x "$_dstub/$name"
+  }
+
+  # POLL low on purpose, and only here. The stubs are deterministic and several are SUPPOSED
+  # never to write, so the default 10s row wait would be spent four times per such case
+  # proving something already known. Lowering it in a real run manufactures findings — see the
+  # knob's own comment in verify-atuin-guard.sh.
+  _d_run() { # _d_run <stub> [extra args...] → sets _dout/_drc
+    local stub="$1"
+    shift
+    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL=8 "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>&1)"
+    _drc=$?
+  }
+  _d_get() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"$2\"])" 2>/dev/null; }
+  # _d_calls <stub> — every invocation that stub received. Read from the stub dir, which
+  # outlives the sandbox, so "no spawn was attempted" is a real absence rather than a
+  # deleted file.
+  _d_calls() { cat "$_dstub/$1.calls" 2>/dev/null; }
+
+  # ── apparatus-free: the flag contract, assertable with no daemon anywhere ──
+  # 1. An unknown premise is a USAGE error, not a measurement. The --color lesson applied to
+  #    the one flag that selects which upstream fact is being asserted: a typo that fell
+  #    through would measure the default premise and report it under the caller's title.
+  CORE_COLOR=never "$_DVERIFY" --premise banana >/dev/null 2>&1
+  _drc=$?
+  CORE_COLOR=never "$_DVERIFY" --premise >/dev/null 2>&1
+  _drc2=$?
+  if ((_drc == 2 && _drc2 == 2)); then
+    pass "atuin autostart: an unknown --premise and a --premise with no value both exit 2 (usage, not a finding)"
+  else
+    fail "atuin autostart: --premise must exit 2 on a bad value (got rc$_drc) and on a missing one (got rc$_drc2)"
+  fi
+
+  # 2. The premise travels in the JSON. The workflow's two legs differ by ONE flag and both
+  #    file issues under different titles, so it asserts this field rather than trusting the
+  #    flag reached the script — this is the assertion that makes that check meaningful.
+  _d_run nonexistent-stub --premise autostart --json
+  if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+    [[ "$(_d_get "$_dout" premise)" == autostart ]]; then
+    pass "atuin autostart: --premise autostart is carried in --json, and a missing atuin is still rc 3"
+  else
+    fail "atuin autostart: expected unmeasurable/rc3/premise=autostart, got $(_d_get "$_dout" verdict)/rc$_drc/$(_d_get "$_dout" premise)"
+  fi
+
+  # 3. THE DEFAULT TARGET MUST STAY LAPTOP-SAFE. `make verify-atuin-guard` starts no
+  #    background process today, and adding one silently would change what that target costs
+  #    on a developer's machine. Asserted by CONSTRUCTION — the stub logs every invocation it
+  #    receives, so this reads the log rather than believing a comment.
+  _mkdstub atuin-heals heals
+  _d_run atuin-heals --json >/dev/null 2>&1
+  if _d_calls atuin-heals | grep -qE '^daemon start( |$)'; then
+    fail "atuin autostart: --premise discard invoked 'daemon start' — the default target must start no daemon"
+  else
+    pass "atuin autostart: --premise discard never invokes 'daemon start' (the default target stays spawn-free)"
+  fi
+  _dreap
+
+  # ── APPARATUS SELF-CHECK, same contract as §J3's. Everything below needs the stub to bind
+  #    a real AF_UNIX socket and be measured through it. A sandbox that forbids that (a
+  #    container without /tmp, a path past sun_path, a python3 without AF_UNIX) would fail
+  #    every case below for reasons that have nothing to do with the code under test.
+  _d_run atuin-heals --premise autostart --json
+  _dapp="$(_d_get "$_dout" verdict)"
+  _dreap
+  if [[ "$_dapp" != holds ]]; then
+    skip "atuin autostart: measurement assertions (apparatus unusable here — verdict=${_dapp:-<unparseable>}: $(_d_get "$_dout" reason))"
+  else
+    # 4. The happy path, and the shape real 18.19.0 has: all four arms spawn and land a row.
+    if ((_drc == 0)) && [[ "$_dout" == *'"spawned":"no"'* ]]; then
+      fail "atuin autostart: a healing atuin reported an arm that did not spawn"
+    elif ((_drc == 0)); then
+      pass "atuin autostart: an atuin that self-heals its daemon → holds (rc 0), every arm spawned"
+    else
+      fail "atuin autostart: expected holds/rc0 for a healing atuin, got rc$_drc"
+    fi
+
+    # 5. Expected delta is 1 here and 0 under discard, on arms with IDENTICAL names. Without
+    #    expected_delta in the JSON a reader has no way to tell a healthy autostart arm from a
+    #    discard arm that just broke.
+    if [[ "$_dout" == *'"expected_delta":1'* ]] && [[ "$_dout" != *'"expected_delta":0'* ]]; then
+      pass "atuin autostart: every arm records expected_delta 1, so an identically-named discard arm cannot be misread"
+    else
+      fail "atuin autostart: arms must carry expected_delta 1 under this premise"
+    fi
+
+    # 6. An atuin that never spawns is a FINDING, and the reason must say so in the words the
+    #    remedy depends on — "no daemon became reachable", not merely "the row count changed".
+    _mkdstub atuin-nospawn never-spawns
+    _d_run atuin-nospawn --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *"no daemon became reachable"* ]]; then
+      pass "atuin autostart: an atuin that never spawns a daemon → moved (rc 1), naming the absent spawn"
+    else
+      fail "atuin autostart: expected moved/rc1 naming the absent spawn, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 7. THE HEADLINE SHAPE. Spawns onto a clear path, not over a crashed daemon's leftover
+    #    inode. Every `atuin history start` is a fresh process, so this is what
+    #    "fire-and-forget" can actually mean — and an absent-socket-only detector would call
+    #    it healthy while Alpine and macOS quietly lost their net.
+    _mkdstub atuin-halfheal heals-absent-not-stale
+    _d_run atuin-halfheal --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *'"stale_hook":{"rc":0,"delta":0'* ]] &&
+      [[ "$_dout" == *'"absent_hook":{"rc":0,"delta":1'* ]]; then
+      pass "atuin autostart: spawning on an absent socket but NOT over a stale one is moved — the stale arm is why it is measured"
+    else
+      fail "atuin autostart: half-healing must be moved with stale arms failing and absent arms passing, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 8. A daemon that comes up and drops the entry is a DIFFERENT finding from one that never
+    #    came up, and both leave delta 0 — which is exactly why `spawned` is recorded per arm
+    #    rather than inferred from the row count.
+    _mkdstub atuin-nowrite spawns-but-discards
+    _d_run atuin-nowrite --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *'"spawned":"yes"'* ]] && [[ "$_dout" == *"did not land"* ]]; then
+      pass "atuin autostart: a daemon that spawns but drops the entry is moved, and is distinguished from one that never spawned"
+    else
+      fail "atuin autostart: spawn-but-discard must be moved naming the unlanded entry, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 9. THE LOAD-BEARING ONE, and §J3 case 5's counterpart. A box that cannot host a daemon
+    #    AT ALL must be `unmeasurable` — never a finding about upstream. This is the whole
+    #    reason the manual-spawn control exists, and the assertion a future simplification
+    #    that deletes it would trip.
+    _mkdstub atuin-nodaemon manual-spawn-impossible
+    _d_run atuin-nodaemon --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+      [[ "$_dout" == *"cannot host a daemon"* ]]; then
+      pass "atuin autostart: a box where NO daemon can start is unmeasurable (rc 3), never a finding about upstream"
+    else
+      fail "atuin autostart: a failed spawn CONTROL must be unmeasurable/rc3, got $(_d_get "$_dout" verdict)/rc$_drc — an apparatus limit was rendered as an upstream finding"
+    fi
+
+    # 10. A build this script cannot cleanly stop is one it must not start. atuin has moved
+    #     the daemon subcommand spelling before (#380), and unlike the bench — which holds a
+    #     PID to kill — an autostart daemon's PID is never handed to us. Refusing costs an
+    #     unmeasurable run; spawning anyway costs a process writing into a deleted tree.
+    for _dcase in no-daemon-subcommand no-stop-subcommand; do
+      _mkdstub "atuin-$_dcase" "$_dcase"
+      _d_run "atuin-$_dcase" --premise autostart --json
+      _dreap
+      if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+        ! _d_calls "atuin-$_dcase" | grep -qE '^daemon start$'; then
+        pass "atuin autostart: $_dcase is unmeasurable (rc 3) and nothing was spawned on it"
+      else
+        fail "atuin autostart: $_dcase must be unmeasurable/rc3 with no spawn attempted, got $(_d_get "$_dout" verdict)/rc$_drc"
+      fi
+    done
+
+    # 11. TEARDOWN IS THE KNOWN-HARD PART. A `daemon stop` that returns 0 and does nothing is
+    #     the realistic bad shape — which is why the stop is PROVEN by a connect rather than
+    #     believed from an exit status. The escalation must still leave nothing running and
+    #     nothing behind, or the next arm measures a daemon it did not start and the EXIT
+    #     trap rm -rf's a tree a live process is writing into.
+    #
+    #     WHAT THIS DOES NOT COVER, stated so the gap is not mistaken for coverage: the branch
+    #     where the stop can never be proven at all, which PRESERVES the sandbox and prints its
+    #     path. No portable stub can reach it — a process that survives SIGKILL does not exist,
+    #     and the escalation's PID lookup is what would have to fail instead (/proc on Linux,
+    #     lsof on macOS), which is platform-specific rather than something a stub can arrange.
+    #     It was verified by hand on macOS by running this same stub with lsof off PATH:
+    #     verdict `unmeasurable`, sandbox kept, and the exact `rm -rf` printed to stderr.
+    _mkdstub atuin-stopnoop stop-noop
+    _d_run atuin-stopnoop --premise autostart --json
+    _dleft=0
+    _dpf="$_dstub/atuin-stopnoop.pid"
+    if [[ -f "$_dpf" ]] && kill -0 "$(cat "$_dpf" 2>/dev/null)" 2>/dev/null; then
+      _dleft=1
+    fi
+    _dreap
+    if ((_dleft == 0)) && [[ -n "$(_d_get "$_dout" verdict)" ]]; then
+      pass "atuin autostart: a 'daemon stop' that lies still leaves no daemon running — the stop is proven, not believed"
+    else
+      fail "atuin autostart: a no-op 'daemon stop' left a daemon alive; teardown escalation did not work"
+    fi
+
+    # 12. The sandbox is REMOVED on a normal run. The one path that keeps it is a stop that
+    #     could not be proven even after SIGKILL, and that path prints where it went — a
+    #     silent leak of a /tmp tree with a history DB in it is not acceptable either way.
+    if compgen -G '/tmp/atverify.*' >/dev/null; then
+      fail "atuin autostart: a completed run left its sandbox behind in /tmp"
+    else
+      pass "atuin autostart: a completed run removes its sandbox, daemon stopped first"
+    fi
+
+    # 13. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+      #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
+      #   true until this mode existed and is exactly the kind of prose that rots — and must
+      #   name the machines a green run here does and does not speak for.
+    _drep="$SANDBOX/atverify-auto.md"
+    _d_run atuin-heals --premise autostart --report "$_drep" --json
+    _dreap
+    if [[ -s "$_drep" ]] && printf '%s' "$_dout" | python3 -c '
+import json,re,sys
+d = json.load(sys.stdin)
+rep = open(sys.argv[1]).read()
+arms = set(d["arms"])
+m = re.search(r"^\*\*Measured here:\*\* (.+)\.$", rep, re.M)
+assert m, "no derived coverage sentence"
+claimed = {a.strip().replace(" / ", "_") for a in m.group(1).split(",")}
+assert claimed == arms, sorted(claimed ^ arms)
+assert "premise: `autostart`" in rep, "the report does not say which premise it measured"
+scope = rep.split("---\n\n", 1)[1]
+# The claim this whole section retires. If it survives here, the report is telling a reader
+# that nothing measures the thing the report is a measurement of.
+assert "stand-down** is unmeasured" not in scope, "the autostart report still claims the premise is unmeasured"
+for want in ("musl", "macOS", "3382", "--premise discard"):
+    assert want in scope, want
+named = [a for a in arms if a.replace("_", " / ") in scope]
+assert not named, "the scope section names measured arms: %s" % named
+' "$_drep" 2>/dev/null; then
+      pass "atuin autostart: --report names this premise, matches the arms that ran, and no longer calls autostart unmeasured"
+    else
+      fail "atuin autostart: the autostart report's prose does not match what it measured"
+    fi
+  fi
+  _dreap
 fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
