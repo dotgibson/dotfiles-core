@@ -73,6 +73,56 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **A release tag can no longer exist before its commit is on `main`.** `make tag` used
+  to commit _and_ tag in one step, leaving a local `vX.Y.Z` on a commit that was not yet
+  merged. That window is not closable by discipline: `--no-follow-tags` governs _your_
+  push, while the tag lives in shared `.git` state any other process can push.
+
+  It happened. During the v4.11.0 cut a concurrent session pushed its own branch with
+  `push.followTags` set, carried the release tag to origin, and fired `release.yml` and
+  `sync-fanout.yml` against an unmerged commit — publishing a Release and opening eight
+  vendor PRs across the fleet against a commit that was never on `main`. Nothing merged,
+  because `sync-fanout` opens PRs and never merges them, but the number had to be retired:
+  release tags are immutable by ruleset, so `v4.11.0` could not be re-pointed.
+
+  The invariant is structural now, not procedural — **a `vX.Y.Z` tag only ever exists on a
+  commit already on `origin/main`**. `make tag` commits and creates no tag at all, so a
+  stray push has nothing to carry. `make publish` runs after the PR merges and refuses
+  unless `origin/main` actually carries this `core.version`, then tags `origin/main` and
+  pushes. `--push` is withdrawn — its whole semantic was the hazard — and fails with a
+  pointer to `--publish`.
+
+  Phase 2 tags the **release commit**, not `origin/main`'s tip. `core.version` does not
+  change again until the next release, so "the tip carries this version" stays true for
+  every commit that lands afterwards — tagging the tip would sweep work still under
+  `[Unreleased]` into the release, and `release.yml` builds the Release body from the
+  `[vX.Y.Z]` section, so that work would ship undescribed. It resolves the commit that
+  _set_ `core.version` to this value and tags that, reporting when the tip has moved on.
+
+  It also validates that commit's `[vX.Y.Z]` section before creating any tag — that it
+  **exists and is non-empty**, using `release.yml`'s own `awk` so the two cannot disagree
+  about what empty means. `release.yml` builds the Release body from that section and
+  rejects an empty one, and `release.sh` will promote an empty `[Unreleased]` without
+  complaint; publishing first and discovering either afterwards leaves an immutable tag on
+  a release that cannot be published, burning the version for a reason knowable up front.
+
+  `make release`'s printed recipe is updated to match. It still ended with
+  `git tag -a` + `git push --tags`, so an operator following the output it generates would
+  have recreated exactly the pre-merge tag this change exists to eliminate.
+
+  Both refs go up in a single `--atomic` push, with a `--force-with-lease` on the `vN`
+  alias. Pushed separately they can half-land: `vX.Y.Z` published while `vN` is stale fires
+  the workflows against a stale alias, and a re-run then refuses because the immutable tag
+  already exists. The lease rejects the push if another publisher moved `vN` after this run read it, and an
+  **ancestry check** covers the gap before that read: whatever `vN` points at must be an
+  ancestor of the commit being tagged, so the alias can only ever move forward. Both are
+  needed — a publisher finishing _before_ the read is seen as this run's own expected
+  value, so the lease alone would be satisfied while `vN` rolled backward.
+
+  This also makes the merge method irrelevant to the tag. Eleven behavioural assertions
+  cover it — including that the tag does **not** follow a tip that advanced after the
+  release merged; the script previously had none, which is how the ordering survived.
+
 - **The audit now names the behavioural assertion that failed, in the failure line itself.**
   It said `behavioral tests failed — run: ./scripts/test-core.sh`, which sends the operator
   away to reproduce a result the run already had. For an _intermittent_ failure that is advice
@@ -145,6 +195,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   lie on every non-brew machine.
 
 ### Fixed
+
+- **`grep -q` on a large piped producer read a match as a failure under `pipefail`.** The
+  new `origin/main` CHANGELOG guard piped a 4000-line file into `grep -q`, which exits the
+  moment it matches — leaving `git show` to die of `SIGPIPE`, and `set -o pipefail` then
+  surfaced git's 141 rather than grep's 0. The check reported "no heading" on a file that
+  had one. Captured to a variable instead. Swept the rest of the tree for the same shape:
+  the other instances pipe small `printf`/`find` output that fits the pipe buffer, so they
+  never trip it, and the one borderline case in `test-core.sh` was made immune anyway.
+
+- **The atuin autostart apparatus gate now tells a slow box apart from a broken detector.**
+  The gate proves the box can bind and connect an AF_UNIX socket with python3 alone, then
+  runs a known-good stub and treats any verdict other than `holds` as a regression in
+  `verify-atuin-guard.sh` — deliberately, because the obvious "skip unless it holds" form
+  uses the code under test as its own apparatus check and would let a real regression skip
+  every assertion below while leaving the audit green.
 
 - **`core-doctor` no longer reports a false `○ (idle)` for starship and carapace.**
   `_core_wired` probed only `starship_precmd` and `_carapace`, but both tools renamed the
@@ -342,6 +407,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   spliced-in program, a quoted look-alike, an undecodable reference, or a `%`-bearing value
   is refused rather than mis-parsed, and three that a dead runner outranks a stale PATH. The healthy fixtures point
   at a runner that really exists, or the whole section would pass vacuously.
+
 - **The release cut no longer tells the operator to do something the repo forbids.**
   `RELEASE-RUNBOOK.md` §1.1 step 4 said "merge commit, not squash", and `tag-release.sh`
   printed the same hint twice. Merge commits are disabled — `mergeCommitAllowed` and

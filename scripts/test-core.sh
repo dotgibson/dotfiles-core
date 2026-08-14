@@ -1921,13 +1921,217 @@ if have git; then
   _lr_ino_after="$(_lr_inodes)"
   if ((_lr_rc == 0)) && [[ "$_lr_before" == "$_lr_after" ]] &&
     [[ -n "$_lr_ino_before" && "$_lr_ino_before" == "$_lr_ino_after" ]] &&
-    ! find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*' | grep -q .; then
+    [[ -z "$(find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*')" ]]; then
     pass "link run: a second pass is a true no-op (same inodes, no backups, rc=0)"
   else
     fail "link run: re-running bootstrap churned links, backed a file up, or failed (rc=$_lr_rc)"
   fi
 else
   skip "bootstrap link run (git unavailable)"
+fi
+
+# ── F9. tag-release.sh — the tag may only exist on a commit that is on main ──
+# This script had NO coverage, which is how its ordering bug survived: it used to commit
+# AND tag in one step, leaving a local vX.Y.Z on a commit that was not yet on main. A
+# concurrent session pushing with push.followTags carried exactly such a tag to origin and
+# fired release.yml + sync-fanout.yml against an unmerged commit — eight bad vendor PRs,
+# and a retired version number, because release tags are immutable by ruleset.
+#
+# The invariant these pin: a vX.Y.Z tag only ever exists on a commit already on
+# origin/main. Phase 1 must create NO tag; phase 2 must refuse unless origin/main really
+# carries the version.
+if have git; then
+  hdr "tag-release.sh two-phase ordering (hermetic fixtures)"
+  TR="$SANDBOX/tagrelease"
+  rm -rf "$TR"; mkdir -p "$TR"
+  _trg() { git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
+  _tr_ident() {
+    git -C "$1" config user.email t@example.com
+    git -C "$1" config user.name t
+    git -C "$1" config commit.gpgsign false
+  }
+  # A miniature release repo: the REAL tag-release.sh plus the two files it reads, and an
+  # "origin" it can fetch. audit is stubbed so the gate can be driven without running the
+  # real one inside a test.
+  mkdir -p "$TR/origin/scripts/lib" "$TR/origin/lib"
+  cp "$HERE/scripts/tag-release.sh" "$TR/origin/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$TR/origin/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$TR/origin/lib/"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$TR/origin/scripts/audit-core.sh"
+  chmod +x "$TR/origin/scripts/audit-core.sh" "$TR/origin/scripts/tag-release.sh"
+  printf '1.0.0\n' >"$TR/origin/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/origin/CHANGELOG.md"
+  _trg "$TR/origin" init -q >/dev/null 2>&1
+  _tr_ident "$TR/origin"
+  _trg "$TR/origin" symbolic-ref HEAD refs/heads/main
+  _trg "$TR/origin" add -A; _trg "$TR/origin" commit -q -m "v1.0.0"
+  # The fixture "origin" is a normal repo with main checked out, so a push to that branch
+  # is refused by default. Allow it: the test needs to LAND the release on origin's main
+  # to exercise the guard, and nothing here reads origin's worktree.
+  git -C "$TR/origin" config receive.denyCurrentBranch ignore
+  git -c commit.gpgsign=false clone -q "$TR/origin" "$TR/work" >/dev/null 2>&1
+  _tr_ident "$TR/work"
+  _TRS="$TR/work/scripts/tag-release.sh"
+
+  # Stage a 1.1.0 release in the clone, exactly as release.sh would leave it.
+  printf '1.1.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.1.0] - 2026-02-02\n\n- new\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/work/CHANGELOG.md"
+
+  _tr_run() { (cd "$TR/work" && env CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
+
+  # THE property. Phase 1 commits and must leave NO tag behind — there must be nothing
+  # for a stray push to carry while the commit is still off main.
+  _tr_out="$(_tr_run)"; _tr_rc=$?
+  _tr_tags="$(_trg "$TR/work" tag -l | tr '\n' ' ')"
+  if ((_tr_rc == 0)) && [[ -z "$_tr_tags" ]] &&
+    [[ -n "$(_trg "$TR/work" log --oneline -1 --grep='release v1.1.0')" ]]; then
+    pass "tag-release: phase 1 commits the release and creates NO tag"
+  else
+    fail "tag-release: phase 1 left tags '$_tr_tags' (rc=$_tr_rc) — a pre-merge tag is the hazard"
+  fi
+
+  # Phase 2 must REFUSE while the commit is only local: origin/main still carries 1.0.0.
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'has not merged' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v1.1.0')" ]]; then
+    pass "tag-release: --publish refuses while origin/main lacks the version (no tag created)"
+  else
+    fail "tag-release: --publish tagged a release that had not landed (rc=$_tr_rc)"
+  fi
+
+  # The withdrawn flag must fail loudly rather than silently doing the old thing.
+  _tr_out="$(_tr_run --push)"; _tr_rc=$?
+  if ((_tr_rc == 2)) && grep -q 'was removed' <<<"$_tr_out"; then
+    pass "tag-release: the withdrawn --push flag fails with a pointer to --publish"
+  else
+    fail "tag-release: --push did not fail cleanly (rc=$_tr_rc)"
+  fi
+
+  # Land the release on origin's main — and then let main ADVANCE, which is the case
+  # that matters. core.version does not change again until the next release, so "the tip
+  # carries $VERSION" stays true for every later commit; tagging the tip would sweep work
+  # still under [Unreleased] into the release, and release.yml builds the body from the
+  # [vX.Y.Z] section, so it would ship undescribed.
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _tr_release_sha="$(_trg "$TR/work" rev-parse HEAD)"
+  # a later, unrelated commit on origin/main
+  printf 'later\n' >"$TR/work/later.txt"
+  _trg "$TR/work" add later.txt; _trg "$TR/work" commit -q -m "unrelated work after the release"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _trg "$TR/work" fetch -q origin
+
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_at="$(_trg "$TR/work" rev-parse -q --verify 'v1.1.0^{commit}' 2>/dev/null)"
+  _tr_tip="$(_trg "$TR/work" rev-parse -q --verify origin/main 2>/dev/null)"
+  if ((_tr_rc == 0)) && [[ "$_tr_at" == "$_tr_release_sha" ]]; then
+    pass "tag-release: --publish tags the RELEASE commit, not origin/main's tip"
+  else
+    fail "tag-release: tagged $_tr_at, wanted the release commit $_tr_release_sha (tip=$_tr_tip, rc=$_tr_rc)"
+  fi
+  if [[ "$_tr_at" != "$_tr_tip" ]]; then
+    pass "tag-release: the tip had advanced, and the tag did not follow it"
+  else
+    fail "tag-release: fixture did not actually advance the tip — the assertion above proves nothing"
+  fi
+  # ...and the moving major alias rides along to the same commit.
+  if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_release_sha" ]]; then
+    pass "tag-release: --publish moves the vN alias to the release commit too"
+  else
+    fail "tag-release: the vN alias did not follow the release"
+  fi
+  # Re-publishing an already-published tag must refuse — release tags are immutable.
+  # Runs here, while 1.1.0 is still origin/main's newest core.version change.
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'already exists on origin' <<<"$_tr_out"; then
+    pass "tag-release: --publish refuses to re-tag a published release (immutable)"
+  else
+    fail "tag-release: --publish would clobber a published tag (rc=$_tr_rc)"
+  fi
+
+  # The alias may only move FORWARD. The lease covers changes after REMOTE_MAJOR is read,
+  # but a publisher that finishes BEFORE that read is seen as our own expected value, and
+  # the leased push would satisfy the lease while rolling vN backward. Reaching that state
+  # naturally needs a real race, so drive it directly: stage an UNPUBLISHED release (so the
+  # immutability guard does not fire first), point origin's alias at a commit that is NOT
+  # an ancestor of it, and require the refusal.
+  printf '1.3.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.3.0] - 2026-05-05\n\n- three\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v1.3.0"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _tr_rel13="$(_trg "$TR/work" rev-parse HEAD)"
+  # a commit off that line, published to origin so a ref there can point at it
+  _trg "$TR/work" checkout -q -b divergent "$_tr_rel13~1" 2>/dev/null
+  printf 'divergent\n' >"$TR/work/side.txt"
+  _trg "$TR/work" add side.txt; _trg "$TR/work" commit -q -m "a commit off the release line"
+  _tr_div="$(_trg "$TR/work" rev-parse HEAD)"
+  _trg "$TR/work" push -q origin HEAD:refs/heads/divergent 2>/dev/null
+  git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_div"
+  _trg "$TR/work" checkout -q main 2>/dev/null
+  _trg "$TR/work" fetch -q --tags --force origin
+  printf '1.3.0\n' >"$TR/work/core.version"
+
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_v1_now="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  if ((_tr_rc != 0)) && grep -q 'not an ancestor' <<<"$_tr_out" &&
+    [[ "$_tr_v1_now" == "$_tr_div" ]] && [[ -z "$(_trg "$TR/work" tag -l 'v1.3.0')" ]]; then
+    pass "tag-release: --publish refuses to move vN off its line (ancestry, not just the lease)"
+  else
+    fail "tag-release: alias moved off its line (rc=$_tr_rc, v1=$_tr_v1_now want=$_tr_div)"
+  fi
+  # restore a sane alias for the cases below
+  git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_rel13"
+  _trg "$TR/work" fetch -q --tags --force origin
+
+  # Publishing an OLDER release must be refused and must not move the alias. The property
+  # matters more than which guard enforces it: resolution only accepts origin/main's
+  # NEWEST core.version change, so an older version never resolves — and vN, which every
+  # reusable-workflow caller pins to, cannot be pointed at an older Core.
+  printf '1.0.0\n' >"$TR/work/core.version"
+  _tr_v1_before="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_v1_after="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  if ((_tr_rc != 0)) && [[ -z "$(_trg "$TR/work" tag -l 'v1.0.0')" ]] &&
+    [[ -n "$_tr_v1_before" && "$_tr_v1_before" == "$_tr_v1_after" ]]; then
+    pass "tag-release: publishing an older release is refused and vN does not move backward"
+  else
+    fail "tag-release: older publish not refused (rc=$_tr_rc, v1 $_tr_v1_before -> $_tr_v1_after)"
+  fi
+
+  # A heading with an EMPTY body must be refused too. release.yml rejects an empty Release
+  # body, and release.sh will promote an empty [Unreleased] without complaint — so without
+  # this the immutable tag is pushed and the workflow fails afterwards, burning the version
+  # for a reason knowable up front. Uses release.yml's own extraction, so the two agree.
+  printf '2.5.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v2.5.0] - 2026-04-04\n\n## [v1.1.0] - 2026-02-02\n\n- new\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v2.5.0 (empty section)"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null; _trg "$TR/work" fetch -q origin
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'is EMPTY' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v2.5.0')" ]]; then
+    pass "tag-release: --publish refuses an empty [vX.Y.Z] section (no tag created)"
+  else
+    fail "tag-release: published a version release.yml would reject as an empty body (rc=$_tr_rc)"
+  fi
+
+  # A release commit with the right core.version but NO [vX.Y.Z] heading must be refused
+  # BEFORE any tag exists: release.yml builds the Release body from that section, so
+  # publishing first and finding out later leaves an immutable tag on a release that
+  # cannot be published — the version is burned. (This guard was silently lost in an
+  # earlier revision of this script, which is why it is pinned.) Both files move in ONE
+  # commit, as release.sh + make tag produce. Runs LAST: it advances origin/main.
+  printf '3.0.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n- deliberately no 3.0.0 heading\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v3.0.0 (no heading)"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null; _trg "$TR/work" fetch -q origin
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'has no' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v3.0.0')" ]]; then
+    pass "tag-release: --publish refuses a release commit with no CHANGELOG heading (no tag created)"
+  else
+    fail "tag-release: published a version release.yml would fail on (rc=$_tr_rc)"
+  fi
+else
+  skip "tag-release.sh two-phase ordering (git unavailable)"
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
