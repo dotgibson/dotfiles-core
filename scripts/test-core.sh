@@ -3068,23 +3068,41 @@ STUB
   # regression test that could not fail. Selecting on the real predicate means that where a
   # locale IS found the case genuinely fails if the pin is removed, and where none is found the
   # message SAYS the pin is unexercised here rather than implying coverage this box cannot give.
+  # ENUMERATED, not guessed, wherever the box can answer. A hand-written candidate list is its
+  # own way of reporting the wrong coverage: the locale that misbehaves here need not be among
+  # seven names someone happened to think of — this machine offers 84 UTF-8 locales, not 7.
+  # `locale -a` is the box's own answer; musl ships no such command, so the named candidates
+  # survive as the fallback and the result line says which source it actually used.
+  _dlocs="$(locale -a 2>/dev/null | grep -iE 'utf-?8' || true)"
+  _dlocsrc=installed
+  if [[ -z "$_dlocs" ]]; then
+    _dlocsrc=candidate
+    _dlocs="$(printf '%s\n' C.UTF-8 en_US.UTF-8 en_US.utf8 UTF-8 de_DE.UTF-8 cs_CZ.UTF-8 hu_HU.UTF-8)"
+  fi
   _dutf8=""
-  for _dl in C.UTF-8 en_US.UTF-8 en_US.utf8 UTF-8 de_DE.UTF-8 cs_CZ.UTF-8 hu_HU.UTF-8; do
+  _dlocn=0
+  while read -r _dl; do
+    [[ -n "$_dl" ]] || continue
+    _dlocn=$((_dlocn + 1))
     if LC_ALL="$_dl" "$BASH" -c '[[ "$1" =~ ^[A-Za-z0-9_-]{1,16}$ ]]' _ 'tág' 2>/dev/null; then
       _dutf8="$_dl"
       break
     fi
-  done
+  done <<<"$_dlocs"
   # Said out loud in the result line, because "the pin is exercised here" and "no locale here
   # can exercise it" are different facts and a reader must not have to guess which one a green
   # tick meant. This is the same discipline as case 17's self-check, applied to coverage.
   if [[ -n "$_dutf8" ]]; then
     _dcov=" — LC_ALL=C pin EXERCISED under $_dutf8, which accepts the sample unpinned"
   else
-    _dcov=" — no locale here accepts the sample unpinned, so the LC_ALL=C pin is unexercised on this box (contract only)"
+    _dcov=" — none of $_dlocn $_dlocsrc UTF-8 locales accepts the sample unpinned, so the LC_ALL=C pin is unexercised on this box (contract only)"
   fi
   for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space" "tág" "ábcdefghij123456"; do
-    LC_ALL="$_dutf8" CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
+    # `:-C`, not a bare "$_dutf8". An EMPTY LC_ALL is not "no locale" — it falls through to the
+    # caller's LC_COLLATE/LANG, which is an unprobed locale that could be the very one that
+    # accepts the sample. The run would then exercise the pin while the line above reported it
+    # unexercised: the report would be wrong in the one direction a coverage claim must not be.
+    LC_ALL="${_dutf8:-C}" CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
       --premise autostart --atuin "$_dstub/atuin-tagck" >/dev/null 2>&1
     _drc=$?
     if ((_drc != 2)); then

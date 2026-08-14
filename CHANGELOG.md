@@ -171,12 +171,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   diverge from the byte length once collation has already leaked a non-ASCII character in.
 
   The suite reports **how much of this it actually exercised**, rather than implying more. It
-  probes for a locale under which the _unpinned_ pattern really accepts a non-ASCII sample, and
-  names it in the result when it finds one; where none exists — no locale on macOS accepts it,
-  for instance — the result says the pin is unexercised on that box and asserted by contract
-  only. An earlier draft probed for multibyte _decoding_ instead and would have passed
-  identically with the pin removed, which is the vacuous shape this file already exists to
-  refuse.
+  asks the box for its installed UTF-8 locales (`locale -a`, falling back to named candidates
+  on musl, which ships no such command) and looks for one under which the _unpinned_ pattern
+  really accepts a non-ASCII sample. Finding one, it names it and the case genuinely fails if
+  the pin is removed; finding none — all 84 on macOS reject it — the result states the count and
+  says the pin is unexercised there, asserted by contract only. The no-match case then runs
+  under `LC_ALL=C` rather than an empty `LC_ALL`, which is not "no locale" at all but a
+  fall-through to the caller's `LANG`: an unprobed locale that could be the very one that
+  accepts the sample, making the run exercise the pin while the line claimed it had not.
+
+  Two earlier drafts of this check were vacuous — one probed for multibyte _decoding_, which a
+  locale can do while still collating `á` outside `[A-Za-z]`, so it passed identically with the
+  pin removed. That is the shape this file already exists to refuse, and the coverage line is
+  now part of the assertion rather than a comment about it.
 
   Two assertions, because narrowing a glob and blinding it look identical from a green run.
   The leak check now plants a foreign-tagged sandbox _inside_ its own window and still
