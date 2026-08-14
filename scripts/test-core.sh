@@ -5085,6 +5085,32 @@ ucheck "maint/refresh: the recorded runner path is read back verbatim (cron, pas
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-dead"
 
+# The refusals — the other half of the contract, and the half that decides whether this
+# feature is trustworthy. systemd's ExecStart and cron's command field are COMMANDS, not
+# path fields, so a parse that swallows the whole tail turns `bash /a/live/runner --quiet`
+# into the nonexistent path "/a/live/runner --quiet" and reports a HEALTHY job as dead.
+# The launchd equivalent is an `<array>` that is not ProgramArguments' own value: skip over
+# a non-array value there and the parser lifts the second string out of whatever key owns
+# the NEXT array, naming a path the unit never runs. Each fixture below runs a runner that
+# genuinely EXISTS, so a regression here is a false death notice, not a missed one.
+mkdir -p "$_MRF/sd-args/systemd/user" "$_MRF/ld-displaced/Library/LaunchAgents"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s --quiet\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-args/systemd/user/dotfiles-maint.service"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s >>/tmp/m.log # dotfiles-maint\n" "$_MRF_RUNNER" \
+  >"$_MRF/cron-args"
+printf '<plist><dict><key>ProgramArguments</key><string>%s</string><key>WatchPaths</key><array><string>/a</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_RUNNER" "$_MRF_GONE" >"$_MRF/ld-displaced/Library/LaunchAgents/com.dotfiles.maint.plist"
+
+ucheck "maint/refresh: a systemd ExecStart with extra argv is refused, not read as one path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-args"
+ucheck "maint/refresh: a cron command with a redirection is refused, not read as one path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-args"
+ucheck "maint/refresh: a later key's <array> is not mistaken for ProgramArguments'" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-displaced"
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question

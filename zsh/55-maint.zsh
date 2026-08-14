@@ -80,6 +80,12 @@ _maint_systemd_escape() {
   print -r -- "$s"
 }
 
+# True when a command tail is a single bare argument — no flags, no redirection, nothing
+# after the path. Both the systemd and cron arms below read a COMMAND, not a path field,
+# so this is what separates "the runner maint-install wrote" from a hand-edited command
+# line that merely starts with it.
+_maint_lone_arg() { [[ -n "$1" && "$1" != *[[:space:]]* ]] }
+
 # Read back the runner path a scheduler unit RECORDS, or print nothing when there is no
 # unit (or none can be parsed out of it). Deliberately not `$_MAINT_SH`: the whole point
 # is that the two can drift. `$_MAINT_SH` is re-resolved from %x every shell, so it always
@@ -88,7 +94,9 @@ _maint_systemd_escape() {
 # time, has been firing at a path that no longer exists.
 #
 # Silence on an unparseable unit is intentional: this feeds a "your job is dead" warning,
-# and a hand-edited unit in a shape Core never wrote is not evidence of that.
+# and a hand-edited unit in a shape Core never wrote is not evidence of that. Each arm
+# therefore matches the EXACT shape maint-install renders and bails on anything else —
+# "close enough" parsing is what turns a live job into a false death notice.
 _maint_unit_runner() {
   local f line xml rest
   case "$(_maint_scheduler)" in
@@ -96,7 +104,13 @@ _maint_unit_runner() {
     f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
     [[ -f "$f" ]] || return 0
     line="$(grep '^ExecStart=/usr/bin/env bash ' "$f" 2>/dev/null | head -n 1)"
-    [[ -n "$line" ]] && print -r -- "${line#ExecStart=/usr/bin/env bash }"
+    [[ -n "$line" ]] || return 0
+    line="${line#ExecStart=/usr/bin/env bash }"
+    # EXACTLY one argument. `… bash /existing/runner --quiet` is a hand-edited unit that
+    # runs a script that IS there; treating the whole suffix as a path would report that
+    # live job as dead. (maint-install writes the path unquoted, so a runner containing
+    # whitespace would already be a broken unit — staying quiet is right there too.)
+    _maint_lone_arg "$line" && print -r -- "$line"
     ;;
   launchd)
     # ProgramArguments[1] — argv[0] is the interpreter, argv[1] the runner. Parsed with
@@ -107,8 +121,13 @@ _maint_unit_runner() {
     xml="$(<"$f")"
     xml="${xml//$'\n'/ }" # tolerate the array wrapped across lines
     rest="${xml#*<key>ProgramArguments</key>}"
-    [[ "$rest" != "$xml" && "$rest" == *"<array>"* ]] || return 0
-    rest="${${rest#*<array>}%%</array>*}"
+    [[ "$rest" != "$xml" ]] || return 0
+    # The array must be THIS key's value — only whitespace may sit between them. A bare
+    # `*<array>` would skip over a non-array value here and lift the second string out of
+    # some later key's array, naming a path this unit never runs.
+    rest="${rest#"${rest%%[^[:space:]]*}"}"
+    [[ "$rest" == "<array>"* && "$rest" == *"</array>"* ]] || return 0
+    rest="${${rest#<array>}%%</array>*}"
     rest="${${rest#*<string>}#*</string>}" # drop argv[0]
     [[ "$rest" == *"<string>"*"</string>"* ]] || return 0
     rest="${${rest#*<string>}%%</string>*}"
@@ -127,7 +146,12 @@ _maint_unit_runner() {
     # on `/usr/bin/env bash ` — and on its LAST occurrence, in case a PATH entry contains
     # the string — is what survives that prefix.
     line="${line% # dotfiles-maint}"
-    [[ "$line" == *"/usr/bin/env bash "* ]] && print -r -- "${line##*/usr/bin/env bash }"
+    [[ "$line" == *"/usr/bin/env bash "* ]] || return 0
+    line="${line##*/usr/bin/env bash }"
+    # Same one-argument rule as the systemd arm, and cron needs it more: the command field
+    # is a full sh command line, so `… bash /existing/runner >>/tmp/log` or a trailing flag
+    # would otherwise be read as one long, nonexistent path and reported as a dead job.
+    _maint_lone_arg "$line" && print -r -- "$line"
     ;;
   esac
 }
