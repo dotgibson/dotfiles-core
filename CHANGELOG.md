@@ -13,6 +13,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`PORTABILITY.md` — how to write Core that survives the fan-out.** The rules were
+  real and consistently followed, but recorded only in ~8 scattered code comments, so
+  they were unteachable to a new contributor and unenforced for new files. That is the
+  likely root cause of the Homebrew paths that sat in `maint/` and `tmux/scripts/`.
+  It documents the bash 3.2 floor (with the banned constructs and their portable forms),
+  the BSD/busybox coreutils traps, the shim pattern with the full inventory of shipped
+  shims, what to do when a capability genuinely cannot be probed, and why `have()` is
+  defined four times on purpose.
+
+- **`VENDORING.md` — the same contract from an OS repo's side.** Previously scattered
+  across `ARCHITECTURE.md`, `RELEASE-RUNBOOK.md` and a source comment, so a downstream
+  maintainer had no single answer to: which `core/` paths may I touch, what does
+  `core.lock` mean, which number band may I claim, how do I upstream a fix. Includes the
+  footgun that was documented only in `zsh/loader.zsh` — a fragment dropped in a **gap in
+  the Core band** (say `22-foo.zsh`) is gated as Core and silently vanishes under
+  `CORE_PROFILE=minimal`.
+
+- **`CODE_OF_CONDUCT.md`** — the one standard community-health file that was missing
+  while the README actively solicits contributions.
+
+### Changed
+
+- **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
+  them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
+  the gate; `zsh/60-update.zsh` — ~480 lines of seven-package-manager logic, including a
+  Tumbleweed check to choose `zypper dup` over `zypper up` — was justified only in a code
+  comment. The reasoning is sound (one verb, N backends, exactly like `bin/clip`) and now
+  says so where the layering rule is stated.
+
+### Fixed
+
+- **`V4-PROPOSAL.md` no longer claims v4 is unreleased.** Its status block said
+  _"IMPLEMENTED … pending the v4.0.0 release cut"_ and described the work as sitting on a
+  branch — ten minor releases after v4.0.0 shipped. It is now marked as the historical
+  design record it is, pointing at `ARCHITECTURE.md` / `PORTABILITY.md` / `VENDORING.md`
+  for how the shipped system actually behaves.
+
 ## [v4.10.0] - 2026-08-13
 
 ### Added
