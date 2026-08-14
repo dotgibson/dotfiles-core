@@ -4595,6 +4595,61 @@ else
   skip "maint launchd PATH capture (python3 absent — cannot parse plist XML)"
 fi
 
+# ── the stale-unit detector (_maint_unit_needs_refresh) ──────────────────────
+# This is what makes the migration survivable. A unit written before the PATH capture
+# still fires, still logs, still exits 0 — and silently resolves no brew/mise. maint-status
+# is the ONLY place that can surface it, so the detector is load-bearing rather than a
+# nicety. Three states per scheduler, and the third matters as much as the others: a box
+# with NO schedule installed must stay quiet, or every such box is nagged forever.
+_MRF="$SANDBOX/maint-refresh"
+rm -rf "$_MRF"
+mkdir -p "$_MRF/bin" "$_MRF/sd-new/systemd/user" "$_MRF/sd-old/systemd/user" "$_MRF/sd-none" \
+  "$_MRF/ld-new/Library/LaunchAgents" "$_MRF/ld-old/Library/LaunchAgents" "$_MRF/ld-none"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash r\n' \
+  >"$_MRF/sd-new/systemd/user/dotfiles-maint.service"
+printf '[Service]\nExecStart=/usr/bin/env bash r\n' \
+  >"$_MRF/sd-old/systemd/user/dotfiles-maint.service"
+printf '<plist><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  >"$_MRF/ld-new/Library/LaunchAgents/com.dotfiles.maint.plist"
+# ld-old is precisely the case a bare `EnvironmentVariables` presence test MISSES: the
+# dict exists but carries no PATH, so the runner is still handed a stripped environment
+# while the detector reports the schedule as current.
+printf '<plist><dict><key>EnvironmentVariables</key><dict><key>LANG</key><string>C</string></dict></dict></plist>\n' \
+  >"$_MRF/ld-old/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '#!/bin/sh\ncase "$1" in -l) cat "${CRON_TABLE:-/dev/null}" ;; *) exit 0 ;; esac\n' >"$_MRF/bin/crontab"
+chmod +x "$_MRF/bin/crontab"
+printf '30 09 * * * PATH="/x/bin" /usr/bin/env bash r # dotfiles-maint\n' >"$_MRF/cron-new"
+printf '30 09 * * * /usr/bin/env bash r # dotfiles-maint\n' >"$_MRF/cron-old"
+: >"$_MRF/cron-none"
+
+ucheck "maint/refresh: systemd unit WITH the PATH capture is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-new"
+ucheck "maint/refresh: systemd unit WITHOUT it is flagged stale" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-old"
+ucheck "maint/refresh: no systemd unit at all stays quiet (no nag without a schedule)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-none"
+ucheck "maint/refresh: launchd plist WITH a PATH key is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-new"
+ucheck "maint/refresh: launchd plist with EnvironmentVariables but NO PATH is flagged stale" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-old"
+ucheck "maint/refresh: no launchd plist at all stays quiet" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-none"
+ucheck "maint/refresh: cron line carrying a PATH is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-new"
+ucheck "maint/refresh: cron line without a PATH is flagged stale" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-old"
+ucheck "maint/refresh: an empty crontab stays quiet" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-none"
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question

@@ -36,7 +36,11 @@ export HOME="${HOME:?}"
 # shell that installed it (zsh/55-maint.zsh), which is where a Homebrew/pkgsrc/Nix
 # prefix legitimately enters — supplied by the OS, not hardcoded by Core. What remains
 # below is only the POSIX floor for a hand-wired scheduler that supplies no PATH at all.
-export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+# ORDER IS LOAD-BEARING: intentional prepends, then the CAPTURED PATH, then the floor.
+# The captured PATH must outrank the floor — an Apple-Silicon shell puts /opt/homebrew/bin
+# ahead of a legacy /usr/local/bin, and appending it last would silently run the legacy
+# brew instead. The floor is a last resort for a hand-wired scheduler, not a preference.
+export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin${PATH:+:$PATH}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_STATE_HOME:=$HOME/.local/state}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"

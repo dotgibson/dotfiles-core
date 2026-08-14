@@ -68,8 +68,11 @@ _maint_unit_needs_refresh() {
     [[ -f "$f" ]] && ! grep -q '^Environment="PATH=' "$f"
     ;;
   launchd)
+    # Test for the PATH KEY, not merely for an EnvironmentVariables dict: a plist
+    # carrying some unrelated variable would otherwise read as current while the
+    # runner still gets a stripped PATH — the exact silent-skip this detects.
     f="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
-    [[ -f "$f" ]] && ! grep -q '<key>EnvironmentVariables</key>' "$f"
+    [[ -f "$f" ]] && ! grep -q '<key>PATH</key>' "$f"
     ;;
   cron)
     line="$(crontab -l 2>/dev/null | grep -F '# dotfiles-maint')"

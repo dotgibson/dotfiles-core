@@ -443,40 +443,44 @@ fi
 # Comment-stripped first, so an explanatory comment naming an OS path can't trip it.
 # Pure sed+grep (busybox-safe), shell-scoped like the other shell-layer gates.
 hdr "Core⇄OS boundary (no OS paths in portable Core files)"
-if ((SCOPE_SHELL)); then
-  bnd_fail=0
-  # Scan BOTH the portable shell modules AND the SYMLINKED config files (mise, git,
-  # tmux, starship, atuin, jujutsu, lazygit — i.e. ALL of them; the list had quietly
-  # fallen behind the manifest twice). The latter were previously ungated — yet they are vendored and
-  # symlinked verbatim into every OS repo just like the zsh modules, so a hard-coded
-  # /opt/homebrew in starship.toml or an /Library/ path in gitconfig fans out N-way
-  # exactly the same way. A real drift of this shape was found downstream (an OS path
-  # baked into mise/config.toml). The os/ layer is where those belong. The .example
-  # templates are EXCLUDED — they are user-edited illustrations, not the live config.
-  #
-  # ALSO scanned: the EXECUTABLES — bin/, maint/, tmux/scripts/. These are manifested
-  # Core and ship into all eight repos, but the list above stopped at the sourced
-  # modules, so they were never checked. They were not clean when that was fixed:
-  # maint/dotfiles-maint.sh hardcoded both Homebrew prefixes in its PATH and probed
-  # them by absolute path, and tmux-cheat.sh did the same in its pop-up PATH — the
-  # exact drift this gate exists to reject, sitting inside its blind spot. Both now
-  # discover the prefix instead (the scheduler unit carries the installing shell's
-  # PATH; the pop-up reads $HOMEBREW_PREFIX / `brew --prefix`).
-  while IFS= read -r f; do
-    [[ "$f" == zsh/55-maint.zsh ]] && continue # OS-switched scheduler surface (see above)
-    if sed 's/#.*//' "$f" | grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/'; then
-      bnd_fail=1
-      fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
-    fi
-  done < <(git ls-files 'zsh/*.zsh' \
-    'mise/config.toml' 'git/gitconfig' 'atuin/config.toml' \
-    'jujutsu/config.toml' 'lazygit/config.yml' \
-    'tmux/tmux.conf' 'tmux/tmux.reset.conf' 'starship/starship.toml' \
-    'bin/*' 'maint/*' 'tmux/scripts/*' 2>/dev/null)
-  ((bnd_fail)) || pass "portable Core files (shell modules + symlinked configs + bin/maint/tmux executables) carry no OS-absolute paths"
-else
-  skip "Core⇄OS boundary (out of scope)"
-fi
+# The scope is DERIVED FROM core.manifest, not from a hand-kept list. That list had
+# quietly fallen behind the manifest three times: first the symlinked configs were
+# ungated (a real /opt/homebrew drift was found downstream, baked into mise/config.toml),
+# then bin/, maint/ and tmux/scripts/ — and when THOSE were added, zsh/completions/*,
+# lib/ux.sh, lib/bootstrap-lib.sh and .bin/sync-upstream.sh were still missing. Every one
+# of those omissions is the same bug, so the fix is structural: the manifest already IS
+# the definition of "what is Core", and a file added to it is now scanned automatically.
+# The blind spot cannot silently reopen, because reopening it would mean the file is not
+# Core at all — which section 1 already fails on.
+#
+# It is also UNCONDITIONAL now (no SCOPE_SHELL guard). It used to be shell-scoped, but it
+# now covers manifested nvim/, toml and config files too, and it is pure sed+grep over
+# ~150 small files — cheap and cross-cutting, like the manifest/exec-bit/markdown gates.
+# A narrowed --scope run must not be able to skip a fan-out-correctness check.
+#
+# EXCLUDED, both deliberately and visibly:
+#   · zsh/55-maint.zsh — the scheduler CONTROL SURFACE, whose launchd arm legitimately
+#     writes ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct
+#     cross-OS shape).
+#   · *.example — user-edited illustrations, not the live config.
+bnd_fail=0
+while IFS= read -r f; do
+  case "$f" in
+  zsh/55-maint.zsh) continue ;; # OS-switched scheduler surface (see above)
+  *.example) continue ;;        # user-edited illustration, not live config
+  esac
+  [[ -f "$f" ]] || continue
+  if sed 's/#.*//' "$f" | grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/'; then
+    bnd_fail=1
+    fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
+  fi
+done < <(
+  # Expand the manifest: directory entries (nvim/) via git ls-files, file entries as-is.
+  for m in "${MANIFEST_PATHS[@]}"; do
+    if [[ "$m" == */ ]]; then git ls-files "$m" 2>/dev/null; else printf '%s\n' "$m"; fi
+  done | sort -u
+)
+((bnd_fail)) || pass "every manifested Core file carries no OS-absolute path (scope derived from core.manifest)"
 
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —

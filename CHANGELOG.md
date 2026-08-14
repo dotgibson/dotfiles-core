@@ -25,9 +25,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   PATH. The rule was documented, believed enforced, and was not — on seven of the eight
   target machines those paths do not exist.
 
-  The gate now scans `bin/*`, `maint/*`, and `tmux/scripts/*`. Verified the way a gate
-  change has to be: the previous tree is **red** under the new list and green under the
-  old one, which is the only evidence that the widening actually bites.
+  The gate's scope is now **derived from `core.manifest`** rather than hand-kept. That
+  list had fallen behind three separate times — first the symlinked configs, then the
+  `bin/`/`maint/`/`tmux/scripts/` executables, and even then it still omitted
+  `zsh/completions/*`, `lib/ux.sh`, `lib/bootstrap-lib.sh` and `.bin/sync-upstream.sh`.
+  Every omission was the same bug, so the fix is structural: the manifest already *is*
+  the definition of "what is Core", and a file added to it is scanned automatically. The
+  blind spot cannot silently reopen, because reopening it would mean the file is not Core
+  at all — which the manifest gate already fails on. Coverage went from 19 files to 167
+  (including the vendored `nvim/` tree).
+
+  The gate is also unconditional now: it used to be `SCOPE_SHELL`-gated, but it is pure
+  `sed`+`grep` and cross-cutting, so a narrowed `--scope` run must not be able to skip a
+  fan-out-correctness check.
+
+  Verified the way a gate change has to be: the previous tree is **red** under the new
+  scope and green under the old one, which is the only evidence that the widening bites.
 
 ### Changed
 
