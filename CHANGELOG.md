@@ -309,6 +309,55 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Verified the way a gate change has to be: the previous tree is **red** under the new
   scope and green under the old one, which is the only evidence that the widening bites.
 
+- **`maint-install` now escapes the runner path it writes into every scheduler unit.** The
+  write-side half of the `%` problem the entry above only closed on the read side: the
+  captured PATH was already escaped three different ways, one per scheduler grammar — but
+  the runner alongside it went in **raw**, and it is no more of a constant: it is wherever
+  the consuming repo happens to have been cloned. A single metacharacter in that path
+  produced a broken schedule, and all three failures were silent or nearly so:
+
+  - **systemd** expands `%` **specifiers** in `ExecStart=` (`%h` = home directory, `%i` =
+    instance, …), so a repo under `…/a%h/…` ran a different path entirely — or the unit
+    refused to load outright on an unknown one. The `Environment=` line one row above was
+    already protected. The argument was also unquoted, so `systemd` split the runner on
+    whitespace, and a `"` or `\` in the name carried unit-file syntax rather than being
+    part of the filename.
+  - **cron** treats `%` as its **newline** metacharacter: the command was truncated there
+    and the remainder handed to it as stdin, so the job simply stopped running.
+    `maint-install` already escaped `%` in the PATH portion and not in the runner. The
+    runner was unquoted besides, so a space split the command and a `$(…)` or a backtick in
+    the path was _code_, evaluated on every scheduled run.
+  - **launchd** got `&`, `<` or `>` straight into `ProgramArguments`, yielding a malformed
+    plist that `launchctl load` rejects. The PATH value two lines below was already escaped.
+
+  Each field now goes through the escape its own grammar needs: the systemd runner is
+  written **quoted** and through the same helper as `Environment=` (quoting is what reduces
+  whitespace, `"` and `\` to the same three substitutions `%` already needed), the cron
+  runner through the same single-quote-then-escape-`%` pair as the cron PATH, and the
+  launchd runner — along with the two log paths, which had the same hole — through the
+  plist's XML escape.
+
+  `_maint_unit_runner` decodes each new encoding symmetrically, so `maint-status` keeps
+  naming the real filename. It stays as strict as it was: the systemd arm refuses a closing
+  quote with argv after it, and refuses a surviving `%` specifier outright, since the text
+  in the file is then not the path systemd runs and resolving it would mean reimplementing
+  systemd's specifier table — the same rule the launchd arm already applied to an
+  undecodable entity reference. The older unquoted shapes still parse, because a unit on
+  disk is only rewritten when the operator re-runs `maint-install` — and a `%` in one of
+  those is still refused outright by `_maint_lone_arg`, which remains the right answer
+  there: nothing escaped it, so the recorded text genuinely is not the path that runs.
+
+  Nine further assertions: one round-trip per scheduler through a runner path holding
+  `% & < > " \ '` and a space — installed, read back verbatim, and reported as _current_
+  rather than as a dead runner — one per scheduler confirming the same artifact through a
+  party that is not this codebase (`/bin/sh` parses the cron command back after applying
+  cron's own `\%` pass, `plistlib` parses the plist, and the systemd `ExecStart` is pinned
+  against a literal expectation), and three refusals for the quoted shapes. A round-trip
+  through our own reader alone would pass a matched pair of wrong escapes. The whole block
+  skips, rather than passing vacuously, on a filesystem that will not take `"` or `\` in a
+  name. The pre-existing cron render assertion now anchors on the runner's closing quote,
+  so dropping the quoting fails there rather than on the one box whose path has a space.
+
 ### Security
 
 - **Caller-supplied workflow inputs no longer reach a `run:` body as code.**
