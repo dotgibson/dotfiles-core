@@ -162,6 +162,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   greening the leak assertion forever. That is the same vacuous pass the self-check exists to
   catch, arriving by a different door.
 
+  The validation runs **in the C locale**. POSIX defines a range like `[A-Z]` by _collation_
+  rather than codepoint, so under some locales it may admit letters the contract does not mean
+  to allow — and Core ships to glibc, musl and BSD userlands, which need not agree. The byte cap
+  is the same fault one step downstream: `{1,16}` counts _characters_, so sixteen multibyte ones
+  are up to 64 bytes and the limit stops being the AF_UNIX budget it exists to be. Downstream,
+  not separate — every character in `[A-Za-z0-9_-]` is single-byte ASCII, so the count can only
+  diverge from the byte length once collation has already leaked a non-ASCII character in.
+
+  The suite reports **how much of this it actually exercised**, rather than implying more. It
+  asks the box for its installed UTF-8 locales (`locale -a`, falling back to named candidates
+  on musl, which ships no such command) and looks for one under which the _unpinned_ pattern
+  really accepts a non-ASCII sample. Finding one, it names it and the case genuinely fails if
+  the pin is removed; finding none — all 84 on macOS reject it — the result states the count and
+  says the pin is unexercised there, asserted by contract only. The no-match case then runs
+  under `LC_ALL=C` rather than an empty `LC_ALL`, which is not "no locale" at all but a
+  fall-through to the caller's `LANG`: an unprobed locale that could be the very one that
+  accepts the sample, making the run exercise the pin while the line claimed it had not.
+
+  Two earlier drafts of this check were vacuous — one probed for multibyte _decoding_, which a
+  locale can do while still collating `á` outside `[A-Za-z]`, so it passed identically with the
+  pin removed. That is the shape this file already exists to refuse, and the coverage line is
+  now part of the assertion rather than a comment about it.
+
   Two assertions, because narrowing a glob and blinding it look identical from a green run.
   The leak check now plants a foreign-tagged sandbox _inside_ its own window and still
   requires a clean delta; a companion case plants one foreign and one of its own and

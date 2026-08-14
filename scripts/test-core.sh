@@ -3050,8 +3050,59 @@ STUB
   _dbad=0
   _dtagwhy=""
   # 17 chars, one past the cap — not 16, which is the accepted boundary asserted just below.
-  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space"; do
-    CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
+  #
+  # THE TWO NON-ASCII CASES assert the ASCII half of the contract, and are the ones that would
+  # notice if the script's LC_ALL=C pin were removed on a userland where it matters. A range
+  # like [A-Z] is defined by COLLATION, not codepoint, so a locale may admit letters this
+  # contract does not mean to allow; `ábcdefghij123456` is the same fault one step downstream —
+  # sixteen CHARACTERS but seventeen BYTES, so a character-counting cap would pass a path
+  # component longer than promised, against an AF_UNIX budget measured in bytes. Downstream,
+  # not separate: every character in [A-Za-z0-9_-] is single-byte ASCII, so 16 chars can only
+  # exceed 16 bytes once collation has already leaked a non-ASCII one in.
+  #
+  # THE PROBE ASKS THE ONLY QUESTION THAT MATTERS: is there a locale here under which the
+  # UNPINNED pattern actually accepts the sample? An earlier version probed for multibyte
+  # DECODING (`${#é}` is 1, not 2) and picked the first hit — which proved nothing, because a
+  # locale can decode multibyte and still collate `á` outside [A-Za-z]. C.UTF-8 does exactly
+  # that and was probed first, so the case passed identically with and without the pin: a
+  # regression test that could not fail. Selecting on the real predicate means that where a
+  # locale IS found the case genuinely fails if the pin is removed, and where none is found the
+  # message SAYS the pin is unexercised here rather than implying coverage this box cannot give.
+  # ENUMERATED, not guessed, wherever the box can answer. A hand-written candidate list is its
+  # own way of reporting the wrong coverage: the locale that misbehaves here need not be among
+  # seven names someone happened to think of — this machine offers 84 UTF-8 locales, not 7.
+  # `locale -a` is the box's own answer; musl ships no such command, so the named candidates
+  # survive as the fallback and the result line says which source it actually used.
+  _dlocs="$(locale -a 2>/dev/null | grep -iE 'utf-?8' || true)"
+  _dlocsrc=installed
+  if [[ -z "$_dlocs" ]]; then
+    _dlocsrc=candidate
+    _dlocs="$(printf '%s\n' C.UTF-8 en_US.UTF-8 en_US.utf8 UTF-8 de_DE.UTF-8 cs_CZ.UTF-8 hu_HU.UTF-8)"
+  fi
+  _dutf8=""
+  _dlocn=0
+  while read -r _dl; do
+    [[ -n "$_dl" ]] || continue
+    _dlocn=$((_dlocn + 1))
+    if LC_ALL="$_dl" "$BASH" -c '[[ "$1" =~ ^[A-Za-z0-9_-]{1,16}$ ]]' _ 'tág' 2>/dev/null; then
+      _dutf8="$_dl"
+      break
+    fi
+  done <<<"$_dlocs"
+  # Said out loud in the result line, because "the pin is exercised here" and "no locale here
+  # can exercise it" are different facts and a reader must not have to guess which one a green
+  # tick meant. This is the same discipline as case 17's self-check, applied to coverage.
+  if [[ -n "$_dutf8" ]]; then
+    _dcov=" — LC_ALL=C pin EXERCISED under $_dutf8, which accepts the sample unpinned"
+  else
+    _dcov=" — none of $_dlocn $_dlocsrc UTF-8 locales accepts the sample unpinned, so the LC_ALL=C pin is unexercised on this box (contract only)"
+  fi
+  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space" "tág" "ábcdefghij123456"; do
+    # `:-C`, not a bare "$_dutf8". An EMPTY LC_ALL is not "no locale" — it falls through to the
+    # caller's LC_COLLATE/LANG, which is an unprobed locale that could be the very one that
+    # accepts the sample. The run would then exercise the pin while the line above reported it
+    # unexercised: the report would be wrong in the one direction a coverage claim must not be.
+    LC_ALL="${_dutf8:-C}" CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
       --premise autostart --atuin "$_dstub/atuin-tagck" >/dev/null 2>&1
     _drc=$?
     if ((_drc != 2)); then
@@ -3087,7 +3138,7 @@ STUB
   }
   _dreap
   if ((_dbad == 0)); then
-    pass "atuin autostart: a tag that is empty, overlong, or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted"
+    pass "atuin autostart: a tag that is empty, overlong, non-ASCII, or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted$_dcov"
   else
     fail "atuin autostart: the CORE_ATVERIFY_TAG contract is not enforced —$_dtagwhy; an accepted bad tag globs nothing and greens the leak check vacuously"
   fi
