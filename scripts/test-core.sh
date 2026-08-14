@@ -4580,9 +4580,22 @@ ucheck "maint: systemd unit bakes in the installing shell's PATH" \
 # cron's command field is sh, so the PATH rides as an env prefix — and `%` is cron's
 # newline metacharacter, which would truncate the line mid-PATH if it were not escaped.
 # The sentinel deliberately contains one.
-ucheck "maint: cron line carries the PATH with cron's % metachar escaped" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; PATH='/sent%inel/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'PATH=\"[^\"]*/sent\\\\%inel/bin' \"\$CRON_CAPTURE\"" \
+ucheck "maint: cron line carries the PATH, single-quoted, with % escaped" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; PATH='/sent%inel/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; line=\$(cat \"\$CRON_CAPTURE\"); [[ \$line == *\"PATH='\"* ]] && [[ \$line == *'sent\\%inel'* ]]" \
   PATH="$SCHEDBIN:$PATH" CRON_CAPTURE="$SANDBOX/cron-path.captured"
+# The decisive one. cron's command field is handed to /bin/sh, so a PATH entry holding
+# $(…), a backtick, or a quote is CODE unless it is quoted as DATA — an unquoted or
+# double-quoted assignment would evaluate it on every scheduled run, silently and with
+# the user's privileges. Build the assignment exactly as maint-install does, then let a
+# real /bin/sh parse it back and compare: nothing but a true round-trip passes this.
+_mq_want='/we'"'"'ird/$(echo pwned)/`echo pwned`/"dq"/bin'
+_mq_rendered="$(zsh -c "source '$UI'; source '$MNT'; _maint_sh_squote \"\$1\"" _ "$_mq_want" 2>/dev/null)"
+_mq_got="$(sh -c "PATH=$_mq_rendered; printf '%s' \"\$PATH\"" 2>/dev/null)"
+if [[ "$_mq_got" == "$_mq_want" ]]; then
+  pass "maint: a hostile PATH round-trips through /bin/sh as data (no \$() evaluation)"
+else
+  fail "maint: PATH did not round-trip through sh (got '$_mq_got')"
+fi
 # launchd's plist is XML: an unescaped & in a directory name yields a malformed plist
 # that launchctl rejects at load time, i.e. a schedule that silently never runs. Assert
 # plistlib can still PARSE it and that the value round-trips — the escape and the parse

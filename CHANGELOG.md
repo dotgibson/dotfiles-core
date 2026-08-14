@@ -55,7 +55,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   prefixes were hardcoded. `maint-install` now captures the **live PATH** of the shell
   installing it and bakes it into the unit — `Environment="PATH=…"` (systemd), an
   `EnvironmentVariables` dict (launchd, XML-escaped), and an env-prefixed command
-  (cron, with `%` escaped). Whatever prefix this OS uses is already correct in that
+  (cron, POSIX single-quoted and then `%`-escaped, in that order — cron hands its
+  command field to `/bin/sh`, so an unquoted or double-quoted value containing `$(…)`
+  or a backtick would be **evaluated on every scheduled run**). Whatever prefix this OS
+  uses is already correct in that
   PATH, so the OS supplies the truth and Core hardcodes nothing. The brew step is now
   gated on `have brew` alone.
 

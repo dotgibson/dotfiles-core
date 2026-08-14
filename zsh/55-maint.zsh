@@ -55,6 +55,17 @@ _maint_xml_escape() {
   print -r -- "$s"
 }
 
+# POSIX single-quote a value for a /bin/sh command line — cron hands its command field
+# to sh, so an UNQUOTED (or double-quoted) PATH is code, not data: a directory holding
+# $(…) or a backtick would be EVALUATED at every scheduled run, and one holding a double
+# quote would simply make the line malformed. Inside single quotes nothing is special to
+# the shell, so the only case to handle is an embedded single quote — closed, escaped,
+# reopened as the classic '\'' sequence.
+_maint_sh_squote() {
+  local s="$1" q="'" esc="'\\''"
+  print -r -- "'${s//$q/$esc}'"
+}
+
 # True only when a schedule EXISTS but was written before Core baked the PATH into it.
 # Such a unit still runs — it just hands the runner a stripped PATH, so brew/mise/nvim
 # resolve to nothing and those steps skip silently. That is the failure this reports:
@@ -157,12 +168,18 @@ EOF
     # cron hands the command field to /bin/sh, so a leading `PATH=…` is just an
     # env-prefixed command — and it stays local to this job, unlike a bare `PATH=`
     # crontab line, which would silently re-point every OTHER job in the table.
-    # `%` is cron's newline metacharacter: unescaped it truncates the line mid-PATH.
-    local cron_path="$(_maint_unit_path)"
+    #
+    # TWO escapes, and the ORDER matters. First POSIX single-quote the value, so sh
+    # treats it as data — unquoted or double-quoted, a directory containing $(…) or a
+    # backtick would be evaluated on every scheduled run. Then escape `%`, which is
+    # cron's own newline metacharacter and would otherwise truncate the line mid-PATH.
+    # Quoting first is what makes the `%` pass safe: it only ever sees the final text.
+    local cron_path
+    cron_path="$(_maint_sh_squote "$(_maint_unit_path)")"
     cron_path="${cron_path//\%/\\%}"
     (
       crontab -l 2>/dev/null | grep -vF "$marker"
-      echo "$mm $hh * * * PATH=\"$cron_path\" /usr/bin/env bash $_MAINT_SH $marker"
+      echo "$mm $hh * * * PATH=$cron_path /usr/bin/env bash $_MAINT_SH $marker"
     ) | crontab -
     _core_ok "cron entry installed for $when"
     crontab -l 2>/dev/null | grep -F "$marker"
