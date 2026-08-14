@@ -351,7 +351,18 @@ done
 # Rejected, not sanitized. This value becomes a path component under /tmp, so a `/` or a `..`
 # in it is a caller bug that would put the sandbox somewhere the cleanup trap does not expect;
 # and a caller that globs its own tag needs the tag it PASSED, not a quietly rewritten one.
-[[ "$RUN_TAG" =~ ^[A-Za-z0-9_-]{1,16}$ ]] || {
+#
+# IN THE C LOCALE, and BOTH halves of the pattern need it. POSIX defines a range like [A-Z] by
+# COLLATION rather than codepoint, so under a UTF-8 locale it may admit letters this contract
+# does not mean to allow — and Core ships to glibc, musl and BSD userlands, which do not agree
+# with each other about that. The cap needs it just as much: `{1,16}` counts CHARACTERS, so
+# sixteen multibyte ones are up to 64 bytes and the limit silently stops being the AF_UNIX
+# budget it exists to be. Under LC_ALL=C both become bytes, which is the unit that matters.
+# A subshell rather than an assignment, so the locale cannot leak into the report rendering.
+(
+  LC_ALL=C
+  [[ "$RUN_TAG" =~ ^[A-Za-z0-9_-]{1,16}$ ]]
+) || {
   printf 'verify-atuin-guard.sh: CORE_ATVERIFY_TAG must be 1-16 characters of [A-Za-z0-9_-]: %s\n' \
     "$RUN_TAG" >&2
   exit 2

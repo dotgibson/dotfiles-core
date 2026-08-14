@@ -3050,8 +3050,29 @@ STUB
   _dbad=0
   _dtagwhy=""
   # 17 chars, one past the cap — not 16, which is the accepted boundary asserted just below.
-  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space"; do
-    CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
+  #
+  # THE TWO NON-ASCII CASES ARE A LOCALE ASSERTION, and they are why the script validates under
+  # LC_ALL=C. A range like [A-Z] is defined by COLLATION, not codepoint, so a UTF-8 locale may
+  # admit letters this contract does not mean to allow — and this suite runs on glibc, musl and
+  # BSD, which need not agree. `tág` is the alphabet half. `ábcdefghij123456` is the CAP half:
+  # sixteen characters but seventeen BYTES, so a character-counting cap would accept a path
+  # component longer than it promised, against an AF_UNIX budget measured in bytes.
+  #
+  # PROBED, NOT NAMED, because naming one is how this would pass vacuously: en_US.UTF-8 does
+  # not exist on musl, LC_ALL would silently fall back to C, and the case would be rejected for
+  # being non-ASCII in a SINGLE-byte locale — proving nothing about the collation it is here to
+  # pin. A candidate counts only if the shell really decodes multibyte under it (`${#é}` is 1,
+  # not 2). Where none is available the cases still run in the ambient locale and must still be
+  # rejected; the pass message names what actually ran, so partial coverage cannot read as full.
+  _dutf8=""
+  for _dl in C.UTF-8 en_US.UTF-8 en_US.utf8 UTF-8; do
+    if [[ "$(LC_ALL="$_dl" "$BASH" -c 'printf %s "${#1}"' _ 'é' 2>/dev/null)" == 1 ]]; then
+      _dutf8="$_dl"
+      break
+    fi
+  done
+  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space" "tág" "ábcdefghij123456"; do
+    LC_ALL="$_dutf8" CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
       --premise autostart --atuin "$_dstub/atuin-tagck" >/dev/null 2>&1
     _drc=$?
     if ((_drc != 2)); then
@@ -3087,7 +3108,7 @@ STUB
   }
   _dreap
   if ((_dbad == 0)); then
-    pass "atuin autostart: a tag that is empty, overlong, or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted"
+    pass "atuin autostart: a tag that is empty, overlong, non-ASCII (${_dutf8:-ambient locale, no UTF-8 one found}), or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted"
   else
     fail "atuin autostart: the CORE_ATVERIFY_TAG contract is not enforced —$_dtagwhy; an accepted bad tag globs nothing and greens the leak check vacuously"
   fi

@@ -135,6 +135,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   greening the leak assertion forever. That is the same vacuous pass the self-check exists to
   catch, arriving by a different door.
 
+  The validation runs **in the C locale**, and both halves of the pattern need it. POSIX
+  defines a range like `[A-Z]` by _collation_ rather than codepoint, so under a UTF-8 locale it
+  may admit letters the contract does not mean to allow — and Core ships to glibc, musl and BSD
+  userlands, which need not agree. The cap needs it just as much: `{1,16}` counts _characters_,
+  so sixteen multibyte ones are up to 64 bytes and the limit silently stops being the AF_UNIX
+  budget it exists to be. The suite asserts both against a **probed** UTF-8 locale rather than a
+  named one, since `en_US.UTF-8` does not exist on musl and the fallback to C would reject the
+  case for the wrong reason; where no UTF-8 locale is available the pass message says so, so
+  partial coverage cannot read as full.
+
   Two assertions, because narrowing a glob and blinding it look identical from a green run.
   The leak check now plants a foreign-tagged sandbox _inside_ its own window and still
   requires a clean delta; a companion case plants one foreign and one of its own and
