@@ -105,6 +105,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`maint-status` now reports a scheduler unit whose runner path no longer exists.**
+  `_maint_unit_needs_refresh` only ever asked whether the unit carried a PATH capture, so
+  the other way a scheduled job dies silently went unreported: move the consuming repo and
+  the scheduler keeps firing at the absolute runner path frozen into the unit at install
+  time. Found on a real machine, where a launchd agent had been pointing at a path that had
+  not existed for months.
+
+  Nothing surfaced it from any angle. `maint-status` printed the timer happily, `launchctl
+  list` showed exit status 0 because the job had not fired since the move, and `maint-run`
+  kept working — it resolves the runner relative to the live config rather than reading the
+  unit, which is exactly why the breakage stayed invisible.
+
+  The detector now also reads the runner back out of the unit — `ProgramArguments[1]` from
+  the launchd plist, the path after `ExecStart=/usr/bin/env bash` in the systemd service,
+  the command past cron's single-quoted `PATH=` prefix — and flags it when it does not
+  resolve. Both causes are fixed by re-running `maint-install`, so the hint now says _which_
+  happened: a stale unit predating the PATH capture is a snapshot to refresh, a dead runner
+  path usually means the repo moved. A unit in a shape Core never wrote stays quiet, and so
+  does a box with no schedule installed. Twelve behavioral assertions, four states per
+  scheduler; the healthy fixtures point at a runner that really exists, or the whole section
+  would pass vacuously.
+
 - **The boundary scan no longer strips comments at all.** Stripping was a false-negative
   machine: `#` is a comment in shell and TOML but the **length operator** in Lua, so
   `local p = t[#t] .. "<prefix>/bin"` was truncated and passed; a delimiter inside a string

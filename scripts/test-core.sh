@@ -4991,56 +4991,99 @@ ucheck "maint: the systemd unit's PATH survives a % in the installing PATH" \
 # This is what makes the migration survivable. A unit written before the PATH capture
 # still fires, still logs, still exits 0 — and silently resolves no brew/mise. maint-status
 # is the ONLY place that can surface it, so the detector is load-bearing rather than a
-# nicety. Three states per scheduler, and the third matters as much as the others: a box
-# with NO schedule installed must stay quiet, or every such box is nagged forever.
+# nicety.
+#
+# The SECOND silent death is a unit whose recorded runner path no longer resolves: move
+# the consuming repo and the scheduler keeps firing at the old absolute path. Observed in
+# the wild, and invisible from every angle — `maint-status` printed the timer happily,
+# `launchctl list` reported exit status 0 (the job had not fired since the move), and
+# `maint-run` kept working because it re-resolves the runner from the live config rather
+# than reading the unit. Only reading the unit back catches it, so each arm is asserted
+# per-scheduler with a REAL runner path for the healthy fixture — point the "current"
+# fixtures at a path that does not exist and this whole section passes vacuously.
+#
+# Four states per scheduler, and the last matters as much as the others: a box with NO
+# schedule installed must stay quiet, or every such box is nagged forever.
 _MRF="$SANDBOX/maint-refresh"
+_MRF_RUNNER="$HERE/maint/dotfiles-maint.sh" # a path that really exists
+_MRF_GONE="$_MRF/moved-away/core/maint/dotfiles-maint.sh"
 rm -rf "$_MRF"
-mkdir -p "$_MRF/bin" "$_MRF/sd-new/systemd/user" "$_MRF/sd-old/systemd/user" "$_MRF/sd-none" \
-  "$_MRF/ld-new/Library/LaunchAgents" "$_MRF/ld-old/Library/LaunchAgents" "$_MRF/ld-none"
-printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash r\n' \
+mkdir -p "$_MRF/bin" "$_MRF/sd-new/systemd/user" "$_MRF/sd-old/systemd/user" \
+  "$_MRF/sd-dead/systemd/user" "$_MRF/sd-none" \
+  "$_MRF/ld-new/Library/LaunchAgents" "$_MRF/ld-old/Library/LaunchAgents" \
+  "$_MRF/ld-dead/Library/LaunchAgents" "$_MRF/ld-none"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_RUNNER" \
   >"$_MRF/sd-new/systemd/user/dotfiles-maint.service"
-printf '[Service]\nExecStart=/usr/bin/env bash r\n' \
+printf '[Service]\nExecStart=/usr/bin/env bash %s\n' "$_MRF_RUNNER" \
   >"$_MRF/sd-old/systemd/user/dotfiles-maint.service"
-printf '<plist><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
-  >"$_MRF/ld-new/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_GONE" \
+  >"$_MRF/sd-dead/systemd/user/dotfiles-maint.service"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_RUNNER" >"$_MRF/ld-new/Library/LaunchAgents/com.dotfiles.maint.plist"
 # ld-old is precisely the case a bare `EnvironmentVariables` presence test MISSES: the
 # dict exists but carries no PATH, so the runner is still handed a stripped environment
 # while the detector reports the schedule as current.
 printf '<plist><dict><key>EnvironmentVariables</key><dict><key>LANG</key><string>C</string></dict></dict></plist>\n' \
   >"$_MRF/ld-old/Library/LaunchAgents/com.dotfiles.maint.plist"
+# ld-dead is the observed macOS case, rendered as maint-install writes it (ProgramArguments
+# on its own line, argv[0] the interpreter) so the argv[1] extraction is exercised for real.
+printf '<plist><dict>\n  <key>ProgramArguments</key>\n  <array><string>/bin/bash</string><string>%s</string></array>\n  <key>EnvironmentVariables</key>\n  <dict><key>PATH</key><string>/x/bin</string></dict>\n</dict></plist>\n' \
+  "$_MRF_GONE" >"$_MRF/ld-dead/Library/LaunchAgents/com.dotfiles.maint.plist"
 printf '#!/bin/sh\ncase "$1" in -l) cat "${CRON_TABLE:-/dev/null}" ;; *) exit 0 ;; esac\n' >"$_MRF/bin/crontab"
 chmod +x "$_MRF/bin/crontab"
-printf '30 09 * * * PATH="/x/bin" /usr/bin/env bash r # dotfiles-maint\n' >"$_MRF/cron-new"
-printf '30 09 * * * /usr/bin/env bash r # dotfiles-maint\n' >"$_MRF/cron-old"
+# The PATH prefix is SINGLE-quoted, as _maint_sh_squote renders it — the runner extraction
+# has to step over that assignment, so a fixture using bare or double quotes would let a
+# parser that simply grabbed field 6 pass.
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_RUNNER" >"$_MRF/cron-new"
+printf '30 09 * * * /usr/bin/env bash %s # dotfiles-maint\n' "$_MRF_RUNNER" >"$_MRF/cron-old"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-dead"
 : >"$_MRF/cron-none"
 
-ucheck "maint/refresh: systemd unit WITH the PATH capture is current" \
+ucheck "maint/refresh: systemd unit WITH the PATH capture and a resolvable runner is current" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-new"
-ucheck "maint/refresh: systemd unit WITHOUT it is flagged stale" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh" \
+ucheck "maint/refresh: systemd unit WITHOUT it is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
   XDG_CONFIG_HOME="$_MRF/sd-old"
+ucheck "maint/refresh: systemd unit whose runner path is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  XDG_CONFIG_HOME="$_MRF/sd-dead"
 ucheck "maint/refresh: no systemd unit at all stays quiet (no nag without a schedule)" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-none"
-ucheck "maint/refresh: launchd plist WITH a PATH key is current" \
+ucheck "maint/refresh: launchd plist WITH a PATH key and a resolvable runner is current" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-new"
-ucheck "maint/refresh: launchd plist with EnvironmentVariables but NO PATH is flagged stale" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh" \
+ucheck "maint/refresh: launchd plist with EnvironmentVariables but NO PATH is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
   HOME="$_MRF/ld-old"
+ucheck "maint/refresh: launchd plist whose ProgramArguments runner is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  HOME="$_MRF/ld-dead"
 ucheck "maint/refresh: no launchd plist at all stays quiet" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-none"
-ucheck "maint/refresh: cron line carrying a PATH is current" \
+ucheck "maint/refresh: cron line carrying a PATH and a resolvable runner is current" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-new"
-ucheck "maint/refresh: cron line without a PATH is flagged stale" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh" \
+ucheck "maint/refresh: cron line without a PATH is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-old"
+ucheck "maint/refresh: cron line whose runner path is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-dead"
 ucheck "maint/refresh: an empty crontab stays quiet" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-none"
+# The runner a unit records must be read back VERBATIM — the hint prints it, and an
+# extraction that mangled it (dropping the PATH prefix's quoting, or half a path with a
+# space) would still "detect" a dead runner while telling the operator the wrong path.
+ucheck "maint/refresh: the recorded runner path is read back verbatim (launchd argv[1])" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  HOME="$_MRF/ld-dead"
+ucheck "maint/refresh: the recorded runner path is read back verbatim (cron, past the PATH prefix)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-dead"
 
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via

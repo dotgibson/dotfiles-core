@@ -80,31 +80,103 @@ _maint_systemd_escape() {
   print -r -- "$s"
 }
 
-# True only when a schedule EXISTS but was written before Core baked the PATH into it.
-# Such a unit still runs — it just hands the runner a stripped PATH, so brew/mise/nvim
-# resolve to nothing and those steps skip silently. That is the failure this reports:
-# not a crash, an unattended job quietly doing less than it says. No schedule installed
-# is not a complaint, hence the -f / -n guards before each test.
-_maint_unit_needs_refresh() {
-  local f line
+# Read back the runner path a scheduler unit RECORDS, or print nothing when there is no
+# unit (or none can be parsed out of it). Deliberately not `$_MAINT_SH`: the whole point
+# is that the two can drift. `$_MAINT_SH` is re-resolved from %x every shell, so it always
+# names wherever the config lives NOW — which is why `maint-run` keeps working after the
+# consuming repo moves while the scheduler, holding the absolute path frozen at install
+# time, has been firing at a path that no longer exists.
+#
+# Silence on an unparseable unit is intentional: this feeds a "your job is dead" warning,
+# and a hand-edited unit in a shape Core never wrote is not evidence of that.
+_maint_unit_runner() {
+  local f line xml rest
   case "$(_maint_scheduler)" in
   systemd)
     f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
-    [[ -f "$f" ]] && ! grep -q '^Environment="PATH=' "$f"
+    [[ -f "$f" ]] || return 0
+    line="$(grep '^ExecStart=/usr/bin/env bash ' "$f" 2>/dev/null | head -n 1)"
+    [[ -n "$line" ]] && print -r -- "${line#ExecStart=/usr/bin/env bash }"
+    ;;
+  launchd)
+    # ProgramArguments[1] — argv[0] is the interpreter, argv[1] the runner. Parsed with
+    # zsh string ops rather than python3/plutil: this is a login-shell function, and the
+    # suite's plist parsing (plistlib) is a TEST-side luxury Core itself cannot assume.
+    f="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
+    [[ -f "$f" ]] || return 0
+    xml="$(<"$f")"
+    xml="${xml//$'\n'/ }" # tolerate the array wrapped across lines
+    rest="${xml#*<key>ProgramArguments</key>}"
+    [[ "$rest" != "$xml" && "$rest" == *"<array>"* ]] || return 0
+    rest="${${rest#*<array>}%%</array>*}"
+    rest="${${rest#*<string>}#*</string>}" # drop argv[0]
+    [[ "$rest" == *"<string>"*"</string>"* ]] || return 0
+    rest="${${rest#*<string>}%%</string>*}"
+    # Undo the entity encoding a well-formed plist carries. &amp; LAST, mirroring
+    # _maint_xml_escape doing & FIRST — the other order would decode a path that really
+    # contained the text "&lt;" into "<". (maint-install writes ProgramArguments raw and
+    # only escapes the PATH value, so today this is a no-op on units Core wrote; it is
+    # what keeps the read side correct for a hand-written or later-escaped plist.)
+    rest="${rest//&lt;/<}"; rest="${rest//&gt;/>}"; rest="${rest//&amp;/&}"
+    print -r -- "$rest"
+    ;;
+  cron)
+    line="$(crontab -l 2>/dev/null | grep -F '# dotfiles-maint')"
+    # Strip the trailing marker, then take what follows the interpreter. The line now
+    # opens with a single-quoted `PATH=…` env prefix (see _maint_sh_squote), so anchoring
+    # on `/usr/bin/env bash ` — and on its LAST occurrence, in case a PATH entry contains
+    # the string — is what survives that prefix.
+    line="${line% # dotfiles-maint}"
+    [[ "$line" == *"/usr/bin/env bash "* ]] && print -r -- "${line##*/usr/bin/env bash }"
+    ;;
+  esac
+}
+
+# True only when a schedule EXISTS but is broken in one of two silent ways, recorded in
+# $_MAINT_REFRESH_WHY so maint-status can say WHICH:
+#
+#   path   — written before Core baked the PATH into it. Still runs, still exits 0; it
+#            just hands the runner a stripped PATH, so brew/mise/nvim resolve to nothing
+#            and those steps skip.
+#   runner — the recorded runner path no longer resolves. The consuming repo moved and
+#            the unit still points at the old location, so the job is simply dead. This
+#            is the more invisible of the two: `maint-status` prints the timer happily,
+#            `launchctl list` reports exit status 0 while the job has not fired since the
+#            move, and `maint-run` keeps working because it re-resolves the runner from
+#            the live config instead of reading the unit.
+#
+# Either way the fix is the same (`maint-install` rewrites the unit), but the operator is
+# owed the distinction — one is a stale snapshot, the other means their repo moved.
+#
+# No schedule installed is not a complaint, hence the -f / -n guards before each test.
+typeset -g _MAINT_REFRESH_WHY=''
+_maint_unit_needs_refresh() {
+  local f line runner
+  _MAINT_REFRESH_WHY=''
+  case "$(_maint_scheduler)" in
+  systemd)
+    f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
+    [[ -f "$f" ]] || return 1
+    grep -q '^Environment="PATH=' "$f" || { _MAINT_REFRESH_WHY=path; return 0; }
     ;;
   launchd)
     # Test for the PATH KEY, not merely for an EnvironmentVariables dict: a plist
     # carrying some unrelated variable would otherwise read as current while the
     # runner still gets a stripped PATH — the exact silent-skip this detects.
     f="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
-    [[ -f "$f" ]] && ! grep -q '<key>PATH</key>' "$f"
+    [[ -f "$f" ]] || return 1
+    grep -q '<key>PATH</key>' "$f" || { _MAINT_REFRESH_WHY=path; return 0; }
     ;;
   cron)
     line="$(crontab -l 2>/dev/null | grep -F '# dotfiles-maint')"
-    [[ -n "$line" && "$line" != *PATH=* ]]
+    [[ -n "$line" ]] || return 1
+    [[ "$line" == *PATH=* ]] || { _MAINT_REFRESH_WHY=path; return 0; }
     ;;
   *) return 1 ;;
   esac
+  runner="$(_maint_unit_runner)"
+  [[ -n "$runner" && ! -f "$runner" ]] && { _MAINT_REFRESH_WHY=runner; return 0; }
+  return 1
 }
 
 maint-install() {
@@ -241,8 +313,17 @@ maint-status() {
   cron) crontab -l 2>/dev/null | grep -F "# dotfiles-maint" || echo "no cron entry" ;;
   *) echo "no scheduler" ;;
   esac
-  _maint_unit_needs_refresh &&
-    _core_hint "this schedule predates the PATH capture — brew/mise steps will skip; re-run: maint-install"
+  # Both causes are fixed by re-running maint-install, but they mean different things:
+  # say which, or the operator reads "stale unit" and never learns their repo moved.
+  if _maint_unit_needs_refresh; then
+    case "$_MAINT_REFRESH_WHY" in
+    runner)
+      _core_hint "this schedule runs $(_maint_unit_runner) — which no longer exists, so the job is dead"
+      _core_hint "(the repo moved; maint-run still works because it re-resolves it) — re-run: maint-install"
+      ;;
+    *) _core_hint "this schedule predates the PATH capture — brew/mise steps will skip; re-run: maint-install" ;;
+    esac
+  fi
   return 0
 }
 maint-uninstall() {
