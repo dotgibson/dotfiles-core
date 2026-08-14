@@ -162,15 +162,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   greening the leak assertion forever. That is the same vacuous pass the self-check exists to
   catch, arriving by a different door.
 
-  The validation runs **in the C locale**, and both halves of the pattern need it. POSIX
-  defines a range like `[A-Z]` by _collation_ rather than codepoint, so under a UTF-8 locale it
-  may admit letters the contract does not mean to allow — and Core ships to glibc, musl and BSD
-  userlands, which need not agree. The cap needs it just as much: `{1,16}` counts _characters_,
-  so sixteen multibyte ones are up to 64 bytes and the limit silently stops being the AF_UNIX
-  budget it exists to be. The suite asserts both against a **probed** UTF-8 locale rather than a
-  named one, since `en_US.UTF-8` does not exist on musl and the fallback to C would reject the
-  case for the wrong reason; where no UTF-8 locale is available the pass message says so, so
-  partial coverage cannot read as full.
+  The validation runs **in the C locale**. POSIX defines a range like `[A-Z]` by _collation_
+  rather than codepoint, so under some locales it may admit letters the contract does not mean
+  to allow — and Core ships to glibc, musl and BSD userlands, which need not agree. The byte cap
+  is the same fault one step downstream: `{1,16}` counts _characters_, so sixteen multibyte ones
+  are up to 64 bytes and the limit stops being the AF_UNIX budget it exists to be. Downstream,
+  not separate — every character in `[A-Za-z0-9_-]` is single-byte ASCII, so the count can only
+  diverge from the byte length once collation has already leaked a non-ASCII character in.
+
+  The suite reports **how much of this it actually exercised**, rather than implying more. It
+  probes for a locale under which the _unpinned_ pattern really accepts a non-ASCII sample, and
+  names it in the result when it finds one; where none exists — no locale on macOS accepts it,
+  for instance — the result says the pin is unexercised on that box and asserted by contract
+  only. An earlier draft probed for multibyte _decoding_ instead and would have passed
+  identically with the pin removed, which is the vacuous shape this file already exists to
+  refuse.
 
   Two assertions, because narrowing a glob and blinding it look identical from a green run.
   The leak check now plants a foreign-tagged sandbox _inside_ its own window and still
