@@ -79,7 +79,7 @@ manifested Core file. Its scope is derived from `core.manifest`, so adding a fil
 manifest puts it under the gate automatically.
 
 Nothing is exempt by syntax — **not even comments**. Comment-stripping was tried and
-removed: `#` is a comment in shell and TOML but the *length operator* in Lua; a delimiter
+removed: `#` is a comment in shell and TOML but the _length operator_ in Lua; a delimiter
 inside a string is code; a line inside a heredoc or a Lua long-bracket string is runtime
 data however it starts. Every fix uncovered the next, because doing it correctly needs a
 parser for all five grammars the gate now scans.
