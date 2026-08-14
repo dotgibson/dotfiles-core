@@ -28,7 +28,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   Covered: a red audit refuses the fan-out **and** refuses before mutating anything;
   local `HEAD` ≠ remote tip refuses (what you audited is not what would vendor); an
-  uncloned repo and a `core/`-less repo are *skipped*, not failed; `dotfiles-Windows`
+  uncloned repo and a `core/`-less repo are _skipped_, not failed; `dotfiles-Windows`
   appears in neither the fleet file nor the fallback array; `--dry-run` prints the plan
   and commits nothing; `core.lock` lands at the repo **root** with the full sha, version
   and branch; the tree is clean afterwards so the next run is not self-blocked;
