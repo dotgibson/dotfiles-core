@@ -1511,6 +1511,17 @@ if have git; then
   # commit, and init.defaultBranch decides whether `main` even exists (load-bearing —
   # CORE_BRANCH defaults to main). Same neutralisation the fleet-drift fixture uses.
   _scg() { git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
+  # sync-core.sh runs `git subtree pull` and `git commit` INSIDE these fixtures with its
+  # own argv — it never inherits the -c flags above. A CI runner has no global git
+  # identity, so those commits abort with "Please tell me who you are" and the whole
+  # fan-out silently produces no core.lock. (A developer machine hides this: the global
+  # identity is already set, so it passes locally and fails only on CI.) Stamp the
+  # identity into each fixture's LOCAL config so any git invocation inside it can commit.
+  _sc_ident() {
+    git -C "$1" config user.email t@example.com
+    git -C "$1" config user.name t
+    git -C "$1" config commit.gpgsign false
+  }
 
   # 1) coreremote — the vendored origin. Carries the REAL sync-core.sh + the libs it
   #    sources, so the code under test is the shipped code, not a copy of its logic.
@@ -1528,6 +1539,7 @@ if have git; then
   chmod +x "$SCF/coreremote/scripts/audit-core.sh" "$SCF/coreremote/scripts/sync-core.sh"
   printf '0\n' >"$SCF/auditrc"
   _scg "$SCF/coreremote" init -q >/dev/null 2>&1
+  _sc_ident "$SCF/coreremote"
   _scg "$SCF/coreremote" symbolic-ref HEAD refs/heads/main
   _scg "$SCF/coreremote" add -A
   _scg "$SCF/coreremote" commit -q -m "core c0"
@@ -1535,6 +1547,7 @@ if have git; then
   # 2) core — the local checkout sync-core.sh runs from. A clone, so HEAD == remote tip
   #    (the state the local-vs-remote guard demands).
   git -c commit.gpgsign=false clone -q "$SCF/coreremote" "$SCF/core" >/dev/null 2>&1
+  _sc_ident "$SCF/core"
   _SCS="$SCF/core/scripts/sync-core.sh"
 
   # 3) the fleet. dotfiles-Test gets a real core/ subtree; the other two are the
@@ -1544,6 +1557,7 @@ if have git; then
     local d="$SCF/repos/$1"
     mkdir -p "$d"
     _scg "$d" init -q >/dev/null 2>&1
+    _sc_ident "$d"
     _scg "$d" symbolic-ref HEAD refs/heads/main
     printf 'os layer\n' >"$d/os.txt"
     _scg "$d" add -A
@@ -1552,6 +1566,7 @@ if have git; then
   }
   _sc_new_osrepo dotfiles-Test
   _scg "$SCF/repos/dotfiles-Other" init -q >/dev/null 2>&1   # a git repo with NO core/
+  _sc_ident "$SCF/repos/dotfiles-Other"
   _scg "$SCF/repos/dotfiles-Other" symbolic-ref HEAD refs/heads/main
   rm -rf "$SCF/repos/dotfiles-NotCloned/.git"                 # a dir that is not a repo
 
