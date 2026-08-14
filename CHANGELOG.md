@@ -13,6 +13,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/sync-core.sh` has tests.** The highest-blast-radius script in the repo —
+  it gates on the audit, `git subtree pull`s into eight working trees, and stamps
+  `core.lock` — had **no coverage at all**. Its only proof was `sync-fanout.yml` running
+  it for real against the live fleet, i.e. the fleet was the test.
+
+  Twelve assertions on hermetic fixtures (a miniature of the real topology: a vendored
+  origin, a local checkout, and a throwaway fleet, with `audit-core.sh` stubbed so the
+  gate can be driven red and green in-process). Every case is a **refusal or an
+  idempotency property**, because that is how this script fails: a broken guard does not
+  throw, it fans a bad tree out to eight repos and reports success.
+
+  Covered: a red audit refuses the fan-out **and** refuses before mutating anything;
+  local `HEAD` ≠ remote tip refuses (what you audited is not what would vendor); an
+  uncloned repo and a `core/`-less repo are _skipped_, not failed; `dotfiles-Windows`
+  appears in neither the fleet file nor the fallback array; `--dry-run` prints the plan
+  and commits nothing; `core.lock` lands at the repo **root** with the full sha, version
+  and branch; the tree is clean afterwards so the next run is not self-blocked;
+  re-syncing an unchanged sha manufactures no commit; and a dirty target is refused,
+  counted failed, and does **not** abandon the repos after it.
+
 ### Fixed
 
 - **The Core⇄OS boundary gate was green while two Core files carried Homebrew paths.**
