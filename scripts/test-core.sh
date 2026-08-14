@@ -1486,6 +1486,206 @@ else
   skip "fleet drift classifier (git unavailable)"
 fi
 
+# ── F6. sync-core.sh — THE fan-out, on hermetic fixtures ─────────────────────
+# scripts/sync-core.sh is the highest-blast-radius script here: it gates on the audit,
+# runs `git subtree pull` into eight working trees, and stamps core.lock. Until now it
+# had NO coverage at all — its only proof was sync-fanout.yml running it for real
+# against the live fleet, i.e. the fleet WAS the test.
+#
+# Everything below is a REFUSAL or an idempotency property. That matters for what these
+# tests are worth: a broken guard does not throw, it fans a bad tree out to eight repos
+# and reports success. So each case asserts the script DECLINED, and (where the guard is
+# per-repo) that it declined without abandoning the repos after it.
+#
+# The fixture is a miniature of the real topology: `coreremote` is the origin every OS
+# repo vendors from, `core` is the local checkout sync-core.sh runs out of ($HERE, as it
+# computes from BASH_SOURCE), and `repos/` is REPOS_ROOT. audit-core.sh is STUBBED in the
+# fixture so the audit gate can be driven both ways in-process — the real one cannot fail
+# on demand.
+if have git; then
+  hdr "sync-core.sh fan-out guards (hermetic fixtures)"
+  SCF="$SANDBOX/synccore"
+  rm -rf "$SCF"
+  mkdir -p "$SCF"
+  # Host git config must not reach in: a global commit.gpgsign blocks every fixture
+  # commit, and init.defaultBranch decides whether `main` even exists (load-bearing —
+  # CORE_BRANCH defaults to main). Same neutralisation the fleet-drift fixture uses.
+  _scg() { git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
+
+  # 1) coreremote — the vendored origin. Carries the REAL sync-core.sh + the libs it
+  #    sources, so the code under test is the shipped code, not a copy of its logic.
+  mkdir -p "$SCF/coreremote/scripts/lib" "$SCF/coreremote/lib"
+  cp "$HERE/scripts/sync-core.sh" "$SCF/coreremote/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$SCF/coreremote/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$HERE/lib/bootstrap-lib.sh" "$SCF/coreremote/lib/"
+  printf '9.9.9\n' >"$SCF/coreremote/core.version"
+  printf 'dotfiles-Test\ndotfiles-Other\ndotfiles-NotCloned\n' >"$SCF/coreremote/scripts/os-repos.txt"
+  printf 'core payload v1\n' >"$SCF/coreremote/payload.txt"
+  # The stub audit: exits with whatever $SCF/auditrc says, so a single file flips the
+  # pre-fan-out gate between green and red without touching the script under test.
+  printf '#!/usr/bin/env bash\nexit "$(cat "%s/auditrc" 2>/dev/null || echo 0)"\n' "$SCF" \
+    >"$SCF/coreremote/scripts/audit-core.sh"
+  chmod +x "$SCF/coreremote/scripts/audit-core.sh" "$SCF/coreremote/scripts/sync-core.sh"
+  printf '0\n' >"$SCF/auditrc"
+  _scg "$SCF/coreremote" init -q >/dev/null 2>&1
+  _scg "$SCF/coreremote" symbolic-ref HEAD refs/heads/main
+  _scg "$SCF/coreremote" add -A
+  _scg "$SCF/coreremote" commit -q -m "core c0"
+
+  # 2) core — the local checkout sync-core.sh runs from. A clone, so HEAD == remote tip
+  #    (the state the local-vs-remote guard demands).
+  git -c commit.gpgsign=false clone -q "$SCF/coreremote" "$SCF/core" >/dev/null 2>&1
+  _SCS="$SCF/core/scripts/sync-core.sh"
+
+  # 3) the fleet. dotfiles-Test gets a real core/ subtree; the other two are the
+  #    "not cloned" and "no core/ yet" shapes the loop must SKIP rather than fail.
+  mkdir -p "$SCF/repos/dotfiles-Other" "$SCF/repos/dotfiles-NotCloned"
+  _sc_new_osrepo() { # <name>  — a repo with a real core/ subtree sharing history
+    local d="$SCF/repos/$1"
+    mkdir -p "$d"
+    _scg "$d" init -q >/dev/null 2>&1
+    _scg "$d" symbolic-ref HEAD refs/heads/main
+    printf 'os layer\n' >"$d/os.txt"
+    _scg "$d" add -A
+    _scg "$d" commit -q -m "os c0"
+    _scg "$d" subtree add -q --prefix=core "$SCF/coreremote" main --squash >/dev/null 2>&1
+  }
+  _sc_new_osrepo dotfiles-Test
+  _scg "$SCF/repos/dotfiles-Other" init -q >/dev/null 2>&1   # a git repo with NO core/
+  _scg "$SCF/repos/dotfiles-Other" symbolic-ref HEAD refs/heads/main
+  rm -rf "$SCF/repos/dotfiles-NotCloned/.git"                 # a dir that is not a repo
+
+  _sc_run() { # run the fixture's sync-core.sh against the fixture fleet
+    env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never \
+      REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+      SYNC_JOBS=1 "$@" bash "$_SCS" 2>&1
+  }
+
+  # --- the audit gate: the property that a RED tree must never fan out ---------
+  # This is the single most important assertion in the file: every other guard protects
+  # one repo, this one protects all eight. It must also refuse BEFORE mutating anything.
+  printf '1\n' >"$SCF/auditrc"
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'refusing to fan out a red tree' <<<"$_sc_out"; then
+    pass "sync-core: a RED audit refuses the fan-out (rc=$_sc_rc)"
+  else
+    fail "sync-core: a red audit did NOT stop the fan-out (rc=$_sc_rc)"
+  fi
+  # ...and it refused BEFORE touching anything: the target's HEAD is untouched.
+  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+    pass "sync-core: the red-audit refusal happens before any repo is mutated"
+  else
+    fail "sync-core: a repo moved despite the red-audit refusal"
+  fi
+  printf '0\n' >"$SCF/auditrc"
+
+  # --- the local-vs-remote guard ----------------------------------------------
+  # subtree pull fetches the REMOTE tip, but the audit above validated the LOCAL tree.
+  # Advance the remote so the two disagree; the run must refuse rather than vendor a
+  # commit nobody audited.
+  printf 'core payload v2\n' >"$SCF/coreremote/payload.txt"
+  _scg "$SCF/coreremote" commit -q -am "core c1"
+  _sc_out="$(_sc_run)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'local HEAD' <<<"$_sc_out"; then
+    pass "sync-core: local HEAD != remote tip refuses (audited tree != vendored tree)"
+  else
+    fail "sync-core: local/remote mismatch was not caught (rc=$_sc_rc)"
+  fi
+  _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1   # realign for the runs below
+
+  # --- skip vs fail: an absent repo is not a failure ---------------------------
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  if grep -q 'dotfiles-NotCloned' <<<"$_sc_out" && grep -qE 'dotfiles-Other.*no core/' <<<"$_sc_out"; then
+    pass "sync-core: uncloned repo and core/-less repo are SKIPPED, not failed"
+  else
+    fail "sync-core: absent/core-less repos not reported as skips"
+  fi
+
+  # --- dotfiles-Windows is never a target -------------------------------------
+  # It vendors no core/ (its host layer is native PowerShell), so fanning into it would
+  # be wrong, not merely useless. The fallback array inside the script must agree with
+  # scripts/os-repos.txt on that — assert the SHIPPED data file, not the fixture's.
+  if ! grep -qE '^[[:space:]]*dotfiles-Windows[[:space:]]*$' "$HERE/scripts/os-repos.txt" &&
+    ! grep -q 'dotfiles-Windows' <<<"$(sed -n '/^ALL_OS_REPOS=(/,/^)/p' "$HERE/scripts/sync-core.sh")"; then
+    pass "sync-core: dotfiles-Windows is in neither the fleet file nor the fallback array"
+  else
+    fail "sync-core: dotfiles-Windows would be fanned into (it carries no core/ subtree)"
+  fi
+
+  # --- --dry-run mutates nothing ----------------------------------------------
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
+    CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"
+  if grep -q 'would: git -C' <<<"$_sc_out" &&
+    [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+    pass "sync-core: --dry-run prints the plan and commits nothing"
+  else
+    fail "sync-core: --dry-run mutated the target or printed no plan"
+  fi
+
+  # --- the real pull: core.lock lands at the ROOT and records the full sha -----
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  _sc_lock="$SCF/repos/dotfiles-Test/core.lock"
+  _sc_remote_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+  if [[ -f "$_sc_lock" ]] && ! [[ -e "$SCF/repos/dotfiles-Test/core/core.lock" ]]; then
+    pass "sync-core: core.lock is written at the repo ROOT (a subtree pull cannot clobber it)"
+  else
+    fail "sync-core: core.lock is missing or landed inside core/"
+  fi
+  if grep -q "^core_sha=$_sc_remote_sha\$" "$_sc_lock" &&
+    grep -q '^core_version=9.9.9$' "$_sc_lock" && grep -q '^core_branch=main$' "$_sc_lock"; then
+    pass "sync-core: core.lock records the FULL vendored sha, version and branch"
+  else
+    fail "sync-core: core.lock contents wrong ($(tr '\n' ' ' <"$_sc_lock"))"
+  fi
+  # The tree must be CLEAN afterwards, or the dirty-tree guard blocks the next run —
+  # the self-inflicted deadlock the core.lock commit exists to prevent.
+  if [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: the target tree is clean after a sync (next run is not self-blocked)"
+  else
+    fail "sync-core: sync left the target dirty — the next run would refuse it"
+  fi
+
+  # --- idempotency: re-syncing the same sha must not manufacture a commit ------
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  if grep -q 'core.lock current' <<<"$_sc_out" &&
+    [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+    pass "sync-core: re-syncing an unchanged sha is a no-op (no empty core.lock commit)"
+  else
+    fail "sync-core: a no-change re-sync still moved HEAD"
+  fi
+
+  # --- the dirty-tree guard, and that it does not abandon the rest of the fleet -
+  # Ordering matters here: dotfiles-Test sorts BEFORE dotfiles-Other in the fixture fleet
+  # file, so if a dirty first repo aborted the loop the second would never be reached.
+  printf 'uncommitted\n' >"$SCF/repos/dotfiles-Test/dirty.txt"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  # Asserted on the ✗ line and the SUMMARY, deliberately NOT on $?. sync-core.sh exits
+  # ZERO here: the failure branch prints "done with failures" to stderr but never sets a
+  # status. That is load-bearing rather than an oversight to "fix" in passing —
+  # sync-fanout.yml runs this under `bash -e` and then does its OWN per-repo
+  # post-condition check (core.lock pins the released sha, branch ≥1 commit ahead), so a
+  # non-zero exit would abort that step and stop it opening PRs for the repos that DID
+  # sync. Pinning the observable contract here keeps the test honest about what the
+  # script actually promises; whether $? should also be non-zero is a design call.
+  if grep -q 'has uncommitted changes' <<<"$_sc_out" &&
+    grep -qE 'failed 1' <<<"$_sc_out"; then
+    pass "sync-core: a dirty target is refused and counted failed (not stashed, not force-merged)"
+  else
+    fail "sync-core: a dirty target was not refused/counted"
+  fi
+  if grep -q 'dotfiles-Other' <<<"$_sc_out"; then
+    pass "sync-core: a dirty repo does not abandon the repos after it"
+  else
+    fail "sync-core: the fan-out stopped at the first dirty repo"
+  fi
+  rm -f "$SCF/repos/dotfiles-Test/dirty.txt"
+else
+  skip "sync-core.sh fan-out guards (git unavailable)"
+fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link
