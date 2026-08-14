@@ -47,13 +47,23 @@ evidence.
 | `sed -i` | BSD requires an arg to `-i` | write to `$(mktemp …)` then `mv` |
 | `readlink -f` | not on BSD | a `cd`/`pwd -P` helper |
 | `stat -c` / `stat -f` | inverted between GNU and BSD | avoid; use `[[ -nt ]]`, `wc -c` |
-| `date -r`, `date -d` | different meanings | `${EPOCHSECONDS:-$(date +%s)}` |
+| `date -r`, `date -d` | different meanings | for _now_: `${EPOCHSECONDS:-$(date +%s)}` |
 | `grep -P` | not in busybox | `grep -E` |
 | `sort -V` | not in busybox | `sort` on zero-padded fields |
 | `mktemp` with no template | BSD requires one | `mktemp "prefix.XXXXXX"` |
-| `xargs -P` | busybox may reject it | offer a serial fallback knob |
+| `xargs -P` | busybox may reject it | branch to plain `xargs` when serial |
+
+`${EPOCHSECONDS:-$(date +%s)}` only covers **now** — it is not a general `date`
+replacement. Reading a file's mtime or parsing a supplied date has no portable one-liner:
+compare files with `[[ -nt ]]` instead of reading timestamps, and keep any date arithmetic
+in epoch seconds you produced yourself.
 
 `grep -q`, `grep -E`, `sort -u`, `cut -c`, `tr -d` are safe everywhere and used freely.
+
+A knob is only a fallback if the code actually takes a different path: `pullall`
+documents `PULLALL_JOBS=1` as the busybox escape hatch but still passes `-P "$jobs"`
+either way (`zsh/30-functions.zsh:766-768`), so on the one platform it exists for it
+fails exactly as before. Branch around the flag, do not just change its value.
 
 Two shipped examples worth copying: `zsh/20-aliases.zsh` probes `diff --color=auto` once
 and caches the answer rather than assuming GNU diff (busybox and BSD diff lack it);
@@ -100,26 +110,34 @@ machines; a missing optional tool is a visible, local degradation.
 
 ### The two documented exceptions
 
-Both are excepted **in writing**, at the gate, so they cannot be mistaken for drift:
+They are exceptions to **different things**, which is worth keeping straight:
 
-1. **`zsh/55-maint.zsh`** — the scheduler _control surface_. Its launchd arm legitimately
-   writes `~/Library/LaunchAgents` and embeds a plist; its systemd arm embeds a unit. It
-   switches on `_maint_scheduler`, which is the correct cross-OS shape, so the OS-specific
-   text is the payload rather than an assumption. Skipped explicitly in §5c.
-2. **`zsh/60-update.zsh`** — a seven-package-manager driver, i.e. the canonical example of
-   an _OS-layer_ concern, living in Core on purpose. See `ARCHITECTURE.md`.
+1. **`zsh/55-maint.zsh`** is excepted **at the gate**. Its launchd arm legitimately writes
+   `~/Library/LaunchAgents` and embeds a plist; its systemd arm embeds a unit. It switches
+   on `_maint_scheduler`, the correct cross-OS shape, so the OS-specific text is the
+   payload rather than an assumption. §5c drops only its `LaunchAgents` lines — the rest of
+   the file is scanned like any other, so unrelated drift inside it still fails.
+2. **`zsh/60-update.zsh`** is excepted **architecturally, not at the gate**. It is a
+   seven-package-manager driver — the canonical OS-layer concern — kept in Core so `up` is
+   one verb everywhere. It needs no gate exclusion because it names no OS-absolute path;
+   it would fail §5c like anything else if it did. See `ARCHITECTURE.md`.
 
 `*.example` files are also skipped: they are user-edited illustrations, not live config.
 
-## 4. `have()` is defined four times, deliberately
+## 4. The `have()` probe is redefined per context, deliberately
 
-`_have` (`zsh/00-tools.zsh`), `ux_have` (`lib/ux.sh`), `have`
-(`maint/dotfiles-maint.sh`), and `have` (`.claude/hooks/session-start.sh`) are the same
-one-liner under four names. That is **intentional, not drift**: a zsh module, a sourced
-bash library, a standalone runner, and a repo-meta hook have no shared ancestor to source
-from, and giving them one would create a load-order dependency where none exists today.
+`command -v "$1" >/dev/null 2>&1` appears under several names — `_have`
+(`zsh/00-tools.zsh`), `_core_have` (`zsh/05-ui.zsh`), `ux_have` (`lib/ux.sh`), `have`
+(`scripts/lib/common.sh`), `have` (`maint/dotfiles-maint.sh`), `have`
+(`.claude/hooks/session-start.sh`).
 
-If you add a fifth context, define it locally too. Do not invent a shared `lib/have.sh`.
+That is **intentional, not drift**. Each lives in a different loading context — an
+interactive zsh module, a sourced bash library, a gate-script library, a standalone
+unattended runner, a repo-meta hook — and they have no shared ancestor to source from.
+Giving them one would create a load-order dependency where none exists today, in a tree
+whose whole load story is ordering.
+
+Define it locally in a new context too. Do not invent a shared `lib/have.sh`.
 
 ## 5. Before you push
 

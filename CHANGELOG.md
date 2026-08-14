@@ -21,8 +21,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   likely root cause of the Homebrew paths that sat in `maint/` and `tmux/scripts/`.
   It documents the bash 3.2 floor (with the banned constructs and their portable forms),
   the BSD/busybox coreutils traps, the shim pattern with the full inventory of shipped
-  shims, what to do when a capability genuinely cannot be probed, and why `have()` is
-  defined four times on purpose.
+  shims, what to do when a capability genuinely cannot be probed, and why the `have()`
+  probe is redefined per loading context on purpose.
 
 - **`VENDORING.md` — the same contract from an OS repo's side.** Previously scattered
   across `ARCHITECTURE.md`, `RELEASE-RUNBOOK.md` and a source comment, so a downstream

@@ -10,9 +10,12 @@ When a rule here drifts from `README.md` or `CONTRIBUTING.md`, those win — fix
 
 ## The one rule
 
-**Never edit anything under `core/`.** That tree is a copy. The next `make sync` replaces
-it wholesale and your change is gone — silently, because a subtree squash-merge does not
-announce what it discarded.
+**Never edit anything under `core/`.** That tree is a copy, and the next `make sync`
+merges upstream Core over it. Be precise about what that does: a subtree pull is a
+**merge**, not a wholesale replacement — an uncommitted edit is lost, while a committed
+one either conflicts (stopping the sync mid-fleet) or survives, and a surviving edit is
+worse, because `core/` now silently disagrees with the Core commit `core.lock` pins.
+That divergence is exactly what the integrity check exists to catch.
 
 Two things enforce this, and it is worth knowing that neither is complete on its own:
 
@@ -49,7 +52,13 @@ Two consumers depend on it:
 - **`core-integrity.sh`** resolves `core_sha` to a tree and compares it with your actual
   `core/`, which is how a hand-edit is detected.
 
-If you ever pull the subtree by hand, run `make core-lock` afterwards to restamp it.
+**Do not pull the subtree by hand.** A raw `git subtree pull` updates `core/` but not
+`core.lock`, so `core-integrity.sh` compares your tree against a commit the lock no longer
+describes and reports `TAMPERED` until the lock is regenerated — and `make core-lock` does
+**not** exist in every consumer (most carry no root `Makefile`). `sync-core.sh` commits
+both together, and `sync-fanout.yml` runs it for you on every release. If you have already
+done it by hand, the fix is to re-run the fan-out from Core rather than to patch the lock.
+See `RELEASE-STRATEGY.md` on the pinning model.
 
 ## Number bands — where your files go
 
@@ -127,3 +136,12 @@ git subtree add --prefix=core <core-remote> main --squash
 Then add the repo to `scripts/os-repos.txt` **here**, which is the single source of the
 fan-out fleet. `dotfiles-Windows` is deliberately absent: it replicates the host config
 natively in PowerShell and vendors no `core/` at all.
+
+**The scaffold is a starting point, not the finished contract.** A freshly generated repo
+has no `core.lock`, no core-guard hook, and no `core-integrity` workflow — so it carries
+no provenance and nothing yet stops a hand-edit to `core/`. Its generated README also
+suggests a raw `git subtree pull`, which is the stale-lock path this document warns about.
+Close all four before treating the repo as part of the fleet: run one `sync-core.sh` from
+Core (which writes `core.lock` and installs the guard), add the `core-integrity` and
+`bootstrap` workflow callers, and fix the generated README's update instructions to point
+at the fan-out.

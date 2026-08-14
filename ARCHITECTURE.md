@@ -64,10 +64,14 @@ here rather than left to be rediscovered as drift:
   to `bin/clip` — and putting it here means every machine has the same muscle memory
   instead of eight subtly different update commands.
 
-  The line is drawn at *apply* policy, not at knowledge: unattended auto-apply belongs to
-  the OS layer, which is why `60-update.zsh` refuses to do it and defers to that distro's
-  own scheduler. A change to how one distro upgrades still edits a Core file, and that is
-  the accepted cost.
+  The line is drawn at *interactive* apply, not at knowledge. `60-update.zsh` itself
+  never applies unattended — `up` is a verb you run. Scheduled apply lives one file over,
+  in `maint/dotfiles-maint.sh`, and is **opt-in and deliberately narrowed**: off unless
+  `MAINT_SYSTEM_UPGRADE=1`, and even then refused on Kali (engagement boxes) and on
+  Arch/Gentoo (rolling distros that must not upgrade unattended). So scheduled apply is
+  part of the same accepted exception rather than something Core disclaims; what Core
+  will not do is apply *by default*. A change to how one distro upgrades still edits a
+  Core file, and that is the accepted cost.
 
 ## The fleet
 
