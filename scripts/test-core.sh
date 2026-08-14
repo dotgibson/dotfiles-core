@@ -1785,18 +1785,25 @@ if have git; then
   _lr_is_link_to "$LR/config/jj/config.toml" "$LR/dotfiles/core/jujutsu/config.toml" || _lr_bad="$_lr_bad jj"
   _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
   _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
-  [[ -L "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts"
+  # Resolve the target, don't just prove it is *a* symlink — a dangling link, or one
+  # pointing at the wrong directory, would otherwise pass this grouped assertion.
+  _lr_is_link_to "$LR/config/tmux/scripts" "$LR/dotfiles/core/tmux/scripts" || _lr_bad="$_lr_bad tmux/scripts"
+  [[ -d "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts(dangling)"
   if [[ -z "$_lr_bad" ]]; then
     pass "link run: tmux, starship, lazygit, jj, gitconfig and vimrc land where bootstrap promises"
   else
     fail "link run: wrong or missing links —$_lr_bad"
   fi
-  # clip is COPIED onto PATH, not symlinked, and must stay executable — nvim's clipboard
-  # provider, tmux copy-pipe and the zsh helpers all shell out to it by name.
-  if [[ -x "$LR/home/.local/bin/clip" && -x "$LR/home/.local/bin/clip-paste" ]]; then
-    pass "link run: clip + clip-paste are on ~/.local/bin and executable"
+  # clip is SYMLINKED onto PATH — bootstrap-lib chmod +x's the SOURCE, not the link — so
+  # assert the target as well as the mode. nvim's clipboard provider, tmux copy-pipe and
+  # the zsh helpers all shell out to it by name, so a dangling link breaks copy on every
+  # surface at once while `-x` alone would still look fine on a wrong-but-executable file.
+  if _lr_is_link_to "$LR/home/.local/bin/clip" "$LR/dotfiles/core/bin/clip" &&
+    _lr_is_link_to "$LR/home/.local/bin/clip-paste" "$LR/dotfiles/core/bin/clip-paste" &&
+    [[ -x "$LR/home/.local/bin/clip" && -x "$LR/home/.local/bin/clip-paste" ]]; then
+    pass "link run: clip + clip-paste link onto ~/.local/bin and resolve executable"
   else
-    fail "link run: clip/clip-paste not installed executable on ~/.local/bin"
+    fail "link run: clip/clip-paste missing, mislinked, or not executable"
   fi
   # The SEEDED files are the inverse contract: real copies, never symlinks, so a user's
   # identity/local edits are never tracked back into Core. A symlink here would publish
