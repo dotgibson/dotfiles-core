@@ -92,7 +92,14 @@ _maint_abs_path() { [[ "$1" == /* ]] }
 # ...and for the two arms that read a COMMAND rather than a path field, exactly one bare
 # argument: no flags, no redirection, nothing after the path. That is what separates "the
 # runner maint-install wrote" from a hand-edited command line that merely starts with it.
-_maint_lone_arg() { [[ "$1" != *[[:space:]]* ]] && _maint_abs_path "$1" }
+#
+# A `%` disqualifies it outright, in BOTH those arms, because in neither is the recorded
+# text the path that actually runs: systemd expands % SPECIFIERS in ExecStart (%h = home,
+# %i = instance, …), the same expansion _maint_systemd_escape already doubles against in
+# `Environment=`; and cron reads % as its newline metacharacter, so everything past it is
+# stdin rather than command. Testing the literal text with `-f` would therefore answer a
+# question about a path nothing executes — false either way, dead or alive.
+_maint_lone_arg() { [[ "$1" != *[[:space:]]* && "$1" != *%* ]] && _maint_abs_path "$1" }
 
 # Consume one POSIX single-quoted token from the FRONT of $1 and print whatever follows
 # it; non-zero if the token is unterminated. _maint_sh_squote renders an embedded quote as

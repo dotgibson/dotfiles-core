@@ -5334,6 +5334,25 @@ ucheck "maint/refresh: a pre-capture cron line that is ALSO dead reports runner,
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-old-dead"
 
+# A `%` in the recorded runner means the literal text is NOT what runs. systemd expands
+# specifiers in ExecStart (%h and friends) — the very expansion _maint_systemd_escape
+# already doubles against in `Environment=` — and cron treats % as its newline
+# metacharacter, so everything past it becomes stdin. `-f` on the raw text answers a
+# question about a path nothing executes, so both arms must refuse. The fixtures use a
+# runner that would RESOLVE if the % were simply ignored, so a reader that failed to
+# refuse would emit a confident, wrong verdict rather than merely a noisy one.
+mkdir -p "$_MRF/sd-pct/systemd/user"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_RUNNER%h" \
+  >"$_MRF/sd-pct/systemd/user/dotfiles-maint.service"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_RUNNER%m" >"$_MRF/cron-pct"
+
+ucheck "maint/refresh: a systemd runner carrying a % specifier is refused (not the path that runs)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-pct"
+ucheck "maint/refresh: a cron runner carrying % (cron's newline metacharacter) is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-pct"
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question

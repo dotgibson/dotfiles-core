@@ -186,11 +186,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `path` is the fallback. Reporting the milder cause there would tell the operator that some
   steps will skip on a job that does not run at all.
 
-  Twenty-nine behavioral assertions — twelve scheduler states, four that a recorded path is
+  A `%` in the recorded runner disqualifies it in both command-reading arms, because in
+  neither is the literal text what runs: systemd expands `%` specifiers in `ExecStart` — the
+  expansion `_maint_systemd_escape` already doubles against in `Environment=` — and cron
+  reads `%` as its newline metacharacter.
+
+  Thirty-one behavioral assertions — twelve scheduler states, four that a recorded path is
   extracted correctly (two read back verbatim, plus escaped-quote scanning and `&apos;`
-  decoding), ten that an extended command, a displaced array, a relative path, a spliced-in
-  program, a quoted look-alike, or an undecodable reference is refused rather than
-  mis-parsed, and three that a dead runner outranks a stale PATH. The healthy fixtures point
+  decoding), twelve that an extended command, a displaced array, a relative path, a
+  spliced-in program, a quoted look-alike, an undecodable reference, or a `%`-bearing value
+  is refused rather than mis-parsed, and three that a dead runner outranks a stale PATH. The healthy fixtures point
   at a runner that really exists, or the whole section would pass vacuously.
 
 - **The boundary scan no longer strips comments at all.** Stripping was a false-negative
