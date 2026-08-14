@@ -88,6 +88,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The boundary scan's comment stripping could hide a real violation in Lua.** §5c strips
+  comments so an explanatory comment naming an OS path cannot trip the gate — but the
+  blanket `sed 's/#.*//'` stopped being safe the moment the scan's scope became
+  `core.manifest`, because the vendored `nvim/` tree is Lua, where `#` is the **length
+  operator**. A line such as `local p = t[#t] .. "/opt/homebrew/bin"` was truncated at the
+  `#` and passed the gate. `_core_strip_comments` is now language-aware (Lua `--`, JSON
+  untouched, `#` elsewhere), with four regression cases covering the non-shell half of the
+  scope. Stripping may stop a comment tripping the gate; it may never hide code.
+
 - **`V4-PROPOSAL.md` no longer claims v4 is unreleased.** Its status block said
   _"IMPLEMENTED … pending the v4.0.0 release cut"_ and described the work as sitting on a
   branch — ten minor releases after v4.0.0 shipped. It is now marked as the historical

@@ -78,6 +78,13 @@ signals its SIGTERM as 143) as "the probe never answered".
 manifested Core file. Its scope is derived from `core.manifest`, so adding a file to the
 manifest puts it under the gate automatically.
 
+Comments are stripped first — so a comment naming an OS path cannot trip the gate — and
+that stripping is **language-aware** (`_core_strip_comments`). It has to be: `#` starts a
+comment in shell and TOML but is the **length operator** in Lua, and the scope includes the
+vendored `nvim/` tree, so a blanket strip would truncate `t[#t] .. "/opt/homebrew"` and let
+a real violation through. Stripping may stop a comment tripping the gate; it may never hide
+code.
+
 The pattern: **one verb, N backends, chosen by probing for a capability — not by
 branching on an OS name.**
 

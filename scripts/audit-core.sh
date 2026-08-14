@@ -474,8 +474,10 @@ while IFS= read -r f; do
   *.example) continue ;; # user-edited illustration, not live config
   esac
   [[ -f "$f" ]] || continue
-  # Comment-strip first, so an explanatory comment naming an OS path can't trip the gate.
-  bnd_src="$(sed 's/#.*//' "$f")"
+  # Comment-strip first, so an explanatory comment naming an OS path can't trip the gate —
+  # LANGUAGE-AWARE (see _core_strip_comments): `#` starts a comment in shell and toml but
+  # is the LENGTH OPERATOR in Lua, and a blanket strip would truncate a real violation.
+  bnd_src="$(_core_strip_comments "$f")"
   # Then drop ONLY the sanctioned lines of the one exempt file — everything else in it
   # is still scanned.
   [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="$(grep -v 'Library/LaunchAgents' <<<"$bnd_src")"

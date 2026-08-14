@@ -165,3 +165,24 @@ _core_read_classify() { # _core_read_classify <classifier-output>
   case "$CLASSIFY_NVIM" in true | false) ;; *) return 1 ;; esac
   return 0
 }
+
+# _core_strip_comments <file> — emit <file> with its LINE COMMENTS removed, for the
+# Core⇄OS boundary scan (audit-core.sh §5c).
+#
+# Language-aware on purpose. A single `sed 's/#.*//'` was right while that scan only saw
+# shell, and became wrong the moment its scope became core.manifest: in **Lua `#` is the
+# LENGTH OPERATOR**, so a line like
+#     local p = t[#t] .. "/opt/homebrew/bin"
+# is truncated at the `#` and a genuine OS-path violation passes the gate. JSON has no
+# comment syntax at all, so stripping anything there can only lose signal.
+#
+# Stripping exists so an explanatory comment naming an OS path cannot trip the gate; it
+# must never be able to HIDE code. When those two pull apart, the file's real comment
+# syntax decides.
+_core_strip_comments() {
+  case "$1" in
+  *.lua) sed 's/--.*//' "$1" ;;  # Lua line comment; `#` is an operator here
+  *.json) cat "$1" ;;            # no comment syntax
+  *) sed 's/#.*//' "$1" ;;       # sh/zsh/toml/yaml/tmux.conf/gitconfig
+  esac
+}
