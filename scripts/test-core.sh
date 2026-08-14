@@ -4175,6 +4175,19 @@ check "_core_wired detects an integration once its hook function exists" \
   'starship_precmd() { :; }; _core_wired starship'
 check "_core_wired is false for an idle integration and an unknown name" \
   '_core_wired starship 2>/dev/null; (( $? != 0 )); _core_wired bogustool 2>/dev/null; (( $? != 0 ))'
+# Upstream RENAMES the function its `init` emits, and Core sources that init verbatim — so a
+# probe pinned to one spelling silently goes stale and reports a FALSE `○ (idle)` for a live
+# integration (seen on starship 1.24.2 → prompt_starship_precmd, carapace-bin 1.5.7 →
+# _carapace_completer; neither emits the historical name at all). Pin BOTH spellings per tool
+# so dropping either fallback fails the audit instead of quietly recreating that bug.
+check "_core_wired accepts starship's current hook name (prompt_starship_precmd)" \
+  'prompt_starship_precmd() { :; }; _core_wired starship'
+check "_core_wired accepts carapace's historical hook name (_carapace)" \
+  '_carapace() { :; }; _core_wired carapace'
+check "_core_wired accepts carapace's current hook name (_carapace_completer)" \
+  '_carapace_completer() { :; }; _core_wired carapace'
+check "_core_wired is false for an idle carapace" \
+  '_core_wired carapace 2>/dev/null; (( $? != 0 ))'
 # core-help (U5): the width-aware renderer must emit every verb and never crash on its
 # kw arithmetic — including a pathologically narrow terminal where the key column clamps.
 check "core-help renders all verbs (wide terminal)" \
