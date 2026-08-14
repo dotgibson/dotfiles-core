@@ -2694,6 +2694,17 @@ elif ! have python3; then
   skip "atuin autostart premise (python3 not installed)"
 else
   hdr "atuin autostart self-healing premise (--premise autostart, hermetic)"
+  # THIS RUN'S NAME IN SHARED /tmp. Case 17 asserts that a completed verifier run leaves no
+  # sandbox behind, and the only evidence it has is what appeared under /tmp during a window.
+  # /tmp has other writers — a second worktree, another agent, `make audit` in one terminal
+  # while `make tag` audits in another — and an untagged glob cannot tell their sandbox from a
+  # leak of ours. That is not hypothetical: it failed a `make tag` for exactly this reason.
+  # Exported once, so every invocation below (case 18 runs the script from a copied repo, not
+  # through _d_run) tags its trees identically and case 17's glob is exhaustive for OUR runs
+  # and blind to everyone else's. The pid is the token because two LIVE processes cannot share
+  # one, which is precisely the collision being defended against.
+  _DTAG="t$$"
+  export CORE_ATVERIFY_TAG="$_DTAG"
   _dstub="$(mktemp -d "$SANDBOX/dstub.XXXXXX")"
   # Section-local reaping. Every stub daemon writes its pid where the stub can find it, but a
   # test that fails midway can leave one behind — and unlike the script under test, this
@@ -3019,6 +3030,68 @@ STUB
     fail "atuin autostart: --premise must exit 2 on a bad value (got rc$_drc) and on a missing one (got rc$_drc2)"
   fi
 
+  # 1b. THE TAG CONTRACT, asserted where it is cheapest — no daemon, no sandbox, no atuin.
+  #     CORE_ATVERIFY_TAG is a PUBLIC knob (it is in --help), and case 17 only ever exports a
+  #     generated valid one, so every way a caller can get it wrong was unasserted: the value
+  #     becomes a path component under /tmp, and it is the only thing standing between the
+  #     leak check and a glob that silently matches nothing.
+  #
+  #     THE EMPTY CASE IS THE IMPORTANT ONE, and it is why the script reads `${…-$$}` rather
+  #     than the `${…:-…}` its two neighbouring knobs use. An empty tag is not a request for
+  #     the default — it is a caller whose tag expression came out empty — and accepting it
+  #     would put the sandbox under the pid while the caller globbed `/tmp/atverify..*`,
+  #     matching nothing and greening the leak assertion forever. That is precisely the
+  #     vacuous pass case 17's self-check exists to catch, arriving by a different door, so
+  #     it is pinned here rather than left to the `-` vs `:-` being noticed in review.
+  #
+  #     Rejection must also happen BEFORE anything is measured, which is read off the stub's
+  #     own call log rather than assumed: a tag validated late would already have spawned.
+  _mkdstub atuin-tagck heals
+  _dbad=0
+  _dtagwhy=""
+  # 17 chars, one past the cap — not 16, which is the accepted boundary asserted just below.
+  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space"; do
+    CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
+      --premise autostart --atuin "$_dstub/atuin-tagck" >/dev/null 2>&1
+    _drc=$?
+    if ((_drc != 2)); then
+      _dbad=1
+      _dtagwhy="$_dtagwhy '${_dcase:-<empty>}'→rc$_drc"
+    fi
+  done
+  # Accepted, by contrast: the 16-char boundary and an ABSENT tag both get past validation and
+  # fail later for the missing binary (rc 3), which is what tells acceptance from rejection
+  # without measuring anything. The absent case is the standalone contract — it is what
+  # `make verify-atuin-guard` and atuin-guard-verify.yml rely on, and the section exports a
+  # tag, so it is unset in a SUBSHELL rather than for the rest of the run.
+  CORE_COLOR=never CORE_ATVERIFY_TAG="sixteenchars0123" "$_DVERIFY" \
+    --premise autostart --atuin "$_dstub/nonexistent" >/dev/null 2>&1
+  _drc=$?
+  if ((_drc != 3)); then
+    _dbad=1
+    _dtagwhy="$_dtagwhy 16-char→rc$_drc"
+  fi
+  (
+    unset CORE_ATVERIFY_TAG
+    CORE_COLOR=never "$_DVERIFY" --premise autostart \
+      --atuin "$_dstub/nonexistent" >/dev/null 2>&1
+  )
+  _drc=$?
+  if ((_drc != 3)); then
+    _dbad=1
+    _dtagwhy="$_dtagwhy unset→rc$_drc"
+  fi
+  [[ -z "$(_d_calls atuin-tagck)" ]] || {
+    _dbad=1
+    _dtagwhy="$_dtagwhy (a rejected tag still invoked atuin)"
+  }
+  _dreap
+  if ((_dbad == 0)); then
+    pass "atuin autostart: a tag that is empty, overlong, or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted"
+  else
+    fail "atuin autostart: the CORE_ATVERIFY_TAG contract is not enforced —$_dtagwhy; an accepted bad tag globs nothing and greens the leak check vacuously"
+  fi
+
   # 2. The premise travels in the JSON. The workflow's two legs differ by ONE flag and both
   #    file issues under different titles, so it asserts this field rather than trusting the
   #    flag reached the script — this is the assertion that makes that check meaningful.
@@ -3319,13 +3392,26 @@ J4PROBE
     #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
     #     fail this for a run that cleaned up perfectly. Only paths this run created count.
     #
+    #     A DELTA IS NOT ENOUGH, because /tmp is a SHARED namespace and the window is not
+    #     exclusive. This globbed every `atverify.*` and treated anything new as a leak, which
+    #     silently assumed no second run existed — and a second run is ordinary here: another
+    #     worktree, another agent, or simply `make audit` in one terminal while `make tag`
+    #     audits in another. The second run's sandbox is born inside the first run's window and
+    #     the first run reports a leak that does not exist. That is what happened: a `make tag`
+    #     failed the audit with "leaked 1 new sandbox dir(s)" on the repo's most consequential
+    #     command, where the operator's natural next move — re-run, or reach for
+    #     TAG_SKIP_AUDIT=1 — is the exact habit a release gate must not teach. So the glob is
+    #     narrowed to $_DTAG, the tag every sandbox of OURS carries (see CORE_ATVERIFY_TAG),
+    #     and a foreign tree is now invisible to it by construction rather than by luck.
+    #
     #     THE SELF-CHECK IS NOT OPTIONAL. A delta over a directory listing that silently
     #     returns nothing passes for every run, forever — and that is precisely what the first
     #     version of this did: on macOS /tmp is a symlink to private/tmp and `find /tmp`
     #     without -L does not descend it, so both snapshots were empty and the assertion was
     #     vacuous on a third of the fleet. Prove the snapshot can see a directory before
     #     trusting it to notice one. (The fault there was the unfollowed symlink, not a
-    #     missing -maxdepth.)
+    #     missing -maxdepth.) Narrowing the glob makes that guard MORE load-bearing, not less:
+    #     a tag that never reached the script would empty both snapshots the same way.
     # The shell's own one-level glob, not find(1) and not ls(1). BSD find on macOS does
     # support -maxdepth (checked against /usr/bin/find, which is what the macOS CI leg runs),
     # so the earlier version was not broken for that reason — but a glob needs no portability
@@ -3333,27 +3419,59 @@ J4PROBE
     _dsnap() {
       local d
       local -a out=()
-      for d in /tmp/atverify.*; do [[ -d "$d" ]] && out+=("$d"); done
+      for d in "/tmp/atverify.$_DTAG."*; do [[ -d "$d" ]] && out+=("$d"); done
       ((${#out[@]})) && printf '%s\n' "${out[@]}" | sort
       return 0
     }
-    mkdir -p "/tmp/atverify.selfcheck$$"
-    if ! _dsnap | grep -q "atverify.selfcheck$$"; then
-      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+    # _dnewdirs <pre-snapshot> — the tagged dirs present now that were absent in <pre>.
+    # comm needs sorted input on both sides; _dsnap sorts, so a snapshot may be fed back in.
+    _dnewdirs() {
+      comm -13 <(printf '%s\n' "$1" | grep -v '^$') <(_dsnap | grep -v '^$')
+    }
+    _dselfck="/tmp/atverify.$_DTAG.selfcheck$$"
+    mkdir -p "$_dselfck"
+    if ! _dsnap | grep -q "atverify.$_DTAG.selfcheck$$"; then
+      rmdir "$_dselfck" 2>/dev/null
       fail "atuin autostart: the sandbox-leak check cannot enumerate /tmp — it would pass vacuously, so it is reported as broken rather than green"
     else
-      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+      rmdir "$_dselfck" 2>/dev/null
       _dpre="$(_dsnap)"
       _d_run atuin-heals --premise autostart --json
       _dreap
-      _dpost="$(_dsnap)"
-      _dnew="$(comm -13 <(printf '%s\n' "$_dpre" | grep -v '^$') \
-        <(printf '%s\n' "$_dpost" | grep -v '^$') | grep -c . || true)"
+      # A CONCURRENT RUN'S SANDBOX, planted inside the window on purpose — this is the
+      # regression half of the assertion, not scaffolding. Who created it is irrelevant: a
+      # glob is all this check has to reason with, so a directory of the right SHAPE under a
+      # tag that is not ours is exactly what a second test-core.sh on this box contributes.
+      # If it is ever counted again, this arm goes red here rather than at a release cut.
+      _dforeign="/tmp/atverify.foreign$$.regress"
+      mkdir -p "$_dforeign"
+      _dleaked="$(_dnewdirs "$_dpre")"
+      rmdir "$_dforeign" 2>/dev/null
+      _dnew="$(printf '%s\n' "$_dleaked" | grep -c . || true)"
       if ((_dnew == 0)); then
-        pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first"
+        pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first — and a concurrent run's sandbox in shared /tmp is not mistaken for one"
       else
-        fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp"
+        fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp: $(printf '%s' "$_dleaked" | tr '\n' ' ')"
       fi
+    fi
+
+    # 17b. THE OTHER HALF OF 17, and the reason narrowing the glob is safe rather than merely
+    #      quiet. A check that ignores a foreign tree and a check that ignores EVERY tree look
+    #      identical from a green run, and 17 alone cannot tell them apart — its expected
+    #      result is zero either way. So the discrimination is asserted directly, with no
+    #      verifier involved: plant one sandbox under a foreign tag and one under ours, and
+    #      require the delta to name OURS and only ours. A single string compare carries both
+    #      directions — a wrong count or a wrong path fails it.
+    _dpre="$(_dsnap)"
+    _dforeign="/tmp/atverify.foreign$$.control"
+    _dmine="/tmp/atverify.$_DTAG.leak$$"
+    mkdir -p "$_dforeign" "$_dmine"
+    _dleaked="$(_dnewdirs "$_dpre")"
+    rmdir "$_dforeign" "$_dmine" 2>/dev/null
+    if [[ "$_dleaked" == "$_dmine" ]]; then
+      pass "atuin autostart: the leak check still SEES a genuine leak under this run's tag while ignoring a foreign one — narrowing the glob did not make it blind"
+    else
+      fail "atuin autostart: the leak check must report exactly $_dmine as new and nothing else, got '$(printf '%s' "$_dleaked" | tr '\n' ' ')' — it is either blind to a real leak or still counting foreign sandboxes"
     fi
 
     # 18. A MALFORMED ANCHOR IS NOT AN ABSENT ONE. Absence is legitimate for THIS premise —
