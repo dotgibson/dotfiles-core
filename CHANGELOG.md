@@ -35,6 +35,93 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   re-syncing an unchanged sha manufactures no commit; and a dirty target is refused,
   counted failed, and does **not** abandon the repos after it.
 
+### Fixed
+
+- **The Core⇄OS boundary gate was green while two Core files carried Homebrew paths.**
+  `audit-core.sh` §5c rejects OS-absolute paths in portable Core, but its file list
+  stopped at `zsh/*.zsh` plus the symlinked configs — so `bin/`, `maint/`, and
+  `tmux/scripts/`, all manifested Core that ships to eight repos, were never scanned.
+  They were not clean: `maint/dotfiles-maint.sh` hardcoded `/opt/homebrew/{bin,sbin}`
+  and `/home/linuxbrew/.linuxbrew/bin` in its PATH _and_ probed both by absolute path
+  to run `brew shellenv`, and `tmux/scripts/tmux-cheat.sh` did the same in its pop-up
+  PATH. The rule was documented, believed enforced, and was not — on seven of the eight
+  target machines those paths do not exist.
+
+  The gate's scope is now **derived from `core.manifest`** rather than hand-kept. That
+  list had fallen behind three separate times — first the symlinked configs, then the
+  `bin/`/`maint/`/`tmux/scripts/` executables, and even then it still omitted
+  `zsh/completions/*`, `lib/ux.sh`, `lib/bootstrap-lib.sh` and `.bin/sync-upstream.sh`.
+  Every omission was the same bug, so the fix is structural: the manifest already _is_
+  the definition of "what is Core", and a file added to it is scanned automatically. The
+  blind spot cannot silently reopen, because reopening it would mean the file is not Core
+  at all — which the manifest gate already fails on. Coverage went from 19 files to 167
+  (including the vendored `nvim/` tree).
+
+  The gate is also unconditional now: it used to be `SCOPE_SHELL`-gated, but it is pure
+  `sed`+`grep` and cross-cutting, so a narrowed `--scope` run must not be able to skip a
+  fan-out-correctness check.
+
+  The one exemption — `zsh/55-maint.zsh`, whose launchd arm legitimately writes
+  `~/Library/LaunchAgents` — is now **per-line rather than per-file**. Skipping the whole
+  module would have re-opened the blind spot _inside_ it: an accidental `/opt/homebrew`
+  added to `maint-install`, or to any other function there, would have sailed through.
+  Only the `LaunchAgents` lines are dropped; everything else in the file is scanned.
+
+  Verified the way a gate change has to be: the previous tree is **red** under the new
+  scope and green under the old one, which is the only evidence that the widening bites.
+
+### Changed
+
+- **The maint runner no longer names an OS prefix; the scheduler unit supplies the PATH.**
+  A scheduler starts the runner with a stripped environment, which is why the Homebrew
+  prefixes were hardcoded. `maint-install` now captures the **live PATH** of the shell
+  installing it and bakes it into the unit — `Environment="PATH=…"` (systemd), an
+  `EnvironmentVariables` dict (launchd, XML-escaped), and an env-prefixed command
+  (cron, POSIX single-quoted and then `%`-escaped, in that order — cron hands its
+  command field to `/bin/sh`, so an unquoted or double-quoted value containing `$(…)`
+  or a backtick would be **evaluated on every scheduled run**). Whatever prefix this OS
+  uses is already correct in that
+  PATH, so the OS supplies the truth and Core hardcodes nothing. The brew step is now
+  gated on `have brew` alone.
+
+  **Action required on an existing schedule:** a unit written before this change carries
+  no PATH, so the runner falls back to the POSIX floor and the brew/mise steps skip
+  silently — the job still succeeds while doing less. Re-run `maint-install` once.
+  `maint-status` detects this and says so rather than leaving it to be noticed.
+
+- **`tmux-cheat.sh` discovers a brew prefix instead of naming one** — `$HOMEBREW_PREFIX`
+  (exported by `brew shellenv`, so the tmux server usually carries it), falling back to
+  `brew --prefix`. When neither resolves it adds nothing and takes the existing pager
+  fallback: a missing tool degrades visibly, where a wrong absolute path was a silent
+  lie on every non-brew machine.
+
+### Security
+
+- **Caller-supplied workflow inputs no longer reach a `run:` body as code.**
+  `auto-tag-call.yml` spliced `${{ inputs.bump }}` straight into its script in a job
+  holding `contents: write` **and** `persist-credentials: true`, so a caller passing
+  `bump: 'patch"; …; #'` could run arbitrary code with the tag-push token. It was the
+  one place the fleet broke the rule `notify-web-call.yml` states outright — _"a
+  caller-supplied string must not be able to write shell"_.
+
+  Both `bump` and `release` now arrive through `env:`, and `bump` is checked against a
+  `patch|minor|major` allowlist at runtime — `workflow_call` inputs cannot be
+  `type: choice` (that is `workflow_dispatch`-only), so the type system will not do it.
+  A typo now fails with the valid set instead of reaching `auto-tag.sh`'s arg parser.
+
+  `claude-routines-call.yml` had the same shape with `${{ inputs.distro }}` in a job
+  holding `CLAUDE_CODE_OAUTH_TOKEN`; it now goes through `env:` too, and is likewise
+  allowlisted to the six distro names its own input contract already documents — `env:`
+  makes the value shell-safe, but the Claude prompt is an _instruction_ channel, so an
+  arbitrary string there remains a prompt-injection vector. No `run:` body in any
+  workflow interpolates an expression any more.
+
+  Neither rejection path echoes the raw value back. The runner parses stdout line by
+  line, so a multiline input can open a new `::…::` command on the following line and
+  forge or suppress annotations no matter how well it is shell-quoted; both paths strip
+  `CR`/`LF`/`%`/`:` and truncate first, mirroring how `atuin-guard-verify.yml` already
+  handles upstream-derived text.
+
 ## [v4.10.0] - 2026-08-13
 
 ### Added

@@ -4800,6 +4800,118 @@ else
   skip "maint launchd plist (python3 absent — cannot parse plist XML)"
 fi
 
+# ── the PATH capture (the one seam where an OS prefix may enter the runner) ───
+# maint/dotfiles-maint.sh is portable Core and names no Homebrew/pkgsrc/Nix prefix, so
+# the scheduler unit is the ONLY thing that tells the unattended runner where this box
+# keeps its binaries. Drop the capture in a refactor and nothing breaks loudly: the job
+# still fires, still logs, still exits 0 — it just resolves no brew/mise and skips those
+# steps silently. That is why this is asserted per-scheduler rather than trusted.
+# A /sentinel/bin injected into PATH at install time must appear in the rendered unit.
+ucheck "maint: systemd unit bakes in the installing shell's PATH" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH=/sentinel/bin:\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q '^Environment=\"PATH=.*/sentinel/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-path-systemd"
+# cron's command field is sh, so the PATH rides as an env prefix — and `%` is cron's
+# newline metacharacter, which would truncate the line mid-PATH if it were not escaped.
+# The sentinel deliberately contains one.
+ucheck "maint: cron line carries the PATH, single-quoted, with % escaped" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; PATH='/sent%inel/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; line=\$(cat \"\$CRON_CAPTURE\"); [[ \$line == *\"PATH='\"* ]] && [[ \$line == *'sent\\%inel'* ]]" \
+  PATH="$SCHEDBIN:$PATH" CRON_CAPTURE="$SANDBOX/cron-path.captured"
+# The decisive one. cron's command field is handed to /bin/sh, so a PATH entry holding
+# $(…), a backtick, or a quote is CODE unless it is quoted as DATA — an unquoted or
+# double-quoted assignment would evaluate it on every scheduled run, silently and with
+# the user's privileges. Build the assignment exactly as maint-install does, then let a
+# real /bin/sh parse it back and compare: nothing but a true round-trip passes this.
+_mq_want='/we'"'"'ird/$(echo pwned)/`echo pwned`/"dq"/bin'
+_mq_rendered="$(zsh -c "source '$UI'; source '$MNT'; _maint_sh_squote \"\$1\"" _ "$_mq_want" 2>/dev/null)"
+_mq_got="$(sh -c "PATH=$_mq_rendered; printf '%s' \"\$PATH\"" 2>/dev/null)"
+if [[ "$_mq_got" == "$_mq_want" ]]; then
+  pass "maint: a hostile PATH round-trips through /bin/sh as data (no \$() evaluation)"
+else
+  fail "maint: PATH did not round-trip through sh (got '$_mq_got')"
+fi
+# launchd's plist is XML: an unescaped & in a directory name yields a malformed plist
+# that launchctl rejects at load time, i.e. a schedule that silently never runs. Assert
+# plistlib can still PARSE it and that the value round-trips — the escape and the parse
+# together, since either alone would pass while the pair is broken.
+if have python3; then
+  ucheck "maint: launchd plist XML-escapes the PATH and still parses" \
+    "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; PATH='/a&b/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); sys.exit(0 if \"/a&b/bin\" in d[\"EnvironmentVariables\"][\"PATH\"] else 1)' \"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"" \
+    PATH="$SCHEDBIN:$PATH" HOME="$SANDBOX/sched-path-launchd"
+else
+  skip "maint launchd PATH capture (python3 absent — cannot parse plist XML)"
+fi
+# systemd expands % SPECIFIERS inside Environment= (%h = home, %i = instance, …), so a
+# legitimate PATH entry like /sent%h/bin would silently become /sent<homedir>/bin — or
+# the unit would refuse to load on an unknown specifier. Quotes and backslashes carry
+# unit-file syntax there too. Assert the three documented substitutions against a
+# literal expectation rather than round-tripping through a reimplementation of the rule.
+_ms_got="$(zsh -c "source '$UI'; source '$MNT'; _maint_systemd_escape \"\$1\"" _ '/a%h/b"c/d\e/bin' 2>/dev/null)"
+_ms_want='/a%%h/b\"c/d\\e/bin'
+if [[ "$_ms_got" == "$_ms_want" ]]; then
+  pass "maint: systemd Environment= escapes %, \" and \\ (no specifier expansion)"
+else
+  fail "maint: systemd escape wrong (got '$_ms_got' want '$_ms_want')"
+fi
+# ...and the rendered unit actually carries it, so the helper cannot be wired up wrong.
+ucheck "maint: the systemd unit's PATH survives a % in the installing PATH" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH='/sent%h/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'Environment=\"PATH=/sent%%h/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-pct-systemd"
+
+# ── the stale-unit detector (_maint_unit_needs_refresh) ──────────────────────
+# This is what makes the migration survivable. A unit written before the PATH capture
+# still fires, still logs, still exits 0 — and silently resolves no brew/mise. maint-status
+# is the ONLY place that can surface it, so the detector is load-bearing rather than a
+# nicety. Three states per scheduler, and the third matters as much as the others: a box
+# with NO schedule installed must stay quiet, or every such box is nagged forever.
+_MRF="$SANDBOX/maint-refresh"
+rm -rf "$_MRF"
+mkdir -p "$_MRF/bin" "$_MRF/sd-new/systemd/user" "$_MRF/sd-old/systemd/user" "$_MRF/sd-none" \
+  "$_MRF/ld-new/Library/LaunchAgents" "$_MRF/ld-old/Library/LaunchAgents" "$_MRF/ld-none"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash r\n' \
+  >"$_MRF/sd-new/systemd/user/dotfiles-maint.service"
+printf '[Service]\nExecStart=/usr/bin/env bash r\n' \
+  >"$_MRF/sd-old/systemd/user/dotfiles-maint.service"
+printf '<plist><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  >"$_MRF/ld-new/Library/LaunchAgents/com.dotfiles.maint.plist"
+# ld-old is precisely the case a bare `EnvironmentVariables` presence test MISSES: the
+# dict exists but carries no PATH, so the runner is still handed a stripped environment
+# while the detector reports the schedule as current.
+printf '<plist><dict><key>EnvironmentVariables</key><dict><key>LANG</key><string>C</string></dict></dict></plist>\n' \
+  >"$_MRF/ld-old/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '#!/bin/sh\ncase "$1" in -l) cat "${CRON_TABLE:-/dev/null}" ;; *) exit 0 ;; esac\n' >"$_MRF/bin/crontab"
+chmod +x "$_MRF/bin/crontab"
+printf '30 09 * * * PATH="/x/bin" /usr/bin/env bash r # dotfiles-maint\n' >"$_MRF/cron-new"
+printf '30 09 * * * /usr/bin/env bash r # dotfiles-maint\n' >"$_MRF/cron-old"
+: >"$_MRF/cron-none"
+
+ucheck "maint/refresh: systemd unit WITH the PATH capture is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-new"
+ucheck "maint/refresh: systemd unit WITHOUT it is flagged stale" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-old"
+ucheck "maint/refresh: no systemd unit at all stays quiet (no nag without a schedule)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-none"
+ucheck "maint/refresh: launchd plist WITH a PATH key is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-new"
+ucheck "maint/refresh: launchd plist with EnvironmentVariables but NO PATH is flagged stale" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-old"
+ucheck "maint/refresh: no launchd plist at all stays quiet" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-none"
+ucheck "maint/refresh: cron line carrying a PATH is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-new"
+ucheck "maint/refresh: cron line without a PATH is flagged stale" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-old"
+ucheck "maint/refresh: an empty crontab stays quiet" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-none"
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question

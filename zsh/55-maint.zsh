@@ -33,6 +33,80 @@ _maint_scheduler() {
   else echo none; fi
 }
 
+# ── The PATH a scheduler must hand the runner ────────────────────────────────
+# A scheduler (launchd/systemd/cron) starts the runner with a stripped environment,
+# so it has to be TOLD where this box keeps its binaries. The runner used to answer
+# that by hardcoding Homebrew's two prefixes — an OS-absolute path in portable Core,
+# and precisely what the Core⇄OS boundary gate rejects.
+#
+# Instead: capture the LIVE PATH of the interactive shell doing the install and bake
+# it into the unit. Whatever prefix this OS uses (Homebrew, pkgsrc, Nix, a distro
+# path) is already correct in that PATH, so the OS supplies the truth and Core names
+# nothing. The trade-off is that the unit is a SNAPSHOT — re-run `maint-install`
+# after a PATH change (maint-status flags a unit that predates this).
+_maint_unit_path() { print -r -- "$PATH" }
+
+# Minimal XML escape for embedding that PATH in the launchd plist. A directory
+# containing & < > is legal on every filesystem here and would otherwise produce a
+# malformed plist that launchd rejects silently at load time.
+_maint_xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"; s="${s//</&lt;}"; s="${s//>/&gt;}"
+  print -r -- "$s"
+}
+
+# POSIX single-quote a value for a /bin/sh command line — cron hands its command field
+# to sh, so an UNQUOTED (or double-quoted) PATH is code, not data: a directory holding
+# $(…) or a backtick would be EVALUATED at every scheduled run, and one holding a double
+# quote would simply make the line malformed. Inside single quotes nothing is special to
+# the shell, so the only case to handle is an embedded single quote — closed, escaped,
+# reopened as the classic '\'' sequence.
+_maint_sh_squote() {
+  local s="$1" q="'" esc="'\\''"
+  print -r -- "'${s//$q/$esc}'"
+}
+
+# Escape a value for a systemd unit's quoted `Environment=` assignment. systemd expands
+# % SPECIFIERS there (%h = home directory, %i = instance, …), so a literal % must be
+# DOUBLED or a legitimate PATH entry like /sent%h/bin silently becomes /sent<homedir>/bin
+# — or the unit fails to load outright on an unknown specifier. Inside double quotes
+# systemd also processes C-style escapes, so \ and " need escaping too, and the backslash
+# pass must come FIRST or it would re-escape the backslashes the quote pass adds.
+_maint_systemd_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//\%/%%}"
+  print -r -- "$s"
+}
+
+# True only when a schedule EXISTS but was written before Core baked the PATH into it.
+# Such a unit still runs — it just hands the runner a stripped PATH, so brew/mise/nvim
+# resolve to nothing and those steps skip silently. That is the failure this reports:
+# not a crash, an unattended job quietly doing less than it says. No schedule installed
+# is not a complaint, hence the -f / -n guards before each test.
+_maint_unit_needs_refresh() {
+  local f line
+  case "$(_maint_scheduler)" in
+  systemd)
+    f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
+    [[ -f "$f" ]] && ! grep -q '^Environment="PATH=' "$f"
+    ;;
+  launchd)
+    # Test for the PATH KEY, not merely for an EnvironmentVariables dict: a plist
+    # carrying some unrelated variable would otherwise read as current while the
+    # runner still gets a stripped PATH — the exact silent-skip this detects.
+    f="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
+    [[ -f "$f" ]] && ! grep -q '<key>PATH</key>' "$f"
+    ;;
+  cron)
+    line="$(crontab -l 2>/dev/null | grep -F '# dotfiles-maint')"
+    [[ -n "$line" && "$line" != *PATH=* ]]
+    ;;
+  *) return 1 ;;
+  esac
+}
+
 maint-install() {
   emulate -L zsh
   _core_wants_help "$1" && { _core_help "maint-install [HH:MM]" "schedule the daily safe-update job (24h, default 13:00)"; return 0; }
@@ -60,6 +134,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment="PATH=$(_maint_systemd_escape "$(_maint_unit_path)")"
 ExecStart=/usr/bin/env bash $_MAINT_SH
 EOF
     cat >"$ud/dotfiles-maint.timer" <<EOF
@@ -90,6 +165,8 @@ EOF
   <key>Label</key><string>com.dotfiles.maint</string>
   <key>ProgramArguments</key>
   <array><string>/bin/bash</string><string>$_MAINT_SH</string></array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>$(_maint_xml_escape "$(_maint_unit_path)")</string></dict>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>$((10#$hh))</integer><key>Minute</key><integer>$((10#$mm))</integer></dict>
   <key>StandardOutPath</key><string>$_MAINT_LOG</string>
@@ -102,9 +179,21 @@ EOF
     ;;
   cron)
     local marker="# dotfiles-maint"
+    # cron hands the command field to /bin/sh, so a leading `PATH=…` is just an
+    # env-prefixed command — and it stays local to this job, unlike a bare `PATH=`
+    # crontab line, which would silently re-point every OTHER job in the table.
+    #
+    # TWO escapes, and the ORDER matters. First POSIX single-quote the value, so sh
+    # treats it as data — unquoted or double-quoted, a directory containing $(…) or a
+    # backtick would be evaluated on every scheduled run. Then escape `%`, which is
+    # cron's own newline metacharacter and would otherwise truncate the line mid-PATH.
+    # Quoting first is what makes the `%` pass safe: it only ever sees the final text.
+    local cron_path
+    cron_path="$(_maint_sh_squote "$(_maint_unit_path)")"
+    cron_path="${cron_path//\%/\\%}"
     (
       crontab -l 2>/dev/null | grep -vF "$marker"
-      echo "$mm $hh * * * /usr/bin/env bash $_MAINT_SH $marker"
+      echo "$mm $hh * * * PATH=$cron_path /usr/bin/env bash $_MAINT_SH $marker"
     ) | crontab -
     _core_ok "cron entry installed for $when"
     crontab -l 2>/dev/null | grep -F "$marker"
@@ -152,6 +241,9 @@ maint-status() {
   cron) crontab -l 2>/dev/null | grep -F "# dotfiles-maint" || echo "no cron entry" ;;
   *) echo "no scheduler" ;;
   esac
+  _maint_unit_needs_refresh &&
+    _core_hint "this schedule predates the PATH capture — brew/mise steps will skip; re-run: maint-install"
+  return 0
 }
 maint-uninstall() {
   _core_wants_help "$1" && { _core_help "maint-uninstall" "remove the scheduled maintenance job"; return 0; }
