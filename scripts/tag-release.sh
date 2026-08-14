@@ -173,8 +173,9 @@ if ((PUSH)); then
   printf '\n%s──────── %s released (tags pushed) ────────%s\n' "$c_blu" "$TAG" "$c_rst"
   cat <<EOF
   NOTE: --push tagged the PRE-merge commit. main is protected, so the commit lands via a
-  PR — whose merge puts a NEW commit on main, leaving these tags one behind main's HEAD
-  ('git describe' shows $TAG-1-g…). After the PR merges, RE-POINT both at the merged tip:
+  PR — whose merge puts a NEW commit on main, so these tags do NOT end up at main's tip.
+  Under a squash the tagged commit is not even an ANCESTOR of main, so 'git describe' on
+  main skips it and resolves against the PREVIOUS release. RE-POINT both at the merged tip:
 
   1. land the commit:  git push --no-follow-tags origin HEAD:release/$TAG
        gh pr create --base main --head release/$TAG --title "release $TAG"
@@ -204,7 +205,8 @@ else
   Ship IN THIS ORDER — land the commit FIRST, then tag the MERGED tip. main is protected,
   so the commit lands via a PR (whose merge puts a new commit on main); tagging only AFTER
   that, at origin/main, keeps the tag on main's HEAD and 'git describe' clean. (Tagging
-  before the merge leaves the tag one commit behind and needs a re-point — the PUSH=1 trap.)
+  before the merge leaves the tag OFF main's history entirely under a squash — not merely
+  one commit behind — so it needs a re-point: the PUSH=1 trap.)
 
   Also note $MAJOR was just force-moved LOCALLY onto this not-yet-merged commit, so it
   disagrees with origin's $MAJOR until step 2 below. Abandoning the cut?
@@ -222,8 +224,8 @@ else
        git push --no-follow-tags origin HEAD:release/$TAG
        gh pr create --base main --head release/$TAG --title "release $TAG"
        # merge it — GitHub only offers the methods this repo enables, and any of them is
-       # fine: step 2 tags origin/main, so the merge method cannot affect the tag. (Today
-       # that button is "Squash and merge"; RELEASE-RUNBOOK.md §"Why squash is fine".)
+       # fine: step 2 tags origin/main, so the merge method cannot affect the tag.
+       # (Why this names no method: RELEASE-RUNBOOK.md §"Why squash is fine".)
   2. tag the merged tip AFTER the PR merges:
        git fetch origin
        git tag -fa $TAG origin/main -m $TAG

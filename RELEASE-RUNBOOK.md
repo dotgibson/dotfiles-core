@@ -104,9 +104,11 @@ git push origin vX.Y.Z ; git push -f origin vN   # ';' not '&&' — independent 
 
 #### Why squash is fine
 
-Step 4 used to read "merge commit, not squash". That was never a technical requirement —
-it was *descriptive*, written when merge commits were still enabled (v2.1.0, #95) and left
-behind when they were turned off. Squash is now the repo's **only** enabled method:
+Step 4 used to read "merge commit, not squash". That was never a technical requirement — it
+was *descriptive*. It was added in #106 (first shipped in v2.1.1), recording how releases
+merged at the time: #95, the v2.0.0 release, had landed as a genuine merge commit because
+merge commits were still enabled. It was then left behind when they were turned off.
+Squash is now the repo's **only** enabled method:
 `mergeCommitAllowed` and `rebaseMergeAllowed` are both false, and `main`'s ruleset
 additionally pins `allowed_merge_methods: ["squash"]`. The old instruction was impossible
 to follow, so **if the printed hint and the repo ever disagree again, trust the repo** —

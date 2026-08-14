@@ -168,9 +168,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   where the natural reaction is to assume the _ruleset_ is misconfigured and go change it.
   v4.10.0 had already shipped as a squash (`cd4278e`, one parent) in silent contradiction.
 
-  The "not squash" clause was never load-bearing. It was descriptive — written when merge
-  commits were still enabled (v2.1.0, #95) and left behind when they were turned off. What
-  makes the recipe correct is step 5 tagging `origin/main`, the post-merge tip, so
+  The "not squash" clause was never load-bearing. It was descriptive — added in #106 (first
+  shipped in v2.1.1) to record how releases merged then, since #95, the v2.0.0 release, had
+  landed as a real merge commit back when merge commits were still enabled — and left behind
+  when they were turned off. What makes the recipe correct is step 5 tagging `origin/main`,
+  the post-merge tip, so
   `release.yml`'s `core.version`-at-the-tagged-commit guard, `git describe`, and the `vN`
   alias are all satisfied by a squashed tip. `RELEASE-RUNBOOK.md` now records that reasoning
   under §"Why squash is fine", including the instruction to trust the repo over the docs if
