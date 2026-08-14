@@ -105,6 +105,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A concurrent test run no longer fails the audit with a sandbox leak that never
+  happened.** `verify-atuin-guard.sh --premise autostart` built its sandbox at
+  `/tmp/atverify.XXXXXX`, and the `test-core.sh` assertion that a completed run leaves no
+  sandbox behind enumerated that prefix _globally_ — snapshot before, snapshot after,
+  anything new is a leak. `/tmp` has other writers, so a second suite running on the same
+  box during the window was counted as the first run's leak. Two worktrees, two agents, or
+  simply `make audit` in one terminal while `make tag` audits in another was enough.
+
+  It cost a real `make tag` — `leaked 1 new sandbox dir(s)` on the repo's most consequential
+  command, where the operator's natural next move is to re-run or reach for
+  `TAG_SKIP_AUDIT=1`. A release gate that teaches the operator to skip it is worse than no
+  gate.
+
+  Sandboxes now carry a per-run tag — `/tmp/atverify.<tag>.XXXXXX`, from the new
+  `CORE_ATVERIFY_TAG` — and the assertion globs only its own. The tag **defaults to the
+  script's pid**, so `make verify-atuin-guard` and `atuin-guard-verify.yml` pass nothing and
+  still get a prefix no concurrent run can collide with; two live processes cannot share a
+  pid. It is validated as 1-16 characters of `[A-Za-z0-9_-]` and rejected rather than
+  sanitized, because it becomes a path component and a caller that globs its own tag needs
+  the tag it passed. The cap is an AF_UNIX budget, not style: `sun_path` ends near 108 bytes
+  and the daemon socket sits inside the sandbox, which is the same reason `/tmp` is
+  hardcoded there instead of `$TMPDIR`.
+
+  Two assertions, because narrowing a glob and blinding it look identical from a green run.
+  The leak check now plants a foreign-tagged sandbox _inside_ its own window and still
+  requires a clean delta; a companion case plants one foreign and one of its own and
+  requires the delta to name its own and only its own. The existing self-check — which fails
+  loudly when the glob cannot enumerate at all, after an unfollowed `/tmp` symlink once made
+  this pass vacuously on macOS — is unchanged, and matters more now: a tag that never reached
+  the script would empty both snapshots the same way.
+
 - **`maint-status` now reports a scheduler unit whose runner path no longer exists.**
   `_maint_unit_needs_refresh` only ever asked whether the unit carried a PATH capture, so
   the other way a scheduled job dies silently went unreported: move the consuming repo and
