@@ -1733,9 +1733,16 @@ if have git; then
   LR="$SANDBOX/linkrun"
   rm -rf "$LR"
   mkdir -p "$LR/home" "$LR/config" "$LR/dotfiles"
-  # A consumer's layout is <repo>/core -> the vendored Core tree. Symlink rather than copy
-  # so the assertions run against the working tree exactly as it will be vendored.
-  ln -s "$HERE" "$LR/dotfiles/core"
+  # A consumer's layout is <repo>/core -> the vendored Core tree. COPY it rather than
+  # symlinking: blib_link_core runs `chmod +x` on core/tmux/scripts/*.sh and core/bin/clip*,
+  # and audit-core.sh launches this suite CONCURRENTLY with its own exec-bit gate — a
+  # symlink here would let the test mutate the very checkout that gate is reading, which is
+  # both a race and a violation of the read-only assumption the whole suite is built on.
+  # Copying per top-level directory keeps .git out without needing a non-portable tar flag.
+  mkdir -p "$LR/dotfiles/core"
+  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh bin lib; do
+    [[ -e "$HERE/$_lr_d" ]] && cp -R "$HERE/$_lr_d" "$LR/dotfiles/core/$_lr_d"
+  done
   mkdir -p "$LR/config/tmux/plugins/tpm"   # pre-seed: skips the tpm clone (offline)
   (
     # shellcheck source=lib/bootstrap-lib.sh
