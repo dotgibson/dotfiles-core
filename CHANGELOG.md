@@ -81,8 +81,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   above the summary and only the summary survived being piped through `tail`.
 
   The suite's output is already buffered for the background run, so the names cost one `grep`
-  and travel wherever the fail line travels: the summary block, `--json`, a CI annotation, a
-  truncated paste in an issue. Up to three are named, then a count (`+N more`) rather than a
+  and travel wherever the fail line travels: the summary block, `--json`, the CI job log, a
+  truncated paste in an issue. Not a CI _annotation_ — `fail()` writes to stderr and `ci.yml`
+  runs `audit-core.sh` directly with nothing emitting `::error::`, and claiming a destination
+  this does not reach would be the same overclaim the digest exists to prevent. The names are
+  joined without rewriting the records, so a message containing a literal `|` (nine assertions
+  do, `'exec … || exec …' cannot fall back` among them) is not spaced out into false
+  boundaries — two failures reading as four is worse than terse in the one line someone has
+  when they cannot reproduce the failure. Up to three are named, then a count (`+N more`)
+  rather than a
   silent truncation, because "one flaky assertion" and "the whole section is down" need telling
   apart before deciding to re-run or investigate. A run that exits non-zero having printed no
   `✗` at all — a crash, a kill, a timeout — now says _that_, instead of an empty list beside a
