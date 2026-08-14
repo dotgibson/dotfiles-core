@@ -3393,19 +3393,59 @@ J4PROBE
     #     once its socket is unlinked, so a socket-only proof yields extra rows and a FALSE
     #     `moved`; the group half of the proof kills it at the inter-arm stop and the run
     #     stays clean. Asserted on the VERDICT, because that is where the damage would show.
+    #
+    #     THREE VERDICTS HERE TOO, and this is the one case in the section that had to learn
+    #     it. Every other verdict-bearing arm drives its stub to a SPECIFIC negative
+    #     (`moved`, or `unmeasurable` for a named apparatus limit), so anything else is a
+    #     genuine miss. This one is the only arm that expects the POSITIVE verdict from an
+    #     otherwise well-behaved stub — which means it inherits every environmental way a run
+    #     can honestly decline, and `[[ $_dv == holds ]]` … `else fail` swept all of them into
+    #     a message asserting an upstream finding. That is precisely the inversion the third
+    #     verdict exists to prevent (see verify-atuin-guard.sh's header: `unmeasurable` is
+    #     "the apparatus could not be trusted … never a finding about upstream"), so the check
+    #     that polices it must not be the one committing it.
+    #
+    #     NOT HYPOTHETICAL, and not a rare corner. The section runs at CORE_ATVERIFY_POLL=3 —
+    #     300ms for the manual-spawn control's daemon to bind and answer — which a loaded box
+    #     misses, yielding "a daemon started by hand never answered … An apparatus limit, not
+    #     a finding" with NOTHING having survived. Reproduced under CPU contention (the same
+    #     stub flips holds/unmeasurable), and it reddened audit-alpine on an unrelated
+    #     docs-only PR, where a rerun of the identical commit went green.
+    #
+    #     THE SKIP DOES NOT MAKE THIS GO QUIET, which is the only reason it is allowed. The
+    #     two halves are separated: the SURVIVOR half is unconditional and stays a failure
+    #     under any verdict — a live daemon is a leak whether or not the run could measure —
+    #     and `moved` stays a failure because that is the false verdict the zombie's rows
+    #     would manufacture. Nor can a contaminated control hide behind the skip: the opening
+    #     control runs before any daemon exists, the spawn control runs while the socket is
+    #     PRESENT (this stub only commits once it is gone), and the closing drain control runs
+    #     only after daemon_stop_proven has confirmed the owner pid dead. Contamination has no
+    #     route to `unmeasurable` here — it can only surface as `moved` or a survivor.
     _mkdstub atuin-stopunlink stop-unlinks-only
     _d_run atuin-stopunlink --premise autostart --json
     _dv="$(_d_get "$_dout" verdict)"
+    _dwhy="$(_d_get "$_dout" reason)"
     _dleft=0
     _dpf="$_dstub/atuin-stopunlink.pid"
     if [[ -f "$_dpf" ]] && kill -0 "$(cat "$_dpf" 2>/dev/null)" 2>/dev/null; then
       _dleft=1
     fi
     _dreap
-    if [[ "$_dv" == holds ]] && ((_dleft == 0)); then
+    if ((_dleft != 0)); then
+      fail "atuin autostart: a socket-only stop left the zombie daemon alive (verdict=$_dv) — it keeps committing into later arms and its writes would be reported as an upstream finding"
+    elif [[ "$_dv" == holds ]]; then
       pass "atuin autostart: a daemon that outlives its own socket is stopped before the next arm — it cannot write rows the run would blame on upstream"
+    elif [[ "$_dv" == unmeasurable ]]; then
+      skip "atuin autostart: a daemon that outlives its own socket — no zombie survived, but the verdict half could not be measured on this box (${_dwhy:-no reason reported})"
+    elif [[ "$_dv" == moved ]]; then
+      fail "atuin autostart: a socket-only stop let the zombie's rows land in a measured arm — the run reports a premise that MOVED on writes it made itself"
     else
-      fail "atuin autostart: a socket-only stop let a zombie daemon keep committing into later arms (verdict=$_dv, survived=$_dleft) — its writes would be reported as an upstream finding"
+      # NO VERDICT AT ALL is its own outcome, and routing it into the `moved` arm would name a
+      # cause this run has no evidence for. It is also the one shape with a KNOWN history here:
+      # a stray line on stderr merging into stdout leaves json.load with nothing to parse, which
+      # is how §J4 first went red on Alpine (see _d_run's comment). So stderr is carried into the
+      # message — it is the only thing that can say what actually happened.
+      fail "atuin autostart: the socket-only-stop run produced no parseable verdict (rc$_drc) — this is the apparatus failing to report, not a measurement${_dstderr:+ (stderr: $_dstderr)}"
     fi
 
     # 17. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
