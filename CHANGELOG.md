@@ -105,6 +105,56 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`maint-status` now reports a scheduler unit whose runner path no longer exists.**
+  `_maint_unit_needs_refresh` only ever asked whether the unit carried a PATH capture, so
+  the other way a scheduled job dies silently went unreported: move the consuming repo and
+  the scheduler keeps firing at the absolute runner path frozen into the unit at install
+  time. Found on a real machine, where a launchd agent had been pointing at a path that had
+  not existed for months.
+
+  Nothing surfaced it from any angle. `maint-status` printed the timer happily, `launchctl
+  list` showed exit status 0 because the job had not fired since the move, and `maint-run`
+  kept working — it resolves the runner relative to the live config rather than reading the
+  unit, which is exactly why the breakage stayed invisible.
+
+  The detector now also reads the runner back out of the unit — `ProgramArguments[1]` from
+  the launchd plist, the path after `ExecStart=/usr/bin/env bash` in the systemd service,
+  the command past cron's single-quoted `PATH=` prefix — and flags it when it does not
+  resolve. Both causes are fixed by re-running `maint-install`, so the hint now says _which_
+  happened: a stale unit predating the PATH capture is a snapshot to refresh, a dead runner
+  path usually means the repo moved.
+
+  Each arm matches the exact shape `maint-install` renders and stays quiet on anything
+  else, because a "close enough" parse turns a live job into a false death notice: the
+  systemd and cron arms read a _command_, not a path field, so a hand-edited
+  `… bash /runner --quiet` or `… bash /runner >>/log` must not be read as one long,
+  nonexistent path; and the launchd array must be `ProgramArguments`' own value rather
+  than the next array in the plist. A recorded path must also be absolute, which
+  `maint-install` always writes: a relative one would be resolved by `[[ -f ]]` against
+  whatever directory `maint-status` was invoked from, making the verdict a property of the
+  caller rather than of the unit. A box with no schedule installed stays quiet too.
+
+  Every token is located by _position_ rather than by appearance: launchd's `argv[0]` must
+  be the interpreter, and cron's `PATH=` value is consumed as a real single-quoted token, so
+  a command that merely contains text resembling the interpreter — inside the assignment, or
+  inside a later quoted argument — can never have its argument read back as our runner. On
+  the launchd side the encoded forms a plist may legally use (`&quot;`, `&apos;`) are decoded
+  so the hint names the real filename, and anything undecodable (a numeric character
+  reference, an unknown entity) is refused for the same reason the rest is: a filename that
+  cannot be reconstructed is not evidence of anything.
+
+  The two causes can coexist, and a unit predating the PATH capture is if anything the
+  likeliest to have been orphaned by a move as well — so the runner is inspected first and
+  `path` is the fallback. Reporting the milder cause there would tell the operator that some
+  steps will skip on a job that does not run at all.
+
+  Twenty-nine behavioral assertions — twelve scheduler states, four that a recorded path is
+  extracted correctly (two read back verbatim, plus escaped-quote scanning and `&apos;`
+  decoding), ten that an extended command, a displaced array, a relative path, a spliced-in
+  program, a quoted look-alike, or an undecodable reference is refused rather than
+  mis-parsed, and three that a dead runner outranks a stale PATH. The healthy fixtures point
+  at a runner that really exists, or the whole section would pass vacuously.
+
 - **The boundary scan no longer strips comments at all.** Stripping was a false-negative
   machine: `#` is a comment in shell and TOML but the **length operator** in Lua, so
   `local p = t[#t] .. "<prefix>/bin"` was truncated and passed; a delimiter inside a string
