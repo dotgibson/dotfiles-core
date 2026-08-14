@@ -193,6 +193,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   greening the leak assertion forever. That is the same vacuous pass the self-check exists to
   catch, arriving by a different door.
 
+  The validation runs **in the C locale**. POSIX defines a range like `[A-Z]` by _collation_
+  rather than codepoint, so under some locales it may admit letters the contract does not mean
+  to allow — and Core ships to glibc, musl and BSD userlands, which need not agree. The byte cap
+  is the same fault one step downstream: `{1,16}` counts _characters_, so sixteen multibyte ones
+  are up to 64 bytes and the limit stops being the AF_UNIX budget it exists to be. Downstream,
+  not separate — every character in `[A-Za-z0-9_-]` is single-byte ASCII, so the count can only
+  diverge from the byte length once collation has already leaked a non-ASCII character in.
+
+  The suite reports **how much of this it actually exercised**, rather than implying more. It
+  asks the box for its installed UTF-8 locales (`locale -a`, falling back to named candidates
+  on musl, which ships no such command) and looks for one under which the _unpinned_ pattern
+  really accepts a non-ASCII sample. Finding one, it names it and the case genuinely fails if
+  the pin is removed; finding none — all 84 on macOS reject it — the result states the count and
+  says the pin is unexercised there, asserted by contract only. The no-match case then runs
+  under `LC_ALL=C` rather than an empty `LC_ALL`, which is not "no locale" at all but a
+  fall-through to the caller's `LANG`: an unprobed locale that could be the very one that
+  accepts the sample, making the run exercise the pin while the line claimed it had not.
+
+  Two earlier drafts of this check were vacuous — one probed for multibyte _decoding_, which a
+  locale can do while still collating `á` outside `[A-Za-z]`, so it passed identically with the
+  pin removed. That is the shape this file already exists to refuse, and the coverage line is
+  now part of the assertion rather than a comment about it.
+
   Two assertions, because narrowing a glob and blinding it look identical from a green run.
   The leak check now plants a foreign-tagged sandbox _inside_ its own window and still
   requires a clean delta; a companion case plants one foreign and one of its own and
@@ -340,6 +363,80 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   Verified the way a gate change has to be: the previous tree is **red** under the new
   scope and green under the old one, which is the only evidence that the widening bites.
+
+- **`maint-install` now escapes the runner path it writes into every scheduler unit.** The
+  write-side half of the `%` problem the entry above only closed on the read side: the
+  captured PATH was already escaped three different ways, one per scheduler grammar — but
+  the runner alongside it went in **raw**, and it is no more of a constant: it is wherever
+  the consuming repo happens to have been cloned. A single metacharacter in that path
+  produced a broken schedule, and all three failures were silent or nearly so:
+
+  - **systemd** expands `%` **specifiers** in `ExecStart=` (`%h` = home directory, `%i` =
+    instance, …), so a repo under `…/a%h/…` ran a different path entirely — or the unit
+    refused to load outright on an unknown one. It substitutes **variables** there too, so
+    a component literally named `${HOME}` was equally not the path that ran. The
+    `Environment=` line one row above was already protected against the specifiers — and
+    performs no variable substitution at all, which is why `$` needs its own pass rather
+    than a wider shared helper. The argument was also unquoted, so `systemd` split the
+    runner on whitespace, and a `"` or `\` in the name carried unit-file syntax rather than
+    being part of the filename.
+  - **cron** treats `%` as its **newline** metacharacter: the command was truncated there
+    and the remainder handed to it as stdin, so the job simply stopped running.
+    `maint-install` already escaped `%` in the PATH portion and not in the runner. The
+    runner was unquoted besides, so a space split the command and a `$(…)` or a backtick in
+    the path was _code_, evaluated on every scheduled run.
+  - **launchd** got `&`, `<` or `>` straight into `ProgramArguments`, yielding a malformed
+    plist that `launchctl load` rejects. The PATH value two lines below was already escaped.
+
+  Each field now goes through the escape its own grammar needs: the systemd runner is
+  written **quoted**, through the `Environment=` helper plus a command-line-only `$` → `$$`
+  pass (quoting is what reduces whitespace, `"` and `\` to the same substitutions `%` and
+  `$` already needed), the cron runner through the same single-quote-then-escape-`%` pair as
+  the cron PATH, and the launchd runner — along with the two log paths, which had the same
+  hole — through the plist's XML escape.
+
+  The crontab entry is also emitted with `print -r` rather than `echo`. `maint-install` runs
+  under `emulate -L zsh`, where the `echo` builtin **interprets backslash escapes** — so two
+  characters in a directory name were enough to corrupt the table that the careful quoting
+  above had just produced: `\n` split the entry across two lines and `\c` truncated it
+  outright, leaving a schedule that silently was not the one anyone asked for.
+
+  `_maint_unit_runner` decodes each new encoding symmetrically, so `maint-status` keeps
+  naming the real filename. It stays as strict as it was, and the strictness is the same
+  rule in three places: a value the reader cannot _reconstruct_ is not evidence of anything,
+  so it is refused rather than guessed at. The systemd arm therefore refuses a closing quote
+  with argv after it, a surviving `%` specifier, and a surviving `$VAR` reference — the text
+  in the file is then not the path systemd runs, and resolving either would mean
+  reimplementing systemd's specifier table and reading the unit's environment block. The
+  cron arm refuses a **bare** `%` — one that is not our own `\%` — because sh quoting is no
+  defence there: cron translates the field before `sh` ever sees it, so the command is
+  truncated at that `%` whatever the quotes say. That test has to run _before_ the `\%`
+  decode, which would otherwise destroy the evidence of which kind of `%` it was. The
+  launchd arm already applied the same rule to an undecodable entity reference.
+
+  The older unquoted shapes still parse, because a unit on disk is only rewritten when the
+  operator re-runs `maint-install` — and a `%` in one of those is still refused outright by
+  `_maint_lone_arg`, which remains the right answer there: nothing escaped it, so the
+  recorded text genuinely is not the path that runs.
+
+  Twelve further assertions: one round-trip per scheduler through a runner path holding
+  `% $ ${} & < > " \ '`, a space, and the two-character sequences `\n` and `\c` — installed,
+  read back verbatim, and reported as _current_ rather than as a dead runner — one per
+  scheduler confirming the same artifact through a party that is not this codebase
+  (`/bin/sh` parses the cron command back after applying cron's own `\%` pass, `plistlib`
+  parses the plist, and the systemd `ExecStart` is pinned against a literal expectation),
+  one that the crontab entry is a single **marker-terminated** line, and five refusals for
+  the quoted shapes. That one is stated as a pair deliberately: with this fixture the two
+  `echo` corruptions cancel in the line count — `\n` adds a newline and `\c` removes the
+  final one — so a bare "is it one line" check reads green on a table that is one wrapped
+  fragment plus one unterminated one. Reaching the marker is what truncation cannot fake.
+  A round-trip through our own reader alone would pass a matched pair of wrong escapes, and
+  a fixture whose backslash pair is not a recognized escape passes the `echo` hazard without
+  ever exercising it — the first revision of this one used `\g` and did exactly that. The
+  whole block skips, rather than passing vacuously, on a filesystem that will not take `"`
+  or `\` in a name. The pre-existing cron render assertion now anchors on the runner's
+  closing quote, so dropping the quoting fails there rather than on the one box whose path
+  has a space.
 
 ### Security
 

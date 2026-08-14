@@ -3155,8 +3155,59 @@ STUB
   _dbad=0
   _dtagwhy=""
   # 17 chars, one past the cap — not 16, which is the accepted boundary asserted just below.
-  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space"; do
-    CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
+  #
+  # THE TWO NON-ASCII CASES assert the ASCII half of the contract, and are the ones that would
+  # notice if the script's LC_ALL=C pin were removed on a userland where it matters. A range
+  # like [A-Z] is defined by COLLATION, not codepoint, so a locale may admit letters this
+  # contract does not mean to allow; `ábcdefghij123456` is the same fault one step downstream —
+  # sixteen CHARACTERS but seventeen BYTES, so a character-counting cap would pass a path
+  # component longer than promised, against an AF_UNIX budget measured in bytes. Downstream,
+  # not separate: every character in [A-Za-z0-9_-] is single-byte ASCII, so 16 chars can only
+  # exceed 16 bytes once collation has already leaked a non-ASCII one in.
+  #
+  # THE PROBE ASKS THE ONLY QUESTION THAT MATTERS: is there a locale here under which the
+  # UNPINNED pattern actually accepts the sample? An earlier version probed for multibyte
+  # DECODING (`${#é}` is 1, not 2) and picked the first hit — which proved nothing, because a
+  # locale can decode multibyte and still collate `á` outside [A-Za-z]. C.UTF-8 does exactly
+  # that and was probed first, so the case passed identically with and without the pin: a
+  # regression test that could not fail. Selecting on the real predicate means that where a
+  # locale IS found the case genuinely fails if the pin is removed, and where none is found the
+  # message SAYS the pin is unexercised here rather than implying coverage this box cannot give.
+  # ENUMERATED, not guessed, wherever the box can answer. A hand-written candidate list is its
+  # own way of reporting the wrong coverage: the locale that misbehaves here need not be among
+  # seven names someone happened to think of — this machine offers 84 UTF-8 locales, not 7.
+  # `locale -a` is the box's own answer; musl ships no such command, so the named candidates
+  # survive as the fallback and the result line says which source it actually used.
+  _dlocs="$(locale -a 2>/dev/null | grep -iE 'utf-?8' || true)"
+  _dlocsrc=installed
+  if [[ -z "$_dlocs" ]]; then
+    _dlocsrc=candidate
+    _dlocs="$(printf '%s\n' C.UTF-8 en_US.UTF-8 en_US.utf8 UTF-8 de_DE.UTF-8 cs_CZ.UTF-8 hu_HU.UTF-8)"
+  fi
+  _dutf8=""
+  _dlocn=0
+  while read -r _dl; do
+    [[ -n "$_dl" ]] || continue
+    _dlocn=$((_dlocn + 1))
+    if LC_ALL="$_dl" "$BASH" -c '[[ "$1" =~ ^[A-Za-z0-9_-]{1,16}$ ]]' _ 'tág' 2>/dev/null; then
+      _dutf8="$_dl"
+      break
+    fi
+  done <<<"$_dlocs"
+  # Said out loud in the result line, because "the pin is exercised here" and "no locale here
+  # can exercise it" are different facts and a reader must not have to guess which one a green
+  # tick meant. This is the same discipline as case 17's self-check, applied to coverage.
+  if [[ -n "$_dutf8" ]]; then
+    _dcov=" — LC_ALL=C pin EXERCISED under $_dutf8, which accepts the sample unpinned"
+  else
+    _dcov=" — none of $_dlocn $_dlocsrc UTF-8 locales accepts the sample unpinned, so the LC_ALL=C pin is unexercised on this box (contract only)"
+  fi
+  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space" "tág" "ábcdefghij123456"; do
+    # `:-C`, not a bare "$_dutf8". An EMPTY LC_ALL is not "no locale" — it falls through to the
+    # caller's LC_COLLATE/LANG, which is an unprobed locale that could be the very one that
+    # accepts the sample. The run would then exercise the pin while the line above reported it
+    # unexercised: the report would be wrong in the one direction a coverage claim must not be.
+    LC_ALL="${_dutf8:-C}" CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
       --premise autostart --atuin "$_dstub/atuin-tagck" >/dev/null 2>&1
     _drc=$?
     if ((_drc != 2)); then
@@ -3192,7 +3243,7 @@ STUB
   }
   _dreap
   if ((_dbad == 0)); then
-    pass "atuin autostart: a tag that is empty, overlong, or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted"
+    pass "atuin autostart: a tag that is empty, overlong, non-ASCII, or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted$_dcov"
   else
     fail "atuin autostart: the CORE_ATVERIFY_TAG contract is not enforced —$_dtagwhy; an accepted bad tag globs nothing and greens the leak check vacuously"
   fi
@@ -5179,8 +5230,12 @@ ucheck "maint: systemd timer+service render with a valid OnCalendar" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; maint-install 09:30 >/dev/null 2>&1; ud=\"\$XDG_CONFIG_HOME/systemd/user\"; [[ -f \"\$ud/dotfiles-maint.timer\" && -f \"\$ud/dotfiles-maint.service\" ]] || exit 1; grep -q 'OnCalendar=\*-\*-\* 09:30:00' \"\$ud/dotfiles-maint.timer\" || exit 1; grep -q 'ExecStart=.*dotfiles-maint.sh' \"\$ud/dotfiles-maint.service\"" \
   PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-systemd"
 # cron: the captured table line must be a well-formed 5-field schedule at MM HH, tagged.
-ucheck "maint: cron line renders as a valid 5-field schedule" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; maint-install 09:30 >/dev/null 2>&1; [[ -f \"\$CRON_CAPTURE\" ]] || exit 1; grep -qE '^30 09 \* \* \* .*dotfiles-maint\.sh # dotfiles-maint\$' \"\$CRON_CAPTURE\"" \
+# The runner is single-quoted, which is part of the contract rather than incidental: cron's
+# command field is handed to /bin/sh, so a bare runner is split on whitespace and a $(…) in
+# the path would be evaluated on every scheduled run. Anchoring on the closing quote is what
+# makes dropping the quoting fail HERE rather than on the one box whose path contains a space.
+ucheck "maint: cron line renders as a valid 5-field schedule with the runner quoted" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; maint-install 09:30 >/dev/null 2>&1; [[ -f \"\$CRON_CAPTURE\" ]] || exit 1; grep -qE '^30 09 \* \* \* .*dotfiles-maint\.sh'\\'' # dotfiles-maint\$' \"\$CRON_CAPTURE\"" \
   PATH="$SCHEDBIN:$PATH" CRON_CAPTURE="$SANDBOX/cron.captured"
 # launchd: the plist must be WELL-FORMED XML (plistlib parses it) with the rendered
 # Hour/Minute — the one artifact that's silent text the other gates never inspect. Needs
@@ -5348,6 +5403,126 @@ ucheck "maint/refresh: the recorded runner path is read back verbatim (cron, pas
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-dead"
 
+# ── the runner path is DATA in three different grammars ──────────────────────
+# maint-install escapes the captured PATH per scheduler but wrote the RUNNER raw, and the
+# runner is not a constant: it is wherever the consuming repo was cloned to. Every one of
+# the three failures is silent or nearly so, which is why they survived —
+#
+#   systemd  % is a SPECIFIER in ExecStart, so a repo under …/a%h/… runs a different path
+#            (or the unit refuses to load on an unknown one); an unquoted argument is also
+#            split on whitespace, and " / \ carry unit-file syntax.
+#   cron     % is cron's NEWLINE metacharacter: the command is truncated there and the
+#            remainder is fed to it as stdin, so the job simply stops running. Unquoted,
+#            the command field is also sh, so a space splits it and $(…) is CODE.
+#   launchd  & < > make the plist malformed and `launchctl load` rejects it.
+#
+# One fixture path carries all of it — % space & < > " \ ' — and each arm asserts the full
+# loop: maint-install renders it, _maint_unit_runner reads it back VERBATIM, and the unit
+# reads as CURRENT rather than as a dead runner. That last part is the user-visible bug:
+# before this, a repo at such a path got a broken schedule AND a maint-status that either
+# said nothing or named the wrong file.
+#
+# The pre-existing fixtures above all use the older UNQUOTED shapes, so they double as the
+# backward-compatibility gate: units already on disk are only rewritten when the operator
+# re-runs maint-install, and must keep parsing until they do.
+# Every hazard in one component. The last four are the ones a "looks about right" fixture
+# misses: `$i`/`${j}` because systemd substitutes VARIABLES in ExecStart on top of its %
+# specifiers, and `\n`/`\c` because they are the two-character sequences zsh's `echo`
+# builtin would rewrite — `\c` truncating the crontab line outright. An earlier revision of
+# this fixture used `\g`, which is not a recognized escape, so the whole hazard sat
+# unexercised while the assertion read green.
+_MRF_HOSTILE_DIR="$_MRF/hostile/a%h b&c<d>e\"f\\g'h\$i\${j}\\nk\\cl"
+_MRF_HOSTILE="$_MRF_HOSTILE_DIR/dotfiles-maint.sh"
+if mkdir -p "$_MRF_HOSTILE_DIR" 2>/dev/null && printf '#!/bin/bash\n:\n' >"$_MRF_HOSTILE" 2>/dev/null; then
+  # A crontab stub that ROUND-TRIPS: `-` stores the table, `-l` reads that same table back.
+  # The one above is read-only, and install-then-read is the whole point here.
+  mkdir -p "$_MRF/rtbin"
+  printf '#!/bin/sh\ncase "$1" in -l) [ -f "$CRON_TABLE" ] && cat "$CRON_TABLE"; exit 0 ;; -) cat > "$CRON_TABLE" ;; *) exit 0 ;; esac\n' >"$_MRF/rtbin/crontab"
+  chmod +x "$_MRF/rtbin/crontab"
+  : >"$_MRF/cron-hostile"
+  # The path rides in through the ENVIRONMENT — it holds a single quote, a double quote and
+  # a backslash, so interpolating it into the assertion body would rewrite the body itself.
+  _MRF_RT="source '$UI'; source '$MNT'; _MAINT_SH=\"\$SH\"; _maint_scheduler() { echo SCHED }; maint-install 09:30 >/dev/null 2>&1; [[ \"\$(_maint_unit_runner)\" == \"\$SH\" ]] && ! _maint_unit_needs_refresh"
+
+  ucheck "maint/refresh: a runner path holding % \$ \" \\ and a space round-trips through the systemd unit" \
+    "${_MRF_RT/SCHED/systemd}" \
+    PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$_MRF/rt-sd" SH="$_MRF_HOSTILE"
+  ucheck "maint/refresh: a runner path holding & < > and a quote round-trips through the launchd plist" \
+    "${_MRF_RT/SCHED/launchd}" \
+    PATH="$SCHEDBIN:$PATH" HOME="$_MRF/rt-ld" SH="$_MRF_HOSTILE"
+  ucheck "maint/refresh: a runner path holding % and shell metacharacters round-trips through the cron line" \
+    "${_MRF_RT/SCHED/cron}" \
+    PATH="$_MRF/rtbin:$SCHEDBIN:$PATH" CRON_TABLE="$_MRF/cron-hostile" SH="$_MRF_HOSTILE"
+
+  # ...and the same three artifacts read by something that is NOT this codebase. A round-trip
+  # through our own reader proves only that the two halves AGREE — escape it wrongly and
+  # unescape it wrongly the same way and the assertions above stay green while the scheduler
+  # runs nothing. These pin the emitted text against the real grammar instead, the way the
+  # PATH assertions already do.
+  #
+  # systemd has no parser to borrow on a macOS runner, so it gets the literal expectation:
+  # the ONE directory component is spelled out post-escape (% doubled, " and \ backslashed)
+  # rather than recomputed here — restating the rule in the test would let a wrong rule pass.
+  if grep -qF 'ExecStart=/usr/bin/env bash "' "$_MRF/rt-sd/systemd/user/dotfiles-maint.service" 2>/dev/null &&
+    grep -qF 'a%%h b&c<d>e\"f\\g'"'"'h$$i$${j}\\nk\\cl/dotfiles-maint.sh"' "$_MRF/rt-sd/systemd/user/dotfiles-maint.service" 2>/dev/null; then
+    pass "maint: the systemd ExecStart runner is quoted with %, \$, \" and \\ escaped"
+  else
+    fail "maint: the systemd ExecStart runner is not escaped as expected"
+  fi
+  # cron: let a real /bin/sh parse the command back, after applying cron's OWN pass (\% → %)
+  # exactly as crond would before handing the field over. Exactly one argument must come out
+  # of it, spelled the same as the file on disk.
+  # ONE line, AND that line reaches its terminating marker. maint-install runs under
+  # `emulate -L zsh`, where `echo` interprets backslash escapes, so a `\n` in the runner
+  # splits the entry in two and a `\c` truncates it and swallows the trailing newline.
+  #
+  # BOTH halves are needed, and the reason is worth stating because the obvious single check
+  # does not work: with this fixture the two corruptions CANCEL in the line count — `\n`
+  # adds a newline, `\c` removes the final one, and a line count of exactly 1 comes back
+  # from a table that is in fact one wrapped fragment plus one unterminated one. What the
+  # truncation cannot fake is arriving at the marker, since everything past the `\c` is
+  # gone. Verified against a reverted copy of the module: `echo` yields marker-terminated=0
+  # while `print -r` yields 1, with the line count reading 1 for both.
+  _mr_nlines="$(wc -l <"$_MRF/cron-hostile" 2>/dev/null | tr -d ' ')"
+  _mr_tagged="$(grep -c '# dotfiles-maint$' "$_MRF/cron-hostile" 2>/dev/null || true)"
+  if [[ "$_mr_nlines" == 1 && "$_mr_tagged" == 1 ]]; then
+    pass "maint: the cron entry is one marker-terminated line (no echo-escape split or truncation)"
+  else
+    fail "maint: cron table is $_mr_nlines line(s), $_mr_tagged marker-terminated — a backslash escape corrupted the entry"
+  fi
+  _mr_line="$(cat "$_MRF/cron-hostile" 2>/dev/null)"
+  # A BARE % is one left over once every escaped \% is accounted for — testing for the
+  # mere presence of \% would pass a line that escaped the PATH's % and not the runner's.
+  if [[ "${_mr_line//\\%/}" == *'%'* ]]; then
+    fail "maint: the cron line carries a BARE % — crond truncates the command there"
+  else
+    _mr_tok="${_mr_line% # dotfiles-maint}"
+    _mr_tok="${_mr_tok#*"/usr/bin/env bash "}"
+    _mr_tok="${_mr_tok//\\%/%}" # cron's own unescape
+    _mr_got="$(sh -c "set -- $_mr_tok; printf '%s|%s' \"\$#\" \"\$1\"" 2>/dev/null)"
+    if [[ "$_mr_got" == "1|$_MRF_HOSTILE" ]]; then
+      pass "maint: the cron runner survives cron's % pass and reaches sh as one argument"
+    else
+      fail "maint: cron runner did not round-trip through sh (got '$_mr_got')"
+    fi
+  fi
+  # launchd: plistlib is the third party, as it is for the PATH value two sections up.
+  if have python3; then
+    if python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],"rb")); sys.exit(0 if d["ProgramArguments"][1]==sys.argv[2] else 1)' \
+      "$_MRF/rt-ld/Library/LaunchAgents/com.dotfiles.maint.plist" "$_MRF_HOSTILE" 2>/dev/null; then
+      pass "maint: the launchd plist still parses and ProgramArguments[1] is the real path"
+    else
+      fail "maint: the launchd plist is malformed or ProgramArguments[1] is not the runner"
+    fi
+  else
+    skip "maint launchd runner escape (python3 absent — cannot parse plist XML)"
+  fi
+else
+  # Some filesystems (a CI runner on exFAT, a Windows-hosted mount) reject " or \ in a
+  # name. Skipping is honest; silently passing would vouch for an escape never exercised.
+  skip "maint runner-path escaping (this filesystem rejects a name holding \" or \\)"
+fi
+
 # The refusals — the other half of the contract, and the half that decides whether this
 # feature is trustworthy. systemd's ExecStart and cron's command field are COMMANDS, not
 # path fields, so a parse that swallows the whole tail turns `bash /a/live/runner --quiet`
@@ -5373,6 +5548,50 @@ ucheck "maint/refresh: a cron command with a redirection is refused, not read as
 ucheck "maint/refresh: a later key's <array> is not mistaken for ProgramArguments'" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-displaced"
+
+# The same rule against the QUOTED shapes, where "one argument" is a property of where the
+# closing quote sits rather than of whitespace. Both fixtures run a runner that exists, so
+# a regression is again a false death notice. The third is the quoted counterpart of the
+# `%` refusal below: there, a bare `%` reaches `_maint_lone_arg` and is rejected because
+# nothing escaped it; here the value IS escaped, so a SINGLE `%` inside the quotes is a
+# specifier that survived — a path we cannot reconstruct without reimplementing systemd's
+# table, and therefore not evidence of anything either.
+mkdir -p "$_MRF/sd-qargs/systemd/user" "$_MRF/sd-spec/systemd/user"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash "%s" --quiet\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-qargs/systemd/user/dotfiles-maint.service"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash "/a%%h/dotfiles-maint.sh"\n' \
+  >"$_MRF/sd-spec/systemd/user/dotfiles-maint.service"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash '%s' >>/tmp/m.log # dotfiles-maint\n" "$_MRF_RUNNER" \
+  >"$_MRF/cron-qargs"
+
+ucheck "maint/refresh: a quoted systemd runner with argv after the closing quote is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-qargs"
+ucheck "maint/refresh: a QUOTED systemd runner holding an unresolved % specifier is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-spec"
+ucheck "maint/refresh: a quoted cron runner with a redirection after it is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-qargs"
+
+# The two metacharacters that sh QUOTING does not save you from, one per scheduler. cron
+# translates % before sh ever sees the field, so a bare % inside the quotes still truncates
+# the command; systemd substitutes $VAR inside double quotes, so `$HOME` there is not the
+# path it runs. Both fixtures name a runner that RESOLVES if the metacharacter is merely
+# ignored — so a reader that failed to refuse would hand back a confident wrong verdict
+# about a job that does not run, which is worse than the noisy kind.
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash '%s' # dotfiles-maint\n" "$_MRF_RUNNER%h" \
+  >"$_MRF/cron-qpct"
+mkdir -p "$_MRF/sd-qvar/systemd/user"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash "%s$HOME"\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-qvar/systemd/user/dotfiles-maint.service"
+
+ucheck "maint/refresh: a QUOTED cron runner carrying a bare % is refused (quoting is no defence)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-qpct"
+ucheck "maint/refresh: a QUOTED systemd runner carrying a \$VAR reference is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-qvar"
 
 # A RELATIVE recorded runner is the one value that cannot be tested at all: `[[ -f ]]`
 # resolves it against whatever directory maint-status was invoked from, so the same unit
