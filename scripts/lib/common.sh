@@ -165,3 +165,37 @@ _core_read_classify() { # _core_read_classify <classifier-output>
   case "$CLASSIFY_NVIM" in true | false) ;; *) return 1 ;; esac
   return 0
 }
+
+# _core_fail_digest <file> — condense the ✗ lines of a nested gate's CAPTURED output into
+# one line: `N: first | second | third (+M more)`, or EMPTY when the file holds no ✗ at all.
+#
+# WHY A DIGEST EXISTS. A wrapper that reports only "the nested suite failed — go re-run it"
+# sends the operator away to reproduce a result the run already had, and for an INTERMITTENT
+# failure that is advice which cannot be taken: the re-run passes and the evidence is gone.
+# The digest rides along in the wrapper's own fail line, so the names survive wherever that
+# line goes — a summary block, --json, a CI annotation, a `tail` of a long log.
+#
+# LIVES HERE, not inline in the caller, so it is REACHABLE BY TESTS. Every branch below is a
+# quiet-failure risk rather than an obvious one, and verifying them by making a real gate fail
+# means either recursively invoking that gate or hand-injecting faults — neither of which CI
+# repeats. Both gate scripts already source this file, so the suite can drive it on fixtures.
+#
+# ESCAPES ARE STRIPPED rather than anchoring on a bare ✗: fail() above prefixes the mark with
+# $c_red, so an anchored match finds nothing whenever colour is on — a detector that would go
+# quiet in exactly the runs someone is watching.
+#
+# NAMES ARE CAPPED AT THREE, then counted (+M more) rather than silently truncated: a suite
+# that failed wholesale would otherwise render an unreadable wall, and "one flaky assertion"
+# versus "the whole section is down" is the distinction a reader needs before deciding whether
+# to re-run or to investigate. The leading N is the TRUE total, not the number shown.
+_core_fail_digest() { # _core_fail_digest <captured-output-file>
+  local f="${1:-}" esc lines n why
+  [[ -n "$f" && -r "$f" ]] || return 0
+  esc="$(printf '\033')"
+  lines="$(sed "s/${esc}\[[0-9;]*m//g" "$f" 2>/dev/null | grep '^✗' | sed 's/^✗[[:space:]]*//')"
+  [[ -n "$lines" ]] || return 0
+  n="$(printf '%s\n' "$lines" | grep -c .)"
+  why="$(printf '%s\n' "$lines" | head -3 | tr '\n' '|' | sed 's/|$//; s/|/ | /g')"
+  ((n > 3)) && why="$why (+$((n - 3)) more)"
+  printf '%s: %s' "$n" "$why"
+}

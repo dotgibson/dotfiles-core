@@ -94,6 +94,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (`CORE_AUDIT_SERIAL=1`) keeps the old line; its output is not captured, and piping it to
   capture would cost the live colour output that mode exists to give.
 
+  The rendering lives in `scripts/lib/common.sh` as `_core_fail_digest` **so the suite can
+  test it**, which matters more here than usual: every branch of it fails _quietly_, producing
+  a plausible line that has silently lost the name — indistinguishable from the flake merely
+  not being nameable. Proving those by making a real gate fail would mean recursively invoking
+  the audit or hand-injecting a fault, and CI repeats neither, so four assertions drive it on
+  fixtures instead: a **coloured** `✗` is still extracted, five failures render as three names
+  plus a true total, exactly three grow no `(+0 more)` tail, and both a marker-less log and an
+  unreadable file yield empty so a crash is never misreported as assertions. Confirmed as real
+  regression tests by mutation — dropping the escape-strip makes the coloured case yield
+  nothing, and dropping the overflow notice reddens that case alone.
+
 - **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
   them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
   the gate; `zsh/60-update.zsh` — ~480 lines of seven-package-manager logic, including a
