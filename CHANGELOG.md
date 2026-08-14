@@ -134,9 +134,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   whatever directory `maint-status` was invoked from, making the verdict a property of the
   caller rather than of the unit. A box with no schedule installed stays quiet too.
 
-  Twenty behavioral assertions — four states per scheduler, two that the recorded path is
-  read back verbatim (the hint prints it), and six that an extended command, a displaced
-  array, or a relative path is refused rather than mis-parsed. The healthy fixtures point
+  The interpreter is identified by _position_ too — launchd's `argv[0]`, and cron's command
+  anchored to the closing quote of the `PATH=` assignment — so an argument belonging to some
+  other program can never be read back as our runner.
+
+  Twenty-two behavioral assertions — four states per scheduler, two that the recorded path is
+  read back verbatim (the hint prints it), and eight that an extended command, a displaced
+  array, a relative path, or a spliced-in program is refused rather than mis-parsed. The healthy fixtures point
   at a runner that really exists, or the whole section would pass vacuously.
 
 - **The boundary scan no longer strips comments at all.** Stripping was a false-negative

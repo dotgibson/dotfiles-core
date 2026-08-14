@@ -106,7 +106,7 @@ _maint_lone_arg() { [[ "$1" != *[[:space:]]* ]] && _maint_abs_path "$1" }
 # therefore matches the EXACT shape maint-install renders and bails on anything else —
 # "close enough" parsing is what turns a live job into a false death notice.
 _maint_unit_runner() {
-  local f line xml rest
+  local f line head xml rest argv0
   case "$(_maint_scheduler)" in
   systemd)
     f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
@@ -136,6 +136,12 @@ _maint_unit_runner() {
     rest="${rest#"${rest%%[^[:space:]]*}"}"
     [[ "$rest" == "<array>"* && "$rest" == *"</array>"* ]] || return 0
     rest="${${rest#<array>}%%</array>*}"
+    [[ "$rest" == *"<string>"*"</string>"* ]] || return 0
+    # argv[0] must be the interpreter maint-install writes. A hand-edited
+    # ["/bin/echo", "/missing"] is a perfectly healthy job — reading ITS argv[1] as our
+    # runner would report it dead on the strength of an argument to another program.
+    argv0="${${rest#*<string>}%%</string>*}"
+    [[ "$argv0" == "/bin/bash" ]] || return 0
     rest="${${rest#*<string>}#*</string>}" # drop argv[0]
     [[ "$rest" == *"<string>"*"</string>"* ]] || return 0
     rest="${${rest#*<string>}%%</string>*}"
@@ -152,13 +158,23 @@ _maint_unit_runner() {
     ;;
   cron)
     line="$(crontab -l 2>/dev/null | grep -F '# dotfiles-maint')"
-    # Strip the trailing marker, then take what follows the interpreter. The line now
-    # opens with a single-quoted `PATH=…` env prefix (see _maint_sh_squote), so anchoring
-    # on `/usr/bin/env bash ` — and on its LAST occurrence, in case a PATH entry contains
-    # the string — is what survives that prefix.
+    # Strip the trailing marker, then require the shape maint-install renders:
+    #
+    #   <mm> <hh> * * * PATH='<value>' /usr/bin/env bash <runner> # dotfiles-maint
+    #
+    # The interpreter is anchored to the CLOSING QUOTE of the PATH assignment, not merely
+    # found somewhere in the line. Searching anywhere let a hand-edited command that only
+    # MENTIONS the interpreter — `PATH='/x' /bin/echo /usr/bin/env bash /missing`, which
+    # runs /bin/echo and is healthy — hand back /missing as though it were our runner.
+    # That anchor is unambiguous: _maint_sh_squote renders an embedded quote as '\'', so a
+    # quote inside the value is always followed by a backslash, never by this text.
     line="${line% # dotfiles-maint}"
-    [[ "$line" == *"/usr/bin/env bash "* ]] || return 0
-    line="${line##*/usr/bin/env bash }"
+    [[ "$line" == *"' /usr/bin/env bash "* ]] || return 0
+    head="${line%"' /usr/bin/env bash "*}"
+    # ...and the interpreter must sit after the five schedule fields and the assignment,
+    # so the runner cannot be an argument to some command spliced in ahead of it.
+    [[ "$head" == [0-9]*" "[0-9]*" * * * PATH='"* ]] || return 0
+    line="${line##*"' /usr/bin/env bash "}"
     # Same one-argument rule as the systemd arm, and cron needs it more: the command field
     # is a full sh command line, so `… bash /existing/runner >>/tmp/log` or a trailing flag
     # would otherwise be read as one long, nonexistent path and reported as a dead job.

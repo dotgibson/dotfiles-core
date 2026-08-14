@@ -5135,6 +5135,23 @@ ucheck "maint/refresh: a relative launchd runner is refused (verdict must not de
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-rel"
 
+# The last way to name a path the unit does not actually run: read an argument belonging to
+# some OTHER program. Both fixtures below are healthy jobs — `/bin/echo /missing` succeeds —
+# so extracting `/missing` from either would be a death notice for a live schedule. The
+# interpreter has to be identified by POSITION (launchd argv[0]; cron's command, anchored to
+# the closing quote of the PATH assignment), not merely found somewhere in the unit.
+mkdir -p "$_MRF/ld-argv0/Library/LaunchAgents"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/echo</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_GONE" >"$_MRF/ld-argv0/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf "30 09 * * * PATH='/x/bin' /bin/echo /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-spliced"
+
+ucheck "maint/refresh: a launchd argv[0] that is not the interpreter is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-argv0"
+ucheck "maint/refresh: a cron command with another program spliced before the interpreter is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-spliced"
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question
