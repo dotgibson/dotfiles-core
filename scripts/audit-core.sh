@@ -751,11 +751,26 @@ if ((BEHAV_BG)); then
   if [[ -s "$BEHAV_OUT" ]]; then
     if ((JSON)); then cat "$BEHAV_OUT" >&2; else cat "$BEHAV_OUT"; fi
   fi
+  # NAME WHAT BROKE, in the fail line itself. "run: ./scripts/test-core.sh" sends the operator
+  # away to reproduce a result this run already has — and for an INTERMITTENT failure that is
+  # advice that cannot be taken: the re-run passes and the evidence is gone. It has already
+  # cost two occurrences of an unattributed flake here, both lost because the ✗ scrolled past
+  # far above the summary and only the summary survived being piped through `tail`.
+  #
+  # Read BEFORE the buffer is removed. The rendering itself lives in common.sh so the suite can
+  # test it on fixtures — see _core_fail_digest for why each of its branches is a quiet-failure
+  # risk that hand-injecting a fault would not keep honest.
+  _behav_digest="$(_core_fail_digest "$BEHAV_OUT")"
   rm -f "$BEHAV_OUT"
   if ((_behav_rc == 0)); then
     pass "behavioral tests (load-order smoke + function units)"
+  elif [[ -n "$_behav_digest" ]]; then
+    fail "behavioral tests failed ($_behav_digest) — run: ./scripts/test-core.sh"
   else
-    fail "behavioral tests failed — run: ./scripts/test-core.sh"
+    # rc says failed and no ✗ was printed: the suite died before it could report (a crash, a
+    # kill, a timeout). Say THAT rather than render an empty list, which would read as zero
+    # failures beside a red line and send the reader hunting a mismatch that is not there.
+    fail "behavioral tests failed — it exited $_behav_rc without printing a ✗, so it died before reporting; run: ./scripts/test-core.sh"
   fi
 else
   # Serial fallback. `${arr[@]+"${arr[@]}"}`, not `"${arr[@]}"`: under `set -u`, expanding

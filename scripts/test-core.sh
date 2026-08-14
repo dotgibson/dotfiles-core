@@ -831,6 +831,70 @@ fi
 # the __ALL__ sentinel runs everything, and — the regression that matters — an
 # UNRECOGNISED top-level path FAILS CLOSED to the full run instead of silently skipping
 # a gate on the 9-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
+# ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
+# WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
+# whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
+# operator is told to re-run — so the one line that names it has to be right on the FIRST
+# occurrence. Every branch below is a QUIET failure: it renders a plausible line and loses the
+# name, which is indistinguishable from the flake simply not being nameable. Driven straight on
+# fixtures because the alternative — making a real gate fail — means recursively invoking the
+# audit or hand-injecting a fault, and CI repeats neither.
+hdr "nested-gate failure digest (_core_fail_digest)"
+_fdg="$SANDBOX/faildigest"
+mkdir -p "$_fdg"
+_fdesc="$(printf '\033')"
+
+# 1. COLOUR IS THE ONE THAT WOULD GO QUIET UNNOTICED. fail() prefixes ✗ with $c_red, so an
+#    anchored ^✗ finds nothing whenever colour is forced — and the runs where a human forces
+#    colour are exactly the runs a human is watching. Fixture carries the real SGR bytes.
+{
+  printf 'preamble noise\n'
+  printf '%s✗%s atuin autostart: the sandbox leaked\n' "${_fdesc}[31m" "${_fdesc}[0m"
+  printf '%s✓%s something fine\n' "${_fdesc}[32m" "${_fdesc}[0m"
+} >"$_fdg/coloured.txt"
+_fdout="$(_core_fail_digest "$_fdg/coloured.txt")"
+if [[ "$_fdout" == "1: atuin autostart: the sandbox leaked" ]]; then
+  pass "fail digest: a COLOURED ✗ is still extracted (an anchored match would report nothing here)"
+else
+  fail "fail digest: colour hid the failure — got '$_fdout', want '1: atuin autostart: the sandbox leaked'"
+fi
+
+# 2. The count is the TRUE total while only three are named; "+N more" is what keeps that from
+#    being a silent truncation. This is the line that tells one flaky assertion apart from a
+#    section that is wholly down, which is what decides re-run versus investigate.
+: >"$_fdg/many.txt"
+for _fdi in alpha beta gamma delta epsilon; do printf '✗ case %s failed\n' "$_fdi" >>"$_fdg/many.txt"; done
+_fdout="$(_core_fail_digest "$_fdg/many.txt")"
+if [[ "$_fdout" == "5: case alpha failed | case beta failed | case gamma failed (+2 more)" ]]; then
+  pass "fail digest: five failures render as three names + a true total (+2 more), not a silent cut"
+else
+  fail "fail digest: overflow rendering wrong — got '$_fdout'"
+fi
+
+# 3. EXACTLY three must not grow a "(+0 more)" tail — an off-by-one here is the kind of wart
+#    that gets copied into the next renderer because it looks deliberate.
+: >"$_fdg/three.txt"
+for _fdi in one two three; do printf '✗ %s\n' "$_fdi" >>"$_fdg/three.txt"; done
+_fdout="$(_core_fail_digest "$_fdg/three.txt")"
+if [[ "$_fdout" == "3: one | two | three" ]]; then
+  pass "fail digest: exactly three names render with no '(+0 more)' tail"
+else
+  fail "fail digest: boundary at three is wrong — got '$_fdout'"
+fi
+
+# 4. NO MARKER MUST YIELD NOTHING, so the caller can tell "these assertions failed" from "it
+#    died before it could report". Rendering an empty list beside a red line would read as zero
+#    failures and send the reader hunting a contradiction that is not there; audit-core.sh
+#    branches on this emptiness to say "exited N without printing a ✗" instead.
+printf 'ran fine\nno markers here\n' >"$_fdg/nomark.txt"
+_fdout="$(_core_fail_digest "$_fdg/nomark.txt")"
+_fdout2="$(_core_fail_digest "$_fdg/does-not-exist.txt")"
+if [[ -z "$_fdout" && -z "$_fdout2" ]]; then
+  pass "fail digest: output with no ✗, and an unreadable file, both yield EMPTY so a crash is not misreported as assertions"
+else
+  fail "fail digest: expected empty for both no-marker ('$_fdout') and missing file ('$_fdout2')"
+fi
+
 hdr "CI path classifier (scripts/ci-classify.sh)"
 CLASSIFY="$HERE/scripts/ci-classify.sh"
 _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
