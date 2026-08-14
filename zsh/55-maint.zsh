@@ -66,23 +66,35 @@ _maint_sh_squote() {
   print -r -- "'${s//$q/$esc}'"
 }
 
-# Escape a value for a DOUBLE-QUOTED field in a systemd unit — `Environment=` and the
-# runner argument of `ExecStart=` alike. systemd expands % SPECIFIERS in both (%h = home
-# directory, %i = instance, …), so a literal % must be DOUBLED or a legitimate PATH entry
-# like /sent%h/bin silently becomes /sent<homedir>/bin — or the unit fails to load outright
-# on an unknown specifier. Inside double quotes systemd also processes C-style escapes, so
-# \ and " need escaping too, and the backslash pass must come FIRST or it would re-escape
-# the backslashes the quote pass adds.
-#
-# ExecStart is a COMMAND LINE, not a path field, so its argument is written quoted rather
-# than bare: unquoted, systemd would additionally split the runner on whitespace, and a
-# lone " would open a quoted section that swallows the rest of the line. Quoting reduces
-# every one of those to the same three substitutions.
+# Escape a value for a DOUBLE-QUOTED field in a systemd unit. systemd expands % SPECIFIERS
+# (%h = home directory, %i = instance, …), so a literal % must be DOUBLED or a legitimate
+# PATH entry like /sent%h/bin silently becomes /sent<homedir>/bin — or the unit fails to
+# load outright on an unknown specifier. Inside double quotes systemd also processes C-style
+# escapes, so \ and " need escaping too, and the backslash pass must come FIRST or it would
+# re-escape the backslashes the quote pass adds.
 _maint_systemd_escape() {
   local s="$1"
   s="${s//\\/\\\\}"
   s="${s//\"/\\\"}"
   s="${s//\%/%%}"
+  print -r -- "$s"
+}
+
+# ...and the extra pass a COMMAND LINE needs on top of that. `ExecStart=` is not a path
+# field: systemd performs environment-variable substitution there, so a checkout under a
+# directory literally named `${HOME}` — or any `$FOO` — would execute a different path, or
+# an empty one. A literal dollar is written `$$`. That pass belongs HERE and not in
+# _maint_systemd_escape, because `Environment=` performs no variable substitution: `$` is
+# an ordinary character in the PATH value, and doubling it there would corrupt it.
+#
+# Quoting is the other half of what makes ExecStart safe. Unquoted, systemd would split the
+# runner on whitespace and a lone " would open a quoted section swallowing the rest of the
+# line; quoting reduces both to the substitutions above. (Single quotes need no escape —
+# inside double quotes systemd treats them literally.)
+_maint_systemd_exec_escape() {
+  local s
+  s="$(_maint_systemd_escape "$1")"
+  s="${s//\$/\$\$}"
   print -r -- "$s"
 }
 
@@ -128,14 +140,15 @@ _maint_squote_rest() {
 }
 
 # The systemd counterpart: decode ONE double-quoted ExecStart argument that spans the whole
-# of $1, undoing exactly the three substitutions _maint_systemd_escape applies. Non-zero on
+# of $1, undoing exactly the substitutions _maint_systemd_exec_escape applies. Non-zero on
 # anything it could not have written — a closing quote with argv after it, an unterminated
-# token, a C escape we never emit (\n, \t), or a bare % .
+# token, a C escape we never emit (\n, \t), a bare % , or a bare $ .
 #
-# Refusing the bare % is the load-bearing case: `%h` is a SPECIFIER, so the string in the
-# file is not the path systemd runs, and resolving specifiers ourselves would mean
-# reimplementing systemd's table. A path we cannot reconstruct is not evidence of a dead
-# job — same rule the launchd arm applies to an entity reference it cannot decode.
+# Those last two are the load-bearing cases, and they are the same case: `%h` is a SPECIFIER
+# and `$HOME` a VARIABLE REFERENCE, so in neither is the string in the file the path systemd
+# runs. Resolving them ourselves would mean reimplementing systemd's specifier table and
+# reading the unit's environment block. A path we cannot reconstruct is not evidence of a
+# dead job — the same rule the launchd arm applies to an entity reference it cannot decode.
 _maint_systemd_unquote() {
   local t="$1" out='' run
   [[ "$t" == \"* ]] || return 1
@@ -149,12 +162,14 @@ _maint_systemd_unquote() {
     '\'*) return 1 ;;   # some other C escape — not a shape maint-install renders
     '%%'*) out+='%'; t="${t#%%}" ;;
     '%'*) return 1 ;;   # an unresolved specifier
+    '$$'*) out+='$'; t="${t#\$\$}" ;;
+    '$'*) return 1 ;;   # an unresolved variable reference
     '') return 1 ;;     # unterminated
     # A run of ordinary characters, consumed in one step. The class must include the
-    # BACKSLASH as well as " and % , or a \\ sitting mid-path would be copied through
+    # BACKSLASH as well as " % and $ , or a \\ sitting mid-path would be copied through
     # undecoded instead of collapsing to the single \ the path really holds.
     *)
-      run="${t%%[\\\"%]*}"
+      run="${t%%[\\\"%\$]*}"
       out+="$run"
       t="${t#"$run"}"
       ;;
@@ -279,9 +294,15 @@ _maint_unit_runner() {
     # cannot slip through the second shape either.
     [[ "$cmd" == "/usr/bin/env bash "* ]] || return 0
     line="${cmd#"/usr/bin/env bash "}"
-    # Peel the two layers in the reverse of the order maint-install applies them. cron
-    # translates the command field BEFORE sh ever sees it, so its \% → % undoing comes
-    # first; what is left is the sh-level single-quoted token.
+    # A BARE % — one left over once every escaped \% is accounted for — is cron's newline
+    # metacharacter, and sh quoting is no defence: cron translates the field BEFORE sh ever
+    # sees it, so the command is truncated there and the rest becomes stdin. The recorded
+    # text is then not what runs, in the quoted shape exactly as in the legacy one, where
+    # _maint_lone_arg refuses it. This MUST be tested before the decode below, which would
+    # otherwise turn our own \% into a % and destroy the evidence of which kind it was.
+    [[ "${line//\\%/}" == *%* ]] && return 0
+    # Now peel the two layers, in the reverse of the order maint-install applies them: the
+    # cron-level \% → % first, leaving the sh-level single-quoted token.
     line="${line//\\%/%}"
     if [[ "$line" == \'* ]]; then
       # The shape maint-install writes. Consume the token as a real single-quoted token —
@@ -390,7 +411,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 Environment="PATH=$(_maint_systemd_escape "$(_maint_unit_path)")"
-ExecStart=/usr/bin/env bash "$(_maint_systemd_escape "$_MAINT_SH")"
+ExecStart=/usr/bin/env bash "$(_maint_systemd_exec_escape "$_MAINT_SH")"
 EOF
     cat >"$ud/dotfiles-maint.timer" <<EOF
 [Unit]
@@ -454,9 +475,15 @@ EOF
     cron_path="${cron_path//\%/\\%}"
     cron_runner="$(_maint_sh_squote "$_MAINT_SH")"
     cron_runner="${cron_runner//\%/\\%}"
+    # `print -r`, never `echo`: maint-install runs under `emulate -L zsh`, where the echo
+    # builtin INTERPRETS backslash escapes. Both fields are paths that may legitimately hold
+    # a backslash, and two characters is all it takes — `\n` or `\t` in a directory name is
+    # rewritten before cron ever sees the table, and `\c` truncates the line outright, which
+    # is a schedule that silently stops existing. -r is the whole point; -- guards a value
+    # that begins with a dash.
     (
       crontab -l 2>/dev/null | grep -vF "$marker"
-      echo "$mm $hh * * * PATH=$cron_path /usr/bin/env bash $cron_runner $marker"
+      print -r -- "$mm $hh * * * PATH=$cron_path /usr/bin/env bash $cron_runner $marker"
     ) | crontab -
     _core_ok "cron entry installed for $when"
     crontab -l 2>/dev/null | grep -F "$marker"

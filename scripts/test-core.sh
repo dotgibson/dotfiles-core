@@ -5269,7 +5269,13 @@ ucheck "maint/refresh: the recorded runner path is read back verbatim (cron, pas
 # The pre-existing fixtures above all use the older UNQUOTED shapes, so they double as the
 # backward-compatibility gate: units already on disk are only rewritten when the operator
 # re-runs maint-install, and must keep parsing until they do.
-_MRF_HOSTILE_DIR="$_MRF/hostile/a%h b&c<d>e\"f\\g'h"
+# Every hazard in one component. The last four are the ones a "looks about right" fixture
+# misses: `$i`/`${j}` because systemd substitutes VARIABLES in ExecStart on top of its %
+# specifiers, and `\n`/`\c` because they are the two-character sequences zsh's `echo`
+# builtin would rewrite — `\c` truncating the crontab line outright. An earlier revision of
+# this fixture used `\g`, which is not a recognized escape, so the whole hazard sat
+# unexercised while the assertion read green.
+_MRF_HOSTILE_DIR="$_MRF/hostile/a%h b&c<d>e\"f\\g'h\$i\${j}\\nk\\cl"
 _MRF_HOSTILE="$_MRF_HOSTILE_DIR/dotfiles-maint.sh"
 if mkdir -p "$_MRF_HOSTILE_DIR" 2>/dev/null && printf '#!/bin/bash\n:\n' >"$_MRF_HOSTILE" 2>/dev/null; then
   # A crontab stub that ROUND-TRIPS: `-` stores the table, `-l` reads that same table back.
@@ -5282,7 +5288,7 @@ if mkdir -p "$_MRF_HOSTILE_DIR" 2>/dev/null && printf '#!/bin/bash\n:\n' >"$_MRF
   # a backslash, so interpolating it into the assertion body would rewrite the body itself.
   _MRF_RT="source '$UI'; source '$MNT'; _MAINT_SH=\"\$SH\"; _maint_scheduler() { echo SCHED }; maint-install 09:30 >/dev/null 2>&1; [[ \"\$(_maint_unit_runner)\" == \"\$SH\" ]] && ! _maint_unit_needs_refresh"
 
-  ucheck "maint/refresh: a runner path holding % \" \\ and a space round-trips through the systemd unit" \
+  ucheck "maint/refresh: a runner path holding % \$ \" \\ and a space round-trips through the systemd unit" \
     "${_MRF_RT/SCHED/systemd}" \
     PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$_MRF/rt-sd" SH="$_MRF_HOSTILE"
   ucheck "maint/refresh: a runner path holding & < > and a quote round-trips through the launchd plist" \
@@ -5302,14 +5308,32 @@ if mkdir -p "$_MRF_HOSTILE_DIR" 2>/dev/null && printf '#!/bin/bash\n:\n' >"$_MRF
   # the ONE directory component is spelled out post-escape (% doubled, " and \ backslashed)
   # rather than recomputed here — restating the rule in the test would let a wrong rule pass.
   if grep -qF 'ExecStart=/usr/bin/env bash "' "$_MRF/rt-sd/systemd/user/dotfiles-maint.service" 2>/dev/null &&
-    grep -qF 'a%%h b&c<d>e\"f\\g'"'"'h/dotfiles-maint.sh"' "$_MRF/rt-sd/systemd/user/dotfiles-maint.service" 2>/dev/null; then
-    pass "maint: the systemd ExecStart runner is quoted with %, \" and \\ escaped"
+    grep -qF 'a%%h b&c<d>e\"f\\g'"'"'h$$i$${j}\\nk\\cl/dotfiles-maint.sh"' "$_MRF/rt-sd/systemd/user/dotfiles-maint.service" 2>/dev/null; then
+    pass "maint: the systemd ExecStart runner is quoted with %, \$, \" and \\ escaped"
   else
     fail "maint: the systemd ExecStart runner is not escaped as expected"
   fi
   # cron: let a real /bin/sh parse the command back, after applying cron's OWN pass (\% → %)
   # exactly as crond would before handing the field over. Exactly one argument must come out
   # of it, spelled the same as the file on disk.
+  # ONE line, AND that line reaches its terminating marker. maint-install runs under
+  # `emulate -L zsh`, where `echo` interprets backslash escapes, so a `\n` in the runner
+  # splits the entry in two and a `\c` truncates it and swallows the trailing newline.
+  #
+  # BOTH halves are needed, and the reason is worth stating because the obvious single check
+  # does not work: with this fixture the two corruptions CANCEL in the line count — `\n`
+  # adds a newline, `\c` removes the final one, and a line count of exactly 1 comes back
+  # from a table that is in fact one wrapped fragment plus one unterminated one. What the
+  # truncation cannot fake is arriving at the marker, since everything past the `\c` is
+  # gone. Verified against a reverted copy of the module: `echo` yields marker-terminated=0
+  # while `print -r` yields 1, with the line count reading 1 for both.
+  _mr_nlines="$(wc -l <"$_MRF/cron-hostile" 2>/dev/null | tr -d ' ')"
+  _mr_tagged="$(grep -c '# dotfiles-maint$' "$_MRF/cron-hostile" 2>/dev/null || true)"
+  if [[ "$_mr_nlines" == 1 && "$_mr_tagged" == 1 ]]; then
+    pass "maint: the cron entry is one marker-terminated line (no echo-escape split or truncation)"
+  else
+    fail "maint: cron table is $_mr_nlines line(s), $_mr_tagged marker-terminated — a backslash escape corrupted the entry"
+  fi
   _mr_line="$(cat "$_MRF/cron-hostile" 2>/dev/null)"
   # A BARE % is one left over once every escaped \% is accounted for — testing for the
   # mere presence of \% would pass a line that escaped the PATH's % and not the runner's.
@@ -5393,6 +5417,25 @@ ucheck "maint/refresh: a QUOTED systemd runner holding an unresolved % specifier
 ucheck "maint/refresh: a quoted cron runner with a redirection after it is refused" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-qargs"
+
+# The two metacharacters that sh QUOTING does not save you from, one per scheduler. cron
+# translates % before sh ever sees the field, so a bare % inside the quotes still truncates
+# the command; systemd substitutes $VAR inside double quotes, so `$HOME` there is not the
+# path it runs. Both fixtures name a runner that RESOLVES if the metacharacter is merely
+# ignored — so a reader that failed to refuse would hand back a confident wrong verdict
+# about a job that does not run, which is worse than the noisy kind.
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash '%s' # dotfiles-maint\n" "$_MRF_RUNNER%h" \
+  >"$_MRF/cron-qpct"
+mkdir -p "$_MRF/sd-qvar/systemd/user"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash "%s$HOME"\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-qvar/systemd/user/dotfiles-maint.service"
+
+ucheck "maint/refresh: a QUOTED cron runner carrying a bare % is refused (quoting is no defence)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-qpct"
+ucheck "maint/refresh: a QUOTED systemd runner carrying a \$VAR reference is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-qvar"
 
 # A RELATIVE recorded runner is the one value that cannot be tested at all: `[[ -f ]]`
 # resolves it against whatever directory maint-status was invoked from, so the same unit
