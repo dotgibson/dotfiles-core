@@ -5152,6 +5152,46 @@ ucheck "maint/refresh: a cron command with another program spliced before the in
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-spliced"
 
+# ...and the version of that splice which HIDES the anchor inside a quoted argument. This
+# is why the PATH value is consumed as a real single-quoted token (_maint_squote_rest)
+# rather than located by searching: `/bin/echo '␣/usr/bin/env bash /missing'` runs echo and
+# is healthy, but contains a quote followed by the exact interpreter text, so any
+# appearance-based anchor reads /missing back as our runner. The escaped-quote fixture is
+# the other half — the scanner must step OVER a '\'' inside the value, or a legitimate
+# PATH containing an apostrophe would stop the scan early and lose the real runner.
+printf "30 09 * * * PATH='/x' /bin/echo ' /usr/bin/env bash %s' # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-quoted"
+printf "30 09 * * * PATH='/we'\\\\''ird/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-squote"
+
+ucheck "maint/refresh: a cron argument that merely QUOTES the interpreter text is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-quoted"
+ucheck "maint/refresh: a PATH value containing an escaped quote does not derail the scan" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-squote"
+
+# launchd entity decoding. A plist may legally encode a quote as &quot;/&apos;, and launchd
+# resolves it to the real filename — returning the encoded text would name a path that does
+# not exist and call a live job dead. Anything we CANNOT decode (a numeric reference, an
+# unknown entity) is refused for the same reason, from the other direction: a filename we
+# cannot reconstruct is not evidence of anything.
+mkdir -p "$_MRF/ld-entity/Library/LaunchAgents" "$_MRF/ld-numref/Library/LaunchAgents"
+_MRF_QUOTED="$_MRF/moved'away/core/maint/dotfiles-maint.sh"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s/moved&apos;away/core/maint/dotfiles-maint.sh</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF" >"$_MRF/ld-entity/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s&#47;gone&#47;dotfiles-maint.sh</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF" >"$_MRF/ld-numref/Library/LaunchAgents/com.dotfiles.maint.plist"
+
+# The expectation rides in via the ENVIRONMENT, not interpolated into the assertion text:
+# the whole point of this fixture is a path containing a single quote, which would close
+# the quoting of the body itself. (The other verbatim checks above interpolate safely only
+# because their paths happen to hold no quote — a hazard of the harness, not of the code.)
+ucheck "maint/refresh: launchd decodes &apos; so the hint names the real filename" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == \"\$WANT\" ]] && _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  HOME="$_MRF/ld-entity" WANT="$_MRF_QUOTED"
+ucheck "maint/refresh: a launchd path with an undecodable numeric reference is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-numref"
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question

@@ -134,13 +134,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   whatever directory `maint-status` was invoked from, making the verdict a property of the
   caller rather than of the unit. A box with no schedule installed stays quiet too.
 
-  The interpreter is identified by _position_ too — launchd's `argv[0]`, and cron's command
-  anchored to the closing quote of the `PATH=` assignment — so an argument belonging to some
-  other program can never be read back as our runner.
+  Every token is located by _position_ rather than by appearance: launchd's `argv[0]` must
+  be the interpreter, and cron's `PATH=` value is consumed as a real single-quoted token, so
+  a command that merely contains text resembling the interpreter — inside the assignment, or
+  inside a later quoted argument — can never have its argument read back as our runner. On
+  the launchd side the encoded forms a plist may legally use (`&quot;`, `&apos;`) are decoded
+  so the hint names the real filename, and anything undecodable (a numeric character
+  reference, an unknown entity) is refused for the same reason the rest is: a filename that
+  cannot be reconstructed is not evidence of anything.
 
-  Twenty-two behavioral assertions — four states per scheduler, two that the recorded path is
-  read back verbatim (the hint prints it), and eight that an extended command, a displaced
-  array, a relative path, or a spliced-in program is refused rather than mis-parsed. The healthy fixtures point
+  Twenty-six behavioral assertions — four states per scheduler, three that a recorded path is
+  read back verbatim (the hint prints it), and eleven that an extended command, a displaced
+  array, a relative path, a spliced-in program, a quoted look-alike, or an undecodable
+  reference is refused rather than mis-parsed. The healthy fixtures point
   at a runner that really exists, or the whole section would pass vacuously.
 
 - **The boundary scan no longer strips comments at all.** Stripping was a false-negative

@@ -94,6 +94,26 @@ _maint_abs_path() { [[ "$1" == /* ]] }
 # runner maint-install wrote" from a hand-edited command line that merely starts with it.
 _maint_lone_arg() { [[ "$1" != *[[:space:]]* ]] && _maint_abs_path "$1" }
 
+# Consume one POSIX single-quoted token from the FRONT of $1 and print whatever follows
+# it; non-zero if the token is unterminated. _maint_sh_squote renders an embedded quote as
+# the classic '\'' — closed, escaped, reopened — so the closing quote is the first one NOT
+# followed by \''. Scanning for it is what makes the interpreter's position PROVABLE rather
+# than merely likely: without it, a command hiding the text `' /usr/bin/env bash ` inside
+# the assignment's value or a later argument reads exactly like the real thing, and the
+# argument of some other program gets reported as our dead runner.
+_maint_squote_rest() {
+  local t="$1"
+  [[ "$t" == \'* ]] || return 1
+  t="${t#\'}"
+  while true; do
+    [[ "$t" == *\'* ]] || return 1 # unterminated
+    t="${t#*\'}"                   # step past the next quote
+    [[ "$t" == \\\'\'* ]] || break  # not an escaped quote → that one closed the token
+    t="${t#\\\'\'}"
+  done
+  print -r -- "$t"
+}
+
 # Read back the runner path a scheduler unit RECORDS, or print nothing when there is no
 # unit (or none can be parsed out of it). Deliberately not `$_MAINT_SH`: the whole point
 # is that the two can drift. `$_MAINT_SH` is re-resolved from %x every shell, so it always
@@ -106,7 +126,7 @@ _maint_lone_arg() { [[ "$1" != *[[:space:]]* ]] && _maint_abs_path "$1" }
 # therefore matches the EXACT shape maint-install renders and bails on anything else —
 # "close enough" parsing is what turns a live job into a false death notice.
 _maint_unit_runner() {
-  local f line head xml rest argv0
+  local f line xml rest argv0 sq dq
   case "$(_maint_scheduler)" in
   systemd)
     f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
@@ -149,8 +169,20 @@ _maint_unit_runner() {
     # _maint_xml_escape doing & FIRST — the other order would decode a path that really
     # contained the text "&lt;" into "<". (maint-install writes ProgramArguments raw and
     # only escapes the PATH value, so today this is a no-op on units Core wrote; it is
-    # what keeps the read side correct for a hand-written or later-escaped plist.)
-    rest="${rest//&lt;/<}"; rest="${rest//&gt;/>}"; rest="${rest//&amp;/&}"
+    # what keeps the read side correct for a hand-written or later-escaped plist, which
+    # may legally encode a quote as &quot;/&apos; that launchd resolves to the real name.)
+    # The quote replacements go through variables: a backslash in the replacement text of
+    # ${x//pat/repl} stays LITERAL in zsh, so the obvious `\'` decodes &apos; to \' — a
+    # path that does not exist, i.e. the false death notice this arm exists to avoid.
+    sq="'" dq='"'
+    rest="${rest//&lt;/<}"; rest="${rest//&gt;/>}"
+    rest="${rest//&quot;/$dq}"; rest="${rest//&apos;/$sq}"
+    # Any OTHER reference — a numeric one like &#47;, or an entity we do not know — leaves
+    # us holding text that is not the filename launchd runs. In well-formed XML a raw & is
+    # illegal, so once the known entities are accounted for, a surviving & is exactly that
+    # case. Refuse rather than guess: a path we cannot read is not evidence of a dead job.
+    [[ "${rest//&amp;/}" == *"&"* ]] && return 0
+    rest="${rest//&amp;/&}"
     # Absolute only — same reasoning as the other two arms. No lone-argument test here:
     # a plist argv element has exact boundaries, so a space in it is part of the path
     # rather than a second argument.
@@ -162,19 +194,16 @@ _maint_unit_runner() {
     #
     #   <mm> <hh> * * * PATH='<value>' /usr/bin/env bash <runner> # dotfiles-maint
     #
-    # The interpreter is anchored to the CLOSING QUOTE of the PATH assignment, not merely
-    # found somewhere in the line. Searching anywhere let a hand-edited command that only
-    # MENTIONS the interpreter — `PATH='/x' /bin/echo /usr/bin/env bash /missing`, which
-    # runs /bin/echo and is healthy — hand back /missing as though it were our runner.
-    # That anchor is unambiguous: _maint_sh_squote renders an embedded quote as '\'', so a
-    # quote inside the value is always followed by a backslash, never by this text.
+    # Every token is located by POSITION, never by searching: the five schedule fields,
+    # then the assignment, whose value is consumed as a real single-quoted token so the
+    # interpreter that follows is provably the command cron runs — not text that merely
+    # looks like it. Matching on appearance is what let `PATH='/x' /bin/echo '␣/usr/bin/env
+    # bash /missing'` (a healthy job running /bin/echo) hand back /missing as our runner.
     line="${line% # dotfiles-maint}"
-    [[ "$line" == *"' /usr/bin/env bash "* ]] || return 0
-    head="${line%"' /usr/bin/env bash "*}"
-    # ...and the interpreter must sit after the five schedule fields and the assignment,
-    # so the runner cannot be an argument to some command spliced in ahead of it.
-    [[ "$head" == [0-9]*" "[0-9]*" * * * PATH='"* ]] || return 0
-    line="${line##*"' /usr/bin/env bash "}"
+    [[ "$line" == [0-9]*" "[0-9]*" * * * PATH='"* ]] || return 0
+    line="$(_maint_squote_rest "${line#*" * * * PATH="}")" || return 0
+    [[ "$line" == " /usr/bin/env bash "* ]] || return 0
+    line="${line#" /usr/bin/env bash "}"
     # Same one-argument rule as the systemd arm, and cron needs it more: the command field
     # is a full sh command line, so `… bash /existing/runner >>/tmp/log` or a trailing flag
     # would otherwise be read as one long, nonexistent path and reported as a dead job.
