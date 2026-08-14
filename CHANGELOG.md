@@ -19,8 +19,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `auto-tag-call.yml` spliced `${{ inputs.bump }}` straight into its script in a job
   holding `contents: write` **and** `persist-credentials: true`, so a caller passing
   `bump: 'patch"; …; #'` could run arbitrary code with the tag-push token. It was the
-  one place the fleet broke the rule `notify-web-call.yml` states outright — *"a
-  caller-supplied string must not be able to write shell"*.
+  one place the fleet broke the rule `notify-web-call.yml` states outright — _"a
+  caller-supplied string must not be able to write shell"_.
 
   Both `bump` and `release` now arrive through `env:`, and `bump` is checked against a
   `patch|minor|major` allowlist at runtime — `workflow_call` inputs cannot be
@@ -30,7 +30,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `claude-routines-call.yml` had the same shape with `${{ inputs.distro }}` in a job
   holding `CLAUDE_CODE_OAUTH_TOKEN`; it now goes through `env:` too, and is likewise
   allowlisted to the six distro names its own input contract already documents — `env:`
-  makes the value shell-safe, but the Claude prompt is an *instruction* channel, so an
+  makes the value shell-safe, but the Claude prompt is an _instruction_ channel, so an
   arbitrary string there remains a prompt-injection vector. No `run:` body in any
   workflow interpolates an expression any more.
 
