@@ -35,37 +35,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **`CODE_OF_CONDUCT.md`** — the one standard community-health file that was missing
   while the README actively solicits contributions.
 
-### Changed
-
-- **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
-  them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
-  the gate; `zsh/60-update.zsh` — ~480 lines of seven-package-manager logic, including a
-  Tumbleweed check to choose `zypper dup` over `zypper up` — was justified only in a code
-  comment. The reasoning is sound (one verb, N backends, exactly like `bin/clip`) and now
-  says so where the layering rule is stated.
-
-- **The maint runner no longer names an OS prefix; the scheduler unit supplies the PATH.**
-  A scheduler starts the runner with a stripped environment, which is why the Homebrew
-  prefixes were hardcoded. `maint-install` now captures the **live PATH** of the shell
-  installing it and bakes it into the unit — `Environment="PATH=…"` (systemd), an
-  `EnvironmentVariables` dict (launchd, XML-escaped), and an env-prefixed command
-  (cron, POSIX single-quoted and then `%`-escaped, in that order — cron hands its
-  command field to `/bin/sh`, so an unquoted or double-quoted value containing `$(…)`
-  or a backtick would be **evaluated on every scheduled run**). Whatever prefix this OS
-  uses is already correct in that
-  PATH, so the OS supplies the truth and Core hardcodes nothing. The brew step is now
-  gated on `have brew` alone.
-
-  **Action required on an existing schedule:** a unit written before this change carries
-  no PATH, so the runner falls back to the POSIX floor and the brew/mise steps skip
-  silently — the job still succeeds while doing less. Re-run `maint-install` once.
-  `maint-status` detects this and says so rather than leaving it to be noticed.
-
-- **`tmux-cheat.sh` discovers a brew prefix instead of naming one** — `$HOMEBREW_PREFIX`
-  (exported by `brew shellenv`, so the tmux server usually carries it), falling back to
-  `brew --prefix`. When neither resolves it adds nothing and takes the existing pager
-  fallback: a missing tool degrades visibly, where a wrong absolute path was a silent
-  lie on every non-brew machine.
 - **Core now performs a real bootstrap link run in its own suite.** `bootstrap-test.yml`
   asserts the symlink graph, but it is `workflow_call`-only and dotfiles-core ships no
   `bootstrap.sh` — so it only ever runs from the eight OS repos. Core unit-tested the
@@ -101,6 +70,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and branch; the tree is clean afterwards so the next run is not self-blocked;
   re-syncing an unchanged sha manufactures no commit; and a dirty target is refused,
   counted failed, and does **not** abandon the repos after it.
+
+### Changed
+
+- **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
+  them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
+  the gate; `zsh/60-update.zsh` — ~480 lines of seven-package-manager logic, including a
+  Tumbleweed check to choose `zypper dup` over `zypper up` — was justified only in a code
+  comment. The reasoning is sound (one verb, N backends, exactly like `bin/clip`) and now
+  says so where the layering rule is stated.
+
+- **The maint runner no longer names an OS prefix; the scheduler unit supplies the PATH.**
+  A scheduler starts the runner with a stripped environment, which is why the Homebrew
+  prefixes were hardcoded. `maint-install` now captures the **live PATH** of the shell
+  installing it and bakes it into the unit — `Environment="PATH=…"` (systemd), an
+  `EnvironmentVariables` dict (launchd, XML-escaped), and an env-prefixed command
+  (cron, POSIX single-quoted and then `%`-escaped, in that order — cron hands its
+  command field to `/bin/sh`, so an unquoted or double-quoted value containing `$(…)`
+  or a backtick would be **evaluated on every scheduled run**). Whatever prefix this OS
+  uses is already correct in that
+  PATH, so the OS supplies the truth and Core hardcodes nothing. The brew step is now
+  gated on `have brew` alone.
+
+  **Action required on an existing schedule:** a unit written before this change carries
+  no PATH, so the runner falls back to the POSIX floor and the brew/mise steps skip
+  silently — the job still succeeds while doing less. Re-run `maint-install` once.
+  `maint-status` detects this and says so rather than leaving it to be noticed.
+
+- **`tmux-cheat.sh` discovers a brew prefix instead of naming one** — `$HOMEBREW_PREFIX`
+  (exported by `brew shellenv`, so the tmux server usually carries it), falling back to
+  `brew --prefix`. When neither resolves it adds nothing and takes the existing pager
+  fallback: a missing tool degrades visibly, where a wrong absolute path was a silent
+  lie on every non-brew machine.
 
 ### Fixed
 
