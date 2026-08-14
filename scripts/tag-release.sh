@@ -173,12 +173,13 @@ if ((PUSH)); then
   printf '\n%s──────── %s released (tags pushed) ────────%s\n' "$c_blu" "$TAG" "$c_rst"
   cat <<EOF
   NOTE: --push tagged the PRE-merge commit. main is protected, so the commit lands via a
-  PR — which adds a merge commit, leaving these tags one behind main's HEAD ('git describe'
-  shows $TAG-1-g…). After the PR merges, RE-POINT both at the merged tip for a clean tag:
+  PR — whose merge puts a NEW commit on main, leaving these tags one behind main's HEAD
+  ('git describe' shows $TAG-1-g…). After the PR merges, RE-POINT both at the merged tip:
 
   1. land the commit:  git push --no-follow-tags origin HEAD:release/$TAG
        gh pr create --base main --head release/$TAG --title "release $TAG"
-       # merge with a MERGE commit (not squash)
+       # merge it — GitHub only offers the methods this repo enables, and any of them
+       # is fine: step 2 re-points the tags at origin/main whatever shape the merge has
   2. re-point AFTER it merges:
        git fetch origin
        git tag -fa $TAG origin/main -m $TAG && git tag -f $MAJOR origin/main
@@ -201,9 +202,9 @@ else
   origin/main' to put your local main back.
 
   Ship IN THIS ORDER — land the commit FIRST, then tag the MERGED tip. main is protected,
-  so the commit lands via a PR (a merge commit); tagging only AFTER that, at origin/main,
-  keeps the tag on main's HEAD and 'git describe' clean. (Tagging before the merge leaves
-  the tag one commit behind and needs a re-point — the trap PUSH=1 falls into.)
+  so the commit lands via a PR (whose merge puts a new commit on main); tagging only AFTER
+  that, at origin/main, keeps the tag on main's HEAD and 'git describe' clean. (Tagging
+  before the merge leaves the tag one commit behind and needs a re-point — the PUSH=1 trap.)
 
   Also note $MAJOR was just force-moved LOCALLY onto this not-yet-merged commit, so it
   disagrees with origin's $MAJOR until step 2 below. Abandoning the cut?
@@ -220,7 +221,9 @@ else
   1. land the commit:
        git push --no-follow-tags origin HEAD:release/$TAG
        gh pr create --base main --head release/$TAG --title "release $TAG"
-       # merge with a MERGE commit (not squash)
+       # merge it — GitHub only offers the methods this repo enables, and any of them is
+       # fine: step 2 tags origin/main, so the merge method cannot affect the tag. (Today
+       # that button is "Squash and merge"; RELEASE-RUNBOOK.md §"Why squash is fine".)
   2. tag the merged tip AFTER the PR merges:
        git fetch origin
        git tag -fa $TAG origin/main -m $TAG

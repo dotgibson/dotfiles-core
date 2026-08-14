@@ -159,6 +159,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   spliced-in program, a quoted look-alike, an undecodable reference, or a `%`-bearing value
   is refused rather than mis-parsed, and three that a dead runner outranks a stale PATH. The healthy fixtures point
   at a runner that really exists, or the whole section would pass vacuously.
+- **The release cut no longer tells the operator to do something the repo forbids.**
+  `RELEASE-RUNBOOK.md` §1.1 step 4 said "merge commit, not squash", and `tag-release.sh`
+  printed the same hint twice. Merge commits are disabled — `mergeCommitAllowed` and
+  `rebaseMergeAllowed` are false, and `main`'s ruleset pins
+  `allowed_merge_methods: ["squash"]` — so the instruction was impossible to follow, and it
+  was printed at the worst possible moment: mid-cut, by the repo's highest-stakes command,
+  where the natural reaction is to assume the _ruleset_ is misconfigured and go change it.
+  v4.10.0 had already shipped as a squash (`cd4278e`, one parent) in silent contradiction.
+
+  The "not squash" clause was never load-bearing. It was descriptive — written when merge
+  commits were still enabled (v2.1.0, #95) and left behind when they were turned off. What
+  makes the recipe correct is step 5 tagging `origin/main`, the post-merge tip, so
+  `release.yml`'s `core.version`-at-the-tagged-commit guard, `git describe`, and the `vN`
+  alias are all satisfied by a squashed tip. `RELEASE-RUNBOOK.md` now records that reasoning
+  under §"Why squash is fine", including the instruction to trust the repo over the docs if
+  they ever disagree again.
+
+  `tag-release.sh` now names **no** merge method rather than swapping one hardcoded claim
+  for another. Deriving the wording from the live setting would need `gh` and a network
+  call, which its offline-safe next-steps output cannot take, and there is no
+  settings-as-code file to read instead. Naming a method was never actionable anyway —
+  GitHub only offers the methods a repo enables, so the operator cannot pick a disallowed
+  one. The hints now state the property that actually matters (step 2 tags `origin/main`,
+  so the merge method cannot affect the tag), which has no way to go stale.
 
 - **The boundary scan no longer strips comments at all.** Stripping was a false-negative
   machine: `#` is a comment in shell and TOML but the **length operator** in Lua, so
