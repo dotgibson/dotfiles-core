@@ -92,7 +92,14 @@ jobs:
           case "$BUMP" in
           patch | minor | major) ;;
           *)
-            echo "::error::invalid bump '$BUMP' — expected one of: patch, minor, major"
+            # Do NOT echo the raw value into a workflow command. Shell-quoting does not
+            # help here: the runner parses stdout LINE BY LINE, so a multiline value can
+            # start a new `::...::` on the next line and forge or suppress annotations.
+            # Collapse newlines and drop the command punctuation (% is the escape
+            # introducer, : builds the `::` delimiter), then truncate — the same shape
+            # atuin-guard-verify.yml uses for upstream-derived text.
+            safe="$(printf '%s' "$BUMP" | tr -d '\r\n%:' | cut -c1-40)"
+            echo "::error::invalid bump '${safe}' — expected one of: patch, minor, major"
             exit 2
             ;;
           esac
