@@ -105,6 +105,44 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The atuin autostart apparatus gate now tells a slow box apart from a broken detector.**
+  The gate proves the box can bind and connect an AF_UNIX socket with python3 alone, then
+  runs a known-good stub and treats any verdict other than `holds` as a regression in
+  `verify-atuin-guard.sh` — deliberately, because the obvious "skip unless it holds" form
+  uses the code under test as its own apparatus check and would let a real regression skip
+  every assertion below while leaving the audit green.
+
+  The probe establishes **capability, not speed**. Binding a socket in-process says nothing
+  about whether a _spawned_ daemon binds and answers inside `CORE_ATVERIFY_POLL`, which this
+  section sets to 300ms, and on a loaded runner it does not. The verifier then correctly
+  declines with "a daemon started by hand … never answered", and the gate rendered that
+  timing property of the box as a defect in the detector — the same false-finding shape
+  fixed one entry below, one level up.
+
+  A repeated `unmeasurable` is **not** evidence of that, and the gate does not treat it as
+  such. The verdict is the verifier's fail-closed answer for a whole family of causes, and
+  most are deterministic and _are_ the detector: a renamed or duplicated anchor, control-arm
+  row accounting that no longer matches, and `internal: no verdict was reached (this is a bug
+  in verify-atuin-guard.sh)`. All of those survive a retry, so retrying separates transient
+  from persistent — which is not the question being asked.
+
+  So the question is put to the **box**, by the same rule the gate already follows: prove it
+  without the subject's help. After one retry, a python3-only probe spawns a **detached**
+  listener and times it against the same bound the arms ran under — the one thing the
+  existing AF_UNIX probe cannot attest, since that binds in-process and establishes
+  capability rather than speed. If the box cannot bring a listener up inside the bound, an
+  expired bound is fully explained and the gate skips, naming both facts. If the box _is_
+  fast enough, the decline is not slowness, every remaining cause is the detector, and the
+  gate **fails** with the verifier's own reason.
+
+  Fail-closed in the direction that matters: on a healthy box every deterministic
+  `unmeasurable` still reddens this gate — including the verifier announcing its own
+  internal bug — and only a genuinely slow box can silence it. `moved` never consults the
+  probe at all and stays a hard failure, because no amount of slowness produces it, and a run
+  with no parseable verdict fails too, carrying stderr. The skip names the verdict and reason
+  and prints even under `--quiet`, so a gate that declined can never pass for one that
+  measured.
+
 - **The atuin autostart suite no longer reports an unmeasurable run as an upstream finding.**
   `verify-atuin-guard.sh` has three verdicts on purpose — `holds`, `moved`, and
   `unmeasurable` for "the apparatus could not be trusted, never a finding about upstream" —
