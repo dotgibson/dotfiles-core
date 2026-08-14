@@ -487,7 +487,11 @@ while IFS= read -r f; do
   bnd_src="$(cat "$f")"
   # Then drop ONLY the sanctioned lines of the one exempt file — everything else in it
   # is still scanned.
-  [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="$(grep -v 'Library/LaunchAgents' <<<"$bnd_src")"
+  # REDACT the sanctioned segment; do not drop the line. Dropping it would exempt
+  # everything else on that line too, so a second literal riding along on a legitimate
+  # LaunchAgents assignment would evade the gate. Replacing just the segment leaves the
+  # rest of the line to be scanned normally.
+  [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="${bnd_src//Library\/LaunchAgents/<sanctioned-launchd-path>}"
   if grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/' <<<"$bnd_src"; then
     bnd_fail=1
     fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"

@@ -100,6 +100,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `maint/` and `tmux/scripts/` were reworded to comply. That costs a wording choice and
   buys a gate with no hiding places.
 
+  The one sanctioned exemption is now **redacted rather than dropped**. Removing the whole
+  `LaunchAgents` line exempted everything else on it, so a second literal riding along on a
+  legitimate assignment evaded the gate; only the sanctioned segment is replaced now, and
+  the rest of the line is scanned normally. Verified against the old filter: with
+  `_x="<prefix>/bin"` appended to a `LaunchAgents` line, the line-drop passed it and the
+  redaction catches it.
+
 - **`V4-PROPOSAL.md` no longer claims v4 is unreleased.** Its status block said
   _"IMPLEMENTED … pending the v4.0.0 release cut"_ and described the work as sitting on a
   branch — ten minor releases after v4.0.0 shipped. It is now marked as the historical
