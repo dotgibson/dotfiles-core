@@ -1926,20 +1926,35 @@ if have git; then
     fail "tag-release: --push did not fail cleanly (rc=$_tr_rc)"
   fi
 
-  # Land the release on origin's main, then phase 2 must succeed and tag ORIGIN/MAIN.
+  # Land the release on origin's main — and then let main ADVANCE, which is the case
+  # that matters. core.version does not change again until the next release, so "the tip
+  # carries $VERSION" stays true for every later commit; tagging the tip would sweep work
+  # still under [Unreleased] into the release, and release.yml builds the body from the
+  # [vX.Y.Z] section, so it would ship undescribed.
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _tr_release_sha="$(_trg "$TR/work" rev-parse HEAD)"
+  # a later, unrelated commit on origin/main
+  printf 'later\n' >"$TR/work/later.txt"
+  _trg "$TR/work" add later.txt; _trg "$TR/work" commit -q -m "unrelated work after the release"
   _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
   _trg "$TR/work" fetch -q origin
+
   _tr_out="$(_tr_run --publish)"; _tr_rc=$?
   _tr_at="$(_trg "$TR/work" rev-parse -q --verify 'v1.1.0^{commit}' 2>/dev/null)"
-  _tr_main="$(_trg "$TR/work" rev-parse -q --verify origin/main 2>/dev/null)"
-  if ((_tr_rc == 0)) && [[ -n "$_tr_at" && "$_tr_at" == "$_tr_main" ]]; then
-    pass "tag-release: --publish tags origin/main once the release has landed"
+  _tr_tip="$(_trg "$TR/work" rev-parse -q --verify origin/main 2>/dev/null)"
+  if ((_tr_rc == 0)) && [[ "$_tr_at" == "$_tr_release_sha" ]]; then
+    pass "tag-release: --publish tags the RELEASE commit, not origin/main's tip"
   else
-    fail "tag-release: --publish did not tag origin/main (rc=$_tr_rc, tag=$_tr_at, main=$_tr_main)"
+    fail "tag-release: tagged $_tr_at, wanted the release commit $_tr_release_sha (tip=$_tr_tip, rc=$_tr_rc)"
+  fi
+  if [[ "$_tr_at" != "$_tr_tip" ]]; then
+    pass "tag-release: the tip had advanced, and the tag did not follow it"
+  else
+    fail "tag-release: fixture did not actually advance the tip — the assertion above proves nothing"
   fi
   # ...and the moving major alias rides along to the same commit.
-  if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_main" ]]; then
-    pass "tag-release: --publish moves the vN alias to origin/main too"
+  if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_release_sha" ]]; then
+    pass "tag-release: --publish moves the vN alias to the release commit too"
   else
     fail "tag-release: the vN alias did not follow the release"
   fi
@@ -3089,6 +3104,11 @@ STUB
   # here, and it is the difference between J4 costing seconds and costing minutes. Lowering it
   # against a REAL atuin manufactures findings; see the knob's own comment in
   # verify-atuin-guard.sh.
+  # ONE CONSTANT, because the apparatus gate below measures this box against the SAME bound
+  # the arms run under. Two copies of "3" would let the probe and the thing it is vouching
+  # for drift apart silently, and a probe that vouches for a different bound than the one
+  # that expired is worse than none.
+  _DPOLL=3
   _d_run() { # _d_run <stub> [extra args...] → sets _dout (stdout) / _dstderr / _drc
     local stub="$1"
     shift
@@ -3100,9 +3120,78 @@ STUB
     # verdict came back empty, because something musl-side wrote to stderr and json.load then
     # choked on it. stderr is still captured, so a genuine crash still reaches the message.
     _dstderr=""
-    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL=3 "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>"$SANDBOX/derr.txt")"
+    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL="$_DPOLL" "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>"$SANDBOX/derr.txt")"
     _drc=$?
     _dstderr="$(head -c 400 "$SANDBOX/derr.txt" 2>/dev/null | tr '\n' ' ')"
+  }
+  # _d_spawn_within_bound — 0 when THIS BOX can bring a freshly spawned, detached listener up
+  # and answer a connect inside the same $_DPOLL bound the arms run under; 1 when it cannot.
+  #
+  # THE ONE CLAIM A SKIP AT THE APPARATUS GATE NEEDS, and the one the gate's AF_UNIX probe
+  # cannot make. That probe binds and connects IN-PROCESS, which proves the box has working
+  # AF_UNIX sockets under /tmp — capability. What every arm actually depends on is a separate
+  # process starting, binding, and answering before the bound expires — speed — and a loaded
+  # runner misses that while passing the capability probe comfortably. Measuring it is what
+  # lets an expired bound be attributed to the box instead of to the detector.
+  #
+  # SUBJECT-INDEPENDENT ON PURPOSE: python3 only, never atuin and never the verifier, for the
+  # same reason the probe above is. Evidence gathered THROUGH the code under test cannot
+  # exonerate it.
+  #
+  # Deliberately the FAVOURABLE case for the box — no sqlite, no config, no daemon protocol,
+  # just spawn/bind/listen — so a failure here means the box could not manage even the
+  # cheapest version of what the arms need, and a pass leaves slowness with no excuse.
+  # Named j4spawn, NOT atverify.*, so case 17's leak glob never sees it.
+  _d_spawn_within_bound() {
+    python3 - "/tmp/j4spawn.$$.sock" "$_DPOLL" <<'J4SPAWN' 2>/dev/null
+import os, socket, subprocess, sys, time
+
+path, tries = sys.argv[1], int(sys.argv[2])
+child = None
+try:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    # setsid() so it detaches exactly as a real autostart daemon does; the parent below is
+    # the only thing that reaps it, which is why the finally block is unconditional.
+    child = subprocess.Popen(
+        [sys.executable, "-c",
+         "import socket,sys,os,time\n"
+         "os.setsid()\n"
+         "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
+         "s.bind(sys.argv[1]); s.listen(8)\n"
+         "t=time.time()\n"
+         "s.settimeout(0.2)\n"
+         "while time.time()-t < 30:\n"
+         "    try:\n"
+         "        c,_=s.accept(); c.close()\n"
+         "    except Exception:\n"
+         "        pass\n",
+         path],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(tries):
+        try:
+            c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            c.settimeout(1)
+            c.connect(path)
+            c.close()
+            sys.exit(0)
+        except OSError:
+            time.sleep(0.1)
+    sys.exit(1)
+finally:
+    if child is not None:
+        try:
+            child.kill()
+            child.wait(timeout=5)
+        except Exception:
+            pass
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+J4SPAWN
   }
   _d_get() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"$2\"])" 2>/dev/null; }
   # _d_calls <stub> — every invocation that stub received. Read from the stub dir, which
@@ -3302,12 +3391,69 @@ J4PROBE
   else
     rm -f "/tmp/j4probe.$$.sock"
     # The apparatus is established WITHOUT the subject's help, so a known-good stub that does
-    # not report `holds` is a regression in the detector — a FAILURE, never a skip.
+    # not report `holds` is a regression in the detector — a FAILURE, never a skip. That holds
+    # for every outcome the probe above actually covers, which is why this gate is NOT §J3's
+    # blanket "skip unless holds": there, no independent probe exists, so declining is all it
+    # can honestly do; here one does, and the stricter stance is the point of running it.
+    #
+    # WHAT THE PROBE COVERS IS CAPABILITY, NOT SPEED, and the gap between those two is where
+    # this gate manufactured reds. Binding and connecting an AF_UNIX socket in-process says
+    # nothing about whether a SPAWNED daemon binds and answers inside CORE_ATVERIFY_POLL —
+    # 300ms in this section — and on a loaded runner it does not. The verifier then declines
+    # with "a daemon started by hand ... never answered", a property of the box's timing
+    # rather than of the detector, and hard-failing on it reddened an audit leg for a change
+    # that had nothing to do with atuin. So `unmeasurable` is the one outcome the probe
+    # cannot speak to, and the only one allowed to skip.
+    #
+    # RETRIED ONCE, AND THEN THE BOX IS MEASURED — because a repeat is NOT evidence of an
+    # apparatus limit. `unmeasurable` is the verifier's fail-closed answer for a whole family
+    # of causes, and most of them are DETERMINISTIC AND ARE THE DETECTOR: a renamed or
+    # duplicated anchor, a control arm whose row accounting no longer matches, and — the case
+    # that settles the argument — `internal: no verdict was reached (this is a bug in
+    # verify-atuin-guard.sh)`. Every one of those repeats on a retry. Treating a repeat as
+    # "the box could not host it" would skip the sixteen assertions below while the subject
+    # is announcing its own bug, which is exactly the blindness the block comment above
+    # refuses to allow, arriving by a slower door. The retry only separates TRANSIENT from
+    # PERSISTENT, which is not the question.
+    #
+    # SO THE QUESTION IS PUT TO THE BOX, NOT TO THE VERDICT, and by the same rule the probe
+    # above already follows: prove it WITHOUT the subject's help. _d_spawn_within_bound
+    # spawns a detached python3 listener and times it against the SAME $_DPOLL bound the arms
+    # ran under. That is the one thing the AF_UNIX probe does not cover — it establishes
+    # CAPABILITY, this establishes SPEED — and it is the only claim a skip here actually
+    # needs. Not a reason-string match: prose is free to change, and no wording can prove a
+    # box was too slow.
+    #
+    #   probe FAILS  → this box cannot bring a listener up inside the bound, so an expired
+    #                  bound is fully explained by the box. Skip, and say so.
+    #   probe PASSES → the box is fast enough, so the decline is NOT speed. Every remaining
+    #                  cause is the detector. FAIL, loudly, with the verifier's own reason.
+    #
+    # Fail-closed in the direction that matters: on a healthy box every deterministic
+    # `unmeasurable` still reddens this gate, and only a genuinely slow box can silence it.
+    #
+    # `moved` STAYS A HARD FAILURE without consulting the probe at all. It is the shape a
+    # detector regression takes on a known-good stub — the verifier miscategorising correct
+    # behaviour — and no amount of slowness produces it. A run with no parseable verdict
+    # fails too, carrying stderr.
     _d_run atuin-heals --premise autostart --json
     _dapp="$(_d_get "$_dout" verdict)"
+    _dappwhy="$(_d_get "$_dout" reason)"
     _dreap
-    if [[ "$_dapp" != holds ]]; then
-      fail "atuin autostart: this box can bind AF_UNIX sockets, yet the known-good stub reported ${_dapp:-<unparseable>} rather than holds — that is a regression in verify-atuin-guard.sh, not an unusable apparatus: $(_d_get "$_dout" reason)"
+    if [[ "$_dapp" == unmeasurable ]]; then
+      _d_run atuin-heals --premise autostart --json
+      _dapp="$(_d_get "$_dout" verdict)"
+      _dappwhy="$(_d_get "$_dout" reason)"
+      _dreap
+    fi
+    if [[ "$_dapp" == unmeasurable ]] && ! _d_spawn_within_bound; then
+      skip "atuin autostart: measurement assertions (this box cannot bring a detached listener up within the ${_DPOLL}-tick bound the arms run under, so the verifier's decline is explained by the box: ${_dappwhy:-no reason parsed})"
+    elif [[ "$_dapp" == unmeasurable ]]; then
+      fail "atuin autostart: the known-good stub reported unmeasurable TWICE, yet this box brings a detached listener up well inside the ${_DPOLL}-tick bound — so this is not slowness, it is verify-atuin-guard.sh declining when it should measure: ${_dappwhy:-no reason parsed}"
+    elif [[ "$_dapp" == moved ]]; then
+      fail "atuin autostart: this box can bind AF_UNIX sockets, yet the known-good stub reported moved rather than holds — that is a regression in verify-atuin-guard.sh, not an unusable apparatus: ${_dappwhy:-no reason parsed}"
+    elif [[ "$_dapp" != holds ]]; then
+      fail "atuin autostart: the known-good stub produced no parseable verdict (rc$_drc) — the apparatus failed to report rather than measuring${_dstderr:+ (stderr: $_dstderr)}"
     else
 
     # 4. The happy path, and the shape real 18.19.0 has: all four arms spawn and land a row.

@@ -80,7 +80,7 @@ git diff                            # sanity-check: only core.version + CHANGELO
 # 3. Commit the release (re-audits). Creates NO TAG — that is deliberate, see below.
 make tag
 
-# 4. Land the release COMMIT via a PR (squash — see "Why squash is fine" below).
+# 4. Land the release COMMIT via a PR (squash — see "Why the tag comes last" below).
 #    No --no-follow-tags needed any more: step 3 creates no tag, so a plain push has
 #    nothing to carry. (The flag was load-bearing only while a pre-merge tag existed.)
 git push origin release/vX.Y.Z
@@ -139,8 +139,6 @@ MAJOR survived the fetch, pointing at a dead commit).
 If the release branch was already pushed and a PR opened, close the PR and delete the
 remote branch too — `git push origin --delete release/vX.Y.Z`.
 
-Delete `vN` explicitly rather than trusting the fetch to fix it. `--tags --force` only
-*updates* tags origin actually has: on a PATCH/MINOR that restores `v4` to origin's commit
 Nothing on origin needs unwinding as long as you have not run `make publish`: phase 1
 creates no tag at all, so no Release was published and no fan-out fired. Confirm with
 `git ls-remote --tags origin 'refs/tags/vX.Y.Z'` — empty is what you want. The abandoned
@@ -179,11 +177,11 @@ hand; see the straggler note in §2. What you do with it depends on the bump you
   edit is the single intentional, reviewed change a MAJOR is meant to be, and it's tracked as
   part of rollout (§2), not this step.
 
-> The `make tag` shortcut path handles the alias itself, safely for either case:
-> `tag-release.sh` derives the alias from the version (`MAJOR="v${VERSION%%.*}"`), so a
-> `v5.0.0` cut force-moves **`v5`** (creating it) and never touches `v4`. It does **not**,
-> however, bump the fleet's callers from `@v4` to `@v5` — that hand edit is still yours on a
-> MAJOR.
+> `make publish` handles the alias itself, safely for either case: `tag-release.sh`
+> derives it from the version (`MAJOR="v${VERSION%%.*}"`), so a `v5.0.0` cut force-moves
+> **`v5`** (creating it) and never touches `v4`. Both refs go up in one `--atomic` push, so
+> the alias cannot be left stale behind a published `vX.Y.Z`. It does **not**, however, bump
+> the fleet's callers from `@v4` to `@v5` — that hand edit is still yours on a MAJOR.
 
 ### What happens automatically after the tag
 
@@ -425,7 +423,7 @@ This catches the auth-scope, argument, and resolve-path bugs that PR CI cannot s
 | fan-out fails `could not read Username for 'https://github.com'` | a git op reading a private repo without auth | the read must be authenticated (built-in token for own repo, `FLEET_SYNC_TOKEN` for cross-repo) |
 | fan-out aborts `core.lock differs ...` | an htpx sync touched Core | by design — htpx fan-out must never change `core.lock`; investigate the sync |
 | `make tag` refuses: `no '## [vX.Y.Z]' heading` | `make release` wasn't run | run `make release VERSION=X.Y.Z` first |
-| staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, use §1.1 ["Abandoning a cut"](#abandoning-a-cut) — it is the one recipe, and it clears the `vN` alias that `make tag` moved |
+| staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, use §1.1 ["Abandoning a cut"](#abandoning-a-cut) — dropping the branch is the whole recipe now, since phase 1 creates no tag |
 
 For the policy behind all of this — cadence, canary order, why only Core is versioned —
 see `RELEASE-STRATEGY.md`.

@@ -126,29 +126,41 @@ if [[ "$MODE" == publish ]]; then
     exit 1
   }
 
-  # THE guard. core.version at origin/main is what proves the release commit actually
-  # merged — not that a branch exists, not that CI was green, but that the released
-  # version is on main right now. Everything else here is a sanity check; this is the
-  # one that makes it impossible to publish a tag for a version main does not carry.
-  ORIGIN_VERSION="$(git show origin/main:core.version 2>/dev/null | tr -d '[:space:]')"
-  if [[ "$ORIGIN_VERSION" != "$VERSION" ]]; then
-    fail "tag-release.sh: origin/main carries core.version '$ORIGIN_VERSION', not '$VERSION' — the release PR has not merged yet"
+  # THE guard, and it must identify the RELEASE COMMIT — not merely today's tip.
+  # core.version does not change again until the NEXT release, so "origin/main carries
+  # $VERSION" stays true for every commit that lands afterwards. Tagging the tip would
+  # therefore tag whatever merged most recently, sweeping changes still sitting under
+  # [Unreleased] into the release — and release.yml builds the Release body from the
+  # [vX.Y.Z] section, so those changes would ship undescribed.
+  #
+  # So resolve the commit that SET core.version to this value: walk origin/main's history
+  # for commits touching core.version, newest first, and take the first whose blob is
+  # $VERSION. Under a squash merge that is exactly the release commit.
+  RELEASE_SHA=''
+  while IFS= read -r _sha; do
+    [[ -n "$_sha" ]] || continue
+    if [[ "$(git show "$_sha:$VERFILE" 2>/dev/null | tr -d '[:space:]')" == "$VERSION" ]]; then
+      RELEASE_SHA="$_sha"
+    else
+      # First commit going back that does NOT carry $VERSION — everything older predates
+      # the bump, so the last match we saw is the commit that introduced it.
+      break
+    fi
+  done < <(git rev-list origin/main -- "$VERFILE")
+
+  if [[ -z "$RELEASE_SHA" ]]; then
+    fail "tag-release.sh: no commit on origin/main sets $VERFILE to '$VERSION' — the release PR has not merged yet"
     fail "land it first: the recipe is printed by a no-flag run"
     exit 1
   fi
-  pass "origin/main carries core.version $VERSION"
+  pass "release commit on origin/main: $(git rev-parse --short "$RELEASE_SHA") (sets $VERFILE to $VERSION)"
 
-  # Captured first, NOT piped into `grep -q`. Under `set -o pipefail` that pipeline
-  # reports FAILURE on a successful match: grep -q exits the moment it matches, git show
-  # dies of SIGPIPE (141) part-way through a 4000-line file, and pipefail surfaces git's
-  # status rather than grep's. The phase-1 guard below is immune only because it greps the
-  # file directly instead of through a pipe.
-  ORIGIN_CHANGELOG="$(git show origin/main:"$CHANGELOG" 2>/dev/null)"
-  if ! grep -qE "^## +\[v?${VERSION//./\\.}\]" <<<"$ORIGIN_CHANGELOG"; then
-    fail "tag-release.sh: origin/main's $CHANGELOG has no '## [v$VERSION]' heading"
-    exit 1
+  # Say so when the tag will not land on the tip — that is legitimate (main moved on
+  # after the release merged) but the operator should know `git describe` on main will
+  # now report commits-since, not a clean tag.
+  if [[ "$RELEASE_SHA" != "$(git rev-parse origin/main)" ]]; then
+    note "origin/main has advanced $(git rev-list --count "$RELEASE_SHA..origin/main") commit(s) since the release — tagging the release commit, not the tip"
   fi
-  pass "origin/main's $CHANGELOG carries the [v$VERSION] heading"
 
   # Never clobber a published release. vX.Y.Z is immutable by ruleset, so a re-push
   # would be rejected anyway — fail here with a reason instead of a git error.
@@ -157,31 +169,33 @@ if [[ "$MODE" == publish ]]; then
     exit 1
   fi
 
-  if ! git tag -fa "$TAG" origin/main -m "$TAG"; then
+  if ! git tag -fa "$TAG" "$RELEASE_SHA" -m "$TAG"; then
     fail "tag-release.sh: could not create $TAG at origin/main"
     exit 1
   fi
-  pass "tagged $TAG at origin/main ($(git rev-parse --short origin/main))"
+  pass "tagged $TAG at $(git rev-parse --short "$RELEASE_SHA")"
 
   # The moving MAJOR alias reusable-workflow callers pin to (RELEASE-STRATEGY.md
   # §"Pinning reusable workflows"). Force-moved to each new vN.x so callers pick up
   # patch/minor guard fixes without a manual bump.
-  if ! git tag -f "$MAJOR" origin/main >/dev/null; then
+  if ! git tag -f "$MAJOR" "$RELEASE_SHA" >/dev/null; then
     fail "tag-release.sh: could not move major tag $MAJOR"
     exit 1
   fi
-  pass "moved major tag $MAJOR → origin/main"
+  pass "moved major tag $MAJOR → $(git rev-parse --short "$RELEASE_SHA")"
 
-  # Independent pushes: vX.Y.Z is a fresh immutable tag, vN is a force-move. Chaining
-  # them with && would skip the alias if the first push raced someone else.
-  push_rc=0
-  git push origin "$TAG" || push_rc=1
-  git push -f origin "$MAJOR" || push_rc=1
-  if ((push_rc)); then
-    fail "tag-release.sh: tag push failed — retry: git push origin $TAG ; git push -f origin $MAJOR"
+  # ONE atomic push, not two. Pushed separately these can half-land: if vX.Y.Z lands and
+  # vN does not, release.yml and sync-fanout.yml fire while the alias every reusable-
+  # workflow caller pins to is still stale — and re-running --publish then refuses,
+  # because the immutable tag now exists. A concurrent publisher makes it worse: this
+  # invocation could lose the vX.Y.Z race and still force vN back to its stale value.
+  # --atomic makes it all-or-nothing; the leading + forces ONLY the alias, so a
+  # non-fast-forward on the immutable tag is still rejected rather than overwritten.
+  if ! git push --atomic origin "refs/tags/$TAG" "+refs/tags/$MAJOR"; then
+    fail "tag-release.sh: atomic tag push failed — nothing was published; fix and re-run 'make publish'"
     exit 1
   fi
-  pass "pushed $TAG and $MAJOR"
+  pass "pushed $TAG and $MAJOR atomically"
 
   printf '\n%s──────── %s published ────────%s\n' "$c_blu" "$TAG" "$c_rst"
   cat <<EOF
@@ -263,7 +277,7 @@ cat <<EOF
        gh pr create --base main --head release/$TAG --title "release $TAG"
        # merge it — GitHub only offers the methods this repo enables, and any of them is
        # fine: phase 2 tags origin/main, so the merge method cannot affect the tag.
-       # (Why this names no method: RELEASE-RUNBOOK.md §"Why squash is fine".)
+       # (Why the method cannot matter: RELEASE-RUNBOOK.md §"Why the tag comes last".)
   2. publish the tags AFTER the PR merges:
        make publish          # or: ./scripts/tag-release.sh --publish
        # refuses unless origin/main actually carries core.version $VERSION
