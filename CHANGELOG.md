@@ -200,6 +200,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   uses the code under test as its own apparatus check and would let a real regression skip
   every assertion below while leaving the audit green.
 
+- **`core-doctor` no longer reports a false `○ (idle)` for starship and carapace.**
+  `_core_wired` probed only `starship_precmd` and `_carapace`, but both tools renamed the
+  functions their `init` emits — starship 1.24.2 emits `prompt_starship_precmd` and
+  carapace-bin 1.5.7 emits `_carapace_completer`, and neither emits the old name at all.
+  Since Core sources each tool's own init (`_cache_eval starship starship init zsh`), the
+  probe silently went stale as the tools moved, so every box on a current starship or
+  carapace saw `○ (idle)` for an integration that was demonstrably driving the prompt and
+  completion (measured: 1760 carapace-bridged commands, `PROMPT` set by starship). That is
+  the exact failure the probe exists to prevent, inverted — a misleading `○` instead of a
+  misleading `✓`. Both arms now accept the old **and** current names, so boxes pinned to
+  older releases keep reporting wired.
+
 - **The atuin autostart apparatus gate no longer reds when the box is merely slow.** The
   gate proves the box can bind and connect an AF_UNIX socket with python3 alone, then runs a
   known-good stub and treats any verdict other than `holds` as a regression in
