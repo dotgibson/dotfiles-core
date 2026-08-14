@@ -200,9 +200,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   greening the leak assertion forever. That is the same vacuous pass the self-check exists to
   catch, arriving by a different door.
 
-  The validation runs **in the C locale**. POSIX defines a range like `[A-Z]` by _collation_
-  rather than codepoint, so under some locales it may admit letters the contract does not mean
-  to allow — and Core ships to glibc, musl and BSD userlands, which need not agree. The byte cap
+  The validation runs **in the C locale**, and this is a defect that was shipping rather than a
+  precaution: POSIX defines a range like `[A-Z]` by _collation_ rather than codepoint, and on
+  **glibc under `en_US.utf8` the unpinned pattern accepts `tág`** — measured on the Ubuntu CI
+  leg, not reasoned about, so the ASCII-only contract was not being enforced there at all. It is
+  invisible from macOS, where all 84 installed UTF-8 locales reject the same sample, which is
+  exactly why Core cannot take one userland's answer for the fleet's. The byte cap
   is the same fault one step downstream: `{1,16}` counts _characters_, so sixteen multibyte ones
   are up to 64 bytes and the limit stops being the AF_UNIX budget it exists to be. Downstream,
   not separate — every character in `[A-Za-z0-9_-]` is single-byte ASCII, so the count can only
@@ -212,8 +215,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   asks the box for its installed UTF-8 locales (`locale -a`, falling back to named candidates
   on musl, which ships no such command) and looks for one under which the _unpinned_ pattern
   really accepts a non-ASCII sample. Finding one, it names it and the case genuinely fails if
-  the pin is removed; finding none — all 84 on macOS reject it — the result states the count and
-  says the pin is unexercised there, asserted by contract only. The no-match case then runs
+  the pin is removed; finding none, the result states the count and says the pin is unexercised
+  there, asserted by contract only. Across the fleet that reads: Ubuntu **exercised under
+  `en_US.utf8`**, while macOS (84 installed), Arch (1 installed) and Alpine (7 candidates, since
+  musl ships no `locale`) report contract-only — so one leg proves the fix and the other three
+  say honestly that they cannot. The no-match case then runs
   under `LC_ALL=C` rather than an empty `LC_ALL`, which is not "no locale" at all but a
   fall-through to the caller's `LANG`: an unprobed locale that could be the very one that
   accepts the sample, making the run exercise the pin while the line claimed it had not.
