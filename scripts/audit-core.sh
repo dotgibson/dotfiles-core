@@ -439,9 +439,11 @@ fi
 # or macOS ~/Library path could slip into a portable shell module and fan out to eight repos
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
 # zsh/55-maint.zsh — the scheduler CONTROL SURFACE whose launchd arm legitimately writes
-# ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape).
+# ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape);
+# only THOSE lines are exempt, not the whole file (see the per-line note below).
 # Comment-stripped first, so an explanatory comment naming an OS path can't trip it.
-# Pure sed+grep (busybox-safe), shell-scoped like the other shell-layer gates.
+# Pure sed+grep (busybox-safe), and CROSS-CUTTING rather than shell-scoped — the scope is
+# the manifest, so it covers configs and the nvim tree too, and no --scope may skip it.
 hdr "Core⇄OS boundary (no OS paths in portable Core files)"
 # The scope is DERIVED FROM core.manifest, not from a hand-kept list. That list had
 # quietly fallen behind the manifest three times: first the symlinked configs were
