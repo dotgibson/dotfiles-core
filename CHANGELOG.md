@@ -128,6 +128,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and the daemon socket sits inside the sandbox, which is the same reason `/tmp` is
   hardcoded there instead of `$TMPDIR`.
 
+  An **empty** tag is rejected rather than defaulted, which is why the knob reads `${…-$$}`
+  and not the `${…:-…}` its two neighbours use. An empty value is not a caller asking for the
+  default — it is a caller whose tag expression came out empty — and accepting it would
+  sandbox under the pid while the caller globbed `/tmp/atverify..*`, matching nothing and
+  greening the leak assertion forever. That is the same vacuous pass the self-check exists to
+  catch, arriving by a different door.
+
   Two assertions, because narrowing a glob and blinding it look identical from a green run.
   The leak check now plants a foreign-tagged sandbox _inside_ its own window and still
   requires a clean delta; a companion case plants one foreign and one of its own and

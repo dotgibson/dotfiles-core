@@ -155,7 +155,16 @@ POLL_N="${CORE_ATVERIFY_POLL:-100}"
 # near 108 bytes and the daemon socket sits at <sandbox>/home/.local/share/atuin/ (~35 bytes),
 # which is the same reason /tmp is hardcoded above instead of $TMPDIR. 14 + 16 + 7 + 35 leaves
 # room to spare; a tag longer than that would start spending it.
-RUN_TAG="${CORE_ATVERIFY_TAG:-$$}"
+#
+# `-`, NOT `:-`, and the difference is the whole point of the knob. The two bounds above use
+# `:-`, so an empty CORE_ATVERIFY_TIMEOUT harmlessly means "the default" — but an empty tag is
+# not a caller asking for the default, it is a caller whose tag EXPRESSION came out empty
+# (`CORE_ATVERIFY_TAG="$some_unset_var"`). Defaulting that to the pid is the vacuous-pass shape
+# this whole change exists to close: the script would sandbox under its pid while the caller
+# globbed `/tmp/atverify..*`, which matches nothing, and the leak assertion would go green
+# forever without ever looking at a sandbox. Unset is a default; empty is a bug, and falls
+# through to the validator below to be rejected.
+RUN_TAG="${CORE_ATVERIFY_TAG-$$}"
 
 # Parse EVERY arg and reject an unknown one rather than ignore it — the same fail-closed
 # contract as the gates, and as bench-atuin-daemon.sh's arg loop.

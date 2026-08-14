@@ -3030,6 +3030,68 @@ STUB
     fail "atuin autostart: --premise must exit 2 on a bad value (got rc$_drc) and on a missing one (got rc$_drc2)"
   fi
 
+  # 1b. THE TAG CONTRACT, asserted where it is cheapest — no daemon, no sandbox, no atuin.
+  #     CORE_ATVERIFY_TAG is a PUBLIC knob (it is in --help), and case 17 only ever exports a
+  #     generated valid one, so every way a caller can get it wrong was unasserted: the value
+  #     becomes a path component under /tmp, and it is the only thing standing between the
+  #     leak check and a glob that silently matches nothing.
+  #
+  #     THE EMPTY CASE IS THE IMPORTANT ONE, and it is why the script reads `${…-$$}` rather
+  #     than the `${…:-…}` its two neighbouring knobs use. An empty tag is not a request for
+  #     the default — it is a caller whose tag expression came out empty — and accepting it
+  #     would put the sandbox under the pid while the caller globbed `/tmp/atverify..*`,
+  #     matching nothing and greening the leak assertion forever. That is precisely the
+  #     vacuous pass case 17's self-check exists to catch, arriving by a different door, so
+  #     it is pinned here rather than left to the `-` vs `:-` being noticed in review.
+  #
+  #     Rejection must also happen BEFORE anything is measured, which is read off the stub's
+  #     own call log rather than assumed: a tag validated late would already have spawned.
+  _mkdstub atuin-tagck heals
+  _dbad=0
+  _dtagwhy=""
+  # 17 chars, one past the cap — not 16, which is the accepted boundary asserted just below.
+  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space"; do
+    CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
+      --premise autostart --atuin "$_dstub/atuin-tagck" >/dev/null 2>&1
+    _drc=$?
+    if ((_drc != 2)); then
+      _dbad=1
+      _dtagwhy="$_dtagwhy '${_dcase:-<empty>}'→rc$_drc"
+    fi
+  done
+  # Accepted, by contrast: the 16-char boundary and an ABSENT tag both get past validation and
+  # fail later for the missing binary (rc 3), which is what tells acceptance from rejection
+  # without measuring anything. The absent case is the standalone contract — it is what
+  # `make verify-atuin-guard` and atuin-guard-verify.yml rely on, and the section exports a
+  # tag, so it is unset in a SUBSHELL rather than for the rest of the run.
+  CORE_COLOR=never CORE_ATVERIFY_TAG="sixteenchars0123" "$_DVERIFY" \
+    --premise autostart --atuin "$_dstub/nonexistent" >/dev/null 2>&1
+  _drc=$?
+  if ((_drc != 3)); then
+    _dbad=1
+    _dtagwhy="$_dtagwhy 16-char→rc$_drc"
+  fi
+  (
+    unset CORE_ATVERIFY_TAG
+    CORE_COLOR=never "$_DVERIFY" --premise autostart \
+      --atuin "$_dstub/nonexistent" >/dev/null 2>&1
+  )
+  _drc=$?
+  if ((_drc != 3)); then
+    _dbad=1
+    _dtagwhy="$_dtagwhy unset→rc$_drc"
+  fi
+  [[ -z "$(_d_calls atuin-tagck)" ]] || {
+    _dbad=1
+    _dtagwhy="$_dtagwhy (a rejected tag still invoked atuin)"
+  }
+  _dreap
+  if ((_dbad == 0)); then
+    pass "atuin autostart: a tag that is empty, overlong, or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted"
+  else
+    fail "atuin autostart: the CORE_ATVERIFY_TAG contract is not enforced —$_dtagwhy; an accepted bad tag globs nothing and greens the leak check vacuously"
+  fi
+
   # 2. The premise travels in the JSON. The workflow's two legs differ by ONE flag and both
   #    file issues under different titles, so it asserts this field rather than trusting the
   #    flag reached the script — this is the assertion that makes that check meaningful.
