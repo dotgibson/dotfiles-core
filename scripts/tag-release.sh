@@ -177,7 +177,25 @@ if [[ "$MODE" == publish ]]; then
     fail "release.yml builds the Release body from that section — refusing to publish a tag it would fail on"
     exit 1
   fi
-  pass "the release commit's $CHANGELOG carries the [v$VERSION] heading"
+
+  # A heading is not enough: release.yml ALSO rejects an empty section, and release.sh
+  # will happily promote an empty [Unreleased]. Without this, publish would push the
+  # immutable tag and release.yml would then fail on the empty body — burning the version
+  # for a reason that was knowable up front. Extract the body with the SAME awk release.yml
+  # uses, so the two cannot disagree about what "empty" means.
+  RELEASE_BODY="$(awk -v tag="v$VERSION" '
+    $0 ~ "^## +\\[" tag "\\]" { f = 1; next }
+    f && /^## +\[/ { exit }
+    f && NF { p = 1 }
+    f && p { buf[++n] = $0 }
+    END { while (n > 0 && buf[n] ~ /^[[:space:]]*$/) n--; for (i = 1; i <= n; i++) print buf[i] }
+  ' <<<"$RELEASE_CHANGELOG")"
+  if [[ -z "${RELEASE_BODY//[[:space:]]/}" ]]; then
+    fail "tag-release.sh: the [v$VERSION] section in $CHANGELOG is EMPTY"
+    fail "release.yml refuses an empty Release body — publishing would burn the version; write the notes first"
+    exit 1
+  fi
+  pass "the release commit's $CHANGELOG carries a non-empty [v$VERSION] section"
 
   # Never clobber a published release. vX.Y.Z is immutable by ruleset, so a re-push
   # would be rejected anyway — fail here with a reason instead of a git error.

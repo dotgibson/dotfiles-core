@@ -1982,6 +1982,22 @@ if have git; then
     fail "tag-release: older publish not refused (rc=$_tr_rc, v1 $_tr_v1_before -> $_tr_v1_after)"
   fi
 
+  # A heading with an EMPTY body must be refused too. release.yml rejects an empty Release
+  # body, and release.sh will promote an empty [Unreleased] without complaint — so without
+  # this the immutable tag is pushed and the workflow fails afterwards, burning the version
+  # for a reason knowable up front. Uses release.yml's own extraction, so the two agree.
+  printf '2.5.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v2.5.0] - 2026-04-04\n\n## [v1.1.0] - 2026-02-02\n\n- new\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v2.5.0 (empty section)"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null; _trg "$TR/work" fetch -q origin
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'is EMPTY' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v2.5.0')" ]]; then
+    pass "tag-release: --publish refuses an empty [vX.Y.Z] section (no tag created)"
+  else
+    fail "tag-release: published a version release.yml would reject as an empty body (rc=$_tr_rc)"
+  fi
+
   # A release commit with the right core.version but NO [vX.Y.Z] heading must be refused
   # BEFORE any tag exists: release.yml builds the Release body from that section, so
   # publishing first and finding out later leaves an immutable tag on a release that

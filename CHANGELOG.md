@@ -99,10 +99,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `[vX.Y.Z]` section, so that work would ship undescribed. It resolves the commit that
   _set_ `core.version` to this value and tags that, reporting when the tip has moved on.
 
-  It also validates the `[vX.Y.Z]` heading **at that commit** before creating any tag —
-  `release.yml` builds the Release body from that section, so publishing first and finding
-  the heading missing afterwards leaves an immutable tag on a release that cannot be
-  published, burning the version.
+  It also validates that commit's `[vX.Y.Z]` section before creating any tag — that it
+  **exists and is non-empty**, using `release.yml`'s own `awk` so the two cannot disagree
+  about what empty means. `release.yml` builds the Release body from that section and
+  rejects an empty one, and `release.sh` will promote an empty `[Unreleased]` without
+  complaint; publishing first and discovering either afterwards leaves an immutable tag on
+  a release that cannot be published, burning the version for a reason knowable up front.
+
+  `make release`'s printed recipe is updated to match. It still ended with
+  `git tag -a` + `git push --tags`, so an operator following the output it generates would
+  have recreated exactly the pre-merge tag this change exists to eliminate.
 
   Both refs go up in a single `--atomic` push, with a `--force-with-lease` on the `vN`
   alias. Pushed separately they can half-land: `vX.Y.Z` published while `vN` is stale fires
@@ -111,7 +117,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   after this run read it. Rolling `vN` backward needs no separate guard — resolution only
   accepts `origin/main`'s newest `core.version` change, so an older release never resolves.
 
-  This also makes the merge method irrelevant to the tag. Nine behavioural assertions
+  This also makes the merge method irrelevant to the tag. Ten behavioural assertions
   cover it — including that the tag does **not** follow a tip that advanced after the
   release merged; the script previously had none, which is how the ordering survived.
 
