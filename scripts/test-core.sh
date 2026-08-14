@@ -5192,6 +5192,30 @@ ucheck "maint/refresh: a launchd path with an undecodable numeric reference is r
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-numref"
 
+# The two causes are not mutually exclusive, and a unit predating the PATH capture is if
+# anything the LIKELIEST to have been orphaned by a move as well — it is the oldest thing
+# on the box. Reporting the milder cause there tells the operator "some steps will skip"
+# about a job that does not run at all. The runner is inspected first for that reason, and
+# these fixtures pin it per arm, since each arm detects the PATH separately. The cron one
+# also exercises the pre-capture LINE SHAPE (no `PATH=` prefix): refusing to parse it would
+# silently reintroduce the misclassification for exactly the units most likely to hit it.
+mkdir -p "$_MRF/sd-old-dead/systemd/user" "$_MRF/ld-old-dead/Library/LaunchAgents"
+printf '[Service]\nExecStart=/usr/bin/env bash %s\n' "$_MRF_GONE" \
+  >"$_MRF/sd-old-dead/systemd/user/dotfiles-maint.service"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>LANG</key><string>C</string></dict></dict></plist>\n' \
+  "$_MRF_GONE" >"$_MRF/ld-old-dead/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '30 09 * * * /usr/bin/env bash %s # dotfiles-maint\n' "$_MRF_GONE" >"$_MRF/cron-old-dead"
+
+ucheck "maint/refresh: a pre-capture systemd unit that is ALSO dead reports runner, not path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  XDG_CONFIG_HOME="$_MRF/sd-old-dead"
+ucheck "maint/refresh: a pre-capture launchd plist that is ALSO dead reports runner, not path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  HOME="$_MRF/ld-old-dead"
+ucheck "maint/refresh: a pre-capture cron line that is ALSO dead reports runner, not path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-old-dead"
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question

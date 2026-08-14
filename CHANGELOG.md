@@ -143,10 +143,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   reference, an unknown entity) is refused for the same reason the rest is: a filename that
   cannot be reconstructed is not evidence of anything.
 
-  Twenty-six behavioral assertions — four states per scheduler, three that a recorded path is
-  read back verbatim (the hint prints it), and eleven that an extended command, a displaced
-  array, a relative path, a spliced-in program, a quoted look-alike, or an undecodable
-  reference is refused rather than mis-parsed. The healthy fixtures point
+  The two causes can coexist, and a unit predating the PATH capture is if anything the
+  likeliest to have been orphaned by a move as well — so the runner is inspected first and
+  `path` is the fallback. Reporting the milder cause there would tell the operator that some
+  steps will skip on a job that does not run at all.
+
+  Twenty-nine behavioral assertions — twelve scheduler states, four that a recorded path is
+  extracted correctly (two read back verbatim, plus escaped-quote scanning and `&apos;`
+  decoding), ten that an extended command, a displaced array, a relative path, a spliced-in
+  program, a quoted look-alike, or an undecodable reference is refused rather than
+  mis-parsed, and three that a dead runner outranks a stale PATH. The healthy fixtures point
   at a runner that really exists, or the whole section would pass vacuously.
 
 - **The boundary scan no longer strips comments at all.** Stripping was a false-negative

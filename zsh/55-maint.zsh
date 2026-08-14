@@ -126,7 +126,7 @@ _maint_squote_rest() {
 # therefore matches the EXACT shape maint-install renders and bails on anything else —
 # "close enough" parsing is what turns a live job into a false death notice.
 _maint_unit_runner() {
-  local f line xml rest argv0 sq dq
+  local f line cmd xml rest argv0 sq dq
   case "$(_maint_scheduler)" in
   systemd)
     f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
@@ -190,9 +190,15 @@ _maint_unit_runner() {
     ;;
   cron)
     line="$(crontab -l 2>/dev/null | grep -F '# dotfiles-maint')"
-    # Strip the trailing marker, then require the shape maint-install renders:
+    # Strip the trailing marker, then require one of the two shapes maint-install has
+    # written — with the PATH prefix, and the older form from before the capture:
     #
     #   <mm> <hh> * * * PATH='<value>' /usr/bin/env bash <runner> # dotfiles-maint
+    #   <mm> <hh> * * * /usr/bin/env bash <runner>                # dotfiles-maint
+    #
+    # The old form matters precisely because it is the unit most likely to ALSO have a
+    # stale runner path: refusing to parse it would classify a completely dead pre-capture
+    # job as a mere "some steps will skip".
     #
     # Every token is located by POSITION, never by searching: the five schedule fields,
     # then the assignment, whose value is consumed as a real single-quoted token so the
@@ -200,10 +206,19 @@ _maint_unit_runner() {
     # looks like it. Matching on appearance is what let `PATH='/x' /bin/echo '␣/usr/bin/env
     # bash /missing'` (a healthy job running /bin/echo) hand back /missing as our runner.
     line="${line% # dotfiles-maint}"
-    [[ "$line" == [0-9]*" "[0-9]*" * * * PATH='"* ]] || return 0
-    line="$(_maint_squote_rest "${line#*" * * * PATH="}")" || return 0
-    [[ "$line" == " /usr/bin/env bash "* ]] || return 0
-    line="${line#" /usr/bin/env bash "}"
+    if [[ "$line" == [0-9]*" "[0-9]*" * * * PATH='"* ]]; then
+      cmd="$(_maint_squote_rest "${line#*" * * * PATH="}")" || return 0
+      [[ "$cmd" == " "* ]] || return 0
+      cmd="${cmd# }"
+    elif [[ "$line" == [0-9]*" "[0-9]*" * * * "* ]]; then
+      cmd="${line#*" * * * "}"
+    else
+      return 0
+    fi
+    # Anchored at the START of the command, so a program spliced ahead of the interpreter
+    # cannot slip through the second shape either.
+    [[ "$cmd" == "/usr/bin/env bash "* ]] || return 0
+    line="${cmd#"/usr/bin/env bash "}"
     # Same one-argument rule as the systemd arm, and cron needs it more: the command field
     # is a full sh command line, so `… bash /existing/runner >>/tmp/log` or a trailing flag
     # would otherwise be read as one long, nonexistent path and reported as a dead job.
@@ -228,16 +243,21 @@ _maint_unit_runner() {
 # Either way the fix is the same (`maint-install` rewrites the unit), but the operator is
 # owed the distinction — one is a stale snapshot, the other means their repo moved.
 #
+# The two are NOT mutually exclusive, and a unit that predates the capture is if anything
+# the likeliest one to have been left behind by a move as well. So the runner is inspected
+# FIRST and `path` is the fallback: reporting the older, milder cause on a job that does
+# not run at all would tell the operator some steps will skip when in fact none do.
+#
 # No schedule installed is not a complaint, hence the -f / -n guards before each test.
 typeset -g _MAINT_REFRESH_WHY=''
 _maint_unit_needs_refresh() {
-  local f line runner
+  local f line runner has_path=''
   _MAINT_REFRESH_WHY=''
   case "$(_maint_scheduler)" in
   systemd)
     f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
     [[ -f "$f" ]] || return 1
-    grep -q '^Environment="PATH=' "$f" || { _MAINT_REFRESH_WHY=path; return 0; }
+    grep -q '^Environment="PATH=' "$f" && has_path=1
     ;;
   launchd)
     # Test for the PATH KEY, not merely for an EnvironmentVariables dict: a plist
@@ -245,17 +265,18 @@ _maint_unit_needs_refresh() {
     # runner still gets a stripped PATH — the exact silent-skip this detects.
     f="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
     [[ -f "$f" ]] || return 1
-    grep -q '<key>PATH</key>' "$f" || { _MAINT_REFRESH_WHY=path; return 0; }
+    grep -q '<key>PATH</key>' "$f" && has_path=1
     ;;
   cron)
     line="$(crontab -l 2>/dev/null | grep -F '# dotfiles-maint')"
     [[ -n "$line" ]] || return 1
-    [[ "$line" == *PATH=* ]] || { _MAINT_REFRESH_WHY=path; return 0; }
+    [[ "$line" == *PATH=* ]] && has_path=1
     ;;
   *) return 1 ;;
   esac
   runner="$(_maint_unit_runner)"
   [[ -n "$runner" && ! -f "$runner" ]] && { _MAINT_REFRESH_WHY=runner; return 0; }
+  [[ -n "$has_path" ]] || { _MAINT_REFRESH_WHY=path; return 0; }
   return 1
 }
 
