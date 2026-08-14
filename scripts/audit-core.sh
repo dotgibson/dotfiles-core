@@ -751,11 +751,42 @@ if ((BEHAV_BG)); then
   if [[ -s "$BEHAV_OUT" ]]; then
     if ((JSON)); then cat "$BEHAV_OUT" >&2; else cat "$BEHAV_OUT"; fi
   fi
+  # NAME WHAT BROKE, in the fail line itself. "run: ./scripts/test-core.sh" sends the operator
+  # away to reproduce a result this run already has — and for an INTERMITTENT failure that is
+  # advice that cannot be taken: the re-run passes and the evidence is gone. It has already
+  # cost two occurrences of an unattributed flake here, both lost because the ✗ scrolled past
+  # far above the summary and only the summary survived being piped through `tail`. The suite's
+  # own output is buffered right here, so the names cost one grep and travel wherever the fail
+  # line travels — the summary block, --json, a CI annotation, a truncated paste in an issue.
+  #
+  # Read BEFORE the buffer is removed, and matched after stripping SGR escapes rather than
+  # anchoring on a bare ✗: common.sh's fail() prefixes the mark with $c_red, so an anchored
+  # match silently finds nothing whenever colour is on (CORE_COLOR=always, or any caller that
+  # forces it) — a detector that fails quietly in exactly the runs someone is watching.
+  _behav_esc="$(printf '\033')"
+  _behav_fails="$(sed "s/${_behav_esc}\[[0-9;]*m//g" "$BEHAV_OUT" 2>/dev/null | grep '^✗' | sed 's/^✗[[:space:]]*//' || true)"
   rm -f "$BEHAV_OUT"
   if ((_behav_rc == 0)); then
     pass "behavioral tests (load-order smoke + function units)"
   else
-    fail "behavioral tests failed — run: ./scripts/test-core.sh"
+    # Up to three named, then a count — not a silent truncation. A suite that fails wholesale
+    # would otherwise render an unreadable wall, and the first three plus "+N more" is enough
+    # to tell "one flaky assertion" from "the whole section is down", which is the distinction
+    # the reader actually needs before deciding whether to re-run or investigate.
+    _behav_n=0
+    [[ -n "$_behav_fails" ]] && _behav_n="$(printf '%s\n' "$_behav_fails" | grep -c . || true)"
+    _behav_why=""
+    if ((_behav_n > 0)); then
+      _behav_why="$(printf '%s\n' "$_behav_fails" | head -3 | tr '\n' '|' | sed 's/|$//; s/|/ | /g')"
+      ((_behav_n > 3)) && _behav_why="$_behav_why (+$((_behav_n - 3)) more)"
+      _behav_why=" ($_behav_n): $_behav_why —"
+    else
+      # rc says failed and nothing matched: the suite died before it could report (a crash, a
+      # kill, a timeout). Say THAT rather than print an empty list, which would read as zero
+      # failures beside a red line and send the reader hunting for a mismatch that is not there.
+      _behav_why=" — no ✗ line in its output, so it exited $_behav_rc without reporting;"
+    fi
+    fail "behavioral tests failed$_behav_why run: ./scripts/test-core.sh"
   fi
 else
   # Serial fallback. `${arr[@]+"${arr[@]}"}`, not `"${arr[@]}"`: under `set -u`, expanding

@@ -73,6 +73,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **The audit now names the behavioural assertion that failed, in the failure line itself.**
+  It said `behavioral tests failed — run: ./scripts/test-core.sh`, which sends the operator
+  away to reproduce a result the run already had. For an _intermittent_ failure that is advice
+  that cannot be taken: the re-run passes and the evidence is gone. That is not hypothetical —
+  it cost two occurrences of an unattributed flake, both lost because the `✗` scrolled past far
+  above the summary and only the summary survived being piped through `tail`.
+
+  The suite's output is already buffered for the background run, so the names cost one `grep`
+  and travel wherever the fail line travels: the summary block, `--json`, a CI annotation, a
+  truncated paste in an issue. Up to three are named, then a count (`+N more`) rather than a
+  silent truncation, because "one flaky assertion" and "the whole section is down" need telling
+  apart before deciding to re-run or investigate. A run that exits non-zero having printed no
+  `✗` at all — a crash, a kill, a timeout — now says _that_, instead of an empty list beside a
+  red line.
+
+  Matched after stripping SGR escapes rather than anchoring on a bare `✗`: `fail()` prefixes
+  the mark with `$c_red`, so an anchored match finds nothing whenever colour is on — a detector
+  that would go quiet in exactly the runs someone is watching. The serial path
+  (`CORE_AUDIT_SERIAL=1`) keeps the old line; its output is not captured, and piping it to
+  capture would cost the live colour output that mode exists to give.
+
 - **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
   them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
   the gate; `zsh/60-update.zsh` — ~480 lines of seven-package-manager logic, including a
