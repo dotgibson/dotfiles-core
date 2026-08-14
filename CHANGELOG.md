@@ -70,6 +70,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   fallback: a missing tool degrades visibly, where a wrong absolute path was a silent
   lie on every non-brew machine.
 
+### Security
+
+- **Caller-supplied workflow inputs no longer reach a `run:` body as code.**
+  `auto-tag-call.yml` spliced `${{ inputs.bump }}` straight into its script in a job
+  holding `contents: write` **and** `persist-credentials: true`, so a caller passing
+  `bump: 'patch"; …; #'` could run arbitrary code with the tag-push token. It was the
+  one place the fleet broke the rule `notify-web-call.yml` states outright — _"a
+  caller-supplied string must not be able to write shell"_.
+
+  Both `bump` and `release` now arrive through `env:`, and `bump` is checked against a
+  `patch|minor|major` allowlist at runtime — `workflow_call` inputs cannot be
+  `type: choice` (that is `workflow_dispatch`-only), so the type system will not do it.
+  A typo now fails with the valid set instead of reaching `auto-tag.sh`'s arg parser.
+
+  `claude-routines-call.yml` had the same shape with `${{ inputs.distro }}` in a job
+  holding `CLAUDE_CODE_OAUTH_TOKEN`; it now goes through `env:` too, and is likewise
+  allowlisted to the six distro names its own input contract already documents — `env:`
+  makes the value shell-safe, but the Claude prompt is an _instruction_ channel, so an
+  arbitrary string there remains a prompt-injection vector. No `run:` body in any
+  workflow interpolates an expression any more.
+
+  Neither rejection path echoes the raw value back. The runner parses stdout line by
+  line, so a multiline input can open a new `::…::` command on the following line and
+  forge or suppress annotations no matter how well it is shell-quoted; both paths strip
+  `CR`/`LF`/`%`/`:` and truncate first, mirroring how `atuin-guard-verify.yml` already
+  handles upstream-derived text.
+
 ## [v4.10.0] - 2026-08-13
 
 ### Added
