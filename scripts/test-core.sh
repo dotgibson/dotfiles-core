@@ -1840,13 +1840,118 @@ if have git; then
   _lr_ino_after="$(_lr_inodes)"
   if ((_lr_rc == 0)) && [[ "$_lr_before" == "$_lr_after" ]] &&
     [[ -n "$_lr_ino_before" && "$_lr_ino_before" == "$_lr_ino_after" ]] &&
-    ! find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*' | grep -q .; then
+    [[ -z "$(find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*')" ]]; then
     pass "link run: a second pass is a true no-op (same inodes, no backups, rc=0)"
   else
     fail "link run: re-running bootstrap churned links, backed a file up, or failed (rc=$_lr_rc)"
   fi
 else
   skip "bootstrap link run (git unavailable)"
+fi
+
+# ── F9. tag-release.sh — the tag may only exist on a commit that is on main ──
+# This script had NO coverage, which is how its ordering bug survived: it used to commit
+# AND tag in one step, leaving a local vX.Y.Z on a commit that was not yet on main. A
+# concurrent session pushing with push.followTags carried exactly such a tag to origin and
+# fired release.yml + sync-fanout.yml against an unmerged commit — eight bad vendor PRs,
+# and a retired version number, because release tags are immutable by ruleset.
+#
+# The invariant these pin: a vX.Y.Z tag only ever exists on a commit already on
+# origin/main. Phase 1 must create NO tag; phase 2 must refuse unless origin/main really
+# carries the version.
+if have git; then
+  hdr "tag-release.sh two-phase ordering (hermetic fixtures)"
+  TR="$SANDBOX/tagrelease"
+  rm -rf "$TR"; mkdir -p "$TR"
+  _trg() { git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
+  _tr_ident() {
+    git -C "$1" config user.email t@example.com
+    git -C "$1" config user.name t
+    git -C "$1" config commit.gpgsign false
+  }
+  # A miniature release repo: the REAL tag-release.sh plus the two files it reads, and an
+  # "origin" it can fetch. audit is stubbed so the gate can be driven without running the
+  # real one inside a test.
+  mkdir -p "$TR/origin/scripts/lib" "$TR/origin/lib"
+  cp "$HERE/scripts/tag-release.sh" "$TR/origin/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$TR/origin/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$TR/origin/lib/"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$TR/origin/scripts/audit-core.sh"
+  chmod +x "$TR/origin/scripts/audit-core.sh" "$TR/origin/scripts/tag-release.sh"
+  printf '1.0.0\n' >"$TR/origin/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/origin/CHANGELOG.md"
+  _trg "$TR/origin" init -q >/dev/null 2>&1
+  _tr_ident "$TR/origin"
+  _trg "$TR/origin" symbolic-ref HEAD refs/heads/main
+  _trg "$TR/origin" add -A; _trg "$TR/origin" commit -q -m "v1.0.0"
+  # The fixture "origin" is a normal repo with main checked out, so a push to that branch
+  # is refused by default. Allow it: the test needs to LAND the release on origin's main
+  # to exercise the guard, and nothing here reads origin's worktree.
+  git -C "$TR/origin" config receive.denyCurrentBranch ignore
+  git -c commit.gpgsign=false clone -q "$TR/origin" "$TR/work" >/dev/null 2>&1
+  _tr_ident "$TR/work"
+  _TRS="$TR/work/scripts/tag-release.sh"
+
+  # Stage a 1.1.0 release in the clone, exactly as release.sh would leave it.
+  printf '1.1.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.1.0] - 2026-02-02\n\n- new\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/work/CHANGELOG.md"
+
+  _tr_run() { (cd "$TR/work" && env CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
+
+  # THE property. Phase 1 commits and must leave NO tag behind — there must be nothing
+  # for a stray push to carry while the commit is still off main.
+  _tr_out="$(_tr_run)"; _tr_rc=$?
+  _tr_tags="$(_trg "$TR/work" tag -l | tr '\n' ' ')"
+  if ((_tr_rc == 0)) && [[ -z "$_tr_tags" ]] &&
+    [[ -n "$(_trg "$TR/work" log --oneline -1 --grep='release v1.1.0')" ]]; then
+    pass "tag-release: phase 1 commits the release and creates NO tag"
+  else
+    fail "tag-release: phase 1 left tags '$_tr_tags' (rc=$_tr_rc) — a pre-merge tag is the hazard"
+  fi
+
+  # Phase 2 must REFUSE while the commit is only local: origin/main still carries 1.0.0.
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'has not merged yet' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v1.1.0')" ]]; then
+    pass "tag-release: --publish refuses while origin/main lacks the version (no tag created)"
+  else
+    fail "tag-release: --publish tagged a release that had not landed (rc=$_tr_rc)"
+  fi
+
+  # The withdrawn flag must fail loudly rather than silently doing the old thing.
+  _tr_out="$(_tr_run --push)"; _tr_rc=$?
+  if ((_tr_rc == 2)) && grep -q 'was removed' <<<"$_tr_out"; then
+    pass "tag-release: the withdrawn --push flag fails with a pointer to --publish"
+  else
+    fail "tag-release: --push did not fail cleanly (rc=$_tr_rc)"
+  fi
+
+  # Land the release on origin's main, then phase 2 must succeed and tag ORIGIN/MAIN.
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _trg "$TR/work" fetch -q origin
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_at="$(_trg "$TR/work" rev-parse -q --verify 'v1.1.0^{commit}' 2>/dev/null)"
+  _tr_main="$(_trg "$TR/work" rev-parse -q --verify origin/main 2>/dev/null)"
+  if ((_tr_rc == 0)) && [[ -n "$_tr_at" && "$_tr_at" == "$_tr_main" ]]; then
+    pass "tag-release: --publish tags origin/main once the release has landed"
+  else
+    fail "tag-release: --publish did not tag origin/main (rc=$_tr_rc, tag=$_tr_at, main=$_tr_main)"
+  fi
+  # ...and the moving major alias rides along to the same commit.
+  if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_main" ]]; then
+    pass "tag-release: --publish moves the vN alias to origin/main too"
+  else
+    fail "tag-release: the vN alias did not follow the release"
+  fi
+  # Re-publishing an already-published tag must refuse — release tags are immutable.
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'already exists on origin' <<<"$_tr_out"; then
+    pass "tag-release: --publish refuses to re-tag a published release (immutable)"
+  else
+    fail "tag-release: --publish would clobber a published tag (rc=$_tr_rc)"
+  fi
+else
+  skip "tag-release.sh two-phase ordering (git unavailable)"
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────

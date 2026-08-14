@@ -73,6 +73,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **A release tag can no longer exist before its commit is on `main`.** `make tag` used
+  to commit _and_ tag in one step, leaving a local `vX.Y.Z` on a commit that was not yet
+  merged. That window is not closable by discipline: `--no-follow-tags` governs _your_
+  push, while the tag lives in shared `.git` state any other process can push.
+
+  It happened. During the v4.11.0 cut a concurrent session pushed its own branch with
+  `push.followTags` set, carried the release tag to origin, and fired `release.yml` and
+  `sync-fanout.yml` against an unmerged commit — publishing a Release and opening eight
+  vendor PRs across the fleet against a commit that was never on `main`. Nothing merged,
+  because `sync-fanout` opens PRs and never merges them, but the number had to be retired:
+  release tags are immutable by ruleset, so `v4.11.0` could not be re-pointed.
+
+  The invariant is structural now, not procedural — **a `vX.Y.Z` tag only ever exists on a
+  commit already on `origin/main`**. `make tag` commits and creates no tag at all, so a
+  stray push has nothing to carry. `make publish` runs after the PR merges and refuses
+  unless `origin/main` actually carries this `core.version`, then tags `origin/main` and
+  pushes. `--push` is withdrawn — its whole semantic was the hazard — and fails with a
+  pointer to `--publish`.
+
+  This also makes the merge method irrelevant to the tag, since phase 2 tags `origin/main`
+  whatever shape the merge took. Six behavioural assertions cover it; the script previously
+  had none, which is how the ordering survived.
+
 - **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
   them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
   the gate; `zsh/60-update.zsh` — ~480 lines of seven-package-manager logic, including a
@@ -104,6 +127,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   lie on every non-brew machine.
 
 ### Fixed
+
+- **`grep -q` on a large piped producer read a match as a failure under `pipefail`.** The
+  new `origin/main` CHANGELOG guard piped a 4000-line file into `grep -q`, which exits the
+  moment it matches — leaving `git show` to die of `SIGPIPE`, and `set -o pipefail` then
+  surfaced git's 141 rather than grep's 0. The check reported "no heading" on a file that
+  had one. Captured to a variable instead. Swept the rest of the tree for the same shape:
+  the other instances pipe small `printf`/`find` output that fits the pipe buffer, so they
+  never trip it, and the one borderline case in `test-core.sh` was made immune anyway.
 
 - **The atuin autostart suite no longer reports an unmeasurable run as an upstream finding.**
   `verify-atuin-guard.sh` has three verdicts on purpose — `holds`, `moved`, and
@@ -224,6 +255,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   spliced-in program, a quoted look-alike, an undecodable reference, or a `%`-bearing value
   is refused rather than mis-parsed, and three that a dead runner outranks a stale PATH. The healthy fixtures point
   at a runner that really exists, or the whole section would pass vacuously.
+
 - **The release cut no longer tells the operator to do something the repo forbids.**
   `RELEASE-RUNBOOK.md` §1.1 step 4 said "merge commit, not squash", and `tag-release.sh`
   printed the same hint twice. Merge commits are disabled — `mergeCommitAllowed` and

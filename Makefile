@@ -93,8 +93,11 @@ check-modern: ## Check CI meets the modern floor (scripts/modern-baseline.yml) â
 release: ## Cut a release: bump core.version + CHANGELOG, run the audit (usage: make release VERSION=X.Y.Z)
 	@./scripts/release.sh $(VERSION)
 
-tag: ## Finish the release: commit + annotated tag vX.Y.Z from core.version (PUSH=1 also pushes)
-	@./scripts/tag-release.sh $(if $(filter 1,$(PUSH)),--push,)
+tag: ## Release phase 1: commit core.version + CHANGELOG (creates NO tag â€” see publish)
+	@./scripts/tag-release.sh
+
+publish: ## Release phase 2: tag origin/main + push, AFTER the release PR has merged
+	@./scripts/tag-release.sh --publish
 
 release-notes: ## Draft a GitHub Release body from Conventional Commits since the last release (needs git-cliff)
 	@command -v git-cliff >/dev/null 2>&1 || { echo "git-cliff not found: cargo install git-cliff (or scoop/pkg). Config: cliff.toml"; exit 1; }
