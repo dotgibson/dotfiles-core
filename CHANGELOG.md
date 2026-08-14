@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.11.1] - 2026-08-14
+
 ### Added
 
 - **`PORTABILITY.md` — how to write Core that survives the fan-out.** The rules were
