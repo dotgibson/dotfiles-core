@@ -105,12 +105,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   test it**, which matters more here than usual: every branch of it fails _quietly_, producing
   a plausible line that has silently lost the name — indistinguishable from the flake merely
   not being nameable. Proving those by making a real gate fail would mean recursively invoking
-  the audit or hand-injecting a fault, and CI repeats neither, so four assertions drive it on
+  the audit or hand-injecting a fault, and CI repeats neither, so five assertions drive it on
   fixtures instead: a **coloured** `✗` is still extracted, five failures render as three names
-  plus a true total, exactly three grow no `(+0 more)` tail, and both a marker-less log and an
-  unreadable file yield empty so a crash is never misreported as assertions. Confirmed as real
-  regression tests by mutation — dropping the escape-strip makes the coloured case yield
-  nothing, and dropping the overflow notice reddens that case alone.
+  plus a true total, exactly three grow no `(+0 more)` tail, a message carrying its own literal
+  `||` survives verbatim rather than gaining false boundaries, and both a marker-less log and
+  an unreadable file yield empty so a crash is never misreported as assertions. Confirmed as
+  real regression tests by mutation — dropping the escape-strip makes the coloured case yield
+  nothing, dropping the overflow notice reddens that case alone, and the pipe fixture fails
+  against the join this entry replaces.
 
 - **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
   them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
