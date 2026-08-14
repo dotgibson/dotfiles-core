@@ -103,8 +103,14 @@ jobs:
         # Fail fast if the pin didn't load — never silently fall back to a floating `latest`.
         run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not loaded from scripts/tool-versions.env}"
       - name: Run /os-package-availability
+        env:
+          # Via env, never interpolated into the script body — this job holds
+          # CLAUDE_CODE_OAUTH_TOKEN, so a caller-supplied string spliced into `run:`
+          # would execute with it. Bash expands it inside the quoted prompt as inert
+          # data instead.
+          DISTRO: ${{ inputs.distro }}
         run: |
-          claude -p "/os-package-availability ${{ inputs.distro }}" \
+          claude -p "/os-package-availability $DISTRO" \
             --add-dir "$GITHUB_WORKSPACE/caller" \
             --model opus \
             --permission-mode default \

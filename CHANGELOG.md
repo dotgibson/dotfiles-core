@@ -13,6 +13,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Security
+
+- **Caller-supplied workflow inputs no longer reach a `run:` body as code.**
+  `auto-tag-call.yml` spliced `${{ inputs.bump }}` straight into its script in a job
+  holding `contents: write` **and** `persist-credentials: true`, so a caller passing
+  `bump: 'patch"; …; #'` could run arbitrary code with the tag-push token. It was the
+  one place the fleet broke the rule `notify-web-call.yml` states outright — *"a
+  caller-supplied string must not be able to write shell"*.
+
+  Both `bump` and `release` now arrive through `env:`, and `bump` is checked against a
+  `patch|minor|major` allowlist at runtime — `workflow_call` inputs cannot be
+  `type: choice` (that is `workflow_dispatch`-only), so the type system will not do it.
+  A typo now fails with the valid set instead of reaching `auto-tag.sh`'s arg parser.
+
+  `claude-routines-call.yml` had the same shape with `${{ inputs.distro }}` in a job
+  holding `CLAUDE_CODE_OAUTH_TOKEN`; it now goes through `env:` too. No `run:` body in
+  any workflow interpolates an expression any more.
+
 ## [v4.10.0] - 2026-08-13
 
 ### Added
