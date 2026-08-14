@@ -173,7 +173,10 @@ _core_read_classify() { # _core_read_classify <classifier-output>
 # sends the operator away to reproduce a result the run already had, and for an INTERMITTENT
 # failure that is advice which cannot be taken: the re-run passes and the evidence is gone.
 # The digest rides along in the wrapper's own fail line, so the names survive wherever that
-# line goes — a summary block, --json, a CI annotation, a `tail` of a long log.
+# line goes — a summary block, --json, a CI job log, a `tail` of a long log. (A CI ANNOTATION
+# is NOT among them: fail() writes to stderr and ci.yml runs audit-core.sh directly, with
+# nothing emitting `::error::`. Naming a destination this does not reach would be the same
+# overclaim the digest exists to prevent, one layer up.)
 #
 # LIVES HERE, not inline in the caller, so it is REACHABLE BY TESTS. Every branch below is a
 # quiet-failure risk rather than an obvious one, and verifying them by making a real gate fail
@@ -195,7 +198,19 @@ _core_fail_digest() { # _core_fail_digest <captured-output-file>
   lines="$(sed "s/${esc}\[[0-9;]*m//g" "$f" 2>/dev/null | grep '^✗' | sed 's/^✗[[:space:]]*//')"
   [[ -n "$lines" ]] || return 0
   n="$(printf '%s\n' "$lines" | grep -c .)"
-  why="$(printf '%s\n' "$lines" | head -3 | tr '\n' '|' | sed 's/|$//; s/|/ | /g')"
+  # JOINED WITHOUT REWRITING THE RECORDS. The obvious `tr '\n' '|' | sed 's/|/ | /g'` also
+  # spaces out every literal `|` INSIDE a message, and assertions here really do contain them
+  # — `'exec … || exec …' cannot fall back` is one of nine in test-core.sh. Two failures then
+  # render with four apparent boundaries while the count says 2, which is worse than terse:
+  # it invents structure in the one line someone reads when they cannot reproduce the failure.
+  local l i=0
+  why=""
+  while IFS= read -r l; do
+    [[ -n "$l" ]] || continue
+    i=$((i + 1))
+    ((i <= 3)) || break
+    why="${why:+$why | }$l"
+  done <<<"$lines"
   ((n > 3)) && why="$why (+$((n - 3)) more)"
   printf '%s: %s' "$n" "$why"
 }
