@@ -1719,58 +1719,6 @@ else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
 
-# ── F8. the boundary scan's comment stripping (_core_strip_comments) ─────────
-# §5c strips comments so an explanatory comment naming an OS path cannot trip the gate.
-# That is only safe while stripping cannot also HIDE code — and a blanket `sed 's/#.*//'`
-# stopped being safe the moment the scan's scope became core.manifest, because the
-# vendored nvim/ tree is Lua, where `#` is the LENGTH OPERATOR rather than a comment.
-# These are regression cases for the non-shell half of that scope.
-hdr "boundary scan comment stripping (_core_strip_comments)"
-CS="$SANDBOX/cstrip"
-rm -rf "$CS"; mkdir -p "$CS"
-_cs_has() { # <file> — does an OS path survive stripping?
-  _core_strip_comments "$1" | grep -qE '/opt/homebrew|/Library/'
-}
-# Lua: `#` is length. A violation on a line that also contains `#` must SURVIVE.
-printf 'local p = t[#t] .. "/opt/homebrew/bin"\n' >"$CS/a.lua"
-if _cs_has "$CS/a.lua"; then
-  pass "strip: a Lua violation after a # length operator is NOT hidden"
-else
-  fail "strip: Lua # truncated the line and hid an OS path (the blanket-sed bug)"
-fi
-# ...while a genuine Lua comment is still stripped, so it cannot trip the gate.
-printf -- '-- see /opt/homebrew for the macOS prefix\nlocal x = 1\n' >"$CS/b.lua"
-if _cs_has "$CS/b.lua"; then
-  fail "strip: a Lua -- comment naming an OS path wrongly trips the gate"
-else
-  pass "strip: a Lua -- comment naming an OS path is stripped"
-fi
-# Shell keeps # semantics: comment stripped, code kept.
-printf '# mentions /opt/homebrew harmlessly\nexport A=1\n' >"$CS/c.sh"
-printf 'export B="/opt/homebrew/bin"  # trailing\n' >"$CS/d.sh"
-if ! _cs_has "$CS/c.sh" && _cs_has "$CS/d.sh"; then
-  pass "strip: shell # comments are stripped, shell code is not"
-else
-  fail "strip: shell comment handling regressed"
-fi
-# JSON has no comments, so nothing may be removed — stripping there only loses signal.
-printf '{ "p": "/opt/homebrew/bin#x" }\n' >"$CS/e.json"
-if _cs_has "$CS/e.json"; then
-  pass "strip: JSON is passed through whole (no comment syntax to strip)"
-else
-  fail "strip: JSON was stripped and a path was lost"
-fi
-# The reason stripping is whole-line only: a delimiter INSIDE A STRING is code, and no
-# regex short of a per-language parser can tell the two apart. Both of these are valid
-# code that a mid-line strip would truncate, hiding the path from the gate.
-printf 'export P="#/opt/homebrew/bin"\n' >"$CS/f.sh"
-printf 'local p = "--/opt/homebrew/bin"\n' >"$CS/g.lua"
-if _cs_has "$CS/f.sh" && _cs_has "$CS/g.lua"; then
-  pass "strip: a quoted # or -- inside code cannot hide a path (fails closed)"
-else
-  fail "strip: a quoted comment delimiter truncated real code and hid an OS path"
-fi
-
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link

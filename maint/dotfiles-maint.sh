@@ -37,7 +37,7 @@ export HOME="${HOME:?}"
 # prefix legitimately enters — supplied by the OS, not hardcoded by Core. What remains
 # below is only the POSIX floor for a hand-wired scheduler that supplies no PATH at all.
 # ORDER IS LOAD-BEARING: intentional prepends, then the CAPTURED PATH, then the floor.
-# The captured PATH must outrank the floor — an Apple-Silicon shell puts /opt/homebrew/bin
+# The captured PATH must outrank the floor — an Apple-Silicon shell puts the Homebrew bin
 # ahead of a legacy /usr/local/bin, and appending it last would silently run the legacy
 # brew instead. The floor is a last resort for a hand-wired scheduler, not a preference.
 export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin${PATH:+:$PATH}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"

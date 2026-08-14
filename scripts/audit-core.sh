@@ -474,10 +474,17 @@ while IFS= read -r f; do
   *.example) continue ;; # user-edited illustration, not live config
   esac
   [[ -f "$f" ]] || continue
-  # Comment-strip first, so an explanatory comment naming an OS path can't trip the gate —
-  # LANGUAGE-AWARE (see _core_strip_comments): `#` starts a comment in shell and toml but
-  # is the LENGTH OPERATOR in Lua, and a blanket strip would truncate a real violation.
-  bnd_src="$(_core_strip_comments "$f")"
+  # NOTHING is stripped. Comment-stripping was a false-negative machine: `#` is a comment
+  # in shell and toml but the LENGTH OPERATOR in Lua, a delimiter inside a string is code
+  # (`export P="#/opt/…"`), and a line inside a heredoc or a Lua long-bracket string is
+  # runtime data however it starts. Each fix uncovered the next, because getting it right
+  # needs a parser for all five grammars this now scans.
+  #
+  # So the rule is simply: a manifested Core file must not contain an OS-absolute path
+  # ANYWHERE, prose included. Name the prefix instead of spelling it — "the Homebrew
+  # prefix", not the literal. That costs one wording choice in a comment and buys a gate
+  # with no hiding places at all.
+  bnd_src="$(cat "$f")"
   # Then drop ONLY the sanctioned lines of the one exempt file — everything else in it
   # is still scanned.
   [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="$(grep -v 'Library/LaunchAgents' <<<"$bnd_src")"

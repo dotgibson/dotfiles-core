@@ -88,21 +88,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
-- **The boundary scan's comment stripping could hide a real violation in Lua.** §5c strips
-  comments so an explanatory comment naming an OS path cannot trip the gate — but the
-  blanket `sed 's/#.*//'` stopped being safe the moment the scan's scope became
-  `core.manifest`, because the vendored `nvim/` tree is Lua, where `#` is the **length
-  operator**. A line such as `local p = t[#t] .. "/opt/homebrew/bin"` was truncated at the
-  `#` and passed the gate. `_core_strip_comments` is now language-aware (Lua `--`, JSON
-  untouched, `#` elsewhere) **and whole-line only** — a mid-line strip cannot distinguish a
-  delimiter from the same character inside a string, so `export P="#/opt/homebrew/bin"` and
-  `local p = "--/opt/homebrew/bin"` are valid code that truncating would hide, and no regex
-  resolves that across five grammars.
+- **The boundary scan no longer strips comments at all.** Stripping was a false-negative
+  machine: `#` is a comment in shell and TOML but the **length operator** in Lua, so
+  `local p = t[#t] .. "<prefix>/bin"` was truncated and passed; a delimiter inside a string
+  is code, so `export P="#<prefix>/bin"` was truncated too; and a line inside a heredoc or
+  a Lua long-bracket string is runtime data however it starts. Each fix uncovered the next,
+  because getting it right needs a parser for all five grammars the gate now scans.
 
-  The gate therefore fails closed: a line is dropped only when its first non-blank
-  character starts a comment. A _trailing_ comment naming an OS path now trips it — move
-  the comment to its own line. Five regression cases, all on the paths a blanket strip got
-  wrong. Stripping may stop a comment tripping the gate; it may never hide code.
+  The rule is flat instead: a manifested Core file must not contain an OS-absolute path
+  **anywhere, prose included** — name the prefix rather than spelling it. Two comments in
+  `maint/` and `tmux/scripts/` were reworded to comply. That costs a wording choice and
+  buys a gate with no hiding places.
 
 - **`V4-PROPOSAL.md` no longer claims v4 is unreleased.** Its status block said
   _"IMPLEMENTED … pending the v4.0.0 release cut"_ and described the work as sitting on a

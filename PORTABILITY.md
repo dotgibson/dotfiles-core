@@ -78,17 +78,16 @@ signals its SIGTERM as 143) as "the probe never answered".
 manifested Core file. Its scope is derived from `core.manifest`, so adding a file to the
 manifest puts it under the gate automatically.
 
-Comments are stripped first — so a comment naming an OS path cannot trip the gate — and
-that stripping is **language-aware and whole-line only** (`_core_strip_comments`). It has
-to be both. `#` starts a comment in shell and TOML but is the **length operator** in Lua,
-and a mid-line strip cannot tell a delimiter from the same character inside a string, so
-`export P="#/opt/homebrew/bin"` and `local p = "--/opt/homebrew/bin"` are valid code that
-truncating would hide.
+Nothing is exempt by syntax — **not even comments**. Comment-stripping was tried and
+removed: `#` is a comment in shell and TOML but the *length operator* in Lua; a delimiter
+inside a string is code; a line inside a heredoc or a Lua long-bracket string is runtime
+data however it starts. Every fix uncovered the next, because doing it correctly needs a
+parser for all five grammars the gate now scans.
 
-So the gate **fails closed**: a line is dropped only when its first non-blank character
-starts a comment. The cost is that a _trailing_ comment naming an OS path trips the gate —
-move it to its own line. That is the right way round: a false positive is visible and
-trivially fixed, a false negative ships a wrong path to eight repos in silence.
+So the rule is flat: **a manifested Core file must not contain an OS-absolute path
+anywhere, prose included.** Name the prefix instead of spelling it — write "the Homebrew
+prefix", not the literal. That costs one wording choice in a comment and buys a gate with
+no hiding places.
 
 The pattern: **one verb, N backends, chosen by probing for a capability — not by
 branching on an OS name.**
