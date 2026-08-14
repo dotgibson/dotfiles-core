@@ -1502,7 +1502,17 @@ fi
 # computes from BASH_SOURCE), and `repos/` is REPOS_ROOT. audit-core.sh is STUBBED in the
 # fixture so the audit gate can be driven both ways in-process — the real one cannot fail
 # on demand.
+# `git subtree` is a CONTRIB command, not part of core git: the Alpine/busybox image
+# ships git without it, and Debian splits it into a separate git-subtree package. Every
+# assertion below needs a real subtree add + pull, so probe for the command itself rather
+# than assuming `have git` implies it — otherwise the fixture silently builds an OS repo
+# with no core/ and half these tests fail for a reason that has nothing to do with
+# sync-core.sh. Probing the exec-path is deterministic; `git subtree --help` can page.
+_sc_subtree=0
 if have git; then
+  if [[ -x "$(git --exec-path 2>/dev/null)/git-subtree" ]] || have git-subtree; then _sc_subtree=1; fi
+fi
+if ((_sc_subtree)); then
   hdr "sync-core.sh fan-out guards (hermetic fixtures)"
   SCF="$SANDBOX/synccore"
   rm -rf "$SCF"
@@ -1698,7 +1708,7 @@ if have git; then
   fi
   rm -f "$SCF/repos/dotfiles-Test/dirty.txt"
 else
-  skip "sync-core.sh fan-out guards (git unavailable)"
+  skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
