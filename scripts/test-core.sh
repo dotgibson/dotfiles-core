@@ -882,6 +882,23 @@ else
   fail "fail digest: boundary at three is wrong — got '$_fdout'"
 fi
 
+# 3b. A RECORD IS NOT REWRITTEN TO FIT THE SEPARATOR. The first implementation joined with
+#     `tr '\n' '|' | sed 's/|/ | /g'`, which also spaced out every literal `|` INSIDE a
+#     message — and nine assertions in this very file contain one, `'exec … || exec …' cannot
+#     fall back` among them. Two failures then rendered with four apparent boundaries while
+#     the count said 2, inventing structure in the one line someone has when they cannot
+#     reproduce the failure. Fixtures use the real offending text rather than a stand-in.
+{
+  printf "✗ atuin unit: 'exec … || exec …' cannot fall back — exec replaces the process\n"
+  printf '✗ serve: plain second failure\n'
+} >"$_fdg/pipes.txt"
+_fdout="$(_core_fail_digest "$_fdg/pipes.txt")"
+if [[ "$_fdout" == "2: atuin unit: 'exec … || exec …' cannot fall back — exec replaces the process | serve: plain second failure" ]]; then
+  pass "fail digest: a literal '||' inside a message survives verbatim — the count and the visible boundaries agree"
+else
+  fail "fail digest: a message's own pipes were rewritten as separators — got '$_fdout'"
+fi
+
 # 4. NO MARKER MUST YIELD NOTHING, so the caller can tell "these assertions failed" from "it
 #    died before it could report". Rendering an empty list beside a red line would read as zero
 #    failures and send the reader hunting a contradiction that is not there; audit-core.sh
