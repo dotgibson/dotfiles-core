@@ -1597,11 +1597,14 @@ if ((_sc_subtree)); then
   else
     fail "sync-core: a red audit did NOT stop the fan-out (rc=$_sc_rc)"
   fi
-  # ...and it refused BEFORE touching anything: the target's HEAD is untouched.
-  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+  # ...and it refused BEFORE touching anything. HEAD alone is too weak a claim: a
+  # regression that WROTE core.lock or staged a file before returning would leave HEAD
+  # unchanged and still pass. Require the working tree to be clean as well.
+  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
+    [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
     pass "sync-core: the red-audit refusal happens before any repo is mutated"
   else
-    fail "sync-core: a repo moved despite the red-audit refusal"
+    fail "sync-core: a repo was written to or moved despite the red-audit refusal"
   fi
   printf '0\n' >"$SCF/auditrc"
 
@@ -1621,10 +1624,14 @@ if ((_sc_subtree)); then
 
   # --- skip vs fail: an absent repo is not a failure ---------------------------
   _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
-  if grep -q 'dotfiles-NotCloned' <<<"$_sc_out" && grep -qE 'dotfiles-Other.*no core/' <<<"$_sc_out"; then
-    pass "sync-core: uncloned repo and core/-less repo are SKIPPED, not failed"
+  # Both names appearing is not the property — they would still appear if either branch
+  # were changed from skip() to err(). Assert the SUMMARY BUCKETS: two skipped, none
+  # failed. That is the distinction that decides whether a missing clone reds a fan-out.
+  if grep -q 'dotfiles-NotCloned' <<<"$_sc_out" && grep -qE 'dotfiles-Other.*no core/' <<<"$_sc_out" &&
+    grep -qE 'skipped 2' <<<"$_sc_out" && grep -qE 'failed 0' <<<"$_sc_out"; then
+    pass "sync-core: uncloned repo and core/-less repo land in the SKIPPED bucket, not failed"
   else
-    fail "sync-core: absent/core-less repos not reported as skips"
+    fail "sync-core: absent/core-less repos not counted as skips (want skipped 2 / failed 0)"
   fi
 
   # --- dotfiles-Windows is never a target -------------------------------------
@@ -1643,8 +1650,9 @@ if ((_sc_subtree)); then
   _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
     CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"
   if grep -q 'would: git -C' <<<"$_sc_out" &&
-    [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
-    pass "sync-core: --dry-run prints the plan and commits nothing"
+    [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
+    [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: --dry-run prints the plan and writes nothing"
   else
     fail "sync-core: --dry-run mutated the target or printed no plan"
   fi
