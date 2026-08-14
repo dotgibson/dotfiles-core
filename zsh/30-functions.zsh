@@ -105,13 +105,19 @@ core() {
 # core-doctor can tell "✓ present" from "✓ present AND working". Returns non-zero for an
 # unknown tool. (Inherited into core-doctor's `$()` capture: zsh forks keep functions +
 # the $widgets/$precmd_functions params readable.)
+# Each arm accepts BOTH the historical and the current upstream name: starship and
+# carapace renamed the functions their `init` emits, so probing only the old name
+# reported a FALSE `○ (idle)` for an integration that was demonstrably driving the
+# prompt/completion (measured on starship 1.24.2 → prompt_starship_precmd, and
+# carapace-bin 1.5.7 → _carapace_completer; neither emits the old name at all). Keep
+# the old names so boxes pinned to older releases keep reporting wired.
 _core_wired() {
   case "$1" in
-  starship) (( $+functions[starship_precmd] )) ;;
+  starship) (( $+functions[starship_precmd] )) || (( $+functions[prompt_starship_precmd] )) ;;
   atuin)    [[ -n ${widgets[atuin-search]:-} ]] || (( $+functions[_atuin_precmd] )) ;;
   mise)     (( $+functions[_mise_hook] )) || (( $+functions[__mise_hook] )) ;;
   zoxide)   (( $+functions[__zoxide_hook] )) || (( $+functions[__zoxide_z] )) ;;
-  carapace) (( $+functions[_carapace] )) ;;
+  carapace) (( $+functions[_carapace] )) || (( $+functions[_carapace_completer] )) ;;
   *) return 1 ;;
   esac
 }
