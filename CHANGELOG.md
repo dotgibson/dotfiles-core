@@ -15,6 +15,57 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`PORTABILITY.md` — how to write Core that survives the fan-out.** The rules were
+  real and consistently followed, but recorded only in ~8 scattered code comments, so
+  they were unteachable to a new contributor and unenforced for new files. That is the
+  likely root cause of the Homebrew paths that sat in `maint/` and `tmux/scripts/`.
+  It documents the bash 3.2 floor (with the banned constructs and their portable forms),
+  the BSD/busybox coreutils traps, the shim pattern with the full inventory of shipped
+  shims, what to do when a capability genuinely cannot be probed, and why the `have()`
+  probe is redefined per loading context on purpose.
+
+- **`VENDORING.md` — the same contract from an OS repo's side.** Previously scattered
+  across `ARCHITECTURE.md`, `RELEASE-RUNBOOK.md` and a source comment, so a downstream
+  maintainer had no single answer to: which `core/` paths may I touch, what does
+  `core.lock` mean, which number band may I claim, how do I upstream a fix. Includes the
+  footgun that was documented only in `zsh/loader.zsh` — a fragment dropped in a **gap in
+  the Core band** (say `22-foo.zsh`) is gated as Core and silently vanishes under
+  `CORE_PROFILE=minimal`.
+
+- **`CODE_OF_CONDUCT.md`** — the one standard community-health file that was missing
+  while the README actively solicits contributions.
+
+### Changed
+
+- **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
+  them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
+  the gate; `zsh/60-update.zsh` — ~480 lines of seven-package-manager logic, including a
+  Tumbleweed check to choose `zypper dup` over `zypper up` — was justified only in a code
+  comment. The reasoning is sound (one verb, N backends, exactly like `bin/clip`) and now
+  says so where the layering rule is stated.
+
+- **The maint runner no longer names an OS prefix; the scheduler unit supplies the PATH.**
+  A scheduler starts the runner with a stripped environment, which is why the Homebrew
+  prefixes were hardcoded. `maint-install` now captures the **live PATH** of the shell
+  installing it and bakes it into the unit — `Environment="PATH=…"` (systemd), an
+  `EnvironmentVariables` dict (launchd, XML-escaped), and an env-prefixed command
+  (cron, POSIX single-quoted and then `%`-escaped, in that order — cron hands its
+  command field to `/bin/sh`, so an unquoted or double-quoted value containing `$(…)`
+  or a backtick would be **evaluated on every scheduled run**). Whatever prefix this OS
+  uses is already correct in that
+  PATH, so the OS supplies the truth and Core hardcodes nothing. The brew step is now
+  gated on `have brew` alone.
+
+  **Action required on an existing schedule:** a unit written before this change carries
+  no PATH, so the runner falls back to the POSIX floor and the brew/mise steps skip
+  silently — the job still succeeds while doing less. Re-run `maint-install` once.
+  `maint-status` detects this and says so rather than leaving it to be noticed.
+
+- **`tmux-cheat.sh` discovers a brew prefix instead of naming one** — `$HOMEBREW_PREFIX`
+  (exported by `brew shellenv`, so the tmux server usually carries it), falling back to
+  `brew --prefix`. When neither resolves it adds nothing and takes the existing pager
+  fallback: a missing tool degrades visibly, where a wrong absolute path was a silent
+  lie on every non-brew machine.
 - **Core now performs a real bootstrap link run in its own suite.** `bootstrap-test.yml`
   asserts the symlink graph, but it is `workflow_call`-only and dotfiles-core ships no
   `bootstrap.sh` — so it only ever runs from the eight OS repos. Core unit-tested the
@@ -53,6 +104,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The boundary scan no longer strips comments at all.** Stripping was a false-negative
+  machine: `#` is a comment in shell and TOML but the **length operator** in Lua, so
+  `local p = t[#t] .. "<prefix>/bin"` was truncated and passed; a delimiter inside a string
+  is code, so `export P="#<prefix>/bin"` was truncated too; and a line inside a heredoc or
+  a Lua long-bracket string is runtime data however it starts. Each fix uncovered the next,
+  because getting it right needs a parser for all five grammars the gate now scans.
+
+  The rule is flat instead: a manifested Core file must not contain an OS-absolute path
+  **anywhere, prose included** — name the prefix rather than spelling it. Two comments in
+  `maint/` and `tmux/scripts/` were reworded to comply. That costs a wording choice and
+  buys a gate with no hiding places.
+
+  The one sanctioned exemption is now **redacted rather than dropped**. Removing the whole
+  `LaunchAgents` line exempted everything else on it, so a second literal riding along on a
+  legitimate assignment evaded the gate; only the sanctioned segment is replaced now, and
+  the rest of the line is scanned normally. Verified against the old filter: with
+  `_x="<prefix>/bin"` appended to a `LaunchAgents` line, the line-drop passed it and the
+  redaction catches it.
+
+- **`V4-PROPOSAL.md` no longer claims v4 is unreleased.** Its status block said
+  _"IMPLEMENTED … pending the v4.0.0 release cut"_ and described the work as sitting on a
+  branch — ten minor releases after v4.0.0 shipped. It is now marked as the historical
+  design record it is, pointing at `ARCHITECTURE.md` / `PORTABILITY.md` / `VENDORING.md`
+  for how the shipped system actually behaves.
+
 - **The Core⇄OS boundary gate was green while two Core files carried Homebrew paths.**
   `audit-core.sh` §5c rejects OS-absolute paths in portable Core, but its file list
   stopped at `zsh/*.zsh` plus the symlinked configs — so `bin/`, `maint/`, and
@@ -85,31 +161,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   Verified the way a gate change has to be: the previous tree is **red** under the new
   scope and green under the old one, which is the only evidence that the widening bites.
-
-### Changed
-
-- **The maint runner no longer names an OS prefix; the scheduler unit supplies the PATH.**
-  A scheduler starts the runner with a stripped environment, which is why the Homebrew
-  prefixes were hardcoded. `maint-install` now captures the **live PATH** of the shell
-  installing it and bakes it into the unit — `Environment="PATH=…"` (systemd), an
-  `EnvironmentVariables` dict (launchd, XML-escaped), and an env-prefixed command
-  (cron, POSIX single-quoted and then `%`-escaped, in that order — cron hands its
-  command field to `/bin/sh`, so an unquoted or double-quoted value containing `$(…)`
-  or a backtick would be **evaluated on every scheduled run**). Whatever prefix this OS
-  uses is already correct in that
-  PATH, so the OS supplies the truth and Core hardcodes nothing. The brew step is now
-  gated on `have brew` alone.
-
-  **Action required on an existing schedule:** a unit written before this change carries
-  no PATH, so the runner falls back to the POSIX floor and the brew/mise steps skip
-  silently — the job still succeeds while doing less. Re-run `maint-install` once.
-  `maint-status` detects this and says so rather than leaving it to be noticed.
-
-- **`tmux-cheat.sh` discovers a brew prefix instead of naming one** — `$HOMEBREW_PREFIX`
-  (exported by `brew shellenv`, so the tmux server usually carries it), falling back to
-  `brew --prefix`. When neither resolves it adds nothing and takes the existing pager
-  fallback: a missing tool degrades visibly, where a wrong absolute path was a silent
-  lie on every non-brew machine.
 
 ### Security
 

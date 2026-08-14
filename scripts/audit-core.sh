@@ -245,7 +245,7 @@ trap 'exit 143' TERM
 # manifest, must appear here (or under a META_PREFIXES dir) or section 1 flags it.
 META_ALLOWLIST=(
   README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
-  ARCHITECTURE.md
+  ARCHITECTURE.md PORTABILITY.md VENDORING.md CODE_OF_CONDUCT.md
   PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V4-PROPOSAL.md
   core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json
   Makefile cliff.toml
@@ -439,9 +439,11 @@ fi
 # or macOS ~/Library path could slip into a portable shell module and fan out to eight repos
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
 # zsh/55-maint.zsh — the scheduler CONTROL SURFACE whose launchd arm legitimately writes
-# ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape).
+# ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape);
+# only THOSE lines are exempt, not the whole file (see the per-line note below).
 # Comment-stripped first, so an explanatory comment naming an OS path can't trip it.
-# Pure sed+grep (busybox-safe), shell-scoped like the other shell-layer gates.
+# Pure sed+grep (busybox-safe), and CROSS-CUTTING rather than shell-scoped — the scope is
+# the manifest, so it covers configs and the nvim tree too, and no --scope may skip it.
 hdr "Core⇄OS boundary (no OS paths in portable Core files)"
 # The scope is DERIVED FROM core.manifest, not from a hand-kept list. That list had
 # quietly fallen behind the manifest three times: first the symlinked configs were
@@ -472,11 +474,24 @@ while IFS= read -r f; do
   *.example) continue ;; # user-edited illustration, not live config
   esac
   [[ -f "$f" ]] || continue
-  # Comment-strip first, so an explanatory comment naming an OS path can't trip the gate.
-  bnd_src="$(sed 's/#.*//' "$f")"
+  # NOTHING is stripped. Comment-stripping was a false-negative machine: `#` is a comment
+  # in shell and toml but the LENGTH OPERATOR in Lua, a delimiter inside a string is code
+  # (`export P="#/opt/…"`), and a line inside a heredoc or a Lua long-bracket string is
+  # runtime data however it starts. Each fix uncovered the next, because getting it right
+  # needs a parser for all five grammars this now scans.
+  #
+  # So the rule is simply: a manifested Core file must not contain an OS-absolute path
+  # ANYWHERE, prose included. Name the prefix instead of spelling it — "the Homebrew
+  # prefix", not the literal. That costs one wording choice in a comment and buys a gate
+  # with no hiding places at all.
+  bnd_src="$(cat "$f")"
   # Then drop ONLY the sanctioned lines of the one exempt file — everything else in it
   # is still scanned.
-  [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="$(grep -v 'Library/LaunchAgents' <<<"$bnd_src")"
+  # REDACT the sanctioned segment; do not drop the line. Dropping it would exempt
+  # everything else on that line too, so a second literal riding along on a legitimate
+  # LaunchAgents assignment would evade the gate. Replacing just the segment leaves the
+  # rest of the line to be scanned normally.
+  [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="${bnd_src//Library\/LaunchAgents/<sanctioned-launchd-path>}"
   if grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/' <<<"$bnd_src"; then
     bnd_fail=1
     fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
