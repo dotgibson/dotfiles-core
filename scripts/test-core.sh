@@ -4567,6 +4567,34 @@ else
   skip "maint launchd plist (python3 absent — cannot parse plist XML)"
 fi
 
+# ── the PATH capture (the one seam where an OS prefix may enter the runner) ───
+# maint/dotfiles-maint.sh is portable Core and names no Homebrew/pkgsrc/Nix prefix, so
+# the scheduler unit is the ONLY thing that tells the unattended runner where this box
+# keeps its binaries. Drop the capture in a refactor and nothing breaks loudly: the job
+# still fires, still logs, still exits 0 — it just resolves no brew/mise and skips those
+# steps silently. That is why this is asserted per-scheduler rather than trusted.
+# A /sentinel/bin injected into PATH at install time must appear in the rendered unit.
+ucheck "maint: systemd unit bakes in the installing shell's PATH" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH=/sentinel/bin:\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q '^Environment=\"PATH=.*/sentinel/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-path-systemd"
+# cron's command field is sh, so the PATH rides as an env prefix — and `%` is cron's
+# newline metacharacter, which would truncate the line mid-PATH if it were not escaped.
+# The sentinel deliberately contains one.
+ucheck "maint: cron line carries the PATH with cron's % metachar escaped" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; PATH='/sent%inel/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'PATH=\"[^\"]*/sent\\\\%inel/bin' \"\$CRON_CAPTURE\"" \
+  PATH="$SCHEDBIN:$PATH" CRON_CAPTURE="$SANDBOX/cron-path.captured"
+# launchd's plist is XML: an unescaped & in a directory name yields a malformed plist
+# that launchctl rejects at load time, i.e. a schedule that silently never runs. Assert
+# plistlib can still PARSE it and that the value round-trips — the escape and the parse
+# together, since either alone would pass while the pair is broken.
+if have python3; then
+  ucheck "maint: launchd plist XML-escapes the PATH and still parses" \
+    "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; PATH='/a&b/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); sys.exit(0 if \"/a&b/bin\" in d[\"EnvironmentVariables\"][\"PATH\"] else 1)' \"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"" \
+    PATH="$SCHEDBIN:$PATH" HOME="$SANDBOX/sched-path-launchd"
+else
+  skip "maint launchd PATH capture (python3 absent — cannot parse plist XML)"
+fi
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question

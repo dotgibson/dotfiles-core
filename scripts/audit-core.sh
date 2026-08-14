@@ -453,6 +453,15 @@ if ((SCOPE_SHELL)); then
   # exactly the same way. A real drift of this shape was found downstream (an OS path
   # baked into mise/config.toml). The os/ layer is where those belong. The .example
   # templates are EXCLUDED — they are user-edited illustrations, not the live config.
+  #
+  # ALSO scanned: the EXECUTABLES — bin/, maint/, tmux/scripts/. These are manifested
+  # Core and ship into all eight repos, but the list above stopped at the sourced
+  # modules, so they were never checked. They were not clean when that was fixed:
+  # maint/dotfiles-maint.sh hardcoded both Homebrew prefixes in its PATH and probed
+  # them by absolute path, and tmux-cheat.sh did the same in its pop-up PATH — the
+  # exact drift this gate exists to reject, sitting inside its blind spot. Both now
+  # discover the prefix instead (the scheduler unit carries the installing shell's
+  # PATH; the pop-up reads $HOMEBREW_PREFIX / `brew --prefix`).
   while IFS= read -r f; do
     [[ "$f" == zsh/55-maint.zsh ]] && continue # OS-switched scheduler surface (see above)
     if sed 's/#.*//' "$f" | grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/'; then
@@ -462,8 +471,9 @@ if ((SCOPE_SHELL)); then
   done < <(git ls-files 'zsh/*.zsh' \
     'mise/config.toml' 'git/gitconfig' 'atuin/config.toml' \
     'jujutsu/config.toml' 'lazygit/config.yml' \
-    'tmux/tmux.conf' 'tmux/tmux.reset.conf' 'starship/starship.toml' 2>/dev/null)
-  ((bnd_fail)) || pass "portable Core files (shell modules + symlinked configs) carry no OS-absolute paths"
+    'tmux/tmux.conf' 'tmux/tmux.reset.conf' 'starship/starship.toml' \
+    'bin/*' 'maint/*' 'tmux/scripts/*' 2>/dev/null)
+  ((bnd_fail)) || pass "portable Core files (shell modules + symlinked configs + bin/maint/tmux executables) carry no OS-absolute paths"
 else
   skip "Core⇄OS boundary (out of scope)"
 fi

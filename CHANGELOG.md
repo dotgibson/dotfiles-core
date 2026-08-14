@@ -13,6 +13,44 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Core⇄OS boundary gate was green while two Core files carried Homebrew paths.**
+  `audit-core.sh` §5c rejects OS-absolute paths in portable Core, but its file list
+  stopped at `zsh/*.zsh` plus the symlinked configs — so `bin/`, `maint/`, and
+  `tmux/scripts/`, all manifested Core that ships to eight repos, were never scanned.
+  They were not clean: `maint/dotfiles-maint.sh` hardcoded `/opt/homebrew/{bin,sbin}`
+  and `/home/linuxbrew/.linuxbrew/bin` in its PATH _and_ probed both by absolute path
+  to run `brew shellenv`, and `tmux/scripts/tmux-cheat.sh` did the same in its pop-up
+  PATH. The rule was documented, believed enforced, and was not — on seven of the eight
+  target machines those paths do not exist.
+
+  The gate now scans `bin/*`, `maint/*`, and `tmux/scripts/*`. Verified the way a gate
+  change has to be: the previous tree is **red** under the new list and green under the
+  old one, which is the only evidence that the widening actually bites.
+
+### Changed
+
+- **The maint runner no longer names an OS prefix; the scheduler unit supplies the PATH.**
+  A scheduler starts the runner with a stripped environment, which is why the Homebrew
+  prefixes were hardcoded. `maint-install` now captures the **live PATH** of the shell
+  installing it and bakes it into the unit — `Environment="PATH=…"` (systemd), an
+  `EnvironmentVariables` dict (launchd, XML-escaped), and an env-prefixed command
+  (cron, with `%` escaped). Whatever prefix this OS uses is already correct in that
+  PATH, so the OS supplies the truth and Core hardcodes nothing. The brew step is now
+  gated on `have brew` alone.
+
+  **Action required on an existing schedule:** a unit written before this change carries
+  no PATH, so the runner falls back to the POSIX floor and the brew/mise steps skip
+  silently — the job still succeeds while doing less. Re-run `maint-install` once.
+  `maint-status` detects this and says so rather than leaving it to be noticed.
+
+- **`tmux-cheat.sh` discovers a brew prefix instead of naming one** — `$HOMEBREW_PREFIX`
+  (exported by `brew shellenv`, so the tmux server usually carries it), falling back to
+  `brew --prefix`. When neither resolves it adds nothing and takes the existing pager
+  fallback: a missing tool degrades visibly, where a wrong absolute path was a silent
+  lie on every non-brew machine.
+
 ## [v4.10.0] - 2026-08-13
 
 ### Added
