@@ -1814,21 +1814,29 @@ if have git; then
   else
     fail "link run: a seeded file is missing or was symlinked (user edits would track back)"
   fi
-  # Idempotency: bootstrap is re-run after every sync, so a second pass must be a no-op
-  # rather than churning links or backing anything up.
+  # Idempotency: bootstrap is re-run after every sync, so a second pass must be a no-op.
+  # Comparing sorted PATH NAMES is not enough — blib_link removing and recreating every
+  # symlink leaves the exact same names behind, which is precisely the churn this is
+  # supposed to catch. Compare INODES: a torn-down-and-remade link gets a new one.
+  # The second run's exit status is captured rather than discarded, so a rerun that fails
+  # outright cannot pass this as "nothing changed".
+  _lr_inodes() { find "$LR/config" "$LR/home" -maxdepth 4 -type l -exec ls -di {} + 2>/dev/null | sort -k2; }
   _lr_before="$(find "$LR/config" "$LR/home" -maxdepth 4 2>/dev/null | sort)"
-  (
-    HOME="$LR/home" XDG_CONFIG_HOME="$LR/config" bash -c '
-      set -u
-      . "'"$HERE/lib/bootstrap-lib.sh"'"
-      blib_link_core "'"$LR/dotfiles"'" "'"$LR/config"'" >/dev/null 2>&1
-    '
-  ) || true
+  _lr_ino_before="$(_lr_inodes)"
+  HOME="$LR/home" XDG_CONFIG_HOME="$LR/config" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_link_core "'"$LR/dotfiles"'" "'"$LR/config"'" >/dev/null 2>&1
+  '
+  _lr_rc=$?
   _lr_after="$(find "$LR/config" "$LR/home" -maxdepth 4 2>/dev/null | sort)"
-  if [[ "$_lr_before" == "$_lr_after" ]] && ! find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*' | grep -q .; then
-    pass "link run: a second pass is a no-op (no churn, nothing backed up)"
+  _lr_ino_after="$(_lr_inodes)"
+  if ((_lr_rc == 0)) && [[ "$_lr_before" == "$_lr_after" ]] &&
+    [[ -n "$_lr_ino_before" && "$_lr_ino_before" == "$_lr_ino_after" ]] &&
+    ! find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*' | grep -q .; then
+    pass "link run: a second pass is a true no-op (same inodes, no backups, rc=0)"
   else
-    fail "link run: re-running bootstrap changed the tree or backed a file up"
+    fail "link run: re-running bootstrap churned links, backed a file up, or failed (rc=$_lr_rc)"
   fi
 else
   skip "bootstrap link run (git unavailable)"
