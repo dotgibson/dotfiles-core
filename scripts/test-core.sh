@@ -5111,6 +5111,30 @@ ucheck "maint/refresh: a later key's <array> is not mistaken for ProgramArgument
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-displaced"
 
+# A RELATIVE recorded runner is the one value that cannot be tested at all: `[[ -f ]]`
+# resolves it against whatever directory maint-status was invoked from, so the same unit
+# would read dead in one shell and alive in another — a verdict about the caller, not the
+# unit. maint-install never writes one ($_MAINT_SH is `:A`-resolved at the top of the
+# module), and a hand-edited unit can legitimately pair a relative script with systemd's
+# WorkingDirectory= or cron's implicit $HOME. All three arms must stay quiet.
+mkdir -p "$_MRF/sd-rel/systemd/user" "$_MRF/ld-rel/Library/LaunchAgents"
+_MRF_REL='core/maint/dotfiles-maint.sh'
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_REL" \
+  >"$_MRF/sd-rel/systemd/user/dotfiles-maint.service"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_REL" >"$_MRF/cron-rel"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_REL" >"$_MRF/ld-rel/Library/LaunchAgents/com.dotfiles.maint.plist"
+
+ucheck "maint/refresh: a relative systemd runner is refused (verdict must not depend on cwd)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-rel"
+ucheck "maint/refresh: a relative cron runner is refused (verdict must not depend on cwd)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-rel"
+ucheck "maint/refresh: a relative launchd runner is refused (verdict must not depend on cwd)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-rel"
+
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question

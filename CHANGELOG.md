@@ -129,12 +129,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   systemd and cron arms read a _command_, not a path field, so a hand-edited
   `… bash /runner --quiet` or `… bash /runner >>/log` must not be read as one long,
   nonexistent path; and the launchd array must be `ProgramArguments`' own value rather
-  than the next array in the plist. A box with no schedule installed stays quiet too.
+  than the next array in the plist. A recorded path must also be absolute, which
+  `maint-install` always writes: a relative one would be resolved by `[[ -f ]]` against
+  whatever directory `maint-status` was invoked from, making the verdict a property of the
+  caller rather than of the unit. A box with no schedule installed stays quiet too.
 
-  Seventeen behavioral assertions — four states per scheduler, two that the recorded path
-  is read back verbatim (the hint prints it), and three that an extended command or a
-  displaced array is refused rather than mis-parsed. The healthy fixtures point at a runner
-  that really exists, or the whole section would pass vacuously.
+  Twenty behavioral assertions — four states per scheduler, two that the recorded path is
+  read back verbatim (the hint prints it), and six that an extended command, a displaced
+  array, or a relative path is refused rather than mis-parsed. The healthy fixtures point
+  at a runner that really exists, or the whole section would pass vacuously.
 
 - **The boundary scan no longer strips comments at all.** Stripping was a false-negative
   machine: `#` is a comment in shell and TOML but the **length operator** in Lua, so

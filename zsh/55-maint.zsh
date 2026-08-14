@@ -80,11 +80,19 @@ _maint_systemd_escape() {
   print -r -- "$s"
 }
 
-# True when a command tail is a single bare argument — no flags, no redirection, nothing
-# after the path. Both the systemd and cron arms below read a COMMAND, not a path field,
-# so this is what separates "the runner maint-install wrote" from a hand-edited command
-# line that merely starts with it.
-_maint_lone_arg() { [[ -n "$1" && "$1" != *[[:space:]]* ]] }
+# The runner maint-install records is ALWAYS absolute — `$_MAINT_SH` is `:A`-resolved at
+# the top of this file — so a relative value is a shape Core never wrote. It is also the
+# one value this function must not hand back even if it wanted to: `[[ -f ]]` would resolve
+# it against whatever directory maint-status happens to be run FROM, so a hand-edited unit
+# pairing a relative script with systemd's `WorkingDirectory=` (or cron's implicit $HOME)
+# would read as dead or alive depending on where the operator was standing. Requiring an
+# absolute path is what makes the verdict a property of the unit rather than of the caller.
+_maint_abs_path() { [[ "$1" == /* ]] }
+
+# ...and for the two arms that read a COMMAND rather than a path field, exactly one bare
+# argument: no flags, no redirection, nothing after the path. That is what separates "the
+# runner maint-install wrote" from a hand-edited command line that merely starts with it.
+_maint_lone_arg() { [[ "$1" != *[[:space:]]* ]] && _maint_abs_path "$1" }
 
 # Read back the runner path a scheduler unit RECORDS, or print nothing when there is no
 # unit (or none can be parsed out of it). Deliberately not `$_MAINT_SH`: the whole point
@@ -137,7 +145,10 @@ _maint_unit_runner() {
     # only escapes the PATH value, so today this is a no-op on units Core wrote; it is
     # what keeps the read side correct for a hand-written or later-escaped plist.)
     rest="${rest//&lt;/<}"; rest="${rest//&gt;/>}"; rest="${rest//&amp;/&}"
-    print -r -- "$rest"
+    # Absolute only — same reasoning as the other two arms. No lone-argument test here:
+    # a plist argv element has exact boundaries, so a space in it is part of the path
+    # rather than a second argument.
+    _maint_abs_path "$rest" && print -r -- "$rest"
     ;;
   cron)
     line="$(crontab -l 2>/dev/null | grep -F '# dotfiles-maint')"
