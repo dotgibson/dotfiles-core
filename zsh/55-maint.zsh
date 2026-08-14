@@ -66,6 +66,20 @@ _maint_sh_squote() {
   print -r -- "'${s//$q/$esc}'"
 }
 
+# Escape a value for a systemd unit's quoted `Environment=` assignment. systemd expands
+# % SPECIFIERS there (%h = home directory, %i = instance, …), so a literal % must be
+# DOUBLED or a legitimate PATH entry like /sent%h/bin silently becomes /sent<homedir>/bin
+# — or the unit fails to load outright on an unknown specifier. Inside double quotes
+# systemd also processes C-style escapes, so \ and " need escaping too, and the backslash
+# pass must come FIRST or it would re-escape the backslashes the quote pass adds.
+_maint_systemd_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//\%/%%}"
+  print -r -- "$s"
+}
+
 # True only when a schedule EXISTS but was written before Core baked the PATH into it.
 # Such a unit still runs — it just hands the runner a stripped PATH, so brew/mise/nvim
 # resolve to nothing and those steps skip silently. That is the failure this reports:
@@ -120,7 +134,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-Environment="PATH=$(_maint_unit_path)"
+Environment="PATH=$(_maint_systemd_escape "$(_maint_unit_path)")"
 ExecStart=/usr/bin/env bash $_MAINT_SH
 EOF
     cat >"$ud/dotfiles-maint.timer" <<EOF

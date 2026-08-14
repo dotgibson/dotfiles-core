@@ -4607,6 +4607,22 @@ if have python3; then
 else
   skip "maint launchd PATH capture (python3 absent — cannot parse plist XML)"
 fi
+# systemd expands % SPECIFIERS inside Environment= (%h = home, %i = instance, …), so a
+# legitimate PATH entry like /sent%h/bin would silently become /sent<homedir>/bin — or
+# the unit would refuse to load on an unknown specifier. Quotes and backslashes carry
+# unit-file syntax there too. Assert the three documented substitutions against a
+# literal expectation rather than round-tripping through a reimplementation of the rule.
+_ms_got="$(zsh -c "source '$UI'; source '$MNT'; _maint_systemd_escape \"\$1\"" _ '/a%h/b"c/d\e/bin' 2>/dev/null)"
+_ms_want='/a%%h/b\"c/d\\e/bin'
+if [[ "$_ms_got" == "$_ms_want" ]]; then
+  pass "maint: systemd Environment= escapes %, \" and \\ (no specifier expansion)"
+else
+  fail "maint: systemd escape wrong (got '$_ms_got' want '$_ms_want')"
+fi
+# ...and the rendered unit actually carries it, so the helper cannot be wired up wrong.
+ucheck "maint: the systemd unit's PATH survives a % in the installing PATH" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH='/sent%h/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'Environment=\"PATH=/sent%%h/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-pct-systemd"
 
 # ── the stale-unit detector (_maint_unit_needs_refresh) ──────────────────────
 # This is what makes the migration survivable. A unit written before the PATH capture
