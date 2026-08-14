@@ -99,11 +99,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `[vX.Y.Z]` section, so that work would ship undescribed. It resolves the commit that
   _set_ `core.version` to this value and tags that, reporting when the tip has moved on.
 
-  Both refs go up in a single `--atomic` push, force applied only to the `vN` alias. Pushed
-  separately they can half-land: `vX.Y.Z` published while `vN` is stale fires the workflows
-  against a stale alias, and a re-run then refuses because the immutable tag already exists.
+  It also validates the `[vX.Y.Z]` heading **at that commit** before creating any tag —
+  `release.yml` builds the Release body from that section, so publishing first and finding
+  the heading missing afterwards leaves an immutable tag on a release that cannot be
+  published, burning the version.
 
-  This also makes the merge method irrelevant to the tag. Seven behavioural assertions
+  Both refs go up in a single `--atomic` push, with a `--force-with-lease` on the `vN`
+  alias. Pushed separately they can half-land: `vX.Y.Z` published while `vN` is stale fires
+  the workflows against a stale alias, and a re-run then refuses because the immutable tag
+  already exists. The lease additionally rejects the push if another publisher moved `vN`
+  after this run read it. Rolling `vN` backward needs no separate guard — resolution only
+  accepts `origin/main`'s newest `core.version` change, so an older release never resolves.
+
+  This also makes the merge method irrelevant to the tag. Nine behavioural assertions
   cover it — including that the tag does **not** follow a tip that advanced after the
   release merged; the script previously had none, which is how the ordering survived.
 

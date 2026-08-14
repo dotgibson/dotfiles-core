@@ -1911,7 +1911,7 @@ if have git; then
 
   # Phase 2 must REFUSE while the commit is only local: origin/main still carries 1.0.0.
   _tr_out="$(_tr_run --publish)"; _tr_rc=$?
-  if ((_tr_rc != 0)) && grep -q 'has not merged yet' <<<"$_tr_out" &&
+  if ((_tr_rc != 0)) && grep -q 'has not merged' <<<"$_tr_out" &&
     [[ -z "$(_trg "$TR/work" tag -l 'v1.1.0')" ]]; then
     pass "tag-release: --publish refuses while origin/main lacks the version (no tag created)"
   else
@@ -1959,11 +1959,45 @@ if have git; then
     fail "tag-release: the vN alias did not follow the release"
   fi
   # Re-publishing an already-published tag must refuse — release tags are immutable.
+  # Runs here, while 1.1.0 is still origin/main's newest core.version change.
   _tr_out="$(_tr_run --publish)"; _tr_rc=$?
   if ((_tr_rc != 0)) && grep -q 'already exists on origin' <<<"$_tr_out"; then
     pass "tag-release: --publish refuses to re-tag a published release (immutable)"
   else
     fail "tag-release: --publish would clobber a published tag (rc=$_tr_rc)"
+  fi
+
+  # Publishing an OLDER release must be refused and must not move the alias. The property
+  # matters more than which guard enforces it: resolution only accepts origin/main's
+  # NEWEST core.version change, so an older version never resolves — and vN, which every
+  # reusable-workflow caller pins to, cannot be pointed at an older Core.
+  printf '1.0.0\n' >"$TR/work/core.version"
+  _tr_v1_before="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_v1_after="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  if ((_tr_rc != 0)) && [[ -z "$(_trg "$TR/work" tag -l 'v1.0.0')" ]] &&
+    [[ -n "$_tr_v1_before" && "$_tr_v1_before" == "$_tr_v1_after" ]]; then
+    pass "tag-release: publishing an older release is refused and vN does not move backward"
+  else
+    fail "tag-release: older publish not refused (rc=$_tr_rc, v1 $_tr_v1_before -> $_tr_v1_after)"
+  fi
+
+  # A release commit with the right core.version but NO [vX.Y.Z] heading must be refused
+  # BEFORE any tag exists: release.yml builds the Release body from that section, so
+  # publishing first and finding out later leaves an immutable tag on a release that
+  # cannot be published — the version is burned. (This guard was silently lost in an
+  # earlier revision of this script, which is why it is pinned.) Both files move in ONE
+  # commit, as release.sh + make tag produce. Runs LAST: it advances origin/main.
+  printf '3.0.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n- deliberately no 3.0.0 heading\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v3.0.0 (no heading)"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null; _trg "$TR/work" fetch -q origin
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'has no' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v3.0.0')" ]]; then
+    pass "tag-release: --publish refuses a release commit with no CHANGELOG heading (no tag created)"
+  else
+    fail "tag-release: published a version release.yml would fail on (rc=$_tr_rc)"
   fi
 else
   skip "tag-release.sh two-phase ordering (git unavailable)"

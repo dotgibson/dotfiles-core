@@ -149,7 +149,8 @@ if [[ "$MODE" == publish ]]; then
   done < <(git rev-list origin/main -- "$VERFILE")
 
   if [[ -z "$RELEASE_SHA" ]]; then
-    fail "tag-release.sh: no commit on origin/main sets $VERFILE to '$VERSION' — the release PR has not merged yet"
+    fail "tag-release.sh: no commit on origin/main sets $VERFILE to '$VERSION' as its newest change"
+    fail "either the release PR has not merged, or main has already moved on to a newer release"
     fail "land it first: the recipe is printed by a no-flag run"
     exit 1
   fi
@@ -162,12 +163,38 @@ if [[ "$MODE" == publish ]]; then
     note "origin/main has advanced $(git rev-list --count "$RELEASE_SHA..origin/main") commit(s) since the release — tagging the release commit, not the tip"
   fi
 
+  # The Release BODY comes from this commit's [vX.Y.Z] section (release.yml extracts it),
+  # so a commit with the right core.version but no heading yields a tag that release.yml
+  # then fails on — and by then the tag is published and immutable, i.e. the version is
+  # burned. Validate before creating any tag.
+  #
+  # Captured, NOT piped into `grep -q`: under `set -o pipefail` that pipeline reports
+  # failure on a successful match, because grep -q exits on the first hit and git show
+  # then dies of SIGPIPE part-way through a 4000-line file.
+  RELEASE_CHANGELOG="$(git show "$RELEASE_SHA:$CHANGELOG" 2>/dev/null)"
+  if ! grep -qE "^## +\[v?${VERSION//./\\.}\]" <<<"$RELEASE_CHANGELOG"; then
+    fail "tag-release.sh: the release commit's $CHANGELOG has no '## [v$VERSION]' heading"
+    fail "release.yml builds the Release body from that section — refusing to publish a tag it would fail on"
+    exit 1
+  fi
+  pass "the release commit's $CHANGELOG carries the [v$VERSION] heading"
+
   # Never clobber a published release. vX.Y.Z is immutable by ruleset, so a re-push
   # would be rejected anyway — fail here with a reason instead of a git error.
   if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
     fail "tag-release.sh: $TAG already exists on origin — a published release tag is immutable"
     exit 1
   fi
+
+  # Capture the remote alias NOW, well before the push: it is the lease for the force
+  # below. A concurrent publisher that moves $MAJOR between this read and that push
+  # invalidates the lease and our push is rejected — which is the point. Reading it here
+  # rather than immediately before the push widens the window the lease protects.
+  #
+  # Rolling $MAJOR BACKWARD needs no separate guard: the resolution above only accepts the
+  # NEWEST core.version change on origin/main, so an older release cannot resolve at all
+  # and is refused before any tag is created (pinned by a test).
+  REMOTE_MAJOR="$(git ls-remote origin "refs/tags/$MAJOR" 2>/dev/null | awk 'NR==1{print $1}')"
 
   if ! git tag -fa "$TAG" "$RELEASE_SHA" -m "$TAG"; then
     fail "tag-release.sh: could not create $TAG at origin/main"
@@ -191,8 +218,18 @@ if [[ "$MODE" == publish ]]; then
   # invocation could lose the vX.Y.Z race and still force vN back to its stale value.
   # --atomic makes it all-or-nothing; the leading + forces ONLY the alias, so a
   # non-fast-forward on the immutable tag is still rejected rather than overwritten.
-  if ! git push --atomic origin "refs/tags/$TAG" "+refs/tags/$MAJOR"; then
-    fail "tag-release.sh: atomic tag push failed — nothing was published; fix and re-run 'make publish'"
+  # The lease turns the alias force into a compare-and-swap: reject rather than overwrite
+  # if $MAJOR moved since REMOTE_MAJOR was read. With no remote alias yet (a new major)
+  # there is nothing to lease against and the ref is simply created.
+  push_args=(--atomic origin "refs/tags/$TAG")
+  if [[ -n "$REMOTE_MAJOR" ]]; then
+    push_args+=(--force-with-lease="refs/tags/$MAJOR:$REMOTE_MAJOR" "+refs/tags/$MAJOR")
+  else
+    push_args+=("refs/tags/$MAJOR")
+  fi
+  if ! git push "${push_args[@]}"; then
+    fail "tag-release.sh: atomic tag push failed — nothing was published"
+    fail "if $MAJOR moved under you, another publisher won the race: re-fetch and re-run 'make publish'"
     exit 1
   fi
   pass "pushed $TAG and $MAJOR atomically"
