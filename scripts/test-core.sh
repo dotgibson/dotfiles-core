@@ -2031,6 +2031,40 @@ if have git; then
     fail "tag-release: --publish would clobber a published tag (rc=$_tr_rc)"
   fi
 
+  # The alias may only move FORWARD. The lease covers changes after REMOTE_MAJOR is read,
+  # but a publisher that finishes BEFORE that read is seen as our own expected value, and
+  # the leased push would satisfy the lease while rolling vN backward. Reaching that state
+  # naturally needs a real race, so drive it directly: stage an UNPUBLISHED release (so the
+  # immutability guard does not fire first), point origin's alias at a commit that is NOT
+  # an ancestor of it, and require the refusal.
+  printf '1.3.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.3.0] - 2026-05-05\n\n- three\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v1.3.0"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _tr_rel13="$(_trg "$TR/work" rev-parse HEAD)"
+  # a commit off that line, published to origin so a ref there can point at it
+  _trg "$TR/work" checkout -q -b divergent "$_tr_rel13~1" 2>/dev/null
+  printf 'divergent\n' >"$TR/work/side.txt"
+  _trg "$TR/work" add side.txt; _trg "$TR/work" commit -q -m "a commit off the release line"
+  _tr_div="$(_trg "$TR/work" rev-parse HEAD)"
+  _trg "$TR/work" push -q origin HEAD:refs/heads/divergent 2>/dev/null
+  git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_div"
+  _trg "$TR/work" checkout -q main 2>/dev/null
+  _trg "$TR/work" fetch -q --tags --force origin
+  printf '1.3.0\n' >"$TR/work/core.version"
+
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_v1_now="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  if ((_tr_rc != 0)) && grep -q 'not an ancestor' <<<"$_tr_out" &&
+    [[ "$_tr_v1_now" == "$_tr_div" ]] && [[ -z "$(_trg "$TR/work" tag -l 'v1.3.0')" ]]; then
+    pass "tag-release: --publish refuses to move vN off its line (ancestry, not just the lease)"
+  else
+    fail "tag-release: alias moved off its line (rc=$_tr_rc, v1=$_tr_v1_now want=$_tr_div)"
+  fi
+  # restore a sane alias for the cases below
+  git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_rel13"
+  _trg "$TR/work" fetch -q --tags --force origin
+
   # Publishing an OLDER release must be refused and must not move the alias. The property
   # matters more than which guard enforces it: resolution only accepts origin/main's
   # NEWEST core.version change, so an older version never resolves — and vN, which every

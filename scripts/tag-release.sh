@@ -117,7 +117,7 @@ MAJOR="v${VERSION%%.*}"
 # ── PHASE 2 — publish the tags for a release that has ALREADY landed on main ──
 if [[ "$MODE" == publish ]]; then
   hdr "publish $TAG (tag origin/main)"
-  git fetch -q origin 2>/dev/null || {
+  git fetch -q --tags origin 2>/dev/null || {
     fail "tag-release.sh: could not fetch origin — publishing needs the remote's view of main"
     exit 1
   }
@@ -213,6 +213,29 @@ if [[ "$MODE" == publish ]]; then
   # NEWEST core.version change on origin/main, so an older release cannot resolve at all
   # and is refused before any tag is created (pinned by a test).
   REMOTE_MAJOR="$(git ls-remote origin "refs/tags/$MAJOR" 2>/dev/null | awk 'NR==1{print $1}')"
+
+  # The lease alone is not enough. It only covers changes AFTER this read — but a newer
+  # publisher that completes BEFORE it makes us read THEIR alias as our expected value,
+  # and the leased push then moves $MAJOR backward with the lease perfectly satisfied.
+  # So require the move to be FORWARD: whatever $MAJOR points at must be an ancestor of
+  # the commit we are about to move it to. (An earlier revision dropped this guard as
+  # unreachable, reasoning that resolution only accepts origin/main's newest core.version
+  # change — true, but that reasoning holds only at resolution time, and this read happens
+  # later. The two together are what make it safe: ancestry closes the gap before the
+  # read, the lease closes the gap after it.)
+  if [[ -n "$REMOTE_MAJOR" ]]; then
+    REMOTE_MAJOR_COMMIT="$(git rev-parse -q --verify "$REMOTE_MAJOR^{commit}" 2>/dev/null || echo '')"
+    if [[ -z "$REMOTE_MAJOR_COMMIT" ]]; then
+      fail "tag-release.sh: cannot resolve origin's $MAJOR ($REMOTE_MAJOR) locally — refusing to move an alias blind"
+      exit 1
+    fi
+    if [[ "$REMOTE_MAJOR_COMMIT" != "$RELEASE_SHA" ]] &&
+      ! git merge-base --is-ancestor "$REMOTE_MAJOR_COMMIT" "$RELEASE_SHA" 2>/dev/null; then
+      fail "tag-release.sh: origin's $MAJOR points at $(git rev-parse --short "$REMOTE_MAJOR_COMMIT"), which is not an ancestor of this release"
+      fail "moving it would roll $MAJOR backward for every caller pinned to it — refusing (another publisher may have raced ahead; re-fetch and re-check)"
+      exit 1
+    fi
+  fi
 
   if ! git tag -fa "$TAG" "$RELEASE_SHA" -m "$TAG"; then
     fail "tag-release.sh: could not create $TAG at origin/main"

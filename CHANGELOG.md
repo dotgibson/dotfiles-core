@@ -113,11 +113,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Both refs go up in a single `--atomic` push, with a `--force-with-lease` on the `vN`
   alias. Pushed separately they can half-land: `vX.Y.Z` published while `vN` is stale fires
   the workflows against a stale alias, and a re-run then refuses because the immutable tag
-  already exists. The lease additionally rejects the push if another publisher moved `vN`
-  after this run read it. Rolling `vN` backward needs no separate guard — resolution only
-  accepts `origin/main`'s newest `core.version` change, so an older release never resolves.
+  already exists. The lease rejects the push if another publisher moved `vN` after this run read it, and an
+  **ancestry check** covers the gap before that read: whatever `vN` points at must be an
+  ancestor of the commit being tagged, so the alias can only ever move forward. Both are
+  needed — a publisher finishing *before* the read is seen as this run's own expected
+  value, so the lease alone would be satisfied while `vN` rolled backward.
 
-  This also makes the merge method irrelevant to the tag. Ten behavioural assertions
+  This also makes the merge method irrelevant to the tag. Eleven behavioural assertions
   cover it — including that the tag does **not** follow a tip that advanced after the
   release merged; the script previously had none, which is how the ordering survived.
 
