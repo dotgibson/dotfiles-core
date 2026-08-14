@@ -1719,6 +1719,114 @@ else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
 
+# ── F7. the REAL link run (blib_link_core against a throwaway $HOME) ─────────
+# bootstrap-test.yml asserts the symlink graph, but it is workflow_call-only and
+# dotfiles-core ships no bootstrap.sh — so it only ever runs from the eight OS repos.
+# Core's own CI unit-tests the blib_* helpers and never performs a real link run, which
+# means a bootstrap-lib regression is caught downstream, in eight repos, instead of here.
+#
+# This closes that: link the ACTUAL Core tree into a sandbox $HOME/$config and assert the
+# graph a consumer depends on. Hermetic — the tpm directory is pre-seeded so the one-time
+# clone is skipped, which is the only network call in the whole function.
+if have git; then
+  hdr "bootstrap link run (blib_link_core against a sandbox HOME)"
+  LR="$SANDBOX/linkrun"
+  rm -rf "$LR"
+  mkdir -p "$LR/home" "$LR/config" "$LR/dotfiles"
+  # A consumer's layout is <repo>/core -> the vendored Core tree. Symlink rather than copy
+  # so the assertions run against the working tree exactly as it will be vendored.
+  ln -s "$HERE" "$LR/dotfiles/core"
+  mkdir -p "$LR/config/tmux/plugins/tpm"   # pre-seed: skips the tpm clone (offline)
+  (
+    # shellcheck source=lib/bootstrap-lib.sh
+    HOME="$LR/home" XDG_CONFIG_HOME="$LR/config" \
+      BLIB_ONLY="" BLIB_SKIP="" \
+      bash -c '
+        set -u
+        . "'"$HERE/lib/bootstrap-lib.sh"'"
+        blib_link_core "'"$LR/dotfiles"'" "'"$LR/config"'" >/dev/null 2>&1
+      '
+  ) || true
+
+  _lr_is_link_to() { # <link> <target>  — a symlink resolving to the expected file
+    [[ -L "$1" ]] && [[ "$(readlink "$1")" == "$2" ]]
+  }
+  # The zsh chain is the load-order contract: every numbered Core fragment must land FLAT
+  # in $config/zsh under its own basename, because loader.zsh globs NN-*.zsh there. A
+  # rename or a missed file here is precisely what silently drops a stage on eight boxes.
+  _lr_missing=""
+  for f in "$HERE"/zsh/[0-9][0-9]-*.zsh; do
+    b="$(basename "$f")"
+    _lr_is_link_to "$LR/config/zsh/$b" "$LR/dotfiles/core/zsh/$b" || _lr_missing="$_lr_missing $b"
+  done
+  if [[ -z "$_lr_missing" ]]; then
+    pass "link run: every numbered Core zsh fragment is linked flat into \$ZSH_CFG"
+  else
+    fail "link run: zsh fragments missing or mislinked —$_lr_missing"
+  fi
+  # loader.zsh is not a numbered fragment but IS what sources them; a graph without it
+  # produces a shell that starts and loads nothing.
+  if _lr_is_link_to "$LR/config/zsh/loader.zsh" "$LR/dotfiles/core/zsh/loader.zsh"; then
+    pass "link run: loader.zsh is linked (the chain has an entry point)"
+  else
+    fail "link run: loader.zsh was not linked"
+  fi
+  # nvim is linked as a DIRECTORY symlink — the one manifest entry that is a whole tree.
+  if [[ -L "$LR/config/nvim" && -d "$LR/config/nvim" && -f "$LR/config/nvim/init.lua" ]]; then
+    pass "link run: nvim/ is a directory symlink resolving to a real init.lua"
+  else
+    fail "link run: nvim/ is not a resolvable directory symlink"
+  fi
+  # The rest of the symlinked surface, at the exact destinations bootstrap promises.
+  _lr_bad=""
+  _lr_is_link_to "$LR/config/tmux/tmux.conf" "$LR/dotfiles/core/tmux/tmux.conf" || _lr_bad="$_lr_bad tmux.conf"
+  _lr_is_link_to "$LR/config/starship.toml" "$LR/dotfiles/core/starship/starship.toml" || _lr_bad="$_lr_bad starship.toml"
+  _lr_is_link_to "$LR/config/lazygit/config.yml" "$LR/dotfiles/core/lazygit/config.yml" || _lr_bad="$_lr_bad lazygit"
+  _lr_is_link_to "$LR/config/jj/config.toml" "$LR/dotfiles/core/jujutsu/config.toml" || _lr_bad="$_lr_bad jj"
+  _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
+  _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
+  [[ -L "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts"
+  if [[ -z "$_lr_bad" ]]; then
+    pass "link run: tmux, starship, lazygit, jj, gitconfig and vimrc land where bootstrap promises"
+  else
+    fail "link run: wrong or missing links —$_lr_bad"
+  fi
+  # clip is COPIED onto PATH, not symlinked, and must stay executable — nvim's clipboard
+  # provider, tmux copy-pipe and the zsh helpers all shell out to it by name.
+  if [[ -x "$LR/home/.local/bin/clip" && -x "$LR/home/.local/bin/clip-paste" ]]; then
+    pass "link run: clip + clip-paste are on ~/.local/bin and executable"
+  else
+    fail "link run: clip/clip-paste not installed executable on ~/.local/bin"
+  fi
+  # The SEEDED files are the inverse contract: real copies, never symlinks, so a user's
+  # identity/local edits are never tracked back into Core. A symlink here would publish
+  # someone's git identity into the repo on their next commit.
+  if [[ -f "$LR/config/git/local.gitconfig" && ! -L "$LR/config/git/local.gitconfig" ]] &&
+    [[ -f "$LR/config/sesh/sesh.toml" && ! -L "$LR/config/sesh/sesh.toml" ]]; then
+    pass "link run: seeded local.gitconfig and sesh.toml are COPIES, not symlinks"
+  else
+    fail "link run: a seeded file is missing or was symlinked (user edits would track back)"
+  fi
+  # Idempotency: bootstrap is re-run after every sync, so a second pass must be a no-op
+  # rather than churning links or backing anything up.
+  _lr_before="$(find "$LR/config" "$LR/home" -maxdepth 4 2>/dev/null | sort)"
+  (
+    HOME="$LR/home" XDG_CONFIG_HOME="$LR/config" bash -c '
+      set -u
+      . "'"$HERE/lib/bootstrap-lib.sh"'"
+      blib_link_core "'"$LR/dotfiles"'" "'"$LR/config"'" >/dev/null 2>&1
+    '
+  ) || true
+  _lr_after="$(find "$LR/config" "$LR/home" -maxdepth 4 2>/dev/null | sort)"
+  if [[ "$_lr_before" == "$_lr_after" ]] && ! find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*' | grep -q .; then
+    pass "link run: a second pass is a no-op (no churn, nothing backed up)"
+  else
+    fail "link run: re-running bootstrap changed the tree or backed a file up"
+  fi
+else
+  skip "bootstrap link run (git unavailable)"
+fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link

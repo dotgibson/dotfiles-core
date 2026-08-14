@@ -15,6 +15,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Core now performs a real bootstrap link run in its own suite.** `bootstrap-test.yml`
+  asserts the symlink graph, but it is `workflow_call`-only and dotfiles-core ships no
+  `bootstrap.sh` — so it only ever runs from the eight OS repos. Core unit-tested the
+  `blib_*` helpers and never linked anything, which meant a `bootstrap-lib.sh` regression
+  was caught **downstream, in eight repos**, instead of here.
+
+  Seven assertions now link the actual Core tree into a sandbox `$HOME`/`$XDG_CONFIG_HOME`
+  and check the graph a consumer depends on: every numbered fragment lands flat in
+  `$ZSH_CFG` (the load-order contract `loader.zsh` globs), `loader.zsh` itself is linked,
+  `nvim/` resolves as a directory symlink, tmux/starship/lazygit/jj/gitconfig/vimrc land
+  at their promised destinations, `clip` and `clip-paste` are executable on
+  `~/.local/bin`, the **seeded** files (`local.gitconfig`, `sesh.toml`) are real copies
+  rather than symlinks — a symlink there would track a user's git identity back into
+  Core — and a second pass is a no-op that backs nothing up. Hermetic: the `tpm`
+  directory is pre-seeded so the one network call in the function is skipped.
+
 - **`scripts/sync-core.sh` has tests.** The highest-blast-radius script in the repo —
   it gates on the audit, `git subtree pull`s into eight working trees, and stamps
   `core.lock` — had **no coverage at all**. Its only proof was `sync-fanout.yml` running
