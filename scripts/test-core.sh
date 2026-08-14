@@ -1760,6 +1760,16 @@ if _cs_has "$CS/e.json"; then
 else
   fail "strip: JSON was stripped and a path was lost"
 fi
+# The reason stripping is whole-line only: a delimiter INSIDE A STRING is code, and no
+# regex short of a per-language parser can tell the two apart. Both of these are valid
+# code that a mid-line strip would truncate, hiding the path from the gate.
+printf 'export P="#/opt/homebrew/bin"\n' >"$CS/f.sh"
+printf 'local p = "--/opt/homebrew/bin"\n' >"$CS/g.lua"
+if _cs_has "$CS/f.sh" && _cs_has "$CS/g.lua"; then
+  pass "strip: a quoted # or -- inside code cannot hide a path (fails closed)"
+else
+  fail "strip: a quoted comment delimiter truncated real code and hid an OS path"
+fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and

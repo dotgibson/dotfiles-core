@@ -94,8 +94,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `core.manifest`, because the vendored `nvim/` tree is Lua, where `#` is the **length
   operator**. A line such as `local p = t[#t] .. "/opt/homebrew/bin"` was truncated at the
   `#` and passed the gate. `_core_strip_comments` is now language-aware (Lua `--`, JSON
-  untouched, `#` elsewhere), with four regression cases covering the non-shell half of the
-  scope. Stripping may stop a comment tripping the gate; it may never hide code.
+  untouched, `#` elsewhere) **and whole-line only** — a mid-line strip cannot distinguish a
+  delimiter from the same character inside a string, so `export P="#/opt/homebrew/bin"` and
+  `local p = "--/opt/homebrew/bin"` are valid code that truncating would hide, and no regex
+  resolves that across five grammars.
+
+  The gate therefore fails closed: a line is dropped only when its first non-blank
+  character starts a comment. A _trailing_ comment naming an OS path now trips it — move
+  the comment to its own line. Five regression cases, all on the paths a blanket strip got
+  wrong. Stripping may stop a comment tripping the gate; it may never hide code.
 
 - **`V4-PROPOSAL.md` no longer claims v4 is unreleased.** Its status block said
   _"IMPLEMENTED … pending the v4.0.0 release cut"_ and described the work as sitting on a

@@ -179,10 +179,23 @@ _core_read_classify() { # _core_read_classify <classifier-output>
 # Stripping exists so an explanatory comment naming an OS path cannot trip the gate; it
 # must never be able to HIDE code. When those two pull apart, the file's real comment
 # syntax decides.
+# Only WHOLE-LINE comments are removed, and that is the point. Stripping from a mid-line
+# delimiter cannot tell a comment from the same character inside a string, so
+#     export P="#/opt/homebrew/bin"        (shell)
+#     local  p = "--/opt/homebrew/bin"     (Lua)
+# are both valid CODE that a mid-line strip truncates — hiding a real violation. There is
+# no regex that resolves that without a parser per language, and this gate scans five
+# grammars.
+#
+# So it FAILS CLOSED: a line is dropped only when its first non-blank character starts a
+# comment, and every code line is scanned intact. The cost is a trailing comment that
+# names an OS path — `local x = 1  # see /opt/homebrew` — now trips the gate. That is the
+# right way round: a false positive is visible and fixed by moving the comment to its own
+# line, while a false negative ships a wrong path to eight repos in silence.
 _core_strip_comments() {
   case "$1" in
-  *.lua) sed 's/--.*//' "$1" ;;  # Lua line comment; `#` is an operator here
-  *.json) cat "$1" ;;            # no comment syntax
-  *) sed 's/#.*//' "$1" ;;       # sh/zsh/toml/yaml/tmux.conf/gitconfig
+  *.lua) sed 's/^[[:space:]]*--.*$//' "$1" ;;  # Lua line comment; `#` is an operator here
+  *.json) cat "$1" ;;                          # no comment syntax
+  *) sed 's/^[[:space:]]*#.*$//' "$1" ;;       # sh/zsh/toml/yaml/tmux.conf/gitconfig
   esac
 }

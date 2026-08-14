@@ -79,11 +79,16 @@ manifested Core file. Its scope is derived from `core.manifest`, so adding a fil
 manifest puts it under the gate automatically.
 
 Comments are stripped first — so a comment naming an OS path cannot trip the gate — and
-that stripping is **language-aware** (`_core_strip_comments`). It has to be: `#` starts a
-comment in shell and TOML but is the **length operator** in Lua, and the scope includes the
-vendored `nvim/` tree, so a blanket strip would truncate `t[#t] .. "/opt/homebrew"` and let
-a real violation through. Stripping may stop a comment tripping the gate; it may never hide
-code.
+that stripping is **language-aware and whole-line only** (`_core_strip_comments`). It has
+to be both. `#` starts a comment in shell and TOML but is the **length operator** in Lua,
+and a mid-line strip cannot tell a delimiter from the same character inside a string, so
+`export P="#/opt/homebrew/bin"` and `local p = "--/opt/homebrew/bin"` are valid code that
+truncating would hide.
+
+So the gate **fails closed**: a line is dropped only when its first non-blank character
+starts a comment. The cost is that a _trailing_ comment naming an OS path trips the gate —
+move it to its own line. That is the right way round: a false positive is visible and
+trivially fixed, a false negative ships a wrong path to eight repos in silence.
 
 The pattern: **one verb, N backends, chosen by probing for a capability — not by
 branching on an OS name.**
