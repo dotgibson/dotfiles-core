@@ -39,6 +39,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `sed`+`grep` and cross-cutting, so a narrowed `--scope` run must not be able to skip a
   fan-out-correctness check.
 
+  The one exemption — `zsh/55-maint.zsh`, whose launchd arm legitimately writes
+  `~/Library/LaunchAgents` — is now **per-line rather than per-file**. Skipping the whole
+  module would have re-opened the blind spot _inside_ it: an accidental `/opt/homebrew`
+  added to `maint-install`, or to any other function there, would have sailed through.
+  Only the `LaunchAgents` lines are dropped; everything else in the file is scanned.
+
   Verified the way a gate change has to be: the previous tree is **red** under the new
   scope and green under the old one, which is the only evidence that the widening bites.
 

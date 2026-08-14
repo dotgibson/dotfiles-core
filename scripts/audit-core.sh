@@ -458,19 +458,26 @@ hdr "Core⇄OS boundary (no OS paths in portable Core files)"
 # ~150 small files — cheap and cross-cutting, like the manifest/exec-bit/markdown gates.
 # A narrowed --scope run must not be able to skip a fan-out-correctness check.
 #
-# EXCLUDED, both deliberately and visibly:
+# EXCLUDED, both deliberately and visibly — and note the exemption is per-LINE, not
+# per-file, for the one module that needs it:
 #   · zsh/55-maint.zsh — the scheduler CONTROL SURFACE, whose launchd arm legitimately
 #     writes ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct
-#     cross-OS shape).
+#     cross-OS shape). Only the LaunchAgents lines are dropped. Skipping the whole file
+#     would re-open the blind spot inside it: an accidental /opt/homebrew or /mnt/c
+#     added to maint-install, or to any other function there, would sail through.
 #   · *.example — user-edited illustrations, not the live config.
 bnd_fail=0
 while IFS= read -r f; do
   case "$f" in
-  zsh/55-maint.zsh) continue ;; # OS-switched scheduler surface (see above)
-  *.example) continue ;;        # user-edited illustration, not live config
+  *.example) continue ;; # user-edited illustration, not live config
   esac
   [[ -f "$f" ]] || continue
-  if sed 's/#.*//' "$f" | grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/'; then
+  # Comment-strip first, so an explanatory comment naming an OS path can't trip the gate.
+  bnd_src="$(sed 's/#.*//' "$f")"
+  # Then drop ONLY the sanctioned lines of the one exempt file — everything else in it
+  # is still scanned.
+  [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="$(grep -v 'Library/LaunchAgents' <<<"$bnd_src")"
+  if grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/' <<<"$bnd_src"; then
     bnd_fail=1
     fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
   fi
