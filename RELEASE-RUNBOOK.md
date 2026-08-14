@@ -84,7 +84,7 @@ git diff                            # sanity-check: only core.version + CHANGELO
 #    if you finish the cut; see "Abandoning a cut" below if you do not.
 make tag
 
-# 4. Land the release COMMIT via a PR (merge commit, not squash).
+# 4. Land the release COMMIT via a PR (squash — see "Why squash is fine" below).
 #    --no-follow-tags is LOAD-BEARING: step 3 just created the tag locally, and with
 #    `push.followTags = true` in your git config a plain push carries it along — landing the
 #    tag on the PRE-merge commit and firing release.yml + sync-fanout.yml immediately, which
@@ -92,7 +92,7 @@ make tag
 #    regardless of local config.
 git push --no-follow-tags origin release/vX.Y.Z
 gh pr create --base main --head release/vX.Y.Z --title "release vX.Y.Z"
-#    ... review, let CI go green, then MERGE with a merge commit ...
+#    ... review, let CI go green, then "Squash and merge" ...
 
 # 5. After the PR merges, tag the MERGED tip and push the tags (keeps git describe clean).
 #    The `vN` line is the ONE step that differs by bump type — see the callout below.
@@ -101,6 +101,35 @@ git tag -fa vX.Y.Z origin/main -m vX.Y.Z
 git tag -f  vN     origin/main          # vN = the major alias, e.g. v3 (v4 on a MAJOR)
 git push origin vX.Y.Z ; git push -f origin vN   # ';' not '&&' — independent pushes
 ```
+
+#### Why squash is fine
+
+Step 4 used to read "merge commit, not squash". That was never a technical requirement — it
+was *descriptive*. It was added in #106 (first shipped in v2.1.1), recording how releases
+merged at the time: #95, the v2.0.0 release, had landed as a genuine merge commit because
+merge commits were still enabled. It was then left behind when they were turned off.
+Squash is now the repo's **only** enabled method:
+`mergeCommitAllowed` and `rebaseMergeAllowed` are both false, and `main`'s ruleset
+additionally pins `allowed_merge_methods: ["squash"]`. The old instruction was impossible
+to follow, so **if the printed hint and the repo ever disagree again, trust the repo** —
+the merge method is not what makes this recipe correct, and changing the ruleset to match a
+stale doc would weaken a branch protection for no reason.
+
+What actually makes it correct is **step 5 tagging `origin/main`** — the post-merge tip,
+whatever shape it has — rather than the pre-merge commit. Everything downstream reads the
+tag, or the commit it points at, and never the merge's shape:
+
+- **`release.yml`'s coherence guard** compares `core.version` *at the tagged commit* against
+  the tag. A squashed tip carries the release commit's `core.version` bump, so it passes.
+  v4.10.0 already shipped this way — `cd4278e` has one parent and `core.version` `4.10.0`.
+- **`git describe`** stays clean because the tag lands exactly on `main`'s HEAD. That is a
+  property of tagging `origin/main` *after* the merge, not of how the merge was performed.
+- **The `vN` alias** (`@v4` in every OS repo's reusable-workflow caller) is force-moved onto
+  that same commit, so callers resolve identically either way.
+
+The one genuine difference is that a squash gives the release commit a new SHA and a `(#NNN)`
+subject. Nothing depends on the pre-merge SHA: step 3's local tag is re-pointed by step 5's
+`git tag -fa`, which discards it by design. Nothing in the repo parses a two-parent shape.
 
 #### Abandoning a cut
 
