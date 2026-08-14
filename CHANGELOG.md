@@ -105,6 +105,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The atuin autostart suite no longer reports an unmeasurable run as an upstream finding.**
+  `verify-atuin-guard.sh` has three verdicts on purpose — `holds`, `moved`, and
+  `unmeasurable` for "the apparatus could not be trusted, never a finding about upstream" —
+  but the socket-only-stop assertion in `scripts/test-core.sh` compared against `holds` and
+  swept everything else into a single `else`, so a declined run printed the exact claim the
+  third verdict exists to prevent: that a zombie daemon had kept committing into later arms.
+
+  It is the only arm in that section expecting the POSITIVE verdict from an otherwise
+  well-behaved stub, so it alone inherits every environmental way a run can honestly decline.
+  The section runs at `CORE_ATVERIFY_POLL=3` — 300ms for the manual-spawn control's daemon to
+  bind and answer — which a loaded box misses, yielding "a daemon started by hand never
+  answered … An apparatus limit, not a finding" with **nothing having survived**. That
+  reddened `audit-alpine` on an unrelated docs-only PR; a rerun of the identical commit went
+  green.
+
+  The three states are now distinguished: `holds` with no survivor passes, `unmeasurable`
+  skips with the verifier's own reason surfaced, and `moved` fails as the real finding. A
+  run that produces no parseable verdict at all is reported as its own outcome carrying
+  stderr, rather than being read as `moved` — that shape has a history here, being how §J4
+  first went red on Alpine when a stray musl-side line merged into the JSON. The
+  assertion does not go quiet in exchange — the survivor half is now checked unconditionally
+  and stays a failure under any verdict, because a live daemon is a leak whether or not the
+  run could measure. A contaminated control cannot hide behind the skip either: the opening
+  control runs before any daemon exists, the spawn control while the socket is still present,
+  and the closing drain control only after the owner pid is confirmed dead — so the zombie's
+  rows have no route to `unmeasurable`, only to `moved` or a survivor.
+
 - **A concurrent test run no longer fails the audit with a sandbox leak that never
   happened.** `verify-atuin-guard.sh --premise autostart` built its sandbox at
   `/tmp/atverify.XXXXXX`, and the `test-core.sh` assertion that a completed run leaves no
