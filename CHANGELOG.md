@@ -29,7 +29,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   list had fallen behind three separate times — first the symlinked configs, then the
   `bin/`/`maint/`/`tmux/scripts/` executables, and even then it still omitted
   `zsh/completions/*`, `lib/ux.sh`, `lib/bootstrap-lib.sh` and `.bin/sync-upstream.sh`.
-  Every omission was the same bug, so the fix is structural: the manifest already *is*
+  Every omission was the same bug, so the fix is structural: the manifest already _is_
   the definition of "what is Core", and a file added to it is scanned automatically. The
   blind spot cannot silently reopen, because reopening it would mean the file is not Core
   at all — which the manifest gate already fails on. Coverage went from 19 files to 167
