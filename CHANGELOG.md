@@ -116,7 +116,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   already exists. The lease rejects the push if another publisher moved `vN` after this run read it, and an
   **ancestry check** covers the gap before that read: whatever `vN` points at must be an
   ancestor of the commit being tagged, so the alias can only ever move forward. Both are
-  needed — a publisher finishing *before* the read is seen as this run's own expected
+  needed — a publisher finishing _before_ the read is seen as this run's own expected
   value, so the lease alone would be satisfied while `vN` rolled backward.
 
   This also makes the merge method irrelevant to the tag. Eleven behavioural assertions
