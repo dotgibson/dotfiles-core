@@ -77,8 +77,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   entry with no file, unparseable registry, missing registry — plus the
   two exemptions (a false positive on `health.lua` or `plugins/` would make the gate
   unusable). Each negative fixture asserts the finding text **and** exit status 1, so the
-  documented CLI contract is covered too. The real tree is clean: all 100 tracked files under
-  `nvim/` are reachable today. bash 3.2 safe, so the macos-latest CI leg runs it. Closes the
+  documented CLI contract is covered too. The real tree is clean: all **97 lua modules under
+  `nvim/lua/gerrrt/`** are reachable today. That module set is the gate's scope — `nvim/init.lua`
+  is the entry point it walks _from_ rather than a vertex, and `lazy-lock.json` and
+  `.luacheckrc` are not lua modules at all. bash 3.2 safe, so the macos-latest CI leg runs it. Closes the
   `nvim/` half of #454.
 
 - **`PORTABILITY.md` — how to write Core that survives the fan-out.** The rules were
@@ -261,6 +263,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   lie on every non-brew machine.
 
 ### Fixed
+
+- **The nvim reachability gate invented orphans on `main`.** The membership lookups piped
+  into an early-exiting reader — `printf '%s\n' "$visited" | grep -qxF "$m"` — while the
+  script runs under `set -o pipefail`. `grep -q` exits on its first match, the writer takes
+  EPIPE and dies with 141, and pipefail makes the pipeline non-zero **even though the reader
+  matched**: a module that _is_ visited reads as unvisited and is reported as an orphan, with
+  `printf: write error: Broken pipe` captured as a finding alongside it.
+
+  Timing-dependent — the writer must still be writing when the reader exits — so it passed
+  every PR run and failed on the push to `main`. Measured on a large input, the piped form
+  gave 20/20 false negatives and the herestring 0/20. Every lookup now feeds its input by
+  herestring, `awk … <<<"$mods"` included, since `awk`'s `exit` closes the pipe the same way.
 
 - **`grep -q` on a large piped producer read a match as a failure under `pipefail`.** The
   new `origin/main` CHANGELOG guard piped a 4000-line file into `grep -q`, which exits the

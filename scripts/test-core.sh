@@ -6592,7 +6592,7 @@ if have git; then
     local out rc
     out="$("$NVR" --root "$NREPO" 2>&1)"
     rc=$?
-    if printf '%s\n' "$out" | grep -q "$1" && [[ $rc -eq 1 ]]; then
+    if grep -q "$1" <<<"$out" && [[ $rc -eq 1 ]]; then
       pass "nvim-reachability: $2"
     else
       fail "nvim-reachability: $2 (rc=$rc, output=${out:-<empty>})"
