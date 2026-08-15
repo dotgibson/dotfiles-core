@@ -47,6 +47,20 @@
 # missing and an unparseable registry FAIL CLOSED — silently skipping the registry check
 # would disable the whole servers/ arm, which is precisely how this class of gap starts.
 #
+# LOOKUPS FEED THEIR INPUT BY HERESTRING, NEVER BY PIPE. Do not "simplify" any of the
+# `grep -q … <<<"$s"` or `awk … <<<"$s"` forms back to `printf '%s\n' "$s" | …`.
+#
+# This script runs under `set -o pipefail`, and every one of those readers exits EARLY —
+# `grep -q` on its first match, `awk` on its `exit`. The writer then takes EPIPE and dies
+# with 141, and pipefail makes the PIPELINE non-zero even though the reader succeeded. A
+# module that IS visited therefore reads as unvisited and is reported as an orphan, and
+# the "printf: write error: Broken pipe" on stderr is captured by §4b as a finding in its
+# own right.
+#
+# It is timing-dependent — the writer must still be writing when the reader exits — so it
+# passes on small trees and on most runs. Measured on a large input, the piped form gave
+# 20/20 false negatives. This is exactly how it reached main once.
+#
 # Output contract: one finding per line on stdout, no colour, no decoration — the caller
 # (audit-core.sh §4b) turns each line into a `fail`. Silence means clean.
 # Exit: 0 = clean, 1 = findings, 2 = usage / cannot run.
@@ -156,15 +170,15 @@ EOF
 # so the other is dead config that the walk would mark visited along with its twin.
 while IFS= read -r dup; do
   [ -n "$dup" ] || continue
-  files="$(printf '%s\n' "$mods" | awk -F'\t' -v m="$dup" '$1 == m { printf "%s ", $2 }')"
+  files="$(awk -F'\t' -v m="$dup" '$1 == m { printf "%s ", $2 }' <<<"$mods")"
   echo "duplicate module id \"$dup\" — claimed by: ${files% }"
   rc=1
 done <<EOF
-$(printf '%s\n' "$mods" | cut -f1 | sort | uniq -d)
+$(cut -f1 <<<"$mods" | sort | uniq -d)
 EOF
 
-_file_for() { printf '%s\n' "$mods" | awk -F'\t' -v m="$1" '$1 == m { print $2; exit }'; }
-_children_of() { printf '%s\n' "$mods" | awk -F'\t' -v p="$1." 'index($1, p) == 1 { print $1 }'; }
+_file_for() { awk -F'\t' -v m="$1" '$1 == m { print $2; exit }' <<<"$mods"; }
+_children_of() { awk -F'\t' -v p="$1." 'index($1, p) == 1 { print $1 }' <<<"$mods"; }
 
 # Strip lua comments — every form. A line-only `sed 's/--.*$//'` leaves the interior of a
 # multiline block fully searchable, so a module named inside one would still forge an edge.
@@ -263,7 +277,7 @@ while [ -n "$queue" ]; do
   [ -n "$entry" ] || continue
   kind="${entry%% *}"
   m="${entry#* }"
-  printf '%s\n' "$visited" | grep -qxF "$m" && continue
+  grep -qxF "$m" <<<"$visited" && continue
   visited="$visited
 $m"
 
@@ -306,7 +320,7 @@ done
 while IFS="$(printf '\t')" read -r m f; do
   [ -n "$m" ] || continue
   case "$m" in gerrrt.servers.*) continue ;; esac
-  printf '%s\n' "$visited" | grep -qxF "$m" && continue
+  grep -qxF "$m" <<<"$visited" && continue
   echo "orphaned module — nothing reaches \"$m\" from nvim/init.lua ($f)"
   rc=1
 done <<EOF
@@ -318,7 +332,7 @@ if [ -n "$srv_listed" ]; then
   while IFS= read -r m; do
     [ -n "$m" ] || continue
     name="${m#gerrrt.servers.}"
-    if ! printf '%s\n' "$srv_listed" | grep -qx "$name"; then
+    if ! grep -qx "$name" <<<"$srv_listed"; then
       echo "orphaned LSP module — nvim/lua/gerrrt/servers/$name.lua is in no \`servers\` registry entry (dead config)"
       rc=1
     fi
