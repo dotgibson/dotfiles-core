@@ -15,6 +15,9 @@
 #                                         git index; zsh/*.zsh must NOT be (sourced)
 #   3. shell syntax                     — bash -n on bash scripts; zsh -n on zsh modules
 #   4. lua                              — luacheck nvim/        (if luacheck present)
+#  4b. nvim module reachability        — no orphaned lua module under nvim/lua/gerrrt
+#                                         (the backstop the directory-granular manifest
+#                                          entry for nvim/ cannot provide)
 #   5. lint                             — shellcheck            (if present)
 #  5c. Core⇄OS boundary                — no OS-absolute paths in portable zsh modules
 #   6. config files                     — toml/yaml parse-check (if python3 present)
@@ -373,6 +376,42 @@ elif have luacheck; then
   fi
 else
   skip "luacheck (not installed)"
+fi
+
+# ── 4b. nvim module reachability (the orphan backstop) ───────────────────────
+# core.manifest lists `nvim/` as a DIRECTORY, so §1's manifest⇄fs drift check auto-lists
+# every new path under it and cannot see an orphan — a lua module nothing loads would sit
+# in the tree and fan out to all eight OS repos silently. core.manifest said that gap was
+# covered "by verify-core.sh instead"; that script has never existed here (#454). The real
+# logic — a graph walk from nvim/init.lua, not a "is this name mentioned" scan — lives in
+# the script below, along with the rationale for its roots and its two resolved edges. It
+# is a standalone script rather than an inline block precisely so test-core.sh can drive
+# it against synthetic fixtures. Findings arrive one per line; each becomes a fail.
+hdr "nvim module reachability"
+if ! ((SCOPE_NVIM)); then
+  skip "nvim reachability (out of scope)"
+elif [[ ! -d nvim/lua/gerrrt ]]; then
+  skip "nvim reachability (no nvim/lua/gerrrt)"
+else
+  # Gate on the EXIT STATUS as well as the output. Deciding purely on "did it print
+  # anything" means a silent non-zero exit — the script killed, or dying before it can
+  # emit a diagnostic — reads as a passing gate, which is the one outcome a backstop must
+  # never produce. Pass requires rc 0 AND no findings; anything else fails, and a
+  # status-without-output still says something actionable rather than nothing.
+  orph_out="$("$HERE/scripts/nvim-reachability.sh" --root "$HERE" 2>&1)"
+  orph_rc=$?
+  if [[ -n "$orph_out" ]]; then
+    while IFS= read -r orph_line; do
+      [[ -n "$orph_line" ]] && fail "nvim: $orph_line"
+    done <<EOF
+$orph_out
+EOF
+    ((orph_rc == 0)) && fail "nvim: reachability reported findings but exited 0 (contract violation)"
+  elif ((orph_rc == 0)); then
+    pass "nvim module reachability (no orphaned lua modules)"
+  else
+    fail "nvim: reachability exited $orph_rc with no output — the gate did not actually run"
+  fi
 fi
 
 # ── 5. lint (shellcheck) ─────────────────────────────────────────────────────
