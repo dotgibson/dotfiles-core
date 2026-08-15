@@ -6917,6 +6917,20 @@ _su_after() { (
 ); }
 if [[ "$(_su_after 'BLIB_SU=')" == "" ]]; then pass "blib_resolve_su: an explicit empty BLIB_SU is preserved"; else fail "blib_resolve_su clobbered an explicit BLIB_SU= (would re-add sudo as root)"; fi
 if [[ "$(_su_after 'BLIB_SU=doas')" == "doas" ]]; then pass "blib_resolve_su: an explicit BLIB_SU=doas is preserved"; else fail "blib_resolve_su clobbered BLIB_SU=doas"; fi
+# `command -v` also reports aliases, builtins and FUNCTIONS, so an exported `sudo()` makes
+# it print the bare word `sudo`. Recording that defeats the absolute-path pinning (a bare
+# name is re-resolved at every call) and could hand privileged execution to the function.
+if [[ "$(id -u)" -ne 0 ]]; then
+  # shellcheck disable=SC2030,SC2031,SC2123,SC2317  # emptying PATH and defining a shadowing
+  # `sudo` function are both the POINT here; the function is reached via `command -v`.
+  _su_fn="$( unset BLIB_SU; PATH="$SANDBOX/emptybin"
+    sudo() { :; }
+    blib_resolve_su >/dev/null 2>&1
+    printf '%s' "$BLIB_SU" )"
+  if [[ -z "$_su_fn" ]]; then pass "blib_resolve_su ignores a shell FUNCTION named sudo"; else fail "blib_resolve_su recorded a non-executable [$_su_fn]"; fi
+else
+  skip "blib_resolve_su function-shadowing case (suite is running as root)"
+fi
 
 # With no escalator on PATH and not root, --require must FAIL (rc 1) rather than hand back
 # a broken escalator; without --require it must SUCCEED (links-only needs no privileges).
@@ -7053,7 +7067,20 @@ _ka_out="$( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin
   blib_sudo_keepalive_stop   # second call must be a harmless no-op
   printf '%s/%s/%s' "$alive" "$after" "${BLIB_SUDO_KEEPALIVE_PID:-empty}" )"
 case "$_ka_out" in yes/*) pass "blib_sudo_keepalive_start forks a live refresher" ;; *) fail "blib_sudo_keepalive_start did not fork a refresher (got $_ka_out)" ;; esac
-case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher (no orphan)" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
+case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher shell" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
+# The refresher's SLEEPER is a separate process. Killing only the loop shell leaves it
+# running — orphaned for up to its full duration — and the pid check above cannot see that,
+# so it certified a "no orphan" property it never tested. Count `sleep` processes by exact
+# NAME (-x): a -f pattern would also match this suite's own command line and self-match.
+_ka_sleep_base="$(pgrep -x sleep | wc -l)"
+# shellcheck disable=SC2030,SC2031
+_ka_sleep_after="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  sleep 0.5
+  blib_sudo_keepalive_stop
+  sleep 0.5
+  pgrep -x sleep | wc -l )"
+if [[ "$_ka_sleep_after" -le "$_ka_sleep_base" ]]; then pass "blib_sudo_keepalive_stop reaps the SLEEPER too (no orphaned sleep)"; else fail "blib_sudo_keepalive_stop orphaned a sleep process (base=$_ka_sleep_base after=$_ka_sleep_after)"; fi
 case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
 
 # ── blib_set_login_shell must never abort a completed wiring ─────────────────

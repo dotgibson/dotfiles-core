@@ -568,6 +568,19 @@ blib_priv() { _blib_priv "$@"; }
 # --require makes "not root and no escalator" a hard error (returns 1). Without it the
 # caller gets an empty BLIB_SU and a warning, which is the correct outcome for a
 # links-only run — wiring symlinks needs no privileges at all.
+# _blib_su_path <name> — set $_BLIB_SU_PATH to NAME's absolute executable path and return
+# 0, or return 1. `command -v` alone is not enough: it also resolves aliases, builtins and
+# shell functions, so a `sudo()` function in the environment makes it print `sudo`. Require
+# a value that starts with / and is actually executable.
+_BLIB_SU_PATH=""
+_blib_su_path() {
+  local p
+  p="$(command -v "$1" 2>/dev/null || true)"
+  [[ "$p" == /* && -x "$p" ]] || return 1
+  _BLIB_SU_PATH="$p"
+  return 0
+}
+
 blib_resolve_su() {
   local require=0
   [[ "${1:-}" == "--require" ]] && require=1
@@ -578,22 +591,31 @@ blib_resolve_su() {
   # STRING compare, and tolerate `id` itself being unavailable. `[[ "$(id -u)" -eq 0 ]]` is
   # an ARITHMETIC comparison, and bash evaluates an empty string there as 0 — so on a box
   # where `id` is missing or off PATH the old form concluded "we are root", skipped the
-  # --require error, and then ran every privileged command unescalated. Failing closed to
-  # "not root" is the safe direction: the worst case is an unnecessary sudo.
-  local uid
-  uid="$(id -u 2>/dev/null || true)"
+  # --require error, and then ran every privileged command unescalated.
+  #
+  # $EUID rather than `id -u`: it is a bash BUILTIN, so it needs no PATH lookup, no fork,
+  # and cannot be shadowed. The previous fix only failed CLOSED to "not root" when `id` was
+  # missing, which is safe against a wrong answer but wrong against a right one — a genuine
+  # root shell with no id/sudo/doas then got a --require failure, breaking the exact
+  # minimal-root bootstrap this helper exists to support.
+  local uid="$EUID"
   # Pin the ABSOLUTE path, not the bare name. "Resolve once" has to mean once: this file
   # also ships blib_user_bindirs_on_path, which deliberately prepends user-writable dirs
   # (~/.local/bin, $CARGO_HOME/bin, $GOBIN) to PATH — so a bare `sudo` recorded here would
   # be re-resolved against a DIFFERENT PATH at every later call. A `sudo` dropped in one of
   # those dirs would then receive the password prompt, and the keepalive would prime one
   # binary while _blib_priv escalated with another.
+  #
+  # _blib_su_path resolves a REAL EXECUTABLE or nothing: `command -v` also reports aliases,
+  # builtins and shell FUNCTIONS, so an exported `sudo()` makes it print the bare word
+  # `sudo`. Recording that would defeat the pinning above (a bare name is re-resolved at
+  # every call) and could hand privileged execution to the function itself.
   if [[ "$uid" == "0" ]]; then
     BLIB_SU=""
-  elif command -v sudo >/dev/null 2>&1; then
-    BLIB_SU="$(command -v sudo)"
-  elif command -v doas >/dev/null 2>&1; then
-    BLIB_SU="$(command -v doas)"
+  elif _blib_su_path sudo; then
+    BLIB_SU="$_BLIB_SU_PATH"
+  elif _blib_su_path doas; then
+    BLIB_SU="$_BLIB_SU_PATH"
   else
     BLIB_SU=""
     if ((require)); then
@@ -643,9 +665,23 @@ blib_sudo_keepalive_start() {
   # child holding the caller's stdout keeps a pipe or command substitution open. A caller
   # writing `out=$(step_that_primes_sudo)` would then block until the whole bootstrap
   # exits, rather than returning — a hang observed nowhere near its cause.
+  #
+  # `-n -v` (not `-n true`): -v is sudo's VALIDATION mode, which refreshes the timestamp and
+  # nothing else. `sudo -n true` additionally requires the account to be authorised to run
+  # `true`, so on a sudoers restricted to the provisioning commands the refresh is denied,
+  # the failure is swallowed by `|| true`, and the timestamp quietly expires — putting back
+  # the invisible-prompt hang this whole helper exists to prevent.
+  #
+  # The trap is what makes stop() able to REAP. Without it, `kill` signals only this loop
+  # shell; the `sleep` it is blocked in is a separate process that survives, orphaned, for
+  # up to its full duration. Trapping TERM lets us kill the current sleeper explicitly, and
+  # holding its pid in $_sleeper is the only way to name it.
   while true; do
-    "$su" -n true 2>/dev/null || true
-    sleep 50
+    "$su" -n -v 2>/dev/null || true
+    sleep 50 &
+    _sleeper=$!
+    trap 'kill "$_sleeper" 2>/dev/null; exit 0' TERM
+    wait "$_sleeper" 2>/dev/null
     kill -0 "$$" 2>/dev/null || exit 0
   done >/dev/null 2>&1 &
   BLIB_SUDO_KEEPALIVE_PID=$!
@@ -653,6 +689,10 @@ blib_sudo_keepalive_start() {
 blib_sudo_keepalive_stop() {
   [[ -n "$BLIB_SUDO_KEEPALIVE_PID" ]] || return 0
   kill "$BLIB_SUDO_KEEPALIVE_PID" 2>/dev/null || true
+  # `wait` for the refresher so stop() is synchronous: it returns once the loop has run its
+  # TERM trap and torn down its sleeper, rather than leaving both to be reaped whenever.
+  # Redirected because bash reports a signal-terminated job on stderr.
+  wait "$BLIB_SUDO_KEEPALIVE_PID" 2>/dev/null || true
   BLIB_SUDO_KEEPALIVE_PID=""
 }
 
