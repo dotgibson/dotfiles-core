@@ -311,14 +311,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 - **`PORTING-MATRIX.md`'s `carapace = go³` cells named an install path that cannot be
   followed on any platform.** Footnote ³ promises `go install` where a tool is unpackaged,
-  and the carapace row pointed openSUSE and Kali straight at it. That install can never
-  succeed, for two independent and permanent reasons: `carapace-bin`'s `go.mod` carries two
-  **`replace`** directives (`spf13/pflag`, `kevinburke/ssh_config`), and `go install
-  pkg@version` refuses any module that does; and the generated sources
+  and the carapace row pointed openSUSE and Kali straight at it. That install cannot succeed
+  against v1.7.3 or current `master`, for two independent reasons: `carapace-bin`'s `go.mod`
+  carries two **`replace`** directives (`spf13/pflag`, `kevinburke/ssh_config`), and `go
+  install pkg@version` refuses any module that does; and the generated sources
   (`pkg/{actions,conditions}/*_generated.go`) are not committed, so even a plain `go build`
-  on a clone fails until `cmd/carapace/main.go`'s `go:generate` lines have run. Not a
-  transient upstream break — upstream's own `.goreleaser.yml` runs `go generate ./cmd/...`
-  as a pre-build hook, and the AUR's from-source PKGBUILD does the same.
+  on a clone fails until `cmd/carapace/main.go`'s `go:generate` lines have run. Neither is a
+  transient break to wait out — upstream's own `.goreleaser.yml` runs `go generate ./cmd/...`
+  as a pre-build hook, and the AUR's from-source PKGBUILD does the same, so this is the
+  intended build shape.
 
   The three cells now point at a new footnote ²⁷ carrying a route per target — the upstream
   `.rpm` for openSUSE (the block `dotfiles-Fedora`'s `bootstrap.sh` already ships and has

@@ -476,11 +476,11 @@ against each distro's own package pages:
 - **openSUSE Tumbleweed is the one laggard, at 0.6.17** — the gap #394 flagged, confirmed
   here rather than left as a repology snapshot. Re-check on the next openSUSE stamp.
 
-²⁷ carapace: **`go install` cannot work here — on any platform, ever.** This row used to
-read `go³`, and following that footnote fails on every box. It is the one row where ³'s
+²⁷ carapace: **`go install` cannot work here, on any platform.** This row used to read
+`go³`, and following that footnote fails on every box. It is the one row where ³'s
 `go install` arm is not merely stale but impossible, so it gets its own paths. Two
-independent blockers, both **permanent properties of the module** rather than a transient
-break (verified against upstream `master` and v1.7.3 on 2026-08-15):
+independent blockers, both **properties of how the module is built** rather than a broken
+build waiting to be fixed (verified against upstream `master` and v1.7.3 on 2026-08-15):
 
 1. `carapace-bin`'s `go.mod` carries two **`replace`** directives (`spf13/pflag` →
    `carapace-sh/carapace-pflag`, `kevinburke/ssh_config` → `carapace-sh/ssh_config`), and
@@ -494,10 +494,13 @@ break (verified against upstream `master` and v1.7.3 on 2026-08-15):
    `cmd/carapace/main.go`'s `go:generate` lines produce them.
 
 Blocker 1 kills `go install`; blocker 2 kills the obvious workaround (`go build ./cmd/carapace`
-on a clone) until `go generate` has run. Do **not** file this as "retry when upstream fixes
-it" — upstream's own `.goreleaser.yml` runs `go generate ./cmd/...` as a pre-build hook, and
-the AUR's from-source `carapace` PKGBUILD does the same, so this is the intended build shape,
-not an oversight.
+on a clone) until `go generate` has run. Do **not** treat either as a transient break to retry
+next week — upstream's own `.goreleaser.yml` runs `go generate ./cmd/...` as a pre-build hook,
+and the AUR's from-source `carapace` PKGBUILD does the same, so this is the intended build
+shape, not an oversight. Upstream could of course drop the `replace` directives or commit the
+generated sources in some future release, at which point this row can be revisited — but that
+is a change to watch for, not one to assume: **re-check only if you see it announced, and
+verify with an actual `go install` before believing it.**
 
 **The route is the upstream release artifact**, which goreleaser publishes per arch as
 `.rpm`, `.deb`, `.apk` and `.tar.gz` (v1.7.3, 2026-06-30). Per target:
@@ -508,6 +511,18 @@ not an oversight.
   stanza in `.goreleaser.yml`), and while dnf4 installs an unsigned local/URL rpm without
   complaint, `zypper -n` aborts on one — so a non-interactive install needs
   `--no-gpg-checks`. Same shape for Alpine's `.apk` (`--allow-untrusted`) if you ever need it.
+
+  Be clear-eyed about what that flag gives up rather than pasting it as boilerplate: with no
+  signature to check, **the only trust anchor left is HTTPS to the GitHub release origin**,
+  and you are installing as root. Upstream does publish a `checksums.txt`, but it is
+  unsigned and served from the same origin as the asset — it catches a truncated or corrupted
+  download, not a compromised release, so it is not a substitute for a signature. A repo that
+  wants a real anchor should pin the version and record the SHA-256 **in its own tree**, which
+  is precisely the shape `scripts/tool-versions.env` + `scripts/update-tool-checksums.sh`
+  already use for the gate toolchain (`.github/actions/setup-core-tools` verifies before
+  installing). That is a heavier contract than any other bootstrap-installed tool carries
+  today — starship and atuin come from upstream installer scripts, which verify less — so it
+  is a deliberate per-repo call, not something this row silently mandates.
 - **Kali/Debian** — the `linux_<arch>.deb`, same asset set (`amd64`/`arm64`). `apt-get
   install` wants a path, not a URL, so this is curl-to-a-tempfile then `apt-get install
   ./carapace-bin_*.deb` (which resolves deps, unlike bare `dpkg -i`).
@@ -544,9 +559,13 @@ go build -o ~/.local/bin/carapace ./cmd/carapace
 Two caveats. **Size:** this is a big binary either way — 500+ bundled completers put
 upstream's released amd64 build at **81.6 MB on disk** (from a ~14 MiB download), and a plain
 `go build` lands nearer 114 MB because it is unstripped and skips upstream's `-tags release`;
-add `-ldflags='-s -w' -tags release` to close most of the gap. **Version:** a shallow clone
-carries no tags, so the build self-reports `carapace-bin develop` rather than a version — add
-`--branch <tag>` or drop `--depth` if that matters to you.
+add `-ldflags='-s -w' -tags release` to close most of the gap. **Version:** the build will
+self-report `carapace-bin develop` no matter what you clone. That is **not** a shallow-clone
+artifact, as it first appears — `cmd/carapace/main.go` initializes `var version = "develop"`
+and nothing in the build derives it from git, so a full clone and a checked-out tag report
+`develop` too. The version is injected at link time or not at all; pass it yourself, as both
+upstream's goreleaser and the AUR PKGBUILD do:
+`-ldflags="-s -w -X main.version=v<tag>"`.
 
 Core's side is unchanged by any of this: `zsh/00-tools.zsh` sets `HAVE_CARAPACE`, and
 `zsh/45-plugins.zsh` runs `carapace _carapace zsh` through `_cache_eval` **after** `compinit`
