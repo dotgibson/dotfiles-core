@@ -6717,6 +6717,199 @@ if have git; then
   _nvr_fresh; rm -rf "$NREPO/nvim"
   _nvr_clean "no nvim/ tree is a clean no-op"
 fi
+# ── L. escalation + failure tally (lib/bootstrap-lib.sh) ──────────────────────
+# The provisioning half of the bootstrap scaffold: blib_resolve_su picks the escalator,
+# blib_priv runs a command through it, blib_user_bindirs_on_path stops the presence guards
+# lying, and blib_note_fail/blib_failures_report make a half-provisioned box say so. All
+# pure bash — no package manager, no network, no privileges — so it runs everywhere.
+#
+# Each of these encodes a real fresh-machine failure: a hard-coded `sudo` that exited 127
+# on a container, a PATH-only guard that rebuilt every Rust crate on every run, and ~20
+# `|| true` steps that still reported "bootstrap complete".
+hdr "escalation + failure tally (blib_resolve_su / blib_priv / blib_note_fail)"
+# NB: lib/bootstrap-lib.sh is deliberately NOT re-sourced here. Sections F and G already
+# source it at file scope, and its `_CORE_BOOTSTRAP_LIB_SH` re-entry guard makes a repeat
+# `source` a runtime no-op regardless. It is not free for `shellcheck -x` though: a third
+# source re-reads the lib's `${XDG_STATE_HOME:-…}` expansions AFTER section H's subshell
+# assignment of that same variable, which is enough to trip SC2030/SC2031 on section H's
+# otherwise untouched line 2215.
+
+# An explicitly-set BLIB_SU always wins — INCLUDING an empty one, which is the "already
+# root / run directly" contract bootstrap-test.yml depends on. A resolver testing
+# emptiness instead of set-ness would silently re-add sudo in CI.
+_su_after() { (
+  eval "$1"
+  blib_resolve_su >/dev/null 2>&1
+  printf '%s' "${BLIB_SU-UNSET}"
+); }
+if [[ "$(_su_after 'BLIB_SU=')" == "" ]]; then pass "blib_resolve_su: an explicit empty BLIB_SU is preserved"; else fail "blib_resolve_su clobbered an explicit BLIB_SU= (would re-add sudo as root)"; fi
+if [[ "$(_su_after 'BLIB_SU=doas')" == "doas" ]]; then pass "blib_resolve_su: an explicit BLIB_SU=doas is preserved"; else fail "blib_resolve_su clobbered BLIB_SU=doas"; fi
+
+# With no escalator on PATH and not root, --require must FAIL (rc 1) rather than hand back
+# a broken escalator; without --require it must SUCCEED (links-only needs no privileges).
+mkdir -p "$SANDBOX/emptybin"
+# shellcheck disable=SC2123  # emptying PATH is the POINT: it hides sudo/doas (and id)
+_su_none() { ( unset BLIB_SU; PATH="$SANDBOX/emptybin"; blib_resolve_su "$@" >/dev/null 2>&1 ); }
+if [[ "$(id -u)" -ne 0 ]]; then
+  if _su_none --require; then fail "blib_resolve_su --require succeeded with no escalator and no root"; else pass "blib_resolve_su --require fails when there is no escalator"; fi
+  if _su_none; then pass "blib_resolve_su (no --require) succeeds — links-only needs no privileges"; else fail "blib_resolve_su without --require must not fail"; fi
+else
+  skip "blib_resolve_su no-escalator cases (suite is running as root)"
+fi
+
+# "Resolve once" must mean ONCE: the recorded escalator has to survive a later PATH change,
+# because blib_user_bindirs_on_path (same file) prepends user-writable dirs by design. A
+# bare `sudo` would be re-resolved against the new PATH and could pick up a different
+# binary — which would then receive the password prompt.
+_su_pin_a="$(mktemp -d "$SANDBOX/supin-a.XXXXXX")"
+_su_pin_b="$(mktemp -d "$SANDBOX/supin-b.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_su_pin_a/sudo"; chmod +x "$_su_pin_a/sudo"
+printf '#!/bin/sh\nexit 0\n' >"$_su_pin_b/sudo"; chmod +x "$_su_pin_b/sudo"   # the impostor
+# Root-guarded, like the no-escalator cases above: as root the resolver correctly returns
+# an EMPTY BLIB_SU (nothing to escalate with), so there is no path to pin. The Alpine and
+# Arch audit legs run in root containers, which is exactly where an unguarded version of
+# this assertion fails for the wrong reason.
+if [[ "$(id -u)" -ne 0 ]]; then
+  # shellcheck disable=SC2030,SC2031
+  _su_pinned="$( unset BLIB_SU; PATH="$_su_pin_a:/usr/bin:/bin"
+    blib_resolve_su >/dev/null 2>&1
+    PATH="$_su_pin_b:$PATH"          # a later prepend, exactly what bindirs_on_path does
+    printf '%s' "$BLIB_SU" )"
+  if [[ "$_su_pinned" == "$_su_pin_a/sudo" ]]; then pass "blib_resolve_su pins the absolute path (survives a later PATH prepend)"; else fail "blib_resolve_su recorded [$_su_pinned] — a later PATH change can swap the escalator"; fi
+else
+  skip "blib_resolve_su path pinning (suite is running as root — no escalator to pin)"
+fi
+
+# blib_priv must never invoke an empty-string command: with BLIB_SU= it runs CMD directly,
+# and with an escalator set it prefixes it (`env` stands in harmlessly for sudo).
+if [[ "$(BLIB_SU='' blib_priv printf 'ran-%s' direct)" == "ran-direct" ]]; then pass "blib_priv with BLIB_SU= runs the command directly"; else fail "blib_priv mishandled an empty escalator"; fi
+if [[ "$(BLIB_SU='env' blib_priv printf 'ran-%s' viasu)" == "ran-viasu" ]]; then pass "blib_priv routes through a non-empty BLIB_SU"; else fail "blib_priv did not route through BLIB_SU"; fi
+
+# blib_user_bindirs_on_path: adds only EXISTING dirs, never duplicates.
+_bindirs_path() { (
+  HOME="$1"
+  PATH="/usr/bin"
+  blib_user_bindirs_on_path
+  blib_user_bindirs_on_path
+  printf '%s' "$PATH"
+); }
+_bhome="$(mktemp -d "$SANDBOX/bindirs.XXXXXX")"
+mkdir -p "$_bhome/.local/bin" "$_bhome/.cargo/bin" # deliberately NO go/bin, NO .atuin/bin
+_bpath="$(_bindirs_path "$_bhome")"
+case "$_bpath" in *"$_bhome/.local/bin"*) pass "blib_user_bindirs_on_path adds an existing ~/.local/bin" ;; *) fail "blib_user_bindirs_on_path missed ~/.local/bin" ;; esac
+case "$_bpath" in *"$_bhome/.cargo/bin"*) pass "blib_user_bindirs_on_path adds an existing ~/.cargo/bin (the cargo-rebuild bug)" ;; *) fail "blib_user_bindirs_on_path missed ~/.cargo/bin" ;; esac
+case "$_bpath" in *"$_bhome/go/bin"*) fail "blib_user_bindirs_on_path added a NON-EXISTENT dir (~/go/bin)" ;; *) pass "blib_user_bindirs_on_path skips directories that do not exist" ;; esac
+if [[ "$(printf '%s' "$_bpath" | tr ':' '\n' | grep -cxF "$_bhome/.local/bin")" == "1" ]]; then pass "blib_user_bindirs_on_path is idempotent (no duplicate PATH entries)"; else fail "blib_user_bindirs_on_path duplicated a PATH entry on the second call"; fi
+
+# The failure tally. Empty ⇒ silent AND rc 0; non-empty ⇒ rc 1 and every entry listed.
+# That rc IS the contract a caller maps onto its --strict flag.
+if (BLIB_FAILED=(); blib_failures_report >/dev/null); then pass "blib_failures_report returns 0 when nothing failed"; else fail "blib_failures_report must return 0 on an empty tally"; fi
+if [[ -z "$(BLIB_FAILED=(); blib_failures_report 2>&1)" ]]; then pass "blib_failures_report prints nothing when nothing failed"; else fail "blib_failures_report printed on an empty tally"; fi
+_tally_out="$(BLIB_FAILED=(); blib_note_fail 'carapace: RPM install failed' >/dev/null 2>&1; blib_note_fail 'op: install failed' >/dev/null 2>&1; blib_failures_report 2>&1 || true)"
+case "$_tally_out" in *"2 step(s) did not complete"*) pass "blib_failures_report counts the recorded steps" ;; *) fail "blib_failures_report lost the count" ;; esac
+case "$_tally_out" in *"carapace: RPM install failed"*) pass "blib_failures_report lists the first failure" ;; *) fail "blib_failures_report dropped a recorded failure" ;; esac
+case "$_tally_out" in *"op: install failed"*) pass "blib_failures_report lists the last failure" ;; *) fail "blib_failures_report dropped the last failure" ;; esac
+if (BLIB_FAILED=(); blib_note_fail x >/dev/null 2>&1; blib_failures_report >/dev/null 2>&1); then fail "blib_failures_report must return NON-zero when a step failed"; else pass "blib_failures_report returns non-zero when a step failed (drives --strict)"; fi
+if [[ "$(BLIB_FAILED=(); blib_note_fail a >/dev/null 2>&1; blib_note_fail b >/dev/null 2>&1; blib_failed_count)" == "2" ]]; then pass "blib_failed_count reports the tally size"; else fail "blib_failed_count wrong"; fi
+# bash 3.2 + `set -u`: an empty array expansion counts as UNSET, so a bare
+# "${BLIB_FAILED[@]}" would abort the report on the HAPPY path. Prove the guarded form
+# survives errexit+nounset — which is exactly how a bootstrap runs.
+if (set -eu; BLIB_FAILED=(); blib_failures_report >/dev/null 2>&1); then pass "blib_failures_report survives set -eu with an empty tally (bash 3.2 array rule)"; else fail "blib_failures_report tripped set -u on an empty array"; fi
+
+# ── the relocatable bindirs (CARGO_HOME / GOBIN / GOPATH) ────────────────────
+# cargo honours $CARGO_HOME and go honours $GOBIN then $GOPATH/bin. Hard-coding
+# ~/.cargo/bin would leave a box with a custom CARGO_HOME still rebuilding every crate on
+# every run — the same bug, just relocated.
+_relo_home="$(mktemp -d "$SANDBOX/relo.XXXXXX")"
+mkdir -p "$_relo_home/xdgcargo/bin" "$_relo_home/gobin" "$_relo_home/gopath/bin"
+_relo_path="$( HOME="$_relo_home" CARGO_HOME="$_relo_home/xdgcargo" GOBIN="$_relo_home/gobin" PATH=/usr/bin; export CARGO_HOME GOBIN; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path" in *"$_relo_home/xdgcargo/bin"*) pass "blib_user_bindirs_on_path honours CARGO_HOME" ;; *) fail "blib_user_bindirs_on_path ignored CARGO_HOME" ;; esac
+case "$_relo_path" in *"$_relo_home/gobin"*) pass "blib_user_bindirs_on_path honours GOBIN" ;; *) fail "blib_user_bindirs_on_path ignored GOBIN" ;; esac
+# shellcheck disable=SC2030,SC2031  # a subshell-local PATH is the POINT of every probe below
+_relo_path2="$( HOME="$_relo_home" GOPATH="$_relo_home/gopath" PATH=/usr/bin; unset GOBIN; export GOPATH; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path2" in *"$_relo_home/gopath/bin"*) pass "blib_user_bindirs_on_path falls back to GOPATH/bin when GOBIN is unset" ;; *) fail "blib_user_bindirs_on_path ignored GOPATH" ;; esac
+# GOPATH is a LIST: go installs into the FIRST entry's bin/. Appending /bin to the whole
+# value would probe "/first:/second/bin", which exists nowhere — so the Go tools stay off
+# PATH and get rebuilt every run, the exact failure this helper exists to prevent.
+# shellcheck disable=SC2030,SC2031
+_relo_path3="$( HOME="$_relo_home" GOPATH="$_relo_home/gopath:$_relo_home/second" PATH=/usr/bin; unset GOBIN; export GOPATH; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path3" in *"$_relo_home/gopath/bin"*) pass "blib_user_bindirs_on_path uses GOPATH's FIRST entry when it is a list" ;; *) fail "blib_user_bindirs_on_path mishandled a multi-entry GOPATH (got: $_relo_path3)" ;; esac
+case "$_relo_path3" in *":$_relo_home/second/bin"*|*"gopath:$_relo_home/second/bin"*) fail "blib_user_bindirs_on_path built a bogus path from a multi-entry GOPATH" ;; *) pass "blib_user_bindirs_on_path builds no bogus /a:/b/bin entry" ;; esac
+
+# ── sudo keepalive (hermetic: a shimmed `sudo` on PATH, never the real one) ───
+# The riskiest code in this batch — it forks a background refresher and installs no trap of
+# its own — so pin the branches that decide whether it runs at all, that a failed FIRST
+# authentication is reported (so a caller can abort before half-provisioning), and that
+# stop() is idempotent and leaves no orphan.
+_ka_bin="$(mktemp -d "$SANDBOX/kabin.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"; chmod +x "$_ka_bin/sudo"
+# _ka_pid <BLIB_SU> <BLIB_DRY> — start the keepalive against the shimmed sudo, print the
+# pid it recorded (empty when it correctly declined to fork). _ka_rc is the same, returning
+# the rc instead. Both wrap the subshell so the SC2030/SC2031 suppression is stated once.
+# shellcheck disable=SC2030,SC2031  # a subshell-local PATH is the POINT (hermetic sudo shim)
+_ka_pid() { ( BLIB_SU="$1"; BLIB_DRY="$2"; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  _p="${BLIB_SUDO_KEEPALIVE_PID:-}"
+  blib_sudo_keepalive_stop  # reap BEFORE printing: a live refresher would otherwise be
+  printf '%s' "$_p" ); }    # a second writer on this substitution's pipe
+# shellcheck disable=SC2030,SC2031
+_ka_rc() { ( BLIB_SU="$1"; BLIB_DRY="$2"; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1 ); }
+# not-sudo escalators must no-op: doas has no refreshable timestamp, root has nothing to prime.
+if [[ -z "$(_ka_pid doas 0)" ]]; then pass "blib_sudo_keepalive_start no-ops under doas"; else fail "blib_sudo_keepalive_start started a refresher under doas"; fi
+if [[ -z "$(_ka_pid '' 0)" ]]; then pass "blib_sudo_keepalive_start no-ops as root (BLIB_SU=)"; else fail "blib_sudo_keepalive_start started a refresher as root"; fi
+# BLIB_DRY must PREVIEW, never authenticate or fork.
+if [[ -z "$(_ka_pid sudo 1)" ]]; then pass "blib_sudo_keepalive_start forks nothing under BLIB_DRY"; else fail "blib_sudo_keepalive_start forked a refresher during a dry run"; fi
+# BLIB_SU is documented as a single command TOKEN, so an absolute path is a valid override.
+# Matching the literal string `sudo` skipped priming for it, silently restoring the very
+# timestamp expiry (and invisible prompt) this helper exists to prevent.
+if [[ -n "$(_ka_pid "$_ka_bin/sudo" 0)" ]]; then pass "blib_sudo_keepalive_start primes an absolute-path BLIB_SU (/…/sudo)"; else fail "an absolute-path BLIB_SU silently disabled the keepalive"; fi
+# a FAILED initial `sudo -v` must return non-zero — that rc is what lets a caller abort.
+printf '#!/bin/sh\nexit 1\n' >"$_ka_bin/sudo"
+if _ka_rc sudo 0; then fail "blib_sudo_keepalive_start returned 0 when sudo -v failed"; else pass "blib_sudo_keepalive_start reports a failed initial authentication"; fi
+# the happy path: it forks exactly one refresher, and stop() reaps it and is re-callable.
+printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"
+# shellcheck disable=SC2030,SC2031  # subshell-local PATH again: the shimmed sudo
+_ka_out="$( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  pid="$BLIB_SUDO_KEEPALIVE_PID"
+  kill -0 "$pid" 2>/dev/null && alive=yes || alive=no
+  blib_sudo_keepalive_stop
+  sleep 0.2
+  kill -0 "$pid" 2>/dev/null && after=alive || after=reaped
+  blib_sudo_keepalive_stop   # second call must be a harmless no-op
+  printf '%s/%s/%s' "$alive" "$after" "${BLIB_SUDO_KEEPALIVE_PID:-empty}" )"
+case "$_ka_out" in yes/*) pass "blib_sudo_keepalive_start forks a live refresher" ;; *) fail "blib_sudo_keepalive_start did not fork a refresher (got $_ka_out)" ;; esac
+case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher (no orphan)" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
+case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
+
+# ── blib_set_login_shell must never abort a completed wiring ─────────────────
+# It runs at the very END of wire_links, so a failure here would discard an otherwise
+# correct install. Shim zsh/getent/chsh so the function reaches its mutating half, then
+# make each mutation fail and assert the whole thing still returns 0 under `set -e`.
+_ls_bin="$(mktemp -d "$SANDBOX/lsbin.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_ls_bin/zsh"; chmod +x "$_ls_bin/zsh"
+# getent reports a NON-zsh current shell so the early "already zsh" return is not taken.
+printf '#!/bin/sh\necho "u:x:1:1::/home/u:/bin/sh"\n' >"$_ls_bin/getent"; chmod +x "$_ls_bin/getent"
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/chsh"; chmod +x "$_ls_bin/chsh"   # chsh FAILS
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/tee"; chmod +x "$_ls_bin/tee"     # /etc/shells append FAILS
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/grep"; chmod +x "$_ls_bin/grep"   # ...so the append is attempted
+for _b in id printf cut awk; do [[ -x "$_ls_bin/$_b" ]] || ln -sf "$(command -v "$_b")" "$_ls_bin/$_b" 2>/dev/null; done
+if ( set -eu
+     PATH="$_ls_bin:/usr/bin:/bin"
+     BLIB_SU=""; BLIB_DRY=0; BLIB_ONLY=""; BLIB_SKIP=""
+     blib_set_login_shell >/dev/null 2>&1 ); then
+  pass "blib_set_login_shell returns 0 under set -e when /etc/shells AND chsh both fail"
+else
+  fail "blib_set_login_shell still aborts a completed wiring when its last step fails"
+fi
+# ...and it must SAY so rather than failing silently.
+_ls_msg="$( PATH="$_ls_bin:/usr/bin:/bin" BLIB_SU="" BLIB_DRY=0 BLIB_ONLY="" BLIB_SKIP="" blib_set_login_shell 2>&1 || true )"
+# Match the two warnings SEPARATELY and on strings unique to each. A bare *chsh* match is
+# vacuous: the /etc/shells warning also says "chsh may refuse it", so it passed whether or
+# not the chsh branch ever ran.
+case "$_ls_msg" in *"could not add"*) pass "blib_set_login_shell warns when the /etc/shells append fails" ;; *) fail "blib_set_login_shell swallowed the /etc/shells failure (got: $_ls_msg)" ;; esac
+case "$_ls_msg" in *"chsh failed"*) pass "blib_set_login_shell warns when chsh fails, naming the manual fallback" ;; *) fail "blib_set_login_shell swallowed the chsh failure (got: $_ls_msg)" ;; esac
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary

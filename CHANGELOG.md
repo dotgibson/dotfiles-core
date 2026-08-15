@@ -82,6 +82,51 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   is the entry point it walks _from_ rather than a vertex, and `lazy-lock.json` and
   `.luacheckrc` are not lua modules at all. bash 3.2 safe, so the macos-latest CI leg runs it. Closes the
   `nvim/` half of #454.
+- **`lib/bootstrap-lib.sh` now owns privilege escalation, so a bootstrap stops hard-coding
+  `sudo`.** `blib_resolve_su [--require]` resolves the escalator **once** into `BLIB_SU`
+  (an explicitly set value always wins, _including_ an empty one; else root needs nothing,
+  else `sudo`, else `doas`), and `blib_priv` is the public way to run a privileged command.
+  Every OS bootstrap wrote `sudo` inline at roughly a dozen call sites, which is wrong on
+  precisely the machines a bootstrap meets first: `fedora:latest` and `alpine:3.20` ship
+  **no sudo**, and neither does a WSL distro's first boot (root, before `/etc/wsl.conf`
+  installs the default user) or a minimal Server image. Those runs died at the _first_
+  package-manager line with `sudo: command not found` — exit 127 under `set -e`, before
+  doing anything at all. It is also why `bootstrap-test.yml` can exercise only
+  `--links-only`, and must pass `BLIB_SU=` to manage even that. `--require` makes "not root
+  and no escalator" a hard error for a provisioning run, while a links-only run correctly
+  continues (wiring symlinks needs no privileges).
+
+- **`blib_sudo_keepalive_start` / `blib_sudo_keepalive_stop` — no more invisible password
+  prompts.** A bootstrap's privileged calls are interleaved with from-source `cargo`/`go`
+  builds that take minutes, comfortably outliving sudo's 5-minute timestamp. sudo writes
+  its prompt to **stderr** and reads from the TTY, so a later call whose stderr is
+  redirected (`>/dev/null 2>&1`, ubiquitous in these scripts) stopped dead at a prompt
+  nobody could see: no output, no progress, indistinguishable from a hang, and reproducible
+  only on a box slow enough to cross the timeout. Prime once up front, refresh in the
+  background, and return non-zero if that first authentication fails so the caller can
+  abort before half-provisioning. A no-op under `doas` (no refreshable timestamp) and as
+  root.
+
+- **`blib_user_bindirs_on_path` — stop the presence guards lying.** A bootstrap's
+  `command -v <tool>` guards decide whether to spend _minutes_ building from source, but
+  they are answered by the PATH of whatever shell launched the bootstrap — on a fresh box,
+  bash. `cargo install` writes `~/.cargo/bin` and `go install` writes `$GOBIN`
+  (`~/.local/bin` by convention here), while `~/.cargo/bin` reaches PATH only via the OS
+  zsh layer — i.e. only inside a Core shell that does not exist yet. So every guard
+  reported "missing" and every re-run rebuilt the entire from-source tool set. Adds only
+  directories that exist, and never twice.
+
+- **`blib_note_fail` / `blib_failed_count` / `blib_failures_report` — a half-provisioned
+  box now says so.** A bootstrap is full of steps that must not abort the run (a COPR that
+  is down, a rate-limited API, a crate that fails to build), so each is written `|| true` —
+  and the script then printed "bootstrap complete" and exited 0 regardless, making a box
+  that got none of its extra tooling indistinguishable from a good one, to CI and operator
+  alike. `blib_failures_report` returns non-zero when anything was recorded, which is the
+  contract a caller maps onto its own `--strict` flag.
+
+  All four are covered by a new hermetic section in `scripts/test-core.sh` (no package
+  manager, no network, no privileges), including the bash 3.2 `set -u` empty-array rule
+  that would otherwise crash the report on the _happy_ path.
 
 - **`PORTABILITY.md` — how to write Core that survives the fan-out.** The rules were
   real and consistently followed, but recorded only in ~8 scattered code comments, so
@@ -275,6 +320,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   every PR run and failed on the push to `main`. Measured on a large input, the piped form
   gave 20/20 false negatives and the herestring 0/20. Every lookup now feeds its input by
   herestring, `awk … <<<"$mods"` included, since `awk`'s `exit` closes the pipe the same way.
+- **`blib_set_login_shell` could throw away a complete, correct wiring over its last,
+  purely cosmetic step.** It runs at the very end of `wire_links`, after every symlink is
+  already in place — but neither the `/etc/shells` append nor `chsh` tolerated failure, so
+  under the caller's `set -e` a host with a read-only `/etc` (a container), a restricted
+  `chsh`, or an LDAP/SSSD-backed account aborted the whole bootstrap. Worse, the operator
+  saw a bare `tee: /etc/shells: Permission denied` and no indication of what had or had not
+  been done. Both steps now warn and continue, naming the manual command to finish the job.
 
 - **`grep -q` on a large piped producer read a match as a failure under `pipefail`.** The
   new `origin/main` CHANGELOG guard piped a 4000-line file into `grep -q`, which exits the
