@@ -369,10 +369,11 @@ elif have luacheck; then
   # luacheck discovers .luacheckrc by searching UP from the CWD, not the target —
   # so run it from inside nvim/, where nvim/.luacheckrc lives. From repo root it
   # would miss the config and emit hundreds of false "undefined vim" warnings.
-  if (cd nvim && luacheck . --no-color >/dev/null 2>&1); then
+  if lua_out="$(cd nvim && luacheck . --no-color 2>&1)"; then
     pass "luacheck nvim/"
   else
     fail "luacheck reported issues — run: (cd nvim && luacheck .)"
+    fail_detail "$lua_out"
   fi
 else
   skip "luacheck (not installed)"
@@ -421,10 +422,11 @@ if ! ((SCOPE_SHELL)); then
 elif have shellcheck; then
   sc_fail=0
   while IFS= read -r f; do
-    shellcheck -x "$f" >/dev/null 2>&1 || {
+    if ! sc_out="$(shellcheck -x "$f" 2>&1)"; then
       sc_fail=1
       fail "shellcheck: $f"
-    }
+      fail_detail "$sc_out"
+    fi
   done < <(git ls-files '*.sh' 'bin/clip' 'bin/clip-paste' 2>/dev/null)
   ((sc_fail)) || pass "shellcheck (all bash scripts clean)"
 else
@@ -609,10 +611,11 @@ elif [[ -x node_modules/.bin/markdownlint-cli2 ]]; then
   _mdl=(node_modules/.bin/markdownlint-cli2)
 fi
 if ((${#_mdl[@]})); then
-  if "${_mdl[@]}" "**/*.md" >/dev/null 2>&1; then
+  if md_out="$("${_mdl[@]}" "**/*.md" 2>&1)"; then
     pass "markdownlint (all tracked markdown clean)"
   else
     fail "markdownlint reported issues — run: markdownlint-cli2 '**/*.md'"
+    fail_detail "$md_out"
   fi
 else
   skip "markdownlint (markdownlint-cli2 not installed — npm i -g markdownlint-cli2)"
@@ -627,10 +630,11 @@ fi
 # above; CI installs it pinned (ACTIONLINT_VERSION) so the gate actually runs there.
 hdr "workflows (actionlint)"
 if have actionlint; then
-  if actionlint >/dev/null 2>&1; then
+  if al_out="$(actionlint 2>&1)"; then
     pass "actionlint (workflows valid)"
   else
     fail "actionlint reported issues — run: actionlint"
+    fail_detail "$al_out"
   fi
 else
   skip "actionlint (not installed — go install github.com/rhysd/actionlint/cmd/actionlint@latest)"
@@ -647,10 +651,19 @@ fi
 # like the linters above; CI installs it pinned (GITLEAKS_VERSION) so it runs there.
 hdr "secrets (gitleaks)"
 if have gitleaks; then
-  if gitleaks dir . --no-banner --redact >/dev/null 2>&1; then
+  # -v is what makes the captured output worth anything: without it gitleaks prints only
+  # "leaks found: N" and the file/line/rule stay hidden — the same non-answer this change
+  # exists to remove. --no-color matches the flag already passed to luacheck, so the text
+  # captured into a log is plain rather than escape sequences.
+  if gl_out="$(gitleaks dir . --no-banner --redact -v --no-color 2>&1)"; then
     pass "gitleaks (no secrets in the working tree)"
   else
-    fail "gitleaks found potential secrets — run: gitleaks dir . --redact"
+    fail "gitleaks found potential secrets — run: gitleaks dir . --redact -v"
+    # Safe to print BECAUSE of --redact: gitleaks replaces the matched value with
+    # REDACTED, so the report names the file, line, rule and fingerprint without
+    # reproducing the secret. Drop --redact and this becomes the one gate whose output
+    # must stay dark.
+    fail_detail "$gl_out"
   fi
 else
   skip "gitleaks (not installed — https://github.com/gitleaks/gitleaks/releases)"

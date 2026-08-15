@@ -99,6 +99,31 @@ fail() {
   FAIL=$((FAIL + 1))
   printf '%s✗%s %s\n' "$c_red" "$c_rst" "$*" >&2
 }
+# fail_detail <captured-output> — print a failing tool's OWN report under the ✗ line.
+#
+# The audit's job is to say WHAT failed; the tool has already computed WHY. Discarding it
+# meant a red CI run named a gate and nothing else — "✗ markdownlint reported issues" with
+# no rule, no file, no line — and CI is precisely where you cannot re-run the tool by hand
+# (dotgibson/dotfiles-core#456).
+#
+# stderr, like fail(), so --json keeps stdout clean for the summary object. Indented so it
+# reads as detail rather than as further findings, and capped so a pathological run cannot
+# bury the summary; the "run:" hint on each fail line stays the route to the full output.
+#
+# NB the herestrings: `head` exits after N lines, so `printf … | head` under `set -o
+# pipefail` is the SIGPIPE trap this repo has hit three times (#459). `head <<<` has no
+# upstream to kill, and the `| sed` downstream consumes everything without exiting early.
+CORE_FAIL_DETAIL_LINES="${CORE_FAIL_DETAIL_LINES:-40}"
+fail_detail() {
+  local out="${1:-}" n
+  [ -n "$out" ] || return 0
+  n="$(wc -l <<<"$out" | tr -d ' ')"
+  head -n "$CORE_FAIL_DETAIL_LINES" <<<"$out" | sed 's/^/    /' >&2
+  if [ "${n:-0}" -gt "$CORE_FAIL_DETAIL_LINES" ]; then
+    printf '    … %s more line(s) — run the command above for the rest\n' \
+      "$((n - CORE_FAIL_DETAIL_LINES))" >&2
+  fi
+}
 hdr() { ((QUIET)) || printf '\n%s== %s ==%s\n' "$c_blu" "$*" "$c_rst"; }
 
 # ── area scope (shared by audit-core.sh + test-core.sh) ───────────────────────

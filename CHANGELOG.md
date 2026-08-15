@@ -309,6 +309,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A failing linter gate named itself and nothing else.** Five sections — luacheck,
+  shellcheck, markdownlint, actionlint, gitleaks — ran their tool with `>/dev/null 2>&1`
+  and reported a one-line verdict, so a red run said `✗ markdownlint reported issues` with
+  no rule, no file and no line. Each ended with a "run it yourself" hint, which is fine
+  locally and useless in CI — the one place the tool is installed, the finding is already
+  computed, and re-running it costs a push and a full CI cycle per guess. Diagnosing a
+  single MD049 violation this way took three round-trips.
+
+  Output is now captured and printed beneath the `✗`, via a shared `fail_detail` in
+  `scripts/lib/common.sh`: stderr (so `--json` keeps stdout parseable), indented (so it
+  reads as detail, not as further findings), and capped at `CORE_FAIL_DETAIL_LINES` (40)
+  so a pathological run cannot bury the summary it is meant to explain.
+
+  gitleaks also gains `-v --no-color`, without which it prints only `leaks found: N` and
+  the file/line/rule stay hidden — the same non-answer. Printing its report is safe
+  precisely because `--redact` is already in use: the value is replaced with `REDACTED`,
+  so the report names the file, line, rule and fingerprint without reproducing the secret.
+
 - **`PORTING-MATRIX.md`'s `carapace = go³` cells named an install path that cannot be
   followed on any platform.** Footnote ³ promises `go install` where a tool is unpackaged,
   and the carapace row pointed openSUSE and Kali straight at it. That install cannot succeed
