@@ -383,9 +383,10 @@ fi
 # every new path under it and cannot see an orphan — a lua module nothing loads would sit
 # in the tree and fan out to all eight OS repos silently. core.manifest said that gap was
 # covered "by verify-core.sh instead"; that script has never existed here (#454). The real
-# logic (and the full rationale for which groups are exempt) lives in the script below —
-# it is a standalone script rather than an inline block precisely so test-core.sh can
-# drive it against synthetic fixtures. Findings arrive one per line; each becomes a fail.
+# logic — a graph walk from nvim/init.lua, not a "is this name mentioned" scan — lives in
+# the script below, along with the rationale for its roots and its two resolved edges. It
+# is a standalone script rather than an inline block precisely so test-core.sh can drive
+# it against synthetic fixtures. Findings arrive one per line; each becomes a fail.
 hdr "nvim module reachability"
 if ! ((SCOPE_NVIM)); then
   skip "nvim reachability (out of scope)"

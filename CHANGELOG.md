@@ -25,21 +25,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   fan out to all eight OS repos, silently. luacheck does not help — it lints the files it is
   handed and does no reachability analysis.
 
-  §4b walks the load graph instead. Four groups are reachable by construction and exempt for
-  stated reasons: `plugins/*` (lazy imports the directory), `health.lua` (Neovim discovers
-  `lua/**/health.lua` for `:checkhealth`, so zero requires is correct, not orphaned),
-  `gerrrt/init.lua` (the entry point), and `servers/*` — which are require()d _dynamically_
-  via `pcall(require, "gerrrt.servers." .. name)`, so a static grep finds nothing and the
-  `servers` registry is the only evidence. Everything else — `utils/`, `config/`, and any
-  top-level `lua/gerrrt/*.lua` — must be require()d by name somewhere. The registry is checked
-  **both** ways: a module in no list entry is dead config; a list entry with no module file is
-  a runtime load error. An unparseable registry fails closed and says so once, rather than
-  emitting ~28 bogus failures or quietly passing everything.
+  §4b walks the load graph instead — a real traversal, not an "is this name mentioned
+  anywhere" scan. That distinction is the whole point: a mention-scan passes two dead modules
+  that require _each other_ (a disconnected cycle, non-zero indegree, reachable from nothing),
+  and passes a module named only in another file's comment. Both are exactly the orphan this
+  exists to catch. So it inventories every module, strips lua comments, reads each file's
+  edges (any quoted `gerrrt.*` string — covering `require()` and lazy's
+  `{ import = "gerrrt.plugins" }`), then walks outward from the roots and flags every module
+  never visited.
 
-  Verified against planted orphans of every class it claims to catch (stray `utils/` module,
-  stray top-level module, unlisted LSP module, list entry with no file, unparseable registry)
-  and against the real tree, which is clean: all 100 tracked files under `nvim/` are reachable
-  today. bash 3.2 safe, so the macos-latest CI leg runs it. Closes the `nvim/` half of #454.
+  Two roots, both genuine entry points rather than exemptions: `nvim/init.lua`, and
+  `gerrrt.health` — which Neovim discovers by runtimepath for `:checkhealth`, so nothing
+  requires it and nothing should. Two edges cannot be read literally from source and are
+  resolved during the walk: a **directory import** (`gerrrt.plugins` names a directory, so a
+  target with no file but with `target.*` children expands to all of them, as lazy does), and
+  the **dynamic require** in `servers/init.lua`, which does
+  `pcall(require, "gerrrt.servers." .. name)` over its `servers` list — so visiting
+  `gerrrt.servers` expands to the listed names, that registry being the only static evidence
+  those modules are wanted.
+
+  The registry is also checked **both** ways, because a generic "unreachable" is a worse
+  message than the truth: a module in no list entry is dead config; a list entry with no module
+  file is a runtime load error `servers/init.lua` reports at startup. A missing **or**
+  unparseable registry fails closed — silently skipping it would disable the entire `servers/`
+  arm, which is how this class of gap starts in the first place.
+
+  Verified against planted fixtures for every class it claims to catch — orphaned `utils/`
+  module, stray top-level module, disconnected require cycle, comment-only mention, unlisted
+  LSP module, registry entry with no file, unparseable registry, missing registry — plus the
+  two exemptions (a false positive on `health.lua` or `plugins/` would make the gate
+  unusable). Each negative fixture asserts the finding text **and** exit status 1, so the
+  documented CLI contract is covered too. The real tree is clean: all 100 tracked files under
+  `nvim/` are reachable today. bash 3.2 safe, so the macos-latest CI leg runs it. Closes the
+  `nvim/` half of #454.
 
 - **`PORTABILITY.md` — how to write Core that survives the fan-out.** The rules were
   real and consistently followed, but recorded only in ~8 scattered code comments, so
