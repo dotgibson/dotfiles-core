@@ -90,7 +90,10 @@ module can never be `go install`ed, on any platform, so its cells point at ²⁷
 ⁴ Debian/Kali ship these under different binary names — `bat` runs as `batcat`,
 the `fd-find` package installs `fdfind`, and the `du-dust` package installs the
 `dust` command. Core's `00-tools.zsh` already resolves them, so aliases and config
-work unchanged.
+work unchanged. `20-aliases.zsh` additionally aliases `bat`/`fd` back to their
+canonical names, so both are typeable as documented upstream, and `core-doctor`
+probes the RESOLVED binary — it reports `✓` for a renamed tool rather than the `✗`
+that once contradicted the `resolved` line in the same report.
 ⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. **Mac:**
 `tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
 **Fedora:** `tree-sitter-cli` via dnf (verify ≥ 0.26.1, else mise/cargo).

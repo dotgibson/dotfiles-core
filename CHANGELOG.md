@@ -327,6 +327,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   precisely because `--redact` is already in use: the value is replaced with `REDACTED`,
   so the report names the file, line, rule and fingerprint without reproducing the secret.
 
+- **`core-doctor` reported `✗ bat` on Debian/Ubuntu/Kali for a tool that was installed and
+  fully wired** (#418). Those distros ship the binary as `batcat`; `00-tools.zsh` resolves
+  it into `$BAT_BIN`, and `cat`, `catp`, `MANPAGER`, the fzf file preview and `fif`'s preview
+  all ran on it. The report still called it absent — two lines above its own `resolved`
+  section printing `bat → batcat` — and listed `bat` under "install missing", advising an
+  install of something already present.
+
+  The cause was an asymmetry between the only two renamed tools. `20-aliases.zsh` gave `fd`
+  an alias under its canonical name and `bat` none, so `bat` was untypeable by the name its
+  README, man page and every upstream recipe use. `bat` now carries the matching
+  `alias bat="$BAT_BIN"` (a no-op `alias bat=bat` where the name is already canonical; zsh
+  does not re-expand an alias to its own name).
+
+  That alias is **not** what makes the report honest, though it looks like it would: zsh's
+  `command -v` resolves aliases, so `fd`'s `✓` had been coming from the alias rather than
+  from PATH all along. The doctor now resolves each row through a new `_core_doctor_bin` —
+  one definition shared by the human render and `--json`, so they cannot drift — which maps
+  `fd`/`bat` to `$FD_BIN`/`$BAT_BIN` and everything else to itself. Presence, the
+  install-missing list and the JSON `tools` object all follow the real binary; the JSON keys
+  stay canonical (`.tools.bat`, never `.tools.batcat`) for existing consumers.
+
+  Resolving there also fixed a second defect the alias could never have reached.
+  `core-doctor -v` forks `"$tool" --version`, and a **parameter** expansion is never
+  alias-expanded — so on Debian the probe ran `fd`, hit `command not found`, and had the
+  error swallowed by the pipeline: the row rendered as a bare, versionless `✓ fd`. Both rows
+  now fork the resolved binary and print their version. Five cases in `scripts/test-core.sh`
+  pin it against a stubbed PATH (Debian names, canonical names, neither), with the doctor
+  assertions deliberately run **without** `20-aliases.zsh` loaded so a `✓` can only come from
+  the resolver.
+
 - **`PORTING-MATRIX.md`'s `carapace = go³` cells named an install path that cannot be
   followed on any platform.** Footnote ³ promises `go install` where a tool is unpackaged,
   and the carapace row pointed openSUSE and Kali straight at it. That install cannot succeed
