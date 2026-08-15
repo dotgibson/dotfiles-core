@@ -106,25 +106,35 @@ srv_init=nvim/lua/gerrrt/servers/init.lua
 #   for `a/b.lua`, so `a.b.lua` is unaddressable dead weight; it is reported below rather
 #   than silently folded into a name some other file legitimately owns.
 #
-# TWO BASH 3.2 RULES APPLY TO THE BLOCK BELOW — macos-latest runs the 2007 bash, and it
-# broke on both of these in review:
+# THE BLOCK BELOW IS WRITTEN FOR BASH 3.2 — macos-latest runs the 2007 bash, whose $(…)
+# parser is a naive scanner rather than a real recursive parse. Three things broke it
+# during review, each a separate red CI run:
 #
-#   1. No nested command substitution inside the `case`. Old bash mis-parses a $(…) within
-#      a case that is itself inside a $(…). Pure parameter expansion is used instead —
+#   1. NO `case` INSIDE THE SUBSTITUTION. This is the big one. The scanner counts
+#      parentheses, and a case pattern terminator — `init.lua)` — looks exactly like the
+#      closing paren of the $(…), so the substitution "ends" mid-statement and the rest of
+#      the file becomes a syntax error. Plain if/elif below; a leading-paren form
+#      (`(init.lua)`) also works but relies on the reader knowing why.
+#   2. No nested $(…) inside it either. Pure parameter expansion instead —
 #      ${var//\//.} is 3.2-clean and needs no subshell.
-#   2. No prose comments inside the $(…) at all. Old bash scans comment text while matching
-#      the substitution, so a lone backtick or quote in a comment there — which prose about
-#      shell quoting inevitably contains — aborts the parse with "unexpected EOF". That is
-#      why this explanation lives out here rather than beside the code it describes.
+#   3. No prose comments inside it at all. The scanner reads comment text while matching,
+#      so a lone backtick or quote there — which prose about shell quoting inevitably
+#      contains — aborts the parse with "unexpected EOF". Hence this explanation living
+#      out here rather than beside the code it describes.
+#
+# None of this is visible to `bash -n` on a modern bash, to shellcheck, or to the ubuntu,
+# Alpine and Arch legs. The macos leg is the only thing that catches it.
 mods="$(git ls-files 'nvim/lua/gerrrt/*.lua' 2>/dev/null | while IFS= read -r f; do
   [ -n "$f" ] || continue
   rel="${f#nvim/lua/gerrrt/}"
   base="${rel%.lua}"
-  case "$rel" in
-    init.lua) mod_path="" ;;              # gerrrt/init.lua ⇒ gerrrt
-    */init.lua) mod_path="${base%/init}" ;; # dir/init.lua  ⇒ gerrrt.dir
-    *) mod_path="$base" ;;
-  esac
+  if [ "$rel" = init.lua ]; then
+    mod_path=""
+  elif [ "${rel%/init.lua}" != "$rel" ]; then
+    mod_path="${base%/init}"
+  else
+    mod_path="$base"
+  fi
   if [ -n "$mod_path" ]; then mod="gerrrt.${mod_path//\//.}"; else mod="gerrrt"; fi
   printf '%s\t%s\n' "$mod" "$f"
 done)"

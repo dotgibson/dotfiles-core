@@ -393,15 +393,24 @@ if ! ((SCOPE_NVIM)); then
 elif [[ ! -d nvim/lua/gerrrt ]]; then
   skip "nvim reachability (no nvim/lua/gerrrt)"
 else
+  # Gate on the EXIT STATUS as well as the output. Deciding purely on "did it print
+  # anything" means a silent non-zero exit — the script killed, or dying before it can
+  # emit a diagnostic — reads as a passing gate, which is the one outcome a backstop must
+  # never produce. Pass requires rc 0 AND no findings; anything else fails, and a
+  # status-without-output still says something actionable rather than nothing.
   orph_out="$("$HERE/scripts/nvim-reachability.sh" --root "$HERE" 2>&1)"
-  if [[ -z "$orph_out" ]]; then
-    pass "nvim module reachability (no orphaned lua modules)"
-  else
+  orph_rc=$?
+  if [[ -n "$orph_out" ]]; then
     while IFS= read -r orph_line; do
       [[ -n "$orph_line" ]] && fail "nvim: $orph_line"
     done <<EOF
 $orph_out
 EOF
+    ((orph_rc == 0)) && fail "nvim: reachability reported findings but exited 0 (contract violation)"
+  elif ((orph_rc == 0)); then
+    pass "nvim module reachability (no orphaned lua modules)"
+  else
+    fail "nvim: reachability exited $orph_rc with no output — the gate did not actually run"
   fi
 fi
 
