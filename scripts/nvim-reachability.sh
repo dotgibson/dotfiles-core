@@ -105,14 +105,21 @@ srv_init=nvim/lua/gerrrt/servers/init.lua
 #   A dot inside a filename is not a path separator to lua. `require("gerrrt.a.b")` looks
 #   for `a/b.lua`, so `a.b.lua` is unaddressable dead weight; it is reported below rather
 #   than silently folded into a name some other file legitimately owns.
+#
+# TWO BASH 3.2 RULES APPLY TO THE BLOCK BELOW — macos-latest runs the 2007 bash, and it
+# broke on both of these in review:
+#
+#   1. No nested command substitution inside the `case`. Old bash mis-parses a $(…) within
+#      a case that is itself inside a $(…). Pure parameter expansion is used instead —
+#      ${var//\//.} is 3.2-clean and needs no subshell.
+#   2. No prose comments inside the $(…) at all. Old bash scans comment text while matching
+#      the substitution, so a lone backtick or quote in a comment there — which prose about
+#      shell quoting inevitably contains — aborts the parse with "unexpected EOF". That is
+#      why this explanation lives out here rather than beside the code it describes.
 mods="$(git ls-files 'nvim/lua/gerrrt/*.lua' 2>/dev/null | while IFS= read -r f; do
   [ -n "$f" ] || continue
   rel="${f#nvim/lua/gerrrt/}"
   base="${rel%.lua}"
-  # NO command substitution inside this case: bash 3.2 (macos-latest) mis-parses a nested
-  # $(…) within a `case` that is itself inside a `$(…)`, failing the whole script with
-  # "command substitution: syntax error near unexpected token `newline'". Pure parameter
-  # expansion instead — `${var//\//.}` is bash 3.2 clean and needs no subshell at all.
   case "$rel" in
     init.lua) mod_path="" ;;              # gerrrt/init.lua ⇒ gerrrt
     */init.lua) mod_path="${base%/init}" ;; # dir/init.lua  ⇒ gerrrt.dir
