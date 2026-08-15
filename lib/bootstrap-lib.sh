@@ -618,20 +618,30 @@ blib_resolve_su() {
 # before doing half a provision.
 BLIB_SUDO_KEEPALIVE_PID=""
 blib_sudo_keepalive_start() {
-  [[ "${BLIB_SU-sudo}" == sudo ]] || return 0
+  # Match on the BASENAME, then invoke the RESOLVED token. BLIB_SU is documented as a single
+  # command token, and `BLIB_SU=/usr/bin/sudo` is a perfectly valid one — but comparing it to
+  # the literal string `sudo` silently declined to prime it, so the timestamp expired mid-run
+  # and the invisible-prompt hang came straight back. Calling a bare `sudo` below would have
+  # been the same bug from the other end (priming one binary, escalating with another).
+  local su="${BLIB_SU-sudo}"
+  [[ "${su##*/}" == sudo ]] || return 0
   [[ -z "$BLIB_SUDO_KEEPALIVE_PID" ]] || return 0 # already running
   _blib_dry && {
     blib_say "would prime sudo and keep its timestamp warm for the run"
     return 0
   }
-  sudo -v || return 1
+  "$su" -v || return 1
   # `kill -0 "$$"`: $$ is the PARENT shell's pid even inside this background subshell, so
   # the refresher stops when the bootstrap exits even if the caller's trap is missed.
+  # stdio redirected on purpose: the refresher OUTLIVES the call that started it, and a
+  # child holding the caller's stdout keeps a pipe or command substitution open. A caller
+  # writing `out=$(step_that_primes_sudo)` would then block until the whole bootstrap
+  # exits, rather than returning — a hang observed nowhere near its cause.
   while true; do
-    sudo -n true 2>/dev/null || true
+    "$su" -n true 2>/dev/null || true
     sleep 50
     kill -0 "$$" 2>/dev/null || exit 0
-  done &
+  done >/dev/null 2>&1 &
   BLIB_SUDO_KEEPALIVE_PID=$!
 }
 blib_sudo_keepalive_stop() {
@@ -656,14 +666,26 @@ blib_sudo_keepalive_stop() {
 #
 # The cargo/go dirs are RELOCATABLE and must be resolved through their env vars, not
 # hard-coded: `cargo install` honours $CARGO_HOME and `go install` honours $GOBIN, then
-# $GOPATH/bin. Hard-coding ~/.cargo/bin means a box with a custom CARGO_HOME keeps missing
-# its installed crates and rebuilding them on every run — the very bug this fixes, just
-# moved. maint/dotfiles-maint.sh already resolves cargo the same way.
+# $GOPATH. Hard-coding ~/.cargo/bin means a box with a custom CARGO_HOME keeps missing its
+# installed crates and rebuilding them on every run — the very bug this fixes, just moved
+# somewhere less obvious. maint/dotfiles-maint.sh already resolves cargo the same way.
+#
+# GOPATH is a PATH LIST, and that distinction matters: with GOBIN unset, `go install`
+# writes to the bin/ of GOPATH's FIRST entry. Expanding "${GOPATH}/bin" against
+# GOPATH=/a:/b would probe the nonexistent "/a:/b/bin" — so the Go tools stay off PATH and
+# get rebuilt every run, which is precisely the failure this helper exists to prevent.
+# CARGO_HOME, by contrast, IS a single directory, so `${CARGO_HOME:-…}/bin` is correct.
 blib_user_bindirs_on_path() {
-  local d
+  local d gobin gopath
+  if [[ -n "${GOBIN:-}" ]]; then
+    gobin="$GOBIN"
+  else
+    gopath="${GOPATH:-$HOME/go}"
+    gobin="${gopath%%:*}/bin" # first entry only
+  fi
   for d in "$HOME/.local/bin" \
     "${CARGO_HOME:-$HOME/.cargo}/bin" \
-    "${GOBIN:-${GOPATH:-$HOME/go}/bin}" \
+    "$gobin" \
     "$HOME/.atuin/bin"; do
     [[ -d "$d" ]] || continue
     case ":$PATH:" in

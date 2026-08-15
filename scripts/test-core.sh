@@ -6805,6 +6805,13 @@ case "$_relo_path" in *"$_relo_home/gobin"*) pass "blib_user_bindirs_on_path hon
 # shellcheck disable=SC2030,SC2031  # a subshell-local PATH is the POINT of every probe below
 _relo_path2="$( HOME="$_relo_home" GOPATH="$_relo_home/gopath" PATH=/usr/bin; unset GOBIN; export GOPATH; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
 case "$_relo_path2" in *"$_relo_home/gopath/bin"*) pass "blib_user_bindirs_on_path falls back to GOPATH/bin when GOBIN is unset" ;; *) fail "blib_user_bindirs_on_path ignored GOPATH" ;; esac
+# GOPATH is a LIST: go installs into the FIRST entry's bin/. Appending /bin to the whole
+# value would probe "/first:/second/bin", which exists nowhere — so the Go tools stay off
+# PATH and get rebuilt every run, the exact failure this helper exists to prevent.
+# shellcheck disable=SC2030,SC2031
+_relo_path3="$( HOME="$_relo_home" GOPATH="$_relo_home/gopath:$_relo_home/second" PATH=/usr/bin; unset GOBIN; export GOPATH; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path3" in *"$_relo_home/gopath/bin"*) pass "blib_user_bindirs_on_path uses GOPATH's FIRST entry when it is a list" ;; *) fail "blib_user_bindirs_on_path mishandled a multi-entry GOPATH (got: $_relo_path3)" ;; esac
+case "$_relo_path3" in *":$_relo_home/second/bin"*|*"gopath:$_relo_home/second/bin"*) fail "blib_user_bindirs_on_path built a bogus path from a multi-entry GOPATH" ;; *) pass "blib_user_bindirs_on_path builds no bogus /a:/b/bin entry" ;; esac
 
 # ── sudo keepalive (hermetic: a shimmed `sudo` on PATH, never the real one) ───
 # The riskiest code in this batch — it forks a background refresher and installs no trap of
@@ -6819,7 +6826,9 @@ printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"; chmod +x "$_ka_bin/sudo"
 # shellcheck disable=SC2030,SC2031  # a subshell-local PATH is the POINT (hermetic sudo shim)
 _ka_pid() { ( BLIB_SU="$1"; BLIB_DRY="$2"; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   blib_sudo_keepalive_start >/dev/null 2>&1
-  printf '%s' "${BLIB_SUDO_KEEPALIVE_PID:-}" ); }
+  _p="${BLIB_SUDO_KEEPALIVE_PID:-}"
+  blib_sudo_keepalive_stop  # reap BEFORE printing: a live refresher would otherwise be
+  printf '%s' "$_p" ); }    # a second writer on this substitution's pipe
 # shellcheck disable=SC2030,SC2031
 _ka_rc() { ( BLIB_SU="$1"; BLIB_DRY="$2"; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   blib_sudo_keepalive_start >/dev/null 2>&1 ); }
@@ -6828,6 +6837,10 @@ if [[ -z "$(_ka_pid doas 0)" ]]; then pass "blib_sudo_keepalive_start no-ops und
 if [[ -z "$(_ka_pid '' 0)" ]]; then pass "blib_sudo_keepalive_start no-ops as root (BLIB_SU=)"; else fail "blib_sudo_keepalive_start started a refresher as root"; fi
 # BLIB_DRY must PREVIEW, never authenticate or fork.
 if [[ -z "$(_ka_pid sudo 1)" ]]; then pass "blib_sudo_keepalive_start forks nothing under BLIB_DRY"; else fail "blib_sudo_keepalive_start forked a refresher during a dry run"; fi
+# BLIB_SU is documented as a single command TOKEN, so an absolute path is a valid override.
+# Matching the literal string `sudo` skipped priming for it, silently restoring the very
+# timestamp expiry (and invisible prompt) this helper exists to prevent.
+if [[ -n "$(_ka_pid "$_ka_bin/sudo" 0)" ]]; then pass "blib_sudo_keepalive_start primes an absolute-path BLIB_SU (/…/sudo)"; else fail "an absolute-path BLIB_SU silently disabled the keepalive"; fi
 # a FAILED initial `sudo -v` must return non-zero — that rc is what lets a caller abort.
 printf '#!/bin/sh\nexit 1\n' >"$_ka_bin/sudo"
 if _ka_rc sudo 0; then fail "blib_sudo_keepalive_start returned 0 when sudo -v failed"; else pass "blib_sudo_keepalive_start reports a failed initial authentication"; fi
@@ -6869,7 +6882,11 @@ else
 fi
 # ...and it must SAY so rather than failing silently.
 _ls_msg="$( PATH="$_ls_bin:/usr/bin:/bin" BLIB_SU="" BLIB_DRY=0 BLIB_ONLY="" BLIB_SKIP="" blib_set_login_shell 2>&1 || true )"
-case "$_ls_msg" in *chsh*) pass "blib_set_login_shell warns, naming the manual chsh fallback" ;; *) fail "blib_set_login_shell failed quietly (got: $_ls_msg)" ;; esac
+# Match the two warnings SEPARATELY and on strings unique to each. A bare *chsh* match is
+# vacuous: the /etc/shells warning also says "chsh may refuse it", so it passed whether or
+# not the chsh branch ever ran.
+case "$_ls_msg" in *"could not add"*) pass "blib_set_login_shell warns when the /etc/shells append fails" ;; *) fail "blib_set_login_shell swallowed the /etc/shells failure (got: $_ls_msg)" ;; esac
+case "$_ls_msg" in *"chsh failed"*) pass "blib_set_login_shell warns when chsh fails, naming the manual fallback" ;; *) fail "blib_set_login_shell swallowed the chsh failure (got: $_ls_msg)" ;; esac
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
