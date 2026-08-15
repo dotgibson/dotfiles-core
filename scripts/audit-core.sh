@@ -562,11 +562,18 @@ done < <(
 # moment, and unable to cover code written afterwards. Hence a gate (#459).
 #
 # SCOPE IS DELIBERATELY NARROW: a SHELL-STRING producer (`printf`/`echo`) into an
-# early-exiting reader. That shape is always convertible to a herestring with no
-# behavioural difference and no reason to prefer the pipe, so a finding here is never a
-# judgement call. `sed <file> | head -n1` — a FILE producer, ~15 instances — is left alone
-# on purpose: converting those is not free, and a gate that fires fifteen times on
+# early-exiting reader. `sed <file> | head -n1` — a FILE producer, ~15 instances — is left
+# alone on purpose: converting those is not free, and a gate that fires fifteen times on
 # working code is a gate someone turns off.
+#
+# THE REMEDY IS "REMOVE THE PIPE", NOT "ALWAYS USE A HERESTRING". A herestring appends a
+# newline, so `printf '%s' "\$v" | head -c 3` and `head -c 3 <<<"\$v"` differ by a byte —
+# for a byte-counting reader the naive rewrite corrupts the value. Capturing to a variable
+# preserves the producer's exact bytes; a herestring is the right fix wherever a trailing
+# newline is immaterial, which is most places but not all.
+#
+# The scanner is textual (see _core_pipefail_hits) and so a heuristic backstop, not a
+# proof: a pipeline split across lines, or a reader reached via a variable, is not seen.
 hdr "pipefail SIGPIPE hazard"
 if ! ((SCOPE_SHELL)); then
   skip "pipefail SIGPIPE (out of scope)"
@@ -576,7 +583,7 @@ else
     [ -n "$pf_f" ] || continue
     while IFS= read -r pf_line; do
       [ -n "$pf_line" ] || continue
-      fail "pipefail: $pf_f:$pf_line — shell-string producer piped into an early-exiting reader; use a herestring"
+      fail "pipefail: $pf_f:$pf_line — shell-string producer feeds a reader that exits early; remove the pipe (capture to a variable, or a herestring where a trailing newline is immaterial)"
       pf_fail=1
     done <<EOF
 $(_core_pipefail_hits "$pf_f")

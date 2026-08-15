@@ -914,6 +914,31 @@ grep -q foo <<<\"\$x\""
 printf '%s' \"\$v\" $_pf_p grep -q needle"
   if [[ -z "$(_core_pipefail_hits "$_pfd/nopipefail.sh")" ]]; then pass "pipefail scan: a file that never enables pipefail is not a finding"; else fail "pipefail scan: flagged a file that never enables pipefail"; fi
 
+  # pipefail enabled in a SPLIT form — an earlier version anchored on the first option
+  # token and skipped these entirely, so the gate silently permitted the hazard
+  _pf_write splitset.sh "set -e -o pipefail
+printf '%s' \"\$v\" $_pf_p grep -q needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/splitset.sh")" == 2 ]]; then pass "pipefail scan: sees set -e -o pipefail"; else fail "pipefail scan: missed the split set form"; fi
+
+  _pf_write longset.sh "set -o errexit -o pipefail
+printf '%s' \"\$v\" $_pf_p grep -q needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/longset.sh")" == 2 ]]; then pass "pipefail scan: sees set -o errexit -o pipefail"; else fail "pipefail scan: missed the long-option set form"; fi
+
+  # quiet grep has more spellings than -q
+  _pf_write grepeq.sh "set -euo pipefail
+printf '%s' \"\$v\" $_pf_p grep -E -q needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepeq.sh")" == 2 ]]; then pass "pipefail scan: catches a separated quiet flag"; else fail "pipefail scan: missed grep -E -q"; fi
+
+  _pf_write grepquiet.sh "set -euo pipefail
+printf '%s' \"\$v\" $_pf_p grep --quiet needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepquiet.sh")" == 2 ]]; then pass "pipefail scan: catches --quiet"; else fail "pipefail scan: missed grep --quiet"; fi
+
+  # awk that merely PRINTS the word exit does not exit early — flagging it would be an
+  # invented finding, the other way this gate loses trust
+  _pf_write awkstring.sh "set -euo pipefail
+printf '%s' \"\$v\" $_pf_p awk '{ print \"exit\" }'"
+  if [[ -z "$(_core_pipefail_hits "$_pfd/awkstring.sh")" ]]; then pass "pipefail scan: awk printing the word exit is not a finding"; else fail "pipefail scan: flagged awk that never exits"; fi
+
   # a file producer is deliberately out of scope (~15 legitimate instances in-tree)
   _pf_write fileproducer.sh 'set -euo pipefail
 sed -n "s/^x=//p" "$f" | head -n1'

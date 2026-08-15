@@ -242,28 +242,43 @@ _core_fail_digest() { # _core_fail_digest <captured-output-file>
 
 # ── pipefail SIGPIPE scanner (audit-core.sh §5d) ──────────────────────────────
 # _core_pipefail_hits <file> — print the line number of every place <file> pipes a
-# SHELL-STRING producer (printf/echo) into a reader that EXITS EARLY: `grep -q` on its
-# first match, `awk` on its `exit`, `head` after N lines. Under `set -o pipefail` the
-# writer then takes EPIPE, dies with 141, and the pipeline reports failure even though
-# the reader matched. Silence = clean.
+# SHELL-STRING producer (printf/echo) into a reader that EXITS EARLY: grep in a quiet mode,
+# awk reaching an `exit`, head after its count. Under `set -o pipefail` the writer then
+# takes EPIPE, dies with 141, and the pipeline reports failure even though the reader
+# succeeded. Silence = clean.
 #
 # It lives here rather than inline in the gate for the same reason _core_fail_digest does:
-# so test-core.sh can drive it on fixtures. A gate that has never been shown to fire is a
-# gate nobody should trust — and probe-testing this one already caught a real defect in it
-# (it used to scan any file that merely MENTIONED pipefail in a comment).
+# so test-core.sh can drive it on fixtures. A gate never shown to fire is a gate nobody
+# should trust — and testing this one caught three defects in it before it shipped.
+#
+# WHAT THIS IS: a textual scan, and so a HEURISTIC BACKSTOP rather than a proof. It does
+# not parse shell. The limits, stated so nobody reads a green §5d as more than it is:
+#   * a pipeline split across lines is not seen
+#   * a reader reached through a variable or eval is not seen
+#   * the banned text inside a quoted string still matches — there is no lexer here, which
+#     is why test-core.sh assembles its fixtures instead of spelling them out
+# It catches the shape people actually write; all three real occurrences in this repo were
+# one-liners of exactly that shape.
 #
 # Two deliberate narrowings, both about not crying wolf:
-#   * the file must actually `set -…o pipefail`; naming it in prose is not running under it
+#   * the file must actually enable pipefail — `set -euo pipefail`, `set -o pipefail`,
+#     `set -e -o pipefail` and `set -o errexit -o pipefail` all count; naming it in prose
+#     does not
 #   * comment lines are skipped, so writing ABOUT the hazard does not trip the gate
 # A FILE producer (`sed x | head -n1`) is out of scope: converting those is not free, and a
 # gate that fires on working code is a gate someone turns off.
 _core_pipefail_hits() { # _core_pipefail_hits <file>
   local f="${1:-}" re
   [ -f "$f" ] || return 0
-  grep -qE '^[[:space:]]*set[[:space:]]+-[a-zA-Z]*o[[:space:]]+pipefail' "$f" 2>/dev/null || return 0
+  # `-o pipefail` in ANY position of a `set`, compact or split. An earlier version anchored
+  # on the first option token and so skipped `set -e -o pipefail` outright — a guard that
+  # silently permits the hazard, which is the worst way for this to be wrong.
+  grep -qE '^[[:space:]]*set[[:space:]].*o[[:space:]]+pipefail' "$f" 2>/dev/null || return 0
   # Assembled from fragments so this very line cannot match the pattern it defines — the
   # scanner reads every tracked shell script, and common.sh is one of them.
-  re="(printf|echo)[^|]*[|][[:space:]]*(grep -[a-zA-Z]*q|head([[:space:]]|\$)|awk[^|]*exit)"
+  # grep: any quiet spelling (-q, -Eq, -E -q, --quiet). awk: an `exit` that is a statement
+  # rather than the word inside a string — `awk '{ print "exit" }'` exits nothing.
+  re="(printf|echo)[^|]*[|][[:space:]]*(grep[^|]*(-[a-zA-Z]*q|--quiet)([[:space:]]|\$)|head([[:space:]]|\$)|awk[^|]*[^\"'[:alnum:]_]exit)"
   grep -nE "$re" "$f" 2>/dev/null |
     awk -F: '{ l = $0; sub(/^[0-9]+:/, "", l); if (l !~ /^[[:space:]]*#/) print $1 }'
 }
