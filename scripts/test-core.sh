@@ -6659,6 +6659,34 @@ if have git; then
   _nvr_fresh; rm -f "$NREPO/nvim/lua/gerrrt/servers/init.lua"
   _nvr_catches 'missing.*servers/init\.lua' "fails closed on a missing registry"
 
+  # a `package.loaded["gerrrt.x"]` PEEK is not a load — health.lua uses exactly this to
+  # inspect the registry without forcing it to load, and counting it as an edge would let
+  # the whole servers/ arm look reachable from the health root with no real require left.
+  _nvr_fresh
+  printf 'local _ = package.loaded["gerrrt.utils.peeked"]\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/peeked.lua"
+  _nvr_catches 'gerrrt\.utils\.peeked' "a package.loaded peek is not an edge"
+
+  # a require inside a MULTILINE --[[ ]] block is still a comment; a line-only stripper
+  # leaves the block interior searchable and would forge the edge
+  _nvr_fresh
+  printf -- '--[[\nrequire("gerrrt.utils.blockghost")\n]]\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/blockghost.lua"
+  _nvr_catches 'gerrrt\.utils\.blockghost' "a multiline block comment is not an edge"
+
+  # require() of a DIRECTORY is a runtime error, not a lazy import: it must be reported,
+  # and it must NOT mark the directory's children reachable
+  _nvr_fresh
+  printf 'require("gerrrt.utils")\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/onlychild.lua"
+  _nvr_catches 'dangling require' "reports require() of a module that does not exist"
+  _nvr_catches 'gerrrt\.utils\.onlychild' "require() of a directory does not expand children"
+
+  # a lazy import naming nothing at all is dead config, not a silent no-op
+  _nvr_fresh
+  printf 'require("lazy").setup({ { import = "gerrrt.nosuchdir" } })\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  _nvr_catches 'imports "gerrrt.nosuchdir"' "reports a lazy import that matches no module"
+
   # a repo with no nvim/ (every OS repo) is silently clean, not an error
   _nvr_fresh; rm -rf "$NREPO/nvim"
   _nvr_clean "no nvim/ tree is a clean no-op"

@@ -30,19 +30,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   that require _each other_ (a disconnected cycle, non-zero indegree, reachable from nothing),
   and passes a module named only in another file's comment. Both are exactly the orphan this
   exists to catch. So it inventories every module, strips lua comments, reads each file's
-  edges (any quoted `gerrrt.*` string — covering `require()` and lazy's
-  `{ import = "gerrrt.plugins" }`), then walks outward from the roots and flags every module
-  never visited.
+  edges, then walks outward from the roots and flags every module never visited.
+
+  Only real load expressions count as edges — the module name must be preceded by
+  `require` (covering `require("x")`, `require "x"`, and `pcall(require, "x")`) or by
+  lazy's `import =`. Matching every quoted `gerrrt.*` string would still be a mention scan:
+  `health.lua` deliberately peeks `package.loaded["gerrrt.servers"]` precisely so it does
+  _not_ load the registry, and counting that as an edge would let the whole `servers/` arm
+  look reachable from the health root even with every real `require("gerrrt.servers")`
+  deleted. Comment stripping handles `--[[ … ]]` blocks across lines too, since a
+  line-only stripper leaves the block interior searchable.
 
   Two roots, both genuine entry points rather than exemptions: `nvim/init.lua`, and
   `gerrrt.health` — which Neovim discovers by runtimepath for `:checkhealth`, so nothing
   requires it and nothing should. Two edges cannot be read literally from source and are
   resolved during the walk: a **directory import** (`gerrrt.plugins` names a directory, so a
-  target with no file but with `target.*` children expands to all of them, as lazy does), and
+  target with no file expands to its `target.*` children, as lazy does), and
   the **dynamic require** in `servers/init.lua`, which does
   `pcall(require, "gerrrt.servers." .. name)` over its `servers` list — so visiting
   `gerrrt.servers` expands to the listed names, that registry being the only static evidence
   those modules are wanted.
+
+  The edge KIND is carried through the walk, because the two resolve differently at a
+  missing target: `import` expands to children, but a `require` with no module behind it is
+  a dangling require lua raises at runtime, and is reported. Treating every fileless target
+  as a directory import meant `require("gerrrt.utils")` silently marked every
+  `gerrrt.utils.*` child reachable.
 
   The registry is also checked **both** ways, because a generic "unreachable" is a worse
   message than the truth: a module in no list entry is dead config; a list entry with no module
@@ -51,8 +64,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   arm, which is how this class of gap starts in the first place.
 
   Verified against planted fixtures for every class it claims to catch — orphaned `utils/`
-  module, stray top-level module, disconnected require cycle, comment-only mention, unlisted
-  LSP module, registry entry with no file, unparseable registry, missing registry — plus the
+  module, stray top-level module, disconnected require cycle, comment-only mention, multiline
+  block comment, `package.loaded` peek, `require()` of a directory, lazy import matching
+  nothing, unlisted LSP module, registry entry with no file, unparseable registry, missing
+  registry — plus the
   two exemptions (a false positive on `health.lua` or `plugins/` would make the gate
   unusable). Each negative fixture asserts the finding text **and** exit status 1, so the
   documented CLI contract is covered too. The real tree is clean: all 100 tracked files under

@@ -106,15 +106,55 @@ done)"
 _file_for() { printf '%s\n' "$mods" | awk -F'\t' -v m="$1" '$1 == m { print $2; exit }'; }
 _children_of() { printf '%s\n' "$mods" | awk -F'\t' -v p="$1." 'index($1, p) == 1 { print $1 }'; }
 
-# Edges out of one file: every quoted `gerrrt.*` string in CODE. Comments are stripped
-# first so a module named in prose cannot fake an edge — the mention-scan bug above.
-# A trailing dot (the `"gerrrt.servers." .. name` concatenation) is dropped; that edge is
-# resolved from the registry instead.
+# Strip lua comments — BOTH forms. A line-only `sed 's/--.*$//'` leaves the interior of a
+# multiline `--[[ … ]]` block fully searchable, so a module named inside one would still
+# forge an edge. This is a small state machine: carry `blk` across lines, close on `]]`.
+_strip_comments() {
+  awk '
+    { line = $0
+      if (blk) {                                    # inside --[[ … ]] from a previous line
+        i = index(line, "]]")
+        if (i == 0) { print ""; next }
+        line = substr(line, i + 2); blk = 0
+      }
+      while ((s = index(line, "--[[")) > 0) {       # block comment opening on this line
+        rest = substr(line, s + 4)
+        e = index(rest, "]]")
+        if (e == 0) { line = substr(line, 1, s - 1); blk = 1; break }
+        line = substr(line, 1, s - 1) substr(rest, e + 2)
+      }
+      if ((c = index(line, "--")) > 0) line = substr(line, 1, c - 1)
+      print line
+    }' "$1"
+}
+
+# Edges out of one file, as "<kind> <module>" — kind is `req` or `imp`.
+#
+# ONLY REAL LOAD EXPRESSIONS COUNT. Matching every quoted `gerrrt.*` string was still a
+# mention scan, just a comment-free one: health.lua deliberately peeks
+# `package.loaded["gerrrt.servers"]` precisely so it does NOT load the registry, and
+# counting that as an edge would let the entire servers/ arm look reachable from the
+# health root even if the real `require("gerrrt.servers")` were deleted. So the module
+# name must be preceded by `require` (covering `require("x")`, `require "x"`, and the
+# `pcall(require, "x")` form) or by lazy's `import =`.
+#
+# The KIND is carried because the two resolve differently at a missing target: `import`
+# names a directory and expands to its children, while a `require` for which no module
+# file exists is a dangling require lua would raise at runtime.
+#
+# A trailing dot (from `"gerrrt.servers." .. name`) is dropped — that edge comes from the
+# registry instead.
 _edges_of() {
   [ -f "$1" ] || return 0
-  sed -e 's/--\[\[.*\]\]//g' -e 's/--.*$//' "$1" |
-    grep -oE '["'"'"']gerrrt[A-Za-z0-9_.-]*["'"'"']' |
-    tr -d '"'"'"'' | sed -e 's/\.$//' | sort -u
+  code="$(_strip_comments "$1")"
+  {
+    printf '%s\n' "$code" |
+      grep -oE 'require[[:space:]]*[(,]?[[:space:]]*["'"'"']gerrrt[A-Za-z0-9_.-]*["'"'"']' |
+      grep -oE 'gerrrt[A-Za-z0-9_.-]*' | sed -e 's/\.$//' -e 's/^/req /'
+    printf '%s\n' "$code" |
+      grep -oE 'import[[:space:]]*=[[:space:]]*["'"'"']gerrrt[A-Za-z0-9_.-]*["'"'"']' |
+      grep -oE 'gerrrt[A-Za-z0-9_.-]*' | sed -e 's/\.$//' -e 's/^/imp /'
+  } | sort -u
 }
 
 # ── the LSP registry (also the dynamic edge out of `gerrrt.servers`) ──────────
@@ -133,31 +173,44 @@ elif [ -n "$(_children_of gerrrt.servers)" ]; then
 fi
 
 # ── walk the graph from the roots ─────────────────────────────────────────────
-# Roots: whatever nvim/init.lua pulls in, plus gerrrt.health (runtimepath-discovered by
-# :checkhealth — a genuine second entry point, not an exemption).
+# Queue entries are "<kind> <module>". Roots: whatever nvim/init.lua pulls in, plus
+# gerrrt.health (runtimepath-discovered by :checkhealth — a genuine second entry point,
+# not an exemption).
 queue="$(_edges_of nvim/init.lua)
-gerrrt.health"
+req gerrrt.health"
 visited=""
 
 while [ -n "$queue" ]; do
-  m="${queue%%
+  entry="${queue%%
 *}"
-  if [ "$m" = "$queue" ]; then queue=""; else queue="${queue#*
+  if [ "$entry" = "$queue" ]; then queue=""; else queue="${queue#*
 }"; fi
-  [ -n "$m" ] || continue
+  [ -n "$entry" ] || continue
+  kind="${entry%% *}"
+  m="${entry#* }"
   printf '%s\n' "$visited" | grep -qxF "$m" && continue
   visited="$visited
 $m"
 
   f="$(_file_for "$m")"
   if [ -z "$f" ]; then
-    # No module file: a DIRECTORY import (lazy's `{ import = "gerrrt.plugins" }`).
-    # Expand to its children; a name with neither a file nor children is a dangling
-    # require, which lua would raise at runtime — reported below.
-    kids="$(_children_of "$m")"
-    if [ -n "$kids" ]; then
-      queue="$queue
-$kids"
+    # No module file. What that MEANS depends on how we got here, which is why the edge
+    # kind is carried: `import` names a directory (lazy expands it to its children), but
+    # a `require` with no module behind it is a dangling require lua raises at runtime.
+    # Treating every fileless target as a directory import made `require("gerrrt.utils")`
+    # silently mark every gerrrt.utils.* child reachable.
+    if [ "$kind" = imp ]; then
+      kids="$(_children_of "$m")"
+      if [ -n "$kids" ]; then
+        queue="$queue
+$(printf '%s\n' "$kids" | sed 's/^/req /')"
+      else
+        echo "lazy imports \"$m\" but no module matches it"
+        rc=1
+      fi
+    else
+      echo "dangling require — \"$m\" is required but no such module file exists"
+      rc=1
     fi
     continue
   fi
@@ -168,7 +221,7 @@ $(_edges_of "$f")"
   # The dynamic arm: `gerrrt.servers` require()s each listed name at runtime.
   if [ "$m" = gerrrt.servers ] && [ -n "$srv_listed" ]; then
     queue="$queue
-$(printf '%s\n' "$srv_listed" | sed 's/^/gerrrt.servers./')"
+$(printf '%s\n' "$srv_listed" | sed 's/^/req gerrrt.servers./')"
   fi
 done
 
