@@ -582,12 +582,18 @@ blib_resolve_su() {
   # "not root" is the safe direction: the worst case is an unnecessary sudo.
   local uid
   uid="$(id -u 2>/dev/null || true)"
+  # Pin the ABSOLUTE path, not the bare name. "Resolve once" has to mean once: this file
+  # also ships blib_user_bindirs_on_path, which deliberately prepends user-writable dirs
+  # (~/.local/bin, $CARGO_HOME/bin, $GOBIN) to PATH — so a bare `sudo` recorded here would
+  # be re-resolved against a DIFFERENT PATH at every later call. A `sudo` dropped in one of
+  # those dirs would then receive the password prompt, and the keepalive would prime one
+  # binary while _blib_priv escalated with another.
   if [[ "$uid" == "0" ]]; then
     BLIB_SU=""
   elif command -v sudo >/dev/null 2>&1; then
-    BLIB_SU="sudo"
+    BLIB_SU="$(command -v sudo)"
   elif command -v doas >/dev/null 2>&1; then
-    BLIB_SU="doas"
+    BLIB_SU="$(command -v doas)"
   else
     BLIB_SU=""
     if ((require)); then

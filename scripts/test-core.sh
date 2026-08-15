@@ -6757,6 +6757,21 @@ else
   skip "blib_resolve_su no-escalator cases (suite is running as root)"
 fi
 
+# "Resolve once" must mean ONCE: the recorded escalator has to survive a later PATH change,
+# because blib_user_bindirs_on_path (same file) prepends user-writable dirs by design. A
+# bare `sudo` would be re-resolved against the new PATH and could pick up a different
+# binary — which would then receive the password prompt.
+_su_pin_a="$(mktemp -d "$SANDBOX/supin-a.XXXXXX")"
+_su_pin_b="$(mktemp -d "$SANDBOX/supin-b.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_su_pin_a/sudo"; chmod +x "$_su_pin_a/sudo"
+printf '#!/bin/sh\nexit 0\n' >"$_su_pin_b/sudo"; chmod +x "$_su_pin_b/sudo"   # the impostor
+# shellcheck disable=SC2030,SC2031
+_su_pinned="$( unset BLIB_SU; PATH="$_su_pin_a:/usr/bin:/bin"
+  blib_resolve_su >/dev/null 2>&1
+  PATH="$_su_pin_b:$PATH"          # a later prepend, exactly what bindirs_on_path does
+  printf '%s' "$BLIB_SU" )"
+if [[ "$_su_pinned" == "$_su_pin_a/sudo" ]]; then pass "blib_resolve_su pins the absolute path (survives a later PATH prepend)"; else fail "blib_resolve_su recorded '\''$_su_pinned'\'' — a later PATH change can swap the escalator"; fi
+
 # blib_priv must never invoke an empty-string command: with BLIB_SU= it runs CMD directly,
 # and with an escalator set it prefixes it (`env` stands in harmlessly for sudo).
 if [[ "$(BLIB_SU='' blib_priv printf 'ran-%s' direct)" == "ran-direct" ]]; then pass "blib_priv with BLIB_SU= runs the command directly"; else fail "blib_priv mishandled an empty escalator"; fi
