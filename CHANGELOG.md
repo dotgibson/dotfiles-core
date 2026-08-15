@@ -28,7 +28,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   §4b walks the load graph instead. Four groups are reachable by construction and exempt for
   stated reasons: `plugins/*` (lazy imports the directory), `health.lua` (Neovim discovers
   `lua/**/health.lua` for `:checkhealth`, so zero requires is correct, not orphaned),
-  `gerrrt/init.lua` (the entry point), and `servers/*` — which are require()d *dynamically*
+  `gerrrt/init.lua` (the entry point), and `servers/*` — which are require()d _dynamically_
   via `pcall(require, "gerrrt.servers." .. name)`, so a static grep finds nothing and the
   `servers` registry is the only evidence. Everything else — `utils/`, `config/`, and any
   top-level `lua/gerrrt/*.lua` — must be require()d by name somewhere. The registry is checked
