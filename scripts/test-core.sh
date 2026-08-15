@@ -4105,7 +4105,7 @@ smoke_out="$(
 smoke_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|bad pattern|bad math expression|maximum nested' \
   "$SANDBOX/smoke.err" 2>/dev/null || true)"
-if ! printf '%s' "$smoke_out" | grep -q '^SMOKE_OK$'; then
+if ! grep -q '^SMOKE_OK$' <<<"$smoke_out"; then
   fail "load-order chain did not reach the end (no SMOKE_OK sentinel — a fragment aborted)"
   [[ -s "$SANDBOX/smoke.err" ]] && sed 's/^/    /' "$SANDBOX/smoke.err" >&2
 elif [[ -n "$smoke_errs" ]]; then
@@ -4165,7 +4165,7 @@ integ_out="$(
 integ_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|missing|bad pattern|bad math expression|maximum nested' \
   "$INTEG/integ.err" 2>/dev/null || true)"
-if ! printf '%s' "$integ_out" | grep -q '^INTEG_OK$'; then
+if ! grep -q '^INTEG_OK$' <<<"$integ_out"; then
   fail "consumer load (Core+80-os+99-local) did not reach the end — a layer aborted"
   [[ -s "$INTEG/integ.err" ]] && sed 's/^/    /' "$INTEG/integ.err" >&2
 elif [[ -n "$integ_errs" ]]; then
