@@ -309,6 +309,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`PORTING-MATRIX.md`'s `carapace = go³` cells named an install path that cannot be
+  followed on any platform.** Footnote ³ promises `go install` where a tool is unpackaged,
+  and the carapace row pointed openSUSE and Kali straight at it. That install cannot succeed
+  for **any published version**, for two independent reasons: `carapace-bin`'s `go.mod`
+  carries `replace` directives (`spf13/pflag`, `kevinburke/ssh_config`), and `go install
+  pkg@version` refuses any module that does; and the generated sources
+  (`pkg/{actions,conditions}/*_generated.go`) are not committed, so even a plain `go build`
+  on a clone fails until `cmd/carapace/main.go`'s `go:generate` lines have run. Checked
+  exhaustively rather than inferred from the current release: across all **184 tags** from
+  v0.0.3 (2020-08-31) to v1.7.3 (2026-06-30), 184 carry a `replace` directive and 0 commit
+  the generated sources. That scope is the operative part — `go install` takes any
+  `@version`, and pinning an older one fails identically. Nor is it a transient break to
+  wait out: upstream's own `.goreleaser.yml` runs `go generate ./cmd/...` as a pre-build
+  hook, and the AUR's from-source PKGBUILD does the same, so this is the intended build
+  shape.
+
+  The three cells now point at a new footnote ²⁷ carrying a route per target — the upstream
+  `.rpm` for openSUSE (the block `dotfiles-Fedora`'s `bootstrap.sh` already ships and has
+  proven), the `.deb` for Kali/Debian, and the AUR **`carapace-bin`** for Arch (the prebuilt
+  one; the AUR's bare `carapace` is a from-source, x86_64-only build). Alpine and Gentoo were
+  already correct and are now documented as verified rather than merely unmarked. ²⁷ also
+  records what the release-URL route costs — no repo is added, so nothing upgrades carapace
+  afterwards — the unsigned-artifact wrinkle that makes `zypper -n` stricter than dnf here,
+  and the source build as the escape hatch with its real binary size (81.6 MB released,
+  ~114 MB unstripped). Footnote ³ gained a pointer so the general `go install` promise is not
+  read back onto this row.
+
+  `dotfiles-Arch`, `dotfiles-Kali` and `dotfiles-openSUSE` still make the impossible call in
+  their `bootstrap.sh`, failing invisibly because `_dotfiles_go_install` discards the
+  explanation; each is tracked in its own repo against this footnote. (`PORTING-MATRIX.md`)
 - **The nvim reachability gate invented orphans on `main`.** The membership lookups piped
   into an early-exiting reader — `printf '%s\n' "$visited" | grep -qxF "$m"` — while the
   script runs under `set -o pipefail`. `grep -q` exits on its first match, the writer takes
