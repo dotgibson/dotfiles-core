@@ -15,6 +15,9 @@
 #                                         git index; zsh/*.zsh must NOT be (sourced)
 #   3. shell syntax                     — bash -n on bash scripts; zsh -n on zsh modules
 #   4. lua                              — luacheck nvim/        (if luacheck present)
+#  4b. nvim module reachability        — no orphaned lua module under nvim/lua/gerrrt
+#                                         (the backstop the directory-granular manifest
+#                                          entry for nvim/ cannot provide)
 #   5. lint                             — shellcheck            (if present)
 #  5c. Core⇄OS boundary                — no OS-absolute paths in portable zsh modules
 #   6. config files                     — toml/yaml parse-check (if python3 present)
@@ -373,6 +376,32 @@ elif have luacheck; then
   fi
 else
   skip "luacheck (not installed)"
+fi
+
+# ── 4b. nvim module reachability (the orphan backstop) ───────────────────────
+# core.manifest lists `nvim/` as a DIRECTORY, so §1's manifest⇄fs drift check auto-lists
+# every new path under it and cannot see an orphan — a lua module nothing loads would sit
+# in the tree and fan out to all eight OS repos silently. core.manifest said that gap was
+# covered "by verify-core.sh instead"; that script has never existed here (#454). The real
+# logic (and the full rationale for which groups are exempt) lives in the script below —
+# it is a standalone script rather than an inline block precisely so test-core.sh can
+# drive it against synthetic fixtures. Findings arrive one per line; each becomes a fail.
+hdr "nvim module reachability"
+if ! ((SCOPE_NVIM)); then
+  skip "nvim reachability (out of scope)"
+elif [[ ! -d nvim/lua/gerrrt ]]; then
+  skip "nvim reachability (no nvim/lua/gerrrt)"
+else
+  orph_out="$("$HERE/scripts/nvim-reachability.sh" --root "$HERE" 2>&1)"
+  if [[ -z "$orph_out" ]]; then
+    pass "nvim module reachability (no orphaned lua modules)"
+  else
+    while IFS= read -r orph_line; do
+      [[ -n "$orph_line" ]] && fail "nvim: $orph_line"
+    done <<EOF
+$orph_out
+EOF
+  fi
 fi
 
 # ── 5. lint (shellcheck) ─────────────────────────────────────────────────────

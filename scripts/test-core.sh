@@ -6547,6 +6547,85 @@ ucheck "serve: a failed default route does not reprint the tunnel addr as (lan)"
   "source '$UI' || exit 1; source '$FN' || exit 1; out=\$(_serve_advertise 8000); [[ \$out == *'(tun0)'* && \$out != *'(lan)'* ]]" \
   PATH="$SRVBIN"
 
+# ── K. nvim orphan backstop (scripts/nvim-reachability.sh) ────────────────────
+# core.manifest lists nvim/ as a DIRECTORY, so the audit's manifest⇄fs check auto-lists
+# every path under it and cannot see an orphan. §4b of the audit is the backstop; this
+# proves the backstop actually catches what it claims to, rather than merely existing —
+# the same lesson the atuin-guard verification exists to enforce. Hermetic: a synthetic
+# git repo with a miniature gerrrt tree, so it asserts the LOGIC, never this repo's tree.
+if have git; then
+  hdr "nvim orphan backstop (nvim-reachability.sh)"
+  NVR="$HERE/scripts/nvim-reachability.sh"
+  NREPO="$SANDBOX/nvimrepo"
+
+  _nvr_fresh() { # build a minimal, REACHABLE gerrrt tree
+    rm -rf "$NREPO"
+    mkdir -p "$NREPO/nvim/lua/gerrrt/config" "$NREPO/nvim/lua/gerrrt/plugins" \
+             "$NREPO/nvim/lua/gerrrt/servers" "$NREPO/nvim/lua/gerrrt/utils"
+    git -C "$NREPO" init -q
+    git -C "$NREPO" config user.email t@example.com
+    git -C "$NREPO" config user.name tester
+    printf 'require("gerrrt")\n'                      >"$NREPO/nvim/init.lua"
+    printf 'require("gerrrt.config")\n'               >"$NREPO/nvim/lua/gerrrt/init.lua"
+    printf 'local M={} function M.check() end return M\n' >"$NREPO/nvim/lua/gerrrt/health.lua"
+    printf 'require("gerrrt.config.lazy")\n'          >"$NREPO/nvim/lua/gerrrt/config/init.lua"
+    # lazy.lua reaches the one util and imports the plugins dir wholesale
+    printf 'require("gerrrt.utils.term")\nrequire("lazy").setup({ { import = "gerrrt.plugins" } })\n' \
+                                                      >"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+    printf 'return {}\n'                              >"$NREPO/nvim/lua/gerrrt/utils/term.lua"
+    printf 'return {}\n'                              >"$NREPO/nvim/lua/gerrrt/plugins/anything.lua"
+    printf 'local servers = {\n\t"lua_ls",\n}\nfor _, n in ipairs(servers) do pcall(require, "gerrrt.servers." .. n) end\n' \
+                                                      >"$NREPO/nvim/lua/gerrrt/servers/init.lua"
+    printf 'return {}\n'                              >"$NREPO/nvim/lua/gerrrt/servers/lua_ls.lua"
+    git -C "$NREPO" add -A >/dev/null 2>&1
+  }
+  # `|| true` is LOAD-BEARING under `set -o pipefail`: the script exits 1 when it finds
+  # orphans, so `_nvr | grep -q …` reports the PIPELINE as failed even when grep matched,
+  # silently inverting every "does it catch X" assertion below. Swallow the status here;
+  # _nvr_rc asserts it separately.
+  _nvr() { "$NVR" --root "$NREPO" 2>&1 || true; } # findings on stdout
+  _nvr_rc() { "$NVR" --root "$NREPO" >/dev/null 2>&1; echo $?; }
+
+  _nvr_fresh
+  if [[ -z "$(_nvr)" && "$(_nvr_rc)" == 0 ]]; then pass "nvim-reachability: a fully reachable tree is clean"; else fail "nvim-reachability: false positive on a clean tree — $(_nvr)"; fi
+
+  # the gap this whole section exists to close: a utils/ module nothing requires
+  _nvr_fresh; printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/dead.lua"; git -C "$NREPO" add -A >/dev/null 2>&1
+  if _nvr | grep -q 'gerrrt.utils.dead'; then pass "nvim-reachability: catches an orphaned utils/ module"; else fail "nvim-reachability: MISSED an orphaned utils/ module"; fi
+
+  # a stray top-level lua/gerrrt/*.lua (health.lua is the only legitimate one)
+  _nvr_fresh; printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/junk.lua"; git -C "$NREPO" add -A >/dev/null 2>&1
+  if _nvr | grep -q 'gerrrt.junk'; then pass "nvim-reachability: catches a stray top-level module"; else fail "nvim-reachability: MISSED a stray top-level module"; fi
+
+  # health.lua must NOT be flagged — Neovim discovers lua/**/health.lua by runtimepath
+  _nvr_fresh
+  if ! _nvr | grep -q 'gerrrt.health'; then pass "nvim-reachability: exempts health.lua (:checkhealth convention)"; else fail "nvim-reachability: wrongly flagged health.lua"; fi
+
+  # plugins/ must NOT be flagged — lazy imports the directory wholesale
+  _nvr_fresh; printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/plugins/another.lua"; git -C "$NREPO" add -A >/dev/null 2>&1
+  if ! _nvr | grep -q 'gerrrt.plugins'; then pass "nvim-reachability: exempts plugins/ (lazy imports the dir)"; else fail "nvim-reachability: wrongly flagged a plugins/ module"; fi
+
+  # an LSP module absent from the registry is dead config
+  _nvr_fresh; printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/servers/pyright.lua"; git -C "$NREPO" add -A >/dev/null 2>&1
+  if _nvr | grep -q 'pyright.*registry'; then pass "nvim-reachability: catches an unlisted LSP module"; else fail "nvim-reachability: MISSED an unlisted LSP module"; fi
+
+  # the reverse — a registry name with no file is a RUNTIME load error
+  _nvr_fresh
+  printf 'local servers = {\n\t"lua_ls",\n\t"ghostls",\n}\n' >"$NREPO/nvim/lua/gerrrt/servers/init.lua"
+  git -C "$NREPO" add -A >/dev/null 2>&1
+  if _nvr | grep -q 'ghostls'; then pass "nvim-reachability: catches a registry entry with no module file"; else fail "nvim-reachability: MISSED a dangling registry entry"; fi
+
+  # an unparseable registry must FAIL CLOSED — not emit N bogus findings, not go quiet
+  _nvr_fresh
+  printf 'local servers = vim.tbl_flatten({\n\t"lua_ls",\n})\n' >"$NREPO/nvim/lua/gerrrt/servers/init.lua"
+  git -C "$NREPO" add -A >/dev/null 2>&1
+  if _nvr | grep -q 'could not parse'; then pass "nvim-reachability: fails closed on an unparseable registry"; else fail "nvim-reachability: did not fail closed on an unparseable registry"; fi
+
+  # a repo with no nvim/ (every OS repo) is silently clean, not an error
+  _nvr_fresh; rm -rf "$NREPO/nvim"; git -C "$NREPO" add -A >/dev/null 2>&1
+  if [[ -z "$(_nvr)" && "$(_nvr_rc)" == 0 ]]; then pass "nvim-reachability: no nvim/ tree is a clean no-op"; else fail "nvim-reachability: errored on a repo without nvim/"; fi
+fi
+
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
 ((FAIL == 0)) || {

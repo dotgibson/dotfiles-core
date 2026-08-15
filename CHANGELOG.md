@@ -15,6 +15,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`audit-core.sh` §4b — the nvim orphan backstop `core.manifest` claimed already existed.**
+  `core.manifest` lists `nvim/` as a directory rather than per-file, because a vendored
+  lazy.nvim tree churns wholesale and per-file listing would be noise. The stated
+  justification was that "verify-core.sh (byte-for-byte vs upstream) is the orphan backstop
+  here instead" — but **`verify-core.sh` has never existed in this repo**. So from the day
+  `nvim/` went directory-granular, §1's manifest⇄fs check auto-listed every new path under it
+  and nothing else looked: a lua module nothing loads could sit in the tree indefinitely and
+  fan out to all eight OS repos, silently. luacheck does not help — it lints the files it is
+  handed and does no reachability analysis.
+
+  §4b walks the load graph instead. Four groups are reachable by construction and exempt for
+  stated reasons: `plugins/*` (lazy imports the directory), `health.lua` (Neovim discovers
+  `lua/**/health.lua` for `:checkhealth`, so zero requires is correct, not orphaned),
+  `gerrrt/init.lua` (the entry point), and `servers/*` — which are require()d *dynamically*
+  via `pcall(require, "gerrrt.servers." .. name)`, so a static grep finds nothing and the
+  `servers` registry is the only evidence. Everything else — `utils/`, `config/`, and any
+  top-level `lua/gerrrt/*.lua` — must be require()d by name somewhere. The registry is checked
+  **both** ways: a module in no list entry is dead config; a list entry with no module file is
+  a runtime load error. An unparseable registry fails closed and says so once, rather than
+  emitting ~28 bogus failures or quietly passing everything.
+
+  Verified against planted orphans of every class it claims to catch (stray `utils/` module,
+  stray top-level module, unlisted LSP module, list entry with no file, unparseable registry)
+  and against the real tree, which is clean: all 100 tracked files under `nvim/` are reachable
+  today. bash 3.2 safe, so the macos-latest CI leg runs it. Closes the `nvim/` half of #454.
+
 - **`PORTABILITY.md` — how to write Core that survives the fan-out.** The rules were
   real and consistently followed, but recorded only in ~8 scattered code comments, so
   they were unteachable to a new contributor and unenforced for new files. That is the
