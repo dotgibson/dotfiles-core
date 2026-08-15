@@ -20,6 +20,8 @@
 #                                          entry for nvim/ cannot provide)
 #   5. lint                             — shellcheck            (if present)
 #  5c. Core⇄OS boundary                — no OS-absolute paths in portable zsh modules
+#  5d. pipefail SIGPIPE hazard        — no shell-string producer piped into a reader
+#                                         that exits early (grep -q / awk exit / head)
 #   6. config files                     — toml/yaml parse-check (if python3 present)
 #   7. markdown                          — markdownlint (if markdownlint-cli2 present)
 #   8. workflows                         — actionlint on .github/workflows (if present)
@@ -544,6 +546,46 @@ done < <(
   done | sort -u
 )
 ((bnd_fail)) || pass "every manifested Core file carries no OS-absolute path (scope derived from core.manifest)"
+
+# ── 5d. pipefail SIGPIPE hazard (regression gate) ────────────────────────────
+# Under `set -o pipefail`, piping into a reader that EXITS EARLY turns a success into a
+# failure. `grep -q` stops on its first match, `awk` on its `exit`, `head` after N lines;
+# the writer then takes EPIPE and dies with 141, and pipefail reports the PIPELINE as
+# failed even though the reader matched.
+#
+# This repo has hit it three times. Twice it was found and fixed by hand — the CHANGELOG
+# records a 4000-line `git show` into `grep -q` reporting "no heading" on a file that had
+# one, and test-core.sh has an assertion literally named "the pipefail trap this repo has
+# hit before" for `ldd --version | grep -qi musl`. The third broke `main`:
+# nvim-reachability.sh invented two orphans because a visited module's membership lookup
+# returned 141 (#458). The fix each time was a hand sweep of the tree — correct for its
+# moment, and unable to cover code written afterwards. Hence a gate (#459).
+#
+# SCOPE IS DELIBERATELY NARROW: a SHELL-STRING producer (`printf`/`echo`) into an
+# early-exiting reader. That shape is always convertible to a herestring with no
+# behavioural difference and no reason to prefer the pipe, so a finding here is never a
+# judgement call. `sed <file> | head -n1` — a FILE producer, ~15 instances — is left alone
+# on purpose: converting those is not free, and a gate that fires fifteen times on
+# working code is a gate someone turns off.
+hdr "pipefail SIGPIPE hazard"
+if ! ((SCOPE_SHELL)); then
+  skip "pipefail SIGPIPE (out of scope)"
+else
+  pf_fail=0
+  while IFS= read -r pf_f; do
+    [ -n "$pf_f" ] || continue
+    while IFS= read -r pf_line; do
+      [ -n "$pf_line" ] || continue
+      fail "pipefail: $pf_f:$pf_line — shell-string producer piped into an early-exiting reader; use a herestring"
+      pf_fail=1
+    done <<EOF
+$(_core_pipefail_hits "$pf_f")
+EOF
+  done <<EOF
+$(git ls-files '*.sh' 'bin/clip' 'bin/clip-paste' 2>/dev/null)
+EOF
+  ((pf_fail)) || pass "pipefail (no shell-string producer feeds an early-exiting reader)"
+fi
 
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —

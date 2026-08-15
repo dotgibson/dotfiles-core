@@ -239,3 +239,31 @@ _core_fail_digest() { # _core_fail_digest <captured-output-file>
   ((n > 3)) && why="$why (+$((n - 3)) more)"
   printf '%s: %s' "$n" "$why"
 }
+
+# ── pipefail SIGPIPE scanner (audit-core.sh §5d) ──────────────────────────────
+# _core_pipefail_hits <file> — print the line number of every place <file> pipes a
+# SHELL-STRING producer (printf/echo) into a reader that EXITS EARLY: `grep -q` on its
+# first match, `awk` on its `exit`, `head` after N lines. Under `set -o pipefail` the
+# writer then takes EPIPE, dies with 141, and the pipeline reports failure even though
+# the reader matched. Silence = clean.
+#
+# It lives here rather than inline in the gate for the same reason _core_fail_digest does:
+# so test-core.sh can drive it on fixtures. A gate that has never been shown to fire is a
+# gate nobody should trust — and probe-testing this one already caught a real defect in it
+# (it used to scan any file that merely MENTIONED pipefail in a comment).
+#
+# Two deliberate narrowings, both about not crying wolf:
+#   * the file must actually `set -…o pipefail`; naming it in prose is not running under it
+#   * comment lines are skipped, so writing ABOUT the hazard does not trip the gate
+# A FILE producer (`sed x | head -n1`) is out of scope: converting those is not free, and a
+# gate that fires on working code is a gate someone turns off.
+_core_pipefail_hits() { # _core_pipefail_hits <file>
+  local f="${1:-}" re
+  [ -f "$f" ] || return 0
+  grep -qE '^[[:space:]]*set[[:space:]]+-[a-zA-Z]*o[[:space:]]+pipefail' "$f" 2>/dev/null || return 0
+  # Assembled from fragments so this very line cannot match the pattern it defines — the
+  # scanner reads every tracked shell script, and common.sh is one of them.
+  re="(printf|echo)[^|]*[|][[:space:]]*(grep -[a-zA-Z]*q|head([[:space:]]|\$)|awk[^|]*exit)"
+  grep -nE "$re" "$f" 2>/dev/null |
+    awk -F: '{ l = $0; sub(/^[0-9]+:/, "", l); if (l !~ /^[[:space:]]*#/) print $1 }'
+}

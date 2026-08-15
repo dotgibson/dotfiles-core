@@ -862,6 +862,67 @@ if [[ "$_fdt_n" == 6 ]] && grep -q '… 55 more line' <<<"$_fdt_err"; then
   pass "fail_detail: caps at CORE_FAIL_DETAIL_LINES and reports the remainder"
 else fail "fail_detail: cap produced $_fdt_n line(s): $(head -3 <<<"$_fdt_err")"; fi
 
+# ── pipefail SIGPIPE scanner (scripts/lib/common.sh :: _core_pipefail_hits) ───
+# WHY THIS IS TESTED. audit-core.sh §5d exists because this repo has hit the pipefail +
+# SIGPIPE trap three times — a 4000-line `git show` into `grep -q`, `ldd --version |
+# grep -qi musl`, and nvim-reachability.sh inventing orphans on main (#458, #459). A gate
+# for a bug that has recurred that often is only worth having if it actually fires, and
+# probe-testing this one already caught a real defect: it used to scan any file that merely
+# MENTIONED pipefail in a comment, which is the false-positive class that gets a gate
+# switched off. Both halves are pinned below — what it catches AND what it must ignore.
+if have git; then
+  hdr "pipefail SIGPIPE scanner (_core_pipefail_hits)"
+  _pfd="$SANDBOX/pipefail"
+  mkdir -p "$_pfd"
+  _pf_write() { printf '%s\n' "$2" >"$_pfd/$1"; }   # _pf_write <name> <body>
+  # THE PIPE IS ASSEMBLED, NOT WRITTEN LITERALLY. This file sets `pipefail`, so §5d scans
+  # it — and a file whose job is to TEST the banned shape necessarily contains it, which
+  # made the gate flag its own fixtures on the first run. Keeping the literal out of this
+  # source is the honest fix: the fixture written to disk is byte-identical to the real
+  # hazard, so the assertions still exercise the true pattern. The alternative — an
+  # inline "allow" marker in the scanner — was rejected as an escape hatch that invites
+  # silencing a real finding, on a gate that exists because this bug keeps coming back.
+  _pf_p='|'
+
+  _pf_write grepq.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -q needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepq.sh")" == 2 ]]; then pass "pipefail scan: catches a printf piped into grep -q"; else fail "pipefail scan: missed a printf piped into grep -q"; fi
+
+  _pf_write head.sh "set -euo pipefail
+echo \"\$v\" $_pf_p head -n1"
+  if [[ "$(_core_pipefail_hits "$_pfd/head.sh")" == 2 ]]; then pass "pipefail scan: catches an echo piped into head"; else fail "pipefail scan: missed an echo piped into head"; fi
+
+  _pf_write awkexit.sh "set -euo pipefail
+printf '%s' \"\$v\" $_pf_p awk '/x/ { print; exit }'"
+  if [[ "$(_core_pipefail_hits "$_pfd/awkexit.sh")" == 2 ]]; then pass "pipefail scan: catches a printf piped into awk with exit"; else fail "pipefail scan: missed a printf piped into awk with exit"; fi
+
+  # the herestring form is the FIX — it must never be flagged, or the gate punishes the cure
+  _pf_write safe.sh 'set -euo pipefail
+grep -q needle <<<"$big"'
+  if [[ -z "$(_core_pipefail_hits "$_pfd/safe.sh")" ]]; then pass "pipefail scan: a herestring is not a finding"; else fail "pipefail scan: flagged the herestring fix"; fi
+
+  # writing ABOUT the hazard must not trip it — this very repo documents it in comments
+  _pf_write comment.sh "set -euo pipefail
+# printf '%s' \"\$x\" $_pf_p grep -q foo is the trap this gate exists to catch
+grep -q foo <<<\"\$x\""
+  if [[ -z "$(_core_pipefail_hits "$_pfd/comment.sh")" ]]; then pass "pipefail scan: a comment describing the hazard is not a finding"; else fail "pipefail scan: flagged a comment"; fi
+
+  # no pipefail set → the shape is harmless, and flagging it is the false positive that
+  # gets a gate disabled. (The word appearing in prose must not count as enabling it.)
+  _pf_write nopipefail.sh "set -eu
+# this file only mentions pipefail in a comment
+printf '%s' \"\$v\" $_pf_p grep -q needle"
+  if [[ -z "$(_core_pipefail_hits "$_pfd/nopipefail.sh")" ]]; then pass "pipefail scan: a file that never enables pipefail is not a finding"; else fail "pipefail scan: flagged a file that never enables pipefail"; fi
+
+  # a file producer is deliberately out of scope (~15 legitimate instances in-tree)
+  _pf_write fileproducer.sh 'set -euo pipefail
+sed -n "s/^x=//p" "$f" | head -n1'
+  if [[ -z "$(_core_pipefail_hits "$_pfd/fileproducer.sh")" ]]; then pass "pipefail scan: a file producer stays out of scope"; else fail "pipefail scan: flagged sed <file> | head"; fi
+
+  # and the gate must not flag the library that defines it
+  if [[ -z "$(_core_pipefail_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "pipefail scan: does not flag its own definition"; else fail "pipefail scan: flagged common.sh itself"; fi
+fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
@@ -4105,7 +4166,7 @@ smoke_out="$(
 smoke_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|bad pattern|bad math expression|maximum nested' \
   "$SANDBOX/smoke.err" 2>/dev/null || true)"
-if ! printf '%s' "$smoke_out" | grep -q '^SMOKE_OK$'; then
+if ! grep -q '^SMOKE_OK$' <<<"$smoke_out"; then
   fail "load-order chain did not reach the end (no SMOKE_OK sentinel — a fragment aborted)"
   [[ -s "$SANDBOX/smoke.err" ]] && sed 's/^/    /' "$SANDBOX/smoke.err" >&2
 elif [[ -n "$smoke_errs" ]]; then
@@ -4165,7 +4226,7 @@ integ_out="$(
 integ_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|missing|bad pattern|bad math expression|maximum nested' \
   "$INTEG/integ.err" 2>/dev/null || true)"
-if ! printf '%s' "$integ_out" | grep -q '^INTEG_OK$'; then
+if ! grep -q '^INTEG_OK$' <<<"$integ_out"; then
   fail "consumer load (Core+80-os+99-local) did not reach the end — a layer aborted"
   [[ -s "$INTEG/integ.err" ]] && sed 's/^/    /' "$INTEG/integ.err" >&2
 elif [[ -n "$integ_errs" ]]; then
