@@ -6674,6 +6674,13 @@ if have git; then
   printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/blockghost.lua"
   _nvr_catches 'gerrrt\.utils\.blockghost' "a multiline block comment is not an edge"
 
+  # lua long comments come in levels — --[=[ … ]=], --[==[ … ]==] — and the closing
+  # delimiter must match the opener's `=` count, so it cannot be hardcoded
+  _nvr_fresh
+  printf -- '--[=[\nrequire("gerrrt.utils.levelghost")\n]=]\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/levelghost.lua"
+  _nvr_catches 'gerrrt\.utils\.levelghost' "a --[=[ level long comment is not an edge"
+
   # require() of a DIRECTORY is a runtime error, not a lazy import: it must be reported,
   # and it must NOT mark the directory's children reachable
   _nvr_fresh

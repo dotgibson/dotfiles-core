@@ -109,11 +109,16 @@ mods="$(git ls-files 'nvim/lua/gerrrt/*.lua' 2>/dev/null | while IFS= read -r f;
   [ -n "$f" ] || continue
   rel="${f#nvim/lua/gerrrt/}"
   base="${rel%.lua}"
+  # NO command substitution inside this case: bash 3.2 (macos-latest) mis-parses a nested
+  # $(…) within a `case` that is itself inside a `$(…)`, failing the whole script with
+  # "command substitution: syntax error near unexpected token `newline'". Pure parameter
+  # expansion instead — `${var//\//.}` is bash 3.2 clean and needs no subshell at all.
   case "$rel" in
-    init.lua) mod="gerrrt" ;;                                                  # gerrrt/init.lua
-    */init.lua) mod="gerrrt.$(printf '%s' "${base%/init}" | tr '/' '.')" ;;    # dir/init.lua ⇒ gerrrt.dir
-    *) mod="gerrrt.$(printf '%s' "$base" | tr '/' '.')" ;;
+    init.lua) mod_path="" ;;              # gerrrt/init.lua ⇒ gerrrt
+    */init.lua) mod_path="${base%/init}" ;; # dir/init.lua  ⇒ gerrrt.dir
+    *) mod_path="$base" ;;
   esac
+  if [ -n "$mod_path" ]; then mod="gerrrt.${mod_path//\//.}"; else mod="gerrrt"; fi
   printf '%s\t%s\n' "$mod" "$f"
 done)"
 [ -n "$mods" ] || exit 0
@@ -144,24 +149,29 @@ EOF
 _file_for() { printf '%s\n' "$mods" | awk -F'\t' -v m="$1" '$1 == m { print $2; exit }'; }
 _children_of() { printf '%s\n' "$mods" | awk -F'\t' -v p="$1." 'index($1, p) == 1 { print $1 }'; }
 
-# Strip lua comments — BOTH forms. A line-only `sed 's/--.*$//'` leaves the interior of a
-# multiline `--[[ … ]]` block fully searchable, so a module named inside one would still
-# forge an edge. This is a small state machine: carry `blk` across lines, close on `]]`.
+# Strip lua comments — every form. A line-only `sed 's/--.*$//'` leaves the interior of a
+# multiline block fully searchable, so a module named inside one would still forge an edge.
+# Lua long comments are `--[[ … ]]` AND the level forms `--[=[ … ]=]`, `--[==[ … ]==]`, …
+# with matching `=` counts, so the closing delimiter is derived from the opener rather than
+# hardcoded. State (`blk`, `close_re`) carries across lines.
 _strip_comments() {
   awk '
     { line = $0
-      if (blk) {                                    # inside --[[ … ]] from a previous line
-        i = index(line, "]]")
-        if (i == 0) { print ""; next }
-        line = substr(line, i + 2); blk = 0
+      if (blk) {                                    # inside a long comment from a prior line
+        if (match(line, close_re)) { line = substr(line, RSTART + RLENGTH); blk = 0 }
+        else { print ""; next }
       }
-      while ((s = index(line, "--[[")) > 0) {       # block comment opening on this line
-        rest = substr(line, s + 4)
-        e = index(rest, "]]")
-        if (e == 0) { line = substr(line, 1, s - 1); blk = 1; break }
-        line = substr(line, 1, s - 1) substr(rest, e + 2)
+      while (match(line, /--\[=*\[/)) {             # long comment opening on this line
+        eqs = RLENGTH - 4                            # "--[" + "[" is 4 chars; the rest are "="
+        close_re = "\\]"
+        for (i = 0; i < eqs; i++) close_re = close_re "="
+        close_re = close_re "\\]"
+        head = substr(line, 1, RSTART - 1)
+        rest = substr(line, RSTART + RLENGTH)
+        if (match(rest, close_re)) { line = head substr(rest, RSTART + RLENGTH) }
+        else { line = head; blk = 1; break }
       }
-      if ((c = index(line, "--")) > 0) line = substr(line, 1, c - 1)
+      if (!blk && (c = index(line, "--")) > 0) line = substr(line, 1, c - 1)
       print line
     }' "$1"
 }
@@ -182,6 +192,16 @@ _strip_comments() {
 #
 # A trailing dot (from `"gerrrt.servers." .. name`) is dropped — that edge comes from the
 # registry instead.
+#
+# KNOWN LIMIT, deliberately not "fixed": the contents of string literals are still in
+# scope, so `local help = 'require("gerrrt.x")'` would forge an edge. Ignoring string
+# interiors — the obvious lexer-shaped fix — would be WORSE here, because a require inside
+# a string is very often a real load in this codebase: `plugins/alpha-nvim.lua:44` uses
+# `"<cmd>lua require('persistence').load()<cr>"`, and that require genuinely executes when
+# the mapping fires. A lexer would classify it inert and report a live module as an orphan.
+# Between a rare false negative (someone writes a real module path inside inert prose) and
+# a false positive that reds CI on a correct tree, the false negative is the safer failure
+# for a guard. Revisit if the inert-string case ever actually occurs.
 _edges_of() {
   [ -f "$1" ] || return 0
   code="$(_strip_comments "$1")"
