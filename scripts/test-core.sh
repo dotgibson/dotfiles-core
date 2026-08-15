@@ -6765,12 +6765,20 @@ _su_pin_a="$(mktemp -d "$SANDBOX/supin-a.XXXXXX")"
 _su_pin_b="$(mktemp -d "$SANDBOX/supin-b.XXXXXX")"
 printf '#!/bin/sh\nexit 0\n' >"$_su_pin_a/sudo"; chmod +x "$_su_pin_a/sudo"
 printf '#!/bin/sh\nexit 0\n' >"$_su_pin_b/sudo"; chmod +x "$_su_pin_b/sudo"   # the impostor
-# shellcheck disable=SC2030,SC2031
-_su_pinned="$( unset BLIB_SU; PATH="$_su_pin_a:/usr/bin:/bin"
-  blib_resolve_su >/dev/null 2>&1
-  PATH="$_su_pin_b:$PATH"          # a later prepend, exactly what bindirs_on_path does
-  printf '%s' "$BLIB_SU" )"
-if [[ "$_su_pinned" == "$_su_pin_a/sudo" ]]; then pass "blib_resolve_su pins the absolute path (survives a later PATH prepend)"; else fail "blib_resolve_su recorded '\''$_su_pinned'\'' — a later PATH change can swap the escalator"; fi
+# Root-guarded, like the no-escalator cases above: as root the resolver correctly returns
+# an EMPTY BLIB_SU (nothing to escalate with), so there is no path to pin. The Alpine and
+# Arch audit legs run in root containers, which is exactly where an unguarded version of
+# this assertion fails for the wrong reason.
+if [[ "$(id -u)" -ne 0 ]]; then
+  # shellcheck disable=SC2030,SC2031
+  _su_pinned="$( unset BLIB_SU; PATH="$_su_pin_a:/usr/bin:/bin"
+    blib_resolve_su >/dev/null 2>&1
+    PATH="$_su_pin_b:$PATH"          # a later prepend, exactly what bindirs_on_path does
+    printf '%s' "$BLIB_SU" )"
+  if [[ "$_su_pinned" == "$_su_pin_a/sudo" ]]; then pass "blib_resolve_su pins the absolute path (survives a later PATH prepend)"; else fail "blib_resolve_su recorded [$_su_pinned] — a later PATH change can swap the escalator"; fi
+else
+  skip "blib_resolve_su path pinning (suite is running as root — no escalator to pin)"
+fi
 
 # blib_priv must never invoke an empty-string command: with BLIB_SU= it runs CMD directly,
 # and with an escalator set it prefixes it (`env` stands in harmlessly for sudo).
