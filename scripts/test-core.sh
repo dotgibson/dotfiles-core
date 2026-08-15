@@ -831,6 +831,37 @@ fi
 # the __ALL__ sentinel runs everything, and — the regression that matters — an
 # UNRECOGNISED top-level path FAILS CLOSED to the full run instead of silently skipping
 # a gate on the 9-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
+# ── failing-gate detail (scripts/lib/common.sh :: fail_detail) ────────────────
+# WHY THIS IS TESTED. The audit used to discard every linter's own report, so a red CI run
+# named a gate and nothing else — "✗ markdownlint reported issues", no rule, no file, no
+# line — and CI is exactly where you cannot re-run the tool by hand (#456). fail_detail is
+# what closes that, which makes its two easy-to-break properties worth pinning: it must go
+# to STDERR (stdout carries the --json summary object, and polluting it would trade one
+# broken output for another), and it must CAP, or a pathological run buries the summary it
+# is meant to explain. The herestrings inside it are the #459 SIGPIPE trap; a "tidy-up"
+# back to `printf | head` reintroduces it, so the cap assertion doubles as that guard.
+hdr "failing-gate detail (fail_detail)"
+_fdt_out="$(fail_detail "one
+two" 2>/dev/null)"
+if [[ -z "$_fdt_out" ]]; then pass "fail_detail: writes nothing to stdout (--json stays parseable)"; else fail "fail_detail: leaked to stdout: $_fdt_out"; fi
+
+_fdt_err="$(fail_detail "alpha
+beta" 2>&1 >/dev/null)"
+if grep -q '^    alpha$' <<<"$_fdt_err" && grep -q '^    beta$' <<<"$_fdt_err"; then
+  pass "fail_detail: writes the tool's report to stderr, indented"
+else fail "fail_detail: stderr was [$_fdt_err]"; fi
+
+_fdt_err="$(fail_detail "" 2>&1 >/dev/null)"
+if [[ -z "$_fdt_err" ]]; then pass "fail_detail: empty output is a no-op"; else fail "fail_detail: emitted [$_fdt_err] for empty input"; fi
+
+# cap: 60 lines with a limit of 5 → 5 shown plus one "… N more" line, and the count right
+_fdt_many="$(seq 1 60)"
+_fdt_err="$(CORE_FAIL_DETAIL_LINES=5 fail_detail "$_fdt_many" 2>&1 >/dev/null)"
+_fdt_n="$(wc -l <<<"$_fdt_err" | tr -d ' ')"
+if [[ "$_fdt_n" == 6 ]] && grep -q '… 55 more line' <<<"$_fdt_err"; then
+  pass "fail_detail: caps at CORE_FAIL_DETAIL_LINES and reports the remainder"
+else fail "fail_detail: cap produced $_fdt_n line(s): $(head -3 <<<"$_fdt_err")"; fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
