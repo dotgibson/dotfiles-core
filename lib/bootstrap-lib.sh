@@ -653,9 +653,18 @@ blib_sudo_keepalive_stop() {
 #
 # Only directories that EXIST are added, and never twice, so this is safe to call more than
 # once and cannot inject a bogus PATH entry.
+#
+# The cargo/go dirs are RELOCATABLE and must be resolved through their env vars, not
+# hard-coded: `cargo install` honours $CARGO_HOME and `go install` honours $GOBIN, then
+# $GOPATH/bin. Hard-coding ~/.cargo/bin means a box with a custom CARGO_HOME keeps missing
+# its installed crates and rebuilding them on every run — the very bug this fixes, just
+# moved. maint/dotfiles-maint.sh already resolves cargo the same way.
 blib_user_bindirs_on_path() {
   local d
-  for d in "$HOME/.local/bin" "$HOME/.cargo/bin" "$HOME/go/bin" "$HOME/.atuin/bin"; do
+  for d in "$HOME/.local/bin" \
+    "${CARGO_HOME:-$HOME/.cargo}/bin" \
+    "${GOBIN:-${GOPATH:-$HOME/go}/bin}" \
+    "$HOME/.atuin/bin"; do
     [[ -d "$d" ]] || continue
     case ":$PATH:" in
     *":$d:"*) ;;

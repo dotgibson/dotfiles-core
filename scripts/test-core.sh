@@ -6793,6 +6793,84 @@ if [[ "$(BLIB_FAILED=(); blib_note_fail a >/dev/null 2>&1; blib_note_fail b >/de
 # survives errexit+nounset — which is exactly how a bootstrap runs.
 if (set -eu; BLIB_FAILED=(); blib_failures_report >/dev/null 2>&1); then pass "blib_failures_report survives set -eu with an empty tally (bash 3.2 array rule)"; else fail "blib_failures_report tripped set -u on an empty array"; fi
 
+# ── the relocatable bindirs (CARGO_HOME / GOBIN / GOPATH) ────────────────────
+# cargo honours $CARGO_HOME and go honours $GOBIN then $GOPATH/bin. Hard-coding
+# ~/.cargo/bin would leave a box with a custom CARGO_HOME still rebuilding every crate on
+# every run — the same bug, just relocated.
+_relo_home="$(mktemp -d "$SANDBOX/relo.XXXXXX")"
+mkdir -p "$_relo_home/xdgcargo/bin" "$_relo_home/gobin" "$_relo_home/gopath/bin"
+_relo_path="$( HOME="$_relo_home" CARGO_HOME="$_relo_home/xdgcargo" GOBIN="$_relo_home/gobin" PATH=/usr/bin; export CARGO_HOME GOBIN; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path" in *"$_relo_home/xdgcargo/bin"*) pass "blib_user_bindirs_on_path honours CARGO_HOME" ;; *) fail "blib_user_bindirs_on_path ignored CARGO_HOME" ;; esac
+case "$_relo_path" in *"$_relo_home/gobin"*) pass "blib_user_bindirs_on_path honours GOBIN" ;; *) fail "blib_user_bindirs_on_path ignored GOBIN" ;; esac
+# shellcheck disable=SC2030,SC2031  # a subshell-local PATH is the POINT of every probe below
+_relo_path2="$( HOME="$_relo_home" GOPATH="$_relo_home/gopath" PATH=/usr/bin; unset GOBIN; export GOPATH; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path2" in *"$_relo_home/gopath/bin"*) pass "blib_user_bindirs_on_path falls back to GOPATH/bin when GOBIN is unset" ;; *) fail "blib_user_bindirs_on_path ignored GOPATH" ;; esac
+
+# ── sudo keepalive (hermetic: a shimmed `sudo` on PATH, never the real one) ───
+# The riskiest code in this batch — it forks a background refresher and installs no trap of
+# its own — so pin the branches that decide whether it runs at all, that a failed FIRST
+# authentication is reported (so a caller can abort before half-provisioning), and that
+# stop() is idempotent and leaves no orphan.
+_ka_bin="$(mktemp -d "$SANDBOX/kabin.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"; chmod +x "$_ka_bin/sudo"
+# _ka_pid <BLIB_SU> <BLIB_DRY> — start the keepalive against the shimmed sudo, print the
+# pid it recorded (empty when it correctly declined to fork). _ka_rc is the same, returning
+# the rc instead. Both wrap the subshell so the SC2030/SC2031 suppression is stated once.
+# shellcheck disable=SC2030,SC2031  # a subshell-local PATH is the POINT (hermetic sudo shim)
+_ka_pid() { ( BLIB_SU="$1"; BLIB_DRY="$2"; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  printf '%s' "${BLIB_SUDO_KEEPALIVE_PID:-}" ); }
+# shellcheck disable=SC2030,SC2031
+_ka_rc() { ( BLIB_SU="$1"; BLIB_DRY="$2"; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1 ); }
+# not-sudo escalators must no-op: doas has no refreshable timestamp, root has nothing to prime.
+if [[ -z "$(_ka_pid doas 0)" ]]; then pass "blib_sudo_keepalive_start no-ops under doas"; else fail "blib_sudo_keepalive_start started a refresher under doas"; fi
+if [[ -z "$(_ka_pid '' 0)" ]]; then pass "blib_sudo_keepalive_start no-ops as root (BLIB_SU=)"; else fail "blib_sudo_keepalive_start started a refresher as root"; fi
+# BLIB_DRY must PREVIEW, never authenticate or fork.
+if [[ -z "$(_ka_pid sudo 1)" ]]; then pass "blib_sudo_keepalive_start forks nothing under BLIB_DRY"; else fail "blib_sudo_keepalive_start forked a refresher during a dry run"; fi
+# a FAILED initial `sudo -v` must return non-zero — that rc is what lets a caller abort.
+printf '#!/bin/sh\nexit 1\n' >"$_ka_bin/sudo"
+if _ka_rc sudo 0; then fail "blib_sudo_keepalive_start returned 0 when sudo -v failed"; else pass "blib_sudo_keepalive_start reports a failed initial authentication"; fi
+# the happy path: it forks exactly one refresher, and stop() reaps it and is re-callable.
+printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"
+# shellcheck disable=SC2030,SC2031  # subshell-local PATH again: the shimmed sudo
+_ka_out="$( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  pid="$BLIB_SUDO_KEEPALIVE_PID"
+  kill -0 "$pid" 2>/dev/null && alive=yes || alive=no
+  blib_sudo_keepalive_stop
+  sleep 0.2
+  kill -0 "$pid" 2>/dev/null && after=alive || after=reaped
+  blib_sudo_keepalive_stop   # second call must be a harmless no-op
+  printf '%s/%s/%s' "$alive" "$after" "${BLIB_SUDO_KEEPALIVE_PID:-empty}" )"
+case "$_ka_out" in yes/*) pass "blib_sudo_keepalive_start forks a live refresher" ;; *) fail "blib_sudo_keepalive_start did not fork a refresher (got $_ka_out)" ;; esac
+case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher (no orphan)" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
+case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
+
+# ── blib_set_login_shell must never abort a completed wiring ─────────────────
+# It runs at the very END of wire_links, so a failure here would discard an otherwise
+# correct install. Shim zsh/getent/chsh so the function reaches its mutating half, then
+# make each mutation fail and assert the whole thing still returns 0 under `set -e`.
+_ls_bin="$(mktemp -d "$SANDBOX/lsbin.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_ls_bin/zsh"; chmod +x "$_ls_bin/zsh"
+# getent reports a NON-zsh current shell so the early "already zsh" return is not taken.
+printf '#!/bin/sh\necho "u:x:1:1::/home/u:/bin/sh"\n' >"$_ls_bin/getent"; chmod +x "$_ls_bin/getent"
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/chsh"; chmod +x "$_ls_bin/chsh"   # chsh FAILS
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/tee"; chmod +x "$_ls_bin/tee"     # /etc/shells append FAILS
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/grep"; chmod +x "$_ls_bin/grep"   # ...so the append is attempted
+for _b in id printf cut awk; do [[ -x "$_ls_bin/$_b" ]] || ln -sf "$(command -v "$_b")" "$_ls_bin/$_b" 2>/dev/null; done
+if ( set -eu
+     PATH="$_ls_bin:/usr/bin:/bin"
+     BLIB_SU=""; BLIB_DRY=0; BLIB_ONLY=""; BLIB_SKIP=""
+     blib_set_login_shell >/dev/null 2>&1 ); then
+  pass "blib_set_login_shell returns 0 under set -e when /etc/shells AND chsh both fail"
+else
+  fail "blib_set_login_shell still aborts a completed wiring when its last step fails"
+fi
+# ...and it must SAY so rather than failing silently.
+_ls_msg="$( PATH="$_ls_bin:/usr/bin:/bin" BLIB_SU="" BLIB_DRY=0 BLIB_ONLY="" BLIB_SKIP="" blib_set_login_shell 2>&1 || true )"
+case "$_ls_msg" in *chsh*) pass "blib_set_login_shell warns, naming the manual chsh fallback" ;; *) fail "blib_set_login_shell failed quietly (got: $_ls_msg)" ;; esac
+
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
 ((FAIL == 0)) || {
