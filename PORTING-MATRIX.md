@@ -476,11 +476,11 @@ against each distro's own package pages:
 - **openSUSE Tumbleweed is the one laggard, at 0.6.17** — the gap #394 flagged, confirmed
   here rather than left as a repology snapshot. Re-check on the next openSUSE stamp.
 
-²⁷ carapace: **`go install` cannot work here, on any platform.** This row used to read
-`go³`, and following that footnote fails on every box. It is the one row where ³'s
-`go install` arm is not merely stale but impossible, so it gets its own paths. Two
-independent blockers, both **properties of how the module is built** rather than a broken
-build waiting to be fixed (verified against upstream `master` and v1.7.3 on 2026-08-15):
+²⁷ carapace: **`go install` cannot work here, on any platform, for any published version.**
+This row used to read `go³`, and following that footnote fails on every box. It is the one
+row where ³'s `go install` arm is not merely stale but impossible, so it gets its own paths.
+Two independent blockers, both **properties of how the module is built** rather than a broken
+build waiting to be fixed:
 
 1. `carapace-bin`'s `go.mod` carries two **`replace`** directives (`spf13/pflag` →
    `carapace-sh/carapace-pflag`, `kevinburke/ssh_config` → `carapace-sh/ssh_config`), and
@@ -494,13 +494,26 @@ build waiting to be fixed (verified against upstream `master` and v1.7.3 on 2026
    `cmd/carapace/main.go`'s `go:generate` lines produce them.
 
 Blocker 1 kills `go install`; blocker 2 kills the obvious workaround (`go build ./cmd/carapace`
-on a clone) until `go generate` has run. Do **not** treat either as a transient break to retry
-next week — upstream's own `.goreleaser.yml` runs `go generate ./cmd/...` as a pre-build hook,
-and the AUR's from-source `carapace` PKGBUILD does the same, so this is the intended build
-shape, not an oversight. Upstream could of course drop the `replace` directives or commit the
-generated sources in some future release, at which point this row can be revisited — but that
-is a change to watch for, not one to assume: **re-check only if you see it announced, and
-verify with an actual `go install` before believing it.**
+on a clone) until `go generate` has run.
+
+**The scope is every version, not just the current one** — which matters, because `go install`
+takes any `@version` you name and the obvious next move on a failure is to pin an older one.
+Don't: it fails identically. Checked exhaustively over the whole tag history on 2026-08-15
+(`git clone --bare --filter=blob:none`, then `git show <tag>:go.mod` for each of the 184 tags
+from **v0.0.3, 2020-08-31, through v1.7.3, 2026-06-30**):
+
+- **184 of 184 tags carry a `replace` directive.** Zero exceptions. The count rose from one to
+  two at v1.6.0, which is immaterial — one is enough.
+- **0 of 184 tags commit `pkg/actions/actions_generated.go`.** It has never been in the tree.
+
+So this is not an extrapolation from the current release: in nearly six years of tags there has
+never been a version you could `go install`. Upstream's own `.goreleaser.yml` runs
+`go generate ./cmd/...` as a pre-build hook and the AUR's from-source `carapace` PKGBUILD does
+the same — this is the intended build shape, not an oversight. Upstream _could_ drop the
+`replace` directives or start committing the generated sources in a future release, and this
+row can be revisited if they do, but that would reverse six years of practice: treat it as a
+change to watch for, not one to assume. **Re-check only on an announced change, and verify
+with an actual `go install` before believing it.**
 
 **The route is the upstream release artifact**, which goreleaser publishes per arch as
 `.rpm`, `.deb`, `.apk` and `.tar.gz` (v1.7.3, 2026-06-30). Per target:

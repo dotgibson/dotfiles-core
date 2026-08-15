@@ -312,14 +312,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **`PORTING-MATRIX.md`'s `carapace = go³` cells named an install path that cannot be
   followed on any platform.** Footnote ³ promises `go install` where a tool is unpackaged,
   and the carapace row pointed openSUSE and Kali straight at it. That install cannot succeed
-  against v1.7.3 or current `master`, for two independent reasons: `carapace-bin`'s `go.mod`
-  carries two **`replace`** directives (`spf13/pflag`, `kevinburke/ssh_config`), and `go
-  install pkg@version` refuses any module that does; and the generated sources
+  for **any published version**, for two independent reasons: `carapace-bin`'s `go.mod`
+  carries `replace` directives (`spf13/pflag`, `kevinburke/ssh_config`), and `go install
+  pkg@version` refuses any module that does; and the generated sources
   (`pkg/{actions,conditions}/*_generated.go`) are not committed, so even a plain `go build`
-  on a clone fails until `cmd/carapace/main.go`'s `go:generate` lines have run. Neither is a
-  transient break to wait out — upstream's own `.goreleaser.yml` runs `go generate ./cmd/...`
-  as a pre-build hook, and the AUR's from-source PKGBUILD does the same, so this is the
-  intended build shape.
+  on a clone fails until `cmd/carapace/main.go`'s `go:generate` lines have run. Checked
+  exhaustively rather than inferred from the current release: across all **184 tags** from
+  v0.0.3 (2020-08-31) to v1.7.3 (2026-06-30), 184 carry a `replace` directive and 0 commit
+  the generated sources. That scope is the operative part — `go install` takes any
+  `@version`, and pinning an older one fails identically. Nor is it a transient break to
+  wait out: upstream's own `.goreleaser.yml` runs `go generate ./cmd/...` as a pre-build
+  hook, and the AUR's from-source PKGBUILD does the same, so this is the intended build
+  shape.
 
   The three cells now point at a new footnote ²⁷ carrying a route per target — the upstream
   `.rpm` for openSUSE (the block `dotfiles-Fedora`'s `bootstrap.sh` already ships and has
