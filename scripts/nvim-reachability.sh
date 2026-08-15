@@ -95,13 +95,51 @@ rc=0
 srv_init=nvim/lua/gerrrt/servers/init.lua
 
 # ── inventory: "<module>\t<file>", one per line ───────────────────────────────
+# The mapping must be exactly how LUA resolves a module name, or the walk marks the wrong
+# rows visited. Two traps, both previously live:
+#
+#   `.init` is stripped only for a real `*/init.lua` path. Doing it on the module STRING
+#   let a file literally named `foo.init.lua` masquerade as module `foo` — a name lua
+#   resolves through `foo.lua` or `foo/init.lua` and never through `foo.init.lua`.
+#
+#   A dot inside a filename is not a path separator to lua. `require("gerrrt.a.b")` looks
+#   for `a/b.lua`, so `a.b.lua` is unaddressable dead weight; it is reported below rather
+#   than silently folded into a name some other file legitimately owns.
 mods="$(git ls-files 'nvim/lua/gerrrt/*.lua' 2>/dev/null | while IFS= read -r f; do
   [ -n "$f" ] || continue
   rel="${f#nvim/lua/gerrrt/}"
-  m="gerrrt.$(printf '%s' "${rel%.lua}" | tr '/' '.')"
-  printf '%s\t%s\n' "${m%.init}" "$f" # dir/init.lua is required as `gerrrt.dir`
+  base="${rel%.lua}"
+  case "$rel" in
+    init.lua) mod="gerrrt" ;;                                                  # gerrrt/init.lua
+    */init.lua) mod="gerrrt.$(printf '%s' "${base%/init}" | tr '/' '.')" ;;    # dir/init.lua ⇒ gerrrt.dir
+    *) mod="gerrrt.$(printf '%s' "$base" | tr '/' '.')" ;;
+  esac
+  printf '%s\t%s\n' "$mod" "$f"
 done)"
 [ -n "$mods" ] || exit 0
+
+# A filename lua cannot address at all.
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  b="${f##*/}"
+  case "${b%.lua}" in
+    *.*) echo "unaddressable module file — $f has a dot in its filename; lua resolves gerrrt.a.b through a/b.lua, never a.b.lua"
+      rc=1 ;;
+  esac
+done <<EOF
+$(git ls-files 'nvim/lua/gerrrt/*.lua' 2>/dev/null)
+EOF
+
+# Two files claiming one module name: lua loads exactly one of them (package.path order),
+# so the other is dead config that the walk would mark visited along with its twin.
+while IFS= read -r dup; do
+  [ -n "$dup" ] || continue
+  files="$(printf '%s\n' "$mods" | awk -F'\t' -v m="$dup" '$1 == m { printf "%s ", $2 }')"
+  echo "duplicate module id \"$dup\" — claimed by: ${files% }"
+  rc=1
+done <<EOF
+$(printf '%s\n' "$mods" | cut -f1 | sort | uniq -d)
+EOF
 
 _file_for() { printf '%s\n' "$mods" | awk -F'\t' -v m="$1" '$1 == m { print $2; exit }'; }
 _children_of() { printf '%s\n' "$mods" | awk -F'\t' -v p="$1." 'index($1, p) == 1 { print $1 }'; }

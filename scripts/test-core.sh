@@ -6687,6 +6687,25 @@ if have git; then
   printf 'require("lazy").setup({ { import = "gerrrt.nosuchdir" } })\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
   _nvr_catches 'imports "gerrrt.nosuchdir"' "reports a lazy import that matches no module"
 
+  # the inventory must map module names the way LUA does, or the walk marks the wrong rows
+  # visited. Two files claiming one name: lua loads exactly one (package.path order), so
+  # the other is dead config riding on its twin's reachability.
+  _nvr_fresh
+  mkdir -p "$NREPO/nvim/lua/gerrrt/utils/dup"
+  printf 'require("gerrrt.utils.dup")\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/dup.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/dup/init.lua"
+  _nvr_catches 'duplicate module id' "catches two files claiming one module id"
+
+  # a dot inside a filename is not a path separator to lua: require("gerrrt.a.b") resolves
+  # a/b.lua, never a.b.lua — so the file is unaddressable, and must not masquerade as the
+  # module some other file legitimately owns
+  _nvr_fresh
+  printf 'require("gerrrt.utils.shadow")\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/shadow.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/shadow.init.lua"
+  _nvr_catches 'unaddressable module file' "catches a literal-dot filename lua cannot address"
+
   # a repo with no nvim/ (every OS repo) is silently clean, not an error
   _nvr_fresh; rm -rf "$NREPO/nvim"
   _nvr_clean "no nvim/ tree is a clean no-op"

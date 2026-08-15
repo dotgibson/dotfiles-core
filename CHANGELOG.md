@@ -57,6 +57,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   as a directory import meant `require("gerrrt.utils")` silently marked every
   `gerrrt.utils.*` child reachable.
 
+  The inventory itself is validated, since the walk is only as sound as its name→file map:
+  `.init` is stripped for a real `*/init.lua` path only (doing it on the module string let a
+  file named `foo.init.lua` masquerade as module `foo`), a dot inside a filename is reported
+  as unaddressable (lua resolves `gerrrt.a.b` through `a/b.lua`, never `a.b.lua`), and two
+  files claiming one module id fail — lua loads exactly one of them, so the other is dead
+  config that would otherwise ride on its twin's reachability.
+
   The registry is also checked **both** ways, because a generic "unreachable" is a worse
   message than the truth: a module in no list entry is dead config; a list entry with no module
   file is a runtime load error `servers/init.lua` reports at startup. A missing **or**
@@ -66,8 +73,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Verified against planted fixtures for every class it claims to catch — orphaned `utils/`
   module, stray top-level module, disconnected require cycle, comment-only mention, multiline
   block comment, `package.loaded` peek, `require()` of a directory, lazy import matching
-  nothing, unlisted LSP module, registry entry with no file, unparseable registry, missing
-  registry — plus the
+  nothing, duplicate module id, unaddressable dotted filename, unlisted LSP module, registry
+  entry with no file, unparseable registry, missing registry — plus the
   two exemptions (a false positive on `health.lua` or `plugins/` would make the gate
   unusable). Each negative fixture asserts the finding text **and** exit status 1, so the
   documented CLI contract is covered too. The real tree is clean: all 100 tracked files under
