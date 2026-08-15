@@ -6717,6 +6717,81 @@ if have git; then
   _nvr_fresh; rm -rf "$NREPO/nvim"
   _nvr_clean "no nvim/ tree is a clean no-op"
 fi
+# ── L. escalation + failure tally (lib/bootstrap-lib.sh) ──────────────────────
+# The provisioning half of the bootstrap scaffold: blib_resolve_su picks the escalator,
+# blib_priv runs a command through it, blib_user_bindirs_on_path stops the presence guards
+# lying, and blib_note_fail/blib_failures_report make a half-provisioned box say so. All
+# pure bash — no package manager, no network, no privileges — so it runs everywhere.
+#
+# Each of these encodes a real fresh-machine failure: a hard-coded `sudo` that exited 127
+# on a container, a PATH-only guard that rebuilt every Rust crate on every run, and ~20
+# `|| true` steps that still reported "bootstrap complete".
+hdr "escalation + failure tally (blib_resolve_su / blib_priv / blib_note_fail)"
+# NB: lib/bootstrap-lib.sh is deliberately NOT re-sourced here. Sections F and G already
+# source it at file scope, and its `_CORE_BOOTSTRAP_LIB_SH` re-entry guard makes a repeat
+# `source` a runtime no-op regardless. It is not free for `shellcheck -x` though: a third
+# source re-reads the lib's `${XDG_STATE_HOME:-…}` expansions AFTER section H's subshell
+# assignment of that same variable, which is enough to trip SC2030/SC2031 on section H's
+# otherwise untouched line 2215.
+
+# An explicitly-set BLIB_SU always wins — INCLUDING an empty one, which is the "already
+# root / run directly" contract bootstrap-test.yml depends on. A resolver testing
+# emptiness instead of set-ness would silently re-add sudo in CI.
+_su_after() { (
+  eval "$1"
+  blib_resolve_su >/dev/null 2>&1
+  printf '%s' "${BLIB_SU-UNSET}"
+); }
+if [[ "$(_su_after 'BLIB_SU=')" == "" ]]; then pass "blib_resolve_su: an explicit empty BLIB_SU is preserved"; else fail "blib_resolve_su clobbered an explicit BLIB_SU= (would re-add sudo as root)"; fi
+if [[ "$(_su_after 'BLIB_SU=doas')" == "doas" ]]; then pass "blib_resolve_su: an explicit BLIB_SU=doas is preserved"; else fail "blib_resolve_su clobbered BLIB_SU=doas"; fi
+
+# With no escalator on PATH and not root, --require must FAIL (rc 1) rather than hand back
+# a broken escalator; without --require it must SUCCEED (links-only needs no privileges).
+mkdir -p "$SANDBOX/emptybin"
+# shellcheck disable=SC2123  # emptying PATH is the POINT: it hides sudo/doas (and id)
+_su_none() { ( unset BLIB_SU; PATH="$SANDBOX/emptybin"; blib_resolve_su "$@" >/dev/null 2>&1 ); }
+if [[ "$(id -u)" -ne 0 ]]; then
+  if _su_none --require; then fail "blib_resolve_su --require succeeded with no escalator and no root"; else pass "blib_resolve_su --require fails when there is no escalator"; fi
+  if _su_none; then pass "blib_resolve_su (no --require) succeeds — links-only needs no privileges"; else fail "blib_resolve_su without --require must not fail"; fi
+else
+  skip "blib_resolve_su no-escalator cases (suite is running as root)"
+fi
+
+# blib_priv must never invoke an empty-string command: with BLIB_SU= it runs CMD directly,
+# and with an escalator set it prefixes it (`env` stands in harmlessly for sudo).
+if [[ "$(BLIB_SU='' blib_priv printf 'ran-%s' direct)" == "ran-direct" ]]; then pass "blib_priv with BLIB_SU= runs the command directly"; else fail "blib_priv mishandled an empty escalator"; fi
+if [[ "$(BLIB_SU='env' blib_priv printf 'ran-%s' viasu)" == "ran-viasu" ]]; then pass "blib_priv routes through a non-empty BLIB_SU"; else fail "blib_priv did not route through BLIB_SU"; fi
+
+# blib_user_bindirs_on_path: adds only EXISTING dirs, never duplicates.
+_bindirs_path() { (
+  HOME="$1"
+  PATH="/usr/bin"
+  blib_user_bindirs_on_path
+  blib_user_bindirs_on_path
+  printf '%s' "$PATH"
+); }
+_bhome="$(mktemp -d "$SANDBOX/bindirs.XXXXXX")"
+mkdir -p "$_bhome/.local/bin" "$_bhome/.cargo/bin" # deliberately NO go/bin, NO .atuin/bin
+_bpath="$(_bindirs_path "$_bhome")"
+case "$_bpath" in *"$_bhome/.local/bin"*) pass "blib_user_bindirs_on_path adds an existing ~/.local/bin" ;; *) fail "blib_user_bindirs_on_path missed ~/.local/bin" ;; esac
+case "$_bpath" in *"$_bhome/.cargo/bin"*) pass "blib_user_bindirs_on_path adds an existing ~/.cargo/bin (the cargo-rebuild bug)" ;; *) fail "blib_user_bindirs_on_path missed ~/.cargo/bin" ;; esac
+case "$_bpath" in *"$_bhome/go/bin"*) fail "blib_user_bindirs_on_path added a NON-EXISTENT dir (~/go/bin)" ;; *) pass "blib_user_bindirs_on_path skips directories that do not exist" ;; esac
+if [[ "$(printf '%s' "$_bpath" | tr ':' '\n' | grep -cxF "$_bhome/.local/bin")" == "1" ]]; then pass "blib_user_bindirs_on_path is idempotent (no duplicate PATH entries)"; else fail "blib_user_bindirs_on_path duplicated a PATH entry on the second call"; fi
+
+# The failure tally. Empty ⇒ silent AND rc 0; non-empty ⇒ rc 1 and every entry listed.
+# That rc IS the contract a caller maps onto its --strict flag.
+if (BLIB_FAILED=(); blib_failures_report >/dev/null); then pass "blib_failures_report returns 0 when nothing failed"; else fail "blib_failures_report must return 0 on an empty tally"; fi
+if [[ -z "$(BLIB_FAILED=(); blib_failures_report 2>&1)" ]]; then pass "blib_failures_report prints nothing when nothing failed"; else fail "blib_failures_report printed on an empty tally"; fi
+_tally_out="$(BLIB_FAILED=(); blib_note_fail 'carapace: RPM install failed' >/dev/null 2>&1; blib_note_fail 'op: install failed' >/dev/null 2>&1; blib_failures_report 2>&1 || true)"
+case "$_tally_out" in *"2 step(s) did not complete"*) pass "blib_failures_report counts the recorded steps" ;; *) fail "blib_failures_report lost the count" ;; esac
+case "$_tally_out" in *"carapace: RPM install failed"*) pass "blib_failures_report lists the first failure" ;; *) fail "blib_failures_report dropped a recorded failure" ;; esac
+case "$_tally_out" in *"op: install failed"*) pass "blib_failures_report lists the last failure" ;; *) fail "blib_failures_report dropped the last failure" ;; esac
+if (BLIB_FAILED=(); blib_note_fail x >/dev/null 2>&1; blib_failures_report >/dev/null 2>&1); then fail "blib_failures_report must return NON-zero when a step failed"; else pass "blib_failures_report returns non-zero when a step failed (drives --strict)"; fi
+if [[ "$(BLIB_FAILED=(); blib_note_fail a >/dev/null 2>&1; blib_note_fail b >/dev/null 2>&1; blib_failed_count)" == "2" ]]; then pass "blib_failed_count reports the tally size"; else fail "blib_failed_count wrong"; fi
+# bash 3.2 + `set -u`: an empty array expansion counts as UNSET, so a bare
+# "${BLIB_FAILED[@]}" would abort the report on the HAPPY path. Prove the guarded form
+# survives errexit+nounset — which is exactly how a bootstrap runs.
+if (set -eu; BLIB_FAILED=(); blib_failures_report >/dev/null 2>&1); then pass "blib_failures_report survives set -eu with an empty tally (bash 3.2 array rule)"; else fail "blib_failures_report tripped set -u on an empty array"; fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary

@@ -546,6 +546,154 @@ _blib_priv() {
   local su="${BLIB_SU-sudo}"
   if [[ -n "$su" ]]; then "$su" "$@"; else "$@"; fi
 }
+# blib_priv is the PUBLIC name for the same thing — an OS bootstrap should call this for
+# every privileged command instead of writing `sudo` inline. `_blib_priv` predates it and
+# stays as the internal spelling the helpers in this file already use.
+blib_priv() { _blib_priv "$@"; }
+
+# blib_resolve_su [--require] — resolve the escalator ONCE into BLIB_SU, and export it.
+#
+# Every OS bootstrap.sh hard-codes `sudo` at a dozen call sites. That is wrong on every box
+# where there is no sudo to call — and those are exactly the boxes a bootstrap meets first:
+# a distro container (fedora:latest and alpine:3.20 both ship without sudo), a WSL distro's
+# first boot (root, before /etc/wsl.conf installs the default user), and a minimal Server
+# image. The script then died at its FIRST package-manager line with `sudo: command not
+# found` — exit 127 under `set -e`, before doing anything at all. It is also why
+# bootstrap-test.yml can exercise only --links-only, and must pass BLIB_SU= to do even that.
+#
+# Precedence: an explicitly set BLIB_SU always wins, INCLUDING an empty one (BLIB_SU= means
+# "run directly"), which is why this tests ${BLIB_SU+x} and not emptiness. Otherwise root
+# needs nothing, else sudo, else doas.
+#
+# --require makes "not root and no escalator" a hard error (returns 1). Without it the
+# caller gets an empty BLIB_SU and a warning, which is the correct outcome for a
+# links-only run — wiring symlinks needs no privileges at all.
+blib_resolve_su() {
+  local require=0
+  [[ "${1:-}" == "--require" ]] && require=1
+  if [[ -n "${BLIB_SU+x}" ]]; then
+    export BLIB_SU
+    return 0
+  fi
+  # STRING compare, and tolerate `id` itself being unavailable. `[[ "$(id -u)" -eq 0 ]]` is
+  # an ARITHMETIC comparison, and bash evaluates an empty string there as 0 — so on a box
+  # where `id` is missing or off PATH the old form concluded "we are root", skipped the
+  # --require error, and then ran every privileged command unescalated. Failing closed to
+  # "not root" is the safe direction: the worst case is an unnecessary sudo.
+  local uid
+  uid="$(id -u 2>/dev/null || true)"
+  if [[ "$uid" == "0" ]]; then
+    BLIB_SU=""
+  elif command -v sudo >/dev/null 2>&1; then
+    BLIB_SU="sudo"
+  elif command -v doas >/dev/null 2>&1; then
+    BLIB_SU="doas"
+  else
+    BLIB_SU=""
+    if ((require)); then
+      blib_warn "not root, and neither sudo nor doas is installed — cannot install packages"
+      blib_warn "re-run as root, install sudo, or use --links-only (which needs no privileges)"
+      export BLIB_SU
+      return 1
+    fi
+    blib_warn "no privilege escalator found — privileged steps run directly and may fail"
+  fi
+  export BLIB_SU
+  return 0
+}
+
+# ── keep the sudo timestamp warm ──────────────────────────────────────────────
+# blib_sudo_keepalive_start / blib_sudo_keepalive_stop — prime sudo ONCE up front, then
+# refresh it in the background for the life of the caller.
+#
+# The bug this exists for: a bootstrap's privileged calls are interleaved with package
+# builds that take MINUTES (cargo/go from source), comfortably outliving sudo's 5-minute
+# timestamp. sudo writes its prompt to STDERR and reads the password from the TTY — so a
+# later call whose stderr is redirected (`>/dev/null 2>&1`, ubiquitous in these scripts)
+# stops dead at a prompt nobody can see. No output, no progress, indistinguishable from a
+# hang, and it reproduces only on a box slow enough to cross the timeout.
+#
+# Only meaningful for sudo: doas has no refreshable timestamp and root has nothing to
+# prime. Returns non-zero if the initial authentication fails, so a caller can abort
+# before doing half a provision.
+BLIB_SUDO_KEEPALIVE_PID=""
+blib_sudo_keepalive_start() {
+  [[ "${BLIB_SU-sudo}" == sudo ]] || return 0
+  [[ -z "$BLIB_SUDO_KEEPALIVE_PID" ]] || return 0 # already running
+  _blib_dry && {
+    blib_say "would prime sudo and keep its timestamp warm for the run"
+    return 0
+  }
+  sudo -v || return 1
+  # `kill -0 "$$"`: $$ is the PARENT shell's pid even inside this background subshell, so
+  # the refresher stops when the bootstrap exits even if the caller's trap is missed.
+  while true; do
+    sudo -n true 2>/dev/null || true
+    sleep 50
+    kill -0 "$$" 2>/dev/null || exit 0
+  done &
+  BLIB_SUDO_KEEPALIVE_PID=$!
+}
+blib_sudo_keepalive_stop() {
+  [[ -n "$BLIB_SUDO_KEEPALIVE_PID" ]] || return 0
+  kill "$BLIB_SUDO_KEEPALIVE_PID" 2>/dev/null || true
+  BLIB_SUDO_KEEPALIVE_PID=""
+}
+
+# ── user bindirs on PATH ──────────────────────────────────────────────────────
+# blib_user_bindirs_on_path — prepend the per-user bindirs that language installers write
+# into, so a bootstrap's `command -v <tool>` guards tell the TRUTH.
+#
+# Without this those guards are answered by the PATH of whatever shell launched the
+# bootstrap — on a fresh box, bash, which has none of these entries. `cargo install` writes
+# ~/.cargo/bin and `go install` writes $GOBIN (~/.local/bin by convention here), while
+# ~/.cargo/bin reaches PATH only via the OS zsh layer — i.e. only inside a Core shell that
+# does not exist yet. So every guard reported "missing" and every re-run rebuilt the whole
+# from-source tool set: minutes of work, silently discarded, on every single bootstrap.
+#
+# Only directories that EXIST are added, and never twice, so this is safe to call more than
+# once and cannot inject a bogus PATH entry.
+blib_user_bindirs_on_path() {
+  local d
+  for d in "$HOME/.local/bin" "$HOME/.cargo/bin" "$HOME/go/bin" "$HOME/.atuin/bin"; do
+    [[ -d "$d" ]] || continue
+    case ":$PATH:" in
+    *":$d:"*) ;;
+    *) PATH="$d:$PATH" ;;
+    esac
+  done
+  export PATH
+}
+
+# ── deferred failures ─────────────────────────────────────────────────────────
+# blib_note_fail / blib_failed_count / blib_failures_report — record a best-effort step
+# that did not work, then report them together at the end.
+#
+# A bootstrap is full of steps that must NOT abort the run: a COPR that is down, a
+# rate-limited API, a crate that fails to build. Every one is therefore written `|| true`
+# or `|| warn` — and the script then finished with "bootstrap complete" and exit 0, so a
+# box that got none of its extra tooling was indistinguishable from a good one, to CI and
+# to the operator alike.
+#
+# blib_failures_report returns non-zero when anything was recorded, so a caller can map
+# that onto its own --strict flag.
+BLIB_FAILED=()
+blib_note_fail() {
+  BLIB_FAILED[${#BLIB_FAILED[@]}]="$1" # bash 3.2-safe append (arrays have no += there)
+  blib_warn "$1"
+}
+blib_failed_count() { printf '%s' "${#BLIB_FAILED[@]}"; }
+blib_failures_report() {
+  ((${#BLIB_FAILED[@]})) || return 0
+  printf '\n%s%s%s %s\n' "${UX_YEL:-}" "${UX_WARN:-!}" "${UX_RST:-}" \
+    "${#BLIB_FAILED[@]} step(s) did not complete:"
+  # `"${arr[@]+"${arr[@]}"}"`: on bash 3.2 `set -u` treats an empty array expansion as
+  # unset. The count guard above makes it non-empty here, but keep the idiom so a later
+  # edit that moves this line cannot reintroduce the crash.
+  printf '    - %s\n' "${BLIB_FAILED[@]+"${BLIB_FAILED[@]}"}"
+  printf '\n'
+  return 1
+}
 
 # ── make zsh the default login shell ──────────────────────────────────────────
 # blib_set_login_shell — set zsh as the user's LOGIN shell (a fresh WSL/login session
@@ -578,9 +726,22 @@ blib_set_login_shell() {
     return 0
   fi
   blib_say "setting zsh as default login shell"
-  grep -qxF "$zsh_path" /etc/shells || echo "$zsh_path" | _blib_priv tee -a /etc/shells >/dev/null
+  # NEITHER of the next two steps may abort the bootstrap. This runs at the very END of
+  # wire_links, after every symlink is already in place, so a box where /etc/shells is
+  # read-only or chsh is restricted (a hardened host, an LDAP/SSSD account, a container
+  # with a read-only /etc) would throw away a COMPLETE and correct wiring over the one
+  # cosmetic step left — and under `set -e` the failure surfaced as a bare `tee:
+  # Permission denied` with no explanation of what had or hadn't been done.
+  if ! grep -qxF "$zsh_path" /etc/shells 2>/dev/null; then
+    printf '%s\n' "$zsh_path" | _blib_priv tee -a /etc/shells >/dev/null 2>&1 ||
+      blib_warn "could not add $zsh_path to /etc/shells — chsh may refuse it; add that line by hand"
+  fi
   if command -v chsh >/dev/null 2>&1; then
-    _blib_priv chsh -s "$zsh_path" "$user" && blib_ok "default shell -> zsh (applies to NEW logins)"
+    if _blib_priv chsh -s "$zsh_path" "$user"; then
+      blib_ok "default shell -> zsh (applies to NEW logins)"
+    else
+      blib_warn "chsh failed — set it by hand: chsh -s $zsh_path $user (or usermod -s $zsh_path $user)"
+    fi
   else
     blib_say "chsh not found (install the 'shadow' package) — set it manually with usermod -s $zsh_path $user"
   fi
