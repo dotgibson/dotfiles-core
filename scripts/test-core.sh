@@ -5223,6 +5223,62 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
   "DISPLAY=''; WAYLAND_DISPLAY=''; OSTYPE=darwin24; source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[web] )) && [[ -z \${BROWSER:-} ]]" \
   PATH="$BRBIN"
 
+# ── renamed binaries: fd/bat symmetry + an honest doctor (#418) ──────────────
+# Debian/Ubuntu/Kali ship fd as `fdfind` and bat as `batcat`. 00-tools.zsh resolves both
+# into FD_BIN/BAT_BIN, but the two were then handled ASYMMETRICALLY: 20-aliases.zsh gave
+# fd an alias under its canonical name and bat none, so `bat` was untypeable on those
+# boxes — and core-doctor reported `✗ bat` two lines above a `resolved` section printing
+# `bat → batcat`. The ✓ that fd got was itself accidental: it came from zsh's `command -v`
+# resolving the ALIAS, not from PATH, which is why `core-doctor -v` still printed a bare
+# versionless `✓ fd` there (the probe forks `"$bin" --version`, a parameter expansion, and
+# parameters are never alias-expanded — the error was swallowed by the pipeline).
+# Both halves are pinned here against a stubbed PATH, hermetically, because a regression
+# fans out to all eight OS repos and is invisible on macOS where the names are canonical.
+RNBIN="$SANDBOX/rnbin"
+_real_grep="$(command -v grep)"
+_real_head="$(command -v head)"
+_rn_only() { # _rn_only [binary-name ...] — stub these onto an otherwise-empty bin dir
+  rm -rf "$RNBIN"
+  mkdir -p "$RNBIN"
+  local n
+  for n in "$@"; do
+    printf '#!/bin/sh\necho "%s 0.24.0"\n' "$n" >"$RNBIN/$n"
+    chmod +x "$RNBIN/$n"
+  done
+  # grep/head are linked in, not stubbed: `core-doctor -v` pipes each tool's --version
+  # through them, so case (c) cannot run on a PATH that lacks them. Linking the real ones
+  # keeps the dir hermetic for the names that MATTER — a stubbed batcat/fdfind/bat/fd
+  # still wins by precedence, and no real bat/fd from /usr/bin can leak in and hand the
+  # version assertion someone else's release number on a Fedora or Debian runner.
+  ln -sf "$_real_grep" "$RNBIN/grep"
+  ln -sf "$_real_head" "$RNBIN/head"
+}
+# (a) SYMMETRY — the issue itself: on Debian names, BOTH tools are typeable canonically.
+_rn_only batcat fdfind
+ucheck "renamed: Debian names → alias bat=batcat AND alias fd=fdfind (symmetric)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; [[ \${aliases[bat]} == batcat && \${aliases[fd]} == fdfind ]]" \
+  PATH="$RNBIN"
+# (b) HONEST DOCTOR — and it must NOT depend on (a). 20-aliases.zsh is deliberately NOT
+# sourced here, so a ✓ can only come from _core_doctor_bin resolving $BAT_BIN/$FD_BIN.
+ucheck "renamed: core-doctor --json reports bat/fd present without the aliases loaded" \
+  "source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"bat\":true'* && \$j == *'\"fd\":true'* ]]" \
+  PATH="$RNBIN" CORE_NO_PAGER=1
+# (c) VERSIONS — the latent half: -v forks the RESOLVED binary, so both rows carry a
+# version. Before the fix this printed `✓ fd` bare, with the failure swallowed.
+ucheck "renamed: core-doctor -v reads versions off the resolved binary" \
+  "source '$TOOLS_FILE'; source '$UI'; source '$FN'; o=\$(core-doctor -v); [[ \$o == *'bat 0.24.0'* && \$o == *'fd 0.24.0'* ]]" \
+  PATH="$RNBIN" CORE_NO_PAGER=1
+# (d) CANONICAL NAMES — the non-Debian answer is unchanged: self-named aliases, still ✓.
+_rn_only bat fd
+ucheck "renamed: canonical names → aliases stay self-named and the doctor still reports ✓" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \${aliases[bat]} == bat && \${aliases[fd]} == fd && \$j == *'\"bat\":true'* && \$j == *'\"fd\":true'* ]]" \
+  PATH="$RNBIN" CORE_NO_PAGER=1
+# (e) NEITHER — a bare box degrades: no HAVE_*, no bat/fd/cat alias, and an honest ✗.
+_rn_only
+ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports absent" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ -z \${HAVE_BAT:-} && -z \${HAVE_FD:-} ]] && ! (( \$+aliases[bat] )) && ! (( \$+aliases[fd] )) && ! (( \$+aliases[cat] )) && [[ \$j == *'\"bat\":false'* && \$j == *'\"fd\":false'* ]]" \
+  PATH="$RNBIN" CORE_NO_PAGER=1
+
 # ── OSC 133 prompt marks + the command-block rule (00-tools.zsh) ─────────────
 # The marks are what tmux's next-prompt/previous-prompt (bound to ] / [ in
 # tmux.reset.conf) read, so a regression here silently costs the keybinding its meaning
