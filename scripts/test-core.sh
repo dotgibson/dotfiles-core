@@ -7171,10 +7171,13 @@ if [[ -z "$_ka_trap" ]]; then
   fail "keepalive: no TERM handler found in lib/bootstrap-lib.sh — the reaping gate cannot check anything"
 elif [[ "$_ka_trap" == *'$!'* || "$_ka_trap" == *'_sleeper'* ]]; then
   fail "keepalive: the TERM handler targets a pid, not a job — \$! survives the reap and can signal a recycled pid: $_ka_trap"
-elif [[ "$_ka_trap" != *'kill %%'* ]]; then
-  fail "keepalive: the TERM handler does not 'kill %%' — the sleeper is never signalled and leaks for its full interval: $_ka_trap"
-elif [[ "$_ka_trap" != *'wait %%'* ]]; then
-  fail "keepalive: the TERM handler does not 'wait %%' — it exits before the sleeper is reaped, so stop() is not synchronous: $_ka_trap"
+elif [[ "$_ka_trap" != *'kill %%'*'wait %%'*exit* ]]; then
+  # ONE ORDERED pattern, not three independent substring tests. Testing membership
+  # separately says nothing about sequence or reachability, so it accepted
+  # `trap 'exit 0; kill %%; wait %%' TERM` — where both cleanup commands sit after the
+  # exit and never run — and a wait-before-kill handler, which blocks on a sleeper it
+  # has not signalled. Requiring kill THEN wait THEN exit rejects both by construction.
+  fail "keepalive: the TERM handler is not 'kill %% … wait %% … exit' in that order — it must signal the sleeper, reap it, and only then exit: $_ka_trap"
 else
   pass "keepalive: the TERM handler kills AND waits the job (%%), so it cannot leak or signal a recycled pid"
 fi
