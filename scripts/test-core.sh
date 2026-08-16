@@ -6917,6 +6917,23 @@ _su_after() { (
 ); }
 if [[ "$(_su_after 'BLIB_SU=')" == "" ]]; then pass "blib_resolve_su: an explicit empty BLIB_SU is preserved"; else fail "blib_resolve_su clobbered an explicit BLIB_SU= (would re-add sudo as root)"; fi
 if [[ "$(_su_after 'BLIB_SU=doas')" == "doas" ]]; then pass "blib_resolve_su: an explicit BLIB_SU=doas is preserved"; else fail "blib_resolve_su clobbered BLIB_SU=doas"; fi
+# `command -v` also reports aliases, builtins and FUNCTIONS, so an exported `sudo()` makes
+# it print the bare word `sudo`. Recording that defeats the absolute-path pinning (a bare
+# name is re-resolved at every call) and could hand privileged execution to the function.
+if [[ "$(id -u)" -ne 0 ]]; then
+  # shellcheck disable=SC2030,SC2031,SC2123,SC2317,SC2329  # emptying PATH and defining a
+  # shadowing `sudo` function are both the POINT here; the function is reached via
+  # `command -v` and never called, which is why BOTH unreachability codes are suppressed.
+  # SC2317 alone used to cover it; 0.10 split "this function is never invoked" out into
+  # SC2329, so the older list went red on every audit leg over an info-level finding.
+  _su_fn="$( unset BLIB_SU; PATH="$SANDBOX/emptybin"
+    sudo() { :; }
+    blib_resolve_su >/dev/null 2>&1
+    printf '%s' "$BLIB_SU" )"
+  if [[ -z "$_su_fn" ]]; then pass "blib_resolve_su ignores a shell FUNCTION named sudo"; else fail "blib_resolve_su recorded a non-executable [$_su_fn]"; fi
+else
+  skip "blib_resolve_su function-shadowing case (suite is running as root)"
+fi
 
 # With no escalator on PATH and not root, --require must FAIL (rc 1) rather than hand back
 # a broken escalator; without --require it must SUCCEED (links-only needs no privileges).
@@ -6927,7 +6944,17 @@ if [[ "$(id -u)" -ne 0 ]]; then
   if _su_none --require; then fail "blib_resolve_su --require succeeded with no escalator and no root"; else pass "blib_resolve_su --require fails when there is no escalator"; fi
   if _su_none; then pass "blib_resolve_su (no --require) succeeds — links-only needs no privileges"; else fail "blib_resolve_su without --require must not fail"; fi
 else
-  skip "blib_resolve_su no-escalator cases (suite is running as root)"
+  # The MINIMAL-ROOT contract, and the only leg that can test it: as root with no id, sudo
+  # or doas reachable, --require must SUCCEED with an empty BLIB_SU, because root needs no
+  # escalator. This is exactly what $EUID buys — the previous `id -u` probe returned "" on a
+  # PATH with no `id`, concluded "not root", and failed --require on the minimal container
+  # this scaffold exists to serve. Non-root legs cannot reach the branch, so without this
+  # case the regression ships unseen (and every root leg skipped the whole section).
+  # shellcheck disable=SC2030,SC2031,SC2123  # emptying PATH is the point: it hides `id` too
+  _su_root="$( unset BLIB_SU; PATH="$SANDBOX/emptybin"
+    blib_resolve_su --require >/dev/null 2>&1 && printf 'ok/%s' "${BLIB_SU-UNSET}" || printf 'failed/%s' "${BLIB_SU-UNSET}" )"
+  if [[ "$_su_root" == "ok/" ]]; then pass "blib_resolve_su --require succeeds as root on an empty PATH (no id/sudo/doas)"; else fail "root minimal-PATH --require regressed (got $_su_root; want ok/ with an empty BLIB_SU)"; fi
+  skip "blib_resolve_su NON-root no-escalator cases (suite is running as root)"
 fi
 
 # "Resolve once" must mean ONCE: the recorded escalator has to survive a later PATH change,
@@ -7041,7 +7068,15 @@ if [[ -n "$(_ka_pid "$_ka_bin/sudo" 0)" ]]; then pass "blib_sudo_keepalive_start
 printf '#!/bin/sh\nexit 1\n' >"$_ka_bin/sudo"
 if _ka_rc sudo 0; then fail "blib_sudo_keepalive_start returned 0 when sudo -v failed"; else pass "blib_sudo_keepalive_start reports a failed initial authentication"; fi
 # the happy path: it forks exactly one refresher, and stop() reaps it and is re-callable.
-printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"
+# The shim now RECORDS its argv, so the refresh MODE is assertable further down: a shim that
+# merely exits 0 accepts `-n true` and `-n -v` alike, and the suite passed either way — it
+# could not see the restricted-sudoers fix at all.
+#
+# `printf`, not `echo`: given argv `-n -v`, dash's echo eats the `-n` as its own no-newline
+# flag and records a bare `-v` — a harness that reports the OLD behaviour as the new one.
+_ka_argv="$_ka_bin/argv"
+: >"$_ka_argv"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexit 0\n' "$_ka_argv" >"$_ka_bin/sudo"
 # shellcheck disable=SC2030,SC2031  # subshell-local PATH again: the shimmed sudo
 _ka_out="$( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   blib_sudo_keepalive_start >/dev/null 2>&1
@@ -7053,8 +7088,87 @@ _ka_out="$( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin
   blib_sudo_keepalive_stop   # second call must be a harmless no-op
   printf '%s/%s/%s' "$alive" "$after" "${BLIB_SUDO_KEEPALIVE_PID:-empty}" )"
 case "$_ka_out" in yes/*) pass "blib_sudo_keepalive_start forks a live refresher" ;; *) fail "blib_sudo_keepalive_start did not fork a refresher (got $_ka_out)" ;; esac
-case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher (no orphan)" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
+case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher shell" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
+# The refresh must use sudo's VALIDATION mode. `-n true` additionally requires the account
+# to be authorised to run `true`, which a sudoers restricted to the provisioning commands
+# denies — the refresh then fails silently and the timestamp expires, restoring the hang.
+# The initial prime is a bare `-v`, so require the `-n -v` line specifically.
+#
+# Its OWN run, which POLLS for that line before stopping. Reusing the block above would
+# make this scheduler-dependent: that one stops after a fixed short delay, and a loaded
+# runner need not have scheduled the background loop's first refresh by then. It did not on
+# macOS — the argv log held only the initial `-v` and the assertion failed for a timing
+# reason that had nothing to do with the behaviour under test.
+# shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
+_ka_mode="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  : >"$_ka_argv"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  n=0
+  while ((n < 100)); do grep -qe '-n -v' "$_ka_argv" 2>/dev/null && break; sleep 0.1; n=$((n + 1)); done
+  blib_sudo_keepalive_stop
+  tr '\n' '|' <"$_ka_argv" )"
+case "$_ka_mode" in *"-n -v"*) pass "the background refresh uses 'sudo -n -v' (validation mode)" ;; *) fail "the refresher did not use -n -v (argv recorded: $_ka_mode)" ;; esac
+# The refresher's SLEEPER is a separate process. Killing only the loop shell leaves it
+# running — orphaned for up to its full duration — and the pid check above cannot see that,
+# so it certified a "no orphan" property it never tested.
+#
+# Assert on THIS keepalive's own sleeper, by pid. Comparing a global `pgrep -x sleep` count
+# before and after could not tell our sleeper from the box's, and failed in BOTH directions:
+# an unrelated sleep exiting between the two snapshots dropped the count and passed the
+# assertion while this keepalive had in fact leaked one, and an unrelated sleep starting
+# failed it for something no one here did. On a CI leg (or a dev box running two suites at
+# once) that is a coin toss, and the direction that matters is the silent pass.
+#
+# The shim records the sleeper's pid and then EXECs the real sleep, so the recorded pid IS
+# the surviving process — no parent/child indirection to get wrong. Only the 50s refresher
+# sleeper is recorded: the harness's own short sleeps reach this shim through the same
+# scoped PATH, and counting those would put us right back to measuring the box.
+_ka_sleeper_file="$SANDBOX/ka-sleeper.pids"
+: >"$_ka_sleeper_file"
+_ka_real_sleep="$(command -v sleep)"
+cat >"$_ka_bin/sleep" <<SHIM
+#!/bin/sh
+case "\$1" in 50) printf '%s\n' "\$\$" >>"$_ka_sleeper_file" ;; esac
+exec "$_ka_real_sleep" "\$@"
+SHIM
+chmod +x "$_ka_bin/sleep"
+# shellcheck disable=SC2030,SC2031
+# No fixed delays, in EITHER direction. A pre-stop sleep can fire before the refresher has
+# been scheduled on a loaded runner (that is the macOS failure documented above), so poll
+# for the recording instead. And a post-stop grace period is worse than useless here: it
+# lets a NON-synchronous stop() pass whenever the sleeper happens to die shortly after,
+# which is exactly the contract under test — so assert the instant stop() returns.
+# shellcheck disable=SC2030,SC2031
+( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  n=0; while ((n < 100)) && [[ ! -s "$_ka_sleeper_file" ]]; do sleep 0.1; n=$((n + 1)); done
+  blib_sudo_keepalive_stop ) >/dev/null 2>&1
+_ka_sleeper_pid="$(head -n1 "$_ka_sleeper_file" 2>/dev/null || true)"
+# An empty recording is a FAILURE, not a pass. If the shim never fired, no sleeper was ever
+# forked and the reaping claim is vacuous — precisely the silent-pass mode being removed.
+if [[ -z "$_ka_sleeper_pid" ]]; then
+  fail "the keepalive forked no sleeper (shim recorded none) — the reaping assertion would be vacuous"
+elif kill -0 "$_ka_sleeper_pid" 2>/dev/null; then
+  fail "blib_sudo_keepalive_stop returned with its sleeper (pid $_ka_sleeper_pid) still alive — teardown is not synchronous"
+else
+  pass "blib_sudo_keepalive_stop reaps the SLEEPER before returning (synchronous teardown)"
+fi
 case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
+# The TERM handler must target the JOB, never a pid. `$!` does not clear when `wait` reaps
+# the sleeper, so a handler holding it signals that dead pid for the whole of the next
+# `sudo -n -v` — and once the box has cycled through the pid space, whatever now owns it,
+# as root. A saved copy is wrong the other way (assigned after the fork, so a TERM in
+# between orphans the new sleeper). Only a job spec is set by the fork AND cleared by the
+# reap. This is a STRUCTURAL gate because the failure needs a 50s iteration boundary plus a
+# pid wrap to observe — unreachable in a suite, which is exactly why it needs pinning.
+_ka_trap="$(sed -n "/^ *trap .*TERM$/p" "$HERE/lib/bootstrap-lib.sh")"
+if [[ -z "$_ka_trap" ]]; then
+  fail "keepalive: no TERM handler found in lib/bootstrap-lib.sh — the reaping gate cannot check anything"
+elif [[ "$_ka_trap" == *'$!'* || "$_ka_trap" == *'_sleeper'* ]]; then
+  fail "keepalive: the TERM handler targets a pid, not a job — \$! survives the reap and can signal a recycled pid: $_ka_trap"
+else
+  pass "keepalive: the TERM handler targets the job (%%), so it cannot signal a reaped or recycled pid"
+fi
 
 # ── blib_set_login_shell must never abort a completed wiring ─────────────────
 # It runs at the very END of wire_links, so a failure here would discard an otherwise

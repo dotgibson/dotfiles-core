@@ -115,8 +115,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   is the entry point it walks _from_ rather than a vertex, and `lazy-lock.json` and
   `.luacheckrc` are not lua modules at all. bash 3.2 safe, so the macos-latest CI leg runs it. Closes the
   `nvim/` half of #454.
-- **`lib/bootstrap-lib.sh` now owns privilege escalation, so a bootstrap stops hard-coding
-  `sudo`.** `blib_resolve_su [--require]` resolves the escalator **once** into `BLIB_SU`
+- **`lib/bootstrap-lib.sh` gains the privilege-escalation API a bootstrap needs in order to
+  stop hard-coding `sudo` — available for adoption; no caller yet.**
+  `blib_resolve_su [--require]` resolves the escalator **once** into `BLIB_SU`
   (an explicitly set value always wins, _including_ an empty one; else root needs nothing,
   else `sudo`, else `doas`), and `blib_priv` is the public way to run a privileged command.
   Every OS bootstrap wrote `sudo` inline at roughly a dozen call sites, which is wrong on
@@ -129,8 +130,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and no escalator" a hard error for a provisioning run, while a links-only run correctly
   continues (wiring symlinks needs no privileges).
 
-- **`blib_sudo_keepalive_start` / `blib_sudo_keepalive_stop` — no more invisible password
-  prompts.** A bootstrap's privileged calls are interleaved with from-source `cargo`/`go`
+- **`blib_sudo_keepalive_start` / `blib_sudo_keepalive_stop` — the API for keeping a sudo
+  timestamp warm, which greatly reduces the chance that an adopting bootstrap stalls on an
+  invisible password prompt.** A mitigation, not a guarantee: the background refresh
+  deliberately swallows its own failures rather than killing the run, and a sudoers with no
+  reusable timestamp (`timestamp_timeout=0`) cannot be kept warm at all. A bootstrap's privileged calls are interleaved with from-source `cargo`/`go`
   builds that take minutes, comfortably outliving sudo's 5-minute timestamp. sudo writes
   its prompt to **stderr** and reads from the TTY, so a later call whose stderr is
   redirected (`>/dev/null 2>&1`, ubiquitous in these scripts) stopped dead at a prompt
@@ -140,7 +144,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   abort before half-provisioning. A no-op under `doas` (no refreshable timestamp) and as
   root.
 
-- **`blib_user_bindirs_on_path` — stop the presence guards lying.** A bootstrap's
+- **`blib_user_bindirs_on_path` — the helper an adopting bootstrap calls to stop its
+  presence guards lying.** A bootstrap's
   `command -v <tool>` guards decide whether to spend _minutes_ building from source, but
   they are answered by the PATH of whatever shell launched the bootstrap — on a fresh box,
   bash. `cargo install` writes `~/.cargo/bin` and `go install` writes `$GOBIN`
@@ -149,13 +154,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   reported "missing" and every re-run rebuilt the entire from-source tool set. Adds only
   directories that exist, and never twice.
 
-- **`blib_note_fail` / `blib_failed_count` / `blib_failures_report` — a half-provisioned
-  box now says so.** A bootstrap is full of steps that must not abort the run (a COPR that
+- **`blib_note_fail` / `blib_failed_count` / `blib_failures_report` — the tally an adopting
+  bootstrap uses so a half-provisioned box says so.** A bootstrap is full of steps that must not abort the run (a COPR that
   is down, a rate-limited API, a crate that fails to build), so each is written `|| true` —
   and the script then printed "bootstrap complete" and exited 0 regardless, making a box
   that got none of its extra tooling indistinguishable from a good one, to CI and operator
   alike. `blib_failures_report` returns non-zero when anything was recorded, which is the
   contract a caller maps onto its own `--strict` flag.
+
+  **Scope:** these are new APIs, not yet wired into any bootstrap. Nothing in the fleet
+  changes behaviour from this release alone — each OS repo adopts them after the next
+  sync, starting with `dotfiles-Fedora` (whose `bootstrap.sh` currently carries
+  equivalent logic inline) as the reference implementation, then per `PORTING-MATRIX.md`.
 
   All four are covered by a new hermetic section in `scripts/test-core.sh` (no package
   manager, no network, no privileges), including the bash 3.2 `set -u` empty-array rule
