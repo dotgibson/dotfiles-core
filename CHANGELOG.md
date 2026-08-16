@@ -13,6 +13,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The fan-out moved the tree and the lock, and left the pins pointing at the previous
+  Core** ([#482](https://github.com/dotgibson/dotfiles-core/issues/482)). An OS repo names
+  the vendored Core in three places — the `core/` subtree, `core.lock`'s `core_sha`, and,
+  in any repo that SHA-pins its reusable callers, the workflow `uses:` pins.
+  `sync-core.sh` wrote the first two and had no concept of the third, so a fan-out produced
+  a repo that **vendored one Core and ran another**.
+
+  Not cosmetic: `auto-tag-call` holds `contents: write` and pushes tags, `notify-web-call`
+  is handed two secrets. And the drift was silent by construction — `core-integrity`
+  compares a tree object and `verify-core` a byte-for-byte split, so both stay green while
+  a workflow points somewhere else entirely. It reached production on the v4.12.0 fan-out
+  and surfaced only because `dotfiles-MacBook` had just built its own pin gate; every other
+  repo takes the mutable `@v4` alias, which the release force-advances, so nothing else
+  showed a symptom.
+
+  The pins now move in the **same commit** that stamps `core.lock` (landing them apart
+  would leave a window where the repo's own gate is red on `main`). Two boundaries, both
+  tested: only an existing 40-hex pin moves — a caller on `@v4` is left alone, because
+  taking the alias is a deliberate per-repo policy and silently converting it to a SHA pin
+  would change that repo's update model behind its back — and the trailing `# vX.Y.Z` moves
+  with the SHA, since Renovate reads it and a pin check compares it against `core_tag`
+  independently, so rewriting one without the other only trades one red gate for another.
+  A third-party action pinned in the identical `@<sha> # <version>` shape is matched on the
+  `dotgibson/dotfiles-core/` prefix and skipped.
+
+  The idempotency check widened from `core.lock` to the whole staged set. Scoped to
+  `core.lock` it reported "current" and dropped the pin fix on exactly the repos a
+  pre-fix fan-out had already left stale.
+
 ## [v4.12.0] - 2026-08-16
 
 ### Added

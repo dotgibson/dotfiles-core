@@ -1913,6 +1913,93 @@ if ((_sc_subtree)); then
     fail "sync-core: the fan-out stopped at the first dirty repo"
   fi
   rm -f "$SCF/repos/dotfiles-Test/dirty.txt"
+
+  # --- the THIRD Core reference: reusable-workflow SHA pins (#482) -------------
+  # A repo names the vendored Core in three places — the core/ subtree, core.lock, and the
+  # `uses:` pins of any SHA-pinned reusable caller. The sync wrote two and left the third,
+  # so a fan-out produced a tree that VENDORED one Core and RAN another, with both existing
+  # gates green (core-integrity checks the tree object, verify-core the split; neither reads
+  # a workflow). It reached production on the v4.12.0 fan-out and only surfaced because
+  # dotfiles-MacBook had built its own pin gate.
+  #
+  # Tag the fixture Core first: the comment rewrite is driven by core.lock's core_tag, so
+  # without a tag that half of the contract would go untested (and core_tag untested too).
+  _scg "$SCF/coreremote" tag -f v9.9.9 >/dev/null 2>&1
+  _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1
+  _sc_remote_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+  _sc_oldsha=0123456789abcdef0123456789abcdef01234567
+  _sc_wf="$SCF/repos/dotfiles-Test/.github/workflows"
+  mkdir -p "$_sc_wf"
+  # Four shapes, because three of them must NOT move. Only the first two are ours to touch.
+  printf 'jobs:\n  t:\n    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@%s # v9.0.0\n' \
+    "$_sc_oldsha" >"$_sc_wf/pinned-with-comment.yml"
+  printf 'jobs:\n  n:\n    uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@%s\n' \
+    "$_sc_oldsha" >"$_sc_wf/pinned-no-comment.yml"
+  printf 'jobs:\n  l:\n    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v4\n' \
+    >"$_sc_wf/mutable-alias.yml"
+  printf 'jobs:\n  c:\n    uses: actions/checkout@%s # v4.2.2\n' \
+    "$_sc_oldsha" >"$_sc_wf/third-party.yml"
+  _scg "$SCF/repos/dotfiles-Test" add -A
+  _scg "$SCF/repos/dotfiles-Test" commit -q -m "ci: pinned callers"
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+
+  if grep -q "@${_sc_remote_sha} # v9.9.9\$" "$_sc_wf/pinned-with-comment.yml"; then
+    pass "sync-core: a SHA-pinned caller is repointed at the vendored Core, comment and all"
+  else
+    fail "sync-core: pinned caller not repointed ($(grep -o '@[^ ]*.*' "$_sc_wf/pinned-with-comment.yml"))"
+  fi
+  # No comment in, no comment out: inventing one would hand Renovate a version claim the
+  # repo never made.
+  if grep -q "@${_sc_remote_sha}\$" "$_sc_wf/pinned-no-comment.yml"; then
+    pass "sync-core: a pin with no version comment gets the sha moved and no comment invented"
+  else
+    fail "sync-core: comment-less pin mishandled ($(cat "$_sc_wf/pinned-no-comment.yml"))"
+  fi
+  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (7 of 9 repos take
+  # the moving alias); converting it to a SHA pin would change that repo's update model
+  # behind its back. And a third-party action pinned to a sha with a `# vX.Y.Z` comment has
+  # exactly the shape of our own pins — rewriting it would point actions/checkout at a
+  # dotfiles-core commit, which is the worst outcome in this whole block.
+  if grep -q '@v4$' "$_sc_wf/mutable-alias.yml"; then
+    pass "sync-core: a caller on the mutable @v4 alias is left alone (policy is the repo's)"
+  else
+    fail "sync-core: the @v4 alias was rewritten into a SHA pin"
+  fi
+  if grep -q "actions/checkout@${_sc_oldsha} # v4.2.2\$" "$_sc_wf/third-party.yml"; then
+    pass "sync-core: a third-party action pinned in the same shape is untouched"
+  else
+    fail "sync-core: a non-dotfiles-core action was rewritten ($(cat "$_sc_wf/third-party.yml"))"
+  fi
+  # The pins must land in the SAME commit as core.lock: landing them apart leaves a window
+  # where the repo's own pin gate is red on main.
+  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" != "$_sc_head_before" ]] &&
+    [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]] &&
+    _scg "$SCF/repos/dotfiles-Test" show --stat --oneline HEAD | grep -q 'core.lock' &&
+    _scg "$SCF/repos/dotfiles-Test" show --stat --oneline HEAD | grep -q 'pinned-with-comment.yml'; then
+    pass "sync-core: pins and core.lock land in ONE commit, leaving the tree clean"
+  else
+    fail "sync-core: pins/core.lock were not committed together (or left the tree dirty)"
+  fi
+  # The regression the staged-wide check exists for: core.lock is now current, so a
+  # core.lock-scoped idempotency test would report "current" and silently skip a stale pin.
+  sed -i.bak "s|@${_sc_remote_sha}|@${_sc_oldsha}|" "$_sc_wf/pinned-with-comment.yml"
+  rm -f "$_sc_wf/pinned-with-comment.yml.bak"
+  _scg "$SCF/repos/dotfiles-Test" commit -q -a -m "ci: regress the pin"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  if grep -q "@${_sc_remote_sha} # v9.9.9\$" "$_sc_wf/pinned-with-comment.yml"; then
+    pass "sync-core: a stale pin is fixed even when core.lock is already current"
+  else
+    fail "sync-core: stale pin left behind because core.lock needed no change"
+  fi
+  # ...and re-syncing an already-correct repo still manufactures nothing.
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+    pass "sync-core: a repo whose pins and core.lock are both current gets no empty commit"
+  else
+    fail "sync-core: an already-correct repo still produced a commit"
+  fi
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
