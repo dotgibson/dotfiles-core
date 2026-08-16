@@ -690,7 +690,11 @@ blib_sudo_keepalive_start() {
   # inside the handler, and is empty only before the first fork — when there is nothing to
   # reap and `kill ""` fails harmlessly into /dev/null.
   {
-    trap 'kill "$!" 2>/dev/null; exit 0' TERM
+    # kill THEN wait: without the wait the handler exits the moment the signal is sent, so
+    # the loop shell dies while its sleeper is still alive or unreaped — and stop()'s own
+    # `wait` returns on the shell, not the sleeper. Teardown then only LOOKED synchronous
+    # because the test slept afterwards. Reaping here is what makes stop()'s contract true.
+    trap 'kill "$!" 2>/dev/null; wait "$!" 2>/dev/null; exit 0' TERM
     while true; do
       "$su" -n -v 2>/dev/null || true
       sleep 50 &

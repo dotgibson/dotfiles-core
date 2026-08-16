@@ -7133,20 +7133,25 @@ exec "$_ka_real_sleep" "\$@"
 SHIM
 chmod +x "$_ka_bin/sleep"
 # shellcheck disable=SC2030,SC2031
+# No fixed delays, in EITHER direction. A pre-stop sleep can fire before the refresher has
+# been scheduled on a loaded runner (that is the macOS failure documented above), so poll
+# for the recording instead. And a post-stop grace period is worse than useless here: it
+# lets a NON-synchronous stop() pass whenever the sleeper happens to die shortly after,
+# which is exactly the contract under test — so assert the instant stop() returns.
+# shellcheck disable=SC2030,SC2031
 ( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   blib_sudo_keepalive_start >/dev/null 2>&1
-  sleep 0.5
-  blib_sudo_keepalive_stop
-  sleep 0.5 ) >/dev/null 2>&1
+  n=0; while ((n < 100)) && [[ ! -s "$_ka_sleeper_file" ]]; do sleep 0.1; n=$((n + 1)); done
+  blib_sudo_keepalive_stop ) >/dev/null 2>&1
 _ka_sleeper_pid="$(head -n1 "$_ka_sleeper_file" 2>/dev/null || true)"
 # An empty recording is a FAILURE, not a pass. If the shim never fired, no sleeper was ever
 # forked and the reaping claim is vacuous — precisely the silent-pass mode being removed.
 if [[ -z "$_ka_sleeper_pid" ]]; then
   fail "the keepalive forked no sleeper (shim recorded none) — the reaping assertion would be vacuous"
 elif kill -0 "$_ka_sleeper_pid" 2>/dev/null; then
-  fail "blib_sudo_keepalive_stop orphaned its sleeper (pid $_ka_sleeper_pid still alive)"
+  fail "blib_sudo_keepalive_stop returned with its sleeper (pid $_ka_sleeper_pid) still alive — teardown is not synchronous"
 else
-  pass "blib_sudo_keepalive_stop reaps the SLEEPER too (no orphaned sleep)"
+  pass "blib_sudo_keepalive_stop reaps the SLEEPER before returning (synchronous teardown)"
 fi
 case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
 
