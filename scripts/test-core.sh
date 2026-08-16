@@ -7093,7 +7093,21 @@ case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refreshe
 # to be authorised to run `true`, which a sudoers restricted to the provisioning commands
 # denies — the refresh then fails silently and the timestamp expires, restoring the hang.
 # The initial prime is a bare `-v`, so require the `-n -v` line specifically.
-if grep -qe '-n -v' "$_ka_argv" 2>/dev/null; then pass "the background refresh uses 'sudo -n -v' (validation mode)"; else fail "the refresher did not use -n -v (argv recorded: $(tr '\n' '|' <"$_ka_argv" 2>/dev/null))"; fi
+#
+# Its OWN run, which POLLS for that line before stopping. Reusing the block above would
+# make this scheduler-dependent: that one stops after a fixed short delay, and a loaded
+# runner need not have scheduled the background loop's first refresh by then. It did not on
+# macOS — the argv log held only the initial `-v` and the assertion failed for a timing
+# reason that had nothing to do with the behaviour under test.
+# shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
+_ka_mode="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  : >"$_ka_argv"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  n=0
+  while ((n < 100)); do grep -qe '-n -v' "$_ka_argv" 2>/dev/null && break; sleep 0.1; n=$((n + 1)); done
+  blib_sudo_keepalive_stop
+  tr '\n' '|' <"$_ka_argv" )"
+case "$_ka_mode" in *"-n -v"*) pass "the background refresh uses 'sudo -n -v' (validation mode)" ;; *) fail "the refresher did not use -n -v (argv recorded: $_ka_mode)" ;; esac
 # The refresher's SLEEPER is a separate process. Killing only the loop shell leaves it
 # running — orphaned for up to its full duration — and the pid check above cannot see that,
 # so it certified a "no orphan" property it never tested.
