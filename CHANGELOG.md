@@ -15,6 +15,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`audit-core.sh` §5d — a gate for the `pipefail` + SIGPIPE trap this repo keeps hitting.**
+  Under `set -o pipefail`, piping into a reader that exits early turns a success into a
+  failure: `grep -q` stops on its first match, `awk` on its `exit`, `head` after N lines, the
+  writer takes EPIPE and dies with 141, and pipefail reports the pipeline as failed even
+  though the reader matched.
+
+  Three occurrences so far. Two were found and fixed by hand — a 4000-line `git show` into
+  `grep -q` reporting "no heading" on a file that had one, and `ldd --version | grep -qi
+  musl` reading false on every musl box, whose assertion is still named "the pipefail trap
+  this repo has hit before". The third broke `main`: `nvim-reachability.sh` invented two
+  orphans because a visited module's lookup returned 141. Each fix included a sweep of the
+  tree, correct at the time and unable to cover code written afterwards.
+
+  The gate is scoped to a **shell-string** producer (`printf`/`echo`) feeding an
+  early-exiting reader, in files that actually `set -o pipefail`. That shape converts to a
+  herestring with no behavioural difference and no reason to prefer the pipe, so a finding
+  is never a judgement call. `sed <file> | head -n1` — a file producer, ~15 instances — is
+  deliberately out of scope: converting those is not free, and a gate that fires fifteen
+  times on working code is a gate someone turns off.
+
+  Four existing instances converted (`check-modern.sh`, `parity-check.sh`, `test-core.sh`
+  ×2). All fed small values and none was a live bug — which is precisely why a hand sweep
+  leaves them, and why the next author copies the shape somewhere the producer is large.
+
+  The scanner lives in `scripts/lib/common.sh` as `_core_pipefail_hits`, beside
+  `_core_fail_digest` and for the same reason: so `test-core.sh` can drive it on fixtures.
+  A gate for a bug that has recurred three times is only worth having if it demonstrably
+  fires, and probe-testing caught a defect in this one before it shipped — it used to scan
+  any file that merely _mentioned_ pipefail in a comment, which is the false-positive class
+  that gets a gate switched off. Eight assertions pin both halves: the three banned reader
+  forms are caught, and the herestring fix, a comment describing the hazard, a file with no
+  `pipefail`, a file producer, and the library's own definition are all left alone.
+
 - **`audit-core.sh` §4b — the nvim orphan backstop `core.manifest` claimed already existed.**
   `core.manifest` lists `nvim/` as a directory rather than per-file, because a vendored
   lazy.nvim tree churns wholesale and per-file listing would be noise. The stated
