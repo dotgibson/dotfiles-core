@@ -1930,7 +1930,7 @@ if ((_sc_subtree)); then
   _sc_oldsha=0123456789abcdef0123456789abcdef01234567
   _sc_wf="$SCF/repos/dotfiles-Test/.github/workflows"
   mkdir -p "$_sc_wf"
-  # Four shapes, because three of them must NOT move. Only the first two are ours to touch.
+  # Four shapes: the first two must move, the last two must NOT.
   printf 'jobs:\n  t:\n    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@%s # v9.0.0\n' \
     "$_sc_oldsha" >"$_sc_wf/pinned-with-comment.yml"
   printf 'jobs:\n  n:\n    uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@%s\n' \
@@ -1999,6 +1999,23 @@ if ((_sc_subtree)); then
     pass "sync-core: a repo whose pins and core.lock are both current gets no empty commit"
   else
     fail "sync-core: an already-correct repo still produced a commit"
+  fi
+  # A rewrite that CANNOT run must fail the repo, not read as "no pins here". Swallowed,
+  # it would let the run commit core.lock and report the repo synced while a caller still
+  # pointed at the previous Core — this fix's own error path recreating the drift it
+  # exists to end. Root ignores the mode bits, so the CI legs that run as root skip it
+  # rather than assert a property they cannot create.
+  if [[ "$(id -u)" -ne 0 ]]; then
+    chmod a-w "$_sc_wf"
+    _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+    chmod u+w "$_sc_wf"
+    if grep -q 'pin rewrite failed' <<<"$_sc_out" && grep -qE 'failed 1' <<<"$_sc_out"; then
+      pass "sync-core: an unwritable workflow fails the repo instead of reading as 'no pins'"
+    else
+      fail "sync-core: a pin-rewrite failure was swallowed (want the named file and failed 1)"
+    fi
+  else
+    skip "sync-core: unwritable-workflow case (suite is running as root)"
   fi
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"

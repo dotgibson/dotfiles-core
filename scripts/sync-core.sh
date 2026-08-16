@@ -252,31 +252,51 @@ fi
 # not). Idempotent by construction — an unchanged file is cmp-identical and left alone, so
 # a re-sync of the same Core stages nothing.
 _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files it changed
-  local path="$1" sha="$2" tag="$3" f tmp changed=0
+  local path="$1" sha="$2" tag="$3" f tmp changed=0 rc=0
   [[ -d "$path/.github/workflows" ]] || { printf 0; return 0; }
   for f in "$path"/.github/workflows/*.yml "$path"/.github/workflows/*.yaml; do
     [[ -f "$f" ]] || continue # unmatched glob stays literal (nullglob is off)
     tmp="$f.sync.tmp"
-    sed -E "s|(dotgibson/dotfiles-core/\.github/workflows/[^@[:space:]]+@)[0-9a-f]{40}|\1${sha}|g" \
-      "$f" >"$tmp" 2>/dev/null || {
+    # EVERY failure below is reported and fails the repo, never swallowed. Treating an
+    # unreadable or unwritable workflow as "no pins here" would let the caller commit the
+    # new core.lock and report the repo synced while a caller still pointed at the previous
+    # Core — the exact silent drift this function exists to end, reintroduced through its
+    # own error path. The file is named on stderr; the caller turns the non-zero return
+    # into an err() (this runs in a command substitution, so an err() in here would have
+    # its FAIL increment discarded with the subshell).
+    if ! sed -E "s|(dotgibson/dotfiles-core/\.github/workflows/[^@[:space:]]+@)[0-9a-f]{40}|\1${sha}|g" \
+      "$f" >"$tmp" 2>/dev/null; then
       rm -f "$tmp"
+      printf 'pin rewrite failed (could not read or write): %s\n' "$f" >&2
+      rc=1
       continue
-    }
+    fi
     # Refresh the version comment only on the lines that now carry OUR sha, so a line
-    # left on `@v4` above keeps whatever comment it had.
+    # left on `@v4` above keeps whatever comment it had. A failure here is NOT recoverable
+    # by keeping the sha-only rewrite: that lands a pin whose comment still names the old
+    # release, which a pin check reds independently of the sha. Discard and report.
     if [[ -n "$tag" ]]; then
       if sed -E "/@${sha}/ s|(#[[:space:]]*)v[0-9][^[:space:]]*|\1${tag}|" "$tmp" >"$tmp.2" 2>/dev/null; then
         mv "$tmp.2" "$tmp"
       else
-        rm -f "$tmp.2" # sed failed → keep the sha-only rewrite rather than lose it
+        rm -f "$tmp.2" "$tmp"
+        printf 'pin comment rewrite failed: %s\n' "$f" >&2
+        rc=1
+        continue
       fi
     fi
-    if cmp -s "$f" "$tmp"; then rm -f "$tmp"; else
-      mv "$tmp" "$f"
+    if cmp -s "$f" "$tmp"; then
+      rm -f "$tmp"
+    elif mv "$tmp" "$f"; then
       changed=$((changed + 1))
+    else
+      rm -f "$tmp"
+      printf 'pin rewrite could not replace: %s\n' "$f" >&2
+      rc=1
     fi
   done
   printf '%s' "$changed"
+  return "$rc"
 }
 
 # Per-REPO tally for the summary footer. The line-level PASS/SKIP/FAIL counters from
@@ -339,7 +359,18 @@ for repo in "${TARGETS[@]}"; do
       # Move the workflow pins in the SAME commit that stamps core.lock: the two name the
       # same Core, so landing them apart leaves a window where the repo's own pin gate is
       # red on main. See the _sync_pin_workflows block above for why (#482).
-      _pins="$(_sync_pin_workflows "$path" "$CORE_SHA_FULL" "$CORE_TAG")"
+      # `|| _pinfail=1` rather than a bare assignment: `set -e` is on, so a non-zero from
+      # the command substitution would abort the whole fan-out mid-fleet. We want THIS repo
+      # marked failed and the remaining repos still attempted — the same shape the dirty-tree
+      # guard uses.
+      _pinfail=0
+      _pins="$(_sync_pin_workflows "$path" "$CORE_SHA_FULL" "$CORE_TAG")" || _pinfail=1
+      # core.lock is still committed below even on a pin failure: the subtree pull has
+      # already landed, so leaving it uncommitted would only add a dirty tree that self-blocks
+      # the next run on top of the drift. The err() is what makes it non-silent — it flips
+      # this repo into the failed bucket, so the run cannot end "updated 8" with a repo whose
+      # pins never moved.
+      ((_pinfail)) && err "$repo: a workflow pin could not be rewritten (named above) — core.lock will be ahead of its pins; re-run after fixing the file"
       git -C "$path" add core.lock
       ((_pins)) && git -C "$path" add .github/workflows
       # Staged-wide, not `-- core.lock`: a repo whose core.lock is already current but
