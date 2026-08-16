@@ -684,21 +684,30 @@ blib_sudo_keepalive_start() {
   # prevent, surviving inside its own fix. Measured with the window held open: orphaned
   # 5/5 with the trap inside the loop, 0/5 with it hoisted.
   #
-  # The handler kills `$!` rather than a saved copy deliberately. `$!` is set by the fork
-  # itself, so there is no assignment for a signal to arrive in front of; copying it into
-  # `_sleeper` reinstates the same race one statement narrower. `$!` remains readable
-  # inside the handler, and is empty only before the first fork — when there is nothing to
-  # reap and `kill ""` fails harmlessly into /dev/null.
+  # The handler names the JOB (`%%`), not a pid — neither `$!` nor a saved copy. Both pid
+  # forms are wrong, in opposite directions:
+  #   • a copy (`_sleeper=$!`) is assigned one statement AFTER the fork, so a TERM landing
+  #     in between fires the handler holding the PREVIOUS sleeper and orphans the new one —
+  #     the same race as arming the trap late, just narrower.
+  #   • `$!` closes that (the fork sets it) but never clears: after `wait` reaps the
+  #     sleeper, `$!` still holds its dead pid, so a TERM during the next `sudo -n -v` —
+  #     a 50-second window, every iteration — signals that pid anyway. Once the box has
+  #     cycled through the pid space it belongs to an unrelated process, and this runs as
+  #     root. Verified: after `wait "$p"`, `$!` still equals `$p`.
+  # A job spec has both properties at once, which is the whole reason to use one: the job
+  # table is updated BY the fork (so `%%` names a just-forked sleeper, keeping the orphan
+  # window shut) and CLEARED by the reap (so `kill %%` matches nothing at all once the
+  # sleeper is gone, rather than something else). Verified both ways.
   {
     # kill THEN wait: without the wait the handler exits the moment the signal is sent, so
     # the loop shell dies while its sleeper is still alive or unreaped — and stop()'s own
     # `wait` returns on the shell, not the sleeper. Teardown then only LOOKED synchronous
     # because the test slept afterwards. Reaping here is what makes stop()'s contract true.
-    trap 'kill "$!" 2>/dev/null; wait "$!" 2>/dev/null; exit 0' TERM
+    trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM
     while true; do
       "$su" -n -v 2>/dev/null || true
       sleep 50 &
-      wait "$!" 2>/dev/null
+      wait %% 2>/dev/null
       kill -0 "$$" 2>/dev/null || exit 0
     done
   } >/dev/null 2>&1 &

@@ -7154,6 +7154,21 @@ else
   pass "blib_sudo_keepalive_stop reaps the SLEEPER before returning (synchronous teardown)"
 fi
 case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
+# The TERM handler must target the JOB, never a pid. `$!` does not clear when `wait` reaps
+# the sleeper, so a handler holding it signals that dead pid for the whole of the next
+# `sudo -n -v` — and once the box has cycled through the pid space, whatever now owns it,
+# as root. A saved copy is wrong the other way (assigned after the fork, so a TERM in
+# between orphans the new sleeper). Only a job spec is set by the fork AND cleared by the
+# reap. This is a STRUCTURAL gate because the failure needs a 50s iteration boundary plus a
+# pid wrap to observe — unreachable in a suite, which is exactly why it needs pinning.
+_ka_trap="$(sed -n "/^ *trap .*TERM$/p" "$HERE/lib/bootstrap-lib.sh")"
+if [[ -z "$_ka_trap" ]]; then
+  fail "keepalive: no TERM handler found in lib/bootstrap-lib.sh — the reaping gate cannot check anything"
+elif [[ "$_ka_trap" == *'$!'* || "$_ka_trap" == *'_sleeper'* ]]; then
+  fail "keepalive: the TERM handler targets a pid, not a job — \$! survives the reap and can signal a recycled pid: $_ka_trap"
+else
+  pass "keepalive: the TERM handler targets the job (%%), so it cannot signal a reaped or recycled pid"
+fi
 
 # ── blib_set_login_shell must never abort a completed wiring ─────────────────
 # It runs at the very END of wire_links, so a failure here would discard an otherwise
