@@ -6921,8 +6921,11 @@ if [[ "$(_su_after 'BLIB_SU=doas')" == "doas" ]]; then pass "blib_resolve_su: an
 # it print the bare word `sudo`. Recording that defeats the absolute-path pinning (a bare
 # name is re-resolved at every call) and could hand privileged execution to the function.
 if [[ "$(id -u)" -ne 0 ]]; then
-  # shellcheck disable=SC2030,SC2031,SC2123,SC2317  # emptying PATH and defining a shadowing
-  # `sudo` function are both the POINT here; the function is reached via `command -v`.
+  # shellcheck disable=SC2030,SC2031,SC2123,SC2317,SC2329  # emptying PATH and defining a
+  # shadowing `sudo` function are both the POINT here; the function is reached via
+  # `command -v` and never called, which is why BOTH unreachability codes are suppressed.
+  # SC2317 alone used to cover it; 0.10 split "this function is never invoked" out into
+  # SC2329, so the older list went red on every audit leg over an info-level finding.
   _su_fn="$( unset BLIB_SU; PATH="$SANDBOX/emptybin"
     sudo() { :; }
     blib_resolve_su >/dev/null 2>&1
