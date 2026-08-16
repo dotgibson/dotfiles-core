@@ -7162,12 +7162,24 @@ case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is
 # reap. This is a STRUCTURAL gate because the failure needs a 50s iteration boundary plus a
 # pid wrap to observe — unreachable in a suite, which is exactly why it needs pinning.
 _ka_trap="$(sed -n "/^ *trap .*TERM$/p" "$HERE/lib/bootstrap-lib.sh")"
+# REQUIRE the job spec, do not merely reject the pid spellings. A blacklist passes anything
+# it did not think of — `trap 'exit 0' TERM` names no pid, sails through, and silently
+# restores the orphan leak; so does a differently-named pid variable. Demand both halves
+# positively (`kill %%` to signal the sleeper, `wait %%` to reap it before exiting) AND
+# keep the pid rejection, so the two failure modes are covered from both directions.
 if [[ -z "$_ka_trap" ]]; then
   fail "keepalive: no TERM handler found in lib/bootstrap-lib.sh — the reaping gate cannot check anything"
 elif [[ "$_ka_trap" == *'$!'* || "$_ka_trap" == *'_sleeper'* ]]; then
   fail "keepalive: the TERM handler targets a pid, not a job — \$! survives the reap and can signal a recycled pid: $_ka_trap"
+elif [[ "$_ka_trap" != *'kill %%'*'wait %%'*exit* ]]; then
+  # ONE ORDERED pattern, not three independent substring tests. Testing membership
+  # separately says nothing about sequence or reachability, so it accepted
+  # `trap 'exit 0; kill %%; wait %%' TERM` — where both cleanup commands sit after the
+  # exit and never run — and a wait-before-kill handler, which blocks on a sleeper it
+  # has not signalled. Requiring kill THEN wait THEN exit rejects both by construction.
+  fail "keepalive: the TERM handler is not 'kill %% … wait %% … exit' in that order — it must signal the sleeper, reap it, and only then exit: $_ka_trap"
 else
-  pass "keepalive: the TERM handler targets the job (%%), so it cannot signal a reaped or recycled pid"
+  pass "keepalive: the TERM handler kills AND waits the job (%%), so it cannot leak or signal a recycled pid"
 fi
 
 # ── blib_set_login_shell must never abort a completed wiring ─────────────────
