@@ -1939,6 +1939,16 @@ if ((_sc_subtree)); then
     >"$_sc_wf/mutable-alias.yml"
   printf 'jobs:\n  c:\n    uses: actions/checkout@%s # v4.2.2\n' \
     "$_sc_oldsha" >"$_sc_wf/third-party.yml"
+  # ...and the nastier variant: a NON-Core reference already sitting at the exact sha we
+  # are syncing to. A third-party action can be pinned there by coincidence and a FORK of
+  # this repo by construction. The sha pass is scoped to the dotgibson/dotfiles-core
+  # prefix, so it never moved these — but the comment pass was addressed on the bare sha
+  # and rewrote their `# vX.Y.Z` to our tag, falsifying a version claim on someone else's
+  # action. Two files: neither prefix matches, and their comments must survive verbatim.
+  printf 'jobs:\n  s:\n    uses: someorg/someaction@%s # v1.2.3\n' \
+    "$_sc_remote_sha" >"$_sc_wf/third-party-same-sha.yml"
+  printf 'jobs:\n  k:\n    uses: someonelse/dotfiles-core/.github/workflows/lint-call.yml@%s # v9.0.0\n' \
+    "$_sc_remote_sha" >"$_sc_wf/forked-core.yml"
   _scg "$SCF/repos/dotfiles-Test" add -A
   _scg "$SCF/repos/dotfiles-Test" commit -q -m "ci: pinned callers"
   _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
@@ -1970,6 +1980,15 @@ if ((_sc_subtree)); then
     pass "sync-core: a third-party action pinned in the same shape is untouched"
   else
     fail "sync-core: a non-dotfiles-core action was rewritten ($(cat "$_sc_wf/third-party.yml"))"
+  fi
+  # The case the first version of this fixture missed: pinning the OLD sha made every
+  # non-Core file trivially out of scope, so a comment pass addressed on the bare sha
+  # looked correct. These two sit at the sha being synced TO.
+  if grep -q "someorg/someaction@${_sc_remote_sha} # v1.2.3\$" "$_sc_wf/third-party-same-sha.yml" &&
+    grep -q "someonelse/dotfiles-core/.github/workflows/lint-call.yml@${_sc_remote_sha} # v9.0.0\$" "$_sc_wf/forked-core.yml"; then
+    pass "sync-core: a third-party action and a FORK already at the synced sha keep their own version comments"
+  else
+    fail "sync-core: a non-Core reference at the synced sha had its version comment rewritten"
   fi
   # The pins must land in the SAME commit as core.lock: landing them apart leaves a window
   # where the repo's own pin gate is red on main.

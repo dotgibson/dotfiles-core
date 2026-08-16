@@ -275,9 +275,18 @@ _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files
     # left on `@v4` above keeps whatever comment it had. A failure here is NOT recoverable
     # by keeping the sha-only rewrite: that lands a pin whose comment still names the old
     # release, which a pin check reds independently of the sha. Discard and report.
+    #
+    # The address carries the SAME dotgibson/dotfiles-core prefix as the sha pass above,
+    # not a bare /@${sha}/. Matching on the sha alone reached any line that happened to
+    # contain it — a third-party action pinned at the same commit, or a FORK of this repo
+    # — and rewrote its `# vX.Y.Z` to our tag, silently falsifying a version claim on
+    # somebody else's action while the sha (correctly prefix-scoped) stayed put. The
+    # `\%…%` form picks % as the address delimiter so the slashes in the path need no
+    # escaping; it is POSIX and works on both BSD and GNU sed.
     if [[ -n "$tag" ]]; then
-      if sed -E "/@${sha}/ s|(#[[:space:]]*)v[0-9][^[:space:]]*|\1${tag}|" "$tmp" >"$tmp.2" 2>/dev/null; then
-        mv "$tmp.2" "$tmp"
+      if sed -E "\%dotgibson/dotfiles-core/\.github/workflows/[^@[:space:]]+@${sha}% s|(#[[:space:]]*)v[0-9][^[:space:]]*|\1${tag}|" \
+        "$tmp" >"$tmp.2" 2>/dev/null && mv "$tmp.2" "$tmp"; then
+        : # comment pass landed
       else
         rm -f "$tmp.2" "$tmp"
         printf 'pin comment rewrite failed: %s\n' "$f" >&2
