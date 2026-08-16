@@ -6944,7 +6944,17 @@ if [[ "$(id -u)" -ne 0 ]]; then
   if _su_none --require; then fail "blib_resolve_su --require succeeded with no escalator and no root"; else pass "blib_resolve_su --require fails when there is no escalator"; fi
   if _su_none; then pass "blib_resolve_su (no --require) succeeds — links-only needs no privileges"; else fail "blib_resolve_su without --require must not fail"; fi
 else
-  skip "blib_resolve_su no-escalator cases (suite is running as root)"
+  # The MINIMAL-ROOT contract, and the only leg that can test it: as root with no id, sudo
+  # or doas reachable, --require must SUCCEED with an empty BLIB_SU, because root needs no
+  # escalator. This is exactly what $EUID buys — the previous `id -u` probe returned "" on a
+  # PATH with no `id`, concluded "not root", and failed --require on the minimal container
+  # this scaffold exists to serve. Non-root legs cannot reach the branch, so without this
+  # case the regression ships unseen (and every root leg skipped the whole section).
+  # shellcheck disable=SC2030,SC2031,SC2123  # emptying PATH is the point: it hides `id` too
+  _su_root="$( unset BLIB_SU; PATH="$SANDBOX/emptybin"
+    blib_resolve_su --require >/dev/null 2>&1 && printf 'ok/%s' "${BLIB_SU-UNSET}" || printf 'failed/%s' "${BLIB_SU-UNSET}" )"
+  if [[ "$_su_root" == "ok/" ]]; then pass "blib_resolve_su --require succeeds as root on an empty PATH (no id/sudo/doas)"; else fail "root minimal-PATH --require regressed (got $_su_root; want ok/ with an empty BLIB_SU)"; fi
+  skip "blib_resolve_su NON-root no-escalator cases (suite is running as root)"
 fi
 
 # "Resolve once" must mean ONCE: the recorded escalator has to survive a later PATH change,
@@ -7058,7 +7068,15 @@ if [[ -n "$(_ka_pid "$_ka_bin/sudo" 0)" ]]; then pass "blib_sudo_keepalive_start
 printf '#!/bin/sh\nexit 1\n' >"$_ka_bin/sudo"
 if _ka_rc sudo 0; then fail "blib_sudo_keepalive_start returned 0 when sudo -v failed"; else pass "blib_sudo_keepalive_start reports a failed initial authentication"; fi
 # the happy path: it forks exactly one refresher, and stop() reaps it and is re-callable.
-printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"
+# The shim now RECORDS its argv, so the refresh MODE is assertable further down: a shim that
+# merely exits 0 accepts `-n true` and `-n -v` alike, and the suite passed either way — it
+# could not see the restricted-sudoers fix at all.
+#
+# `printf`, not `echo`: given argv `-n -v`, dash's echo eats the `-n` as its own no-newline
+# flag and records a bare `-v` — a harness that reports the OLD behaviour as the new one.
+_ka_argv="$_ka_bin/argv"
+: >"$_ka_argv"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexit 0\n' "$_ka_argv" >"$_ka_bin/sudo"
 # shellcheck disable=SC2030,SC2031  # subshell-local PATH again: the shimmed sudo
 _ka_out="$( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   blib_sudo_keepalive_start >/dev/null 2>&1
@@ -7071,6 +7089,11 @@ _ka_out="$( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin
   printf '%s/%s/%s' "$alive" "$after" "${BLIB_SUDO_KEEPALIVE_PID:-empty}" )"
 case "$_ka_out" in yes/*) pass "blib_sudo_keepalive_start forks a live refresher" ;; *) fail "blib_sudo_keepalive_start did not fork a refresher (got $_ka_out)" ;; esac
 case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher shell" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
+# The refresh must use sudo's VALIDATION mode. `-n true` additionally requires the account
+# to be authorised to run `true`, which a sudoers restricted to the provisioning commands
+# denies — the refresh then fails silently and the timestamp expires, restoring the hang.
+# The initial prime is a bare `-v`, so require the `-n -v` line specifically.
+if grep -qe '-n -v' "$_ka_argv" 2>/dev/null; then pass "the background refresh uses 'sudo -n -v' (validation mode)"; else fail "the refresher did not use -n -v (argv recorded: $(tr '\n' '|' <"$_ka_argv" 2>/dev/null))"; fi
 # The refresher's SLEEPER is a separate process. Killing only the loop shell leaves it
 # running — orphaned for up to its full duration — and the pid check above cannot see that,
 # so it certified a "no orphan" property it never tested.

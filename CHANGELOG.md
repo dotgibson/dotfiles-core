@@ -131,7 +131,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   continues (wiring symlinks needs no privileges).
 
 - **`blib_sudo_keepalive_start` / `blib_sudo_keepalive_stop` — the API for keeping a sudo
-  timestamp warm, so an adopting bootstrap cannot stall on an invisible password prompt.** A bootstrap's privileged calls are interleaved with from-source `cargo`/`go`
+  timestamp warm, which greatly reduces the chance that an adopting bootstrap stalls on an
+  invisible password prompt.** A mitigation, not a guarantee: the background refresh
+  deliberately swallows its own failures rather than killing the run, and a sudoers with no
+  reusable timestamp (`timestamp_timeout=0`) cannot be kept warm at all. A bootstrap's privileged calls are interleaved with from-source `cargo`/`go`
   builds that take minutes, comfortably outliving sudo's 5-minute timestamp. sudo writes
   its prompt to **stderr** and reads from the TTY, so a later call whose stderr is
   redirected (`>/dev/null 2>&1`, ubiquitous in these scripts) stopped dead at a prompt
