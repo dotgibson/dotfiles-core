@@ -674,16 +674,30 @@ blib_sudo_keepalive_start() {
   #
   # The trap is what makes stop() able to REAP. Without it, `kill` signals only this loop
   # shell; the `sleep` it is blocked in is a separate process that survives, orphaned, for
-  # up to its full duration. Trapping TERM lets us kill the current sleeper explicitly, and
-  # holding its pid in $_sleeper is the only way to name it.
-  while true; do
-    "$su" -n -v 2>/dev/null || true
-    sleep 50 &
-    _sleeper=$!
-    trap 'kill "$_sleeper" 2>/dev/null; exit 0' TERM
-    wait "$_sleeper" 2>/dev/null
-    kill -0 "$$" 2>/dev/null || exit 0
-  done >/dev/null 2>&1 &
+  # up to its full duration. Trapping TERM lets us kill the current sleeper explicitly.
+  #
+  # It is armed ONCE, BEFORE the loop — i.e. before anything can fork. Arming it per
+  # iteration (after `sleep &`) left a window in which a sleeper already existed but no
+  # handler did: the parent records the loop pid the instant `&` returns, so a stop()
+  # landing in that window killed the loop under the DEFAULT disposition and orphaned the
+  # freshly forked sleep for its full duration — the exact leak this helper exists to
+  # prevent, surviving inside its own fix. Measured with the window held open: orphaned
+  # 5/5 with the trap inside the loop, 0/5 with it hoisted.
+  #
+  # The handler kills `$!` rather than a saved copy deliberately. `$!` is set by the fork
+  # itself, so there is no assignment for a signal to arrive in front of; copying it into
+  # `_sleeper` reinstates the same race one statement narrower. `$!` remains readable
+  # inside the handler, and is empty only before the first fork — when there is nothing to
+  # reap and `kill ""` fails harmlessly into /dev/null.
+  {
+    trap 'kill "$!" 2>/dev/null; exit 0' TERM
+    while true; do
+      "$su" -n -v 2>/dev/null || true
+      sleep 50 &
+      wait "$!" 2>/dev/null
+      kill -0 "$$" 2>/dev/null || exit 0
+    done
+  } >/dev/null 2>&1 &
   BLIB_SUDO_KEEPALIVE_PID=$!
 }
 blib_sudo_keepalive_stop() {

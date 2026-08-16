@@ -7073,17 +7073,44 @@ case "$_ka_out" in yes/*) pass "blib_sudo_keepalive_start forks a live refresher
 case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher shell" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
 # The refresher's SLEEPER is a separate process. Killing only the loop shell leaves it
 # running — orphaned for up to its full duration — and the pid check above cannot see that,
-# so it certified a "no orphan" property it never tested. Count `sleep` processes by exact
-# NAME (-x): a -f pattern would also match this suite's own command line and self-match.
-_ka_sleep_base="$(pgrep -x sleep | wc -l)"
+# so it certified a "no orphan" property it never tested.
+#
+# Assert on THIS keepalive's own sleeper, by pid. Comparing a global `pgrep -x sleep` count
+# before and after could not tell our sleeper from the box's, and failed in BOTH directions:
+# an unrelated sleep exiting between the two snapshots dropped the count and passed the
+# assertion while this keepalive had in fact leaked one, and an unrelated sleep starting
+# failed it for something no one here did. On a CI leg (or a dev box running two suites at
+# once) that is a coin toss, and the direction that matters is the silent pass.
+#
+# The shim records the sleeper's pid and then EXECs the real sleep, so the recorded pid IS
+# the surviving process — no parent/child indirection to get wrong. Only the 50s refresher
+# sleeper is recorded: the harness's own short sleeps reach this shim through the same
+# scoped PATH, and counting those would put us right back to measuring the box.
+_ka_sleeper_file="$SANDBOX/ka-sleeper.pids"
+: >"$_ka_sleeper_file"
+_ka_real_sleep="$(command -v sleep)"
+cat >"$_ka_bin/sleep" <<SHIM
+#!/bin/sh
+case "\$1" in 50) printf '%s\n' "\$\$" >>"$_ka_sleeper_file" ;; esac
+exec "$_ka_real_sleep" "\$@"
+SHIM
+chmod +x "$_ka_bin/sleep"
 # shellcheck disable=SC2030,SC2031
-_ka_sleep_after="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   blib_sudo_keepalive_start >/dev/null 2>&1
   sleep 0.5
   blib_sudo_keepalive_stop
-  sleep 0.5
-  pgrep -x sleep | wc -l )"
-if [[ "$_ka_sleep_after" -le "$_ka_sleep_base" ]]; then pass "blib_sudo_keepalive_stop reaps the SLEEPER too (no orphaned sleep)"; else fail "blib_sudo_keepalive_stop orphaned a sleep process (base=$_ka_sleep_base after=$_ka_sleep_after)"; fi
+  sleep 0.5 ) >/dev/null 2>&1
+_ka_sleeper_pid="$(head -n1 "$_ka_sleeper_file" 2>/dev/null || true)"
+# An empty recording is a FAILURE, not a pass. If the shim never fired, no sleeper was ever
+# forked and the reaping claim is vacuous — precisely the silent-pass mode being removed.
+if [[ -z "$_ka_sleeper_pid" ]]; then
+  fail "the keepalive forked no sleeper (shim recorded none) — the reaping assertion would be vacuous"
+elif kill -0 "$_ka_sleeper_pid" 2>/dev/null; then
+  fail "blib_sudo_keepalive_stop orphaned its sleeper (pid $_ka_sleeper_pid still alive)"
+else
+  pass "blib_sudo_keepalive_stop reaps the SLEEPER too (no orphaned sleep)"
+fi
 case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
 
 # ── blib_set_login_shell must never abort a completed wiring ─────────────────
