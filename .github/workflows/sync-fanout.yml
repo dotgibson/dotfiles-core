@@ -265,10 +265,21 @@ jobs:
               fail=1
               continue
             fi
-            open="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq 'length')"
+            # The gh calls need the same isolation as the push. Under `set -e` a failing
+            # command substitution exits the step, so a repo-specific API error here — a
+            # rate limit, an outage, PR creation disabled on one repo — would strand every
+            # LATER repo despite its branch already being pushed. That is the worse shape
+            # of the two: the push succeeded, so the work is done and merely unannounced.
+            if ! open="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq 'length' 2>"$RUNNER_TEMP/gh-$r.log")"; then
+              echo "- ❌ \`$r\` branch pushed, but listing its PRs failed — open it by hand from \`$branch\`" >> "$summary"
+              echo "::error::$r: gh pr list failed after a successful push — the sync branch is on the remote, the PR is not"
+              sed 's/^/    /' "$RUNNER_TEMP/gh-$r.log" >&2 || true
+              fail=1
+              continue
+            fi
             if [ "${open:-0}" != 0 ]; then
-              url="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq '.[0].url')"
-              echo "- 🔁 \`$r\` PR already open — pushed update: $url" >> "$summary"
+              url="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq '.[0].url' || echo '')"
+              echo "- 🔁 \`$r\` PR already open — pushed update: ${url:-(url lookup failed)}" >> "$summary"
             else
               cat > "$RUNNER_TEMP/pr-body.md" <<EOF
           Automated Core fan-out from \`dotfiles-core\` **${TAG}** (\`${short}\`).
@@ -280,9 +291,15 @@ jobs:
           Merge per the staged rollout in \`RELEASE-STRATEGY.md\` — canary
           \`dotfiles-MacBook\` first, bake, then the rest. **Review the diff before merging.**
           EOF
-              url="$(gh pr create --repo "${OWNER}/${r}" --base "$default" --head "$branch" \
+              if ! url="$(gh pr create --repo "${OWNER}/${r}" --base "$default" --head "$branch" \
                 --title "chore(core): sync Core → ${TAG}" \
-                --body-file "$RUNNER_TEMP/pr-body.md")"
+                --body-file "$RUNNER_TEMP/pr-body.md" 2>"$RUNNER_TEMP/gh-$r.log")"; then
+                echo "- ❌ \`$r\` branch pushed, but opening its PR failed — open it by hand from \`$branch\`" >> "$summary"
+                echo "::error::$r: gh pr create failed — the sync branch is on the remote, the PR is not"
+                sed 's/^/    /' "$RUNNER_TEMP/gh-$r.log" >&2 || true
+                fail=1
+                continue
+              fi
               echo "- 🚀 \`$r\` PR opened: $url" >> "$summary"
             fi
           done
