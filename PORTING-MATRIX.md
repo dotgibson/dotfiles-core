@@ -505,9 +505,10 @@ against each distro's own package pages:
 - **Arch `extra`** 0.9.0-2, **Alpine `community`** 0.9.0-r0, **Gentoo `dev-vcs/git-absorb`**
   0.9.0 (**stable on amd64**, in the main tree — no GURU needed), **Homebrew** 0.9.0.
 - **Debian `git-absorb`** 0.9.0-2 per packages.debian.org, but **Kali rolling ships
-  0.6.17-2+b4** — verified on-box 2026-08-17, so the two must not be quoted as one cell:
-  Kali is a laggard here rather than a Debian follower. Whether Debian's own 0.9.0-2 also
-  installs into git's exec-path is **not** verified; only the Kali build is. Note repology
+  0.6.17-2+b4** — verified on-box 2026-08-17. The two now have their own columns above, and
+  this is a case where that matters: Kali is a laggard here rather than a Debian follower.
+  Whether Debian's own 0.9.0-2 also installs into git's exec-path is **not** verified — only
+  the Kali build is, so the ²⁶ footnote's on-box evidence covers the Kali column. Note repology
   reports the **source** package as `rust-git-absorb`; the **binary** package you install is
   `git-absorb`, confirmed on packages.debian.org. Fedora is the same shape
   (`rust-git-absorb` source, `git-absorb` binary).
