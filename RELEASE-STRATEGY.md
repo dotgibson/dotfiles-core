@@ -41,7 +41,7 @@ versioned thing (Core) vendored into thin per-OS consumers**:
   not on this cadence.
 
 This is deliberate. Versioning nine repos independently would multiply the
-release surface eightfold for no benefit: the OS layer is a thin shim over
+release surface ninefold for no benefit: the OS layer is a thin shim over
 package manager, clipboard, and paths, and most of what changes a host is Core.
 
 ## 2. Release cadence

@@ -75,8 +75,8 @@ here rather than left to be rediscovered as drift:
 
 ## The fleet
 
-Ten repositories make up the configuration system (one Core plus nine machine
-repos), with `dotfiles-web` as an eleventh public repo that documents the system
+Eleven repositories make up the configuration system (one Core plus ten machine
+repos), with `dotfiles-web` as a twelfth public repo that documents the system
 rather than configuring a machine.
 
 | Repository          | Layer            | Vendors `core/`? | Notes                                                      |
