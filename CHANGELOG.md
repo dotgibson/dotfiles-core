@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.12.1] - 2026-08-16
+
 ### Fixed
 
 - **`blib_link` deleted a displaced symlink with no record, while backing up a regular
