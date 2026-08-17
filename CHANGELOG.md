@@ -31,6 +31,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   override with the default exec-path populated, flag and doctor are asserted to agree on
   that configuration, and an unexported `GIT_EXEC_PATH` is ignored by both.
 
+  The block is also made hermetic against the developer's own environment. `ucheck` runs
+  `env "$@" zsh`, which layers the named variables ON TOP of the inherited environment rather
+  than clearing it, and the suite's git stub honours `GIT_EXEC_PATH` exactly as real git does
+  — so on a box with that variable exported, four of these cases failed for a reason
+  unrelated to the code under test. It is now unset once for the whole block, and the
+  unexported case unsets before assigning, because assigning to an already-exported parameter
+  preserves the export attribute.
+
   Three documentation claims contradicted each other after #503 and are reconciled:
   `PORTING-MATRIX.md`'s ²⁶ preamble still said flatly that git-absorb installs on `PATH`,
   two paragraphs above the correction saying the Debian family does not; the v4.10.0 entry's
@@ -1287,10 +1295,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `git absorb --version` would add a `git` fork to every interactive shell, which
   `00-tools.zsh` exists to avoid.
 
-  **Correction (#424).** "No mainstream package does" was wrong when it shipped. The Debian
-  family does exactly this — verified on Kali, `git-absorb` 0.6.17-2+b4, whose only binary is
-  the one in git's exec-path — so this release's `core-doctor` reported `✗ git-absorb` on
-  boxes where `git absorb` worked. Fixed in the `[Unreleased]` entry above. Corrected inline
+  **Correction (#424).** "No mainstream package does" was wrong when it shipped. Debian-family
+  packages do exactly this on both boxes anyone has checked — **Kali** `git-absorb`
+  0.6.17-2+b4, whose only binary is the one in git's exec-path, and **Ubuntu 24.04** 0.6.11
+  from the reporter's `dpkg -L` in #424 — so this release's `core-doctor` reported
+  `✗ git-absorb` on boxes where `git absorb` worked. **Debian proper is unverified**, then and
+  now; the claim is the packaging convention plus two confirmations of it, not a survey.
+  Fixed in the `[Unreleased]` entry above. Corrected inline
   rather than rewritten, because it was wrong when shipped and the record should say so.
 
   The same correction supersedes the version line below: **Kali was never on 0.9.0.** It

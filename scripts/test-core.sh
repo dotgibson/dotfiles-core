@@ -5868,6 +5868,15 @@ ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports 
 # its candidates from ${commands[git]:h:h} rather than naming a distro path, so the tree has
 # to be shaped like a real prefix for that half to be exercised at all. The call log is what
 # lets the fork budget itself be asserted, in (d) and (e) and (h).
+#
+# HERMETIC AGAINST THE DEVELOPER'S OWN ENVIRONMENT. `ucheck` runs `env "$@" zsh`, which
+# passes the named variables ON TOP of the inherited environment — it does not clear it. So
+# a box with GIT_EXEC_PATH exported would leak it into every case here: the git stub honours
+# the variable exactly as real git does, so it would answer with the developer's directory
+# instead of $GXLIB and cases (a)-(h) would fail for a reason that has nothing to do with
+# the code under test. Unset it once, here, for the whole block; the cases that need it
+# pass it explicitly through ucheck's env.
+unset GIT_EXEC_PATH
 GXROOT="$SANDBOX/gitexec"
 GXBIN="$GXROOT/bin"
 GXLIB="$GXROOT/lib/git-core"
@@ -6014,10 +6023,16 @@ ucheck "git exec-path: flag and doctor agree under an empty override (both absen
 #     point — anything ucheck exports arrives as `scalar-export` and cannot express this.
 #     git-absorb is in the default exec-path, so the correct answer is present-and-agreeing.
 _gx_tree
+#     `unset` FIRST, then assign: assigning to an already-exported parameter PRESERVES the
+#     export attribute, so on a box where GIT_EXEC_PATH is exported a bare assignment would
+#     leave it `scalar-export` and this case would fail for the wrong reason. Unsetting drops
+#     the attribute with the value, and the plain assignment then creates a fresh `scalar`.
+#     The type is asserted rather than assumed, so if that ever stops holding this fails
+#     loudly instead of quietly testing the exported path twice.
 ucheck "git exec-path: an UNEXPORTED GIT_EXEC_PATH is ignored, as git ignores it" \
-  "GIT_EXEC_PATH='$GXROOT/empty-override'   # deliberately not exported
+  "unset GIT_EXEC_PATH; GIT_EXEC_PATH='$GXROOT/empty-override'   # set, deliberately NOT exported
+   [[ \${(t)GIT_EXEC_PATH} == scalar ]] || return 1
    source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json)
-   [[ \${(t)GIT_EXEC_PATH} != *export* ]] || return 1
    [[ -n \${HAVE_GIT_ABSORB:-} && \$j == *'\"git-absorb\":true'* ]]" \
   PATH="$GXBIN" CORE_NO_PAGER=1
 
