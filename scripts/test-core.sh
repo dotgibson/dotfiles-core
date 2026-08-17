@@ -2718,7 +2718,14 @@ if have git; then
   # own strings are ours and stable, but anything bash or git emits — notably a shell's
   # "command not found" — is localized, and an assertion that greps a translated
   # diagnostic silently stops matching rather than failing.
-  _tr_run() { (cd "$TR/work" && env LC_ALL=C CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
+  # -u CORE_JSON alongside the pins: under --json, common.sh's skip() prints NOTHING (stdout
+  # must carry only the JSON object), and both test-core.sh and audit-core.sh EXPORT
+  # CORE_JSON=1 for that mode. The fixture inherits it, the advanced-tip notice vanishes,
+  # and the assertion below fails for a reason that has nothing to do with tag-release.sh.
+  # Verified: before this, `test-core.sh --json` reported the notice missing. The rule this
+  # follows — a fixture asserting on OUTPUT must pin every variable that governs how output
+  # is produced — is the same one behind LC_ALL and CORE_COLOR here, and $EDITOR below.
+  _tr_run() { (cd "$TR/work" && env -u CORE_JSON LC_ALL=C CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
 
   # THE property. Phase 1 commits and must leave NO tag behind — there must be nothing
   # for a stray push to carry while the commit is still off main.
