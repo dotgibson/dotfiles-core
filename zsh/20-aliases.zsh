@@ -131,8 +131,11 @@ alias vim='nvim'
 # gated, not git-workflow aliases: the `lg` lazygit launcher and the HAVE_DIFFT-gated
 # `gdft` below.
 # git-absorb gets NO alias at all — it installs as the `git absorb` subcommand, so git
-# already dispatches it and there is nothing to shadow. 00-tools.zsh detects it
-# (HAVE_GIT_ABSORB) purely so core-doctor can report it; see git/gitconfig's `fix` alias.
+# already dispatches it and there is nothing to shadow; see git/gitconfig's `fix` alias.
+# 00-tools.zsh sets HAVE_GIT_ABSORB for symmetry with the other detected tools, and nothing
+# reads it today — core-doctor probes the tool itself rather than consulting the flag. The
+# two are kept in agreement anyway (#425): both look past $PATH, because the Debian family
+# keeps the subcommand in git's exec-path only (#424).
 alias lg='lazygit'
 
 # difftastic (difft): AST/structural diff — an OPT-IN companion to delta, never the

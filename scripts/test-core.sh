@@ -5949,6 +5949,144 @@ ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports 
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ -z \${HAVE_BAT:-} && -z \${HAVE_FD:-} ]] && ! (( \$+aliases[bat] )) && ! (( \$+aliases[fd] )) && ! (( \$+aliases[cat] )) && [[ \$j == *'\"bat\":false'* && \$j == *'\"fd\":false'* ]]" \
   PATH="$RNBIN" CORE_NO_PAGER=1
 
+# ── git subcommands in git's exec-path: an honest doctor off $PATH (#424) ────
+# The Debian family packages a git SUBCOMMAND into git's exec-path (`git --exec-path`) and
+# keeps that directory off $PATH on purpose — git dispatches `git absorb` by looking there
+# itself. Verified on Kali, git-absorb 0.6.17-2+b4: `dpkg -L` lists the exec-path binary and
+# a man page and NOTHING in a PATH dir, `command -v git-absorb` finds nothing, and
+# `git absorb --version` prints 0.6.17. core-doctor printed `✗ git-absorb` for a tool the
+# reader had just used — #418's failure one directory further out, and it earns the same
+# hermetic treatment for the same reason: the box running this suite has it one way or the
+# other (a Kali runner ONLY in the exec-path, an Arch one ONLY on PATH) and neither can
+# prove the other's path.
+#
+#   $GXROOT/bin/git                  stub: answers --exec-path, and LOGS every invocation
+#   $GXROOT/lib/git-core/git-absorb  the subcommand — executable, NOT on $PATH
+#   $GXROOT/bin/{grep,head}          real, symlinked: `core-doctor -v` pipes --version through them
+#
+# The bin/ · lib/git-core/ layout is not cosmetic: 00-tools.zsh's zero-fork fallback derives
+# its candidates from ${commands[git]:h:h} rather than naming a distro path, so the tree has
+# to be shaped like a real prefix for that half to be exercised at all. The call log is what
+# lets the fork budget itself be asserted, in (d) and (e) and (h).
+GXROOT="$SANDBOX/gitexec"
+GXBIN="$GXROOT/bin"
+GXLIB="$GXROOT/lib/git-core"
+_gx_tree() { # _gx_tree [name ...] — rebuild the tree; each name also lands on $PATH as a stub
+  rm -rf "$GXROOT"
+  mkdir -p "$GXBIN" "$GXLIB"
+  # $1/$* below belong to the /bin/sh stub being written, not to this shell — hence printf
+  # with %s rather than an expanding heredoc.
+  # The stub honours $GIT_EXEC_PATH exactly as real git does. That is not decoration: it is
+  # the only way to move the exec-path BETWEEN two reports using nothing but an env var,
+  # and this PATH is hermetic — it carries git, grep and head and nothing else, so a test
+  # body cannot reach for `mv` to rearrange the tree.
+  printf '#!/bin/sh\necho "$*" >>"%s/calls"\n[ "$1" = --exec-path ] && { echo "${GIT_EXEC_PATH:-%s}"; exit 0; }\nexit 1\n' \
+    "$GXROOT" "$GXLIB" >"$GXBIN/git"
+  printf '#!/bin/sh\necho "git-absorb 0.6.17"\n' >"$GXLIB/git-absorb"
+  chmod +x "$GXBIN/git" "$GXLIB/git-absorb"
+  local n
+  for n in "$@"; do
+    printf '#!/bin/sh\necho "%s 0.6.17"\n' "$n" >"$GXBIN/$n"
+    chmod +x "$GXBIN/$n"
+  done
+  ln -sf "$_real_grep" "$GXBIN/grep"
+  ln -sf "$_real_head" "$GXBIN/head"
+}
+# (a) THE ISSUE. 00-tools.zsh is deliberately NOT sourced, so a ✓ can only come from
+#     _core_doctor_bin asking git — not from a HAVE_* flag and not from an alias.
+_gx_tree
+ucheck "git exec-path: core-doctor reports a subcommand that lives ONLY in git's exec-path" \
+  "source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"git-absorb\":true'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (b) VERSIONS — the latent half, exactly as in the fd/bat suite above: -v forks the RESOLVED
+#     binary. A bare `git-absorb --version` cannot run on this family at all, so this row
+#     could not have carried a version even if presence had somehow been right.
+ucheck "git exec-path: core-doctor -v reads the version off the exec-path binary" \
+  "source '$UI'; source '$FN'; o=\$(core-doctor -v); [[ \$o == *'git-absorb 0.6.17'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (c) NO LEAK — the row is keyed and PRINTED by its canonical name; the absolute path the
+#     resolver hands back is an implementation detail and must not reach the report. The
+#     `resolved` footer names the exec-path DIRECTORY, which is why this asserts against the
+#     full binary path rather than against the directory.
+ucheck "git exec-path: the report prints the canonical name, never the resolved absolute path" \
+  "source '$UI'; source '$FN'; o=\$(NO_COLOR=1 core-doctor); [[ \$o == *'✓ git-absorb'* && \$o != *'$GXLIB/git-absorb'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (d) ONE FORK PER REPORT. The cache is the reason forking here is acceptable at all; without
+#     it the answer is re-derived per git-* row and per renderer. Driven through
+#     _core_doctor_bin with TWO different names rather than through a report, deliberately:
+#     _CORE_DOCTOR_GROUPS carries exactly one `git-*` row today, so a whole-report assertion
+#     would read `== 1` with the cache torn out and prove nothing. Two names is the smallest
+#     input that can tell a cache from its absence, and it stays honest if the inventory
+#     never grows a second git subcommand.
+_gx_tree
+ucheck "git exec-path: two git-* rows resolve on ONE fork (the cache, not a one-row artefact)" \
+  "source '$UI'; source '$FN'; _core_doctor_bin git-absorb; _core_doctor_bin git-imaginary; (( \$(grep -c -- '--exec-path' '$GXROOT/calls') == 1 ))" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (d2) …AND THE CACHE MUST NOT OUTLIVE ITS REPORT. Only the TTY render runs in a `$(…)`
+#     subshell; --json and the non-TTY path run in the caller's shell, so core-doctor unsets
+#     the cache on entry. Without that unset a shell that ran one report before git was
+#     installed would keep answering from the cached EMPTY value forever. Asserted by
+#     MOVING THE EXEC-PATH between two reports in ONE shell, via $GIT_EXEC_PATH, which the
+#     git stub honours as real git does: the first report is pointed at an empty directory
+#     and must say false, the second at the real one and must say true. A cache that outlives
+#     its report answers the second from the first's directory and the assertion fails.
+#     Done with an env var rather than by rearranging the tree because this PATH is hermetic
+#     — no `mv` on it — and a body that shells out to a missing tool fails silently, which
+#     is how the first draft of this case passed for the wrong reason.
+_gx_tree
+mkdir -p "$GXROOT/lib/git-core-empty"
+#     REDIRECT TO A FILE, never `$(…)` — the same rule the OSC 133 block below states for its
+#     own reason. A command substitution is itself a subshell, so it discards the cache on the
+#     way out and this case passes no matter what core-doctor does. Redirection keeps both
+#     reports in the one shell, which is the only place the leak is observable.
+ucheck "git exec-path: a second report re-derives — the cache does not outlive its invocation" \
+  "source '$UI'; source '$FN'
+   export GIT_EXEC_PATH='$GXROOT/lib/git-core-empty'; core-doctor --json >'$GXROOT/j1'
+   export GIT_EXEC_PATH='$GXLIB';                     core-doctor --json >'$GXROOT/j2'
+   [[ \$(<'$GXROOT/j1') == *'\"git-absorb\":false'* && \$(<'$GXROOT/j2') == *'\"git-absorb\":true'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (e) PATH FIRST. A git-absorb on $PATH must be used as-is and git must never be asked — this
+#     is what keeps the fix free on every box that never had the bug.
+_gx_tree git-absorb
+ucheck "git exec-path: a git-absorb on \$PATH is used as-is — git is never forked to find it" \
+  "source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"git-absorb\":true'* ]] && [[ ! -s '$GXROOT/calls' ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (f) HONEST ✗, twice: git present with no subcommand, and no git at all. core-doctor is
+#     read-only diagnostics and must return 0 through both.
+_gx_tree; rm -f "$GXLIB/git-absorb"
+ucheck "git exec-path: git present but no subcommand in its exec-path → an honest ✗, rc 0" \
+  "source '$UI'; source '$FN'; j=\$(core-doctor --json) && [[ \$j == *'\"git-absorb\":false'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+_gx_tree; rm -f "$GXBIN/git" "$GXLIB/git-absorb"
+ucheck "git exec-path: no git at all → an honest ✗ and no error (the empty answer is cached)" \
+  "source '$UI'; source '$FN'; j=\$(core-doctor --json) && [[ \$j == *'\"git-absorb\":false'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (g) THE RESOLVER'S CONTRACT: a RUNNABLE absolute path, which is what makes the -v fork work.
+_gx_tree
+ucheck "git exec-path: _core_doctor_bin hands back a runnable absolute path for the resolved row" \
+  "source '$UI'; source '$FN'; _core_doctor_bin git-absorb; [[ \$REPLY == '$GXLIB/git-absorb' ]] && [[ \$(\$REPLY --version) == 'git-absorb 0.6.17' ]]" \
+  PATH="$GXBIN"
+# (h) 00-tools.zsh's half — and its ZERO-FORK contract in the same assertion: the flag must be
+#     set from git's exec-path, derived via $commands, with `git` itself never invoked. This is
+#     the guard that fails if someone "simplifies" the fallback into a $(git --exec-path).
+_gx_tree
+ucheck "git exec-path: HAVE_GIT_ABSORB is set from git's exec-path, with no fork (00-tools.zsh)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_GIT_ABSORB:-} ]] && [[ ! -s '$GXROOT/calls' ]]" \
+  PATH="$GXBIN"
+_gx_tree; rm -f "$GXLIB/git-absorb"
+ucheck "git exec-path: HAVE_GIT_ABSORB stays unset when the exec-path has no git-absorb" \
+  "source '$TOOLS_FILE'; [[ -z \${HAVE_GIT_ABSORB:-} ]]" \
+  PATH="$GXBIN"
+# (i) $GIT_EXEC_PATH is git's own override, so the flag must honour it — asserted from a
+#     directory OUTSIDE the derived prefix, or the derived candidate would satisfy it anyway.
+_gx_tree; rm -f "$GXLIB/git-absorb"
+mkdir -p "$GXROOT/elsewhere"
+printf '#!/bin/sh\necho "git-absorb 0.6.17"\n' >"$GXROOT/elsewhere/git-absorb"
+chmod +x "$GXROOT/elsewhere/git-absorb"
+ucheck "git exec-path: \$GIT_EXEC_PATH is honoured for the flag (git's own override wins)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_GIT_ABSORB:-} ]]" \
+  PATH="$GXBIN" GIT_EXEC_PATH="$GXROOT/elsewhere"
+
 # ── OSC 133 prompt marks + the command-block rule (00-tools.zsh) ─────────────
 # The marks are what tmux's next-prompt/previous-prompt (bound to ] / [ in
 # tmux.reset.conf) read, so a regression here silently costs the keybinding its meaning

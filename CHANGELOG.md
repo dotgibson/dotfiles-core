@@ -15,6 +15,55 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`core-doctor` reported `✗ git-absorb` on the whole Debian family, for a tool that was
+  installed and working** (#424). The Debian family packages a `git-<verb>` subcommand into
+  git's **exec-path** — the directory `git --exec-path` names — and keeps it off `PATH` on
+  purpose: git finds the binary there itself, and the user invokes it as `git absorb`. The
+  presence probe was `command -v git-absorb`, so the row was wrong on most apt boxes.
+  Verified on Kali, `git-absorb` 0.6.17-2+b4: `dpkg -L` lists `/usr/lib/git-core/git-absorb`
+  and a man page and nothing in a `PATH` directory, `command -v` finds nothing, and
+  `git absorb --version` works. The `✗` implied the verb was unavailable, so a reader would
+  go install what they already had.
+
+  `_core_doctor_bin` (`30-functions.zsh`) gains a `git-*` arm that resolves through git's
+  exec-path when the bare name misses, and hands back an **absolute path**. That is what
+  both consumers need: `command -v` on a path is exactly as honest as the `PATH` probe, and
+  `core-doctor -v` forks `"$bin" --version`, which a bare `git-absorb` could not run on this
+  family at all — so the version readout is fixed in the same change, the way #418's
+  `bat`/`batcat` fix was. The path never reaches the report; the render and the `--json`
+  keys still print the canonical name.
+
+  **Fork budget.** `PATH` is probed first, so a box that never had the bug (Arch, Alpine,
+  Gentoo, Homebrew, macOS) pays one lookup and no fork. Only a miss asks git, and the answer
+  is cached in `_CORE_GIT_EXEC_PATH` for the life of one report — `core-doctor` drops the
+  cache on entry, since only the TTY render runs in a `$(…)` subshell and a cache left
+  standing would answer for a box that has since installed git or moved `GIT_EXEC_PATH`.
+  Three tests pin this: two `git-*` names resolve on one fork, git is never invoked at all
+  when the subcommand is on `PATH`, and a second report re-derives after the exec-path moves.
+
+  `00-tools.zsh` is fixed too, without breaking its zero-fork contract: `HAVE_GIT_ABSORB`
+  falls back to stat'ing `$GIT_EXEC_PATH` and `<git-prefix>/{lib,libexec}/git-core`, with the
+  prefix derived from zsh's builtin `$commands` hash rather than spelled out as a distro
+  path. Skipped entirely when the `PATH` probe already hit. The flag has no consumer today,
+  but #425 is the reminder that a `HAVE_*` flag and the doctor disagreeing about the same box
+  is itself a bug — and a test now pins the no-fork property, so "simplifying" it into a
+  `$(git --exec-path)` fails CI.
+
+  Meta-issue #447 proposed instead giving `_core_have` a tri-state override hook. Not taken:
+  `_core_have` is a general primitive that `05-ui.zsh` calls on every confirm/spin/gum probe,
+  so an override there taxes every call site to fix one command's inventory — and answering
+  "present" for a name that cannot be executed would mislead any future caller. Resolving to
+  a runnable path is strictly more information. `_core_doctor_bin` was already the seam for
+  exactly this class.
+
+  Two docs claimed the opposite of the truth and are corrected: `PORTING-MATRIX.md`'s ²⁶
+  footnote ("no mainstream package does this") and the v4.10.0 entry below, which now carries
+  the correction inline rather than being quietly rewritten. The version cell is corrected in
+  the same pass — Kali ships 0.6.17-2+b4, not Debian's 0.9.0-2, so the two are no longer
+  quoted as one cell, and whether Debian's own build uses the exec-path is marked unverified.
+  Latent elsewhere: Git for Windows has a `mingw64/libexec/git-core` with the same shape, but
+  scoop/winget/cargo installs land on `PATH`, so no `dotfiles-Windows` change is needed yet.
+
 - **`clip` had no way to copy from a headless box, so `pbcopy`, tmux's `copy-pipe` and
   nvim's `"+y` were all dead over plain ssh.** The ladder ran WSL → macOS → Wayland →
   X11 and then gave up, and none of those exist on a machine you only ever ssh into —
@@ -1236,6 +1285,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   give a working `git absorb` and an unset flag — no mainstream package does, and probing
   `git absorb --version` would add a `git` fork to every interactive shell, which
   `00-tools.zsh` exists to avoid.
+
+  **Correction (#424).** "No mainstream package does" was wrong when it shipped. The Debian
+  family does exactly this — verified on Kali, `git-absorb` 0.6.17-2+b4, whose only binary is
+  the one in git's exec-path — so this release's `core-doctor` reported `✗ git-absorb` on
+  boxes where `git absorb` worked. Fixed in the `[Unreleased]` entry above. Corrected inline
+  rather than rewritten, because it was wrong when shipped and the record should say so.
 
   It is also the first `core-doctor --json` key that is not a bare identifier, so the
   function's docstring now says which parsers care: the key is emitted quoted and the JSON
