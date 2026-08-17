@@ -7645,7 +7645,28 @@ case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is
 # between orphans the new sleeper). Only a job spec is set by the fork AND cleared by the
 # reap. This is a STRUCTURAL gate because the failure needs a 50s iteration boundary plus a
 # pid wrap to observe — unreachable in a suite, which is exactly why it needs pinning.
-_ka_trap="$(sed -n "/^ *trap .*TERM$/p" "$HERE/lib/bootstrap-lib.sh")"
+_ka_trap_want="trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM"
+# ONE matcher, used for BOTH the extraction and the count. Two matchers could disagree,
+# and a gate whose two halves disagree is the failure this whole change is about.
+#
+# It recognises TERM ANYWHERE in the signal operand list, not only as the final token. The
+# first version anchored on `.*TERM$`, which made a second handler invisible:
+#     trap 'exit 0' TERM INT   -> not matched (TERM is not last)
+#     trap 'exit 0' 15         -> not matched (numeric spelling)
+# Bash gives a signal to the MOST RECENT trap, so either line added later would replace the
+# keepalive's TERM behaviour while this gate still counted one handler, still saw the safe
+# line, and still passed. That is a matcher asserting less than it appears to — precisely
+# the defect this change exists to remove, sitting inside the fix for it.
+#
+# Anchoring the signal list AFTER the quoted handler is what keeps it honest in the other
+# direction too: `trap 'echo TERM' INT` mentions TERM in the COMMAND and is correctly
+# ignored, where a bare `.*TERM` would have matched it.
+_ka_trap_re="^[[:space:]]*trap[[:space:]]+('[^']*'|\"[^\"]*\")[[:space:]]+([A-Za-z0-9]+[[:space:]]+)*(TERM|SIGTERM|15)([[:space:]]|\$)"
+_ka_trap="$(grep -E "$_ka_trap_re" "$HERE/lib/bootstrap-lib.sh" 2>/dev/null)"
+_ka_trap="${_ka_trap#"${_ka_trap%%[![:space:]]*}"}" # ltrim indentation, keep the statement
+# Exactly one TERM handler is expected. If a second is ever added the equality below would
+# compare a two-line string and red for a confusing reason, so say the real one out loud.
+_ka_trap_n="$(grep -cE "$_ka_trap_re" "$HERE/lib/bootstrap-lib.sh" 2>/dev/null || echo 0)"
 # REQUIRE the job spec, do not merely reject the pid spellings. A blacklist passes anything
 # it did not think of — `trap 'exit 0' TERM` names no pid, sails through, and silently
 # restores the orphan leak; so does a differently-named pid variable. Demand both halves
@@ -7653,18 +7674,47 @@ _ka_trap="$(sed -n "/^ *trap .*TERM$/p" "$HERE/lib/bootstrap-lib.sh")"
 # keep the pid rejection, so the two failure modes are covered from both directions.
 if [[ -z "$_ka_trap" ]]; then
   fail "keepalive: no TERM handler found in lib/bootstrap-lib.sh — the reaping gate cannot check anything"
+elif [[ "$_ka_trap_n" != 1 ]]; then
+  fail "keepalive: expected exactly one TERM handler in lib/bootstrap-lib.sh, found $_ka_trap_n — this gate assumes the keepalive owns the only one"
 elif [[ "$_ka_trap" == *'$!'* || "$_ka_trap" == *'_sleeper'* ]]; then
   fail "keepalive: the TERM handler targets a pid, not a job — \$! survives the reap and can signal a recycled pid: $_ka_trap"
-elif [[ "$_ka_trap" != *'kill %%'*'wait %%'*exit* ]]; then
-  # ONE ORDERED pattern, not three independent substring tests. Testing membership
-  # separately says nothing about sequence or reachability, so it accepted
-  # `trap 'exit 0; kill %%; wait %%' TERM` — where both cleanup commands sit after the
-  # exit and never run — and a wait-before-kill handler, which blocks on a sleeper it
-  # has not signalled. Requiring kill THEN wait THEN exit rejects both by construction.
-  fail "keepalive: the TERM handler is not 'kill %% … wait %% … exit' in that order — it must signal the sleeper, reap it, and only then exit: $_ka_trap"
+elif [[ "$_ka_trap" != "$_ka_trap_want" ]]; then
+  # WHOLE-HANDLER equality, not a pattern. Each looser form let something through, because
+  # a wildcard between two command names asserts nothing about what sits in the gap:
+  #   membership   accepted `exit 0; kill %%; wait %%`   (cleanup after the exit, dead code)
+  #   ordered glob accepted `kill %%; exit 0; wait %%; exit 0` (reaps after exiting) and
+  #                         `kill %%; wait %% & exit 0`  (reap backgrounded — not synchronous)
+  # The production handler has exactly one safe form, so compare against it verbatim. A
+  # deliberate change to it must update this expectation in the same commit — which is the
+  # point: this gate exists because the failure needs a 50s boundary plus a pid wrap to
+  # observe at runtime, so review is the only place it can be caught.
+  fail "keepalive: the TERM handler is not the expected form.
+    want: $_ka_trap_want
+    got:  $_ka_trap"
 else
   pass "keepalive: the TERM handler kills AND waits the job (%%), so it cannot leak or signal a recycled pid"
 fi
+
+# The matcher above is the gate's blind-spot surface: anything it cannot SEE is a handler
+# that can replace the keepalive's TERM behaviour while the count stays 1 and the equality
+# still compares the safe line. Bash gives a signal to the most recent trap, so an
+# invisible second handler wins silently. Pin what it must see and what it must not, or
+# the anchor can quietly narrow again (it did: `.*TERM$` missed both forms below).
+_ka_re_is() { # _ka_re_is <label> <candidate-line> <want:0|1>
+  local n
+  n="$(printf '%s\n' "$2" | grep -cE "$_ka_trap_re")"
+  if [[ "$n" == "$3" ]]; then pass "trap matcher: $1"; else fail "trap matcher: $1 (matched=$n want=$3)"; fi
+}
+_ka_re_is "sees the shipped handler" "    trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM" 1
+_ka_re_is "sees TERM when it is NOT the last operand" "    trap 'exit 0' TERM INT" 1
+_ka_re_is "sees TERM after another signal" "    trap 'exit 0' INT TERM" 1
+_ka_re_is "sees the SIGTERM spelling" "    trap 'exit 0' SIGTERM" 1
+_ka_re_is "sees the numeric spelling (15)" "    trap 'exit 0' 15" 1
+_ka_re_is "sees a double-quoted handler" '    trap "exit 0" TERM' 1
+# The other direction: it must not fire on traps that do not take TERM, or the gate reds on
+# unrelated edits and someone deletes it.
+_ka_re_is "ignores a trap that does not take TERM" "    trap 'exit 0' HUP INT" 0
+_ka_re_is "ignores TERM appearing inside the COMMAND, not the signal list" "    trap 'echo TERM' INT" 0
 
 # ── blib_set_login_shell must never abort a completed wiring ─────────────────
 # It runs at the very END of wire_links, so a failure here would discard an otherwise
