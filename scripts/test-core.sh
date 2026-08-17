@@ -2670,6 +2670,21 @@ if have git; then
   else
     fail "tag-release: fixture did not actually advance the tip — the assertion above proves nothing"
   fi
+  # No undefined helper on the publish path. This run just exercised the advanced-tip
+  # branch, which called a `note` that scripts/lib/common.sh has never defined (it defines
+  # pass/skip/fail/hdr/have) — so it printed "note: command not found" and SWALLOWED the
+  # very notice it exists to give. It survived because this branch only runs when main has
+  # moved past the release commit, and because shellcheck cannot flag a bare word that
+  # might be some command on PATH; the assertions above only ever inspected tags, never the
+  # output. It fired for real while publishing v4.12.2.
+  #
+  # Deliberately generic: matching "command not found" rather than `note` catches the NEXT
+  # undefined helper too, which is the actual failure class.
+  if ! grep -qi 'command not found' <<<"$_tr_out"; then
+    pass "tag-release: --publish calls no undefined helper (its output has no 'command not found')"
+  else
+    fail "tag-release: --publish invoked an undefined helper: $(grep -i 'command not found' <<<"$_tr_out" | head -1)"
+  fi
   # ...and the moving major alias rides along to the same commit.
   if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_release_sha" ]]; then
     pass "tag-release: --publish moves the vN alias to the release commit too"
@@ -2705,7 +2720,15 @@ if have git; then
   # wording and went red across all four CI legs for a difference that says nothing about
   # the bug. The message is kept for the failure text, where it aids diagnosis, and is
   # never gated on.
-  _tr_sign_err="$(LC_ALL=C git -C "$_tr_gpgd" -c tag.gpgsign=true tag -f vSIG 2>&1)"
+  # GIT_EDITOR=true, and the inherited editor vars cleared. Without this the probe is only
+  # deterministic where there is no editor to launch — i.e. CI. On a developer's
+  # interactive `make audit`, git would open $EDITOR here to collect the tag message and
+  # BLOCK the suite on a modal vim; saving a message would then let it proceed to a real
+  # signing attempt, which is neither what this asserts nor guaranteed to be possible.
+  # `true` is a no-op editor: it exits 0 having written nothing, so the message stays
+  # empty and git aborts exactly as it does in CI — deterministic, key-free, everywhere.
+  _tr_sign_err="$(LC_ALL=C GIT_EDITOR=true EDITOR=true VISUAL=true \
+    git -C "$_tr_gpgd" -c tag.gpgsign=true tag -f vSIG 2>&1)"
   _tr_sign_rc=$?
   if ((_tr_sign_rc != 0)); then
     pass "tag-release: a message-less 'git tag -f' really does abort under tag.gpgsign (the #506 hazard)"

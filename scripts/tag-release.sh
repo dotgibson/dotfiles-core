@@ -160,7 +160,14 @@ if [[ "$MODE" == publish ]]; then
   # after the release merged) but the operator should know `git describe` on main will
   # now report commits-since, not a clean tag.
   if [[ "$RELEASE_SHA" != "$(git rev-parse origin/main)" ]]; then
-    note "origin/main has advanced $(git rev-list --count "$RELEASE_SHA..origin/main") commit(s) since the release — tagging the release commit, not the tip"
+    # `skip`, not `note` — there is no note() in scripts/lib/common.sh (it defines
+    # pass/skip/fail/hdr/have), so this line printed "note: command not found" and the
+    # operator never saw the notice. It survived because this branch only runs when main
+    # has ADVANCED past the release commit, an uncommon path that no test covers, and
+    # because a bare word that might be some command on PATH is not something the linter
+    # can flag. It fired for real publishing v4.12.2 — swallowing the very message it
+    # exists to give.
+    skip "origin/main has advanced $(git rev-list --count "$RELEASE_SHA..origin/main") commit(s) since the release — tagging the release commit, not the tip"
   fi
 
   # The Release BODY comes from this commit's [vX.Y.Z] section (release.yml extracts it),

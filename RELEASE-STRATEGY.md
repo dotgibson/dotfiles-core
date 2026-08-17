@@ -258,7 +258,7 @@ GitHub's own recommended pattern for reusable workflows.
   Don't trust a frozen count of who pins what — `RELEASE-RUNBOOK.md` §"Step 5, by bump type"
   carries a one-liner that derives it from the callers.
 - **Bootstrapping a major:** `vN` is created/advanced by `make publish`; the very first
-  `vN` can also be stamped by hand (`git tag -f vN vN.0.0 && git push -f origin vN`).
+  `vN` can also be stamped by hand (`git tag -fa vN vN.0.0 -m vN && git push -f origin vN`).
 - **Trade vs. exact-SHA pinning:** a SHA is maximally deterministic but needs a manual
   caller bump fleet-wide on every change — rejected as too high-churn for a first-party,
   same-owner reusable workflow. `dotfiles-Windows` takes the opposite side of that trade for
