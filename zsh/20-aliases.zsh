@@ -133,6 +133,9 @@ alias vim='nvim'
 # git-absorb gets NO alias at all — it installs as the `git absorb` subcommand, so git
 # already dispatches it and there is nothing to shadow. 00-tools.zsh detects it
 # (HAVE_GIT_ABSORB) purely so core-doctor can report it; see git/gitconfig's `fix` alias.
+# Both sides now look past $PATH: the Debian family keeps the subcommand in git's exec-path
+# only, so the flag falls back to a zero-fork stat there and core-doctor resolves the row
+# through `git --exec-path` (#424).
 alias lg='lazygit'
 
 # difftastic (difft): AST/structural diff — an OPT-IN companion to delta, never the

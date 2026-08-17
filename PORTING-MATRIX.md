@@ -457,14 +457,36 @@ where a change belongs and `git absorb` when you would otherwise go looking.
 **The house-style ideal for a new tool: it needs no alias at all.** git-absorb installs as
 `git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand — so it shadows
 nothing classic and `zsh/20-aliases.zsh` gains no entry, only a note saying why.
-`HAVE_GIT_ABSORB` exists purely so `core-doctor` can report it. One detection caveat: the
-probe is `command -v git-absorb`, so a distro that installs the binary into git's
-`libexec/git-core` rather than a `PATH` directory would give you a working `git absorb` and
-an unset flag. No mainstream package does this — the distro packages (Arch, Debian/Kali,
-Alpine, Gentoo) land it in `/usr/bin`, and Homebrew links it into its own prefix `bin`
-(`/opt/homebrew/bin` on Apple silicon, `/usr/local/bin` on Intel), which is a different
-directory but equally on `PATH`. Probing `git absorb --version` instead would add a `git`
-fork to every interactive shell — which `zsh/00-tools.zsh` exists to avoid.
+`HAVE_GIT_ABSORB` exists purely so `core-doctor` can report it. **The Debian family does
+install it into git's exec-path rather than onto `PATH`** — verified on a Kali box
+2026-08-17, `git-absorb` 0.6.17-2+b4: `dpkg -L git-absorb` lists `/usr/lib/git-core/git-absorb`
+and a man page and nothing else, `command -v git-absorb` finds nothing, and
+`git absorb --version` works. That is the standard packaging convention for a `git-<verb>`
+subcommand, not an oddity: git finds it via `--exec-path`, the user invokes it as
+`git absorb`, and it is intentionally absent from `PATH`.
+
+This paragraph used to say no mainstream package did that, and #424 is what the wrong claim
+cost — `core-doctor` reported `✗ git-absorb` on boxes where the tool was installed and the
+only supported way to call it worked, so a reader would go install what they already had.
+Both sides now look past `PATH`:
+
+- `core-doctor` resolves any `git-*` row through `git --exec-path` when the bare name misses
+  (`zsh/30-functions.zsh`, `_core_git_exec_path` + the `git-*` arm of `_core_doctor_bin`).
+  One fork, only on a miss, cached per report, and the resolved absolute path is what the
+  `-v` version readout then executes.
+- `HAVE_GIT_ABSORB` falls back to a **zero-fork** stat of `$GIT_EXEC_PATH` and
+  `<git-prefix>/{lib,libexec}/git-core`, with the prefix derived from zsh's builtin
+  `$commands` hash rather than hard-coded. `zsh/00-tools.zsh` still forks nothing at shell
+  start, which is the constraint that made the original PATH-only probe look reasonable.
+
+Where the two can still differ: a git built with its libexec outside its own prefix, with
+the subcommand not linked onto `PATH`. `core-doctor` is authoritative there — it asks git —
+and the flag is a best-effort approximation.
+
+Arch, Alpine, Gentoo and Homebrew land the binary on `PATH` (Homebrew in its own prefix
+`bin`, `/opt/homebrew/bin` on Apple silicon and `/usr/local/bin` on Intel), so those boxes
+never reach the fallback — but that is package-page evidence, not an on-box check, so treat
+it with the same caution as the version stamps below.
 
 **Detect-only on Linux**, and packaged essentially everywhere — the ²¹ shape, not `jnv`¹⁷'s.
 The MacBook `Brewfile` carries it; no Linux `install/packages.txt` does. Verified 2026-08-12
@@ -472,12 +494,16 @@ against each distro's own package pages:
 
 - **Arch `extra`** 0.9.0-2, **Alpine `community`** 0.9.0-r0, **Gentoo `dev-vcs/git-absorb`**
   0.9.0 (**stable on amd64**, in the main tree — no GURU needed), **Homebrew** 0.9.0.
-- **Debian/Kali `git-absorb`** 0.9.0-2. Note repology reports the **source** package as
-  `rust-git-absorb`; the **binary** package you install is `git-absorb`, confirmed on
-  packages.debian.org. Fedora is the same shape (`rust-git-absorb` source, `git-absorb`
-  binary).
-- **openSUSE Tumbleweed is the one laggard, at 0.6.17** — the gap #394 flagged, confirmed
-  here rather than left as a repology snapshot. Re-check on the next openSUSE stamp.
+- **Debian `git-absorb`** 0.9.0-2 per packages.debian.org, but **Kali rolling ships
+  0.6.17-2+b4** — verified on-box 2026-08-17, so the two must not be quoted as one cell:
+  Kali is a laggard here rather than a Debian follower. Whether Debian's own 0.9.0-2 also
+  installs into git's exec-path is **not** verified; only the Kali build is. Note repology
+  reports the **source** package as `rust-git-absorb`; the **binary** package you install is
+  `git-absorb`, confirmed on packages.debian.org. Fedora is the same shape
+  (`rust-git-absorb` source, `git-absorb` binary).
+- **openSUSE Tumbleweed is the other laggard, also at 0.6.17** — the gap #394 flagged,
+  confirmed here rather than left as a repology snapshot. Re-check on the next openSUSE
+  stamp.
 
 ²⁷ carapace: **`go install` cannot work here, on any platform, for any published version.**
 This row used to read `go³`, and following that footnote fails on every box. It is the one
