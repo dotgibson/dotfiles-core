@@ -39,6 +39,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`make audit` could report a fully green run while never reading the file the change
+  was about.** The audit's content gates — `bash -n`, `zsh -n`, shellcheck, the pipefail
+  scanner, and the toml/yaml/json parsers — enumerated their targets with a bare
+  `git ls-files`, which lists **only tracked files**. A brand-new script or config was
+  therefore invisible until the moment it was `git add`ed, and each gate still printed its
+  "all clean" pass. A green audit that had not opened the file is strictly worse than a red
+  one: it is indistinguishable from a real pass.
+
+  This shipped. `scripts/ci-pr-link.sh` passed a local **261 pass / 0 fail** audit while
+  still untracked, then failed all four CI legs (ubuntu, macOS, Alpine, Arch) on two SC2016
+  violations that had been in the file the whole time.
+
+  The audit was already inconsistent with itself about this: its `--changed` scope
+  derivation counts untracked files when deciding which _areas_ run, and the walk-based
+  gates (`luacheck .`, markdownlint's `**/*.md` glob) have always seen them. Only the
+  `git ls-files` gates disagreed, and nothing surfaced the disagreement.
+
+  All twelve content gates now enumerate through a shared `_audit_ls` helper
+  (`scripts/lib/common.sh`) that unions tracked with untracked-but-not-ignored, honouring
+  `.gitignore` so scratch files stay out. That covers every gate script `make audit`
+  consults, not just `audit-core.sh`: `check-modern.sh`'s workflow inventory and
+  `nvim-reachability.sh`'s lua-module inventory had the same blind spot, so an untracked
+  workflow could evade the modernization floor and an untracked module the orphan
+  backstop. `audit-core.sh`'s own §5c boundary scan was affected too, in a form worth
+  naming — it expands `nvim/` from the manifest and then reads every file it names, so it
+  reads like a manifest question while actually being a content one. The rule is documented where the next gate author
+  will read it: a gate asking **"is this file's content valid?"** uses `_audit_ls`, while a
+  gate asking **"what does git record?"** (manifest drift, index exec-bits) keeps plain
+  `git ls-files`, because an untracked file has no git state to check. The helper lives in
+  the shared lib rather than in `audit-core.sh` so `scripts/test-core.sh` exercises the real
+  implementation instead of a copy that could drift; five new assertions pin the behaviour,
+  including that a gitignored script stays excluded and that the enumeration split stays
+  exact, per file — twelve content gates through the helper, three git-state gates
+  direct. That last one is deliberately a tripwire rather than a floor: an "at least N
+  helper calls" check would sit green while a _newly added_ gate reintroduced the bug with
+  a bare `git ls-files`, so adding either kind of enumeration now fails the suite until
+  someone decides which side of the rule it belongs on.
+
+  **Exec-bits deliberately unchanged.** That gate reads index modes (`git ls-files -s`), and
+  an untracked file has no index entry — it falls on the git-state side of the rule above.
+
 - **A failed `tpm` clone announced itself as a status line, so tmux quietly ended up with
   no plugin manager.** `blib_link_core`'s one-time clone reported failure with `blib_say` —
   the blue `::` on **stdout**, the identical shape to the `cloning tpm` progress line
