@@ -56,9 +56,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   gates (`luacheck .`, markdownlint's `**/*.md` glob) have always seen them. Only the
   `git ls-files` gates disagreed, and nothing surfaced the disagreement.
 
-  All seven content gates now enumerate through a shared `_audit_ls` helper
+  All twelve content gates now enumerate through a shared `_audit_ls` helper
   (`scripts/lib/common.sh`) that unions tracked with untracked-but-not-ignored, honouring
-  `.gitignore` so scratch files stay out. The rule is documented where the next gate author
+  `.gitignore` so scratch files stay out. That covers every gate script `make audit`
+  consults, not just `audit-core.sh`: `check-modern.sh`'s workflow inventory and
+  `nvim-reachability.sh`'s lua-module inventory had the same blind spot, so an untracked
+  workflow could evade the modernization floor and an untracked module the orphan
+  backstop. `audit-core.sh`'s own §5c boundary scan was affected too, in a form worth
+  naming — it expands `nvim/` from the manifest and then reads every file it names, so it
+  reads like a manifest question while actually being a content one. The rule is documented where the next gate author
   will read it: a gate asking **"is this file's content valid?"** uses `_audit_ls`, while a
   gate asking **"what does git record?"** (manifest drift, index exec-bits) keeps plain
   `git ls-files`, because an untracked file has no git state to check. The helper lives in

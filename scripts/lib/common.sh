@@ -303,9 +303,21 @@ _core_pipefail_hits() { # _core_pipefail_hits <file>
 #   * Does the gate ask "is this file's CONTENT valid?" (syntax, lint, parse) → use
 #     _audit_ls. An untracked file is about to be committed; catching it now is the
 #     entire point of a local gate.
-#   * Does the gate ask "what does GIT RECORD?" (manifest drift, index exec-bits) →
-#     use plain `git ls-files`. An untracked file has no git state to check, so
+#   * Does the gate ask "what does GIT RECORD?" (manifest reverse-drift, index exec-bits)
+#     → use plain `git ls-files`. An untracked file has no git state to check, so
 #     including it would be meaningless rather than merely noisy.
+#
+# The rule binds every gate script `make audit` consults, not just audit-core.sh:
+# check-modern.sh (workflow/action inventory) and nvim-reachability.sh (lua module
+# inventory) source this lib for the same reason. scripts/test-core.sh asserts the exact
+# split per file, so adding either kind of enumeration anywhere fails the suite until
+# someone picks a side.
+#
+# The trap to watch for: a gate can READ like a manifest/git question and still be a
+# content one. audit-core.sh's §5c expands `nvim/` from the manifest and then cat|greps
+# every file it names — the manifest chooses the SCOPE, but the check is about contents,
+# so it belongs on the _audit_ls side. Ask what the gate does with the list, not where
+# the list came from.
 # --exclude-standard honours .gitignore, so scratch files and build output stay out.
 # Lives here rather than in audit-core.sh so test-core.sh can exercise the REAL
 # implementation instead of a copy that could drift from it.

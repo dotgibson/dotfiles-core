@@ -541,9 +541,17 @@ while IFS= read -r f; do
     fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
   fi
 done < <(
-  # Expand the manifest: directory entries (nvim/) via git ls-files, file entries as-is.
+  # Expand the manifest: directory entries (nvim/) into their files, file entries as-is.
+  #
+  # _audit_ls, not plain `git ls-files`: this list feeds a CONTENT scan — each file is
+  # cat'd and grepped for OS-absolute paths above — so it sits on the content side of the
+  # rule in common.sh. It reads like a manifest question and is not one; the manifest
+  # names the DIRECTORY, and every file under it is in scope whether or not git has seen
+  # it yet. Without this, a new nvim/ lua module hardcoding a Homebrew prefix would pass
+  # the boundary gate locally and only fail after `git add` — the same blind spot this
+  # rule exists to close, wearing manifest clothing.
   for m in "${MANIFEST_PATHS[@]}"; do
-    if [[ "$m" == */ ]]; then git ls-files "$m" 2>/dev/null; else printf '%s\n' "$m"; fi
+    if [[ "$m" == */ ]]; then _audit_ls "$m"; else printf '%s\n' "$m"; fi
   done | sort -u
 )
 ((bnd_fail)) || pass "every manifested Core file carries no OS-absolute path (scope derived from core.manifest)"

@@ -1088,18 +1088,44 @@ if have git; then
   # the new gate belongs on. That decision is the whole point; a test that lets it be made
   # implicitly is not guarding anything.
   #
-  # Match the call form `_audit_ls '<pathspec>`, NOT a leading `'*` — the zsh gate passes
-  # 'zsh/*.zsh', so anchoring on the glob undercounts it (it did, first time round). The
-  # definition in common.sh reads `_audit_ls() {` and cannot match. Comment lines are
-  # excluded from the direct count so prose ABOUT `git ls-files` never trips the gate.
-  _als_want_content=7
-  _als_want_direct=4
-  _als_content="$(grep -cE "_audit_ls '" "$HERE/scripts/audit-core.sh")"
-  _als_direct="$(grep -nE 'git ls-files' "$HERE/scripts/audit-core.sh" | grep -vcE '^[0-9]+:[[:space:]]*#')"
-  if [[ "$_als_content" == "$_als_want_content" && "$_als_direct" == "$_als_want_direct" ]]; then
-    pass "audit-core.sh enumeration split is exact (${_als_content} content via _audit_ls, ${_als_direct} git-state direct)"
+  # EVERY gate script that `make audit` consults, not just audit-core.sh. The first
+  # version guarded one file, and the rule was quietly broken in three places outside it:
+  # audit-core.sh's own manifest expansion (which feeds the §5c OS-path CONTENT scan and
+  # merely looks like a manifest question), check-modern.sh's workflow inventory, and
+  # nvim-reachability.sh's module inventory. A rule documented as universal but enforced
+  # on one file is worse than no rule — it reads as covered.
+  #
+  # Count CALLS robustly: `_audit_ls '<glob>'`, `_audit_ls "$m"`, and `_audit_ls \` with
+  # the pathspecs on the next line all count. Two earlier patterns here were too narrow
+  # and undercounted exactly those forms. The definition line `_audit_ls() {` and comment
+  # lines are excluded from both counts, so prose ABOUT either mechanism never trips it.
+  _als_calls() { # _als_calls <file> → number of _audit_ls call sites
+    grep -nE '(^|[^[:alnum:]_])_audit_ls([[:space:]]|$)' "$1" 2>/dev/null |
+      grep -vE '^[0-9]+:[[:space:]]*#' | grep -vcE '_audit_ls\(\)'
+  }
+  _als_direct() { # _als_direct <file> → number of bare `git ls-files` sites
+    grep -nE 'git ls-files' "$1" 2>/dev/null | grep -vcE '^[0-9]+:[[:space:]]*#'
+  }
+  # file:want_content:want_direct — exact on BOTH sides. A floor would stop guarding the
+  # moment the count was met: a NEW content gate could use bare `git ls-files` and still
+  # satisfy it. Exactness makes adding either kind of enumeration fail here until someone
+  # picks a side, which is the decision this rule exists to force.
+  _als_expect="audit-core.sh:8:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  _als_bad=""
+  for _als_spec in $_als_expect; do
+    _als_f="${_als_spec%%:*}"
+    _als_rest="${_als_spec#*:}"
+    _als_wc="${_als_rest%%:*}"
+    _als_wd="${_als_rest##*:}"
+    _als_gc="$(_als_calls "$HERE/scripts/$_als_f")"
+    _als_gd="$(_als_direct "$HERE/scripts/$_als_f")"
+    [[ "$_als_gc" == "$_als_wc" && "$_als_gd" == "$_als_wd" ]] ||
+      _als_bad="${_als_bad}${_als_f} (got ${_als_gc}/${_als_gd}, want ${_als_wc}/${_als_wd}) "
+  done
+  if [[ -z "$_als_bad" ]]; then
+    pass "enumeration split is exact across all three gate scripts (content via _audit_ls / git-state direct)"
   else
-    fail "audit-core.sh enumeration split changed: ${_als_content} _audit_ls (want ${_als_want_content}), ${_als_direct} direct git ls-files (want ${_als_want_direct}) — a new gate must pick a side: content → _audit_ls, git-state → git ls-files; then update these counts"
+    fail "enumeration split changed: ${_als_bad}— a new enumeration must pick a side (content → _audit_ls, git-state → git ls-files), then update these counts"
   fi
 fi
 
