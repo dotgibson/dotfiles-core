@@ -13,6 +13,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **CI now fails a `fix(…)` PR that closes no issue and gives no reason.** #446 fixed two
+  reported bugs — #420 (starship) and #423 (carapace) — and merged green with no closing
+  keyword in its body. GitHub therefore linked nothing, both issues stayed **open**, and
+  days later a reader re-derived a 2021 upstream function rename and re-ran the reproducer
+  to re-confirm a bug that had already shipped in v4.12.0. The code was correct the whole
+  time; the _link_ was missing, and no check objected.
+
+  `.github/workflows/pr-link-check.yml` now asks GitHub for the PR's
+  `closingIssuesReferences` — the same field GitHub itself uses to auto-close on merge, so
+  cosmetic text like "Refs #420" cannot satisfy it — and requires a `fix(…)` PR to close at
+  least one issue. The escape hatch is a `No-Issue: <reason>` line in the body, because a
+  genuine fix is often found and fixed in one pass with nothing filed; the reason is what a
+  future reader finds in place of a link. `pull_request_template.md` documents both routes.
+
+  Gated set is `fix` only, matched with the repo's canonical Conventional-Commit regex
+  (`scripts/gen-release-notes.sh`, `cliff.toml`), so `fixup:` and ordinary prose that
+  merely starts with the word are untouched. The verdict logic lives in
+  `scripts/ci-pr-link.sh` rather than inline YAML — shellcheck'd and unit-tested in
+  `scripts/test-core.sh`, following the `scripts/ci-classify.sh` precedent — and it is its
+  own workflow rather than a job in `ci.yml` so that a body edit re-runs one GraphQL query
+  instead of the whole nine-repo audit matrix.
+
 ### Fixed
 
 - **A failed `tpm` clone announced itself as a status line, so tmux quietly ended up with
