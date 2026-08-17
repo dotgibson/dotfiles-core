@@ -278,7 +278,14 @@ _core_pipefail_hits() { # _core_pipefail_hits <file>
   # scanner reads every tracked shell script, and common.sh is one of them.
   # grep: any quiet spelling (-q, -Eq, -E -q, --quiet). awk: an `exit` that is a statement
   # rather than the word inside a string — `awk '{ print "exit" }'` exits nothing.
-  re="(printf|echo)[^|]*[|][[:space:]]*(grep[^|]*(-[a-zA-Z]*q|--quiet)([[:space:]]|\$)|head([[:space:]]|\$)|awk[^|]*[^\"'[:alnum:]_]exit)"
+  # `-[a-zA-Z]*q[a-zA-Z]*`, NOT `-[a-zA-Z]*q`: the q may sit ANYWHERE in the flag cluster.
+  # The old form required it to be the LAST letter, so `grep -q` and `grep -xq` were caught
+  # while `grep -qx` and `grep -Eqi` walked straight past — the same hazard, differing only
+  # in spelling. A gate that misses a spelling of the thing it guards is indistinguishable
+  # from one that works, which is the failure mode this scanner exists to prevent.
+  # Widening it flags exactly ONE line that was already in the tree (ci-pr-link.sh's
+  # No-Issue probe, fixed in the same change), so this is a real catch, not new noise.
+  re="(printf|echo)[^|]*[|][[:space:]]*(grep[^|]*(-[a-zA-Z]*q[a-zA-Z]*|--quiet)([[:space:]]|\$)|head([[:space:]]|\$)|awk[^|]*[^\"'[:alnum:]_]exit)"
   grep -nE "$re" "$f" 2>/dev/null |
     awk -F: '{ l = $0; sub(/^[0-9]+:/, "", l); if (l !~ /^[[:space:]]*#/) print $1 }'
 }
