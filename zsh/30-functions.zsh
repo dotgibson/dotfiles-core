@@ -182,10 +182,12 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
 # typeset -g, because every caller is already inside a function that has `local`-ed its own
 # scratch (REPLY/bin/_v in _core_doctor_render, REPLY in _core_doctor_json) — a plain
 # assignment would die with that frame and the cache would not survive one loop iteration.
-# Lifetime is ONE REPORT, not one shell: on a TTY core-doctor runs the render inside a `$(…)`
-# capture, so this is set in a subshell and discarded with it. That is exactly the unit being
-# deduplicated, and it means an interactive session cannot carry a stale answer across a git
-# upgrade. `command git`, not `git`: the real binary's account of its own layout.
+# Lifetime is ONE REPORT, not one shell, and that is ENFORCED by core-doctor unsetting the
+# cache on entry — it cannot be left to the subshell. Only the TTY render runs inside a `$(…)`
+# capture; `--json` and the non-TTY path both run in the caller's shell, so without the unset
+# an interactive session would carry the answer — including a cached EMPTY one — across a git
+# install or a PATH/GIT_EXEC_PATH change and report the row wrong for the rest of the session.
+# `command git`, not `git`: the real binary's account of its own layout.
 _core_git_exec_path() {
   if ((!${+_CORE_GIT_EXEC_PATH})); then
     typeset -g _CORE_GIT_EXEC_PATH=""
@@ -291,6 +293,13 @@ _core_doctor_json() {
 
 core-doctor() {
   emulate -L zsh
+  # Drop the exec-path cache so THIS report re-derives it (at most once — see
+  # _core_git_exec_path). Only the TTY branch below runs the render in a `$(…)` subshell that
+  # would discard it anyway; --json and the non-TTY path run right here, so a cache left
+  # standing would outlive its report and answer for a box that has since installed git,
+  # installed the subcommand, or moved GIT_EXEC_PATH. A health check that goes stale is worse
+  # than one that forks once.
+  unset _CORE_GIT_EXEC_PATH
   # --json (anywhere on the line) → machine-readable, never paged (B12).
   local a
   for a in "$@"; do [[ "$a" == --json ]] && { _core_doctor_json; return 0; }; done

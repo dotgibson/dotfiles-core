@@ -457,7 +457,10 @@ where a change belongs and `git absorb` when you would otherwise go looking.
 **The house-style ideal for a new tool: it needs no alias at all.** git-absorb installs as
 `git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand — so it shadows
 nothing classic and `zsh/20-aliases.zsh` gains no entry, only a note saying why.
-`HAVE_GIT_ABSORB` exists purely so `core-doctor` can report it. **The Debian family does
+`HAVE_GIT_ABSORB` is set for symmetry with the other detected tools and **has no consumer
+today** — `core-doctor` probes the tool itself rather than reading the flag, so the two are
+independent paths to the same question and are kept in agreement deliberately (#425).
+**The Debian family does
 install it into git's exec-path rather than onto `PATH`** — verified on a Kali box
 2026-08-17, `git-absorb` 0.6.17-2+b4: `dpkg -L git-absorb` lists `/usr/lib/git-core/git-absorb`
 and a man page and nothing else, `command -v git-absorb` finds nothing, and
