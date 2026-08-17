@@ -81,7 +81,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (the runbook froze it as "27 of 28"), when `dotfiles-MacBook` pins four callers and
   `dotfiles-Defense` one. Both now split the cases by the property that actually matters at
   release time — pinned **inside** the fan-out (MacBook, Defense: `sync-core.sh` moves the
-  pin automatically since #482, which is *why* the App needs Workflows write) versus pinned
+  pin automatically since #482, which is _why_ the App needs Workflows write) versus pinned
   **outside** it (Windows: vendors no `core/`, so nothing moves its pin and it needs a hand
   bump). The frozen count is replaced by a one-liner that derives it from the callers, since
   a hand-maintained tally is what rotted here.
