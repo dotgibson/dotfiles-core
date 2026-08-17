@@ -43,6 +43,43 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The pipefail SIGPIPE scanner was half-blind, and was hiding a live hazard in the
+  PR-link gate.** `_core_pipefail_hits` required grep's `q` to be the **last letter** of
+  the flag cluster, so `grep -q` and `grep -xq` were caught while `grep -qx` and
+  `grep -Eqi` walked straight past — the identical hazard, differing only in spelling.
+
+  Widening the pattern to allow the `q` anywhere flags exactly **one** line that was
+  already in the tree: `ci-pr-link.sh`'s `No-Issue:` probe, `printf … | grep -Eqi` under
+  `set -o pipefail`. `grep` exits on its first match, `printf` takes `EPIPE`, and the
+  pipeline reports 141 — so a PR body larger than the pipe buffer would make a **valid**
+  `No-Issue:` line evaluate false and fail a correctly-exempt PR. That is the escape hatch
+  failing into a false accusation: the same shape as the probe bug above, one layer down.
+  It survived because a PR body fits the buffer, which is precisely the "happens to work"
+  the scanner exists to eliminate.
+
+  Both land together — widening the regex without fixing the line it newly catches would
+  turn the audit red. Four assertions now pin every spelling (`-q`, `-xq`, `-qx`, `-Eqi`)
+  plus a grep with no quiet flag at all, so the gate cannot go half-blind again.
+
+- **`pr-link-check` no longer tells a correctly-linked PR that it has no linked issue.**
+  The probe coerced any non-numeric count to zero, so **"I could not reach the API"** and
+  **"this PR has no link"** produced the same verdict and the same message. During a run of
+  GitHub 503s it failed #499 — which links #498 — with "this `fix(…)` PR closes no issue
+  and gives no reason", and offered `No-Issue:` as the remedy. The link was intact
+  throughout; re-running the identical job minutes later returned `linked=1`.
+
+  Fail-closed was the right call and is unchanged — a broken probe must never silently pass
+  an unlinked fix PR. What was wrong is that the check asserted something it did not know.
+  An undeterminable count now gets its own `probe-failed` verdict which says plainly that
+  the API was unreachable and the job should be re-run, so the exit code carries the
+  **policy** while the verdict carries the **claim**.
+
+  The workflow also retries the probe four times with quadratic backoff (0s/2s/6s/12s),
+  requiring a numeric result rather than merely exit 0 — `gh` can return success with an
+  empty body on a partial GraphQL response, which the old code would have read as a
+  confident zero. And the `No-Issue:` escape hatch is now evaluated **before** the
+  probe-failure verdict: it is read from the PR body and needs no API call, so a PR that
+  already carries its reason is no longer blocked by an outage it does not depend on.
 - **`make audit` could report a fully green run while never reading the file the change
   was about.** The audit's content gates — `bash -n`, `zsh -n`, shellcheck, the pipefail
   scanner, and the toml/yaml/json parsers — enumerated their targets with a bare
@@ -83,6 +120,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   **Exec-bits deliberately unchanged.** That gate reads index modes (`git ls-files -s`), and
   an untracked file has no index entry — it falls on the git-state side of the rule above.
+||||||| parent of 5640316 (fix(ci): tell "no link" apart from "could not determine"; unblind the pipefail scanner)
 
 - **A failed `tpm` clone announced itself as a status line, so tmux quietly ended up with
   no plugin manager.** `blib_link_core`'s one-time clone reported failure with `blib_say` —
