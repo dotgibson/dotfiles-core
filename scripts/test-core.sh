@@ -153,7 +153,7 @@ trap 'rm -rf "$SANDBOX"' EXIT
 # ── C. clipboard detection ladder (bin/clip / bin/clip-paste) ─────────────────
 # bin/clip is the single highest-fan-out runtime artifact in Core — used by zsh
 # (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all 8 OS
-# repos — yet its WSL→macOS→Wayland→X11 ladder had no test, only `bash -n`. We drive
+# repos — yet its WSL→macOS→Wayland→X11→OSC 52 ladder had no test, only `bash -n`. We drive
 # the ladder HERMETICALLY: PATH is pointed at a fake bin holding a stub `uname` that
 # reports the OS we want, a stub `grep` that answers the /proc/version probe, and
 # stub backends that print a marker instead of touching a real clipboard — then we
@@ -180,11 +180,16 @@ _stub() {
 _clip_reset() {
   rm -rf "$CBIN"
   mkdir -p "$CBIN"
-  unset WSL_DISTRO_NAME WAYLAND_DISPLAY
+  unset WSL_DISTRO_NAME WAYLAND_DISPLAY DISPLAY
   ln -s "$_real_bash" "$CBIN/bash"
   _stub uname 'echo Linux'
   printf 'Linux version 6.1.0-0 (gcc) #1 SMP\n' >"$CBIN/procversion"
   export CLIP_PROC_VERSION="$CBIN/procversion"
+  # Point the OSC 52 fallback at a path that cannot be opened, so a scenario which
+  # reaches it fails LOUDLY instead of quietly writing to the runner's real terminal
+  # (or accidentally passing because CI happens to have no tty). The OSC 52 cases
+  # below override this with a real file.
+  export CLIP_TTY="$CBIN/no-such-dir/tty"
 }
 # Assert prog's stdout is exactly the marker the chosen backend prints.
 _clip_is() { # _clip_is <label> <prog> <expected>
@@ -220,13 +225,103 @@ _stub wl-copy 'echo WL'
 _clip_is "clip → wl-copy under Wayland" "$CLIP" WL
 unset WAYLAND_DISPLAY
 _clip_reset
+# DISPLAY is required, not incidental: xclip/xsel cannot talk to an X server without
+# one, and the guard is what lets a box that merely HAS xclip installed (a common
+# desktop dependency) fall through to OSC 52 over ssh instead of exec'ing a doomed
+# binary. See the ladder's own comment in bin/clip.
+export DISPLAY=:0
 _stub xclip 'echo XCLIP'
 _clip_is "clip → xclip on X11" "$CLIP" XCLIP
 _clip_reset
+export DISPLAY=:0
 _stub xsel 'echo XSEL'
 _clip_is "clip → xsel when xclip absent" "$CLIP" XSEL
 _clip_reset
-_clip_fails "clip exits non-zero with no backend" "$CLIP"
+# The regression that motivated the guard: xclip present, no DISPLAY. This MUST NOT
+# exec xclip — it must fall past it. The stub writes a marker file so we can prove the
+# backend never ran, rather than inferring it from stdout.
+_stub xclip "echo RAN >'$CBIN/xclip-ran'"
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+export CLIP_TTY="$CBIN/tty-x11"
+if printf 'payload' | PATH="$CBIN" "$CLIP" 2>/dev/null && [[ ! -e "$CBIN/xclip-ran" ]]; then
+  pass "clip: xclip installed but no DISPLAY falls through to OSC 52 (does not exec a doomed xclip)"
+else
+  fail "clip: xclip was exec'd with no DISPLAY, or the OSC 52 fallback did not run"
+fi
+_clip_reset
+# base64/tr must be present, or `clip` dies during ENCODING and never reaches the tty
+# write — leaving this assertion green even if the write-error handling is broken. It
+# would then be testing "the fallback failed", not "the fallback failed FOR THE REASON
+# THIS TEST NAMES". CLIP_TTY still points at _clip_reset's unopenable path.
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+_clip_fails "clip exits non-zero with no backend and no terminal" "$CLIP"
+
+# OSC 52 fallback — the branch that makes `clip` work at all on a headless ssh box.
+# Asserted on the WIRE FORMAT, not just "did something happen": a terminal ignores a
+# malformed sequence silently, so a test that only checked for output would pass while
+# the user's copy vanished. base64/tr are symlinked in because the fallback shells out
+# to them under the stripped PATH.
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+export CLIP_TTY="$CBIN/tty-osc52"
+_osc_payload='hello osc52'
+if printf '%s' "$_osc_payload" | PATH="$CBIN" "$CLIP" 2>/dev/null; then
+  # \033]52;c;<base64>\a  — selection `c`, BEL-terminated.
+  # `$(cat …)` strips ALL trailing newlines, which would normalise a stray LF after the
+  # BEL right out of the comparison — so a regression that emitted
+  # `ESC ]52;c;<b64> BEL LF` would sail through a test whose whole job is the exact wire
+  # format. The X sentinel preserves the file's trailing bytes; strip it after.
+  _osc_raw="$(cat "$CBIN/tty-osc52"; printf X)"
+  _osc_raw="${_osc_raw%X}"
+  _osc_b64="${_osc_raw#$'\033']52;c;}"
+  _osc_b64="${_osc_b64%$'\a'}"
+  if [[ "$_osc_raw" == $'\033']52\;c\;*$'\a' ]]; then
+    pass "clip: OSC 52 fallback emits a BEL-terminated \\033]52;c; sequence"
+  else
+    fail "clip: OSC 52 framing wrong (got: $(printf '%q' "$_osc_raw"))"
+  fi
+  if [[ "$(printf '%s' "$_osc_b64" | base64 -d 2>/dev/null)" == "$_osc_payload" ]]; then
+    pass "clip: OSC 52 payload base64-decodes back to exactly what was piped in"
+  else
+    fail "clip: OSC 52 payload did not round-trip"
+  fi
+  # A newline anywhere in the base64 terminates the escape early and the terminal
+  # copies a truncated value — which is why the encoder pipes through `tr -d`, and
+  # why `base64 -w0` (GNU-only) is not used.
+  #
+  # The payload has to be LONG to test this. GNU base64 wraps at 76 columns, so it
+  # only emits a newline once the encoding exceeds that — i.e. past ~57 bytes of
+  # input. A short multi-line string encodes to one line either way, and an assertion
+  # built on one passes just as happily with the `tr` removed. (Confirmed by deleting
+  # it: the short-input version of this test did not notice.) 300 bytes forces
+  # several wraps on any implementation that wraps at all.
+  _osc_long="$(printf 'the quick brown fox jumps over the lazy dog %.0s' 1 2 3 4 5 6 7)"
+  printf '%s\n%s\n' "$_osc_long" "$_osc_long" | PATH="$CBIN" "$CLIP" 2>/dev/null
+  _osc_multi="$(cat "$CBIN/tty-osc52"; printf X)"
+  if [[ "${_osc_multi%X}" != *$'\n'* ]]; then
+    pass "clip: OSC 52 payload stays one unbroken line for multi-line input"
+  else
+    fail "clip: OSC 52 payload contains a newline — the sequence would be truncated"
+  fi
+else
+  fail "clip: OSC 52 fallback did not run with no backend and a writable CLIP_TTY"
+fi
+# The escape must go to the terminal, never stdout: `clip` is used in pipelines and as
+# nvim's provider, so anything on stdout corrupts the caller's data.
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+export CLIP_TTY="$CBIN/tty-stdout"
+_osc_stdout="$(printf 'payload' | PATH="$CBIN" "$CLIP" 2>/dev/null)"
+if [[ -z "$_osc_stdout" && -s "$CBIN/tty-stdout" ]]; then
+  pass "clip: OSC 52 writes to the tty and leaves stdout empty"
+else
+  fail "clip: OSC 52 leaked to stdout (got '$_osc_stdout')"
+fi
+unset _osc_payload _osc_raw _osc_b64 _osc_stdout _osc_long _osc_multi
 
 # clip-paste (paste) — mirror ladder; the WSL leg also strips the CR powershell adds.
 _clip_reset
@@ -251,10 +346,15 @@ _stub wl-paste 'echo WL'
 _clip_is "clip-paste → wl-paste under Wayland" "$CLIPPASTE" WL
 unset WAYLAND_DISPLAY
 _clip_reset
+export DISPLAY=:0
 _stub xclip 'echo XCLIP'
 _clip_is "clip-paste → xclip -o on X11" "$CLIPPASTE" XCLIP
 _clip_reset
-_clip_fails "clip-paste exits non-zero with no backend" "$CLIPPASTE"
+# No OSC 52 mirror here, deliberately: reading the clipboard over OSC 52 means querying
+# the terminal and waiting for a reply that most terminals refuse to send, so clip-paste
+# still fails — loudly — where clip now succeeds. bin/clip-paste's header explains why,
+# and the asymmetry is intentional rather than an oversight.
+_clip_fails "clip-paste exits non-zero with no backend (no OSC 52 read path)" "$CLIPPASTE"
 
 # ── D. Neovim config load (nvim/, headless) ───────────────────────────────────
 # nvim/ is the largest body of code in Core yet was validated only by luacheck
