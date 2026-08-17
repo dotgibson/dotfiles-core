@@ -462,18 +462,22 @@ commit yourself, and `git absorb` works one out per hunk. Reach for `git fix` wh
 where a change belongs and `git absorb` when you would otherwise go looking.
 
 **The house-style ideal for a new tool: it needs no alias at all.** git-absorb installs as
-`git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand — so it shadows
+`git-absorb` — on `PATH` in the common case, in git's exec-path on the Debian family (see
+below) — and git dispatches it as the `git absorb` subcommand either way, so it shadows
 nothing classic and `zsh/20-aliases.zsh` gains no entry, only a note saying why.
 `HAVE_GIT_ABSORB` is set for symmetry with the other detected tools and **has no consumer
 today** — `core-doctor` probes the tool itself rather than reading the flag, so the two are
 independent paths to the same question and are kept in agreement deliberately (#425).
-**The Debian family does
-install it into git's exec-path rather than onto `PATH`** — verified on a Kali box
-2026-08-17, `git-absorb` 0.6.17-2+b4: `dpkg -L git-absorb` lists `/usr/lib/git-core/git-absorb`
-and a man page and nothing else, `command -v git-absorb` finds nothing, and
-`git absorb --version` works. That is the standard packaging convention for a `git-<verb>`
-subcommand, not an oddity: git finds it via `--exec-path`, the user invokes it as
-`git absorb`, and it is intentionally absent from `PATH`.
+**Debian-family packages do install it into git's exec-path rather than onto `PATH`** — on
+the two boxes anyone has actually checked. **Kali**, `git-absorb` 0.6.17-2+b4, verified
+2026-08-17: `dpkg -L git-absorb` lists `/usr/lib/git-core/git-absorb` and a man page and
+nothing else, `command -v git-absorb` finds nothing, and `git absorb --version` works.
+**Ubuntu 24.04**, 0.6.11, from the reporter's `dpkg -L` in #424. **Debian proper is
+unverified** — its package page lists 0.9.0-2 and nobody has looked at where that build
+lands, so read the heading as the packaging convention plus two confirmations of it, not as
+a survey of the family. The convention itself is standard for a `git-<verb>` subcommand and
+not an oddity: git finds it via `--exec-path`, the user invokes it as `git absorb`, and it
+is intentionally absent from `PATH`.
 
 This paragraph used to say no mainstream package did that, and #424 is what the wrong claim
 cost — `core-doctor` reported `✗ git-absorb` on boxes where the tool was installed and the
@@ -484,10 +488,13 @@ Both sides now look past `PATH`:
   (`zsh/30-functions.zsh`, `_core_git_exec_path` + the `git-*` arm of `_core_doctor_bin`).
   One fork, only on a miss, cached per report, and the resolved absolute path is what the
   `-v` version readout then executes.
-- `HAVE_GIT_ABSORB` falls back to a **zero-fork** stat of `$GIT_EXEC_PATH` and
-  `<git-prefix>/{lib,libexec}/git-core`, with the prefix derived from zsh's builtin
-  `$commands` hash rather than hard-coded. `zsh/00-tools.zsh` still forks nothing at shell
-  start, which is the constraint that made the original PATH-only probe look reasonable.
+- `HAVE_GIT_ABSORB` falls back to a **zero-fork** stat. An **exported** `$GIT_EXEC_PATH` is
+  probed **exclusively**, because that is what it means to git — it replaces the compiled-in
+  exec-path rather than adding to it, and an _unexported_ parameter of that name never
+  reaches git at all, so it is ignored here too. With no such override it stats
+  `<git-prefix>/{lib,libexec}/git-core`, the prefix derived from zsh's builtin `$commands`
+  hash rather than hard-coded. `zsh/00-tools.zsh` still forks nothing at shell start, which
+  is the constraint that made the original PATH-only probe look reasonable.
 
 Where the two can still differ: a git built with its libexec outside its own prefix, with
 the subcommand not linked onto `PATH`. `core-doctor` is authoritative there — it asks git —
