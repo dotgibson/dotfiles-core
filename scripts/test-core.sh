@@ -1074,17 +1074,32 @@ if have git; then
   else
     fail "_audit_ls double-listed a tracked file ($_als_n times)"
   fi
-  # The audit's CONTENT gates must all use it; the GIT-STATE gates (manifest reverse-drift,
-  # index exec-bits, manifest expansion) must NOT. Pin the split so a new gate copied from
-  # the wrong neighbour is caught here rather than by a green audit that read nothing.
+  # The audit's CONTENT gates must all use _audit_ls; the GIT-STATE gates (the --changed
+  # scope probe, manifest reverse-drift, index exec-bits, manifest expansion) must NOT.
+  #
+  # Assert the split EXACTLY, in both directions. A floor (">= 7 helper calls") looks like
+  # it guards this and does not: once seven calls exist, a NEW content gate can enumerate
+  # with a bare `git ls-files` and the floor is still satisfied — the guard would sit green
+  # through the reintroduction of the very bug it exists to prevent. Worse, a later helper
+  # call could mask a regression elsewhere by keeping the total up.
+  #
+  # Exact counts are deliberately a tripwire: adding EITHER kind of enumeration fails here
+  # until someone bumps the number, which is the moment to decide which side of the rule
+  # the new gate belongs on. That decision is the whole point; a test that lets it be made
+  # implicitly is not guarding anything.
+  #
   # Match the call form `_audit_ls '<pathspec>`, NOT a leading `'*` — the zsh gate passes
-  # 'zsh/*.zsh', so anchoring on the glob would undercount it (it did, first time round).
-  # The definition in common.sh reads `_audit_ls() {` and cannot match this.
+  # 'zsh/*.zsh', so anchoring on the glob undercounts it (it did, first time round). The
+  # definition in common.sh reads `_audit_ls() {` and cannot match. Comment lines are
+  # excluded from the direct count so prose ABOUT `git ls-files` never trips the gate.
+  _als_want_content=7
+  _als_want_direct=4
   _als_content="$(grep -cE "_audit_ls '" "$HERE/scripts/audit-core.sh")"
-  if ((_als_content >= 7)); then
-    pass "audit-core.sh routes its content gates through _audit_ls ($_als_content sites)"
+  _als_direct="$(grep -nE 'git ls-files' "$HERE/scripts/audit-core.sh" | grep -vcE '^[0-9]+:[[:space:]]*#')"
+  if [[ "$_als_content" == "$_als_want_content" && "$_als_direct" == "$_als_want_direct" ]]; then
+    pass "audit-core.sh enumeration split is exact (${_als_content} content via _audit_ls, ${_als_direct} git-state direct)"
   else
-    fail "audit-core.sh has only $_als_content _audit_ls sites — a content gate regressed to git ls-files"
+    fail "audit-core.sh enumeration split changed: ${_als_content} _audit_ls (want ${_als_want_content}), ${_als_direct} direct git ls-files (want ${_als_want_direct}) — a new gate must pick a side: content → _audit_ls, git-state → git ls-files; then update these counts"
   fi
 fi
 
