@@ -2714,7 +2714,18 @@ if have git; then
   printf '1.1.0\n' >"$TR/work/core.version"
   printf '# Changelog\n\n## [Unreleased]\n\n## [v1.1.0] - 2026-02-02\n\n- new\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/work/CHANGELOG.md"
 
-  _tr_run() { (cd "$TR/work" && env CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
+  # LC_ALL=C so assertions on this output mean the same thing on every box: the script's
+  # own strings are ours and stable, but anything bash or git emits — notably a shell's
+  # "command not found" — is localized, and an assertion that greps a translated
+  # diagnostic silently stops matching rather than failing.
+  # -u CORE_JSON alongside the pins: under --json, common.sh's skip() prints NOTHING (stdout
+  # must carry only the JSON object), and both test-core.sh and audit-core.sh EXPORT
+  # CORE_JSON=1 for that mode. The fixture inherits it, the advanced-tip notice vanishes,
+  # and the assertion below fails for a reason that has nothing to do with tag-release.sh.
+  # Verified: before this, `test-core.sh --json` reported the notice missing. The rule this
+  # follows — a fixture asserting on OUTPUT must pin every variable that governs how output
+  # is produced — is the same one behind LC_ALL and CORE_COLOR here, and $EDITOR below.
+  _tr_run() { (cd "$TR/work" && env -u CORE_JSON LC_ALL=C CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
 
   # THE property. Phase 1 commits and must leave NO tag behind — there must be nothing
   # for a stray push to carry while the commit is still off main.
@@ -2770,6 +2781,34 @@ if have git; then
   else
     fail "tag-release: fixture did not actually advance the tip — the assertion above proves nothing"
   fi
+  # No undefined helper on the publish path. This run just exercised the advanced-tip
+  # branch, which called a `note` that scripts/lib/common.sh has never defined (it defines
+  # pass/skip/fail/hdr/have) — so it printed "note: command not found" and SWALLOWED the
+  # very notice it exists to give. It survived because this branch only runs when main has
+  # moved past the release commit, and because shellcheck cannot flag a bare word that
+  # might be some command on PATH; the assertions above only ever inspected tags, never the
+  # output. It fired for real while publishing v4.12.2.
+  #
+  # BOTH halves, because either alone is satisfiable by the wrong thing:
+  #   * absence of the shell diagnostic alone passes if the notice is DELETED — the
+  #     user-visible regression (no notice at all) would sail through;
+  #   * presence of the notice alone would pass while a second, later helper was undefined.
+  # And the diagnostic is matched only as a NEGATIVE, because bash localizes "command not
+  # found" — a translated shell would silently satisfy a positive match. The notice text
+  # is ours and stable, so that is the half worth asserting positively. _tr_run pins
+  # LC_ALL=C so the negative match stays meaningful wherever this runs.
+  # Order matters for the DIAGNOSIS, not the verdict. An undefined helper fails both halves
+  # at once — bash prints "…: command not found" and the message text never appears, since
+  # the words were arguments to a command that does not exist — so testing the missing
+  # notice first would report "deleted? suppressed?" for a helper that is merely misspelled.
+  # Check the specific cause first and let the general one catch the rest.
+  if grep -qi 'command not found' <<<"$_tr_out"; then
+    fail "tag-release: --publish invoked an undefined helper: $(grep -i 'command not found' <<<"$_tr_out" | head -1)"
+  elif ! grep -q 'origin/main has advanced' <<<"$_tr_out"; then
+    fail "tag-release: --publish printed NO advanced-tip notice — the fixture advanced the tip, so it was due (deleted? suppressed?)"
+  else
+    pass "tag-release: --publish emits the advanced-tip notice, via a helper that exists"
+  fi
   # ...and the moving major alias rides along to the same commit.
   if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_release_sha" ]]; then
     pass "tag-release: --publish moves the vN alias to the release commit too"
@@ -2805,7 +2844,15 @@ if have git; then
   # wording and went red across all four CI legs for a difference that says nothing about
   # the bug. The message is kept for the failure text, where it aids diagnosis, and is
   # never gated on.
-  _tr_sign_err="$(LC_ALL=C git -C "$_tr_gpgd" -c tag.gpgsign=true tag -f vSIG 2>&1)"
+  # GIT_EDITOR=true, and the inherited editor vars cleared. Without this the probe is only
+  # deterministic where there is no editor to launch — i.e. CI. On a developer's
+  # interactive `make audit`, git would open $EDITOR here to collect the tag message and
+  # BLOCK the suite on a modal vim; saving a message would then let it proceed to a real
+  # signing attempt, which is neither what this asserts nor guaranteed to be possible.
+  # `true` is a no-op editor: it exits 0 having written nothing, so the message stays
+  # empty and git aborts exactly as it does in CI — deterministic, key-free, everywhere.
+  _tr_sign_err="$(LC_ALL=C GIT_EDITOR=true EDITOR=true VISUAL=true \
+    git -C "$_tr_gpgd" -c tag.gpgsign=true tag -f vSIG 2>&1)"
   _tr_sign_rc=$?
   if ((_tr_sign_rc != 0)); then
     pass "tag-release: a message-less 'git tag -f' really does abort under tag.gpgsign (the #506 hazard)"

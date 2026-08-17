@@ -136,6 +136,28 @@ commit you just dropped — the failure the old recipe had to warn about (a plai
 `git fetch --tags` only *updates* tags origin already knows, so a newly minted `vN` on a
 MAJOR survived the fetch, pointing at a dead commit).
 
+> **Exception — a `make publish` that failed part-way.** The sentence above covers
+> abandoning *before* publish. `--publish` creates the immutable `vX.Y.Z` locally, then
+> moves `vN`, then pushes both atomically; if it dies between the first and last of those,
+> a local `vX.Y.Z` is left behind with **nothing pushed**. That is the safe side of the
+> failure — no tag reached origin, so neither `release.yml` nor `sync-fanout.yml` fired.
+>
+> **Just re-run `make publish`.** The local leftover does not block the retry: the publish
+> path checks only whether the tag exists **on origin**, and then force-creates the local
+> tag with `git tag -fa`, overwriting the leftover. (The "tag already exists" guard that
+> *does* consult a local tag belongs to phase 1, the commit path — not to `--publish`.)
+>
+> The check worth running first is about origin, not your clone:
+>
+> ```bash
+> git ls-remote --tags origin 'refs/tags/vX.Y.Z'   # no output = never published, retry freely
+> ```
+>
+> If that prints a SHA the release published: the tag is immutable, the version is spent,
+> and the fix is a new patch release rather than a retry. Seen for real in v4.12.2, where
+> the alias move aborted under `tag.gpgsign`
+> ([#506](https://github.com/dotgibson/dotfiles-core/issues/506)).
+
 If the release branch was already pushed and a PR opened, close the PR and delete the
 remote branch too — `git push origin --delete release/vX.Y.Z`.
 
@@ -189,7 +211,7 @@ What you do with the alias depends on the bump you chose in §1.0
   `@v4` picks the change up automatically on its next run. **No caller edits.** This
   auto-fan-out of guard/bootstrap fixes is the whole reason the alias moves.
 - **MAJOR** — you are minting a **new** major. In step 5, `vN` is the **new** alias (from
-  `v4` today, that is `v5`), created fresh at the merged tip (`git tag -f v5 origin/main &&
+  `v4` today, that is `v5`), created fresh at the merged tip (`git tag -fa v5 origin/main -m v5 &&
   git push -f origin v5`). **Leave the previous alias frozen:** do *not* run the `vN` line
   against `v4` — advancing it would push the breaking change onto every caller still pinned
   `@v4`. Then bump the callers that should adopt the new major from `@v4` to `@v5` **by hand** — that fleet-wide `uses:`

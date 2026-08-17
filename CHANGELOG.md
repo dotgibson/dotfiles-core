@@ -15,6 +15,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`make publish` swallowed the one notice it had for you, and could hang a local
+  `make audit`.** Follow-ups to the v4.12.2 publish — three found in review of the fix for
+  it, one from running the release, and one correcting recovery advice that this changelog
+  itself had got wrong:
+
+  `tag-release.sh` called a `note` helper that **does not exist** — `scripts/lib/common.sh`
+  defines `pass`/`skip`/`fail`/`hdr`/`have` — so the line printed `note: command not found`
+  and the operator never saw its message. That branch only runs when `main` has advanced
+  past the release commit, an uncommon path no test covered, and a bare word that might be
+  a command on `$PATH` is not something the linter can flag. It fired for real while
+  publishing v4.12.2, discarding exactly the notice it exists to give: that `git describe`
+  on `main` would now report commits-since rather than a clean tag. A new assertion greps
+  the publish output for `command not found` — deliberately generic, so it catches the next
+  undefined helper rather than only this one.
+
+  The `tag.gpgsign` probe inherited `$EDITOR`. With no message and no `-m`, git opens an
+  editor to collect one — so on a developer's interactive `make audit` it would launch vim
+  and **block the suite**, where CI (no editor) merely errored. Verified by simulating a
+  blocking editor: git really does invoke it. The probe now forces a no-op editor, so the
+  empty-message failure is deterministic and key-free everywhere.
+
+  `RELEASE-RUNBOOK.md` and `RELEASE-STRATEGY.md` still documented the manual alias fallback
+  as a bare `git tag -f`, the exact form the fix declares broken — a signing operator
+  following either would have hit the same abort, and a non-signing one would have created
+  a lightweight alias contradicting the new contract. Both now use `git tag -fa … -m`.
 - **`core-doctor` reported `✗ git-absorb` on the whole Debian family, for a tool that was
   installed and working** (#424). The Debian family packages a `git-<verb>` subcommand into
   git's **exec-path** — the directory `git --exec-path` names — and keeps it off `PATH` on
@@ -95,8 +120,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `scripts/tag-release.sh` moved the alias with a bare `git tag -f`, expecting a
   lightweight ref. Under `tag.gpgsign = true` git makes every tag **signed** — therefore
   annotated — so the message-less form aborts with `fatal: no tag message?`. The publish
-  died there, after the immutable `vX.Y.Z` tag had already been created locally, which
-  also meant a naive re-run then met the "tag already exists" guard.
+  died there, after the immutable `vX.Y.Z` tag had already been created locally — harmless
+  debris, since `--publish` consults only whether the tag exists on **origin** and then
+  force-recreates the local one, so a direct `make publish` retry works.
 
   The failure was well-placed — it happens **before** the atomic push, so nothing
   half-landed and neither `release.yml` nor `sync-fanout.yml` fired — but the release
