@@ -16,8 +16,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 ### Fixed
 
 - **`make publish` swallowed the one notice it had for you, and could hang a local
-  `make audit`.** Three follow-ups to the v4.12.2 publish, all found in review of the fix
-  for it:
+  `make audit`.** Follow-ups to the v4.12.2 publish — three found in review of the fix for
+  it, one from running the release, and one correcting recovery advice that this changelog
+  itself had got wrong:
 
   `tag-release.sh` called a `note` helper that **does not exist** — `scripts/lib/common.sh`
   defines `pass`/`skip`/`fail`/`hdr`/`have` — so the line printed `note: command not found`
@@ -119,8 +120,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `scripts/tag-release.sh` moved the alias with a bare `git tag -f`, expecting a
   lightweight ref. Under `tag.gpgsign = true` git makes every tag **signed** — therefore
   annotated — so the message-less form aborts with `fatal: no tag message?`. The publish
-  died there, after the immutable `vX.Y.Z` tag had already been created locally, which
-  also meant a naive re-run then met the "tag already exists" guard.
+  died there, after the immutable `vX.Y.Z` tag had already been created locally — harmless
+  debris, since `--publish` consults only whether the tag exists on **origin** and then
+  force-recreates the local one, so a direct `make publish` retry works.
 
   The failure was well-placed — it happens **before** the atomic push, so nothing
   half-landed and neither `release.yml` nor `sync-fanout.yml` fired — but the release
