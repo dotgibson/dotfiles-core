@@ -21,7 +21,8 @@
 #
 # AUTH: the built-in GITHUB_TOKEN is scoped to dotfiles-core only — it cannot push a
 # branch or open a PR in another repo. This mints a short-lived, OS-repo-scoped GitHub
-# App installation token at run time (contents + pull-requests write) when the fleet App
+# App installation token at run time (contents + pull-requests + workflows write — the last
+# because a sync branch can carry .github/workflows/* pin moves) when the fleet App
 # is configured (the FLEET_APP_ID variable), and otherwise falls back to the legacy
 # FLEET_SYNC_TOKEN PAT — see GITHUB-APP-AUTH.md. The preflight fails loudly if neither is
 # available.

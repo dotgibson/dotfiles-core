@@ -17,7 +17,7 @@ Two secrets are long-lived PATs with broad scope and no automatic rotation:
 
 | Secret | Used by | What it authorises today |
 | --- | --- | --- |
-| `FLEET_SYNC_TOKEN` | `dotfiles-core` `sync-fanout.yml`, `htpx` `sync-fanout.yml` | Clone another repo, push a `sync/…` branch, and open a PR (contents + pull-requests **write** on the OS repos and `dotfiles-Kali`). |
+| `FLEET_SYNC_TOKEN` | `dotfiles-core` `sync-fanout.yml`, `htpx` `sync-fanout.yml` | Clone another repo, push a `sync/…` branch, and open a PR (contents + pull-requests + workflows **write** on the OS repos and `dotfiles-Kali`). Workflows is needed because the sync branch can carry `.github/workflows/*` pin moves — see Step 1. |
 | `WEBHOOK_SECRET` | every source repo's `notify-web.yml` (via `notify-web-call.yml`) | A `Bearer` token POSTing a `repository_dispatch` to `dotfiles-web` to trigger a docs rebuild (contents **write** on `dotfiles-web`). |
 
 Both are the same anti-pattern: a **single broad token**, held as a secret in many

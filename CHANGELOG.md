@@ -70,8 +70,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `GITHUB-APP-AUTH.md` prescribed the failure it now has to fix: it listed Contents and
   Pull requests and said "Everything else: **No access**", so an operator following the
   setup guide built an App that cannot push the workflow-pin changes #482 added. It now
-  requires **Workflows: Read and write**, says why only some repos trigger it (the pin is
-  a property of the App, the workflow file only appears in repos that SHA-pin a caller),
+  requires **Workflows: Read and write**, says why only some repos trigger it while every
+  installation still needs the grant (the permission is a property of the App; the SHA pin
+  belongs to each caller workflow, and only those repos put one in a sync branch),
   and warns that editing an existing App's permissions mints the OLD set until the
   installation owner accepts the review request.
 
