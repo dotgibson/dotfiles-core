@@ -2166,6 +2166,55 @@ if have git; then
   else
     fail "link run: re-running bootstrap churned links, backed a file up, or failed (rc=$_lr_rc)"
   fi
+
+  # A FAILED tpm clone must read as a failure. It used to be announced with blib_say —
+  # blue `::` on STDOUT, the identical shape to the "cloning tpm" progress line above —
+  # with git's error discarded by `>/dev/null 2>&1`. Behind a proxy that left tmux with no
+  # plugin manager, nothing in the log to notice, and an empty tally, so an adopting
+  # bootstrap could not tell a degraded box from a good one.
+  #
+  # Hermetic and OFFLINE: GIT_ALLOW_PROTOCOL=file makes git refuse the https transport, so
+  # the clone fails deterministically without depending on the remote being unreachable
+  # (or reachable). $config is fresh, so the clone is genuinely attempted.
+  TF="$SANDBOX/tpmfail"
+  rm -rf "$TF"
+  mkdir -p "$TF/home" "$TF/config"
+  HOME="$TF/home" XDG_CONFIG_HOME="$TF/config" GIT_ALLOW_PROTOCOL=file \
+    BLIB_ONLY="tmux" BLIB_SKIP="" bash -c '
+      set -u
+      . "'"$HERE/lib/bootstrap-lib.sh"'"
+      blib_link_core "'"$LR/dotfiles"'" "'"$TF/config"'"
+      printf "TALLY=%s\n" "$(blib_failed_count)"
+    ' >"$TF/out" 2>"$TF/err"
+  if grep -q "tpm clone failed" "$TF/err"; then
+    pass "tpm clone failure warns on STDERR"
+  else
+    fail "tpm clone failure did not reach stderr"
+  fi
+  # The regression itself: the message must not be on stdout, where blib_say put it.
+  if grep -q "tpm clone failed" "$TF/out"; then
+    fail "tpm clone failure is on STDOUT (blib_say regression — it must use blib_note_fail)"
+  else
+    pass "tpm clone failure is NOT on stdout (no longer a blib_say status line)"
+  fi
+  # Recorded, so blib_failures_report / a caller's --strict can act on it downstream.
+  if grep -q "^TALLY=[1-9]" "$TF/out"; then
+    pass "tpm clone failure lands in the blib_note_fail tally"
+  else
+    fail "tpm clone failure was not recorded in the tally"
+  fi
+  # git's own error is the whole diagnosis (DNS, proxy, TLS, rate limit) and used to be
+  # thrown away. Assert the indented passthrough, not git's wording, which varies.
+  #
+  # `[^[:space:]]` is load-bearing, not decoration: an EMPTY capture still produces an
+  # indented line, because `printf '%s\n' ""` emits one empty line and sed indents it to
+  # four spaces. A bare `^    ` therefore passed whether or not anything was captured —
+  # exactly the regression this is here to catch. Require real content after the indent.
+  if grep -q '^    [^[:space:]]' "$TF/err"; then
+    pass "tpm clone failure surfaces git's own error, indented under it"
+  else
+    fail "tpm clone failure discarded git's error output"
+  fi
 else
   skip "bootstrap link run (git unavailable)"
 fi
@@ -7425,6 +7474,35 @@ _ls_msg="$( PATH="$_ls_bin:/usr/bin:/bin" BLIB_SU="" BLIB_DRY=0 BLIB_ONLY="" BLI
 # not the chsh branch ever ran.
 case "$_ls_msg" in *"could not add"*) pass "blib_set_login_shell warns when the /etc/shells append fails" ;; *) fail "blib_set_login_shell swallowed the /etc/shells failure (got: $_ls_msg)" ;; esac
 case "$_ls_msg" in *"chsh failed"*) pass "blib_set_login_shell warns when chsh fails, naming the manual fallback" ;; *) fail "blib_set_login_shell swallowed the chsh failure (got: $_ls_msg)" ;; esac
+
+# The OTHER no-op outcome: chsh is absent entirely (a distro without `shadow`). The login
+# shell is just as unchanged as in the failure branch above, but this one announced itself
+# with blib_say — blue `::` on STDOUT — so it read as a status line rather than a problem.
+# The block above cannot cover it: its shim PATH always contains a chsh, and it merges
+# stdout into stderr with 2>&1, so it could neither reach this branch nor tell the streams
+# apart if it did. Hence a separate fixture, with the streams kept SEPARATE.
+#
+# PATH is the bindir ALONE — adding /usr/bin:/bin would find the system chsh and silently
+# test the wrong branch. So every binary the function reaches for is shimmed or linked in.
+_lsn_bin="$(mktemp -d "$SANDBOX/lsnbin.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_lsn_bin/zsh"; chmod +x "$_lsn_bin/zsh"
+printf '#!/bin/sh\necho "u:x:1:1::/home/u:/bin/sh"\n' >"$_lsn_bin/getent"; chmod +x "$_lsn_bin/getent"
+# grep exits 0 = "$zsh_path is already listed in /etc/shells", so the privileged tee append
+# is skipped and this stays a pure no-privilege test.
+printf '#!/bin/sh\nexit 0\n' >"$_lsn_bin/grep"; chmod +x "$_lsn_bin/grep"
+for _b in id cut awk printf; do [[ -x "$_lsn_bin/$_b" ]] || ln -sf "$(command -v "$_b")" "$_lsn_bin/$_b" 2>/dev/null; done
+PATH="$_lsn_bin" BLIB_SU="" BLIB_DRY=0 BLIB_ONLY="" BLIB_SKIP="" \
+  blib_set_login_shell >"$SANDBOX/lsn.out" 2>"$SANDBOX/lsn.err" || true
+if grep -q "chsh not found" "$SANDBOX/lsn.err"; then
+  pass "blib_set_login_shell warns on STDERR when chsh is absent"
+else
+  fail "blib_set_login_shell did not warn on stderr when chsh is absent (got: $(tr '\n' ' ' <"$SANDBOX/lsn.err"))"
+fi
+if grep -q "chsh not found" "$SANDBOX/lsn.out"; then
+  fail "'chsh not found' is on STDOUT (blib_say regression — the shell was NOT changed, it must warn)"
+else
+  pass "'chsh not found' is NOT on stdout (no longer a blib_say status line)"
+fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
