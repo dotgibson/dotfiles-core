@@ -4,7 +4,7 @@ name: atuin-guard-verify
 # still hold? With the daemon enabled and its socket unreachable, atuin 18.19.0 exits 0,
 # prints a history id, writes nothing to stderr and DISCARDS the entry
 # (atuinsh/atuin#3561). A persistent precmd hook, a throttled connect(2) on the prompt
-# path, and a one-way degrade in every interactive shell across eight repos are justified
+# path, and a one-way degrade in every interactive shell across nine repos are justified
 # by that fact ALONE — and it has already moved once, in the direction that makes it harder
 # to notice (18.16.1 failed loudly). Nothing watched it: atuin is not pinned in
 # mise/config.toml, has no renovate.json entry, and /tool-scout's allowed-tools carry no

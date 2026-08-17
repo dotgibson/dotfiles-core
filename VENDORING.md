@@ -166,8 +166,14 @@ Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs:
 git subtree add --prefix=core <core-remote> main --squash
 ```
 
-Then add the repo to `scripts/os-repos.txt` **here**, which is the single source of the
-fan-out fleet. `dotfiles-Windows` is deliberately absent: it replicates the host config
+Then register the repo **here**, which takes **four coordinated edits**, not one:
+`scripts/os-repos.txt` (the source), plus the hardcoded fallback arrays in
+`scripts/sync-core.sh`, `scripts/fleet-drift.sh` and `scripts/core-integrity.sh`. Those
+fallbacks run when the data file is missing or unreadable, so a repo registered in the
+file alone silently disappears from the fan-out in exactly the situation you are least
+able to spot it. `scripts/test-core.sh` asserts all four agree.
+
+`dotfiles-Windows` is deliberately absent from all four: it replicates the host config
 natively in PowerShell and vendors no `core/` at all.
 
 **The scaffold is a starting point, not the finished contract.** A freshly generated repo

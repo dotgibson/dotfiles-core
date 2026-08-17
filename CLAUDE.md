@@ -8,16 +8,16 @@ rule here drifts from `README.md` / `CONTRIBUTING.md`, those win — fix this.
 ## What this repo is
 
 `dotfiles-core` is the **single source of truth** for the Core layer of a
-**ten-repo dotfiles system** built on a three-layer model. Core is authored
+**eleven-repo dotfiles system** built on a three-layer model. Core is authored
 **once here** and vendored into each OS repo's `core/` via `git subtree` — so a
 defect here fans out N-way. Treat every change as if it ships to all of them,
 because it does.
 
-| Layer         | Lives in                                                        | Examples                                                           |
-| ------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Core**      | **this repo**, vendored into each OS repo's `core/`             | zsh modules, tmux, nvim, git, starship                             |
-| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,openSUSE,Alpine,Gentoo}` | package manager, clipboard, paths                                  |
-| **Role**      | `dotfiles-Kali` (offensive), `dotfiles-Defense` (defensive)     | offensive engagement + defensive detection tooling on the OS layer |
+| Layer         | Lives in                                                               | Examples                                                           |
+| ------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **Core**      | **this repo**, vendored into each OS repo's `core/`                    | zsh modules, tmux, nvim, git, starship                             |
+| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}` | package manager, clipboard, paths                                  |
+| **Role**      | `dotfiles-Kali` (offensive), `dotfiles-Defense` (defensive)            | offensive engagement + defensive detection tooling on the OS layer |
 
 Plus `dotfiles-web` — the public Astro showcase/docs site (the system's public
 face, **not** a config layer). The canonical Core-vendoring fleet is
