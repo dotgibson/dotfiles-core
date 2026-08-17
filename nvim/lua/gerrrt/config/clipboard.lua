@@ -5,8 +5,15 @@
 -- Routes the "+ and "* registers through Core's `clip` / `clip-paste` scripts,
 -- which themselves detect WSL / macOS / Wayland / X11. This is what makes
 -- `"+y` (yank to system clipboard) and `"+p` (paste from it) work identically on
--- every machine — most importantly on WSL, where Neovim otherwise has NO native
--- clipboard provider and `"+y` silently does nothing.
+-- every machine WITH A BIDIRECTIONAL BACKEND — most importantly on WSL, where
+-- Neovim otherwise has NO native clipboard provider and `"+y` silently does nothing.
+--
+-- The symmetry stops on a headless ssh box, and deliberately so. There `clip` copies
+-- via OSC 52 (see core/bin/clip) but `clip-paste` has no counterpart, because reading
+-- over OSC 52 means querying the terminal for a reply most terminals refuse to send
+-- and some never answer at all. So `"+y` works and `"+p` does not — matching the
+-- shell, where `pbcopy` works and `pbpaste` does not. Pasting INTO the remote is your
+-- terminal's own paste, which needs no provider.
 --
 -- Requires `clip` and `clip-paste` on PATH (bootstrap.sh symlinks them into
 -- ~/.local/bin). If they're missing, we leave Neovim's own auto-detection alone

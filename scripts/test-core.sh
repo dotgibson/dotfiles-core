@@ -250,6 +250,12 @@ else
   fail "clip: xclip was exec'd with no DISPLAY, or the OSC 52 fallback did not run"
 fi
 _clip_reset
+# base64/tr must be present, or `clip` dies during ENCODING and never reaches the tty
+# write — leaving this assertion green even if the write-error handling is broken. It
+# would then be testing "the fallback failed", not "the fallback failed FOR THE REASON
+# THIS TEST NAMES". CLIP_TTY still points at _clip_reset's unopenable path.
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
 _clip_fails "clip exits non-zero with no backend and no terminal" "$CLIP"
 
 # OSC 52 fallback — the branch that makes `clip` work at all on a headless ssh box.
@@ -264,7 +270,12 @@ export CLIP_TTY="$CBIN/tty-osc52"
 _osc_payload='hello osc52'
 if printf '%s' "$_osc_payload" | PATH="$CBIN" "$CLIP" 2>/dev/null; then
   # \033]52;c;<base64>\a  — selection `c`, BEL-terminated.
-  _osc_raw="$(cat "$CBIN/tty-osc52")"
+  # `$(cat …)` strips ALL trailing newlines, which would normalise a stray LF after the
+  # BEL right out of the comparison — so a regression that emitted
+  # `ESC ]52;c;<b64> BEL LF` would sail through a test whose whole job is the exact wire
+  # format. The X sentinel preserves the file's trailing bytes; strip it after.
+  _osc_raw="$(cat "$CBIN/tty-osc52"; printf X)"
+  _osc_raw="${_osc_raw%X}"
   _osc_b64="${_osc_raw#$'\033']52;c;}"
   _osc_b64="${_osc_b64%$'\a'}"
   if [[ "$_osc_raw" == $'\033']52\;c\;*$'\a' ]]; then
@@ -289,7 +300,8 @@ if printf '%s' "$_osc_payload" | PATH="$CBIN" "$CLIP" 2>/dev/null; then
   # several wraps on any implementation that wraps at all.
   _osc_long="$(printf 'the quick brown fox jumps over the lazy dog %.0s' 1 2 3 4 5 6 7)"
   printf '%s\n%s\n' "$_osc_long" "$_osc_long" | PATH="$CBIN" "$CLIP" 2>/dev/null
-  if [[ "$(cat "$CBIN/tty-osc52")" != *$'\n'* ]]; then
+  _osc_multi="$(cat "$CBIN/tty-osc52"; printf X)"
+  if [[ "${_osc_multi%X}" != *$'\n'* ]]; then
     pass "clip: OSC 52 payload stays one unbroken line for multi-line input"
   else
     fail "clip: OSC 52 payload contains a newline — the sequence would be truncated"
@@ -309,7 +321,7 @@ if [[ -z "$_osc_stdout" && -s "$CBIN/tty-stdout" ]]; then
 else
   fail "clip: OSC 52 leaked to stdout (got '$_osc_stdout')"
 fi
-unset _osc_payload _osc_raw _osc_b64 _osc_stdout _osc_long
+unset _osc_payload _osc_raw _osc_b64 _osc_stdout _osc_long _osc_multi
 
 # clip-paste (paste) — mirror ladder; the WSL leg also strips the CR powershell adds.
 _clip_reset
