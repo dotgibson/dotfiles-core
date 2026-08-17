@@ -13,8 +13,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
-## [v4.12.2] - 2026-08-17
-
 ### Added
 
 - **`dotfiles-Debian` joins the fleet as the ninth Core-vendoring repo.** It was planned
@@ -35,6 +33,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (deliberately not installed). **The column-order contract changed**: the last cell on
   a package row is now Debian/Ubuntu, not Kali — `/os-package-availability` asserted the
   old order and has been updated with it.
+
+## [v4.12.2] - 2026-08-17
+
+### Added
 
 - **CI now fails a `fix(…)` PR that closes no issue and gives no reason.** #446 fixed two
   reported bugs — #420 (starship) and #423 (carapace) — and merged green with no closing
