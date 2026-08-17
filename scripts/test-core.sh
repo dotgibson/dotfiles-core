@@ -1029,6 +1029,65 @@ else
   fail "fail digest: expected empty for both no-marker ('$_fdout') and missing file ('$_fdout2')"
 fi
 
+# ── E0. content-gate file set (_audit_ls, scripts/lib/common.sh) ──────────────
+# The audit's content gates (bash -n, zsh -n, shellcheck, the pipefail scanner, toml/
+# yaml/json) used to enumerate with a bare `git ls-files`, which lists ONLY tracked
+# files. A brand-new script was therefore invisible until `git add`, and the gate still
+# reported "all clean" — a green audit that had not read the file. That shipped: #496's
+# scripts/ci-pr-link.sh passed a local 261/0 audit, then failed all four CI legs on two
+# SC2016 violations. Pin the enumeration so the blind spot cannot come back.
+#
+# Driven in a THROWAWAY repo, not this one: asserting against the real checkout would
+# depend on whatever happens to be untracked in the developer's tree, which is exactly
+# the kind of ambient state that makes a test lie.
+if have git; then
+  hdr "content-gate file set (_audit_ls)"
+  ALSREPO="$SANDBOX/audit-ls-repo"
+  rm -rf "$ALSREPO"
+  mkdir -p "$ALSREPO"
+  git -C "$ALSREPO" init -q
+  git -C "$ALSREPO" config user.email t@example.com
+  git -C "$ALSREPO" config user.name tester
+  printf 'ignored/\n' >"$ALSREPO/.gitignore"
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/tracked.sh"
+  git -C "$ALSREPO" add -A
+  git -C "$ALSREPO" commit -qm init
+  # Created AFTER the commit: the exact state the bug was blind to.
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/untracked.sh"
+  mkdir -p "$ALSREPO/ignored"
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/ignored/skipped.sh"
+  _als_out="$(cd "$ALSREPO" && _audit_ls '*.sh')"
+  _als_has() { # _als_has <label> <needle> <want:0|1>
+    local n=0
+    printf '%s\n' "$_als_out" | grep -qx "$2" && n=1
+    if ((n == $3)); then pass "$1"; else fail "$1 (got list: ${_als_out//$'\n'/ })"; fi
+  }
+  _als_has "_audit_ls includes a tracked script" 'tracked.sh' 1
+  # THE REGRESSION GUARD: this is the assertion that would have failed before the fix.
+  _als_has "_audit_ls includes an UNTRACKED script (the #496 blind spot)" 'untracked.sh' 1
+  # --exclude-standard: a gitignored scratch script must not start failing anyone's audit.
+  _als_has "_audit_ls excludes a gitignored script" 'ignored/skipped.sh' 0
+  # Deduped: a tracked file must not be listed twice just because both probes ran.
+  _als_n="$(printf '%s\n' "$_als_out" | grep -cx 'tracked.sh')"
+  if [[ "$_als_n" == 1 ]]; then
+    pass "_audit_ls does not double-list a tracked file"
+  else
+    fail "_audit_ls double-listed a tracked file ($_als_n times)"
+  fi
+  # The audit's CONTENT gates must all use it; the GIT-STATE gates (manifest reverse-drift,
+  # index exec-bits, manifest expansion) must NOT. Pin the split so a new gate copied from
+  # the wrong neighbour is caught here rather than by a green audit that read nothing.
+  # Match the call form `_audit_ls '<pathspec>`, NOT a leading `'*` — the zsh gate passes
+  # 'zsh/*.zsh', so anchoring on the glob would undercount it (it did, first time round).
+  # The definition in common.sh reads `_audit_ls() {` and cannot match this.
+  _als_content="$(grep -cE "_audit_ls '" "$HERE/scripts/audit-core.sh")"
+  if ((_als_content >= 7)); then
+    pass "audit-core.sh routes its content gates through _audit_ls ($_als_content sites)"
+  else
+    fail "audit-core.sh has only $_als_content _audit_ls sites — a content gate regressed to git ls-files"
+  fi
+fi
+
 hdr "CI path classifier (scripts/ci-classify.sh)"
 CLASSIFY="$HERE/scripts/ci-classify.sh"
 _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>

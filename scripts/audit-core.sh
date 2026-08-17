@@ -275,6 +275,7 @@ META_ALLOWLIST=(
 # subtree copy but is never symlinked.
 META_PREFIXES=(examples/ .github/ scripts/ .claude/ .devcontainer/ assets/)
 
+
 # ── 1. manifest <-> filesystem drift ─────────────────────────────────────────
 hdr "manifest ↔ filesystem"
 # Parse manifest: strip comments/blank lines, take the first whitespace token.
@@ -348,14 +349,14 @@ fi
 hdr "shell syntax (bash -n / zsh -n)"
 while IFS= read -r f; do
   if bash -n "$f" 2>/dev/null; then pass "bash -n $f"; else fail "bash syntax error: $f"; fi
-done < <(git ls-files '*.sh' 'bin/clip' 'bin/clip-paste' 2>/dev/null)
+done < <(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 if ((SCOPE_SHELL)); then
   if have zsh; then
     # The sourced modules AND the autoloaded completion functions (zsh/completions/_*,
     # no .zsh extension) — both are zsh that fans out to eight repos; both must parse.
     while IFS= read -r f; do
       if zsh -n "$f" 2>/dev/null; then pass "zsh -n  $f"; else fail "zsh syntax error: $f"; fi
-    done < <(git ls-files 'zsh/*.zsh' 'zsh/completions/*' 2>/dev/null)
+    done < <(_audit_ls 'zsh/*.zsh' 'zsh/completions/*')
   else
     skip "zsh -n (zsh not installed)"
   fi
@@ -429,7 +430,7 @@ elif have shellcheck; then
       fail "shellcheck: $f"
       fail_detail "$sc_out"
     fi
-  done < <(git ls-files '*.sh' 'bin/clip' 'bin/clip-paste' 2>/dev/null)
+  done < <(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
   ((sc_fail)) || pass "shellcheck (all bash scripts clean)"
 else
   skip "shellcheck (not installed)"
@@ -589,7 +590,7 @@ else
 $(_core_pipefail_hits "$pf_f")
 EOF
   done <<EOF
-$(git ls-files '*.sh' 'bin/clip' 'bin/clip-paste' 2>/dev/null)
+$(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 EOF
   ((pf_fail)) || pass "pipefail (no shell-string producer feeds an early-exiting reader)"
 fi
@@ -608,7 +609,7 @@ if have python3 && python3 -c 'import tomllib' 2>/dev/null; then
     if python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' "$f" 2>/dev/null; then
       pass "toml $f"
     else fail "toml parse error: $f"; fi
-  done < <(git ls-files '*.toml' '*.toml.example' 2>/dev/null)
+  done < <(_audit_ls '*.toml' '*.toml.example')
 else
   skip "toml parse (python3 tomllib unavailable — needs python ≥3.11)"
 fi
@@ -618,7 +619,7 @@ if have python3 && python3 -c 'import yaml' 2>/dev/null; then
     if python3 -c 'import yaml,sys; list(yaml.safe_load_all(open(sys.argv[1])))' "$f" 2>/dev/null; then
       pass "yaml $f"
     else fail "yaml parse error: $f"; fi
-  done < <(git ls-files '*.yml' '*.yaml' 2>/dev/null)
+  done < <(_audit_ls '*.yml' '*.yaml')
 else
   skip "yaml parse (python3 PyYAML not importable)"
 fi
@@ -632,7 +633,7 @@ if have python3; then
     if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f" 2>/dev/null; then
       pass "json $f"
     else fail "json parse error: $f"; fi
-  done < <(git ls-files '*.json' 2>/dev/null)
+  done < <(_audit_ls '*.json')
 else
   skip "json parse (python3 unavailable)"
 fi
