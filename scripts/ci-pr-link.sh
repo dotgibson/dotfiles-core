@@ -49,7 +49,9 @@ linked="$2"
 
 if [[ ! "$title" =~ ^fix(\([^\)]*\))?!?: ]]; then
   echo "verdict=not-gated"
-  printf 'ci-pr-link: title is not a `fix(…)` PR — rule does not apply.\n' >&2
+  # No backticks in these single-quoted strings: shellcheck reads them as an intended
+  # command substitution and raises SC2016, which this repo's audit treats as a failure.
+  printf 'ci-pr-link: title is not a fix(…) PR — rule does not apply.\n' >&2
   exit 0
 fi
 
@@ -96,7 +98,7 @@ body_visible="$(
 # and hides the same signal behind a longer string.
 if printf '%s\n' "$body_visible" | grep -Eqi '^[[:space:]]*No-Issue:[[:space:]]*[^[:space:]]'; then
   echo "verdict=exempt"
-  printf 'ci-pr-link: no linked issue, but the body records a `No-Issue:` reason.\n' >&2
+  printf 'ci-pr-link: no linked issue, but the body records a No-Issue: reason.\n' >&2
   exit 0
 fi
 
