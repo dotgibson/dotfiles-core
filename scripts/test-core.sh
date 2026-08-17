@@ -2640,6 +2640,37 @@ if have git; then
   else
     fail "tag-release: the vN alias did not follow the release"
   fi
+
+  # ── the alias must be ANNOTATED, or signing operators cannot publish (#506) ──────────
+  # The assertion above passes on any box with `tag.gpgsign` OFF, which is why this shipped
+  # broken: under `tag.gpgsign = true` git makes every tag SIGNED — therefore annotated —
+  # so a message-less `git tag -f "$MAJOR"` aborts with "fatal: no tag message?" and the
+  # publish dies AFTER creating the immutable tag locally. It broke the first real release
+  # cut by an operator with signing enabled (v4.12.2).
+  #
+  # This cannot be driven by simply flipping gpgsign on in the fixture: git would then try
+  # to actually sign, and CI has no key, so the test would fail for an unrelated reason and
+  # prove nothing. Pin it from both ends instead, neither of which needs a key:
+  #   1. the hazard is REAL — the message-less form still fails under gpgsign, and it fails
+  #      BEFORE any signing is attempted, so no key is required to observe it;
+  #   2. the script does not USE that form for the alias.
+  _tr_gpgd="$SANDBOX/tagsign"; rm -rf "$_tr_gpgd"; mkdir -p "$_tr_gpgd"
+  git init -q "$_tr_gpgd"; _tr_ident "$_tr_gpgd"
+  git -C "$_tr_gpgd" commit -q --allow-empty -m x
+  _tr_sign_err="$(git -C "$_tr_gpgd" -c tag.gpgsign=true tag -f vSIG 2>&1)"
+  if grep -qi 'no tag message' <<<"$_tr_sign_err"; then
+    pass "tag-release: a message-less 'git tag -f' really does abort under tag.gpgsign (the #506 hazard)"
+  else
+    # Not a failure of ours — git changed behaviour, so the guard below is now guarding
+    # nothing. Say so rather than reporting a silent pass.
+    fail "tag-release: message-less 'git tag -f' no longer fails under gpgsign — re-check whether #506's guard is still needed (got: ${_tr_sign_err:-<no error>})"
+  fi
+  if grep -qE 'git tag -fa "\$MAJOR" "\$RELEASE_SHA" -m' "$HERE/scripts/tag-release.sh" &&
+    ! grep -qE 'git tag -f "\$MAJOR"' "$HERE/scripts/tag-release.sh"; then
+    pass "tag-release: the vN alias is created ANNOTATED with a message (publishable under gpgsign)"
+  else
+    fail "tag-release: the vN alias uses a message-less 'git tag -f' — publish will abort for a signing operator (#506)"
+  fi
   # Re-publishing an already-published tag must refuse — release tags are immutable.
   # Runs here, while 1.1.0 is still origin/main's newest core.version change.
   _tr_out="$(_tr_run --publish)"; _tr_rc=$?
