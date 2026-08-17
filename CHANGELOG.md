@@ -15,15 +15,40 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
-- **`core-doctor` reported `✗ git-absorb` on the whole Debian family, for a tool that was
-  installed and working** (#424). The Debian family packages a `git-<verb>` subcommand into
-  git's **exec-path** — the directory `git --exec-path` names — and keeps it off `PATH` on
+- **`HAVE_GIT_ABSORB` was set for a subcommand `git absorb` could no longer dispatch**, when
+  `GIT_EXEC_PATH` is set. Shipped in #503 and caught in its own review. `GIT_EXEC_PATH`
+  **replaces** git's compiled-in exec-path rather than adding to it — point it at an empty
+  directory and `git absorb` answers `'absorb' is not a git command` even with the binary
+  still sitting in the default location. The fallback treated it as one more candidate and
+  fell through to the derived `<git-prefix>/{lib,libexec}/git-core` paths, so the flag said
+  present while `core-doctor` — which asks `git --exec-path`, and therefore inherits the
+  override — correctly said absent. That is the exact flag-vs-doctor disagreement of #425,
+  re-created on a new axis by the change meant to remove it. A non-empty override is now
+  probed **exclusively**. Two tests pin it: the flag stays unset under an empty override
+  with the default exec-path populated, and the flag and the doctor are asserted to agree on
+  that same configuration.
+
+  Three documentation claims contradicted each other after #503 and are reconciled:
+  `PORTING-MATRIX.md`'s ²⁶ preamble still said flatly that git-absorb installs on `PATH`,
+  two paragraphs above the correction saying the Debian family does not; the v4.10.0 entry's
+  "Homebrew and Debian/Kali all on 0.9.0" is now superseded inline, since Kali ships
+  0.6.17-2+b4 and so openSUSE was not the only laggard; and this entry's own "whole Debian
+  family" is narrowed to what was actually observed — Kali on-box, Ubuntu 24.04 from the
+  reporter, Debian proper unverified. (`zsh/00-tools.zsh`, `scripts/test-core.sh`,
+  `CHANGELOG.md`, `PORTING-MATRIX.md`)
+
+- **`core-doctor` reported `✗ git-absorb` on Debian-family boxes, for a tool that was
+  installed and working** (#424). Debian packaging puts a `git-<verb>` subcommand in git's
+  **exec-path** — the directory `git --exec-path` names — and keeps it off `PATH` on
   purpose: git finds the binary there itself, and the user invokes it as `git absorb`. The
-  presence probe was `command -v git-absorb`, so the row was wrong on most apt boxes.
-  Verified on Kali, `git-absorb` 0.6.17-2+b4: `dpkg -L` lists `/usr/lib/git-core/git-absorb`
-  and a man page and nothing in a `PATH` directory, `command -v` finds nothing, and
-  `git absorb --version` works. The `✗` implied the verb was unavailable, so a reader would
-  go install what they already had.
+  presence probe was `command -v git-absorb`, so the row was wrong wherever that convention
+  is followed. Two boxes, two distros: **Kali** `git-absorb` 0.6.17-2+b4, verified on-box —
+  `dpkg -L` lists `/usr/lib/git-core/git-absorb` and a man page and nothing in a `PATH`
+  directory, `command -v` finds nothing, and `git absorb --version` works — and **Ubuntu
+  24.04** 0.6.11, from the reporter's `dpkg -L` in #424. Debian proper is **not** verified;
+  its package page lists 0.9.0-2 and nobody has checked where that build lands, so the
+  claim here is the convention plus two confirmations of it, not a survey. The `✗` implied
+  the verb was unavailable, so a reader would go install what they already had.
 
   `_core_doctor_bin` (`30-functions.zsh`) gains a `git-*` arm that resolves through git's
   exec-path when the bare name misses, and hands back an **absolute path**. That is what
@@ -1264,6 +1289,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the one in git's exec-path — so this release's `core-doctor` reported `✗ git-absorb` on
   boxes where `git absorb` worked. Fixed in the `[Unreleased]` entry above. Corrected inline
   rather than rewritten, because it was wrong when shipped and the record should say so.
+
+  The same correction supersedes the version line below: **Kali was never on 0.9.0.** It
+  ships `git-absorb` 0.6.17-2+b4 — verified on-box 2026-08-17 — so "Homebrew and Debian/Kali
+  all on 0.9.0" reads one package-page figure onto two distros that had already diverged,
+  and openSUSE was therefore not the only laggard. Debian proper remains unverified.
 
   It is also the first `core-doctor --json` key that is not a bare identifier, so the
   function's docstring now says which parsers care: the key is emitted quoted and the JSON

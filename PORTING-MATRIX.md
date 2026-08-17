@@ -462,7 +462,8 @@ commit yourself, and `git absorb` works one out per hunk. Reach for `git fix` wh
 where a change belongs and `git absorb` when you would otherwise go looking.
 
 **The house-style ideal for a new tool: it needs no alias at all.** git-absorb installs as
-`git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand — so it shadows
+`git-absorb` — on `PATH` in the common case, in git's exec-path on the Debian family (see
+below) — and git dispatches it as the `git absorb` subcommand either way, so it shadows
 nothing classic and `zsh/20-aliases.zsh` gains no entry, only a note saying why.
 `HAVE_GIT_ABSORB` is set for symmetry with the other detected tools and **has no consumer
 today** — `core-doctor` probes the tool itself rather than reading the flag, so the two are

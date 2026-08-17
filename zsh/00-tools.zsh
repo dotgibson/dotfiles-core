@@ -139,17 +139,28 @@ _have git-absorb && HAVE_GIT_ABSORB=1 # routes staged hunks into the earlier com
 # are DERIVED from where git itself resolves rather than spelling a distro path (audit §5c:
 # name the prefix, don't spell it), and the whole block is skipped when the PATH probe
 # already hit — so a non-Debian shell pays nothing and a Debian one pays a hash lookup and
-# at most three stats. $GIT_EXEC_PATH is consulted first because git honours it.
+# at most three stats. $GIT_EXEC_PATH, when set, is consulted EXCLUSIVELY, because that is
+# what it means to git: it REPLACES the compiled-in exec-path rather than adding to it.
+# Verified — with the override pointed at an empty directory, `git absorb` answers "'absorb'
+# is not a git command" even though the default exec-path still holds the binary. Treating it
+# as one more candidate therefore set the flag for a subcommand git could no longer dispatch,
+# while core-doctor (which asks `git --exec-path`, and so inherits the override) correctly
+# said absent — re-creating on a new axis the very flag-vs-doctor disagreement this block
+# exists to remove. Shipped that way in #503 and corrected here.
 # core-doctor remains the AUTHORITY: it asks `git --exec-path` outright — one fork, once per
 # report, which a one-off command can afford — so it is also right about a git built with
 # its libexec outside its own prefix, where this approximation is not. The two are kept in
 # step deliberately: #425 is the reminder that a HAVE_* flag and the doctor disagreeing
 # about the same box is itself a bug.
 if [[ -z ${HAVE_GIT_ABSORB:-} && -n ${commands[git]:-} ]]; then
-  for _gx in ${GIT_EXEC_PATH:-} "${commands[git]:h:h}"/{lib,libexec}/git-core; do
-    [[ -n $_gx && -x $_gx/git-absorb ]] && { HAVE_GIT_ABSORB=1; break; }
-  done
-  unset _gx  # file top level — no function scope to contain it
+  if [[ -n ${GIT_EXEC_PATH:-} ]]; then
+    [[ -x $GIT_EXEC_PATH/git-absorb ]] && HAVE_GIT_ABSORB=1
+  else
+    for _gx in "${commands[git]:h:h}"/{lib,libexec}/git-core; do
+      [[ -x $_gx/git-absorb ]] && { HAVE_GIT_ABSORB=1; break; }
+    done
+    unset _gx  # file top level — no function scope to contain it
+  fi
 fi
 [[ -n ${FD_BIN:-} ]] && HAVE_FD=1
 [[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1

@@ -5986,6 +5986,26 @@ chmod +x "$GXROOT/elsewhere/git-absorb"
 ucheck "git exec-path: \$GIT_EXEC_PATH is honoured for the flag (git's own override wins)" \
   "source '$TOOLS_FILE'; [[ -n \${HAVE_GIT_ABSORB:-} ]]" \
   PATH="$GXBIN" GIT_EXEC_PATH="$GXROOT/elsewhere"
+# (i2) …and the INVERSE, which case (i) alone cannot see: the override must be EXCLUSIVE, not
+#     one more candidate. GIT_EXEC_PATH REPLACES git's compiled-in exec-path — point it at an
+#     empty directory and `git absorb` answers "'absorb' is not a git command" even with the
+#     binary still sitting in the default one. So with the override empty and the DEFAULT
+#     exec-path populated, the flag must stay unset: setting it would claim a subcommand git
+#     can no longer dispatch, and core-doctor — which asks `git --exec-path` and therefore
+#     inherits the override — would rightly disagree. #503 shipped the fall-through; this is
+#     the guard against it coming back.
+_gx_tree   # git-absorb IS in the default exec-path here; the override deliberately is not
+mkdir -p "$GXROOT/empty-override"
+ucheck "git exec-path: a \$GIT_EXEC_PATH without the subcommand wins over the default (no false ✓)" \
+  "source '$TOOLS_FILE'; [[ -z \${HAVE_GIT_ABSORB:-} ]]" \
+  PATH="$GXBIN" GIT_EXEC_PATH="$GXROOT/empty-override"
+# …and the doctor must AGREE with the flag on that same box, which is the whole point of
+# keeping the two in step (#425). The git stub honours GIT_EXEC_PATH exactly as real git
+# does, so this puts both assertions on one configuration.
+ucheck "git exec-path: flag and doctor agree under an empty override (both absent)" \
+  "source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json)
+   [[ -z \${HAVE_GIT_ABSORB:-} && \$j == *'\"git-absorb\":false'* ]]" \
+  PATH="$GXBIN" GIT_EXEC_PATH="$GXROOT/empty-override" CORE_NO_PAGER=1
 
 # ── OSC 133 prompt marks + the command-block rule (00-tools.zsh) ─────────────
 # The marks are what tmux's next-prompt/previous-prompt (bound to ] / [ in
