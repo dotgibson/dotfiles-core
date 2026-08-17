@@ -76,6 +76,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and warns that editing an existing App's permissions mints the OLD set until the
   installation owner accepts the review request.
 
+  The same staleness ran through the release docs: `RELEASE-RUNBOOK.md` and
+  `RELEASE-STRATEGY.md` both named `dotfiles-Windows` as the **sole** SHA-pinning caller
+  (the runbook froze it as "27 of 28"), when `dotfiles-MacBook` pins four callers and
+  `dotfiles-Defense` one. Both now split the cases by the property that actually matters at
+  release time — pinned **inside** the fan-out (MacBook, Defense: `sync-core.sh` moves the
+  pin automatically since #482, which is *why* the App needs Workflows write) versus pinned
+  **outside** it (Windows: vendors no `core/`, so nothing moves its pin and it needs a hand
+  bump). The frozen count is replaced by a one-liner that derives it from the callers, since
+  a hand-maintained tally is what rotted here.
+
   Guarding the `gh` calls matters as much as the push, and fails in a nastier shape: a rate
   limit or a per-repo API error there strands every _later_ repo even though this one's
   branch is already on the remote — work done and merely unannounced. Those cases now say
