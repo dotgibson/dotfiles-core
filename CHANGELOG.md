@@ -96,7 +96,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
-
 - **The pipefail SIGPIPE scanner was half-blind, and was hiding a live hazard in the
   PR-link gate.** `_core_pipefail_hits` required grep's `q` to be the **last letter** of
   the flag cluster, so `grep -q` and `grep -xq` were caught while `grep -qx` and
