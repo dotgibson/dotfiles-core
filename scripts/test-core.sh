@@ -888,6 +888,28 @@ if have git; then
 printf '%s' \"\$big\" $_pf_p grep -q needle"
   if [[ "$(_core_pipefail_hits "$_pfd/grepq.sh")" == 2 ]]; then pass "pipefail scan: catches a printf piped into grep -q"; else fail "pipefail scan: missed a printf piped into grep -q"; fi
 
+  # FLAG ORDER must not matter. The regex used to require `q` to be the LAST letter of the
+  # cluster, so `-q` and `-xq` were caught while `-qx` and `-Eqi` walked past — identical
+  # hazard, different spelling. That blind spot was hiding a live one in ci-pr-link.sh's
+  # No-Issue probe (`-Eqi`), where a body over the pipe buffer would have failed a
+  # correctly-exempt PR. Pin every spelling so the gate cannot go half-blind again (#501).
+  _pf_write grepqx.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -qx needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepqx.sh")" == 2 ]]; then pass "pipefail scan: catches grep -qx (q not last in the cluster)"; else fail "pipefail scan: missed grep -qx — the regex still requires q to be last"; fi
+
+  _pf_write grepeqi.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -Eqi needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepeqi.sh")" == 2 ]]; then pass "pipefail scan: catches grep -Eqi (the real ci-pr-link.sh shape)"; else fail "pipefail scan: missed grep -Eqi"; fi
+
+  _pf_write grepxq.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -xq needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepxq.sh")" == 2 ]]; then pass "pipefail scan: still catches grep -xq (q last, the original form)"; else fail "pipefail scan: regressed on grep -xq"; fi
+
+  # The widened cluster must not swallow a grep with NO q at all — that has no early exit.
+  _pf_write grepnoq.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -Ei needle"
+  if [[ -z "$(_core_pipefail_hits "$_pfd/grepnoq.sh")" ]]; then pass "pipefail scan: a grep with no quiet flag is not a finding"; else fail "pipefail scan: widened regex now flags a non-quiet grep"; fi
+
   _pf_write head.sh "set -euo pipefail
 echo \"\$v\" $_pf_p head -n1"
   if [[ "$(_core_pipefail_hits "$_pfd/head.sh")" == 2 ]]; then pass "pipefail scan: catches an echo piped into head"; else fail "pipefail scan: missed an echo piped into head"; fi
@@ -1169,16 +1191,31 @@ _classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examp
 hdr "PR link gate (scripts/ci-pr-link.sh)"
 PRLINK="$HERE/scripts/ci-pr-link.sh"
 _prlink_is() { # _prlink_is <label> <title> <linked-count> <body> <want-verdict>
-  local got
+  local got rc want_rc
   got="$(printf '%s' "$4" | "$PRLINK" "$2" "$3" 2>/dev/null)"
-  if [[ "$got" == "verdict=$5" ]]; then
+  rc=$?
+  # Assert the EXIT STATUS as well as the verdict line. The workflow enforces the policy
+  # through the status, not the text — so a regression to `exit 0` on missing-link would
+  # silently stop failing PRs while a stdout-only assertion stayed green. Checking both
+  # pins the two together: missing-link is the only verdict that may exit non-zero.
+  # Both blocking verdicts exit 1. They are NOT interchangeable: missing-link asserts
+  # something about the PR, probe-failed asserts only that the API could not be reached
+  # (#500). Same policy, different claim — so the tests pin the verdict token too, and a
+  # regression that swapped one for the other would fail on the stdout comparison above.
+  case "$5" in
+  missing-link | probe-failed) want_rc=1 ;;
+  *) want_rc=0 ;;
+  esac
+  if [[ "$got" == "verdict=$5" ]] && ((rc == want_rc)); then
     pass "$1"
   else
-    fail "$1 (got: ${got:-<empty>}; want verdict=$5)"
+    fail "$1 (got: ${got:-<empty>} rc=$rc; want verdict=$5 rc=$want_rc)"
   fi
 }
-# The gated set: the repo's canonical Conventional-Commit shape (gen-release-notes.sh:50,
-# cliff.toml:56) — optional (scope), optional breaking `!`, then the `:` delimiter.
+# The gated set: the delimiter-aware Conventional-Commit shape from
+# scripts/gen-release-notes.sh:50 — optional (scope), optional breaking `!`, then the `:`.
+# NOT cliff.toml:56, which groups on a broader bare `^fix` and would sweep in `fixup:`;
+# the gate deliberately takes the stricter of the two.
 _prlink_is "fix( PR with a linked issue → ok" 'fix(doctor): probe both names' 1 '' ok
 _prlink_is "fix( PR with no link and no reason → missing-link" 'fix(doctor): probe both names' 0 '' missing-link
 _prlink_is "unscoped fix: is gated too" 'fix: probe both names' 0 '' missing-link
@@ -1204,9 +1241,25 @@ _prlink_is "commented-out No-Issue: does NOT exempt (multi-line)" \
   'fix(x): y' 0 $'<!--\nNo-Issue: <reason>\n-->' missing-link
 _prlink_is "a real marker after a comment still exempts" \
   'fix(x): y' 0 $'<!-- guidance -->\nNo-Issue: genuinely no issue' exempt
-# Fail closed: a garbled count from the GraphQL probe must read as "no link proven",
-# never as a pass — a broken API call must not silently open the gate.
-_prlink_is "non-numeric linked count fails closed to 0" 'fix(x): y' 'unknown' '' missing-link
+# ── An undeterminable count is NOT zero links (#500) ─────────────────────────────────
+# The first version coerced a non-numeric count to 0, so a GitHub API blip produced
+# `missing-link` and told the author their linked PR had no link. That happened for real:
+# #499 links #498, and during a run of 503s the check failed it with "closes no issue and
+# gives no reason" — false, and the kind of thing that teaches people to distrust a gate.
+# It still BLOCKS (a broken probe must never silently open the gate), but the claim it
+# makes is now true.
+_prlink_is "an undeterminable count is probe-failed, NOT missing-link" \
+  'fix(x): y' 'unknown' '' probe-failed
+_prlink_is "an empty count (partial API response) is probe-failed too" \
+  'fix(x): y' '' '' probe-failed
+# The escape hatch is read from the body and needs no API call, so it must still work
+# while the probe is down — blocking a PR that already carries its reason would be
+# gratuitous, and the check has everything it needs to say yes.
+_prlink_is "No-Issue: still exempts while the probe is down" \
+  'fix(x): y' 'unknown' 'No-Issue: found in one pass' exempt
+# A non-fix PR is out of scope whatever the probe did.
+_prlink_is "a non-fix PR stays not-gated while the probe is down" \
+  'feat(x): y' 'unknown' '' not-gated
 # Usage error is its own exit code (2), distinct from a policy violation (1), so a
 # workflow that miscalls the script reads as broken rather than as a failing PR.
 # Asserted inline rather than via check(), which is zsh-only and defined further down.
