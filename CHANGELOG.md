@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.12.2] - 2026-08-17
+
 ### Added
 
 - **CI now fails a `fix(…)` PR that closes no issue and gives no reason.** #446 fixed two
