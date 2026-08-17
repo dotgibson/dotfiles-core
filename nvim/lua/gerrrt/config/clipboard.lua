@@ -68,6 +68,15 @@ then
   -- imposed on a box that has a real provider) — while still closing the "yank does nothing
   -- over tmux/psmux/SSH" gap on a headless/remote box. Neovim 0.10+'s OSC52 provider carries
   -- yanks to the system clipboard over the terminal escape sequence, no external helper needed.
+  --
+  -- NOTE this branch is NOT what covers a headless Linux box that has been bootstrapped:
+  -- there `clip` IS on PATH, so the first branch wins and this one is unreachable. That is
+  -- fine, because core/bin/clip has its own OSC52 fallback and copying works through it —
+  -- but it is worth stating, because the reverse assumption (that a present-but-backendless
+  -- `clip` would fall through to here) is wrong and costs an afternoon to rediscover. What
+  -- this branch actually covers is a box with no Core bootstrap at all: psmux, a bare
+  -- checkout, nvim installed on its own. Paste differs in both cases — see bin/clip-paste
+  -- for why OSC52 reads are not safe to do blind.
   local osc52 = require("vim.ui.clipboard.osc52")
   vim.g.clipboard = {
     name = "clip-osc52",

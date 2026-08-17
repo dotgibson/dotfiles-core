@@ -15,6 +15,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`clip` had no way to copy from a headless box, so `pbcopy`, tmux's `copy-pipe` and
+  nvim's `"+y` were all dead over plain ssh.** The ladder ran WSL → macOS → Wayland →
+  X11 and then gave up, and none of those exist on a machine you only ever ssh into —
+  which is exactly where copying _out_ of the terminal matters most. It now falls back
+  to **OSC 52**: the payload goes to the terminal as an escape sequence and the terminal
+  emulator puts it on the clipboard of the machine you are sitting at, with nothing
+  installed on the remote end. Core's tmux already sets `set-clipboard on`, so tmux
+  forwards it rather than needing passthrough wrapping.
+
+  Deliberately **last** in the ladder — a real backend is bidirectional and does not
+  depend on terminal support — and it writes to `/dev/tty`, never stdout, because `clip`
+  is used in pipelines and as nvim's provider where stdout carries the caller's data.
+
+- **`clip`/`clip-paste` exec'd `xclip`/`xsel` without checking `DISPLAY`.** The Wayland
+  branch above them checked `WAYLAND_DISPLAY`; the X11 ones checked only that the binary
+  existed. On any desktop distro where something pulled `xclip` in as a dependency,
+  `command -v` succeeded over ssh and the exec then failed for want of a display —
+  _instead of_ falling through to a fallback that would have worked. This is what made
+  the new OSC 52 branch unreachable in the most common real configuration.
+
+- **`clip-paste` still fails on a headless box, and now says why.** There is no safe
+  OSC 52 read: it means querying the terminal and waiting for a reply that most
+  terminals refuse to send (letting a remote host read your clipboard is a genuine
+  hazard), and one that never replies blocks forever. Nothing is lost — pasting _into_ a
+  remote shell is what the terminal's own paste already does. The error names the
+  asymmetry so it does not read as `clip` being broken too.
+
 - **`make publish` could not move the `v4` major alias when `tag.gpgsign` is enabled.**
   `scripts/tag-release.sh` moved the alias with a bare `git tag -f`, expecting a
   lightweight ref. Under `tag.gpgsign = true` git makes every tag **signed** — therefore
