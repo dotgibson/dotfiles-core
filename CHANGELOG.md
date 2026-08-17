@@ -23,10 +23,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   fell through to the derived `<git-prefix>/{lib,libexec}/git-core` paths, so the flag said
   present while `core-doctor` — which asks `git --exec-path`, and therefore inherits the
   override — correctly said absent. That is the exact flag-vs-doctor disagreement of #425,
-  re-created on a new axis by the change meant to remove it. A non-empty override is now
-  probed **exclusively**. Two tests pin it: the flag stays unset under an empty override
-  with the default exec-path populated, and the flag and the doctor are asserted to agree on
-  that same configuration.
+  re-created on a new axis by the change meant to remove it. An **exported** override is now
+  probed **exclusively** — exported because git reads the variable from its environment, so
+  a plain shell assignment (`scalar`, not `scalar-export`) never reaches git and must be
+  ignored here too, or the mirror-image disagreement appears: the flag honouring an override
+  git does not see. Three tests pin it: the flag stays unset under an empty exported
+  override with the default exec-path populated, flag and doctor are asserted to agree on
+  that configuration, and an unexported `GIT_EXEC_PATH` is ignored by both.
 
   Three documentation claims contradicted each other after #503 and are reconciled:
   `PORTING-MATRIX.md`'s ²⁶ preamble still said flatly that git-absorb installs on `PATH`,

@@ -6006,6 +6006,20 @@ ucheck "git exec-path: flag and doctor agree under an empty override (both absen
   "source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json)
    [[ -z \${HAVE_GIT_ABSORB:-} && \$j == *'\"git-absorb\":false'* ]]" \
   PATH="$GXBIN" GIT_EXEC_PATH="$GXROOT/empty-override" CORE_NO_PAGER=1
+# (i3) EXPORTED, not merely set. git reads GIT_EXEC_PATH from its ENVIRONMENT, so a plain
+#     shell assignment — `scalar`, not `scalar-export` — is invisible to it. Treating any
+#     non-empty parameter as authoritative gives the MIRROR of (i2): the flag honours an
+#     override git ignores and reports absent while `git absorb` and the doctor both work.
+#     Set INSIDE the body rather than passed through `ucheck`'s env, which is the whole
+#     point — anything ucheck exports arrives as `scalar-export` and cannot express this.
+#     git-absorb is in the default exec-path, so the correct answer is present-and-agreeing.
+_gx_tree
+ucheck "git exec-path: an UNEXPORTED GIT_EXEC_PATH is ignored, as git ignores it" \
+  "GIT_EXEC_PATH='$GXROOT/empty-override'   # deliberately not exported
+   source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json)
+   [[ \${(t)GIT_EXEC_PATH} != *export* ]] || return 1
+   [[ -n \${HAVE_GIT_ABSORB:-} && \$j == *'\"git-absorb\":true'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
 
 # ── OSC 133 prompt marks + the command-block rule (00-tools.zsh) ─────────────
 # The marks are what tmux's next-prompt/previous-prompt (bound to ] / [ in

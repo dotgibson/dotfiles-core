@@ -152,8 +152,14 @@ _have git-absorb && HAVE_GIT_ABSORB=1 # routes staged hunks into the earlier com
 # its libexec outside its own prefix, where this approximation is not. The two are kept in
 # step deliberately: #425 is the reminder that a HAVE_* flag and the doctor disagreeing
 # about the same box is itself a bug.
+# EXPORTED, not merely set: git reads GIT_EXEC_PATH from its ENVIRONMENT, so an unexported
+# shell parameter of that name is invisible to it. `${(t)…}` is zsh's type string — a plain
+# assignment gives `scalar`, `export` (or an inherited environment entry) gives
+# `scalar-export` — and it is a parameter-flag lookup, so the no-fork rule survives. Without
+# this the mirror of the bug above appears: the flag would honour an override git ignores and
+# report absent while `git absorb` and core-doctor both work.
 if [[ -z ${HAVE_GIT_ABSORB:-} && -n ${commands[git]:-} ]]; then
-  if [[ -n ${GIT_EXEC_PATH:-} ]]; then
+  if [[ -n ${GIT_EXEC_PATH:-} && ${(t)GIT_EXEC_PATH} == *export* ]]; then
     [[ -x $GIT_EXEC_PATH/git-absorb ]] && HAVE_GIT_ABSORB=1
   else
     for _gx in "${commands[git]:h:h}"/{lib,libexec}/git-core; do
