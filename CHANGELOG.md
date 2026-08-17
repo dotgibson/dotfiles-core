@@ -122,7 +122,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   **Exec-bits deliberately unchanged.** That gate reads index modes (`git ls-files -s`), and
   an untracked file has no index entry — it falls on the git-state side of the rule above.
-||||||| parent of 5640316 (fix(ci): tell "no link" apart from "could not determine"; unblind the pipefail scanner)
 
 - **A failed `tpm` clone announced itself as a status line, so tmux quietly ended up with
   no plugin manager.** `blib_link_core`'s one-time clone reported failure with `blib_say` —
