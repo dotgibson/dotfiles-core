@@ -2166,6 +2166,50 @@ if have git; then
   else
     fail "link run: re-running bootstrap churned links, backed a file up, or failed (rc=$_lr_rc)"
   fi
+
+  # A FAILED tpm clone must read as a failure. It used to be announced with blib_say —
+  # blue `::` on STDOUT, the identical shape to the "cloning tpm" progress line above —
+  # with git's error discarded by `>/dev/null 2>&1`. Behind a proxy that left tmux with no
+  # plugin manager, nothing in the log to notice, and an empty tally, so an adopting
+  # bootstrap could not tell a degraded box from a good one.
+  #
+  # Hermetic and OFFLINE: GIT_ALLOW_PROTOCOL=file makes git refuse the https transport, so
+  # the clone fails deterministically without depending on the remote being unreachable
+  # (or reachable). $config is fresh, so the clone is genuinely attempted.
+  TF="$SANDBOX/tpmfail"
+  rm -rf "$TF"
+  mkdir -p "$TF/home" "$TF/config"
+  HOME="$TF/home" XDG_CONFIG_HOME="$TF/config" GIT_ALLOW_PROTOCOL=file \
+    BLIB_ONLY="tmux" BLIB_SKIP="" bash -c '
+      set -u
+      . "'"$HERE/lib/bootstrap-lib.sh"'"
+      blib_link_core "'"$LR/dotfiles"'" "'"$TF/config"'"
+      printf "TALLY=%s\n" "$(blib_failed_count)"
+    ' >"$TF/out" 2>"$TF/err"
+  if grep -q "tpm clone failed" "$TF/err"; then
+    pass "tpm clone failure warns on STDERR"
+  else
+    fail "tpm clone failure did not reach stderr"
+  fi
+  # The regression itself: the message must not be on stdout, where blib_say put it.
+  if grep -q "tpm clone failed" "$TF/out"; then
+    fail "tpm clone failure is on STDOUT (blib_say regression — it must use blib_note_fail)"
+  else
+    pass "tpm clone failure is NOT on stdout (no longer a blib_say status line)"
+  fi
+  # Recorded, so blib_failures_report / a caller's --strict can act on it downstream.
+  if grep -q "^TALLY=[1-9]" "$TF/out"; then
+    pass "tpm clone failure lands in the blib_note_fail tally"
+  else
+    fail "tpm clone failure was not recorded in the tally"
+  fi
+  # git's own error is the whole diagnosis (DNS, proxy, TLS, rate limit) and used to be
+  # thrown away. Assert the indented passthrough, not git's wording, which varies.
+  if grep -q '^    ' "$TF/err"; then
+    pass "tpm clone failure surfaces git's own error, indented under it"
+  else
+    fail "tpm clone failure discarded git's error output"
+  fi
 else
   skip "bootstrap link run (git unavailable)"
 fi

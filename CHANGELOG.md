@@ -45,6 +45,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `N linked · M seeded · K backed up · R relinked · S skipped`. An already-correct link is
   still a silent no-op, so a plain re-run prints no relink noise.
 
+- **A failed `tpm` clone announced itself as a status line, so tmux quietly ended up with
+  no plugin manager.** `blib_link_core`'s one-time clone reported failure with `blib_say` —
+  the blue `::` on **stdout**, the identical shape to the `cloning tpm` progress line
+  immediately above it — and discarded git's error with `>/dev/null 2>&1`. Behind a proxy,
+  offline, or against a rate limit, the run therefore produced a box whose tmux had no
+  theme and no resurrect/continuum, with nothing in the log that stood out and no way to
+  find out why.
+
+  It now uses `blib_note_fail`, which warns on **stderr** and records the step, and git's
+  own output is captured and printed indented under the failure instead of dropped — on a
+  clone failure that output _is_ the diagnosis (DNS, proxy, TLS, rate limit).
+
+  **Scope — this is the first lib-internal caller of `blib_note_fail`.** The v4.11.0 entry
+  below scoped that API as "new, not yet wired into any bootstrap", meaning adoption by
+  _consumers_. A clone that happens inside Core is the case a consumer cannot observe for
+  itself: `dotfiles-MacBook` had to add a post-hoc "is the tpm directory there?" check to
+  its own `bootstrap.sh` precisely because this failure was unreportable
+  ([dotfiles-MacBook#133](https://github.com/dotgibson/dotfiles-MacBook/issues/133)). No
+  consumer changes behaviour from this alone — `blib_note_fail` calls `blib_warn`
+  internally, so a bootstrap that ignores `BLIB_FAILED` sees exactly the corrected warning
+  and nothing else. A bootstrap that _does_ fold the tally in now learns about a failure it
+  previously could not see, and can drop its local directory probe.
+
+  Same shape, same fix, one line away: `blib_set_login_shell`'s "chsh not found" branch
+  also used `blib_say` while its sibling failure branch used `blib_warn`, though the
+  outcome — login shell unchanged — is identical. It is a warning now too.
+
+  Covered by four assertions in `scripts/test-core.sh`'s link-run section, hermetic and
+  offline: `GIT_ALLOW_PROTOCOL=file` makes git refuse the https transport, so the clone
+  fails deterministically without depending on the remote being reachable or unreachable.
+  They pin the stream (stderr, not stdout), the tally, and the git-error passthrough.
+
 - **The fan-out moved the tree and the lock, and left the pins pointing at the previous
   Core** ([#482](https://github.com/dotgibson/dotfiles-core/issues/482)). An OS repo names
   the vendored Core in three places — the `core/` subtree, `core.lock`'s `core_sha`, and,
