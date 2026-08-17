@@ -13,11 +13,11 @@ rule here drifts from `README.md` / `CONTRIBUTING.md`, those win — fix this.
 defect here fans out N-way. Treat every change as if it ships to all of them,
 because it does.
 
-| Layer         | Lives in                                                        | Examples                                                           |
-| ------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Core**      | **this repo**, vendored into each OS repo's `core/`             | zsh modules, tmux, nvim, git, starship                             |
+| Layer         | Lives in                                                               | Examples                                                           |
+| ------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **Core**      | **this repo**, vendored into each OS repo's `core/`                    | zsh modules, tmux, nvim, git, starship                             |
 | **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}` | package manager, clipboard, paths                                  |
-| **Role**      | `dotfiles-Kali` (offensive), `dotfiles-Defense` (defensive)     | offensive engagement + defensive detection tooling on the OS layer |
+| **Role**      | `dotfiles-Kali` (offensive), `dotfiles-Defense` (defensive)            | offensive engagement + defensive detection tooling on the OS layer |
 
 Plus `dotfiles-web` — the public Astro showcase/docs site (the system's public
 face, **not** a config layer). The canonical Core-vendoring fleet is

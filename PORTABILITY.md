@@ -8,7 +8,7 @@ tree correct on every machine.
 `CONTRIBUTING.md` answers _is it Core?_ This answers _how do I write Core that survives
 the fan-out?_ Both were previously only in scattered code comments, which is exactly how
 `maint/dotfiles-maint.sh` and `tmux/scripts/tmux-cheat.sh` ended up carrying
-`/opt/homebrew` paths into eight repos where seven of them do not exist.
+`/opt/homebrew` paths into nine repos where eight of them do not exist.
 
 When a rule here drifts from `README.md` or `CONTRIBUTING.md`, those win — fix this.
 

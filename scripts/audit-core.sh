@@ -361,7 +361,7 @@ done < <(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 if ((SCOPE_SHELL)); then
   if have zsh; then
     # The sourced modules AND the autoloaded completion functions (zsh/completions/_*,
-    # no .zsh extension) — both are zsh that fans out to eight repos; both must parse.
+    # no .zsh extension) — both are zsh that fans out to nine repos; both must parse.
     while IFS= read -r f; do
       if zsh -n "$f" 2>/dev/null; then pass "zsh -n  $f"; else fail "zsh syntax error: $f"; fi
     done < <(_audit_ls 'zsh/*.zsh' 'zsh/completions/*')
@@ -488,7 +488,7 @@ fi
 # ── 5c. Core⇄OS boundary (portable shell modules carry no OS-absolute paths) ──
 # README's contract: "if it changes when the OS changes, it does NOT belong in Core."
 # That rule is documented but was ungated — a hard-coded /opt/homebrew, /home/linuxbrew,
-# or macOS ~/Library path could slip into a portable shell module and fan out to eight repos
+# or macOS ~/Library path could slip into a portable shell module and fan out to nine repos
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
 # zsh/55-maint.zsh — the scheduler CONTROL SURFACE whose launchd arm legitimately writes
 # ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape);

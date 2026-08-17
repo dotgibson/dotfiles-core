@@ -19,7 +19,7 @@
 #
 # By default this only REPORTS the number (informational). Set CORE_BENCH_BUDGET_MS
 # to turn it into a GATE: the script exits non-zero if the mean startup exceeds the
-# budget, so a perf regression can fail CI instead of shipping silently to eight repos.
+# budget, so a perf regression can fail CI instead of shipping silently to nine repos.
 # Enforcement needs python3 to read hyperfine's JSON; with no budget set, behaviour
 # is unchanged (report only). Graceful skip still wins on a box with no zsh/hyperfine.
 #

@@ -34,7 +34,7 @@ PLUGINS_FILE="zsh/45-plugins.zsh"
 # installs a pin), resolve the entry file (mirroring _zplugin_load's search order), and
 # `zsh -n` it. The behavioral suite pre-seeds EMPTY plugin dirs (no network), so it never
 # touches the real pinned code — a HEAD that 404s, vanished to GC, or won't parse would
-# otherwise sail through `make audit` and ship to eight repos. Returns 0 = loads; non-zero else.
+# otherwise sail through `make audit` and ship to nine repos. Returns 0 = loads; non-zero else.
 _verify_pin() {
   local slug="$1" sha="$2" d f src="" rc=0
   local name="${slug##*/}" # separate `local`: same-statement refs to slug don't take effect (SC2318)

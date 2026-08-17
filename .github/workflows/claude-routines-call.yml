@@ -113,7 +113,7 @@ jobs:
           # env: makes DISTRO shell-safe, but the prompt is an INSTRUCTION channel — an
           # arbitrary string there is a prompt-injection vector into a job holding
           # CLAUDE_CODE_OAUTH_TOKEN, and a typo would file a package audit for a target
-          # that does not exist. The input contract is six names, so enforce it before
+          # that does not exist. The input contract is seven names, so enforce it before
           # the agent runs. (Sanitised on the error path for the same workflow-command
           # reason as auto-tag-call.yml.)
           case "$DISTRO" in

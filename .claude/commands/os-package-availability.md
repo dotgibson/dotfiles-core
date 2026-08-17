@@ -87,7 +87,7 @@ the list still resolve upstream*.
    macOS is Homebrew). So for `fedora`/`macbook`, do **not** cite or invent a matrix
    column —
    verify names against the upstream index (Fedora Packages / Homebrew formulae) plus
-   the matrix's distro-general **footnotes**. For the other four, compare the caller's
+   the matrix's distro-general **footnotes**. For the other five, compare the caller's
    list against its column *and* footnotes, and flag a tool the matrix says is packaged
    that isn't (or vice-versa), or a footnote gone stale — e.g. a "cargo³" note for a
    tool now first-class in the repos, or a rename the matrix hasn't recorded.

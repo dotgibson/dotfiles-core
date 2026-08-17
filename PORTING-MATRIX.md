@@ -20,64 +20,64 @@ _Repo status_ at the bottom).
 
 ## Package-manager commands
 
-| Action    | Arch                     | openSUSE                                         | Alpine                    | Gentoo                          | Kali (apt)                   | Debian/Ubuntu (apt) |
-| --------- | ------------------------ | ------------------------------------------------ | ------------------------- | ------------------------------- | ---------------------------- | -------------------------- |
-| refresh   | `sudo pacman -Sy`²³      | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        | `sudo apt-get update` |
-| upgrade   | `sudo pacman -Syu`       | Leap: `zypper up` · **Tumbleweed: `zypper dup`** | `doas apk upgrade`        | `sudo emerge -uDN @world`       | `sudo apt-get full-upgrade`  | `sudo apt-get full-upgrade` |
+| Action    | Arch                     | openSUSE                                         | Alpine                    | Gentoo                          | Kali (apt)                   | Debian/Ubuntu (apt)          |
+| --------- | ------------------------ | ------------------------------------------------ | ------------------------- | ------------------------------- | ---------------------------- | ---------------------------- |
+| refresh   | `sudo pacman -Sy`²³      | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        | `sudo apt-get update`        |
+| upgrade   | `sudo pacman -Syu`       | Leap: `zypper up` · **Tumbleweed: `zypper dup`** | `doas apk upgrade`        | `sudo emerge -uDN @world`       | `sudo apt-get full-upgrade`  | `sudo apt-get full-upgrade`  |
 | install   | `sudo pacman -S <pkg>`   | `sudo zypper in <pkg>`                           | `doas apk add <pkg>`      | `sudo emerge <atom>`            | `sudo apt-get install <pkg>` | `sudo apt-get install <pkg>` |
-| remove    | `sudo pacman -Rns <pkg>` | `sudo zypper rm <pkg>`                           | `doas apk del <pkg>`      | `sudo emerge --depclean <atom>` | `sudo apt-get remove <pkg>`  | `sudo apt-get remove <pkg>` |
-| search    | `pacman -Ss <term>`      | `zypper se <term>`                               | `apk search <term>`       | `emerge -s <term>`              | `apt-cache search <term>`    | `apt-cache search <term>` |
-| owns-file | `pacman -Qo <path>`      | `zypper se --provides <f>`                       | `apk info --who-owns <f>` | `equery belongs <path>`         | `dpkg -S <path>`             | `dpkg -S <path>` |
+| remove    | `sudo pacman -Rns <pkg>` | `sudo zypper rm <pkg>`                           | `doas apk del <pkg>`      | `sudo emerge --depclean <atom>` | `sudo apt-get remove <pkg>`  | `sudo apt-get remove <pkg>`  |
+| search    | `pacman -Ss <term>`      | `zypper se <term>`                               | `apk search <term>`       | `emerge -s <term>`              | `apt-cache search <term>`    | `apt-cache search <term>`    |
+| owns-file | `pacman -Qo <path>`      | `zypper se --provides <f>`                       | `apk info --who-owns <f>` | `equery belongs <path>`         | `dpkg -S <path>`             | `dpkg -S <path>`             |
 
 ## Package names (modern CLI stack)
 
 | Tool             | Arch              | openSUSE     | Alpine            | Gentoo (atom)              | Kali (apt)        | Debian/Ubuntu |
-| ---------------- | ----------------- | ------------ | ----------------- | -------------------------- | ----------------- | ----------------- |
-| eza              | `eza`             | `eza`        | `eza`             | `sys-apps/eza`             | `eza`             | `eza` |
-| bat              | `bat`             | `bat`        | `bat`             | `sys-apps/bat`             | `bat`⁴            | `bat`⁴ |
-| fd               | `fd`              | `fd`         | `fd`              | `sys-apps/fd`              | `fd-find`⁴        | `fd-find`⁴ |
-| ripgrep          | `ripgrep`         | `ripgrep`    | `ripgrep`         | `sys-apps/ripgrep`         | `ripgrep`         | `ripgrep` |
-| zoxide           | `zoxide`          | `zoxide`     | `zoxide`          | `app-shells/zoxide`        | `zoxide`          | `zoxide` |
-| fzf              | `fzf`             | `fzf`        | `fzf`             | `app-shells/fzf`           | `fzf`             | `fzf` |
-| git-delta        | `git-delta`       | `git-delta`  | `delta`           | `dev-util/git-delta`       | `git-delta`       | `git-delta` |
-| btop             | `btop`            | `btop`       | `btop`            | `sys-process/btop`         | `btop`            | `btop` |
-| tldr             | `tealdeer`        | `tealdeer`¹  | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        | `tealdeer` |
-| neovim           | `neovim`          | `neovim`     | `neovim`          | `app-editors/neovim`       | `neovim`          | asset²⁸ |
-| lazygit          | `lazygit`         | `lazygit`    | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`²¹       | asset²⁸ |
-| zsh              | `zsh`             | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`             | `zsh` |
-| tmux             | `tmux`            | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`            | `tmux` |
-| starship         | `starship`        | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³           | asset²⁸ |
-| atuin²⁰          | `atuin`           | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³          | asset²⁸ |
-| yazi             | `yazi`            | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹ |
-| tree-sitter-cli⁵ | `tree-sitter-cli` | cargo³       | `tree-sitter-cli` | cargo³                     | `tree-sitter-cli` | asset²⁸ |
-| jq               | `jq`              | `jq`         | `jq`              | `app-misc/jq`              | `jq`              | `jq` |
-| yq⁶              | `go-yq`           | go³          | `yq-go`           | `app-misc/yq-go`           | `yq-go`           | go³ |
-| duf              | `duf`             | `duf`        | testing¹⁴         | `sys-fs/duf`               | `duf`             | `duf` |
-| dust             | `dust`            | `dust`       | `dust`            | `sys-block/dust`           | `du-dust`⁴        | asset²⁸ |
-| procs            | `procs`           | `procs`      | `procs`           | `sys-process/procs`        | `procs`           | asset²⁸ |
-| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸    | `viddy`           | cargo³                     | cargo³            | —²⁹ |
-| sd²²             | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              | `sd` |
-| gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            | `gron` |
-| jnv¹⁷            | AUR               | cargo        | cargo             | cargo                      | cargo             | —²⁹ |
-| lnav²¹ ²⁴        | `lnav`            | `lnav`       | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          | `lnav` |
-| glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          | charm apt |
-| gum              | `gum`             | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵           | charm apt |
-| xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              | asset²⁸ |
-| doggo            | `doggo`           | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³               | go³ |
-| gping¹⁹          | `gping`           | `gping`¹⁹    | `gping`           | GURU¹⁹                     | `gping`¹⁹         | `gping` |
-| carapace         | AUR²⁷             | rpm²⁷        | `carapace`        | `app-shells/carapace`¹²    | deb²⁷             | deb²⁷ |
-| op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        | vendor apt |
-| hyperfine²¹      | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       | `hyperfine` |
-| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`  | `watchexec`       | GURU²⁵                     | cargo²⁵           | —²⁹ |
-| shellcheck²¹     | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      | `shellcheck` |
-| shfmt⁷ ²¹        | `shfmt`           | `shfmt`      | `shfmt`           | go²¹                       | `shfmt`⁷          | `shfmt` |
-| ouch²¹           | `ouch`            | `ouch`¹⁸     | testing¹⁴         | cargo²¹                    | cargo²¹           | —²⁹ |
-| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | cargo²¹                    | cargo²¹           | —²⁹ |
-| sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               | go³ |
-| difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      | asset²⁸ |
-| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb` | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb` |
-| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo³            | —²⁹ |
-| w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m` |
+| ---------------- | ----------------- | ------------ | ----------------- | -------------------------- | ----------------- | ------------- |
+| eza              | `eza`             | `eza`        | `eza`             | `sys-apps/eza`             | `eza`             | `eza`         |
+| bat              | `bat`             | `bat`        | `bat`             | `sys-apps/bat`             | `bat`⁴            | `bat`⁴        |
+| fd               | `fd`              | `fd`         | `fd`              | `sys-apps/fd`              | `fd-find`⁴        | `fd-find`⁴    |
+| ripgrep          | `ripgrep`         | `ripgrep`    | `ripgrep`         | `sys-apps/ripgrep`         | `ripgrep`         | `ripgrep`     |
+| zoxide           | `zoxide`          | `zoxide`     | `zoxide`          | `app-shells/zoxide`        | `zoxide`          | `zoxide`      |
+| fzf              | `fzf`             | `fzf`        | `fzf`             | `app-shells/fzf`           | `fzf`             | `fzf`         |
+| git-delta        | `git-delta`       | `git-delta`  | `delta`           | `dev-util/git-delta`       | `git-delta`       | `git-delta`   |
+| btop             | `btop`            | `btop`       | `btop`            | `sys-process/btop`         | `btop`            | `btop`        |
+| tldr             | `tealdeer`        | `tealdeer`¹  | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        | `tealdeer`    |
+| neovim           | `neovim`          | `neovim`     | `neovim`          | `app-editors/neovim`       | `neovim`          | asset²⁸       |
+| lazygit          | `lazygit`         | `lazygit`    | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`²¹       | asset²⁸       |
+| zsh              | `zsh`             | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`             | `zsh`         |
+| tmux             | `tmux`            | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`            | `tmux`        |
+| starship         | `starship`        | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³           | asset²⁸       |
+| atuin²⁰          | `atuin`           | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³          | asset²⁸       |
+| yazi             | `yazi`            | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
+| tree-sitter-cli⁵ | `tree-sitter-cli` | cargo³       | `tree-sitter-cli` | cargo³                     | `tree-sitter-cli` | asset²⁸       |
+| jq               | `jq`              | `jq`         | `jq`              | `app-misc/jq`              | `jq`              | `jq`          |
+| yq⁶              | `go-yq`           | go³          | `yq-go`           | `app-misc/yq-go`           | `yq-go`           | go³           |
+| duf              | `duf`             | `duf`        | testing¹⁴         | `sys-fs/duf`               | `duf`             | `duf`         |
+| dust             | `dust`            | `dust`       | `dust`            | `sys-block/dust`           | `du-dust`⁴        | asset²⁸       |
+| procs            | `procs`           | `procs`      | `procs`           | `sys-process/procs`        | `procs`           | asset²⁸       |
+| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸    | `viddy`           | cargo³                     | cargo³            | —²⁹           |
+| sd²²             | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              | `sd`          |
+| gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            | `gron`        |
+| jnv¹⁷            | AUR               | cargo        | cargo             | cargo                      | cargo             | —²⁹           |
+| lnav²¹ ²⁴        | `lnav`            | `lnav`       | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          | `lnav`        |
+| glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          | charm apt     |
+| gum              | `gum`             | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵           | charm apt     |
+| xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              | asset²⁸       |
+| doggo            | `doggo`           | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³               | go³           |
+| gping¹⁹          | `gping`           | `gping`¹⁹    | `gping`           | GURU¹⁹                     | `gping`¹⁹         | `gping`       |
+| carapace         | AUR²⁷             | rpm²⁷        | `carapace`        | `app-shells/carapace`¹²    | deb²⁷             | deb²⁷         |
+| op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        | vendor apt    |
+| hyperfine²¹      | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       | `hyperfine`   |
+| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`  | `watchexec`       | GURU²⁵                     | cargo²⁵           | —²⁹           |
+| shellcheck²¹     | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      | `shellcheck`  |
+| shfmt⁷ ²¹        | `shfmt`           | `shfmt`      | `shfmt`           | go²¹                       | `shfmt`⁷          | `shfmt`       |
+| ouch²¹           | `ouch`            | `ouch`¹⁸     | testing¹⁴         | cargo²¹                    | cargo²¹           | —²⁹           |
+| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | cargo²¹                    | cargo²¹           | —²⁹           |
+| sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               | go³           |
+| difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      | asset²⁸       |
+| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb` | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb`  |
+| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo³            | —²⁹           |
+| w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
@@ -235,28 +235,35 @@ Core ships `atuin/config.toml` (symlinked to `~/.config/atuin/config.toml`) with
 the DB lock, which is where atuin's tail latency comes from on a busy multi-pane box. What
 differs per machine is how the daemon gets **launched**, so that half lives in the OS repo:
 
-| Machine                                                      | How the daemon runs                                                                                                                                                                                                              | What the OS layer exports                                     |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Fedora✔ · Arch · openSUSE · Gentoo (systemd) · Kali          | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true`                                  |
-| Alpine✔ (musl, no systemd)                                   | atuin supervises its own daemon — no unit, no service manager, nothing to install                                                                                                                                                | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
-| macOS                                                        | same as Alpine: `autostart` beats hand-writing a launchd plist, and `XDG_RUNTIME_DIR` is unset there so the socket lands in the data dir — which atuin resolves itself                                                           | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
-| Windows                                                      | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell                                                                                                                                | —                                                             |
+| Machine                                                              | How the daemon runs                                                                                                                                                                                                              | What the OS layer exports                                     |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Fedora✔ · Debian/Ubuntu✔ · Arch · openSUSE · Gentoo (systemd) · Kali | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true`                                  |
+| Alpine✔ (musl, no systemd)                                           | atuin supervises its own daemon — no unit, no service manager, nothing to install                                                                                                                                                | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| macOS                                                                | same as Alpine: `autostart` beats hand-writing a launchd plist, and `XDG_RUNTIME_DIR` is unset there so the socket lands in the data dir — which atuin resolves itself                                                           | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| Windows                                                              | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell                                                                                                                                | —                                                             |
 
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
 wrong on the other eight. `autostart` is mutually exclusive with `systemd_socket = true` —
 pick the unit or pick autostart, not both.
 
-**✔ marks the machines where the exports are actually wired today — Fedora and Alpine, two
-of the seven Core-vendoring machines this table covers.** The marker is per **machine**, not
-per row: the systemd row holds a wired Fedora alongside four unwired ones. For the other
-five — Arch, openSUSE, Gentoo and Kali (sharing that row with Fedora) plus macOS — the cell
-is the documented recipe, not a shipped state, so follow the rollout order below (Fedora
-first as the template, Alpine second as the design's real constraint, then the rest) rather
-than assuming your repo already does this. The `Windows` row is neither wired nor pending:
+**✔ marks the machines where the exports are actually wired today — Fedora, Debian/Ubuntu
+and Alpine, three of the eight Core-vendoring machines this table covers.** The marker is
+per **machine**, not per row: the systemd row holds a wired Fedora and a wired
+Debian/Ubuntu alongside four unwired ones. For the other five — Arch, openSUSE, Gentoo and
+Kali (sharing that row with Fedora) plus macOS — the cell is the documented recipe, not a
+shipped state, so follow the rollout order below (Fedora first as the template, Alpine
+second as the design's real constraint, then the rest) rather than assuming your repo
+already does this.
+
+`dotfiles-Debian` is wired end to end: its `os/debian.zsh` exports `ENABLED`, and — because
+Ubuntu **has** systemd, so the `AUTOSTART` fallback never fires there — its `bootstrap.sh`
+also installs and enables the `systemd --user` unit. Exporting `ENABLED` without installing
+a launcher is the one state this note warns against, and on a systemd box the autostart
+escape hatch does not cover for it. The `Windows` row is neither wired nor pending:
 it is out of scope, vendoring no `core/` at all. **`Defense` has no row here by design** —
 it is distro-agnostic and carries no `os/` layer, so its atuin exports come from whichever
-OS repo is underneath it (see "Repo status"). Seven machines + `Defense` = the eight
+OS repo is underneath it (see "Repo status"). Eight machines + `Defense` = the nine
 Core-vendoring repos in `scripts/os-repos.txt`.
 
 **For those exports to work at all, `atuin/config.toml` must leave `enabled` and `autostart`
@@ -394,17 +401,17 @@ a repology snapshot. Upstream is 0.14.0 (2026-04-12). Rolling targets get one qu
 because that query is the complete answer; **Fedora is versioned, so every supported stable
 release is named separately** rather than collapsed into one unqualified ✓:
 
-| Target | Release | lnav |
-| --- | --- | --- |
-| Arch | `extra` (rolling) | 0.14.0-1 |
-| openSUSE | Tumbleweed (rolling) | 0.14.0 |
-| Alpine | `edge/community` — **native musl build** | 0.14.0-r0 |
-| Homebrew | rolling | 0.14.0 |
-| **Fedora** | **Rawhide / F45** | **0.14.0-3.fc45** |
-| **Fedora** | **F44** | **0.13.2-2.fc44** |
-| **Fedora** | **F43** | **0.12.4-2.fc43** |
-| **Kali/Debian** | rolling / sid | **0.13.2** |
-| **Gentoo** | `app-admin/lnav` | **0.11.2** |
+| Target          | Release                                  | lnav              |
+| --------------- | ---------------------------------------- | ----------------- |
+| Arch            | `extra` (rolling)                        | 0.14.0-1          |
+| openSUSE        | Tumbleweed (rolling)                     | 0.14.0            |
+| Alpine          | `edge/community` — **native musl build** | 0.14.0-r0         |
+| Homebrew        | rolling                                  | 0.14.0            |
+| **Fedora**      | **Rawhide / F45**                        | **0.14.0-3.fc45** |
+| **Fedora**      | **F44**                                  | **0.13.2-2.fc44** |
+| **Fedora**      | **F43**                                  | **0.12.4-2.fc43** |
+| **Kali/Debian** | rolling / sid                            | **0.13.2**        |
+| **Gentoo**      | `app-admin/lnav`                         | **0.11.2**        |
 
 So "Fedora has it" is true but "Fedora is current" is only true on F45/Rawhide — F44 and F43
 track one and two minors back respectively. Two targets lag enough to be worth naming:
@@ -602,7 +609,7 @@ download, or hash mismatch skips that tool loudly rather than installing anythin
 unverified. **Neovim is the exception in shape** — its asset is a directory tree
 (`bin/` + `lib/` + `share/nvim/runtime`), so it uses `verified_tree_install` and lands
 in `~/.local/opt` with a symlink into `~/.local/bin`; copying the bare binary yields an
-editor whose `$VIMRUNTIME` points at nothing. Deliberately *not* the AppImage: Ubuntu
+editor whose `$VIMRUNTIME` points at nothing. Deliberately _not_ the AppImage: Ubuntu
 24.04 sets `kernel.apparmor_restrict_unprivileged_userns=1`, which blocks the
 unprivileged user namespace an AppImage needs to mount itself.
 
@@ -620,14 +627,14 @@ particular box? `mise use -g rust`, then `cargo install --locked <tool>`.
      os/<distro>.zsh only aliases pbcopy/pbpaste to them — no distro swaps a
      backend in its zsh layer. This table is the packages each backend needs. -->
 
-| Distro      | Wayland                                      | X11 fallback                                           |
-| ----------- | -------------------------------------------- | ------------------------------------------------------ |
-| Arch        | `wl-clipboard` (`wl-copy`/`wl-paste`)        | `xclip`                                                |
-| openSUSE    | `wl-clipboard`                               | `xclip`                                                |
-| Alpine      | `wl-clipboard`                               | `xclip` / `xsel` (often headless — may be neither)     |
-| Gentoo      | `gui-apps/wl-clipboard`                      | `x11-misc/xclip`                                       |
-| Kali (WSL2) | n/a — Core's `clip` shells out to `clip.exe` | `wl-clipboard`/`xclip` install but sit inert under WSL |
-| Debian/Ubuntu | `wl-clipboard` | `xclip` — but `dotfiles-Debian` installs **neither**: it targets headless SSH-only boxes, so `clip` has no backend and exits 1. See its README's *Headless clipboard* note; the fix is an OSC 52 fallback in Core's `clip`. |
+| Distro        | Wayland                                      | X11 fallback                                                                                                                                                                                                                |
+| ------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arch          | `wl-clipboard` (`wl-copy`/`wl-paste`)        | `xclip`                                                                                                                                                                                                                     |
+| openSUSE      | `wl-clipboard`                               | `xclip`                                                                                                                                                                                                                     |
+| Alpine        | `wl-clipboard`                               | `xclip` / `xsel` (often headless — may be neither)                                                                                                                                                                          |
+| Gentoo        | `gui-apps/wl-clipboard`                      | `x11-misc/xclip`                                                                                                                                                                                                            |
+| Kali (WSL2)   | n/a — Core's `clip` shells out to `clip.exe` | `wl-clipboard`/`xclip` install but sit inert under WSL                                                                                                                                                                      |
+| Debian/Ubuntu | `wl-clipboard`                               | `xclip` — but `dotfiles-Debian` installs **neither**: it targets headless SSH-only boxes, so `clip` has no backend and exits 1. See its README's _Headless clipboard_ note; the fix is an OSC 52 fallback in Core's `clip`. |
 
 ## Distro quirks worth a README note (and that will actually bite you)
 
@@ -677,10 +684,10 @@ nvim-treesitter's `main` hard-requires) and **tree-sitter-cli** (noble 0.20.8 vs
 0.26.1 floor in footnote ⁵ — no Debian/Ubuntu suite short of sid clears it). Its
 `install/packages.txt` therefore declares `# min:` floors that CI enforces, and a
 dozen tools come from pinned upstream assets instead (²⁸). Three more traps:
-**`yq`** in apt is kislyuk's *Python* tool, and the Go build (`yq-go`) is sid-only, so
+**`yq`** in apt is kislyuk's _Python_ tool, and the Go build (`yq-go`) is sid-only, so
 neither name is safe to list; **`cargo`** is 1.75, too old to build yazi/ast-grep/viddy,
 which are simply not installed (²⁹); and **`needrestart`**, preinstalled on Ubuntu
-Server, interposes on apt with a full-screen prompt that `DEBIAN_FRONTEND` does *not*
+Server, interposes on apt with a full-screen prompt that `DEBIAN_FRONTEND` does _not_
 suppress — an unattended bootstrap over SSH hangs forever without `NEEDRESTART_MODE=a`.
 Vendor-signed apt repos (Charm, 1Password) are used where upstream offers them; **PPAs
 are not**, because they are keyed to an Ubuntu series and would break the Debian lane.

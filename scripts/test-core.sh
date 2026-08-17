@@ -260,7 +260,7 @@ _clip_fails "clip-paste exits non-zero with no backend" "$CLIPPASTE"
 # nvim/ is the largest body of code in Core yet was validated only by luacheck
 # (static). Lua that is luacheck-clean can still be a BROKEN config — a bad vim API
 # call, a malformed lazy spec — that surfaces only when nvim actually starts, and it
-# fans out to eight repos. This loads the AUTHORED Lua headlessly: the pure config layer
+# fans out to nine repos. This loads the AUTHORED Lua headlessly: the pure config layer
 # (globals/options/keymaps/autocmds/clipboard/providers) AND every plugin SPEC file
 # (require evaluates the spec TABLE; lazy's deferred config/keys callbacks do NOT run,
 # so no plugin needs to be installed — every plugin `require` in this tree is inside
@@ -496,7 +496,7 @@ fi
 # breaks only when you actually edit. That blind spot shipped a real bug: the
 # TextYankPost highlight called a non-existent `vim.hl.hl_op`, throwing on every yank
 # AND delete (TextYankPost fires on both) while the edit still ran — a red error with
-# no failing gate, fanned out to eight repos. This closes it: load the autocmds, then
+# no failing gate, fanned out to nine repos. This closes it: load the autocmds, then
 # FIRE the events and assert the callbacks ran clean.
 #
 # Events are triggered via post-startup `-c` commands (NOT inside the `-u` init): an
@@ -565,7 +565,7 @@ fi
 # autocmds load and don't throw — it would still pass if FilePost never fired at all
 # (every deferred plugin silently dead: no LSP, no linting, no git signs) or fired
 # repeatedly (every later buffer re-emitting it). Neither shows up as an error, which
-# is exactly the kind of silent breakage that fans out to eight repos.
+# is exactly the kind of silent breakage that fans out to nine repos.
 #
 # So assert the CONTRACT, not just the absence of errors — fires EXACTLY ONCE, in both
 # startup shapes:
@@ -678,7 +678,7 @@ fi
 # untested: the "*" wildcard capability registration, the per-server vim.lsp.config calls,
 # the failed-module isolation, and which names actually get enabled could all regress while
 # the leaf probe stayed green. It is the file that decides whether you have LSP at all, and
-# it fans out to eight repos.
+# it fans out to nine repos.
 #
 # Close it by stubbing the two things that made it untestable — blink.cmp (via package.preload)
 # and the vim.lsp surface — then require the real module and assert what it registered. No
@@ -1860,12 +1860,12 @@ fi
 
 # ── F6. sync-core.sh — THE fan-out, on hermetic fixtures ─────────────────────
 # scripts/sync-core.sh is the highest-blast-radius script here: it gates on the audit,
-# runs `git subtree pull` into eight working trees, and stamps core.lock. Until now it
+# runs `git subtree pull` into nine working trees, and stamps core.lock. Until now it
 # had NO coverage at all — its only proof was sync-fanout.yml running it for real
 # against the live fleet, i.e. the fleet WAS the test.
 #
 # Everything below is a REFUSAL or an idempotency property. That matters for what these
-# tests are worth: a broken guard does not throw, it fans a bad tree out to eight repos
+# tests are worth: a broken guard does not throw, it fans a bad tree out to nine repos
 # and reports success. So each case asserts the script DECLINED, and (where the guard is
 # per-repo) that it declined without abandoning the repos after it.
 #
@@ -2016,6 +2016,42 @@ if ((_sc_subtree)); then
   else
     fail "sync-core: dotfiles-Windows would be fanned into (it carries no core/ subtree)"
   fi
+
+  # --- every shipped fallback array equals the canonical fleet -----------------
+  # scripts/os-repos.txt is the single source, but sync-core.sh, fleet-drift.sh and
+  # core-integrity.sh EACH keep a hardcoded array for when that file is missing or
+  # unreadable — and that array is what actually runs in exactly the situation you are
+  # least able to notice it. Registering dotfiles-Debian in the data file alone would
+  # have left three silent omissions, so assert the SHIPPED arrays against the SHIPPED
+  # file rather than trusting that whoever adds the next target remembers all four.
+  _fleet_canon="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e 's/[[:space:]]//g' \
+    "$HERE/scripts/os-repos.txt" | sort)"
+  # shellcheck disable=SC2043
+  for _fb in "sync-core.sh:ALL_OS_REPOS" "fleet-drift.sh:OS_REPOS" "core-integrity.sh:OS_REPOS"; do
+    _fb_file="${_fb%%:*}" _fb_var="${_fb##*:}"
+    # Take the FIRST array literal for that name: fleet-drift/core-integrity use the
+    # `((${#VAR[@]})) || VAR=(…)` form, so the assignment is the one with a `(` on it.
+    # awk, not a sed range. A `sed -n '/VAR=(/,/^)/p' ` range restarts on every later
+    # match of the opening address and happily ran on to the end of the file, dragging
+    # in every `dotfiles-core` mentioned in the usage heredoc below. awk with an explicit
+    # in/out flag stops at the FIRST closing paren, which is the array and nothing else.
+    # Comments are stripped too: both files carry prose INSIDE the block explaining why
+    # dotfiles-Windows is excluded, and that prose is otherwise scraped as membership.
+    _fb_list="$(awk -v v="$_fb_var" '
+        $0 ~ "^[[:space:]]*" v "=\\(" { inarr = 1; next }
+        inarr && /^[[:space:]]*\)/     { exit }
+        inarr                           { sub(/#.*/, ""); print }
+      ' "$HERE/scripts/$_fb_file" |
+      tr ' ' '\n' | grep -oE '^dotfiles-[A-Za-z]+$' | sort -u)"
+    if [[ -z "$_fb_list" ]]; then
+      fail "$_fb_file: could not parse the $_fb_var fallback array (did its shape change?)"
+    elif [[ "$_fb_list" == "$_fleet_canon" ]]; then
+      pass "$_fb_file: the $_fb_var fallback matches scripts/os-repos.txt exactly"
+    else
+      fail "$_fb_file: $_fb_var drifted from scripts/os-repos.txt — missing: $(comm -23 <(printf '%s\n' "$_fleet_canon") <(printf '%s\n' "$_fb_list") | tr '\n' ' ')extra: $(comm -13 <(printf '%s\n' "$_fleet_canon") <(printf '%s\n' "$_fb_list") | tr '\n' ' ')"
+    fi
+  done
+  unset _fleet_canon _fb _fb_file _fb_var _fb_list
 
   # --- --dry-run mutates nothing ----------------------------------------------
   _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
@@ -2218,7 +2254,7 @@ fi
 # bootstrap-test.yml asserts the symlink graph, but it is workflow_call-only and
 # dotfiles-core ships no bootstrap.sh — so it only ever runs from the nine OS repos.
 # Core's own CI unit-tests the blib_* helpers and never performs a real link run, which
-# means a bootstrap-lib regression is caught downstream, in eight repos, instead of here.
+# means a bootstrap-lib regression is caught downstream, in nine repos, instead of here.
 #
 # This closes that: link the ACTUAL Core tree into a sandbox $HOME/$config and assert the
 # graph a consumer depends on. Hermetic — the tpm directory is pre-seeded so the one-time
@@ -2255,7 +2291,7 @@ if have git; then
   }
   # The zsh chain is the load-order contract: every numbered Core fragment must land FLAT
   # in $config/zsh under its own basename, because loader.zsh globs NN-*.zsh there. A
-  # rename or a missed file here is precisely what silently drops a stage on eight boxes.
+  # rename or a missed file here is precisely what silently drops a stage on nine boxes.
   _lr_missing=""
   for f in "$HERE"/zsh/[0-9][0-9]-*.zsh; do
     b="$(basename "$f")"
@@ -4762,7 +4798,7 @@ UI="$HERE/zsh/05-ui.zsh"
 # Run an assertion under zsh; $1 = label, $2 = zsh body that must exit 0.
 # On FAILURE we capture the child's combined stdout+stderr and print it INDENTED
 # (mirroring the nvim/smoke sections above) — a red unit test must say WHY, not just
-# its label, or a CI failure that fans out to eight repos forces a local re-reproduction.
+# its label, or a CI failure that fans out to nine repos forces a local re-reproduction.
 # On PASS the output is discarded, so the expected _core_err/usage noise stays silent.
 check() { # check <label> <zsh-body>
   local out
@@ -6070,7 +6106,7 @@ ucheck "maint: maint-log rejects a non-numeric N in Core's voice" \
 # ── maint scheduler artifacts (systemd unit / launchd plist / cron line) ──────
 # maint-install GENERATES a systemd unit+timer, a launchd plist (XML), and a cron line —
 # fan-out artifacts that, until now, had NO gate: a malformed OnCalendar, a broken plist,
-# or a bad cron field only fails on the user's box, then fans out to eight repos. Every OTHER
+# or a bad cron field only fails on the user's box, then fans out to nine repos. Every OTHER
 # fan-out artifact class is gated (toml/yaml/json §6, workflows actionlint §8); this closes
 # the maint hole the same way. Hermetic: override _maint_scheduler to pick the branch,
 # stub systemctl/launchctl/crontab to no-ops (so nothing touches the real system), sandbox
@@ -6776,7 +6812,7 @@ ucheck "completions: every first-party verb has a compinit-resolved completion (
 
 # core-help coverage (B2): the cheat sheet is a HAND-MAINTAINED rows=() array — so a new
 # verb is trivially forgotten and the one discoverability surface silently drifts from
-# reality, with nothing to catch it across eight repos. Derive the public-verb set from the
+# reality, with nothing to catch it across nine repos. Derive the public-verb set from the
 # source (same technique as the completion gate above), then assert each appears in the
 # RENDERED core-help output (rows OR the footer line, where the op/health/front-door verbs
 # live). `cheat` is the alias and `core` is the dispatcher whose own help IS the sheet —
@@ -6816,7 +6852,7 @@ _flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/60-update.zsh"
 # ── git helper unit tests (git.zsh) (B2) ──────────────────────────────────────
 # git.zsh's trunk/branch resolution (git_main_branch's 6-way ref search, git_current_branch's
 # detached-HEAD fallback) is real logic that branch-aware aliases (gcom/grbm/gpu) ride on and
-# that fans out to eight repos — yet it was the ONE shell module with no behavioral coverage (only
+# that fans out to nine repos — yet it was the ONE shell module with no behavioral coverage (only
 # `zsh -n`). Drive each helper against throwaway repos, hermetic: HOME → sandbox and git config
 # pinned to /dev/null so the host's init.defaultBranch can't skew the result. Skips without git.
 hdr "git helper unit tests (git.zsh)"
@@ -6898,7 +6934,7 @@ ucheck "update: _pkgup_list parses pacman package names" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
 
 # ── op.zsh 1Password helpers (B7) ─────────────────────────────────────────────
-# op.zsh fans out to eight repos and handles SECRETS, yet had zero behavioral coverage. The
+# op.zsh fans out to nine repos and handles SECRETS, yet had zero behavioral coverage. The
 # module short-circuits (returns) unless `op` is on PATH, so we stub a fake `op` (echoes
 # its args) + a fake `clip` (captures stdin) on an isolated PATH — the same hermetic
 # technique as the clip ladder — and assert the verbs' input-guards, the op:// path
@@ -6962,7 +6998,7 @@ else
 fi
 
 # ── tmux status/popup scripts (U11) ───────────────────────────────────────────
-# The tmux helper scripts fan out to eight repos and were covered only by bash -n + shellcheck
+# The tmux helper scripts fan out to nine repos and were covered only by bash -n + shellcheck
 # (static). Their PORTABILITY CONTRACT — "emit a styled pill when there's something to show,
 # emit NOTHING (segment vanishes) otherwise" — is pure logic that a bad edit could break
 # silently (a status helper that errors blanks the whole bar). Drive the two data-driven
