@@ -13,37 +13,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
-## [v4.12.1] - 2026-08-16
-
 ### Fixed
-
-- **`blib_link` deleted a displaced symlink with no record, while backing up a regular
-  file** ([#430](https://github.com/dotgibson/dotfiles-core/issues/430)). A real file at
-  the destination was moved to `<dst>.pre-dotfiles.<epoch>` and counted; a symlink was
-  `rm -f`'d — whatever it pointed at — with no backup, no counter, and nothing in the run
-  summary. The early return above that branch only skips an **already-correct** link, so
-  the delete was reached precisely when the link pointed somewhere else, which is the one
-  case worth recording.
-
-  Not the rare path, the common one: the repos being wired are symlink farms, so `$dst` is
-  far more often a symlink than a regular file. `dotfiles-Kali` and `dotfiles-Defense` are
-  designed to coexist as red/blue twins, and whichever bootstrapped second silently
-  discarded the other's links; a user migrating off a hand-rolled tree lost every record of
-  where their fragments used to point. `bootstrap.sh` is advertised as idempotent and safe
-  to re-run, and backup-on-clobber is what made that credible — the guarantee quietly did
-  not hold for the thing it actually encounters most.
-
-  A displaced link is now **printed with its old target** (`relinking <dst> (was -> …)`)
-  and counted in a new `BLIB_RELINKED` tally, and the dry-run says what it is about to
-  displace (`would relink: <dst> (currently -> …)`) instead of a bare "would relink", which
-  read as _repoint_ rather than _discard unrecorded_. Deliberately logged rather than moved
-  aside: backing a symlink up would leave one stray link per fragment per run in
-  `~/.config` — a role switch relinks nearly everything — and the counter is deliberately
-  **separate from `BLIB_BACKED`** rather than folded into it, because "backed up" promises a
-  restorable `.pre-dotfiles.*` file on disk and the OS repos' unlink/restore paths read
-  exactly those. `blib_wire_summary` therefore gains a field:
-  `N linked · M seeded · K backed up · R relinked · S skipped`. An already-correct link is
-  still a silent no-op, so a plain re-run prints no relink noise.
 
 - **A failed `tpm` clone announced itself as a status line, so tmux quietly ended up with
   no plugin manager.** `blib_link_core`'s one-time clone reported failure with `blib_say` —
@@ -76,6 +46,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   offline: `GIT_ALLOW_PROTOCOL=file` makes git refuse the https transport, so the clone
   fails deterministically without depending on the remote being reachable or unreachable.
   They pin the stream (stderr, not stdout), the tally, and the git-error passthrough.
+
+## [v4.12.1] - 2026-08-16
+
+### Fixed
+
+- **`blib_link` deleted a displaced symlink with no record, while backing up a regular
+  file** ([#430](https://github.com/dotgibson/dotfiles-core/issues/430)). A real file at
+  the destination was moved to `<dst>.pre-dotfiles.<epoch>` and counted; a symlink was
+  `rm -f`'d — whatever it pointed at — with no backup, no counter, and nothing in the run
+  summary. The early return above that branch only skips an **already-correct** link, so
+  the delete was reached precisely when the link pointed somewhere else, which is the one
+  case worth recording.
+
+  Not the rare path, the common one: the repos being wired are symlink farms, so `$dst` is
+  far more often a symlink than a regular file. `dotfiles-Kali` and `dotfiles-Defense` are
+  designed to coexist as red/blue twins, and whichever bootstrapped second silently
+  discarded the other's links; a user migrating off a hand-rolled tree lost every record of
+  where their fragments used to point. `bootstrap.sh` is advertised as idempotent and safe
+  to re-run, and backup-on-clobber is what made that credible — the guarantee quietly did
+  not hold for the thing it actually encounters most.
+
+  A displaced link is now **printed with its old target** (`relinking <dst> (was -> …)`)
+  and counted in a new `BLIB_RELINKED` tally, and the dry-run says what it is about to
+  displace (`would relink: <dst> (currently -> …)`) instead of a bare "would relink", which
+  read as _repoint_ rather than _discard unrecorded_. Deliberately logged rather than moved
+  aside: backing a symlink up would leave one stray link per fragment per run in
+  `~/.config` — a role switch relinks nearly everything — and the counter is deliberately
+  **separate from `BLIB_BACKED`** rather than folded into it, because "backed up" promises a
+  restorable `.pre-dotfiles.*` file on disk and the OS repos' unlink/restore paths read
+  exactly those. `blib_wire_summary` therefore gains a field:
+  `N linked · M seeded · K backed up · R relinked · S skipped`. An already-correct link is
+  still a silent no-op, so a plain re-run prints no relink noise.
 
 - **The fan-out moved the tree and the lock, and left the pins pointing at the previous
   Core** ([#482](https://github.com/dotgibson/dotfiles-core/issues/482)). An OS repo names
