@@ -67,11 +67,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   reported with the grant to make, since GitHub's message is opaque unless you already know
   the fan-out edits workflow files.
 
+  `GITHUB-APP-AUTH.md` prescribed the failure it now has to fix: it listed Contents and
+  Pull requests and said "Everything else: **No access**", so an operator following the
+  setup guide built an App that cannot push the workflow-pin changes #482 added. It now
+  requires **Workflows: Read and write**, says why only some repos trigger it (the pin is
+  a property of the App, the workflow file only appears in repos that SHA-pin a caller),
+  and warns that editing an existing App's permissions mints the OLD set until the
+  installation owner accepts the review request.
+
   Guarding the `gh` calls matters as much as the push, and fails in a nastier shape: a rate
   limit or a per-repo API error there strands every _later_ repo even though this one's
   branch is already on the remote — work done and merely unannounced. Those cases now say
-  so explicitly ("branch pushed, but opening its PR failed — open it by hand from
-  `<branch>`") rather than surfacing as an opaque step abort.
+  so explicitly rather than surfacing as an opaque step abort, and they report the PR state
+  as **unknown**: the lookup itself is what failed, so an open PR may simply be hidden by
+  the same outage, and "no PR exists" would invite a duplicate. The summary asks the
+  operator to check the branch and open one only if none is there.
 
   **Deliberately not "retry without the workflow changes".** `core.lock` and the pins name
   the same Core; landing the lock while silently keeping stale pins is exactly the

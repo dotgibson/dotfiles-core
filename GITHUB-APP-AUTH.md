@@ -38,7 +38,27 @@ In **GitHub → Settings → Developer settings → GitHub Apps → New GitHub A
   - **Contents: Read and write** — the `git push` of the sync branch, and the
     `repository_dispatch` POST both require it.
   - **Pull requests: Read and write** — `gh pr create` for the fan-out PRs.
+  - **Workflows: Read and write** — since
+    [#482](https://github.com/dotgibson/dotfiles-core/issues/482) the fan-out moves each
+    repo's reusable-workflow SHA pins in the same commit that stamps `core.lock`, so the
+    sync branch can contain `.github/workflows/*` changes. GitHub refuses **any** push
+    from an App that touches a workflow file without this grant — `Contents: write` is
+    not enough — and it refuses the whole push, not just that file.
   - Everything else: **No access**.
+
+> **This one is not optional, even though only some repos need it.** Only repos that
+> SHA-pin a Core caller (`dotfiles-MacBook`, `dotfiles-Defense`) ever have a workflow file
+> in their sync branch — but the permission is a property of the **App**, not of a repo, so
+> without it those repos fail every fan-out. That is not hypothetical: the v4.12.1 fan-out
+> was refused on `dotfiles-MacBook` with *"refusing to allow a GitHub App to create or
+> update workflow `.github/workflows/auto-tag.yml` without `workflows` permission"*.
+>
+> **Changing permissions on an existing App requires the installation to accept them.**
+> GitHub emails the owner a review request; until it is approved the token is still minted
+> with the OLD permission set and the pushes keep failing with the same message. After
+> approving, confirm on the App's **Install App → ⚙ → Permissions** page rather than
+> assuming the edit took.
+
 - **Where can this App be installed?** **Only on this account.**
 
 Create it, then note the **App ID** (shown on the App's page). Under **Private keys**,
