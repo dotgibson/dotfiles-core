@@ -1051,6 +1051,62 @@ _classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init
 _classify_is "atuin/ config change → shell gate only" 'atuin/config.toml' true false
 _classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examples/atuin-daemon.service' false false
 
+# ── E2. PR link gate (scripts/ci-pr-link.sh) ──────────────────────────────────
+# #446 fixed #420 and #423 and merged green with NO closing keyword, so GitHub linked
+# nothing and both issues sat open looking like live bugs. pr-link-check.yml now gates
+# that, and the verdict logic lives in a script (like ci-classify.sh) precisely so it
+# can be pinned here instead of rotting untested inside workflow YAML.
+hdr "PR link gate (scripts/ci-pr-link.sh)"
+PRLINK="$HERE/scripts/ci-pr-link.sh"
+_prlink_is() { # _prlink_is <label> <title> <linked-count> <body> <want-verdict>
+  local got
+  got="$(printf '%s' "$4" | "$PRLINK" "$2" "$3" 2>/dev/null)"
+  if [[ "$got" == "verdict=$5" ]]; then
+    pass "$1"
+  else
+    fail "$1 (got: ${got:-<empty>}; want verdict=$5)"
+  fi
+}
+# The gated set: the repo's canonical Conventional-Commit shape (gen-release-notes.sh:50,
+# cliff.toml:56) — optional (scope), optional breaking `!`, then the `:` delimiter.
+_prlink_is "fix( PR with a linked issue → ok" 'fix(doctor): probe both names' 1 '' ok
+_prlink_is "fix( PR with no link and no reason → missing-link" 'fix(doctor): probe both names' 0 '' missing-link
+_prlink_is "unscoped fix: is gated too" 'fix: probe both names' 0 '' missing-link
+_prlink_is "breaking fix!: is gated too" 'fix!: probe both names' 0 '' missing-link
+_prlink_is "breaking scoped fix(x)!: is gated too" 'fix(doctor)!: probe both names' 0 '' missing-link
+_prlink_is "feat( is not gated (fix-only rule)" 'feat(doctor): new panel' 0 '' not-gated
+_prlink_is "chore( is not gated" 'chore(deps): bump actions' 0 '' not-gated
+# The delimiter is what separates a type from prose — without it, `fixup:` and an
+# ordinary sentence would both be swept in, and authors would learn to distrust the gate.
+_prlink_is "fixup: is not the fix type (delimiter, not prefix)" 'fixup: squash me' 0 '' not-gated
+_prlink_is "prose starting with the word is not gated" 'fixing a flaky test' 0 '' not-gated
+# The escape hatch, and its two failure modes.
+_prlink_is "No-Issue: with a reason exempts" 'fix(x): y' 0 'No-Issue: found in one pass, never filed' exempt
+_prlink_is "No-Issue: is case-insensitive and may be indented" 'fix(x): y' 0 '   no-issue: trivial typo' exempt
+_prlink_is "bare No-Issue: with no reason does NOT exempt" 'fix(x): y' 0 'No-Issue:' missing-link
+_prlink_is "no-issue: mid-prose does NOT exempt (line-anchored)" 'fix(x): y' 0 'there is no-issue: here' missing-link
+# THE ONE THAT MATTERS. pull_request_template.md documents the marker inside an HTML
+# comment; if the scan read the raw body, every unedited-template PR would exempt itself
+# and the gate would ship dead — green and green look identical, so nothing would catch it.
+_prlink_is "commented-out No-Issue: does NOT exempt (inline)" \
+  'fix(x): y' 0 '<!-- No-Issue: <reason> if there is no issue -->' missing-link
+_prlink_is "commented-out No-Issue: does NOT exempt (multi-line)" \
+  'fix(x): y' 0 $'<!--\nNo-Issue: <reason>\n-->' missing-link
+_prlink_is "a real marker after a comment still exempts" \
+  'fix(x): y' 0 $'<!-- guidance -->\nNo-Issue: genuinely no issue' exempt
+# Fail closed: a garbled count from the GraphQL probe must read as "no link proven",
+# never as a pass — a broken API call must not silently open the gate.
+_prlink_is "non-numeric linked count fails closed to 0" 'fix(x): y' 'unknown' '' missing-link
+# Usage error is its own exit code (2), distinct from a policy violation (1), so a
+# workflow that miscalls the script reads as broken rather than as a failing PR.
+# Asserted inline rather than via check(), which is zsh-only and defined further down.
+"$PRLINK" 'only-one-arg' </dev/null >/dev/null 2>&1
+if [[ $? -eq 2 ]]; then
+  pass "ci-pr-link.sh exits 2 on usage error"
+else
+  fail "ci-pr-link.sh exits 2 on usage error"
+fi
+
 # ── F. core/ pre-commit guard (lib/bootstrap-lib.sh blib_install_core_guard) ───
 # The guard hook (installed by sync-core.sh on every fan-out, and by a bootstrap on a
 # fresh clone) is the mechanical backstop for "never hand-edit vendored core/". Drive it
