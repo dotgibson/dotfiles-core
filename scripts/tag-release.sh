@@ -163,10 +163,11 @@ if [[ "$MODE" == publish ]]; then
     # `skip`, not `note` — there is no note() in scripts/lib/common.sh (it defines
     # pass/skip/fail/hdr/have), so this line printed "note: command not found" and the
     # operator never saw the notice. It survived because this branch only runs when main
-    # has ADVANCED past the release commit, an uncommon path that no test covers, and
-    # because a bare word that might be some command on PATH is not something the linter
-    # can flag. It fired for real publishing v4.12.2 — swallowing the very message it
-    # exists to give.
+    # has ADVANCED past the release commit — an uncommon path — and because a bare word
+    # that might be some command on PATH is not something the linter can flag. It fired
+    # for real publishing v4.12.2, swallowing the very message it exists to give.
+    # scripts/test-core.sh now drives this branch and asserts BOTH that the notice appears
+    # and that no "command not found" does, so the gap that hid this is closed.
     skip "origin/main has advanced $(git rev-list --count "$RELEASE_SHA..origin/main") commit(s) since the release — tagging the release commit, not the tip"
   fi
 
