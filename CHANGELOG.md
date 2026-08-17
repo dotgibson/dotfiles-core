@@ -47,6 +47,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   fails deterministically without depending on the remote being reachable or unreachable.
   They pin the stream (stderr, not stdout), the tally, and the git-error passthrough.
 
+- **One repo's failed push aborted the entire fan-out, so a release reached none of the
+  fleet.** The per-repo loop in `sync-fanout.yml` treats every error as per-repo — record
+  it, set `fail=1`, move to the next repo — except the three calls that talk to the remote:
+  `git push` and the `gh pr list` / `gh pr create` after it, all unguarded under
+  `set -euo pipefail` (a failing command substitution exits too). The first failure
+  therefore exited the step outright, skipping the remaining repos entirely.
+
+  It fired on the v4.12.1 cut. `dotfiles-MacBook` is first in `scripts/os-repos.txt`, and
+  its push was refused with _"refusing to allow a GitHub App to create or update workflow
+  `.github/workflows/auto-tag.yml` without `workflows` permission"_ — the fleet App has no
+  `workflows` grant, and since [#482](https://github.com/dotgibson/dotfiles-core/issues/482)
+  the fan-out rewrites `.github/workflows/*` SHA pins in repos that pin a Core caller. That
+  one repo took the other seven with it: five had synced cleanly and were ready to open a
+  PR, and none did. The release existed on `main` and in no OS repo at all.
+
+  All three are now guarded like every other per-repo step, so a bad repo costs one PR
+  instead of the fleet. The `workflows`-permission rejection is recognised by name and
+  reported with the grant to make, since GitHub's message is opaque unless you already know
+  the fan-out edits workflow files.
+
+  Guarding the `gh` calls matters as much as the push, and fails in a nastier shape: a rate
+  limit or a per-repo API error there strands every _later_ repo even though this one's
+  branch is already on the remote — work done and merely unannounced. Those cases now say
+  so explicitly ("branch pushed, but opening its PR failed — open it by hand from
+  `<branch>`") rather than surfacing as an opaque step abort.
+
+  **Deliberately not "retry without the workflow changes".** `core.lock` and the pins name
+  the same Core; landing the lock while silently keeping stale pins is exactly the
+  vendors-one-Core-runs-another split #482 closed, and it is invisible to `core-integrity`
+  and `verify-core` — which is what let it survive the first time. Failing that repo loudly
+  is the correct degradation; re-creating the split is not.
+
 ## [v4.12.1] - 2026-08-16
 
 ### Fixed
