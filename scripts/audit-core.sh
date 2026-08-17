@@ -64,8 +64,16 @@ SCOPE_NVIM=1
 # Shared palette + pass/skip/fail/hdr/have + _set_scope (one definition for every gate
 # script). Sourced HERE — before the arg loop below calls _set_scope — and after QUIET
 # is set so the lib's `: "${QUIET:=0}"` preserves it.
+#
+# Via the ALREADY-ABSOLUTE $HERE, not ${BASH_SOURCE[0]%/*}: line 48 has already cd'd,
+# while BASH_SOURCE stays relative to the caller's original directory, so the two
+# disagree the moment this script is invoked by a relative path from somewhere else.
+# `bash ../../repo/scripts/audit-core.sh` printed "lib/common.sh: No such file or
+# directory" and then carried on with every helper undefined. Pre-existing; found while
+# fixing the same shape in check-modern.sh, and fixed here rather than left as the one
+# copy of the bug the reader would trip over next.
 # shellcheck source=scripts/lib/common.sh
-source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+source "$HERE/scripts/lib/common.sh"
 # Render the active scope as test-core.sh expects it (shell,nvim | shell | nvim | none).
 _scope_str() {
   local s=""

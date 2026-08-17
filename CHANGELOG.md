@@ -71,11 +71,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the shared lib rather than in `audit-core.sh` so `scripts/test-core.sh` exercises the real
   implementation instead of a copy that could drift; five new assertions pin the behaviour,
   including that a gitignored script stays excluded and that the enumeration split stays
-  exact — seven content gates through the helper, four git-state gates direct. That last
-  one is deliberately a tripwire rather than a floor: a "at least seven helper calls" check
-  would sit green while a _newly added_ gate reintroduced the bug with a bare
-  `git ls-files`, so adding either kind of enumeration now fails the suite until someone
-  decides which side of the rule it belongs on.
+  exact, per file — twelve content gates through the helper, three git-state gates
+  direct. That last one is deliberately a tripwire rather than a floor: an "at least N
+  helper calls" check would sit green while a _newly added_ gate reintroduced the bug with
+  a bare `git ls-files`, so adding either kind of enumeration now fails the suite until
+  someone decides which side of the rule it belongs on.
 
   **Exec-bits deliberately unchanged.** That gate reads index modes (`git ls-files -s`), and
   an untracked file has no index entry — it falls on the git-state side of the rule above.
