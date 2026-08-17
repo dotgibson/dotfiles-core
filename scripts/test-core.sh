@@ -1029,6 +1029,116 @@ else
   fail "fail digest: expected empty for both no-marker ('$_fdout') and missing file ('$_fdout2')"
 fi
 
+# ── E0. content-gate file set (_audit_ls, scripts/lib/common.sh) ──────────────
+# The audit's content gates (bash -n, zsh -n, shellcheck, the pipefail scanner, toml/
+# yaml/json) used to enumerate with a bare `git ls-files`, which lists ONLY tracked
+# files. A brand-new script was therefore invisible until `git add`, and the gate still
+# reported "all clean" — a green audit that had not read the file. That shipped: #496's
+# scripts/ci-pr-link.sh passed a local 261/0 audit, then failed all four CI legs on two
+# SC2016 violations. Pin the enumeration so the blind spot cannot come back.
+#
+# Driven in a THROWAWAY repo, not this one: asserting against the real checkout would
+# depend on whatever happens to be untracked in the developer's tree, which is exactly
+# the kind of ambient state that makes a test lie.
+if have git; then
+  hdr "content-gate file set (_audit_ls)"
+  ALSREPO="$SANDBOX/audit-ls-repo"
+  rm -rf "$ALSREPO"
+  mkdir -p "$ALSREPO"
+  git -C "$ALSREPO" init -q
+  git -C "$ALSREPO" config user.email t@example.com
+  git -C "$ALSREPO" config user.name tester
+  printf 'ignored/\n' >"$ALSREPO/.gitignore"
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/tracked.sh"
+  git -C "$ALSREPO" add -A
+  git -C "$ALSREPO" commit -qm init
+  # Created AFTER the commit: the exact state the bug was blind to.
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/untracked.sh"
+  mkdir -p "$ALSREPO/ignored"
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/ignored/skipped.sh"
+  _als_out="$(cd "$ALSREPO" && _audit_ls '*.sh')"
+  _als_has() { # _als_has <label> <needle> <want:0|1>
+    local n=0
+    # Herestring, NOT `printf … | grep -qx`: that is the SIGPIPE shape §5d exists to
+    # catch — grep exits on its first match, printf takes EPIPE, and pipefail reports
+    # the pipeline as failed, which here would silently flip an assertion to false.
+    # The list is small enough to fit the pipe buffer today, so it happens to work;
+    # "happens to work" is exactly what this file should not rely on.
+    grep -qx "$2" <<<"$_als_out" && n=1
+    if ((n == $3)); then pass "$1"; else fail "$1 (got list: ${_als_out//$'\n'/ })"; fi
+  }
+  _als_has "_audit_ls includes a tracked script" 'tracked.sh' 1
+  # THE REGRESSION GUARD: this is the assertion that would have failed before the fix.
+  _als_has "_audit_ls includes an UNTRACKED script (the #496 blind spot)" 'untracked.sh' 1
+  # --exclude-standard: a gitignored scratch script must not start failing anyone's audit.
+  _als_has "_audit_ls excludes a gitignored script" 'ignored/skipped.sh' 0
+  # Deduped: a tracked file must not be listed twice just because both probes ran.
+  _als_n="$(printf '%s\n' "$_als_out" | grep -cx 'tracked.sh')"
+  if [[ "$_als_n" == 1 ]]; then
+    pass "_audit_ls does not double-list a tracked file"
+  else
+    fail "_audit_ls double-listed a tracked file ($_als_n times)"
+  fi
+  # The audit's CONTENT gates must all use _audit_ls; the GIT-STATE gates — the --changed
+  # scope probe, manifest reverse-drift, and the index exec-bit check — must NOT.
+  #
+  # Manifest EXPANSION is deliberately absent from that list: it feeds §5c, which cat|greps
+  # every file it names, so it is a content gate wearing manifest clothing and routes
+  # through _audit_ls like the rest. It sat in this list while the implementation said
+  # otherwise, which is how it got misfiled in the first place.
+  #
+  # Assert the split EXACTLY, in both directions. A floor (">= N helper calls") looks like
+  # it guards this and does not: once seven calls exist, a NEW content gate can enumerate
+  # with a bare `git ls-files` and the floor is still satisfied — the guard would sit green
+  # through the reintroduction of the very bug it exists to prevent. Worse, a later helper
+  # call could mask a regression elsewhere by keeping the total up.
+  #
+  # Exact counts are deliberately a tripwire: adding EITHER kind of enumeration fails here
+  # until someone bumps the number, which is the moment to decide which side of the rule
+  # the new gate belongs on. That decision is the whole point; a test that lets it be made
+  # implicitly is not guarding anything.
+  #
+  # EVERY gate script that `make audit` consults, not just audit-core.sh. The first
+  # version guarded one file, and the rule was quietly broken in three places outside it:
+  # audit-core.sh's own manifest expansion (which feeds the §5c OS-path CONTENT scan and
+  # merely looks like a manifest question), check-modern.sh's workflow inventory, and
+  # nvim-reachability.sh's module inventory. A rule documented as universal but enforced
+  # on one file is worse than no rule — it reads as covered.
+  #
+  # Count CALLS robustly: `_audit_ls '<glob>'`, `_audit_ls "$m"`, and `_audit_ls \` with
+  # the pathspecs on the next line all count. Two earlier patterns here were too narrow
+  # and undercounted exactly those forms. The definition line `_audit_ls() {` and comment
+  # lines are excluded from both counts, so prose ABOUT either mechanism never trips it.
+  _als_calls() { # _als_calls <file> → number of _audit_ls call sites
+    grep -nE '(^|[^[:alnum:]_])_audit_ls([[:space:]]|$)' "$1" 2>/dev/null |
+      grep -vE '^[0-9]+:[[:space:]]*#' | grep -vcE '_audit_ls\(\)'
+  }
+  _als_direct() { # _als_direct <file> → number of bare `git ls-files` sites
+    grep -nE 'git ls-files' "$1" 2>/dev/null | grep -vcE '^[0-9]+:[[:space:]]*#'
+  }
+  # file:want_content:want_direct — exact on BOTH sides. A floor would stop guarding the
+  # moment the count was met: a NEW content gate could use bare `git ls-files` and still
+  # satisfy it. Exactness makes adding either kind of enumeration fail here until someone
+  # picks a side, which is the decision this rule exists to force.
+  _als_expect="audit-core.sh:8:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  _als_bad=""
+  for _als_spec in $_als_expect; do
+    _als_f="${_als_spec%%:*}"
+    _als_rest="${_als_spec#*:}"
+    _als_wc="${_als_rest%%:*}"
+    _als_wd="${_als_rest##*:}"
+    _als_gc="$(_als_calls "$HERE/scripts/$_als_f")"
+    _als_gd="$(_als_direct "$HERE/scripts/$_als_f")"
+    [[ "$_als_gc" == "$_als_wc" && "$_als_gd" == "$_als_wd" ]] ||
+      _als_bad="${_als_bad}${_als_f} (got ${_als_gc}/${_als_gd}, want ${_als_wc}/${_als_wd}) "
+  done
+  if [[ -z "$_als_bad" ]]; then
+    pass "enumeration split is exact across all three gate scripts (content via _audit_ls / git-state direct)"
+  else
+    fail "enumeration split changed: ${_als_bad}— a new enumeration must pick a side (content → _audit_ls, git-state → git ls-files), then update these counts"
+  fi
+fi
+
 hdr "CI path classifier (scripts/ci-classify.sh)"
 CLASSIFY="$HERE/scripts/ci-classify.sh"
 _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
