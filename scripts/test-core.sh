@@ -1059,7 +1059,12 @@ if have git; then
   _als_out="$(cd "$ALSREPO" && _audit_ls '*.sh')"
   _als_has() { # _als_has <label> <needle> <want:0|1>
     local n=0
-    printf '%s\n' "$_als_out" | grep -qx "$2" && n=1
+    # Herestring, NOT `printf … | grep -qx`: that is the SIGPIPE shape §5d exists to
+    # catch — grep exits on its first match, printf takes EPIPE, and pipefail reports
+    # the pipeline as failed, which here would silently flip an assertion to false.
+    # The list is small enough to fit the pipe buffer today, so it happens to work;
+    # "happens to work" is exactly what this file should not rely on.
+    grep -qx "$2" <<<"$_als_out" && n=1
     if ((n == $3)); then pass "$1"; else fail "$1 (got list: ${_als_out//$'\n'/ })"; fi
   }
   _als_has "_audit_ls includes a tracked script" 'tracked.sh' 1
@@ -1074,10 +1079,15 @@ if have git; then
   else
     fail "_audit_ls double-listed a tracked file ($_als_n times)"
   fi
-  # The audit's CONTENT gates must all use _audit_ls; the GIT-STATE gates (the --changed
-  # scope probe, manifest reverse-drift, index exec-bits, manifest expansion) must NOT.
+  # The audit's CONTENT gates must all use _audit_ls; the GIT-STATE gates — the --changed
+  # scope probe, manifest reverse-drift, and the index exec-bit check — must NOT.
   #
-  # Assert the split EXACTLY, in both directions. A floor (">= 7 helper calls") looks like
+  # Manifest EXPANSION is deliberately absent from that list: it feeds §5c, which cat|greps
+  # every file it names, so it is a content gate wearing manifest clothing and routes
+  # through _audit_ls like the rest. It sat in this list while the implementation said
+  # otherwise, which is how it got misfiled in the first place.
+  #
+  # Assert the split EXACTLY, in both directions. A floor (">= N helper calls") looks like
   # it guards this and does not: once seven calls exist, a NEW content gate can enumerate
   # with a bare `git ls-files` and the floor is still satisfied — the guard would sit green
   # through the reintroduction of the very bug it exists to prevent. Worse, a later helper
