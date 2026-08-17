@@ -2614,7 +2614,11 @@ if have git; then
   printf '1.1.0\n' >"$TR/work/core.version"
   printf '# Changelog\n\n## [Unreleased]\n\n## [v1.1.0] - 2026-02-02\n\n- new\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/work/CHANGELOG.md"
 
-  _tr_run() { (cd "$TR/work" && env CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
+  # LC_ALL=C so assertions on this output mean the same thing on every box: the script's
+  # own strings are ours and stable, but anything bash or git emits — notably a shell's
+  # "command not found" — is localized, and an assertion that greps a translated
+  # diagnostic silently stops matching rather than failing.
+  _tr_run() { (cd "$TR/work" && env LC_ALL=C CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
 
   # THE property. Phase 1 commits and must leave NO tag behind — there must be nothing
   # for a stray push to carry while the commit is still off main.
@@ -2678,12 +2682,25 @@ if have git; then
   # might be some command on PATH; the assertions above only ever inspected tags, never the
   # output. It fired for real while publishing v4.12.2.
   #
-  # Deliberately generic: matching "command not found" rather than `note` catches the NEXT
-  # undefined helper too, which is the actual failure class.
-  if ! grep -qi 'command not found' <<<"$_tr_out"; then
-    pass "tag-release: --publish calls no undefined helper (its output has no 'command not found')"
-  else
+  # BOTH halves, because either alone is satisfiable by the wrong thing:
+  #   * absence of the shell diagnostic alone passes if the notice is DELETED — the
+  #     user-visible regression (no notice at all) would sail through;
+  #   * presence of the notice alone would pass while a second, later helper was undefined.
+  # And the diagnostic is matched only as a NEGATIVE, because bash localizes "command not
+  # found" — a translated shell would silently satisfy a positive match. The notice text
+  # is ours and stable, so that is the half worth asserting positively. _tr_run pins
+  # LC_ALL=C so the negative match stays meaningful wherever this runs.
+  # Order matters for the DIAGNOSIS, not the verdict. An undefined helper fails both halves
+  # at once — bash prints "…: command not found" and the message text never appears, since
+  # the words were arguments to a command that does not exist — so testing the missing
+  # notice first would report "deleted? suppressed?" for a helper that is merely misspelled.
+  # Check the specific cause first and let the general one catch the rest.
+  if grep -qi 'command not found' <<<"$_tr_out"; then
     fail "tag-release: --publish invoked an undefined helper: $(grep -i 'command not found' <<<"$_tr_out" | head -1)"
+  elif ! grep -q 'origin/main has advanced' <<<"$_tr_out"; then
+    fail "tag-release: --publish printed NO advanced-tip notice — the fixture advanced the tip, so it was due (deleted? suppressed?)"
+  else
+    pass "tag-release: --publish emits the advanced-tip notice, via a helper that exists"
   fi
   # ...and the moving major alias rides along to the same commit.
   if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_release_sha" ]]; then

@@ -140,19 +140,21 @@ MAJOR survived the fetch, pointing at a dead commit).
 > abandoning *before* publish. `--publish` creates the immutable `vX.Y.Z` locally, then
 > moves `vN`, then pushes both atomically; if it dies between the first and last of those,
 > a local `vX.Y.Z` is left behind with **nothing pushed**. That is the safe side of the
-> failure — no tag reached origin, so neither `release.yml` nor `sync-fanout.yml` fired —
-> but re-running then hits the "tag already exists" guard and refuses. Clear the debris
-> first:
+> failure — no tag reached origin, so neither `release.yml` nor `sync-fanout.yml` fired.
+>
+> **Just re-run `make publish`.** The local leftover does not block the retry: the publish
+> path checks only whether the tag exists **on origin**, and then force-creates the local
+> tag with `git tag -fa`, overwriting the leftover. (The "tag already exists" guard that
+> *does* consult a local tag belongs to phase 1, the commit path — not to `--publish`.)
+>
+> The check worth running first is about origin, not your clone:
 >
 > ```bash
-> git tag -l 'vX.Y.Z'                  # confirm it is local-only…
-> git ls-remote --tags origin 'refs/tags/vX.Y.Z'   # …and absent on origin (no output)
-> git tag -d vX.Y.Z                    # then re-run: make publish
+> git ls-remote --tags origin 'refs/tags/vX.Y.Z'   # no output = never published, retry freely
 > ```
 >
-> Check the remote before deleting: if the tag **is** on origin the release published and
-> must not be retagged — it is immutable, and the version is spent. Tags are shared across
-> worktrees, so `git tag -d` from any of them clears it. Seen for real in v4.12.2, where
+> If that prints a SHA the release published: the tag is immutable, the version is spent,
+> and the fix is a new patch release rather than a retry. Seen for real in v4.12.2, where
 > the alias move aborted under `tag.gpgsign`
 > ([#506](https://github.com/dotgibson/dotfiles-core/issues/506)).
 
