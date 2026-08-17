@@ -238,7 +238,7 @@ jobs:
 
             # Push per repo, and NEVER let one repo's failure deny the others their PR.
             # This ran unguarded under `set -e`, so the first bad push aborted the whole
-            # loop: on the v4.12.1 cut dotfiles-MacBook was refused and the remaining seven
+            # loop: on the v4.12.1 cut dotfiles-MacBook was refused and the remaining eight
             # repos — five of them already synced and ready — got no PR at all. A release
             # reached NONE of the fleet over one repo's permission problem. The loop
             # already treats every other per-repo error this way (fail=1 + continue); the

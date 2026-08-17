@@ -1,6 +1,6 @@
 # Release Strategy
 
-How and when changes ship across the ten-repo fleet. This is the **policy
+How and when changes ship across the eleven-repo fleet. This is the **policy
 layer** that ties together the machinery already in the tree — `core.version`,
 `scripts/release.sh`, `scripts/sync-core.sh`, the `core.lock` provenance stamp,
 `scripts/fleet-drift.sh`, and the weekly bots — into one cadence, one tagging
@@ -15,7 +15,7 @@ The short version: **Core is the only thing that is versioned and released. The
 OS and Role repos are consumers that pull a named Core version when they choose
 to.** Releases are cut on a predictable monthly rhythm (plus out-of-band for
 security), tagged `vX.Y.Z`, proven green by the audit before they fan out, and
-rolled out canary-first so a bad Core can never reach all eight operating
+rolled out canary-first so a bad Core can never reach all nine operating
 systems at once.
 
 ## 1. The unit of release
@@ -40,8 +40,8 @@ versioned thing (Core) vendored into thin per-OS consumers**:
 - **`dotfiles-web`** documents the system; it ships when its content is true,
   not on this cadence.
 
-This is deliberate. Versioning eight repos independently would multiply the
-release surface eightfold for no benefit: the OS layer is a thin shim over
+This is deliberate. Versioning nine repos independently would multiply the
+release surface ninefold for no benefit: the OS layer is a thin shim over
 package manager, clipboard, and paths, and most of what changes a host is Core.
 
 ## 2. Release cadence
@@ -140,7 +140,7 @@ A **three-layer, multi-repo model with Core vendored by `git subtree`**:
 | **Role** | `dotfiles-Kali` (offensive), `dotfiles-Defense` (blue) | engagement / detection tooling layered on an OS |
 
 Each OS repo therefore carries **only** vendored Core plus its own thin OS layer
-— not the other seven OSes' files. The zsh **load order is the contract**
+— not the other eight OSes' files. The zsh **load order is the contract**
 (`tools → ui → options → history → aliases → git → functions → fzf → bindings →
 plugins → op → maint → update → os → local`); OS and Role repos extend it by
 appending stages (`… os offensive local` on Kali, `… os defense local` on

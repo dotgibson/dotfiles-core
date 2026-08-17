@@ -5,7 +5,7 @@
 #
 # core.manifest calls itself "the contract. Audit scripts and the promotion
 # checklist read it." This is that audit script. It verifies Core is internally
-# consistent BEFORE it gets vendored (via scripts/sync-core.sh) into all eight OS repos,
+# consistent BEFORE it gets vendored (via scripts/sync-core.sh) into all nine OS repos,
 # where a defect would fan out N-way.
 #
 # Checks (each is a section; a failure in one does not abort the others):
@@ -361,7 +361,7 @@ done < <(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 if ((SCOPE_SHELL)); then
   if have zsh; then
     # The sourced modules AND the autoloaded completion functions (zsh/completions/_*,
-    # no .zsh extension) — both are zsh that fans out to eight repos; both must parse.
+    # no .zsh extension) — both are zsh that fans out to nine repos; both must parse.
     while IFS= read -r f; do
       if zsh -n "$f" 2>/dev/null; then pass "zsh -n  $f"; else fail "zsh syntax error: $f"; fi
     done < <(_audit_ls 'zsh/*.zsh' 'zsh/completions/*')
@@ -393,7 +393,7 @@ fi
 # ── 4b. nvim module reachability (the orphan backstop) ───────────────────────
 # core.manifest lists `nvim/` as a DIRECTORY, so §1's manifest⇄fs drift check auto-lists
 # every new path under it and cannot see an orphan — a lua module nothing loads would sit
-# in the tree and fan out to all eight OS repos silently. core.manifest said that gap was
+# in the tree and fan out to all nine OS repos silently. core.manifest said that gap was
 # covered "by verify-core.sh instead"; that script has never existed here (#454). The real
 # logic — a graph walk from nvim/init.lua, not a "is this name mentioned" scan — lives in
 # the script below, along with the rationale for its roots and its two resolved edges. It
@@ -488,7 +488,7 @@ fi
 # ── 5c. Core⇄OS boundary (portable shell modules carry no OS-absolute paths) ──
 # README's contract: "if it changes when the OS changes, it does NOT belong in Core."
 # That rule is documented but was ungated — a hard-coded /opt/homebrew, /home/linuxbrew,
-# or macOS ~/Library path could slip into a portable shell module and fan out to eight repos
+# or macOS ~/Library path could slip into a portable shell module and fan out to nine repos
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
 # zsh/55-maint.zsh — the scheduler CONTROL SURFACE whose launchd arm legitimately writes
 # ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape);
@@ -814,7 +814,7 @@ else
   skip "tool download integrity ($VERSIONS_ENV unreadable)"
 fi
 
-# core.version is the human-readable Core stamp vendored into all eight OS repos (read by
+# core.version is the human-readable Core stamp vendored into all nine OS repos (read by
 # the `core-version` verb). A missing or malformed stamp would fan out a bogus version
 # everywhere, so assert it exists and is SemVer-shaped (MAJOR.MINOR.PATCH, optional
 # -prerelease). Single line only — the verb and sync-core.sh both read it whole.

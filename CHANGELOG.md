@@ -3,7 +3,7 @@
 All notable changes to **dotfiles-core** are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Core is the single source of truth vendored into eight repos via
+Core is the single source of truth vendored into nine repos via
 `git subtree pull --prefix=core <core-remote> main --squash` (see `scripts/sync-core.sh`).
 Every entry below is therefore a change those repos receive on their next sync —
 this file is the human-readable record of _what_ a sync will bring, complementing
@@ -34,6 +34,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   under `gpgsign` (so the guard is guarding something), and that the script no longer uses
   that form. Neither needs a signing key, so both run in CI — where this bug was
   structurally invisible, because CI signs nothing.
+
+### Added
+
+- **`dotfiles-Debian` joins the fleet as the ninth Core-vendoring repo.** It was planned
+  once, cancelled, and left a "no longer being pursued" note in `scripts/os-repos.txt`
+  on the grounds that `dotfiles-Kali` covered the Debian family. That reasoning does not
+  survive contact with a plain Ubuntu box: Kali is a rolling sid derivative carrying a
+  67-package offensive role layer. The note is removed and the repo registered — in
+  `scripts/os-repos.txt` **and** in the hardcoded fallback arrays in `sync-core.sh`,
+  `fleet-drift.sh` and `core-integrity.sh`, which are what actually run when the data
+  file is unreadable and would otherwise have silently omitted it.
+- **`claude-routines-call.yml` accepts `distro: debian`.** That allowlist is enforced at
+  runtime (`::error::unsupported distro`), not merely documented, so the new repo's
+  routine caller would have red-failed without this. `/os-package-availability` gains
+  the matching guidance, including the rule that on a frozen LTS "does the name resolve"
+  and "is it a version Core can use" are different questions.
+- **`PORTING-MATRIX.md` gains a Debian/Ubuntu column** in both tables, a quirks
+  paragraph, a clipboard row, and footnotes ²⁸ (pinned upstream release asset) and ²⁹
+  (deliberately not installed). **The column-order contract changed**: the last cell on
+  a package row is now Debian/Ubuntu, not Kali — `/os-package-availability` asserted the
+  old order and has been updated with it.
 
 ## [v4.12.2] - 2026-08-17
 
