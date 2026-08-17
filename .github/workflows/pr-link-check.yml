@@ -67,29 +67,47 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -uo pipefail
-          # shellcheck disable=SC2016  # $owner/$repo/$number are GRAPHQL variables, bound
-          # by the -f/-F flags below. Single quotes are required: letting the shell expand
-          # them would send an empty query and the probe would silently count nothing.
-          #
           # closingIssuesReferences is the SAME thing GitHub itself uses to auto-close
           # on merge, so this asks the question the bug was actually about. It counts
           # both routes — a closing keyword in the body AND a manual link from the
           # "Development" sidebar — which is why the check can't be satisfied by
           # cosmetic text like "Refs #420" that reads like a link but closes nothing.
-          count="$(gh api graphql \
-            -f query='query($owner:String!,$repo:String!,$number:Int!){
-              repository(owner:$owner,name:$repo){
-                pullRequest(number:$number){
-                  closingIssuesReferences(first:20){ totalCount }
+          # RETRY, because a single attempt is not enough in practice. github.com served
+          # sustained 503s during one session here — enough to fail this probe on a PR
+          # whose link was demonstrably intact (#499 → #498), and enough to make several
+          # unrelated API calls fail alongside it. A transient blip must not reach the
+          # verdict logic at all; that path exists for a genuinely unreachable API, not
+          # for ordinary flakiness. Backoff is 0s/2s/6s/12s — quadratic, ~20s worst case,
+          # well inside the job's 5-minute budget. See #500.
+          count=""
+          for attempt in 1 2 3 4; do
+            # shellcheck disable=SC2016  # $owner/$repo/$number are GRAPHQL variables,
+            # bound by the -f/-F flags below. Single quotes are required: letting the
+            # shell expand them would send an empty query, and the probe would then
+            # report a confident zero for a PR it never actually asked about.
+            if count="$(gh api graphql \
+              -f query='query($owner:String!,$repo:String!,$number:Int!){
+                repository(owner:$owner,name:$repo){
+                  pullRequest(number:$number){
+                    closingIssuesReferences(first:20){ totalCount }
+                  }
                 }
-              }
-            }' \
-            -f owner="$OWNER" -f repo="$REPO" -F number="$NUMBER" \
-            --jq '.data.repository.pullRequest.closingIssuesReferences.totalCount' 2>/dev/null)" || count=""
-          # An empty/garbled result means the API call failed, not that the PR is
-          # clean. ci-pr-link.sh coerces a non-numeric count to 0 (fail closed), so
-          # the worst case is asking the author for a link or a reason — never a
-          # silently skipped gate.
+              }' \
+              -f owner="$OWNER" -f repo="$REPO" -F number="$NUMBER" \
+              --jq '.data.repository.pullRequest.closingIssuesReferences.totalCount' 2>/dev/null)" \
+              && [[ "$count" =~ ^[0-9]+$ ]]; then
+              break
+            fi
+            # Require a NUMERIC result, not merely exit 0: gh can succeed while --jq
+            # yields empty (a partial GraphQL response with an errors block), and an
+            # empty string would otherwise be mistaken for a successful "no links".
+            count=""
+            printf 'probe attempt %s failed; retrying\n' "$attempt" >&2
+            sleep $(((attempt - 1) * (attempt - 1) + attempt - 1))
+          done
+          # `unknown` is a DISTINCT state, not zero. ci-pr-link.sh gives it its own
+          # verdict (probe-failed) so the check never tells an author their linked PR
+          # has no link — it still fails, but it says the API was unreachable.
           printf 'linked=%s\n' "${count:-unknown}" | tee -a "$GITHUB_OUTPUT"
 
       - name: Enforce the link-or-reason rule
