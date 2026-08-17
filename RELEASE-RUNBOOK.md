@@ -211,8 +211,12 @@ What you do with the alias depends on the bump you chose in §1.0
   `@v4` picks the change up automatically on its next run. **No caller edits.** This
   auto-fan-out of guard/bootstrap fixes is the whole reason the alias moves.
 - **MAJOR** — you are minting a **new** major. In step 5, `vN` is the **new** alias (from
-  `v4` today, that is `v5`), created fresh at the merged tip (`git tag -fa v5 origin/main -m v5 &&
-  git push -f origin v5`). **Leave the previous alias frozen:** do *not* run the `vN` line
+  `v4` today, that is `v5`), created fresh at the **release commit** (`git tag -fa v5
+  v5.0.0^{commit} -m v5 && git push -f origin v5`). Target the peeled release tag, **not**
+  `origin/main`: if main has advanced since the release merged, tagging the tip points `v5`
+  at later unrelated work while the immutable `v5.0.0` points at the release — two aliases
+  for one release, disagreeing. `make publish` targets the release commit for exactly this
+  reason, and says so when the tip has moved. **Leave the previous alias frozen:** do *not* run the `vN` line
   against `v4` — advancing it would push the breaking change onto every caller still pinned
   `@v4`. Then bump the callers that should adopt the new major from `@v4` to `@v5` **by hand** — that fleet-wide `uses:`
   edit is the single intentional, reviewed change a MAJOR is meant to be, and it's tracked as
