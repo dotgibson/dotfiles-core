@@ -13,34 +13,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
-### Added
-
-- **CI now fails a `fix(…)` PR that closes no issue and gives no reason.** #446 fixed two
-  reported bugs — #420 (starship) and #423 (carapace) — and merged green with no closing
-  keyword in its body. GitHub therefore linked nothing, both issues stayed **open**, and
-  days later a reader re-derived a 2021 upstream function rename and re-ran the reproducer
-  to re-confirm a bug that had already shipped in v4.12.0. The code was correct the whole
-  time; the _link_ was missing, and no check objected.
-
-  `.github/workflows/pr-link-check.yml` now asks GitHub for the PR's
-  `closingIssuesReferences` — the same field GitHub itself uses to auto-close on merge, so
-  cosmetic text like "Refs #420" cannot satisfy it — and requires a `fix(…)` PR to close at
-  least one issue. The escape hatch is a `No-Issue: <reason>` line in the body, because a
-  genuine fix is often found and fixed in one pass with nothing filed; the reason is what a
-  future reader finds in place of a link. `pull_request_template.md` documents both routes.
-
-  Gated set is `fix` only, matched with the delimiter-aware Conventional-Commit regex from
-  `scripts/gen-release-notes.sh`, so `fixup:` and ordinary prose that merely starts with
-  the word are untouched. That is deliberately the stricter of the repo's two parsers —
-  `cliff.toml` groups on a bare `^fix`, which would also sweep in `fixup:` — because a
-  false `not-gated` only declines to ask for a link, while a false gate would demand one
-  from a PR that is not a fix and teach authors to route around the check. The verdict
-  logic lives in
-  `scripts/ci-pr-link.sh` rather than inline YAML — shellcheck'd and unit-tested in
-  `scripts/test-core.sh`, following the `scripts/ci-classify.sh` precedent — and it is its
-  own workflow rather than a job in `ci.yml` so that a body edit re-runs one GraphQL query
-  instead of the whole nine-repo audit matrix.
-
 ### Fixed
 
 - **`core-doctor` reported `✗ git-absorb` on the whole Debian family, for a tool that was
@@ -91,6 +63,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   quoted as one cell, and whether Debian's own build uses the exec-path is marked unverified.
   Latent elsewhere: Git for Windows has a `mingw64/libexec/git-core` with the same shape, but
   scoop/winget/cargo installs land on `PATH`, so no `dotfiles-Windows` change is needed yet.
+
+## [v4.12.2] - 2026-08-17
+
+### Added
+
+- **CI now fails a `fix(…)` PR that closes no issue and gives no reason.** #446 fixed two
+  reported bugs — #420 (starship) and #423 (carapace) — and merged green with no closing
+  keyword in its body. GitHub therefore linked nothing, both issues stayed **open**, and
+  days later a reader re-derived a 2021 upstream function rename and re-ran the reproducer
+  to re-confirm a bug that had already shipped in v4.12.0. The code was correct the whole
+  time; the _link_ was missing, and no check objected.
+
+  `.github/workflows/pr-link-check.yml` now asks GitHub for the PR's
+  `closingIssuesReferences` — the same field GitHub itself uses to auto-close on merge, so
+  cosmetic text like "Refs #420" cannot satisfy it — and requires a `fix(…)` PR to close at
+  least one issue. The escape hatch is a `No-Issue: <reason>` line in the body, because a
+  genuine fix is often found and fixed in one pass with nothing filed; the reason is what a
+  future reader finds in place of a link. `pull_request_template.md` documents both routes.
+
+  Gated set is `fix` only, matched with the delimiter-aware Conventional-Commit regex from
+  `scripts/gen-release-notes.sh`, so `fixup:` and ordinary prose that merely starts with
+  the word are untouched. That is deliberately the stricter of the repo's two parsers —
+  `cliff.toml` groups on a bare `^fix`, which would also sweep in `fixup:` — because a
+  false `not-gated` only declines to ask for a link, while a false gate would demand one
+  from a PR that is not a fix and teach authors to route around the check. The verdict
+  logic lives in
+  `scripts/ci-pr-link.sh` rather than inline YAML — shellcheck'd and unit-tested in
+  `scripts/test-core.sh`, following the `scripts/ci-classify.sh` precedent — and it is its
+  own workflow rather than a job in `ci.yml` so that a body edit re-runs one GraphQL query
+  instead of the whole nine-repo audit matrix.
+
+### Fixed
+
 
 - **The pipefail SIGPIPE scanner was half-blind, and was hiding a live hazard in the
   PR-link gate.** `_core_pipefail_hits` required grep's `q` to be the **last letter** of
@@ -169,7 +174,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   **Exec-bits deliberately unchanged.** That gate reads index modes (`git ls-files -s`), and
   an untracked file has no index entry — it falls on the git-state side of the rule above.
-||||||| parent of 5640316 (fix(ci): tell "no link" apart from "could not determine"; unblind the pipefail scanner)
 
 - **A failed `tpm` clone announced itself as a status line, so tmux quietly ended up with
   no plugin manager.** `blib_link_core`'s one-time clone reported failure with `blib_say` —
