@@ -29,9 +29,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   genuine fix is often found and fixed in one pass with nothing filed; the reason is what a
   future reader finds in place of a link. `pull_request_template.md` documents both routes.
 
-  Gated set is `fix` only, matched with the repo's canonical Conventional-Commit regex
-  (`scripts/gen-release-notes.sh`, `cliff.toml`), so `fixup:` and ordinary prose that
-  merely starts with the word are untouched. The verdict logic lives in
+  Gated set is `fix` only, matched with the delimiter-aware Conventional-Commit regex from
+  `scripts/gen-release-notes.sh`, so `fixup:` and ordinary prose that merely starts with
+  the word are untouched. That is deliberately the stricter of the repo's two parsers —
+  `cliff.toml` groups on a bare `^fix`, which would also sweep in `fixup:` — because a
+  false `not-gated` only declines to ask for a link, while a false gate would demand one
+  from a PR that is not a fix and teach authors to route around the check. The verdict
+  logic lives in
   `scripts/ci-pr-link.sh` rather than inline YAML — shellcheck'd and unit-tested in
   `scripts/test-core.sh`, following the `scripts/ci-classify.sh` precedent — and it is its
   own workflow rather than a job in `ci.yml` so that a body edit re-runs one GraphQL query

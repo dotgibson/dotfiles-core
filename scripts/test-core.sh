@@ -1059,16 +1059,24 @@ _classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examp
 hdr "PR link gate (scripts/ci-pr-link.sh)"
 PRLINK="$HERE/scripts/ci-pr-link.sh"
 _prlink_is() { # _prlink_is <label> <title> <linked-count> <body> <want-verdict>
-  local got
+  local got rc want_rc
   got="$(printf '%s' "$4" | "$PRLINK" "$2" "$3" 2>/dev/null)"
-  if [[ "$got" == "verdict=$5" ]]; then
+  rc=$?
+  # Assert the EXIT STATUS as well as the verdict line. The workflow enforces the policy
+  # through the status, not the text — so a regression to `exit 0` on missing-link would
+  # silently stop failing PRs while a stdout-only assertion stayed green. Checking both
+  # pins the two together: missing-link is the only verdict that may exit non-zero.
+  [[ "$5" == "missing-link" ]] && want_rc=1 || want_rc=0
+  if [[ "$got" == "verdict=$5" ]] && ((rc == want_rc)); then
     pass "$1"
   else
-    fail "$1 (got: ${got:-<empty>}; want verdict=$5)"
+    fail "$1 (got: ${got:-<empty>} rc=$rc; want verdict=$5 rc=$want_rc)"
   fi
 }
-# The gated set: the repo's canonical Conventional-Commit shape (gen-release-notes.sh:50,
-# cliff.toml:56) — optional (scope), optional breaking `!`, then the `:` delimiter.
+# The gated set: the delimiter-aware Conventional-Commit shape from
+# scripts/gen-release-notes.sh:50 — optional (scope), optional breaking `!`, then the `:`.
+# NOT cliff.toml:56, which groups on a broader bare `^fix` and would sweep in `fixup:`;
+# the gate deliberately takes the stricter of the two.
 _prlink_is "fix( PR with a linked issue → ok" 'fix(doctor): probe both names' 1 '' ok
 _prlink_is "fix( PR with no link and no reason → missing-link" 'fix(doctor): probe both names' 0 '' missing-link
 _prlink_is "unscoped fix: is gated too" 'fix: probe both names' 0 '' missing-link

@@ -25,12 +25,20 @@
 #   1  verdict=missing-link gated, no link, no reason  ← the #446 shape
 #   2  usage error
 #
-# GATED SET: `fix` only, deliberately. The regex is the repo's canonical
-# Conventional-Commit shape, the same one scripts/gen-release-notes.sh:50 and
-# cliff.toml:56 use — optional `(scope)`, optional breaking `!`, then `:`. Prose
-# that merely starts with the word ("fixing a flaky test") is NOT gated, and
-# neither is `fixup:`. The PR TITLE is what this repo squash-merges into the
-# subject line, so the title is the honest thing to test.
+# GATED SET: `fix` only, deliberately. The regex is the delimiter-aware
+# Conventional-Commit shape from scripts/gen-release-notes.sh:50 — optional
+# `(scope)`, optional breaking `!`, then `:`. Prose that merely starts with the
+# word ("fixing a flaky test") is NOT gated, and neither is `fixup:`.
+#
+# NOT cliff.toml:56, which groups on a bare `^fix` and so also matches `fixup:`.
+# The two differ, and this gate deliberately takes the STRICTER of them: a false
+# `not-gated` merely declines to ask for a link, while a false gate would demand
+# one from a PR that is not a fix at all, and authors would learn to route around
+# the check. Widening this to match cliff would be a behaviour change, not a
+# tidy-up.
+#
+# The PR TITLE is what this repo squash-merges into the subject line, so the
+# title is the honest thing to test.
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -116,14 +124,19 @@ Do ONE of these:
 
          Closes #420
 
-     (or use the "Development" sidebar). "Refs #420" does NOT link — it must
-     be a closing keyword: close/closes/closed, fix/fixes/fixed,
-     resolve/resolves/resolved.
+     It must be a CLOSING keyword -- close/closes/closed, fix/fixes/fixed,
+     resolve/resolves/resolved. "Refs #420" reads like a link but closes
+     nothing, so it will not satisfy this check.
 
   2. Say why there isn't one. Add a line to the PR body:
 
          No-Issue: found and fixed in one pass, never filed
 
-Editing the PR body re-runs this check automatically.
+Either way, editing the PR body re-runs this check automatically.
+
+Linking from the "Development" sidebar instead also works, and this check will
+count it -- but GitHub emits no pull_request event for a sidebar link, so the
+check will NOT re-run on its own. Re-run it from the Actions tab, or make any
+edit to the PR body, to pick the link up.
 EOF
 exit 1
