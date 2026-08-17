@@ -13,13 +13,11 @@
 #   dotfiles-Windows — the native Windows host layer is replicated from scratch
 #     (PowerShell; not a one-to-one port of the Unix Core), so it carries no
 #     vendored core/ subtree and sync-core.sh must never fan out into it.
-#   dotfiles-Debian — was planned, never created, and is no longer being pursued.
-#     The Debian family is covered by dotfiles-Kali (apt, Debian-family). Do not
-#     re-add unless a standalone Debian OS repo is actually stood up.
 # ──────────────────────────────────────────────────────────────────────────────
 dotfiles-MacBook
 dotfiles-Alpine
 dotfiles-Arch
+dotfiles-Debian
 dotfiles-Defense
 dotfiles-Fedora
 dotfiles-Gentoo

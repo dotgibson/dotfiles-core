@@ -10,7 +10,7 @@ the OS-repo rollout is the consumer side of the Core line, not its own version:
 
 | Flow | Versioned thing | Trigger | Fans out to | Section |
 | --- | --- | --- | --- | --- |
-| **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 8 OS repos' `core/` | [1](#1-cut-a-core-release) |
+| **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 9 OS repos' `core/` | [1](#1-cut-a-core-release) |
 | **OS-repo rollout** | not versioned (stamped `core.lock`) | merging the fan-out PRs | the live hosts (on bootstrap) | [2](#2-roll-a-core-release-out-to-the-os-repos) |
 | **dotfiles-Windows** | `dotfiles-Windows` (own `vX.Y.Z`) | mirror-sync `nvim/`+`starship/` (auto-patch) **or** a manual CHANGELOG promotion + tag (minor/major) | the Windows host (on bootstrap) | [3](#3-cut-a-dotfiles-windows-release) |
 | **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Kali` (`companion.lock`) | [4](#4-cut-an-htpx-release) |

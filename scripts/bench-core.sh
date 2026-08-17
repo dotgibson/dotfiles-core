@@ -4,7 +4,7 @@
 # Measure Core's contribution to interactive-shell startup time — the metric this
 # repo invests in (cached starship/zoxide/mise/atuin init in 00-tools.zsh, deferred
 # heavy plugins in 45-plugins.zsh) but never actually MEASURED, so a regression could
-# ship silently to all eight OS repos. This is the missing perf guard: run it before
+# ship silently to all nine OS repos. This is the missing perf guard: run it before
 # and after a change to the load path to see the delta.
 #
 # It benchmarks the SAME canonical load chain scripts/test-core.sh asserts, in the

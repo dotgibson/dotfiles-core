@@ -6,7 +6,7 @@ labels: bug
 ---
 
 <!--
-Reminder: this is the Core layer, vendored into eight OS repos via git subtree.
+Reminder: this is the Core layer, vendored into nine OS repos via git subtree.
 If the problem is OS-specific (package manager, paths, clipboard) it belongs in
 the OS repo; if it's offensive/engagement tooling, it belongs in dotfiles-Kali.
 See CONTRIBUTING.md for the three-layer test.

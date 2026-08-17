@@ -2,7 +2,7 @@
 
 This repo is the **Core layer** — the config that is identical on every machine —
 authored once here and vendored into each OS repo's `core/` via `git subtree`.
-A change here fans out to all eight OS repos, so the bar is: _is this truly Core,
+A change here fans out to all nine OS repos, so the bar is: _is this truly Core,
 and is it healthy?_
 
 ## Is it actually Core?

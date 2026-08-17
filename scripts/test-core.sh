@@ -5,7 +5,7 @@
 # reach. audit-core.sh proves the modules PARSE (zsh -n) and that the manifest and
 # exec-bits are consistent; this proves the modules actually LOAD TOGETHER in the
 # canonical order and that the pure shell functions DO what they claim. A defect
-# here passes every per-file `zsh -n` cleanly and still fans out to eight OS repos —
+# here passes every per-file `zsh -n` cleanly and still fans out to nine OS repos —
 # which is exactly the gap this file closes.
 #
 # Two sections, both zsh-gated and degrading gracefully (mirrors audit-core.sh):
@@ -830,7 +830,7 @@ fi
 # this asserts the contract the workflow depends on: known paths map to the right gates,
 # the __ALL__ sentinel runs everything, and — the regression that matters — an
 # UNRECOGNISED top-level path FAILS CLOSED to the full run instead of silently skipping
-# a gate on the 9-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
+# a gate on the 10-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
 # ── failing-gate detail (scripts/lib/common.sh :: fail_detail) ────────────────
 # WHY THIS IS TESTED. The audit used to discard every linter's own report, so a red CI run
 # named a gate and nothing else — "✗ markdownlint reported issues", no rule, no file, no
@@ -1960,7 +1960,7 @@ if ((_sc_subtree)); then
 
   # --- the audit gate: the property that a RED tree must never fan out ---------
   # This is the single most important assertion in the file: every other guard protects
-  # one repo, this one protects all eight. It must also refuse BEFORE mutating anything.
+  # one repo, this one protects all nine. It must also refuse BEFORE mutating anything.
   printf '1\n' >"$SCF/auditrc"
   _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
   _sc_out="$(_sc_run)"; _sc_rc=$?
@@ -2140,7 +2140,7 @@ if ((_sc_subtree)); then
   else
     fail "sync-core: comment-less pin mishandled ($(cat "$_sc_wf/pinned-no-comment.yml"))"
   fi
-  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (7 of 9 repos take
+  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (8 of 10 repos take
   # the moving alias); converting it to a SHA pin would change that repo's update model
   # behind its back. And a third-party action pinned to a sha with a `# vX.Y.Z` comment has
   # exactly the shape of our own pins — rewriting it would point actions/checkout at a
@@ -2216,7 +2216,7 @@ fi
 
 # ── F7. the REAL link run (blib_link_core against a throwaway $HOME) ─────────
 # bootstrap-test.yml asserts the symlink graph, but it is workflow_call-only and
-# dotfiles-core ships no bootstrap.sh — so it only ever runs from the eight OS repos.
+# dotfiles-core ships no bootstrap.sh — so it only ever runs from the nine OS repos.
 # Core's own CI unit-tests the blib_* helpers and never performs a real link run, which
 # means a bootstrap-lib regression is caught downstream, in eight repos, instead of here.
 #
@@ -4855,7 +4855,7 @@ check "pullall on a repo-less dir prints the summary and returns 0" \
 # throwaway $GIT_AUTHOR_* identity and git init in mktemp), advance the remote, then run
 # pullall and assert it fast-forwarded the clone (tally "updated: 1", a real new file on
 # disk, zero failures). This exercises trunk auto-detection, the --ff-only pull, and the
-# ✅ tally — the per-repo path that fans out to all eight OS repos.
+# ✅ tally — the per-repo path that fans out to all nine OS repos.
 check_dep "pullall fast-forwards a behind repo and tallies it (hermetic bare remote)" git \
   'export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@e GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@e
    w=$(mktemp -d)
@@ -5126,7 +5126,7 @@ check_dep "extract guards the gz output at the archive's path, not \$PWD" gzip \
 # Sections A/B and audit-core.sh's static pass leave the highest-LOGIC, highest
 # fan-out helpers unproven: the package-manager and scheduler detection LADDERS
 # (which differ per distro and silently mis-fire) and ui.zsh's defensive no-TTY
-# confirm. A regression in any of these ships to all eight OS repos — exactly what a
+# confirm. A regression in any of these ships to all nine OS repos — exactly what a
 # behavioral gate must catch. Each is driven HERMETICALLY against a stubbed PATH
 # (the same technique the clip ladder in section C uses), so the result is
 # deterministic on every CI userland (glibc / BSD / musl) regardless of what's
@@ -5672,7 +5672,7 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
 # versionless `✓ fd` there (the probe forks `"$bin" --version`, a parameter expansion, and
 # parameters are never alias-expanded — the error was swallowed by the pipeline).
 # Both halves are pinned here against a stubbed PATH, hermetically, because a regression
-# fans out to all eight OS repos and is invisible on macOS where the names are canonical.
+# fans out to all nine OS repos and is invisible on macOS where the names are canonical.
 RNBIN="$SANDBOX/rnbin"
 _real_grep="$(command -v grep)"
 _real_head="$(command -v head)"
@@ -6753,7 +6753,7 @@ ucheck "update: welcome stays silent (no greet, no sentinel) without a tty" \
 
 # completions (U3 / DERIVED regression gate): every first-party PUBLIC verb must have a
 # #compdef that compinit resolves off the vendored fpath dir — a missing/typo'd tag
-# means no tab-completion for that command across all eight repos, with nothing else to
+# means no tab-completion for that command across all nine repos, with nothing else to
 # catch it. The verb set is DERIVED from the source (top-level functions whose names
 # don't start with `_`, Core's private-helper convention) minus an explicit allowlist
 # of public-but-non-completable functions: the zsh-vi-mode init HOOK, the git-alias
@@ -6796,7 +6796,7 @@ ucheck "core-help lists every first-party verb (derived B2 coverage gate)" \
 # this proves its FLAGS still match the verb. Every long flag a flag-bearing completion
 # advertises must still be mentioned in the verb's zsh source — so removing `--dry-run`
 # from `up` (or renaming `--local`) without updating its #compdef now FAILS here instead
-# of silently shipping a completion that offers a flag the verb rejects to all eight repos.
+# of silently shipping a completion that offers a flag the verb rejects to all nine repos.
 # Pure sed+grep (busybox-safe); comment lines in the completion are stripped first.
 hdr "completion ↔ source flag drift (serve, up)"
 _flag_drift() { # _flag_drift <verb> <completion-file> <source-file>

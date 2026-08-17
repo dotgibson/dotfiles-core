@@ -99,8 +99,9 @@ else
     done <"$_OS_REPOS_FILE"
   fi
   ((${#OS_REPOS[@]})) || OS_REPOS=(
-    dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Defense
-    dotfiles-Fedora dotfiles-Gentoo dotfiles-Kali dotfiles-openSUSE
+    dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian
+    dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Kali
+    dotfiles-openSUSE
   )
 fi
 

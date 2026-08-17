@@ -5,7 +5,7 @@
 # each upstream's current default-branch HEAD. This is the runtime-plugin mirror of
 # `make update-hooks` (pre-commit autoupdate) and the manual SHELLCHECK_VERSION /
 # LUACHECK_VERSION bumps in ci.yml: pins exist so nothing floats silently into the
-# eight OS repos, and THIS is the one place they move — under review, not on their own.
+# nine OS repos, and THIS is the one place they move — under review, not on their own.
 #
 # Single source of truth: the ZPLUGIN_PINS associative array in zsh/45-plugins.zsh.
 # We parse the `owner/name  <40-hex sha>` rows straight out of it, `git ls-remote`

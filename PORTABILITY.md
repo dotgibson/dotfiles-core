@@ -1,6 +1,6 @@
 # PORTABILITY.md — what "portable" means in Core, concretely
 
-Core is authored once here and vendored into eight OS repos. A file in `core.manifest`
+Core is authored once here and vendored into nine OS repos. A file in `core.manifest`
 runs on **macOS (bash 3.2, BSD userland), glibc Linux, musl/busybox Alpine, and rolling
 Arch** — so "portable" is not a style preference here, it is the contract that keeps one
 tree correct on every machine.
