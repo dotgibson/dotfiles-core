@@ -13,7 +13,189 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **CI now fails a `fix(…)` PR that closes no issue and gives no reason.** #446 fixed two
+  reported bugs — #420 (starship) and #423 (carapace) — and merged green with no closing
+  keyword in its body. GitHub therefore linked nothing, both issues stayed **open**, and
+  days later a reader re-derived a 2021 upstream function rename and re-ran the reproducer
+  to re-confirm a bug that had already shipped in v4.12.0. The code was correct the whole
+  time; the _link_ was missing, and no check objected.
+
+  `.github/workflows/pr-link-check.yml` now asks GitHub for the PR's
+  `closingIssuesReferences` — the same field GitHub itself uses to auto-close on merge, so
+  cosmetic text like "Refs #420" cannot satisfy it — and requires a `fix(…)` PR to close at
+  least one issue. The escape hatch is a `No-Issue: <reason>` line in the body, because a
+  genuine fix is often found and fixed in one pass with nothing filed; the reason is what a
+  future reader finds in place of a link. `pull_request_template.md` documents both routes.
+
+  Gated set is `fix` only, matched with the repo's canonical Conventional-Commit regex
+  (`scripts/gen-release-notes.sh`, `cliff.toml`), so `fixup:` and ordinary prose that
+  merely starts with the word are untouched. The verdict logic lives in
+  `scripts/ci-pr-link.sh` rather than inline YAML — shellcheck'd and unit-tested in
+  `scripts/test-core.sh`, following the `scripts/ci-classify.sh` precedent — and it is its
+  own workflow rather than a job in `ci.yml` so that a body edit re-runs one GraphQL query
+  instead of the whole nine-repo audit matrix.
+
 ### Fixed
+
+- **`make audit` could report a fully green run while never reading the file the change
+  was about.** The audit's content gates — `bash -n`, `zsh -n`, shellcheck, the pipefail
+  scanner, and the toml/yaml/json parsers — enumerated their targets with a bare
+  `git ls-files`, which lists **only tracked files**. A brand-new script or config was
+  therefore invisible until the moment it was `git add`ed, and each gate still printed its
+  "all clean" pass. A green audit that had not opened the file is strictly worse than a red
+  one: it is indistinguishable from a real pass.
+
+  This shipped. `scripts/ci-pr-link.sh` passed a local **261 pass / 0 fail** audit while
+  still untracked, then failed all four CI legs (ubuntu, macOS, Alpine, Arch) on two SC2016
+  violations that had been in the file the whole time.
+
+  The audit was already inconsistent with itself about this: its `--changed` scope
+  derivation counts untracked files when deciding which _areas_ run, and the walk-based
+  gates (`luacheck .`, markdownlint's `**/*.md` glob) have always seen them. Only the
+  `git ls-files` gates disagreed, and nothing surfaced the disagreement.
+
+  All twelve content gates now enumerate through a shared `_audit_ls` helper
+  (`scripts/lib/common.sh`) that unions tracked with untracked-but-not-ignored, honouring
+  `.gitignore` so scratch files stay out. That covers every gate script `make audit`
+  consults, not just `audit-core.sh`: `check-modern.sh`'s workflow inventory and
+  `nvim-reachability.sh`'s lua-module inventory had the same blind spot, so an untracked
+  workflow could evade the modernization floor and an untracked module the orphan
+  backstop. `audit-core.sh`'s own §5c boundary scan was affected too, in a form worth
+  naming — it expands `nvim/` from the manifest and then reads every file it names, so it
+  reads like a manifest question while actually being a content one. The rule is documented where the next gate author
+  will read it: a gate asking **"is this file's content valid?"** uses `_audit_ls`, while a
+  gate asking **"what does git record?"** (manifest drift, index exec-bits) keeps plain
+  `git ls-files`, because an untracked file has no git state to check. The helper lives in
+  the shared lib rather than in `audit-core.sh` so `scripts/test-core.sh` exercises the real
+  implementation instead of a copy that could drift; five new assertions pin the behaviour,
+  including that a gitignored script stays excluded and that the enumeration split stays
+  exact, per file — twelve content gates through the helper, three git-state gates
+  direct. That last one is deliberately a tripwire rather than a floor: an "at least N
+  helper calls" check would sit green while a _newly added_ gate reintroduced the bug with
+  a bare `git ls-files`, so adding either kind of enumeration now fails the suite until
+  someone decides which side of the rule it belongs on.
+
+  **Exec-bits deliberately unchanged.** That gate reads index modes (`git ls-files -s`), and
+  an untracked file has no index entry — it falls on the git-state side of the rule above.
+
+- **A failed `tpm` clone announced itself as a status line, so tmux quietly ended up with
+  no plugin manager.** `blib_link_core`'s one-time clone reported failure with `blib_say` —
+  the blue `::` on **stdout**, the identical shape to the `cloning tpm` progress line
+  immediately above it — and discarded git's error with `>/dev/null 2>&1`. Behind a proxy,
+  offline, or against a rate limit, the run therefore produced a box whose tmux had no
+  theme and no resurrect/continuum, with nothing in the log that stood out and no way to
+  find out why.
+
+  It now uses `blib_note_fail`, which warns on **stderr** and records the step, and git's
+  own output is captured and printed indented under the failure instead of dropped — on a
+  clone failure that output _is_ the diagnosis (DNS, proxy, TLS, rate limit).
+
+  **Scope — this is the first lib-internal caller of `blib_note_fail`.** The v4.11.0 entry
+  below scoped that API as "new, not yet wired into any bootstrap", meaning adoption by
+  _consumers_. A clone that happens inside Core is the case a consumer cannot observe for
+  itself: `dotfiles-MacBook` had to add a post-hoc "is the tpm directory there?" check to
+  its own `bootstrap.sh` precisely because this failure was unreportable
+  ([dotfiles-MacBook#133](https://github.com/dotgibson/dotfiles-MacBook/issues/133)). No
+  consumer changes behaviour from this alone — `blib_note_fail` calls `blib_warn`
+  internally, so a bootstrap that ignores `BLIB_FAILED` sees exactly the corrected warning
+  and nothing else. A bootstrap that _does_ fold the tally in now learns about a failure it
+  previously could not see, and can drop its local directory probe.
+
+  Same shape, same fix, one line away: `blib_set_login_shell`'s "chsh not found" branch
+  also used `blib_say` while its sibling failure branch used `blib_warn`, though the
+  outcome — login shell unchanged — is identical. It is a warning now too.
+
+  Covered by four assertions in `scripts/test-core.sh`'s link-run section, hermetic and
+  offline: `GIT_ALLOW_PROTOCOL=file` makes git refuse the https transport, so the clone
+  fails deterministically without depending on the remote being reachable or unreachable.
+  They pin the stream (stderr, not stdout), the tally, and the git-error passthrough.
+
+- **One repo's failed push aborted the entire fan-out, so a release reached none of the
+  fleet.** The per-repo loop in `sync-fanout.yml` treats every error as per-repo — record
+  it, set `fail=1`, move to the next repo — except the three calls that talk to the remote:
+  `git push` and the `gh pr list` / `gh pr create` after it, all unguarded under
+  `set -euo pipefail` (a failing command substitution exits too). The first failure
+  therefore exited the step outright, skipping the remaining repos entirely.
+
+  It fired on the v4.12.1 cut. `dotfiles-MacBook` is first in `scripts/os-repos.txt`, and
+  its push was refused with _"refusing to allow a GitHub App to create or update workflow
+  `.github/workflows/auto-tag.yml` without `workflows` permission"_ — the fleet App has no
+  `workflows` grant, and since [#482](https://github.com/dotgibson/dotfiles-core/issues/482)
+  the fan-out rewrites `.github/workflows/*` SHA pins in repos that pin a Core caller. That
+  one repo took the other seven with it: five had synced cleanly and were ready to open a
+  PR, and none did. The release existed on `main` and in no OS repo at all.
+
+  All three are now guarded like every other per-repo step, so a bad repo costs one PR
+  instead of the fleet. The `workflows`-permission rejection is recognised by name and
+  reported with the grant to make, since GitHub's message is opaque unless you already know
+  the fan-out edits workflow files.
+
+  `GITHUB-APP-AUTH.md` prescribed the failure it now has to fix: it listed Contents and
+  Pull requests and said "Everything else: **No access**", so an operator following the
+  setup guide built an App that cannot push the workflow-pin changes #482 added. It now
+  requires **Workflows: Read and write**, says why only some repos trigger it while every
+  installation still needs the grant (the permission is a property of the App; the SHA pin
+  belongs to each caller workflow, and only those repos put one in a sync branch),
+  and warns that editing an existing App's permissions mints the OLD set until the
+  installation owner accepts the review request.
+
+  The same staleness ran through the release docs: `RELEASE-RUNBOOK.md` and
+  `RELEASE-STRATEGY.md` both named `dotfiles-Windows` as the **sole** SHA-pinning caller
+  (the runbook froze it as "27 of 28"), when `dotfiles-MacBook` pins four callers and
+  `dotfiles-Defense` one. Both now split the cases by the property that actually matters at
+  release time — pinned **inside** the fan-out (MacBook, Defense: `sync-core.sh` moves the
+  pin automatically since #482, which is _why_ the App needs Workflows write) versus pinned
+  **outside** it (Windows: vendors no `core/`, so nothing moves its pin and it needs a hand
+  bump). The frozen count is replaced by a one-liner that derives it from the callers, since
+  a hand-maintained tally is what rotted here.
+
+  Guarding the `gh` calls matters as much as the push, and fails in a nastier shape: a rate
+  limit or a per-repo API error there strands every _later_ repo even though this one's
+  branch is already on the remote — work done and merely unannounced. Those cases now say
+  so explicitly rather than surfacing as an opaque step abort, and they report the PR state
+  as **unknown**: the lookup itself is what failed, so an open PR may simply be hidden by
+  the same outage, and "no PR exists" would invite a duplicate. The summary asks the
+  operator to check the branch and open one only if none is there.
+
+  **Deliberately not "retry without the workflow changes".** `core.lock` and the pins name
+  the same Core; landing the lock while silently keeping stale pins is exactly the
+  vendors-one-Core-runs-another split #482 closed, and it is invisible to `core-integrity`
+  and `verify-core` — which is what let it survive the first time. Failing that repo loudly
+  is the correct degradation; re-creating the split is not.
+
+## [v4.12.1] - 2026-08-16
+
+### Fixed
+
+- **`blib_link` deleted a displaced symlink with no record, while backing up a regular
+  file** ([#430](https://github.com/dotgibson/dotfiles-core/issues/430)). A real file at
+  the destination was moved to `<dst>.pre-dotfiles.<epoch>` and counted; a symlink was
+  `rm -f`'d — whatever it pointed at — with no backup, no counter, and nothing in the run
+  summary. The early return above that branch only skips an **already-correct** link, so
+  the delete was reached precisely when the link pointed somewhere else, which is the one
+  case worth recording.
+
+  Not the rare path, the common one: the repos being wired are symlink farms, so `$dst` is
+  far more often a symlink than a regular file. `dotfiles-Kali` and `dotfiles-Defense` are
+  designed to coexist as red/blue twins, and whichever bootstrapped second silently
+  discarded the other's links; a user migrating off a hand-rolled tree lost every record of
+  where their fragments used to point. `bootstrap.sh` is advertised as idempotent and safe
+  to re-run, and backup-on-clobber is what made that credible — the guarantee quietly did
+  not hold for the thing it actually encounters most.
+
+  A displaced link is now **printed with its old target** (`relinking <dst> (was -> …)`)
+  and counted in a new `BLIB_RELINKED` tally, and the dry-run says what it is about to
+  displace (`would relink: <dst> (currently -> …)`) instead of a bare "would relink", which
+  read as _repoint_ rather than _discard unrecorded_. Deliberately logged rather than moved
+  aside: backing a symlink up would leave one stray link per fragment per run in
+  `~/.config` — a role switch relinks nearly everything — and the counter is deliberately
+  **separate from `BLIB_BACKED`** rather than folded into it, because "backed up" promises a
+  restorable `.pre-dotfiles.*` file on disk and the OS repos' unlink/restore paths read
+  exactly those. `blib_wire_summary` therefore gains a field:
+  `N linked · M seeded · K backed up · R relinked · S skipped`. An already-correct link is
+  still a silent no-op, so a plain re-run prints no relink noise.
 
 - **The fan-out moved the tree and the lock, and left the pins pointing at the previous
   Core** ([#482](https://github.com/dotgibson/dotfiles-core/issues/482)). An OS repo names

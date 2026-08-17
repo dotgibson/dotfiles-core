@@ -49,7 +49,7 @@ _CORE_BOOTSTRAP_LIB_SH=1
 # nothing — so a bootstrap's `--dry-run` previews the full plan. Default off, so every
 # existing caller is byte-for-byte unaffected. The BLIB_* counters accumulate across a
 # run; blib_wire_summary prints them. (MacBook adopts these so its --dry-run survives.)
-BLIB_LINKED=0 BLIB_SEEDED=0 BLIB_BACKED=0 BLIB_SKIPPED=0
+BLIB_LINKED=0 BLIB_SEEDED=0 BLIB_BACKED=0 BLIB_RELINKED=0 BLIB_SKIPPED=0
 _blib_dry() { [[ "${BLIB_DRY:-0}" != 0 ]]; }
 
 # ── messages ──────────────────────────────────────────────────────────────────
@@ -72,10 +72,19 @@ blib_is_wsl() {
 # blib_link <src> <dst> — replace an existing SYMLINK in place; back up a real file
 # to <dst>.pre-dotfiles.<epoch> first. Idempotent (safe to re-run a bootstrap): an
 # already-correct link is a no-op. A missing src is skipped (not a dangling link).
-# Honors BLIB_DRY (plan only) and updates the BLIB_* counters. Non-dry mutation
-# behaviour is unchanged from before (symlink → relink, real file → backup, then link).
+# Honors BLIB_DRY (plan only) and updates the BLIB_* counters.
+#
+# The two displacement cases are deliberately NOT symmetric, and both are RECORDED:
+# a real file is moved aside (restorable from disk, counted in BLIB_BACKED); a symlink
+# is removed and its old target is PRINTED and counted in BLIB_RELINKED. Keeping the
+# symlink case a delete avoids littering ~/.config with one stray backup link per
+# fragment per run — the repos being wired are symlink farms, so a role switch
+# (Kali ↔ Defense) or a moved dotfiles tree relinks nearly everything. But deleting it
+# unrecorded lost the one thing worth keeping: WHERE it used to point. The early return
+# above means this branch is reached ONLY when the link points somewhere else, so every
+# relink notice is real information, never re-run noise (issue #430).
 blib_link() {
-  local src="$1" dst="$2"
+  local src="$1" dst="$2" was=""
   if [[ ! -e "$src" ]]; then
     blib_say "skip (missing): ${src##*/}"
     BLIB_SKIPPED=$((BLIB_SKIPPED + 1))
@@ -85,9 +94,13 @@ blib_link() {
     BLIB_LINKED=$((BLIB_LINKED + 1)) # already correct → no-op
     return 0
   fi
+  # readlink, not realpath: a DANGLING link still reports the path it recorded, which is
+  # exactly what someone migrating off a since-deleted tree needs to read afterwards.
+  [[ -L "$dst" ]] && was="$(readlink "$dst")"
   if _blib_dry; then
     if [[ -L "$dst" ]]; then
-      blib_say "would relink: $dst"
+      blib_say "would relink: $dst (currently -> $was)"
+      BLIB_RELINKED=$((BLIB_RELINKED + 1))
     elif [[ -e "$dst" ]]; then
       blib_say "would back up + link: $dst"
       BLIB_BACKED=$((BLIB_BACKED + 1))
@@ -99,7 +112,9 @@ blib_link() {
   fi
   mkdir -p "$(dirname "$dst")"
   if [[ -L "$dst" ]]; then
+    blib_say "relinking $dst (was -> $was)"
     rm -f "$dst"
+    BLIB_RELINKED=$((BLIB_RELINKED + 1))
   elif [[ -e "$dst" ]]; then
     mv "$dst" "$dst.pre-dotfiles.$(date +%s)"
     BLIB_BACKED=$((BLIB_BACKED + 1))
@@ -276,7 +291,7 @@ blib_migrate_v4() {
 # top of this file — that is the canonical enumeration. OS-specific overlays
 # (os/<os>.*) are NOT here — call blib_link_os_layer for those.
 blib_link_core() {
-  local dotfiles="$1" config="$2" f s
+  local dotfiles="$1" config="$2" f s tpm_log
 
   # ── zsh — the Core module chain (os/<os>.zsh comes from blib_link_os_layer) ──
   if blib_want zsh; then
@@ -313,10 +328,20 @@ blib_link_core() {
         blib_say "would clone tpm (tmux plugin manager)"
       else
         blib_say "cloning tpm (tmux plugin manager)"
-        if git clone --depth=1 https://github.com/tmux-plugins/tpm "$config/tmux/plugins/tpm" >/dev/null 2>&1; then
+        # Announce a FAILED clone as a failure, not as a status line. This branch used
+        # blib_say — the same blue `::` on stdout as the "cloning tpm" line above — and
+        # discarded git's error with `>/dev/null 2>&1`, so behind a proxy tmux ended up
+        # with no plugin manager and nothing in the log stood out. blib_note_fail warns on
+        # STDERR and records the step, so a bootstrap that folds in the tally can decline
+        # to call the run clean (the caller's own --strict / exit-code policy decides).
+        #
+        # Capture combined output instead of dropping it: on success it is noise, on
+        # failure it is the entire diagnosis (DNS, proxy, TLS, rate limit).
+        if tpm_log="$(git clone --depth=1 https://github.com/tmux-plugins/tpm "$config/tmux/plugins/tpm" 2>&1)"; then
           blib_ok "tpm cloned — run prefix + I in tmux to install plugins"
         else
-          blib_say "tpm clone failed — clone it manually, then prefix + I"
+          blib_note_fail "tpm clone failed — tmux will start with no plugins; clone it by hand, then press prefix + I"
+          printf '%s\n' "$tpm_log" | sed 's/^/    /' >&2 # git's own error, under the failure
         fi
       fi
     fi
@@ -414,10 +439,12 @@ blib_link_os_layer() {
 # since the counters were last reset (they start at 0 on source). Optional: a caller
 # that wants a one-line "N linked · M seeded · K backed up" footer calls this after
 # its wire_links. Prefixes "(dry run) " under BLIB_DRY so a preview reads as a preview.
+# "backed up" and "relinked" are separate on purpose: the first promises a restorable
+# .pre-dotfiles.<epoch> file on disk, the second only that the old target was printed.
 blib_wire_summary() {
   local pre=""
   _blib_dry && pre="(dry run) "
-  blib_ok "${pre}${BLIB_LINKED} linked · ${BLIB_SEEDED} seeded · ${BLIB_BACKED} backed up · ${BLIB_SKIPPED} skipped"
+  blib_ok "${pre}${BLIB_LINKED} linked · ${BLIB_SEEDED} seeded · ${BLIB_BACKED} backed up · ${BLIB_RELINKED} relinked · ${BLIB_SKIPPED} skipped"
 }
 
 # ── write the .zshrc entry loader ─────────────────────────────────────────────
@@ -847,7 +874,9 @@ blib_set_login_shell() {
       blib_warn "chsh failed — set it by hand: chsh -s $zsh_path $user (or usermod -s $zsh_path $user)"
     fi
   else
-    blib_say "chsh not found (install the 'shadow' package) — set it manually with usermod -s $zsh_path $user"
+    # blib_warn, not blib_say: the login shell was NOT changed, which is the same outcome
+    # as the chsh-failed branch above — it must read like one, on stderr.
+    blib_warn "chsh not found (install the 'shadow' package) — set it manually with usermod -s $zsh_path $user"
   fi
 }
 
