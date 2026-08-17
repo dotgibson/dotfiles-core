@@ -25,6 +25,14 @@ on:
     # this is the one that matters, because adding `Closes #N` or `No-Issue: …` IS a
     # body edit, and without it a fixed PR would sit red until an unrelated push.
     # synchronize: cheap insurance if a link is established alongside new commits.
+    #
+    # KNOWN GAP, and why the body is the documented route: GitHub emits NO pull_request
+    # activity when an issue is linked or unlinked from the "Development" sidebar. This
+    # check counts such a link when it happens to run, but nothing re-triggers it — so a
+    # sidebar link leaves a red check red until someone edits the body or re-runs the job,
+    # and unlinking after a green run leaves the check stale-green. There is no event to
+    # subscribe to; the failure message therefore steers authors to a body keyword and
+    # says plainly that the sidebar route needs a manual re-run.
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions:
