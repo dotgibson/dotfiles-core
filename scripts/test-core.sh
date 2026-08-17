@@ -2676,6 +2676,56 @@ if have git; then
   else
     fail "tag-release: the vN alias did not follow the release"
   fi
+
+  # ── the alias must be ANNOTATED, or signing operators cannot publish (#506) ──────────
+  # The assertion above passes on any box with `tag.gpgsign` OFF, which is why this shipped
+  # broken: under `tag.gpgsign = true` git makes every tag SIGNED — therefore annotated —
+  # so a message-less `git tag -f "$MAJOR"` aborts with "fatal: no tag message?" and the
+  # publish dies AFTER creating the immutable tag locally. It broke the first real release
+  # cut by an operator with signing enabled (v4.12.2).
+  #
+  # This cannot be driven by simply flipping gpgsign on in the fixture: git would then try
+  # to actually sign, and CI has no key, so the test would fail for an unrelated reason and
+  # prove nothing. Note also WHY the fixture never caught this on the maintainer's own box,
+  # where signing IS on — this suite exports GIT_CONFIG_GLOBAL=/dev/null (above), so the
+  # fixture is hermetic from exactly the config that triggers the bug. Hermeticity is right,
+  # and it is also what hid this. Pin it from both ends instead, neither needing a key:
+  #   1. the hazard is REAL — the message-less form still fails under gpgsign, and it fails
+  #      BEFORE any signing is attempted, so no key is required to observe it;
+  #   2. the alias the script ACTUALLY produced is annotated and carries a message.
+  _tr_gpgd="$SANDBOX/tagsign"; rm -rf "$_tr_gpgd"; mkdir -p "$_tr_gpgd"
+  git init -q "$_tr_gpgd"; _tr_ident "$_tr_gpgd"
+  git -C "$_tr_gpgd" commit -q --allow-empty -m x
+  # Assert the STATUS and ONLY the status. The wording is environment-dependent, not a
+  # stable contract: with no message and no -m, git needs one, and how it complains
+  # depends on whether it can open an editor —
+  #     macOS, interactive:  fatal: no tag message?
+  #     CI, no TTY/EDITOR:   error: Terminal is dumb, but EDITOR unset
+  # Both are the same hazard. An earlier version of this assertion demanded the first
+  # wording and went red across all four CI legs for a difference that says nothing about
+  # the bug. The message is kept for the failure text, where it aids diagnosis, and is
+  # never gated on.
+  _tr_sign_err="$(LC_ALL=C git -C "$_tr_gpgd" -c tag.gpgsign=true tag -f vSIG 2>&1)"
+  _tr_sign_rc=$?
+  if ((_tr_sign_rc != 0)); then
+    pass "tag-release: a message-less 'git tag -f' really does abort under tag.gpgsign (the #506 hazard)"
+  else
+    # Not a failure of ours — git changed behaviour, so the check below is guarding a
+    # hazard that may no longer exist. Say so rather than reporting a silent pass.
+    fail "tag-release: message-less 'git tag -f' no longer aborts under gpgsign — re-check whether #506's fix is still needed (git said: ${_tr_sign_err:-<nothing>})"
+  fi
+  # BEHAVIOUR, not source spelling. Grepping tag-release.sh for a command form would match
+  # a comment or dead code, and would reject equivalent correct spellings like
+  # `--annotate --force`. The publish above already created v1 with the real script, so ask
+  # git what that ref actually IS: an annotated tag is its own object (`cat-file -t` → tag)
+  # and carries a message; a lightweight tag resolves straight to the commit.
+  _tr_v1_type="$(_trg "$TR/work" cat-file -t "$(_trg "$TR/work" rev-parse -q --verify v1 2>/dev/null)" 2>/dev/null)"
+  _tr_v1_msg="$(_trg "$TR/work" tag -l --format='%(contents)' v1 2>/dev/null)"
+  if [[ "$_tr_v1_type" == tag && -n "${_tr_v1_msg//[[:space:]]/}" ]]; then
+    pass "tag-release: the vN alias is an ANNOTATED tag with a message (publishable under gpgsign)"
+  else
+    fail "tag-release: the vN alias is '${_tr_v1_type:-missing}' with message '${_tr_v1_msg:-<empty>}' — a lightweight alias makes publish abort for a signing operator (#506)"
+  fi
   # Re-publishing an already-published tag must refuse — release tags are immutable.
   # Runs here, while 1.1.0 is still origin/main's newest core.version change.
   _tr_out="$(_tr_run --publish)"; _tr_rc=$?

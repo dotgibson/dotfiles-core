@@ -13,6 +13,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`make publish` could not move the `v4` major alias when `tag.gpgsign` is enabled.**
+  `scripts/tag-release.sh` moved the alias with a bare `git tag -f`, expecting a
+  lightweight ref. Under `tag.gpgsign = true` git makes every tag **signed** — therefore
+  annotated — so the message-less form aborts with `fatal: no tag message?`. The publish
+  died there, after the immutable `vX.Y.Z` tag had already been created locally, which
+  also meant a naive re-run then met the "tag already exists" guard.
+
+  The failure was well-placed — it happens **before** the atomic push, so nothing
+  half-landed and neither `release.yml` nor `sync-fanout.yml` fired — but the release
+  could not complete, and `v4` is the moving alias every OS repo's reusable-workflow
+  caller pins to. Found cutting v4.12.2, the first release published from a box with tag
+  signing on ([#506](https://github.com/dotgibson/dotfiles-core/issues/506)).
+
+  The alias is now annotated with a message, exactly like the immutable tag beside it —
+  which is also the better artefact for a force-moved pointer, since it records who moved
+  it and when. Two assertions pin it: that a message-less `git tag -f` really does abort
+  under `gpgsign` (so the guard is guarding something), and that the script no longer uses
+  that form. Neither needs a signing key, so both run in CI — where this bug was
+  structurally invisible, because CI signs nothing.
+
 ### Added
 
 - **`dotfiles-Debian` joins the fleet as the ninth Core-vendoring repo.** It was planned
