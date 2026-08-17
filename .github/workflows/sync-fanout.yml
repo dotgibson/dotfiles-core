@@ -21,7 +21,8 @@
 #
 # AUTH: the built-in GITHUB_TOKEN is scoped to dotfiles-core only — it cannot push a
 # branch or open a PR in another repo. This mints a short-lived, OS-repo-scoped GitHub
-# App installation token at run time (contents + pull-requests write) when the fleet App
+# App installation token at run time (contents + pull-requests + workflows write — the last
+# because a sync branch can carry .github/workflows/* pin moves) when the fleet App
 # is configured (the FLEET_APP_ID variable), and otherwise falls back to the legacy
 # FLEET_SYNC_TOKEN PAT — see GITHUB-APP-AUTH.md. The preflight fails loudly if neither is
 # available.
@@ -271,8 +272,11 @@ jobs:
             # LATER repo despite its branch already being pushed. That is the worse shape
             # of the two: the push succeeded, so the work is done and merely unannounced.
             if ! open="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq 'length' 2>"$RUNNER_TEMP/gh-$r.log")"; then
-              echo "- ❌ \`$r\` branch pushed, but listing its PRs failed — open it by hand from \`$branch\`" >> "$summary"
-              echo "::error::$r: gh pr list failed after a successful push — the sync branch is on the remote, the PR is not"
+              # State UNKNOWN, not "no PR". The lookup is what failed, so an open PR could
+              # be hidden by the very rate limit or outage that broke the query — telling
+              # the operator to open one invites a duplicate.
+              echo "- ⚠️ \`$r\` branch pushed, but its PR state could not be read — check \`$branch\` and open a PR only if none exists" >> "$summary"
+              echo "::error::$r: gh pr list failed after a successful push — the sync branch is on the remote; whether a PR exists is UNKNOWN, check before opening one"
               sed 's/^/    /' "$RUNNER_TEMP/gh-$r.log" >&2 || true
               fail=1
               continue
@@ -294,8 +298,10 @@ jobs:
               if ! url="$(gh pr create --repo "${OWNER}/${r}" --base "$default" --head "$branch" \
                 --title "chore(core): sync Core → ${TAG}" \
                 --body-file "$RUNNER_TEMP/pr-body.md" 2>"$RUNNER_TEMP/gh-$r.log")"; then
-                echo "- ❌ \`$r\` branch pushed, but opening its PR failed — open it by hand from \`$branch\`" >> "$summary"
-                echo "::error::$r: gh pr create failed — the sync branch is on the remote, the PR is not"
+                # Same caution as the list case: a timeout can fail the client after the
+                # PR was created server-side, so check rather than assume it is absent.
+                echo "- ⚠️ \`$r\` branch pushed, but \`gh pr create\` failed — check \`$branch\` and open a PR only if none exists" >> "$summary"
+                echo "::error::$r: gh pr create failed — the sync branch is on the remote; the PR may or may not have been created, check before retrying"
                 sed 's/^/    /' "$RUNNER_TEMP/gh-$r.log" >&2 || true
                 fail=1
                 continue
