@@ -241,7 +241,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   hand-forking the shared half. Both documents called it "the one documented exception" to
   `lib/bootstrap-lib.sh` and said its `bootstrap.sh` does not call `blib_link_core`; it calls
   it directly. What a role repo actually skips is `blib_link_os_layer`, because the `80` band
-  belongs to the OS repo underneath — and it now calls `blib_link_role_layer` in its place.
+  belongs to the OS repo underneath — and `blib_link_role_layer` is what it will call in its
+  place. Both documents now separate that contract from today's reality: neither role repo has
+  adopted the helper yet (Defense still runs its own `wire_defense_stage`, Offense still calls
+  `blib_link_os_layer`), because the helper has to ship in a Core release and fan out first.
 
 - **CI's critical path drops from ~8 minutes to ~3, with no gate removed.** Measured, not
   guessed: on a typical PR run every job starts in parallel, so wall-clock is the slowest —
@@ -276,6 +279,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   not beside `os.conf`, and the placement is load-bearing: `os.conf` only ever _sets_ options,
   whereas a role layer BINDS KEYS, and tmux gives a key to its last binding. Sourced early,
   any future Core `bind e` would silently take the key back.
+
+  **One destination moves, for consumers to handle deliberately.** Defense already lands
+  its templates at `<config>/defense/templates`, but the offensive repo hand-rolls
+  `<config>/kali/templates` — named for the distro, which is the naming this rename
+  retires. Adopting the helper there relocates them to `<config>/offensive/templates`, and
+  two shipped docs quote the old path by hand (`offensive/hacktheplanet`'s
+  `pseudo-shell.py` line, and `offensive/ippsec`); both need updating in the same change
+  that adopts the helper. Deliberately not papered over with a compat symlink — that would
+  preserve a `~/.config/kali/` on a repo no longer called Kali.
 
   **One role per box.** Both roles land on band `85`, so a machine wired for Offense and then
   Defense gets `85-offensive.zsh` and `85-defense.zsh` loading in glob order and a single

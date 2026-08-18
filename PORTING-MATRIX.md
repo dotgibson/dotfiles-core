@@ -748,10 +748,14 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
   **distro-agnostic** — it stacks its blue-team stage on whatever OS-native layer is
   underneath — so it has no row in this OS-stamp matrix by design, not by omission.
   Both role repos source the shared bootstrap scaffold (`lib/bootstrap-lib.sh`) and
-  call `blib_link_core` exactly as the OS repos do; what they skip is
-  `blib_link_os_layer`, because the `80` band belongs to the OS repo underneath.
-  In its place they call `blib_link_role_layer`, which wires the `85` band and
-  `tmux/role.conf`. Deliberate, not drift — `core.manifest` records it too.
+  call `blib_link_core` exactly as the OS repos do. Where they differ is the `80`
+  band, which belongs to the OS repo underneath: the contract is that a role repo
+  skips `blib_link_os_layer` and calls `blib_link_role_layer` instead, wiring the
+  `85` band and `tmux/role.conf`. **Neither repo has adopted it yet** — `Defense`
+  hand-rolls the band in its own `wire_defense_stage`, and `Offense` still calls
+  `blib_link_os_layer` because it still carries the Kali OS layer. Both migrate
+  once the Core release carrying the helper fans out. Deliberate, not drift —
+  `core.manifest` records it too.
 - `Debian` is stamped from Fedora structurally, but takes its **apt idioms** from
   `Offense` — the fleet's other Debian-family repo. It is the only **frozen** target
   (Ubuntu 24.04 LTS), which is why it carries by far the largest out-of-band install

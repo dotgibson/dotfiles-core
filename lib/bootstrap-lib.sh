@@ -441,12 +441,22 @@ blib_link_os_layer() {
 # being one: dotfiles-Offense (role `offensive`) and dotfiles-Defense (role `defense`).
 #
 # <role> names BOTH the directory and the file stem, exactly as <os> does above, so
-# nothing has to move: offensive/offensive.zsh and defense/defense.zsh are already
-# where this expects them.
+# no SOURCE file has to move: offensive/offensive.zsh and defense/defense.zsh are
+# already where this expects them.
 #
 #   <role>/<role>.zsh   → zsh/85-<role>.zsh   (the loader's Role band, 85-94)
 #   <role>/<role>.conf  → tmux/role.conf      (Core's tmux.conf sources this last)
 #   <role>/templates/   → <config>/<role>/templates
+#
+# ONE DESTINATION DOES MOVE, and a consumer must handle it rather than discover it.
+# dotfiles-Defense already lands its templates at <config>/defense/templates, but the
+# offensive repo hand-rolls <config>/kali/templates — named for the distro, which is
+# exactly the naming this rename retires. Adopting this helper there relocates them to
+# <config>/offensive/templates, and TWO shipped docs quote the old path by hand:
+# offensive/hacktheplanet (the pseudo-shell.py line) and offensive/ippsec. Update both
+# in the same change that adopts the helper. Deliberately NOT solved with a compat
+# symlink (it would preserve a ~/.config/kali/ on a repo no longer called Kali) or a
+# namespace parameter (an argument whose only job is to keep a retired name alive).
 #
 # This exists because BOTH role repos hand-rolled the same three links and had already
 # drifted: Defense honoured BLIB_DRY when dropping the stale pre-v4 link and Offense did

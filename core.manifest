@@ -89,10 +89,13 @@ lib/ux.sh
 #    .zshrc-loader/login-shell helpers; SOURCED by every repo's bootstrap.sh —
 #    role repos included — so the shared half of the bootstrap stops being
 #    hand-forked across the fleet. What differs is which helpers a repo CALLS:
-#    an OS repo calls blib_link_core + blib_link_os_layer; a role repo
-#    (dotfiles-Offense, dotfiles-Defense) calls blib_link_core +
-#    blib_link_role_layer and never blib_link_os_layer, because the OS band
-#    belongs to the OS repo underneath it. ──────────────────────────────────────
+#    an OS repo calls blib_link_core + blib_link_os_layer; the CONTRACT for a
+#    role repo is blib_link_core + blib_link_role_layer and never
+#    blib_link_os_layer, because the OS band belongs to the repo underneath it.
+#    TODAY neither role repo is there yet: dotfiles-Defense hand-rolls the band
+#    in its own wire_defense_stage, and dotfiles-Offense still calls
+#    blib_link_os_layer because it still owns the Kali OS layer. Both adopt
+#    blib_link_role_layer once this Core release fans out. ─────────────────────
 lib/bootstrap-lib.sh
 # ── jujutsu (jj) — OPT-IN colocated git companion; symlinked to ~/.config/jj/config.toml.
 #    Additive — never replaces git. Inert without the jj binary; zsh aliases are HAVE_JJ-gated.

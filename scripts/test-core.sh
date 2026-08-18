@@ -2803,8 +2803,11 @@ _rl_out="$(BLIB_DRY=0 bash -c '
   . "'"$HERE/lib/bootstrap-lib.sh"'"
   blib_link_role_layer "$1/repo2" "$2" defense
 ' _ "$_rl" "$_rl_c5" 2>&1)"
+# -e AND -L, not -e alone: bash's -e follows the link, so it is FALSE for a dangling
+# symlink — an -e-only assertion would pass on exactly the regression this test is named
+# after. -L catches the dangling case, -e catches a real file or directory.
 if [[ "$(readlink "$_rl_c5/zsh/85-defense.zsh")" == "$_rl/repo2/defense/defense.zsh" ]] &&
-  [[ ! -e "$_rl_c5/tmux/role.conf" ]]; then
+  [[ ! -e "$_rl_c5/tmux/role.conf" && ! -L "$_rl_c5/tmux/role.conf" ]]; then
   pass "blib_link_role_layer: a role with no .conf and no templates leaves no dangling role.conf"
 else
   fail "blib_link_role_layer: the no-.conf role wired wrongly (got: $_rl_out)"
