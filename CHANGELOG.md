@@ -37,6 +37,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`ci.yml` ran the whole matrix twice on every branch push, and the comment claiming it
+  did not was wrong.** `on:` fired for both `push: branches: ["**"]` and `pull_request`,
+  and the concurrency key was documented as deduping that — it cannot. `github.ref` is
+  `refs/heads/<branch>` on a push and `refs/pull/<n>/merge` on a pull_request, so the two
+  events land in different groups and both run to completion.
+
+  The cost was 7 job-runs becoming 14, and — worse — each check _name_ existing twice on
+  one SHA, leaving the merge gate to take whichever finished last. #531 was blocked
+  exactly that way: its `pull_request` `audit (ubuntu-latest)` passed, then the `push`
+  run's copy concluded `cancelled` and that was the result the ruleset saw.
+
+  `push` is now `main`-only, with `pull_request` covering branches. The two events were
+  never redundant, which is why `pull_request` is the one kept: `push` tests the branch
+  head, `pull_request` tests an ephemeral merge into `main` — what merging actually
+  produces. A branch pushed with no PR open now gets no CI until one exists; that is
+  already the fleet convention, since every OS repo ships `branches: [main, master]` and
+  this repo was the lone holdout.
+
 - **CI's `apt-get update` is now bounded, so a wedged Ubuntu mirror fails fast instead of
   hanging a job to death.** On 2026-08-18 `archive.ubuntu.com`'s `noble-security` index
   stalled mid-fetch and took out four `audit (ubuntu-latest)` legs at 15 minutes each —
