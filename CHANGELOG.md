@@ -13,6 +13,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Corrected the keepalive stall's stated cause, and recorded what is actually known.** The
+  `sudo -n -v` assertion in `scripts/test-core.sh` can stall for one full refresh interval.
+  The code described that cost as a determinate property ("EXACTLY ONE INTERVAL … measured
+  three ways"); instrumenting 16 suite runs shows it is **intermittent** — two stalls
+  (50.017s, and 20.016s driven at 20), every other run 0.02–0.13s. A race, which is why it
+  usually reproduces as "already fast" and reads as fixed.
+
+  Two explanations are now ruled out in the comments rather than left for the next person to
+  re-derive. Pipe retention keeping the command substitution open reproduces the one-interval
+  signature by construction (0.329s redirected vs 7.023s not, at an interval of 7), but
+  sampling `/proc/<pid>/fd` across an entire stall — 1644 samples — found one sleeper with all
+  three fds on `/dev/null` throughout and its loop shell alive, so nothing was holding a pipe.
+  Removing the substitution therefore does not help either: measured on the converted block,
+  2 stalls in 2 runs.
+
+  What the sampling does show is a **teardown** stall — the loop did not act on its `TERM`
+  until its sleeper expired, while the caller sat in `blib_sudo_keepalive_stop`'s `wait`. The
+  root cause is still open (`stop()` alone is clean at 0/60, and the block outside the suite
+  at 0/40) and gets its own issue. No behaviour changes here; `BLIB_SUDO_KEEPALIVE_INTERVAL`
+  caps the damage at ~1s rather than removing it, and does not bound the poll as was claimed.
+
 ### Fixed
 
 - **`audit-core.sh --json` reported `failed` on a tree the identical non-JSON run passed**
