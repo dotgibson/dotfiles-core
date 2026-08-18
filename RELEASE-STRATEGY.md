@@ -28,7 +28,7 @@ versioned thing (Core) vendored into thin per-OS consumers**:
   `core/` via `git subtree`. A defect here fans out N-way, so Core is the thing
   that earns a version number, a tag, and a changelog.
 - **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,openSUSE,Alpine,Gentoo}`)
-  and **Role repos** (`dotfiles-Kali`, `dotfiles-Defense`) are **not**
+  and **Role repos** (`dotfiles-Offense`, `dotfiles-Defense`) are **not**
   independently versioned. They are stamped with the Core they carry — the
   generated `core.lock` records `core_version`, `core_sha`, and `core_branch` —
   so "what Core does Alpine run?" is answerable offline without a release
@@ -137,13 +137,13 @@ A **three-layer, multi-repo model with Core vendored by `git subtree`**:
 | --- | --- | --- |
 | **Core** | `dotfiles-core`, vendored into each OS repo's `core/` | zsh modules, tmux, nvim, git, starship — identical everywhere |
 | **OS-native** | one repo per OS | package manager, clipboard, paths, bootstrap |
-| **Role** | `dotfiles-Kali` (offensive), `dotfiles-Defense` (blue) | engagement / detection tooling layered on an OS |
+| **Role** | `dotfiles-Offense` (offensive), `dotfiles-Defense` (blue) | engagement / detection tooling layered on an OS |
 
 Each OS repo therefore carries **only** vendored Core plus its own thin OS layer
 — not the other eight OSes' files. The zsh **load order is the contract**
 (`tools → ui → options → history → aliases → git → functions → fzf → bindings →
 plugins → op → maint → update → os → local`); OS and Role repos extend it by
-appending stages (`… os offensive local` on Kali, `… os defense local` on
+appending stages (`… os offensive local` on Offense, `… os defense local` on
 Defense), never by editing Core.
 
 Why `git subtree` rather than a submodule: the vendored `core/` is present

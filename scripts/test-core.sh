@@ -2713,6 +2713,103 @@ else
   fail "blib_wire_summary: the footer omits the relink tally (got: $_bl_sum)"
 fi
 
+# ── F8b. blib_link_role_layer (lib/bootstrap-lib.sh) ─────────────────────────
+# The Role band (85-94) had no Core wiring for years, so BOTH role repos hand-rolled it
+# and drifted: dotfiles-Defense honoured BLIB_DRY when dropping the stale pre-v4
+# unnumbered link, dotfiles-Offense did not — so the same `--dry-run` mutated one box and
+# not the other. That asymmetry is exactly what case 3 below pins.
+#
+# The other invariant worth a test is a NEGATIVE one: a role repo must never write band
+# 80. That band belongs to the OS repo underneath it, and a role layer that claimed it
+# would silently displace the OS layer's fragment on every bootstrap — a failure that
+# looks like "my aliases vanished", three layers from its cause.
+hdr "blib_link_role_layer (band 85 + tmux/role.conf, and never band 80)"
+_rl="$(mktemp -d "$SANDBOX/rolelayer.XXXXXX")"
+mkdir -p "$_rl/repo/offensive/templates"
+printf 'ROLEZSH\n'  >"$_rl/repo/offensive/offensive.zsh"
+printf 'ROLECONF\n' >"$_rl/repo/offensive/offensive.conf"
+printf 'TPL\n'      >"$_rl/repo/offensive/templates/engagement.md"
+
+# Fresh `bash -c` per case: the lib's re-entry guard makes a re-source a no-op, and these
+# need BLIB_DRY / BLIB_SKIP read from a clean start. <dry> <skip-csv> <config-dir>.
+_rl_run() {
+  BLIB_DRY="$1" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    [ -n "$2" ] && blib_select --skip "$2"
+    blib_link_role_layer "$1/repo" "$3" offensive
+  ' _ "$_rl" "$2" "$3" 2>&1
+}
+
+# 1) the full wire: band 85, tmux/role.conf, and templates under <config>/<role>/.
+_rl_c1="$_rl/cfg1"
+_rl_out="$(_rl_run 0 "" "$_rl_c1")"
+if [[ "$(readlink "$_rl_c1/zsh/85-offensive.zsh")" == "$_rl/repo/offensive/offensive.zsh" ]] &&
+  [[ "$(readlink "$_rl_c1/tmux/role.conf")" == "$_rl/repo/offensive/offensive.conf" ]] &&
+  [[ "$(readlink "$_rl_c1/offensive/templates")" == "$_rl/repo/offensive/templates" ]]; then
+  pass "blib_link_role_layer: wires 85-<role>.zsh, tmux/role.conf and <role>/templates"
+else
+  fail "blib_link_role_layer: the role surface is not fully wired (got: $_rl_out)"
+fi
+
+# 2) it must NOT touch band 80 — that is the OS repo's, and this helper has no business
+#    there even though the role fragment rides the same `zsh` group.
+if [[ ! -e "$_rl_c1/zsh/80-os.zsh" ]]; then
+  pass "blib_link_role_layer: leaves band 80 alone (the OS repo owns it)"
+else
+  fail "blib_link_role_layer: wrote band 80 — a role layer would displace the OS fragment"
+fi
+
+# 3) the stale pre-v4 unnumbered link. The v4 loader globs NN-*.zsh, so an unnumbered
+#    <role>.zsh is INERT while still looking wired — it must be dropped on a real run and
+#    SURVIVE a dry run. The second half is the drift this helper was written to end.
+_rl_c3="$_rl/cfg3"
+mkdir -p "$_rl_c3/zsh"
+ln -sfn "$_rl/repo/offensive/offensive.zsh" "$_rl_c3/zsh/offensive.zsh"
+_rl_out="$(_rl_run 1 "" "$_rl_c3")"
+if [[ -L "$_rl_c3/zsh/offensive.zsh" ]] && [[ ! -e "$_rl_c3/zsh/85-offensive.zsh" ]] &&
+  [[ "$_rl_out" == *"would drop stale pre-v4 link"* ]]; then
+  pass "blib_link_role_layer: BLIB_DRY names the stale pre-v4 link and removes nothing"
+else
+  fail "blib_link_role_layer: dry-run mutated the box or hid the stale link (got: $_rl_out)"
+fi
+_rl_out="$(_rl_run 0 "" "$_rl_c3")"
+if [[ ! -e "$_rl_c3/zsh/offensive.zsh" ]] &&
+  [[ "$(readlink "$_rl_c3/zsh/85-offensive.zsh")" == "$_rl/repo/offensive/offensive.zsh" ]]; then
+  pass "blib_link_role_layer: a real run drops the inert pre-v4 link and numbers the fragment"
+else
+  fail "blib_link_role_layer: the stale unnumbered link survived a real run (got: $_rl_out)"
+fi
+
+# 4) group gating, both directions in one pass: --skip tmux must drop role.conf WITHOUT
+#    dropping the zsh fragment. A helper that ignored blib_want would wire both; one that
+#    gated the whole function on a single group would wire neither.
+_rl_c4="$_rl/cfg4"
+_rl_out="$(_rl_run 0 tmux "$_rl_c4")"
+if [[ ! -e "$_rl_c4/tmux/role.conf" ]] &&
+  [[ "$(readlink "$_rl_c4/zsh/85-offensive.zsh")" == "$_rl/repo/offensive/offensive.zsh" ]]; then
+  pass "blib_link_role_layer: --skip tmux drops role.conf and keeps the band-85 fragment"
+else
+  fail "blib_link_role_layer: --skip tmux gated the wrong half (got: $_rl_out)"
+fi
+
+# 5) <role> names the directory AND the stem, so a role with no .conf (dotfiles-Defense
+#    ships none today) wires cleanly instead of leaving a dangling tmux/role.conf.
+mkdir -p "$_rl/repo2/defense"
+printf 'BLUE\n' >"$_rl/repo2/defense/defense.zsh"
+_rl_c5="$_rl/cfg5"
+_rl_out="$(BLIB_DRY=0 bash -c '
+  set -u
+  . "'"$HERE/lib/bootstrap-lib.sh"'"
+  blib_link_role_layer "$1/repo2" "$2" defense
+' _ "$_rl" "$_rl_c5" 2>&1)"
+if [[ "$(readlink "$_rl_c5/zsh/85-defense.zsh")" == "$_rl/repo2/defense/defense.zsh" ]] &&
+  [[ ! -e "$_rl_c5/tmux/role.conf" ]]; then
+  pass "blib_link_role_layer: a role with no .conf and no templates leaves no dangling role.conf"
+else
+  fail "blib_link_role_layer: the no-.conf role wired wrongly (got: $_rl_out)"
+fi
+
 # ── F9. tag-release.sh — the tag may only exist on a commit that is on main ──
 # This script had NO coverage, which is how its ordering bug survived: it used to commit
 # AND tag in one step, leaving a local vX.Y.Z on a commit that was not yet on main. A

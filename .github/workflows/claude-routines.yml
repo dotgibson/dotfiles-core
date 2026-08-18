@@ -135,7 +135,7 @@ jobs:
       - name: Clone the rest of the fleet (read-only, shallow)
         run: |
           for r in dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian \
-                   dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Kali \
+                   dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense \
                    dotfiles-openSUSE dotfiles-Windows dotfiles-web; do
             git clone --depth 1 "https://github.com/${OWNER}/${r}.git" "$r" 2>/dev/null \
               || echo "::warning::could not clone $r (skipping it in the sweep)"
@@ -378,7 +378,7 @@ jobs:
       - name: Clone the rest of the fleet (read-only, shallow)
         run: |
           for r in dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian \
-                   dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Kali \
+                   dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense \
                    dotfiles-openSUSE dotfiles-Windows; do
             git clone --depth 1 "https://github.com/${OWNER}/${r}.git" "$r" 2>/dev/null \
               || echo "::warning::could not clone $r (skipping it in the sweep)"

@@ -26,7 +26,7 @@ truth and compare:
   than inventory — it has no layout tree, so do not audit against one.
 - **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's
   `aliases.md` ↔ `zsh/20-aliases.zsh` + `zsh/25-git.zsh`; each role repo's `aliases.md`
-  ↔ its own source (`dotfiles-Kali/aliases.md` ↔ `offensive/offensive.zsh`,
+  ↔ its own source (`dotfiles-Offense/aliases.md` ↔ `offensive/offensive.zsh`,
   `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`). Documented entries must
   exist; notable source aliases/helpers should be documented.
 - **`PORTING-MATRIX.md` ↔ each OS repo.** Per distro, compare the matrix's commands

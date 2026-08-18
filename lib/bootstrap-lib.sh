@@ -2,7 +2,7 @@
 # core/lib/bootstrap-lib.sh — shared BASH provisioning scaffold for OS bootstraps.
 # ──────────────────────────────────────────────────────────────────────────────
 # ONE definition of the symlink/loader/login-shell scaffold that every OS repo's
-# bootstrap.sh used to hand-roll. Before this, ~half of each of the seven Linux/Kali
+# bootstrap.sh used to hand-roll. Before this, ~half of each of the seven Linux/role
 # bootstrap.sh files was the SAME code — link(), read_pkgs(), WSL detection, the big
 # Core-symlink loop, the .zshrc loader heredoc, the default-shell logic — copy-pasted
 # and then independently reformatted (tabs vs spaces), so a fix to any of it had to be
@@ -79,7 +79,7 @@ blib_is_wsl() {
 # is removed and its old target is PRINTED and counted in BLIB_RELINKED. Keeping the
 # symlink case a delete avoids littering ~/.config with one stray backup link per
 # fragment per run — the repos being wired are symlink farms, so a role switch
-# (Kali ↔ Defense) or a moved dotfiles tree relinks nearly everything. But deleting it
+# (Offense ↔ Defense) or a moved dotfiles tree relinks nearly everything. But deleting it
 # unrecorded lost the one thing worth keeping: WHERE it used to point. The early return
 # above means this branch is reached ONLY when the link points somewhere else, so every
 # relink notice is real information, never re-run noise (issue #430).
@@ -159,9 +159,10 @@ blib_read_pkgs() {
 # ── module selection (Track B: --only / --skip) ───────────────────────────────
 # Optional filtering of the wiring GROUPS so a bootstrap can re-link a subset (e.g.
 # `--only zsh,nvim`). The groups and what each covers in the link helpers below:
-#   zsh    — core/zsh/*.zsh, os/<os>.zsh, the managed ~/.zshrc loader, login shell
+#   zsh    — core/zsh/*.zsh, os/<os>.zsh, <role>/<role>.zsh + <role>/templates,
+#            the managed ~/.zshrc loader, login shell
 #   nvim   — core/nvim, the core/vim/vimrc fallback
-#   tmux   — tmux.conf/reset/scripts + tpm, os/<os>.conf
+#   tmux   — tmux.conf/reset/scripts + tpm, os/<os>.conf, <role>/<role>.conf
 #   git    — core gitconfig, os/<os>.gitconfig, the once-seeded local identity
 #   prompt — starship.toml
 #   tools  — lazygit, mise, jujutsu, atuin, bin/clip*, ssh client config, the seeded sesh config
@@ -415,8 +416,8 @@ blib_link_core() {
 
 # ── symlink the OS-native overlays ────────────────────────────────────────────
 # blib_link_os_layer <dotfiles> <config> <os> — link the three OS overlay files when
-# present: os/<os>.conf → tmux/os.conf, os/<os>.zsh → zsh/os.zsh (the loader's `os`
-# stage), os/<os>.gitconfig → git/os.gitconfig (included by Core's gitconfig).
+# present: os/<os>.conf → tmux/os.conf, os/<os>.zsh → zsh/80-os.zsh (the loader's OS
+# band), os/<os>.gitconfig → git/os.gitconfig (included by Core's gitconfig).
 blib_link_os_layer() {
   local dotfiles="$1" config="$2" os="$3"
   # Each overlay rides with its Core group: os.conf→tmux, os.gitconfig→git, os.zsh→zsh.
@@ -431,6 +432,62 @@ blib_link_os_layer() {
     # v4: the OS layer is the numbered fragment 80-os.zsh (band 70-84). The loader globs
     # it by NN prefix; it always loads (>=70), independent of CORE_PROFILE.
     blib_link "$dotfiles/os/$os.zsh" "$config/zsh/80-os.zsh"
+  fi
+}
+
+# ── symlink the Role overlays ─────────────────────────────────────────────────
+# blib_link_role_layer <dotfiles> <config> <role> — the Role-layer twin of
+# blib_link_os_layer, for the repos that sit ON TOP of an OS-native layer rather than
+# being one: dotfiles-Offense (role `offensive`) and dotfiles-Defense (role `defense`).
+#
+# <role> names BOTH the directory and the file stem, exactly as <os> does above, so
+# nothing has to move: offensive/offensive.zsh and defense/defense.zsh are already
+# where this expects them.
+#
+#   <role>/<role>.zsh   → zsh/85-<role>.zsh   (the loader's Role band, 85-94)
+#   <role>/<role>.conf  → tmux/role.conf      (Core's tmux.conf sources this last)
+#   <role>/templates/   → <config>/<role>/templates
+#
+# This exists because BOTH role repos hand-rolled the same three links and had already
+# drifted: Defense honoured BLIB_DRY when dropping the stale pre-v4 link and Offense did
+# not, so a --dry-run in one repo mutated the box and in the other did not.
+#
+# ONE ROLE PER BOX. Both roles land on band 85, so a machine that wired Offense and
+# then Defense would have 85-offensive.zsh and 85-defense.zsh loading in glob order and
+# a single tmux/role.conf that only the second one to run owns. That is not a supported
+# configuration — an attacker station and an analyst station are different boxes — and
+# spreading the roles across separate bands would only make the breakage quieter.
+#
+# NO role gitconfig hook, deliberately: Core's gitconfig [include]s os.gitconfig and
+# local.gitconfig only, neither role repo has ever had one, and an unused include is a
+# hook that rots. Add it here AND in git/gitconfig if a role ever needs one.
+blib_link_role_layer() {
+  local dotfiles="$1" config="$2" role="$3"
+
+  if blib_want zsh && [[ -f "$dotfiles/$role/$role.zsh" ]]; then
+    blib_say "symlinking $role role layer"
+    # v4: the loader globs NUMBERED fragments ($ZSH_CFG/NN-*.zsh), so a pre-v4 unnumbered
+    # link is not just stale — it is INERT, and it sits there looking wired. Drop it, via
+    # the dry-run guard so a preview stays a preview.
+    if [[ -L "$config/zsh/$role.zsh" ]]; then
+      if _blib_dry; then
+        blib_say "would drop stale pre-v4 link: $config/zsh/$role.zsh"
+      else
+        rm -f "$config/zsh/$role.zsh"
+      fi
+    fi
+    blib_link "$dotfiles/$role/$role.zsh" "$config/zsh/85-$role.zsh"
+  fi
+
+  if blib_want tmux && [[ -f "$dotfiles/$role/$role.conf" ]]; then
+    blib_link "$dotfiles/$role/$role.conf" "$config/tmux/role.conf"
+  fi
+
+  # Templates ride with the zsh group: they are the role's scaffolding (engagement /
+  # case skeletons), surfaced under $config for discoverability. The role's own helpers
+  # read them out of the checkout, not from here.
+  if blib_want zsh && [[ -d "$dotfiles/$role/templates" ]]; then
+    blib_link "$dotfiles/$role/templates" "$config/$role/templates"
   fi
 }
 
