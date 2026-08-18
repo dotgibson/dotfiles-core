@@ -8191,6 +8191,42 @@ done
 _ka_iv_got="$(_ka_iv unset)"
 if [[ "$_ka_iv_got" == "$_KA_DEFAULT_INTERVAL" ]]; then pass "keepalive: an unset interval is the shipped ${_KA_DEFAULT_INTERVAL}s (the seam changes no default)"; else fail "keepalive: with no override the sleeper got '${_ka_iv_got:-nothing}', not ${_KA_DEFAULT_INTERVAL}"; fi
 rm -f "$_ka_bin/sleep"
+# ── #529: stop() must not block when a TERM to the sleeper goes unheeded ─────
+# The shipped hang was a race: a TERM aimed at the sleeper is sometimes accepted by kill(2)
+# — rc 0 — and never acted on, so the handler's `wait` sits out the sleeper's entire
+# interval and stop() blocks behind it. 50s in a real provisioning run. In this suite it
+# reproduced about 1 run in 3 at a 30s interval and never once outside it, and a 1-in-3
+# race is not a gate: it would pass on the run that mattered.
+#
+# So force the case instead of waiting for it. A sleeper that IGNORES SIGTERM is the lost
+# signal made deterministic — SIG_IGN survives exec, so the real `sleep` inherits it from
+# the shim. The handler's KILL cannot be caught or ignored, so stop() still returns at
+# once; drop the KILL and this blocks for the whole interval, every time.
+#
+# Asserted on WALL CLOCK on purpose. "stop() eventually returned and the sleeper was gone"
+# is true in BOTH cases — it is the passing-for-the-wrong-reason this exists to catch.
+_ka_ign_iv=5
+cat >"$_ka_bin/sleep" <<SHIM
+#!/bin/sh
+trap '' TERM
+exec "$_ka_real_sleep" "\$@"
+SHIM
+chmod +x "$_ka_bin/sleep"
+_ka_ign_t0=$SECONDS
+# shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo + sleep
+( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  BLIB_SUDO_KEEPALIVE_INTERVAL="$_ka_ign_iv"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  sleep 0.3 # let the refresher fork and exec its sleeper before tearing down
+  blib_sudo_keepalive_stop ) >/dev/null 2>&1
+_ka_ign_d=$((SECONDS - _ka_ign_t0))
+rm -f "$_ka_bin/sleep"
+if ((_ka_ign_d < _ka_ign_iv - 1)); then
+  pass "keepalive: stop() returns promptly when the sleeper ignores SIGTERM (${_ka_ign_d}s < ${_ka_ign_iv}s)"
+else
+  fail "keepalive: stop() blocked ${_ka_ign_d}s waiting out a SIGTERM-ignoring sleeper — the handler's KILL is gone (#529)"
+fi
+
 # The TERM handler must target the JOB, never a pid. `$!` does not clear when `wait` reaps
 # the sleeper, so a handler holding it signals that dead pid for the whole of the next
 # `sudo -n -v` — and once the box has cycled through the pid space, whatever now owns it,
@@ -8198,7 +8234,14 @@ rm -f "$_ka_bin/sleep"
 # between orphans the new sleeper). Only a job spec is set by the fork AND cleared by the
 # reap. This is a STRUCTURAL gate because the failure needs a 50s iteration boundary plus a
 # pid wrap to observe — unreachable in a suite, which is exactly why it needs pinning.
-_ka_trap_want="trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM"
+#
+# The KILL is pinned here for the same reason but a different failure: a lone TERM is
+# sometimes accepted by kill(2) and never acted on, and the handler then blocks in `wait`
+# for the sleeper's whole interval (#529). Dropping the KILL back out would restore an
+# intermittent 50s hang that the behavioral gate below can catch only because it forces the
+# case with a TERM-ignoring sleeper — in the wild it is roughly a 1-in-3 race, so this line
+# is what keeps someone from "simplifying" it away on a green run.
+_ka_trap_want="trap 'kill %% 2>/dev/null; kill -9 %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM"
 # ONE matcher, used for BOTH the extraction and the count. Two matchers could disagree,
 # and a gate whose two halves disagree is the failure this whole change is about.
 #
@@ -8258,7 +8301,7 @@ _ka_re_is() { # _ka_re_is <label> <candidate-line> <want:0|1>
   n="$(printf '%s\n' "$2" | grep -cE "$_ka_trap_re")"
   if [[ "$n" == "$3" ]]; then pass "trap matcher: $1"; else fail "trap matcher: $1 (matched=$n want=$3)"; fi
 }
-_ka_re_is "sees the shipped handler" "    trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM" 1
+_ka_re_is "sees the shipped handler" "    trap 'kill %% 2>/dev/null; kill -9 %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM" 1
 _ka_re_is "sees TERM when it is NOT the last operand" "    trap 'exit 0' TERM INT" 1
 _ka_re_is "sees TERM after another signal" "    trap 'exit 0' INT TERM" 1
 _ka_re_is "sees the SIGTERM spelling" "    trap 'exit 0' SIGTERM" 1

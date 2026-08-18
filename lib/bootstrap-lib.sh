@@ -750,7 +750,29 @@ blib_sudo_keepalive_start() {
     # the loop shell dies while its sleeper is still alive or unreaped — and stop()'s own
     # `wait` returns on the shell, not the sleeper. Teardown then only LOOKED synchronous
     # because the test slept afterwards. Reaping here is what makes stop()'s contract true.
-    trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM
+    #
+    # TERM then KILL, because one TERM is not enough. A signal aimed at the sleeper is
+    # sometimes accepted by kill(2) — rc 0 — and simply never acted on: the sleeper runs
+    # its FULL interval and exits 0, while this handler blocks in `wait` and stop() blocks
+    # behind it. Measured in-loop: `TRAP kill rc=0` followed 30.003s later by `TRAP wait
+    # rc=0`, with the sleeper showing no signal blocked, ignored or caught (SigBlk/SigIgn/
+    # SigCgt all zero) — so it was killable and the signal was lost, not refused. That is
+    # the whole of #529: an intermittent 50s hang in a helper whose job is to keep a
+    # provisioning run from hanging.
+    #
+    # The mechanism was NOT isolated. It reproduces only inside the full behavioral suite
+    # (roughly 1 run in 2–3 at a 30s interval) and never standalone — not with a plain
+    # sleeper, not through the suite's own `sleep` shim, and not at any delay between
+    # start() and stop() from 0 to 50ms. So this is a fix validated by measurement rather
+    # than by explanation, and it is written that way on purpose.
+    #
+    # A follow-up KILL costs nothing and cannot be lost or ignored. It is safe precisely
+    # because the target is a bare `sleep`: no state, nothing to flush, nothing to corrupt.
+    # On the normal path TERM wins and the KILL lands on a zombie as a harmless no-op —
+    # `wait` returns 143. When TERM is lost it returns 137, and that is the case this line
+    # exists for: 4 such rescues in 7 instrumented runs, with stop() staying at 2–3ms and
+    # zero stalls, against roughly one 30s stall every 2–3 runs before.
+    trap 'kill %% 2>/dev/null; kill -9 %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM
     while true; do
       "$su" -n -v 2>/dev/null || true
       sleep "$interval" &
