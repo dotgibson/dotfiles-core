@@ -6,17 +6,37 @@ name: ci
 # lack (shellcheck/shfmt/luacheck/zsh) and then hands off entirely to
 # scripts/audit-core.sh, so there is ONE definition of "Core is healthy".
 
+# push is main-ONLY, and pull_request covers everything else. Both used to fire on
+# every branch, which double-ran the whole matrix: 7 job-runs became 14, and — worse —
+# each check NAME then existed twice on one SHA, so the merge gate took whichever
+# finished last. dotgibson/dotfiles-core#531 was blocked exactly that way: its
+# pull_request `audit (ubuntu-latest)` passed at 17:36:49 and the push run's copy
+# concluded `cancelled` at 17:55:55, and the newer, worse result is the one the
+# ruleset saw.
+#
+# The two events are NOT redundant, which is why pull_request is the one kept: `push`
+# tests the branch head, `pull_request` tests an ephemeral merge of the branch into
+# main — the thing merging will actually produce. Keeping the weaker signal and
+# discarding the stronger one would have been the wrong trade.
+#
+# Cost: a branch pushed with no PR open now gets no CI until one exists. That is the
+# fleet's own convention — every OS repo already ships `branches: [main, master]`
+# here; this repo was the lone holdout.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
-# One in-flight run per ref. This both (a) cancels a superseded run when you push
-# again, and (b) dedupes the push-event + pull_request-event double-trigger on a
-# same-repo PR: both share this ref-keyed group, so only the latest survives.
+# One in-flight run per ref: pushing again cancels the superseded run.
+#
+# It does NOT, and never did, dedupe a push/pull_request double-trigger — the claim
+# that used to sit here was simply wrong. `github.ref` is `refs/heads/<branch>` on a
+# push and `refs/pull/<n>/merge` on a pull_request, so the two events land in DIFFERENT
+# groups and both run to completion. The trigger split above is what actually removes
+# the duplication; this key only ever collapsed successive pushes to one ref.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
