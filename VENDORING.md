@@ -2,7 +2,7 @@
 
 Every OS repo carries a `core/` directory that is a **vendored copy of this repo**,
 delivered by `git subtree`. This document is for the person working in
-`dotfiles-Fedora` / `dotfiles-Arch` / `dotfiles-Kali` / … who needs to know what they may
+`dotfiles-Fedora` / `dotfiles-Arch` / `dotfiles-Offense` / … who needs to know what they may
 touch, what will be overwritten, and how to get a fix upstream.
 
 `ARCHITECTURE.md` explains _why_ the system vendors. This explains _how to live with it_.
@@ -102,7 +102,7 @@ order. The band decides the owner:
 | --- | --- | --- |
 | `00`–`69` | **Core** | `20-aliases.zsh`, `60-update.zsh` |
 | `70`–`84` | **OS-native** | `80-os.zsh` ← symlinked from your `os/<os>.zsh` |
-| `85`–`94` | **Role** | Kali / Defense fragments |
+| `85`–`94` | **Role** | Offense / Defense fragments |
 | `95`–`99` | **host-local** | `99-local.zsh` (gitignored, never committed) |
 
 ### The footgun: `CORE_PROFILE` gates by NUMBER, not by authorship

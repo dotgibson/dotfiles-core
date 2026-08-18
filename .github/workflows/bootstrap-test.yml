@@ -27,7 +27,7 @@
 #       with:
 #         image: alpine:3.20
 #         prep:  apk add --no-cache bash zsh
-#         offensive: false        # true only for dotfiles-Kali
+#         offensive: false        # true only for dotfiles-Offense
 # ──────────────────────────────────────────────────────────────────────────────
 name: bootstrap-test
 
@@ -43,7 +43,7 @@ on:
         type: string
         required: true
       offensive:
-        description: Assert the Kali offensive role layer (offensive symlinks + loader stage).
+        description: Assert the offensive role layer (offensive symlinks + loader stage).
         type: boolean
         default: false
 

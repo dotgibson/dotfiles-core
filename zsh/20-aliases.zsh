@@ -3,7 +3,7 @@
 # Aliases for the modern CLI stack. Every alias touching an optional tool is
 # GUARDED by a HAVE_* flag from 00-tools.zsh, so on a bare box (fresh server, rescue
 # shell) you transparently get the classic command. Load AFTER 00-tools.zsh.
-# Anything offensive/engagement-flavoured lives in dotfiles-Kali, not here.
+# Anything offensive/engagement-flavoured lives in dotfiles-Offense, not here.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ── ls -> eza ─────────────────────────────────────────────────────────────────
@@ -195,7 +195,7 @@ alias mkdir='mkdir -p'
 # tealdeer: `help <cmd>` → community-curated quick-reference (complement to man).
 [[ -n ${HAVE_TLDR:-} ]] && alias help='tldr'
 
-# ── network conveniences (stay in Core; anything engagement-flavored -> Kali)─
+# ── network conveniences (stay in Core; engagement-flavored -> Offense) ──────
 alias myip='curl -fsS https://ifconfig.me 2>/dev/null && echo'
 alias ports='ss -tulpn 2>/dev/null || netstat -tulpn'
 [[ -n ${HAVE_GPING:-} ]] && alias ping='gping'

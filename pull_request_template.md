@@ -22,7 +22,7 @@
 ## Is it actually Core?
 
 - [ ] Identical on every machine — **not** OS-specific (pkg manager, paths, clipboard → the OS repo)
-- [ ] **Not** offensive/engagement tooling (→ `dotfiles-Kali`)
+- [ ] **Not** offensive/engagement tooling (→ `dotfiles-Offense`)
 
 ## Contract & checks
 

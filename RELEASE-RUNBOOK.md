@@ -13,10 +13,10 @@ the OS-repo rollout is the consumer side of the Core line, not its own version:
 | **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 9 OS repos' `core/` | [1](#1-cut-a-core-release) |
 | **OS-repo rollout** | not versioned (stamped `core.lock`) | merging the fan-out PRs | the live hosts (on bootstrap) | [2](#2-roll-a-core-release-out-to-the-os-repos) |
 | **dotfiles-Windows** | `dotfiles-Windows` (own `vX.Y.Z`) | mirror-sync `nvim/`+`starship/` (auto-patch) **or** a manual CHANGELOG promotion + tag (minor/major) | the Windows host (on bootstrap) | [3](#3-cut-a-dotfiles-windows-release) |
-| **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Kali` (`companion.lock`) | [4](#4-cut-an-htpx-release) |
+| **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Offense` (`companion.lock`) | [4](#4-cut-an-htpx-release) |
 
 These lines are independent and update different files, so they never collide: a Core
-release bumps each OS repo's `core.lock`; an htpx release bumps Kali's `companion.lock`;
+release bumps each OS repo's `core.lock`; an htpx release bumps Offense's `companion.lock`;
 and `dotfiles-Windows` carries its own version, advanced **two ways** — an automatic patch when
 the `nvim/`/`starship/` assets it mirrors from Core move, and a deliberate minor/major a human
 cuts for host work (both flows in §3). It vendors no `core/` subtree.
@@ -375,7 +375,7 @@ Then close the `release-readiness` / `release-notes` tracking issues for the cut
 Run in a clean `htpx` checkout. htpx versions itself from its `CHANGELOG.md`.
 
 **Which bump?** htpx is a content corpus, so read SemVer as impact on its consumers —
-`dotfiles-Kali` (which regenerates the marked `hacktheplanet` / `PURPLE-TEAM.md` blocks from
+`dotfiles-Offense` (which regenerates the marked `hacktheplanet` / `PURPLE-TEAM.md` blocks from
 the entries via `gen-views.sh`, drift-gated by `companion.yml`) and anyone browsing with the
 `htpx` picker:
 
@@ -384,9 +384,9 @@ the entries via `gen-views.sh`, drift-gated by `companion.yml`) and anyone brows
   `### Changed` "asrep-probing-4771 retargeted" line is patch-shaped work.)
 - **MINOR** — the corpus **grows** backward-compatibly: new red↔blue pairs, a new unpaired
   entry, a new tactic/technique covered. (v2.4.0's "+2 pairs, +1 recon entry" = minor.)
-- **MAJOR** — a change Kali's regeneration or the `htpx` picker must **adapt** to: the entry
+- **MAJOR** — a change Offense's regeneration or the `htpx` picker must **adapt** to: the entry
   frontmatter / `{{slot}}` format, the `gen-views.sh` marker contract, or the
-  `entries/red|blue/` layout. These break the `companion.yml` drift-gate until Kali re-syncs,
+  `entries/red|blue/` layout. These break the `companion.yml` drift-gate until Offense re-syncs,
   so flag them loudly.
 
 ```bash
@@ -416,10 +416,10 @@ git checkout main && git fetch origin && git pull --ff-only origin main
 
 3. The push to `main` triggers `auto-tag.yml`, which tags `vX.Y.Z` and publishes the
    Release. `sync-fanout.yml` then opens a `chore(companion): sync htpx -> vX.Y.Z` PR
-   against `dotfiles-Kali` (bumps `companion.lock` only — never `core.lock`).
-4. Review and merge that dotfiles-Kali PR.
+   against `dotfiles-Offense` (bumps `companion.lock` only — never `core.lock`).
+4. Review and merge that dotfiles-Offense PR.
 
-Requires the `FLEET_SYNC_TOKEN` secret on the **htpx** repo (write to dotfiles-Kali).
+Requires the `FLEET_SYNC_TOKEN` secret on the **htpx** repo (write to dotfiles-Offense).
 htpx is read with the built-in token, so `FLEET_SYNC_TOKEN` needs no htpx access.
 
 ### Backfill an already-released tag

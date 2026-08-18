@@ -2,16 +2,16 @@ name: lint (reusable)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # REUSABLE shell/workflow lint gate (G3). Every OS/role repo carried its own
-# ~203-line copy of this (identical but for Kali's one extra exclude) — one fix had
+# ~203-line copy of this (identical but for Offense's one extra exclude) — one fix had
 # to be hand-propagated to 5+ repos. This is the single definition; each OS repo
 # collapses to a 3-line caller:
 #
 #   jobs:
 #     lint:
 #       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v4
-#       # Kali only:  with: { extra_ls_files_excludes: ":!:offensive/companion/**" }
+#       # Offense only: with: { extra_ls_files_excludes: ":!:offensive/companion/**" }
 #
-# The ONLY per-repo variance is the extra `git ls-files` exclude (Kali excludes its
+# The ONLY per-repo variance is the extra `git ls-files` exclude (Offense excludes its
 # vendored htpx `offensive/companion/` subtree); everything else — the pinned-tool
 # bootstrap, SHELLCHECK_OPTS, the core/ exclude, shfmt-advisory — is constant.
 #
@@ -36,7 +36,7 @@ on:
           Extra git-ls-files pathspec exclude(s), appended after ':!:core/**' in every
           file list. Each a RAW pathspec with NO surrounding quotes — the value is
           word-split into a bash array, so literal quotes would become part of the token
-          and the exclude would silently not match. Space-separated for multiple. Only Kali
+          and the exclude would silently not match. Space-separated for multiple. Only Offense
           sets it: :!:offensive/companion/**
         required: false
         type: string

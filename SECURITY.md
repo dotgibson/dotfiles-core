@@ -30,5 +30,5 @@ first, then propagates to each OS repo on the next `./scripts/sync-core.sh`.
 ## Scope
 
 In scope: anything tracked in this repository. Out of scope: the OS-native repos
-(`dotfiles-{MacBook,Windows,Fedora,…}`) and `dotfiles-Kali` — report issues that
+(`dotfiles-{MacBook,Windows,Fedora,…}`) and `dotfiles-Offense` — report issues that
 are specific to those layers in their own repositories.

@@ -14,11 +14,11 @@ Before adding anything, run the README's test. It belongs here **only** if:
 
 Otherwise it lives elsewhere:
 
-| If it changes when…                                               | It belongs in…                                           |
-| ----------------------------------------------------------------- | -------------------------------------------------------- |
-| the **operating system** changes (pkg manager, paths, clipboard)  | the OS repo (`dotfiles-{MacBook,Fedora,Arch,…}`)         |
-| **you as an operator** change (C2/wordlists; or detections/hunts) | `dotfiles-Kali` (offense) / `dotfiles-Defense` (defense) |
-| neither — it's the same everywhere                                | **here**                                                 |
+| If it changes when…                                               | It belongs in…                                              |
+| ----------------------------------------------------------------- | ----------------------------------------------------------- |
+| the **operating system** changes (pkg manager, paths, clipboard)  | the OS repo (`dotfiles-{MacBook,Fedora,Arch,…}`)            |
+| **you as an operator** change (C2/wordlists; or detections/hunts) | `dotfiles-Offense` (offense) / `dotfiles-Defense` (defense) |
+| neither — it's the same everywhere                                | **here**                                                    |
 
 ## The manifest is the contract
 

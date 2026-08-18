@@ -55,7 +55,7 @@ CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null |
 # vendored core/ subtree). See the note in scripts/os-repos.txt.
 ALL_OS_REPOS=(
   dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian
-  dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Kali
+  dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense
   dotfiles-openSUSE
 )
 _OS_REPOS_FILE="$HERE/scripts/os-repos.txt"

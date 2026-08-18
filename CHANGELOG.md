@@ -283,6 +283,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **The fleet entry `dotfiles-Kali` is renamed to `dotfiles-Offense`**, making the Role layer's
+  two repos symmetric (`dotfiles-Offense` red / `dotfiles-Defense` blue) and naming the repo
+  after the role it carries rather than the distro it happened to be built on. The GitHub
+  repo is renamed in place rather than recreated, so it keeps its stars, issues and PRs, and
+  existing clones and remotes keep working through GitHub's redirect.
+
+  The rename is a **four-file coordinated edit**, exactly as `scripts/os-repos.txt`'s own
+  header warns: the data file plus the hardcoded fallback arrays in `scripts/sync-core.sh`,
+  `scripts/fleet-drift.sh` and `scripts/core-integrity.sh` — the fallbacks being what runs
+  precisely when nobody is watching. `scripts/test-core.sh` asserts all four agree, so a
+  partial rename fails the audit rather than silently dropping a repo from the fan-out.
+  Fan-out order is unchanged: case-insensitively, `offense` sorts into the same slot `kali`
+  held, between `gentoo` and `opensuse`.
+
+  **Rename the GitHub repo and your local checkout together with this change.** The
+  entries in `scripts/os-repos.txt` are _directory_ names — `sync-core.sh` resolves each
+  against `REPOS_ROOT` on your disk — so a box still holding `~/…/dotfiles-Kali` gets
+  that repo skipped by the fan-out. It says so (`skip: dotfiles-Offense (not cloned at
+  …)`) rather than failing quietly, but a skipped repo is a repo that stops receiving
+  Core, and `fleet-drift.sh` will report it red until the directory is renamed.
+
+  Only the **repo name** moves. Every reference to Kali the _distro_ stays: `maint`'s
+  `OS_ID == kali` upgrade guard, the `kalilinux/kali-rolling` CI images, the `Kali (apt)`
+  columns in `PORTING-MATRIX.md`, and the Debian/Kali binary-name notes are all unaffected by
+  what a repository is called. Historical `CHANGELOG.md` entries keep the old name too — they
+  record what happened at the time.
+
+  This is the first step of a larger split: `dotfiles-Offense` still carries its own
+  OS-native layer today, and that half is moving to `dotfiles-Debian` so the role repo stacks
+  on an OS repo the way `dotfiles-Defense` already does. Core's docs describe the repo as it
+  is now, not as it will be.
+
+- **Corrected a stale claim that `dotfiles-Defense` does not source the shared bootstrap
+  scaffold** (`core.manifest`, `PORTING-MATRIX.md`). It does — and has since it stopped
+  hand-forking the shared half. Both documents called it "the one documented exception" to
+  `lib/bootstrap-lib.sh` and said its `bootstrap.sh` does not call `blib_link_core`; it calls
+  it directly. What a role repo actually skips is `blib_link_os_layer`, because the `80` band
+  belongs to the OS repo underneath — and `blib_link_role_layer` is what it will call in its
+  place. Both documents now separate that contract from today's reality: neither role repo has
+  adopted the helper yet (Defense still runs its own `wire_defense_stage`, Offense still calls
+  `blib_link_os_layer`), because the helper has to ship in a Core release and fan out first.
+
 - **CI's critical path drops from ~8 minutes to ~3, with no gate removed.** Measured, not
   guessed: on a typical PR run every job starts in parallel, so wall-clock is the slowest —
   `audit (macos-latest)` at 7m33, of which 7m08 is `audit-core.sh` itself and only ~25s is
@@ -294,6 +336,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   A plain shell change now runs the suite in **43s**.
 
 ### Added
+
+- **A first-class Role band in the bootstrap scaffold and in tmux** — `blib_link_role_layer`
+  (`lib/bootstrap-lib.sh`) and a `role.conf` hook (`tmux/tmux.conf`). Core has always
+  documented a Role layer (band `85`–`94`) but shipped no wiring for one, so both role repos
+  hand-rolled it — and had already drifted apart doing so: dotfiles-Defense honoured
+  `BLIB_DRY` when dropping the stale pre-v4 unnumbered link and dotfiles-Offense did not, which
+  made `--dry-run` mutate the box in one repo and not the other.
+
+  `blib_link_role_layer <dotfiles> <config> <role>` is the twin of `blib_link_os_layer`, and
+  `<role>` names both the directory and the file stem exactly as `<os>` does — so
+  `offensive/offensive.zsh` and `defense/defense.zsh` are already where it expects them and
+  nothing has to move. It links `<role>/<role>.zsh` → `zsh/85-<role>.zsh`,
+  `<role>/<role>.conf` → `tmux/role.conf`, and `<role>/templates/` →
+  `<config>/<role>/templates`, all `blib_want`-gated and all honouring `BLIB_DRY`.
+
+  The tmux half is the part Core genuinely did not have. `tmux.conf` carried exactly ONE
+  overlay hook — `os.conf` — so a role's tmux bits had nowhere to go, and dotfiles-Offense's
+  `prefix + e` engagement popup was consequently smuggled into `os/kali.conf`, an OS overlay
+  a role repo has no business owning. `role.conf` is sourced **after the pop-up bindings**,
+  not beside `os.conf`, and the placement is load-bearing: `os.conf` only ever _sets_ options,
+  whereas a role layer BINDS KEYS, and tmux gives a key to its last binding. Sourced early,
+  any future Core `bind e` would silently take the key back.
+
+  **One destination moves, for consumers to handle deliberately.** Defense already lands
+  its templates at `<config>/defense/templates`, but the offensive repo hand-rolls
+  `<config>/kali/templates` — named for the distro, which is the naming this rename
+  retires. Adopting the helper there relocates them to `<config>/offensive/templates`, and
+  two shipped docs quote the old path by hand (`offensive/hacktheplanet`'s
+  `pseudo-shell.py` line, and `offensive/ippsec`); both need updating in the same change
+  that adopts the helper. Deliberately not papered over with a compat symlink — that would
+  preserve a `~/.config/kali/` on a repo no longer called Kali.
+
+  **One role per box.** Both roles land on band `85`, so a machine wired for Offense and then
+  Defense gets `85-offensive.zsh` and `85-defense.zsh` loading in glob order and a single
+  `tmux/role.conf` owned by whichever ran last. That is not a supported configuration — an
+  attacker station and an analyst station are different boxes — and spreading the roles across
+  separate bands would only make the breakage quieter. There is deliberately no role
+  `gitconfig` hook either: Core's `gitconfig` `[include]`s `os.gitconfig` and
+  `local.gitconfig` only, neither role repo has ever had one, and an unused include rots.
 
 - **`BLIB_SUDO_KEEPALIVE_INTERVAL` — the sudo keepalive's refresh interval is injectable**
   (`lib/bootstrap-lib.sh`), defaulting to the shipped 50s. It exists as a TEST SEAM: the block

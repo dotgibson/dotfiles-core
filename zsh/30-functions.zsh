@@ -2,7 +2,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Cross-OS shell functions. Pure POSIX-ish where possible so they behave the
 # same on macOS zsh, Linux zsh, and Alpine's busybox-adjacent environment.
-# Nothing OS-specific or offensive here — those live in the OS / Kali repos.
+# Nothing OS-specific or offensive here — those live in the OS / Offense repos.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Resolved path to the vendored version stamp. core.version sits one dir ABOVE zsh/,

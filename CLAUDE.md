@@ -17,7 +17,7 @@ because it does.
 | ------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | **Core**      | **this repo**, vendored into each OS repo's `core/`                    | zsh modules, tmux, nvim, git, starship                             |
 | **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}` | package manager, clipboard, paths                                  |
-| **Role**      | `dotfiles-Kali` (offensive), `dotfiles-Defense` (defensive)            | offensive engagement + defensive detection tooling on the OS layer |
+| **Role**      | `dotfiles-Offense` (offensive), `dotfiles-Defense` (defensive)         | offensive engagement + defensive detection tooling on the OS layer |
 
 Plus `dotfiles-web` — the public Astro showcase/docs site (the system's public
 face, **not** a config layer). The canonical Core-vendoring fleet is
@@ -28,7 +28,7 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
 
 - **Is it Core?** It belongs here **only** if it is identical on every machine
   **and** not OS-specific **and** not offensive. Changes with the OS → the OS
-  repo. Changes with the operator → `dotfiles-Kali`. (See `CONTRIBUTING.md`.)
+  repo. Changes with the operator → `dotfiles-Offense`. (See `CONTRIBUTING.md`.)
 - **The manifest is the contract.** `core.manifest` is the canonical inventory.
   Adding a Core file means adding its path to `core.manifest` in the same change;
   `scripts/audit-core.sh` enforces this both directions. Repo-meta and dev tooling
@@ -37,7 +37,7 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   and is overwritten on the next sync. Fix it **here**, then fan out.
 - **Load order is load-bearing.** `tools → ui → options → history → aliases → git
   → functions → fzf → bindings → plugins → op → maint → update → os → role → local`
-  (bands: Core 00-69, OS-native 70-84, Role 85-94 on Kali/Defense, host-local 95-99)
+  (bands: Core 00-69, OS-native 70-84, Role 85-94 on Offense/Defense, host-local 95-99)
   (the canonical order in `core.manifest`). Don't reorder casually.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.

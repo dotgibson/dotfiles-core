@@ -4,8 +4,8 @@ How to stamp `dotfiles-Arch`, `dotfiles-openSUSE`, `dotfiles-Alpine`,
 `dotfiles-Gentoo`, and `dotfiles-Debian` from the `dotfiles-Fedora` template. The structure is identical
 every time — only three things change per distro: **package manager commands**,
 **package names**, and **distro quirks**. Core never changes (it's vendored).
-Kali and macOS appear in the reference tables below for convenience, but they're
-their own lineages — built directly, **not** stamped from this template (see
+Offense (Kali) and macOS appear in the reference tables below for convenience, but
+they're their own lineages — built directly, **not** stamped from this template (see
 _Repo status_ at the bottom).
 
 ## Per-repo recipe
@@ -633,7 +633,7 @@ Core's side is unchanged by any of this: `zsh/00-tools.zsh` sets `HAVE_CARAPACE`
 
 **Three OS repos still call the impossible `go install`** and have been failing invisibly at
 it, because `_dotfiles_go_install` sends the explanation to `/dev/null` and downgrades the
-failure to a deferred note: `dotfiles-Arch/bootstrap.sh`, `dotfiles-Kali/bootstrap.sh` and
+failure to a deferred note: `dotfiles-Arch/bootstrap.sh`, `dotfiles-Offense/bootstrap.sh` and
 `dotfiles-openSUSE/bootstrap.sh`. Each is tracked in its own repo; this footnote is the
 contract they should be fixed against.
 
@@ -701,7 +701,7 @@ where the learning is. Tool _names_ are full atoms (`category/name`). Treat this
 repo as your "understand the system from the ground up" build; it's the most
 educational and the most time-expensive.
 
-**Kali (WSL2)** — The one repo that isn't stamped from Fedora: it's Debian-family
+**Offense (Kali / WSL2)** — The one repo that isn't stamped from Fedora: it's Debian-family
 (apt) and carries a unique **offensive role layer** on top of the usual OS layer,
 adding an `offensive` stage to the zsh loader (`… os offensive local`). Two things
 actually bite. (1) Debian renames binaries — `bat`→`batcat`, and the `fd-find`
@@ -734,26 +734,30 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
 ### Repo status
 
 - **Built:** `core`, `Fedora` (template), `MacBook`, `Arch`, `Debian`, `openSUSE`,
-  `Alpine`, `Gentoo`, `Kali`, `Defense`. That is the nine Core-vendoring repos
+  `Alpine`, `Gentoo`, `Offense`, `Defense`. That is the nine Core-vendoring repos
   (`scripts/os-repos.txt`) plus `core` itself; `Windows` vendors no `core/` and is
   tracked separately.
 - **Stamp-pending (this doc):** none — all five template stamps are complete.
-- `Kali` (apt + offensive layer) and `MacBook` (Homebrew) are their own lineages,
+- `Offense` (apt + offensive layer) and `MacBook` (Homebrew) are their own lineages,
   built directly rather than stamped from Fedora. `Windows` is tracked separately
   from this matrix.
-- **Role repos:** `Kali` (offensive) and `Defense` (defensive) both vendor
-  Core. `Kali` also carries its own OS-native layer (Debian/apt, kali-rolling) —
+- **Role repos:** `Offense` (offensive) and `Defense` (defensive) both vendor
+  Core. `Offense` also carries its own OS-native layer (Debian/apt, kali-rolling) —
   distinct from `dotfiles-Debian`, which targets a frozen Ubuntu LTS and carries no
   role layer. `Defense` is
   **distro-agnostic** — it stacks its blue-team stage on whatever OS-native layer is
   underneath — so it has no row in this OS-stamp matrix by design, not by omission.
-  For the same reason `Defense` is the **one documented exception** to the shared
-  bootstrap scaffold: its `bootstrap.sh` does not source `lib/bootstrap-lib.sh`'s
-  `blib_link_core` (the other eight do). It layers onto an already-provisioned host,
-  where the OS repo underneath has already run the scaffold, so it hand-rolls the
-  partial re-link it needs. Deliberate, not drift — `core.manifest` records it too.
+  Both role repos source the shared bootstrap scaffold (`lib/bootstrap-lib.sh`) and
+  call `blib_link_core` exactly as the OS repos do. Where they differ is the `80`
+  band, which belongs to the OS repo underneath: the contract is that a role repo
+  skips `blib_link_os_layer` and calls `blib_link_role_layer` instead, wiring the
+  `85` band and `tmux/role.conf`. **Neither repo has adopted it yet** — `Defense`
+  hand-rolls the band in its own `wire_defense_stage`, and `Offense` still calls
+  `blib_link_os_layer` because it still carries the Kali OS layer. Both migrate
+  once the Core release carrying the helper fans out. Deliberate, not drift —
+  `core.manifest` records it too.
 - `Debian` is stamped from Fedora structurally, but takes its **apt idioms** from
-  `Kali` — the fleet's other Debian-family repo. It is the only **frozen** target
+  `Offense` — the fleet's other Debian-family repo. It is the only **frozen** target
   (Ubuntu 24.04 LTS), which is why it carries by far the largest out-of-band install
   surface (²⁸) and the only version-floor gate in the fleet.
 
