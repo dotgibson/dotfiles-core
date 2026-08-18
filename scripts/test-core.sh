@@ -2098,7 +2098,12 @@ if ((_sc_subtree)); then
   rm -rf "$SCF/repos/dotfiles-NotCloned/.git"                 # a dir that is not a repo
 
   _sc_run() { # run the fixture's sync-core.sh against the fixture fleet
-    env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never \
+    # -u CORE_JSON: --json EXPORTS CORE_JSON=1 so nested gates keep stdout clean for the
+    # JSON object, and common.sh's skip() then prints nothing. The fixture inherits that
+    # export, sync-core.sh reports absent / core/-less repos via skip(), and the assertions
+    # below grep for exactly those lines — so `audit-core.sh --json` went red on a tree the
+    # identical non-JSON run passed (#524). Same guard, same reason, as _tr_run below.
+    env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
       REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
       SYNC_JOBS=1 "$@" bash "$_SCS" 2>&1
   }
@@ -2150,6 +2155,32 @@ if ((_sc_subtree)); then
   else
     fail "sync-core: absent/core-less repos not counted as skips (want skipped 2 / failed 0)"
   fi
+  # THE REGRESSION GATE for #524, and the reason it is here rather than in a --json test:
+  # the bug was invisible from inside a normal run. Both assertions above pass under a bare
+  # `test-core.sh` and fail only when the parent was invoked with --json, so the suite
+  # certified sync-core's bucketing while `audit-core.sh --json` reported the tree red.
+  #
+  # Drive the SAME fixture with CORE_JSON=1 exported — exactly what --json does — and require
+  # the identical verdict. This fails loudly if anyone drops the `-u CORE_JSON` above, and it
+  # costs one extra fixture run rather than a recursive audit.
+  #
+  # Asserted on the skip LINES, not just the summary counts: the counts are printed by
+  # sync-core.sh's own printf and would survive a silenced skip(), so a count-only assertion
+  # would go on passing through precisely this bug.
+  # An explicit `export` inside a subshell, not a `CORE_JSON=1 _sc_run` prefix. The value must
+  # genuinely be EXPORTED or `env -u` has nothing to strip and the gate passes vacuously; and a
+  # prefix assignment on a FUNCTION call is the one form whose persistence bash and POSIX mode
+  # disagree about, so it could leak CORE_JSON into every later section and silence their skips.
+  _sc_out="$(
+    export CORE_JSON=1
+    _sc_run SYNC_SKIP_AUDIT=1
+  )"
+  if grep -q 'dotfiles-NotCloned' <<<"$_sc_out" && grep -qE 'dotfiles-Other.*no core/' <<<"$_sc_out" &&
+    grep -qE 'skipped 2' <<<"$_sc_out" && grep -qE 'failed 0' <<<"$_sc_out"; then
+    pass "sync-core: the fixture is insulated from an exported CORE_JSON (--json cannot change the verdict)"
+  else
+    fail "sync-core: an exported CORE_JSON silenced the fixture's skip() lines — --json would red a green tree (#524)"
+  fi
 
   # --- dotfiles-Windows is never a target -------------------------------------
   # It vendors no core/ (its host layer is native PowerShell), so fanning into it would
@@ -2200,7 +2231,10 @@ if ((_sc_subtree)); then
 
   # --- --dry-run mutates nothing ----------------------------------------------
   _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
-  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
+  # -u CORE_JSON for the same reason as _sc_run (#524). This call site does not currently
+  # assert on skip() output, so it was not failing — but it is the identical trap one
+  # assertion away, and a guard applied only where it already hurts is how this one got in.
+  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
     CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"
   if grep -q 'would: git -C' <<<"$_sc_out" &&
     [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
