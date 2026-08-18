@@ -8078,14 +8078,40 @@ case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refreshe
 # macOS — the argv log held only the initial `-v` and the assertion failed for a timing
 # reason that had nothing to do with the behaviour under test.
 #
-# BLIB_SUDO_KEEPALIVE_INTERVAL is what bounds this block's cost. The poll itself is NOT the
-# expense — the loop runs `sudo -n -v` BEFORE its first sleep, so the grep below matches on
-# iteration zero. The block nonetheless costs EXACTLY ONE REFRESH INTERVAL end to end,
-# measured three ways: 50.02s at the shipped default, 3.02s and 7.02s at intervals of 3 and 7.
-# Something here waits out a single sleeper; the same block reproduced standalone finishes in
-# 0.02s, so the responsible construct is suite-context-dependent and was not pinned down.
-# Setting the interval bounds it regardless — 50s of pure idle wall-clock on every leg of
-# every run in all nine repos, 17% of this whole suite for one test, becomes about a second.
+# THIS BLOCK CAN STALL FOR ONE FULL REFRESH INTERVAL, and the cause is NOT yet known. Read
+# the next 20 lines before trying to fix it — two plausible explanations have already been
+# measured and killed, and the interval seam only bounds the damage.
+#
+# MEASURED:
+#   • It is INTERMITTENT, not the constant an earlier version of this comment asserted:
+#     2 stalls in 16 instrumented suite runs (50.017s pre-seam, 20.016s driven at 20), every
+#     other run 0.02–0.13s. Expect to see "already fast" and wrongly conclude it is fixed.
+#   • The cost is exactly one interval + ~20ms, at every interval it has been driven at.
+#   • During a stall, sampling /proc/<pid>/fd across the whole window (1644 samples): ONE
+#     sleeper, all three fds on /dev/null the entire time, its parent — the refresher loop
+#     shell — alive throughout. So the subshell was still inside blib_sudo_keepalive_stop,
+#     whose `wait` was blocked on a loop shell that did not act on its TERM until its sleeper
+#     expired on its own. This is a TEARDOWN stall.
+#
+# RULED OUT — do not re-propose these:
+#   • Pipe retention by the refresher keeping the command substitution open. An unredirected
+#     sleeper does reproduce the one-interval signature by construction (0.329s redirected vs
+#     7.023s not, at an interval of 7), but the shipped loop redirects and the fd sampling
+#     above never once caught a pipe. A matching duration is not a diagnosis.
+#   • Rewriting this as `( … )` + reading the argv file afterwards, i.e. removing the
+#     substitution. Measured on the converted block: 2 stalls in 2 runs, 30.012s and 30.013s.
+#     The parent waits for the subshell either way, and the subshell is what blocks.
+#
+# STILL OPEN: blib_sudo_keepalive_stop on its own is clean (0/60 at an interval of 5), and
+# this whole block reproduced outside the suite is clean (0/40, 0/30), so it needs suite
+# context that has not been isolated. The trap's `kill %% … wait %% …` racing against the
+# loop's FIRST iteration — where stop() can land before the loop reaches its `wait` — is the
+# next place to look, and that is product teardown semantics, not a test fix.
+#
+# BLIB_SUDO_KEEPALIVE_INTERVAL does NOT keep this poll short, whatever it may once have
+# claimed: the poll is bounded by its own 100 × 0.1s, and the `-n -v` it waits for is written
+# BEFORE the loop's first sleep, so it returns on iteration zero at any interval. What the
+# seam does is cap a stall at ~1s instead of ~50s when the race fires.
 # shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
 _ka_mode="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   BLIB_SUDO_KEEPALIVE_INTERVAL="$_KA_INTERVAL"
