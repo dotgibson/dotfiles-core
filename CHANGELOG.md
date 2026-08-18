@@ -13,6 +13,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.13.1] - 2026-08-18
+
+### Fixed
+
+- **The reusable `bootstrap-test` no longer assumes every caller has an OS-native layer.**
+  It asserted `~/.config/zsh/80-os.zsh` unconditionally, which is right for the nine OS
+  repos and wrong for a ROLE repo: `dotfiles-Offense` and `dotfiles-Defense` wire Core plus
+  a band-85 role stage and deliberately link nothing at band 80, so the shared test red a
+  repo doing exactly the right thing. The check now arms itself on whether the caller ships
+  an `os/*.zsh` — self-derived, the same way the atuin check is, rather than a new input
+  every role repo would have to remember to pass. Found by `dotfiles-Offense` as it dropped
+  its OS layer to `dotfiles-Debian`.
+
 ## [v4.13.0] - 2026-08-18
 
 ### Documentation
@@ -38,15 +51,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   behaviour on its own. `BLIB_SUDO_KEEPALIVE_INTERVAL` does not bound the poll as was claimed.
 
 ### Fixed
-
-- **The reusable `bootstrap-test` no longer assumes every caller has an OS-native layer.**
-  It asserted `~/.config/zsh/80-os.zsh` unconditionally, which is right for the nine OS
-  repos and wrong for a ROLE repo: `dotfiles-Offense` and `dotfiles-Defense` wire Core plus
-  a band-85 role stage and deliberately link nothing at band 80, so the shared test red a
-  repo doing exactly the right thing. The check now arms itself on whether the caller ships
-  an `os/*.zsh` — self-derived, the same way the atuin check is, rather than a new input
-  every role repo would have to remember to pass. Found by `dotfiles-Offense` as it dropped
-  its OS layer to `dotfiles-Debian`.
 
 - **`ci.yml` ran the whole matrix twice on every branch push, and the comment claiming it
   did not was wrong.** `on:` fired for both `push: branches: ["**"]` and `pull_request`,
