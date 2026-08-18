@@ -15,6 +15,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`audit-core.sh --json` reported `failed` on a tree the identical non-JSON run passed**
+  (#524). `--json` is documented as an output-format switch — "lets a CI step / editor parse
+  the result instead of scraping coloured text" — so it must not move the verdict, and it was
+  moving it in the direction that matters: a **false red**.
+
+  `--json` sets and **exports** `CORE_JSON=1`, which is right for its purpose (nested gates must
+  keep stdout clean for the JSON object), and `common.sh`'s `skip()` then prints nothing. Because
+  the variable is exported it also reached the hermetic fixture that runs `sync-core.sh`, whose
+  absent- and `core/`-less-repo reports go through `skip()` — and two assertions grep for exactly
+  those lines. They failed for a reason unrelated to what they test; `sync-core.sh`'s bucketing
+  was never wrong.
+
+  This trap had already been found once and fixed in ONE place: `_tr_run` carries `-u CORE_JSON`
+  with a comment describing this precise mechanism. Its two siblings never got it. Both now do —
+  including the `--dry-run` call site, which was not failing only because it happens not to assert
+  on `skip()` output, and which is the identical trap one assertion away.
+
+  The regression gate is the point, though. The bug was **invisible from inside a normal run**:
+  both assertions passed under a bare `test-core.sh` and failed only when the parent was invoked
+  with `--json`, so the suite went on certifying `sync-core` while the JSON interface called the
+  tree red. A new check drives the same fixture with `CORE_JSON=1` exported and requires the
+  identical verdict, so the failure now surfaces in an ordinary run. It asserts on the skip LINES
+  rather than the summary counts on purpose: the counts come from `sync-core.sh`'s own `printf`
+  and survive a silenced `skip()`, so a count-only assertion would have passed straight through
+  this bug.
 - **`HAVE_GIT_ABSORB` was set for a subcommand `git absorb` could no longer dispatch**, when
   `GIT_EXEC_PATH` is set. Shipped in #503 and caught in its own review. `GIT_EXEC_PATH`
   **replaces** git's compiled-in exec-path rather than adding to it — point it at an empty
