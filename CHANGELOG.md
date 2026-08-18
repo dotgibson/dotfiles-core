@@ -31,12 +31,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   2 stalls in 2 runs.
 
   What the sampling does show is a **teardown** stall — the loop did not act on its `TERM`
-  until its sleeper expired, while the caller sat in `blib_sudo_keepalive_stop`'s `wait`. The
-  root cause is still open (`stop()` alone is clean at 0/60, and the block outside the suite
-  at 0/40) and gets its own issue. No behaviour changes here; `BLIB_SUDO_KEEPALIVE_INTERVAL`
-  caps the damage at ~1s rather than removing it, and does not bound the poll as was claimed.
+  until its sleeper expired, while the caller sat in `blib_sudo_keepalive_stop`'s `wait`. That
+  pointed at the right place, and it is fixed in the entry below (#529); this entry changes no
+  behaviour on its own. `BLIB_SUDO_KEEPALIVE_INTERVAL` does not bound the poll as was claimed.
 
 ### Fixed
+
+- **`blib_sudo_keepalive_stop` could block for a full refresh interval — 50s in a real
+  provisioning run** (#529). The helper exists to stop a bootstrap hanging on an invisible
+  sudo prompt; intermittently it did the hanging itself.
+
+  A `TERM` aimed at the refresher's sleeper is sometimes **accepted by `kill(2)` and never
+  acted on**. Measured in-loop: `kill` returns 0, and 30.003s later the sleeper exits
+  normally having slept its whole interval, with the handler blocked in `wait` and `stop()`
+  blocked behind it. The sleeper had no signal blocked, ignored or caught — it was killable,
+  and the signal was lost rather than refused.
+
+  The handler now sends `KILL` after `TERM`. It cannot be lost or ignored, and it is safe
+  precisely because the target is a bare `sleep`: no state, nothing to flush. There is no
+  grace period between the two — which signal ends the sleeper does not matter, and pausing
+  to find out would put latency back into teardown. (Its exit status proves nothing either
+  way: with no gap, a sleeper that simply was not scheduled in between dies of `KILL` and
+  reports 137 even when `TERM` was delivered normally.) Measured outcome: **zero stalls
+  across 7 instrumented runs with `stop()` steady at 2–3ms**, against roughly one 30s stall
+  every 2–3 runs before.
+
+  **The mechanism was not isolated** and the fix does not claim to explain it — it
+  reproduces only inside the full behavioral suite, never standalone, at no delay between
+  `start()` and `stop()` from 0–50ms, and not through the suite's own `sleep` shim. Since a
+  1-in-3 race cannot gate anything, the new regression test forces the case instead: a
+  sleeper that **ignores `SIGTERM`** is the lost signal made deterministic, and `stop()` is
+  asserted on wall clock to return well inside the interval. Without the `KILL` it blocks
+  the full interval, every time.
 
 - **`audit-core.sh --json` reported `failed` on a tree the identical non-JSON run passed**
   (#524). `--json` is documented as an output-format switch — "lets a CI step / editor parse
