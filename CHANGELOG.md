@@ -39,6 +39,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The reusable `bootstrap-test` no longer assumes every caller has an OS-native layer.**
+  It asserted `~/.config/zsh/80-os.zsh` unconditionally, which is right for the nine OS
+  repos and wrong for a ROLE repo: `dotfiles-Offense` and `dotfiles-Defense` wire Core plus
+  a band-85 role stage and deliberately link nothing at band 80, so the shared test red a
+  repo doing exactly the right thing. The check now arms itself on whether the caller ships
+  an `os/*.zsh` — self-derived, the same way the atuin check is, rather than a new input
+  every role repo would have to remember to pass. Found by `dotfiles-Offense` as it dropped
+  its OS layer to `dotfiles-Debian`.
+
 - **`ci.yml` ran the whole matrix twice on every branch push, and the comment claiming it
   did not was wrong.** `on:` fired for both `push: branches: ["**"]` and `pull_request`,
   and the concurrency key was documented as deduping that — it cannot. `github.ref` is
