@@ -768,10 +768,21 @@ blib_sudo_keepalive_start() {
     #
     # A follow-up KILL costs nothing and cannot be lost or ignored. It is safe precisely
     # because the target is a bare `sleep`: no state, nothing to flush, nothing to corrupt.
-    # On the normal path TERM wins and the KILL lands on a zombie as a harmless no-op —
-    # `wait` returns 143. When TERM is lost it returns 137, and that is the case this line
-    # exists for: 4 such rescues in 7 instrumented runs, with stop() staying at 2–3ms and
-    # zero stalls, against roughly one 30s stall every 2–3 runs before.
+    # There is deliberately NO grace period between the two — which signal actually ends the
+    # sleeper does not matter, and pausing to let TERM land first would put latency straight
+    # back into teardown.
+    #
+    # Do NOT read the sleeper's exit status as evidence about any of this. With no gap
+    # between the signals, a sleeper that merely was not scheduled in between dies of KILL
+    # and reports 137 even though TERM was delivered perfectly normally — so 137 and 143 are
+    # scheduler-dependent outcomes and separate nothing. (An earlier version of this comment
+    # cited a count of 137s as "rescues"; it could not have meant that.)
+    #
+    # What IS measured is the outcome: zero stalls across 7 instrumented suite runs with
+    # stop() steady at 2–3ms, against roughly one 30s stall every 2–3 runs without the KILL.
+    # And the gate in scripts/test-core.sh does not depend on any of that — it forces the
+    # lost-signal case with a sleeper that ignores SIGTERM, where removing this line blocks
+    # teardown for the whole interval every single time.
     trap 'kill %% 2>/dev/null; kill -9 %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM
     while true; do
       "$su" -n -v 2>/dev/null || true

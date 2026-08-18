@@ -8205,26 +8205,44 @@ rm -f "$_ka_bin/sleep"
 #
 # Asserted on WALL CLOCK on purpose. "stop() eventually returned and the sleeper was gone"
 # is true in BOTH cases — it is the passing-for-the-wrong-reason this exists to catch.
+# NO fixed pre-stop delay, for the reason stated at the reaping block above: on a loaded
+# runner a fixed sleep can elapse before the refresher has been scheduled at all, and then
+# stop() finds no job to signal, returns instantly, and this passes with the KILL deleted —
+# the vacuous pass it exists to prevent. Poll for the shim's recording instead, and treat an
+# empty recording as a FAILURE rather than a pass.
+#
+# The shim records only the refresher's own sleeper (it keys on the interval), so the poll's
+# 0.1s sleeps reaching the same shim are not counted. Timing is taken INSIDE the subshell
+# around stop() alone, so the poll's own duration cannot mask a blocked teardown.
 _ka_ign_iv=5
+_ka_ign_file="$SANDBOX/ka-ignterm.pids"
+_ka_ign_dur="$SANDBOX/ka-ignterm.dur"
+: >"$_ka_ign_file"
+: >"$_ka_ign_dur"
 cat >"$_ka_bin/sleep" <<SHIM
 #!/bin/sh
 trap '' TERM
+case "\$1" in $_ka_ign_iv) printf '%s\n' "\$\$" >>"$_ka_ign_file" ;; esac
 exec "$_ka_real_sleep" "\$@"
 SHIM
 chmod +x "$_ka_bin/sleep"
-_ka_ign_t0=$SECONDS
 # shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo + sleep
 ( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   BLIB_SUDO_KEEPALIVE_INTERVAL="$_ka_ign_iv"
   blib_sudo_keepalive_start >/dev/null 2>&1
-  sleep 0.3 # let the refresher fork and exec its sleeper before tearing down
-  blib_sudo_keepalive_stop ) >/dev/null 2>&1
-_ka_ign_d=$((SECONDS - _ka_ign_t0))
+  n=0; while ((n < 100)) && [[ ! -s "$_ka_ign_file" ]]; do sleep 0.1; n=$((n + 1)); done
+  _ka_ign_t0=$SECONDS
+  blib_sudo_keepalive_stop
+  printf '%s' "$((SECONDS - _ka_ign_t0))" >"$_ka_ign_dur" ) >/dev/null 2>&1
 rm -f "$_ka_bin/sleep"
-if ((_ka_ign_d < _ka_ign_iv - 1)); then
+_ka_ign_pid="$(head -n1 "$_ka_ign_file" 2>/dev/null || true)"
+_ka_ign_d="$(cat "$_ka_ign_dur" 2>/dev/null || true)"
+if [[ -z "$_ka_ign_pid" ]]; then
+  fail "keepalive: no SIGTERM-ignoring sleeper was ever forked (shim recorded none) — the timing assertion would be vacuous (#529)"
+elif [[ -n "$_ka_ign_d" ]] && ((_ka_ign_d < _ka_ign_iv - 1)); then
   pass "keepalive: stop() returns promptly when the sleeper ignores SIGTERM (${_ka_ign_d}s < ${_ka_ign_iv}s)"
 else
-  fail "keepalive: stop() blocked ${_ka_ign_d}s waiting out a SIGTERM-ignoring sleeper — the handler's KILL is gone (#529)"
+  fail "keepalive: stop() blocked ${_ka_ign_d:-?}s waiting out a SIGTERM-ignoring sleeper (pid $_ka_ign_pid) — the handler's KILL is gone (#529)"
 fi
 
 # The TERM handler must target the JOB, never a pid. `$!` does not clear when `wait` reaps

@@ -26,10 +26,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and the signal was lost rather than refused.
 
   The handler now sends `KILL` after `TERM`. It cannot be lost or ignored, and it is safe
-  precisely because the target is a bare `sleep`: no state, nothing to flush. On the normal
-  path `TERM` still wins and the `KILL` is a no-op on a zombie (`wait` → 143); when `TERM`
-  is lost it is what ends the sleeper (`wait` → 137). Measured: **4 such rescues in 7
-  instrumented runs, zero stalls, `stop()` steady at 2–3ms**, against roughly one 30s stall
+  precisely because the target is a bare `sleep`: no state, nothing to flush. There is no
+  grace period between the two — which signal ends the sleeper does not matter, and pausing
+  to find out would put latency back into teardown. (Its exit status proves nothing either
+  way: with no gap, a sleeper that simply was not scheduled in between dies of `KILL` and
+  reports 137 even when `TERM` was delivered normally.) Measured outcome: **zero stalls
+  across 7 instrumented runs with `stop()` steady at 2–3ms**, against roughly one 30s stall
   every 2–3 runs before.
 
   **The mechanism was not isolated** and the fix does not claim to explain it — it
