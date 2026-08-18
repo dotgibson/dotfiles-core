@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.13.0] - 2026-08-18
+
 ### Documentation
 
 - **Corrected the keepalive stall's stated cause, and recorded what is actually known.** The
