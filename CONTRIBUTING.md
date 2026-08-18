@@ -124,6 +124,10 @@ same commit.
    out from it: the Core⇄OS boundary scan in `scripts/audit-core.sh` (§5c — a
    vendored config gets no OS-absolute paths either) and a bucket in
    `scripts/ci-classify.sh` (an unrecognised path fails closed to a full CI run),
-   with a matching `_classify_is` line in `scripts/test-core.sh`.
+   with a matching `_classify_is` line in `scripts/test-core.sh`. The classifier
+   emits three axes — `shell`, `nvim` and `atuin` — and `atuin` is narrow on
+   purpose: it gates the premise detector's hermetic self-test, the single most
+   expensive thing the suite does, so only `scripts/`, `zsh/00-tools.zsh` and
+   `atuin/` reach it. Widening it is a real cost on every push in the fleet.
 7. `./scripts/audit-core.sh` — green before you push.
 8. `./scripts/sync-core.sh` to vendor it into every OS repo.
