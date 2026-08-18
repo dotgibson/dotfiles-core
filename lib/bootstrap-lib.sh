@@ -751,17 +751,25 @@ blib_sudo_keepalive_start() {
   # The refresh INTERVAL, seconds. 50s is a comfortable fraction of the timestamp lifetime
   # described above, not a tuning knob — no caller should need to change it for a real run.
   #
-  # It is a variable rather than a literal so the TEST SUITE can bound its cost. The block
-  # asserting that the background loop refreshes with `sudo -n -v` was measured taking
-  # EXACTLY ONE INTERVAL: 50.02s against the shipped default, and 3.02s / 7.02s when the
-  # interval was set to 3 and 7. That was 17% of the entire behavioral suite for one test,
-  # on every CI leg of all nine repos.
+  # It is a variable rather than a literal for the TEST SUITE's benefit. It was introduced to
+  # bound a stall in the block asserting that this loop refreshes with `sudo -n -v`, which
+  # cost one full interval — 50.02s against the shipped default.
   #
-  # Note what the delay is NOT: the loop refreshes BEFORE it sleeps, so the test's poll for
-  # the `-n -v` line returns on its first iteration and never waits for a cycle. Something in
-  # that block waits out one sleeper regardless — the same block reproduced standalone
-  # completes in 0.02s, so it depends on suite context that was not pinned down. The seam
-  # bounds the cost either way; it does not claim to explain it.
+  # That stall is INTERMITTENT (2 in 16 instrumented runs, not the constant first reported)
+  # and its cause is still UNKNOWN. What sampling during a stall does show is that the loop
+  # below did not act on its TERM until its sleeper expired, while the caller sat in
+  # blib_sudo_keepalive_stop's `wait` — so the suspect is this trap/teardown path, not the
+  # test's output capture as previously written here. scripts/test-core.sh carries the full
+  # measurement and the two explanations already ruled out; read it before changing the loop.
+  #
+  # That teardown stall is FIXED below (#529): the TERM is now followed by a KILL, which
+  # cannot be lost or ignored. So the seam is no longer what caps the damage — it bounds
+  # only the TEST, and no real run should ever set it. The lost-signal mechanism itself was
+  # never isolated; the note on the trap says exactly what is measured and what is not.
+  #
+  # The `>/dev/null 2>&1` on the loop below is what keeps this helper's own sleeper out of a
+  # caller's pipe, and is load-bearing for exactly that reason — see the stdio note further
+  # down. Do not remove it because "the refresher prints nothing anyway".
   #
   # FAIL-SAFE, not fail-closed: a non-numeric or zero override falls back to 50 rather than
   # erroring. This is a test seam, and a typo in it must not turn a provisioning run into a
@@ -817,7 +825,40 @@ blib_sudo_keepalive_start() {
     # the loop shell dies while its sleeper is still alive or unreaped — and stop()'s own
     # `wait` returns on the shell, not the sleeper. Teardown then only LOOKED synchronous
     # because the test slept afterwards. Reaping here is what makes stop()'s contract true.
-    trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM
+    #
+    # TERM then KILL, because one TERM is not enough. A signal aimed at the sleeper is
+    # sometimes accepted by kill(2) — rc 0 — and simply never acted on: the sleeper runs
+    # its FULL interval and exits 0, while this handler blocks in `wait` and stop() blocks
+    # behind it. Measured in-loop: `TRAP kill rc=0` followed 30.003s later by `TRAP wait
+    # rc=0`, with the sleeper showing no signal blocked, ignored or caught (SigBlk/SigIgn/
+    # SigCgt all zero) — so it was killable and the signal was lost, not refused. That is
+    # the whole of #529: an intermittent 50s hang in a helper whose job is to keep a
+    # provisioning run from hanging.
+    #
+    # The mechanism was NOT isolated. It reproduces only inside the full behavioral suite
+    # (roughly 1 run in 2–3 at a 30s interval) and never standalone — not with a plain
+    # sleeper, not through the suite's own `sleep` shim, and not at any delay between
+    # start() and stop() from 0 to 50ms. So this is a fix validated by measurement rather
+    # than by explanation, and it is written that way on purpose.
+    #
+    # A follow-up KILL costs nothing and cannot be lost or ignored. It is safe precisely
+    # because the target is a bare `sleep`: no state, nothing to flush, nothing to corrupt.
+    # There is deliberately NO grace period between the two — which signal actually ends the
+    # sleeper does not matter, and pausing to let TERM land first would put latency straight
+    # back into teardown.
+    #
+    # Do NOT read the sleeper's exit status as evidence about any of this. With no gap
+    # between the signals, a sleeper that merely was not scheduled in between dies of KILL
+    # and reports 137 even though TERM was delivered perfectly normally — so 137 and 143 are
+    # scheduler-dependent outcomes and separate nothing. (An earlier version of this comment
+    # cited a count of 137s as "rescues"; it could not have meant that.)
+    #
+    # What IS measured is the outcome: zero stalls across 7 instrumented suite runs with
+    # stop() steady at 2–3ms, against roughly one 30s stall every 2–3 runs without the KILL.
+    # And the gate in scripts/test-core.sh does not depend on any of that — it forces the
+    # lost-signal case with a sleeper that ignores SIGTERM, where removing this line blocks
+    # teardown for the whole interval every single time.
+    trap 'kill %% 2>/dev/null; kill -9 %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM
     while true; do
       "$su" -n -v 2>/dev/null || true
       sleep "$interval" &
