@@ -177,7 +177,62 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   that form. Neither needs a signing key, so both run in CI — where this bug was
   structurally invisible, because CI signs nothing.
 
+### Changed
+
+- **CI's critical path drops from ~8 minutes to ~3, with no gate removed.** Measured, not
+  guessed: on a typical PR run every job starts in parallel, so wall-clock is the slowest —
+  `audit (macos-latest)` at 7m33, of which 7m08 is `audit-core.sh` itself and only ~25s is
+  checkout plus every tool install. The structure was already doing its job (parallel legs,
+  change detection, tool caching, the behavioral suite overlapped with the static gates,
+  `cancel-in-progress`); the cost was concentrated in the suite. Profiling
+  `scripts/test-core.sh` at **24% CPU** — waiting, not computing — put **247s of 286s in two
+  places**, with the remaining ~600 tests costing ~40s combined. Both are addressed below.
+  A plain shell change now runs the suite in **43s**.
+
 ### Added
+
+- **`BLIB_SUDO_KEEPALIVE_INTERVAL` — the sudo keepalive's refresh interval is injectable**
+  (`lib/bootstrap-lib.sh`), defaulting to the shipped 50s. It exists as a TEST SEAM: asserting
+  that the background refresher uses `sudo -n -v` (validation mode, the restricted-sudoers fix)
+  means watching the loop go round once, and against a hard-coded `sleep 50` that one assertion
+  cost **50.02s of idle wall-clock on every CI leg of every repo** — 17% of the whole behavioral
+  suite for a single test. It now costs about a second.
+
+  The override is guarded **fail-safe, not fail-closed**: a zero, negative, non-numeric or
+  leading-zero value falls back to 50 rather than erroring, because the interval is the only
+  thing bounding that loop's rate and a typo in a test seam must not turn a provisioning run
+  into a busy-loop hammering `sudo`. Four new gates pin it — the honoured case first (a guard
+  that rejected everything would pass every fallback case and still have broken the seam), then
+  eight bad values, then the unset default. They assert on the argument the sleeper is actually
+  handed rather than on the source, since a regex that merely looks right is exactly how a
+  validator passes review and admits `0` anyway. The suite also pins the shipped default by
+  name, because its sleeper shim keys on it.
+- **An `atuin` scope axis, so the premise detector's self-test stops riding on every push.**
+  `scripts/ci-classify.sh` now emits a third `atuin=<true|false>` line alongside `shell`/`nvim`,
+  and `--scope atuin` gates the two hermetic sections that drive `scripts/verify-atuin-guard.sh`.
+  Those sections were **197s of a 286s suite — 68% of it**, and the largest single cost on the
+  fan-out's critical path, while testing the DETECTOR against stub binaries rather than testing
+  Core: the script is dev tooling, absent from `core.manifest` and vendored nowhere, and its real
+  job — measuring live upstream atuin — runs weekly in `atuin-guard-verify.yml`, never on a push.
+  A one-line edit to `zsh/10-ui.zsh` was paying all 197s for a harness it cannot reach.
+
+  Coverage is preserved rather than traded away, in three ways. The axis is reachable from
+  everything that can actually move it: `scripts/` (already infra → full run), `zsh/00-tools.zsh`
+  (which carries `_core_atuin_daemon_guard`, the guard the detector protects) and `atuin/`.
+  The Alpine and Arch legs receive the same classifier verdict through the environment — never
+  interpolated into a `run:` body, per #422 — so musl/busybox and rolling-glibc coverage of the
+  self-test is dropped only from pushes that could never move it. And `atuin-guard-verify.yml`
+  gains a `selftest` job that runs the whole thing **unconditionally, every week**, on the same
+  schedule as the measurement that trusts it: the measure jobs rely on the detector to tell a
+  real upstream move from a broken apparatus, so a regressed `unmeasurable` verdict would file a
+  confident issue claiming the premise MOVED when nothing had. It is wired into `notify-failure`
+  for that reason, and deliberately needs nothing and is needed by nothing — a red self-test must
+  sit beside the live measurement saying which to believe, not suppress it.
+
+  Skipping stays **fail-closed at the classifier**, as before: an unrecognised path, an empty
+  scope or an unparseable classifier line all force the full run. `_core_read_classify` validates
+  `atuin=` exactly as strictly as the other two axes, so a classifier this reader cannot parse can
+  never be read as "skip the most expensive gate".
 
 - **`dotfiles-Debian` joins the fleet as the ninth Core-vendoring repo.** It was planned
   once, cancelled, and left a "no longer being pursued" note in `scripts/os-repos.txt`

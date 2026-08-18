@@ -42,12 +42,13 @@ cd "$HERE" || exit 1
 QUIET=0
 JSON=0 # --json: machine-readable summary on stdout (implies quiet); mirrors audit-core.sh
 # Scope mirrors audit-core.sh: gate the slow AREA-specific sections so a per-area run
-# does less. FAIL-CLOSED default (no --scope → both areas run). The cross-cutting,
+# does less. FAIL-CLOSED default (no --scope → every area runs). The cross-cutting,
 # pure-bash sections (clipboard ladder, CI-classifier) ALWAYS run — they are fast and
 # guard runtime artifacts shared by every area. audit-core.sh passes the classifier's
 # verdict here; a bare `./scripts/test-core.sh` runs everything.
 SCOPE_SHELL=1
 SCOPE_NVIM=1
+SCOPE_ATUIN=1
 # Shared palette + pass/skip/fail/hdr/have + _set_scope + _seed_plugin_dirs (one
 # definition for every gate script). Sourced HERE — before the arg loop calls _set_scope
 # — and after QUIET is set so the lib's `: "${QUIET:=0}"` preserves it.
@@ -64,7 +65,7 @@ while (($#)); do
     # Require an explicit value (mirrors audit-core.sh): `--scope --quiet` must not
     # eat the next flag as the scope list.
     if (($# < 2)) || [[ "$2" == -* ]]; then
-      printf 'test-core.sh: --scope requires a value (shell,nvim|all|none)\n' >&2
+      printf 'test-core.sh: --scope requires a value (shell,nvim,atuin|all|none)\n' >&2
       printf 'try: test-core.sh --help\n' >&2
       exit 2
     fi
@@ -96,8 +97,10 @@ Behavioral suite: clipboard ladder + nvim headless load + nvim event callbacks
 when zsh/nvim are absent.
 
   -q, --quiet     only print SKIP/FAIL lines and the final summary
-  --scope LIST    limit the slow area sections: shell, nvim, all (default), none.
-                  The clipboard + CI-classifier sections always run.
+  --scope LIST    limit the slow area sections: shell, nvim, atuin, all (default),
+                  none. The clipboard + CI-classifier sections always run.
+                  `atuin` drives the premise detector's hermetic self-test
+                  (scripts/verify-atuin-guard.sh) — the slowest thing here by far.
   --color WHEN    auto (default) | always | never; NO_COLOR still wins. (CORE_COLOR env.)
   --json          machine-readable summary on stdout (implies --quiet):
                   {pass,skip,fail,seconds,skipped[],result}
@@ -1263,25 +1266,34 @@ fi
 
 hdr "CI path classifier (scripts/ci-classify.sh)"
 CLASSIFY="$HERE/scripts/ci-classify.sh"
-_classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
+_classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim> <want-atuin>
   local got
   got="$(printf '%s\n' "$2" | "$CLASSIFY" 2>/dev/null)"
-  if [[ "$got" == "shell=$3"$'\n'"nvim=$4" ]]; then
+  if [[ "$got" == "shell=$3"$'\n'"nvim=$4"$'\n'"atuin=$5" ]]; then
     pass "$1"
   else
-    fail "$1 (got: ${got//$'\n'/ }; want shell=$3 nvim=$4)"
+    fail "$1 (got: ${got//$'\n'/ }; want shell=$3 nvim=$4 atuin=$5)"
   fi
 }
-_classify_is "zsh/ change → shell gate only" 'zsh/05-ui.zsh' true false
-_classify_is "nvim/ change → nvim gate only" 'nvim/init.lua' false true
-_classify_is "docs (*.md) change → no gate" 'README.md' false false
-_classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true
-_classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true
-_classify_is "__ALL__ sentinel → full run" '__ALL__' true true
-_classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true
-_classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true
-_classify_is "atuin/ config change → shell gate only" 'atuin/config.toml' true false
-_classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examples/atuin-daemon.service' false false
+_classify_is "zsh/ change → shell gate only" 'zsh/05-ui.zsh' true false false
+_classify_is "nvim/ change → nvim gate only" 'nvim/init.lua' false true false
+_classify_is "docs (*.md) change → no gate" 'README.md' false false false
+_classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true true
+_classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true true
+_classify_is "__ALL__ sentinel → full run" '__ALL__' true true true
+_classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true true
+_classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true false
+_classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examples/atuin-daemon.service' false false false
+# The atuin axis. zsh/00-tools.zsh carries _core_atuin_daemon_guard — the thing the premise
+# detector exists to protect — and atuin/ is its config, so both must reach the atuin gate
+# AND the shell gate. The first of these is the ORDERING assertion: 00-tools.zsh also matches
+# the general `zsh/*` arm, and since first match wins, an arm added in the wrong order would
+# classify it as plain shell and silently stop running the detector's self-test on the one
+# module that can break it.
+_classify_is "zsh/00-tools.zsh change → shell AND atuin (guard's own module)" 'zsh/00-tools.zsh' true false true
+_classify_is "atuin/ config change → shell AND atuin" 'atuin/config.toml' true false true
+_classify_is "a plain zsh/ change does NOT pay the atuin gate" 'zsh/45-plugins.zsh' true false false
+_classify_is "mixed atuin+nvim set → union across all three axes" $'atuin/config.toml\nnvim/init.lua' true true true
 
 # ── E2. PR link gate (scripts/ci-pr-link.sh) ──────────────────────────────────
 # #446 fixed #420 and #423 and merged green with NO closing keyword, so GitHub linked
@@ -3440,7 +3452,18 @@ fi
 # Hermetic: a stub `atuin` supplies every shape, so this needs no atuin, no daemon and no
 # network — the same stubbing idiom Section J uses on the example unit's ExecStart.
 _VERIFY="$HERE/scripts/verify-atuin-guard.sh"
-if [[ ! -x "$_VERIFY" ]]; then
+# SCOPE_ATUIN, not SCOPE_SHELL. This section and J4 below are 197s of a 286s suite — 68% of
+# it, and the largest single cost on the CI critical path across all nine repos. What they
+# exercise is the premise DETECTOR against stub binaries; the detector's real job, measuring
+# live upstream atuin, runs weekly in .github/workflows/atuin-guard-verify.yml and never on a
+# push. So the only changes that can move the result here are the detector itself (scripts/,
+# which ci-classify.sh already treats as infra → full run), the guard it protects in
+# zsh/00-tools.zsh, and atuin/. Every other shell change was paying 197s for a harness it
+# cannot reach. Skipping is FAIL-CLOSED at the classifier, not here: an unrecognised or
+# unparseable path forces the full scope, so an unclassified change still runs this.
+if ! ((SCOPE_ATUIN)); then
+  skip "atuin guard detector (out of scope)"
+elif [[ ! -x "$_VERIFY" ]]; then
   skip "atuin guard detector (scripts/verify-atuin-guard.sh absent or not executable)"
 elif ! have python3; then
   skip "atuin guard detector (python3 not installed)"
@@ -3809,6 +3832,8 @@ fi
 _DVERIFY="$HERE/scripts/verify-atuin-guard.sh"
 if [[ ! -x "$_DVERIFY" ]]; then
   skip "atuin autostart premise (scripts/verify-atuin-guard.sh absent or not executable)"
+elif ! ((SCOPE_ATUIN)); then
+  skip "atuin autostart premise (out of scope)"
 elif ! have python3; then
   skip "atuin autostart premise (python3 not installed)"
 else
@@ -7947,6 +7972,21 @@ case "$_relo_path3" in *":$_relo_home/second/bin"*|*"gopath:$_relo_home/second/b
 # stop() is idempotent and leaves no orphan.
 _ka_bin="$(mktemp -d "$SANDBOX/kabin.XXXXXX")"
 printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"; chmod +x "$_ka_bin/sudo"
+# TWO intervals, and the difference between them is deliberate — see each use site.
+#   _KA_INTERVAL          the SHORT one, for the block that must watch the loop go round.
+#   _KA_DEFAULT_INTERVAL  the SHIPPED default, for the block whose assertion needs a
+#                         sleeper that would still be alive if stop() had not reaped it.
+# The shipped default is pinned below rather than assumed: the sleeper shim keys on it, so
+# a change to bootstrap-lib.sh that this file did not follow must say so by name instead of
+# surfacing as the much vaguer "forked no sleeper".
+_KA_INTERVAL=1
+_KA_DEFAULT_INTERVAL=50
+_ka_shipped="$(sed -n 's/^  local interval="${BLIB_SUDO_KEEPALIVE_INTERVAL:-\([0-9]*\)}"$/\1/p' "$HERE/lib/bootstrap-lib.sh")"
+if [[ "$_ka_shipped" == "$_KA_DEFAULT_INTERVAL" ]]; then
+  pass "keepalive: the shipped refresh interval is still ${_KA_DEFAULT_INTERVAL}s (the sleeper shim keys on it)"
+else
+  fail "keepalive: lib/bootstrap-lib.sh ships a ${_ka_shipped:-unreadable} refresh interval, but this suite's sleeper shim keys on ${_KA_DEFAULT_INTERVAL} — update _KA_DEFAULT_INTERVAL or the shim records nothing and the reaping assertion goes vacuous"
+fi
 # _ka_pid <BLIB_SU> <BLIB_DRY> — start the keepalive against the shimmed sudo, print the
 # pid it recorded (empty when it correctly declined to fork). _ka_rc is the same, returning
 # the rc instead. Both wrap the subshell so the SC2030/SC2031 suppression is stated once.
@@ -8003,8 +8043,15 @@ case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refreshe
 # runner need not have scheduled the background loop's first refresh by then. It did not on
 # macOS — the argv log held only the initial `-v` and the assertion failed for a timing
 # reason that had nothing to do with the behaviour under test.
+#
+# BLIB_SUDO_KEEPALIVE_INTERVAL is what makes that poll cheap. The assertion is about the
+# SECOND `sudo` call — the one the background loop makes after its first sleep — so it can
+# only be made by letting the loop go round once. Against the shipped 50s default that cost
+# 50 seconds of idle wall-clock here, on every leg of every run in all nine repos: measured
+# at 50.02s, 17% of this whole suite for one test. One second buys the same observation.
 # shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
 _ka_mode="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  BLIB_SUDO_KEEPALIVE_INTERVAL="$_KA_INTERVAL"
   : >"$_ka_argv"
   blib_sudo_keepalive_start >/dev/null 2>&1
   n=0
@@ -8024,15 +8071,22 @@ case "$_ka_mode" in *"-n -v"*) pass "the background refresh uses 'sudo -n -v' (v
 # once) that is a coin toss, and the direction that matters is the silent pass.
 #
 # The shim records the sleeper's pid and then EXECs the real sleep, so the recorded pid IS
-# the surviving process — no parent/child indirection to get wrong. Only the 50s refresher
+# the surviving process — no parent/child indirection to get wrong. Only the refresher's own
 # sleeper is recorded: the harness's own short sleeps reach this shim through the same
 # scoped PATH, and counting those would put us right back to measuring the box.
+#
+# This block deliberately does NOT shorten the interval the way the refresh-mode block above
+# does, and that is the whole reason the two constants exist. The assertion here is that
+# stop() REAPED the sleeper — which is only meaningful while the sleeper would otherwise
+# still be running. Under a 1s interval it would exit on its own inside the poll window and
+# the check would pass for a reason that has nothing to do with stop(): a silent vacuous
+# pass, the exact failure mode the "recorded none" guard below exists to prevent.
 _ka_sleeper_file="$SANDBOX/ka-sleeper.pids"
 : >"$_ka_sleeper_file"
 _ka_real_sleep="$(command -v sleep)"
 cat >"$_ka_bin/sleep" <<SHIM
 #!/bin/sh
-case "\$1" in 50) printf '%s\n' "\$\$" >>"$_ka_sleeper_file" ;; esac
+case "\$1" in $_KA_DEFAULT_INTERVAL) printf '%s\n' "\$\$" >>"$_ka_sleeper_file" ;; esac
 exec "$_ka_real_sleep" "\$@"
 SHIM
 chmod +x "$_ka_bin/sleep"
@@ -8058,6 +8112,48 @@ else
   pass "blib_sudo_keepalive_stop reaps the SLEEPER before returning (synchronous teardown)"
 fi
 case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
+# BLIB_SUDO_KEEPALIVE_INTERVAL exists for this suite, which means the fleet now ships a knob
+# that a stray value in someone's environment can reach. Its guard has to be tested, or the
+# seam that made this suite fast is also a way to make a provisioning run hammer sudo in a
+# busy-loop — the interval is the ONLY thing bounding that loop's rate.
+#
+# Assert on the argument the sleeper is actually given, not on the source: a regex that
+# merely LOOKS right (`[0-9]*` accepts the empty string, `+` vs `*`) is precisely how a
+# validator passes review and admits `0` anyway. The shim records argv; each case reads back
+# what the loop asked for.
+_ka_iv_argv="$_ka_bin/sleep-argv"
+cat >"$_ka_bin/sleep" <<SHIM
+#!/bin/sh
+case "\$1" in 0.*) ;; *) printf '%s\n' "\$1" >>"$_ka_iv_argv" ;; esac
+exec "$_ka_real_sleep" "\$@"
+SHIM
+chmod +x "$_ka_bin/sleep"
+# _ka_iv <override> — run one keepalive cycle under that override, print the interval the
+# refresher's sleeper was handed. Unset is spelled by passing the literal token `unset`.
+# shellcheck disable=SC2030,SC2031
+_ka_iv() { ( : >"$_ka_iv_argv"
+  BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  if [[ "$1" == unset ]]; then unset BLIB_SUDO_KEEPALIVE_INTERVAL; else BLIB_SUDO_KEEPALIVE_INTERVAL="$1"; fi
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  n=0; while ((n < 100)) && [[ ! -s "$_ka_iv_argv" ]]; do sleep 0.1; n=$((n + 1)); done
+  blib_sudo_keepalive_stop ) >/dev/null 2>&1
+  head -n1 "$_ka_iv_argv" 2>/dev/null || true; }
+# The honoured case FIRST: a guard that rejects everything would pass every fail-safe case
+# below and still have broken the seam this change exists for.
+_ka_iv_got="$(_ka_iv "$_KA_INTERVAL")"
+if [[ "$_ka_iv_got" == "$_KA_INTERVAL" ]]; then pass "keepalive: a valid BLIB_SUDO_KEEPALIVE_INTERVAL is honoured (the test seam works)"; else fail "keepalive: BLIB_SUDO_KEEPALIVE_INTERVAL=$_KA_INTERVAL was not honoured (sleeper got '${_ka_iv_got:-nothing}')"; fi
+# `0` and `-1` are the values that turn the loop into a sudo busy-loop; the empty string is
+# what an exported-but-unset variable looks like; `5s`/`abc` are ordinary typos. Every one
+# must land on the shipped default, not on itself and not on an error.
+_ka_iv_bad=0
+for _ka_iv_case in 0 -1 "" 5s abc 1.5 " " 01; do
+  _ka_iv_got="$(_ka_iv "$_ka_iv_case")"
+  [[ "$_ka_iv_got" == "$_KA_DEFAULT_INTERVAL" ]] || { _ka_iv_bad=1; fail "keepalive: BLIB_SUDO_KEEPALIVE_INTERVAL='$_ka_iv_case' did not fall back to ${_KA_DEFAULT_INTERVAL}s — the sleeper got '${_ka_iv_got:-nothing}'"; }
+done
+((_ka_iv_bad)) || pass "keepalive: a zero/negative/non-numeric interval falls back to ${_KA_DEFAULT_INTERVAL}s (no sudo busy-loop from a stray override)"
+_ka_iv_got="$(_ka_iv unset)"
+if [[ "$_ka_iv_got" == "$_KA_DEFAULT_INTERVAL" ]]; then pass "keepalive: an unset interval is the shipped ${_KA_DEFAULT_INTERVAL}s (the seam changes no default)"; else fail "keepalive: with no override the sleeper got '${_ka_iv_got:-nothing}', not ${_KA_DEFAULT_INTERVAL}"; fi
+rm -f "$_ka_bin/sleep"
 # The TERM handler must target the JOB, never a pid. `$!` does not clear when `wait` reaps
 # the sleeper, so a handler holding it signals that dead pid for the whole of the next
 # `sudo -n -v` — and once the box has cycled through the pid space, whatever now owns it,

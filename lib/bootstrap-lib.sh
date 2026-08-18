@@ -681,6 +681,22 @@ blib_sudo_keepalive_start() {
   local su="${BLIB_SU-sudo}"
   [[ "${su##*/}" == sudo ]] || return 0
   [[ -z "$BLIB_SUDO_KEEPALIVE_PID" ]] || return 0 # already running
+  # The refresh INTERVAL, seconds. sudo's default timestamp_timeout is 15 MINUTES, so 50s
+  # is not a tuning knob for real runs — it is a comfortable fraction of the shortest
+  # timeout anyone sensibly configures, and no caller should need to change it.
+  #
+  # It is a variable rather than a literal so the TEST SUITE can drive a full refresh cycle
+  # without waiting one. Asserting that the background loop refreshes with `sudo -n -v`
+  # means observing the loop go round, and against a hard-coded 50 that assertion cost 50
+  # seconds of pure idle wall-clock on every CI leg of all nine repos — 17% of the whole
+  # behavioral suite for ONE test. Injecting the interval buys the identical assertion in
+  # about a second.
+  #
+  # FAIL-SAFE, not fail-closed: a non-numeric or zero override falls back to 50 rather than
+  # erroring. This is a test seam, and a typo in it must not turn a provisioning run into a
+  # busy-loop hammering sudo (or into a hard failure) on someone's machine.
+  local interval="${BLIB_SUDO_KEEPALIVE_INTERVAL:-50}"
+  [[ "$interval" =~ ^[1-9][0-9]*$ ]] || interval=50
   _blib_dry && {
     blib_say "would prime sudo and keep its timestamp warm for the run"
     return 0
@@ -733,7 +749,7 @@ blib_sudo_keepalive_start() {
     trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM
     while true; do
       "$su" -n -v 2>/dev/null || true
-      sleep 50 &
+      sleep "$interval" &
       wait %% 2>/dev/null
       kill -0 "$$" 2>/dev/null || exit 0
     done
