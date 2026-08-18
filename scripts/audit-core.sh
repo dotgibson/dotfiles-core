@@ -61,6 +61,7 @@ SCOPE_EXPLICIT=0 # an explicit --scope always wins over --changed
 # checks (manifest, exec-bits, toml/yaml/json, markdown, workflows, version) ALWAYS run.
 SCOPE_SHELL=1
 SCOPE_NVIM=1
+SCOPE_ATUIN=1
 # Shared palette + pass/skip/fail/hdr/have + _set_scope (one definition for every gate
 # script). Sourced HERE — before the arg loop below calls _set_scope — and after QUIET
 # is set so the lib's `: "${QUIET:=0}"` preserves it.
@@ -74,11 +75,13 @@ SCOPE_NVIM=1
 # copy of the bug the reader would trip over next.
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/scripts/lib/common.sh"
-# Render the active scope as test-core.sh expects it (shell,nvim | shell | nvim | none).
+# Render the active scope as test-core.sh expects it (a comma list of shell/nvim/atuin,
+# or `none`).
 _scope_str() {
   local s=""
   ((SCOPE_SHELL)) && s="shell"
   ((SCOPE_NVIM)) && s="${s:+$s,}nvim"
+  ((SCOPE_ATUIN)) && s="${s:+$s,}atuin"
   printf '%s' "${s:-none}"
 }
 
@@ -95,7 +98,7 @@ while (($#)); do
     # Require an explicit value: without this, `--scope --quiet` would swallow the
     # next flag as the scope list and silently drop it.
     if (($# < 2)) || [[ "$2" == -* ]]; then
-      printf 'audit-core.sh: --scope requires a value (shell,nvim|all|none)\n' >&2
+      printf 'audit-core.sh: --scope requires a value (shell,nvim,atuin|all|none)\n' >&2
       printf 'try: audit-core.sh --help\n' >&2
       exit 2
     fi
@@ -139,9 +142,13 @@ version/behavioral checks. CI and pre-commit run this exact script.
                   does NOT trip --strict, so this is safe on a fully-provisioned CI leg
                   where every IN-SCOPE tool is installed. The summary names every skip.
   --scope LIST    limit the slow area-specific sections to a comma list:
-                  shell, nvim, all (default), none. Cheap structural/config/
+                  shell, nvim, atuin, all (default), none. Cheap structural/config/
                   markdown/workflow/version checks always run. CI sets this from
                   scripts/ci-classify.sh; omit it locally to run the full audit.
+                  `atuin` is the hermetic self-test of the premise detector
+                  (scripts/verify-atuin-guard.sh) — the suite's most expensive
+                  section by a wide margin, and reachable only from that script,
+                  zsh/00-tools.zsh and atuin/.
   --color WHEN    auto (default) | always | never. `always` keeps colour when piped
                   (e.g. into `less -R`); NO_COLOR still wins. Also via CORE_COLOR env.
   --changed       derive the scope from your local git diff (working tree vs HEAD,
@@ -193,15 +200,17 @@ _changed_scope() {
   } # nothing resolvable → full (safe)
   local out scope=""
   out="$(printf '%s\n' "$files" | "$HERE/scripts/ci-classify.sh" 2>/dev/null)"
-  # Parse via the shared reader (scripts/lib/common.sh): it sets CLASSIFY_SHELL/CLASSIFY_NVIM
-  # and returns non-zero if the classifier errored or emitted garbage — in which case fail
-  # SAFE to the full run rather than silently returning "none" and skipping every slow gate.
+  # Parse via the shared reader (scripts/lib/common.sh): it sets CLASSIFY_SHELL/CLASSIFY_NVIM/
+  # CLASSIFY_ATUIN and returns non-zero if the classifier errored or emitted garbage on ANY of
+  # the three — in which case fail SAFE to the full run rather than silently returning "none"
+  # and skipping every slow gate.
   if ! _core_read_classify "$out"; then
     printf 'all'
     return
   fi
   [[ "$CLASSIFY_SHELL" == true ]] && scope="shell"
   [[ "$CLASSIFY_NVIM" == true ]] && scope="${scope:+$scope,}nvim"
+  [[ "$CLASSIFY_ATUIN" == true ]] && scope="${scope:+$scope,}atuin"
   printf '%s' "${scope:-none}"
 }
 if ((CHANGED)) && ((!SCOPE_EXPLICIT)); then

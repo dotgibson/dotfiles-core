@@ -681,6 +681,26 @@ blib_sudo_keepalive_start() {
   local su="${BLIB_SU-sudo}"
   [[ "${su##*/}" == sudo ]] || return 0
   [[ -z "$BLIB_SUDO_KEEPALIVE_PID" ]] || return 0 # already running
+  # The refresh INTERVAL, seconds. 50s is a comfortable fraction of the timestamp lifetime
+  # described above, not a tuning knob — no caller should need to change it for a real run.
+  #
+  # It is a variable rather than a literal so the TEST SUITE can bound its cost. The block
+  # asserting that the background loop refreshes with `sudo -n -v` was measured taking
+  # EXACTLY ONE INTERVAL: 50.02s against the shipped default, and 3.02s / 7.02s when the
+  # interval was set to 3 and 7. That was 17% of the entire behavioral suite for one test,
+  # on every CI leg of all nine repos.
+  #
+  # Note what the delay is NOT: the loop refreshes BEFORE it sleeps, so the test's poll for
+  # the `-n -v` line returns on its first iteration and never waits for a cycle. Something in
+  # that block waits out one sleeper regardless — the same block reproduced standalone
+  # completes in 0.02s, so it depends on suite context that was not pinned down. The seam
+  # bounds the cost either way; it does not claim to explain it.
+  #
+  # FAIL-SAFE, not fail-closed: a non-numeric or zero override falls back to 50 rather than
+  # erroring. This is a test seam, and a typo in it must not turn a provisioning run into a
+  # busy-loop hammering sudo (or into a hard failure) on someone's machine.
+  local interval="${BLIB_SUDO_KEEPALIVE_INTERVAL:-50}"
+  [[ "$interval" =~ ^[1-9][0-9]*$ ]] || interval=50
   _blib_dry && {
     blib_say "would prime sudo and keep its timestamp warm for the run"
     return 0
@@ -733,7 +753,7 @@ blib_sudo_keepalive_start() {
     trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM
     while true; do
       "$su" -n -v 2>/dev/null || true
-      sleep 50 &
+      sleep "$interval" &
       wait %% 2>/dev/null
       kill -0 "$$" 2>/dev/null || exit 0
     done
