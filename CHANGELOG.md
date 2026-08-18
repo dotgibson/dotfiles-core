@@ -192,11 +192,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 ### Added
 
 - **`BLIB_SUDO_KEEPALIVE_INTERVAL` — the sudo keepalive's refresh interval is injectable**
-  (`lib/bootstrap-lib.sh`), defaulting to the shipped 50s. It exists as a TEST SEAM: asserting
-  that the background refresher uses `sudo -n -v` (validation mode, the restricted-sudoers fix)
-  means watching the loop go round once, and against a hard-coded `sleep 50` that one assertion
-  cost **50.02s of idle wall-clock on every CI leg of every repo** — 17% of the whole behavioral
-  suite for a single test. It now costs about a second.
+  (`lib/bootstrap-lib.sh`), defaulting to the shipped 50s. It exists as a TEST SEAM: the block
+  asserting that the background refresher uses `sudo -n -v` (validation mode, the
+  restricted-sudoers fix) was measured costing **exactly one refresh interval** — 50.02s against
+  the shipped default, and 3.02s / 7.02s when the interval was set to 3 and 7 — which was
+  **17% of the whole behavioral suite for a single test**, on every CI leg of every repo. It now
+  costs about a second.
+
+  The delay is not the poll: the loop refreshes _before_ it sleeps, so the test's grep for
+  `-n -v` matches on its first iteration. Something in that block waits out one sleeper anyway,
+  and the same block reproduced standalone completes in 0.02s — so the responsible construct is
+  suite-context-dependent and is deliberately **not** claimed here. The seam bounds the cost; it
+  does not explain it, and the underlying asymmetry is worth its own look.
 
   The override is guarded **fail-safe, not fail-closed**: a zero, negative, non-numeric or
   leading-zero value falls back to 50 rather than erroring, because the interval is the only

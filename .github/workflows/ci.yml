@@ -232,8 +232,11 @@ jobs:
       # Scope the audit to the areas the classifier flagged, so a docs- or nvim-only
       # push skips the gates it can't affect. The cheap structural/config/markdown/
       # workflow/version checks always run regardless of scope (see audit-core.sh).
-      # FAIL-CLOSED: the classifier forces BOTH flags true for infra/unknown changes,
-      # so this resolves to the full "shell,nvim" run there — never a narrowed audit.
+      # FAIL-CLOSED: the classifier forces ALL THREE flags true for infra/unknown changes,
+      # so this resolves to the full "shell,nvim,atuin" run there — never a narrowed audit.
+      # That explicitly INCLUDES the expensive atuin gate: an infra or unrecognised change is
+      # exactly the case where we cannot reason about what it can reach, so it pays for all
+      # of them.
       - name: Run Core audit (manifest, exec bits, syntax, lint, behavioral)
         env:
           SHELL_CHANGED: ${{ needs.changes.outputs.shell }}

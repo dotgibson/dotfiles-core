@@ -191,11 +191,11 @@ _seed_plugin_dirs() { # _seed_plugin_dirs <parent-dir>
   done
 }
 
-# Read ci-classify.sh's two-line `shell=<bool>`/`nvim=<bool>` contract into
-# CLASSIFY_SHELL/CLASSIFY_NVIM. Returns NON-ZERO when either key is missing or not a
-# clean true/false (a classifier error or garbage) — so the caller can fail SAFE to the
-# full run rather than trust a half-parsed verdict. ONE reader for the contract the audit
-# (`--changed`) consumes, instead of re-implementing the sed parse + validation per site.
+# Read ci-classify.sh's three-line `shell=<bool>`/`nvim=<bool>`/`atuin=<bool>` contract into
+# CLASSIFY_SHELL/CLASSIFY_NVIM/CLASSIFY_ATUIN. Returns NON-ZERO when ANY of the three keys is
+# missing or not a clean true/false (a classifier error or garbage) — so the caller can fail
+# SAFE to the full run rather than trust a half-parsed verdict. ONE reader for the contract the
+# audit (`--changed`) consumes, instead of re-implementing the sed parse + validation per site.
 _core_read_classify() { # _core_read_classify <classifier-output>
   CLASSIFY_SHELL="$(printf '%s\n' "$1" | sed -n 's/^shell=//p')"
   CLASSIFY_NVIM="$(printf '%s\n' "$1" | sed -n 's/^nvim=//p')"

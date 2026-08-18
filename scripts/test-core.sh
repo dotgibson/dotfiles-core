@@ -8044,11 +8044,14 @@ case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refreshe
 # macOS — the argv log held only the initial `-v` and the assertion failed for a timing
 # reason that had nothing to do with the behaviour under test.
 #
-# BLIB_SUDO_KEEPALIVE_INTERVAL is what makes that poll cheap. The assertion is about the
-# SECOND `sudo` call — the one the background loop makes after its first sleep — so it can
-# only be made by letting the loop go round once. Against the shipped 50s default that cost
-# 50 seconds of idle wall-clock here, on every leg of every run in all nine repos: measured
-# at 50.02s, 17% of this whole suite for one test. One second buys the same observation.
+# BLIB_SUDO_KEEPALIVE_INTERVAL is what bounds this block's cost. The poll itself is NOT the
+# expense — the loop runs `sudo -n -v` BEFORE its first sleep, so the grep below matches on
+# iteration zero. The block nonetheless costs EXACTLY ONE REFRESH INTERVAL end to end,
+# measured three ways: 50.02s at the shipped default, 3.02s and 7.02s at intervals of 3 and 7.
+# Something here waits out a single sleeper; the same block reproduced standalone finishes in
+# 0.02s, so the responsible construct is suite-context-dependent and was not pinned down.
+# Setting the interval bounds it regardless — 50s of pure idle wall-clock on every leg of
+# every run in all nine repos, 17% of this whole suite for one test, becomes about a second.
 # shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
 _ka_mode="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
   BLIB_SUDO_KEEPALIVE_INTERVAL="$_KA_INTERVAL"

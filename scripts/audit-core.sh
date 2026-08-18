@@ -200,9 +200,10 @@ _changed_scope() {
   } # nothing resolvable → full (safe)
   local out scope=""
   out="$(printf '%s\n' "$files" | "$HERE/scripts/ci-classify.sh" 2>/dev/null)"
-  # Parse via the shared reader (scripts/lib/common.sh): it sets CLASSIFY_SHELL/CLASSIFY_NVIM
-  # and returns non-zero if the classifier errored or emitted garbage — in which case fail
-  # SAFE to the full run rather than silently returning "none" and skipping every slow gate.
+  # Parse via the shared reader (scripts/lib/common.sh): it sets CLASSIFY_SHELL/CLASSIFY_NVIM/
+  # CLASSIFY_ATUIN and returns non-zero if the classifier errored or emitted garbage on ANY of
+  # the three — in which case fail SAFE to the full run rather than silently returning "none"
+  # and skipping every slow gate.
   if ! _core_read_classify "$out"; then
     printf 'all'
     return
