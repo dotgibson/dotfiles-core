@@ -684,17 +684,23 @@ blib_sudo_keepalive_start() {
   # The refresh INTERVAL, seconds. 50s is a comfortable fraction of the timestamp lifetime
   # described above, not a tuning knob — no caller should need to change it for a real run.
   #
-  # It is a variable rather than a literal so the TEST SUITE can bound its cost. The block
-  # asserting that the background loop refreshes with `sudo -n -v` was measured taking
-  # EXACTLY ONE INTERVAL: 50.02s against the shipped default, and 3.02s / 7.02s when the
-  # interval was set to 3 and 7. That was 17% of the entire behavioral suite for one test,
-  # on every CI leg of all nine repos.
+  # It is a variable rather than a literal for the TEST SUITE's benefit. It was introduced to
+  # bound a stall in the block asserting that this loop refreshes with `sudo -n -v`, which
+  # cost one full interval — 50.02s against the shipped default.
   #
-  # Note what the delay is NOT: the loop refreshes BEFORE it sleeps, so the test's poll for
-  # the `-n -v` line returns on its first iteration and never waits for a cycle. Something in
-  # that block waits out one sleeper regardless — the same block reproduced standalone
-  # completes in 0.02s, so it depends on suite context that was not pinned down. The seam
-  # bounds the cost either way; it does not claim to explain it.
+  # That stall is INTERMITTENT (2 in 16 instrumented runs, not the constant first reported)
+  # and its cause is still UNKNOWN. What sampling during a stall does show is that the loop
+  # below did not act on its TERM until its sleeper expired, while the caller sat in
+  # blib_sudo_keepalive_stop's `wait` — so the suspect is this trap/teardown path, not the
+  # test's output capture as previously written here. scripts/test-core.sh carries the full
+  # measurement and the two explanations already ruled out; read it before changing the loop.
+  #
+  # The seam therefore caps the damage (~1s instead of ~50s) rather than removing it, and
+  # bounds only the TEST — no real run should ever set it.
+  #
+  # The `>/dev/null 2>&1` on the loop below is what keeps this helper's own sleeper out of a
+  # caller's pipe, and is load-bearing for exactly that reason — see the stdio note further
+  # down. Do not remove it because "the refresher prints nothing anyway".
   #
   # FAIL-SAFE, not fail-closed: a non-numeric or zero override falls back to 50 rather than
   # erroring. This is a test seam, and a typo in it must not turn a provisioning run into a
