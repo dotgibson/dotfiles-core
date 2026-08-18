@@ -31,10 +31,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   2 stalls in 2 runs.
 
   What the sampling does show is a **teardown** stall — the loop did not act on its `TERM`
-  until its sleeper expired, while the caller sat in `blib_sudo_keepalive_stop`'s `wait`. The
-  root cause is still open (`stop()` alone is clean at 0/60, and the block outside the suite
-  at 0/40) and gets its own issue. No behaviour changes here; `BLIB_SUDO_KEEPALIVE_INTERVAL`
-  caps the damage at ~1s rather than removing it, and does not bound the poll as was claimed.
+  until its sleeper expired, while the caller sat in `blib_sudo_keepalive_stop`'s `wait`. That
+  pointed at the right place, and it is fixed in the entry below (#529); this entry changes no
+  behaviour on its own. `BLIB_SUDO_KEEPALIVE_INTERVAL` does not bound the poll as was claimed.
 
 ### Fixed
 

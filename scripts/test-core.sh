@@ -8102,11 +8102,17 @@ case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refreshe
 #     substitution. Measured on the converted block: 2 stalls in 2 runs, 30.012s and 30.013s.
 #     The parent waits for the subshell either way, and the subshell is what blocks.
 #
-# STILL OPEN: blib_sudo_keepalive_stop on its own is clean (0/60 at an interval of 5), and
-# this whole block reproduced outside the suite is clean (0/40, 0/30), so it needs suite
-# context that has not been isolated. The trap's `kill %% … wait %% …` racing against the
-# loop's FIRST iteration — where stop() can land before the loop reaches its `wait` — is the
-# next place to look, and that is product teardown semantics, not a test fix.
+# RESOLVED (#529): teardown was the right suspect, but not for the expected reason. The
+# trap's TERM DID reach the sleeper — `kill` returned 0 — and the sleeper went on to exit
+# normally after its full interval anyway, with no signal blocked, ignored or caught. It was
+# killable and the signal was lost, not refused. lib/bootstrap-lib.sh now follows the TERM
+# with a KILL, which cannot be lost, and the gate further down forces that case with a
+# SIGTERM-ignoring sleeper so it is not left to a 1-in-3 race.
+#
+# The mechanism behind the lost signal was never isolated, and nothing here should pretend
+# otherwise: it reproduces only inside this suite. stop() alone is clean (0/60 at an interval
+# of 5), this block outside the suite is clean (0/40, 0/30), and no start→stop delay from
+# 0–50ms provokes it.
 #
 # BLIB_SUDO_KEEPALIVE_INTERVAL does NOT keep this poll short, whatever it may once have
 # claimed: the poll is bounded by its own 100 × 0.1s, and the `-n -v` it waits for is written

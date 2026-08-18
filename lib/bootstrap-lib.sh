@@ -695,8 +695,10 @@ blib_sudo_keepalive_start() {
   # test's output capture as previously written here. scripts/test-core.sh carries the full
   # measurement and the two explanations already ruled out; read it before changing the loop.
   #
-  # The seam therefore caps the damage (~1s instead of ~50s) rather than removing it, and
-  # bounds only the TEST — no real run should ever set it.
+  # That teardown stall is FIXED below (#529): the TERM is now followed by a KILL, which
+  # cannot be lost or ignored. So the seam is no longer what caps the damage — it bounds
+  # only the TEST, and no real run should ever set it. The lost-signal mechanism itself was
+  # never isolated; the note on the trap says exactly what is measured and what is not.
   #
   # The `>/dev/null 2>&1` on the loop below is what keeps this helper's own sleeper out of a
   # caller's pipe, and is load-bearing for exactly that reason — see the stdio note further
