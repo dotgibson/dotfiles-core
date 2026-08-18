@@ -37,6 +37,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **CI's `apt-get update` is now bounded, so a wedged Ubuntu mirror fails fast instead of
+  hanging a job to death.** On 2026-08-18 `archive.ubuntu.com`'s `noble-security` index
+  stalled mid-fetch and took out four `audit (ubuntu-latest)` legs at 15 minutes each —
+  every one in the install step, with the audit never reaching a test. The Azure regional
+  mirror was dark (every `azure.archive.ubuntu.com` index `Ign:`), so apt fell back to
+  `archive.ubuntu.com`, fetched three of four indexes, and wedged on the fourth.
+
+  The `find -delete` already in front of these updates does not cover that, and was never
+  meant to: it drops **third-party** repos from `sources.list.d`, while
+  `azure.archive.ubuntu.com` is Ubuntu's own **regional mirror** in the main sources list.
+  Different repo class, different failure.
+
+  All five CI `apt-get update` sites now run under three layers —
+  `Acquire::http|https::Timeout=20` bounds a single connection, `Acquire::Retries=3`
+  re-attempts a failed index, and `timeout -k 10 120` is the backstop, because a transfer
+  that trickles keeps the socket warm and evades apt's own timeout entirely. The whole
+  thing is retried once, then allowed to fail: a genuinely unreachable archive must go
+  red, not be papered over.
+
+  The **120s** is load-bearing, not a round number. The bound has to be small relative to
+  each job's `timeout-minutes` or it merely relocates the hang — two 300s attempts inside
+  a 15-minute job would leave 5 minutes for an audit that needs ~7, and the job would
+  still die. A healthy update here is 5-15s, so 2x120s is generous for the slowest honest
+  run and still leaves 11 of the 15 minutes for the audit.
+
+  `lint-call.yml` is among the five, so every OS repo consuming it at `@v4` picks this up
+  when the tag next moves. It stays inlined rather than extracted to a shared script
+  precisely because that workflow checks Core out at `ref: v4` — a script added on `main`
+  would not exist there until a release.
+
 - **`blib_sudo_keepalive_stop` could block for a full refresh interval — 50s in a real
   provisioning run** (#529). The helper exists to stop a bootstrap hanging on an invisible
   sudo prompt; intermittently it did the hanging itself.

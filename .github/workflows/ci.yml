@@ -139,7 +139,42 @@ jobs:
           # Drop GitHub's flaky third-party apt repos (packages.microsoft.com/azure) first:
           # they intermittently serve an unsigned InRelease and fail the whole update (exit 100).
           sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
-          sudo apt-get update
+          # `apt-get update`, BOUNDED. Left bare it can hang until the JOB timeout kills
+          # it: on 2026-08-18 archive.ubuntu.com's noble-security index stalled mid-fetch
+          # and four CI legs died at 15 minutes each, every one in this install step with
+          # the audit never reaching a test. The Azure regional mirror was dark that day
+          # (every azure.archive.ubuntu.com index `Ign:`), so apt fell back to
+          # archive.ubuntu.com, fetched three of four indexes, and wedged on the fourth.
+          #
+          # Note the `find -delete` above does NOT cover that case and is not meant to:
+          # it drops THIRD-PARTY repos from sources.list.d, whereas azure.archive.ubuntu.com
+          # is Ubuntu's own regional mirror in the main sources list. Different repo class,
+          # different failure — hence this second layer.
+          #
+          # Three mechanisms, each covering what the previous one misses:
+          #   Acquire::*::Timeout — bounds a single connection's connect/read
+          #   Acquire::Retries    — re-attempts a failed index instead of failing the run
+          #   timeout(1)          — the backstop. A transfer that trickles keeps the socket
+          #                         warm and can evade apt's own timeout entirely, which is
+          #                         exactly what 15 minutes of no progress looked like.
+          #
+          # `sudo timeout`, not `timeout sudo`: timeout has to run as root to signal the
+          # root apt-get it spawns. `-k 10` follows the TERM with a KILL — #529 was a hang
+          # caused by a TERM that was accepted and never acted on; do not assume one lands.
+          #
+          # Retried once as a whole, because a wedged mirror is usually wedged per-connection.
+          # Still allowed to fail afterwards: a genuinely unreachable archive must go red,
+          # not be papered over.
+          #
+          # 120s, and the number is load-bearing. The bound has to be SMALL relative to the
+          # job's timeout-minutes or it just relocates the hang: two 300s attempts inside a
+          # 15-minute job would leave 5 minutes for an audit that needs ~7, and the job would
+          # still die — bounded, but no less red. A healthy update here is 5-15s, and apt's
+          # own Retries+Timeout cap it well under 120 anyway, so 2x120s is generous for the
+          # slowest honest run and still leaves 11 of the 15 minutes for the audit.
+          apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
+                      -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
+          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
           sudo apt-get install -y --no-install-recommends zsh
 
       # ── macOS: shellcheck via Homebrew (no pinned-binary tarball published for
@@ -414,7 +449,11 @@ jobs:
           # Drop GitHub's flaky third-party apt repos (packages.microsoft.com/azure) first —
           # an unsigned InRelease there otherwise fails the whole update (exit 100).
           sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
-          sudo apt-get update
+          # `apt-get update`, BOUNDED — a wedged mirror otherwise hangs to the job
+          # timeout. Full reasoning at ci.yml's "Install zsh (Linux)" step.
+          apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
+                      -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
+          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
           sudo apt-get install -y --no-install-recommends zsh hyperfine
       - name: Benchmark Core startup (budget gate)
         env:
