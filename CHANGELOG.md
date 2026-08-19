@@ -21,7 +21,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   2026-08-18 and 2026-08-19 `archive.ubuntu.com`'s `noble-security` index stalled mid-fetch
   (with the Azure regional mirror dark, every index `Ign:`), and the job died at `timeout(1)`'s
   exit 124 with no test executed — while the same logs showed `Hit: … noble InRelease`
-  succeeding. Only the *security* pocket wedged; `zsh` lives in `noble/main`. The archive was
+  succeeding. Only the _security_ pocket wedged; `zsh` lives in `noble/main`. The archive was
   reachable for everything the job actually needed, and it failed anyway.
 
   The refresh is now best-effort and the **install is the gate** — a stale index nothing reads
