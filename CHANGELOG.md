@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.13.2] - 2026-08-19
+
 ### Fixed
 
 - **`make audit` no longer reds `blib_user_bindirs_on_path` for anyone with `CARGO_HOME`
