@@ -8215,9 +8215,23 @@ if [[ "$(BLIB_SU='' blib_priv printf 'ran-%s' direct)" == "ran-direct" ]]; then 
 if [[ "$(BLIB_SU='env' blib_priv printf 'ran-%s' viasu)" == "ran-viasu" ]]; then pass "blib_priv routes through a non-empty BLIB_SU"; else fail "blib_priv did not route through BLIB_SU"; fi
 
 # blib_user_bindirs_on_path: adds only EXISTING dirs, never duplicates.
+#
+# CARGO_HOME/GOBIN/GOPATH are UNSET here, as deliberately as HOME and PATH are pinned. These
+# cases assert the $HOME-RELATIVE DEFAULTS, and the helper reaches those defaults only when
+# the vars are absent — `${CARGO_HOME:-$HOME/.cargo}/bin`. Inherit an exported CARGO_HOME
+# from the caller and the lookup retargets, so the fixture's own .cargo/bin never lands and
+# the case reports "missed ~/.cargo/bin" on a perfectly healthy tree.
+#
+# Note where the leak actually lived: the RELOCATION block further down (search `_relo_home`)
+# sets these vars explicitly and was always immune. It was the DEFAULT-path cases here that
+# inherited. A gap between two blocks, not a coverage hole — and invisible to CI, because no
+# runner exports CARGO_HOME while most developers' shells do. Same shape as the
+# GHOSTTY_SHELL_FEATURES leak in the OSC 133 section: a fixture pins what it varies and
+# inherits what it does not, so the ambient environment decides the verdict.
 _bindirs_path() { (
   HOME="$1"
   PATH="/usr/bin"
+  unset CARGO_HOME GOBIN GOPATH
   blib_user_bindirs_on_path
   blib_user_bindirs_on_path
   printf '%s' "$PATH"
