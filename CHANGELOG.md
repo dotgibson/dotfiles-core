@@ -31,6 +31,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `atuin-guard-verify.yml`); all five are fixed, since fixing one would have left the same
   stall live on four other lanes.
 
+- **`make audit` no longer reds 7 OSC 133 assertions when it is run from inside Ghostty.**
+  `00-tools.zsh` deliberately stands the marks down when `GHOSTTY_SHELL_FEATURES` is set and
+  `$TMUX` is empty — Ghostty injects its own prompt marking outside tmux, so Core must not
+  double-mark. Every mark-ON case in `scripts/test-core.sh`'s OSC 133 section pins `TERM` and
+  `TMUX` explicitly for exactly that reason, but `ucheck` ran a bare `env`, which inherits the
+  caller's environment. Auditing from the terminal this repo ships a config for therefore
+  cleared `_CORE_OSC133`, left `_core_osc133_prompt` undefined, and failed 7 assertions about
+  the shell layer while proving nothing about it.
+
+  `ucheck` now runs `env -u GHOSTTY_SHELL_FEATURES`; the per-case assignments come after the
+  option, so the two cases that set it deliberately still win. **CI could not have caught
+  this** — no runner is hosted in Ghostty, so all four audit lanes were green on the identical
+  tree — which is why the regression gate added alongside drives a mark-ON case with the
+  variable genuinely exported rather than passed as an argument.
+
 - **A repo renamed upstream is no longer skipped by the whole fleet toolchain because its
   clone directory still carries the old name.** `scripts/os-repos.txt` names the fleet by
   repo NAME, and `sync-core.sh`, `fleet-drift.sh` and `core-integrity.sh` each turned that
