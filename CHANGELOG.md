@@ -15,6 +15,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A stalled Ubuntu security index no longer reds CI lanes that never needed it.** The Linux
+  setup step gated on `apt-get update` succeeding, and under `set -euxo pipefail` a second
+  failed refresh killed the step before `apt-get install zsh` was ever attempted. On both
+  2026-08-18 and 2026-08-19 `archive.ubuntu.com`'s `noble-security` index stalled mid-fetch
+  (with the Azure regional mirror dark, every index `Ign:`), and the job died at `timeout(1)`'s
+  exit 124 with no test executed — while the same logs showed `Hit: … noble InRelease`
+  succeeding. Only the _security_ pocket wedged; `zsh` lives in `noble/main`. The archive was
+  reachable for everything the job actually needed, and it failed anyway.
+
+  The refresh is now best-effort and the **install is the gate** — a stale index nothing reads
+  is not this job's problem, whereas not having `zsh` still fails it. The install carries its
+  own `timeout(1)` bound so it cannot hang in the refresh's place. The block was duplicated
+  verbatim across five workflows (`ci.yml` twice, plus `lint-call.yml`, `sync-fanout.yml`,
+  `atuin-guard-verify.yml`); all five are fixed, since fixing one would have left the same
+  stall live on four other lanes.
+
 - **A repo renamed upstream is no longer skipped by the whole fleet toolchain because its
   clone directory still carries the old name.** `scripts/os-repos.txt` names the fleet by
   repo NAME, and `sync-core.sh`, `fleet-drift.sh` and `core-integrity.sh` each turned that
