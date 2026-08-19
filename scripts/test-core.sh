@@ -5725,7 +5725,18 @@ ucheck() { # ucheck <label> <zsh-body> [VAR=VAL ...]
   local label="$1" body="$2"
   shift 2
   local out
-  if out="$(HOME="$SANDBOX" env "$@" "$_real_zsh" -fic "$body" 2>&1)"; then
+  # `env -u GHOSTTY_SHELL_FEATURES`, and it is NOT cosmetic. 00-tools.zsh stands the OSC 133
+  # marks down when that variable is set and $TMUX is empty (line ~263), which is exactly the
+  # environment every mark-ON case below pins: they pass TMUX= explicitly and say nothing
+  # about Ghostty. A bare `env` inherits the caller's, so running `make audit` from a Ghostty
+  # window — the reference terminal this repo ships a config for — cleared _CORE_OSC133,
+  # left _core_osc133_prompt undefined, and red 7 assertions on a tree CI called green.
+  # The section header already claims TERM and TMUX are pinned "wherever they matter"
+  # BECAUSE env would otherwise leak the real values; this is the third variable that
+  # reasoning applies to and it was the one missed.
+  # Order is load-bearing: -u is an OPTION, "$@" the assignments after it, so cases (e)/(f)
+  # setting GHOSTTY_SHELL_FEATURES=... explicitly still win over the unset.
+  if out="$(HOME="$SANDBOX" env -u GHOSTTY_SHELL_FEATURES "$@" "$_real_zsh" -fic "$body" 2>&1)"; then
     pass "$label"
   else
     fail "$label"
@@ -6569,6 +6580,29 @@ ucheck "osc133: hooks registered without starship, and precmd stays first (outpu
 ucheck "osc133: no hooks at all when the marks stand down and starship is absent" \
   "source '$TOOLS_FILE'; [[ -z \${precmd_functions[(r)_cmd_block_precmd]} && -z \${preexec_functions[(r)_cmd_block_preexec]} && -z \${precmd_functions[(r)_core_osc133_prompt]} ]]" \
   TERM=dumb TMUX= PATH="$OSCEMPTY"
+
+# (j) THE REGRESSION GATE on the harness itself, not on the shell layer — and the reason it
+#     is here rather than left to CI: this bug was INVISIBLE to CI by construction. No runner
+#     is hosted in Ghostty, so every mark-ON case above passed on ubuntu, macos, arch and
+#     alpine while the identical tree red 7 assertions for an operator running `make audit`
+#     from the terminal this repo ships a config for. A green CI lane was not evidence.
+#
+#     Drive one mark-ON assertion with GHOSTTY_SHELL_FEATURES genuinely EXPORTED — exactly
+#     what a Ghostty-hosted audit does — and require the same verdict. This fails loudly if
+#     anyone drops the `env -u` from ucheck. Exported for real, not passed as an argument:
+#     an argument is the thing cases (e)/(f) already do and would test nothing, because the
+#     leak is about what `env` INHERITS.
+_osc_amb_set=0
+[[ -n ${GHOSTTY_SHELL_FEATURES+x} ]] && _osc_amb_set=1
+_osc_amb_saved="${GHOSTTY_SHELL_FEATURES-}"
+export GHOSTTY_SHELL_FEATURES=cursor,title
+ucheck "osc133: the harness is insulated from an ambient GHOSTTY_SHELL_FEATURES (an audit run inside Ghostty cannot red a green tree)" \
+  "source '$TOOLS_FILE'; _core_osc133_prompt; [[ \$PROMPT == '%{'*']133;A'*'%}'* ]]" \
+  TERM=xterm-256color TMUX=
+# Restore rather than blanket-unset: the caller's environment is not ours to edit, and a
+# later section reading it would otherwise see a value this block invented.
+if ((_osc_amb_set)); then export GHOSTTY_SHELL_FEATURES="$_osc_amb_saved"; else unset GHOSTTY_SHELL_FEATURES; fi
+unset _osc_amb_set _osc_amb_saved
 
 # ── atuin: ATUIN_NOBIND + the OPT-IN daemon guard (00-tools.zsh) ──────────────
 # Two things were ungated here. (1) ATUIN_NOBIND=true is what keeps atuin from grabbing
