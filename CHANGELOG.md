@@ -13,6 +13,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Documentation
+
+- **`blib_link_role_layer`'s migration note described a migration that has since
+  happened.** It read, in the present tense, that "the offensive repo hand-rolls
+  `<config>/kali/templates`" and instructed a consumer to relocate them and update two
+  shipped docs "in the same change that adopts the helper". dotfiles-Offense adopted the
+  helper and did exactly that, so the instruction now describes work that is done —
+  misleading anyone reading the helper to decide what a consumer still owes it. Rewritten
+  as the record of a completed move, keeping the reasoning that matters (why the
+  destination is named for the ROLE rather than the distro, and why neither a compat
+  symlink nor a namespace parameter was the answer). Comment only — no behaviour changes,
+  but it is vendored into all nine consuming repos, so the stale text was live fleet-wide.
+
 ## [v4.13.1] - 2026-08-18
 
 ### Fixed
