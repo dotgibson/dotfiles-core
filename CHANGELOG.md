@@ -13,6 +13,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A repo renamed upstream is no longer skipped by the whole fleet toolchain because its
+  clone directory still carries the old name.** `scripts/os-repos.txt` names the fleet by
+  repo NAME, and `sync-core.sh`, `fleet-drift.sh` and `core-integrity.sh` each turned that
+  name into a path by string-joining it onto the fleet root. Git follows a GitHub rename on
+  its own; a directory name does not. So a machine that cloned `dotfiles-Kali` before it
+  became `dotfiles-Offense` had a correct remote, a correct `core/` subtree and a correct
+  `core.lock` — and the fan-out skipped it as "not cloned", drift reported "not checked out",
+  and the integrity sweep could not have seen a tampered `core/` there at all. Two of those
+  three are false-CLEAN results on gates whose entire job is to notice, and the only remedy
+  on offer was "go `mv` the directory", on every machine, for every future rename.
+
+  All three now resolve through one shared `resolve_repo_dir` (`scripts/lib/common.sh`):
+  the directory-name lookup stays the fast path and keeps precedence, and only when no such
+  directory exists does it ask each sibling clone what it actually is, matching on the repo
+  slug in `origin`'s URL. Both URL shapes parse (`https://host/owner/repo` and
+  `git@host:owner/repo`, with or without `.git`) and matching is case-insensitive, as GitHub
+  itself is. A clone whose origin names a different repo is not adopted, one with no origin
+  is stepped over rather than aborting the sweep, and a genuinely absent repo still reports
+  against the conventional path so the advice names where it looked. `sync-core.sh` prints
+  the resolved path when it isn't the conventional one, so a fan-out into a pre-rename
+  directory is visible in the log instead of a surprise underneath the git output.
+
 ### Documentation
 
 - **`blib_link_role_layer`'s migration note described a migration that has since
