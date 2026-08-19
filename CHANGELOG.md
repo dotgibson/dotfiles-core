@@ -15,6 +15,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`make audit` no longer reds `blib_user_bindirs_on_path` for anyone with `CARGO_HOME`
+  set.** The helper resolves the cargo bindir through `${CARGO_HOME:-$HOME/.cargo}/bin`
+  deliberately — hard-coding `~/.cargo/bin` would break a box that relocates it, which is the
+  bug it exists to prevent. Its fixture asserts the `$HOME`-relative defaults, and those are
+  reached only when the vars are absent; but the subshell pinned just `HOME` and `PATH`, so an
+  exported `CARGO_HOME` retargeted the lookup and the fixture's own `.cargo/bin` never landed.
+  A developer with Rust configured — most operators, and exactly who `make audit` runs for —
+  saw a failure on a healthy tree, while no CI runner exports it and all four lanes stayed
+  green.
+
+  The fixture now unsets `CARGO_HOME`, `GOBIN` and `GOPATH`. Worth noting where the leak
+  actually lived: the relocation block further down the same file sets these vars explicitly
+  and was always immune — it was the default-path cases that inherited. A gap between two
+  blocks rather than a coverage hole, and the same shape as the `GHOSTTY_SHELL_FEATURES` leak
+  fixed one release earlier.
+
 - **A stalled Ubuntu security index no longer reds CI lanes that never needed it.** The Linux
   setup step gated on `apt-get update` succeeding, and under `set -euxo pipefail` a second
   failed refresh killed the step before `apt-get install zsh` was ever attempted. On both
