@@ -6298,6 +6298,113 @@ ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports 
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ -z \${HAVE_BAT:-} && -z \${HAVE_FD:-} ]] && ! (( \$+aliases[bat] )) && ! (( \$+aliases[fd] )) && ! (( \$+aliases[cat] )) && [[ \$j == *'\"bat\":false'* && \$j == *'\"fd\":false'* ]]" \
   PATH="$RNBIN" CORE_NO_PAGER=1
 
+
+# ── user bindirs reach PATH BEFORE detection (#425) ──────────────────────────
+# 00-tools.zsh prepends the per-user bindirs language installers write into, then probes
+# for HAVE_* flags. It used to prepend only ~/.local/bin, so a `cargo install`ed tool —
+# which lands in $CARGO_HOME/bin, and reached PATH only via the OS layer at band 80, a
+# whole load-order band AFTER detection — got no flag, no alias, and no shell init, while
+# core-doctor (which probes LIVE, later, against the finished PATH) reported it ✓. Same
+# shell, two answers. atuin's own installer writes ~/.atuin/bin and had the identical
+# hole, which is the severe one: no HAVE_ATUIN means `atuin init zsh` never runs, so
+# Ctrl+E is dead and no history is recorded behind a green doctor row.
+#
+# Hermetic, and it has to be: the box running this suite has its own cargo/go/atuin dirs
+# one way or the other, and neither arrangement can prove the other's. Each case pins HOME
+# to a purpose-built fixture and PATH to a stub dir holding nothing but real grep/head.
+#
+# CARGO_HOME/GOBIN/GOPATH are neutralised (passed EMPTY — `:-` treats empty as unset) in
+# every case that is not deliberately setting them. That is the same trap v4.13.2 fixed in
+# the blib_user_bindirs_on_path fixture below: the resolution is `${CARGO_HOME:-$HOME/...}`
+# precisely so a relocated dir still works, so a developer with CARGO_HOME exported in
+# their own shell retargets the lookup, the fixture's dir never lands, and the case reds a
+# perfectly healthy tree while no CI runner — none of which export it — ever sees it.
+UBHOME="$SANDBOX/ubhome"
+UBSYS="$SANDBOX/ubsys"
+mkdir -p "$UBSYS"
+ln -sf "$(command -v grep)" "$UBSYS/grep"
+ln -sf "$(command -v head)" "$UBSYS/head"
+_ub_fixture() { # _ub_fixture <reldir>:<tool> ... — fresh $UBHOME holding exactly these stubs
+  rm -rf "$UBHOME"
+  mkdir -p "$UBHOME"
+  local spec d n
+  for spec in "$@"; do
+    d="${spec%%:*}"
+    n="${spec##*:}"
+    mkdir -p "$UBHOME/$d"
+    # Answers --version and NOTHING else: `atuin init zsh` must emit no script, or
+    # _cache_eval would source the stub's chatter back into the shell.
+    printf '#!/bin/sh\n[ "$1" = --version ] && echo "%s 1.0.0"\nexit 0\n' "$n" >"$UBHOME/$d/$n"
+    chmod +x "$UBHOME/$d/$n"
+  done
+}
+
+# (a) THE REPORTED BUG: a cargo-installed tool is detected, aliased and wired.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: a tool in ~/.cargo/bin sets HAVE_PROCS and gets its alias (#425)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; [[ -n \${HAVE_PROCS:-} && \${aliases[ps]} == procs ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (b) THE SEVERE ONE: atuin's own installer dir, whose miss silently loses history.
+_ub_fixture .atuin/bin:atuin
+ucheck "bindirs: a tool in ~/.atuin/bin sets HAVE_ATUIN (so atuin init zsh runs)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_ATUIN:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (c) RELOCATABLE: rustup honours $CARGO_HOME, so hard-coding ~/.cargo/bin would leave a
+# relocated box still undetected. NOTE there is no ~/.cargo/bin in this fixture at all —
+# the flag can only be set by resolving through the variable.
+_ub_fixture xdgcargo/bin:procs
+ucheck "bindirs: CARGO_HOME is honoured (a relocated cargo dir is still detected)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_PROCS:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME="$UBHOME/xdgcargo" GOBIN= GOPATH=
+
+# (d) go honours $GOBIN first.
+_ub_fixture gobin:xh
+ucheck "bindirs: GOBIN is honoured" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_XH:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN="$UBHOME/gobin" GOPATH=
+
+# (e) …then $GOPATH — which is a path LIST, and go writes to the FIRST entry's bin/.
+# Expanding "$GOPATH/bin" against /a:/b would probe a nonexistent "/a:/b/bin", so this
+# asserts BOTH that the first entry is used and that no such bogus entry is built.
+_ub_fixture gopath/bin:xh second/bin:gron
+ucheck "bindirs: GOPATH's FIRST entry is used, and no bogus /a:/b/bin entry is built" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_XH:-} && -z \${HAVE_GRON:-} && \$PATH != *'gopath:'* ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH="$UBHOME/gopath:$UBHOME/second"
+
+# (f) IDEMPOTENT: the guard is a containment test, so a second source must not duplicate.
+# Duplicates are not cosmetic — 00-tools.zsh is re-sourced by `core reload`, and an
+# unbounded PATH is a real leak over a long session.
+_ub_fixture .cargo/bin:procs .local/bin:eza
+ucheck "bindirs: sourcing twice adds each dir exactly once" \
+  "source '$TOOLS_FILE'; source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ \${#\${(M)p:#\$HOME/.cargo/bin}} == 1 && \${#\${(M)p:#\$HOME/.local/bin}} == 1 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (g) Only dirs that EXIST are added — no phantom entries on a box without go or atuin.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: directories that do not exist are never added to PATH" \
+  "source '$TOOLS_FILE'; [[ \$PATH != *'/go/bin'* && \$PATH != *'/.atuin/bin'* && \$PATH == *'/.cargo/bin'* ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (h) ORDER IS A DECISION, not an accident. Each existing dir is prepended, so the front of
+# PATH ends up in reverse list order: ~/.atuin/bin ahead of ~/.local/bin. That matches
+# lib/bootstrap-lib.sh's blib_user_bindirs_on_path, examples/atuin-daemon.service's
+# Environment=PATH, and the OS layers — inverting it here would silently change which
+# binary wins on a box holding atuin in both places.
+_ub_fixture .cargo/bin:procs .local/bin:eza .atuin/bin:atuin
+ucheck "bindirs: ~/.atuin/bin precedes ~/.local/bin, and all of them precede the old PATH" \
+  "source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ \${p[(i)\$HOME/.atuin/bin]} -lt \${p[(i)\$HOME/.local/bin]} && \${p[(i)\$HOME/.local/bin]} -lt \${p[(i)$UBSYS]} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (i) THE DISAGREEMENT ITSELF. The issue's symptom was not "no alias" but that core-doctor
+# and the flags answered differently about the same tool in the same shell. Assert they now
+# agree: the doctor says present AND Core wired it. Before the fix the first half passed and
+# the second failed, which is exactly the bug.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: core-doctor and HAVE_PROCS now agree about a cargo-installed tool (#425)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"procs\":true'* && -n \${HAVE_PROCS:-} && \${aliases[ps]} == procs ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH= CORE_NO_PAGER=1
 # ── git subcommands in git's exec-path: an honest doctor off $PATH (#424) ────
 # The Debian family packages a git SUBCOMMAND into git's exec-path (`git --exec-path`) and
 # keeps that directory off $PATH on purpose — git dispatches `git absorb` by looking there

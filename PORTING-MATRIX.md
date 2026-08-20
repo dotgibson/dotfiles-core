@@ -330,7 +330,11 @@ you are outside what Core can protect.
 ²¹ **Available, not installed** — the same detect-only shape as `jnv`¹⁷ and `gping`¹⁹, and
 the counterpart to ³. These cells name where the tool comes from **when you opt in**; no
 Linux repo's `install/packages.txt` carries it and no `bootstrap.sh` installs it, so Core
-lights the `HAVE_*` probe only once you install it yourself.
+lights the `HAVE_*` probe only once you install it yourself. That promise now actually
+holds for a `cargo install`, which is what #425 fixed: `${CARGO_HOME:-~/.cargo}/bin` used
+to reach PATH via the OS layer at band 80, a whole load-order band after `00-tools.zsh`
+probed, so the flag stayed dark and the alias was never made while `core-doctor` — probing
+live, later — reported the tool present. It joins PATH before detection now.
 
 - `hyperfine`, `shellcheck`, `shfmt`, `ouch`, `lnav`²⁴, `git-absorb`²⁶ are **macOS-only in
   practice**: the MacBook `Brewfile` carries them; **no** Linux repo does. The packaged
@@ -656,7 +660,8 @@ noble's rustc is **1.75**, too old to build them; shipping a toolchain that fail
 halfway through a long build is worse than not shipping the tool. `jnv`, `ouch`,
 `jujutsu` and `watchexec` are likewise unpackaged there and not worth a hand-maintained
 pin. All are `HAVE_*`-guarded in Core, so the shell degrades cleanly. Want one on a
-particular box? `mise use -g rust`, then `cargo install --locked <tool>`.
+particular box? `mise use -g rust`, then `cargo install --locked <tool>` — and as of #425
+the next login picks it up on its own, no symlink into `~/.local/bin` needed.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
