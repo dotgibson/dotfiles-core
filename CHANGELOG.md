@@ -13,6 +13,64 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `cargo install`ed tool now gets its `HAVE_*` flag, its alias and its shell
+  integration — `core-doctor` and the flags no longer disagree about the same box.** (#425)
+  `zsh/00-tools.zsh` put only `~/.local/bin` on PATH before probing, and computed all 43
+  `HAVE_*` flags immediately after. The Rust bindir arrived far later — via the OS layer at
+  band 80, and via mise's activation 200 lines further down the same file — so anything
+  `cargo install` had written to `~/.cargo/bin` was simply invisible at detection time.
+  `core-doctor`, which probes live from an interactive prompt against the finished PATH,
+  saw it and printed `✓`. Same shell, two answers, and the flags were the ones that
+  mattered: `20-aliases.zsh` never made the alias.
+
+  That subset is not small — `PORTING-MATRIX.md` prescribes cargo as the source for
+  `procs`, `xh`, `atuin`, `ouch`, `jnv`, `ast-grep`, `watchexec`, `difft`, `viddy` and
+  `yazi` on distros that do not package them — and for atuin the failure was not cosmetic.
+  An unset `HAVE_ATUIN` means `atuin init zsh` never runs, so Ctrl+E is dead and **no
+  history is recorded at all**, while the doctor reports `✓ atuin` in the tool row and
+  `○ atuin (idle)` below it. That reads as "installed but idle" rather than "Core never
+  initialised it", which is why this could sit unnoticed.
+
+  All four per-user bindirs now join PATH before detection, not just cargo's: `~/.local/bin`,
+  `${CARGO_HOME:-~/.cargo}/bin`, `$GOBIN` (falling back to the **first** entry of `$GOPATH`,
+  which is a path list — expanding `$GOPATH/bin` against `/a:/b` would probe a nonexistent
+  `/a:/b/bin`), and `~/.atuin/bin`, which is where atuin's own installer writes and so had
+  the identical hole. The cargo and go dirs are resolved through their environment variables
+  rather than hard-coded, because rustup and go honour them and a box that relocates one
+  would otherwise keep missing its tools — hard-coding `~/.cargo/bin` does not fix this bug,
+  it moves it somewhere less obvious.
+
+  This is deliberately the same list, the same resolution and the same order as
+  `lib/bootstrap-lib.sh`'s `blib_user_bindirs_on_path`, which fixed the identical blind spot
+  on the bash side in v4.13.2: bootstrap's `command -v` guards and the shell's `HAVE_*`
+  probes must not be able to disagree about where a tool lives. Neither can source the other
+  — one is bash and runs before any Core shell exists — so both carry a note pointing at the
+  other. The order puts `~/.atuin/bin` ahead of `~/.local/bin`, matching
+  `examples/atuin-daemon.service` and the OS layers rather than inverting them, and a test
+  pins it so it stays a decision.
+
+  The OS layers' own prepends (`os/*.zsh`) become inert rather than duplicative — both sides
+  guard on `":$PATH:" != *":$d:"*`, so the later one simply finds the dir already there. They
+  can be dropped on their next pass; nothing breaks if they are not.
+
+  Nine hermetic cases cover it, each pinning `HOME` to a fixture and `PATH` to a stub dir:
+  the reported reproducer, the atuin variant, `CARGO_HOME`/`GOBIN`/`GOPATH` relocation,
+  idempotence, phantom-directory rejection, the ordering, and the disagreement itself
+  (`core-doctor --json` and `$HAVE_PROCS` asserted to agree). All nine are red against the
+  previous `00-tools.zsh`. They neutralise an inherited `CARGO_HOME`/`GOBIN`/`GOPATH` for the
+  reason v4.13.2 records: the resolution exists so a relocated dir still works, so a
+  developer who exports one retargets the lookup and reds a healthy tree while no CI runner
+  — none of which export it — ever sees the failure.
+
+  Worth noting what this does **not** fix, and #425 says so explicitly: `HAVE_*` is still a
+  snapshot taken at band 00, while PATH keeps being assembled through band 99. mise's
+  `hook-env` rewrites it per directory, and `80-os.zsh`, an `85-*` role and `99-local.zsh`
+  all load after every probe, so a tool contributed by any of those still gets no flag while
+  the doctor reports it present. A `✓` still means "on PATH when you asked", not "Core wired
+  this". That half is tracked separately.
+
 ## [v4.13.2] - 2026-08-19
 
 ### Fixed
