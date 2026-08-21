@@ -13,6 +13,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **nvim plugin pins move forward for five plugins.** `nui.nvim`, `nvim-lint`,
+  `nvim-lspconfig`, `package-info.nvim` and `schemastore.nvim` advance to the commits
+  lazy.nvim had already resolved on a live box, 2–7 days ahead of the pins Core carried.
+
+  Every new SHA was verified to exist upstream and to be newer than the one it replaces,
+  and each range was read before promotion: `nui.nvim` one additive commit (borderless
+  tables, `set_data`, cell navigation); `nvim-lint` two (zlint source name, relative
+  `artifactLocation.uri` in sarif output); `nvim-lspconfig` twelve, all per-server fixes
+  or additions plus generated docs (`vhdl_ls`, `tsc`, `symfony_lsp`, `slang-server`,
+  `php_lsp`, `oxc`); `package-info.nvim` one notification fix; `schemastore.nvim` two
+  catalog refreshes. Nothing renames or removes an API Core calls.
+
+  Provenance worth recording, because it is the failure mode this repo warns about: these
+  bumps were found as an uncommitted edit to `dotfiles-Fedora`'s **vendored** `core/nvim/
+  lazy-lock.json`. That tree is a copy — the next `make sync` overwrites it — so the bumps
+  were days from being silently reverted, and would have come back on the next `lazy sync`
+  to be lost again. They belong here, once, and reach every machine by fan-out.
+
 ### Added
 
 - **A gate against leaked `RETURN` traps, for the fleet and for Core's own tree.**
