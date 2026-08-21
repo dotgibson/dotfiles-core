@@ -118,10 +118,12 @@ path — by hand: no `bootstrap.sh` installs it. If the package is missing, `mis
 best-effort — verify the exact package on first stamp of each distro.)
 ⁸ jujutsu (jj): OPT-IN, additive git companion — never replaces git, so a box
 without it just skips the HAVE_JJ-gated aliases. Packaged on Arch (`jujutsu`),
-openSUSE (`jujutsu`), Fedora (`jujutsu`), Homebrew (`jj`), nixpkgs (`jujutsu`)
-and Alpine (`community` — a native musl build); **not** in stable Debian/Kali
-apt, and **not on Gentoo** — absent from `::gentoo` **and** from GURU — so both
-take `cargo install --locked jj-cli`, the same cargo pattern as yazi/ouch. The
+openSUSE (`jujutsu`), Homebrew (`jj`), nixpkgs (`jujutsu`) and Alpine
+(`community` — a native musl build); **not** in stable Debian/Kali apt, **not on
+Fedora** — `dnf` has no `jujutsu`, `jj` or `jj-cli` on F43/F44/rawhide and no
+retired build to point at, unlike `sd`/`gron` which were dropped — and **not on
+Gentoo**, absent from `::gentoo` **and** from GURU. All three therefore take
+`cargo install --locked jj-cli`, the same cargo pattern as yazi/ouch. The
 crate is **`jj-cli`**, not `jujutsu`: the `jujutsu` crate is a stub pinned at
 0.7.2 whose own description reads "You don't want this crate - you want the
 `jj-cli` crate", so `cargo install jujutsu` lands a redirect rather than the
