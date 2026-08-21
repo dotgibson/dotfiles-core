@@ -15,6 +15,118 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The doctor's wirable list was three hand-synced copies with nothing able to see a drift,
+  and no test asserted that a `✓` row means Core actually wired anything.** (#447) Meta-issue
+  #447 collected five bugs — #418, #420, #423, #424, #425 — as one defect: a name used as a
+  proxy for a capability. All five are fixed and closed, and the seam that fixed the presence
+  half is `_core_doctor_bin`, which resolves a canonical row name to the binary that actually
+  backs it (`fd`→`$FD_BIN`, `bat`→`$BAT_BIN`, `git-*`→git's exec-path). Its proposed
+  `_core_have_override` was **not** taken, for the reasons recorded at the v4.13.2 entry below
+  and in `30-functions.zsh` — that decision stands and this change does not revisit it.
+
+  What #447 was right about, and what was still outstanding, is the OTHER axis. `_core_wired`'s
+  `case` arms, `_core_doctor_json`'s `wir=(…)` and `_core_doctor_render`'s `wirable=(…)` were
+  three literals of the same five names, kept in step by hand — precisely the arrangement
+  `_CORE_DOCTOR_GROUPS` exists to prevent on the tool axis. Worse, it was **unobservable**: the
+  render⇄json parity test stubs `_core_have` false, which makes the "integrations wired" block
+  skip every entry, so the one guard that might have noticed is blind to this list by
+  construction. There is now a single `_CORE_DOCTOR_WIRED`, read by both renderers, and the
+  drift is guarded in both directions — a name listed with no `case` arm (which renders a
+  permanent `○ (idle)` no user action can clear) and an arm no renderer iterates (which
+  reports nothing at all, the way twelve tools went unreported on the tool axis for releases).
+  To make the first testable, `_core_wired`'s fallthrough returns **2** — "no arm for this
+  name" — where an idle-but-known tool still returns 1. Both callers test only for zero, so
+  no report changes: the rendered output and `--json` are byte-identical across this change.
+
+  And #447's "worth pairing with a test" now exists, generalised past the single tool it was
+  written against: for **every** tool `00-tools.zsh` probes, "the doctor says present" and
+  "Core set the `HAVE_*` flag" must be the same boolean, on the real box the suite runs on.
+  That is #425's disagreement stated as an invariant instead of an anecdote — it had a
+  `procs`-shaped check only because `procs` is what got reported. The tool→flag mapping is
+  read out of the source, so the two irregular names (`ast-grep`→`HAVE_ASTGREP`,
+  `git-absorb`→`HAVE_GIT_ABSORB`) need no table and cannot rot. A second guard closes the hole
+  that mapping leaves behind — deriving both sides from the same line means DELETING a
+  detection line removes it from the comparison rather than failing it — by requiring every
+  doctor row to have a probe behind it, with `op`, `fd` and `bat` named as the three
+  deliberate exceptions rather than waived in prose.
+
+  Also: the existing "reports every tool 00-tools.zsh probes" guard anchored on `^_have`
+  followed by exactly one literal space, and `00-tools.zsh` aligns some trailing comments with
+  two — so `tldr` had been silently outside its coverage. 37 rows → 38.
+
+- **`jnv` is in Arch's `extra` now, so the matrix stopped sending Arch users to the AUR.**
+  (dotgibson/dotfiles-Arch#87) The package landed as `jnv` 0.7.1-1 on 2026-04-01; `pacman -Si
+  jnv` on a current box reports `Repository: extra`. The table's Arch cell said `AUR` and
+  footnote ¹⁷ prescribed `paru -S jnv`, which asked readers to build an AUR helper for a tool
+  `pacman` has been able to install for four months.
+
+  Footnote ²⁴ also used jnv as its yardstick for the worst packaging shape in the table —
+  lnav is "macOS-only in practice" _rather than jnv's "barely packaged anywhere" one_. With
+  brew and `extra` both carrying it that overstates the case, so the contrast is now the
+  narrower and still-true one: two platforms package jnv, everywhere else is `cargo`.
+
+  What has **not** changed is the decision underneath: jnv stays detect-only on Linux. It is
+  in no `install/packages.txt` and no `bootstrap.sh` installs it, so `HAVE_JNV` still lights
+  only for a box that opted in. Being packaged made the _instruction_ wrong, not the policy —
+  wiring it into the per-repo bootstrap remains the tracked follow-up it already was.
+
+- **`PORTING-MATRIX.md`'s openSUSE story was written for Leap 15.6, which is EOL.** (#89)
+  Four passages still described a release nobody runs; two of them gave advice that is now
+  wrong rather than merely dated. All figures below were verified against the `repo/oss`
+  binary indexes for Leap 16.0, Leap 16.1 and Tumbleweed on 2026-08-21 — both arches, since
+  the Python packages are `noarch` and an `x86_64`-only pass misses them.
+
+  `tealdeer` (footnote ¹) is the one real availability break: it is in Tumbleweed at 1.8.0 and
+  in **neither** Leap 16.0 nor 16.1. The footnote said "also Leap 15.6 … on older Leap, cargo
+  install", which reads as _newer Leap has it_ — the opposite of the truth. It now names the
+  two ways in on Leap (the `utilities` OBS repo, which really does build it, or cargo) and
+  records the trap `dotfiles-openSUSE` hit shipping the fallback: the crate is `tealdeer` and
+  the binary is `tldr`, so a presence guard on the crate name never fires.
+
+  Footnote ¹⁸ hedged that "**Leap 15.x was not separately audited**" and told readers to fall
+  back to the ³ cargo/go path there. Leap 16.x _has_ now been audited, and all seven of that
+  footnote's packages resolve on both 16.0 and 16.1 via Backports — `starship` 1.21.1, `atuin`
+  18.3.0, `yazi` 25.5.31, `viddy` 0.4.0, `ouch` 0.5.1, `doggo` 1.0.5, `ast-grep` 0.28.0. So
+  `zypper in` is the right first move on Leap too; the note now frames those versions as a
+  floor to check rather than prescribing a source build nobody needs.
+
+  That same footnote closed by saying moving these into `install/packages.txt` was
+  "deliberately **not** done". `dotfiles-openSUSE` has since made the opposite call — its list
+  is packaged-first and carries `starship`, `atuin` and `yazi`, which is what keeps three
+  unpinned `curl | sh` installers off its happy path. The footnote was describing a policy the
+  fleet had already reversed.
+
+  Footnote ¹⁹ (`gping`) cited Leap 15.6 at 1.16.1. Both supported Leaps carry 1.17.3 through
+  Backports (`bp160.1.13` / `bp161.1.6`), so the tool is available there without adding a repo.
+
+- **Docs-only PRs were permanently unmergeable.** `audit-alpine` and `audit-arch` are
+  required status checks on `main`, but both carried a job-level
+  `if: needs.changes.outputs.shell == 'true'` — so any change that touched no shell files
+  reported the `skipped` conclusion, which a repository ruleset does not accept as satisfying
+  a required check. The branch was then blocked with "5 of 5 required status checks are
+  expected" and no way to clear it short of an admin override. Both legs now run
+  unconditionally and gate their **steps** instead, so they report `success` on a change they
+  cannot be affected by, at the cost of one runner boot. The container is still never spun for
+  a docs- or nvim-only change, which was the whole point of the axis.
+
+- **`PORTING-MATRIX.md` no longer claims a fleet-wide absence that one repo falsifies.**
+  (dotgibson/dotfiles-Alpine#103) Seven footnotes asserted some form of "no Linux repo's
+  `install/packages.txt` carries it" or "the only tool in this table that nothing in the fleet
+  installs". Re-verified 2026-08-21 against all six Linux repos plus the MacBook `Brewfile`:
+  `dotfiles-Alpine` carries `hyperfine`, `shellcheck`, `shfmt`, `lnav`, `git-absorb`, `gping`,
+  `watchexec` and `jujutsu`, and installs `ouch` from `bootstrap.sh`; `dotfiles-Gentoo` carries
+  four of those. The audit that filed this proposed narrowing the claims to "except
+  `dotfiles-Alpine`" — that would have been a second wrong absolute, since it could only see
+  the Alpine caller. So ²¹ now carries a per-tool coverage table and the prose defers to it,
+  while ⁸, ¹⁹, ²⁴ and ²⁶ name their real exceptions and ²⁵ is rewritten rather than qualified.
+
+  ¹⁴ was the one with teeth: it prescribed keeping `duf`/`glow`/`ouch` in Alpine's
+  `packages.txt` "as a best-effort that `apk add` skips" — the exact footgun that repo
+  documents against, since `apk` fails the whole transaction on one unknown name, so a
+  permanently-unresolvable entry breaks the bulk `apk add` on **every** run. It also called
+  `ouch` a `go install`; it is `cargo install --locked ouch --no-default-features`, because
+  bzip3's bindgen build cannot `dlopen` libclang under musl's static linking.
+
 - **`PORTING-MATRIX.md` no longer sends a reader to a row that isn't there, a `go install`
   that builds the wrong major, or a shadowed `sg`.** (#431) The issue asked for an apt column
   for Debian/Ubuntu distinct from Kali's; that landed with `dotfiles-Debian` in #505, and every
@@ -104,6 +216,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   all load after every probe, so a tool contributed by any of those still gets no flag while
   the doctor reports it present. A `✓` still means "on PATH when you asked", not "Core wired
   this". That half is tracked separately.
+
+- **`PORTING-MATRIX.md` footnote ⁸ no longer tells the reader `dnf install jujutsu` works.**
+  It listed Fedora among the distros that package jj. Fedora does not: there is no
+  `jujutsu`, `jj` or `jj-cli` on F43, F44 or rawhide, and — unlike `sd` and `gron`, which
+  were dropped — no retired build to point back at. Fedora now sits with Debian/Kali and
+  Gentoo in the `cargo install --locked jj-cli` group. Documentation-only: jj is opt-in and
+  carried in no OS repo's `packages.txt`, so nothing installs differently — but the footnote
+  is the one place a reader looks for the install path, and it named a package manager that
+  would have answered "No match".
 
 ## [v4.13.2] - 2026-08-19
 
