@@ -49,6 +49,7 @@ _Repo status_ at the bottom).
 | starship         | `starship`        | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³           | asset²⁸       |
 | atuin²⁰          | `atuin`           | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³          | asset²⁸       |
 | mise³⁰           | `mise`            | script³⁰     | script³⁰          | script³⁰                   | script³⁰          | asset²⁸       |
+| direnv³²         | `direnv`          | `direnv`     | `direnv`          | `app-shells/direnv`¹²      | `direnv`          | `direnv`      |
 | yazi             | `yazi`            | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
 | tree-sitter-cli⁵ | `tree-sitter-cli` | cargo³       | `tree-sitter-cli` | cargo³                     | `tree-sitter-cli` | asset²⁸       |
 | jq               | `jq`              | `jq`         | `jq`              | `app-misc/jq`              | `jq`              | `jq`          |
@@ -821,6 +822,40 @@ right when it was filed and is now two majors stale — a good reason to re-read
 rather than trust a remembered path. Neither is go-installed by any `bootstrap.sh` today
 (the Debian/Kali cells use Charm's apt repo, see ¹⁵), so these two are for the reader
 installing by hand.
+
+³² direnv: per-directory environment loader — **the one row in this table Core neither
+installs nor detects.** There is no `HAVE_DIRENV`, no alias, and no `core-doctor` row; what
+makes it work is each OS repo's `os/<distro>.zsh` at band 80, where
+`_cache_eval direnv direnv hook zsh` installs the `precmd`/`chpwd` hook — Arch, openSUSE,
+Alpine, Debian, Fedora, Gentoo and macOS all carry that block. Core's one stake is
+`starship/starship.toml`'s **`[direnv]` module**, which Core switches on (`disabled = false`;
+starship ships this module **off** by default): it renders `.envrc` state on the `srf1` band so
+a directory waiting on `direnv allow` is visible rather than silently unloaded. The module only
+draws inside a direnv-controlled tree, so a box without the binary loses a segment, not the
+prompt.
+
+**Installed, not merely available** — the inverse of ²¹. Six of the seven package lists carry
+it outright (`dotfiles-Arch`, `-openSUSE`, `-Alpine`, `-Debian`, `-Fedora`, and the MacBook
+`Brewfile`), and `dotfiles-Gentoo` emerges `app-shells/direnv` in its `guru_install` pass per
+¹². **`dotfiles-Offense` (Kali) is the single gap, and it is structural rather than a call
+about direnv**: that repo carries no `install/packages.txt`, and since band 80 moved to the OS
+repo underneath it, no `os/` layer either — so nothing there installs the package or evaluates
+the hook. The Kali cell above is the apt name you would install by hand.
+
+Verified 2026-08-21 against each distro's own index: **Arch `extra`** 2.37.1-1, **Alpine
+`community`** 2.37.1-r7 (v3.24 — a Go binary, so a native musl build), **openSUSE** Tumbleweed
+2.37.1 with **Leap 16.0 and 16.1 both at 2.34.0** through Backports (`bp160.1.13` /
+`bp161.1.9`, both arches), **kali-rolling** 2.37.1-1, **Ubuntu 24.04 `universe`**
+2.32.1-2ubuntu0.24.04.3 and **Debian trixie** 2.32.1-2+b16. **Gentoo is GURU-only** — 2.37.1,
+`~amd64 ~x86`, no `::gentoo` atom and no `dev-util/direnv`; see ¹². Where unpackaged, the
+module path is `github.com/direnv/direnv/v2` — the `/v2` is not optional, the ³¹ trap again.
+
+One version line, because it is the only place a frozen archive touches Core: starship runs
+`direnv status --json`, and **the `--json` flag is silently ignored below direnv 2.33.0** —
+starship's own `src/modules/direnv.rs` says exactly that and falls back to parsing the text
+output. Every target above clears that floor except `dotfiles-Debian`'s two lanes, both on
+2.32.1. It degrades rather than breaks, which is why that repo's `install/packages.txt`
+declares no `# min:` floor for it.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
