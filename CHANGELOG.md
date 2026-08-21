@@ -85,6 +85,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   degrades rather than breaks, which is why that repo's `install/packages.txt` declares no
   `# min:` floor for it.
 
+- **Footnote ¹⁹ said both that Gentoo's `bootstrap.sh` emerges `gping` and that it does not.**
+  (#568) #565 rewrote the footnote's opening to record that `dotfiles-Gentoo` really does emerge
+  `net-analyzer/gping` from GURU in its `guru_install` pass — and that naming the atom only in a
+  `packages.txt` comment is a pointer to that call rather than a decline. Its closing sentence
+  was left behind still saying the opposite: "unlike the ¹² atoms `bootstrap.sh` does **not**
+  emerge it, so enable GURU per ¹² and `emerge net-analyzer/gping` by hand." A reader who got to
+  the end of the footnote was told to do by hand what the bootstrap had already done, and the
+  "unlike the ¹² atoms" framing inverted the actual relationship — the same rewrite had just
+  added `gping` to ¹²'s GURU list, so it is one of them.
+
+  The tail now agrees with the head: GURU-only, no main-tree atom, emerged **like** the ¹²
+  atoms in the same `guru_install` pass, nothing left to do by hand. Verified against
+  `dotfiles-Gentoo/bootstrap.sh`, where `net-analyzer/gping` is the last atom in that call.
+
+- **Footnote ²¹ claimed Kali installs `ast-grep`, and the `ast-grep` row's `³` rested on that
+  claim.** (#569) The note carved out an explicit exception — "Kali **does** install `ast-grep`
+  (`bootstrap.sh`, cargo best-effort), which is why that one cell keeps its ³ while its Gentoo
+  neighbour does not" — which is why the Kali column kept a `cargo³` there after `ouch`,
+  `jujutsu` and `lazygit` lost theirs in the same pass. There is no such install.
+  `dotfiles-Offense`'s `bootstrap.sh` contains no `ast-grep` at all, and its only two `cargo`
+  mentions are the comment and `export` that put `~/.cargo/bin` on PATH for tools an operator
+  added by hand — which is precisely the ²¹ contract, not a ³ one.
+
+  This mattered beyond the prose because ³ means "`bootstrap.sh` installs it best-effort", so a
+  ³ with no installer behind it reads as "you will get this" and delivers nothing — the exact
+  overclaim ²¹ was written to correct, surviving inside ²¹ itself for one tool. The `ast-grep`
+  Kali cell is now `cargo²¹`, matching `ouch` and `jujutsu` in that column, and the list of
+  cells that previously overclaimed a `³` gains `ast-grep` on Kali alongside Gentoo.
+
 ## [v4.14.0] - 2026-08-21
 
 ### Changed
