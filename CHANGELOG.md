@@ -15,6 +15,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Every `core.lock` in the fleet told the reader to recover with `make core-lock`, a
+  command that mostly does not exist and does not regenerate the lock where it does.**
+  (#557) `sync-core.sh` stamped that hint into the generated header unconditionally, and it
+  was wrong three ways at once: the target is absent from `dotfiles-core` itself and from
+  most consumers (which carry no root `Makefile`); in the one repo that has it,
+  `dotfiles-Offense`, it regenerates nothing and just prints a redirect back to the
+  fan-out; and it pointed away from the recovery `VENDORING.md` already prescribes — re-run
+  the fan-out from Core, never patch the lock by hand.
+
+  That line is read at the worst possible moment. `core-integrity.sh` reports `TAMPERED
+  (core/ edited since sync)` whenever the vendored tree and the lock disagree, which reads
+  like someone hand-edited `core/`; the first thing the confused reader does is open
+  `core.lock`, where the header sent them to a dead end. The generated header now names the
+  real recovery and says why the hand route fails, and the two docs that repeated the
+  `make core-lock` caveat are corrected — they warned it was _missing_ in some repos,
+  which understated it: it does not do the job anywhere.
+
+  Note for the first sync after this lands: the header's bytes change, so `sync-core.sh`'s
+  idempotency skip will not fire on that pass and each repo takes one
+  `chore(core): core.lock → …` commit. Nothing else moves. Left open in #557: whether
+  `dotfiles-Offense` should keep a `core-lock` target now that nothing points at it.
+
 - **The doctor's wirable list was three hand-synced copies with nothing able to see a drift,
   and no test asserted that a `✓` row means Core actually wired anything.** (#447) Meta-issue
   #447 collected five bugs — #418, #420, #423, #424, #425 — as one defect: a name used as a
