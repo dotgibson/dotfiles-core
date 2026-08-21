@@ -1173,6 +1173,10 @@ f() { echo \"check the $_rt_s value\"; }"
   # keeps the two copies equal — the same shape as the os-repos.txt fallback-array check
   # above, and for the same reason: a literal duplicated across files with nothing comparing
   # them is exactly the N-way drift the reusable workflows exist to end.
+  # The multi-value test below is `== *$'\n'*`, NOT `$(wc -l) != 1`: BSD wc pads its count
+  # with leading spaces ("       1"), so the string compare is true on macOS and false on
+  # Linux — this assertion shipped with exactly that bug and the macOS leg caught it. A
+  # bash-native newline test has no such divergence, and needs no external tool.
   _sco_of() { # _sco_of <workflow> → the SHELLCHECK_OPTS value, or empty
     sed -n 's/^[[:space:]]*SHELLCHECK_OPTS:[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$1" 2>/dev/null | sort -u
   }
@@ -1180,7 +1184,7 @@ f() { echo \"check the $_rt_s value\"; }"
   _sco_bt="$(_sco_of "$HERE/.github/workflows/bootstrap-test.yml")"
   if [[ -z "$_sco_lc" || -z "$_sco_bt" ]]; then
     fail "SHELLCHECK_OPTS parity: could not read the value from both workflows (lint-call='$_sco_lc' bootstrap-test='$_sco_bt')"
-  elif [[ "$(wc -l <<<"$_sco_lc")" != 1 ]]; then
+  elif [[ "$_sco_lc" == *$'\n'* ]]; then
     fail "SHELLCHECK_OPTS parity: lint-call.yml carries more than one distinct value — the steps disagree with each other"
   elif [[ "$_sco_lc" != "$_sco_bt" ]]; then
     fail "SHELLCHECK_OPTS parity: lint-call.yml has '$_sco_lc' but bootstrap-test.yml has '$_sco_bt' — the same bootstrap.sh would be green in one gate and red in the other (#517)"
