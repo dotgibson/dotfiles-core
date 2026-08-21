@@ -78,7 +78,7 @@ _Repo status_ at the bottom).
 | sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               | go³           |
 | difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb` | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb`  |
-| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo³            | —²⁹           |
+| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo²¹           | —²⁹           |
 | uv³⁰             | `uv`              | `python-uv`  | `uv`              | `dev-python/uv`            | `uv`              | asset²⁸       |
 | w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
 
@@ -285,9 +285,10 @@ covered), Homebrew (`gping`), nixpkgs, and Debian/Kali apt — where the **sourc
 rolling 1.20.4). openSUSE: **Leap 16.0 and 16.1** both carry it via Backports at 1.17.3
 (`gping-1.17.3-bp160.1.13` / `-bp161.1.6`, verified 2026-08-21) — behind, but present without
 adding a repo; **Tumbleweed** builds it from Factory (1.20.1). The old 15.6/1.16.1 reading
-here predated Leap 16 and 15.6 is now EOL. Gentoo is **GURU-only** (`net-analyzer/gping`) — there is
-no main-tree atom, and unlike the ¹² atoms `bootstrap.sh` does **not** emerge it, so enable
-GURU per ¹² and `emerge net-analyzer/gping` by hand. Inert without the binary; nothing depends on it.
+here predated Leap 16 and 15.6 is now EOL. Gentoo is **GURU-only** (`net-analyzer/gping`) — there
+is no main-tree atom, so it is emerged **like the ¹² atoms**, in the same `guru_install` pass and
+from the same overlay; nothing there is left for you to do by hand. Inert without the binary;
+nothing depends on it.
 
 ²⁰ atuin **daemon mode** — the one part of the atuin story that is NOT Core's to decide.
 Core ships `atuin/config.toml` (symlinked to `~/.config/atuin/config.toml`) with the
@@ -437,14 +438,19 @@ you:
   (Deliberately not a counted list — "all four" went stale the first time this family grew,
   "no Linux repo does" the second, and "`ouch` is the one entry" the third.)
 - The cells that previously showed **³** here — `ouch` on Gentoo **and** Kali, `jujutsu` on
-  Kali, `ast-grep` and `shfmt` on Gentoo, `lazygit` on Kali — promised a best-effort bootstrap
-  install that **does not exist**, verified against each repo's `bootstrap.sh` and
-  `install/packages.txt`. (Gentoo's `ouch`, `ast-grep` and `shfmt` have since _acquired_ such an
-  install, and `jujutsu` on Gentoo is now the packaged `dev-vcs/jj`⁸ — the correction stands for
-  Kali, and for what those cells claimed when it was made.) `lazygit` is the sharpest case: every other Linux repo installs it,
+  Kali, `ast-grep` on Gentoo **and** Kali, `shfmt` on Gentoo, `lazygit` on Kali — promised a
+  best-effort bootstrap install that **does not exist**, verified against each repo's
+  `bootstrap.sh` and `install/packages.txt`. (Gentoo's `ouch`, `ast-grep` and `shfmt` have since
+  _acquired_ such an install, and `jujutsu` on Gentoo is now the packaged `dev-vcs/jj`⁸ — the
+  correction stands for Kali, and for what those cells claimed when it was made.) `lazygit` is the sharpest case: every other Linux repo installs it,
   Kali installs it nowhere, and Core ships `alias lg='lazygit'` regardless.
-- Kali **does** install `ast-grep` (`bootstrap.sh`, cargo best-effort), which is why that one
-  cell keeps its ³ while its Gentoo neighbour does not.
+- **Kali installs nothing from this family**, `ast-grep` included. This note used to carve out
+  an exception saying it did — "`bootstrap.sh`, cargo best-effort" — and that is why the
+  `ast-grep` row kept a `³` in its Kali cell after its neighbours lost theirs. There is no such
+  install: `dotfiles-Offense`'s `bootstrap.sh` contains no `ast-grep`, and its only two `cargo`
+  mentions are the comment and `export` that put `~/.cargo/bin` on PATH for tools **an operator
+  added by hand** — which is the ²¹ contract, not a ³ one. The cell is now `cargo²¹`, matching
+  `ouch` and `jujutsu` in the same column.
 
 This is the same overclaim already corrected once for openSUSE (`ouch`/`ast-grep`): ³ means
 "bootstrap.sh installs it best-effort", so a ³ with no installer behind it reads as "you
