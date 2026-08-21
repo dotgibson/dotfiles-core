@@ -70,6 +70,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   only for a box that opted in. Being packaged made the _instruction_ wrong, not the policy —
   wiring it into the per-repo bootstrap remains the tracked follow-up it already was.
 
+- **`PORTING-MATRIX.md`'s openSUSE story was written for Leap 15.6, which is EOL.** (#89)
+  Four passages still described a release nobody runs; two of them gave advice that is now
+  wrong rather than merely dated. All figures below were verified against the `repo/oss`
+  binary indexes for Leap 16.0, Leap 16.1 and Tumbleweed on 2026-08-21 — both arches, since
+  the Python packages are `noarch` and an `x86_64`-only pass misses them.
+
+  `tealdeer` (footnote ¹) is the one real availability break: it is in Tumbleweed at 1.8.0 and
+  in **neither** Leap 16.0 nor 16.1. The footnote said "also Leap 15.6 … on older Leap, cargo
+  install", which reads as _newer Leap has it_ — the opposite of the truth. It now names the
+  two ways in on Leap (the `utilities` OBS repo, which really does build it, or cargo) and
+  records the trap `dotfiles-openSUSE` hit shipping the fallback: the crate is `tealdeer` and
+  the binary is `tldr`, so a presence guard on the crate name never fires.
+
+  Footnote ¹⁸ hedged that "**Leap 15.x was not separately audited**" and told readers to fall
+  back to the ³ cargo/go path there. Leap 16.x _has_ now been audited, and all seven of that
+  footnote's packages resolve on both 16.0 and 16.1 via Backports — `starship` 1.21.1, `atuin`
+  18.3.0, `yazi` 25.5.31, `viddy` 0.4.0, `ouch` 0.5.1, `doggo` 1.0.5, `ast-grep` 0.28.0. So
+  `zypper in` is the right first move on Leap too; the note now frames those versions as a
+  floor to check rather than prescribing a source build nobody needs.
+
+  That same footnote closed by saying moving these into `install/packages.txt` was
+  "deliberately **not** done". `dotfiles-openSUSE` has since made the opposite call — its list
+  is packaged-first and carries `starship`, `atuin` and `yazi`, which is what keeps three
+  unpinned `curl | sh` installers off its happy path. The footnote was describing a policy the
+  fleet had already reversed.
+
+  Footnote ¹⁹ (`gping`) cited Leap 15.6 at 1.16.1. Both supported Leaps carry 1.17.3 through
+  Backports (`bp160.1.13` / `bp161.1.6`), so the tool is available there without adding a repo.
+
+- **Docs-only PRs were permanently unmergeable.** `audit-alpine` and `audit-arch` are
+  required status checks on `main`, but both carried a job-level
+  `if: needs.changes.outputs.shell == 'true'` — so any change that touched no shell files
+  reported the `skipped` conclusion, which a repository ruleset does not accept as satisfying
+  a required check. The branch was then blocked with "5 of 5 required status checks are
+  expected" and no way to clear it short of an admin override. Both legs now run
+  unconditionally and gate their **steps** instead, so they report `success` on a change they
+  cannot be affected by, at the cost of one runner boot. The container is still never spun for
+  a docs- or nvim-only change, which was the whole point of the axis.
+
 - **`PORTING-MATRIX.md` no longer sends a reader to a row that isn't there, a `go install`
   that builds the wrong major, or a shadowed `sg`.** (#431) The issue asked for an apt column
   for Debian/Ubuntu distinct from Kali's; that landed with `dotfiles-Debian` in #505, and every
