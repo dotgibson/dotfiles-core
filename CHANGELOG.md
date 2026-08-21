@@ -13,6 +13,50 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **A gate against leaked `RETURN` traps, for the fleet and for Core's own tree.**
+  (#552, #555, #558; refs #512, #461) A bash `RETURN` trap is a **global slot, not a
+  function-scoped one**: armed inside a function it survives into the _caller's_ frame and
+  fires a second time on that frame's return, where the local it cleans up is out of scope
+  and `set -u` makes it fatal. In `dotfiles-Debian` that aborted `provision()` after every
+  package had installed but before `wire_links` ran — a box carrying the whole stack and
+  not one symlink, wearing the costume of a near-complete run
+  (dotgibson/dotfiles-Debian#2).
+
+  Nothing could see it, and nothing was wrong with the gates that missed it. The broken
+  line is **valid bash**, so `lint-call.yml`'s shellcheck and `bash -n` legs both pass it;
+  and `bootstrap-test.yml` only ever runs `--links-only`, so no job anywhere in the fleet
+  executes `provision()` at all. A textual scan is the only thing that catches this class,
+  which is why it is its own leg rather than another `SHELLCHECK_OPTS` entry.
+
+  `scripts/lib/common.sh` gains `_core_return_trap_hits`, the single definition of the
+  rule. `audit-core.sh` §5e runs it over Core's own tree (which lint-call.yml never checks
+  out), and `lint-call.yml` sources it to gate the nine caller repos — **so a caller repo
+  now fails its required `lint` check on a leaked trap.** Every repo in the fleet was
+  verified green under it before release, so nothing reds on arrival.
+
+  Two notes for anyone writing one of these. The correct form is
+  `trap 'trap - RETURN; …' RETURN` — disarm first, and keep it first, so an early `return`
+  inside the body cannot skip it. And when this bug does surface at runtime the reported
+  line number is a **decoy**: bash attributes a `RETURN` trap to the last nested function
+  _definition_ in the frame, so Debian's abort blamed `_add_vendor_repo`, which had nothing
+  to do with it. Grep for the trap, not the line.
+
+  The pattern is deliberately looser than the one dotfiles-Debian shipped. `trap` is
+  matched as a word **anywhere on the line**, because anchoring to line-start misses
+  `f() { trap … RETURN; }` — the one-line body, and the likeliest shape; against a fixture
+  carrying four broken forms the anchored version catches one. The signal is matched as a
+  **token** rather than as the last word, so a trailing comment and a two-signal
+  `RETURN EXIT` are caught too. Whole-line comments are filtered, because Debian's own fix
+  carries three comment lines naming the signal directly above its corrected traps — an
+  unfiltered scanner would red the repo that fixed the bug. Ten fixtures in
+  `scripts/test-core.sh` pin both halves, plus two assertions that keep `lint-call.yml`
+  calling the helper instead of growing a second copy of the expression.
+
+  **zsh is out of scope, permanently:** it has no `RETURN` signal at all
+  (`trap 'x' RETURN` → _undefined signal_), so the bug cannot exist there.
+
 ### Fixed
 
 - **Every `core.lock` in the fleet told the reader to recover with `make core-lock`, a
