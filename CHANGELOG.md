@@ -99,6 +99,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Footnote ¹⁹ (`gping`) cited Leap 15.6 at 1.16.1. Both supported Leaps carry 1.17.3 through
   Backports (`bp160.1.13` / `bp161.1.6`), so the tool is available there without adding a repo.
 
+- **Docs-only PRs were permanently unmergeable.** `audit-alpine` and `audit-arch` are
+  required status checks on `main`, but both carried a job-level
+  `if: needs.changes.outputs.shell == 'true'` — so any change that touched no shell files
+  reported the `skipped` conclusion, which a repository ruleset does not accept as satisfying
+  a required check. The branch was then blocked with "5 of 5 required status checks are
+  expected" and no way to clear it short of an admin override. Both legs now run
+  unconditionally and gate their **steps** instead, so they report `success` on a change they
+  cannot be affected by, at the cost of one runner boot. The container is still never spun for
+  a docs- or nvim-only change, which was the whole point of the axis.
+
 - **`PORTING-MATRIX.md` no longer sends a reader to a row that isn't there, a `go install`
   that builds the wrong major, or a shadowed `sg`.** (#431) The issue asked for an apt column
   for Debian/Ubuntu distinct from Kali's; that landed with `dotfiles-Debian` in #505, and every
