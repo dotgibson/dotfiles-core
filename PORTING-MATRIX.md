@@ -81,7 +81,14 @@ _Repo status_ at the bottom).
 | uv³⁰             | `uv`              | `python-uv`  | `uv`              | `dev-python/uv`            | `uv`              | asset²⁸       |
 | w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
 
-¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
+¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (1.8.0). **Not in Leap 16.0 or 16.1** —
+it shipped in 15.6, which is EOL, and the name is absent from both arches of each 16.x
+`repo/oss` (checked 2026-08-21). Two ways in on Leap: the `utilities` OBS repo, which does
+build it (`.../repositories/utilities/16.0/x86_64/tealdeer-1.8.0-lp160.49.8.x86_64.rpm`) but
+is a third-party channel `dotfiles-openSUSE` deliberately does not auto-add, same call as
+Packman; or `cargo install --locked tealdeer`, which its `bootstrap.sh` now runs
+presence-guarded. Guard on **`tldr`**, not `tealdeer` — the crate and the binary it installs
+have different names (dotfiles-openSUSE#102).
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
 ³ Not packaged or stale → bootstrap.sh installs it best-effort (upstream
 installer / `cargo install` / `go install` / AUR), the same pattern bootstrap
@@ -215,17 +222,26 @@ no confirmed Gentoo GURU atom yet either, so verify on the next Gentoo stamp.
 `src-oss` is the _source_-RPM repo and is not what `zypper in` resolves against), so
 `zypper in` beats the upstream-installer/cargo/go fallback these rows used to prescribe:
 `starship`, `atuin`, `yazi`, `viddy`, `ouch`, `doggo`, `ast-grep`.
-**Leap 15.x was not separately audited** and rolls slower — on Leap, verify with
-`zypper se <pkg>` and fall back to the ³ path if it's absent. The rows are named for
-Tumbleweed because that's the flavor this fleet targets.
+**Leap 16.0 and 16.1 have now been audited** (dotfiles-openSUSE#89, verified against both
+releases' `repo/oss` binary indexes on 2026-08-21) — the supported Leap is 16.x; 15.6, which
+this note used to hedge about, is EOL. **All seven resolve on both**, via Backports rather
+than the main OSS repo — `starship` 1.21.1, `atuin` 18.3.0, `yazi` 25.5.31, `viddy` 0.4.0,
+`ouch` 0.5.1, `doggo` 1.0.5, `ast-grep` 0.28.0 (`bp160`/`bp161` disttags). So `zypper in`
+is the right first move on Leap too, and the ³ fallback is no longer the expected path for
+these seven — but Leap pins where Tumbleweed rolls, so treat those versions as a floor and
+take the ³ path when a row needs something newer. The rows are named for Tumbleweed because
+that's the flavor this fleet targets.
 Five of the seven (`starship`, `atuin`, `yazi`, `viddy`, `doggo`) are also installed by
 `dotfiles-openSUSE`'s `bootstrap.sh`, which stays correct and harmless either way — each
 install is presence-guarded, so a packaged binary just short-circuits it. **`ouch` and
 `ast-grep` are not**: that bootstrap has no installer for them, so the old `cargo³` cells
 promised a fallback that never existed and the package name above is their only automatic
-path. Moving any of these into `install/packages.txt` is a separate judgment call — it
-trades upstream-latest for the distro build — and is deliberately **not** done here; for
-`ouch`/`ast-grep` it is the _only_ way to get them installed without doing it by hand.
+path. Moving any of these into `install/packages.txt` is a separate judgment call — it trades
+upstream-latest for the distro build. **`dotfiles-openSUSE` has since made that call the other
+way**: its list flipped to packaged-first, and `starship`, `atuin` and `yazi` are now in it, so
+the three `curl | sh` installers only run as a fallback. `viddy` deliberately stays out (cargo,
+for upstream-latest). For `ouch`/`ast-grep` the package name is still the _only_ way to get them
+installed without doing it by hand.
 
 ¹⁹ gping: the `ping` replacement — Core aliases `ping`→`gping` (`HAVE_GPING`-guarded in
 `zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only on
@@ -237,9 +253,10 @@ v3; the matrix row is what was missing.) A **Rust** CLI → `cargo install gping
 unpackaged. Packaged: Arch `extra`, Alpine `community` (a native musl build, so the outlier is
 covered), Homebrew (`gping`), nixpkgs, and Debian/Kali apt — where the **source** package is
 `rust-gping` but the **binary** you install is plain `gping` (Debian trixie 1.19.0, sid/Kali
-rolling 1.20.4). openSUSE: **Leap 15.6** carries it first-class in `main/oss` but well behind
-(1.16.1); **Tumbleweed** builds it from Factory, so verify with `zypper se gping` and fall back
-to cargo if your snapshot lacks it. Gentoo is **GURU-only** (`net-analyzer/gping`) — there is
+rolling 1.20.4). openSUSE: **Leap 16.0 and 16.1** both carry it via Backports at 1.17.3
+(`gping-1.17.3-bp160.1.13` / `-bp161.1.6`, verified 2026-08-21) — behind, but present without
+adding a repo; **Tumbleweed** builds it from Factory (1.20.1). The old 15.6/1.16.1 reading
+here predated Leap 16 and 15.6 is now EOL. Gentoo is **GURU-only** (`net-analyzer/gping`) — there is
 no main-tree atom, and unlike the ¹² atoms `bootstrap.sh` does **not** emerge it, so enable
 GURU per ¹² and `emerge net-analyzer/gping` by hand. Inert without the binary; nothing depends on it.
 
