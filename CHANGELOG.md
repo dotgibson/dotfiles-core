@@ -13,6 +13,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Footnote ³² said the OS layer wires direnv; v4.14.1 moved that into Core, in the same
+  release.** (#449) The `direnv` row's footnote was written days before #578 landed and
+  described the arrangement it replaced — "what makes it work is each OS repo's
+  `os/<distro>.zsh` at band 80". v4.14.1 ships both that sentence and the commit that made it
+  false, which is precisely the defect class #568 and #569 were filed for, reintroduced by the
+  footnote that was added alongside them.
+
+  Rewritten to what the code now does: Core wires direnv at `zsh/00-tools.zsh` band 00, and
+  the footnote records why that band rather than 45 (it registers a hook, not a compdef, and
+  band 00 loads under every `CORE_PROFILE` while 45 is ceilinged out of `minimal`) and why it
+  is sourced last of the four inits (direnv prepends to `precmd_functions`/`chpwd_functions`,
+  so sourcing after mise reproduces the resolution order an `.envrc` pinning tool versions
+  expects). The thesis changes with it: direnv is no longer "the one row Core neither installs
+  nor detects" — Core now **wires** it while still neither installing nor detecting it.
+
+  The Kali paragraph needed the same correction and for the same reason. It argued
+  `dotfiles-Offense` misses the hook because it has no `os/` layer — true at band 80, false at
+  band 00, where the hook reaches it from Core like everywhere else. It is live there now and
+  simply finds no binary, since that repo still installs none.
+
+
 ## [v4.14.1] - 2026-08-21
 
 ### Added
