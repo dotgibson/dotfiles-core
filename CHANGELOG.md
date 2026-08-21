@@ -15,6 +15,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The doctor's wirable list was three hand-synced copies with nothing able to see a drift,
+  and no test asserted that a `✓` row means Core actually wired anything.** (#447) Meta-issue
+  #447 collected five bugs — #418, #420, #423, #424, #425 — as one defect: a name used as a
+  proxy for a capability. All five are fixed and closed, and the seam that fixed the presence
+  half is `_core_doctor_bin`, which resolves a canonical row name to the binary that actually
+  backs it (`fd`→`$FD_BIN`, `bat`→`$BAT_BIN`, `git-*`→git's exec-path). Its proposed
+  `_core_have_override` was **not** taken, for the reasons recorded at the v4.13.2 entry below
+  and in `30-functions.zsh` — that decision stands and this change does not revisit it.
+
+  What #447 was right about, and what was still outstanding, is the OTHER axis. `_core_wired`'s
+  `case` arms, `_core_doctor_json`'s `wir=(…)` and `_core_doctor_render`'s `wirable=(…)` were
+  three literals of the same five names, kept in step by hand — precisely the arrangement
+  `_CORE_DOCTOR_GROUPS` exists to prevent on the tool axis. Worse, it was **unobservable**: the
+  render⇄json parity test stubs `_core_have` false, which makes the "integrations wired" block
+  skip every entry, so the one guard that might have noticed is blind to this list by
+  construction. There is now a single `_CORE_DOCTOR_WIRED`, read by both renderers, and the
+  drift is guarded in both directions — a name listed with no `case` arm (which renders a
+  permanent `○ (idle)` no user action can clear) and an arm no renderer iterates (which
+  reports nothing at all, the way twelve tools went unreported on the tool axis for releases).
+  To make the first testable, `_core_wired`'s fallthrough returns **2** — "no arm for this
+  name" — where an idle-but-known tool still returns 1. Both callers test only for zero, so
+  no report changes: the rendered output and `--json` are byte-identical across this change.
+
+  And #447's "worth pairing with a test" now exists, generalised past the single tool it was
+  written against: for **every** tool `00-tools.zsh` probes, "the doctor says present" and
+  "Core set the `HAVE_*` flag" must be the same boolean, on the real box the suite runs on.
+  That is #425's disagreement stated as an invariant instead of an anecdote — it had a
+  `procs`-shaped check only because `procs` is what got reported. The tool→flag mapping is
+  read out of the source, so the two irregular names (`ast-grep`→`HAVE_ASTGREP`,
+  `git-absorb`→`HAVE_GIT_ABSORB`) need no table and cannot rot. A second guard closes the hole
+  that mapping leaves behind — deriving both sides from the same line means DELETING a
+  detection line removes it from the comparison rather than failing it — by requiring every
+  doctor row to have a probe behind it, with `op`, `fd` and `bat` named as the three
+  deliberate exceptions rather than waived in prose.
+
+  Also: the existing "reports every tool 00-tools.zsh probes" guard anchored on `^_have`
+  followed by exactly one literal space, and `00-tools.zsh` aligns some trailing comments with
+  two — so `tldr` had been silently outside its coverage. 37 rows → 38.
+
 - **`jnv` is in Arch's `extra` now, so the matrix stopped sending Arch users to the AUR.**
   (dotgibson/dotfiles-Arch#87) The package landed as `jnv` 0.7.1-1 on 2026-04-01; `pacman -Si
   jnv` on a current box reports `Repository: extra`. The table's Arch cell said `AUR` and
