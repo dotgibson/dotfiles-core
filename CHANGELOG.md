@@ -15,6 +15,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The `provision-stub` job shipped in v4.14.1 could not run.** It read its shim from the
+  CALLER's vendored `core/scripts/`, which is a different distribution channel from the
+  workflow that uses it: the workflow reaches a caller the moment the `v4` alias moves, while
+  `core/scripts/` only arrives when that repo merges its `core.lock` fan-out PR. Every repo in
+  that window got the job without the script and hard-failed with
+  `core/scripts/provision-shim.sh missing — vendored Core predates it`.
+
+  Harmless in practice — `provision_stub` defaults false and no repo had opted in — but the
+  first one to try (dotgibson/dotfiles-Debian#12) reded immediately.
+
+  The stubs are now built **inline in the job**, so there is exactly one artifact distributed
+  at exactly one ref. An intermediate attempt using a second Core checkout pinned at
+  `github.job_workflow_sha` was abandoned: it silently ran an _older_ revision of the script
+  than the run reported using, which is a worse failure than the one it replaced. Deletes
+  `scripts/provision-shim.sh` and `.github/actionlint.yaml` (whose only suppression existed
+  for `job_workflow_sha`).
+
+  Verified end-to-end before release this time, on `ubuntu:24.04` and `kalilinux/kali-rolling`
+  both: the full stubbed bootstrap walks apt, the 32-package base stack, fourteen SHA-pinned
+  installs, both vendor apt repos, carapace and unattended-upgrades, then crosses into
+  `wire_links` and finishes at `32 linked · 2 seeded · 0 backed up`.
+
 - **Footnote ³² said the OS layer wires direnv; v4.14.1 moved that into Core, in the same
   release.** (#449) The `direnv` row's footnote was written days before #578 landed and
   described the arrangement it replaced — "what makes it work is each OS repo's
