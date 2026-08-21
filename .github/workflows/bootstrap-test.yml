@@ -226,7 +226,7 @@ jobs:
   # (dotgibson/dotfiles-Debian#2).
   #
   # This runs the REAL bootstrap, no --links-only, with the package managers and downloaders
-  # replaced by logging no-ops from core/scripts/provision-shim.sh. Most of that bug class is
+  # replaced by logging no-ops built inline in the job below. Most of that bug class is
   # control flow rather than I/O — a leaked trap, a bare refresh aborting under `set -e`, an
   # unchecked GPG import, a tool assumed present on a minimal image — and all of it executes
   # here without installing a package or touching the network.
