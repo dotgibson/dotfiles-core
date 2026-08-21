@@ -245,40 +245,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # The caller's tree, into repo/ — NOT at the workspace root, because Core is checked
-      # out alongside it below and the two must not overlap.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          path: repo
-      # THE SHIM COMES FROM THIS WORKFLOW'S OWN COMMIT, NOT FROM THE CALLER'S VENDORED core/.
-      # Those are two distribution channels on different timelines: the workflow reaches a
-      # caller the moment the vN alias moves (a Core release), while core/scripts/ only
-      # arrives when that repo merges its core.lock fan-out PR — which is deliberately
-      # canary-first and can lag by days. Reading the shim out of the vendored tree therefore
-      # hard-fails every repo in that window, which is exactly what happened the first time
-      # this was tried (dotgibson/dotfiles-Debian#11, against a repo vendoring 4.14.0).
-      #
-      # job_workflow_sha is the commit of THIS reusable workflow file, so the script and the
-      # job always travel together at whatever ref the caller pinned — a tag, the moving
-      # alias, or a branch SHA during a probe. Same reasoning as lint-call.yml checking Core
-      # out rather than trusting the caller's copy; this is the pinned-by-construction version
-      # of it, and needs no "keep in step on a major bump" note.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          repository: ${{ github.repository_owner }}/dotfiles-core
-          ref: ${{ github.job_workflow_sha }}
-          path: core-src
       - name: bootstrap with provisioning stubbed (${{ inputs.image }})
         env:
           IMAGE: ${{ inputs.image }}
           PREP: ${{ inputs.prep }}
         run: |
-          test -f core-src/scripts/provision-shim.sh \
-            || { echo "::error::core-src/scripts/provision-shim.sh missing from the Core checkout"; exit 1; }
-          docker run --rm -e PREP -e BLIB_SU= \
-            -v "$PWD/repo:/repo" -v "$PWD/core-src:/core-src:ro" -w /repo "$IMAGE" sh -euc '
+          docker run --rm -e PREP -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
             n=0
             until eval "$PREP"; do
               n=$((n+1))
@@ -289,11 +264,67 @@ jobs:
             # Same tpm pre-seed as links-only: skip the first-run clone, stay offline.
             mkdir -p "$HOME/.config/tmux/plugins/tpm"
 
-            # /core-src is this workflow'"'"'s own commit, mounted read-only — see the checkout
-            # note above. Never core/, which is the caller'"'"'s vendored copy and may lag.
-            PROVISION_SHIM_LOG=/tmp/provision-shim.log
+            # THE SHIM IS BUILT HERE, INLINE, AND THAT IS THE POINT. It was previously a
+            # vendored script (core/scripts/) and then a second checkout of Core pinned at
+            # github.job_workflow_sha. Both put the shim on a DIFFERENT distribution channel
+            # from the workflow that uses it, and both went wrong: the vendored copy lagged a
+            # release behind and hard-failed every repo, and the pinned checkout silently ran
+            # an older revision of the script than the workflow reported using — five debug
+            # rounds on dotgibson/dotfiles-Debian#11 between them. Inline, there is exactly one
+            # artifact distributed at exactly one ref, and the class of bug is gone.
+            SHIM=/tmp/provision-shim
+            LOG=/tmp/provision-shim.log
+            mkdir -p "$SHIM"; : >"$LOG"
+
+            # curl/wget/gpg HONOUR -o and create the target. A stub that returns 0 while
+            # writing nothing manufactures a state the real tool cannot produce, and fails a
+            # correctly-guarded caller — dotfiles-Debian _add_vendor_repo guards its chmod
+            # behind the curl|gpg pipeline exactly as it should, and still died on that lie.
+            # The bytes are deliberately NOT a valid asset, so a checksum-verifying caller
+            # still refuses them; faking a passing checksum would hide the refusal path.
+            for c in curl wget gpg gpg2; do
+              { echo "#!/bin/sh"
+                echo "echo \"$c \$*\" >>$LOG"
+                echo "out="
+                echo "while [ \$# -gt 0 ]; do case \$1 in"
+                echo "  -o|--output) out=\$2; shift 2 ;;"
+                echo "  --output=*) out=\${1#--output=} ; shift ;;"
+                echo "  *) shift ;;"
+                echo "esac; done"
+                echo "[ -n \"\$out\" ] && { mkdir -p \"\$(dirname \"\$out\")\" 2>/dev/null; printf shim > \"\$out\" 2>/dev/null; }"
+                echo "exit 0"
+              } >"$SHIM/$c"
+              chmod +x "$SHIM/$c"
+            done
+
+            # Package managers and the rest: logged no-ops. git is deliberately absent —
+            # bootstraps clone real things the caller pre-seeds, and stubbing it would mask
+            # wiring bugs this job should still catch.
+            for c in apt-get apt apt-key add-apt-repository dpkg debconf-set-selections \
+                     dnf yum rpm pacman paru yay zypper apk emerge eselect layman brew \
+                     snap flatpak gpgconf systemctl update-alternatives unattended-upgrade \
+                     pipx go cargo npm; do
+              { echo "#!/bin/sh"
+                echo "echo \"$c \$*\" >>$LOG"
+                echo "exit 0"
+              } >"$SHIM/$c"
+              chmod +x "$SHIM/$c"
+            done
+
+            # sudo/doas drop the escalation and re-exec, so the wrapped command still reaches
+            # its stub and still gets logged. Swallowing them would skip the command under test.
+            for c in sudo doas; do
+              { echo "#!/bin/sh"
+                echo "while [ \$# -gt 0 ]; do case \$1 in -n|-E|-H|-k) shift ;; -u) shift 2 ;; --) shift; break ;; *) break ;; esac; done"
+                echo "[ \$# -eq 0 ] && exit 0"
+                echo "exec \"\$@\""
+              } >"$SHIM/$c"
+              chmod +x "$SHIM/$c"
+            done
+
+            PROVISION_SHIM_LOG="$LOG"
             export PROVISION_SHIM_LOG
-            PATH="$(sh /core-src/scripts/provision-shim.sh):$PATH"
+            PATH="$SHIM:$PATH"
             export PATH
 
             echo "── shim active at: $(command -v curl) ──"
