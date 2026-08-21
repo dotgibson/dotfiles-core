@@ -15,6 +15,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`jnv` is in Arch's `extra` now, so the matrix stopped sending Arch users to the AUR.**
+  (dotgibson/dotfiles-Arch#87) The package landed as `jnv` 0.7.1-1 on 2026-04-01; `pacman -Si
+  jnv` on a current box reports `Repository: extra`. The table's Arch cell said `AUR` and
+  footnote ¹⁷ prescribed `paru -S jnv`, which asked readers to build an AUR helper for a tool
+  `pacman` has been able to install for four months.
+
+  Footnote ²⁴ also used jnv as its yardstick for the worst packaging shape in the table —
+  lnav is "macOS-only in practice" *rather than jnv's "barely packaged anywhere" one*. With
+  brew and `extra` both carrying it that overstates the case, so the contrast is now the
+  narrower and still-true one: two platforms package jnv, everywhere else is `cargo`.
+
+  What has **not** changed is the decision underneath: jnv stays detect-only on Linux. It is
+  in no `install/packages.txt` and no `bootstrap.sh` installs it, so `HAVE_JNV` still lights
+  only for a box that opted in. Being packaged made the *instruction* wrong, not the policy —
+  wiring it into the per-repo bootstrap remains the tracked follow-up it already was.
+
 - **`PORTING-MATRIX.md` no longer sends a reader to a row that isn't there, a `go install`
   that builds the wrong major, or a shadowed `sg`.** (#431) The issue asked for an apt column
   for Debian/Ubuntu distinct from Kali's; that landed with `dotfiles-Debian` in #505, and every

@@ -59,7 +59,7 @@ _Repo status_ at the bottom).
 | viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸    | `viddy`           | cargo³                     | cargo³            | —²⁹           |
 | sd²²             | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              | `sd`          |
 | gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            | `gron`        |
-| jnv¹⁷            | AUR               | cargo        | cargo             | cargo                      | cargo             | —²⁹           |
+| jnv¹⁷            | `jnv`             | cargo        | cargo             | cargo                      | cargo             | —²⁹           |
 | lnav²¹ ²⁴        | `lnav`            | `lnav`       | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          | `lnav`        |
 | glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          | charm apt     |
 | gum              | `gum`             | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵           | charm apt     |
@@ -202,8 +202,11 @@ unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep
 `jq` needed). **On Linux this is detect-only — unlike the ³ tools, `jnv` is in no
 `install/packages.txt` and no `bootstrap.sh` installs it, so Core lights up `HAVE_JNV` only
 once you install it yourself. macOS is the exception: the `Brewfile` carries it.** The cells above name where each platform gets it when you opt in —
-macOS `brew install jnv`, Arch `paru -S jnv` (AUR), Nix, or elsewhere `cargo install --locked
-jnv` (musl-safe on Alpine) — not an automatic install. Wiring it into the per-repo bootstrap
+macOS `brew install jnv`, Arch `pacman -S jnv`, Nix, or elsewhere `cargo install --locked
+jnv` (musl-safe on Alpine) — not an automatic install. **Arch's cell used to read `AUR` and
+this footnote used to prescribe `paru -S jnv`; both are now wrong.** jnv entered `extra` as
+0.7.1-1 on 2026-04-01, confirmed on-box with `pacman -Si jnv` (`Repository: extra`), so no AUR
+helper is involved on Arch any more. Wiring it into the per-repo bootstrap
 (the ³ best-effort path viddy/yazi use) is a tracked follow-up in the OS repos; there is
 no confirmed Gentoo GURU atom yet either, so verify on the next Gentoo stamp.
 
@@ -408,8 +411,8 @@ the cleanest way to get 0.14.0 onto Gentoo or Debian/Kali without waiting for th
 `install/packages.txt` and no `bootstrap.sh` installs it, so Core lights `HAVE_LNAV` only
 once you install it yourself. **macOS is the exception — the MacBook `Brewfile` carries
 it** (added 2026-07-15), which puts `lnav` squarely in ²¹'s "macOS-only in practice" family
-rather than jnv's "barely packaged anywhere" one: every distro in the table above ships it,
-none of them installs it for you.
+rather than jnv's thinner "two platforms package it, cargo everywhere else" one: every distro
+in the table above ships lnav, none of them installs it for you.
 
 Versions **verified against each distro's own package pages** on 2026-08-12, not taken from
 a repology snapshot. Upstream is 0.14.0 (2026-04-12). Rolling targets get one query each,
