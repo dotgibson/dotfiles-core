@@ -238,7 +238,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   only for a box that opted in. Being packaged made the _instruction_ wrong, not the policy —
   wiring it into the per-repo bootstrap remains the tracked follow-up it already was.
 
-- **`PORTING-MATRIX.md`'s openSUSE story was written for Leap 15.6, which is EOL.** (#89)
+- **`PORTING-MATRIX.md`'s openSUSE story was written for Leap 15.6, which is EOL.**
+  (`dotgibson/dotfiles-openSUSE#89`)
   Four passages still described a release nobody runs; two of them gave advice that is now
   wrong rather than merely dated. All figures below were verified against the `repo/oss`
   binary indexes for Leap 16.0, Leap 16.1 and Tumbleweed on 2026-08-21 — both arches, since
