@@ -22,13 +22,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `pacman` has been able to install for four months.
 
   Footnote ²⁴ also used jnv as its yardstick for the worst packaging shape in the table —
-  lnav is "macOS-only in practice" *rather than jnv's "barely packaged anywhere" one*. With
+  lnav is "macOS-only in practice" _rather than jnv's "barely packaged anywhere" one_. With
   brew and `extra` both carrying it that overstates the case, so the contrast is now the
   narrower and still-true one: two platforms package jnv, everywhere else is `cargo`.
 
   What has **not** changed is the decision underneath: jnv stays detect-only on Linux. It is
   in no `install/packages.txt` and no `bootstrap.sh` installs it, so `HAVE_JNV` still lights
-  only for a box that opted in. Being packaged made the *instruction* wrong, not the policy —
+  only for a box that opted in. Being packaged made the _instruction_ wrong, not the policy —
   wiring it into the per-repo bootstrap remains the tracked follow-up it already was.
 
 - **`PORTING-MATRIX.md` no longer sends a reader to a row that isn't there, a `go install`
