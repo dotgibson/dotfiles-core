@@ -109,6 +109,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   cannot be affected by, at the cost of one runner boot. The container is still never spun for
   a docs- or nvim-only change, which was the whole point of the axis.
 
+- **`PORTING-MATRIX.md` no longer claims a fleet-wide absence that one repo falsifies.**
+  (dotgibson/dotfiles-Alpine#103) Seven footnotes asserted some form of "no Linux repo's
+  `install/packages.txt` carries it" or "the only tool in this table that nothing in the fleet
+  installs". Re-verified 2026-08-21 against all six Linux repos plus the MacBook `Brewfile`:
+  `dotfiles-Alpine` carries `hyperfine`, `shellcheck`, `shfmt`, `lnav`, `git-absorb`, `gping`,
+  `watchexec` and `jujutsu`, and installs `ouch` from `bootstrap.sh`; `dotfiles-Gentoo` carries
+  four of those. The audit that filed this proposed narrowing the claims to "except
+  `dotfiles-Alpine`" — that would have been a second wrong absolute, since it could only see
+  the Alpine caller. So ²¹ now carries a per-tool coverage table and the prose defers to it,
+  while ⁸, ¹⁹, ²⁴ and ²⁶ name their real exceptions and ²⁵ is rewritten rather than qualified.
+
+  ¹⁴ was the one with teeth: it prescribed keeping `duf`/`glow`/`ouch` in Alpine's
+  `packages.txt` "as a best-effort that `apk add` skips" — the exact footgun that repo
+  documents against, since `apk` fails the whole transaction on one unknown name, so a
+  permanently-unresolvable entry breaks the bulk `apk add` on **every** run. It also called
+  `ouch` a `go install`; it is `cargo install --locked ouch --no-default-features`, because
+  bzip3's bindgen build cannot `dlopen` libclang under musl's static linking.
+
 - **`PORTING-MATRIX.md` no longer sends a reader to a row that isn't there, a `go install`
   that builds the wrong major, or a shadowed `sg`.** (#431) The issue asked for an apt column
   for Debian/Ubuntu distinct from Kali's; that landed with `dotfiles-Debian` in #505, and every
