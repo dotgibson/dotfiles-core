@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.14.1] - 2026-08-21
+
 ### Fixed
 
 - **`PORTING-MATRIX.md`: the Gentoo column told two lies, and a third that was bigger than
