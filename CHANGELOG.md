@@ -15,6 +15,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Seven OS repos stop hand-maintaining the same shell-hook block; Core owns it.** (#449)
+  `direnv hook zsh`, `gh completion -s zsh`, `uv generate-shell-completion zsh` and
+  `ty generate-shell-completion zsh` were duplicated across every `os/*.zsh` in the fleet —
+  portable zsh with nothing OS-specific in it, maintained once per repo, and already drifted
+  into **three variants of one block**: Alpine and Gentoo carried only two of the four tools,
+  and one copy suppressed the generator's stderr in its fallback arm where the others did
+  not. So whether your shell completed `uv` depended on which OS you booted. They now live
+  in Core, and Alpine, Gentoo and the Debian family gain `uv`/`ty` completions for free.
+
+  **Split by kind rather than kept together**, because the two halves have different
+  constraints. `direnv` goes to `zsh/00-tools.zsh` alongside the zoxide/mise/atuin inits: it
+  registers a hook, needs no `compinit`, and band 00 loads under **every** `CORE_PROFILE` —
+  filed under band 45 it would silently stop `.envrc` files loading on minimal hosts, which
+  is a broken feature rather than a missing convenience. `gh`/`uv`/`ty` go to
+  `zsh/45-plugins.zsh` immediately **after** the carapace block: they call `compdef`, so they
+  must follow `compinit`, and they must follow carapace so a tool's own completion keeps
+  overriding carapace's bridged one — the order they already ran in at band 80, so this
+  preserves behaviour rather than changing it. All four move, `ty` included: `_cache_eval`
+  bails on an absent binary, so a host without the tool pays nothing.
+
+  One ordering that is easy to lose and now has a test behind it: direnv **prepends** its
+  hook to `precmd_functions`/`chpwd_functions`, and so does mise — whichever is sourced last
+  runs first. The direnv line therefore sits _after_ the mise line, reproducing exactly the
+  order these hooks had while direnv was hooked from band 80.
+
+  **For OS-repo maintainers:** nothing to do until you vendor this. After the sync, delete
+  your local copy (`VENDORING.md` has the list). Running both is harmless in the meantime —
+  direnv's hook guards its own registration, a repeated `compdef` re-points the same binding,
+  and Core reuses the same cache files, so the transitional window behaves exactly as today.
+
 - **nvim plugin pins move forward for five plugins.** `nui.nvim`, `nvim-lint`,
   `nvim-lspconfig`, `package-info.nvim` and `schemastore.nvim` advance to the commits
   lazy.nvim had already resolved on a live box, 2–7 days ahead of the pins Core carried.
@@ -34,6 +64,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   to be lost again. They belong here, once, and reach every machine by fan-out.
 
 ### Added
+
+- **`_core_is_wsl` — one WSL predicate for the whole fleet, and a gate against the copies
+  coming back.** (#449) Six OS repos carried a byte-identical `_IS_WSL=0; …` probe to gate
+  their Windows-interop niceties. Core had the same fact twice more and neither was reachable
+  from zsh: `blib_is_wsl` (bash, forks `grep`, no test seam) and a private copy inside
+  `bin/clip`. Eight implementations of one predicate, in two languages, drifting
+  independently. `zsh/00-tools.zsh` now exports `_core_is_wsl` as a second Core→OS API
+  alongside `_cache_eval` — fork-free (`$(<file)`, no `cat`, no `grep`, because unlike the
+  bootstrap sibling this runs on every interactive shell), **lazily memoised** into
+  `_CORE_IS_WSL` so a shell that never asks never pays, and carrying a `$CORE_PROC_VERSION`
+  test seam. The seam is not decoration: without it the "this box is not WSL" case cannot be
+  asserted on a WSL development host and "this box is WSL" cannot be asserted on a CI runner,
+  so half the predicate would go untested on every machine. `PORTABILITY.md` gains the shim
+  row and documents the narrow **env-fact exception** to its own `command -v` rule.
+
+- **A gate against portable logic stranded outside Core.** (#449) `audit-core.sh` §5c catches
+  OS-specifics leaking _into_ Core; nothing caught the reverse, which is why the block above
+  went unnoticed long enough to drift three ways — it could only be found by reading two
+  layers side by side. `scripts/lib/common.sh` gains `_core_owned_block_hits`, the single
+  definition of "this repo re-implements something Core owns", and
+  `.github/workflows/lint-call.yml` gains a leg that runs it over each caller's repo-owned
+  `*.zsh`. It flags exact generator invocations rather than tool names, so hooking a tool
+  that exists on one OS and nowhere else — the OS layer's actual job — is never a finding.
+
+  Unlike the `RETURN`-trap gate it has **no `audit-core.sh` counterpart**, on purpose: Core's
+  own tree contains every pattern it scans for, which is the point. The Core-side guard is
+  the _inverse_ assertion in `scripts/test-core.sh` — if Core ever loses a block, the gate
+  would be making nine repos delete a feature nobody provides. And it **warns in this release
+  and blocks in the next**, because unlike that gate it is red-on-arrival by construction: no
+  OS repo can delete its copy until it has vendored the Core that replaces it.
 
 - **A gate against leaked `RETURN` traps, for the fleet and for Core's own tree.**
   (#552, #555, #558; refs #512, #461) A bash `RETURN` trap is a **global slot, not a
