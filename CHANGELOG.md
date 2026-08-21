@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.14.2] - 2026-08-21
+
 ### Fixed
 
 - **The `provision-stub` job shipped in v4.14.1 could not run.** It read its shim from the
