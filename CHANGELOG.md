@@ -13,6 +13,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`PORTING-MATRIX.md`: the Gentoo column told two lies, and a third that was bigger than
+  both.** Reported by the `/os-package-availability` routine as
+  `dotgibson/dotfiles-Gentoo#85`; the OS-layer halves already landed there in
+  `dotfiles-Gentoo#98` (gum) and `#103` (jj), and this is the matrix catching up.
+
+  - **`gum` on Gentoo is not `app-misc/gum`** — that atom exists in neither `::gentoo` nor
+    GURU, in any category. The cell now reads `mise³⁰`, `gum` is struck from ¹²'s GURU list,
+    and ¹² records why an entry there can only ever emerge as a `skipped:` line — which reads
+    like a keyword mask and invites an `accept_keywords` "fix" that unmasks nothing. That is
+    how it survived in `guru_install` for months. ³⁰ gains the caveat that
+    `gentoo/mise-tools.toml` is the **`--user` path only**, so a privileged Gentoo bootstrap
+    installs no gum at all.
+  - **`jujutsu` on Gentoo is packaged, as `dev-vcs/jj`** (`~amd64`, added 2025-12-04, EAPI 8).
+    The cell moves from `cargo²¹` to `` `dev-vcs/jj`²¹ `` and ⁸ names the trap: the atom is
+    `jj`; `dev-vcs/jujutsu` has never existed. **Kali's `cargo²¹` is unchanged** — jj really
+    is still absent from stable Debian/Kali apt. ⁸ also stops reading Gentoo's `packages.txt`
+    omission as a decline: it is a deliberate placement, because that file is the
+    unconditional emerge and jj must stay skippable by `--no-extras`.
+  - **The ²¹ "available, not installed" family was verified against `install/packages.txt`
+    alone** — and Gentoo is the repo that installs most from `bootstrap.sh` instead, precisely
+    because everything opt-in has to live in the script. So **four of the eight Gentoo cells
+    in ²¹'s table read `—` for tools bootstrap installs**: `shfmt` (go, unconditional), `ouch`
+    and `watchexec` (cargo, opt-in extras) and `gping` (emerged from GURU). Corrected here,
+    along with ⁷, ¹⁹ and ²⁵, which each carried the same claim in prose. ²¹ now says two
+    repos' bootstraps install from this family (Alpine and Gentoo), not one, and records the
+    single-file verification as the root cause so the row does not go stale the same way
+    again. `watchexec`'s Gentoo cell also moves `GURU²⁵` → `cargo²⁵`: GURU carries 2.5.0, but
+    the bootstrap routes around it and builds `watchexec-cli` for upstream-latest.
+
 ## [v4.14.0] - 2026-08-21
 
 ### Changed
