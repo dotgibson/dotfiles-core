@@ -44,6 +44,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     again. `watchexec`'s Gentoo cell also moves `GURU²⁵` → `cargo²⁵`: GURU carries 2.5.0, but
     the bootstrap routes around it and builds `watchexec-cli` for upstream-latest.
 
+- **`direnv` is installed by six of the fleet's seven package lists and had no row in the
+  matrix at all.** (`dotgibson/dotfiles-openSUSE#89`) The `/os-package-availability` audit of
+  `dotfiles-openSUSE` reported it as its one coverage gap rather than drift: `direnv` appeared
+  in `PORTING-MATRIX.md` only inside footnote ¹², as one of the Gentoo GURU atoms. So a reader
+  asking "what is direnv called on Alpine" found nothing, and the next audit comparing a
+  package list against the table found a name the table did not know. It has a row now, and it
+  sits next to `mise` rather than in alphabetical order — this table has never been
+  alphabetical, and the two are the same mechanism: both are `_cache_eval`'d hook generators
+  emitted from `os/<distro>.zsh` at band 80, and Core's own `examples/mise.project.toml` calls
+  mise's `[env]` block "the direnv replacement" and its `[hooks]` block "the other half of
+  direnv".
+
+  Six of the seven cells are a bare `direnv`, verified 2026-08-21 against each distro's own
+  index: Arch `extra` 2.37.1-1, Alpine `community` 2.37.1-r7 (v3.24 — a Go binary, so a native
+  musl build), openSUSE Tumbleweed 2.37.1 with Leap 16.0 and 16.1 both at 2.34.0 through
+  Backports (`bp160.1.13` / `bp161.1.9`, both arches), kali-rolling 2.37.1-1, Ubuntu 24.04
+  `universe` 2.32.1-2ubuntu0.24.04.3 and Debian trixie 2.32.1-2+b16. Gentoo is the exception
+  and is GURU-only — `app-shells/direnv` at 2.37.1, no `::gentoo` atom, and `dev-util/direnv`
+  does not exist — so that cell reads `` `app-shells/direnv` ``¹², where the warning already
+  lived and which therefore needed no edit.
+
+  New footnote ³² records what makes the row unlike its neighbours, because no existing
+  footnote shape fits it. It is not ²¹'s "available, not installed" — six repos install it —
+  and not ¹⁷/¹⁹'s detect-only, because **Core does not detect it at all**: there is no
+  `HAVE_DIRENV`, no alias and no `core-doctor` row. It is the only row in the table wired by
+  the OS layer instead of by Core; the `direnv hook zsh` that makes it work is emitted by each
+  OS repo's `os/<distro>.zsh` at band 80. Core's one stake is `starship/starship.toml`'s
+  `[direnv]` module, which Core switches on (`disabled = false` — starship ships it off by
+  default) so `.envrc` state is visible rather than a directory silently waiting on
+  `direnv allow`. `dotfiles-Offense` (Kali) is the single fleet gap, and it is structural
+  rather than a judgment about direnv — that repo carries no `install/packages.txt` and, since
+  band 80 moved to the OS repo underneath it, no `os/` layer, so nothing there installs the
+  package or evaluates the hook.
+
+  One version floor is recorded because it is the only point where a frozen archive touches
+  Core: starship runs `direnv status --json`, and the `--json` flag is **silently ignored below
+  direnv 2.33.0** — `src/modules/direnv.rs` says so and parses the text output instead. Every
+  target above clears that floor except `dotfiles-Debian`'s two lanes, both on 2.32.1. It
+  degrades rather than breaks, which is why that repo's `install/packages.txt` declares no
+  `# min:` floor for it.
+
 ## [v4.14.0] - 2026-08-21
 
 ### Changed
