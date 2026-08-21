@@ -54,9 +54,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   `scripts/lib/common.sh` gains `_core_return_trap_hits`, the single definition of the
   rule. `audit-core.sh` §5e runs it over Core's own tree (which lint-call.yml never checks
-  out), and `lint-call.yml` sources it to gate the nine caller repos — **so a caller repo
-  now fails its required `lint` check on a leaked trap.** Every repo in the fleet was
-  verified green under it before release, so nothing reds on arrival.
+  out), and `lint-call.yml` sources it to gate its callers — **so a caller repo now fails
+  its required `lint` check on a leaked trap.** Every repo in the fleet was verified green
+  against the rule before release, so nothing reds on arrival.
+
+  **That is eight repos, not nine.** `dotfiles-MacBook` does not call `lint-call.yml` at
+  all — it carries its own `shell lint` job in `ci.yml` — so the leg reaches Alpine, Arch,
+  Debian, Defense, Fedora, Gentoo, Offense and openSUSE, and MacBook is ungated. Its tree
+  is clean today (checked directly, not inferred), and its vendored `core/` and SHA-pinned
+  Core workflow refs do advance with the fan-out, so this is a coverage gap rather than
+  drift. Whether MacBook should adopt the reusable gate or grow the leg in its own `ci.yml`
+  is open.
 
   Two notes for anyone writing one of these. The correct form is
   `trap 'trap - RETURN; …' RETURN` — disarm first, and keep it first, so an early `return`
