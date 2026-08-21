@@ -48,6 +48,7 @@ _Repo status_ at the bottom).
 | tmux             | `tmux`            | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`            | `tmux`        |
 | starship         | `starship`        | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³           | asset²⁸       |
 | atuin²⁰          | `atuin`           | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³          | asset²⁸       |
+| mise³⁰           | `mise`            | script³⁰     | script³⁰          | script³⁰                   | script³⁰          | asset²⁸       |
 | yazi             | `yazi`            | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
 | tree-sitter-cli⁵ | `tree-sitter-cli` | cargo³       | `tree-sitter-cli` | cargo³                     | `tree-sitter-cli` | asset²⁸       |
 | jq               | `jq`              | `jq`         | `jq`              | `app-misc/jq`              | `jq`              | `jq`          |
@@ -77,6 +78,7 @@ _Repo status_ at the bottom).
 | difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb` | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo³            | —²⁹           |
+| uv³⁰             | `uv`              | `python-uv`  | `uv`              | `dev-python/uv`            | `uv`              | asset²⁸       |
 | w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
@@ -87,6 +89,7 @@ already uses on Fedora. Add `cargo`/`rust` (or a `go` toolchain) to packages.
 `go install` targets land in `~/.local/bin` via `GOBIN` so they're on PATH.
 **`carapace` is the one documented exception to the `go install` half of this** — that
 module can never be `go install`ed, on any platform, so its cells point at ²⁷ instead.
+The module path is rarely the repo URL — see ³¹ for the exact one per tool.
 ⁴ Debian/Kali ship these under different binary names — `bat` runs as `batcat`,
 the `fd-find` package installs `fdfind`, and the `du-dust` package installs the
 `dust` command. Core's `00-tools.zsh` already resolves them, so aliases and config
@@ -148,11 +151,17 @@ usual outlier is covered), Fedora, Gentoo (`dev-util/difftastic`), openSUSE, Hom
 (`difftastic`) and Debian/Kali apt; where unpackaged, `cargo install difftastic` or `mise`.
 Inert without the binary — the `gdft` alias is `HAVE_DIFFT`-guarded and `git dft` just errors.
 ¹¹ ast-grep: OPT-IN AST-aware structural search/rewrite — the syntax-tree complement to
-`ripgrep` (text), `sd` (regex), and `gron` (JSON). Own command, **no alias** (like `gron`/`sd`),
-so it shadows nothing; prefer the `ast-grep` binary name over `sg` (which can collide with
-`setgroups`). Core sets `HAVE_ASTGREP` when present. Packaged on Arch (`extra`) and Alpine
-(`community` — a musl build, so the outlier is covered) and Homebrew; elsewhere via
-`cargo install ast-grep` / `mise` / `npm` / `pip`. Inert without the binary — nothing depends on it.
+`ripgrep` (text), `sd` (regex), and `gron` (JSON). Core adds **no alias** (like `gron`/`sd`) — but
+the crate installs a SECOND binary, `sg`, and **that name is already taken**: `sg(1)` is a symlink
+to `newgrp`, shipped by `login` on the Debian family and by `shadow` elsewhere. Since #425 put
+`${CARGO_HOME:-~/.cargo}/bin` on PATH ahead of `/usr/bin`, a `cargo install`ed ast-grep now WINS
+that lookup, so a bare `sg` runs the search tool rather than switching group. Prefer the `ast-grep`
+name, and reach the real one as `newgrp` (or `/usr/bin/sg`). This footnote used to say `sg` "can
+collide with `setgroups`" and that ast-grep "shadows nothing" — both were wrong, and #425 turned
+the second into a live shadow rather than a hypothetical one. Core sets `HAVE_ASTGREP` when
+present. Packaged on Arch (`extra`) and Alpine (`community` — a musl build, so the outlier is
+covered) and Homebrew; elsewhere via `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert
+without the binary — nothing depends on it.
 ¹² Gentoo **GURU overlay** (`sd`, `glow`, `gum`, `xh`, `carapace`, `1password-cli`, `tealdeer`,
 `yazi`, `lazygit`, `direnv`): not in the main `::gentoo` tree. Enable once with `eselect
 repository enable guru && emaint sync -r guru`, then `emerge` the atom. bootstrap.sh does this
@@ -662,6 +671,47 @@ halfway through a long build is worse than not shipping the tool. `jnv`, `ouch`,
 pin. All are `HAVE_*`-guarded in Core, so the shell degrades cleanly. Want one on a
 particular box? `mise use -g rust`, then `cargo install --locked <tool>` — and as of #425
 the next login picks it up on its own, no symlink into `~/.local/bin` needed.
+
+³⁰ **`mise` and `uv` — the two the doctor probes but this table used to omit.**
+`core-doctor` reports on both (`_CORE_DOCTOR_GROUPS` in `zsh/30-functions.zsh`) and both
+get a `HAVE_*` flag, so a `✗` for either sent the reader to a matrix with no row to find —
+the one promise `zsh/30-functions.zsh`'s "install missing" hint makes. **`mise` is the
+chicken-and-egg row**: footnotes ¹, ⁶, ⁷, ¹⁰, ¹¹ and ²⁹ all prescribe `mise use -g <x>` as
+a fallback, and every `bootstrap.sh` reaches for `mise exec go@latest` when no Go toolchain
+is present, so it is a prerequisite of this table rather than an entry in it. Only **Arch**
+packages it (`extra`); openSUSE, Gentoo and Kali have none, and the bootstraps there use the
+official installer (`curl -fsSL https://mise.run | sh`, landing in `~/.local/bin`). Alpine
+_does_ carry `mise` in `community`, but `dotfiles-Alpine` still takes `mise.run` for the musl
+build — hence `script³⁰`, not a package name, in that cell.
+
+`uv` is the cleanest illustration of why the Kali and Debian/Ubuntu columns had to be split
+at all (`dotgibson/dotfiles-core#431`): **kali-rolling ships `uv` 0.9.17 and Ubuntu 24.04
+ships nothing**, because uv reached Debian only in sid/trixie. `dotfiles-Debian` therefore
+pins it as a `verified_install` asset ²⁸. openSUSE's is named `python-uv` (Tumbleweed — Leap
+was not separately audited, so verify with `zypper se python-uv` and fall back to ³ there),
+and Gentoo's is `dev-python/uv`, not a bare `uv`.
+
+³¹ **`go install` module paths — the repo URL is usually NOT the module path.** Four of the
+six go-installable rows need a major-version suffix, a `cmd/` subpath, or both, and a naive
+`go install github.com/<org>/<repo>@latest` fails or silently builds an abandoned major.
+Verified against each project's own `go.mod`, and these are the exact strings the fleet's
+`bootstrap.sh` files already pass to `_dotfiles_go_install`:
+
+| Tool    | `go install <path>@latest`            |
+| ------- | ------------------------------------- |
+| `doggo` | `github.com/mr-karan/doggo/cmd/doggo` |
+| `sesh`  | `github.com/joshmedeski/sesh/v2`      |
+| `yq`    | `github.com/mikefarah/yq/v4`          |
+| `shfmt` | `mvdan.cc/sh/v3/cmd/shfmt`            |
+| `gron`  | `github.com/tomnomnom/gron`           |
+
+**Charm's tools moved off GitHub as a module host** — `glow` is now `charm.land/glow/v3`
+(v3.0.0, 2026-08-11) and `gum` is `charm.land/gum/v2` (v2.0.0). Both still _live_ on GitHub;
+only the module path changed. #431 reported `github.com/charmbracelet/glow/v2`, which was
+right when it was filed and is now two majors stale — a good reason to re-read `go.mod`
+rather than trust a remembered path. Neither is go-installed by any `bootstrap.sh` today
+(the Debian/Kali cells use Charm's apt repo, see ¹⁵), so these two are for the reader
+installing by hand.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

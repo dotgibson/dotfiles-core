@@ -15,6 +15,40 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`PORTING-MATRIX.md` no longer sends a reader to a row that isn't there, a `go install`
+  that builds the wrong major, or a shadowed `sg`.** (#431) The issue asked for an apt column
+  for Debian/Ubuntu distinct from Kali's; that landed with `dotfiles-Debian` in #505, and every
+  tool the issue measured on Ubuntu 24.04 now matches the column. What its noble provisioning
+  also exposed — and what this fixes — are three things that were wrong for the whole fleet,
+  not just apt boxes.
+
+  `core-doctor` probes `mise` and `uv`, and both have a `HAVE_*` flag, but neither had a row in
+  the package table — so for exactly those two the "install missing" hint's promise ("see
+  `core/PORTING-MATRIX.md` for the per-tool name and install path") resolved to nothing. They
+  have rows now, with a footnote (³⁰) for the chicken-and-egg `mise` creates: six other
+  footnotes prescribe `mise use -g <x>` as the fallback, and every `bootstrap.sh` reaches for
+  `mise exec go@latest` when no Go toolchain is present, so it is a prerequisite of the table
+  rather than an entry in it. `uv` turns out to be the sharpest argument for splitting the two
+  apt columns in the first place: kali-rolling ships `uv` 0.9.17 and Ubuntu 24.04 ships none.
+
+  The `go³` cells named no module paths, and the module path is usually not the repo URL. Four
+  of the six go-installable rows need a major-version suffix, a `cmd/` subpath, or both —
+  `github.com/joshmedeski/sesh/v2`, `github.com/mikefarah/yq/v4`, `mvdan.cc/sh/v3/cmd/shfmt`,
+  `github.com/mr-karan/doggo/cmd/doggo` — so a naive `go install <repo>@latest` fails or
+  silently builds an abandoned major. Footnote ³¹ now lists all of them, verified against each
+  project's own `go.mod`. That verification caught a live one: Charm has moved its tools off
+  GitHub as a module host, so `glow` is `charm.land/glow/v3` and `gum` is `charm.land/gum/v2`.
+  #431 reported `github.com/charmbracelet/glow/v2`, which was correct when it was filed and is
+  now two majors stale.
+
+  Footnote ¹¹ claimed `sg` "can collide with `setgroups`" and that ast-grep "shadows nothing".
+  Both were wrong. `sg(1)` is a symlink to `newgrp` — from `login` on the Debian family,
+  `shadow` elsewhere — and the `ast-grep` crate installs `sg` as a second binary. The second
+  claim was merely imprecise until #425, which put `${CARGO_HOME:-~/.cargo}/bin` on PATH ahead
+  of `/usr/bin`: on any box with a `cargo install`ed ast-grep, a bare `sg` now runs the search
+  tool instead of switching group. A hypothetical shadow became a real one, and the doc still
+  said it couldn't happen.
+
 - **A `cargo install`ed tool now gets its `HAVE_*` flag, its alias and its shell
   integration — `core-doctor` and the flags no longer disagree about the same box.** (#425)
   `zsh/00-tools.zsh` put only `~/.local/bin` on PATH before probing, and computed all 43
