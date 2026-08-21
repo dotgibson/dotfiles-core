@@ -37,7 +37,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   installs, both vendor apt repos, carapace and unattended-upgrades, then crosses into
   `wire_links` and finishes at `32 linked · 2 seeded · 0 backed up`.
 
-
 - **Footnote ³² said the OS layer wires direnv; v4.14.1 moved that into Core, in the same
   release.** (#449) The `direnv` row's footnote was written days before #578 landed and
   described the arrangement it replaced — "what makes it work is each OS repo's
