@@ -1,0 +1,24 @@
+# .github/actionlint.yaml — actionlint configuration.
+# ──────────────────────────────────────────────────────────────────────────────
+# ONE suppression, scoped to one file and one message. actionlint validates
+# `github.*` against a baked-in schema, and that schema (1.7.12) does not carry
+# `job_workflow_sha` — a context property GitHub documents for reusable workflows:
+# "For jobs using a reusable workflow, the commit SHA for the reusable workflow file."
+#
+# bootstrap-test.yml's provision-stub job needs exactly that value, and no other
+# context supplies it: `workflow_sha` and `workflow_ref` describe the CALLER's
+# workflow, not the reusable one. Using either would check out the wrong tree.
+#
+# Why it matters enough to suppress rather than work around: the shim that job runs
+# must come from the SAME commit as the job itself. Reading it from the caller's
+# vendored core/ instead put the script and the workflow on two distribution channels
+# with different timelines, and hard-failed every repo in the window between a Core
+# release and that repo merging its fan-out PR (dotgibson/dotfiles-Debian#11).
+#
+# Scoped deliberately: the pattern names the file AND the message, so any OTHER
+# undefined-property error — including a genuine typo in this same file — still fails
+# the gate. Drop this block when actionlint's schema catches up.
+paths:
+  .github/workflows/bootstrap-test.yml:
+    ignore:
+      - 'property "job_workflow_sha" is not defined'

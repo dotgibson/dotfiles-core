@@ -245,15 +245,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # The caller's tree, into repo/ — NOT at the workspace root, because Core is checked
+      # out alongside it below and the two must not overlap.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          path: repo
+      # THE SHIM COMES FROM THIS WORKFLOW'S OWN COMMIT, NOT FROM THE CALLER'S VENDORED core/.
+      # Those are two distribution channels on different timelines: the workflow reaches a
+      # caller the moment the vN alias moves (a Core release), while core/scripts/ only
+      # arrives when that repo merges its core.lock fan-out PR — which is deliberately
+      # canary-first and can lag by days. Reading the shim out of the vendored tree therefore
+      # hard-fails every repo in that window, which is exactly what happened the first time
+      # this was tried (dotgibson/dotfiles-Debian#11, against a repo vendoring 4.14.0).
+      #
+      # job_workflow_sha is the commit of THIS reusable workflow file, so the script and the
+      # job always travel together at whatever ref the caller pinned — a tag, the moving
+      # alias, or a branch SHA during a probe. Same reasoning as lint-call.yml checking Core
+      # out rather than trusting the caller's copy; this is the pinned-by-construction version
+      # of it, and needs no "keep in step on a major bump" note.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          ref: ${{ github.job_workflow_sha }}
+          path: core-src
       - name: bootstrap with provisioning stubbed (${{ inputs.image }})
         env:
           IMAGE: ${{ inputs.image }}
           PREP: ${{ inputs.prep }}
         run: |
-          docker run --rm -e PREP -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+          test -f core-src/scripts/provision-shim.sh \
+            || { echo "::error::core-src/scripts/provision-shim.sh missing from the Core checkout"; exit 1; }
+          docker run --rm -e PREP -e BLIB_SU= \
+            -v "$PWD/repo:/repo" -v "$PWD/core-src:/core-src:ro" -w /repo "$IMAGE" sh -euc '
             n=0
             until eval "$PREP"; do
               n=$((n+1))
@@ -261,18 +286,14 @@ jobs:
               echo "prep attempt $n failed (mirror timeout?), retrying in $((n*10))s..." >&2
               sleep $((n*10))
             done
-            # The shim is VENDORED, so a repo whose core/ predates it simply has no such file.
-            # Skip loudly rather than silently passing a job that never ran the thing it names.
-            if [ ! -f core/scripts/provision-shim.sh ]; then
-              echo "core/scripts/provision-shim.sh missing — vendored Core predates it; sync Core first" >&2
-              exit 1
-            fi
             # Same tpm pre-seed as links-only: skip the first-run clone, stay offline.
             mkdir -p "$HOME/.config/tmux/plugins/tpm"
 
+            # /core-src is this workflow'"'"'s own commit, mounted read-only — see the checkout
+            # note above. Never core/, which is the caller'"'"'s vendored copy and may lag.
             PROVISION_SHIM_LOG=/tmp/provision-shim.log
             export PROVISION_SHIM_LOG
-            PATH="$(sh core/scripts/provision-shim.sh):$PATH"
+            PATH="$(sh /core-src/scripts/provision-shim.sh):$PATH"
             export PATH
 
             echo "── running the FULL bootstrap with provisioning stubbed ──"
