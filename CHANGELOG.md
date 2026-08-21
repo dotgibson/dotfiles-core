@@ -40,6 +40,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   runs first. The direnv line therefore sits _after_ the mise line, reproducing exactly the
   order these hooks had while direnv was hooked from band 80.
 
+  **Measured startup cost, because one of these four is not free.** Sourcing the cached
+  inits in a compinit-ready shell, 100+ runs each (`hyperfine`): `direnv` (14 lines) and
+  `gh` (212) are together **+0.6 ms** over a 12.9 ms baseline — noise. `uv` ships a
+  **6,976-line** completion and `ty` 325, and the pair costs **+37 ms**. The five repos that
+  already hooked all four have been paying that all along and see no change; Alpine, Gentoo
+  and the Debian family newly pay it, but only on a host that actually has `uv` installed.
+  That is the price of the fleet agreeing on one answer, and it is worth knowing rather
+  than discovering. Sourcing 7k lines on every shell to serve one `<TAB>` is the wrong
+  shape long-term — the fix is an `fpath` autoload rather than a `source`, filed separately.
+  Note the bench job cannot see any of this: it runs a hermetic sandbox with none of these
+  binaries, so every call is a two-token no-op there.
+
   **For OS-repo maintainers:** nothing to do until you vendor this. After the sync, delete
   your local copy (`VENDORING.md` has the list). Running both is harmless in the meantime —
   direnv's hook guards its own registration, a repeated `compdef` re-points the same binding,
