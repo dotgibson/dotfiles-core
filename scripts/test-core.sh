@@ -1073,6 +1073,95 @@ sed -n "s/^x=//p" "$f" | head -n1'
   if [[ -z "$(_core_pipefail_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "pipefail scan: does not flag its own definition"; else fail "pipefail scan: flagged common.sh itself"; fi
 fi
 
+# ── leaked-RETURN-trap scanner (scripts/lib/common.sh :: _core_return_trap_hits) ───
+# WHY THIS IS TESTED. audit-core.sh §5e is the ONLY gate anywhere that can see this bug.
+# The broken line is valid bash, so the lint and syntax sections both pass it; and
+# bootstrap-test.yml only ever runs --links-only, so the code where it detonates is executed
+# by nothing (#512, #461). A gate that is the sole line of defence, for a bug that has
+# already shipped green in two repos, is worth proving fires. Probe-testing it while it was
+# written is what found the line-start anchor: the version this repo nearly shipped catches
+# ONE of the four broken shapes below, and the one it misses is the likeliest of them.
+#
+# Both halves are pinned — what it catches AND what it must ignore. The second half is not
+# padding. The false-positive class is what gets a gate switched off, and dotfiles-Debian's
+# own fix carries three comment lines naming the signal directly above its corrected traps:
+# a scanner without the comment filter would red the repo that FIXED the bug.
+#
+# THE SIGNAL NAME IS ASSEMBLED, NOT WRITTEN LITERALLY — the same move, for the same reason,
+# as _pf_p in the pipefail block above. §5e scans this file, and a file whose job is to test
+# the banned shape necessarily contains it; the first run flagged eight of its own lines.
+# Keeping the literal out of this source is the honest fix: the fixture written to disk is
+# byte-identical to the real hazard, so the assertions still exercise the true pattern. An
+# inline "allow" marker in the scanner was rejected for the same reason it was there — an
+# escape hatch invites silencing a real finding. The assertion MESSAGES are worded around
+# it too, which is why none of them says the shape out loud.
+if have git; then
+  hdr "leaked-RETURN-trap scanner (_core_return_trap_hits)"
+  _rtd="$SANDBOX/returntrap"
+  mkdir -p "$_rtd"
+  _rt_write() { printf '%s\n' "$2" >"$_rtd/$1"; }   # _rt_write <name> <body>
+  _rt_s='RETURN'
+  # The handler body is a placeholder, not a real cleanup: what is under test is the signal
+  # operand and the disarm, so a literal `rm -rf` in a fixture would be risk for no gain.
+
+  # ── the four broken shapes ──
+  # The ONE-LINE BODY is first because it is the shape a line-start anchor misses, and it is
+  # how this is most often written: the whole helper fits on one line, so the handler does too.
+  _rt_write oneline.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s; }"
+  if [[ "$(_core_return_trap_hits "$_rtd/oneline.sh")" == 2 ]]; then pass "RETURN scan: catches a one-line function body"; else fail "RETURN scan: missed the one-line function body — is the pattern anchored to line-start again?"; fi
+
+  _rt_write ownline.sh "#!/usr/bin/env bash
+f() {
+  trap CLEAN $_rt_s
+}"
+  if [[ "$(_core_return_trap_hits "$_rtd/ownline.sh")" == 3 ]]; then pass "RETURN scan: catches the dotfiles-Debian#2 shape (handler on its own line)"; else fail "RETURN scan: missed the own-line shape"; fi
+
+  # A TRAILING COMMENT must not hide it. This is why the signal is matched as a TOKEN rather
+  # than as the last word on the line — anchoring to end-of-line waves this straight through.
+  _rt_write trailing.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s  # cleanup
+}"
+  if [[ "$(_core_return_trap_hits "$_rtd/trailing.sh")" == 2 ]]; then pass "RETURN scan: catches a handler with a trailing comment"; else fail "RETURN scan: missed a trailing comment — is the signal anchored to end-of-line again?"; fi
+
+  # TWO SIGNALS leak in exactly the same way, and here the signal is not the last operand.
+  _rt_write multisig.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s EXIT; }"
+  if [[ "$(_core_return_trap_hits "$_rtd/multisig.sh")" == 2 ]]; then pass "RETURN scan: catches a second signal after the first"; else fail "RETURN scan: missed the two-signal form"; fi
+
+  # ── what it must NOT flag ──
+  # The disarming form is the FIX. Flagging it would punish the cure and leave no way to
+  # write a correct one at all.
+  _rt_write fixed.sh "#!/usr/bin/env bash
+f() { trap \"trap - $_rt_s; CLEAN\" $_rt_s; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/fixed.sh")" ]]; then pass "RETURN scan: a self-disarming body is not a finding"; else fail "RETURN scan: flagged the disarming fix"; fi
+
+  # Writing ABOUT the hazard must not trip it — this repo now documents it in three places,
+  # and so does the fix in dotfiles-Debian.
+  _rt_write comment.sh "#!/usr/bin/env bash
+# trap CLEAN $_rt_s is the shape this gate exists to catch
+f() { trap \"trap - $_rt_s; CLEAN\" $_rt_s; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/comment.sh")" ]]; then pass "RETURN scan: a comment describing the hazard is not a finding"; else fail "RETURN scan: flagged a comment"; fi
+
+  # Every OTHER signal is fine — only this one has the leaking-slot semantics. An EXIT
+  # handler inside a function is ordinary, and this repo uses several.
+  _rt_write exitonly.sh '#!/usr/bin/env bash
+f() { trap CLEAN EXIT; }'
+  if [[ -z "$(_core_return_trap_hits "$_rtd/exitonly.sh")" ]]; then pass "RETURN scan: an EXIT handler is not a finding"; else fail "RETURN scan: flagged an EXIT handler"; fi
+
+  # The word in prose, or as part of a longer identifier, is not a signal operand.
+  _rt_write prose.sh "#!/usr/bin/env bash
+f() { echo \"check the $_rt_s value\"; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/prose.sh")" ]]; then pass "RETURN scan: the bare word in prose is not a finding"; else fail "RETURN scan: flagged the word where no handler is armed"; fi
+
+  # and the gate must not flag the library that defines it
+  if [[ -z "$(_core_return_trap_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "RETURN scan: does not flag its own definition"; else fail "RETURN scan: flagged common.sh itself"; fi
+
+  # nor this file, whose fixtures are the banned shape by construction — the assembly above
+  # is what makes that true, and a regression in it must fail HERE rather than in §5e
+  if [[ -z "$(_core_return_trap_hits "$HERE/scripts/test-core.sh")" ]]; then pass "RETURN scan: does not flag its own fixtures (the signal name stays assembled)"; else fail "RETURN scan: this file now spells the banned shape literally — keep the name in \$_rt_s"; fi
+fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
@@ -1245,7 +1334,12 @@ if have git; then
   # moment the count was met: a NEW content gate could use bare `git ls-files` and still
   # satisfy it. Exactness makes adding either kind of enumeration fail here until someone
   # picks a side, which is the decision this rule exists to force.
-  _als_expect="audit-core.sh:8:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  # audit-core.sh 8→9 content calls: §5e (leaked RETURN trap) enumerates via _audit_ls.
+  # It is a CONTENT gate — "is this file's text valid?" — so an untracked-but-not-ignored
+  # script is in scope: a brand-new helper arming a leaked trap must be caught BEFORE it is
+  # `git add`ed, not one round-trip later. That is the side of the rule this tripwire made
+  # explicit, which is what it is for.
+  _als_expect="audit-core.sh:9:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"
