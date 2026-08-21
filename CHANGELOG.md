@@ -35,7 +35,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   band 00, where the hook reaches it from Core like everywhere else. It is live there now and
   simply finds no binary, since that repo still installs none.
 
-
 ## [v4.14.1] - 2026-08-21
 
 ### Added
