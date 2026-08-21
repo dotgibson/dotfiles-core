@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.14.0] - 2026-08-21
+
 ### Changed
 
 - **nvim plugin pins move forward for five plugins.** `nui.nvim`, `nvim-lint`,
