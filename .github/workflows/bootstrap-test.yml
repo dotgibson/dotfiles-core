@@ -296,6 +296,15 @@ jobs:
             PATH="$(sh /core-src/scripts/provision-shim.sh):$PATH"
             export PATH
 
+            echo "── shim active at: $(command -v curl) ──"
+            ls -l "$(dirname "$(command -v curl)")" | head -5
+
+            # Print the intercept log WHATEVER happens. A failed run is exactly when you need
+            # to know which commands the shim actually saw — without it, a red job cannot be
+            # told apart from a shim that never engaged, and that ambiguity already cost two
+            # debugging rounds (dotgibson/dotfiles-Debian#11).
+            trap 'echo "── what provision() would have done (intercepted) ──"; cat "$PROVISION_SHIM_LOG" 2>/dev/null || echo "(nothing intercepted — did the shim engage?)"' EXIT
+
             echo "── running the FULL bootstrap with provisioning stubbed ──"
             ./bootstrap.sh
 
@@ -309,7 +318,5 @@ jobs:
               fi
             done
 
-            echo "── what provision() would have done (intercepted) ──"
-            cat "$PROVISION_SHIM_LOG" 2>/dev/null || echo "(nothing intercepted)"
             echo "bootstrap with stubbed provisioning OK"
           '
