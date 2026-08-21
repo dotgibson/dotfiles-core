@@ -13,6 +13,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.14.1] - 2026-08-21
+
+### Added
+
+- **CI can now run `provision()` for real, with the network stubbed.** (#575) `--links-only`
+  returns before `provision()` is entered, so package installation, retries, upstream
+  installers, repo/key setup and every failure path around them were executed by **no CI job
+  anywhere in the fleet**. That is how a leaked RETURN trap shipped green through review in
+  two repos: it aborted every fresh-box run _after_ installing everything and _before_
+  `wire_links`, and the one job that looks at `bootstrap.sh` never reached the function it
+  was in (`dotgibson/dotfiles-Debian#2`).
+
+  Adds `scripts/provision-shim.sh` — **a new file every OS repo receives in `core/scripts/`
+  on its next sync** — which builds a PATH shim of logging no-ops for the package managers,
+  downloaders and privilege tools a `provision()` reaches for, plus an **opt-in**
+  `provision-stub` job that runs the real bootstrap behind it. Most of that bug class is
+  control flow rather than I/O, so it executes without installing a package or touching the
+  network.
+
+  `sudo`/`doas` are not swallowed — they drop the escalation and re-exec the tail, so
+  `sudo apt-get install x` still reaches the apt-get stub and is still logged. `git` is
+  deliberately not stubbed, since bootstraps clone real things the caller pre-seeds and
+  stubbing it would mask wiring bugs this job should catch. The job asserts more than a zero
+  exit: the bug it exists for aborted _after_ `provision()` did its work, so it also checks
+  the symlink graph survived on the far side, and prints the intercepted command log.
+
+  Opt-in, so nothing changes for a repo that does not enable the job.
+
 ### Fixed
 
 - **`PORTING-MATRIX.md`: the Gentoo column told two lies, and a third that was bigger than
@@ -113,6 +141,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   overclaim ²¹ was written to correct, surviving inside ²¹ itself for one tool. The `ast-grep`
   Kali cell is now `cargo²¹`, matching `ouch` and `jujutsu` in that column, and the list of
   cells that previously overclaimed a `³` gains `ast-grep` on Kali alongside Gentoo.
+
+- **`bootstrap-test` and `lint` disagreed about the same `bootstrap.sh`, and only one of
+  them applied the fleet's shellcheck exclusions.** (#517) `lint-call.yml` set
+  `SHELLCHECK_OPTS` with Core's curated `SC1090,SC1091,SC2015,SC2088` exclusions;
+  `bootstrap-test.yml` lints the same file and set nothing. So the four codes Core has
+  explicitly decided are not defects still blocked — just in the other gate, and the same
+  commit could be green in `lint` and red in `bootstrap`.
+
+  The failure mode is nastier than the disagreement itself, because the two gates run on
+  different triggers: `lint` on every push and PR, `bootstrap` only when `bootstrap.sh` or
+  `core/` changes. A repo stays green for weeks, then a bootstrap-touching PR reds with an
+  error naming a rule the fleet documented as excluded. The natural reading is "the
+  exclusion list is wrong" and the natural fix is to weaken the shell script to satisfy it —
+  which is what happened in `dotfiles-Gentoo` before anyone noticed the gates simply
+  disagreed.
+
+  The workaround had already spread by the time this was found: `dotfiles-Arch`, `-Debian`
+  and `-Fedora` each carry an independent copy of Core's exclusion list in their own
+  `.shellcheckrc`, none aware of the others, while `-Offense` and `-openSUSE` have a
+  `.shellcheckrc` without it and `-MacBook`, `-Alpine`, `-Defense` and `-Gentoo` have none
+  at all. Setting it in the workflow fixes all nine at once, including the six no per-repo
+  workaround ever reached.
+
+  **Nothing changes colour on merge** — all nine `bootstrap.sh` files pass both invocations
+  today, so this closes a latent trap rather than a live break. GitHub cannot import an env
+  value from one workflow into another, so the literal is necessarily authored twice;
+  `scripts/test-core.sh` now asserts the two copies are equal, the same shape as the
+  `os-repos.txt` fallback-array check and for the same reason. Deliberately **not** done:
+  adding a `disable=` line to Core's own `.shellcheckrc` — Core's tree is green without
+  those exclusions, and adding them would weaken its own gate to match a rule written for
+  consumers. The per-repo `.shellcheckrc` fragmentation is tracked separately in #564.
 
 ## [v4.14.0] - 2026-08-21
 
