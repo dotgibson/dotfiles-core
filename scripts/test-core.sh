@@ -1160,6 +1160,25 @@ f() { echo \"check the $_rt_s value\"; }"
   # nor this file, whose fixtures are the banned shape by construction — the assembly above
   # is what makes that true, and a regression in it must fail HERE rather than in §5e
   if [[ -z "$(_core_return_trap_hits "$HERE/scripts/test-core.sh")" ]]; then pass "RETURN scan: does not flag its own fixtures (the signal name stays assembled)"; else fail "RETURN scan: this file now spells the banned shape literally — keep the name in \$_rt_s"; fi
+
+  # ── ONE definition, and it must stay one ──
+  # The fleet-facing leg in .github/workflows/lint-call.yml gates the nine caller repos with
+  # the SAME rule §5e applies here. It first shipped with the pattern inlined (#552) while
+  # the helper landed separately (#555), so for one release the rule existed twice and only
+  # the copy below was tested — the fleet-facing half was the one that could drift unseen.
+  # These two assertions are what stop that from recurring: the workflow must CALL the
+  # helper, and must not carry a second copy of the expression. Cheap, and it fails in the
+  # suite rather than the next time someone corrects one copy and not the other.
+  _rt_wf="$HERE/.github/workflows/lint-call.yml"
+  if [[ ! -r "$_rt_wf" ]]; then
+    skip "RETURN scan: lint-call.yml not readable (partial checkout?)"
+  elif ! grep -q '_core_return_trap_hits' "$_rt_wf"; then
+    fail "RETURN scan: lint-call.yml no longer calls _core_return_trap_hits — the fleet gate has drifted off the shared definition"
+  elif grep -qE 'trap\[\[:space:\]\]' "$_rt_wf"; then
+    fail "RETURN scan: lint-call.yml carries its own copy of the pattern — call the helper instead, so the rule has one definition"
+  else
+    pass "RETURN scan: the fleet gate (lint-call.yml) calls the helper rather than copying the pattern"
+  fi
 fi
 
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
