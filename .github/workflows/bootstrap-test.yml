@@ -19,6 +19,27 @@
 #                    is already covered hermetically by dotfiles-core's test-core.sh,
 #                    so this asserts the part bootstrap.sh OWNS: the wiring it produces.
 #
+# WHAT THIS DOES NOT COVER — read this before trusting a green run.
+#
+# `--links-only` returns before provision() is entered, and NO GATE IN THE FLEET RUNS
+# provision() AT ALL. Package installation, retries, upstream installers, repo/key setup
+# and every failure path around them — the whole first half of each of the nine bootstraps
+# — is executed by nothing, here or anywhere else. A green `bootstrap` check means the
+# WIRING is sound. It says nothing about whether the box can be provisioned.
+#
+# That is a deliberate trade (provisioning is slow, network-bound, and mostly asserts other
+# people's package archives), but the cost has been paid for real and is worth naming. A
+# `trap … RETURN` leaked from verified_install into provision()'s frame and aborted every
+# fresh-box run AFTER installing everything but BEFORE wire_links — a box carrying the whole
+# stack and not one symlink. It stayed green through review in two repos, because the broken
+# line is valid bash and because this job never reached the function it was in
+# (dotgibson/dotfiles-Debian#2; the analysis is in the closed #461 and #512).
+#
+# One shape of that bug is now blocked statically — see _core_return_trap_hits, wired into
+# lint-call.yml and audit-core.sh §5e. That is a guard for ONE shape, not coverage of the
+# path. Anything else living only in provision() is still invisible to CI: if you are
+# changing that half of a bootstrap, the gate below will not tell you whether it works.
+#
 # A caller stub (in an OS repo) looks like — pinned to the moving MAJOR tag @vN per the
 # `@vN` policy in RELEASE-STRATEGY.md, NOT @main: a caller's contract then changes only via
 # a Core release, and a MAJOR bump is the one intentional, reviewed caller edit — so a repo
