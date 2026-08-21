@@ -26,6 +26,13 @@ name: lint (reusable)
 # Same scoping decisions as before: core/ is excluded (gated by its own CI), no Lua
 # leg (all Lua lives under core/), shfmt is advisory. Tools are SHA-256-verified by
 # the shared composite action against pinned checksums in scripts/tool-versions.env.
+#
+# ONE leg needs no pinned tool and is not a linter: RETURN-trap discipline, a grep. It is
+# here rather than in SHELLCHECK_OPTS because shellcheck genuinely cannot see the bug —
+# the broken line is valid bash — and because bootstrap-test.yml never runs provision(),
+# so no gate in the fleet executes the code where it detonates (#512, #461). See the long
+# note on that step. It is BLOCKING, and was verified against all nine fleet repos plus
+# Core before landing: every one is green today, so nobody is red on arrival.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -149,6 +156,71 @@ jobs:
           rc=0
           for f in "${files[@]}"; do echo "bash -n $f"; bash -n "$f" || rc=1; done
           exit $rc
+
+      # ── BLOCKING: a leaked RETURN trap. shellcheck and `bash -n` CANNOT see this one,
+      # which is why it needs its own leg rather than another SHELLCHECK_OPTS entry.
+      #
+      # A bash RETURN trap is a GLOBAL slot, not a function-scoped one. Arm one inside a
+      # function and it stays armed in the CALLER's frame, firing a SECOND time when the
+      # caller returns — where the local it was cleaning up is out of scope and `set -u`
+      # makes that fatal:
+      #
+      #   verified_install() { local tmp; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN; …; }
+      #   provision()        { verified_install …; …; }   # ← aborts HERE, on provision's return
+      #
+      # That is dotgibson/dotfiles-Debian#2: every fresh-box run died the instant provision()
+      # returned, AFTER installing everything but BEFORE wire_links — a box carrying the whole
+      # stack and not one symlink, wearing the costume of a near-complete run. It shipped green
+      # because the broken line is VALID BASH (shellcheck and `bash -n` both pass it) and
+      # because bootstrap-test.yml only ever runs --links-only, so no gate in the fleet
+      # executes provision() at all (#512, #461). A textual check is the only thing that sees
+      # this class of bug. When it does surface at runtime the reported line number is a decoy:
+      # bash attributes a RETURN trap to the last nested function DEFINITION in the frame, so
+      # Debian's abort blamed `_add_vendor_repo`, which had nothing to do with it.
+      #
+      # TWO DELIBERATE LOOSENESS DECISIONS, each of which a tighter pattern got wrong under
+      # test (dotgibson/dotfiles-Offense#214, where this pattern was developed):
+      #
+      #   RETURN is matched as a SIGNAL TOKEN — whitespace, `;` or end-of-line after it — not
+      #   as the last word. Anchoring to `$` waves through `trap '…' RETURN  # note` and
+      #   `trap '…' RETURN EXIT`, and both leak identically.
+      #
+      #   `trap` is matched as a WORD ANYWHERE on the line, not anchored to line-start.
+      #   Anchoring waves through the one-line function body — `f() { trap '…' RETURN; }` —
+      #   which is exactly where this hides. The Debian guard this is derived from anchors,
+      #   and misses that form.
+      #
+      # Then two filters. Whole-line comments are dropped, because a repo that DOCUMENTS the
+      # broken form (as Offense's guard script does) would otherwise flag its own prose. And a
+      # body that starts by disarming the slot is the fix, not the bug.
+      #
+      # Bash only: zsh has no RETURN signal at all (`trap 'x' RETURN` → "undefined signal"),
+      # so *.zsh is correctly out of scope here.
+      - name: RETURN-trap discipline (repo-owned bash/sh)
+        working-directory: caller
+        run: |
+          excludes=(':!:core/**')
+          # shellcheck disable=SC2206
+          [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
+          mapfile -t files < <(git ls-files '*.sh' "${excludes[@]}")
+          if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .sh"; exit 0; fi
+          # -H so the file:line: prefix is always present (grep omits it for a single file),
+          # which the comment filter below depends on.
+          hits="$(grep -HnE '(^|[[:space:]]|;)trap[[:space:]].*[[:space:]]RETURN([[:space:]]|;|$)' -- "${files[@]}" \
+                  | grep -vE '^[^:]*:[0-9]+:[[:space:]]*#' \
+                  | grep -v 'trap - RETURN')" || true
+          if [ -n "$hits" ]; then
+            printf '%s\n' "$hits" | sed 's/^/    /'
+            echo "::error::a RETURN trap is armed without disarming itself (see the lines above)"
+            echo "A bash RETURN trap is a GLOBAL slot, not a function-scoped one: armed inside a"
+            echo "function it survives into the CALLER frame and fires again on ITS return, where"
+            echo "the local it cleans up is out of scope and set -u makes that fatal."
+            echo "Disarm first, and keep the disarm first:"
+            echo "    trap 'trap - RETURN; rm -rf \"\$tmp\"' RETURN"
+            echo "Background: dotgibson/dotfiles-Debian#2, dotgibson/dotfiles-core#512."
+            exit 1
+          fi
+          echo "${#files[@]} repo-owned .sh — every RETURN trap disarms itself"
 
       - name: zsh -n (syntax, repo-owned zsh modules)
         working-directory: caller
