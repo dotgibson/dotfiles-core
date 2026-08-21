@@ -105,6 +105,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the doctor reports it present. A `✓` still means "on PATH when you asked", not "Core wired
   this". That half is tracked separately.
 
+- **`PORTING-MATRIX.md` footnote ⁸ no longer tells the reader `dnf install jujutsu` works.**
+  It listed Fedora among the distros that package jj. Fedora does not: there is no
+  `jujutsu`, `jj` or `jj-cli` on F43, F44 or rawhide, and — unlike `sd` and `gron`, which
+  were dropped — no retired build to point back at. Fedora now sits with Debian/Kali and
+  Gentoo in the `cargo install --locked jj-cli` group. Documentation-only: jj is opt-in and
+  carried in no OS repo's `packages.txt`, so nothing installs differently — but the footnote
+  is the one place a reader looks for the install path, and it named a package manager that
+  would have answered "No match".
+
 ## [v4.13.2] - 2026-08-19
 
 ### Fixed
