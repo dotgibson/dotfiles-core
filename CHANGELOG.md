@@ -21,7 +21,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   returns before `provision()` is entered, so package installation, retries, upstream
   installers, repo/key setup and every failure path around them were executed by **no CI job
   anywhere in the fleet**. That is how a leaked RETURN trap shipped green through review in
-  two repos: it aborted every fresh-box run *after* installing everything and *before*
+  two repos: it aborted every fresh-box run _after_ installing everything and _before_
   `wire_links`, and the one job that looks at `bootstrap.sh` never reached the function it
   was in (`dotgibson/dotfiles-Debian#2`).
 
@@ -36,7 +36,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `sudo apt-get install x` still reaches the apt-get stub and is still logged. `git` is
   deliberately not stubbed, since bootstraps clone real things the caller pre-seeds and
   stubbing it would mask wiring bugs this job should catch. The job asserts more than a zero
-  exit: the bug it exists for aborted *after* `provision()` did its work, so it also checks
+  exit: the bug it exists for aborted _after_ `provision()` did its work, so it also checks
   the symlink graph survived on the far side, and prints the intercepted command log.
 
   Opt-in, so nothing changes for a repo that does not enable the job.
