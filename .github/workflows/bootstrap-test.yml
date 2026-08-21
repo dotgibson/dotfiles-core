@@ -297,13 +297,23 @@ jobs:
             export PATH
 
             echo "── shim active at: $(command -v curl) ──"
-            ls -l "$(dirname "$(command -v curl)")" | head -5
+            echo "── the curl stub the run will actually use ──"
+            cat "$(command -v curl)"
 
-            # Print the intercept log WHATEVER happens. A failed run is exactly when you need
-            # to know which commands the shim actually saw — without it, a red job cannot be
-            # told apart from a shim that never engaged, and that ambiguity already cost two
-            # debugging rounds (dotgibson/dotfiles-Debian#11).
-            trap 'echo "── what provision() would have done (intercepted) ──"; cat "$PROVISION_SHIM_LOG" 2>/dev/null || echo "(nothing intercepted — did the shim engage?)"' EXIT
+            # A FUNCTION, not an inline trap body. This whole script is already inside a
+            # single-quoted `sh -euc ...`, so a trap body containing its own single quotes
+            # closes the outer quote and dash rejects it with "trap: echo: bad trap" — which
+            # under `set -e` killed the run before bootstrap.sh even started. A function name
+            # needs no quoting at all.
+            #
+            # Print the intercept log WHATEVER happens: a failed run is exactly when you need
+            # to know which commands the shim actually saw, and without it a red job cannot be
+            # told apart from a shim that never engaged.
+            _shim_dump() {
+              echo "── what provision() would have done (intercepted) ──"
+              cat "$PROVISION_SHIM_LOG" 2>/dev/null || echo "(nothing intercepted — did the shim engage?)"
+            }
+            trap _shim_dump EXIT
 
             echo "── running the FULL bootstrap with provisioning stubbed ──"
             ./bootstrap.sh
