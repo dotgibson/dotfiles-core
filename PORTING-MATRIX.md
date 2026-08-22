@@ -751,11 +751,14 @@ Core's side is unchanged by any of this: `zsh/00-tools.zsh` sets `HAVE_CARAPACE`
 `zsh/45-plugins.zsh` runs `carapace _carapace zsh` through `_cache_eval` **after** `compinit`
 (`zsh/10-options.zsh`), feeding fzf-tab. Inert without the binary.
 
-**Three OS repos still call the impossible `go install`** and have been failing invisibly at
-it, because `_dotfiles_go_install` sends the explanation to `/dev/null` and downgrades the
-failure to a deferred note: `dotfiles-Arch/bootstrap.sh`, `dotfiles-Offense/bootstrap.sh` and
-`dotfiles-openSUSE/bootstrap.sh`. Each is tracked in its own repo; this footnote is the
-contract they should be fixed against.
+**All three OS repos that called the impossible `go install` have been fixed**, and this
+footnote is the contract each was fixed against. `dotfiles-Arch/bootstrap.sh` prints a
+`paru -S carapace-bin` hint instead: Arch is the one target with a real, upgradable package,
+and hand-placing the upstream binary in `~/.local/bin` would silently shadow it forever.
+`dotfiles-openSUSE/bootstrap.sh` installs upstream's `linux_<arch>.rpm` release asset via
+`zypper` (`--no-gpg-checks --allow-unsigned-rpm`), accepting that nothing upgrades it after.
+`dotfiles-Offense` installs no carapace at all: it stopped being an OS-native layer, and the
+Debian family it used to cover is `dotfiles-Debian`'s job now.
 
 ²⁸ **Debian/Ubuntu — pinned upstream release asset.** `dotfiles-Debian` installs this
 from a version- and SHA-256-pinned GitHub release asset via `bootstrap.sh`'s
