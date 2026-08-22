@@ -24,6 +24,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   a past-tense resolution note rather than decremented to "two", so the footnote still reads as
   the contract those three fixes were made against. (dotgibson/dotfiles-Arch#111)
 
+- **The nvim lockfile no longer drifts inside the byte-verified vendored tree.** (#465)
+  `nvim/lazy-lock.json` is tracked inside `core/` — the one tree a consumer must keep
+  byte-for-byte upstream — and `lazy.nvim` **rewrites it in place** whenever plugins are
+  installed or updated, while an OS repo bootstrap-symlinks `~/.config/nvim` into that
+  very tree. So on any machine that runs nvim at all, a file in the vendored tree was
+  permanently dirty.
+
+  Not a tidiness problem, and not user error. **Opening the editor once was enough**: a
+  freshly-bootstrapped openSUSE box repinned 10 plugins and a fresh Gentoo box 2, with
+  nobody running `:Lazy update`. The consumer-side vendoring gates then fired — `make
+  check-core`, a `no-core-edits` pre-commit hook, `core-integrity` at PR time — all
+  correctly, all against the operator, because the writer was `lazy.nvim` and not a
+  person. `make test` was red on any box where nvim had been opened until someone ran
+  `git checkout -- core/nvim/lazy-lock.json`, and on a box without the guard installed a
+  routine `git add -A` swept the drift into an unrelated PR. A pre-push gate that a normal
+  editor session turns red is a gate people learn to ignore, which is the opposite of what
+  it is for.
+
+  "Don't edit `core/`" is not a rule an operator can keep when the writer is the very tool
+  the file configures. So the file moves, exactly as v4 already did for zsh history
+  (`15-history.zsh` put `HISTFILE` under `$XDG_STATE_HOME` because history is mutable
+  _state_, not config):
+
+  - `$XDG_STATE_HOME/nvim/lazy-lock.json` — the **mutable** lockfile this machine writes.
+  - `core/nvim/lazy-lock.json` — the read-only fleet **seed**, still the reproducible
+    plugin set every machine starts from. `make update-nvim-plugins` upstream remains the
+    only thing that moves it.
+
+  A first-run seed copy (state absent → copy the vendored pins) preserves reproducibility
+  on a fresh machine, which is the half a bare relocation would have lost.
+
+  `scripts/update-nvim-plugins.sh` follows the lockfile to the sandbox's state dir and
+  copies the synced pins back into the repo — and because `lazy.lua` seeds an empty state
+  dir from the committed file, a sync still rolls **forward** from the current pins rather
+  than re-resolving every plugin from its default branch.
+
+  **Consumers can drop their `lazy-lock.json` carve-out** once they vendor this Core.
+  `dotfiles-MacBook/test/verify-core.sh` excludes the file's _content_ from its
+  byte-for-byte gate while presence-checking it; with the drift gone, it can be gated like
+  everything else in `core/`.
+
 ## [v4.15.1] - 2026-08-22
 
 ### Fixed
