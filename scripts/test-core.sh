@@ -2721,7 +2721,10 @@ if ((_sc_subtree)); then
   # assertion away, and a guard applied only where it already hurts is how this one got in.
   _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
     CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"
-  if grep -q 'would: git -C' <<<"$_sc_out" &&
+  # 'would: materialize' since #587 — the plan line stopped naming `git subtree pull`
+  # when the sync stopped BEING one. Matched on the verb rather than the whole line so
+  # this pins "a plan was printed", not the sentence's punctuation.
+  if grep -q 'would: materialize' <<<"$_sc_out" &&
     [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
     [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
     pass "sync-core: --dry-run prints the plan and writes nothing"
@@ -2770,6 +2773,65 @@ if ((_sc_subtree)); then
     pass "sync-core: re-syncing an unchanged sha is a no-op (no empty core.lock commit)"
   else
     fail "sync-core: a no-change re-sync still moved HEAD"
+  fi
+
+  # --- a sync must NOT depend on the subtree trailer surviving (#587) ------------
+  # THE REGRESSION THIS EXISTS FOR, and it is not hypothetical: it took the v4.15.0
+  # fan-out down in 9 repos out of 9, simultaneously.
+  #
+  # `git subtree pull --squash` finds its base by grepping history for the previous sync
+  # commit's `git-subtree-split:` trailer. Every fleet repo SQUASH-merges its fan-out PR
+  # (RELEASE-STRATEGY.md), and a squash keeps the original body only if it happens to be
+  # carried over — so the trailer dies intermittently. Seven of nine repos had lost it
+  # after the v4.14.3 round.
+  #
+  # The damage is not a missing marker, it is a WRONG BASE. Reproducing that needs TWO
+  # prior syncs, not one: destroy the NEWEST trailer and subtree falls back to the one
+  # before it, then replays both rounds of changes onto a tree that already contains the
+  # first — so any file touched by BOTH rounds conflicts. That is why CHANGELOG.md and
+  # core.version (which every release rewrites) were the two casualties in the real
+  # failure, and why payload.txt is rewritten in both rounds here.
+  #
+  # Materializing the tree has no base and no trailer to lose.
+  printf 'core payload v2\n' >"$SCF/coreremote/payload.txt"
+  _scg "$SCF/coreremote" add -A >/dev/null 2>&1
+  _scg "$SCF/coreremote" commit -q -m 'core: payload v2'
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"   # round 2 — this is the sync whose trailer dies
+  # Destroy the trailer the way a squash-merge does — from EVERY commit, not just HEAD.
+  # Amending HEAD alone is not enough and quietly proves nothing: under the old
+  # `subtree pull` a sync round produced TWO commits (the squash, then core.lock), so
+  # amending HEAD rewrote the lock commit and left the subtree marker untouched. Stripping
+  # the trailer repo-wide is both the honest reproduction (a fleet repo can lose it on any
+  # round) and what makes the assertion below able to fail.
+  FILTER_BRANCH_SQUELCH_WARNING=1 _scg "$SCF/repos/dotfiles-Test" \
+    filter-branch -f --msg-filter 'sed "/^git-subtree-/d"' -- --all >/dev/null 2>&1
+  if _scg "$SCF/repos/dotfiles-Test" log --format=%B | grep -q 'git-subtree-split'; then
+    fail "sync-core (#587 fixture): could not destroy the trailer — the test below would prove nothing"
+  else
+    printf 'core payload v3\n' >"$SCF/coreremote/payload.txt"   # SAME file round 2 touched
+    _scg "$SCF/coreremote" add -A >/dev/null 2>&1
+    _scg "$SCF/coreremote" commit -q -m 'core: payload v3'
+    _sc_v3_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+    _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"                        # round 3 — the one that broke
+    _sc_587=""
+    grep -qi 'conflict' <<<"$_sc_out" && _sc_587="$_sc_587 conflicted"
+    grep -q 'failed 0' <<<"$_sc_out" || _sc_587="$_sc_587 repo-failed"
+    # The payload must actually have moved — a sync that "succeeded" without updating the
+    # tree would satisfy the two checks above and be exactly as broken.
+    [[ "$(cat "$SCF/repos/dotfiles-Test/core/payload.txt" 2>/dev/null)" == 'core payload v3' ]] ||
+      _sc_587="$_sc_587 payload-stale"
+    grep -q "^core_sha=$_sc_v3_sha\$" "$_sc_lock" || _sc_587="$_sc_587 lock-stale"
+    if [[ -z "$_sc_587" ]]; then
+      pass "sync-core: a sync succeeds with the subtree trailer DESTROYED (#587 — the v4.15.0 fan-out failure)"
+    else
+      fail "sync-core: trailer-less sync regressed —$_sc_587"
+    fi
+    # And the tree must be clean afterwards, or the next run self-blocks on the dirty guard.
+    if [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+      pass "sync-core: the trailer-less sync leaves a clean tree (one atomic commit)"
+    else
+      fail "sync-core: the trailer-less sync left the target dirty"
+    fi
   fi
 
   # --- core_ref records the ref that was FOLLOWED, branch or pinned commit (#453) --
