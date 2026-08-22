@@ -664,8 +664,10 @@ LZSTUB
     # 2) REPRODUCIBILITY. A first run must start from the fleet's committed pins rather
     #    than resolving every plugin's default branch afresh — that is the entire reason
     #    Core ships a lockfile at all, and the half a bare relocation would have lost.
+    # core_files_identical, not `cmp` — diffutils is not guaranteed present and this
+    # repo has been bitten by assuming it (#572); the helper hashes with git instead.
     if [[ -f "$_lz/state/nvim/lazy-lock.json" ]] &&
-      cmp -s "$_lz/state/nvim/lazy-lock.json" "$HERE/nvim/lazy-lock.json"; then
+      core_files_identical "$_lz/state/nvim/lazy-lock.json" "$HERE/nvim/lazy-lock.json"; then
       pass "first run seeds the state lockfile from Core's vendored pins (reproducible)"
     else
       fail "first run did not seed \$XDG_STATE_HOME/nvim/lazy-lock.json from the Core seed"
