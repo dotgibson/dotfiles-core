@@ -27,7 +27,7 @@ versioned thing (Core) vendored into thin per-OS consumers**:
   rather than trusting a number copied into prose). It is the single source of truth, vendored into each OS repo's
   `core/` via `git subtree`. A defect here fans out N-way, so Core is the thing
   that earns a version number, a tag, and a changelog.
-- **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,openSUSE,Alpine,Gentoo}`)
+- **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}`)
   and **Role repos** (`dotfiles-Offense`, `dotfiles-Defense`) are **not**
   independently versioned. They are stamped with the Core they carry — the
   generated `core.lock` records `core_version`, `core_sha`, and `core_ref` —
