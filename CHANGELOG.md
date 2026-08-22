@@ -13,6 +13,67 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`bootstrap-test.yml` now asserts the OS overlay — the part an OS repo actually owns.**
+  (#473)
+  The `links-only` job asserted `loader.zsh`, `80-os.zsh`, `starship.toml`,
+  `lazygit/config.yml`, `nvim`, `.vimrc`, `.gitconfig`, plus conditional `atuin` and the
+  seeded `sesh`. It did **not** assert a single thing `blib_link_os_layer` produces — so a
+  regression in the OS overlay was invisible to the one test whose stated purpose is "the
+  part bootstrap.sh OWNS: the wiring it produces."
+
+  Now asserted: `~/.config/tmux/os.conf`, `~/.config/git/os.gitconfig`,
+  `~/.ssh/config.d/50-os.conf`, `~/.ssh/config`, `~/.config/jj/config.toml`,
+  `~/.config/mise/config.toml`, and `~/.local/bin/clip` + `clip-paste` — plus the ssh
+  permission side effects nothing checked (`0700` on `~/.ssh`, `~/.ssh/sockets` and
+  `~/.ssh/config.d`). Those modes are not cosmetic: ssh silently ignores a config under a
+  loose directory, so a bootstrap that linked the file but left `~/.ssh` at `0755`
+  produces a box where the config is present and **inert**, which is harder to diagnose
+  than a missing link.
+
+  Every check **self-arms on the caller tree** rather than taking a new input, following
+  the `os/*.zsh` and `atuin` precedent already in the file — a role repo ships no `os/`
+  overlay and correctly links nothing, and a repo on an older vendored `core/` has no
+  `core/jujutsu` to link, so an unconditional check would red a repo doing exactly the
+  right thing.
+
+  `0600` on `~/.ssh/config` is **deliberately not** asserted, and the workflow says why:
+  Core does not chmod that file and must not, because it is a symlink into the consumer's
+  vendored `core/` tree. The reasoning was already recorded in `lib/bootstrap-lib.sh`; it
+  is now recorded at the gate too, so the next audit does not re-file the request.
+
+- **New opt-in `packages_check` input — package names are gated at last.** (#474)
+  `--links-only` returns before `provision()`, so `install/packages.txt` — the most
+  volatile file in every OS repo, on distros including **rolling releases** — was validated
+  by no blocking gate anywhere in the fleet. Real drift already happened: `doggo` moved
+  AUR → `extra` on Arch and broke a file nobody had edited.
+
+  The `provision_stub` job does not cover this and cannot: it replaces the package managers
+  with no-ops, so a wrong package name is precisely the class of bug it is blind to.
+  `packages_check` covers that blind spot from the other side, resolving every name against
+  the real distro repos — `pacman -Si`, `dnf list`, `apk info`, `zypper info` — with no
+  download and no install.
+
+  The input is a **string** (the resolve command) rather than a boolean, so Core does not
+  have to own a distro-to-command table that would need editing here every time a repo
+  joins the fleet or a package manager changes its flags. A companion `packages_file`
+  input (default `install/packages.txt`) covers the repo whose list carries per-distro
+  annotations — dotfiles-Debian filters through its own `scripts/pkg-filter.sh` and should
+  point this at a pre-filtered file.
+
+  It reads the list with `blib_read_pkgs_into`, the **same parser** `bootstrap.sh` uses, so
+  CI cannot pass on a list bootstrap would read differently — and an unreadable list fails
+  loudly instead of resolving zero packages green, which for this job would otherwise be a
+  permanent silent false pass. Every unresolved name is collected and reported together
+  rather than failing on the first, since a rolling-release rename usually arrives in
+  batches.
+
+  `dotfiles-Arch` carries a repo-local `packages.yml` doing exactly this with a
+  `TODO(upstream)` pointing here; it collapses to a caller once this lands. Worth a
+  `schedule:` trigger in the caller as well as `pull_request` — a rename upstream breaks a
+  file nobody edited, so there is no PR to attach the failure to.
+
 ### Fixed
 
 - **The carapace footnote still said three OS repos call the impossible `go install`.** They
