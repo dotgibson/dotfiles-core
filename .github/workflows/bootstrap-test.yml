@@ -505,71 +505,81 @@ jobs:
     name: resolve package names (no install)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: ${{ inputs.image }}
     steps:
-      - name: Install job deps
-        env:
-          PREP: ${{ inputs.prep }}
-        # Same retrying prep as the other two jobs: distro mirrors intermittently time out
-        # in CI and a prep blip should not red a PR that changed nothing. Five tries, then
-        # a loud failure rather than a false green.
-        run: |
-          n=0
-          until eval "$PREP"; do
-            n=$((n+1))
-            if [ "$n" -ge 5 ]; then echo "prep failed after $n attempts" >&2; exit 1; fi
-            echo "prep attempt $n failed (mirror timeout?), retrying in $((n*10))s..." >&2
-            sleep $((n*10))
-          done
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Mark the checkout safe for git
-        # The container runs as root while the checkout is owned by the runner user, which
-        # trips git's dubious-ownership guard.
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
-
-      - name: Resolve every package name
-        shell: bash
+      - name: Resolve every package name (${{ inputs.image }})
         env:
+          IMAGE: ${{ inputs.image }}
+          PREP: ${{ inputs.prep }}
           RESOLVE: ${{ inputs.packages_check }}
           PKGFILE: ${{ inputs.packages_file }}
+        # `docker run` rather than a job-level `container:`, matching the two jobs above.
+        # Not style: scripts/check-modern.sh requires every `container:`/`image:` value to be
+        # DIGEST-pinned, and this image arrives as a caller input (alpine:3.20, archlinux:latest)
+        # that no caller can pin per-run. The other jobs already solved it this way.
+        #
+        # NOTE: keep the script below apostrophe-free — it lives inside the single-quoted
+        # sh -euc argument, exactly like the links-only block.
         run: |
-          set -uo pipefail
-          [ -f core/lib/bootstrap-lib.sh ] || {
-            echo "::error::core/lib/bootstrap-lib.sh missing — this job reads the list with the same parser bootstrap.sh uses"
-            exit 1
-          }
-          # shellcheck disable=SC1091 # vendored at runtime; not present at lint time
-          . core/lib/bootstrap-lib.sh
-          command -v blib_read_pkgs_into >/dev/null || {
-            echo "::error::this repo's vendored core/ predates blib_read_pkgs_into — run make sync"
-            exit 1
-          }
-          # `||` is the whole point of the _into form: a missing or unreadable list is a
-          # broken checkout, not an empty package set, and must not pass as "0 to resolve".
-          blib_read_pkgs_into pkgs "$PKGFILE" || exit 1
-          if [ "${#pkgs[@]}" -eq 0 ]; then
-            echo "::error::$PKGFILE parsed to zero packages — that is a malformed list, not an empty one"
-            exit 1
-          fi
-          echo ":: resolving ${#pkgs[@]} package names with: $RESOLVE (no download, no install)"
-          # Collect EVERY unresolved name before failing, rather than exiting on the first.
-          # A rolling-release rename usually arrives in batches, and a gate that reports one
-          # name per CI round costs a round trip per package.
-          unresolved=""
-          for p in "${pkgs[@]}"; do
-            if ! $RESOLVE "$p" >/dev/null 2>&1; then
-              echo "  UNRESOLVED: $p"
-              unresolved="$unresolved $p"
+          docker run --rm -e PREP -e RESOLVE -e PKGFILE -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+            # Same retrying prep as the jobs above: distro mirrors intermittently time out in
+            # CI, and a prep blip should not red a PR that changed nothing. Five tries, then a
+            # loud failure rather than a false green.
+            n=0
+            until eval "$PREP"; do
+              n=$((n+1))
+              if [ "$n" -ge 5 ]; then echo "prep failed after $n attempts" >&2; exit 1; fi
+              echo "prep attempt $n failed (mirror timeout?), retrying in $((n*10))s..." >&2
+              sleep $((n*10))
+            done
+
+            # The resolver is bash: it sources core/lib/bootstrap-lib.sh, which is bash
+            # (arrays, [[ ]]). The outer shell here is sh because that is all a base image is
+            # guaranteed to have before prep runs — prep is what installs bash.
+            # The RESOLVER terminator below is deliberately FLUSH-LEFT once this block
+            # scalar is dedented. A heredoc terminator must start at column 0; indented, it
+            # never matches, the rest of the script is swallowed as heredoc data, and
+            # `bash /tmp/resolve.sh` is never reached. `sh -n` only WARNS about that, so it
+            # passes a syntax check and fails as a silent no-op gate. Do not re-indent it.
+            cat >/tmp/resolve.sh <<"RESOLVER"
+            set -uo pipefail
+            [ -f core/lib/bootstrap-lib.sh ] || {
+              echo "::error::core/lib/bootstrap-lib.sh missing — this job reads the list with the same parser bootstrap.sh uses"
+              exit 1
+            }
+            # shellcheck disable=SC1091 # vendored in the caller at runtime; absent at lint time
+            . core/lib/bootstrap-lib.sh
+            command -v blib_read_pkgs_into >/dev/null || {
+              echo "::error::this repo vendored core/ predates blib_read_pkgs_into — run make sync"
+              exit 1
+            }
+            # The || is the whole point of the _into form: a missing or unreadable list is a
+            # broken checkout, not an empty package set, and must not pass as "0 to resolve".
+            blib_read_pkgs_into pkgs "$PKGFILE" || exit 1
+            if [ "${#pkgs[@]}" -eq 0 ]; then
+              echo "::error::$PKGFILE parsed to zero packages — that is a malformed list, not an empty one"
+              exit 1
             fi
-          done
-          if [ -n "$unresolved" ]; then
-            echo "::error::unresolved package name(s):$unresolved"
-            echo "Renamed or dropped upstream — check the distro package search. Several of"
-            echo "these distros are ROLLING, so this can go red without anyone editing the repo."
-            exit 1
-          fi
-          echo "all ${#pkgs[@]} package names resolve"
+            echo ":: resolving ${#pkgs[@]} package names with: $RESOLVE (no download, no install)"
+            # Collect EVERY unresolved name before failing, rather than exiting on the first.
+            # A rolling-release rename usually arrives in batches, and a gate that reports one
+            # name per CI round costs a round trip per package.
+            unresolved=""
+            for p in "${pkgs[@]}"; do
+              if ! $RESOLVE "$p" >/dev/null 2>&1; then
+                echo "  UNRESOLVED: $p"
+                unresolved="$unresolved $p"
+              fi
+            done
+            if [ -n "$unresolved" ]; then
+              echo "::error::unresolved package name(s):$unresolved"
+              echo "Renamed or dropped upstream — check the distro package search. Several of"
+              echo "these distros are ROLLING, so this can go red with nobody having edited the repo."
+              exit 1
+            fi
+            echo "all ${#pkgs[@]} package names resolve"
+          RESOLVER
+            bash /tmp/resolve.sh
+          '
