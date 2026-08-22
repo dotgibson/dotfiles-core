@@ -2935,7 +2935,7 @@ if have git; then
   # both a race and a violation of the read-only assumption the whole suite is built on.
   # Copying per top-level directory keeps .git out without needing a non-portable tar flag.
   mkdir -p "$LR/dotfiles/core"
-  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh bin lib; do
+  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh ssh bin lib; do
     [[ -e "$HERE/$_lr_d" ]] && cp -R "$HERE/$_lr_d" "$LR/dotfiles/core/$_lr_d"
   done
   mkdir -p "$LR/config/tmux/plugins/tpm"   # pre-seed: skips the tpm clone (offline)
@@ -2952,6 +2952,9 @@ if have git; then
 
   _lr_is_link_to() { # <link> <target>  — a symlink resolving to the expected file
     [[ -L "$1" ]] && [[ "$(readlink "$1")" == "$2" ]]
+  }
+  _lr_mode() { # <path> — octal permission bits, GNU or BSD stat (the macOS CI leg)
+    stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
   }
   # The zsh chain is the load-order contract: every numbered Core fragment must land FLAT
   # in $config/zsh under its own basename, because loader.zsh globs NN-*.zsh there. A
@@ -3006,6 +3009,38 @@ if have git; then
     pass "link run: clip + clip-paste link onto ~/.local/bin and resolve executable"
   else
     fail "link run: clip/clip-paste missing, mislinked, or not executable"
+  fi
+  # ssh (#450). Core OWNS the client config now — it used to be read from the OS repo's
+  # ROOT ($dotfiles/ssh/config), a path Core neither shipped nor listed in core.manifest,
+  # so a repo that simply lacked one silently got no ssh config at all. Assert the link
+  # resolves INTO core/, not just that ~/.ssh/config exists: a leftover file from the
+  # pre-#450 layout would satisfy the weaker check while the vendored config went unused.
+  _lr_ssh_bad=""
+  _lr_is_link_to "$LR/home/.ssh/config" "$LR/dotfiles/core/ssh/config" || _lr_ssh_bad="$_lr_ssh_bad config"
+  # ssh REFUSES to use ~/.ssh when the perms are loose, and ControlMaster fails outright
+  # on a missing sockets dir — both are silent-at-link-time, loud-at-first-connect.
+  # config.d is the override chain Core's Include depends on; without it, the drop-in
+  # mechanism that replaces each repo's forked config has nowhere to put a file.
+  for _lr_sd in .ssh .ssh/sockets .ssh/config.d; do
+    [[ -d "$LR/home/$_lr_sd" ]] || { _lr_ssh_bad="$_lr_ssh_bad $_lr_sd(missing)"; continue; }
+    # 700 exactly — ssh rejects group/other access on ~/.ssh, and a 755 here is the
+    # failure mode that only shows up on a box with a real key in it.
+    [[ "$(_lr_mode "$LR/home/$_lr_sd")" == 700 ]] || _lr_ssh_bad="$_lr_ssh_bad $_lr_sd($(_lr_mode "$LR/home/$_lr_sd"))"
+  done
+  if [[ -z "$_lr_ssh_bad" ]]; then
+    pass "link run: ssh/config links out of core/, with ~/.ssh, sockets and config.d at 0700"
+  else
+    fail "link run: ssh wiring wrong —$_lr_ssh_bad"
+  fi
+  # The dropped chmod, pinned so it cannot creep back. blib_link_core used to run
+  # `chmod 600` on the SOURCE — reaching into the consumer repo's working tree to change
+  # a tracked file's mode, which post-#450 means Core chmod'ing its own vendored tree in
+  # nine repos. It was never needed: ssh only refuses a config that is group/world
+  # WRITABLE, and git checks out 0644. Assert the source keeps the mode git gave it.
+  if [[ "$(_lr_mode "$LR/dotfiles/core/ssh/config")" != 600 ]]; then
+    pass "link run: core/ssh/config keeps its checked-out mode (no chmod into the vendored tree)"
+  else
+    fail "link run: something chmod 600'd core/ssh/config — Core must not mutate the vendored tree"
   fi
   # The SEEDED files are the inverse contract: real copies, never symlinks, so a user's
   # identity/local edits are never tracked back into Core. A symlink here would publish
@@ -3185,6 +3220,71 @@ if [[ "$_bl_sum" == *"2 relinked"* ]]; then
 else
   fail "blib_wire_summary: the footer omits the relink tally (got: $_bl_sum)"
 fi
+
+# ── F8a. blib_link_os_layer's ssh overlay (lib/bootstrap-lib.sh) ─────────────
+# The escape hatch #450 depends on, and the one overlay NO repo ships yet — so without a
+# fixture it is code that has never run anywhere. It is also what makes moving ssh/config
+# into Core safe to argue for: a layer with a genuinely OS-specific ssh need has somewhere
+# to put it other than a forked copy of the whole client config, which is how seven repos
+# ended up hand-maintaining byte-identical files.
+#
+# Two properties, and the second is the one that bites. blib_link honours BLIB_DRY on its
+# own, but the mkdir/chmod this overlay needs do NOT — they are plain commands, so a
+# --dry-run would create and chmod ~/.ssh/config.d on a box the operator was only
+# inspecting. That is the exact asymmetry F8b pins for the role layer (one repo's dry-run
+# mutated the box, the other's did not), caught here before it can happen again.
+#
+# No `have` guard: this needs only bash and the library, unlike F7 (git), so it runs
+# everywhere — including the minimal containers where the heavier fixtures skip.
+hdr "blib_link_os_layer ssh overlay (config.d drop-in, dry-run safe)"
+# Local rather than F7's _lr_mode: that one is defined inside `if have git`, so it does
+# not exist on a box without git, where this fixture still runs.
+_ol_mode() { # <path> — octal permission bits, GNU or BSD stat (the macOS CI leg)
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
+}
+_ol_wire() { # run blib_link_os_layer against the fixture, honouring the caller's BLIB_DRY
+  HOME="$_ol/home" XDG_CONFIG_HOME="$_ol/config" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_link_os_layer "'"$_ol"'/repo" "'"$_ol"'/config" testos
+  ' >/dev/null 2>&1
+}
+_ol="$(mktemp -d "$SANDBOX/oslayer.XXXXXX")"
+mkdir -p "$_ol/home" "$_ol/config" "$_ol/repo/ssh"
+printf 'Host *\n  IdentityAgent ~/.1password/agent.sock\n' >"$_ol/repo/ssh/os.conf"
+
+# 1) --dry-run must touch NOTHING, not even the directory.
+BLIB_DRY=1 _ol_wire
+if [[ ! -e "$_ol/home/.ssh/config.d" ]]; then
+  pass "os layer: --dry-run creates no ~/.ssh/config.d and links nothing"
+else
+  fail "os layer: --dry-run created ~/.ssh/config.d — the mkdir/chmod escaped the BLIB_DRY guard"
+fi
+
+# 2) the real run links it at the numbered drop-in path, with ssh's required 0700.
+_ol_wire
+_ol_bad=""
+[[ -L "$_ol/home/.ssh/config.d/50-os.conf" ]] || _ol_bad="$_ol_bad link(missing)"
+[[ "$(readlink "$_ol/home/.ssh/config.d/50-os.conf" 2>/dev/null)" == "$_ol/repo/ssh/os.conf" ]] ||
+  _ol_bad="$_ol_bad link(wrong-target)"
+[[ "$(_ol_mode "$_ol/home/.ssh/config.d")" == 700 ]] || _ol_bad="$_ol_bad config.d(perms)"
+if [[ -z "$_ol_bad" ]]; then
+  pass "os layer: ssh/os.conf links to ~/.ssh/config.d/50-os.conf with the dir at 0700"
+else
+  fail "os layer: ssh overlay wiring wrong —$_ol_bad"
+fi
+
+# 3) a repo WITHOUT one is the normal case, not a gap — no repo ships ssh/os.conf today,
+#    so a version of this that linked unconditionally would break every one of them.
+rm -f "$_ol/repo/ssh/os.conf"
+rm -rf "$_ol/home/.ssh"
+_ol_wire
+if [[ ! -e "$_ol/home/.ssh/config.d/50-os.conf" ]]; then
+  pass "os layer: no ssh/os.conf is a silent no-op (the case every repo is in today)"
+else
+  fail "os layer: linked a 50-os.conf with no source file"
+fi
+
 
 # ── F8b. blib_link_role_layer (lib/bootstrap-lib.sh) ─────────────────────────
 # The Role band (85-94) had no Core wiring for years, so BOTH role repos hand-rolled it

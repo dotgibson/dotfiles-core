@@ -255,6 +255,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Core owns the ssh client config; seven OS repos stop each maintaining a copy.** (#450)
+  `blib_link_core` — Core's shared bootstrap library — read `$dotfiles/ssh/config`, the
+  **OS repo's root**: a hard dependency on a file Core neither shipped nor listed in
+  `core.manifest`, guarded by a `[[ -f ]]` that made "this repo forgot" and "this repo
+  opted out" the same silent outcome. Seven repos did provide one. Their `Host *` blocks
+  were **byte-identical** — connection multiplexing, keepalives, the KEX/cipher/MAC
+  allowlists, `StrictHostKeyChecking ask`, `ForwardAgent no`. The only functional
+  divergence in the entire fleet was one repo's per-service key names; everything else
+  that had drifted was comments. Nothing in the file is OS-, libc- or package-manager
+  specific, so by the "is it Core?" test it always belonged here.
+
+  It is now `core/ssh/config`, in the manifest, linked from `core/` like every other
+  file `blib_link_core` wires. Verified behaviour-neutral rather than assumed:
+  `ssh -G github.com` against the new file is **byte-identical** to the same query
+  against the config it replaces.
+
+  **Per-host variance gets a drop-in, not a fork.** The file `Include`s
+  `~/.ssh/config.d/*.conf` as its **first** directive, because ssh resolves each keyword
+  first-match-wins — placed at the bottom it would be silently inert. `blib_link_core`
+  creates that directory (0700), so a machine's per-service keys, work bastions or
+  1Password socket path live there, untracked, instead of forking the whole config.
+  A repo with a genuinely OS-specific need ships `ssh/os.conf`, which
+  `blib_link_os_layer` links to `~/.ssh/config.d/50-os.conf` — the same overlay shape as
+  `os/<os>.zsh` and `os/<os>.gitconfig`. One measured caveat is documented in the file:
+  `IdentityFile` **accumulates** rather than first-wins, so a drop-in's key is tried
+  first and Core's stays a fallback; `User` and `StrictHostKeyChecking` override outright.
+
+  **The `chmod 600` is gone, deliberately.** Core used to `chmod` the _source_ file —
+  reaching into the consumer repo's working tree to change a tracked file's mode, which
+  post-move would mean Core chmod'ing its own vendored tree in nine repos. It was never
+  needed: ssh refuses a config that is group- or world-**writable**, and git checks out
+  0644, which already satisfies that. The 0700 on `~/.ssh`, `~/.ssh/sockets` and
+  `~/.ssh/config.d` stays — ssh does require those. A test pins the absence so it cannot
+  creep back.
+
+  **For OS-repo maintainers:** delete your root `ssh/config` **only after** you have
+  vendored this Core (check `core.lock`) — reversed, the box has no ssh config at all.
+  `VENDORING.md` has the deletion order and the drop-in table.
+
 - **Seven OS repos stop hand-maintaining the same shell-hook block; Core owns it.** (#449)
   `direnv hook zsh`, `gh completion -s zsh`, `uv generate-shell-completion zsh` and
   `ty generate-shell-completion zsh` were duplicated across every `os/*.zsh` in the fleet —

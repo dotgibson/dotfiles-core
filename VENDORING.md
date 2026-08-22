@@ -147,6 +147,7 @@ three drifted variants, until #449. Core owns these now:
 | `uv generate-shell-completion zsh` | same |
 | `ty generate-shell-completion zsh` | same |
 | your own `_IS_WSL` probe | `_core_is_wsl` (`core/zsh/00-tools.zsh`) |
+| your own `ssh/config` | `core/ssh/config` — symlinked to `~/.ssh/config` by `blib_link_core` |
 
 So a WSL nicety is written against Core's predicate:
 
@@ -160,6 +161,30 @@ fi
 The reusable `lint` workflow fails your repo if it grows one of these back — one rule,
 `scripts/lib/common.sh :: _core_owned_block_hits`, shared by every caller. Hooking a tool
 that exists on **your** OS and nowhere else is still your business and is never flagged.
+
+#### `ssh/config` — the one with a deletion order (#450)
+
+Seven OS repos each shipped `ssh/config` at their **root**, and Core's `blib_link_core`
+read it from there — a shared library depending on a file it neither owned nor listed in
+`core.manifest`. All seven `Host *` blocks were byte-identical; the only functional
+divergence in the fleet was one repo's per-service key names. Core owns the file now.
+
+**Delete your repo's copy only AFTER you have vendored a Core that carries it** (check
+`core.lock`). Reversed, the box loses its ssh config entirely — `blib_link_core` links
+`core/ssh/config`, and until the sync lands there is nothing at that path. Running both
+in the meantime is harmless: the old file is simply no longer read.
+
+Anything host- or OS-specific goes to a drop-in instead of a fork:
+
+| What | Where |
+| --- | --- |
+| host-local (per-service keys, work bastions, 1Password socket path) | `~/.ssh/config.d/*.conf` — untracked |
+| genuinely OS-specific | `ssh/os.conf` in your repo → `~/.ssh/config.d/50-os.conf` |
+
+Core's config `Include`s `~/.ssh/config.d/*.conf` **first**, and ssh is
+first-obtained-value-wins, so a drop-in beats the vendored defaults. The exception is
+`IdentityFile`, which accumulates: a drop-in's key is tried first and Core's remains a
+fallback. That file's header documents both.
 
 A tool that belongs to the whole fleet but isn't listed above is a **Core** change, not an
 OS one: send it upstream (below) rather than adding a copy each repo has to maintain.

@@ -112,6 +112,11 @@ mise/config.toml
 # ── sesh — portable session-manager config (SEEDED to ~/.config/sesh/sesh.toml;
 #    copied, not symlinked — engagement layouts live in dotfiles-Offense) ──────────
 sesh/sesh.toml.example
+# ── ssh — portable client config; symlinked to ~/.ssh/config. Host-local and
+#    OS-specific bits go to ~/.ssh/config.d/ drop-ins (ssh/os.conf -> 50-os.conf),
+#    which the file Includes FIRST so they win ssh's first-match-wins resolution.
+#    Lived in seven OS repos with byte-identical `Host *` blocks until #450. ──────
+ssh/config
 # ── tmux — base conf + keybinding layer; OS-specific bits -> os/<os>.conf ──────
 tmux/tmux.conf            # main config; sources tmux.reset.conf first, then os.conf,
                           # then role.conf (the Role layer's tmux bits) last
@@ -148,4 +153,4 @@ vim/vimrc
 # never existed in this repo — so from the day nvim/ went directory-granular until §4b
 # was added, the "backstop instead of the manifest" was nothing at all (#454).
 nvim/
-# ── Core layers: zsh + clip + mise + sesh + tmux + maint + git + nvim. ────────
+# ── Core layers: zsh + clip + mise + sesh + ssh + tmux + maint + git + nvim. ──
