@@ -36,9 +36,21 @@ At the **root** of each OS repo, outside `core/` so a subtree pull cannot clobbe
 ```ini
 core_version=4.10.0
 core_sha=cd4278eb…            # the FULL Core commit that was vendored
-core_branch=main
+core_ref=v4.10.0-release      # the ref that was FOLLOWED — see below
 core_tag=v4.10.0              # only once Core carries a tag describing that commit
 ```
+
+`core_ref` records **what the sync followed**, which is not always a branch:
+
+| How the sync ran | `core_ref` holds |
+| --- | --- |
+| release fan-out (`sync-fanout.yml`) | the pinned **commit** — each release PR vendors the exact released commit, not a moving `main` |
+| ad-hoc `make sync` | the **branch name**, normally `main` |
+
+That distinction is the field's whole value: `core_sha` says _which commit_, `core_ref`
+says _how it was chosen_. It was called `core_branch` until #453, which made the lock file
+disagree with this document — a fan-out wrote a SHA into a field documented as a branch,
+duplicating `core_sha` and adding nothing.
 
 Written by `sync-core.sh` and committed as `chore(core): core.lock → <sha> (v<version>)`
 — or `core.lock + N workflow pin(s) → …` when the repo SHA-pins its reusable callers (see
@@ -60,9 +72,18 @@ decides which Core's code actually _runs_:
 
 | Reference | What it is | Gated by |
 | --------- | ---------- | -------- |
-| the `core/` subtree | the vendored tree | `core-integrity` + `verify-core` |
-| `core.lock` `core_sha` | the provenance stamp | `verify-core` |
+| the `core/` subtree | the vendored tree | `core-integrity` |
+| `core.lock` `core_sha` | the provenance stamp | `core-integrity` (it resolves this to the tree it compares) |
 | the workflow `uses:` pins | which reusable actually executes | the repo's own pin check, if it has one |
+
+Both of the first two rows named a `verify-core` until #454. **No such script has ever
+existed in this repo** — it was cited across the docs as a byte-for-byte
+split-vs-upstream check, and readers (this one included) took the coverage on faith.
+`core-integrity.sh` is the gate that actually runs: it resolves `core.lock`'s `core_sha`
+to a tree object and compares it against your `core/`, which answers "has this copy been
+tampered with". It does **not** answer "does Core contain a file its manifest never
+listed" — that is `audit-core.sh`'s job, upstream, and §4b (nvim module reachability) is
+what closed the one place the manifest could not see.
 
 The pins are not inert: `auto-tag-call` holds `contents: write` and pushes tags, and
 `notify-web-call` is handed two secrets. Running a different Core's version of those than
@@ -87,12 +108,22 @@ Nothing else is rewritten — a third-party action pinned in the identical
 
 **Do not pull the subtree by hand.** A raw `git subtree pull` updates `core/` but not
 `core.lock`, so `core-integrity.sh` compares your tree against a commit the lock no longer
-describes and reports `TAMPERED` until the lock is regenerated — and no per-repo target
-regenerates it (`make core-lock` is absent in most consumers, and where it exists it only
-prints a redirect back to the fan-out). `sync-core.sh` commits
-both together, and `sync-fanout.yml` runs it for you on every release. If you have already
-done it by hand, the fix is to re-run the fan-out from Core rather than to patch the lock.
-See `RELEASE-STRATEGY.md` on the pinning model.
+describes and reports `TAMPERED` until the lock is regenerated. `sync-core.sh` commits both
+together, and `sync-fanout.yml` runs it for you on every release. If you have already done
+it by hand, the fix is to re-run the fan-out from Core rather than to patch the lock. See
+`RELEASE-STRATEGY.md` on the pinning model.
+
+**And do not reach for a local `make core-lock`.** Four consumers have one — `dotfiles-Arch`,
+`dotfiles-MacBook`, `dotfiles-openSUSE` and `dotfiles-Offense` — and only Offense's is a
+redirect back to the fan-out. The other three are **independent generators of a format Core
+owns**, and they have already drifted from it and from each other: Arch hardcodes
+`core_branch=main` (so regenerating a release-pinned lock silently discards which commit was
+vendored), openSUSE writes the SHA into that field, and MacBook reads the previous value
+back. None of them knows about the `core_ref` rename (#453), so running one now produces a
+lock file the fleet's own tooling and this document disagree with.
+
+`sync-core.sh` is the **only** sanctioned writer of `core.lock`. A second generator cannot be
+kept in step with it by discipline — that is what these three demonstrate.
 
 ## Number bands — where your files go
 
@@ -147,6 +178,7 @@ three drifted variants, until #449. Core owns these now:
 | `uv generate-shell-completion zsh` | same |
 | `ty generate-shell-completion zsh` | same |
 | your own `_IS_WSL` probe | `_core_is_wsl` (`core/zsh/00-tools.zsh`) |
+| your own `ssh/config` | `core/ssh/config` — symlinked to `~/.ssh/config` by `blib_link_core` |
 
 So a WSL nicety is written against Core's predicate:
 
@@ -160,6 +192,30 @@ fi
 The reusable `lint` workflow fails your repo if it grows one of these back — one rule,
 `scripts/lib/common.sh :: _core_owned_block_hits`, shared by every caller. Hooking a tool
 that exists on **your** OS and nowhere else is still your business and is never flagged.
+
+#### `ssh/config` — the one with a deletion order (#450)
+
+Seven OS repos each shipped `ssh/config` at their **root**, and Core's `blib_link_core`
+read it from there — a shared library depending on a file it neither owned nor listed in
+`core.manifest`. All seven `Host *` blocks were byte-identical; the only functional
+divergence in the fleet was one repo's per-service key names. Core owns the file now.
+
+**Delete your repo's copy only AFTER you have vendored a Core that carries it** (check
+`core.lock`). Reversed, the box loses its ssh config entirely — `blib_link_core` links
+`core/ssh/config`, and until the sync lands there is nothing at that path. Running both
+in the meantime is harmless: the old file is simply no longer read.
+
+Anything host- or OS-specific goes to a drop-in instead of a fork:
+
+| What | Where |
+| --- | --- |
+| host-local (per-service keys, work bastions, 1Password socket path) | `~/.ssh/config.d/*.conf` — untracked |
+| genuinely OS-specific | `ssh/os.conf` in your repo → `~/.ssh/config.d/50-os.conf` |
+
+Core's config `Include`s `~/.ssh/config.d/*.conf` **first**, and ssh is
+first-obtained-value-wins, so a drop-in beats the vendored defaults. The exception is
+`IdentityFile`, which accumulates: a drop-in's key is tried first and Core's remains a
+fallback. That file's header documents both.
 
 A tool that belongs to the whole fleet but isn't listed above is a **Core** change, not an
 OS one: send it upstream (below) rather than adding a copy each repo has to maintain.
