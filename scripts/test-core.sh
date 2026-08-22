@@ -3463,6 +3463,53 @@ else
   fail "blib_link: real-file backup regressed or leaked into the relink tally (got: $_bl_out)"
 fi
 
+# 2b) …and it SAYS SO. The backup was correct but MUTE, and blib_link wires ~34 of ~40
+#     destinations in an OS-repo bootstrap, so silent clobbering was the common case, not
+#     the rare one (#463). The aggregate "N backed up" footer says THAT something moved,
+#     never WHAT — which is the one thing the person migrating an existing machine needs.
+#     Assert the destination AND the backup path are both named, so a future refactor
+#     cannot quietly degrade this to "backed up a file".
+if [[ "$_bl_out" == *"backed up existing $_bl/dst2 -> $_bl_bak"* ]]; then
+  pass "blib_link: the backup is announced, naming both the destination and where it went"
+else
+  fail "blib_link: a real file was displaced silently or without naming the backup (got: $_bl_out)"
+fi
+
+# 2c) The backup SUFFIX is the one sortable format (#464). Core wrote `date +%s` here and
+#     the `link()` helper new-os-repo.sh generates wrote `date +%Y%m%d-%H%M%S`, and an
+#     OS repo's unlink_dest DOCUMENTS a lexical-sort-is-chronological invariant over the
+#     glob. A 10-digit epoch always sorts before a `20…` datestamp, so across the pair the
+#     invariant was false and --uninstall could restore the OLDER file. Pin the format so
+#     the assertion in that comment is true rather than merely asserted. The `.<pid>` tail
+#     is the same-second collision guard; it only ever tiebreaks WITHIN a second.
+if [[ "${_bl_bak##*/}" =~ ^dst2\.pre-dotfiles\.[0-9]{8}-[0-9]{6}\.[0-9]+$ ]]; then
+  pass "blib_link: backup suffix is the sortable pre-dotfiles.<YYYYmmdd-HHMMSS>.<pid> format"
+else
+  fail "blib_link: backup suffix drifted from the one fleet format (got: ${_bl_bak##*/})"
+fi
+
+# 2d) The invariant itself, end to end: two backups of the SAME destination, one second
+#     apart, must sort chronologically under a plain lexical sort — the operation
+#     --uninstall performs to choose the newest. This is the assertion that would have
+#     caught the two-format split, because it fails on a mixed pair regardless of which
+#     formats are in play.
+printf 'OLDER\n' >"$_bl/dst4"
+_bl_run 0 "$_bl/src" "$_bl/dst4" >/dev/null
+rm -f "$_bl/dst4"
+sleep 1
+printf 'NEWER\n' >"$_bl/dst4"
+_bl_run 0 "$_bl/src" "$_bl/dst4" >/dev/null
+_bl_sorted=()
+while IFS= read -r _bl_l; do _bl_sorted[${#_bl_sorted[@]}]="$_bl_l"; done < <(
+  find "$_bl" -name 'dst4.pre-dotfiles.*' | sort
+)
+if ((${#_bl_sorted[@]} == 2)) &&
+  [[ "$(cat "${_bl_sorted[0]}")" == "OLDER" && "$(cat "${_bl_sorted[1]}")" == "NEWER" ]]; then
+  pass "blib_link: a lexical sort of the backups IS chronological (the --uninstall invariant)"
+else
+  fail "blib_link: lexical sort of backups is not chronological — --uninstall would restore the wrong file"
+fi
+
 # 3) BLIB_DRY previews the displacement instead of hiding it. "would relink: $dst" alone
 #    reads as *repoint*; a reader has to be told what is about to go, and the fixture must
 #    come through untouched.
