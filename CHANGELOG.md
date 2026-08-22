@@ -157,6 +157,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and name `sync-core.sh` as the only sanctioned writer. The three local generators are a
   fleet-side fix, not a Core one — filed separately.
 
+- **`RELEASE-STRATEGY.md` listed six OS-native repos, not seven — `dotfiles-Debian` was
+  missing.** The bullet is about repos that carry no version of their own and are stamped
+  instead by the `core.lock` this repo generates for them. `dotfiles-Debian` vendors `core/`
+  and has a `core.lock` like the rest, so the document that defines the fan-out understated
+  it by one repo. `dotfiles-Windows` stays out of that list deliberately, and correctly: the
+  next bullet names it as the exception with no `core/` subtree, no `core.lock`, and a
+  `vX.Y.Z` of its own. Part of one drift with several faces — the same list had lost
+  `dotfiles-Debian` in six OS repos' READMEs, and `dotfiles-Debian`'s own README had lost
+  `dotfiles-Fedora` in its place. `CLAUDE.md` had it right throughout and is the copy the
+  rest were corrected against.
+
 ## [v4.14.3] - 2026-08-21
 
 ### Fixed
