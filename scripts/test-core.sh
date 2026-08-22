@@ -2792,8 +2792,7 @@ if ((_sc_subtree)); then
   # A repo names the vendored Core in three places — the core/ subtree, core.lock, and the
   # `uses:` pins of any SHA-pinned reusable caller. The sync wrote two and left the third,
   # so a fan-out produced a tree that VENDORED one Core and RAN another, with both existing
-  # gates green (core-integrity checks the tree object, verify-core the split; neither reads
-  # a workflow). It reached production on the v4.12.0 fan-out and only surfaced because
+  # the gate green (core-integrity compares a tree object and never reads a workflow). It reached production on the v4.12.0 fan-out and only surfaced because
   # dotfiles-MacBook had built its own pin gate.
   #
   # Tag the fixture Core first: the comment rewrite is driven by core.lock's core_tag, so

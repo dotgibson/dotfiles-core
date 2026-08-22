@@ -197,11 +197,12 @@ git subtree pull --prefix=core <core-remote> v<X.Y.Z> --squash
 
 **Do not hand-run that in practice.** A raw subtree pull updates `core/` but not
 `core.lock`, and `core-integrity.sh` compares the vendored tree against the commit the
-lock pins — so the freshly-synced repo reports `TAMPERED` until the lock is regenerated,
-and there is no per-repo target that regenerates it (`make core-lock` is absent in most
-consumers, and where it exists it only prints a redirect back to the fan-out).
-`sync-core.sh` commits both together, and `sync-fanout.yml` runs it for you on every
-release. The recipe above is here to show the *pinning model*, not as an operator step.
+lock pins — so the freshly-synced repo reports `TAMPERED` until the lock is regenerated.
+Nor should you reach for a per-repo `make core-lock`: three consumers carry an independent
+generator of a format Core owns, and all three have already drifted from it (see
+`VENDORING.md`). `sync-core.sh` is the only sanctioned writer; it commits both together,
+and `sync-fanout.yml` runs it for you on every release. The recipe above is here to show
+the *pinning model*, not as an operator step.
 
 Now "what Alpine runs" is a frozen, named version, and rolling one OS back is
 just pulling the previous tag there — it touches no other repo. `sync-core.sh`

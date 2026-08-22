@@ -60,9 +60,18 @@ decides which Core's code actually _runs_:
 
 | Reference | What it is | Gated by |
 | --------- | ---------- | -------- |
-| the `core/` subtree | the vendored tree | `core-integrity` + `verify-core` |
-| `core.lock` `core_sha` | the provenance stamp | `verify-core` |
+| the `core/` subtree | the vendored tree | `core-integrity` |
+| `core.lock` `core_sha` | the provenance stamp | `core-integrity` (it resolves this to the tree it compares) |
 | the workflow `uses:` pins | which reusable actually executes | the repo's own pin check, if it has one |
+
+Both of the first two rows named a `verify-core` until #454. **No such script has ever
+existed in this repo** — it was cited across the docs as a byte-for-byte
+split-vs-upstream check, and readers (this one included) took the coverage on faith.
+`core-integrity.sh` is the gate that actually runs: it resolves `core.lock`'s `core_sha`
+to a tree object and compares it against your `core/`, which answers "has this copy been
+tampered with". It does **not** answer "does Core contain a file its manifest never
+listed" — that is `audit-core.sh`'s job, upstream, and §4b (nvim module reachability) is
+what closed the one place the manifest could not see.
 
 The pins are not inert: `auto-tag-call` holds `contents: write` and pushes tags, and
 `notify-web-call` is handed two secrets. Running a different Core's version of those than
@@ -87,12 +96,22 @@ Nothing else is rewritten — a third-party action pinned in the identical
 
 **Do not pull the subtree by hand.** A raw `git subtree pull` updates `core/` but not
 `core.lock`, so `core-integrity.sh` compares your tree against a commit the lock no longer
-describes and reports `TAMPERED` until the lock is regenerated — and no per-repo target
-regenerates it (`make core-lock` is absent in most consumers, and where it exists it only
-prints a redirect back to the fan-out). `sync-core.sh` commits
-both together, and `sync-fanout.yml` runs it for you on every release. If you have already
-done it by hand, the fix is to re-run the fan-out from Core rather than to patch the lock.
-See `RELEASE-STRATEGY.md` on the pinning model.
+describes and reports `TAMPERED` until the lock is regenerated. `sync-core.sh` commits both
+together, and `sync-fanout.yml` runs it for you on every release. If you have already done
+it by hand, the fix is to re-run the fan-out from Core rather than to patch the lock. See
+`RELEASE-STRATEGY.md` on the pinning model.
+
+**And do not reach for a local `make core-lock`.** Four consumers have one — `dotfiles-Arch`,
+`dotfiles-MacBook`, `dotfiles-openSUSE` and `dotfiles-Offense` — and only Offense's is a
+redirect back to the fan-out. The other three are **independent generators of a format Core
+owns**, and they have already drifted from it and from each other: Arch hardcodes
+`core_branch=main` (so regenerating a release-pinned lock silently discards which commit was
+vendored), openSUSE writes the SHA into that field, and MacBook reads the previous value
+back. None of them knows about the `core_ref` rename (#453), so running one now produces a
+lock file the fleet's own tooling and this document disagree with.
+
+`sync-core.sh` is the **only** sanctioned writer of `core.lock`. A second generator cannot be
+kept in step with it by discipline — that is what these three demonstrate.
 
 ## Number bands — where your files go
 

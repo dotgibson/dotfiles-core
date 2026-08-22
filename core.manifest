@@ -41,8 +41,10 @@ zsh/60-update.zsh      # `up` updater + once/day "updates available" nudge
 # autoloaded completions for Core's own verbs — fpath-added by 10-options.zsh, not symlinked.
 # Listed PER-FILE (not as `zsh/completions/`) so the offline audit catches an ADDED or
 # REMOVED completion, not just a deleted directory (B10): a new Core verb must register its
-# completion here deliberately, and an orphaned one is flagged without needing the
-# network-bound verify-core backstop. Keep alphabetical.
+# completion here deliberately, and an orphaned one is flagged OFFLINE, by the manifest
+# itself, rather than depending on any separate backstop. (This named a `verify-core`
+# until #454 — a script that has never existed here. Per-file listing needs no such
+# thing, which is the argument for it.) Keep alphabetical.
 zsh/completions/_cdup
 zsh/completions/_core
 zsh/completions/_core-doctor

@@ -727,6 +727,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   is the one place a reader looks for the install path, and it named a package manager that
   would have answered "No match".
 
+### Documentation
+
+- **`verify-core` is no longer named as a gate that runs, because it has never existed.**
+  (#454) The name was cited across the docs and code comments as the byte-for-byte
+  split-vs-upstream check backing several claims — `VENDORING.md`'s gate table listed it
+  against two of the three Core references, `core.manifest` credited it as the reason a
+  section needed no other backstop, and three comments in `sync-core.sh` plus one each in
+  `sync-fanout.yml` and `test-core.sh` described it running alongside `core-integrity`.
+  `ls scripts/verify-core.sh` has never found anything. Every surviving mention now says
+  so explicitly; `core-integrity.sh` — which resolves `core.lock`'s `core_sha` to a tree
+  and compares it with the vendored `core/` — is named where a real gate belongs. The
+  load-bearing half of this was already fixed: `nvim/`'s directory-granular manifest entry
+  cited the phantom as its orphan backstop, and `scripts/nvim-reachability.sh` (audit §4b)
+  is the real one.
+
+- **The docs' claim about per-repo `make core-lock` targets was false, and the truth
+  matters more after #453.** They said the target is "absent in most consumers, and where
+  it exists it only prints a redirect back to the fan-out". Four consumers have one, and
+  only `dotfiles-Offense`'s is a redirect: `dotfiles-Arch`, `dotfiles-MacBook` and
+  `dotfiles-openSUSE` each carry an **independent generator of a format Core owns** — and
+  they have already drifted from it and from each other. Arch hardcodes `core_branch=main`,
+  so regenerating a release-pinned lock silently discards which commit was vendored;
+  openSUSE writes the SHA into that field; MacBook reads the previous value back. None
+  knows about the `core_ref` rename, so running one now emits a lock the fleet's own docs
+  and tooling disagree with. `VENDORING.md` and `RELEASE-STRATEGY.md` now say this plainly
+  and name `sync-core.sh` as the only sanctioned writer. The three local generators are a
+  fleet-side fix, not a Core one — filed separately.
+
 ## [v4.13.2] - 2026-08-19
 
 ### Fixed
