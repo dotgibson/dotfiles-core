@@ -371,7 +371,18 @@ for repo in "${TARGETS[@]}"; do
         echo "# this file, and core-integrity.sh then reports TAMPERED. See VENDORING.md."
         echo "core_version=$CORE_VERSION"
         echo "core_sha=$CORE_SHA_FULL"
-        echo "core_branch=$CORE_BRANCH"
+        # core_ref, NOT core_branch (#453). The field is written from $CORE_BRANCH, which
+        # is a branch name for a hand-run `make sync` but a PINNED COMMIT for a release
+        # fan-out — sync-fanout.yml sets CORE_BRANCH="$target_sha" deliberately, so each
+        # release PR vendors the exact released commit rather than a moving main. That
+        # pinning is correct and stays. What was wrong was persisting it into a field
+        # named, and documented in VENDORING.md, as a *branch*: the lock file disagreed
+        # with its own contract, and the value duplicated core_sha with nothing added.
+        #
+        # Named for what it actually holds, it earns its place: core_ref is the one field
+        # that says whether this repo was vendored by a release fan-out (a SHA) or by an
+        # ad-hoc sync off a branch (a name) — which core_sha alone cannot answer.
+        echo "core_ref=$CORE_BRANCH"
         # Only emit core_tag once Core actually carries a tag — keeps core.lock
         # byte-identical to the pre-tagging format until the first release, so the
         # idempotency check below still skips a no-op re-sync (no spurious commit).

@@ -36,9 +36,21 @@ At the **root** of each OS repo, outside `core/` so a subtree pull cannot clobbe
 ```ini
 core_version=4.10.0
 core_sha=cd4278eb…            # the FULL Core commit that was vendored
-core_branch=main
+core_ref=v4.10.0-release      # the ref that was FOLLOWED — see below
 core_tag=v4.10.0              # only once Core carries a tag describing that commit
 ```
+
+`core_ref` records **what the sync followed**, which is not always a branch:
+
+| How the sync ran | `core_ref` holds |
+| --- | --- |
+| release fan-out (`sync-fanout.yml`) | the pinned **commit** — each release PR vendors the exact released commit, not a moving `main` |
+| ad-hoc `make sync` | the **branch name**, normally `main` |
+
+That distinction is the field's whole value: `core_sha` says _which commit_, `core_ref`
+says _how it was chosen_. It was called `core_branch` until #453, which made the lock file
+disagree with this document — a fan-out wrote a SHA into a field documented as a branch,
+duplicating `core_sha` and adding nothing.
 
 Written by `sync-core.sh` and committed as `chore(core): core.lock → <sha> (v<version>)`
 — or `core.lock + N workflow pin(s) → …` when the repo SHA-pins its reusable callers (see

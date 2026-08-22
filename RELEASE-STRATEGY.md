@@ -30,7 +30,7 @@ versioned thing (Core) vendored into thin per-OS consumers**:
 - **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,openSUSE,Alpine,Gentoo}`)
   and **Role repos** (`dotfiles-Offense`, `dotfiles-Defense`) are **not**
   independently versioned. They are stamped with the Core they carry — the
-  generated `core.lock` records `core_version`, `core_sha`, and `core_branch` —
+  generated `core.lock` records `core_version`, `core_sha`, and `core_ref` —
   so "what Core does Alpine run?" is answerable offline without a release
   number of its own.
 - **`dotfiles-Windows`** is the exception: it vendors **no** `core/` subtree (so no

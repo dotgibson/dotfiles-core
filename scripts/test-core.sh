@@ -2739,10 +2739,20 @@ if ((_sc_subtree)); then
     fail "sync-core: core.lock is missing or landed inside core/"
   fi
   if grep -q "^core_sha=$_sc_remote_sha\$" "$_sc_lock" &&
-    grep -q '^core_version=9.9.9$' "$_sc_lock" && grep -q '^core_branch=main$' "$_sc_lock"; then
-    pass "sync-core: core.lock records the FULL vendored sha, version and branch"
+    grep -q '^core_version=9.9.9$' "$_sc_lock" && grep -q '^core_ref=main$' "$_sc_lock"; then
+    pass "sync-core: core.lock records the FULL vendored sha, version and ref"
   else
     fail "sync-core: core.lock contents wrong ($(tr '\n' ' ' <"$_sc_lock"))"
+  fi
+  # The field must NOT be called core_branch any more (#453) — it was written from
+  # $CORE_BRANCH, which sync-fanout.yml deliberately sets to a pinned SHA, so a field
+  # documented as a branch held a commit and duplicated core_sha. Assert the old name is
+  # gone rather than only that the new one is present: emitting BOTH would satisfy the
+  # check above while leaving the contradicting field in every OS repo's lock file.
+  if ! grep -q '^core_branch=' "$_sc_lock"; then
+    pass "sync-core: core.lock no longer emits the mislabelled core_branch field"
+  else
+    fail "sync-core: core.lock still emits core_branch"
   fi
   # The tree must be CLEAN afterwards, or the dirty-tree guard blocks the next run —
   # the self-inflicted deadlock the core.lock commit exists to prevent.
@@ -2760,6 +2770,23 @@ if ((_sc_subtree)); then
     pass "sync-core: re-syncing an unchanged sha is a no-op (no empty core.lock commit)"
   else
     fail "sync-core: a no-change re-sync still moved HEAD"
+  fi
+
+  # --- core_ref records the ref that was FOLLOWED, branch or pinned commit (#453) --
+  # The bug this pins: sync-fanout.yml sets CORE_BRANCH="$target_sha" on purpose, so each
+  # release PR vendors the exact released commit rather than a moving main — and the value
+  # was then persisted into a field named, and documented, as a *branch*. Every OS repo's
+  # lock file ended up with core_branch == core_sha: a contract violation, and a field
+  # carrying no information core_sha did not already have.
+  #
+  # The run above covers the branch half (core_ref=main). This covers the half that was
+  # actually wrong, by driving the script the way the fan-out drives it.
+  _sc_pin_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1 CORE_BRANCH="$_sc_pin_sha")"
+  if grep -q "^core_ref=$_sc_pin_sha\$" "$_sc_lock"; then
+    pass "sync-core: a pinned-SHA sync records that commit as core_ref (the fan-out shape)"
+  else
+    fail "sync-core: core_ref did not record the pinned sha ($(grep '^core_ref=' "$_sc_lock" || echo absent))"
   fi
 
   # --- the dirty-tree guard, and that it does not abandon the rest of the fleet -
