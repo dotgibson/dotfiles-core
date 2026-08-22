@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.15.0] - 2026-08-22
+
 ### Changed
 
 - **Core owns the ssh client config; seven OS repos stop each maintaining a copy.** (#450)
