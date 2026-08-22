@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.15.1] - 2026-08-22
+
 ### Fixed
 
 - **The fan-out no longer depends on a commit trailer that squash-merge destroys.** (#587)
