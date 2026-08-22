@@ -438,6 +438,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The three zsh entry files a new OS repo is stamped with are now lintable.** (#451)
+  `scripts/new-os-repo.sh` emitted `zsh/zshenv`, `zsh/zprofile` and `zsh/zshrc`
+  **extensionless** — mirroring their symlink destinations (`~/.zshenv`,
+  `$ZDOTDIR/.zprofile`, `$ZDOTDIR/.zshrc`), which have no extension either. The reusable
+  lint gate selects repo-owned zsh with `git ls-files '*.zsh'`, so none of the three ever
+  matched, and none was syntax-checked in any repo, from the day the generator was added.
+
+  `~/.zshenv` is what makes that worth more than a rename: it is sourced on **every** zsh
+  invocation, non-interactive ones included, and it carries the ZDOTDIR indirection — so a
+  syntax error there does not degrade the shell, it breaks login shells outright on every
+  box running that layer. Simultaneously the highest-blast-radius file in an OS repo and
+  the only one the gate could not see.
+
+  The generator now writes `*.zsh` and links them to the same unchanged destinations, so
+  the fix is behaviour-neutral. **`lint-call.yml`'s two zsh legs additionally select the
+  three bare names by hand**, which covers the copies already written — `dotfiles-MacBook`
+  hand-wrote all three — without requiring a rename in each repo. Verified no repo goes
+  red on arrival: MacBook's three parse today, and the change takes it from 1 linted zsh
+  file to 4. A pathspec that matches nothing is inert, so it is a no-op elsewhere.
+
+  A new `test-core.sh` fixture pins all of it — the `.zsh` names, the absence of the bare
+  ones, agreement between the scaffolded filenames and the generated `bootstrap.sh` link
+  lines, and `zsh -n` over the result. Confirmed to fail when the defect is reintroduced.
+
 - **Every `core.lock` in the fleet told the reader to recover with `make core-lock`, a
   command that mostly does not exist and does not regenerate the lock where it does.**
   (#557) `sync-core.sh` stamped that hint into the generated header unconditionally, and it

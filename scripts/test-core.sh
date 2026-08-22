@@ -3128,6 +3128,71 @@ else
   skip "bootstrap link run (git unavailable)"
 fi
 
+# ── F7b. new-os-repo.sh emits LINTABLE entry files (scripts/new-os-repo.sh) ──
+# Every OS repo this generator stamps inherits whatever it writes, so a defect here
+# ships to each new layer from birth and is only ever noticed downstream.
+#
+# #451: it emitted the three ZDOTDIR entry files EXTENSIONLESS — zsh/zshenv,
+# zsh/zprofile, zsh/zshrc — because their symlink destinations (~/.zshenv,
+# $ZDOTDIR/.zshrc, $ZDOTDIR/.zprofile) have no extension either. Core's reusable lint
+# gate selects repo-owned zsh with `git ls-files '*.zsh'`, so none of the three matched
+# and none was ever syntax-checked, in any repo, from the day the generator was added.
+#
+# ~/.zshenv is the file that makes this worth a fixture rather than a one-line fix: it
+# is sourced on EVERY zsh invocation including non-interactive ones, and it carries the
+# ZDOTDIR indirection, so a syntax error there breaks login shells outright rather than
+# degrading them. It was simultaneously the highest-blast-radius file in an OS repo and
+# the only one the gate could not see.
+#
+# Asserted here rather than trusted, because the pull toward renaming these back to
+# match their destinations is permanent — the filenames LOOK wrong until you know why.
+if have git && have zsh; then
+  hdr "new-os-repo.sh entry files (lintable by construction)"
+  NOR="$SANDBOX/newosrepo"
+  rm -rf "$NOR"
+  # --no-vendor: skip the `git subtree add`, which is the only network call in the
+  # script. Everything this asserts is written before/independently of it.
+  if bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
+    _nor_bad=""
+    for _nor_f in zshenv zprofile zshrc; do
+      [[ -f "$NOR/zsh/$_nor_f.zsh" ]] || _nor_bad="$_nor_bad zsh/$_nor_f.zsh(missing)"
+      # The extensionless name must NOT come back alongside it: a generator writing both
+      # would satisfy the check above while still shipping an unlinted file.
+      [[ -e "$NOR/zsh/$_nor_f" ]] && _nor_bad="$_nor_bad zsh/$_nor_f(extensionless)"
+    done
+    if [[ -z "$_nor_bad" ]]; then
+      pass "new-os-repo: the three ZDOTDIR entry files are written as *.zsh (lint-gate visible)"
+    else
+      fail "new-os-repo: entry-file naming wrong —$_nor_bad"
+    fi
+    # The rename is only behaviour-neutral if the generated bootstrap follows it. A repo
+    # with zshenv.zsh on disk and `link .../zsh/zshenv` in bootstrap.sh has no ~/.zshenv
+    # at all — no ZDOTDIR, so the loader is never reached and the shell starts bare.
+    if grep -q 'link "\$REPO/zsh/zshenv\.zsh" *"\$HOME/\.zshenv"' "$NOR/bootstrap.sh" &&
+      grep -q 'link "\$REPO/zsh/zprofile\.zsh" *"\$CFG/zsh/\.zprofile"' "$NOR/bootstrap.sh" &&
+      grep -q 'link "\$REPO/zsh/zshrc\.zsh" *"\$CFG/zsh/\.zshrc"' "$NOR/bootstrap.sh"; then
+      pass "new-os-repo: bootstrap.sh links the .zsh sources to the extensionless destinations"
+    else
+      fail "new-os-repo: bootstrap.sh link lines disagree with the scaffolded filenames"
+    fi
+    # And the gate can only help if what it reads actually parses. This is the check that
+    # never ran on these three files in any repo until #451.
+    _nor_syn=""
+    for _nor_f in "$NOR"/zsh/*.zsh; do
+      zsh -n "$_nor_f" 2>/dev/null || _nor_syn="$_nor_syn $(basename "$_nor_f")"
+    done
+    if [[ -z "$_nor_syn" ]]; then
+      pass "new-os-repo: every scaffolded entry file passes zsh -n"
+    else
+      fail "new-os-repo: scaffolded entry file(s) fail zsh -n —$_nor_syn"
+    fi
+  else
+    fail "new-os-repo: --no-vendor scaffold run failed outright"
+  fi
+else
+  skip "new-os-repo entry files (git or zsh unavailable)"
+fi
+
 # ── F8. blib_link displacement accounting (lib/bootstrap-lib.sh) ─────────────
 # blib_link is reached above only THROUGH blib_link_core, and no test asserted a BLIB_*
 # value at all — which is how #430 survived: a real file at $dst was moved to

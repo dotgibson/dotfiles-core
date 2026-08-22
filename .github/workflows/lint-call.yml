@@ -226,13 +226,29 @@ jobs:
           fi
           echo "${#files[@]} repo-owned .sh — every RETURN trap disarms itself"
 
+      # The file list is '*.zsh' PLUS three names by hand, and that is not belt-and-braces
+      # — it is the fix for #451. The ZDOTDIR entry files are symlinked to ~/.zshenv,
+      # $ZDOTDIR/.zshrc and $ZDOTDIR/.zprofile, whose destinations have no extension, so
+      # they were repeatedly WRITTEN without one: scripts/new-os-repo.sh emitted all three
+      # extensionless from the day it was added, and dotfiles-MacBook hand-wrote the same
+      # three. None matched '*.zsh', so none was ever syntax-checked in any repo.
+      #
+      # ~/.zshenv is the worst possible file to leave unchecked: it is sourced on EVERY zsh
+      # invocation including non-interactive ones, and it carries the ZDOTDIR indirection,
+      # so a syntax error there does not degrade the shell — it breaks login shells outright
+      # on every box running that layer.
+      #
+      # The generator now emits *.zsh (#451), which fixes repos stamped from here on. These
+      # three pathspecs cover the ones already written, WITHOUT requiring a rename in each
+      # repo, and stop the next hand-written entry file slipping the same way. A pathspec
+      # matching nothing is inert, so this is a no-op everywhere the names are unused.
       - name: zsh -n (syntax, repo-owned zsh modules)
         working-directory: caller
         run: |
           excludes=(':!:core/**')
           # shellcheck disable=SC2206
           [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
-          mapfile -t files < <(git ls-files '*.zsh' "${excludes[@]}")
+          mapfile -t files < <(git ls-files '*.zsh' zsh/zshenv zsh/zshrc zsh/zprofile "${excludes[@]}")
           if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .zsh"; exit 0; fi
           rc=0
           for f in "${files[@]}"; do echo "zsh -n $f"; zsh -n "$f" || rc=1; done
@@ -272,7 +288,11 @@ jobs:
           excludes=(':!:core/**')
           # shellcheck disable=SC2206
           [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
-          mapfile -t files < <(git ls-files '*.zsh' "${excludes[@]}")
+          # Same population as the zsh -n leg above, entry files included — see the long
+          # note there. An OS layer's direnv/WSL block is exactly the kind of thing that
+          # gets parked in a .zshenv, so scanning a narrower set here would reopen the
+          # duplication blind spot in the one file class that was already invisible.
+          mapfile -t files < <(git ls-files '*.zsh' zsh/zshenv zsh/zshrc zsh/zprofile "${excludes[@]}")
           if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .zsh"; exit 0; fi
           # shellcheck source=scripts/lib/common.sh
           . "$CORE_ROOT/scripts/lib/common.sh"
