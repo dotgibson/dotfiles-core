@@ -356,6 +356,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The reusable lint gate finally lints markdown — all eight caller repos, no per-repo
+  workflow.** (#452) `lint-call.yml` had no markdown leg at all, so **no OS repo's markdown
+  was ever linted in CI**, even though every one of them ships a `.markdownlint.jsonc`.
+  Those configs were decoration; one says so in its own header. Core lints its own markdown
+  (`audit-core.sh` §7 plus a pre-commit hook), so this was a gap in the _reusable_ gate
+  specifically, not in Core's hygiene — and markdown is the file class `shellcheck` and
+  `zsh -n` never inspect, and the one a non-maintainer is most likely to read: each OS
+  repo's README is the public landing page for that layer.
+
+  Scoped like every other leg (`git ls-files '*.md' ':!:core/**'` plus the caller's own
+  `extra_ls_files_excludes`), and run from the caller's checkout so `markdownlint-cli2`
+  discovers **its** config rather than Core's — the two agree today, but the caller owns
+  its own rules. `markdownlint-cli2` is npm rather than a release asset, so it is installed
+  from the `MARKDOWNLINT_VERSION` pin exactly as `ci.yml` already does, instead of teaching
+  the SHA-256-verifying composite action a package manager it does not speak.
+
+  **ADVISORY this release, BLOCKING the next — measured, not guessed.** Run across the
+  fleet with each repo's own config and excludes before landing: Debian 0, Offense 0,
+  MacBook 1, Gentoo 16, Alpine 17, Fedora 18, openSUSE 20, Arch 26, Defense 52. Seven of
+  nine would have gone red the moment auto-tag moves `@v4`, before any maintainer could
+  act — callers pin a moving major tag. The backlog is smaller than 150 findings looks:
+  **130 are MD060** (table pipe alignment) and `markdownlint-cli2 --fix` clears most of it
+  (17 → 5 on the worst single file). Core's own 33 markdown files are already clean under
+  the same rules, so this is caller drift, not an unreasonable house style.
+
+  One deliberate difference from the shfmt leg it borrows its non-blocking shape from: a
+  **missing linter hard-fails**. The `if <tool>; then … else warn; fi` idiom cannot tell
+  exit 127 from exit 1, so a broken install would report as an ordinary advisory warning
+  and the leg would look like it had run for the whole release cycle. An advisory gate that
+  silently never runs is worse than no gate, because it reads as coverage.
+
 - **`_core_is_wsl` — one WSL predicate for the whole fleet, and a gate against the copies
   coming back.** (#449) Six OS repos carried a byte-identical `_IS_WSL=0; …` probe to gate
   their Windows-interop niceties. Core had the same fact twice more and neither was reachable
