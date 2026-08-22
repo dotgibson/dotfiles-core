@@ -9863,10 +9863,65 @@ fi
 # And no caller may quietly go back to cmp — OR to diff, which is the same hole one step
 # over: both ship in diffutils, so a box without it (the Arch CI container) has neither.
 # Banning only `cmp` is what let a `diff <(…) <(…)` into this very file and red audit-arch
-# while every local gate was green. `git diff` is exempt: git is the one tool these scripts
-# already cannot run without, which is why core_files_identical is built on git hash-object.
-if grep -nE '(^|[|;&( ])(cmp|diff)[[:space:]]+-' "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh 2>/dev/null |
-  grep -v '^\s*#' | grep -vE '(^|[|;&( ])git[[:space:]]+(--no-pager[[:space:]]+)?diff' | grep -q .; then
+# while every local gate was green.
+#
+# `git diff` MUST be exempt — git is the one tool these scripts already cannot run without,
+# which is why core_files_identical is built on git hash-object. Getting that exemption
+# right is the whole difficulty, and the first attempt got it wrong: it enumerated the
+# invocation forms it could think of (`git diff`, `git --no-pager diff`) and so false-fired
+# on sync-core.sh's `git -C "$path" diff --cached`, reddening four CI legs on correct code.
+#
+# So the exemption is now structural rather than a list of spellings: `diff` is a git
+# SUBCOMMAND if a `git` invocation precedes it in the same pipeline stage. `[^|;&]*` is what
+# scopes it to that stage — it stops at a pipe, so `git log | diff -u - x` is still caught.
+# _diffutils_hits is a function purely so the fixtures below can test BOTH directions; a
+# gate whose exemption is untested is how the last one shipped broken.
+_diffutils_hits() { # _diffutils_hits <file>… — print offending "file:line:text"
+  # The comment filter must skip grep's "file:line:" PREFIX before looking for the #.
+  # The original gate used `grep -v "^\s*#"` against this same prefixed stream, so it
+  # never stripped a single comment — latent only because no commented `cmp -` existed.
+  # -H as well as -n: grep OMITS the filename when handed a single file, so the output
+  # format would change between the multi-file tree scan and a one-file fixture call — and
+  # the comment filter below, which skips past "file:line:", would then miss the "#".
+  grep -nHE '(^|[|;&( ])(cmp|diff)[[:space:]]+-' "$@" 2>/dev/null |
+    grep -vE '^[^:]*:[0-9]+:[[:space:]]*#' |
+    grep -vE 'git[^|;&]*[[:space:]]diff[[:space:]]' || true
+}
+# Fixtures first: prove the matcher catches a real call and the exemption spares every git
+# form actually used in this repo, before trusting its verdict on the tree.
+_du_fx="$(mktemp -d "$SANDBOX/diffutils.XXXXXX")"
+# The offending literals are ASSEMBLED, never written out, because this fixture lives inside
+# a file the gate itself scans — spelled directly, test-core.sh would flag its own test data
+# and the only fixes would be to stop scanning the very file that carried the real bug, or to
+# stop testing the gate. (Same reason the pipefail scanner has a "does not flag its own
+# definition" case.)
+_du_d=diff _du_c=cmp
+{
+  printf 'if %s -u "$a" "$b" >/dev/null; then echo same; fi\n' "$_du_d"
+  printf '%s -s "$a" "$b" && echo identical\n' "$_du_c"
+  printf 'git log --oneline | %s -u - expected.txt\n' "$_du_d"
+} >"$_du_fx/bad.sh"
+cat >"$_du_fx/good.sh" <<'DUGOOD'
+if git diff --quiet HEAD -- "$f"; then echo clean; fi
+git --no-pager diff --no-index -- "$a" "$b"
+git -C "$path" diff --cached --quiet
+git -C "$path" diff --cached --quiet -- core
+DUGOOD
+# The commented-out call goes in the same assembled way, for the same reason.
+printf '# %s -u is fine in a comment\n' "$_du_d" >>"$_du_fx/good.sh"
+_du_bad="$(_diffutils_hits "$_du_fx/bad.sh" | wc -l | tr -d ' ')"
+_du_good="$(_diffutils_hits "$_du_fx/good.sh" | wc -l | tr -d ' ')"
+if [[ "$_du_bad" == 3 ]]; then
+  pass "diffutils gate: catches diff, cmp, and a diff piped from git (3/3)"
+else
+  fail "diffutils gate: missed a real cmp/diff call (found $_du_bad of 3)"
+fi
+if [[ "$_du_good" == 0 ]]; then
+  pass "diffutils gate: every git-subcommand form and a comment are exempt (no false fires)"
+else
+  fail "diffutils gate: false-fired on a legitimate git diff — $(_diffutils_hits "$_du_fx/good.sh" | tr '\n' ' ')"
+fi
+if _diffutils_hits "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh | grep -q .; then
   fail "a script calls cmp/diff again — use core_files_identical (#572)"
 else
   pass "no script calls cmp (diffutils stays optional)"
