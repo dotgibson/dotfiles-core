@@ -618,6 +618,26 @@ hdr "lazy.nvim lockfile is state, not the vendored config tree (#465)"
 if have nvim; then
   _lz="$(mktemp -d "$SANDBOX/lazylock.XXXXXX")"
   mkdir -p "$_lz/config" "$_lz/state" "$_lz/data" "$_lz/cache"
+  # NORMALISE BOTH SIDES before comparing paths, because the two platforms disagree about
+  # which form nvim reports. On macOS $TMPDIR is /var/folders/…, and /var is a symlink to
+  # /private/var, and stdpath() came back RESOLVED — so comparing against the literal $_lz
+  # false-reds there. Resolving only the expected side then false-reds on Linux, where the
+  # same call came back LITERAL. Neither form is "the" answer, so resolve both and compare
+  # resolved-to-resolved; the assertion is about WHICH DIRECTORY the lockfile is in, not
+  # about which spelling of that directory nvim happened to hand back.
+  _lz_real="$(cd "$_lz" && pwd -P)"
+  _core_nvim_real="$(cd "$HERE/nvim" && pwd -P)"
+  _lz_resolve() { # <path> — absolute, symlink-resolved; EMPTY unless the input is itself
+    # an absolute path with an existing parent. The absolute-input guard is load-bearing:
+    # without it, an UNSET opt arrives here as the literal "nil", `dirname nil` is ".", and
+    # the result is a perfectly plausible $PWD/nil — so the "is an absolute path outside the
+    # tree" assertion passes vacuously on exactly the pre-fix code it exists to catch.
+    local d b
+    [[ "$1" == /* ]] || return 0
+    d="$(dirname "$1")" b="$(basename "$1")"
+    [[ -d "$d" ]] || return 0
+    printf '%s/%s' "$(cd "$d" && pwd -P)" "$b"
+  }
   ln -s "$HERE/nvim" "$_lz/config/nvim"
   # The stub, at the exact path config/lazy.lua bootstraps into — so `fs_stat(lazypath)`
   # is true, no clone is attempted, and `require("lazy")` resolves here.
@@ -641,11 +661,12 @@ LZSTUB
     DOTFILES_OFFLINE=1 CORE_LZ_OUT="$_lz_out" \
     nvim --headless -i NONE -n +qa </dev/null >/dev/null 2>"$_lz_err"; then
     _lz_lock="$(head -n1 "$_lz_out" 2>/dev/null || true)"
+    _lz_lock_real="$(_lz_resolve "$_lz_lock")"
 
     # 1) THE FIX. The path lazy was handed must be under XDG_STATE_HOME and must NOT be
     #    inside the config tree — that tree is the vendored one, and anything lazy writes
     #    there is drift a consumer's integrity gate will reject.
-    if [[ "$_lz_lock" == "$_lz/state/nvim/lazy-lock.json" ]]; then
+    if [[ "$_lz_lock_real" == "$_lz_real/state/nvim/lazy-lock.json" ]]; then
       pass "lazy lockfile resolves to \$XDG_STATE_HOME/nvim/lazy-lock.json"
     else
       fail "lazy lockfile is '$_lz_lock' — it must not live in the vendored config tree"
@@ -654,8 +675,9 @@ LZSTUB
     # also not inside the tree, so the negative form alone passes vacuously on exactly the
     # pre-fix code this exists to catch. Require a real absolute path that is neither the
     # seed nor anywhere under the symlinked config dir.
-    if [[ "$_lz_lock" == /* && "$_lz_lock" != "$_lz/config/nvim/"* &&
-      "$_lz_lock" != "$HERE/nvim/lazy-lock.json" ]]; then
+    # The config dir is a SYMLINK into the repo, so "inside the config tree" resolves to
+    # the repo nvim/ dir — check against that, which catches both spellings at once.
+    if [[ "$_lz_lock_real" == /* && "$_lz_lock_real" != "$_core_nvim_real/"* ]]; then
       pass "lazy lockfile is an absolute path outside the symlinked config tree and is not the seed"
     else
       fail "lazy lockfile '$_lz_lock' is unset, is the seed, or is inside the vendored tree"
