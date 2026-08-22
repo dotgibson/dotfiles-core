@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.14.3] - 2026-08-21
+
 ### Fixed
 
 - **`sync-core.sh`'s idempotence check failed open when `cmp` was missing, so a fan-out
