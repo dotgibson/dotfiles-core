@@ -3735,6 +3735,7 @@ printf 'pkg\n# trailing comment\n' >"$_rp/comment-final.txt"
 # scope). Prints the case's own verdict lines; the assertions match on those.
 _rp_run() { bash -c '
   set -uo pipefail
+  . "'"$HERE/scripts/lib/common.sh"'"
   . "'"$HERE/lib/bootstrap-lib.sh"'"
   '"$1"'
 ' 2>&1; }
@@ -3767,9 +3768,14 @@ fi
 
 # 3) The two readers must not disagree. CI and bootstrap both read the same file, and a
 #    gate that parses it differently from the thing it gates is worse than no gate.
+# core_files_identical, NOT diff — diffutils is not guaranteed present, and the Arch CI
+# container is a box that genuinely lacks it. That is the same rule #572 records for `cmp`
+# (they ship in the same package); the gate below now bans both.
 _rp_out="$(_rp_run '
   blib_read_pkgs_into pkgs "'"$_rp"'/list.txt"
-  if diff <(blib_read_pkgs "'"$_rp"'/list.txt") <(printf "%s\n" "${pkgs[@]}") >/dev/null; then
+  blib_read_pkgs "'"$_rp"'/list.txt" >"'"$_rp"'/via-print.txt"
+  printf "%s\n" "${pkgs[@]}" >"'"$_rp"'/via-array.txt"
+  if core_files_identical "'"$_rp"'/via-print.txt" "'"$_rp"'/via-array.txt"; then
     echo AGREE
   else echo DIFFER; fi
 ')"
@@ -10029,9 +10035,14 @@ if PATH="$_cfi_bin" core_files_identical "$_cfi/a" "$_cfi/b" &&
 else
   fail "core_files_identical: wrong answer without diffutils on PATH — the #572 regression is back"
 fi
-# And no caller may quietly go back to cmp.
-if grep -nE '(^|[|;&( ])cmp[[:space:]]+-' "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh 2>/dev/null | grep -v '^\s*#' | grep -q .; then
-  fail "a script calls cmp again — use core_files_identical (#572)"
+# And no caller may quietly go back to cmp — OR to diff, which is the same hole one step
+# over: both ship in diffutils, so a box without it (the Arch CI container) has neither.
+# Banning only `cmp` is what let a `diff <(…) <(…)` into this very file and red audit-arch
+# while every local gate was green. `git diff` is exempt: git is the one tool these scripts
+# already cannot run without, which is why core_files_identical is built on git hash-object.
+if grep -nE '(^|[|;&( ])(cmp|diff)[[:space:]]+-' "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh 2>/dev/null |
+  grep -v '^\s*#' | grep -vE '(^|[|;&( ])git[[:space:]]+(--no-pager[[:space:]]+)?diff' | grep -q .; then
+  fail "a script calls cmp/diff again — use core_files_identical (#572)"
 else
   pass "no script calls cmp (diffutils stays optional)"
 fi
