@@ -13,6 +13,43 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The fan-out no longer depends on a commit trailer that squash-merge destroys.** (#587)
+  `make sync` used `git subtree pull --squash`, which locates its base by grepping history
+  for the previous sync commit's `git-subtree-split:` trailer. Every fleet repo
+  squash-merges its fan-out PR, and a squash keeps the original body only if it happens to
+  be carried over — so the trailer died intermittently.
+
+  The damage was never a missing marker; it was a **wrong base**. Subtree silently fell
+  back to the newest _surviving_ trailer and replayed every change since onto a tree that
+  already contained them. Seven of nine repos lost the marker in the v4.14.3 round, and
+  the **v4.15.0 fan-out then failed in all nine at once**, conflicting on
+  `core/CHANGELOG.md` and `core/core.version` — the two files every release rewrites, so
+  the two guaranteed to overlap.
+
+  **Merging was the wrong operation to begin with.** `core/` is a pure vendored copy,
+  never edited downstream (`blib_install_core_guard` rejects it, `core-integrity.sh` proves
+  it byte-for-byte). "Make `core/` identical to Core@`core_sha`" has exactly one correct
+  answer and no merge base, so the sync now materializes the tree with `read-tree
+  --prefix` — the same plumbing `git subtree add` uses, so file modes come from the tree
+  object rather than being reconstructed. It cannot conflict, needs no trailer, and is
+  immune to whatever the merge policy does to commit bodies. It is also **self-healing**:
+  a `core/` that drifted for any reason is corrected by the next sync instead of
+  conflicting against its own drift.
+
+  Two consequences worth knowing. The sync is now **one atomic commit** per repo rather
+  than two — `core/`, `core.lock` and the workflow pins land together, closing the window
+  where `core/` had moved but `core.lock` had not (the state `core-integrity` reports as
+  TAMPERED). And the subtree trailer is still **emitted**, accurately, purely so consumer
+  tooling that reads it as a fallback keeps working; nothing depends on it any more, so a
+  squash eating it is now harmless rather than the thing that breaks the next release.
+
+  Pinned by a fixture that strips the trailer from every commit and then syncs to a newer
+  Core. It **fails** against the old `subtree pull` implementation and passes against this
+  one — the earlier draft of it did not, because a `subtree pull` round produced two
+  commits and amending `HEAD` rewrote the wrong one.
+
 ## [v4.15.0] - 2026-08-22
 
 ### Changed

@@ -11,11 +11,25 @@ When a rule here drifts from `README.md` or `CONTRIBUTING.md`, those win — fix
 ## The one rule
 
 **Never edit anything under `core/`.** That tree is a copy, and the next `make sync`
-merges upstream Core over it. Be precise about what that does: a subtree pull is a
-**merge**, not a wholesale replacement — an uncommitted edit is lost, while a committed
-one either conflicts (stopping the sync mid-fleet) or survives, and a surviving edit is
-worse, because `core/` now silently disagrees with the Core commit `core.lock` pins.
-That divergence is exactly what the integrity check exists to catch.
+**replaces it wholesale** with Core at the pinned commit. Any edit there is simply gone —
+committed or not, conflict or not.
+
+That is a deliberate change from how this worked until #587, and the reason is worth
+knowing. The sync used to be a `git subtree pull --squash`, i.e. a **merge**, which
+located its base by grepping history for the previous sync commit's `git-subtree-split:`
+trailer. Every repo squash-merges its fan-out PR, and a squash keeps the original body
+only if it happens to be carried over — so the trailer died intermittently, and when it
+did, the merge silently fell back to an **older** base and replayed changes the tree
+already had. Seven of nine repos lost the marker in the v4.14.3 round, and the v4.15.0
+fan-out then failed in all nine at once, conflicting on `core/CHANGELOG.md` and
+`core/core.version`.
+
+Merging was never the right operation here. `core/` is a pure copy, so "make it identical
+to Core@`core_sha`" has exactly one correct answer and needs no base. The replacement is
+also self-healing: a `core/` that drifted for any reason is corrected by the next sync
+rather than conflicting against its own drift. What it does **not** do is make editing
+`core/` safe — the edit is still lost, just quietly and immediately rather than as a
+mid-fleet conflict. That divergence is what the integrity check exists to catch.
 
 Two things enforce this, and it is worth knowing that neither is complete on its own:
 
@@ -31,7 +45,7 @@ own commits. If you find yourself reaching for it by hand, the change belongs up
 
 ## `core.lock` — what Core am I carrying?
 
-At the **root** of each OS repo, outside `core/` so a subtree pull cannot clobber it:
+At the **root** of each OS repo, outside `core/` so a sync cannot clobber it:
 
 ```ini
 core_version=4.10.0
