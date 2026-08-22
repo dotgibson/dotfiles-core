@@ -99,11 +99,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   Named for what it holds, it earns its place. `core_sha` says _which commit_; `core_ref`
   says _how it was chosen_ — a pinned commit for a release fan-out, a branch name for an
-  ad-hoc `make sync`. Nothing read `core_branch` (`fleet-drift.sh` and `core-integrity.sh`
-  read `core_sha`), so the rename is safe; each repo picks the new field up on its next
-  sync. Two fixtures pin it: the branch case, and the pinned-SHA case that was the actual
-  bug — plus an assertion that the old name is _gone_, since emitting both would satisfy
-  the new check while leaving the contradiction in every lock file.
+  ad-hoc `make sync`. Each repo picks the new field up on its next sync. Two fixtures pin
+  it: the branch case, and the pinned-SHA case that was the actual bug — plus an assertion
+  that the old name is _gone_, since emitting both would satisfy the new check while
+  leaving the contradiction in every lock file.
+
+  **One consumer had to be fixed first, and this entry originally said there were none.**
+  The rename shipped on the claim that nothing read `core_branch` — which was verified
+  inside this repo only, where it is true (`fleet-drift.sh` and `core-integrity.sh` read
+  `core_sha`). `dotfiles-Offense` reads it, and is the only fleet member that does: it
+  vendors Core on its own schedule via `scripts/sync-core.sh` rather than waiting for the
+  fan-out. Unfixed, that script would have **died** on the renamed lock, and its
+  `check-core-freshness.sh` would have done something worse than dying — fallen back to
+  `main` and compared the vendored tree against main's tip while reporting success,
+  watching nothing, in the state that repo is in most of the time.
+
+  Fixed in dotgibson/dotfiles-Offense#233 **before** this release could reach it: both
+  now prefer `core_ref` and fall back to `core_branch`, so locks of either vintage work
+  and the rollout order cannot bite. Recorded here rather than quietly corrected, because
+  "nothing reads this field" is exactly the kind of claim a fleet-wide rename rests on,
+  and the check that produced it was scoped to one repo.
 
 - **The three zsh entry files a new OS repo is stamped with are now lintable.** (#451)
   `scripts/new-os-repo.sh` emitted `zsh/zshenv`, `zsh/zprofile` and `zsh/zshrc`
