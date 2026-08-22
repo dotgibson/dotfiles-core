@@ -271,7 +271,7 @@ META_ALLOWLIST=(
   README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
   ARCHITECTURE.md PORTABILITY.md VENDORING.md CODE_OF_CONDUCT.md
   PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V4-PROPOSAL.md
-  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json
+  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json gitleaks.toml
   Makefile cliff.toml
   nvim/.luacheckrc
   CODEOWNERS pull_request_template.md
@@ -772,10 +772,15 @@ if have gitleaks; then
   # "leaks found: N" and the file/line/rule stay hidden — the same non-answer this change
   # exists to remove. --no-color matches the flag already passed to luacheck, so the text
   # captured into a log is plain rather than escape sequences.
-  if gl_out="$(gitleaks dir . --no-banner --redact -v --no-color 2>&1)"; then
+  # -c gitleaks.toml: the ONE fleet policy (see that file's header). Without it this
+  # gate and lint-call.yml's `secrets` job would run different rule sets against the same
+  # class of tree — and a finding that is real here and allowlisted there (or the reverse)
+  # is worse than either gate alone, because it makes the disagreement look like a bug in
+  # the code rather than in the config.
+  if gl_out="$(gitleaks dir . -c gitleaks.toml --no-banner --redact -v --no-color 2>&1)"; then
     pass "gitleaks (no secrets in the working tree)"
   else
-    fail "gitleaks found potential secrets — run: gitleaks dir . --redact -v"
+    fail "gitleaks found potential secrets — run: gitleaks dir . -c gitleaks.toml --redact -v"
     # Safe to print BECAUSE of --redact: gitleaks replaces the matched value with
     # REDACTED, so the report names the file, line, rule and fingerprint without
     # reproducing the secret. Drop --redact and this becomes the one gate whose output
