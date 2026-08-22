@@ -38,6 +38,13 @@
 #     blib_write_zshrc_loader        # param-less (v4): the loader globs the numbered fragments
 #     blib_set_login_shell
 #   }
+#   provision() {
+#     # Reads install/packages.txt into the caller's own array, so a missing or unreadable
+#     # list is a REAL failure rather than an empty array with a success status (#460).
+#     # Prefer this over `mapfile -t pkgs < <(blib_read_pkgs …)`, which discards the status.
+#     blib_read_pkgs_into pkgs "$DOTFILES/install/packages.txt" || exit 1
+#     ((${#pkgs[@]})) && dnf install -y "${pkgs[@]}"
+#   }
 # ──────────────────────────────────────────────────────────────────────────────
 
 [[ -n "${_CORE_BOOTSTRAP_LIB_SH:-}" ]] && return 0
@@ -149,15 +156,102 @@ blib_seed() {
 
 # ── read a package list ───────────────────────────────────────────────────────
 # blib_read_pkgs <file> — print one clean package name per line, stripping inline
-# (#...) comments and all whitespace (package names contain none). Callers feed this
-# into their own `mapfile -t pkgs < <(blib_read_pkgs …)` and hand pkgs to apt/dnf/apk.
+# (#...) comments and all whitespace (package names contain none).
+#
+# A MISSING OR UNREADABLE FILE IS NOW AN ERROR, not silence (#460). This read with a bare
+# redirect and no existence check, and every caller reaches it through a process
+# substitution:
+#
+#     mapfile -t pkgs < <(blib_read_pkgs "$DOTFILES/install/packages.txt")
+#
+# `mapfile` reports the exit status of ITSELF, not of the process inside `< <( … )`. So a
+# missing file left the caller holding a zero-length array WITH A SUCCESS STATUS, and two
+# very different situations became indistinguishable:
+#
+#   · packages.txt deliberately all-comments  → "lists no packages — skipping"
+#   · packages.txt MISSING FROM THE CLONE     → "lists no packages — skipping"
+#
+# The second is a broken checkout — an incomplete clone, a bad sync, a typo'd path — and
+# it provisioned NOTHING while reporting that as intended. On a fresh machine that is the
+# difference between "no extras requested" and "none of your tooling was installed". Same
+# class as #459: the status of the thing that actually failed never reaches the caller.
+#
+# `-r`, NOT `-f`, deliberately: dotfiles-Debian passes a PROCESS SUBSTITUTION here
+# (`blib_read_pkgs <(pkg_filter_lines "$base_list" "$OS_ID")`) to drop the lines annotated
+# for other distros. That argument is a `/dev/fd/N` pipe, which `-f` rejects — an existence
+# check written the obvious way would break a working caller.
+#
+# Returning non-zero is NECESSARY BUT NOT SUFFICIENT for the process-substitution form,
+# which discards it regardless. Callers that need the status must move to
+# blib_read_pkgs_into below, which assigns in the caller's own frame; this guard makes the
+# failure LOUD (stderr) even where the status is thrown away.
 blib_read_pkgs() {
   local line
+  [[ -r "$1" ]] || {
+    blib_warn "package list not readable: $1"
+    return 1
+  }
   while IFS= read -r line; do
     line="${line%%#*}"           # drop everything from the first # onward
     line="${line//[[:space:]]/}" # package names contain no whitespace
-    [[ -n "$line" ]] && printf '%s\n' "$line"
+    [[ -n "$line" ]] || continue
+    printf '%s\n' "$line"
   done <"$1"
+  # Explicit, now that the status MEANS something: this used to end on
+  # `[[ -n "$line" ]] && printf …`, whose status is the loop's status, so a list whose
+  # final line was blank or a comment — the common shape — returned 1. Harmless while
+  # every caller discarded it; a landmine the moment one stops.
+  return 0
+}
+
+# blib_read_pkgs_into <arrayname> <file> — parse a package list into the CALLER'S OWN
+# array variable, so `|| die` actually works:
+#
+#     blib_read_pkgs_into pkgs "$DOTFILES/install/packages.txt" || exit 1
+#
+# This is the robust shape the process-substitution form cannot have. `mapfile -t pkgs
+# < <(blib_read_pkgs …)` runs the reader in a SUBSHELL and reports mapfile's status, so
+# the reader's failure is structurally unreachable. Assigning here — in the current shell,
+# with the redirect on the `while` rather than a pipe — keeps both the data and the status.
+#
+# Returns 1 on a missing/unreadable file (after emptying the array, so no stale contents
+# survive a failed read) and 2 on a malformed array name. Accepts a `/dev/fd/N` process
+# substitution exactly like blib_read_pkgs, so Debian's pkg-filter shape still works.
+#
+# BASH 3.2-SAFE, which rules out the two obvious implementations: `local -n` namerefs are
+# 4.3 and `mapfile` is 4.0, while lib/*.sh must run on the macOS system bash (PORTABILITY.md
+# §1). Hence the index-append loop and the eval. Note that under `set -u` on bash 3.2 an
+# EMPTY array expansion counts as unset, so callers still want the
+# `"${pkgs[@]+"${pkgs[@]}"}"` idiom used elsewhere in this file.
+blib_read_pkgs_into() {
+  local _name="$1" _file="$2" _line _n=0
+  # Validate BEFORE the eval below. The name is spliced into an assignment, so anything
+  # but a plain shell identifier is a code-injection hole rather than a typo. Rejected:
+  # empty, anything with a character outside [A-Za-z0-9_], and a leading digit.
+  case "$_name" in
+  '' | *[!A-Za-z0-9_]* | [0-9]*)
+    blib_warn "blib_read_pkgs_into: not a valid array name: $_name"
+    return 2
+    ;;
+  esac
+  # Empty FIRST, so a failed read cannot leave the caller reading a previous run's list.
+  eval "$_name=()"
+  [[ -r "$_file" ]] || {
+    blib_warn "package list not readable: $_file"
+    return 1
+  }
+  while IFS= read -r _line; do
+    _line="${_line%%#*}"
+    _line="${_line//[[:space:]]/}"
+    [[ -n "$_line" ]] || continue
+    # `arr[i]=$v` — bash 3.2 has no `+=` for arrays, and an assignment RHS undergoes
+    # neither word splitting nor globbing, so the unquoted $_line inside the eval is safe.
+    # The braces are for shellcheck (SC1087): ${_name} is the array NAME being spliced in,
+    # not an array element being read.
+    eval "${_name}[\$_n]=\$_line"
+    _n=$((_n + 1))
+  done <"$_file"
+  return 0
 }
 
 # ── module selection (Track B: --only / --skip) ───────────────────────────────

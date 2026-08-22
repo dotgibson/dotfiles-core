@@ -24,6 +24,50 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   a past-tense resolution note rather than decremented to "two", so the footnote still reads as
   the contract those three fixes were made against. (dotgibson/dotfiles-Arch#111)
 
+- **A missing package list is a failure again, instead of an empty one.** (#460)
+  `blib_read_pkgs` read its file with a bare redirect and no existence check, and every
+  OS bootstrap reaches it through a process substitution:
+
+  ```bash
+  mapfile -t pkgs < <(blib_read_pkgs "$DOTFILES/install/packages.txt")
+  ```
+
+  `mapfile` reports the exit status of _itself_, not of the process inside `< <( … )`. So
+  a missing or unreadable file left the caller holding a **zero-length array with a success
+  status**, and two very different situations became indistinguishable: a `packages.txt`
+  that is deliberately all comments, and a `packages.txt` that is _missing from the clone_.
+  Both printed "lists no packages — skipping". The second is a broken checkout — an
+  incomplete clone, a bad sync, a typo'd path — and it provisioned **nothing at all** while
+  reporting that as intended. On a fresh machine that is the difference between "no extras
+  requested" and "none of your tooling was installed". Same class as #459: the status of
+  the thing that actually failed never reached the caller.
+
+  `blib_read_pkgs` now warns and returns 1 on an unreadable file, which makes the failure
+  loud even where the status is discarded. The check is `-r`, not `-f`, deliberately:
+  dotfiles-Debian passes a **process substitution** here to drop the lines annotated for
+  other distros, and that argument is a `/dev/fd/N` pipe that `-f` would reject.
+
+- **New `blib_read_pkgs_into <array> <file>`** — the shape the process-substitution form
+  cannot have. It assigns into the **caller's own array**, in the current shell, so
+  `blib_read_pkgs_into pkgs "$list" || exit 1` actually works:
+
+  ```bash
+  provision() {
+    blib_read_pkgs_into pkgs "$DOTFILES/install/packages.txt" || exit 1
+    ((${#pkgs[@]})) && dnf install -y "${pkgs[@]}"
+  }
+  ```
+
+  Returns 1 on an unreadable file (after emptying the array, so a caller that ignores the
+  status cannot install a stale list) and 2 on a malformed array name — the name is spliced
+  into an assignment, so validating it is a code-injection control, not a typo check. Kept
+  bash 3.2-safe, which rules out both obvious implementations: `local -n` namerefs are 4.3
+  and `mapfile` is 4.0, while `lib/*.sh` must run on the macOS system bash.
+
+  Four OS repos (openSUSE, Arch, Gentoo, Debian) had each hand-rolled a caller-side
+  precondition for this; Alpine, Fedora and Offense had not. Migrating a caller to this
+  helper replaces all of them with one gate that cannot be forgotten.
+
 ## [v4.15.1] - 2026-08-22
 
 ### Fixed
