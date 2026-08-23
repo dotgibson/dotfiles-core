@@ -72,9 +72,37 @@ blib_is_wsl() {
   grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null
 }
 
+# ── displaced-file backup naming ──────────────────────────────────────────────
+# _blib_backup_suffix — the ONE definition of the `.pre-dotfiles.*` suffix every writer
+# in the fleet appends. It had been open-coded three times in two different formats:
+# blib_link and the .zshrc loader used `date +%s`, while the `link()` helper
+# scripts/new-os-repo.sh generates used `date +%Y%m%d-%H%M%S`.
+#
+# That broke an invariant an OS repo's `--uninstall` DOCUMENTS and depends on:
+#
+#     The backup suffix is a zero-padded YYYYMMDD-HHMMSS stamp, so a lexical sort IS
+#     chronological — the LAST glob match is the newest.
+#
+# False across the pair. A 10-digit epoch (`17…`) always sorts BEFORE a `20…` datestamp,
+# so a date-stamped backup wins "newest" regardless of its real age and --uninstall
+# restores the OLDER file over the newer one, silently. It was latent only because the
+# two writers happened to own disjoint destinations; one overlap — an OS repo wiring a
+# path Core also wires — and it fires (#464).
+#
+# So: ONE format, and it is the sortable one. A datestamp also has the edge over an epoch
+# for a file a human is meant to find and identify on disk.
+#
+# The `.$$` tail is the second half of #464: both formats resolved to one SECOND and both
+# writers use a bare `mv`, so two backups of the same destination inside one second
+# overwrote each other — unlikely by hand, easy in a test loop or a scripted re-run. The
+# PID only ever tiebreaks WITHIN a second (the stamp differs otherwise), so it does not
+# disturb the cross-second ordering the sort relies on.
+_blib_backup_suffix() { printf 'pre-dotfiles.%s.%s' "$(date +%Y%m%d-%H%M%S)" "$$"; }
+
 # ── symlink with backup ───────────────────────────────────────────────────────
 # blib_link <src> <dst> — replace an existing SYMLINK in place; back up a real file
-# to <dst>.pre-dotfiles.<epoch> first. Idempotent (safe to re-run a bootstrap): an
+# to <dst>.pre-dotfiles.<stamp>.<pid> first (see _blib_backup_suffix), ANNOUNCING the
+# move on stderr. Idempotent (safe to re-run a bootstrap): an
 # already-correct link is a no-op. A missing src is skipped (not a dangling link).
 # Honors BLIB_DRY (plan only) and updates the BLIB_* counters.
 #
@@ -88,7 +116,7 @@ blib_is_wsl() {
 # above means this branch is reached ONLY when the link points somewhere else, so every
 # relink notice is real information, never re-run noise (issue #430).
 blib_link() {
-  local src="$1" dst="$2" was=""
+  local src="$1" dst="$2" was="" bak=""
   if [[ ! -e "$src" ]]; then
     blib_say "skip (missing): ${src##*/}"
     BLIB_SKIPPED=$((BLIB_SKIPPED + 1))
@@ -120,7 +148,24 @@ blib_link() {
     rm -f "$dst"
     BLIB_RELINKED=$((BLIB_RELINKED + 1))
   elif [[ -e "$dst" ]]; then
-    mv "$dst" "$dst.pre-dotfiles.$(date +%s)"
+    # ANNOUNCE it. The move itself was always correct — the file is preserved and
+    # restorable, and --uninstall can put it back — but it happened MUTELY, and blib_link
+    # wires roughly 34 of ~40 destinations in an OS-repo bootstrap, so silent clobbering
+    # was the overwhelmingly common case rather than an edge one (#463). The only trace
+    # was an aggregate `N backed up` in the closing summary, which says THAT something was
+    # displaced and never WHAT or where it went.
+    #
+    # The audience for this path is precisely someone migrating an existing machine onto
+    # the dotfiles — the person with the most to lose and the least context. From where
+    # they sit, an unannounced move means their ~/.gitconfig simply stopped being theirs;
+    # recovering it means already knowing the `.pre-dotfiles.` convention exists. That the
+    # recovery path EXISTS is what made the silence expensive, not cheap.
+    #
+    # blib_warn (stderr) rather than blib_say: this is the one wiring outcome that touched
+    # a file the user owned, so it should survive a caller that pipes stdout to a log.
+    bak="$dst.$(_blib_backup_suffix)"
+    mv "$dst" "$bak"
+    blib_warn "backed up existing $dst -> $bak"
     BLIB_BACKED=$((BLIB_BACKED + 1))
   fi
   ln -s "$src" "$dst"
@@ -381,7 +426,8 @@ blib_link_core() {
     # atuin — the config 00-tools.zsh's `atuin init zsh` never had. DEFAULT path (no
     # ATUIN_CONFIG_DIR needed), linked unconditionally like the two above; inert without
     # the binary. NOTE: a hand-written ~/.config/atuin/config.toml is BACKED UP by
-    # blib_link (…pre-dotfiles.<epoch>) — re-apply anything local via ATUIN_* env in the
+    # blib_link (…pre-dotfiles.<stamp>.<pid>, and it says so) — re-apply anything local
+    # via ATUIN_* env in the
     # OS/host layer, which is also how a machine turns the daemon on. CAVEAT: an ATUIN_*
     # override only reaches atuin for a key the Core config does NOT itself set (atuin adds
     # the config file as a source AFTER the environment, so the file wins). See that file's
@@ -544,7 +590,9 @@ blib_link_role_layer() {
 # that wants a one-line "N linked · M seeded · K backed up" footer calls this after
 # its wire_links. Prefixes "(dry run) " under BLIB_DRY so a preview reads as a preview.
 # "backed up" and "relinked" are separate on purpose: the first promises a restorable
-# .pre-dotfiles.<epoch> file on disk, the second only that the old target was printed.
+# .pre-dotfiles.<stamp>.<pid> file on disk, the second only that the old target was
+# printed. Both are now also announced individually as they happen (#463) — this footer
+# is the tally, not the record.
 blib_wire_summary() {
   local pre=""
   _blib_dry && pre="(dry run) "
@@ -566,7 +614,7 @@ blib_wire_summary() {
 # $ZDOTDIR/.zshrc — see _blib_seed_zdotdir_rc.
 blib_write_zshrc_loader() {
   blib_want zsh || return 0   # the .zshrc loader belongs to the zsh group
-  local rc="$HOME/.zshrc"
+  local rc="$HOME/.zshrc" rc_bak=""
 
   if [[ -f "$rc" ]] && grep -q "dotfiles-managed v4" "$rc" 2>/dev/null; then
     # Already managed — but a box bootstrapped before the seeding below existed still
@@ -582,7 +630,15 @@ blib_write_zshrc_loader() {
     return 0
   fi
   blib_say "writing .zshrc loader"
-  [[ -f "$rc" ]] && cp "$rc" "$rc.pre-dotfiles.$(date +%s)"
+  # Same one format as blib_link, via the same helper (#464) — and announced, for the
+  # same reason (#463). This one is a `cp` rather than a `mv` because the heredoc below
+  # overwrites $rc in place; the user's prior ~/.zshrc is still displaced from the only
+  # location that matters to them, so it is still worth saying out loud.
+  if [[ -f "$rc" ]]; then
+    rc_bak="$rc.$(_blib_backup_suffix)"
+    cp "$rc" "$rc_bak"
+    blib_warn "backed up existing $rc -> $rc_bak"
+  fi
 
   cat >"$rc" <<'ZRC'
 # dotfiles-managed v4 — do not hand-edit; local tweaks go in ~/.config/zsh/99-local.zsh

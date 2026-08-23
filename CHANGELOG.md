@@ -65,6 +65,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   byte-for-byte gate while presence-checking it; with the drift gone, it can be gated like
   everything else in `core/`.
 
+- **`blib_link` announces a backup instead of taking one silently.** (#463)
+  The regular-file branch moved a displaced file to `.pre-dotfiles.*` correctly — the
+  content was preserved and `--uninstall` could restore it — and then said nothing. Only
+  an aggregate `N backed up` in the closing summary hinted at it, which reports _that_
+  something moved and never _what_ or _where it went_.
+
+  `blib_link` wires roughly **34 of ~40 destinations** in an OS-repo bootstrap, so silent
+  clobbering was the overwhelmingly common case rather than an edge one. The audience for
+  that path is precisely someone migrating an existing machine onto the dotfiles — the
+  person with the most to lose and the least context — and from where they sit an
+  unannounced move means their `~/.gitconfig` simply stopped being theirs. That a recovery
+  path _existed_ is what made the silence expensive: reconstructing it required already
+  knowing the `.pre-dotfiles.` convention, which was documented only in a source comment.
+
+  It now warns on stderr, naming both the destination and the backup path. The managed
+  `~/.zshrc` writer, the other Core backup site, does the same.
+
+- **One backup timestamp format, so the lexical-sort invariant `--uninstall` relies on is
+  finally true.** (#464)
+  Backup filenames were written in two formats by three call sites: `blib_link` and the
+  `.zshrc` loader used `date +%s`, while the `link()` helper `scripts/new-os-repo.sh`
+  generates used `date +%Y%m%d-%H%M%S`. An OS repo's `unlink_dest` documents — and depends
+  on — "the suffix is a zero-padded `YYYYMMDD-HHMMSS` stamp, so a lexical sort IS
+  chronological; the LAST glob match is the newest."
+
+  That was **false across the pair**: a 10-digit epoch (`17…`) always sorts before a `20…`
+  datestamp, so a date-stamped backup won "newest" regardless of its real age and
+  `--uninstall` would restore the older file over the newer one with no error. It was
+  latent only because the two writers happened to own disjoint destinations; one overlap —
+  an OS repo wiring a path Core also wires — and it fires. The comment asserting the
+  invariant is what made it hard to spot in review, since it reads as already-verified.
+
+  Every writer now goes through one `_blib_backup_suffix` helper producing
+  `pre-dotfiles.<YYYYmmdd-HHMMSS>.<pid>`. The `.<pid>` tail closes the second half: both
+  formats resolved to one second and both writers use a bare `mv`, so two backups of the
+  same destination inside one second overwrote each other — easy to hit in a test loop or
+  a scripted re-run. The PID only ever tiebreaks _within_ a second, so cross-second
+  ordering is untouched.
+
+  `scripts/test-core.sh` now pins the format and, separately, the invariant itself: two
+  backups a second apart must come out of a plain `sort` in chronological order.
+
 ## [v4.15.1] - 2026-08-22
 
 ### Fixed
