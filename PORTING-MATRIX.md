@@ -60,7 +60,7 @@ _Repo status_ at the bottom).
 | viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸     | `viddy`           | cargo³                     | cargo³            | —²⁹           |
 | sd²²             | `sd`              | `sd`          | `sd`              | `sys-apps/sd`¹²            | `sd`              | `sd`          |
 | gron             | `gron`            | `gron`        | `gron`            | go³                        | `gron`            | `gron`        |
-| jnv¹⁷            | `jnv`             | cargo         | cargo             | cargo                      | cargo             | —²⁹           |
+| jnv¹⁷            | `jnv`             | cargo         | cargo³            | cargo                      | cargo             | —²⁹           |
 | lnav²¹ ²⁴        | `lnav`            | `lnav`        | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          | `lnav`        |
 | glow             | `glow`            | `glow`        | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          | charm apt     |
 | gum              | `gum`             | `gum`         | `gum`             | mise³⁰                     | `gum`¹⁵           | charm apt     |
@@ -121,9 +121,17 @@ cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversi
 the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
 is the one you want; openSUSE is the exact opposite, so the same name means opposite things
 on the two platforms and neither instinct transfers.
-Where unpackaged: `mise use -g tree-sitter` or `cargo install tree-sitter-cli`. On
-**Alpine** the `community` package **is** the musl build (0.26.7, clears the floor) —
-prefer it over cargo/any prebuilt binary.
+Where unpackaged: `mise use -g tree-sitter` or `cargo install tree-sitter-cli`.
+**Alpine:** the `community` package **is** the musl build on every branch, but it clears
+the floor on only **two of five** — v3.24 (`0.26.7-r0`) and edge (`0.26.7-r1`). v3.21
+carries `0.24.4-r0` and v3.22/v3.23 carry `0.25.10-r0`, all three **below** it. This note
+used to quote 0.26.7 unqualified, which is the v3.24/edge version read as fleet-wide.
+Prefer the package on the two branches where it clears; on the other three
+`dotfiles-Alpine`'s `bootstrap.sh` supplies a conforming build via cargo, and that guard is
+**version**-checked rather than presence-checked — a presence guard sees apk's 0.25.10,
+skips the build, and leaves the box below the floor in silence (dotfiles-Alpine#122).
+`~/.cargo/bin` is prepended ahead of `/usr/bin` by `zsh/00-tools.zsh`, so the cargo build
+genuinely shadows the older apk one.
 ⁶ yq: this matrix targets **mikefarah's Go `yq`** (the jq-for-YAML). Distros also
 ship **Python `yq`** (kislyuk) under the same `yq` name; if you land the wrong
 one, install the Go build via `mise use -g yq` or the upstream release binary.
@@ -218,14 +226,16 @@ which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali)
 (Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
 (Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
 the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
-¹⁴ Alpine **testing** repo (`duf`, `glow`, `ouch`): musl-fine tools that live in `testing` (never
-promoted to `community` on stable, incl. 3.24), which isn't enabled by default on a stable
-release. bootstrap.sh builds them from source instead of force-enabling `testing`, and the two
-paths are **not** the same one: `duf` + `glow` take `go install` (static, musl-safe), while
-`ouch` takes `cargo install --locked ouch --no-default-features` — bzip3's `libbzip3-sys` build
+¹⁴ Alpine **testing** repo (`duf`, `glow`, `ouch`, `tealdeer`): musl-fine tools that live in
+`testing` (never promoted to `community` on stable, incl. 3.24), which isn't enabled by default
+on a stable release. bootstrap.sh builds them from source instead of force-enabling `testing`,
+and the paths are **not** all the same one: `duf` + `glow` take `go install` (static,
+musl-safe), `tealdeer` takes a plain `cargo install --locked tealdeer` (it is the `tldr` row's
+`cargo³`, which is why that row does not cite this note), while `ouch` takes
+`cargo install --locked ouch --no-default-features` — bzip3's `libbzip3-sys` build
 script runs bindgen, bindgen `dlopen`s libclang, and Rust's musl toolchain links statically, so
 the DEFAULT feature set cannot build on the outlier at all (installing clang does not help).
-None of the three is listed in `install/packages.txt`, and putting them there "as a best-effort"
+None of the four is listed in `install/packages.txt`, and putting them there "as a best-effort"
 is a **footgun the OS repo documents against**: `apk` fails the whole transaction on one unknown
 name, so a permanently-unresolvable entry breaks the bulk `apk add` on EVERY run and forces the
 per-package retry loop across the entire list.
@@ -248,16 +258,21 @@ auto-installing. Inert without the binary.
 unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep), and `yq`
 (YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), `HAVE_JNV`-guarded in
 `zsh/00-tools.zsh`, inert without the binary. A **Rust** CLI (embeds `jaq`, so no external
-`jq` needed). **On Linux this is detect-only — unlike the ³ tools, `jnv` is in no
-`install/packages.txt` and no `bootstrap.sh` installs it, so Core lights up `HAVE_JNV` only
-once you install it yourself. macOS is the exception: the `Brewfile` carries it.** The cells above name where each platform gets it when you opt in —
-macOS `brew install jnv`, Arch `pacman -S jnv`, Nix, or elsewhere `cargo install --locked
-jnv` (musl-safe on Alpine) — not an automatic install. **Arch's cell used to read `AUR` and
+`jq` needed). **On Linux this is detect-only on every repo but one — `jnv` is in no
+`install/packages.txt` anywhere, so Core lights up `HAVE_JNV` only once you install it
+yourself. The exceptions, per ²¹: `dotfiles-Alpine`'s `bootstrap.sh` DOES install it
+(cargo, best-effort — hence `cargo³` in its cell, since `jnv` is unpackaged on all five
+Alpine branches including `testing` on edge, making cargo its only source there), and
+`dotfiles-Gentoo` cargo-builds it in the opt-in extras block that `--no-extras` skips. On
+macOS the `Brewfile` carries it.** Everywhere else the row above names where that platform
+gets it when you opt in — Arch `pacman -S jnv`, Nix, or `cargo install --locked jnv` — not
+an automatic install. **Arch's cell used to read `AUR` and
 this footnote used to prescribe `paru -S jnv`; both are now wrong.** jnv entered `extra` as
 0.7.1-1 on 2026-04-01, confirmed on-box with `pacman -Si jnv` (`Repository: extra`), so no AUR
 helper is involved on Arch any more. Wiring it into the per-repo bootstrap
-(the ³ best-effort path viddy/yazi use) is a tracked follow-up in the OS repos; there is
-no confirmed Gentoo GURU atom yet either, so verify on the next Gentoo stamp.
+(the ³ best-effort path viddy/yazi use) is done on Alpine and Gentoo and remains a tracked
+follow-up on the rest; there is no confirmed Gentoo GURU atom yet either, so verify on the
+next Gentoo stamp.
 
 ¹⁸ openSUSE **Tumbleweed** now ships these first-class in the main OSS **binary** repo
 (`repo-oss`, i.e. `.../tumbleweed/repo/oss` — built from OBS `openSUSE:Factory`; note
@@ -839,9 +854,10 @@ _privileged_ Gentoo bootstrap installs no gum at all. On that path it is a hand-
 `mise use -g gum`, or `go install charm.land/gum/v2@latest` (the module path, **not** the
 GitHub URL — see ³¹).
 
-³¹ **`go install` module paths — the repo URL is usually NOT the module path.** Four of the
-six go-installable rows need a major-version suffix, a `cmd/` subpath, or both, and a naive
-`go install github.com/<org>/<repo>@latest` fails or silently builds an abandoned major.
+³¹ **`go install` module paths — the repo URL is usually NOT the module path.** Five of the
+seven go-installable rows need a major-version suffix, a `cmd/` subpath, a different HOST, or a
+combination, and a naive `go install github.com/<org>/<repo>@latest` fails or silently builds
+an abandoned major.
 Verified against each project's own `go.mod`, and these are the exact strings the fleet's
 `bootstrap.sh` files already pass to `_dotfiles_go_install`:
 
@@ -852,14 +868,19 @@ Verified against each project's own `go.mod`, and these are the exact strings th
 | `yq`    | `github.com/mikefarah/yq/v4`          |
 | `shfmt` | `mvdan.cc/sh/v3/cmd/shfmt`            |
 | `gron`  | `github.com/tomnomnom/gron`           |
+| `glow`  | `charm.land/glow/v3`                  |
 
 **Charm's tools moved off GitHub as a module host** — `glow` is now `charm.land/glow/v3`
 (v3.0.0, 2026-08-11) and `gum` is `charm.land/gum/v2` (v2.0.0). Both still _live_ on GitHub;
 only the module path changed. #431 reported `github.com/charmbracelet/glow/v2`, which was
 right when it was filed and is now two majors stale — a good reason to re-read `go.mod`
-rather than trust a remembered path. Neither is go-installed by any `bootstrap.sh` today
-(the Debian/Kali cells use Charm's apt repo, see ¹⁵), so these two are for the reader
-installing by hand.
+rather than trust a remembered path. **`dotfiles-Alpine` go-installs `glow`** — `glow` is
+`testing`-only on Alpine¹⁴, so `go install` is its real source there, and that call carried the
+stale `github.com/charmbracelet/glow/v2` until dotfiles-Alpine#122 moved it to
+`charm.land/glow/v3`. It resolved either way, which is precisely how it went unnoticed:
+`@latest` on the old path quietly pins the newest **v2** tag instead of failing. `gum` is
+go-installed by no `bootstrap.sh` (the Debian/Kali cells use Charm's apt repo, see ¹⁵), so that
+one is for the reader installing by hand.
 
 ³² direnv: per-directory environment loader — **Core wires it but neither installs nor
 detects it.** There is no `HAVE_DIRENV`, no alias and no `core-doctor` row: `_cache_eval`
