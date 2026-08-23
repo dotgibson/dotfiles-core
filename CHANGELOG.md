@@ -13,6 +13,125 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`bootstrap-test.yml` now asserts the OS overlay — the part an OS repo actually owns.**
+  (#473)
+  The `links-only` job asserted `loader.zsh`, `80-os.zsh`, `starship.toml`,
+  `lazygit/config.yml`, `nvim`, `.vimrc`, `.gitconfig`, plus conditional `atuin` and the
+  seeded `sesh`. It did **not** assert a single thing `blib_link_os_layer` produces — so a
+  regression in the OS overlay was invisible to the one test whose stated purpose is "the
+  part bootstrap.sh OWNS: the wiring it produces."
+
+  Now asserted: `~/.config/tmux/os.conf`, `~/.config/git/os.gitconfig`,
+  `~/.ssh/config.d/50-os.conf`, `~/.ssh/config`, `~/.config/jj/config.toml`,
+  `~/.config/mise/config.toml`, and `~/.local/bin/clip` + `clip-paste` — plus the ssh
+  permission side effects nothing checked (`0700` on `~/.ssh`, `~/.ssh/sockets` and
+  `~/.ssh/config.d`). Those modes are not cosmetic: ssh silently ignores a config under a
+  loose directory, so a bootstrap that linked the file but left `~/.ssh` at `0755`
+  produces a box where the config is present and **inert**, which is harder to diagnose
+  than a missing link.
+
+  Every check **self-arms on the caller tree** rather than taking a new input, following
+  the `os/*.zsh` and `atuin` precedent already in the file — a role repo ships no `os/`
+  overlay and correctly links nothing, and a repo on an older vendored `core/` has no
+  `core/jujutsu` to link, so an unconditional check would red a repo doing exactly the
+  right thing.
+
+  `0600` on `~/.ssh/config` is **deliberately not** asserted, and the workflow says why:
+  Core does not chmod that file and must not, because it is a symlink into the consumer's
+  vendored `core/` tree. The reasoning was already recorded in `lib/bootstrap-lib.sh`; it
+  is now recorded at the gate too, so the next audit does not re-file the request.
+
+- **New opt-in `packages_check` input — package names are gated at last.** (#474)
+  `--links-only` returns before `provision()`, so `install/packages.txt` — the most
+  volatile file in every OS repo, on distros including **rolling releases** — was validated
+  by no blocking gate anywhere in the fleet. Real drift already happened: `doggo` moved
+  AUR → `extra` on Arch and broke a file nobody had edited.
+
+  The `provision_stub` job does not cover this and cannot: it replaces the package managers
+  with no-ops, so a wrong package name is precisely the class of bug it is blind to.
+  `packages_check` covers that blind spot from the other side, resolving every name against
+  the real distro repos — `pacman -Si`, `dnf list`, `apk info`, `zypper info` — with no
+  download and no install.
+
+  The input is a **string** (the resolve command) rather than a boolean, so Core does not
+  have to own a distro-to-command table that would need editing here every time a repo
+  joins the fleet or a package manager changes its flags. A companion `packages_file`
+  input (default `install/packages.txt`) covers the repo whose list carries per-distro
+  annotations — dotfiles-Debian filters through its own `scripts/pkg-filter.sh` and should
+  point this at a pre-filtered file.
+
+  It reads the list with `blib_read_pkgs_into`, the **same parser** `bootstrap.sh` uses, so
+  CI cannot pass on a list bootstrap would read differently — and an unreadable list fails
+  loudly instead of resolving zero packages green, which for this job would otherwise be a
+  permanent silent false pass. Every unresolved name is collected and reported together
+  rather than failing on the first, since a rolling-release rename usually arrives in
+  batches.
+
+  `dotfiles-Arch` carries a repo-local `packages.yml` doing exactly this with a
+  `TODO(upstream)` pointing here; it collapses to a caller once this lands. Worth a
+  `schedule:` trigger in the caller as well as `pull_request` — a rename upstream breaks a
+  file nobody edited, so there is no PR to attach the failure to.
+
+- **`lint-call.yml` now runs a blocking secret scan, so the OS repos are covered for the
+  first time.** (#462, #472)
+  Core scanned itself twice — the gitleaks pre-commit hook at author time and
+  `audit-core.sh` §8b in CI — and pinned `GITLEAKS_VERSION` + `GITLEAKS_SHA256` in
+  `scripts/tool-versions.env`. Both scanned dotfiles-core. The reusable `lint-call.yml` is
+  the **only CI the OS repos have**, and it ran shellcheck, shfmt, `bash -n`, `zsh -n`,
+  actionlint and markdownlint — none of which looks for a credential.
+
+  So **no OS repo had ever had its own files scanned for secrets**, including the repos
+  that actually hold an `ssh/config` and seed a git identity. §8b's own comment names the
+  stake: Core "fans out to 9 PUBLIC repos, where a committed token amplifies N-way." Core
+  was covered; every fan-out target was not. GitHub push protection is a partial backstop
+  only — it matches _provider_ token patterns, so it misses a private key pasted into an
+  `ssh/config`, and the non-provider setting that would catch it is org-governed and off
+  by default.
+
+  Four decisions, each recorded in full on the job:
+
+  - **Unfiltered, so it can be marked required.** The callers' other workflows carry
+    `paths-ignore` filters and never start on a docs-only PR; a required check that never
+    reports blocks the PR forever, which is the practical reason `lint` cannot be required
+    today. This leg has no filter.
+  - **`gitleaks dir`, not `gitleaks git`** — the working tree, not history. One historical
+    finding would pin the check red permanently and wedge every PR once required, and
+    could only be cleared by a rewrite.
+  - **`--redact`** — the repos are public and Actions logs world-readable, so an
+    unredacted finding would write the secret into a log while reporting it.
+  - **The whole tree, `core/` included.** Every other leg excludes `core/**` because it is
+    gated upstream, but that reasoning is about lint _opinions_; a credential is a
+    credential wherever it sits.
+
+- **`gitleaks.toml` — one secret-scanning policy for the fleet.** Read by all four
+  consumers (the pre-commit hook, `audit-core.sh` §8b, the new `secrets` job, and a
+  consumer's own `make secrets`), so author time and CI cannot disagree about what counts
+  as a finding. Same discipline as `scripts/tool-versions.env`: one definition, referenced
+  everywhere, changed deliberately.
+
+  It **extends** the upstream rule set (`useDefault = true`), so a gitleaks bump still
+  brings new detections, and removes nothing. It narrows exactly one false-positive class:
+  a credential position holding a **variable reference** rather than a value. Several
+  default rules match on position rather than content — `curl-auth-user` fires on anything
+  after `curl -u` — and infra config in this fleet routinely puts a variable there, which
+  is the _secure_ shape. The fleet's only finding was dotfiles-Defense's OpenSearch
+  healthcheck:
+
+  ```yaml
+  test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD ..."]
+  ```
+
+  The `$$` is deliberate — it stops Compose interpolating at render time, keeping the
+  password out of `docker compose config` and `docker inspect`. Reporting that as a leak
+  inverts the incentive: it flags the careful form and is silent on the careless one.
+
+  The allowlist targets the matched **value**, not a path, rule or repo, so a real
+  credential on the same line of the same file is still caught — verified both directions
+  before landing. All twelve repos scan clean under it, so the gate is green on arrival
+  rather than red for a maintainer to chase.
+
 ### Fixed
 
 - **The carapace footnote still said three OS repos call the impossible `go install`.** They
@@ -150,66 +269,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Four OS repos (openSUSE, Arch, Gentoo, Debian) had each hand-rolled a caller-side
   precondition for this; Alpine, Fedora and Offense had not. Migrating a caller to this
   helper replaces all of them with one gate that cannot be forgotten.
-
-### Added
-
-- **`lint-call.yml` now runs a blocking secret scan, so the OS repos are covered for the
-  first time.** (#462, #472)
-  Core scanned itself twice — the gitleaks pre-commit hook at author time and
-  `audit-core.sh` §8b in CI — and pinned `GITLEAKS_VERSION` + `GITLEAKS_SHA256` in
-  `scripts/tool-versions.env`. Both scanned dotfiles-core. The reusable `lint-call.yml` is
-  the **only CI the OS repos have**, and it ran shellcheck, shfmt, `bash -n`, `zsh -n`,
-  actionlint and markdownlint — none of which looks for a credential.
-
-  So **no OS repo had ever had its own files scanned for secrets**, including the repos
-  that actually hold an `ssh/config` and seed a git identity. §8b's own comment names the
-  stake: Core "fans out to 9 PUBLIC repos, where a committed token amplifies N-way." Core
-  was covered; every fan-out target was not. GitHub push protection is a partial backstop
-  only — it matches _provider_ token patterns, so it misses a private key pasted into an
-  `ssh/config`, and the non-provider setting that would catch it is org-governed and off
-  by default.
-
-  Four decisions, each recorded in full on the job:
-
-  - **Unfiltered, so it can be marked required.** The callers' other workflows carry
-    `paths-ignore` filters and never start on a docs-only PR; a required check that never
-    reports blocks the PR forever, which is the practical reason `lint` cannot be required
-    today. This leg has no filter.
-  - **`gitleaks dir`, not `gitleaks git`** — the working tree, not history. One historical
-    finding would pin the check red permanently and wedge every PR once required, and
-    could only be cleared by a rewrite.
-  - **`--redact`** — the repos are public and Actions logs world-readable, so an
-    unredacted finding would write the secret into a log while reporting it.
-  - **The whole tree, `core/` included.** Every other leg excludes `core/**` because it is
-    gated upstream, but that reasoning is about lint _opinions_; a credential is a
-    credential wherever it sits.
-
-- **`gitleaks.toml` — one secret-scanning policy for the fleet.** Read by all four
-  consumers (the pre-commit hook, `audit-core.sh` §8b, the new `secrets` job, and a
-  consumer's own `make secrets`), so author time and CI cannot disagree about what counts
-  as a finding. Same discipline as `scripts/tool-versions.env`: one definition, referenced
-  everywhere, changed deliberately.
-
-  It **extends** the upstream rule set (`useDefault = true`), so a gitleaks bump still
-  brings new detections, and removes nothing. It narrows exactly one false-positive class:
-  a credential position holding a **variable reference** rather than a value. Several
-  default rules match on position rather than content — `curl-auth-user` fires on anything
-  after `curl -u` — and infra config in this fleet routinely puts a variable there, which
-  is the _secure_ shape. The fleet's only finding was dotfiles-Defense's OpenSearch
-  healthcheck:
-
-  ```yaml
-  test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD ..."]
-  ```
-
-  The `$$` is deliberate — it stops Compose interpolating at render time, keeping the
-  password out of `docker compose config` and `docker inspect`. Reporting that as a leak
-  inverts the incentive: it flags the careful form and is silent on the careless one.
-
-  The allowlist targets the matched **value**, not a path, rule or repo, so a real
-  credential on the same line of the same file is still caught — verified both directions
-  before landing. All twelve repos scan clean under it, so the gate is green on arrival
-  rather than red for a maintainer to chase.
 
 ## [v4.15.1] - 2026-08-22
 
