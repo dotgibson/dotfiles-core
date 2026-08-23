@@ -117,6 +117,29 @@ EOF
   shift
 done
 
+# ── STOP CORE_JSON AT THIS PROCESS BOUNDARY (#511/#524/#508) ──────────────────
+# CORE_JSON=1 means "stdout carries only the JSON object", and common.sh's skip() honours
+# it by printing nothing. That is right for THIS script and wrong for every child it runs.
+#
+# The fixtures below execute real gate scripts — fleet-drift.sh, sync-core.sh, auto-tag.sh,
+# tag-release.sh — and assert on their human-readable output, skip() lines included. An
+# INHERITED CORE_JSON silences exactly those lines, so an assertion fails for a reason that
+# has nothing to do with the code under test: `test-core.sh --scope none --json` reported a
+# failing result on a tree the identical non-JSON run passed clean, three separate times
+# (#508 tag-release, #524 sync-core, #511 fleet-drift). Each was fixed where it hurt, and
+# the next fixture inherited the trap again — because the default was wrong.
+#
+# `export -n` fixes the DEFAULT rather than the symptom: the value stays readable in this
+# shell, so our own skip() is still quiet and the JSON object is still clean, but no child
+# inherits it. It handles both routes in: our own --json above, and audit-core.sh --json,
+# which puts CORE_JSON in our environment before we start.
+#
+# The explicit `env -u CORE_JSON` at each fixture invocation is kept as well. It is not
+# redundant: it documents the hazard at the call site, and it keeps each fixture correct if
+# it is ever lifted out of this file. The two insulation gates (sync-core, fleet-drift)
+# export CORE_JSON inside a subshell precisely to prove those pins still work.
+export -n CORE_JSON 2>/dev/null || true
+
 # Wall-clock for the standalone summary (mirrors audit-core.sh) — the headless nvim
 # leg can take a few seconds, so showing elapsed reads as progress, not a hang.
 SECONDS=0
@@ -2003,7 +2026,7 @@ if have git; then
   }
   _at_would() { # [bump] → echoes the tag it WOULD cut (dry-run), or noop / err
     local out
-    out="$("$AT" "$ATR" ${1:+--bump "$1"} --color never 2>&1)" || {
+    out="$(env -u CORE_JSON "$AT" "$ATR" ${1:+--bump "$1"} --color never 2>&1)" || {
       echo err
       return 0
     }
@@ -2118,7 +2141,7 @@ if have git; then
   git -C "$GRNR" commit -q --allow-empty -m "totally unconventional line" # must be dropped
   git -C "$GRNR" commit -q --allow-empty -m "fixing a flaky test"         # prose, no delimiter → dropped
   git -C "$GRNR" commit -q --allow-empty -m "refactor:"                   # no description → dropped
-  _grn_out="$("$GRN" "$GRNR" v1.0.0 HEAD 2>/dev/null)"
+  _grn_out="$(env -u CORE_JSON "$GRN" "$GRNR" v1.0.0 HEAD 2>/dev/null)"
 
   if grep -q '^### Features$' <<<"$_grn_out" && grep -q '^### Bug Fixes$' <<<"$_grn_out"; then
     pass "gen-notes: groups feat + fix under cliff.toml headings"
@@ -2165,7 +2188,7 @@ if have git; then
 
   git -C "$GRNR" tag v1.1.0
   git -C "$GRNR" commit -q --allow-empty -m "just some words"
-  if _grn_empty="$("$GRN" "$GRNR" v1.1.0 HEAD)"; [[ -z "$_grn_empty" ]]; then
+  if _grn_empty="$(env -u CORE_JSON "$GRN" "$GRNR" v1.1.0 HEAD)"; [[ -z "$_grn_empty" ]]; then
     pass "gen-notes: a no-conventional-commit range prints nothing (caller falls back)"
   else fail "gen-notes: expected empty output for a non-conventional range"; fi
 
@@ -2281,7 +2304,7 @@ _fd_run() {
     GH_SEARCH="${GH_SEARCH:-limited}" GITHUB_REPOSITORY_OWNER=fixtureowner \
     DASH_SEARCH_PACE=0 DASH_RETRY_BASE="${DASH_RETRY_BASE:-0}" \
     DASH_RETRY_BUDGET="${DASH_RETRY_BUDGET:-60}" \
-    bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null
+    env -u CORE_JSON bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null
 }
 
 : >"$SANDBOX/gh.calls"
@@ -2361,7 +2384,7 @@ else fail "dashboard: backoff budget not enforced (calls=$_fd_budget_calls, expe
 # Without gh/token the board must still compose, with the unavailable note.
 _fd_degraded="$(env -u GH_TOKEN -u GITHUB_TOKEN PATH="$FDBIN:$PATH" \
   GH_CALLS="$SANDBOX/gh.calls" \
-  bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null)"
+  env -u CORE_JSON bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null)"
 _fd_deg_rc=$?
 if [ "$_fd_deg_rc" -eq 0 ] && grep -q 'Unavailable in this run' <<<"$_fd_degraded"; then
   pass "dashboard: degrades to the 'unavailable' note without gh/token"
@@ -2495,7 +2518,14 @@ if have git; then
   _fdg checkout -q main
 
   _fdd_lock() { printf '%s\n' "$@" >"$FDF/dotfiles-Test/core.lock"; }
-  _fdd_run() { bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --color never 2>&1; }
+  # -u CORE_JSON, for the same reason _sc_run and _tr_run strip it (#524/#508/#511): the
+  # parent's --json EXPORTS CORE_JSON=1 so nested gates keep stdout clean for the JSON object,
+  # common.sh's skip() then prints nothing, and fleet-drift.sh reports a not-checked-out repo
+  # via exactly that skip() (fleet-drift.sh, the `else skip` arm of the NOT CHECKED OUT
+  # branch). The assertions below grep for that line, so `test-core.sh --scope none --json`
+  # reported fail:1 on a tree the identical non-JSON run passed clean. Third fixture bitten by
+  # this, which is why the scan below now enforces the rule rather than trusting review.
+  _fdd_run() { env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --color never 2>&1; }
   _fdd_is() { # _fdd_is <label> <want-rc> <status-regex>
     local out rc row
     out="$(_fdd_run)"; rc=$?
@@ -2575,7 +2605,7 @@ if have git; then
 
   # An explicit --ref that doesn't resolve must be a usage error, not a silent fallback to
   # origin/main — the banner would otherwise name a ref that was never compared against.
-  bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --ref nosuchref --color never >/dev/null 2>&1
+  env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --ref nosuchref --color never >/dev/null 2>&1
   if [[ $? -eq 2 ]]; then pass "drift: an unresolvable --ref exits 2 instead of falling back"
   else fail "drift: unresolvable --ref did not exit 2"; fi
 
@@ -2583,9 +2613,9 @@ if have git; then
   # returned 0, so every caller read the run as clean. The root must EXIST and merely be
   # empty — a missing root is a separate usage error (exit 2) and would mask the regression.
   mkdir -p "$SANDBOX/fdempty"
-  bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --strict --color never >/dev/null 2>&1
+  env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --strict --color never >/dev/null 2>&1
   _fdd_strict=$?
-  bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --color never >/dev/null 2>&1
+  env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --color never >/dev/null 2>&1
   _fdd_plain=$?
   if [[ $_fdd_strict -eq 1 && $_fdd_plain -eq 0 ]]; then
     pass "drift: --strict fails on a not-checked-out repo, plain mode still skips"
@@ -2620,7 +2650,7 @@ if have git; then
   # checks dotfiles-Windows unconditionally (line ~383, outside the os-repos loop) and this
   # one-repo fixture root has no such clone, so --strict exits 1 here no matter what the
   # dotfiles-Test row says. An rc assertion would pass for entirely the wrong reason.
-  _fdd_strict_ren="$(bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --strict --color never 2>&1)"
+  _fdd_strict_ren="$(env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --strict --color never 2>&1)"
   if grep -qE 'dotfiles-Test.*current' <<<"$_fdd_strict_ren" &&
     ! grep -qE 'dotfiles-Test.*NOT CHECKED OUT' <<<"$_fdd_strict_ren"; then
     pass "drift: --strict does not red a found-by-URL renamed clone"
@@ -2633,6 +2663,27 @@ if have git; then
   if grep -qE 'dotfiles-Test.*not checked out' <<<"$(_fdd_run)"; then
     pass "drift: a clone whose origin names a DIFFERENT repo is not adopted"
   else fail "drift: the URL fallback adopted an unrelated repo"; fi
+  # THE REGRESSION GATE for #511, same shape and same reason as the sync-core one above.
+  # The assertion immediately above is the one that actually broke: it greps for the
+  # not-checked-out line, fleet-drift.sh emits that line through skip(), and skip() is silent
+  # when CORE_JSON is exported — so `test-core.sh --scope none --json` reported fail:1 on a
+  # tree the identical non-JSON run passed clean. Reproduced on an unmodified checkout before
+  # the fix. Drive the same fixture with CORE_JSON exported and require the identical verdict:
+  # this fails loudly if anyone drops the `-u CORE_JSON` from _fdd_run.
+  #
+  # An explicit `export` in a subshell, not a `CORE_JSON=1 _fdd_run` prefix — the value must
+  # genuinely be EXPORTED or `env -u` has nothing to strip and the gate passes vacuously.
+  # shellcheck disable=SC2030,SC2031  # subshell-local by design — the export must NOT
+  # outlive this command substitution, or it would silence every later section's skip()
+  _fdd_json="$(
+    export CORE_JSON=1
+    _fdd_run
+  )"
+  if grep -qE 'dotfiles-Test.*not checked out' <<<"$_fdd_json"; then
+    pass "drift: the fixture is insulated from an exported CORE_JSON (--json cannot change the verdict)"
+  else
+    fail "drift: an exported CORE_JSON silenced fleet-drift's skip() line — --json would red a green tree (#511)"
+  fi
   # Restore the fixture: later legs assert on the plain directory, with no remote to find.
   rm -rf "$FDF/dotfiles-OldName/.git"
   mv "$FDF/dotfiles-OldName" "$FDF/dotfiles-Test"
@@ -2815,6 +2866,7 @@ if ((_sc_subtree)); then
   # genuinely be EXPORTED or `env -u` has nothing to strip and the gate passes vacuously; and a
   # prefix assignment on a FUNCTION call is the one form whose persistence bash and POSIX mode
   # disagree about, so it could leak CORE_JSON into every later section and silence their skips.
+  # shellcheck disable=SC2030,SC2031  # subshell-local by design, as above
   _sc_out="$(
     export CORE_JSON=1
     _sc_run SYNC_SKIP_AUDIT=1
@@ -2952,9 +3004,18 @@ if ((_sc_subtree)); then
   # failure, and why payload.txt is rewritten in both rounds here.
   #
   # Materializing the tree has no base and no trailer to lose.
-  printf 'core payload v2\n' >"$SCF/coreremote/payload.txt"
+  # 'v2-round2', NOT 'v2': the local-vs-remote guard section above already wrote the exact
+  # bytes 'core payload v2' to this file and committed them, so re-writing them here staged
+  # nothing and `commit -q` was a NO-OP. That cost two things. It printed git's "nothing to
+  # commit, working tree clean" to STDOUT — where --json promises the JSON object and nothing
+  # else, so the machine-readable mode this section's own sibling fixtures exist to protect
+  # was itself unparseable. And it quietly hollowed out this fixture: with no round-2 commit
+  # the remote never moved, so round 2's sync was a no-op too and the "TWO prior syncs" the
+  # comment above insists on were only ever one. The content must differ from BOTH the value
+  # already vendored and the v3 written below.
+  printf 'core payload v2-round2\n' >"$SCF/coreremote/payload.txt"
   _scg "$SCF/coreremote" add -A >/dev/null 2>&1
-  _scg "$SCF/coreremote" commit -q -m 'core: payload v2'
+  _scg "$SCF/coreremote" commit -q -m 'core: payload v2-round2'
   _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"   # round 2 — this is the sync whose trailer dies
   # Destroy the trailer the way a squash-merge does — from EVERY commit, not just HEAD.
   # Amending HEAD alone is not enough and quietly proves nothing: under the old
@@ -3423,7 +3484,7 @@ if have git && have zsh; then
   rm -rf "$NOR"
   # --no-vendor: skip the `git subtree add`, which is the only network call in the
   # script. Everything this asserts is written before/independently of it.
-  if bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
+  if env -u CORE_JSON bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
     _nor_bad=""
     for _nor_f in zshenv zprofile zshrc; do
       [[ -f "$NOR/zsh/$_nor_f.zsh" ]] || _nor_bad="$_nor_bad zsh/$_nor_f.zsh(missing)"
@@ -4718,7 +4779,7 @@ else
     # EMPTY array under `set -u` is an "unbound variable" error rather than zero words. The
     # calls that pass no env vars are exactly the ones that tripped it, so the bug only ever
     # showed on macOS. scripts/lib/common.sh pins the same 3.2 constraint for the same reason.
-    _bout="$(env CORE_COLOR=never ${envs[@]+"${envs[@]}"} "$_BENCH" "$@" 2>&1)"
+    _bout="$(env -u CORE_JSON CORE_COLOR=never ${envs[@]+"${envs[@]}"} "$_BENCH" "$@" 2>&1)"
     _brc=$?
   }
 
@@ -4983,7 +5044,7 @@ STUB
   _v_run() { # _v_run <stub> [extra args...] → sets _vout/_vrc
     local stub="$1"
     shift
-    _vout="$(CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/$stub" "$@" 2>&1)"
+    _vout="$(env -u CORE_JSON CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/$stub" "$@" 2>&1)"
     _vrc=$?
   }
   _v_verdict() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["verdict"])' 2>/dev/null; }
@@ -4994,7 +5055,7 @@ STUB
   #
   # A. A bare box must not be able to produce a green "holds". This is the one place the
   #    repo's skip-and-exit-0 idiom is deliberately broken, so it is pinned.
-  _vout="$(CORE_COLOR=never "$_VERIFY" --atuin /nonexistent/atuin --json 2>&1)"
+  _vout="$(env -u CORE_JSON CORE_COLOR=never "$_VERIFY" --atuin /nonexistent/atuin --json 2>&1)"
   _vrc=$?
   if ((_vrc == 3)) && [[ "$(_v_verdict "$_vout")" == unmeasurable ]]; then
     pass "atuin verify: a missing atuin exits 3 (unmeasurable), NOT 0 — exit 0 asserts something about upstream"
@@ -6301,6 +6362,75 @@ assert not named, "the scope section names measured arms: %s" % named
     fi  # known-good stub held
   fi    # apparatus probe
   _dreap
+fi
+
+# ── --json output contract (self-run) ─────────────────────────────────────────
+# ── --json IS A CONTRACT: stdout carries ONE parseable object and nothing else ─
+# The mode exists for CI steps and editor integrations that PARSE rather than scrape, so
+# every guarantee it makes is machine-facing: a single JSON object on stdout, and a
+# `result` that agrees with the same run without --json. Three separate bugs have broken
+# one half or the other, each found by hand on a green tree (#508, #524, #511), and each
+# time the suite went on certifying itself because no test ever ran --json.
+#
+# Two failure shapes this catches that nothing else does:
+#   1. a fixture leaking to STDOUT — the last one was a no-op `git commit` printing
+#      "nothing to commit, working tree clean", which made the object unparseable while
+#      every assertion still passed;
+#   2. an inherited CORE_JSON silencing a child gate's skip() lines, which flips assertions
+#      that grep for them and reports a failing result on a healthy tree.
+#
+# Runs the suite against ITSELF at --scope none (the cheapest scope, a few seconds).
+# CORE_TEST_SELFJSON=1 in the child is what stops the recursion, and the guard is on the
+# PARENT so a nested run simply skips this section rather than re-entering it.
+#
+# Placed ABOVE the zsh-gated block below, not at the end of the file, because that block
+# ends in `summary; exit` on a box where zsh is absent or shell scope is off — so anything
+# after it is unreachable for exactly the `--scope none` invocation this gate is about.
+if [[ "${CORE_TEST_SELFJSON:-0}" == 1 ]]; then
+  : # nested self-run: this section is what invoked us
+else
+  hdr "--json output contract (self-run, hermetic)"
+  # -u CORE_TEST_NESTED is this section obeying its own rule. audit-core.sh sets it so the
+  # audit owns the summary and we print none — and the child would INHERIT it and print
+  # nothing at all, so under `make audit` the gate saw 0 lines and failed for a reason that
+  # had nothing to do with the contract. Exactly the shape #508/#524/#511 each took: a
+  # fixture asserting on output while a variable that governs how that output is produced
+  # leaks in from the parent.
+  _sj_out="$(env -u CORE_TEST_NESTED CORE_TEST_SELFJSON=1 bash "$HERE/scripts/test-core.sh" --scope none --json 2>/dev/null)"
+  _sj_lines="$(printf '%s\n' "$_sj_out" | grep -c . || true)"
+  if [[ "$_sj_lines" == 1 ]]; then
+    pass "--json: stdout is exactly one line (no fixture leaked onto it)"
+  else
+    fail "--json: stdout carried $_sj_lines lines, want 1 — something printed alongside the object:
+$(printf '%s\n' "$_sj_out" | grep -v '^{' | head -5)"
+  fi
+  # Parse it for real rather than grepping: a truncated or interleaved object can still
+  # contain the substring `"result":"ok"`, and a consumer would choke where a grep would not.
+  if _sj_result="$(printf '%s' "$_sj_out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"])' 2>/dev/null)"; then
+    pass "--json: stdout parses as JSON and exposes .result"
+  else
+    _sj_result=""
+    if have python3; then
+      fail "--json: stdout is not parseable JSON"
+    else
+      skip "--json parse (python3 not installed)"
+    fi
+  fi
+  # THE property #511 was filed about: --json must not change the VERDICT. Compared against
+  # the same scope without it, so a disagreement means the mode itself moved the result.
+  if [[ -n "$_sj_result" ]]; then
+    if env -u CORE_TEST_NESTED CORE_TEST_SELFJSON=1 bash "$HERE/scripts/test-core.sh" --scope none --quiet --color never >/dev/null 2>&1; then
+      _sj_plain=ok
+    else
+      _sj_plain=failed
+    fi
+    if [[ "$_sj_result" == "$_sj_plain" ]]; then
+      pass "--json: the verdict matches the identical run without --json (#511)"
+    else
+      fail "--json: reported '$_sj_result' where the same scope without --json reported '$_sj_plain' — the mode changed the result"
+    fi
+  fi
+  unset _sj_out _sj_lines _sj_result _sj_plain
 fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
@@ -9557,7 +9687,7 @@ if have git; then
   _nvr_catches() { # <grep-pattern> <label>
     git -C "$NREPO" add -A >/dev/null 2>&1
     local out rc
-    out="$("$NVR" --root "$NREPO" 2>&1)"
+    out="$(env -u CORE_JSON "$NVR" --root "$NREPO" 2>&1)"
     rc=$?
     if grep -q "$1" <<<"$out" && [[ $rc -eq 1 ]]; then
       pass "nvim-reachability: $2"
@@ -9568,7 +9698,7 @@ if have git; then
   _nvr_clean() { # <label>
     git -C "$NREPO" add -A >/dev/null 2>&1
     local out rc
-    out="$("$NVR" --root "$NREPO" 2>&1)"
+    out="$(env -u CORE_JSON "$NVR" --root "$NREPO" 2>&1)"
     rc=$?
     if [[ -z "$out" && $rc -eq 0 ]]; then
       pass "nvim-reachability: $1"
