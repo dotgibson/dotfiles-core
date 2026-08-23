@@ -13,6 +13,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **nvim plugin pins move forward for three plugins.** `flash.nvim`, `nvim-lspconfig` and
+  `nvim-treesitter` advance to the commits lazy.nvim had already resolved on a live box.
+
+  Every new SHA was verified to exist upstream and to be a strict fast-forward of the one it
+  replaces (`status=ahead`, `behind_by=0` in all three — no rewrite or force-push), and each
+  range was read before promotion:
+
+  - **`flash.nvim`** `b634694` → `5f0f270`, 2 commits: a Neovim 0.13 search-state fix (#496)
+    plus auto-generated vimdocs. Core calls `require("flash").jump()` — public API, untouched.
+  - **`nvim-lspconfig`** `bff1bd6` → `221c438`, 3 commits: the only functional change is
+    `lsp/ols.lua` skipping its config when the `odin` command is missing, and Core does not
+    configure `ols`. The two servers Core _does_ touch here are cosmetic — `gopls` gains one
+    docstring line in its type annotations, `volar` nine additive annotation lines (Core's
+    only mention of `volar` is the comment in `servers/vue_ls.lua` recording that rename).
+  - **`nvim-treesitter`** `074aa44` → `8b98b44`, 2 commits: a parser bot update, and `djot`
+    marked unmaintained. Core does not reference `djot`.
+
+  Nothing renames or removes an API Core calls.
+
+  **Provenance, because it is the failure mode this repo keeps re-learning:** these bumps were
+  found as an uncommitted edit to `dotfiles-MacBook`'s **vendored** `core/nvim/lazy-lock.json`
+  — the same shape as the v4.14.0 entry, which found the previous set sitting in
+  `dotfiles-Fedora`'s vendored tree. That tree is a copy: `scripts/sync-core.sh` refuses a
+  dirty repo outright, so the edit blocks the next fan-out rather than surviving it, and once
+  committed there it would be overwritten and lost on the following `lazy sync`. They belong
+  here, once, and reach every machine by fan-out.
+
 ### Added
 
 - **`bootstrap-test.yml` now asserts the OS overlay — the part an OS repo actually owns.**
