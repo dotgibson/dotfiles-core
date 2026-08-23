@@ -3714,6 +3714,132 @@ else
   fail "blib_link_role_layer: the no-.conf role wired wrongly (got: $_rl_out)"
 fi
 
+# ── F8c. package-list reading (lib/bootstrap-lib.sh) ─────────────────────────
+# blib_read_pkgs had NO coverage, which is how #460 survived: it read its file with a bare
+# redirect and no existence check, and every caller reaches it through a process
+# substitution, where `mapfile` reports its OWN status rather than the reader's. A missing
+# packages.txt therefore produced a zero-length array WITH A SUCCESS STATUS, and a broken
+# clone provisioned nothing while reporting that as intended.
+#
+# blib_read_pkgs_into is the shape that actually fixes it — it assigns in the CALLER'S
+# frame, so `|| exit 1` works. These pin both halves: the guard on the old function (loud
+# even where the status is discarded) and the new function's status/assignment contract.
+hdr "package-list reading (a missing list is a failure, not an empty array)"
+_rp="$(mktemp -d "$SANDBOX/readpkgs.XXXXXX")"
+printf 'foo # inline comment\n\n# whole-line comment\n  bar  \nbaz\n' >"$_rp/list.txt"
+# A list whose LAST line is a comment — the common real shape, and the one that made the
+# old `[[ -n "$line" ]] && printf …` tail return 1 from the loop.
+printf 'pkg\n# trailing comment\n' >"$_rp/comment-final.txt"
+
+# Fresh `bash -c` per case (the lib's re-entry guard makes a re-source a no-op at file
+# scope). Prints the case's own verdict lines; the assertions match on those.
+_rp_run() { bash -c '
+  set -uo pipefail
+  . "'"$HERE/scripts/lib/common.sh"'"
+  . "'"$HERE/lib/bootstrap-lib.sh"'"
+  '"$1"'
+' 2>&1; }
+
+# 1) THE BUG. An unreadable list must fail, loudly, and must not hand back a plausible
+#    empty array. Both halves matter: the status is what a caller tests, the warning is
+#    what an operator reads when the caller is the process-substitution form that cannot.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs /nonexistent/packages.txt && echo "STATUS=0" || echo "STATUS=$?"
+  echo "SIZE=${#pkgs[@]}"
+')"
+if [[ "$_rp_out" == *"STATUS=1"* && "$_rp_out" == *"SIZE=0"* &&
+  "$_rp_out" == *"not readable"* ]]; then
+  pass "blib_read_pkgs_into: an unreadable list returns 1, warns, and yields no packages"
+else
+  fail "blib_read_pkgs_into: a missing list did not fail loudly (got: $_rp_out)"
+fi
+
+# 2) The happy path still parses exactly as before: inline comments, whole-line comments,
+#    blank lines and surrounding whitespace all stripped.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs "'"$_rp"'/list.txt" || echo "STATUS=$?"
+  echo "GOT=${#pkgs[@]}:${pkgs[*]}"
+')"
+if [[ "$_rp_out" == *"GOT=3:foo bar baz"* ]]; then
+  pass "blib_read_pkgs_into: comments, blanks and whitespace are stripped into the array"
+else
+  fail "blib_read_pkgs_into: parsing drifted from blib_read_pkgs (got: $_rp_out)"
+fi
+
+# 3) The two readers must not disagree. CI and bootstrap both read the same file, and a
+#    gate that parses it differently from the thing it gates is worse than no gate.
+# core_files_identical, NOT diff — diffutils is not guaranteed present, and the Arch CI
+# container is a box that genuinely lacks it. That is the same rule #572 records for `cmp`
+# (they ship in the same package); the gate below now bans both.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs "'"$_rp"'/list.txt"
+  blib_read_pkgs "'"$_rp"'/list.txt" >"'"$_rp"'/via-print.txt"
+  printf "%s\n" "${pkgs[@]}" >"'"$_rp"'/via-array.txt"
+  if core_files_identical "'"$_rp"'/via-print.txt" "'"$_rp"'/via-array.txt"; then
+    echo AGREE
+  else echo DIFFER; fi
+')"
+if [[ "$_rp_out" == *AGREE* ]]; then
+  pass "blib_read_pkgs and blib_read_pkgs_into parse a list identically"
+else
+  fail "the two package-list readers disagree (got: $_rp_out)"
+fi
+
+# 4) A PROCESS SUBSTITUTION argument still works. dotfiles-Debian calls
+#    `blib_read_pkgs <(pkg_filter_lines "$base_list" "$OS_ID")` to drop the lines annotated
+#    for other distros, and that argument is a /dev/fd/N PIPE. This is why the guard is
+#    `-r` and not `-f`: the obvious existence check would reject it and break a working
+#    caller, turning a bug fix into an outage on one repo.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs <(printf "foo # c\n\nbar\n") || echo "STATUS=$?"
+  echo "GOT=${#pkgs[@]}:${pkgs[*]}"
+')"
+if [[ "$_rp_out" == *"GOT=2:foo bar"* ]]; then
+  pass "blib_read_pkgs_into: a /dev/fd process substitution is readable (the Debian shape)"
+else
+  fail "blib_read_pkgs_into: rejected a process substitution — -f crept back in (got: $_rp_out)"
+fi
+
+# 5) A failed read CLEARS the array rather than leaving the previous run's contents, so a
+#    caller that ignores the status cannot silently install a stale list.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs "'"$_rp"'/list.txt"
+  blib_read_pkgs_into pkgs /nonexistent 2>/dev/null
+  echo "SIZE=${#pkgs[@]}"
+')"
+if [[ "$_rp_out" == *"SIZE=0"* ]]; then
+  pass "blib_read_pkgs_into: a failed read empties the array (no stale package list)"
+else
+  fail "blib_read_pkgs_into: stale contents survived a failed read (got: $_rp_out)"
+fi
+
+# 6) The array NAME is spliced into an eval, so anything but a plain identifier must be
+#    rejected before it gets there — this is a code-injection surface, not a typo check.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into "x;touch '"$_rp"'/PWNED" "'"$_rp"'/list.txt" && echo "STATUS=0" || echo "STATUS=$?"
+  blib_read_pkgs_into "9lead" "'"$_rp"'/list.txt" 2>/dev/null && echo "D=0" || echo "D=$?"
+')"
+if [[ "$_rp_out" == *"STATUS=2"* && "$_rp_out" == *"D=2"* && ! -e "$_rp/PWNED" ]]; then
+  pass "blib_read_pkgs_into: a malformed array name returns 2 and never reaches the eval"
+else
+  fail "blib_read_pkgs_into: a bad array name was not rejected (got: $_rp_out)"
+fi
+
+# 7) blib_read_pkgs' own status is now MEANINGFUL, so it has to be right in both
+#    directions. The failure case is the point of #460; the success case is the
+#    regression it could have introduced — the function used to end on
+#    `[[ -n "$line" ]] && printf …`, so a list whose final line is a comment returned 1.
+#    Harmless while every caller discarded the status, a landmine the moment one stops.
+_rp_out="$(_rp_run '
+  blib_read_pkgs "'"$_rp"'/comment-final.txt" >/dev/null && echo "OK=0" || echo "OK=$?"
+  blib_read_pkgs /nonexistent >/dev/null 2>&1 && echo "MISS=0" || echo "MISS=$?"
+')"
+if [[ "$_rp_out" == *"OK=0"* && "$_rp_out" == *"MISS=1"* ]]; then
+  pass "blib_read_pkgs: exits 0 on a comment-final list and 1 on a missing one"
+else
+  fail "blib_read_pkgs: status contract is wrong in one direction (got: $_rp_out)"
+fi
+
 # ── F9. tag-release.sh — the tag may only exist on a commit that is on main ──
 # This script had NO coverage, which is how its ordering bug survived: it used to commit
 # AND tag in one step, leaving a local vX.Y.Z on a commit that was not yet on main. A
@@ -9909,9 +10035,69 @@ if PATH="$_cfi_bin" core_files_identical "$_cfi/a" "$_cfi/b" &&
 else
   fail "core_files_identical: wrong answer without diffutils on PATH — the #572 regression is back"
 fi
-# And no caller may quietly go back to cmp.
-if grep -nE '(^|[|;&( ])cmp[[:space:]]+-' "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh 2>/dev/null | grep -v '^\s*#' | grep -q .; then
-  fail "a script calls cmp again — use core_files_identical (#572)"
+# And no caller may quietly go back to cmp — OR to diff, which is the same hole one step
+# over: both ship in diffutils, so a box without it (the Arch CI container) has neither.
+# Banning only `cmp` is what let a `diff <(…) <(…)` into this very file and red audit-arch
+# while every local gate was green.
+#
+# `git diff` MUST be exempt — git is the one tool these scripts already cannot run without,
+# which is why core_files_identical is built on git hash-object. Getting that exemption
+# right is the whole difficulty, and the first attempt got it wrong: it enumerated the
+# invocation forms it could think of (`git diff`, `git --no-pager diff`) and so false-fired
+# on sync-core.sh's `git -C "$path" diff --cached`, reddening four CI legs on correct code.
+#
+# So the exemption is now structural rather than a list of spellings: `diff` is a git
+# SUBCOMMAND if a `git` invocation precedes it in the same pipeline stage. `[^|;&]*` is what
+# scopes it to that stage — it stops at a pipe, so `git log | diff -u - x` is still caught.
+# _diffutils_hits is a function purely so the fixtures below can test BOTH directions; a
+# gate whose exemption is untested is how the last one shipped broken.
+_diffutils_hits() { # _diffutils_hits <file>… — print offending "file:line:text"
+  # The comment filter must skip grep's "file:line:" PREFIX before looking for the #.
+  # The original gate used `grep -v "^\s*#"` against this same prefixed stream, so it
+  # never stripped a single comment — latent only because no commented `cmp -` existed.
+  # -H as well as -n: grep OMITS the filename when handed a single file, so the output
+  # format would change between the multi-file tree scan and a one-file fixture call — and
+  # the comment filter below, which skips past "file:line:", would then miss the "#".
+  grep -nHE '(^|[|;&( ])(cmp|diff)[[:space:]]+-' "$@" 2>/dev/null |
+    grep -vE '^[^:]*:[0-9]+:[[:space:]]*#' |
+    grep -vE 'git[^|;&]*[[:space:]]diff[[:space:]]' || true
+}
+# Fixtures first: prove the matcher catches a real call and the exemption spares every git
+# form actually used in this repo, before trusting its verdict on the tree.
+_du_fx="$(mktemp -d "$SANDBOX/diffutils.XXXXXX")"
+# The offending literals are ASSEMBLED, never written out, because this fixture lives inside
+# a file the gate itself scans — spelled directly, test-core.sh would flag its own test data
+# and the only fixes would be to stop scanning the very file that carried the real bug, or to
+# stop testing the gate. (Same reason the pipefail scanner has a "does not flag its own
+# definition" case.)
+_du_d=diff _du_c=cmp
+{
+  printf 'if %s -u "$a" "$b" >/dev/null; then echo same; fi\n' "$_du_d"
+  printf '%s -s "$a" "$b" && echo identical\n' "$_du_c"
+  printf 'git log --oneline | %s -u - expected.txt\n' "$_du_d"
+} >"$_du_fx/bad.sh"
+cat >"$_du_fx/good.sh" <<'DUGOOD'
+if git diff --quiet HEAD -- "$f"; then echo clean; fi
+git --no-pager diff --no-index -- "$a" "$b"
+git -C "$path" diff --cached --quiet
+git -C "$path" diff --cached --quiet -- core
+DUGOOD
+# The commented-out call goes in the same assembled way, for the same reason.
+printf '# %s -u is fine in a comment\n' "$_du_d" >>"$_du_fx/good.sh"
+_du_bad="$(_diffutils_hits "$_du_fx/bad.sh" | wc -l | tr -d ' ')"
+_du_good="$(_diffutils_hits "$_du_fx/good.sh" | wc -l | tr -d ' ')"
+if [[ "$_du_bad" == 3 ]]; then
+  pass "diffutils gate: catches diff, cmp, and a diff piped from git (3/3)"
+else
+  fail "diffutils gate: missed a real cmp/diff call (found $_du_bad of 3)"
+fi
+if [[ "$_du_good" == 0 ]]; then
+  pass "diffutils gate: every git-subcommand form and a comment are exempt (no false fires)"
+else
+  fail "diffutils gate: false-fired on a legitimate git diff — $(_diffutils_hits "$_du_fx/good.sh" | tr '\n' ' ')"
+fi
+if _diffutils_hits "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh | grep -q .; then
+  fail "a script calls cmp/diff again — use core_files_identical (#572)"
 else
   pass "no script calls cmp (diffutils stays optional)"
 fi
