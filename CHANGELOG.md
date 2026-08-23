@@ -134,6 +134,53 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`watchexec` 2.6.1 on Arch and Homebrew — the four-repo version stamp has split.**
+  (`PORTING-MATRIX.md`)
+  Footnote `²⁵`'s availability block asserted one version on behalf of four package repos:
+  "**Arch `extra`, openSUSE Tumbleweed, Homebrew, nixpkgs** — 2.5.1, current." Two of the four
+  have since moved. Arch `extra` carries **2.6.1-1** and Homebrew **2.6.1**; openSUSE
+  Tumbleweed and nixpkgs are still on 2.5.1. That bullet is now two, and the block carries a
+  `versions re-verified 2026-08-23` stamp beside the existing coverage dates.
+
+  Re-checked against each repo's own package pages, per the convention the footnote itself
+  declares — not a repology snapshot. The other three bullets hold unchanged: Alpine
+  `community` 2.5.1-r0, GURU 2.5.0 (top non-`9999` ebuild), and Fedora/Debian/Kali still
+  package it nowhere.
+
+  **The shape of the defect is the reusable part.** A bullet that lumps N repos into a single
+  version claim is true only while all N agree, and it rots silently the moment one moves —
+  there is no wrong-looking text to catch, because the line still reads as a fact. This one
+  surfaced through `/os-package-availability macbook` (dotfiles-MacBook#185), which is
+  **Homebrew-scoped by construction** and could only ever see one of the four; the Arch half
+  was found by re-reading the whole bullet rather than only the repo that was reported. Prefer
+  one bullet per repo where the versions are load-bearing.
+
+  The footnote's actual assertion — Homebrew packages `watchexec`, and the MacBook `Brewfile`
+  deliberately declines it — was correct throughout and is unchanged. No package list changed:
+  that same audit found all 77 `Brewfile` entries resolving under their canonical names.
+- **`PORTING-MATRIX.md`'s Alpine claims had drifted: a version floor stated fleet-wide that
+  holds on two of five branches, and two "no bootstrap installs it" absolutes that Alpine
+  falsifies.** (dotfiles-Alpine#122) Documentation only — no Core behaviour changes.
+
+  Footnote ⁵ quoted tree-sitter-cli `0.26.7` for **Alpine** as though it were the whole distro;
+  that is the v3.24/edge version. v3.21 carries `0.24.4-r0` and v3.22/v3.23 carry `0.25.10-r0`,
+  all three **below** nvim-treesitter's `>= 0.26.1` floor. The note is now split per release and
+  records that `dotfiles-Alpine`'s cargo fallback is **version**-guarded rather than
+  presence-guarded — a presence guard sees apk's 0.25.10, skips the build, and leaves the box
+  below the floor in silence. (The openSUSE half of this footnote, added by #599, is untouched.)
+
+  Footnote ¹⁷ said no `bootstrap.sh` installs `jnv`; `dotfiles-Alpine` does, via cargo
+  best-effort, so its cell is now `cargo³`. Footnote ²¹ had already been corrected on this
+  point by #565, and now that ¹⁷ agrees with it, ¹⁷ also names Gentoo's opt-in extras build
+  and defers to ²¹ as the authority rather than keeping a second count in sync by hand.
+
+  Footnote ³¹ said neither Charm tool is go-installed by any `bootstrap.sh`. `dotfiles-Alpine`
+  go-installs `glow` and always has — on the stale `github.com/charmbracelet/glow/v2` path,
+  which still resolves and so quietly pinned an abandoned major instead of failing. `glow` is
+  now a row in the module-path table at its real path, `charm.land/glow/v3`.
+
+  Footnote ¹⁴'s `testing`-only list gained `tealdeer`, which it had always omitted.
+
 - **The carapace footnote still said three OS repos call the impossible `go install`.** They
   no longer do, and had not for a while — the claim, and the "each is tracked in its own repo"
   that followed it, was the last stale paragraph of footnote ²⁷. `dotfiles-Arch/bootstrap.sh`
