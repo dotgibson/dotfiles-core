@@ -44,6 +44,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`core-doctor` gets a third state, so `✗` means something again.** (#513)
+  `_CORE_DOCTOR_GROUPS` probes 41 tools; `PORTING-MATRIX.md`'s footnote ²¹ says a documented
+  subset of them is installed by **no** Linux repo's `packages.txt` and **no** `bootstrap.sh`,
+  deliberately. Both were rendered `✗`, so a correctly-provisioned box reported a wall of
+  failures for tools that were never in scope. `✗` is the doctor's only alarm channel — when a
+  healthy box shows nine permanent ones the operator stops reading them, and a real regression
+  lands in the same visual bucket as the ones that were never coming.
+
+  Now `✓ present | ✗ expected but missing | · opt-in, not installed`, with the opt-in rows
+  listed once under their own heading and kept out of the `install missing` block, which
+  exists to name things worth fixing. `·` rather than the `○` the issue proposed: `○` already
+  means "installed but **idle**" in the wired block below, and one glyph with two meanings on
+  one screen is the legibility problem this change is about.
+
+  `--json` grows an `expected` object beside `tools`, sharing its key set and order, so a
+  provisioning gate can finally assert _"no expected tool is missing"_ — a question that had
+  no expressible form, since `tools` alone can only answer "is every tool present", which is
+  false on every correctly-provisioned box. A separate object rather than widening `tools`
+  from bool to enum, which would break every existing consumer for a question they were not
+  asking. The exit code deliberately does not move: `core-doctor` is read-only diagnostics.
+
+  Membership is a **rule, not a judgement call** — a tool is opt-in iff its `PORTING-MATRIX.md`
+  Tool cell carries a row-level ²¹, or one of the two footnotes ²¹ itself names as the same
+  shape (¹⁷ `jnv`, ¹⁹ `gping`). A test re-derives the list from the matrix and fails if the two
+  disagree, so the prose is mechanically checked rather than hand-copied — the gap that let a
+  probed tool ship with no matrix row at all (#514). Known limitation, recorded rather than
+  papered over: `jj` and `ast-grep` carry ²¹ only in the Gentoo and Kali _cells_, and a
+  Core-side list cannot say "opt-in there, expected here", so they stay expected. Fixing that
+  properly needs a per-repo manifest; this is the fallback default until one exists.
+
 - **`bootstrap-test.yml` now asserts the OS overlay — the part an OS repo actually owns.**
   (#473)
   The `links-only` job asserted `loader.zsh`, `80-os.zsh`, `starship.toml`,
@@ -235,6 +265,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   start. Verified by sabotaging `lazy.lua` to append to the seed: the assertion fires and
   names the file. The conflated condition was also split in two, so a symlinked state lockfile
   and a mutated seed no longer report the same message.
+
+- **The atuin autostart premise was concurrency-sensitive, and it blocked every release.** (#495)
+  The block is hermetic with respect to atuin, systemd and the network — but not with respect
+  to another copy of **itself**. Its leak assertion reasons about what appeared under shared
+  `/tmp` during a window and its reap assertions about processes; neither can tell this run's
+  residue from a concurrent run's. The release path audits **twice** (`make release`, then
+  `make tag`), so a cut needed two consecutive lucky greens. The observed shape was the tell:
+  one unmodified tree went `pass 261  fail 0` and then `pass 260  fail 1` nine minutes later,
+  and across three attempts the failure _count_ varied — 6, then 4, then 0 — which a real
+  defect does not do. The only way through was `TAG_SKIP_AUDIT=1`, i.e. eroding the gate the
+  runbook depends on.
+
+  Three fixes, and the first is a defect in its own right whatever the root cause:
+
+  `_d_forks_alive` read the fork log with no existence check. Bash applies redirections left
+  to right, so the file is opened **before** `2>/dev/null` takes effect — a missing one printed
+  a raw `No such file or directory` on inherited stderr _and_ still returned `0`,
+  indistinguishable from a genuinely clean reap. Its sibling `_d_spawned` has always checked
+  `-s`; this one was the outlier.
+
+  The three call sites read `.forked` the instant the run returned, but the stub writes it from
+  the child it just forked — so "not there yet" and "never forked" were the same observation at
+  the wrong moment, and the failure named the wrong thing ("the stub never forked, so the
+  reaping assertion proved nothing"). Now a bounded poll, ~2s at 50ms.
+
+  And the block takes an exclusivity lock, skipping when another run holds it. A skip is
+  honest; a flaky fail is not. `mkdir` rather than `flock` (absent on macOS, and this suite
+  runs there) or `pgrep` — a process probe cannot work here at all, because `audit-core.sh`
+  runs `test-core.sh` in the **background of the same audit**, so it would find its own sibling
+  and skip every run. The holder's pid is recorded and a lock whose holder is gone is taken
+  over, so a SIGKILLed run cannot turn one crash into a permanently silent skip.
 
 - **`PORTING-MATRIX.md`: the Gentoo column again — a tool that got packaged, and a version
   trap the matrix had only ever recorded for Debian.** Reported by the
