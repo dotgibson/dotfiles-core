@@ -181,6 +181,49 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   Footnote ¹⁴'s `testing`-only list gained `tealdeer`, which it had always omitted.
 
+- **`core.lock` recorded `core_tag=v4` — the moving alias, not the release it pins.** (#515)
+  Every cut writes the specific `vX.Y.Z` and then re-points the major alias `v4`, so the alias
+  is the newer tag and a bare `git describe --tags` picks it. All nine repos were stamped
+  `core_tag=v4`: a provenance field naming a target that is deliberately moved on the next
+  release. `core_version` was right beside it and correct, which is what makes this a bug
+  rather than a design choice — two adjacent fields describing one commit at two precisions,
+  with the less precise one feeding the tooling.
+
+  Not cosmetic, unlike its `core_branch` sibling (#453): `core_tag` is read twice. `fleet-drift`
+  renders it as the RECORDED column, so the fleet dashboard answered "which Core is this box
+  on?" with "4.x" for every repo; and it is written verbatim as the trailing `# vX.Y.Z` comment
+  on every SHA-pinned reusable caller the fan-out rewrites — the comment Renovate reads to pick
+  the next bump, so `# v4` handed Renovate a target that never changes.
+
+  Both `describe` calls now filter to the `vX.Y.Z` shape (the idiom `fleet-drift.sh` already
+  used), which excludes bare-major aliases by construction. When only an alias exists, describe
+  fails and `core_tag` is **omitted** — the field is documented as conditional, and an absent
+  tag is honest where `v4` was not. The fix reaches a repo on its next sync.
+
+- **The fan-out opened a PR for a repo whose workflow-pin rewrite had failed.** (#484)
+  `sync-core.sh` fails such a repo — `err()` prints a `✗` and counts it failed — but that
+  verdict cannot reach `sync-fanout.yml`: the script exits 0 by design (it runs under `bash -e`,
+  so a non-zero would abort the step and deny PRs to the repos that _did_ sync), and `core.lock`
+  is deliberately still written and committed, because withholding it would add a self-blocking
+  dirty tree on top of the drift. The gate's two post-conditions — branch ≥1 commit ahead, and
+  `core.lock` pins the target — are therefore **both satisfied** by exactly the repo that should
+  be held back, so the release shipped a tree that vendors one Core and runs another: the #482
+  split, reopened, with only a `✗` in the job log to say so.
+
+  The gate now asserts the artefact instead of trusting the producer. Before pushing, it
+  re-derives every `dotgibson/dotfiles-core/.github/workflows/<name>@<40-hex>` pin from the
+  files on disk and requires each to equal the released commit; a mismatch marks the repo ❌ and
+  skips the push, matching the two existing post-condition failures. Offline, and independent of
+  how the sync reported — so `sync-core.sh`'s exit-0 contract, which must not change, is
+  untouched. Callers on the mutable `@v4` alias match no 40-hex and are correctly ignored.
+
+- **`sync-core.sh` said "N workflow pin(s)" while counting workflow FILES.** (#491)
+  `_sync_pin_workflows` increments once per file rewritten, and one file can carry several
+  pins, so the number and the noun disagreed in both commit-message forms — while the `ok()`
+  line in the same function already said `file(s)`. Both now say `workflow file(s)`, and
+  `VENDORING.md` says the same; that sentence also documented only the older `core.lock → …`
+  form and now covers the `sync Core → …` one the materialize rework (#587) introduced.
+
 - **The carapace footnote still said three OS repos call the impossible `go install`.** They
   no longer do, and had not for a while — the claim, and the "each is tracked in its own repo"
   that followed it, was the last stale paragraph of footnote ²⁷. `dotfiles-Arch/bootstrap.sh`

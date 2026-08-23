@@ -2988,10 +2988,16 @@ if ((_sc_subtree)); then
   # ZERO here: the failure branch prints "done with failures" to stderr but never sets a
   # status. That is load-bearing rather than an oversight to "fix" in passing —
   # sync-fanout.yml runs this under `bash -e` and then does its OWN per-repo
-  # post-condition check (core.lock pins the released sha, branch ≥1 commit ahead), so a
-  # non-zero exit would abort that step and stop it opening PRs for the repos that DID
-  # sync. Pinning the observable contract here keeps the test honest about what the
-  # script actually promises; whether $? should also be non-zero is a design call.
+  # post-condition check, so a non-zero exit would abort that step and stop it opening PRs
+  # for the repos that DID sync. Pinning the observable contract here keeps the test honest
+  # about what the script actually promises; whether $? should also be non-zero is a design
+  # call. That post-condition is now THREE assertions, not two — core.lock pins the released
+  # sha, the branch is ≥1 commit ahead, and every dotgibson/dotfiles-core 40-hex pin in
+  # .github/workflows/* equals the target (#484). The third was added because the first two
+  # are both satisfied by a repo whose pin rewrite FAILED: err() flips it into the failed
+  # bucket here, but that verdict cannot cross the exit-0 boundary, and core.lock is
+  # deliberately committed anyway. The fan-out now checks the artefact rather than trusting
+  # this script's report — which is what makes keeping exit 0 safe.
   if grep -q 'has uncommitted changes' <<<"$_sc_out" &&
     grep -qE 'failed 1' <<<"$_sc_out"; then
     pass "sync-core: a dirty target is refused and counted failed (not stashed, not force-merged)"
@@ -3014,7 +3020,16 @@ if ((_sc_subtree)); then
   #
   # Tag the fixture Core first: the comment rewrite is driven by core.lock's core_tag, so
   # without a tag that half of the contract would go untested (and core_tag untested too).
+  #
+  # TWO tags on ONE commit, in release order, because that is the shape that broke (#515).
+  # Every real cut writes the specific vX.Y.Z and then re-points the moving major alias, so
+  # the alias is the NEWER tag — and a bare `git describe --tags` picks it. On v4.15.1 it did,
+  # and all nine repos stamped `core_tag=v4`: a provenance field naming a target that moves on
+  # the next release, which then became the `# v4` comment on every rewritten pin, i.e. a
+  # Renovate bump target that never changes. Reproduced here: without the vX.Y.Z shape filter
+  # in sync-core.sh, describe returns `v9` and both assertions below go red.
   _scg "$SCF/coreremote" tag -f v9.9.9 >/dev/null 2>&1
+  _scg "$SCF/coreremote" tag -f v9 >/dev/null 2>&1
   _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1
   _sc_remote_sha="$(_scg "$SCF/coreremote" rev-parse main)"
   _sc_oldsha=0123456789abcdef0123456789abcdef01234567
@@ -3048,6 +3063,15 @@ if ((_sc_subtree)); then
     pass "sync-core: a SHA-pinned caller is repointed at the vendored Core, comment and all"
   else
     fail "sync-core: pinned caller not repointed ($(grep -o '@[^ ]*.*' "$_sc_wf/pinned-with-comment.yml"))"
+  fi
+  # The lock side of the same property. Asserted separately from the pin comment above
+  # because the two can diverge: core_tag is written even by a repo that SHA-pins nothing,
+  # and fleet-drift renders it as the RECORDED column, so `v9` here would make the fleet
+  # dashboard answer "which Core?" with "9.x" for every repo (#515).
+  if grep -q '^core_tag=v9\.9\.9$' "$_sc_lock"; then
+    pass "sync-core: core.lock stamps the SPECIFIC release tag, not the moving major alias"
+  else
+    fail "sync-core: core.lock core_tag is '$(grep '^core_tag=' "$_sc_lock" || echo '(absent)')', want v9.9.9"
   fi
   # No comment in, no comment out: inventing one would hand Renovate a version claim the
   # repo never made.

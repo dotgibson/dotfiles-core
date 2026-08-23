@@ -54,6 +54,13 @@ core_ref=v4.10.0-release      # the ref that was FOLLOWED — see below
 core_tag=v4.10.0              # only once Core carries a tag describing that commit
 ```
 
+`core_tag` names the **specific release**, never the moving `v4` major alias. Both tags point
+at a release commit, and `git describe` used to be free to pick either — so every repo in the
+fleet once stamped `core_tag=v4`, a provenance field whose target is deliberately re-pointed on
+the next cut (#515). `sync-core.sh` now filters describe to the `vX.Y.Z` shape; when only the
+alias exists the field is **omitted**, which is why it is documented as conditional. An absent
+`core_tag` is honest, a `v4` is not.
+
 `core_ref` records **what the sync followed**, which is not always a branch:
 
 | How the sync ran | `core_ref` holds |
@@ -67,9 +74,12 @@ disagree with this document — a fan-out wrote a SHA into a field documented as
 duplicating `core_sha` and adding nothing.
 
 Written by `sync-core.sh` and committed as `chore(core): core.lock → <sha> (v<version>)`
-— or `core.lock + N workflow pin(s) → …` when the repo SHA-pins its reusable callers (see
-below). It exists so the question "which Core is this box on?" is answerable **offline and
-in O(1)**, without parsing `git log` for the subtree-squash marker.
+when only the lock moved, or `chore(core): sync Core → v<version> (<sha>)` when the vendored
+`core/` tree moved with it. Either form gains `+ N workflow file(s)` when the repo SHA-pins
+its reusable callers (see below) — **files**, not pins: one workflow file can carry several
+pins, and the number is a count of files rewritten (#491). It exists so the question "which
+Core is this box on?" is answerable **offline and in O(1)**, without parsing `git log` for the
+subtree-squash marker.
 
 Two consumers depend on it:
 
@@ -115,7 +125,8 @@ rules govern what it touches:
 - The trailing **`# vX.Y.Z` comment moves with the SHA**, written as `core_tag` verbatim.
   Renovate reads that comment to pick the next bump, and a pin check compares it against
   `core_tag` independently of the SHA, so moving one without the other just trades one red
-  gate for another.
+  gate for another. This is also why `core_tag` excludes the `v4` alias (#515) — a `# v4`
+  comment here would hand Renovate a bump target that never moves.
 
 Nothing else is rewritten — a third-party action pinned in the identical
 `@<sha> # <version>` shape is matched on the `dotgibson/dotfiles-core/` prefix and skipped.
