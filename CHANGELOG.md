@@ -134,6 +134,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`watchexec` 2.6.1 on Arch and Homebrew — the four-repo version stamp has split.**
+  (`PORTING-MATRIX.md`)
+  Footnote `²⁵`'s availability block asserted one version on behalf of four package repos:
+  "**Arch `extra`, openSUSE Tumbleweed, Homebrew, nixpkgs** — 2.5.1, current." Two of the four
+  have since moved. Arch `extra` carries **2.6.1-1** and Homebrew **2.6.1**; openSUSE
+  Tumbleweed and nixpkgs are still on 2.5.1. That bullet is now two, and the block carries a
+  `versions re-verified 2026-08-23` stamp beside the existing coverage dates.
+
+  Re-checked against each repo's own package pages, per the convention the footnote itself
+  declares — not a repology snapshot. The other three bullets hold unchanged: Alpine
+  `community` 2.5.1-r0, GURU 2.5.0 (top non-`9999` ebuild), and Fedora/Debian/Kali still
+  package it nowhere.
+
+  **The shape of the defect is the reusable part.** A bullet that lumps N repos into a single
+  version claim is true only while all N agree, and it rots silently the moment one moves —
+  there is no wrong-looking text to catch, because the line still reads as a fact. This one
+  surfaced through `/os-package-availability macbook` (dotfiles-MacBook#185), which is
+  **Homebrew-scoped by construction** and could only ever see one of the four; the Arch half
+  was found by re-reading the whole bullet rather than only the repo that was reported. Prefer
+  one bullet per repo where the versions are load-bearing.
+
+  The footnote's actual assertion — Homebrew packages `watchexec`, and the MacBook `Brewfile`
+  deliberately declines it — was correct throughout and is unchanged. No package list changed:
+  that same audit found all 77 `Brewfile` entries resolving under their canonical names.
+
 - **The carapace footnote still said three OS repos call the impossible `go install`.** They
   no longer do, and had not for a while — the claim, and the "each is tracked in its own repo"
   that followed it, was the last stale paragraph of footnote ²⁷. `dotfiles-Arch/bootstrap.sh`

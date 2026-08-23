@@ -572,9 +572,13 @@ cargo-installs it from the extras block. The other seven machines are opt-in.
 (This paragraph used to read "the only tool in this table that nothing in the fleet installs,
 including macOS"; Alpine falsified the first half, and Gentoo — checked against `bootstrap.sh`
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
-2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files:
+2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
+re-verified 2026-08-23 against each repo's own package pages:
 
-- **Arch `extra`, openSUSE Tumbleweed, Homebrew, nixpkgs** — 2.5.1, current.
+- **Arch `extra` and Homebrew** — 2.6.1 (Arch's package revision is `2.6.1-1`).
+- **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
+  line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
+  like once two of the four move and two do not.)
 - **Alpine `community`** — 2.5.1-r0, a native musl build.
 - **Gentoo: GURU carries 2.5.0**, and there is no `::gentoo` atom — but the cell reads
   `cargo²⁵`, not `GURU`, because `dotfiles-Gentoo` does not emerge that atom: it
