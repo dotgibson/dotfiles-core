@@ -174,7 +174,18 @@ summary() {
 # created BEFORE the zsh gate because Section C (clipboard) is pure bash and must run
 # even where zsh is absent — bin/clip's whole reason to exist is bare-box portability.
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-test.XXXXXX")"
-trap 'rm -rf "$SANDBOX"' EXIT
+# ONE handler, because `trap … EXIT` REPLACES rather than appends — a second one installed
+# further down this file would silently take the sandbox cleanup with it, leaving a
+# core-test.XXXXXX per run under /tmp for nobody to notice. Anything else needing to run at
+# exit hangs off this function. The `declare -F` guard is for the early exits above (--help,
+# a bad argument): those leave before the later definitions exist, and an EXIT handler that
+# calls a not-yet-defined function turns a clean `exit 0` into a command-not-found on stderr.
+_core_test_cleanup() {
+  rm -rf "$SANDBOX"
+  declare -F _d_drop_lock >/dev/null && _d_drop_lock
+  return 0
+}
+trap '_core_test_cleanup' EXIT
 
 # ── C. clipboard detection ladder (bin/clip / bin/clip-paste) ─────────────────
 # bin/clip is the single highest-fan-out runtime artifact in Core — used by zsh
@@ -5329,6 +5340,50 @@ fi
 #
 # Hermetic, and genuinely so: the stub runs a REAL bindable AF_UNIX daemon (python3, exec'd so
 # the process is signal-addressable), but no atuin, no systemd and no network are involved.
+# ── the premise block's exclusivity lock ─────────────────────────────────────────────
+# `mkdir` and not flock/pgrep, deliberately:
+#   • mkdir is atomic on every POSIX filesystem and needs no util-linux — flock is absent on
+#     macOS, and this suite runs on the MacBook too;
+#   • a pgrep for "another test-core.sh" cannot work here at all. audit-core.sh runs
+#     test-core.sh in the BACKGROUND of the same audit, concurrent with its static gates, so
+#     a process-name probe would find its own sibling — or itself — and skip every audit.
+# The lock is content-addressed to nothing but the machine: one holder at a time, fleet-wide.
+#
+# STALENESS MATTERS MORE THAN THE LOCK. A run killed with SIGKILL (or a machine that lost
+# power mid-audit) leaves the directory behind, and a lock nothing can clear turns one crash
+# into a permanently skipped block — which is worse than the flakiness it replaces, because
+# it is silent and forever. So the holder's pid is recorded and a lock whose holder is gone
+# is taken over.
+_D_LOCK="${TMPDIR:-/tmp}/core-atuin-premise.lock"
+_D_LOCK_HELD=0
+_d_take_lock() {
+  if mkdir "$_D_LOCK" 2>/dev/null; then
+    printf '%s\n' "$$" >"$_D_LOCK/pid" 2>/dev/null || true
+    _D_LOCK_HELD=1
+    return 0
+  fi
+  local _holder
+  _holder="$(cat "$_D_LOCK/pid" 2>/dev/null || true)"
+  # No pid file, or a pid nobody answers for → the holder died. Take it over. `kill -0`
+  # answers "is there a process" without signalling it, and a pid we do not own still
+  # reports EPERM rather than ESRCH, so a live foreign holder is correctly left alone.
+  if [[ -z "$_holder" ]] || ! kill -0 "$_holder" 2>/dev/null; then
+    rm -rf "$_D_LOCK" 2>/dev/null || true
+    if mkdir "$_D_LOCK" 2>/dev/null; then
+      printf '%s\n' "$$" >"$_D_LOCK/pid" 2>/dev/null || true
+      _D_LOCK_HELD=1
+      return 0
+    fi
+  fi
+  return 1
+}
+# Released on EXIT rather than at the end of the block: the block can leave by a `fail` path,
+# and a lock held by a finished process would be reclaimed only by the staleness check above
+# — correct, but it would make the very next run skip for no reason.
+# Called from _core_test_cleanup, NOT from a trap of its own: a second `trap … EXIT` replaces
+# the first, and the first is what removes this run's $SANDBOX.
+_d_drop_lock() { ((_D_LOCK_HELD)) && rm -rf "$_D_LOCK" 2>/dev/null; return 0; }
+
 _DVERIFY="$HERE/scripts/verify-atuin-guard.sh"
 if [[ ! -x "$_DVERIFY" ]]; then
   skip "atuin autostart premise (scripts/verify-atuin-guard.sh absent or not executable)"
@@ -5336,6 +5391,22 @@ elif ! ((SCOPE_ATUIN)); then
   skip "atuin autostart premise (out of scope)"
 elif ! have python3; then
   skip "atuin autostart premise (python3 not installed)"
+elif ! _d_take_lock; then
+  # EXCLUSIVITY, and a skip rather than a fail (#495). This block is hermetic with respect to
+  # atuin, systemd and the network — but not with respect to another copy of ITSELF. Its
+  # leak assertion reasons about what appeared under shared /tmp during a window, and its
+  # fork/reap assertions about processes; neither can tell this run's residue from a
+  # concurrent run's. That is not hypothetical here: the release path audits TWICE (`make
+  # release` then `make tag`), this repo has carried six worktrees on one .git driven by
+  # separate sessions, and a cut therefore needed two consecutive lucky greens to get out.
+  # The observed shape was the tell — the same unmodified tree went `pass 261 fail 0` and
+  # then `pass 260 fail 1` nine minutes later, and across three attempts the failure COUNT
+  # varied (6, then 4, then 0), which a real defect does not do.
+  #
+  # A skip is honest; a flaky fail is not, and it teaches the operator to reach for
+  # TAG_SKIP_AUDIT=1 — eroding the gate the runbook depends on, which is a far worse outcome
+  # than one uncovered block.
+  skip "atuin autostart premise (another test-core.sh holds the premise lock — not safely parallel)"
 else
   hdr "atuin autostart self-healing premise (--premise autostart, hermetic)"
   # THIS RUN'S NAME IN SHARED /tmp. Case 17 asserts that a completed verifier run leaves no
@@ -5669,9 +5740,34 @@ STUB
   # Did this stub ever FORK a daemon, by any route? Survives the sandbox, and unlike the call
   # log it is about the thing that matters rather than the command that usually causes it.
   _d_spawned() { [[ -s "$_dstub/$1.spawned" ]]; }
+  # _d_forked_wait <stub> — wait, briefly and boundedly, for the stub's fork log to appear.
+  #
+  # The stub writes .forked from the CHILD it just forked, so "the file is not there yet" and
+  # "the stub never forked" are the same observation at the wrong moment. Reading immediately
+  # made that race decide the verdict, and the failure it produced named the wrong thing —
+  # "the stub never forked, so the reaping assertion proved nothing" — which is how #495 came
+  # to be filed as a flaky test rather than a race. ~2s at 50ms is far longer than a fork
+  # needs and far shorter than the run it guards. Returns non-zero if it never appears, which
+  # is then a real finding rather than a timing artefact.
+  _d_forked_wait() {
+    local _i
+    for _i in $(seq 1 40); do
+      [[ -s "$_dstub/$1.forked" ]] && return 0
+      sleep 0.05
+    done
+    return 1
+  }
   # _d_forks_alive <stub> — how many of the children that stub forked are STILL running.
+  #
+  # The `-s` guard is not defensive padding; without it this returned a SILENT ZERO. Bash
+  # applies redirections left to right, so `<"$_dstub/$1.forked"` is opened BEFORE
+  # `2>/dev/null` takes effect — a missing file therefore printed a raw
+  # "No such file or directory" on the inherited stderr AND still ran the printf, handing the
+  # caller a 0 indistinguishable from a genuinely clean reap. Its sibling _d_spawned just
+  # above has always checked -s; this one was the outlier (#495).
   _d_forks_alive() {
     local n=0 pid
+    [[ -s "$_dstub/$1.forked" ]] || { printf '0'; return 0; }
     while read -r pid; do
       [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && n=$((n + 1))
     done <"$_dstub/$1.forked" 2>/dev/null
@@ -6034,6 +6130,7 @@ J4PROBE
     #     the whole function in a subshell and discard the group id before cleanup ever saw it.
     _mkdstub atuin-forkhang fork-hang
     _d_run atuin-forkhang --premise autostart --json
+    _d_forked_wait atuin-forkhang || true
     _dalive="$(_d_forks_alive atuin-forkhang)"
     _dforked="$(grep -c . "$_dstub/atuin-forkhang.forked" 2>/dev/null || echo 0)"
     _dreap
@@ -6058,6 +6155,7 @@ J4PROBE
     #     rather than assumed to be covered by its sibling.
     _mkdstub atuin-forkhangend fork-hang-end
     _d_run atuin-forkhangend --premise autostart --json
+    _d_forked_wait atuin-forkhangend || true
     _dalive="$(_d_forks_alive atuin-forkhangend)"
     _dforked="$(grep -c . "$_dstub/atuin-forkhangend.forked" 2>/dev/null || echo 0)"
     _dreap
@@ -6077,6 +6175,7 @@ J4PROBE
     #     AND the survivor must be reaped.
     _mkdstub atuin-manualfork manual-fork-nobind
     _d_run atuin-manualfork --premise autostart --json
+    _d_forked_wait atuin-manualfork || true
     _dalive="$(_d_forks_alive atuin-manualfork)"
     _dforked="$(grep -c . "$_dstub/atuin-manualfork.forked" 2>/dev/null || echo 0)"
     _dv="$(_d_get "$_dout" verdict)"
@@ -6841,7 +6940,7 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # describing state that can change under a LIVE shell, so a consumer polling it needs both
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
-  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
+  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
 # The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
 # construction and this assertion should be tautological. It is kept precisely for that
 # reason: it is the guard that stays red if someone reintroduces a second literal — which is
@@ -6857,11 +6956,105 @@ check_dep "core-doctor's rendered tool set == --json tools (the two inventories 
    _CD_R="$_r" _CD_J="$_j" python3 -c "
 import json, os, re
 body  = os.environ[\"_CD_R\"].split(chr(10), 1)[1]   # drop line 1: the header legend, not tools
-shown = set(re.findall(r\"[✓✗] ([A-Za-z0-9_.-]+)\", body))
+body  = body.split(chr(10) + \"opt-in\")[0]           # and the trailing opt-in recap, which re-lists names
+shown = set(re.findall(r\"[✓✗·] ([A-Za-z0-9_.-]+)\", body))
 keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
 assert shown, \"parsed no tools out of the rendered report\"
 assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
 "'
+# ── the third state (#513) ────────────────────────────────────────────────────────────
+# `✗` is the doctor's only alarm channel, and PORTING-MATRIX.md's footnote ²¹ names a subset
+# of the inventory that NO Linux repo's packages.txt and NO bootstrap.sh installs, on purpose.
+# Rendering both as ✗ meant a correctly-provisioned box showed a wall of them, so a REAL
+# regression — a tool that was installed and broke — landed in the same visual bucket as the
+# ones that were never coming.
+check "core-doctor renders opt-in absence as · and expected absence as ✗" \
+  '_core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"· lnav"* ]] && [[ $out == *"· git-absorb"* ]] \
+     && [[ $out == *"✗ eza"* ]] && [[ $out == *"✗ jq"* ]] \
+     && [[ $out != *"✗ lnav"* ]] && [[ $out != *"· eza"* ]]'
+# The legend has to name all three or the third glyph is a mystery mark. Asserted because the
+# glyph set and the legend are two literals in one function and drifted once already.
+check "core-doctor's legend names all three states" \
+  'out=$(NO_COLOR=1 core-doctor 2>&1 | head -n1)
+   [[ $out == *"✓ present"* ]] && [[ $out == *"✗ expected but missing"* ]] \
+     && [[ $out == *"· opt-in"* ]]'
+# `·` and not `○`: the wired block below the tools uses ○ for "installed but IDLE". Two
+# meanings for one glyph on one screen is the legibility problem this change is about, so the
+# separation is pinned rather than left to whoever edits next.
+check "core-doctor does not reuse the wired block's ○ for opt-in tools" \
+  '_core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out != *"○ lnav"* ]] && [[ $out != *"○ ouch"* ]]'
+# An opt-in tool must NOT join the "install missing" list. That block exists to tell the
+# operator what to fix; listing something nothing was ever going to install is the same alarm
+# fatigue one layer down.
+check "core-doctor keeps opt-in tools out of the install-missing list" \
+  '_core_have() { return 1; }
+   _pkgup_mgr() { print -r -- apt; }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   inst=${out#*"install missing"}; inst=${inst%%"opt-in"*}
+   [[ $out == *"install missing"* ]] && [[ $inst == *"eza"* ]] && [[ $inst != *"lnav"* ]]'
+# THE POINT OF THE WHOLE CHANGE, in the machine-readable half: "no expected tool is missing"
+# had no expressible form. `tools` alone can only answer "is every tool present", which is
+# false on every correctly-provisioned box, so a provisioning gate could not be written at all.
+check_dep "core-doctor --json exposes 'expected', so a gate can assert what actually matters" python3 \
+  '_core_have() { return 1; }
+   _CD_J="$(core-doctor --json)" python3 -c "
+import json, os
+d = json.loads(os.environ[\"_CD_J\"])
+t, e = d[\"tools\"], d[\"expected\"]
+assert list(e) == list(t), \"expected and tools must share key set AND order\"
+assert all(v is False for v in t.values()), \"the stub makes every tool absent\"
+# with everything absent, the gate must flag exactly the EXPECTED ones — not all of them
+gate = sorted(k for k, v in e.items() if v and not t[k])
+optin = sorted(k for k, v in e.items() if not v)
+assert \"lnav\" in optin and \"git-absorb\" in optin, optin
+assert \"eza\" in gate and \"jq\" in gate, gate
+assert not (set(gate) & set(optin)), \"a tool cannot be both\"
+"'
+# MAKE THE PROSE MECHANICALLY CHECKABLE. _CORE_DOCTOR_OPTIN is seeded from PORTING-MATRIX.md
+# footnote ²¹, and a hand-copied list is how the matrix and the inventory drift apart — which
+# is exactly what happened in the other direction when a probed tool shipped with no matrix
+# row at all (#514). Re-derive the list from the matrix and require the two to agree.
+#
+# The rule, stated once here and in the array's comment: a tool is opt-in iff its Tool cell
+# carries a ROW-level ²¹, or one of the two footnotes ²¹ itself calls "the same shape" (¹⁷
+# jnv, ¹⁹ gping). Cell-level ²¹ (jj, ast-grep — Gentoo and Kali only) is deliberately NOT
+# included: a Core-side list cannot say "opt-in there, expected here", and muting them
+# globally would hide a real ✗ on the repos that do install them.
+check_dep "core-doctor's opt-in list is derivable from PORTING-MATRIX footnote 21" python3 \
+  '_MATRIX="'"$HERE"'/PORTING-MATRIX.md" _OPTIN="${_CORE_DOCTOR_OPTIN[*]}" python3 -c "
+import os, re
+lines = open(os.environ[\"_MATRIX\"]).read().split(chr(10))
+# Only the AUTHORITATIVE package-names table, bounded to its own CONTIGUOUS rows. Footnote 21
+# carries a coverage table of its own whose first column is backticked tool names, and it sits
+# between this table and the next \"## \" heading — so slicing on headings swept it in. A
+# derivation that reads the wrong table is worse than none, because it looks rigorous.
+i = next(n for n, l in enumerate(lines) if l.startswith(\"## Package names (modern CLI stack)\"))
+i = next(n for n in range(i, len(lines)) if lines[n].startswith(\"| Tool\"))
+rows = []
+while i < len(lines) and lines[i].startswith(\"|\"):
+    rows.append(lines[i]); i += 1
+want = set()
+for cell in re.findall(r\"(?m)^\\| *([^|]+?) *\\|\", chr(10).join(rows)):
+    name = re.split(r\"[ ⁰¹²³⁴⁵⁶⁷⁸⁹]\", cell, maxsplit=1)[0]
+    if set(re.findall(r\"[⁰¹²³⁴⁵⁶⁷⁸⁹]+\", cell)) & set([\"²¹\", \"¹⁷\", \"¹⁹\"]):
+        want.add(name)
+have = set(os.environ[\"_OPTIN\"].split())
+assert want, \"parsed no footnote-21 rows out of PORTING-MATRIX.md\"
+assert want == have, \"matrix-only: %s | list-only: %s\" % (sorted(want - have), sorted(have - want))
+"'
+# Orphan guard: a name here that is not in _CORE_DOCTOR_GROUPS mutes nothing and reads as if
+# it does — the failure mode of every list maintained beside another list.
+check "every _CORE_DOCTOR_OPTIN entry is actually in the doctor inventory" \
+  'local -a all=(); local gi
+   for ((gi = 2; gi <= ${#_CORE_DOCTOR_GROUPS}; gi += 2)); do all+=(${=_CORE_DOCTOR_GROUPS[gi]}); done
+   local o orphan=""
+   for o in $_CORE_DOCTOR_OPTIN; do (( ${all[(I)$o]} )) || orphan="$orphan $o"; done
+   [[ -z $orphan ]] || { print -r -- "orphaned opt-in entries:$orphan"; false }'
+
 # The invariant that would have caught the drift this backfill fixed: every binary
 # 00-tools.zsh probes must be REPORTED by the doctor. Twelve were not — ast-grep, difft,
 # gping, hyperfine, jj, jnv, ouch, shellcheck, shfmt, tldr, uv, viddy were detected into
@@ -7848,10 +8041,18 @@ ucheck "bindirs: core-doctor and HAVE_PROCS now agree about a cargo-installed to
 ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'
    j=\$(core-doctor --json); bad=(); n=0
+   # Narrow to the tools object before substring-matching. --json grew a sibling expected
+   # object with the SAME key set (#513), so a bare match on <name>:true now finds whichever
+   # object happens to say true — and for a tool that is expected but absent that is the
+   # expected object, giving doctor=1 against an unset HAVE_ flag. The substring trick stays
+   # (it keeps this assertion python3-free, so it runs on every box); it just has to be
+   # pointed at one object. No literal quote marks in this comment: it lives inside a
+   # double-quoted bash string, where one would end the string early.
+   tj=\${j#*'\"tools\":{'}; tj=\${tj%%'}'*}
    for line in \${(f)\"\$(<'$TOOLS_FILE')\"}; do
      [[ \$line =~ '^_have +([A-Za-z0-9_.-]+) +&& +(HAVE_[A-Z0-9_]+)=1' ]] || continue
      t=\$match[1]; f=\$match[2]; (( n++ ))
-     [[ \$j == *\$'\\42'\$t\$'\\42'':true'* ]] && d=1 || d=0
+     [[ \$tj == *\$'\\42'\$t\$'\\42'':true'* ]] && d=1 || d=0
      [[ -n \${(P)f:-} ]] && h=1 || h=0
      (( d == h )) || bad+=(\"\$t (doctor=\$d \$f=\$h)\")
    done
