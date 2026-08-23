@@ -31,64 +31,68 @@ _Repo status_ at the bottom).
 
 ## Package names (modern CLI stack)
 
-| Tool             | Arch              | openSUSE     | Alpine            | Gentoo (atom)              | Kali (apt)        | Debian/Ubuntu |
-| ---------------- | ----------------- | ------------ | ----------------- | -------------------------- | ----------------- | ------------- |
-| eza              | `eza`             | `eza`        | `eza`             | `sys-apps/eza`             | `eza`             | `eza`         |
-| bat              | `bat`             | `bat`        | `bat`             | `sys-apps/bat`             | `bat`⁴            | `bat`⁴        |
-| fd               | `fd`              | `fd`         | `fd`              | `sys-apps/fd`              | `fd-find`⁴        | `fd-find`⁴    |
-| ripgrep          | `ripgrep`         | `ripgrep`    | `ripgrep`         | `sys-apps/ripgrep`         | `ripgrep`         | `ripgrep`     |
-| zoxide           | `zoxide`          | `zoxide`     | `zoxide`          | `app-shells/zoxide`        | `zoxide`          | `zoxide`      |
-| fzf              | `fzf`             | `fzf`        | `fzf`             | `app-shells/fzf`           | `fzf`             | `fzf`         |
-| git-delta        | `git-delta`       | `git-delta`  | `delta`           | `dev-util/git-delta`       | `git-delta`       | `git-delta`   |
-| btop             | `btop`            | `btop`       | `btop`            | `sys-process/btop`         | `btop`            | `btop`        |
-| tldr             | `tealdeer`        | `tealdeer`¹  | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        | `tealdeer`    |
-| neovim           | `neovim`          | `neovim`     | `neovim`          | `app-editors/neovim`       | `neovim`          | asset²⁸       |
-| lazygit          | `lazygit`         | `lazygit`    | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`²¹       | asset²⁸       |
-| zsh              | `zsh`             | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`             | `zsh`         |
-| tmux             | `tmux`            | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`            | `tmux`        |
-| starship         | `starship`        | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³           | asset²⁸       |
-| atuin²⁰          | `atuin`           | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³          | asset²⁸       |
-| mise³⁰           | `mise`            | script³⁰     | script³⁰          | script³⁰                   | script³⁰          | asset²⁸       |
-| direnv³²         | `direnv`          | `direnv`     | `direnv`          | `app-shells/direnv`¹²      | `direnv`          | `direnv`      |
-| yazi             | `yazi`            | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
-| tree-sitter-cli⁵ | `tree-sitter-cli` | cargo³       | `tree-sitter-cli` | cargo³                     | `tree-sitter-cli` | asset²⁸       |
-| jq               | `jq`              | `jq`         | `jq`              | `app-misc/jq`              | `jq`              | `jq`          |
-| yq⁶              | `go-yq`           | go³          | `yq-go`           | `app-misc/yq-go`           | `yq-go`           | go³           |
-| duf              | `duf`             | `duf`        | testing¹⁴         | `sys-fs/duf`               | `duf`             | `duf`         |
-| dust             | `dust`            | `dust`       | `dust`            | `sys-block/dust`           | `du-dust`⁴        | asset²⁸       |
-| procs            | `procs`           | `procs`      | `procs`           | `sys-process/procs`        | `procs`           | asset²⁸       |
-| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸    | `viddy`           | cargo³                     | cargo³            | —²⁹           |
-| sd²²             | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              | `sd`          |
-| gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            | `gron`        |
-| jnv¹⁷            | `jnv`             | cargo        | cargo             | cargo                      | cargo             | —²⁹           |
-| lnav²¹ ²⁴        | `lnav`            | `lnav`       | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          | `lnav`        |
-| glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          | charm apt     |
-| gum              | `gum`             | `gum`        | `gum`             | mise³⁰                     | `gum`¹⁵           | charm apt     |
-| xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              | asset²⁸       |
-| doggo            | `doggo`           | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³               | go³           |
-| gping¹⁹          | `gping`           | `gping`¹⁹    | `gping`           | GURU¹⁹                     | `gping`¹⁹         | `gping`       |
-| carapace         | AUR²⁷             | rpm²⁷        | `carapace`        | `app-shells/carapace`¹²    | deb²⁷             | deb²⁷         |
-| op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        | vendor apt    |
-| hyperfine²¹      | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       | `hyperfine`   |
-| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`  | `watchexec`       | cargo²⁵                    | cargo²⁵           | —²⁹           |
-| shellcheck²¹     | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      | `shellcheck`  |
-| shfmt⁷ ²¹        | `shfmt`           | `shfmt`      | `shfmt`           | go²¹                       | `shfmt`⁷          | `shfmt`       |
-| ouch²¹           | `ouch`            | `ouch`¹⁸     | testing¹⁴         | cargo²¹                    | cargo²¹           | —²⁹           |
-| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | `dev-vcs/jj`²¹             | cargo²¹           | —²⁹           |
-| sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               | go³           |
-| difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      | asset²⁸       |
-| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb` | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb`  |
-| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo²¹           | —²⁹           |
-| uv³⁰             | `uv`              | `python-uv`  | `uv`              | `dev-python/uv`            | `uv`              | asset²⁸       |
-| w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
+| Tool             | Arch              | openSUSE      | Alpine            | Gentoo (atom)              | Kali (apt)        | Debian/Ubuntu |
+| ---------------- | ----------------- | ------------- | ----------------- | -------------------------- | ----------------- | ------------- |
+| eza              | `eza`             | `eza`         | `eza`             | `sys-apps/eza`             | `eza`             | `eza`         |
+| bat              | `bat`             | `bat`         | `bat`             | `sys-apps/bat`             | `bat`⁴            | `bat`⁴        |
+| fd               | `fd`              | `fd`          | `fd`              | `sys-apps/fd`              | `fd-find`⁴        | `fd-find`⁴    |
+| ripgrep          | `ripgrep`         | `ripgrep`     | `ripgrep`         | `sys-apps/ripgrep`         | `ripgrep`         | `ripgrep`     |
+| zoxide           | `zoxide`          | `zoxide`      | `zoxide`          | `app-shells/zoxide`        | `zoxide`          | `zoxide`      |
+| fzf              | `fzf`             | `fzf`         | `fzf`             | `app-shells/fzf`           | `fzf`             | `fzf`         |
+| git-delta        | `git-delta`       | `git-delta`   | `delta`           | `dev-util/git-delta`       | `git-delta`       | `git-delta`   |
+| btop             | `btop`            | `btop`        | `btop`            | `sys-process/btop`         | `btop`            | `btop`        |
+| tldr             | `tealdeer`        | `tealdeer`¹   | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        | `tealdeer`    |
+| neovim           | `neovim`          | `neovim`      | `neovim`          | `app-editors/neovim`       | `neovim`          | asset²⁸       |
+| lazygit          | `lazygit`         | `lazygit`     | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`²¹       | asset²⁸       |
+| zsh              | `zsh`             | `zsh`         | `zsh`²            | `app-shells/zsh`           | `zsh`             | `zsh`         |
+| tmux             | `tmux`            | `tmux`        | `tmux`            | `app-misc/tmux`            | `tmux`            | `tmux`        |
+| starship         | `starship`        | `starship`¹⁸  | `starship`        | `app-shells/starship`      | script³           | asset²⁸       |
+| atuin²⁰          | `atuin`           | `atuin`¹⁸     | `atuin`           | `app-shells/atuin`         | `atuin`³          | asset²⁸       |
+| mise³⁰           | `mise`            | script³⁰      | script³⁰          | script³⁰                   | script³⁰          | asset²⁸       |
+| direnv³²         | `direnv`          | `direnv`      | `direnv`          | `app-shells/direnv`¹²      | `direnv`          | `direnv`      |
+| yazi             | `yazi`            | `yazi`¹⁸      | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
+| tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter` | `tree-sitter-cli` | cargo³                     | `tree-sitter-cli` | asset²⁸       |
+| jq               | `jq`              | `jq`          | `jq`              | `app-misc/jq`              | `jq`              | `jq`          |
+| yq⁶              | `go-yq`           | `yq`          | `yq-go`           | `app-misc/yq-go`           | `yq-go`           | go³           |
+| duf              | `duf`             | `duf`         | testing¹⁴         | `sys-fs/duf`               | `duf`             | `duf`         |
+| dust             | `dust`            | `dust`        | `dust`            | `sys-block/dust`           | `du-dust`⁴        | asset²⁸       |
+| procs            | `procs`           | `procs`       | `procs`           | `sys-process/procs`        | `procs`           | asset²⁸       |
+| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸     | `viddy`           | cargo³                     | cargo³            | —²⁹           |
+| sd²²             | `sd`              | `sd`          | `sd`              | `sys-apps/sd`¹²            | `sd`              | `sd`          |
+| gron             | `gron`            | `gron`        | `gron`            | go³                        | `gron`            | `gron`        |
+| jnv¹⁷            | `jnv`             | cargo         | cargo             | cargo                      | cargo             | —²⁹           |
+| lnav²¹ ²⁴        | `lnav`            | `lnav`        | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          | `lnav`        |
+| glow             | `glow`            | `glow`        | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          | charm apt     |
+| gum              | `gum`             | `gum`         | `gum`             | mise³⁰                     | `gum`¹⁵           | charm apt     |
+| xh               | `xh`              | `xh`          | `xh`              | `net-misc/xh`¹²            | `xh`              | asset²⁸       |
+| doggo            | `doggo`           | `doggo`¹⁸     | `doggo`           | `net-dns/doggo`            | go³               | go³           |
+| gping¹⁹          | `gping`           | `gping`¹⁹     | `gping`           | GURU¹⁹                     | `gping`¹⁹         | `gping`       |
+| carapace         | AUR²⁷             | rpm²⁷         | `carapace`        | `app-shells/carapace`¹²    | deb²⁷             | deb²⁷         |
+| op (1Password)¹³ | AUR               | vendor rpm    | vendor apk        | GURU¹²                     | vendor apt        | vendor apt    |
+| hyperfine²¹      | `hyperfine`       | `hyperfine`   | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       | `hyperfine`   |
+| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`   | `watchexec`       | cargo²⁵                    | cargo²⁵           | —²⁹           |
+| shellcheck²¹     | `shellcheck`      | `ShellCheck`  | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      | `shellcheck`  |
+| shfmt⁷ ²¹        | `shfmt`           | `shfmt`       | `shfmt`           | go²¹                       | `shfmt`⁷          | `shfmt`       |
+| ouch²¹           | `ouch`            | `ouch`¹⁸      | testing¹⁴         | cargo²¹                    | cargo²¹           | —²⁹           |
+| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`     | `jujutsu`         | `dev-vcs/jj`²¹             | cargo²¹           | —²⁹           |
+| sesh⁹            | AUR⁹              | go⁹           | go⁹               | go⁹                        | go⁹               | go³           |
+| difftastic¹⁰     | `difftastic`      | `difftastic`  | `difftastic`      | `dev-util/difftastic`      | `difftastic`      | asset²⁸       |
+| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`  | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb`  |
+| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸  | `ast-grep`        | cargo²¹                    | cargo²¹           | —²⁹           |
+| uv³⁰             | `uv`              | `python-uv`   | `uv`              | `dev-python/uv`            | `uv`              | asset²⁸       |
+| w3m              | `w3m`             | `w3m`         | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (1.8.0). **Not in Leap 16.0 or 16.1** —
 it shipped in 15.6, which is EOL, and the name is absent from both arches of each 16.x
-`repo/oss` (checked 2026-08-21). Two ways in on Leap: the `utilities` OBS repo, which does
-build it (`.../repositories/utilities/16.0/x86_64/tealdeer-1.8.0-lp160.49.8.x86_64.rpm`) but
-is a third-party channel `dotfiles-openSUSE` deliberately does not auto-add, same call as
+`repo/oss` (checked 2026-08-21). Two ways in on Leap **16.0**: the `utilities` OBS repo,
+which does build it (`.../repositories/utilities/16.0/x86_64/tealdeer-1.8.0-lp160.49.8.x86_64.rpm`)
+but is a third-party channel `dotfiles-openSUSE` deliberately does not auto-add, same call as
 Packman; or `cargo install --locked tealdeer`, which its `bootstrap.sh` now runs
-presence-guarded. Guard on **`tldr`**, not `tealdeer` — the crate and the binary it installs
+presence-guarded. **On Leap 16.1 there is only the second** — `utilities` builds tealdeer for
+**16.0 only**, its index listing `16.0/` plus three Factory flavors and no `16.1/` at all
+(checked 2026-08-22, dotfiles-openSUSE#113). The retry hint in that bootstrap used to offer
+the 16.0 repo unconditionally, which on a 16.1 box adds a 16.0 channel.
+Guard on **`tldr`**, not `tealdeer` — the crate and the binary it installs
 have different names (dotfiles-openSUSE#102).
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
 ³ Not packaged or stale → bootstrap.sh installs it best-effort (upstream
@@ -108,16 +112,29 @@ that once contradicted the `resolved` line in the same report.
 ⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. **Mac:**
 `tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
 **Fedora:** `tree-sitter-cli` via dnf (verify ≥ 0.26.1, else mise/cargo).
-**Arch:** `extra` carries 0.26.9 (clears the floor). Where unpackaged:
-`mise use -g tree-sitter` or `cargo install tree-sitter-cli`. On **Alpine** the
-`community` package **is** the musl build (0.26.7, clears the floor) — prefer it
-over cargo/any prebuilt binary.
+**Arch:** `extra` carries 0.26.9 (clears the floor).
+**openSUSE:** the CLI is in the **base `tree-sitter` package** (0.26.8 on Tumbleweed,
+Leap 16.1 and Leap 16.0 — clears the floor); what got split off there is the shared
+_library_, as `tree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
+searching for that name is precisely why `dotfiles-openSUSE` carried this as `cargo³` and
+cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversion against
+the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
+is the one you want; openSUSE is the exact opposite, so the same name means opposite things
+on the two platforms and neither instinct transfers.
+Where unpackaged: `mise use -g tree-sitter` or `cargo install tree-sitter-cli`. On
+**Alpine** the `community` package **is** the musl build (0.26.7, clears the floor) —
+prefer it over cargo/any prebuilt binary.
 ⁶ yq: this matrix targets **mikefarah's Go `yq`** (the jq-for-YAML). Distros also
 ship **Python `yq`** (kislyuk) under the same `yq` name; if you land the wrong
 one, install the Go build via `mise use -g yq` or the upstream release binary.
-On **openSUSE** the main OSS `yq` is the kislyuk **Python** build (the Go build
-only ships from a personal OBS repo), so `dotfiles-openSUSE` go-installs the
-mikefarah build in `bootstrap.sh` (`go³`) rather than packaging the wrong `yq`.
+**openSUSE is the exception to that warning, not an instance of it.** The main OSS `yq`
+**is** the mikefarah Go build — 4.53.3 on Tumbleweed and on Leap 16.1/16.0 (`bp161`/`bp160`)
+— and kislyuk's Python tool ships under its own name, `python313-yq` / `python314-yq`, so
+the collision cannot happen there. This footnote used to say the reverse, and
+`dotfiles-openSUSE` go-installed the Go build on that basis; as of
+dotfiles-openSUSE#113 it packages `yq` and keeps the go-install as a presence-guarded
+fallback (its guard matches the mikefarah string in `yq --version`, so the packaged build
+satisfies it and the block no-ops).
 ⁷ shfmt: not always in stable apt (Debian/Kali), and **not packaged on Gentoo** —
 absent from `::gentoo` and from GURU (third-party overlays carry it as
 `dev-util/shfmt`; there is no `dev-go/shfmt` atom), so Gentoo takes the `go²¹`
@@ -260,13 +277,15 @@ Five of the seven (`starship`, `atuin`, `yazi`, `viddy`, `doggo`) are also insta
 `dotfiles-openSUSE`'s `bootstrap.sh`, which stays correct and harmless either way — each
 install is presence-guarded, so a packaged binary just short-circuits it. **`ouch` and
 `ast-grep` are not**: that bootstrap has no installer for them, so the old `cargo³` cells
-promised a fallback that never existed and the package name above is their only automatic
-path. Moving any of these into `install/packages.txt` is a separate judgment call — it trades
-upstream-latest for the distro build. **`dotfiles-openSUSE` has since made that call the other
-way**: its list flipped to packaged-first, and `starship`, `atuin` and `yazi` are now in it, so
-the three `curl | sh` installers only run as a fallback. `viddy` deliberately stays out (cargo,
-for upstream-latest). For `ouch`/`ast-grep` the package name is still the _only_ way to get them
-installed without doing it by hand.
+promised a fallback that never existed and the package name above was, for a while, a name you
+had to type yourself. Moving any of these into `install/packages.txt` is a separate judgment
+call — it trades upstream-latest for the distro build. **`dotfiles-openSUSE` has since made
+that call the other way**: its list flipped to packaged-first, and `starship`, `atuin` and
+`yazi` are now in it, so the three `curl | sh` installers only run as a fallback — and as of
+dotfiles-openSUSE#113 **`ouch` and `ast-grep` are in it too**, which is what finally closes the
+gap this paragraph opened: no installer plus no list entry had meant no automatic path at all.
+`viddy` deliberately stays out (cargo, for upstream-latest), and `doggo` likewise (go, same
+reason) — those two are declines, not gaps.
 
 ¹⁹ gping: the `ping` replacement — Core aliases `ping`→`gping` (`HAVE_GPING`-guarded in
 `zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only on
@@ -421,12 +440,18 @@ you:
 | `hyperfine`    | ✓                | `hyperfine`        | `app-benchmarks/hyperfine`                | —                                 |
 | `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck`                     | —                                 |
 | `shfmt`        | ✓                | `shfmt`            | bootstrap, go⁷ (unconditional)            | —                                 |
-| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, cargo (extras)                 | —                                 |
+| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, cargo (extras)                 | openSUSE: `ouch`¹⁸; others —      |
 | `lnav`²⁴       | ✓                | `lnav`             | `app-admin/lnav`                          | —                                 |
 | `git-absorb`²⁶ | ✓                | `git-absorb`       | `dev-vcs/git-absorb`                      | —                                 |
 | `gping`¹⁹      | ✓                | `gping`            | bootstrap, `net-analyzer/gping` (GURU¹²)  | —                                 |
 | `watchexec`²⁵  | —                | `watchexec`        | bootstrap, cargo `watchexec-cli` (extras) | —                                 |
 
+- **The `ouch` row's last cell is split because that column is four repos, not one.**
+  `dotfiles-openSUSE` added `ouch` to its `install/packages.txt` in dotfiles-openSUSE#113, so
+  the tool is no longer detect-only there while it still is on Arch/Debian/Fedora. Note this
+  is a **`packages.txt`** addition, not a `bootstrap.sh` one — so the "two repos' `bootstrap.sh`"
+  count above stays right, and this is exactly the both-files distinction the lesson two
+  paragraphs up warns about. `ast-grep` moved the same way in the same PR but has no row here.
 - "extras" above means Gentoo's opt-in block: installed by default, **skipped by
   `--no-extras`**. That flag is the one thing keeping these honest as ²¹ entries rather than ³
   ones — the tool is still something you can decline.
