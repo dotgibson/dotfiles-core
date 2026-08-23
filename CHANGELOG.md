@@ -151,6 +151,66 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   precondition for this; Alpine, Fedora and Offense had not. Migrating a caller to this
   helper replaces all of them with one gate that cannot be forgotten.
 
+### Added
+
+- **`lint-call.yml` now runs a blocking secret scan, so the OS repos are covered for the
+  first time.** (#462, #472)
+  Core scanned itself twice — the gitleaks pre-commit hook at author time and
+  `audit-core.sh` §8b in CI — and pinned `GITLEAKS_VERSION` + `GITLEAKS_SHA256` in
+  `scripts/tool-versions.env`. Both scanned dotfiles-core. The reusable `lint-call.yml` is
+  the **only CI the OS repos have**, and it ran shellcheck, shfmt, `bash -n`, `zsh -n`,
+  actionlint and markdownlint — none of which looks for a credential.
+
+  So **no OS repo had ever had its own files scanned for secrets**, including the repos
+  that actually hold an `ssh/config` and seed a git identity. §8b's own comment names the
+  stake: Core "fans out to 9 PUBLIC repos, where a committed token amplifies N-way." Core
+  was covered; every fan-out target was not. GitHub push protection is a partial backstop
+  only — it matches _provider_ token patterns, so it misses a private key pasted into an
+  `ssh/config`, and the non-provider setting that would catch it is org-governed and off
+  by default.
+
+  Four decisions, each recorded in full on the job:
+
+  - **Unfiltered, so it can be marked required.** The callers' other workflows carry
+    `paths-ignore` filters and never start on a docs-only PR; a required check that never
+    reports blocks the PR forever, which is the practical reason `lint` cannot be required
+    today. This leg has no filter.
+  - **`gitleaks dir`, not `gitleaks git`** — the working tree, not history. One historical
+    finding would pin the check red permanently and wedge every PR once required, and
+    could only be cleared by a rewrite.
+  - **`--redact`** — the repos are public and Actions logs world-readable, so an
+    unredacted finding would write the secret into a log while reporting it.
+  - **The whole tree, `core/` included.** Every other leg excludes `core/**` because it is
+    gated upstream, but that reasoning is about lint _opinions_; a credential is a
+    credential wherever it sits.
+
+- **`gitleaks.toml` — one secret-scanning policy for the fleet.** Read by all four
+  consumers (the pre-commit hook, `audit-core.sh` §8b, the new `secrets` job, and a
+  consumer's own `make secrets`), so author time and CI cannot disagree about what counts
+  as a finding. Same discipline as `scripts/tool-versions.env`: one definition, referenced
+  everywhere, changed deliberately.
+
+  It **extends** the upstream rule set (`useDefault = true`), so a gitleaks bump still
+  brings new detections, and removes nothing. It narrows exactly one false-positive class:
+  a credential position holding a **variable reference** rather than a value. Several
+  default rules match on position rather than content — `curl-auth-user` fires on anything
+  after `curl -u` — and infra config in this fleet routinely puts a variable there, which
+  is the _secure_ shape. The fleet's only finding was dotfiles-Defense's OpenSearch
+  healthcheck:
+
+  ```yaml
+  test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD ..."]
+  ```
+
+  The `$$` is deliberate — it stops Compose interpolating at render time, keeping the
+  password out of `docker compose config` and `docker inspect`. Reporting that as a leak
+  inverts the incentive: it flags the careful form and is silent on the careless one.
+
+  The allowlist targets the matched **value**, not a path, rule or repo, so a real
+  credential on the same line of the same file is still caught — verified both directions
+  before landing. All twelve repos scan clean under it, so the gate is green on arrival
+  rather than red for a maintainer to chase.
+
 ## [v4.15.1] - 2026-08-22
 
 ### Fixed
