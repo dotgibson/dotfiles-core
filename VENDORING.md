@@ -218,6 +218,34 @@ The reusable `lint` workflow fails your repo if it grows one of these back — o
 `scripts/lib/common.sh :: _core_owned_block_hits`, shared by every caller. Hooking a tool
 that exists on **your** OS and nowhere else is still your business and is never flagged.
 
+### What your `bootstrap.sh` is expected to call
+
+The mirror of the mirror. The section above is a **negative** contract — do not re-add what
+Core owns — enforced from your side by the reusable `lint` workflow. This is the **positive**
+one, and until #516 it did not exist: `lib/bootstrap-lib.sh` explained what each helper does
+but never said a bootstrap had to call it, so a repo still hand-rolling the thing a helper
+replaces was not, on paper, doing anything wrong. Helpers get added to that file over time —
+usually because one repo hit the bug — and nothing told the other eight.
+
+| Call | Instead of | Because |
+| --- | --- | --- |
+| `blib_resolve_su` | `[[ "$(id -u)" -eq 0 ]]` + inline `sudo` | that is an **arithmetic** comparison, and bash evaluates an empty `id` output as `0` — a box where `id` is missing or off `PATH` concludes "we are root" and runs every privileged command unescalated. Also handles doas, and the sudo-less container/first-boot-WSL boxes where hard-coded `sudo` dies at exit 127 |
+| `blib_priv` | inline `sudo` | one escalator token, resolved once, honouring `BLIB_SU=` (already root) and `BLIB_SU=doas` |
+| `blib_sudo_keepalive_start` | nothing | after a long install sudo's timestamp has expired; the re-prompt goes to a discarded stderr and the run hangs with no visible cause |
+| `blib_user_bindirs_on_path` | nothing | without `~/.cargo/bin` and `~/.local/bin` on `PATH`, every `command -v` guard misses and the run rebuilds tools it already installed — minutes per invocation on a source-based distro, discarded |
+| `blib_note_fail` + `blib_failures_report` | `echo "skipped: …"` | a bare echo cannot be counted. Recording a failure and never reporting it is worse than not recording it: the script ends `complete` and exits 0 on a box that got none of its tooling |
+| `blib_wire_summary` | nothing | the `N linked · N seeded · N backed up` tally, without which a re-link is unverifiable |
+| `blib_install_core_guard` | nothing | installs the local pre-commit hook that rejects a hand-edit of vendored `core/` — the one rule at the top of this file. Only `sync-core.sh` installs it otherwise, i.e. only on the maintainer's machine, so every other clone has no local guard at all |
+| `blib_install_system_file` | `_blib_priv tee` | backs up whatever was at that `/etc` path first and no-ops when byte-identical. Hand-rolled `tee` clobbered a real `/etc/wsl.conf` (#475) |
+| `BLIB_DRY` | nothing | a `--dry-run` flag is the only way CI can exercise anything past `--links-only` |
+
+`audit-core.sh` reports which repos are short of this list — **advisory, not blocking**: most
+of the fleet is short today, and a gate that is red on arrival is a gate someone turns off.
+It reads `scripts/os-repos.txt` and looks at each sibling's `bootstrap.sh`, so it says nothing
+in CI, where only Core is checked out. Role repos (`dotfiles-Defense`, `dotfiles-Offense`)
+layer on an OS bootstrap and install no packages, so the two keepalive/PATH helpers are
+exempt for them.
+
 #### `ssh/config` — the one with a deletion order (#450)
 
 Seven OS repos each shipped `ssh/config` at their **root**, and Core's `blib_link_core`

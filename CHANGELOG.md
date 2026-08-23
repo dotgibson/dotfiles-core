@@ -163,6 +163,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A bootstrapped box committed as `Your Name <you@example.com>` and said nothing.** (#476)
+  `blib_seed` copies `git/local.gitconfig.example` to `~/.config/git/local.gitconfig`, and
+  `git/gitconfig` `[include]`s it — and the example shipped a **live** `name`/`email`. So a
+  freshly bootstrapped box had a perfectly valid identity, `git commit` succeeded, and the
+  author was the placeholder. Before bootstrap that same box had no identity at all and the
+  commit would have failed loudly, which is the correct behaviour: **bootstrapping made the
+  failure mode strictly worse**, and the result lands in public repo history where authorship
+  cannot be fixed retroactively.
+
+  Two coordinated edits, because either alone is inert: `git/gitconfig` now sets
+  `[user] useConfigOnly = true` so git refuses to invent an author, and the example's
+  `name`/`email` are commented out so the seeded copy — included _after_ that setting — cannot
+  supply one. An unconfigured box now gets git's own error naming the two commands to run;
+  filling the seed in works exactly as before. Note `[alias] mine` reads `git config
+  user.email` and so now fails on an unconfigured box rather than matching nothing — the same
+  improvement, loud rather than silent.
+
 - **`PORTING-MATRIX.md`: the Gentoo column again — a tool that got packaged, and a version
   trap the matrix had only ever recorded for Debian.** Reported by the
   `/os-package-availability` routine as `dotgibson/dotfiles-Gentoo#116`; the OS-layer half

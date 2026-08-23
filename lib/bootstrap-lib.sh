@@ -832,6 +832,101 @@ _blib_priv() {
 # stays as the internal spelling the helpers in this file already use.
 blib_priv() { _blib_priv "$@"; }
 
+# ── non-destructive write of a ROOT-OWNED system file ─────────────────────────
+# blib_install_system_file <rendered-content> <dst> — install CONTENT at DST under
+# $BLIB_SU, backing up whatever was there first. The system-file counterpart to blib_link:
+# same guarantee (nothing the user owned is destroyed unannounced), same backup naming, same
+# BLIB_BACKED tally, same BLIB_DRY behaviour.
+#
+# WHY THIS EXISTS. blib_link has backed up a displaced real file since the beginning, but the
+# other way a bootstrap writes to a machine — `_blib_priv tee` into /etc — had no equivalent,
+# so every OS repo hand-rolled it, and one did not. `dotfiles-Arch` rendered /etc/wsl.conf and
+# teed it over the top on every run of a script its own docs call idempotent. That was not a
+# theoretical hazard: on a real box the pre-existing /etc/wsl.conf carried `[boot] systemd=true`
+# and the run destroyed it (#475). A file under /etc is the one class where the user has the
+# least ability to notice and the most to lose — it is not in their home, no editor has it
+# open, and the loss surfaces at the next boot.
+#
+# THREE OUTCOMES, and the first is the common one:
+#   • byte-identical  → nothing is written, nothing is counted, nothing is said. This is what
+#     makes a second run genuinely idempotent rather than merely harmless-looking: without it
+#     every re-run would produce another backup, and a directory of twenty identical
+#     .pre-dotfiles copies is its own kind of damage.
+#   • present and different → `cp -a` to <dst>.pre-dotfiles.<stamp>.<pid>, then write. `cp -a`,
+#     NOT blib_link's `mv`: the original must stay in place with its owner, mode and timestamps
+#     intact, because /etc entries are frequently read by something that must not see the file
+#     briefly vanish, and because the backup should be root-owned like the original rather than
+#     inheriting whoever ran the bootstrap. The stamp comes from _blib_backup_suffix, so a
+#     system backup sorts and reads exactly like a dotfile one (#464) — one convention to know.
+#   • absent → write it, and say so. No backup, nothing to count.
+#
+# COMPARISON IS A BASH STRING COMPARE, deliberately, and this is the one place it beats
+# core_files_identical's `git hash-object`. This helper runs during provisioning, which on a
+# fresh box can be BEFORE git is installed — and a comparison that errors is indistinguishable
+# from "they differ", which would make every run take the backup-and-write branch: exactly the
+# failure mode #572 documents for a missing `cmp`. A string compare needs no binary at all.
+# Its one imprecision is that $(...) strips trailing newlines from both sides, so two renderings
+# differing ONLY in trailing blank lines compare equal. That is the right direction: the quiet
+# one. This helper always writes the same rendering, so the only way to reach that case is a
+# human having touched the file, and treating that as "no change" leaves their file alone
+# rather than backing it up and overwriting it to no visible purpose.
+#
+# The destination is read back through _blib_priv too — a 0600 root-owned file is not readable
+# by the invoking user, and reading it directly would fail and be misread as "differs".
+#
+# Returns 0 on success or no-op. On failure it warns, records via blib_note_fail so
+# blib_failures_report can surface it, and still returns 0 — a bootstrap must not die under
+# `set -e` because one /etc write was refused, and the tally is what keeps that honest.
+blib_install_system_file() {
+  local content="${1-}" dst="${2-}" cur="" bak=""
+  if [[ -z "$dst" ]]; then
+    blib_warn "blib_install_system_file: no destination given"
+    return 0
+  fi
+  # NORMALISE THE CONTENT ONCE, and compare and write the same normalised value. $(...) below
+  # strips trailing newlines from what is on disk but nothing strips them from the argument, so
+  # a caller passing a heredoc — the natural way to render a config file, and the way every
+  # /etc writer in the fleet does it — would compare unequal against the file this helper
+  # itself just wrote, and take the back-up-and-rewrite branch on EVERY run. That is precisely
+  # the non-idempotence the helper exists to remove, reintroduced one layer up.
+  while [[ "$content" == *$'\n' ]]; do content="${content%$'\n'}"; done
+  # `_blib_priv test -e`, not `[[ -e ]]`: the path may live in a directory the invoking user
+  # cannot traverse, where a plain test answers "absent" for a file that is very much there.
+  if _blib_priv test -e "$dst" 2>/dev/null; then
+    cur="$(_blib_priv cat "$dst" 2>/dev/null || true)"
+    if [[ "$cur" == "$content" ]]; then
+      BLIB_SKIPPED=$((BLIB_SKIPPED + 1))
+      return 0 # already exactly this — say nothing, count nothing, write nothing
+    fi
+    if _blib_dry; then
+      blib_say "would back up + write: $dst"
+      BLIB_BACKED=$((BLIB_BACKED + 1))
+      return 0
+    fi
+    bak="$dst.$(_blib_backup_suffix)"
+    if ! _blib_priv cp -a "$dst" "$bak" 2>/dev/null; then
+      blib_note_fail "could not back up $dst — leaving it untouched rather than overwriting it"
+      return 0
+    fi
+    # blib_warn (stderr), matching blib_link: this is a file the machine owned, and the notice
+    # must survive a caller that pipes stdout to a log.
+    blib_warn "backed up existing $dst -> $bak"
+    BLIB_BACKED=$((BLIB_BACKED + 1))
+  else
+    if _blib_dry; then
+      blib_say "would write: $dst"
+      return 0
+    fi
+    _blib_priv mkdir -p "$(dirname "$dst")" 2>/dev/null || true
+  fi
+  if printf '%s\n' "$content" | _blib_priv tee "$dst" >/dev/null 2>&1; then
+    blib_say "wrote $dst"
+  else
+    blib_note_fail "could not write $dst${bak:+ — the original is preserved at $bak}"
+  fi
+  return 0
+}
+
 # blib_resolve_su [--require] — resolve the escalator ONCE into BLIB_SU, and export it.
 #
 # Every OS bootstrap.sh hard-codes `sudo` at a dozen call sites. That is wrong on every box
