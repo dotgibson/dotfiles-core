@@ -3588,6 +3588,229 @@ fi
 #
 # No `have` guard: this needs only bash and the library, unlike F7 (git), so it runs
 # everywhere — including the minimal containers where the heavier fixtures skip.
+hdr "helper-adoption section is --strict-safe (audit-core.sh §5f)"
+# The adoption section reads SIBLING repos off disk, and CI checks out only Core — so every
+# run there takes a skip branch. audit-core.sh treats a skip whose text lacks the literal
+# "out of scope" as a real coverage gap and reds `--strict`, which is what CI runs (ci.yml
+# passes $strict). A section that skips with any other wording would therefore turn the whole
+# fleet's CI red the moment it landed, on every repo, for a purely advisory check.
+#
+# Asserted statically on the source rather than by running the audit: reproducing "no sibling
+# checked out" means a fake fleet root, and the property worth pinning is the WORDING, which
+# is exactly what a static read can see.
+_ha_bad=0
+while IFS= read -r _ha_line; do
+  [ -n "$_ha_line" ] || continue
+  case "$_ha_line" in
+  *"out of scope"*) ;;
+  *)
+    fail "helper adoption: a skip without 'out of scope' would red --strict in CI — $_ha_line"
+    _ha_bad=1
+    ;;
+  esac
+done <<EOF
+$(grep -n 'skip "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+EOF
+if ((_ha_bad == 0)) && grep -q 'skip "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
+  pass "helper adoption: every skip is worded 'out of scope', so --strict stays green in CI"
+elif ((_ha_bad == 0)); then
+  fail "helper adoption: audit-core.sh has no helper-adoption skip at all — the section is gone or renamed"
+fi
+# The other half of "advisory": the section must not be able to FAIL. A future edit that
+# swaps the report for a fail() would red every repo's CI on arrival, since 8 of 9 are short.
+if ! grep -q 'fail "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
+  pass "helper adoption: the section reports and never fails (advisory by construction)"
+else
+  fail "helper adoption: the section can now fail — 8 of 9 repos are short, so this reds the fleet"
+fi
+unset _ha_bad _ha_line
+
+hdr "git identity refuses to guess (useConfigOnly + a commented-out seed)"
+# What a FRESHLY BOOTSTRAPPED box does when the user has not set an identity yet.
+#
+# The seeded ~/.config/git/local.gitconfig used to ship a live `Your Name
+# <you@example.com>`, and gitconfig [include]s it — so the box had a VALID identity, commits
+# succeeded, and they were authored as Your Name. Before bootstrap the same box had no
+# identity and the commit would have failed loudly, so bootstrapping made the failure mode
+# strictly worse; the result lands in public repo history, where authorship is not fixable
+# retroactively (#476).
+#
+# Both halves are asserted because either alone is insufficient: with a live placeholder,
+# useConfigOnly is satisfied and git commits; with it commented out but useConfigOnly unset,
+# git invents $USER@$(hostname) and commits. Only the pair produces the error.
+if have git; then
+  _gi="$(mktemp -d "$SANDBOX/gitid.XXXXXX")"
+  mkdir -p "$_gi/home/.config/git" "$_gi/repo"
+  cp "$HERE/git/gitconfig" "$_gi/home/.gitconfig"
+  # exactly what blib_seed does on a first bootstrap
+  cp "$HERE/git/local.gitconfig.example" "$_gi/home/.config/git/local.gitconfig"
+  # GIT_CONFIG_GLOBAL must be POINTED at the fixture's copy, not left to $HOME. This suite
+  # exports GIT_CONFIG_GLOBAL=/dev/null suite-wide (so a developer's real signing config
+  # cannot reach the tag-release fixtures), and that override wins over $HOME/.gitconfig
+  # outright — git would read no global config at all here. The first draft of this block set
+  # only HOME and passed two of its four assertions VACUOUSLY: with no config whatsoever there
+  # is no identity, so "resolves no user.email" and "the commit fails" were both true for
+  # entirely the wrong reason. HOME is still set because gitconfig's [include] path is written
+  # as ~/.config/git/local.gitconfig and `~` is $HOME.
+  _gi_git() {
+    HOME="$_gi/home" XDG_CONFIG_HOME="$_gi/home/.config" \
+      GIT_CONFIG_GLOBAL="$_gi/home/.gitconfig" git -C "$_gi/repo" "$@"
+  }
+  _gi_git init -q >/dev/null 2>&1
+  printf 'x\n' >"$_gi/repo/a"
+  _gi_git add a >/dev/null 2>&1
+
+  # 1) the seed must not supply an identity. Asserted on the RESOLVED value rather than by
+  #    grepping the example file: the whole defect was that the include made a commented-out
+  #    line and a live one indistinguishable from where git stands.
+  if [[ -z "$(_gi_git config --get user.email || true)" ]] &&
+    [[ -z "$(_gi_git config --get user.name || true)" ]]; then
+    pass "git identity: a freshly seeded box resolves NO user.name/user.email"
+  else
+    fail "git identity: the seed supplied an identity ($(_gi_git config --get user.name || true) <$(_gi_git config --get user.email || true)>)"
+  fi
+  # 2) useConfigOnly must be on, or git fills the gap with a guess instead of erroring.
+  if [[ "$(_gi_git config --get user.useConfigOnly || true)" == "true" ]]; then
+    pass "git identity: user.useConfigOnly is set, so git will not invent an author"
+  else
+    fail "git identity: useConfigOnly is not set — git would author as \$USER@\$(hostname)"
+  fi
+  # 3) THE property, end to end: the commit must FAIL, and its message must tell the user what
+  #    to do. This is the assertion that catches the live-placeholder half — restoring the
+  #    example's `name`/`email` makes it report `rc=0 — authored as Your Name
+  #    <you@example.com>`, i.e. #476 verbatim. It does NOT discriminate on the useConfigOnly
+  #    half on every box: where the hostname is not a FQDN git declines to guess an email and
+  #    refuses anyway. That is exactly why assertion 2 checks the setting directly rather than
+  #    relying on this one to cover both.
+  _gi_out="$(_gi_git -c commit.gpgsign=false commit -m probe 2>&1)"
+  _gi_rc=$?
+  if ((_gi_rc != 0)) && grep -qi 'please tell me who you are' <<<"$_gi_out"; then
+    pass "git identity: committing on an unconfigured box FAILS loudly, naming the fix"
+  else
+    fail "git identity: commit succeeded on an unconfigured box (rc=$_gi_rc) — authored as $(_gi_git log -1 --format='%an <%ae>' 2>/dev/null)"
+  fi
+  # 4) ...and filling the seed in must still work. useConfigOnly only refuses to GUESS; a
+  #    configured identity has to keep working, or the fix would have traded one bug for a
+  #    worse one.
+  _gi_git config -f "$_gi/home/.config/git/local.gitconfig" user.name "Real Person" >/dev/null 2>&1
+  _gi_git config -f "$_gi/home/.config/git/local.gitconfig" user.email "real@example.org" >/dev/null 2>&1
+  if _gi_git -c commit.gpgsign=false commit -qm probe >/dev/null 2>&1 &&
+    [[ "$(_gi_git log -1 --format='%an <%ae>' 2>/dev/null)" == "Real Person <real@example.org>" ]]; then
+    pass "git identity: filling the seed in restores committing, with the real author"
+  else
+    fail "git identity: a filled-in local.gitconfig still could not commit"
+  fi
+  unset _gi _gi_out _gi_rc
+else
+  skip "git identity (git not installed)"
+fi
+
+hdr "blib_install_system_file (root-owned /etc write, non-destructive)"
+# The system-file counterpart to the blib_link accounting above, and the same property:
+# nothing that was already on the machine is destroyed unannounced. blib_link has had this
+# since the beginning; `_blib_priv tee` into /etc never did, so each OS repo hand-rolled it
+# and dotfiles-Arch did not — it re-rendered /etc/wsl.conf on every run of a script its docs
+# call idempotent, and on a real box destroyed a pre-existing `[boot] systemd=true` (#475).
+#
+# BLIB_SU= throughout: the helper escalates through _blib_priv, and an empty BLIB_SU means
+# "run directly". That is what makes this hermetic — it writes only under $SANDBOX and needs
+# no sudo, so it runs identically in CI, in a container and on a developer box.
+_sf="$(mktemp -d "$SANDBOX/sysfile.XXXXXX")"
+# Same `bash -c` shape as _bl_run above, and for the same reason: the lib's re-entry guard
+# makes a re-source a no-op, so the counters can only be read from a fresh interpreter.
+_sf_run() { # <dry> <content> <dst>  → run output, then "--", then LINKED BACKED SKIPPED
+  BLIB_DRY="$1" BLIB_SU='' bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_install_system_file "$1" "$2"
+    printf -- "--\n%s %s %s\n" "$BLIB_LINKED" "$BLIB_BACKED" "$BLIB_SKIPPED"
+  ' _ "$2" "$3" 2>&1
+}
+_sf_tally() { printf '%s' "${1##*$'--\n'}" | tr -d '\n'; }
+
+# 1) THE #475 CASE, verbatim: a real pre-existing /etc/wsl.conf carrying systemd=true, and a
+#    bootstrap that renders something else. The old content must survive on disk.
+mkdir -p "$_sf/etc"
+printf '[boot]\nsystemd=true\n' >"$_sf/etc/wsl.conf"
+_sf_out="$(_sf_run 0 "$(printf '[interop]\nappendWindowsPath=false')" "$_sf/etc/wsl.conf")"
+_sf_bak="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' 2>/dev/null | head -n1)"
+if [[ -n "$_sf_bak" ]] && grep -q 'systemd=true' "$_sf_bak" &&
+  grep -q 'appendWindowsPath=false' "$_sf/etc/wsl.conf" && [[ "$_sf_out" == *"backed up existing"* ]]; then
+  pass "blib_install_system_file: an existing /etc file is preserved, announced, and replaced"
+else
+  fail "blib_install_system_file: the pre-existing file was not backed up (got: $_sf_out)"
+fi
+# The backup must be findable by the SAME convention as a dotfile backup — one naming rule
+# for the whole system, which is the whole point of routing it through _blib_backup_suffix.
+if [[ "${_sf_bak##*/}" =~ ^wsl\.conf\.pre-dotfiles\.[0-9]{8}-[0-9]{6}\.[0-9]+$ ]]; then
+  pass "blib_install_system_file: the backup uses the shared .pre-dotfiles.<stamp>.<pid> name"
+else
+  fail "blib_install_system_file: backup name '${_sf_bak##*/}' is not the shared convention (#464)"
+fi
+# ...and it must be counted, or the closing summary would report a clean run over a displaced
+# system file — the aggregate half of the same silence.
+if [[ "$(_sf_tally "$_sf_out")" == "0 1 0" ]]; then
+  pass "blib_install_system_file: a displaced system file counts into BLIB_BACKED"
+else
+  fail "blib_install_system_file: wrong tally '$(_sf_tally "$_sf_out")' (want LINKED=0 BACKED=1 SKIPPED=0)"
+fi
+
+# 2) IDEMPOTENCE, which is the property the helper is really for. A second run with the same
+#    rendering must write nothing and back up nothing — otherwise a weekly re-bootstrap
+#    accumulates a directory of identical .pre-dotfiles copies, which is its own damage.
+_sf_n1="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' | wc -l | tr -d ' ')"
+_sf_out="$(_sf_run 0 "$(printf '[interop]\nappendWindowsPath=false')" "$_sf/etc/wsl.conf")"
+_sf_n2="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' | wc -l | tr -d ' ')"
+if [[ "$_sf_n1" == "$_sf_n2" ]] && [[ "$(_sf_tally "$_sf_out")" == "0 0 1" ]] &&
+  [[ "$_sf_out" != *"backed up"* ]]; then
+  pass "blib_install_system_file: an identical re-run is a silent no-op (no second backup)"
+else
+  fail "blib_install_system_file: re-run was not a no-op (backups $_sf_n1 -> $_sf_n2, tally '$(_sf_tally "$_sf_out")')"
+fi
+# The same content rendered the way a bootstrap actually renders it — a heredoc, i.e. WITH a
+# trailing newline. $(...) strips trailing newlines from what is read off disk but nothing
+# strips them from the argument, so without the normalisation inside the helper this compares
+# unequal to the file the helper itself just wrote and rewrites on EVERY run: the exact
+# non-idempotence the helper exists to remove, reintroduced one layer up.
+_sf_out="$(_sf_run 0 "$(printf '[interop]\nappendWindowsPath=false\n\n')" "$_sf/etc/wsl.conf")"
+_sf_n3="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' | wc -l | tr -d ' ')"
+if [[ "$_sf_n2" == "$_sf_n3" ]] && [[ "$(_sf_tally "$_sf_out")" == "0 0 1" ]]; then
+  pass "blib_install_system_file: trailing newlines do not make a heredoc rendering look changed"
+else
+  fail "blib_install_system_file: trailing-newline difference triggered a rewrite (backups $_sf_n2 -> $_sf_n3)"
+fi
+
+# 3) an ABSENT destination is written, with no backup and nothing counted as displaced.
+_sf_out="$(_sf_run 0 'key=value' "$_sf/etc/fresh.conf")"
+if [[ "$(cat "$_sf/etc/fresh.conf" 2>/dev/null)" == "key=value" ]] &&
+  [[ "$(_sf_tally "$_sf_out")" == "0 0 0" ]]; then
+  pass "blib_install_system_file: an absent destination is created and nothing is counted"
+else
+  fail "blib_install_system_file: absent-destination write wrong (tally '$(_sf_tally "$_sf_out")')"
+fi
+
+# 4) BLIB_DRY must PLAN and touch nothing. Asserted on the file's bytes, not just the message:
+#    a dry run that announced correctly and wrote anyway would satisfy a message-only check,
+#    and this helper's whole audience is people who run --dry-run before letting it near /etc.
+_sf_before="$(cat "$_sf/etc/wsl.conf")"
+_sf_out="$(_sf_run 1 'totally different' "$_sf/etc/wsl.conf")"
+_sf_n4="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' | wc -l | tr -d ' ')"
+if [[ "$(cat "$_sf/etc/wsl.conf")" == "$_sf_before" ]] && [[ "$_sf_n3" == "$_sf_n4" ]] &&
+  [[ "$_sf_out" == *"would back up + write"* ]] && [[ "$(_sf_tally "$_sf_out")" == "0 1 0" ]]; then
+  pass "blib_install_system_file: BLIB_DRY plans the write and backup, and changes nothing"
+else
+  fail "blib_install_system_file: dry run mutated the box or did not announce (got: $_sf_out)"
+fi
+
+# 5) a missing destination argument must warn, not write somewhere surprising, and must not
+#    take down a bootstrap running under `set -e`.
+_sf_out="$(_sf_run 0 'content' '')"
+if [[ "$_sf_out" == *"no destination given"* ]] && [[ "$(_sf_tally "$_sf_out")" == "0 0 0" ]]; then
+  pass "blib_install_system_file: a missing destination warns and returns cleanly"
+else
+  fail "blib_install_system_file: missing destination mishandled (got: $_sf_out)"
+fi
+
 hdr "blib_link_os_layer ssh overlay (config.d drop-in, dry-run safe)"
 # Local rather than F7's _lr_mode: that one is defined inside `if have git`, so it does
 # not exist on a box without git, where this fixture still runs.
