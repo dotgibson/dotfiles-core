@@ -180,6 +180,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   user.email` and so now fails on an unconfigured box rather than matching nothing — the same
   improvement, loud rather than silent.
 
+- **The lazy-seed assertion asked git about the worktree, so it failed the maintainer and
+  passed the tarball.** (`scripts/test-core.sh`)
+  Section D's third assertion read `git status --porcelain nvim/lazy-lock.json` and required
+  it to be empty, under the heading "the state lockfile links back into the vendored tree (or
+  the seed was modified)". That asks whether the **worktree** is dirty, which is a different
+  question from "did this run write through into the vendored tree" — and it answered the
+  intended one wrongly in **both** directions:
+
+  - **False red.** `./scripts/update-nvim-plugins.sh` — the sanctioned way to move the nvim
+    pins — leaves an uncommitted seed by design, so `make audit` failed until the author
+    committed. A gate that fires on the workflow it exists to protect is one people learn to
+    route around, which is the same lesson the #465 comment directly above it already records
+    about consumer vendoring gates. Hit for real while landing the pins in this release.
+  - **False green.** The clause was guarded by `git rev-parse --show-toplevel`, so outside a
+    git checkout — a release tarball, a vendored `core/` — it short-circuited to true and the
+    assertion silently stopped asserting.
+
+  Now a pre-run snapshot of the seed is compared to the post-run file with
+  `core_files_identical` (git-hash based; diffutils is not guaranteed, #572). Neither failure
+  mode survives, and it needs no repository.
+
+  **What it does and does not prove, since the distinction is the whole point.** It does _not_
+  catch the #465 bug: lazy is stubbed here, nothing plays the part of lazy rewriting its
+  lockfile, and "the vendored file is untouched" would pass on the pre-fix code too — that is
+  why the previous comment declined to assert it, and assertions 1 and 2 remain what pin #465.
+  It _does_ catch `config/lazy.lua`'s own **seeding**, which unlike lazy really does run here,
+  against a config dir symlinked at the vendored tree: `seed` resolves to the real
+  `nvim/lazy-lock.json`, so an inverted `fs_copyfile`, an `fs_symlink`, or anything else that
+  writes the seed instead of reading it would corrupt the fleet's pins from a plain editor
+  start. Verified by sabotaging `lazy.lua` to append to the seed: the assertion fires and
+  names the file. The conflated condition was also split in two, so a symlinked state lockfile
+  and a mutated seed no longer report the same message.
+
 - **`PORTING-MATRIX.md`: the Gentoo column again — a tool that got packaged, and a version
   trap the matrix had only ever recorded for Debian.** Reported by the
   `/os-package-availability` routine as `dotgibson/dotfiles-Gentoo#116`; the OS-layer half
