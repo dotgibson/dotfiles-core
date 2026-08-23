@@ -256,6 +256,44 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     `app-arch/ouch` 0.8.1. ²¹ now says so, the way ²⁵ already did for `watchexec`, leaving
     `ast-grep`¹¹ and `jnv`¹⁷ as the family's genuinely-unpackaged Gentoo entries.
 
+- **`--json` reported a failing result on a healthy tree, and its stdout was not parseable.** (#511)
+  Two independent breakages of the same contract, both live on an unmodified `main`.
+
+  `--json` exports `CORE_JSON=1` so nested gates keep stdout clean, and `skip()` prints nothing
+  in that mode. The fixtures run real gate scripts and assert on their human-readable output —
+  so a child inheriting the export lost exactly the lines being asserted on. This is the
+  **fourth** fixture bitten by it (`$EDITOR`, `LC_ALL`, `CORE_COLOR`, `CORE_JSON`), and the
+  third fixed one at a time: `tag-release` (#508), `sync-core` (#524), and now `fleet-drift`,
+  whose renamed-clone assertion greps for the `not checked out` line that `skip()` emits.
+  Reproduced before the fix: `test-core.sh --scope none --json` reported `fail:1` where the
+  identical run without `--json` reported `fail:0`.
+
+  Fixed at the default rather than the symptom. `test-core.sh` now does `export -n CORE_JSON`
+  once, after argument parsing: the value stays readable in its own shell, so its `skip()` is
+  still quiet and the JSON object still clean, but **no child inherits it** — closing the class
+  for every fixture, present and future, by both routes in (`--json` here, and `audit-core.sh
+  --json` putting it in the environment). The per-call `env -u CORE_JSON` pins are kept and
+  extended to every fixture that captures a gate's output, because they document the hazard at
+  the call site and keep each fixture correct if it is lifted elsewhere.
+
+  Separately, stdout carried three lines, not one: a fixture wrote `core payload v2` that an
+  earlier section had already committed, so `git commit` staged nothing and printed `nothing to
+  commit, working tree clean` — onto the stream `--json` promises carries only the object. That
+  no-op also hollowed out the fixture it sat in: it is the #587 two-prior-syncs reproduction,
+  and with no round-2 commit the remote never moved, so there was only ever one.
+
+- **Nothing ever ran `--json`, which is why three bugs in it shipped green.** (#511)
+  New `--json output contract` section: the suite runs itself at `--scope none --json` and
+  asserts stdout is exactly one line, that it **parses** as JSON (not that it contains a
+  substring — a truncated object can still match a grep), and that its `result` agrees with the
+  identical run without `--json`. `CORE_TEST_SELFJSON=1` in the child stops the recursion, and
+  `-u CORE_TEST_NESTED` is this section obeying its own rule: without it the child inherited the
+  audit's nesting flag, printed no summary at all, and the gate failed under `make audit` for a
+  reason unrelated to the contract. It sits above the zsh-gated block, whose `summary; exit` on
+  a zsh-less box would otherwise make it unreachable for precisely the `--scope none`
+  invocation it exists to check. Verified to bite: re-introducing the no-op commit fails it
+  with `stdout carried 3 lines, want 1`.
+
 - **`watchexec` 2.6.1 on Arch and Homebrew — the four-repo version stamp has split.**
   (`PORTING-MATRIX.md`)
   Footnote `²⁵`'s availability block asserted one version on behalf of four package repos:
