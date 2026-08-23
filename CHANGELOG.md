@@ -13,6 +13,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The carapace footnote still said three OS repos call the impossible `go install`.** They
+  no longer do, and had not for a while — the claim, and the "each is tracked in its own repo"
+  that followed it, was the last stale paragraph of footnote ²⁷. `dotfiles-Arch/bootstrap.sh`
+  prints a `paru -S carapace-bin` hint and go-installs only sesh; `dotfiles-openSUSE`'s
+  installs upstream's `linux_<arch>.rpm` via zypper and go-installs only doggo and sesh; and
+  `dotfiles-Offense` installs no carapace at all now that it is a pure Role layer. Rewritten as
+  a past-tense resolution note rather than decremented to "two", so the footnote still reads as
+  the contract those three fixes were made against. (dotgibson/dotfiles-Arch#111)
+
 ## [v4.15.1] - 2026-08-22
 
 ### Fixed
