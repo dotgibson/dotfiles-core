@@ -654,6 +654,11 @@ return M
 LZSTUB
   _lz_out="$_lz/opts.txt"
   _lz_err="$_lz/nvim.err"
+  # SNAPSHOT the vendored seed before the run, so assertion 3 below can ask the question it
+  # actually means — "did THIS RUN write through into the vendored tree?" — against content
+  # rather than against git's view of the maintainer's worktree. See the note there.
+  _lz_seed_before="$_lz/seed-before.json"
+  cp "$HERE/nvim/lazy-lock.json" "$_lz_seed_before"
   # -u the repo's REAL init.lua (via the symlinked config dir), not a probe: the seeding
   # runs at config load, so a probe that skipped it would test nothing.
   if HOME="$_lz" XDG_CONFIG_HOME="$_lz/config" XDG_STATE_HOME="$_lz/state" \
@@ -700,17 +705,43 @@ LZSTUB
     #    state back into the config tree would satisfy every path assertion above and still
     #    let lazy write straight through into the vendored tree — the original bug wearing
     #    a state-directory costume.
-    #
-    #    NOTE ON WHAT THIS SECTION CANNOT PROVE: lazy is stubbed here, so nothing actually
-    #    writes a lockfile; "the vendored file is untouched after a run" would pass on the
-    #    broken code too and is therefore not asserted. What is asserted is the CONFIGURED
-    #    destination, which is the thing that decides where the real lazy writes.
-    if [[ ! -L "$_lz/state/nvim/lazy-lock.json" ]] &&
-      [[ "$(cd "$HERE" && git rev-parse --show-toplevel 2>/dev/null)" == "" ||
-      -z "$(cd "$HERE" && git status --porcelain nvim/lazy-lock.json 2>/dev/null)" ]]; then
+    if [[ ! -L "$_lz/state/nvim/lazy-lock.json" ]]; then
       pass "the state lockfile is an independent copy, not a link back into the vendored tree"
     else
-      fail "the state lockfile links back into the vendored tree (or the seed was modified)"
+      fail "the state lockfile links back into the vendored tree"
+    fi
+
+    # 3b) The run must leave the vendored seed BYTE-IDENTICAL.
+    #
+    #    WHAT THIS DOES NOT CATCH, stated first so nobody reads it as more than it is: the
+    #    #465 bug itself. lazy is stubbed here, so nothing plays the part of lazy REWRITING
+    #    its lockfile, and "the vendored file is untouched" would pass on the pre-fix code
+    #    too. Assertions 1 and 2 are what pin #465, by testing the CONFIGURED destination.
+    #
+    #    WHAT IT DOES CATCH: config/lazy.lua's own SEEDING, which — unlike lazy — really does
+    #    run here, against a config dir symlinked at the vendored tree. `seed` there resolves
+    #    to $HERE/nvim/lazy-lock.json, so an inverted fs_copyfile(lockfile, seed), an
+    #    fs_symlink, or anything else that writes the seed instead of reading it would
+    #    corrupt the fleet's pins from a plain editor start. That is a live path, and it is
+    #    worth a gate.
+    #
+    #    WHY CONTENT AND NOT `git status --porcelain nvim/lazy-lock.json`, which this
+    #    replaces: that asked git whether the WORKTREE was dirty, which is a different
+    #    question and answers this one wrongly in both directions.
+    #      · False RED, the one that bit: a maintainer running ./scripts/update-nvim-plugins.sh
+    #        — the sanctioned way to move these pins — has an uncommitted seed by design, so
+    #        `make audit` failed before they could commit. A gate that fires on the workflow
+    #        it is meant to protect is one people learn to route around, which is the same
+    #        lesson the #465 comment above already records about consumer vendoring gates.
+    #      · False GREEN: outside a git checkout (a release tarball, a vendored copy) the
+    #        `git rev-parse --show-toplevel` guard short-circuited the whole clause to true,
+    #        so the assertion silently stopped asserting.
+    #    Comparing a pre-run snapshot to the post-run file has neither failure mode and needs
+    #    no repo. core_files_identical, not `cmp` — diffutils is not guaranteed present (#572).
+    if core_files_identical "$_lz_seed_before" "$HERE/nvim/lazy-lock.json"; then
+      pass "the run left the vendored seed byte-identical (no write-through)"
+    else
+      fail "the run MODIFIED $HERE/nvim/lazy-lock.json — config/lazy.lua wrote through into the vendored tree"
     fi
   else
     fail "nvim failed to load the real config with a stubbed lazy.nvim:"
