@@ -42,7 +42,7 @@ _Repo status_ at the bottom).
 | git-delta        | `git-delta`       | `git-delta`   | `delta`           | `dev-util/git-delta`       | `git-delta`       | `git-delta`   |
 | btop             | `btop`            | `btop`        | `btop`            | `sys-process/btop`         | `btop`            | `btop`        |
 | tldr             | `tealdeer`        | `tealdeer`¹   | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        | `tealdeer`    |
-| neovim           | `neovim`          | `neovim`      | `neovim`          | `app-editors/neovim`       | `neovim`          | asset²⁸       |
+| neovim³³         | `neovim`          | `neovim`      | `neovim`          | `app-editors/neovim`       | `neovim`          | asset²⁸       |
 | lazygit          | `lazygit`         | `lazygit`     | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`²¹       | asset²⁸       |
 | zsh              | `zsh`             | `zsh`         | `zsh`²            | `app-shells/zsh`           | `zsh`             | `zsh`         |
 | tmux             | `tmux`            | `tmux`        | `tmux`            | `app-misc/tmux`            | `tmux`            | `tmux`        |
@@ -51,7 +51,7 @@ _Repo status_ at the bottom).
 | mise³⁰           | `mise`            | script³⁰      | script³⁰          | script³⁰                   | script³⁰          | asset²⁸       |
 | direnv³²         | `direnv`          | `direnv`      | `direnv`          | `app-shells/direnv`¹²      | `direnv`          | `direnv`      |
 | yazi             | `yazi`            | `yazi`¹⁸      | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
-| tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter` | `tree-sitter-cli` | cargo³                     | `tree-sitter-cli` | asset²⁸       |
+| tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter` | `tree-sitter-cli` | `dev-util/tree-sitter-cli` | `tree-sitter-cli` | asset²⁸       |
 | jq               | `jq`              | `jq`          | `jq`              | `app-misc/jq`              | `jq`              | `jq`          |
 | yq⁶              | `go-yq`           | `yq`          | `yq-go`           | `app-misc/yq-go`           | `yq-go`           | go³           |
 | duf              | `duf`             | `duf`         | testing¹⁴         | `sys-fs/duf`               | `duf`             | `duf`         |
@@ -121,6 +121,12 @@ cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversi
 the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
 is the one you want; openSUSE is the exact opposite, so the same name means opposite things
 on the two platforms and neither instinct transfers.
+**Gentoo:** `dev-util/tree-sitter-cli` 0.26.11 is **stable on amd64** and clears the floor,
+so it takes no `package.accept_keywords` line and no cargo build — `dotfiles-Gentoo`
+cargo-built the crate until 2026-08-23, when the atom was found to have been packaged and
+stabilised underneath it (dotfiles-Gentoo#116). Between this, the openSUSE paragraph above
+(dotfiles-openSUSE#113) and the Alpine one below (dotfiles-Alpine#122), **three distros in
+this one footnote moved in a fortnight** — re-query this row on every stamp.
 Where unpackaged: `mise use -g tree-sitter` or `cargo install tree-sitter-cli`.
 **Alpine:** the `community` package **is** the musl build on every branch, but it clears
 the floor on only **two of five** — v3.24 (`0.26.7-r0`) and edge (`0.26.7-r1`). v3.21
@@ -470,6 +476,13 @@ you:
 - "extras" above means Gentoo's opt-in block: installed by default, **skipped by
   `--no-extras`**. That flag is the one thing keeping these honest as ²¹ entries rather than ³
   ones — the tool is still something you can decline.
+- **Gentoo's `ouch` cell is a cargo cell by CHOICE, not by availability** — the same shape as
+  `watchexec`²⁵, and worth stating because only one of the two said so. GURU carries
+  `app-arch/ouch` (0.7.1, 0.8.0, **0.8.1**) and `::gentoo` carries no `ouch` at any category;
+  `dotfiles-Gentoo` `cargo install`s it anyway, for upstream-latest. Read the cell as "cargo,
+  over an available overlay ebuild", not "nothing packages it". Verified 2026-08-23 against
+  `gentoo/guru@master`. The genuinely-unpackaged Gentoo entries in this family are
+  `ast-grep`¹¹ and `jnv`¹⁷, absent from both trees.
 - This list used to read "**macOS-only in practice**: the MacBook `Brewfile` carries them;
   **no** Linux repo does." Every row above falsifies that — Alpine carries seven of the eight
   outright and Gentoo installs all eight, four of them from `bootstrap.sh`. Keep it a **per-tool**
@@ -927,6 +940,34 @@ output. Every target above clears that floor except `dotfiles-Debian`'s two lane
 2.32.1. It degrades rather than breaks, which is why that repo's `install/packages.txt`
 declares no `# min:` floor for it.
 
+³³ **neovim — "the package exists" is not "the package is usable", and Gentoo is the
+SECOND target where that bites.** Core's nvim pins nvim-treesitter to `main`
+(`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Two cells in the neovim
+row above resolve perfectly and give you something Core's config will not load on:
+
+| Target        | What `neovim` actually gets you       | Clears 0.12? |
+| ------------- | ------------------------------------- | ------------ |
+| **Debian**    | Ubuntu 24.04 `neovim` **0.9.5**       | no — see ²⁸  |
+| **Gentoo**    | newest **stable** ebuild, **0.11.7**  | no           |
+| Gentoo, fixed | **0.12.3**, via the `>=` keyword line | yes          |
+
+The two get there by different mechanisms and only one of them looks like a problem.
+Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
+`dotfiles-Debian` declares a `# min:0.12.0` floor its CI enforces. Gentoo's is
+**keywords**: 0.12.0–0.12.3 are all in `::gentoo` right now, all `~arch`, so a stable
+profile silently picks 0.11.7 and reports success. Nothing in an availability check can
+see it — the atom exists, installs, and is the wrong version.
+
+`dotfiles-Gentoo` therefore borrows Debian's contract and pairs it with the Portage-native
+fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-restricted**
+`>=app-editors/neovim-0.12.0 ~__ARCH__` in `gentoo/package.accept_keywords` (restricted so
+0.11.x keeps tracking stable), and a check in `scripts/check-packages.sh` that fails when a
+declared floor is not reachable. Filed as dotfiles-Gentoo#116, verified 2026-08-23.
+
+**If you stamp a new source-based or stable/testing-split target, ask the keyword question,
+not just the name question.** Every other column here is rolling, which is why this trap has
+only ever shown up on the fleet's two non-rolling lanes.
+
 ## Clipboard packages to install (backends for Core's `clip`)
 
 <!-- Clipboard selection lives in Core's cross-OS clip/clip-paste scripts; each
@@ -986,8 +1027,9 @@ character of the repo. `dotfiles-Debian` aims at **Ubuntu 24.04 LTS** (April 202
 while proving `debian:trixie` in CI, so unlike every rolling sibling, "apt has it" is
 not the same question as "apt has a version Core can use". Two packages resolve
 perfectly and break the stack: **neovim** (noble 0.9.5 vs the 0.12 that
-nvim-treesitter's `main` hard-requires) and **tree-sitter-cli** (noble 0.20.8 vs the
-0.26.1 floor in footnote ⁵ — no Debian/Ubuntu suite short of sid clears it). Its
+nvim-treesitter's `main` hard-requires — ³³ tabulates this against Gentoo, which
+reaches the same wrong version by a different route) and **tree-sitter-cli** (noble
+0.20.8 vs the 0.26.1 floor in footnote ⁵ — no Debian/Ubuntu suite short of sid clears it). Its
 `install/packages.txt` therefore declares `# min:` floors that CI enforces, and a
 dozen tools come from pinned upstream assets instead (²⁸). Three more traps:
 **`yq`** in apt is kislyuk's _Python_ tool, and the Go build (`yq-go`) is sid-only, so
