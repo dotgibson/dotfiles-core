@@ -134,6 +134,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`PORTING-MATRIX.md`: the Gentoo column again — a tool that got packaged, and a version
+  trap the matrix had only ever recorded for Debian.** Reported by the
+  `/os-package-availability` routine as `dotgibson/dotfiles-Gentoo#116`; the OS-layer half
+  lands in that repo. Verified 2026-08-23 against packages.gentoo.org and `gentoo/guru@master`.
+
+  - **`tree-sitter-cli` on Gentoo is `dev-util/tree-sitter-cli`, not `cargo³`** — 0.26.11 is
+    **stable on amd64** and clears ⁵'s 0.26.1 floor, so it needs neither a keyword line nor a
+    source build. `dotfiles-Gentoo` had been `cargo install`ing it on every privileged run.
+    Row and footnote ⁵ updated — ⁵ now carries this story for **two** distros in a fortnight,
+    Gentoo alongside the openSUSE one from #599.
+  - **New footnote ³³ — "the package exists" is not "the package is usable".** Gentoo is the
+    second target where `neovim` resolves and gives you a version Core's config cannot load:
+    the newest **stable** ebuild is 0.11.7 against nvim-treesitter `main`'s hard 0.12
+    requirement, with 0.12.0–0.12.3 sitting in the tree as `~arch`. Debian reaches the same
+    wrong version through a frozen archive (²⁸); Gentoo reaches it through **keywords**, which
+    no availability check can see. ³³ tabulates both and the Debian paragraph now points at it.
+  - **Gentoo's `ouch` cell is `cargo` by choice, not for lack of a package** — GURU carries
+    `app-arch/ouch` 0.8.1. ²¹ now says so, the way ²⁵ already did for `watchexec`, leaving
+    `ast-grep`¹¹ and `jnv`¹⁷ as the family's genuinely-unpackaged Gentoo entries.
+
 - **`watchexec` 2.6.1 on Arch and Homebrew — the four-repo version stamp has split.**
   (`PORTING-MATRIX.md`)
   Footnote `²⁵`'s availability block asserted one version on behalf of four package repos:
