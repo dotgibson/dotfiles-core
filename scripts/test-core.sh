@@ -592,6 +592,134 @@ else
   skip "nvim config load (nvim not installed — runs in CI)"
 fi
 
+# ── D1b. lazy.nvim's lockfile lives in STATE, not the vendored tree ───────────
+# THE regression net for #465. nvim/lazy-lock.json is tracked inside core/, the one tree a
+# consumer must keep byte-for-byte upstream — and lazy.nvim REWRITES its lockfile in place
+# whenever plugins are installed or updated, while an OS repo bootstrap-symlinks
+# ~/.config/nvim into that very tree. Opening the editor ONCE was enough to dirty it: a
+# fresh openSUSE box repinned 10 plugins, a fresh Gentoo box 2, with nobody running
+# :Lazy update. Consumers' vendoring gates (`make check-core`, a no-core-edits pre-commit
+# hook, core-integrity at PR time) then failed closed on it — correctly, but against the
+# operator, since the writer was lazy.nvim rather than a person. A pre-push gate that a
+# routine editor session turns red is a gate people learn to ignore.
+#
+# So the contract is now: lazy writes $XDG_STATE_HOME/nvim/lazy-lock.json, and
+# nvim/lazy-lock.json is a read-only fleet SEED copied in on first run. Both halves need
+# pinning — the seed alone would not stop the drift, and the relocation alone would lose
+# reproducibility on a fresh machine.
+#
+# HERMETIC, because the real thing needs the network: a STUB lazy.nvim is planted where
+# lazy would be cloned (so config/lazy.lua's bootstrap finds it and skips the git clone),
+# and its setup() records the opts instead of installing anything. That lets the actual
+# nvim/lua/gerrrt/config/lazy.lua run start to finish — seeding included — with no plugin
+# ever fetched. Asserting the recorded `lockfile` opt is what makes this a real gate rather
+# than a grep: it is the value lazy would actually use.
+hdr "lazy.nvim lockfile is state, not the vendored config tree (#465)"
+if have nvim; then
+  _lz="$(mktemp -d "$SANDBOX/lazylock.XXXXXX")"
+  mkdir -p "$_lz/config" "$_lz/state" "$_lz/data" "$_lz/cache"
+  # NORMALISE BOTH SIDES before comparing paths, because the two platforms disagree about
+  # which form nvim reports. On macOS $TMPDIR is /var/folders/…, and /var is a symlink to
+  # /private/var, and stdpath() came back RESOLVED — so comparing against the literal $_lz
+  # false-reds there. Resolving only the expected side then false-reds on Linux, where the
+  # same call came back LITERAL. Neither form is "the" answer, so resolve both and compare
+  # resolved-to-resolved; the assertion is about WHICH DIRECTORY the lockfile is in, not
+  # about which spelling of that directory nvim happened to hand back.
+  _lz_real="$(cd "$_lz" && pwd -P)"
+  _core_nvim_real="$(cd "$HERE/nvim" && pwd -P)"
+  _lz_resolve() { # <path> — absolute, symlink-resolved; EMPTY unless the input is itself
+    # an absolute path with an existing parent. The absolute-input guard is load-bearing:
+    # without it, an UNSET opt arrives here as the literal "nil", `dirname nil` is ".", and
+    # the result is a perfectly plausible $PWD/nil — so the "is an absolute path outside the
+    # tree" assertion passes vacuously on exactly the pre-fix code it exists to catch.
+    local d b
+    [[ "$1" == /* ]] || return 0
+    d="$(dirname "$1")" b="$(basename "$1")"
+    [[ -d "$d" ]] || return 0
+    printf '%s/%s' "$(cd "$d" && pwd -P)" "$b"
+  }
+  ln -s "$HERE/nvim" "$_lz/config/nvim"
+  # The stub, at the exact path config/lazy.lua bootstraps into — so `fs_stat(lazypath)`
+  # is true, no clone is attempted, and `require("lazy")` resolves here.
+  mkdir -p "$_lz/data/nvim/lazy/lazy.nvim/lua/lazy"
+  cat >"$_lz/data/nvim/lazy/lazy.nvim/lua/lazy/init.lua" <<'LZSTUB'
+-- test stub: record what the real config asked for, install nothing.
+local M = {}
+function M.setup(opts)
+  local f = assert(io.open(vim.env.CORE_LZ_OUT, "w"))
+  f:write(tostring(opts.lockfile) .. "\n")
+  f:close()
+end
+return M
+LZSTUB
+  _lz_out="$_lz/opts.txt"
+  _lz_err="$_lz/nvim.err"
+  # -u the repo's REAL init.lua (via the symlinked config dir), not a probe: the seeding
+  # runs at config load, so a probe that skipped it would test nothing.
+  if HOME="$_lz" XDG_CONFIG_HOME="$_lz/config" XDG_STATE_HOME="$_lz/state" \
+    XDG_DATA_HOME="$_lz/data" XDG_CACHE_HOME="$_lz/cache" \
+    DOTFILES_OFFLINE=1 CORE_LZ_OUT="$_lz_out" \
+    nvim --headless -i NONE -n +qa </dev/null >/dev/null 2>"$_lz_err"; then
+    _lz_lock="$(head -n1 "$_lz_out" 2>/dev/null || true)"
+    _lz_lock_real="$(_lz_resolve "$_lz_lock")"
+
+    # 1) THE FIX. The path lazy was handed must be under XDG_STATE_HOME and must NOT be
+    #    inside the config tree — that tree is the vendored one, and anything lazy writes
+    #    there is drift a consumer's integrity gate will reject.
+    if [[ "$_lz_lock_real" == "$_lz_real/state/nvim/lazy-lock.json" ]]; then
+      pass "lazy lockfile resolves to \$XDG_STATE_HOME/nvim/lazy-lock.json"
+    else
+      fail "lazy lockfile is '$_lz_lock' — it must not live in the vendored config tree"
+    fi
+    # Stated as a POSITIVE requirement, not just "not inside the tree": an unset opt is
+    # also not inside the tree, so the negative form alone passes vacuously on exactly the
+    # pre-fix code this exists to catch. Require a real absolute path that is neither the
+    # seed nor anywhere under the symlinked config dir.
+    # The config dir is a SYMLINK into the repo, so "inside the config tree" resolves to
+    # the repo nvim/ dir — check against that, which catches both spellings at once.
+    if [[ "$_lz_lock_real" == /* && "$_lz_lock_real" != "$_core_nvim_real/"* ]]; then
+      pass "lazy lockfile is an absolute path outside the symlinked config tree and is not the seed"
+    else
+      fail "lazy lockfile '$_lz_lock' is unset, is the seed, or is inside the vendored tree"
+    fi
+
+    # 2) REPRODUCIBILITY. A first run must start from the fleet's committed pins rather
+    #    than resolving every plugin's default branch afresh — that is the entire reason
+    #    Core ships a lockfile at all, and the half a bare relocation would have lost.
+    # core_files_identical, not `cmp` — diffutils is not guaranteed present and this
+    # repo has been bitten by assuming it (#572); the helper hashes with git instead.
+    if [[ -f "$_lz/state/nvim/lazy-lock.json" ]] &&
+      core_files_identical "$_lz/state/nvim/lazy-lock.json" "$HERE/nvim/lazy-lock.json"; then
+      pass "first run seeds the state lockfile from Core's vendored pins (reproducible)"
+    else
+      fail "first run did not seed \$XDG_STATE_HOME/nvim/lazy-lock.json from the Core seed"
+    fi
+
+    # 3) The seed and the working copy must be DIFFERENT FILES, not the same inode reached
+    #    two ways. Copying rather than symlinking is the whole mechanism: a symlink from
+    #    state back into the config tree would satisfy every path assertion above and still
+    #    let lazy write straight through into the vendored tree — the original bug wearing
+    #    a state-directory costume.
+    #
+    #    NOTE ON WHAT THIS SECTION CANNOT PROVE: lazy is stubbed here, so nothing actually
+    #    writes a lockfile; "the vendored file is untouched after a run" would pass on the
+    #    broken code too and is therefore not asserted. What is asserted is the CONFIGURED
+    #    destination, which is the thing that decides where the real lazy writes.
+    if [[ ! -L "$_lz/state/nvim/lazy-lock.json" ]] &&
+      [[ "$(cd "$HERE" && git rev-parse --show-toplevel 2>/dev/null)" == "" ||
+      -z "$(cd "$HERE" && git status --porcelain nvim/lazy-lock.json 2>/dev/null)" ]]; then
+      pass "the state lockfile is an independent copy, not a link back into the vendored tree"
+    else
+      fail "the state lockfile links back into the vendored tree (or the seed was modified)"
+    fi
+  else
+    fail "nvim failed to load the real config with a stubbed lazy.nvim:"
+    [[ -s "$_lz_err" ]] && sed 's/^/    /' "$_lz_err" >&2
+  fi
+else
+  skip "lazy lockfile location (nvim not installed — runs in CI)"
+fi
+
 # ── D2. Neovim event-driven autocmd callbacks (nvim/, headless) ───────────────
 # Section D proves the modules LOAD; it does not prove their EVENT CALLBACKS run.
 # An autocmd registers fine and only its callback fires later — on a yank, a save,
