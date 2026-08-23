@@ -163,6 +163,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`/os-package-availability` citations rotted between filing and fixing.**
+  (`.claude/commands/os-package-availability.md`)
+  The routine already had a rule for citations that are wrong _when written_ ("Read a line
+  before you cite it", added after the 2026-08-09 macbook run pointed at `duf` and
+  `visidata`). It had nothing for the other half: a citation that was **right when written
+  and stale by the time anyone acted on it**. Being careful does not prevent that one — these
+  reports are filed as issues and sit open while the files they point into keep moving, and a
+  bare line number is the part of a citation with no redundancy, so when it rots there is
+  nothing to detect the rot with.
+
+  The routine now requires an **anchor string** — the literal text of the line, or a short
+  unique fragment — quoted alongside every `file:line`, and says plainly that the text is the
+  address and the number is only a hint. It also tells whoever acts on an older report to
+  locate by the anchor and re-read before editing, and to treat _no match_ as a finding in its
+  own right: the line has been edited or removed, so the claim needs re-checking rather than
+  applying.
+
+  Prompted by the run that shipped it. The 2026-08-23 macbook report cited the `watchexec`
+  version stamp at `PORTING-MATRIX.md:552`; it was `:552` when written and `:577` when fixed,
+  because Core went v4.14.0 → v4.15.1 in between and that footnote was itself rewritten.
+  Nothing was wrong with the report — the file moved out from under it — and the anchor text
+  was still an exact match the whole time.
+
 - **A bootstrapped box committed as `Your Name <you@example.com>` and said nothing.** (#476)
   `blib_seed` copies `git/local.gitconfig.example` to `~/.config/git/local.gitconfig`, and
   `git/gitconfig` `[include]`s it — and the example shipped a **live** `name`/`email`. So a
