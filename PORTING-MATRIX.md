@@ -938,8 +938,10 @@ go-installed by no `bootstrap.sh` (the Debian/Kali cells use Charm's apt repo, s
 one is for the reader installing by hand.
 
 ³² direnv: per-directory environment loader — **Core wires it but neither installs nor
-detects it.** There is no `HAVE_DIRENV`, no alias and no `core-doctor` row: `_cache_eval`
-already bails on an absent binary, so the hook needs no flag to guard it. Since **v4.14.1**
+detects it.** There is no `HAVE_DIRENV` and no alias: `_cache_eval` already bails on an
+absent binary, so the hook needs no flag to guard it. Since #581 `core-doctor` does carry a
+**wired** row for it (probing `_direnv_hook`), but still no presence row — wiredness and
+presence are different questions, and the latter is what would need detection. Since **v4.14.1**
 the `direnv hook zsh` that makes it work lives in Core, at `zsh/00-tools.zsh` **band 00**,
 where #449 pulled seven byte-drifted `os/*.zsh` copies up into one. Band 00 and not 45 with
 the gh/uv/ty completions, because this registers a hook rather than a compdef and band 00
