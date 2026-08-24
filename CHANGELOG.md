@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.17.0] - 2026-08-24
+
 ### Added
 
 - **The CI floor gains rule 7: no attacker-controlled expression may be spliced into a
