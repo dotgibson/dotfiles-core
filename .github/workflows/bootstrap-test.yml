@@ -28,11 +28,37 @@
 #
 # WHAT THIS DOES NOT COVER — read this before trusting a green run.
 #
-# `--links-only` returns before provision() is entered, and NO GATE IN THE FLEET RUNS
-# provision() AT ALL. Package installation, retries, upstream installers, repo/key setup
-# and every failure path around them — the whole first half of each of the nine bootstraps
-# — is executed by nothing, here or anywhere else. A green `bootstrap` check means the
-# WIRING is sound. It says nothing about whether the box can be provisioned.
+# `--links-only` returns before provision() is entered, so THE JOB BELOW NEVER REACHES IT.
+# Package installation, retries, upstream installers, repo/key setup and every failure path
+# around them are not exercised by that job. A green `bootstrap` check means the WIRING is
+# sound. It says nothing about whether the box can be provisioned.
+#
+# WHAT DOES RUN provision(), so this section stops overclaiming (#606). This block used to
+# say "NO GATE IN THE FLEET RUNS provision() AT ALL". That was true when it was written and
+# is now false in two directions, and because this header is the most-read description of
+# fleet coverage — and is vendored into every repo — the stale absolute went on generating
+# issues filed in good faith against it (dotgibson/dotfiles-MacBook#178):
+#
+#   1. THIS FILE gained one. The opt-in `provision-stub` job below (v4.14.2, #575) executes
+#      provision() with the package managers shimmed, for container-based callers.
+#   2. A REPO GATES IT OUTSIDE THIS WORKFLOW. dotfiles-MacBook runs provision() on its
+#      `macos smoke` leg via `make test-repo`, through a BOOTSTRAP_BREW seam, marked with
+#      REPO_TESTS_GATE_PROVISION=1 — which its test-repo.sh section G2 reads and FAILS on if
+#      the provision sections all self-skipped, so that gate cannot quietly stop gating. It
+#      is not a caller of this workflow and cannot become one — see the constraint below.
+#
+# NO MACOS PATH HERE, DELIBERATELY — so the absence reads as a decision, not a gap. This
+# workflow is Linux-container-only: three `runs-on: ubuntu-latest` jobs, two shelling out to
+# `docker run "$IMAGE"`, `image` a required input, no runner input and no `container:` key.
+# dotfiles-MacBook's provision() hard-exits without the Command Line Tools, so a Linux
+# container could only ever reach that one branch. A `runs-on` input plus a non-container
+# code path, in a workflow serving nine repos, is a lot of shared complexity for a single
+# caller whose seam (BOOTSTRAP_BREW) is Homebrew-specific anyway. A repo whose provision()
+# cannot run in a Linux container gates it in its own CI instead.
+#
+# THE TWO ARE COMPLEMENTARY, NOT REDUNDANT, and this is the non-obvious part: the shims
+# below ALWAYS SUCCEED, so failure branches stay unexercised. MacBook's stub ALWAYS FAILS,
+# so it covers exactly the failure branches this job cannot.
 #
 # That is a deliberate trade (provisioning is slow, network-bound, and mostly asserts other
 # people's package archives), but the cost has been paid for real and is worth naming. A
@@ -54,8 +80,9 @@
 # covers exactly that blind spot from the other side: it resolves every name in the list
 # against the real distro repos without downloading anything, which is worth having on its
 # own schedule because a rename upstream breaks a file nobody edited. Between them the
-# package list and provision()s control flow are gated; the actual installation still is
-# not, and still needs a periodic real bootstrap on a real box.
+# package list and provision()s control flow are gated; the REAL installation still is not
+# — no package is ever fetched by any gate here — and still needs a periodic real bootstrap
+# on a real box (#589).
 #
 # A caller stub (in an OS repo) looks like — pinned to the moving MAJOR tag @vN per the
 # `@vN` policy in RELEASE-STRATEGY.md, NOT @main: a caller's contract then changes only via

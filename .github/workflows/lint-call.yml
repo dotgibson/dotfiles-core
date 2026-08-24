@@ -40,9 +40,11 @@ name: lint (reusable)
 # one:
 #
 #   * RETURN-trap discipline. Here rather than in SHELLCHECK_OPTS because shellcheck
-#     genuinely cannot see the bug — the broken line is valid bash — and because
-#     bootstrap-test.yml never runs provision(), so no gate in the fleet executes the code
-#     where it detonates (#512, #461). BLOCKING, and verified against all nine fleet repos
+#     genuinely cannot see the bug — the broken line is valid bash — and because the gate
+#     that would catch it at runtime barely exists: bootstrap-test.yml's default job returns
+#     before provision(), and the jobs that do enter it are opt-in or repo-local, so most of
+#     the fleet still executes none of the code where it detonates (#512, #461; the coverage
+#     picture is in that workflow's own header). BLOCKING, and verified against all nine repos
 #     plus Core before landing: every one was green, so nobody was red on arrival.
 #   * Core-owned block duplication (#449). The mirror of audit-core.sh §5c: that gate catches
 #     OS-specifics leaking INTO Core, and nothing caught portable logic stranded OUTSIDE it
