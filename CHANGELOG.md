@@ -73,6 +73,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   mise that died on a broken config) is just as much "we got no answer" as a stall, and is now
   reported that way rather than falling through as good news. (#641)
 
+- **`ruby_lsp.lua`'s `INSTALL:` line pointed the one host it misleads at a mise pin that
+  host does not have.** (#642) "mise pins ruby" is true here — `mise/config.toml` pins
+  `ruby = "3.4"` — but `nvim/` is the only Core tree `dotfiles-Windows` vendors, and there
+  ruby is winget-owned with no mise pin and no MSYS2 DevKit. On that host every C-extension
+  gem fails to build, so `ruby-lsp` (and `rubocop`) die on `prism` with an error that names
+  neither ruby nor the missing toolchain:
+
+  ```
+  make: *** No rule to make target '/C/Ruby40-x64/include/ruby-4.0.0/ruby.h' ...
+  ```
+
+  The comment is not wrong, it was **unqualified** — it silently assumed a mise-managed Unix
+  box, which is exactly the assumption an `INSTALL:` line exists to make explicit. It now says
+  "on the UNIX FLEET" and names the Windows path (`ridk install 1 3`, elevated).
+  `intelephense.lua` already modelled this by stating its negative case outright ("mise does
+  NOT pin"). Comment-only; no behaviour change, and nothing here reads the text.
+  (`nvim/lua/gerrrt/servers/ruby_lsp.lua`)
+
 ## [v4.17.0] - 2026-08-24
 
 ### Added
