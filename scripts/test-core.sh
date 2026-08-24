@@ -1682,6 +1682,108 @@ fi
 unset _ob_wf
 
 
+# ── leftover conflict markers (scripts/lib/common.sh :: _core_conflict_marker_hits) ──
+# Drives audit-core.sh §5h. Two properties have to hold at once and they pull against each
+# other, which is why both directions are pinned rather than just the firing one:
+#   • it FIRES on every marker that names a ref, including a lone base marker with no
+#     partners — the exact shape bcdd7dd (#650) committed and that nothing noticed
+#   • it stays SILENT on a bare row of seven `=`, which is also a setext H1 underline that
+#     .markdownlint.jsonc permits (MD003 defaults to `consistent`, not `atx`)
+#
+# THE FIRST VERSION OF THIS MATCHER FAILED OPEN and these fixtures are what caught it. `|` is
+# ERE's alternation operator, so a literal row of seven pipes in the pattern read as eight
+# EMPTY alternatives and the scanner reported NOTHING, on any input — a green gate that
+# checked nothing. A firing-only test would have gone green on the broken version too,
+# because the broken version was silent on the clean fixtures as well.
+#
+# Fixtures are BUILT, never typed: every marker below is assembled with printf, so this file
+# does not itself contain the thing it tests. It is tracked, §5h scans every tracked file, and
+# a literal fixture here would make the gate report its own test suite. They are written into
+# $SANDBOX, which is untracked, so the scanner never sees them at all — that is also why §5h
+# needs no allowlist.
+hdr "conflict-marker scanner (_core_conflict_marker_hits)"
+_cmd_="$SANDBOX/conflictmarker"
+mkdir -p "$_cmd_"
+_cm_open="$(printf '<%.0s' 1 2 3 4 5 6 7)"
+_cm_base="$(printf '|%.0s' 1 2 3 4 5 6 7)"
+_cm_close="$(printf '>%.0s' 1 2 3 4 5 6 7)"
+_cm_sep="$(printf '=%.0s' 1 2 3 4 5 6 7)"
+_cm_write() { printf '%s\n' "$2" >"$_cmd_/$1"; }   # _cm_write <name> <body>
+# _cm_is <label> <file> <expected> — the scanner's full output must equal <expected> exactly.
+# Exact, not "contains": the line numbers ARE the report an operator acts on.
+_cm_is() { # _cm_is <label> <file> <expected>
+  local got
+  got="$(_core_conflict_marker_hits "$_cmd_/$2")"
+  if [[ "$got" == "$3" ]]; then
+    pass "conflict-marker scan: $1"
+  else
+    fail "conflict-marker scan: $1 (got '${got//$'\n'/, }', want '${3//$'\n'/, }')"
+  fi
+}
+
+# ── what it must catch ──
+_cm_write lonebase.md "## [Unreleased]
+$_cm_base parent of fcb0308 (feat(audit): extend the adoption audit (#623))"
+_cm_is "a lone base marker is a finding (the #650 shape)" lonebase.md "2"
+
+_cm_write open.txt "a
+$_cm_open HEAD"
+_cm_is "an open marker is a finding" open.txt "2"
+
+_cm_write close.txt "a
+$_cm_close 6fe44bd (some commit subject)"
+_cm_is "a close marker is a finding" close.txt "2"
+
+# The separator counts ONLY alongside an unambiguous marker — here it has one, so all four
+# lines report. This is the whole conflict as git would leave it under zdiff3.
+_cm_write full.txt "a
+$_cm_open HEAD
+ours
+$_cm_base parent of abc1234 (subject)
+base
+$_cm_sep
+theirs
+$_cm_close abc1234 (subject)"
+_cm_is "a whole zdiff3 conflict reports all four marker lines" full.txt "2
+4
+6
+8"
+
+# ── what it must NOT catch ──
+# A setext H1 underline of exactly seven `=`. MD003 defaults to `consistent`, so a document
+# that uses setext throughout is valid house style — reddening it would be a false alarm on
+# correct markdown, and the gate would get switched off.
+_cm_write setext.md "Some Heading
+$_cm_sep
+
+body text"
+_cm_is "a bare separator alone is NOT a finding (setext underline)" setext.md ""
+
+_cm_write clean.md "## [Unreleased]
+
+### Fixed
+
+- something" 
+_cm_is "a clean file is silent" clean.md ""
+
+# Column 0 is what git keys on, so it is what the scanner keys on — and indenting is the
+# documented escape for a doc that must SHOW a marker.
+_cm_write indented.md "Example of a conflict:
+
+    $_cm_open HEAD"
+_cm_is "an indented marker is NOT a finding (the documented escape)" indented.md ""
+
+# The self-reference guard, asserted rather than assumed: the matcher lives in a tracked file
+# that §5h scans, so if it ever stops assembling its patterns from fragments it reports itself
+# and the audit goes permanently red. Same class as the obfuscated `/proc/versio[n]` in
+# _core_owned_block_hits, and cheaper to assert than to rediscover.
+if [[ -z "$(_core_conflict_marker_hits "$HERE/scripts/lib/common.sh")" ]]; then
+  pass "conflict-marker scan: the matcher does not report itself"
+else fail "conflict-marker scan: common.sh reports itself — the patterns stopped being assembled from fragments"; fi
+if [[ -z "$(_core_conflict_marker_hits "$HERE/scripts/test-core.sh")" ]]; then
+  pass "conflict-marker scan: this test file does not report itself"
+else fail "conflict-marker scan: test-core.sh reports itself — a fixture was typed literally instead of built with printf"; fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
@@ -1859,7 +1961,13 @@ if have git; then
   # script is in scope: a brand-new helper arming a leaked trap must be caught BEFORE it is
   # `git add`ed, not one round-trip later. That is the side of the rule this tripwire made
   # explicit, which is what it is for.
-  _als_expect="audit-core.sh:9:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  #
+  # 9→10: §5h (leftover conflict markers), same side and for the same reason. A marker is a
+  # property of a file's TEXT, and the moment it most needs catching is before the commit
+  # that would carry it onto main — which is precisely the untracked-but-not-ignored window
+  # `_audit_ls` covers and bare `git ls-files` does not. Its pathspec is `*` rather than a
+  # glob list because the defect that motivated it (#650) was in markdown, not in shell.
+  _als_expect="audit-core.sh:10:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"

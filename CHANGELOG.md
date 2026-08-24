@@ -126,6 +126,49 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `_CORE_DOCTOR_OPTIN`, which is derived from `PORTING-MATRIX.md`'s footnote ²¹ and asserted
   against it — a matrix change, not a list edit, and a separate piece of work. (#581)
 
+- **`audit-core.sh` §5h fails when a tracked file carries a leftover conflict marker.**
+  `bcdd7dd` (#650) committed a literal base marker into `CHANGELOG.md`, at the end of
+  `[Unreleased]`'s Fixed section, and it sat on `main` undetected until #656 tripped over it.
+  Under `zdiff3` a conflict has **four** marker lines, not three, and the base one is the half
+  that gets missed precisely because it only exists in that style.
+
+  It was not cosmetic. git refuses to parse a conflict region containing a stray marker, so
+  rebasing onto the affected `main` produced `error: could not parse conflict hunks in
+  CHANGELOG.md`. `CONTRIBUTING.md` requires every user-visible change to touch `[Unreleased]`,
+  so one marker there taxed every future branch in the repo.
+
+  Nothing else could see it: `bash -n` / `zsh -n` never read markdown, markdownlint reads the
+  line as ordinary paragraph text, and gitleaks is looking for credentials. The marker is
+  valid text everywhere — the same reason §5d (pipefail) and §5e (RETURN trap) exist as
+  textual scans. The rule lives beside them in `scripts/lib/common.sh ::
+  _core_conflict_marker_hits`.
+
+  **It blocks rather than reports**, unlike §5f/§5g. Those arrive red across seven repos, so
+  they advise; this tree is clean today (zero hits across every tracked file), so the gate is
+  green on arrival and every future hit is a regression introduced by the commit under test —
+  the exact condition §5f names for promoting an advisory check to a failing one.
+
+  **No allowlist, deliberately.** The obvious design exempts the files that legitimately
+  contain markers — the matcher, the gate, the fixtures. None need it: `common.sh` assembles
+  its patterns from fragments (the discipline §5d/§5e already follow) and `test-core.sh`
+  writes its fixtures into `$SANDBOX` at run time, so they are never tracked and never
+  scanned. A doc that must _show_ a marker indents it by one space; column 0 is what git keys
+  on and what the gate keys on.
+
+  **The separator is treated differently.** A bare row of seven `=` is also a setext H1
+  underline, which `.markdownlint.jsonc` permits (MD003 defaults to `consistent`, not `atx`),
+  so it counts only when the file also carries a marker that names a ref — the same
+  file-level precondition idiom `_core_pipefail_hits` uses. The knowing trade-off: a
+  resolution that deleted every marker _except_ the separator is not caught. Every marker
+  naming a ref always is, and #650 was one of those.
+
+  Fixture-tested in both directions, and that mattered: the first version of the matcher
+  **failed open**. `|` is ERE's alternation operator, so a literal row of seven pipes read as
+  eight empty alternatives and the scanner reported nothing, on any input — a green gate
+  checking nothing. A firing-only test would have passed the broken version too, since it was
+  silent on clean fixtures as well. Two of the nine assertions pin the self-reference property
+  outright, so the matcher can never start reporting its own source.
+
 ### Changed
 
 - **The reusable lint workflow's markdown leg is now BLOCKING.** It shipped advisory in

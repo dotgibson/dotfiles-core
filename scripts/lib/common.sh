@@ -530,6 +530,68 @@ _core_gitleaks_policy_hits() { # _core_gitleaks_policy_hits <file>
 # --exclude-standard honours .gitignore, so scratch files and build output stay out.
 # Lives here rather than in audit-core.sh so test-core.sh can exercise the REAL
 # implementation instead of a copy that could drift from it.
+# ── _core_conflict_marker_hits: a resolution that left a marker behind ────────
+# _core_conflict_marker_hits <file> — print the line number of every leftover VCS
+# conflict marker in <file>. Silence = clean. Consumed by audit-core.sh §5h.
+#
+# WHY THIS EXISTS. bcdd7dd (#650) committed a literal `|||||||` base marker into
+# CHANGELOG.md, at the end of [Unreleased]'s Fixed section, and it sat on main
+# undetected. It is the base half of a zdiff3 conflict that was resolved by deleting the
+# open/separator/close lines but not the base one — the half that only exists under
+# zdiff3/diff3, which is exactly why the eye skips it.
+#
+# It is not cosmetic. git refuses to parse a conflict region that contains a stray marker,
+# so rebasing a branch onto main produced `error: could not parse conflict hunks in
+# CHANGELOG.md`. [Unreleased] is the one section every user-visible change is REQUIRED to
+# touch (CONTRIBUTING.md), so one stray marker there taxes every future branch in the repo.
+#
+# NOTHING ELSE CATCHES IT. `bash -n`/`zsh -n` never see a markdown file; markdownlint reads
+# the line as ordinary paragraph text; gitleaks looks for credentials. The marker is valid
+# text everywhere, which is the same reason §5d/§5e exist as textual scans.
+#
+# ASSEMBLED FROM FRAGMENTS, exactly as _core_pipefail_hits and _core_return_trap_hits are,
+# and here it is load-bearing rather than tidy: the scanner reads every tracked file and
+# common.sh is one of them, so a pattern written literally would report the line that
+# defines it. This is also why the gate needs NO allowlist — see §5h.
+#
+# THE SEPARATOR IS TREATED DIFFERENTLY, and deliberately. The open/base/close markers each
+# carry a trailing space and a ref, so they are unambiguous on sight. A bare row of seven
+# `=` is not: it is also a setext H1 underline, and .markdownlint.jsonc runs MD003 at its
+# default `consistent`, which permits setext as long as a file is consistent about it. So
+# the separator counts only when the file ALSO carries an unambiguous marker — the same
+# file-level precondition idiom _core_pipefail_hits uses when it gates on `set -o pipefail`
+# before scanning at all.
+#
+# THE TRADE-OFF THAT BUYS: a resolution that deleted every marker EXCEPT the separator is
+# not caught. That is accepted knowingly — a lone separator is textually indistinguishable
+# from a legitimate underline, and a gate that reds a correct document is a gate someone
+# turns off (the reasoning §5f spells out). Every marker that names a ref is always caught,
+# and the #650 defect was one of those.
+_core_conflict_marker_hits() { # _core_conflict_marker_hits <file>
+  local f="${1:-}" open base close sep named
+  [ -f "$f" ] || return 0
+  # Seven of each, built rather than typed. `printf %.0s` repeats the char per argument.
+  #
+  # THE BASE MARKER IS BUILT AS A CHARACTER CLASS, and it has to be: `|` is ERE's
+  # alternation operator, so a literal row of seven pipes dropped into the pattern below
+  # reads as eight EMPTY alternatives — an expression that matches the empty string
+  # everywhere and therefore reports nothing anywhere. It fails OPEN, silently, which is
+  # the worst way for a gate to be wrong. `[|]` is the same one character, inert.
+  open="$(printf '<%.0s' 1 2 3 4 5 6 7)"
+  base="$(printf '[|]%.0s' 1 2 3 4 5 6 7)"
+  close="$(printf '>%.0s' 1 2 3 4 5 6 7)"
+  sep="$(printf '=%.0s' 1 2 3 4 5 6 7)"
+  # The three that name a ref: marker, then a space, at column 0. Always a defect.
+  named="^($open|$base|$close) "
+  # -I skips binaries (assets/ carries images); -a would spray NUL bytes at the caller.
+  if grep -qIE "$named" "$f" 2>/dev/null; then
+    # File is genuinely conflicted, so a bare separator here is a marker too, not an underline.
+    grep -nIE "$named|^$sep\$" "$f" 2>/dev/null | cut -d: -f1
+  else
+    grep -nIE "$named" "$f" 2>/dev/null | cut -d: -f1
+  fi
+}
+
 _audit_ls() { # _audit_ls <pathspec>… — content-gate file set, deduped
   {
     git ls-files -- "$@" 2>/dev/null

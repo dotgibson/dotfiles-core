@@ -852,6 +852,51 @@ else
   unset _fc_out _fc_rc
 fi
 
+# ── 5h. leftover conflict markers (tracked files) ────────────────────────────
+# A conflict resolved by hand can leave a marker behind, and bcdd7dd (#650) did exactly
+# that: a literal base marker landed in CHANGELOG.md at the end of [Unreleased]'s Fixed
+# section and sat on main undetected. Under zdiff3 a conflict has FOUR marker lines, not
+# three, and the base one is the half people forget because it only exists in that style.
+#
+# WHY IT BLOCKS RATHER THAN REPORTS, unlike §5f/§5g above: this is not fleet drift that
+# arrives red on seven repos. The tree is clean today (measured: zero hits across every
+# tracked file), so the gate is green on arrival and every future hit is a genuine
+# regression introduced by the commit under test. That is the condition §5f names for
+# turning an advisory check into a failing one.
+#
+# WHY IT IS WORTH A GATE. git refuses to parse a conflict region containing a stray
+# marker — rebasing onto the affected main produced `error: could not parse conflict
+# hunks in CHANGELOG.md` — and CONTRIBUTING.md requires every user-visible change to
+# touch [Unreleased], so one marker there taxes every future branch. Nothing else sees
+# it: `bash -n`/`zsh -n` never read markdown, markdownlint reads the line as ordinary
+# paragraph text, and gitleaks is looking for credentials.
+#
+# NO ALLOWLIST, ON PURPOSE. The obvious design is to exempt the files that legitimately
+# CONTAIN markers — this script, the matcher, the test fixtures. None of them need it:
+# scripts/lib/common.sh assembles its patterns from fragments (the discipline §5d/§5e
+# already follow), and test-core.sh writes its fixtures into $SANDBOX at run time, so
+# they are never tracked and never scanned. An allowlist would be a hole in the one gate
+# whose value is that it has none. A doc that genuinely must SHOW a marker indents it by
+# one space — column 0 is what git keys on, and what this gate keys on.
+#
+# Scope is every tracked text file, not just shell: the defect that motivated this was in
+# markdown. Binaries are skipped by the matcher's `grep -I` (assets/ carries images).
+hdr "leftover conflict markers"
+cm_fail=0
+while IFS= read -r cm_f; do
+  [ -n "$cm_f" ] || continue
+  while IFS= read -r cm_line; do
+    [ -n "$cm_line" ] || continue
+    fail "conflict marker: $cm_f:$cm_line — a resolution left a VCS marker behind; git cannot parse a conflict region containing one. Delete it (under zdiff3 a conflict has FOUR marker lines, and the base one is the half that gets missed)"
+    cm_fail=1
+  done <<EOF
+$(_core_conflict_marker_hits "$cm_f")
+EOF
+done <<EOF
+$(_audit_ls '*')
+EOF
+((cm_fail)) || pass "conflict markers (no tracked file carries a leftover marker)"
+
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —
 # so zsh -n and shellcheck never look at it — yet it breaks every one of the 9
