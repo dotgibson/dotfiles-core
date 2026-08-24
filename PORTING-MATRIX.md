@@ -390,6 +390,15 @@ until the next shell. A shell that was **already** degraded when it started stay
 changed under it — while one whose daemon died **mid-session** prints a single warning, that being
 the case where an open session's plumbing changed underneath it. `core-doctor` distinguishes the
 two afterwards, and `core-doctor --json` exposes them as `atuin_daemon.degraded` / `.was_up`.
+
+`--json` also carries `detection.ran` / `detection.missed` (#545). `missed` names tools that
+are on `PATH` now but were **not** when Core ran detection at band 00 — so they have no
+`HAVE_*` flag, no alias and no shell init, however green their row looks. The cause is a
+directory that joined `PATH` later (`80-os.zsh`, an `85-*` role fragment, `99-local.zsh`, or
+mise's per-directory hook), and the remedy is to move that prepend into `00-tools.zsh`'s
+bindir list. `ran` is false wherever band 00 never loaded — a script, `zsh -c`, the unit
+harness — and `missed` is then necessarily empty and means nothing, so a provisioning gate
+should read `jq -e '.detection.missed == []'` only after checking `.detection.ran`.
 `CORE_ATUIN_PROBE_INTERVAL` tunes the window for a box where `connect(2)` on that path is not
 cheap. One wrinkle worth knowing: the disable is an `export` (that is how it reaches the `atuin`
 binary), so a shell started _from_ a degraded shell inherits `ATUIN_DAEMON__ENABLED=false` and
@@ -640,7 +649,7 @@ where a change belongs and `git absorb` when you would otherwise go looking.
 `git-absorb` — on `PATH` in the common case, in git's exec-path on the Debian family (see
 below) — and git dispatches it as the `git absorb` subcommand either way, so it shadows
 nothing classic and `zsh/20-aliases.zsh` gains no entry, only a note saying why.
-`HAVE_GIT_ABSORB` is set for symmetry with the other detected tools and **has no consumer
+`HAVE_GIT_ABSORB` is set for symmetry with the other detected tools and **has no _alias_ consumer
 today** — `core-doctor` probes the tool itself rather than reading the flag, so the two are
 independent paths to the same question and are kept in agreement deliberately (#425).
 **Debian-family packages do install it into git's exec-path rather than onto `PATH`** — on

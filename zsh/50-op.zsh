@@ -4,7 +4,22 @@
 # installed, this file does nothing.
 # Docs: https://developer.1password.com/docs/cli
 
-command -v op >/dev/null 2>&1 || return 0
+# `op` has the band-00 divergence too (#545), and it is the one row the doctor's own
+# coverage test used to exempt on the grounds that "no alias or function is gated on it".
+# That was false: this guard gates FOUR verbs — opsecret, openv, optoken, opssh — and band
+# 50 still runs before 80-os.zsh, an 85-* role fragment, or 99-local.zsh. An `op`
+# contributed by any of those is on PATH for the doctor's live probe and has no functions
+# defined here, which is exactly the silent `✓` the ledger exists to expose.
+#
+# Recorded here rather than through `_have`, which 00-tools.zsh unfunctions at its end.
+# Guarded on the array existing: a subscript assignment to an undeclared parameter is an
+# error in zsh, and this file must stay sourceable on its own (the unit harness does that).
+if command -v op >/dev/null 2>&1; then
+  (( ${+_CORE_PROBED} )) && _CORE_PROBED[op]=1
+else
+  (( ${+_CORE_PROBED} )) && _CORE_PROBED[op]=0
+  return 0
+fi
 
 # opsecret — fetch a secret by vault/item/field path
 # Usage: opsecret "Personal/AWS/access_key_id"
