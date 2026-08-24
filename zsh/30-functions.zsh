@@ -212,6 +212,11 @@ _core_doctor_optin() {
 #      every row the doctor knows and 00-tools.zsh does not would false-positive.
 # Checked in the render and in --json as well, so the two renderers cannot disagree about
 # whether the axis applies.
+#
+# THE MIRROR CASE IS NOT HANDLED HERE, deliberately: a flag set for a binary that is now GONE
+# leaves a live alias pointing at nothing. That failure is LOUD (`command not found: procs`)
+# where this one is silent, so it wants its own glyph and its own remedy rather than being
+# folded in — tracked in #631, and ~5 lines here if it is taken.
 _core_doctor_unwired() {
   (( ${+_CORE_PROBED} ))     || return 1   # detection never ran here
   (( ${+_CORE_PROBED[$1]} )) || return 1   # Core does not probe this row
