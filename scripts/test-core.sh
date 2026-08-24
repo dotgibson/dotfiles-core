@@ -360,6 +360,80 @@ else
 fi
 unset _osc_payload _osc_raw _osc_b64 _osc_stdout _osc_long _osc_multi
 
+# ── the tmux copy-pipe case (#525) ───────────────────────────────────────────
+# Every OSC 52 case above points CLIP_TTY at a writable FILE, so all of them exercise a
+# clip that has somewhere to write. The one binding that actually names `clip` does not:
+#
+#   tmux.reset.conf:  bind -T copy-mode-vi y  send -X copy-pipe-and-cancel "clip"
+#
+# `copy-pipe` runs its command through tmux's job_run(), a child of the daemonized server
+# — setsid'd, no controlling terminal, stderr to /dev/null. So /dev/tty fails to OPEN
+# (ENXIO; it still exists and still passes a -w permission test, which is why clip attempts
+# the write rather than probing), the error goes nowhere, and clip exits 1 in silence.
+#
+# `setsid` is the faithful reproduction of that shape, and the only one — a redirected or
+# closed stdin does not detach the controlling terminal. Absent on macOS, so this skips
+# there rather than pretending to cover it.
+if ! have setsid; then
+  skip "clip: tmux copy-pipe fallback (setsid not available — Linux-only reproduction)"
+else
+  _clip_reset
+  ln -s "$_real_tr" "$CBIN/tr"
+  ln -s "$(command -v base64)" "$CBIN/base64"
+  # A tmux stub that records the call and captures what was piped to it, so the assertion
+  # is "the payload arrived intact", not merely "something invoked tmux".
+  _tmux_log="$CBIN/tmux.calls"
+  # The stub touches a .done marker AFTER the payload is fully written. Waiting on the
+  # payload file itself would race: `cat >file` CREATES it empty and fills it after, so a
+  # reader that waits for existence can read nothing and call it corruption.
+  # `cat` by ABSOLUTE path: the stub inherits the stripped PATH="$CBIN", where cat does
+  # not exist. A bare `cat` there fails AFTER the shell has already created the redirect
+  # target, leaving a 0-byte payload that reads exactly like a corrupted copy.
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s"\nif [ "$1" = load-buffer ]; then %s >"%s.payload"; : >"%s.done"; exit 0; fi\nexit 1\n' \
+    "$_tmux_log" "$(command -v cat)" "$_tmux_log" "$_tmux_log" >"$CBIN/tmux"
+  chmod +x "$CBIN/tmux"
+
+  _clip_pipe_out="$(printf 'yanked\ttext\n' \
+    | setsid env PATH="$CBIN" TMUX=/tmp/fake,1,0 CLIP_PROC_VERSION="$CBIN/procversion" \
+        "$_real_bash" "$CLIP" </dev/stdin 2>&1)"
+  _clip_pipe_rc=$?
+  # setsid detaches, so the write to the log races our read by a few ms.
+  _cp_i=0
+  while [ ! -f "$_tmux_log.done" ] && [ "$_cp_i" -lt 50 ]; do sleep 0.1; _cp_i=$((_cp_i + 1)); done
+
+  if [ "$_clip_pipe_rc" -eq 0 ] && grep -q 'load-buffer -w -' "$_tmux_log" 2>/dev/null; then
+    pass "clip: with no controlling terminal inside tmux, falls back to tmux load-buffer -w"
+  else
+    fail "clip: the tmux copy-pipe path did not reach load-buffer (rc=$_clip_pipe_rc)"
+    [ -n "$_clip_pipe_out" ] && printf '%s\n' "$_clip_pipe_out" | sed 's/^/    /' >&2
+  fi
+
+  # The payload must survive the base64 round-trip EXACTLY — clip reconstructs the raw
+  # bytes by decoding, so a decode that mangled tabs or ate the trailing newline would be
+  # a silent corruption of every yank taken this way.
+  if [ -f "$_tmux_log.payload" ] \
+    && [ "$(od -An -c <"$_tmux_log.payload" | tr -s ' ')" = "$(printf 'yanked\ttext\n' | od -An -c | tr -s ' ')" ]; then
+    pass "clip: the tmux fallback payload round-trips byte-for-byte (tabs and trailing newline)"
+  else
+    fail "clip: the tmux fallback corrupted the payload"
+    [ -f "$_tmux_log.payload" ] && od -c "$_tmux_log.payload" | sed 's/^/    /' >&2
+  fi
+
+  # Outside tmux the same detached shape must still fail LOUDLY. A fallback that swallowed
+  # this would hide a genuinely missing backend, which is the failure the OSC 52 work in
+  # v4.13.0 set out to make visible.
+  _clip_reset
+  ln -s "$_real_tr" "$CBIN/tr"
+  ln -s "$(command -v base64)" "$CBIN/base64"
+  if printf 'x' | setsid env PATH="$CBIN" CLIP_PROC_VERSION="$CBIN/procversion" \
+      "$_real_bash" "$CLIP" </dev/stdin >/dev/null 2>&1; then
+    fail "clip: detached with no tmux and no backend should exit non-zero"
+  else
+    pass "clip: detached with no tmux and no backend still fails loudly (no silent success)"
+  fi
+  unset _clip_pipe_out _clip_pipe_rc _tmux_log _cp_i
+fi
+
 # clip-paste (paste) — mirror ladder; the WSL leg also strips the CR powershell adds.
 _clip_reset
 export WSL_DISTRO_NAME=Ubuntu
@@ -9928,8 +10002,10 @@ else
   ocheck "opsecret builds the op:// read path" \
     'out=$(opsecret Personal/AWS/key); [[ $out == *"op read op://Personal/AWS/key"* ]]'
   # optoken copies the OTP via clip and confirms — present clip → success + the ok line.
-  ocheck "optoken fetches the OTP and copies it via clip" \
-    'out=$(optoken Personal/GitHub 2>&1); (( $? == 0 )) && [[ $out == *"TOTP copied"* ]]'
+  # "sent", not "copied": clip's OSC 52 last resort returns success once the escape is
+  # WRITTEN, which is not the same as a terminal having accepted it (#525).
+  ocheck "optoken fetches the OTP and hands it to clip" \
+    'out=$(optoken Personal/GitHub 2>&1); (( $? == 0 )) && [[ $out == *"TOTP sent"* ]]'
   ocheck "opssh lists stored SSH keys (rc 0)" \
     'out=$(opssh 2>&1); (( $? == 0 )) && [[ $out == *mykey* ]]'
   # uniform --help contract: each op verb answers --help on stdout, rc 0.
