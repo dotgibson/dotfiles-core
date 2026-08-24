@@ -6710,6 +6710,118 @@ for _it in DIRENV GH UV TY; do
 done
 unset _it
 
+# ── A2b. _cache_eval convergence (#580) ──────────────────────────────────────
+# _cache_eval decides "is this cache usable?" on `-s` alone, and it writes the generator's
+# output straight at the destination. Both halves were wrong, and both failed SILENTLY —
+# `2>/dev/null` is deliberate there (a generator's chatter must never be sourced), so a
+# broken generator leaves nothing behind but the file itself.
+#
+# These fixtures drive the REAL _cache_eval, extracted from 00-tools.zsh by its own
+# function header, against stub generators — the same "parse the shipped source, do not
+# re-spell it" discipline the probe-coverage guards below use. Extracting rather than
+# sourcing the whole file is deliberate: band 00 activates mise/atuin/starship against the
+# host, which is neither hermetic nor fast.
+#
+# Each case runs the SAME shell twice. One run cannot tell "regenerated once" from
+# "regenerates forever" — and forever is the actual defect.
+hdr "_cache_eval convergence (#580)"
+CEV="$SANDBOX/cache-eval"
+mkdir -p "$CEV/bin"
+
+# exits 0, prints nothing — a renamed/removed generator subcommand, the observed trigger.
+printf '#!/bin/sh\nexit 0\n' >"$CEV/bin/ce-empty"
+# prints a PARTIAL script, then fails — truncated init, the case that never self-heals.
+printf '#!/bin/sh\nprintf %%s "alias ce=true\\nif [ "\nexit 1\n' >"$CEV/bin/ce-partial"
+# prints nothing and fails — exit status alone would catch this one; -s alone would not.
+printf '#!/bin/sh\nexit 3\n' >"$CEV/bin/ce-emptyfail"
+# a healthy generator, to prove the fix does not break the path that always worked.
+printf '#!/bin/sh\nprintf %%s "# ce good\\nalias cegood=true\\n"\n' >"$CEV/bin/ce-good"
+chmod +x "$CEV/bin"/ce-*
+
+# Run <tool> through _cache_eval N times in N separate shells; echo one line per run:
+#   <size-in-bytes|MISSING> <would-regenerate-next: YES|no> <sourced-ok: ok|ERR>
+_ce_runs() { # _ce_runs <tool> <count>
+  local _i
+  for _i in $(seq 1 "$2"); do
+    XDG_CACHE_HOME="$CEV/cache" PATH="$CEV/bin:$PATH" HOME="$SANDBOX" \
+      zsh -fc '
+        setopt NO_CLOBBER   # 10-options.zsh sets this; the >| redirections depend on it
+        eval "$(sed -n "/^_cache_eval() {/,/^}/p" "'"$HERE"'/zsh/00-tools.zsh")"
+        _cache_eval '"$1"' '"$1"' && _ok=ok || _ok=ERR
+        c="$XDG_CACHE_HOME/zsh/'"$1"'.zsh"
+        if [[ -e "$c" ]]; then _sz=$(wc -c <"$c" | tr -d " "); else _sz=MISSING; fi
+        printf "%s %s %s\n" "$_sz" "$([[ -s $c ]] && echo no || echo YES)" "$_ok"
+      ' 2>/dev/null
+  done
+}
+
+# 1. exits 0, prints nothing. Pre-fix: a 0-byte cache, so `-s` fails on EVERY later shell
+#    and each one re-forks a generator that can never succeed — invisible, forever.
+rm -rf "$CEV/cache"
+_ce_out="$(_ce_runs ce-empty 2)"
+if [[ -z "$(printf '%s\n' "$_ce_out" | awk '$2!="no"')" ]]; then
+  pass "_cache_eval: a generator that exits 0 and prints nothing converges (no re-fork per shell)"
+else
+  fail "_cache_eval: empty-output generator never converges — every shell re-forks it"
+  printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
+fi
+
+# 2. prints nothing AND fails. Same convergence requirement; separate case because a fix
+#    that only checked $? would pass this and still leave case 1 broken.
+rm -rf "$CEV/cache"
+_ce_out="$(_ce_runs ce-emptyfail 2)"
+if [[ -z "$(printf '%s\n' "$_ce_out" | awk '$2!="no"')" ]]; then
+  pass "_cache_eval: a generator that prints nothing and exits non-zero converges"
+else
+  fail "_cache_eval: failing empty generator never converges"
+  printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
+fi
+
+# 3. partial output then failure. `>|` truncates BEFORE the generator runs, so pre-fix the
+#    cache held `alias ce=true\nif [ ` — non-empty AND newer than the binary, so BOTH halves
+#    of the freshness test go false and that truncated init is sourced on every shell from
+#    then on. Assert the fragment never lands, not merely that the run succeeded.
+rm -rf "$CEV/cache"
+_ce_runs ce-partial 2 >/dev/null
+if [[ ! -f "$CEV/cache/zsh/ce-partial.zsh" ]] || ! grep -q 'if \[ *$' "$CEV/cache/zsh/ce-partial.zsh"; then
+  pass "_cache_eval: a partially-written init is never installed (no truncated cache to source)"
+else
+  fail "_cache_eval: installed a TRUNCATED init — every later shell sources it"
+  sed 's/^/    /' "$CEV/cache/zsh/ce-partial.zsh" >&2
+fi
+
+# 4. the last-good cache survives a generator that breaks later. Warm a good cache, then
+#    swap the binary for a broken one and make it NEWER so the mtime half fires. Degrading
+#    a working shell because a generator regressed is a strictly worse outcome than
+#    serving yesterday's completions.
+rm -rf "$CEV/cache"
+printf '#!/bin/sh\nprintf %%s "# ce keep\\nalias cekeep=true\\n"\n' >"$CEV/bin/ce-keep"
+chmod +x "$CEV/bin/ce-keep"
+_ce_runs ce-keep 1 >/dev/null
+printf '#!/bin/sh\nexit 0\n' >"$CEV/bin/ce-keep"
+chmod +x "$CEV/bin/ce-keep"
+touch "$CEV/bin/ce-keep"          # binary newer than cache -> the -nt half fires
+_ce_out="$(_ce_runs ce-keep 2)"
+if grep -q 'alias cekeep=true' "$CEV/cache/zsh/ce-keep.zsh" 2>/dev/null \
+  && [[ -z "$(printf '%s\n' "$_ce_out" | awk '$2!="no"')" ]]; then
+  pass "_cache_eval: keeps the last good cache when a generator breaks, and still converges"
+else
+  fail "_cache_eval: lost the last good cache (or kept re-forking) after a generator broke"
+  printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
+fi
+
+# 5. the happy path still works — a fix that quarantined everything would pass 1-4.
+rm -rf "$CEV/cache"
+_ce_out="$(_ce_runs ce-good 2)"
+if [[ -z "$(printf '%s\n' "$_ce_out" | awk '$2!="no" || $3!="ok"')" ]] \
+  && grep -q 'alias cegood=true' "$CEV/cache/zsh/ce-good.zsh"; then
+  pass "_cache_eval: a healthy generator still caches and sources its init"
+else
+  fail "_cache_eval: broke the working path"
+  printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
+fi
+unset _ce_out
+
 # ── A3. profile filtering (CORE_PROFILE ceilings + env/file resolution) ───────
 # A2 proves the FULL chain; this proves the minimal/standard ceilings, that outer
 # fragments (>=70) ALWAYS load regardless of profile, that an unknown/unset profile falls

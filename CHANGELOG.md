@@ -13,6 +13,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`_cache_eval` now converges on a generator that produces nothing.** It decided whether a
+  cache was usable on `-s` alone — "the file is non-empty" — and wrote the generator's output
+  straight at the destination with `>|`, which truncates _before_ the generator runs and never
+  looks at its exit status. Two failure modes followed, and both were invisible:
+
+  - **Generator exits 0 and prints nothing** → a 0-byte cache. `-s` then fails forever, so the
+    _next_ shell regenerates, and the next. The cache never converges: every interactive shell
+    pays a fork for a tool that is permanently un-cached, with no error, no output and nothing
+    in the prompt to show for it.
+  - **Generator prints part of a script and then dies** → the cache is non-empty _and_ newer
+    than the binary, so **both** halves of the freshness test go false and a truncated init is
+    sourced on every shell from then on. That one never self-heals.
+
+  The silence is not incidental. `2>/dev/null` on the generator is deliberate and correct — a
+  generator's chatter must never be sourced into the shell — so the "command not found"-shaped
+  signal is discarded by design, and the file is all that is left to judge by.
+
+  Now the output goes to a temp file and is installed only if the generator **exited 0, wrote
+  something, and the result parses** (`zsh -n`, the same "prove it parses before you keep it"
+  discipline `update-plugins.sh` applies to a rolled plugin pin). A generator that breaks after
+  a good cache existed keeps the last good cache — degrading a working shell because a
+  generator regressed is strictly worse than serving yesterday's completions — and the cache is
+  touched so the mtime half stops re-firing. With nothing good to fall back on, a comment-only
+  negative cache lands: valid zsh, sources to a no-op, and non-empty, so the per-shell fork
+  stops. It regenerates when the binary's mtime moves, which an upgrade does.
+
+  The `zsh -n` fork is paid on the regeneration path only — once per tool per upgrade, not once
+  per shell — and is skipped where `zsh` is not on `$PATH` rather than failing every
+  regeneration.
+
+  **Why now:** the trigger is a renamed or removed generator subcommand, and `_cache_eval`
+  gained three new callers in #578 — one of them `ty`, a pre-1.0 type checker whose
+  `generate-shell-completion` is exactly the CLI surface that gets renamed before 1.0. Eleven
+  tools reach this path, counting the `brew shellenv` / `pyenv init` callers OS repos add
+  through the documented Core→OS API.
+
+  The suite gains five fixtures, each running the same shell **twice** — one run cannot tell
+  "regenerated once" from "regenerates forever", and forever is the defect. Four of the five
+  fail against the previous implementation. (#580)
+
 ### Changed
 
 - **`zsh-syntax-highlighting` pin moves to `2fc57d63067c`.** The only pin of the eight that
