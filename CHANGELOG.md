@@ -73,23 +73,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   mise that died on a broken config) is just as much "we got no answer" as a stall, and is now
   reported that way rather than falling through as good news. (#641)
 
-- **`ruby_lsp.lua`'s `INSTALL:` line pointed the one host it misleads at a mise pin that
-  host does not have.** (#642) "mise pins ruby" is true here — `mise/config.toml` pins
-  `ruby = "3.4"` — but `nvim/` is the only Core tree `dotfiles-Windows` vendors, and there
-  ruby is winget-owned with no mise pin and no MSYS2 DevKit. On that host every C-extension
-  gem fails to build, so `ruby-lsp` (and `rubocop`) die on `prism` with an error that names
-  neither ruby nor the missing toolchain:
+- **Three `INSTALL:` lines claimed a mise pin without saying which fleet they meant.** (#642)
+  "mise pins ruby" / "mise pins temurin-21" are all true here — `mise/config.toml` pins
+  `ruby = "3.4"` and `java = "temurin-21"`. These were never stale comments; they were
+  **unqualified** ones, silently assuming a mise-managed Unix box. That is exactly the
+  assumption an `INSTALL:` line exists to make explicit, and `nvim/` is the one Core tree
+  `dotfiles-Windows` vendors — a host with neither pin.
+
+  `ruby_lsp.lua` is where it had teeth. On Windows ruby is winget-owned and ships no MSYS2
+  DevKit, so every C-extension gem fails to build and `ruby-lsp` (with `rubocop`) dies on
+  `prism` with an error naming neither ruby nor the missing toolchain:
 
   ```
   make: *** No rule to make target '/C/Ruby40-x64/include/ruby-4.0.0/ruby.h' ...
   ```
 
-  The comment is not wrong, it was **unqualified** — it silently assumed a mise-managed Unix
-  box, which is exactly the assumption an `INSTALL:` line exists to make explicit. It now says
-  "on the UNIX FLEET" and names the Windows path (`ridk install 1 3`, elevated).
-  `intelephense.lua` already modelled this by stating its negative case outright ("mise does
-  NOT pin"). Comment-only; no behaviour change, and nothing here reads the text.
-  (`nvim/lua/gerrrt/servers/ruby_lsp.lua`)
+  A reader following that line went hunting for a mise pin that will never exist there, while
+  the one thing that unblocks them — an elevated `ridk install 1 3` — went unmentioned.
+
+  `jdtls.lua` and `kotlin_language_server.lua` misled without breaking: Windows gets a JDK
+  either way, just scoop-owned **openjdk25** rather than mise's temurin-21 — a different owner
+  *and* a different major, both of which satisfy the servers. Their qualifiers are one clause
+  each, proportional to the stakes; ruby's earns the longer note.
+
+  All three now name the fleet they describe. `intelephense.lua` already modelled this by
+  stating its negative case outright ("mise does NOT pin"). Comment-only; no behaviour change,
+  and nothing here reads the text. (`nvim/lua/gerrrt/servers/ruby_lsp.lua`,
+  `nvim/lua/gerrrt/servers/jdtls.lua`, `nvim/lua/gerrrt/servers/kotlin_language_server.lua`)
 
 ## [v4.17.0] - 2026-08-24
 
