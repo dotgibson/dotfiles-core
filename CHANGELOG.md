@@ -145,6 +145,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`bootstrap-test.yml`'s header claimed no gate in the fleet runs `provision()` — false in
+  two directions.** The block stated, in capitals, that `--links-only` returns before
+  `provision()` and "NO GATE IN THE FLEET RUNS provision() AT ALL". That was true when it was
+  written and has not been since v4.14.2, which added the opt-in `provision-stub` job to this
+  very file ~200 lines below the claim. It is also false the other way: `dotfiles-MacBook`
+  executes `provision()` on its `macos smoke` leg via `make test-repo` through a
+  `BOOTSTRAP_BREW` seam, gated by `REPO_TESTS_GATE_PROVISION=1` so the leg cannot quietly
+  stop gating.
+
+  This header is the most-read description of what the fleet does and does not cover, and it
+  is vendored into every repo — so a stale absolute keeps generating issues filed in good
+  faith against it (dotgibson/dotfiles-MacBook#178 was filed on exactly this premise). The
+  same sentence was repeated in `lint-call.yml`'s RETURN-trap note, so fixing one file alone
+  would have left it in the fleet; both are corrected.
+
+  The rewrite also states the macOS absence as a **decision rather than a gap**:
+  `bootstrap-test.yml` is Linux-container-only, and a `provision()` that hard-exits without
+  the Command Line Tools can only reach one branch there — so a repo in that position gates
+  it in its own CI instead. And it names the non-obvious part: the two approaches are
+  complementary, not redundant. Core's shims always succeed, so failure branches stay
+  unexercised; MacBook's stub always fails, so it covers exactly those branches. (#606)
+
 - **`make sync` vendored onto whatever the local clone happened to be — no staleness guard.**
   `sync-core.sh` had a dirty-tree guard ("uncommitted work?") and nothing that asked "current
   with the remote?". So a sync materialized `core/` onto a stale base, reported
