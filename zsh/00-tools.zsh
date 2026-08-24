@@ -92,15 +92,63 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
   [[ -z "$bin" ]] && return 0
   if [[ ! -s "$cache" || "$bin" -nt "$cache" ]]; then
     [[ -d "$dir" ]] || mkdir -p "$dir"
-    # `>|` forces the overwrite: 10-options.zsh sets NO_CLOBBER, under which a plain
-    # `>` onto an existing cache raises "file exists" (a shell-level redirection
-    # error that 2>/dev/null does NOT suppress). This regen path runs whenever the
-    # tool's binary is newer than the cache — e.g. right after a brew upgrade. It
-    # surfaced only for the band-45 callers (carapace, gh/uv/ty) because they run AFTER
-    # 10-options.zsh sets NO_CLOBBER; the 00-tools.zsh callers run before it.
-    "$@" >|"$cache" 2>/dev/null
+    # GENERATE TO A TEMP FILE, INSTALL ONLY ON SUCCESS (#580). The obvious shape —
+    # `"$@" >|"$cache"` — truncates the destination BEFORE the generator runs and never
+    # looks at its exit status, which produced two failure modes, both SILENT. The
+    # silence is not incidental: `2>/dev/null` is deliberate and correct, because a
+    # generator's chatter must never be sourced into the shell, so the
+    # "command not found"-shaped signal is discarded by design and the file is all
+    # that is left to judge by.
+    #
+    #   * Generator exits 0 and prints nothing -> a 0-byte cache. `-s` above then fails
+    #     FOREVER, so the next shell regenerates, and the next: the cache never
+    #     converges and every interactive shell pays a fork for a tool that is
+    #     permanently un-cached. No error, no output, nothing in the prompt.
+    #   * Generator prints a partial script and then dies -> the cache is non-empty AND
+    #     newer than $bin, so BOTH halves of the test above go false and a TRUNCATED
+    #     init is sourced on every subsequent shell. That one never self-heals.
+    #
+    # The trigger is a renamed or removed generator subcommand, which is exactly the
+    # shape a pre-1.0 CLI ships (`ty generate-shell-completion` is one of the callers).
+    #
+    # `zsh -n` before installing is the same "prove it parses before you keep it"
+    # discipline update-plugins.sh applies to a rolled plugin pin, and it is what makes
+    # the truncated-cache case impossible rather than merely unlikely. It costs one
+    # fork — but only here, on the regeneration path, which runs once per tool per
+    # upgrade, not once per shell. Resolved through $commands so a box without zsh on
+    # PATH skips the check instead of failing every regeneration.
+    local tmp="$cache.$$" zn="${commands[zsh]}"
+    if "$@" >|"$tmp" 2>/dev/null && [[ -s "$tmp" ]] \
+      && { [[ -z "$zn" ]] || "$zn" -n "$tmp" 2>/dev/null; }; then
+      # `>|` on the temp file for the same reason the destination needed it: 10-options.zsh
+      # sets NO_CLOBBER, under which a plain `>` onto an existing file raises a
+      # shell-level redirection error that 2>/dev/null does NOT suppress. It surfaced
+      # only for the band-45 callers (carapace, gh/uv/ty) because they run AFTER
+      # 10-options.zsh; the 00-tools.zsh callers run before it.
+      mv -f "$tmp" "$cache"
+    elif [[ -s "$cache" ]]; then
+      # A generator that broke AFTER a good cache existed. Keep the last good cache
+      # rather than degrade a working shell — but TOUCH it, or the `-nt` half of the
+      # test above keeps firing and we are back to a fork per shell, which is the very
+      # defect this block exists to fix.
+      rm -f "$tmp"
+      touch "$cache"
+    else
+      # Nothing good to fall back on. Write a comment-only NEGATIVE cache: valid zsh,
+      # sources to a no-op, and — the point — non-empty, so `-s` converges and the
+      # per-shell fork stops. It regenerates when the binary's mtime moves, which an
+      # upgrade does. Caching a failure is a real cost; paying it silently forever is
+      # a worse one.
+      rm -f "$tmp"
+      print -r -- "# _cache_eval: '$1' produced no usable output — negative cache (#580).
+# Sources to a no-op so this shell stops re-forking a generator that cannot succeed.
+# Retry by upgrading the binary (its mtime invalidates this) or deleting this file." >|"$cache"
+    fi
   fi
-  source "$cache"
+  # Guard the source: a cache dir that could not be created (read-only $HOME, a full
+  # disk) leaves no file, and an unguarded `source` would print a shell error on every
+  # startup — noisier than the missing completion it is reporting.
+  [[ -s "$cache" ]] && source "$cache"
 }
 
 # ── WSL predicate: is this Linux userland hosted by Windows? ───────────────────
