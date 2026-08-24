@@ -13,6 +13,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **`zsh-syntax-highlighting` pin moves to `2fc57d63067c`.** The only pin of the eight that
+  was behind; the other seven and every `nvim/lazy-lock.json` entry were already current.
+
+  The range is **one upstream commit, and it touches only `tests/README.md`** (+2/-2, fixing
+  relative links) — verified against the upstream compare before landing rather than inferred
+  from the SHA moving. So this is a pin refresh with no runtime change at all, which is worth
+  saying plainly: this plugin runs a highlighter on every keystroke, so "the pin moved" and
+  "behaviour moved" are worth keeping distinct in the record.
+
+  `update-plugins.sh` re-fetches and `zsh -n` parses each rolled pin before writing, so the
+  new commit is proven fetchable and syntactically valid, not just newer.
+
 ## [v4.16.0] - 2026-08-23
 
 ### Changed
