@@ -9,8 +9,8 @@
 #
 # Assumes:
 #   - all OS repos are cloned as siblings under one parent dir (see REPOS_ROOT)
-#   - each OS repo already did the one-time:
-#       git subtree add --prefix=core <core-remote> main --squash
+#   - each OS repo already did the one-time (from a RELEASED tag, never main — #588):
+#       git subtree add --prefix=core <core-remote> refs/tags/v4 --squash
 #
 # Usage:
 #   ./scripts/sync-core.sh                # pull core into every repo found
@@ -20,7 +20,12 @@
 # Env overrides:
 #   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
 #   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: origin of core)
-#   CORE_BRANCH       Core branch to vendor          (default: main)
+#   CORE_BRANCH       Core ref to vendor             (default: main)
+#                     `main` is right for a maintainer's ad-hoc `make sync` — the fan-out
+#                     always overrides it with the released commit (sync-fanout.yml passes
+#                     CORE_BRANCH=<sha>). Vendoring a repo for the FIRST time is the other
+#                     case: pass a released tag, or core.lock records a commit no release
+#                     points at (#588).
 #   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
 #   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (escape hatch; see below)
 #
@@ -86,7 +91,8 @@ sync-core.sh — THE maintain button: subtree-pull Core into every OS repo's cor
 Env overrides:
   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: core's origin)
-  CORE_BRANCH       Core branch to vendor          (default: main)
+  CORE_BRANCH       Core ref to vendor             (default: main; pass a released tag
+                    such as refs/tags/v4 when vendoring a repo for the first time)
   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (documented escape hatch)
 
