@@ -46,6 +46,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **The reusable lint workflow's markdown leg is now BLOCKING.** It shipped advisory in
+  v4.16 for one release cycle, for the reason any new leg has to: callers pin the moving
+  `@v4` tag, so every repo sees a new gate the moment auto-tag moves — before a maintainer
+  can act on anything it reports.
+
+  The backlog was measured, not assumed. Eight of the nine fleet repos carried findings —
+  **162 in total**, roughly 130 of them MD060 (table pipe alignment). All nine were cleared
+  first, and the flip landed only once `markdownlint-cli2` was green on every one, so no
+  repo is red on arrival.
+
+  The `if/else` that swallowed the exit is gone. Two things are deliberately unchanged: the
+  `command -v markdownlint-cli2 || exit 1` guard, which matters _more_ now rather than less
+  — exiting 127 because the linter is absent and exiting 1 because it found issues are
+  different facts, and only the second is the caller's to fix — and `working-directory:
+  caller`, without which markdownlint would walk up and silently apply **Core's**
+  `.markdownlint.jsonc` to the caller's files instead of the caller's own. (#592)
+
 - **`uv`'s 6,976-line completion is no longer sourced on every shell — it autoloads from
   `fpath`.** `_cache_eval` turns a generator into a cached file and then `source`s that file
   on every interactive shell. That is the right shape for `direnv` (14 lines) and `gh` (212).
