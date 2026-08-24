@@ -14,6 +14,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The hand-vendoring instructions said `main`; the fan-out deliberately pins the released
+  commit.** Three docs and the scaffolder told a human to
+  `git subtree add --prefix=core <core-remote> main --squash`, while `sync-fanout.yml` states
+  the opposite in as many words: each PR vendors the exact commit the tag points at
+  (`CORE_BRANCH=<sha>`), so `core.lock` records that commit and `git describe` stamps the
+  named tag.
+
+  That contradiction bites. `core-integrity` validates `core/` against the commit `core.lock`
+  records, so a tree vendored from whatever `main` happened to be is not that commit — a
+  freshly hand-vendored repo could fail its own tamper check before it had done anything
+  wrong. `dotfiles-MacBook` hit exactly this and corrected its own copies, two of which were
+  live error paths printed by `bootstrap.sh`; the copies inside the vendored subtree could
+  not be fixed downstream, because the next sync overwrites them.
+
+  `ARCHITECTURE.md`, `PORTING-MATRIX.md` and `VENDORING.md` now point at `refs/tags/v4` and
+  name the `core.lock` step that `subtree add` does not perform. `new-os-repo.sh` defaults
+  `CORE_BRANCH` to `refs/tags/v4`, and the README it generates no longer suggests a raw
+  `git subtree pull` — the stale-lock path `VENDORING.md` warns about, and a model #587
+  abandoned outright.
+
+  `sync-core.sh`'s own `CORE_BRANCH` default stays `main` on purpose: the fan-out always
+  overrides it, and `main` is the right default for a maintainer's ad-hoc `make sync`. It is
+  now documented as such, with the first-time-vendoring case called out. (#588)
+
 ## [v4.17.0] - 2026-08-24
 
 ### Added

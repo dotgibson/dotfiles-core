@@ -325,7 +325,21 @@ If `make fleet-drift` shows you `BEHIND`, the fix is to merge that PR — not to
 Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs:
 
 ```sh
-git subtree add --prefix=core <core-remote> main --squash
+git subtree add --prefix=core <core-remote> refs/tags/v4 --squash
+```
+
+**A released tag, never `main`.** The fan-out pins each repo to the exact commit a
+release tag points at (`sync-fanout.yml` passes `CORE_BRANCH=<sha>`), so `core.lock`
+records that commit and `git describe` stamps the named tag. A tree vendored from
+whatever `main` happened to be is not that commit, and `core-integrity` — which
+validates `core/` against the commit `core.lock` records — reports a freshly
+hand-vendored repo as TAMPERED before it has done anything wrong.
+
+`subtree add` writes no `core.lock`. Stamp provenance from a Core checkout, which is
+the only sanctioned writer of that file:
+
+```sh
+CORE_BRANCH=refs/tags/v4 ./scripts/sync-core.sh dotfiles-<Distro>
 ```
 
 Then register the repo **here**, which takes **four coordinated edits**, not one:
@@ -340,9 +354,9 @@ natively in PowerShell and vendors no `core/` at all.
 
 **The scaffold is a starting point, not the finished contract.** A freshly generated repo
 has no `core.lock`, no core-guard hook, and no `core-integrity` workflow — so it carries
-no provenance and nothing yet stops a hand-edit to `core/`. Its generated README also
-suggests a raw `git subtree pull`, which is the stale-lock path this document warns about.
-Close all four before treating the repo as part of the fleet: run one `sync-core.sh` from
-Core (which writes `core.lock` and installs the guard), add the `core-integrity` and
-`bootstrap` workflow callers, and fix the generated README's update instructions to point
-at the fan-out.
+no provenance and nothing yet stops a hand-edit to `core/`.
+Close all three before treating the repo as part of the fleet: run one `sync-core.sh` from
+Core (which writes `core.lock` and installs the guard), and add the `core-integrity` and
+`bootstrap` workflow callers. (The generated README used to suggest a raw
+`git subtree pull` — the stale-lock path this document warns about — and now points at the
+fan-out instead.)
