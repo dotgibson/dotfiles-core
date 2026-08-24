@@ -13,6 +13,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **The CI floor gains rule 7: no attacker-controlled expression may be spliced into a
+  `run:` body.** A `${{ }}` expression is substituted by the _runner_, textually, before the
+  shell ever parses the script — so a PR title or a branch name is not data at that point,
+  it is source code. The remedy is to route it through `env:` and read `$VAR`, which the
+  shell treats as a value.
+
+  The fleet already does this everywhere, and says so at the call sites — `auto-tag-call.yml`
+  spells out that "caller-supplied values reach the script through the ENVIRONMENT, never
+  spliced into the `run:` body", and `notify-web-call.yml` states the same. But a comment is
+  not a gate: nothing stopped the next reusable workflow from splicing
+  `${{ github.event.pull_request.title }}` straight into a shell block. `actionlint`, which
+  the audit already runs, has no equivalent rule, so this was a real gap in current coverage.
+
+  `banned_run_interpolation_contexts` in `modern-baseline.yml` lists `github.event.`,
+  `github.head_ref`, `github.actor` and `github.triggering_actor`. `inputs.` is deliberately
+  absent: `setup-core-tools/action.yml` interpolates `${{ inputs.bindir }}` inline in ~8
+  `run:` steps, and that is a first-party composite input — banning it would be a fix-first
+  migration for no security gain.
+
+  Enforcement is the same block-scalar walk rule 6 uses for the checkout/`with:`
+  association: find the `run:` key, take its column, and treat every more-indented line as
+  body until the first non-blank dedent. Matching happens _inside_ each `${{ … }}` span
+  rather than against the raw line, so a context name appearing in prose beside a step is
+  not a false fire. Scoped to workflows _and_ composite actions, since a composite's `run:`
+  is the same hazard.
+
+  Green on the current tree with no workflow edits. (#521)
+
 ### Fixed
 
 - **`_cache_eval` now converges on a generator that produces nothing.** It decided whether a
@@ -54,6 +84,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   The suite gains five fixtures, each running the same shell **twice** — one run cannot tell
   "regenerated once" from "regenerates forever", and forever is the defect. Four of the five
   fail against the previous implementation. (#580)
+
+- **The banned-runner rule was silently missing the `-arm` / `-large` / `-xlarge` variants.**
+  This was a defect in a rule the floor already declared, not a new floor. The label class
+  that terminates the match contains no hyphen, so with `ubuntu-22.04` in `banned_runners`,
+  `runs-on: ubuntu-22.04-arm` did **not** match — the `-` fails every alternative. Same for
+  `macos-14-large` and `macos-14-xlarge`.
+
+  That matters because GitHub names those exact labels in the same deprecation notices as
+  their base images: `runner-images#14254` lists `ubuntu-22.04` **and** `ubuntu-22.04-arm`;
+  `#13518` lists `macos-14`, `macos-14-large` and `macos-14-xlarge`. The list was right; the
+  matcher was leaky, and had been since the floor was written.
+
+  Fixed by matching an optional variant suffix rather than adding six more list entries —
+  that keeps `banned_runners` reading as one label per image and covers every present and
+  future variant of every label on it, including ones added later. (#521)
+
+- **`check-modern.sh` gains its first behavioural coverage.** Every rule was previously
+  only "green on this tree", which cannot distinguish a rule that _passes_ from a rule that
+  never _matches_ — and rule 2 was in exactly that state. The new fixtures build a throwaway
+  git repo (the gate inventories through `git ls-files`, so a plain directory yields "no
+  workflow/action files to check" and every assertion would vacuously pass) and assert both
+  directions: that each rule fires on the violating shape, and that the prescribed remedy,
+  `inputs.*`, and `if:`/`env:`/`concurrency:`/`with:` contexts do **not** fire. Both new
+  rules' fixtures fail against the previous script. (#521)
 
 ### Changed
 

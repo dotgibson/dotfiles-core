@@ -93,3 +93,24 @@ require_workflow_permissions: true
 #    why, right at the call site — so the exemption is reviewed in the diff that needs it
 #    instead of living in a list here that silently drifts out of sync with the workflows.
 require_explicit_persist_credentials: true
+
+# 7) No attacker-controlled expression may be spliced into a `run:` body. A `${{ }}`
+#    expression is substituted by the RUNNER, textually, before the shell ever sees the
+#    script — so a PR title or a branch name is not data at that point, it is source code.
+#    Route it through `env:` and read `$VAR`, which the shell treats as a value.
+#
+#    The fleet already follows this by written convention (auto-tag-call.yml and
+#    notify-web-call.yml both spell out the reasoning at the call site) — but a comment is
+#    not a gate, and `actionlint`, which the audit already runs, has no equivalent rule.
+#    Template injection is the live exploitation path, not a theoretical one.
+#
+#    `inputs.` is deliberately ABSENT from this list: setup-core-tools/action.yml
+#    interpolates `${{ inputs.bindir }}` inline in ~8 run: steps, and that is a
+#    first-party composite input — banning it is a fix-first migration for no gain.
+#
+#    Full-line comments only, per the parser note under banned_runners above.
+banned_run_interpolation_contexts:
+  - github.event.
+  - github.head_ref
+  - github.actor
+  - github.triggering_actor
