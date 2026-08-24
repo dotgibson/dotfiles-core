@@ -328,6 +328,46 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     possibly a socket the developer's own daemon is already holding. `TMPDIR` is now pinned
     into the sandbox. (#518)
 
+- **Docs caught up with a fleet topology change they were still describing the old way.**
+  `dotfiles-Offense` shed its OS-native layer entirely — no `os/`, no `install/packages.txt`,
+  no `scripts/tool-versions.env` — and adopted `blib_link_role_layer`, with the Kali package
+  lane moving to `dotfiles-Debian`'s `only:kali` / `skip:kali` tiers. `dotfiles-Debian` is
+  therefore a first-class ubuntu/debian/**kali** target now, not the frozen-Ubuntu-LTS one the
+  docs described.
+
+  That single move is what made most of the surviving drift, rather than several independent
+  errors:
+
+  - `core.manifest` and `PORTING-MATRIX.md` both said **neither** role repo had adopted the
+    role-layer helper. `Offense` has; `Defense` still hand-rolls the band in
+    `wire_defense_stage`, and migrating it is what actually remains.
+  - The matrix said `Offense` "also carries its own OS-native layer (Debian/apt,
+    kali-rolling)". It does not.
+  - Two footnotes asserted Kali "installs it nowhere" and "installs nothing from this family".
+    Both are false: `dotfiles-Debian`'s `only:kali` tier installs a substantial subset.
+  - Three Kali cells were demonstrably wrong — `lazygit` was marked `²¹` (available, not
+    installed) and `starship` `script³` when both are apt packages there, and `atuin` was
+    marked `³` (best-effort script) when it is a pinned, checksummed release asset.
+
+  The Kali column as a whole is **not** re-derived here, and the table now says so: a caveat
+  marks it as inherited-not-verified until `/os-package-availability` has run against the new
+  owner. Correcting three cells and claiming the column is verified would be the same mistake
+  the `²¹` footnote block already made once.
+
+  Also corrected: footnote `¹⁴` listed `ouch` among Alpine's `testing`-repo tools, but Alpine's
+  own bootstrap says it is unpackaged there outright; the OSC 52 `clip` fallback was still
+  described as a pending fix, having shipped in **v4.13.0** (and gained the tmux server-side
+  path in #525); and `README.md` offered `--dry-run` to macOS only, when all nine bootstraps
+  implement it and the Linux list also omitted Debian, Defense and Offense.
+
+  Finally, eleven stale fleet counts across `ci.yml`, `pr-link-check.yml`, `zsh/10-options.zsh`,
+  `zsh/45-plugins.zsh`, `tmux/scripts/tmux-claude.sh`, `scripts/lib/common.sh` and
+  `scripts/test-core.sh` — variously "8 OS repos", "10-repo fan-out" and "ten repos" — now
+  agree with `scripts/os-repos.txt` (**nine** vendoring repos; **eleven** including Core and
+  `dotfiles-Windows`). Two were wrong in a more interesting way than the count: `common.sh`
+  disagreed with itself two functions apart, and `pr-link-check.yml` described ci.yml's matrix
+  as "macOS + seven distros" when it is ubuntu + macOS + alpine + arch. (#519)
+
 ### Changed
 
 - **`zsh-syntax-highlighting` pin moves to `2fc57d63067c`.** The only pin of the eight that

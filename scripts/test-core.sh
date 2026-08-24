@@ -189,7 +189,7 @@ trap '_core_test_cleanup' EXIT
 
 # ── C. clipboard detection ladder (bin/clip / bin/clip-paste) ─────────────────
 # bin/clip is the single highest-fan-out runtime artifact in Core — used by zsh
-# (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all 8 OS
+# (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all nine OS
 # repos — yet its WSL→macOS→Wayland→X11→OSC 52 ladder had no test, only `bash -n`. We drive
 # the ladder HERMETICALLY: PATH is pointed at a fake bin holding a stub `uname` that
 # reports the OS we want, a stub `grep` that answers the /proc/version probe, and
@@ -1200,7 +1200,7 @@ fi
 # this asserts the contract the workflow depends on: known paths map to the right gates,
 # the __ALL__ sentinel runs everything, and — the regression that matters — an
 # UNRECOGNISED top-level path FAILS CLOSED to the full run instead of silently skipping
-# a gate on the 10-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
+# a gate on the nine-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
 # ── failing-gate detail (scripts/lib/common.sh :: fail_detail) ────────────────
 # WHY THIS IS TESTED. The audit used to discard every linter's own report, so a red CI run
 # named a gate and nothing else — "✗ markdownlint reported issues", no rule, no file, no
@@ -3272,7 +3272,7 @@ if ((_sc_subtree)); then
   else
     fail "sync-core: comment-less pin mishandled ($(cat "$_sc_wf/pinned-no-comment.yml"))"
   fi
-  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (8 of 10 repos take
+  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (8 of the 9 repos take
   # the moving alias); converting it to a SHA pin would change that repo's update model
   # behind its back. And a third-party action pinned to a sha with a `# vX.Y.Z` comment has
   # exactly the shape of our own pins — rewriting it would point actions/checkout at a

@@ -31,7 +31,16 @@ _Repo status_ at the bottom).
 
 ## Package names (modern CLI stack)
 
-| Tool             | Arch              | openSUSE      | Alpine            | Gentoo (atom)              | Kali (apt)        | Debian/Ubuntu |
+> **The Kali column changed owner.** It described `dotfiles-Offense` while that repo carried
+> the Kali OS band. It no longer does — `dotfiles-Offense` shed its OS-native layer entirely,
+> and the lane moved to `dotfiles-Debian`'s `only:kali` / `skip:kali` tiers. The three cells
+> the move demonstrably falsified are corrected (`lazygit`, `starship`, `atuin`), and so are
+> the two footnotes that asserted "Kali installs nothing" — but the column as a whole has
+> **not** been re-derived cell-by-cell against the new owner. Treat unmarked Kali cells as
+> inherited rather than verified until `/os-package-availability` has run against
+> `dotfiles-Debian`'s kali tier. (²¹ᵃ marks this caveat, not a per-cell claim.)
+
+| Tool             | Arch              | openSUSE      | Alpine            | Gentoo (atom)              | Kali (apt)²¹ᵃ     | Debian/Ubuntu |
 | ---------------- | ----------------- | ------------- | ----------------- | -------------------------- | ----------------- | ------------- |
 | eza              | `eza`             | `eza`         | `eza`             | `sys-apps/eza`             | `eza`             | `eza`         |
 | bat              | `bat`             | `bat`         | `bat`             | `sys-apps/bat`             | `bat`⁴            | `bat`⁴        |
@@ -43,11 +52,11 @@ _Repo status_ at the bottom).
 | btop             | `btop`            | `btop`        | `btop`            | `sys-process/btop`         | `btop`            | `btop`        |
 | tldr             | `tealdeer`        | `tealdeer`¹   | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        | `tealdeer`    |
 | neovim³³         | `neovim`          | `neovim`      | `neovim`          | `app-editors/neovim`       | `neovim`          | asset²⁸       |
-| lazygit          | `lazygit`         | `lazygit`     | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`²¹       | asset²⁸       |
+| lazygit          | `lazygit`         | `lazygit`     | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`         | asset²⁸       |
 | zsh              | `zsh`             | `zsh`         | `zsh`²            | `app-shells/zsh`           | `zsh`             | `zsh`         |
 | tmux             | `tmux`            | `tmux`        | `tmux`            | `app-misc/tmux`            | `tmux`            | `tmux`        |
-| starship         | `starship`        | `starship`¹⁸  | `starship`        | `app-shells/starship`      | script³           | asset²⁸       |
-| atuin²⁰          | `atuin`           | `atuin`¹⁸     | `atuin`           | `app-shells/atuin`         | `atuin`³          | asset²⁸       |
+| starship         | `starship`        | `starship`¹⁸  | `starship`        | `app-shells/starship`      | `starship`        | asset²⁸       |
+| atuin²⁰          | `atuin`           | `atuin`¹⁸     | `atuin`           | `app-shells/atuin`         | asset²⁸           | asset²⁸       |
 | mise³⁰           | `mise`            | script³⁰      | script³⁰          | script³⁰                   | script³⁰          | asset²⁸       |
 | direnv³²         | `direnv`          | `direnv`      | `direnv`          | `app-shells/direnv`¹²      | `direnv`          | `direnv`      |
 | yazi             | `yazi`            | `yazi`¹⁸      | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
@@ -232,9 +241,10 @@ which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali)
 (Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
 (Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
 the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
-¹⁴ Alpine **testing** repo (`duf`, `glow`, `ouch`, `tealdeer`): musl-fine tools that live in
-`testing` (never promoted to `community` on stable, incl. 3.24), which isn't enabled by default
-on a stable release. bootstrap.sh builds them from source instead of force-enabling `testing`,
+¹⁴ Alpine **testing-or-unpackaged** (`duf`, `glow`, `tealdeer` — plus `ouch`, which is not in
+`testing` either, it is **unpackaged on Alpine outright**; `bootstrap.sh` says so at its cargo
+call site). The first three are musl-fine tools that live in `testing` (never promoted to
+`community` on stable, incl. 3.24), which isn't enabled by default on a stable release. bootstrap.sh builds them from source instead of force-enabling `testing`,
 and the paths are **not** all the same one: `duf` + `glow` take `go install` (static,
 musl-safe), `tealdeer` takes a plain `cargo install --locked tealdeer` (it is the `tldr` row's
 `cargo³`, which is why that row does not cite this note), while `ouch` takes
@@ -520,8 +530,13 @@ you:
   `bootstrap.sh` and `install/packages.txt`. (Gentoo's `ouch`, `ast-grep` and `shfmt` have since
   _acquired_ such an install, and `jujutsu` on Gentoo is now the packaged `dev-vcs/jj`⁸ — the
   correction stands for Kali, and for what those cells claimed when it was made.) `lazygit` is the sharpest case: every other Linux repo installs it,
-  Kali installs it nowhere, and Core ships `alias lg='lazygit'` regardless.
-- **Kali installs nothing from this family**, `ast-grep` included. This note used to carve out
+  Kali installs it through `dotfiles-Debian`'s `only:kali` tier (`install/packages.txt`),
+  and Core ships `alias lg='lazygit'` regardless.
+- **Kali's lane moved.** This note used to read "Kali installs nothing from this family",
+  which was true while `dotfiles-Offense` owned the Kali OS band. It no longer does:
+  `dotfiles-Debian` owns that lane through its `only:kali` / `skip:kali` tiers, and installs
+  a substantial subset. `ast-grep` is still absent there, which is the claim that survives.
+  This note used to carve out
   an exception saying it did — "`bootstrap.sh`, cargo best-effort" — and that is why the
   `ast-grep` row kept a `³` in its Kali cell after its neighbours lost theirs. There is no such
   install: `dotfiles-Offense`'s `bootstrap.sh` contains no `ast-grep`, and its only two `cargo`
@@ -998,14 +1013,14 @@ only ever shown up on the fleet's two non-rolling lanes.
      os/<distro>.zsh only aliases pbcopy/pbpaste to them — no distro swaps a
      backend in its zsh layer. This table is the packages each backend needs. -->
 
-| Distro        | Wayland                                      | X11 fallback                                                                                                                                                                                                                |
-| ------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arch          | `wl-clipboard` (`wl-copy`/`wl-paste`)        | `xclip`                                                                                                                                                                                                                     |
-| openSUSE      | `wl-clipboard`                               | `xclip`                                                                                                                                                                                                                     |
-| Alpine        | `wl-clipboard`                               | `xclip` / `xsel` (often headless — may be neither)                                                                                                                                                                          |
-| Gentoo        | `gui-apps/wl-clipboard`                      | `x11-misc/xclip`                                                                                                                                                                                                            |
-| Kali (WSL2)   | n/a — Core's `clip` shells out to `clip.exe` | `wl-clipboard`/`xclip` install but sit inert under WSL                                                                                                                                                                      |
-| Debian/Ubuntu | `wl-clipboard`                               | `xclip` — but `dotfiles-Debian` installs **neither**: it targets headless SSH-only boxes, so `clip` has no backend and exits 1. See its README's _Headless clipboard_ note; the fix is an OSC 52 fallback in Core's `clip`. |
+| Distro        | Wayland                                      | X11 fallback                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Arch          | `wl-clipboard` (`wl-copy`/`wl-paste`)        | `xclip`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| openSUSE      | `wl-clipboard`                               | `xclip`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Alpine        | `wl-clipboard`                               | `xclip` / `xsel` (often headless — may be neither)                                                                                                                                                                                                                                                                                                                                                                                   |
+| Gentoo        | `gui-apps/wl-clipboard`                      | `x11-misc/xclip`                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Kali (WSL2)   | n/a — Core's `clip` shells out to `clip.exe` | `wl-clipboard`/`xclip` install but sit inert under WSL                                                                                                                                                                                                                                                                                                                                                                               |
+| Debian/Ubuntu | `wl-clipboard`                               | `xclip` — but `dotfiles-Debian` installs **neither**: it targets headless SSH-only boxes, so `clip` has no _local_ backend. Since **v4.13.0** it falls back to OSC 52 — the terminal you are sitting at puts the payload on its own clipboard, with nothing installed on the remote end — and since #525 it also reaches tmux's server-side buffer, which is the path `copy-pipe` needs. See its README's _Headless clipboard_ note. |
 
 ## Distro quirks worth a README note (and that will actually bite you)
 
@@ -1077,20 +1092,21 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
   built directly rather than stamped from Fedora. `Windows` is tracked separately
   from this matrix.
 - **Role repos:** `Offense` (offensive) and `Defense` (defensive) both vendor
-  Core. `Offense` also carries its own OS-native layer (Debian/apt, kali-rolling) —
-  distinct from `dotfiles-Debian`, which targets a frozen Ubuntu LTS and carries no
-  role layer. `Defense` is
+  Core. `Offense` **used to** carry its own OS-native layer (Debian/apt,
+  kali-rolling) and no longer does: it shed `os/`, `install/packages.txt` and
+  `scripts/tool-versions.env` entirely, and the Kali package lane moved to
+  `dotfiles-Debian`'s `only:kali` tier — so that repo is now a first-class
+  ubuntu/debian/**kali** target rather than a frozen-Ubuntu-LTS one, and `Offense`
+  is a pure role layer. `Defense` is
   **distro-agnostic** — it stacks its blue-team stage on whatever OS-native layer is
   underneath — so it has no row in this OS-stamp matrix by design, not by omission.
   Both role repos source the shared bootstrap scaffold (`lib/bootstrap-lib.sh`) and
   call `blib_link_core` exactly as the OS repos do. Where they differ is the `80`
   band, which belongs to the OS repo underneath: the contract is that a role repo
   skips `blib_link_os_layer` and calls `blib_link_role_layer` instead, wiring the
-  `85` band and `tmux/role.conf`. **Neither repo has adopted it yet** — `Defense`
-  hand-rolls the band in its own `wire_defense_stage`, and `Offense` still calls
-  `blib_link_os_layer` because it still carries the Kali OS layer. Both migrate
-  once the Core release carrying the helper fans out. Deliberate, not drift —
-  `core.manifest` records it too.
+  `85` band and `tmux/role.conf`. **`Offense` has adopted it**; `Defense` has not —
+  it still hand-rolls the band in its own `wire_defense_stage`, and migrating it is
+  what remains. Deliberate, not drift — `core.manifest` records the same split.
 - `Debian` is stamped from Fedora structurally, but takes its **apt idioms** from
   `Offense` — the fleet's other Debian-family repo. It is the only **frozen** target
   (Ubuntu 24.04 LTS), which is why it carries by far the largest out-of-band install
