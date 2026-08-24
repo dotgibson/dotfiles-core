@@ -16,6 +16,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **A gate × repo coverage register — `scripts/fleet-coverage.sh` and `make fleet-coverage`.**
+  There was no single place recording which repo satisfies which gate, and how. Coverage was
+  inferred by reading the `uses:` lines in each repo's workflows — and that inference is wrong
+  for any repo that satisfies a gate its own way.
+
+  It has misfired twice, identically, both times in good faith: dotgibson/dotfiles-MacBook#154
+  (the RETURN-trap gate, which had in fact been ported by hand) and #178 (the `provision-stub`
+  job, where `provision()` was already gated on the macOS leg via a `BOOTSTRAP_BREW` seam).
+  Same failure mode two gates apart, because a rollout audit had no way to distinguish
+  _not covered_ from _covered elsewhere_.
+
+  **Derived, not hand-maintained** — the load-bearing decision. The `reusable` cells are read
+  from each repo's real `uses:` lines at run time, and the gate list is read from Core's own
+  tree, so a new reusable workflow joins the register the moment it exists. Only the cells
+  that _cannot_ be derived are declared, in each repo's `.github/core-gates.txt`. This repo
+  has been burned by frozen counts before — one commit fixed eleven of them (#519) — and
+  `RELEASE-RUNBOOK.md` already set the precedent: _count them rather than trusting a number
+  frozen into this doc_.
+
+  `audit-core.sh` §5h asserts every gate × repo cell is filled, so a new gate cannot ship
+  without each repo declaring a position on it. Advisory and skipped when siblings are absent,
+  like §5f/§5g. Five cells needed a declaration and now have one: MacBook's `lint-call` and
+  `bootstrap-test`, Defense's `bootstrap-test` and `claude-routines-call`, and Offense's
+  `claude-routines-call`. (#607)
+
 - **core-doctor reports the four integrations Core wires itself: direnv, gh, uv and ty.**
   `_CORE_DOCTOR_WIRED` listed five tools and none of these, so the doctor was silent about
   integrations Core drives directly — it hooks direnv in `zsh/00-tools.zsh` and registers the
