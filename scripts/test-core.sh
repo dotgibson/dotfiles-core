@@ -3489,6 +3489,93 @@ if ((_sc_subtree)); then
     fail "core_lock_classify: an absent sha was misclassified"
   fi
   unset _sc_rec
+
+  # ── the staleness guard: a target BEHIND its remote must refuse pre-flight (#622) ──
+  # The dirty-tree guard asks "uncommitted work?" and nothing asked "current with the
+  # remote?", so a sync landed on a stale base in all nine repos and reported
+  # `updated 9 / failed 0`; every push was then rejected as non-fast-forward. The property
+  # that matters is not the message, it is that the refusal happens BEFORE anything is
+  # written — the whole cost of the bug was nine repos already committed to.
+  #
+  # A dedicated fixture, because the fleet above deliberately has no upstream: a repo with
+  # no @{upstream} has no remote counterpart to be behind, which is a case this guard must
+  # stay quiet about and which the other assertions rely on.
+  _sc_st="$SCF/stale"
+  mkdir -p "$_sc_st"
+  git init -q --bare "$_sc_st/origin.git" >/dev/null 2>&1 || true
+  # Point the bare HEAD at main BEFORE anything clones it. Without this the clone below
+  # inherits the host's init.defaultBranch (often master), lands on an unborn branch that
+  # the origin does not have, and a later commit there becomes a ROOT commit rather than a
+  # descendant — so the "advance the remote" step produces a divergence, not a fast-forward,
+  # and the target is never actually BEHIND. Silent, and it makes the guard look broken.
+  git -C "$_sc_st/origin.git" symbolic-ref HEAD refs/heads/main >/dev/null 2>&1 || true
+  if git clone -q "$_sc_st/origin.git" "$SCF/repos/dotfiles-Stale" >/dev/null 2>&1; then
+    _sc_ident "$SCF/repos/dotfiles-Stale"
+    mkdir -p "$SCF/repos/dotfiles-Stale/core"
+    printf 'seed\n' >"$SCF/repos/dotfiles-Stale/core/payload.txt"
+    _scg "$SCF/repos/dotfiles-Stale" add -A
+    _scg "$SCF/repos/dotfiles-Stale" commit -q -m "seed"
+    _scg "$SCF/repos/dotfiles-Stale" push -q -u origin HEAD:main >/dev/null 2>&1
+    # Advance the shared origin from a second clone, then fetch — leaving the target
+    # exactly one commit behind its upstream, with a clean tree.
+    if git clone -q "$_sc_st/origin.git" "$_sc_st/other" >/dev/null 2>&1; then
+      _sc_ident "$_sc_st/other"
+      printf 'upstream moved\n' >"$_sc_st/other/n.txt"
+      _scg "$_sc_st/other" add -A
+      _scg "$_sc_st/other" commit -q -m "remote advance"
+      _scg "$_sc_st/other" push -q origin HEAD:main >/dev/null 2>&1
+    fi
+    _scg "$SCF/repos/dotfiles-Stale" fetch -q origin >/dev/null 2>&1
+    _sc_st_head="$(_scg "$SCF/repos/dotfiles-Stale" rev-parse HEAD)"
+    _sc_st_run() { # the fixture sync, aimed at the stale repo only
+      env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
+        REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+        SYNC_JOBS=1 "$@" bash "$_SCS" dotfiles-Stale 2>&1
+    }
+    _sc_out="$(_sc_st_run SYNC_SKIP_AUDIT=1)"; _sc_rc=$?
+    if ((_sc_rc != 0)) && grep -qi 'behind their remote' <<<"$_sc_out"; then
+      pass "sync-core: a target BEHIND its remote refuses the fan-out (rc=$_sc_rc)"
+    else
+      fail "sync-core: a stale target did NOT stop the fan-out (rc=$_sc_rc)"
+    fi
+    # The refusal must be pre-flight. HEAD alone is too weak — a regression that wrote
+    # core.lock before returning would leave HEAD unchanged and still pass.
+    if [[ "$(_scg "$SCF/repos/dotfiles-Stale" rev-parse HEAD)" == "$_sc_st_head" ]] &&
+      [[ -z "$(_scg "$SCF/repos/dotfiles-Stale" status --porcelain)" ]] &&
+      [[ ! -f "$SCF/repos/dotfiles-Stale/core.lock" ]]; then
+      pass "sync-core: the staleness refusal happens before any repo is mutated"
+    else
+      fail "sync-core: a repo was written to despite the staleness refusal"
+    fi
+    # It names the correct recovery. Rebasing the sync commit is NOT it: the workflow pin
+    # rewrite is a sed over the target's own files, so it can replay cleanly and be wrong.
+    if grep -q 'RE-RUN this sync' <<<"$_sc_out" && grep -qi 'do NOT rebase' <<<"$_sc_out"; then
+      pass "sync-core: the staleness refusal names re-running, not rebasing, as the fix"
+    else
+      fail "sync-core: the staleness refusal does not point at the correct recovery"
+    fi
+    # The documented escape hatch must actually bypass it.
+    _sc_out="$(_sc_st_run SYNC_SKIP_AUDIT=1 SYNC_SKIP_STALE=1)"
+    if ! grep -qi 'behind their remote' <<<"$_sc_out"; then
+      pass "sync-core: SYNC_SKIP_STALE=1 bypasses the staleness guard"
+    else
+      fail "sync-core: SYNC_SKIP_STALE=1 did not bypass the staleness guard"
+    fi
+    # ...and a repo with NO upstream is silently fine, which is what keeps every other
+    # assertion in this section working.
+    _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+    if ! grep -qi 'behind their remote' <<<"$_sc_out"; then
+      pass "sync-core: a target with no @{upstream} is not reported stale"
+    else
+      fail "sync-core: a target with no upstream was wrongly reported stale"
+    fi
+    rm -rf "$SCF/repos/dotfiles-Stale"
+    unset -f _sc_st_run
+    unset _sc_st_head
+  else
+    skip "sync-core staleness guard (could not build the clone fixture — out of scope)"
+  fi
+  unset _sc_st
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
