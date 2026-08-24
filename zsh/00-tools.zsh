@@ -58,7 +58,44 @@ for _d in "$HOME/.local/bin" \
 done
 unset _d  # file top level — no function scope to contain it
 
-_have() { command -v "$1" >/dev/null 2>&1; }
+# ── The detection LEDGER (#545) ───────────────────────────────────────────────
+# Every HAVE_* flag below is decided against the PATH as it stands HERE, at band 00. That
+# PATH is not final and never can be: `mise activate` registers a chpwd hook that rewrites
+# it on every cd, 80-os.zsh loads at band 80, an 85-* role fragment at 85, and 99-local.zsh
+# — the user's own escape hatch — at 99. A tool contributed by any of them gets no flag, no
+# alias and no shell init.
+#
+# core-doctor, meanwhile, probes LIVE against the finished PATH, and so reported such a tool
+# `✓`. That disagreement is not itself the bug (#425 is the standing note that it IS one);
+# the bug is that it was SILENT, and that a `✓` reads as "Core wired this" when all it ever
+# meant was "this is on PATH right now".
+#
+# So record the verdict where it is produced. _CORE_PROBED[<tool>] is 1 when band-00
+# detection SAW the tool and 0 when it looked and did not — and the difference matters:
+# without the 0, "Core probed this and said no" is indistinguishable from "Core does not
+# probe this tool at all", and every row the doctor knows but Core does not would
+# false-positive as unwired.
+#
+# WHY HERE AND NOT A PARSER. The obvious alternative is to have core-doctor parse this
+# file's `_have <tool> && HAVE_<X>=1` lines at runtime. That handles only the flag-NAME
+# irregulars (ast-grep→HAVE_ASTGREP but git-absorb→HAVE_GIT_ABSORB, three lines apart) and
+# is blind to every probe that does not take that shape — the fd/bat ladder below, the
+# derived flags, the git-absorb exec-path backfill. It would need those special cases
+# anyway, plus a parser, plus logic to find this file at runtime in a vendored tree. Keyed
+# on the argument to _have, which is the canonical tool name in every case, none of that
+# arises.
+#
+# COST: ~45 associative-array stores at startup. No forks, no stats — the zero-fork
+# contract this file is built on is untouched.
+#
+# The `if`/`return` form, not `command -v … && …`: the one-liner inverts the exit status on
+# the else branch, which would break all 38 `_have x && HAVE_X=1` lines at once.
+typeset -gA _CORE_PROBED=()
+_have() {
+  if command -v "$1" >/dev/null 2>&1; then _CORE_PROBED[$1]=1; return 0; fi
+  _CORE_PROBED[$1]=0
+  return 1
+}
 
 # ── Cache helper: source a tool's init script, regenerate only when the binary
 # is newer than the cache (or the cache is missing). Turns an eval-of-subprocess
@@ -305,9 +342,24 @@ if [[ -z ${HAVE_GIT_ABSORB:-} && -n ${commands[git]:-} ]]; then
     unset _gx  # file top level — no function scope to contain it
   fi
 fi
-[[ -n ${FD_BIN:-} ]] && HAVE_FD=1
-[[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
+# Both branches above can set the flag without _have ever having returned true for
+# `git-absorb` (the exec-path hit is invisible to `command -v`), and the PATH-hit case set
+# it via _have. One idempotent line covers all three, so the ledger agrees with the flag.
+[[ -n ${HAVE_GIT_ABSORB:-} ]] && _CORE_PROBED[git-absorb]=1
+# The ledger entries use the CANONICAL row name, which is what core-doctor keys on. On
+# Debian the ladder above probed `fd` (0, absent) and then `fdfind` (1) — so without this,
+# the canonical `fd` row would carry the ladder's 0 and read as "installed but not wired"
+# on every Debian-family box, which is exactly backwards.
+[[ -n ${FD_BIN:-} ]] && { HAVE_FD=1; _CORE_PROBED[fd]=1; }
+[[ -n ${BAT_BIN:-} ]] && { HAVE_BAT=1; _CORE_PROBED[bat]=1; }
+# BROWSER needs no ledger entry: there is no single canonical name to probe (w3m/lynx/
+# links2/links/elinks all qualify), which is exactly why the doctor has no browser row.
 [[ -n ${BROWSER_BIN:-} ]] && HAVE_BROWSER=1  # terminal web browser (20-aliases.zsh: web + headless BROWSER)
+
+# The PATH the flags above were decided against. Kept ONLY so core-doctor can name which
+# directory joined late when it reports an unwired tool — the ledger, not this, is what
+# says whether detection ran. One assignment, no fork.
+typeset -g _CORE_PROBE_PATH=$PATH
 
 # ── Tool env — set BEFORE the init evals below ────────────────────────────────
 # starship reads its theme from the default ~/.config/starship.toml (bootstrap

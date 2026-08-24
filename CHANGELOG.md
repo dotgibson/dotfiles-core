@@ -44,6 +44,54 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   Green on the current tree with no workflow edits. (#521)
 
+- **`core-doctor` now says when a tool is present but Core never wired it.** A `✓` used to
+  read as "Core wired this" when all it ever meant was "this is on `PATH` right now" — and
+  the difference was invisible.
+
+  Every `HAVE_*` flag is decided at band 00, against a `PATH` that keeps changing afterwards:
+  `mise activate` registers a `chpwd` hook that rewrites it on every `cd`, `80-os.zsh` loads
+  at band 80, an `85-*` role fragment at 85, and `99-local.zsh` — the user's own escape hatch
+  — at 99. A tool contributed by any of them gets no flag, no alias and no shell init. The
+  doctor, which probes live against the finished `PATH`, reported it `✓` anyway.
+
+  Such a row now renders `✓ procs⚠` plus a `not wired` block that names the tool **and the
+  directory that joined late**, which is what makes it actionable — the remedy is to move
+  that prepend into `00-tools.zsh`'s bindir list. Where the directory was already there, the
+  tool was simply installed after the shell started, and the message says so instead.
+
+  `⚠` is a **modifier on `✓`, not a fourth presence glyph**: the tool genuinely is present,
+  so `✓` is not wrong. That keeps the legend's three states intact, and keeps the
+  render⇄JSON parity test blind to it by construction.
+
+  `--json` gains `detection.ran` / `detection.missed`. Named `detection`, not `wiring`,
+  because it sits beside `wired` — which answers the unrelated question of whether an
+  integration registered its hooks — and a consumer reading both would conflate them. The
+  gate is `jq -e '.detection.missed == []'`.
+
+  **How it is recorded matters.** The obvious approach — have `core-doctor` parse
+  `00-tools.zsh`'s `_have <tool> && HAVE_<X>=1` lines at runtime — handles only the
+  flag-_name_ irregulars (`ast-grep`→`HAVE_ASTGREP` but `git-absorb`→`HAVE_GIT_ABSORB`, three
+  lines apart) and is blind to every probe that does not take that shape: the `fd`/`bat`
+  ladder, the derived flags, the `git-absorb` exec-path backfill. It would need those special
+  cases anyway, plus a parser, plus logic to locate the file at runtime in a vendored tree.
+
+  So `_have` records its own verdict instead, into a `_CORE_PROBED` ledger keyed on the
+  canonical tool name — which makes every irregular disappear. It stores `0` as well as `1`,
+  because "Core probed this and said no" must be distinguishable from "Core does not probe
+  this tool at all", or every row the doctor knows and `00-tools.zsh` does not would
+  false-positive. Cost: ~45 array stores at startup, no forks, no stats — the zero-fork
+  contract is untouched.
+
+  Two gates keep it honest: no ledger at all means band 00 never ran in this shell (a script,
+  `zsh -c`, the unit harness) and **no claim is made**; no entry for a row means Core does not
+  probe it, and again no claim. Both are checked in the render and in `--json`, so the two
+  renderers cannot disagree about whether the axis applies.
+
+  `05-ui.zsh`'s `_core_have` is deliberately **not** merged with `_have` despite an identical
+  body, and now says so: it is the live probe the doctor itself calls, so recording there
+  would write the doctor's own lookups into the ledger and make every row it probed report as
+  wired — exactly the false `✓` this exists to expose. (#545)
+
 ### Fixed
 
 - **`_cache_eval` now converges on a generator that produces nothing.** It decided whether a
@@ -224,6 +272,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and with the parallel prefetch on. `core-integrity.sh` also gains its first behavioural
   coverage, since extracting its classifier could otherwise have changed the verdict
   silently. All three race fixtures fail against the previous implementation. (#556)
+
+- **`op` had this bug, inside the doctor's own inventory, behind a test comment asserting it
+  could not.** The coverage guard excused `op` on the grounds that "the doctor probes it live
+  and no alias or function is gated on it". That was false: `50-op.zsh`'s `command -v op`
+  guard gates **four** verbs — `opsecret`, `openv`, `optoken`, `opssh` — and band 50 still
+  runs before `80-os.zsh`, an `85-*` role fragment and `99-local.zsh`.
+
+  `op` now records into the ledger too, and with `fd`/`bat` recording under their canonical
+  names, **the guard's exemption list is empty** — a list that had grown to three entries,
+  one of them wrong, now has none. (#545)
 
 ### Changed
 

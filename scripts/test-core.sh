@@ -7465,7 +7465,7 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # describing state that can change under a LIVE shell, so a consumer polling it needs both
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
-  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
+  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"detection\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"]); assert set(d[\"detection\"]) == set([\"ran\",\"missed\"]); assert isinstance(d[\"detection\"][\"ran\"], bool) and isinstance(d[\"detection\"][\"missed\"], list)"'
 # The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
 # construction and this assertion should be tautological. It is kept precisely for that
 # reason: it is the guard that stays red if someone reintroduces a second literal — which is
@@ -7571,6 +7571,58 @@ have = set(os.environ[\"_OPTIN\"].split())
 assert want, \"parsed no footnote-21 rows out of PORTING-MATRIX.md\"
 assert want == have, \"matrix-only: %s | list-only: %s\" % (sorted(want - have), sorted(have - want))
 "'
+# ── detection divergence: `✓` must stop meaning "Core wired this" (#545) ─────
+# HAVE_* is decided at band 00 against a PATH that keeps changing afterwards (mise's chpwd
+# hook, 80-os.zsh, an 85-* role fragment, 99-local.zsh). core-doctor probes LIVE against the
+# finished PATH, so a tool contributed by any of those rendered a clean ✓ while Core had
+# wired nothing — no alias, no init, no flag. These drive the _CORE_PROBED ledger directly:
+# `check` sources ui+functions ONLY, so band 00 never runs and the ledger is whatever the
+# body sets, which is exactly the control this needs.
+check "core-doctor marks a present-but-unwired tool with ⚠ and names it" \
+  '_core_have() { return 0 }
+   typeset -gA _CORE_PROBED=(eza 1 procs 0)
+   out=$(_CORE_FORCE_COLOR= core-doctor)
+   [[ $out == *"procs⚠"* ]] || { print -r -- "no ⚠ on procs"; exit 1 }
+   [[ $out != *"eza⚠"* ]]   || { print -r -- "⚠ on eza, which WAS probed"; exit 1 }
+   [[ $out == *"not wired"* ]] || { print -r -- "no not-wired block"; exit 1 }
+   [[ $out != *"mark="* ]]  || { print -r -- "local re-declaration leaked mark= into the report"; exit 1 }'
+# The sentinel. Without a ledger, 00-tools.zsh never ran in this shell — a script, `zsh -c`,
+# or this very harness — and the honest answer is to make NO claim. Reporting 41 unwired
+# tools there would be worse than silence, and would red every unit harness in the suite.
+check "core-doctor makes no wiring claim when detection never ran" \
+  '_core_have() { return 0 }
+   out=$(_CORE_FORCE_COLOR= core-doctor)
+   [[ $out != *"⚠"* ]]        || { print -r -- "⚠ rendered with no ledger"; exit 1 }
+   [[ $out != *"not wired"* ]] || { print -r -- "not-wired block rendered with no ledger"; exit 1 }'
+check_dep "core-doctor --json reports detection.ran=false when band 00 never loaded" python3 \
+  '_core_have() { return 0 }
+   core-doctor --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"detection\"][\"ran\"] is False, d[\"detection\"]; assert d[\"detection\"][\"missed\"] == [], d[\"detection\"]"'
+# Second gate: a row Core does not probe AT ALL must draw no claim either. Without this,
+# every doctor row with no 00-tools.zsh probe behind it would false-positive as unwired.
+check "core-doctor makes no wiring claim for a row Core never probes" \
+  '_core_have() { return 0 }
+   typeset -gA _CORE_PROBED=(eza 1)
+   out=$(_CORE_FORCE_COLOR= core-doctor)
+   [[ $out != *"op⚠"* ]] || { print -r -- "⚠ on a row with no ledger entry"; exit 1 }'
+# The parity test above stubs _core_have FALSE and never populates the ledger, so it cannot
+# fire this axis at all — which makes "the ⚠ is invisible to it by construction" an untested
+# claim. Re-run the same comparison with the axis ACTIVELY firing.
+check_dep "the render⇄json tool sets still match with the ⚠ axis firing" python3 \
+  '_core_have() { return 0 }
+   typeset -gA _CORE_PROBED=(procs 0 jnv 0)
+   _CD_R="$(NO_COLOR=1 core-doctor 2>&1)" _CD_J="$(core-doctor --json)" python3 -c "
+import json, os, re
+# Same two trims as the parity test this mirrors: line 1 is the legend (it contains the
+# glyphs), and everything from the opt-in recap on re-lists names. The not-wired block sits
+# AFTER opt-in precisely so this second trim covers it structurally.
+body = os.environ[\"_CD_R\"].split(chr(10), 1)[1]
+body = body.split(chr(10) + \"opt-in\")[0]
+shown = set(re.findall(r\"[✓✗·] ([A-Za-z0-9_.-]+)\", body))
+keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
+assert shown, \"parsed no tools out of the rendered report\"
+assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
+"'
+
 # Orphan guard: a name here that is not in _CORE_DOCTOR_GROUPS mutes nothing and reads as if
 # it does — the failure mode of every list maintained beside another list.
 check "every _CORE_DOCTOR_OPTIN entry is actually in the doctor inventory" \
@@ -7609,21 +7661,42 @@ assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\"
 # suite goes quiet. That is the #447 failure mode itself (the doctor promising a tool Core
 # never wired), so assert it directly, with the three exceptions named rather than waived.
 #
-# op is deliberate: the doctor probes it live and no alias or function is gated on it. fd and
-# bat are set from FD_BIN/BAT_BIN after resolving fdfind/batcat, so their assignments do not
-# match `^_have`. A NEW name showing up here is not a fourth exception to add — it means a
-# doctor row has no detection behind it, which is the bug.
+# THE EXEMPTION LIST IS NOW EMPTY, and that is the point (#545). It used to read
+# `exempt=(op fd bat)` with this rationale:
+#
+#     op is deliberate: the doctor probes it live and no alias or function is gated on it.
+#
+# which was simply false. 50-op.zsh:7 gates FOUR verbs — opsecret, openv, optoken, opssh —
+# behind its own `command -v op`, at band 50, which still runs before 80-os.zsh, an 85-* role
+# fragment and 99-local.zsh. So `op` had the exact divergence this test was meant to police,
+# sitting inside the doctor's own inventory behind a comment asserting it could not.
+#
+# fd and bat were excused because their flags are set from FD_BIN/BAT_BIN (after resolving
+# fdfind/batcat), so the assignments do not match `^_have`. Both now record into the
+# _CORE_PROBED ledger under their CANONICAL names, which is what the doctor keys on — so the
+# excuse is gone rather than merely tolerated.
+#
+# Two shapes are parsed, because detection is now recorded in two places: the classic
+# `_have <tool> && HAVE_<X>=1` line, and an explicit `_CORE_PROBED[<tool>]=1`. Note `$` is
+# outside the character class in the second pattern, so the generic `_CORE_PROBED[$1]=1`
+# inside `_have` itself cannot match and be mistaken for a tool named `$1` — load-bearing.
+#
+# A NEW name showing up here is not an exception to add — it means a doctor row has no
+# detection behind it, which is the bug.
 # Pure zsh so it runs everywhere; _CORE_DOCTOR_GROUPS is the inventory the parity test above
 # already proves equal to both renderers' output.
-check "every core-doctor row has a HAVE_* probe behind it (or is a documented exception)" \
-  'paired=(); exempt=(op fd bat); missing=()
-   for line in ${(f)"$(<'"$HERE"'/zsh/00-tools.zsh)"}; do
-     [[ $line =~ "^_have +([A-Za-z0-9_.-]+) +&& +HAVE_[A-Z0-9_]+=1" ]] && paired+=($match[1])
+check "every core-doctor row has detection behind it (the exemption list is empty)" \
+  'paired=(); missing=()
+   for f in '"$HERE"'/zsh/00-tools.zsh '"$HERE"'/zsh/50-op.zsh; do
+     for line in ${(f)"$(<$f)"}; do
+       [[ $line =~ "^_have +([A-Za-z0-9_.-]+) +&& +HAVE_[A-Z0-9_]+=1" ]] && paired+=($match[1])
+       [[ $line =~ "_CORE_PROBED\[([A-Za-z0-9_.-]+)\]=1" ]] && paired+=($match[1])
+     done
    done
-   (( ${#paired} >= 30 )) || { print -r -- "parsed only ${#paired} _have lines"; exit 1; }
+   (( ${#paired} >= 30 )) || { print -r -- "parsed only ${#paired} detection lines"; exit 1; }
    for ((gi = 2; gi <= ${#_CORE_DOCTOR_GROUPS}; gi += 2)); do
      for t in ${=_CORE_DOCTOR_GROUPS[gi]}; do
-       (( ${paired[(I)$t]} )) || (( ${exempt[(I)$t]} )) || missing+=($t)
+       (( ${paired[(I)$t]} )) || missing+=($t)
      done
    done
    (( ${#missing} == 0 )) || { print -r -- "doctor rows with no detection behind them: $missing"; exit 1; }'
@@ -8471,6 +8544,48 @@ _ub_fixture .cargo/bin:procs
 ucheck "bindirs: a tool in ~/.cargo/bin sets HAVE_PROCS and gets its alias (#425)" \
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; [[ -n \${HAVE_PROCS:-} && \${aliases[ps]} == procs ]]" \
   HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (a2) THE #545 AXIS, END TO END: a bindir that joins PATH AFTER band 00 leaves the tool
+# present but unwired, and the doctor must say so. This is the real shape — 80-os.zsh, an
+# 85-* role fragment or 99-local.zsh prepending a directory — reproduced by exporting PATH
+# between sourcing 00-tools.zsh and asking the doctor. Needs python3 for the JSON read;
+# `have` is checked inline because ucheck has no dep variant.
+if have python3; then
+  # python3 by ABSOLUTE path: $UBSYS is deliberately a near-empty PATH (grep + head only),
+  # and widening it for these two cases would change the environment every other bindir
+  # assertion is pinned against.
+  _UB_PY="$(command -v python3)"
+  _ub_fixture latebin:procs
+  ucheck "detection: a bindir that joins PATH after band 00 is reported in detection.missed (#545)" \
+    "source '$TOOLS_FILE'
+     export PATH=\"\$HOME/latebin:\$PATH\"
+     source '$UI'; source '$FN'
+     core-doctor --json | '$_UB_PY' -c \"
+import json, sys
+d = json.load(sys.stdin)
+assert d['detection']['ran'] is True, d['detection']
+assert d['tools']['procs'] is True, 'the live probe should still see it'
+assert 'procs' in d['detection']['missed'], d['detection']
+\"" \
+    HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+  # …and the mirror case, which is what stops the above passing against a doctor that flags
+  # EVERYTHING. Same tool, but in a directory 00-tools.zsh prepends itself (#425's
+  # arrangement), so detection saw it and nothing is missed.
+  _ub_fixture .cargo/bin:procs
+  ucheck "detection: a tool detected at band 00 is NOT reported missed (no false positives)" \
+    "source '$TOOLS_FILE'; source '$UI'; source '$FN'
+     core-doctor --json | '$_UB_PY' -c \"
+import json, sys
+d = json.load(sys.stdin)
+assert d['detection']['ran'] is True, d['detection']
+assert d['tools']['procs'] is True, d['tools']
+assert d['detection']['missed'] == [], d['detection']
+\"" \
+    HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+  unset _UB_PY
+else
+  skip "detection: the #545 end-to-end cases (python3 not installed)"
+fi
 
 # (b) THE SEVERE ONE: atuin's own installer dir, whose miss silently loses history.
 _ub_fixture .atuin/bin:atuin
