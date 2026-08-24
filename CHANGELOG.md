@@ -101,6 +101,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and nothing here reads the text. (`nvim/lua/gerrrt/servers/ruby_lsp.lua`,
   `nvim/lua/gerrrt/servers/jdtls.lua`, `nvim/lua/gerrrt/servers/kotlin_language_server.lua`)
 
+- **rubocop linting and formatting were silent no-ops on Windows — every signal said healthy.**
+  (#646) `nvim-lint` and `conform` both pass `--server` to rubocop, and RuboCop's server mode
+  needs fork/UNIX sockets. A native-Windows ruby prints
+  `RuboCop server is not supported by this Ruby.`, writes **nothing** to stdout, and **exits 0**:
+
+  ```text
+  $ rubocop --format json --force-exclusion --server --stdin main.rb
+  RuboCop server is not supported by this Ruby.
+  $ echo $?
+  0
+  ```
+
+  The zero exit is what made this invisible. nvim-lint parsed an empty payload, found no offenses,
+  and had no non-zero status to complain about — nothing in `:messages`, nothing through
+  `vim.notify`, and `:ConformInfo` still reported rubocop `available` because the binary really is
+  installed. Ruby buffers simply went unlinted and unformatted. `ruby_lsp` masked it further: its
+  own Prism diagnostics still appear, so a Ruby buffer shows _a_ diagnostic, just never a rubocop
+  one.
+
+  Both specs now strip `--server` behind a `vim.fn.has("win32")` guard — the idiom `health.lua`,
+  `nvim-dap.lua` and `blink-cmp.lua` already use. The Unix fleet keeps it, where it is a genuine
+  speedup rather than a no-op. Both overrides **filter** the upstream arg list instead of restating
+  it, so an upstream change cannot silently drift past them; conform's resolves lazily at format
+  time so the builtin module is not required during lazy-spec evaluation.
+
+  Verified on the host that has the problem (Ruby 4.0.6 x64-mingw-ucrt, rubocop 1.89.0 from Mason)
+  by vendoring the patched files into `dotfiles-Windows` and running headless: rubocop diagnostics
+  went 0 → 4, matching the CLI exactly, and conform's format went from leaving the buffer untouched
+  to actually rewriting it. Windows receives this on its next `nvim-sync.ps1`.
+  (`nvim/lua/gerrrt/plugins/nvim-lint.lua`, `nvim/lua/gerrrt/plugins/conform.lua`)
+
 ## [v4.17.0] - 2026-08-24
 
 ### Added
