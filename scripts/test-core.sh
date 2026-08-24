@@ -2834,15 +2834,30 @@ if ((_sc_subtree)); then
   #    sources, so the code under test is the shipped code, not a copy of its logic.
   mkdir -p "$SCF/coreremote/scripts/lib" "$SCF/coreremote/lib"
   cp "$HERE/scripts/sync-core.sh" "$SCF/coreremote/scripts/"
-  cp "$HERE/scripts/lib/common.sh" "$SCF/coreremote/scripts/lib/"
+  # core-lock.sh too: sync-core.sh sources it for its post-fan-out assertion (#556), so
+  # without this the whole F6 block dies at `source` rather than failing an assertion.
+  cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/core-lock.sh" "$SCF/coreremote/scripts/lib/"
   cp "$HERE/lib/ux.sh" "$HERE/lib/bootstrap-lib.sh" "$SCF/coreremote/lib/"
   printf '9.9.9\n' >"$SCF/coreremote/core.version"
   printf 'dotfiles-Test\ndotfiles-Other\ndotfiles-NotCloned\n' >"$SCF/coreremote/scripts/os-repos.txt"
   printf 'core payload v1\n' >"$SCF/coreremote/payload.txt"
   # The stub audit: exits with whatever $SCF/auditrc says, so a single file flips the
   # pre-fan-out gate between green and red without touching the script under test.
-  printf '#!/usr/bin/env bash\nexit "$(cat "%s/auditrc" 2>/dev/null || echo 0)"\n' "$SCF" \
-    >"$SCF/coreremote/scripts/audit-core.sh"
+  # The stub also PUSHES TO CORE when $SCF/pushduring exists — which reproduces #556
+  # exactly and deterministically: the tip moves strictly between sync-core.sh's up-front
+  # `ls-remote` and its per-repo fetch, with no sleeps and no timing dependence. That is
+  # the real-world shape (a PR merging while the ~250s pre-fan-out audit runs), and the
+  # audit gate is the one place in the run guaranteed to sit inside that window.
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'if [ -s "%s/pushduring" ]; then\n' "$SCF"
+    printf '  cat "%s/pushduring" > "%s/coreremote/payload.txt"\n' "$SCF" "$SCF"
+    printf '  rm -f "%s/pushduring"\n' "$SCF"
+    printf '  git -C "%s/coreremote" add -A\n' "$SCF"
+    printf '  git -C "%s/coreremote" -c commit.gpgsign=false commit -q -m "core raced" >/dev/null 2>&1\n' "$SCF"
+    printf 'fi\n'
+    printf 'exit "$(cat "%s/auditrc" 2>/dev/null || echo 0)"\n' "$SCF"
+  } >"$SCF/coreremote/scripts/audit-core.sh"
   chmod +x "$SCF/coreremote/scripts/audit-core.sh" "$SCF/coreremote/scripts/sync-core.sh"
   printf '0\n' >"$SCF/auditrc"
   _scg "$SCF/coreremote" init -q >/dev/null 2>&1
@@ -3327,6 +3342,147 @@ if ((_sc_subtree)); then
   else
     skip "sync-core: unwritable-workflow case (suite is running as root)"
   fi
+
+  # ── #556: a push to Core DURING the run must not desync core/ from core.lock ──
+  # sync-core.sh resolves the tip once up front, then audits (~250s on a real fleet), then
+  # vendors. It used to re-resolve the BRANCH at vendor time, so a push inside that window
+  # gave core/ the new tree while core.lock recorded the old sha. `make core-integrity`
+  # then reported TAMPERED (core/ edited since sync) — for a tree nobody hand-edited,
+  # which is the part that cost the most time to diagnose. Observed three times in one
+  # afternoon on a normally-active day.
+  #
+  # Note the local-HEAD guard cannot see this: $SCF/core is still at the pre-push tip, so
+  # it agrees with the up-front resolution. That is exactly why the bug shipped.
+  _sc_race_n=0
+  _sc_race_check() { # _sc_race_check <label-suffix> [ENV=VAL ...]  — extra env goes to _sc_run
+    local want_sha want_tree got_tree locked payload trailer pre token
+    _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1 || true
+    want_sha="$(_scg "$SCF/coreremote" rev-parse HEAD)"
+    want_tree="$(_scg "$SCF/coreremote" rev-parse "${want_sha}^{tree}")"
+    # The payload as it stands BEFORE this race — that is what must end up vendored. A
+    # fixed marker string will not do: the previous case's race commit becomes this one's
+    # baseline, so the second run would compare a value against itself and pass vacuously
+    # while no race had actually occurred.
+    pre="$(cat "$SCF/coreremote/payload.txt")"
+    _sc_race_n=$((_sc_race_n + 1))
+    token="core payload RACED-$_sc_race_n"
+    printf '0\n' >"$SCF/auditrc"   # ensure the gate is green for this run
+    printf '%s\n' "$token" >"$SCF/pushduring"
+    _sc_out="$(_sc_run "${@:2}")"; _sc_rc=$?
+    payload="$(cat "$SCF/repos/dotfiles-Test/core/payload.txt" 2>/dev/null || echo MISSING)"
+    locked="$(sed -n 's/^core_sha=//p' "$SCF/repos/dotfiles-Test/core.lock" 2>/dev/null)"
+    got_tree="$(_scg "$SCF/repos/dotfiles-Test" rev-parse 'HEAD:core')"
+    trailer="$(_scg "$SCF/repos/dotfiles-Test" log -1 --format=%B | sed -n 's/^git-subtree-split: //p')"
+
+    if [[ "$payload" == "$pre" ]] && [[ "$payload" != *"$token"* ]] \
+      && [[ "$locked" == "$want_sha" ]] \
+      && [[ "$got_tree" == "$want_tree" ]] && grep -qE 'failed 0' <<<"$_sc_out"; then
+      pass "sync-core: a push to Core during the audit does not desync core/ from core.lock ($1)"
+    else
+      fail "sync-core: #556 race — core/ and core.lock disagree ($1)"
+      printf '    payload=%s\n    expected=%s\n    raced-in=%s\n    locked=%s want=%s\n    tree=%s want=%s\n' \
+        "$payload" "$pre" "$token" "${locked:0:12}" "${want_sha:0:12}" \
+        "${got_tree:0:12}" "${want_tree:0:12}" >&2
+    fi
+    # The subtree trailer is a THIRD artefact stamped from the same snapshot; consumer
+    # tooling (dotfiles-MacBook's verify-core) warns when it disagrees with the lock.
+    if [[ "$trailer" == "$want_sha" || -z "$trailer" ]]; then
+      pass "sync-core: the git-subtree-split trailer names the vendored commit ($1)"
+    else
+      fail "sync-core: trailer ${trailer:0:12} != vendored ${want_sha:0:12} ($1)"
+    fi
+    # The assertion must have RUN and been GREEN — otherwise everything above could hold
+    # while the guard itself is dead code that would never catch a future regression.
+    if grep -q 'core/ verified ==' <<<"$_sc_out"; then
+      pass "sync-core: the post-fan-out tree-vs-lock assertion runs and passes ($1)"
+    else
+      fail "sync-core: the post-fan-out assertion did not run, or ran and failed ($1)"
+    fi
+    rm -f "$SCF/pushduring"
+  }
+
+  # A: the direct-SHA fetch path. GitHub sets uploadpack.allowReachableSHA1InWant, and the
+  #    release fan-out already relies on it (sync-fanout.yml pins CORE_BRANCH to a raw sha).
+  _scg "$SCF/coreremote" config uploadpack.allowReachableSHA1InWant true
+  _sc_race_check "direct-sha fetch"
+
+  # B: the SAME assertions with that config OFF, so the ref-fetch fallback is exercised.
+  #    This is the case that catches a fallback written against FETCH_HEAD — which would
+  #    re-create #556 inside the fix, since FETCH_HEAD is the new tip by definition.
+  _scg "$SCF/coreremote" config --unset uploadpack.allowReachableSHA1InWant || true
+  _sc_race_check "ref-fetch fallback"
+
+  # C: with the parallel prefetch on. A warm-up that fetched the moving BRANCH could
+  #    smuggle the newer tip into the object store and have read-tree pick it up. SYNC_JOBS
+  #    is passed through _sc_run's env-prefix parameter, which the outer runner already
+  #    supports — overriding it wins over the SYNC_JOBS=1 baked into the runner.
+  _scg "$SCF/coreremote" config uploadpack.allowReachableSHA1InWant true
+  _sc_race_check "SYNC_JOBS=4 prefetch" SYNC_JOBS=4
+
+  # ── #556: an unresolvable Core must hard-fail BEFORE anything is written ──────
+  # Previously `unknown` was tolerated: the run materialized core/ from the branch and
+  # skipped core.lock entirely — a second, race-free producer of the same TAMPERED state.
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run CORE_REMOTE="$SCF/nope" CORE_BRANCH=nosuchref)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'must vendor a named commit' <<<"$_sc_out" \
+    && [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] \
+    && [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: an unresolvable Core hard-fails before any repo is written"
+  else
+    fail "sync-core: unresolvable Core did not refuse cleanly (rc=$_sc_rc)"
+    printf '%s\n' "$_sc_out" | sed 's/^/    /' >&2
+  fi
+
+  # ── #556: core_tag must never describe a commit other than the vendored one ───
+  # The `|| describe "$CORE_BRANCH"` fallback re-resolved the branch at describe time, so a
+  # moved branch stamped a tag belonging to a DIFFERENT commit — into core.lock and onto
+  # every rewritten workflow pin comment, which is the field Renovate reads.
+  _sc_old_sha="$(_scg "$SCF/coreremote" rev-parse HEAD)"
+  _scg "$SCF/coreremote" tag -f v9.9.9 "$_sc_old_sha" >/dev/null 2>&1
+  printf 'core payload newer\n' >"$SCF/coreremote/payload.txt"
+  _scg "$SCF/coreremote" add -A
+  _scg "$SCF/coreremote" commit -q -m "core c-newer"
+  _scg "$SCF/coreremote" tag -f v9.9.10 >/dev/null 2>&1
+  _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1 || true
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1 CORE_BRANCH="$_sc_old_sha")"
+  _sc_tag="$(sed -n 's/^core_tag=//p' "$SCF/repos/dotfiles-Test/core.lock" 2>/dev/null)"
+  if [[ "$_sc_tag" != v9.9.10 ]] \
+    && ! grep -rq '# v9.9.10' "$SCF/repos/dotfiles-Test/.github/workflows" 2>/dev/null; then
+    pass "sync-core: core_tag never names a tag belonging to a different commit"
+  else
+    fail "sync-core: core_tag stamped v9.9.10 for a run that vendored ${_sc_old_sha:0:12}"
+  fi
+  _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1 || true
+  unset _sc_old_sha _sc_tag
+  unset _sc_race_n
+  unset -f _sc_race_check
+
+  # ── core_lock_classify: the shared comparison, both verdicts ──────────────────
+  # core-integrity.sh had NO behavioural coverage, so extracting its classifier into a
+  # shared lib could have changed the verdict silently. Drive the lib directly.
+  # shellcheck source=scripts/lib/core-lock.sh
+  source "$HERE/scripts/lib/core-lock.sh"
+  _sc_run SYNC_SKIP_AUDIT=1 >/dev/null 2>&1
+  _sc_rec="$(sed -n 's/^core_sha=//p' "$SCF/repos/dotfiles-Test/core.lock")"
+  if [[ "$(core_lock_classify "$SCF/repos/dotfiles-Test" "$_sc_rec" "$SCF/coreremote")" == pristine ]]; then
+    pass "core_lock_classify: a freshly synced repo is pristine"
+  else
+    fail "core_lock_classify: a freshly synced repo was not reported pristine"
+  fi
+  printf 'hand edit\n' >>"$SCF/repos/dotfiles-Test/core/payload.txt"
+  _scg "$SCF/repos/dotfiles-Test" add -A
+  DOTFILES_ALLOW_CORE_EDIT=1 _scg "$SCF/repos/dotfiles-Test" commit -q -m "hand edit core/"
+  if [[ "$(core_lock_classify "$SCF/repos/dotfiles-Test" "$_sc_rec" "$SCF/coreremote")" == TAMPERED* ]]; then
+    pass "core_lock_classify: a hand-edited core/ is reported TAMPERED"
+  else
+    fail "core_lock_classify: a hand-edited core/ was NOT caught"
+  fi
+  if [[ "$(core_lock_classify "$SCF/repos/dotfiles-Test" "$(printf '0%.0s' {1..40})" "$SCF/coreremote")" == UNVERIFIABLE* ]]; then
+    pass "core_lock_classify: a sha absent from Core history is UNVERIFIABLE, not TAMPERED"
+  else
+    fail "core_lock_classify: an absent sha was misclassified"
+  fi
+  unset _sc_rec
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
