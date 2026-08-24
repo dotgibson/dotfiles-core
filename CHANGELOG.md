@@ -145,6 +145,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`make sync` vendored onto whatever the local clone happened to be — no staleness guard.**
+  `sync-core.sh` had a dirty-tree guard ("uncommitted work?") and nothing that asked "current
+  with the remote?". So a sync materialized `core/` onto a stale base, reported
+  `updated 9 / failed 0`, and the operator found out at `git push` — nine repos already
+  committed to, every push rejected as non-fast-forward. Observed on the 2026-08-23 sync with
+  all nine between 1 and 5 commits behind.
+
+  There is now a **pre-flight** check: each target's remote is fetched and its behind-count
+  read before the fan-out loop mutates anything. Ahead is fine (unpushed local work); only
+  behind refuses. A repo with no `@{upstream}` has no counterpart to be behind and is passed
+  over in silence, and an unreachable remote is reported but does not refuse — this guard
+  exists to catch a stale clone, and a network blip is a different failure.
+
+  The refusal names the **correct** recovery, which is the non-obvious part. Rebasing the sync
+  commit is not it: materializing `core/` replays safely because it is fully determined by the
+  Core SHA, but `_sync_pin_workflows` is a `sed` over the target's _own_ existing workflow
+  files, so a replay computed against a tree that no longer exists can apply cleanly and still
+  be wrong. The correct fix is to bring each repo up to date and re-run the sync, which is
+  idempotent by design.
+
+  Applied to `--dry-run` too, and placed before the audit gate, for the same reason as the
+  existing `unknown`-commit refusal: a rehearsal that would refuse should say so, and it should
+  not cost a full audit first. Escape hatch: `SYNC_SKIP_STALE=1`. (#622)
+
 - **The hand-vendoring instructions said `main`; the fan-out deliberately pins the released
   commit.** Three docs and the scaffolder told a human to
   `git subtree add --prefix=core <core-remote> main --squash`, while `sync-fanout.yml` states
