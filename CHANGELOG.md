@@ -46,6 +46,57 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`uv`'s 6,976-line completion is no longer sourced on every shell — it autoloads from
+  `fpath`.** `_cache_eval` turns a generator into a cached file and then `source`s that file
+  on every interactive shell. That is the right shape for `direnv` (14 lines) and `gh` (212).
+  It is the wrong shape for `uv`, whose cached completion is 6,976 lines read into every shell
+  to serve a completion most shells never invoke.
+
+  Measured here with `hyperfine`, against a compinit-ready baseline of 4.7 ms:
+
+  | | mean |
+  | --- | --- |
+  | baseline (compinit only) | 4.7 ms ± 0.3 |
+  | shipped: `source` gh+uv+ty every shell | 40.2 ms ± 2.1 |
+  | this change: `fpath` autoload | 5.0 ms ± 0.3 |
+
+  So the per-shell cost of these three drops from **+35.5 ms to +0.3 ms**.
+
+  `clap_complete`'s output is already built for this — it opens with `#compdef <tool>` and
+  closes with the standard autoload shim — so the new `_cache_completion` helper writes it to
+  `$XDG_CACHE_HOME/zsh/completions/_<tool>` instead of sourcing it. It keeps `_cache_eval`'s
+  two load-bearing invariants verbatim: `${commands[…]}` for a fork-free probe that stays
+  silent on a box without the tool (which is why these callers still need no `HAVE_*` flag),
+  and the binary-mtime regeneration key.
+
+  Three things this had to get right, all of them silent if wrong:
+
+  - **`fpath` must be populated before `compinit` scans it.** Generation therefore moves from
+    band 45 to band 00; `compinit` is band 10.
+  - **The cached compdump hides new files.** `compinit -C`, taken whenever the dump is under
+    24 h old, skips the scan for new completion functions entirely — so a freshly written
+    `_uv` would be invisible for up to a day. A regeneration now deletes the dump, which
+    works precisely because band 00 precedes band 10: that shell pays one full `compinit`,
+    every later shell keeps the fast path.
+  - **carapace must not win the command back.** carapace bridges `gh` among hundreds of
+    others, and the last `compdef` owns the command. Autoloading registers at band 10, i.e.
+    _before_ carapace at band 45 — so a three-line `compdef` re-assert stays at band 45,
+    after carapace, exactly where the sourced version used to be. `compdef` only rebinds a
+    name; it does not read the 6,976 lines, so this costs nothing.
+
+  The negative cache for a generator that cannot succeed is a `.<tool>.failed` dotfile rather
+  than `_cache_eval`'s comment-only stub: any file named `_uv` in `fpath` **is** a completion
+  function, so a stub would register an empty completion and shadow the bridged one that
+  would otherwise have served. `compinit` only scans names beginning with `_`, so the dotfile
+  converges without being visible to the completion system.
+
+  A side benefit: band 45 is profile-gated (`minimal` ceils at 30, `standard` at 50), so these
+  completions did not exist at all under those profiles. Generated at band 00 and registered
+  at band 10, they now do.
+
+  The old `$XDG_CACHE_HOME/zsh/{gh,uv,ty}.zsh` caches are left behind, unused and harmless;
+  delete them to reclaim the space. (#579)
+
 - **`bootstrap-test.yml` now tells you how to choose `packages_check`'s probe, because the
   obvious command is wrong on most distros and both ways it is wrong look healthy.** The
   header documented the input as `packages_check: apk info` and said nothing else. That is

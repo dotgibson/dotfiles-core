@@ -219,7 +219,7 @@ three drifted variants, until #449. Core owns these now:
 | Don't write | Because Core already does it |
 | --- | --- |
 | `direnv hook zsh` | `core/zsh/00-tools.zsh`, band 00 — loads under every `CORE_PROFILE` |
-| `gh completion -s zsh` | `core/zsh/45-plugins.zsh`, after `compinit` and after carapace |
+| `gh completion -s zsh` | `core/zsh/00-tools.zsh`, band 00 — generated into an `fpath` dir and autoloaded, with a `compdef` re-assert at band 45 so carapace's bridge does not win |
 | `uv generate-shell-completion zsh` | same |
 | `ty generate-shell-completion zsh` | same |
 | your own `_IS_WSL` probe | `_core_is_wsl` (`core/zsh/00-tools.zsh`) |
