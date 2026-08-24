@@ -758,12 +758,49 @@ _core_atuin_daemon_guard() {
   # expansion is free here, while the throttle gate above stays expansion-free. Re-resolving each
   # probe also means the knob can be changed mid-session and takes effect at the next window.
   typeset -gi _CORE_ATUIN_DAEMON_INTERVAL=${CORE_ATUIN_PROBE_INTERVAL:-60}
-  # Same default atuin resolves: $XDG_RUNTIME_DIR/atuin.sock, falling back to the data dir
-  # where XDG_RUNTIME_DIR is unset (macOS). Re-resolved on EVERY probe, never cached: if
-  # XDG_RUNTIME_DIR is torn down mid-session (systemd removes /run/user/$UID at the last logout —
-  # the SAME event that stops the daemon under Linger=no) we must follow atuin to the path it will
-  # actually use, not keep probing one nobody binds any more.
-  local sock="${ATUIN_DAEMON__SOCKET_PATH:-${XDG_RUNTIME_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/atuin}/atuin.sock}"
+  # WHERE THE DAEMON LISTENS — a CANDIDATE LIST, not one expression, because upstream moved
+  # the default and the old shape had no way to follow it.
+  #
+  # atuin PR #3910 (merged 2026-08-12, ships in 18.20.0) changes the default for
+  # `systemd_socket = false` — the shape Core recommends — from
+  #   $XDG_RUNTIME_DIR/atuin.sock  (→ $XDG_DATA_HOME/atuin/atuin.sock where that is unset)
+  # to
+  #   $TMPDIR/atuin-$UID/atuin.sock   ($TMPDIR defaulting to /tmp)
+  # `systemd_socket = true` is unchanged. The atuin CLIENT got a legacy search list so it can
+  # still reach an older daemon; this guard had none, and resolved exactly one path.
+  #
+  # The consequence of leaving it: on 18.20.0 with the plain always-running unit Core
+  # recommends, the daemon binds the new path, zsocket fails, and every shell exports
+  # ATUIN_DAEMON__ENABLED=false at its first precmd and unhooks the watchdog — permanently.
+  # _CORE_ATUIN_DAEMON_WAS_UP is never set, so NO WARNING FIRES. It fails in the cheap
+  # direction (history still lands; only the lock relief is lost), which is precisely why it
+  # would go unnoticed on every systemd machine at once.
+  #
+  # Same shape as the git-absorb exec-path loop above: an explicit env override wins
+  # outright, otherwise try each plausible location and stop at the first that answers.
+  # Zero forks — every candidate is parameter expansion, and the loop body is a connect.
+  #
+  # STATING THE COST rather than hiding it: a genuinely-absent daemon now pays N failed
+  # connects per PROBE instead of one. Each is a connect(2) to a non-existent path at
+  # ~0.06-0.10ms (measured in this file's own bench), the probe is throttled to once per
+  # _INTERVAL, and the degrade path is one-way — so a box with no daemon pays it at most
+  # twice before unhooking for good.
+  #
+  # Re-resolved on EVERY probe, never cached: if XDG_RUNTIME_DIR is torn down mid-session
+  # (systemd removes /run/user/$UID at the last logout — the SAME event that stops the daemon
+  # under Linger=no) we must follow atuin to the path it will actually use, not keep probing
+  # one nobody binds any more.
+  #
+  # ORDER mirrors upstream's own resolution: the 18.20.0 default first, then the two legacy
+  # locations a daemon predating it would still be holding.
+  local -a socks
+  if [[ -n ${ATUIN_DAEMON__SOCKET_PATH:-} ]]; then
+    socks=("$ATUIN_DAEMON__SOCKET_PATH")   # explicit config wins outright — probe nothing else
+  else
+    socks=("${TMPDIR:-/tmp}/atuin-${UID}/atuin.sock")
+    [[ -n ${XDG_RUNTIME_DIR:-} ]] && socks+=("$XDG_RUNTIME_DIR/atuin.sock")
+    socks+=("${XDG_DATA_HOME:-$HOME/.local/share}/atuin/atuin.sock")
+  fi
   # A real connect, because a stale socket FILE passes a plain -S test — which is exactly
   # the case that hangs. zsocket returns non-zero immediately when nothing is listening;
   # on success it hands back an open fd in $REPLY that we close right away. REPLY is
@@ -778,12 +815,15 @@ _core_atuin_daemon_guard() {
   # the existence test would leave the daemon enabled on exactly the stale socket this
   # guard exists to catch. Cost of being wrong that way is the lock relief, and
   # core-doctor says so; cost of the other way is the failure mode itself.
-  local REPLY
-  if zmodload -F zsh/net/socket +b:zsocket 2>/dev/null && zsocket -- "$sock" 2>/dev/null; then
-    exec {REPLY}>&-
-    typeset -g _CORE_ATUIN_DAEMON_WAS_UP=1 # "a connect worked here, at least once"
-    typeset -gi _CORE_ATUIN_DAEMON_NEXT=$((now + _CORE_ATUIN_DAEMON_INTERVAL))
-    return $_rc
+  local REPLY sock
+  if zmodload -F zsh/net/socket +b:zsocket 2>/dev/null; then
+    for sock in $socks; do
+      zsocket -- "$sock" 2>/dev/null || continue
+      exec {REPLY}>&-
+      typeset -g _CORE_ATUIN_DAEMON_WAS_UP=1 # "a connect worked here, at least once"
+      typeset -gi _CORE_ATUIN_DAEMON_NEXT=$((now + _CORE_ATUIN_DAEMON_INTERVAL))
+      return $_rc
+    done
   fi
   # DEGRADE — one way, and terminal. Unhook FIRST, so nothing below can leave the hook armed to
   # warn a second time; "once" is structural, not a fourth flag to keep in sync.

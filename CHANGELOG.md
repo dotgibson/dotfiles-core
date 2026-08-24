@@ -283,6 +283,51 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   names, **the guard's exemption list is empty** — a list that had grown to three entries,
   one of them wrong, now has none. (#545)
 
+- **The atuin daemon guard now probes a candidate list, not one path — before upstream moves
+  it.** atuin PR #3910 (merged 2026-08-12, shipping in **18.20.0**) changes the default daemon
+  socket for `systemd_socket = false` — the shape Core recommends — from
+  `$XDG_RUNTIME_DIR/atuin.sock` (falling back to the data dir where that is unset) to
+  **`$TMPDIR/atuin-$UID/atuin.sock`**. `systemd_socket = true` is unchanged.
+
+  atuin's own client gained a legacy search list so it can still reach an older daemon.
+  `_core_atuin_daemon_guard` had none: it resolved exactly one expression. On 18.20.0, with
+  the plain always-running unit Core recommends, the daemon would bind the new path, `zsocket`
+  would fail, and **every shell would export `ATUIN_DAEMON__ENABLED=false` at its first precmd
+  and unhook the watchdog — permanently, with no warning**, because
+  `_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path. It fails in the cheap direction
+  (history still lands; only the lock relief is lost), which is exactly why it would have gone
+  unnoticed on every systemd machine at once.
+
+  The guard now tries the 18.20.0 default first, then the two legacy locations, stopping at
+  the first that answers — the same shape as the `git-absorb` exec-path loop, so the zero-fork
+  discipline is intact. An explicit `ATUIN_DAEMON__SOCKET_PATH` still wins outright and probes
+  nothing else, because a config knob that silently got second-guessed would be a worse bug
+  than the one this fixes.
+
+  **The cost, stated rather than hidden:** a genuinely-absent daemon now pays N failed connects
+  per probe instead of one. Each is ~0.06–0.10 ms (measured in this file's own bench), the
+  probe is throttled, and the degrade is one-way — so such a box pays it at most twice before
+  unhooking for good.
+
+  Verified independently against upstream rather than taken from the scout's report: 18.19.0
+  is still the newest **stable** release, so this lands with roughly a release of lead time.
+  The anchors stay at `18.19.0` — bumping them asserts a measurement nobody has taken yet, and
+  that needs an on-box `atuin daemon start && ss -lx | grep atuin` against an 18.20.0 beta.
+
+  Three prose claims that the change falsifies are corrected with it (`atuin/config.toml`,
+  `PORTING-MATRIX.md`, and the socket-path note in `bench-atuin-daemon.sh`), and two harness
+  bugs it would have introduced are fixed:
+
+  - `bench-atuin-daemon.sh` **printed** a ✓ beside a hand-copy of the guard's single
+    expression. That is prose, and it would have kept printing ✓ while the guard and atuin had
+    drifted apart — the one failure the check exists to catch. It now **asserts** membership of
+    the candidate list and fails loudly otherwise.
+  - `verify-atuin-guard.sh` isolated atuin's socket into its sandbox by unsetting
+    `XDG_RUNTIME_DIR`. Under 18.20.0 that is no longer sufficient: with `TMPDIR` unset under
+    `env -i`, atuin would resolve `/tmp/atuin-$UID/atuin.sock` — outside the sandbox, and
+    possibly a socket the developer's own daemon is already holding. `TMPDIR` is now pinned
+    into the sandbox. (#518)
+
 ### Changed
 
 - **`zsh-syntax-highlighting` pin moves to `2fc57d63067c`.** The only pin of the eight that

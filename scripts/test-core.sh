@@ -9212,6 +9212,44 @@ ucheck "atuin daemon: a stale socket file (no listener) degrades too, not just a
 ucheck "atuin daemon: a listening socket keeps the daemon enabled (accept-but-silent is out of scope)" \
   "rm -f '$SANDBOX/live-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/live-atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/live-atuin.sock"
+# (d2) THE CANDIDATE LIST (#518). atuin PR #3910 (merged 2026-08-12, ships in 18.20.0) moves
+#      the default socket for `systemd_socket = false` — the shape Core recommends — to
+#      $TMPDIR/atuin-$UID/atuin.sock. The client got a legacy search list; this guard had
+#      none and resolved ONE expression, so on 18.20.0 every shell would export
+#      ATUIN_DAEMON__ENABLED=false at its first precmd and unhook, with NO warning
+#      (_CORE_ATUIN_DAEMON_WAS_UP is never set on that path). Silent, fleet-wide, and in the
+#      cheap direction — which is exactly why it would go unnoticed.
+#
+#      Each case puts a REAL listener on exactly one candidate and leaves the others absent,
+#      so a guard that probed only the other path degrades and the assertion fails.
+ATSOCKTMP="$SANDBOX/atsock"
+mkdir -p "$ATSOCKTMP/atuin-$(id -u)" "$ATSOCKTMP/xdgrun" "$ATSOCKTMP/xdgdata/atuin"
+# The 18.20.0 default, with XDG_RUNTIME_DIR set — i.e. a systemd box, where the OLD single
+# expression would have resolved $XDG_RUNTIME_DIR/atuin.sock and found nothing.
+ucheck "atuin daemon: finds the 18.20.0 default \$TMPDIR/atuin-\$UID/atuin.sock (#518)" \
+  "rm -f '$ATSOCKTMP/atuin-$(id -u)/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/atuin-$(id -u)/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
+  ATUIN_DAEMON__ENABLED=true TMPDIR="$ATSOCKTMP" XDG_RUNTIME_DIR="$ATSOCKTMP/xdgrun" \
+  XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+# The legacy systemd path — a daemon predating 18.20.0, or one with systemd_socket = true,
+# which PR #3910 left unchanged. Must still be reached.
+ucheck "atuin daemon: still reaches the legacy \$XDG_RUNTIME_DIR/atuin.sock (#518)" \
+  "rm -f '$ATSOCKTMP/xdgrun/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/xdgrun/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
+  ATUIN_DAEMON__ENABLED=true TMPDIR="$ATSOCKTMP/nowhere" XDG_RUNTIME_DIR="$ATSOCKTMP/xdgrun" \
+  XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+# The legacy data-dir path — macOS and anywhere XDG_RUNTIME_DIR is unset.
+ucheck "atuin daemon: still reaches the legacy data-dir socket (#518)" \
+  "rm -f '$ATSOCKTMP/xdgdata/atuin/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/xdgdata/atuin/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
+  ATUIN_DAEMON__ENABLED=true TMPDIR="$ATSOCKTMP/nowhere" XDG_RUNTIME_DIR= \
+  XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+# An EXPLICIT ATUIN_DAEMON__SOCKET_PATH must win outright and probe nothing else. Point it at
+# an absent path while a live listener sits on a candidate: the guard must still degrade, or
+# the config knob has stopped being authoritative — which would be a worse bug than the one
+# this change fixes, since it silently overrides what the user asked for.
+ucheck "atuin daemon: an explicit socket path wins outright (candidates are not tried) (#518)" \
+  "rm -f '$ATSOCKTMP/xdgrun/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/xdgrun/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == false && -n \$_CORE_ATUIN_DAEMON_DEGRADED ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock" \
+  TMPDIR="$ATSOCKTMP" XDG_RUNTIME_DIR="$ATSOCKTMP/xdgrun" XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+
 # (e) AUTOSTART — atuin supervises its own daemon there (the no-systemd answer for
 #     Alpine/macOS), so an absent socket is EXPECTED, not a fault. Don't disable it — and don't
 #     keep re-probing for the life of the shell either: stand down means UNHOOK.
