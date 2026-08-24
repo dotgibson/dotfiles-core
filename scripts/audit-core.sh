@@ -744,6 +744,38 @@ else
   ((_ha_absent)) && skip "helper adoption: $_ha_absent repo(s) not checked out — out of scope"
 fi
 
+# ── 5h. the gate x repo coverage register ────────────────────────────────────
+# Coverage used to be inferred by reading the `uses:` lines in each repo's workflows, and
+# that inference is WRONG for any repo that satisfies a gate its own way. It has misfired
+# twice, identically, both times in good faith: dotfiles-MacBook#154 (the RETURN-trap gate,
+# ported by hand) and dotfiles-MacBook#178 (the provision-stub job, already gated on the
+# macOS leg via a BOOTSTRAP_BREW seam). Same failure mode two gates apart, because a rollout
+# audit had no way to tell "not covered" from "covered elsewhere" (#607).
+#
+# scripts/fleet-coverage.sh derives the `reusable` cells from each repo's real `uses:` lines
+# and reads .github/core-gates.txt for the ones that cannot be derived. This asserts every
+# cell is filled — so a NEW reusable workflow cannot ship without each repo declaring a
+# position on it, which is the property that makes the register stay true.
+#
+# Advisory and "out of scope"-skipped when siblings are absent, like §5f/§5g.
+hdr "gate x repo coverage register (advisory)"
+if [[ ! -x "$HERE/scripts/fleet-coverage.sh" ]]; then
+  skip "coverage register (scripts/fleet-coverage.sh missing — out of scope)"
+else
+  _fc_out="$("$HERE/scripts/fleet-coverage.sh" --check 2>&1)"
+  _fc_rc=$?
+  if [[ "$_fc_out" == *"no sibling repo checked out"* ]]; then
+    skip "coverage register (no sibling OS repo checked out — out of scope)"
+  elif ((_fc_rc == 0)); then
+    pass "coverage register: $_fc_out"
+  else
+    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f.
+    printf '%s\n' "$_fc_out" | sed 's/^/  /'
+    pass "coverage register: undeclared gate x repo cell(s) — advisory; each repo declares in .github/core-gates.txt (VENDORING.md has the contract)"
+  fi
+  unset _fc_out _fc_rc
+fi
+
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —
 # so zsh -n and shellcheck never look at it — yet it breaks every one of the 9

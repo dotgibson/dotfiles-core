@@ -266,6 +266,30 @@ in CI, where only Core is checked out. Role repos (`dotfiles-Defense`, `dotfiles
 layer on an OS bootstrap and install no packages, so the two keepalive/PATH helpers are
 exempt for them.
 
+### Declaring how you satisfy a gate you do not call
+
+Core publishes its CI as **reusable workflows**, and most repos consume them as a 3–5 line
+caller. Some do not — usually because they cover _more_, not less. That divergence is
+defensible; being **invisible** is the problem.
+
+Coverage used to be inferred by reading each repo's `uses:` lines, and that inference is
+wrong for any repo that satisfies a gate its own way. It has misfired twice, identically and
+both times in good faith — dotgibson/dotfiles-MacBook#154 and #178 — because a rollout audit
+had no way to tell _not covered_ from _covered elsewhere_.
+
+So if your repo does not call one of Core's reusable workflows, say why in
+`.github/core-gates.txt`, one line per gate:
+
+```text
+<gate> own  <how it is satisfied here>
+<gate> none <why this repo does not need it>
+```
+
+Only the exceptions need a line — anything calling the reusable is derived from its own
+`uses:`. `scripts/fleet-coverage.sh` renders the register, `make fleet-coverage` prints it,
+and `audit-core.sh` §5h asserts every gate × repo cell is filled, so a **new** gate cannot
+ship without each repo declaring a position on it.
+
 #### `ssh/config` — the one with a deletion order (#450)
 
 Seven OS repos each shipped `ssh/config` at their **root**, and Core's `blib_link_core`
