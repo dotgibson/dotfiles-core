@@ -744,6 +744,82 @@ else
   ((_ha_absent)) && skip "helper adoption: $_ha_absent repo(s) not checked out — out of scope"
 fi
 
+# ── 5g. the secret-scan policy, in the files §5f cannot see ──────────────────
+# §5f reports which repos have not adopted lib/bootstrap-lib.sh's helpers, and it greps
+# bootstrap.sh ONLY. The identical drift class — Core grows a capability, some repos keep a
+# hand-rolled predecessor, nothing notices — lives in the WORKFLOW and MAKEFILE dimension too,
+# and it went red across four repos on the 2026-08-23 sync (#623).
+#
+# WHAT HAPPENED. Core's gitleaks.toml narrows one false-positive class: a credential position
+# holding a VARIABLE REFERENCE rather than a value. Core's reusable lint-call.yml secrets leg
+# states the rule — "ONE POLICY FILE, Core's … no repo can widen its own allowlist" — and
+# passes -c accordingly. Four repos ran their own gitleaks with no config at all, so they used
+# the stock rule set, where `curl-auth-user` matches on credential-shaped POSITION rather than
+# content. The vendored core/CHANGELOG.md documents that very allowlist and quotes the example
+# it was written for, so CORE'S EXPLANATION OF THE RULE READ AS A VIOLATION OF IT, on a sync
+# that carried no credential. Two further repos were green only because each keeps its own root
+# .gitleaks.toml that gitleaks auto-discovers — the same defect failing in the quiet direction,
+# which is worse: a private allowlist can widen over time with nothing comparing it to Core's,
+# and the next person to look sees a passing gate (#624).
+#
+# TWO CHECKS, because they are two different claims and each must be able to be true alone:
+#   (a) every `gitleaks dir|detect|git` invocation carries a config flag at all
+#       (scripts/lib/common.sh :: _core_gitleaks_policy_hits, fixture-tested both directions);
+#   (b) a repo-local .gitleaks.toml must `[extend]` core/gitleaks.toml, so a repo can ADD a
+#       distro-specific rule without silently DROPPING the fleet's.
+# A repo that legitimately needs local rules is not doing anything wrong; replacing Core's
+# policy rather than extending it is.
+#
+# REPORT, DO NOT BLOCK, for the same reason §5f gives: repos are short on arrival, and a gate
+# that is red from its first run is a gate someone turns off. Same "out of scope" skip wording
+# too — --strict counts every OTHER skip as a coverage gap, and CI checks out only this repo.
+hdr "secret-scan policy adoption (advisory)"
+_gp_root="$(cd "$HERE/.." && pwd)"
+if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
+  skip "gitleaks policy (scripts/os-repos.txt unreadable — out of scope)"
+else
+  _gp_checked=0
+  _gp_bad=0
+  _gp_absent=0
+  while IFS= read -r _gp_repo; do
+    [ -n "$_gp_repo" ] || continue
+    _gp_dir="$(resolve_repo_dir "$_gp_root" "$_gp_repo")" || _gp_dir="$_gp_root/$_gp_repo"
+    if [[ ! -d "$_gp_dir/.git" ]]; then
+      _gp_absent=$((_gp_absent + 1))
+      continue
+    fi
+    _gp_checked=$((_gp_checked + 1))
+    _gp_gaps=""
+    # (a) invocations with no policy at all
+    for _gp_f in "$_gp_dir"/Makefile "$_gp_dir"/.github/workflows/*.yml "$_gp_dir"/.github/workflows/*.yaml; do
+      [[ -f "$_gp_f" ]] || continue # unmatched glob stays literal (nullglob is off)
+      _gp_h="$(_core_gitleaks_policy_hits "$_gp_f")"
+      [[ -n "$_gp_h" ]] || continue
+      _gp_gaps="$_gp_gaps
+      ${_gp_f#"$_gp_dir"/}: $(printf '%s' "$_gp_h" | sed 's/:no-config//' | tr '\n' ',' | sed 's/,$//') — gitleaks runs with no -c/--config, so the STOCK rule set applies, not Core's"
+    done
+    # (b) a private config that replaces Core's instead of extending it
+    if [[ -f "$_gp_dir/.gitleaks.toml" ]] &&
+      ! grep -qE '^[[:space:]]*path[[:space:]]*=.*core/gitleaks\.toml' "$_gp_dir/.gitleaks.toml"; then
+      _gp_gaps="$_gp_gaps
+      .gitleaks.toml: a private rule set that does not [extend] core/gitleaks.toml — gitleaks auto-discovers it, so EVERY scan here silently runs under it"
+    fi
+    if [[ -n "$_gp_gaps" ]]; then
+      _gp_bad=$((_gp_bad + 1))
+      printf '  %s%s%s %s%s\n' "${c_yel}" "•" "${c_rst}" "$_gp_repo" "$_gp_gaps"
+    fi
+  done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
+
+  if ((_gp_checked == 0)); then
+    skip "gitleaks policy (no sibling OS repo checked out — out of scope)"
+  elif ((_gp_bad)); then
+    pass "gitleaks policy: $_gp_bad of $_gp_checked checked-out repo(s) do not measure by Core's policy (advisory — see the lines above; VENDORING.md has the contract)"
+  else
+    pass "gitleaks policy: every checked-out OS repo scans under Core's policy ($_gp_checked repo(s))"
+  fi
+  ((_gp_absent)) && skip "gitleaks policy: $_gp_absent repo(s) not checked out — out of scope"
+fi
+
 # ── 5h. the gate x repo coverage register ────────────────────────────────────
 # Coverage used to be inferred by reading the `uses:` lines in each repo's workflows, and
 # that inference is WRONG for any repo that satisfies a gate its own way. It has misfired

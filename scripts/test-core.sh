@@ -11669,6 +11669,78 @@ else
   pass "no script calls cmp (diffutils stays optional)"
 fi
 
+# ── _core_gitleaks_policy_hits: the secret-scan policy matcher (#623) ────────
+# The gate audit-core.sh §5g rests on. Fixture-driven in BOTH directions before it is
+# trusted on the real fleet, for the reason the diffutils gate above states outright: a gate
+# whose exemption is untested is how the last one shipped broken.
+#
+# THE TRAP THIS PINS, and it cost real time while surveying for the issue: a naive
+# `-c|--config` match also fires on the `-c` inside `--exit-code`, which two of the repos in
+# scope actually pass. An invocation carrying `--exit-code` and NO config must still be a
+# finding — that is case 2 below, and it is the whole reason the flag is matched as a word.
+#
+# The offending strings are ASSEMBLED with printf rather than spelled out, the same technique
+# _core_owned_block_hits uses for its own self-reference problem: this repo scans itself, and
+# a literal config-less invocation written here would be a finding in Core's own tree.
+hdr "_core_gitleaks_policy_hits (secret-scan policy)"
+_gph="$(mktemp -d "$SANDBOX/gpolicy.XXXXXX")"
+_gp_w() { printf '%s\n' "$2" >"$_gph/$1"; } # _gp_w <file> <line>
+_gp_is() {                                  # _gp_is <label> <file> <expected>
+  local got
+  got="$(_core_gitleaks_policy_hits "$_gph/$2")"
+  if [[ "$got" == "$3" ]]; then
+    pass "gitleaks policy: $1"
+  else
+    fail "gitleaks policy: $1 (want '$3', got '$got')"
+  fi
+}
+
+_gp_scan="$(printf 'gitleaks %s' dir)"       # assembled: this file is scanned too
+_gp_det="$(printf 'gitleaks %s' detect)"
+_gp_hist="$(printf 'gitleaks %s' git)"
+
+# FINDINGS — a scan running under whatever rule set gitleaks happens to pick up.
+_gp_w a.mk "$_gp_scan . --no-banner --redact"
+_gp_is "a config-less 'dir' scan is a finding" a.mk "1:no-config"
+_gp_w b.mk "$_gp_hist --redact"
+_gp_is "a config-less history scan is a finding" b.mk "1:no-config"
+# THE --exit-code TRAP: contains the substring '-c', carries no policy, must still fire.
+_gp_w c.mk "$_gp_det --no-git --redact --verbose --exit-code 1"
+_gp_is "--exit-code does NOT read as -c (the false-positive trap this rule is built around)" c.mk "1:no-config"
+
+# NOT FINDINGS — a policy is passed, in any of the spellings the fleet actually uses.
+_gp_w d.mk "$_gp_scan . -c core/gitleaks.toml --no-banner --redact"
+_gp_is "-c with Core's policy is clean" d.mk ""
+_gp_w e.mk "$_gp_det --config core/gitleaks.toml --redact --exit-code 1"
+_gp_is "--config alongside --exit-code is clean (both directions of the trap)" e.mk ""
+_gp_w f.mk "$_gp_scan . --config=.gitleaks.toml --redact"
+_gp_is "the --config=VALUE spelling is clean" f.mk ""
+_gp_w g.mk "$_gp_scan . -c \"\$GITLEAKS_CONFIG\" --no-banner --redact -v"
+_gp_is "a config passed through a variable is clean" g.mk ""
+
+# NOT INVOCATIONS AT ALL — the discipline that keeps the gate switched on.
+_gp_w h.mk "# $_gp_scan . --no-banner   (a comment describing the call)"
+_gp_is "a commented-out invocation is not a finding" h.mk ""
+_gp_w i.mk 'command -v gitleaks >/dev/null 2>&1 || { echo "gitleaks not installed"; exit 0; }'
+_gp_is "a presence check that merely names gitleaks is not a finding" i.mk ""
+_gp_w j.mk 'gitleaks version'
+_gp_is "a non-scanning subcommand is not a finding" j.mk ""
+
+# Core's OWN consumers must be clean, or §5g would be asking the fleet for something Core
+# does not do itself — the same inverse property the owned-block scan asserts.
+_gp_core_ok=1
+for _gpf in "$HERE/audit-core.sh" "$HERE/scripts/audit-core.sh" "$HERE/Makefile"; do
+  [[ -f "$_gpf" ]] || continue
+  [[ -z "$(_core_gitleaks_policy_hits "$_gpf")" ]] || _gp_core_ok=0
+done
+if (( _gp_core_ok )); then
+  pass "gitleaks policy: Core's own gitleaks calls all pass a config (Core meets the rule it sets)"
+else
+  fail "gitleaks policy: Core itself runs gitleaks with no config — the rule §5g applies to the fleet"
+fi
+unset _gp_scan _gp_det _gp_hist _gp_core_ok _gpf _gph
+unset -f _gp_w _gp_is
+
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
 ((FAIL == 0)) || {
