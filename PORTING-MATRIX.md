@@ -340,8 +340,23 @@ differs per machine is how the daemon gets **launched**, so that half lives in t
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | Fedora✔ · Debian/Ubuntu✔ · Arch · openSUSE · Gentoo (systemd) · Kali | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true`                                  |
 | Alpine✔ (musl, no systemd)                                           | atuin supervises its own daemon — no unit, no service manager, nothing to install                                                                                                                                                | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
-| macOS                                                                | same as Alpine: `autostart` beats hand-writing a launchd plist, and `XDG_RUNTIME_DIR` is unset there so the socket lands in the data dir — which atuin resolves itself                                                           | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| macOS                                                                | same as Alpine: `autostart` beats hand-writing a launchd plist — the socket path is atuin's own to resolve (see the note below the table)                                                                                        | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
 | Windows                                                              | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell                                                                                                                                | —                                                             |
+
+**Where the daemon socket lives moved in atuin 18.20.0.** Upstream PR #3910 (merged
+2026-08-12) changed the default for `systemd_socket = false` — the shape Core recommends —
+from `$XDG_RUNTIME_DIR/atuin.sock` (falling back to `$XDG_DATA_HOME/atuin/atuin.sock` where
+that is unset) to **`$TMPDIR/atuin-$UID/atuin.sock`**. `systemd_socket = true` is unchanged.
+
+Two consequences worth recording. The old macOS reasoning — "`XDG_RUNTIME_DIR` is unset there
+so the socket lands in the data dir" — stops being true, and on 18.20.0 macOS's per-user
+`$TMPDIR` actually _unifies_ macOS and Linux rather than splitting them. And atuin's own
+client gained a legacy search list, while Core's guard resolved exactly one expression: on
+18.20.0 it would have probed a path nothing binds, exported `ATUIN_DAEMON__ENABLED=false` at
+every shell's first precmd and unhooked the watchdog — permanently, and with **no warning**,
+because `_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path. Fixed pre-emptively in #518:
+the guard now probes the new default and both legacy paths, newest first, so it follows a
+daemon across the version boundary in either direction.
 
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
