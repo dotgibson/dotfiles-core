@@ -14,6 +14,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **`bootstrap-test.yml` now tells you how to choose `packages_check`'s probe, because the
+  obvious command is wrong on most distros and both ways it is wrong look healthy.** The
+  header documented the input as `packages_check: apk info` and said nothing else. That is
+  Alpine's correct answer and a trap as a template — wiring the same shape into four OS
+  repos surfaced two distinct failure modes, each of which produces a gate a reviewer would
+  sign off on.
+
+  A name-exact probe raises FALSE ALARMS. `bootstrap.sh` installs these names with the
+  package manager's install verb, which honours Provides, so the probe has to ask the same
+  question. Fedora retired `wget` for `wget2` with `wget2-wget` carrying `Provides: wget`,
+  so `dnf install wget` works while `dnf info wget` fails; on Arch `sh` is a `provides` of
+  bash, not a package; on openSUSE `python3-pip` is satisfied by a versioned
+  `python3XX-pip`. Worse, such a list can pass today and break later: none of Arch's ~45
+  names sat behind a `provides` when this was wired, so the name-exact probe was green and
+  would have gone red on some future PR that had nothing to do with it.
+
+  A probe that never rejects gives FALSE CONFIDENCE. `apk policy` and `zypper info` both
+  exit 0 for a name that exists nowhere — a gate that cannot fail, indistinguishable from
+  real coverage. So a green run is not evidence on its own; the header now prescribes the
+  negative control that is (a scratch list holding one real name, one provides-only name,
+  and one bogus name, which must go red naming only the bogus one).
+
+  The note carries the four probes verified against both rules, and two adjacent traps the
+  same exercise turned up: a path-filtered caller that omits `install/**` gets a
+  package-list gate that cannot fire on a package-list change, and prep must leave the
+  index readable — Alpine's `apk add --no-cache` deliberately leaves none.
+
+  Docs only; no behavioural change to the workflow.
+
 ### Fixed
 
 - **The hand-vendoring instructions said `main`; the fan-out deliberately pins the released
