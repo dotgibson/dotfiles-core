@@ -40,6 +40,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   overrides it, and `main` is the right default for a maintainer's ad-hoc `make sync`. It is
   now documented as such, with the first-time-vendoring case called out. (#588)
 
+- **The `mise` steps in the daily maint runner are no longer unbounded.** `brew`, `nvim` and
+  `rustup` each run under `_to`; the three `mise` calls did not, so a hung one had nothing to
+  cut it short and the whole unattended run stopped there. The new `MAINT_MISE_TIMEOUT`
+  (default `2700`, applied per step like `MAINT_BREW_TIMEOUT`) closes that.
+
+  It is deliberately the largest knob in the file, because a `mise` step is the only one that
+  _compiles_. On musl, mise flips `all_compile` to true by default — every precompiled runtime
+  it would otherwise fetch (nodejs.org's tarballs, python-build-standalone, the `jdx/ruby`
+  prebuilts) is glibc-linked and cannot run there — so on Alpine node/python/ruby are built
+  from source on every version bump, and node alone is tens of minutes. 2700s is sized for
+  that build, not for a download — a cold node 24 build on a 32-core musl box was still in V8
+  past 21 minutes, so a lower ceiling would trip on the healthy path and turn every LTS bump
+  into a logged failure. On a glibc box the same steps unpack a binary and never come near the
+  ceiling, so the value costs those boxes nothing.
+
+  `mise outdated --bump` is now bounded too, and needed the `_pkgcount` treatment to go with
+  it: that probe hits the network, and a registry that accepts the connection and then stalls
+  yields **empty output**. The old bare `[[ -n "$bump" ]]` read that emptiness as the happy
+  path and logged "all runtimes current within their pins" — asserting a fact nothing had
+  measured, the exact failure the `_pkgcount` comment block was written about. The rc is now
+  captured and any non-zero reports as `bump check UNAVAILABLE` instead of masquerading as
+  good news, with the rc included so the log can distinguish the causes after the fact.
+
+  That gate is **stricter than `_pkgcount`'s, deliberately** — the two are not meant to
+  converge. `_pkgcount` can only test _how the probe died_ (124, or `>=128` for a signal,
+  which is how busybox `timeout` reports its own SIGTERM as 143) because the managers it
+  wraps overload exit status to mean things: `dnf check-update` exits 100 when updates exist,
+  `pacman -Qu` exits non-zero when there are none. A general non-zero gate would report
+  "unknown" on their healthy path. `mise outdated` overloads nothing — 0 whether or not bumps
+  exist, non-zero only on a real failure — so a fast hard failure (a 500 from the registry, a
+  mise that died on a broken config) is just as much "we got no answer" as a stall, and is now
+  reported that way rather than falling through as good news. (#641)
+
 ## [v4.17.0] - 2026-08-24
 
 ### Added
