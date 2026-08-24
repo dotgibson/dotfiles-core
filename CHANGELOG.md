@@ -402,6 +402,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (`nvim/lua/gerrrt/plugins/nvim-lint.lua`, `nvim/lua/gerrrt/plugins/conform.lua`)
 ||||||| parent of fcb0308 (feat(audit): extend the adoption audit to the secret-scan policy (#623))
 
+- **`Ctrl+\` (toggle autosuggestions) was dead inside tmux — which is every shell.**
+  `zsh/40-bindings.zsh` binds `^\` to `autosuggest-toggle`, and `tmux/scripts/tmux-cheat.sh`
+  advertises it by name. It never fired. `vim-tmux-navigator` binds **five** keys at the tmux
+  ROOT table, not four: `C-h/j/k/l` plus `C-\` → `select-pane -l`. That fifth binding forwards
+  the key to the pane only when the pane is running vim/fzf; a shell pane is neither, so tmux
+  consumed `C-\` and zsh never saw the byte. Since every OS repo's `zshrc` `exec tmux` on login,
+  the key was dead in essentially every shell on every box in the fleet.
+
+  The zsh half was never the problem, and is unchanged — a PTY driven through the full config
+  shows `main` aliased to `viins`, `"^\\" autosuggest-toggle` bound, the widget present, and
+  `_ZSH_AUTOSUGGEST_DISABLED` flipping `0 → 1 → 0` on two `0x1C` bytes. The 40-bindings comment
+  about binding it unconditionally (the widget is deferred, so a `$+widgets` guard would always
+  be false) remains correct.
+
+  `tmux/tmux.conf` now sets `@vim_navigator_mapping_prev ''`, which disables that one mapping
+  and leaves `C-h/j/k/l` — the reason the plugin is here — untouched. Dropping the plugin's side
+  rather than moving zsh's is what the rest of the tree already assumed:
+  `nvim/lua/gerrrt/plugins/vim-tmux-navigator.lua` maps only `<C-h/j/k/l>` and deliberately never
+  mapped `<C-\>`, so `TmuxNavigatePrevious` was a lazy `cmd` bound to nothing. "Previous pane"
+  was half-wired; the autosuggest toggle is documented.
+
+  An empty value is the plugin's off switch: its `get_tmux_option()` falls back to the default
+  only when `show-options -gq` prints nothing, and a defined-but-empty option prints its own
+  name — so the value resolves to `""` and the `for k in $(echo "")` loop never runs. Verified
+  end-to-end on tmux 3.7c: root `C-\` disappears, `C-h/j/k/l` survive, and a PTY client attached
+  to a server carrying this conf toggles the suggestion on `Ctrl+\`.
+
+  The option **must** stay above the trailing `run '…/tpm'` — tpm sources the plugin's `.tmux`
+  script, which reads it at that moment — so `scripts/test-core.sh` pins the value, the
+  emptiness, and the line order, in the same spirit as the gh/carapace order in `45-plugins.zsh`.
+
 ## [v4.17.0] - 2026-08-24
 
 ### Added

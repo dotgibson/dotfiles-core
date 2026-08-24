@@ -10612,6 +10612,38 @@ fi
 # silently (a status helper that errors blanks the whole bar). Drive the two data-driven
 # ones hermetically against a stubbed PATH (same technique as the clip ladder): a fake
 # `pmset`/`ip` pins the environment so the output is deterministic on every box.
+# ── vim-tmux-navigator must not keep C-\ (#652-adjacent; see tmux/tmux.conf) ──
+# The plugin binds FIVE keys at the tmux ROOT table, and the fifth (C-\ → select-pane -l)
+# collides head-on with zsh's `Ctrl+\ → autosuggest-toggle` (zsh/40-bindings.zsh), which
+# tmux/scripts/tmux-cheat.sh advertises by name. tmux wins that race in every shell pane,
+# so the documented key was dead fleet-wide. tmux.conf disables just that mapping with an
+# EMPTY @vim_navigator_mapping_prev.
+#
+# Two halves, and BOTH are load-bearing:
+#   • the option is set, and set to EMPTY — any non-empty value re-binds a key
+#   • it is set ABOVE the `run '…/tpm'` line — tpm sources the plugin's .tmux script, which
+#     reads the option at that instant, so setting it afterwards is a silent no-op
+# Neither half is visible to `tmux -f … source-file` in CI (no plugin checkout, no server),
+# which is exactly why it is pinned here as text, like the gh/carapace order in 45-plugins.
+hdr "tmux: vim-tmux-navigator's C-\\ mapping stays disabled (Ctrl+\\ belongs to zsh)"
+TMUXCONF="$HERE/tmux/tmux.conf"
+_vtn_line="$(grep -n "^[[:space:]]*set -g @vim_navigator_mapping_prev" "$TMUXCONF" | head -1)"
+_tpm_line="$(grep -n "^[[:space:]]*run .*tpm/tpm" "$TMUXCONF" | head -1)"
+if [[ -n "$_vtn_line" ]]; then
+  pass "tmux.conf sets @vim_navigator_mapping_prev"
+else fail "tmux.conf no longer sets @vim_navigator_mapping_prev — C-\\ is back on select-pane -l"; fi
+if [[ "${_vtn_line#*:}" == *"''"* || "${_vtn_line#*:}" == *'""'* ]]; then
+  pass "@vim_navigator_mapping_prev is EMPTY (the plugin's off switch)"
+else fail "@vim_navigator_mapping_prev is non-empty — that binds a key: ${_vtn_line#*:}"; fi
+if [[ -n "$_vtn_line" && -n "$_tpm_line" ]] && ((${_vtn_line%%:*} < ${_tpm_line%%:*})); then
+  pass "@vim_navigator_mapping_prev is set BEFORE tpm runs (or it is a no-op)"
+else fail "@vim_navigator_mapping_prev must precede the tpm run line (${_vtn_line%%:*} vs ${_tpm_line%%:*})"; fi
+# The keys the plugin exists FOR must still be declared — this guard must never become a
+# licence to drop the plugin's navigation along with its fifth key.
+if grep -q "christoomey/vim-tmux-navigator" "$TMUXCONF"; then
+  pass "vim-tmux-navigator is still loaded (C-h/j/k/l navigation intact)"
+else fail "vim-tmux-navigator is gone — C-h/j/k/l no longer cross into nvim"; fi
+
 hdr "tmux status/popup scripts (battery / netinfo, hermetic)"
 TMUXBIN="$SANDBOX/tmuxbin"
 BATTERY="$HERE/tmux/scripts/tmux-battery.sh"
