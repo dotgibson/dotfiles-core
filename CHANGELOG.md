@@ -14,6 +14,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **core-doctor reports the four integrations Core wires itself: direnv, gh, uv and ty.**
+  `_CORE_DOCTOR_WIRED` listed five tools and none of these, so the doctor was silent about
+  integrations Core drives directly — it hooks direnv in `zsh/00-tools.zsh` and registers the
+  gh/uv/ty completions in `zsh/45-plugins.zsh`. Before those moved into Core they were the OS
+  layer's at band 80, and arguably not Core's to report on; they are Core's now.
+
+  All four satisfy the list's own membership rule — a tool belongs there iff its activation
+  defines something observable in _this_ shell that `_core_wired` can probe:
+
+  | tool | probe |
+  | --- | --- |
+  | `direnv` | `_direnv_hook` — the function, or its `precmd_functions` entry |
+  | `gh` / `uv` / `ty` | the tool's `$_comps` entry |
+
+  The completion three needed a **different probe shape**, and it is the same scar the
+  starship/carapace arms already carry. Their wiring fact is the `compdef` registration in
+  `$_comps`, not a defined function: the completion function is autoloaded lazily, so
+  `$+functions[_gh]` would report a permanent `○ (idle)` for a correctly registered
+  completion. The arms test `$_comps` for non-emptiness rather than for a specific value, so
+  the row stays honest when carapace legitimately owns the command.
+
+  **No `HAVE_DIRENV`/`HAVE_GH`/`HAVE_TY` flags, and no presence rows** — decided rather than
+  overlooked. `_cache_eval` self-guards on `${commands[…]}`, so nothing would consume such a
+  flag; and a `_CORE_DOCTOR_GROUPS` row for gh or ty would render a permanent ✗, because no
+  Linux repo's `packages.txt` installs either. Muting that correctly means adding them to
+  `_CORE_DOCTOR_OPTIN`, which is derived from `PORTING-MATRIX.md`'s footnote ²¹ and asserted
+  against it — a matrix change, not a list edit, and a separate piece of work. (#581)
+
 ### Changed
 
 - **`bootstrap-test.yml` now tells you how to choose `packages_check`'s probe, because the
