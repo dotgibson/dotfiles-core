@@ -1624,10 +1624,16 @@ fi
 # audit-core.sh section calling the scanner: Core's own tree matches every pattern, which is
 # the point. A gate that forces nine repos to delete a block Core has quietly lost is worse
 # than no gate — the niceties simply go silent everywhere at once, with every repo green.
+# Keyed on the RULE IDS, not on a list of files: #579 moved the three completion generators
+# from 45-plugins.zsh to 00-tools.zsh, and a per-file assertion reported that as Core having
+# LOST a block it still carries. What matters is that every rule the fleet is gated on is
+# provided somewhere in Core, so ask exactly that.
 _ob_core_ok=1
-for _obf in zsh/00-tools.zsh zsh/45-plugins.zsh; do
-  [[ -n "$(_core_owned_block_hits "$HERE/$_obf")" ]] || _ob_core_ok=0
+_ob_hits="$(for _obf in "$HERE"/zsh/*.zsh; do _core_owned_block_hits "$_obf"; done | sed 's/^[0-9]*://' | sort -u)"
+for _obr in direnv-hook gh-completion uv-completion ty-completion wsl-detect; do
+  grep -qx "$_obr" <<<"$_ob_hits" || { _ob_core_ok=0; printf '    missing Core-side block: %s\n' "$_obr" >&2; }
 done
+unset _ob_hits _obr
 if (( _ob_core_ok )); then
   pass "owned-block scan: Core still carries the blocks it makes the fleet drop"
 else
@@ -6864,21 +6870,29 @@ for f in "${core_frags[@]}"; do ln -s "$f" "$INTEG/$(basename "$f")"; done
 _seed_plugin_dirs "$SANDBOX/integ-data/zsh/plugins"
 # 80-os.zsh: realistic OS-layer fragment. Exercises the Core helpers an OS repo depends
 # on; any reference to an undefined helper prints to stderr (the failure signal below).
-# Stub generators for the four tools Core now hooks itself (#449). Each "generated init"
-# is a single sentinel print, so a sentinel reaching stdout proves the whole
-# generate→cache→source path ran for that tool, under the REAL loader, in the real band
-# order — direnv from 00-tools at band 00, the three completions from 45-plugins at band 45.
-# A real box has some subset of these installed; the sandbox has none, so without stubs
-# _cache_eval bails on ${commands[…]} and all four lines are silent no-ops that could rot
-# unnoticed. (Side effect worth naming so nobody chases it: the `uv` stub sets HAVE_UV, so
-# 20-aliases.zsh defines uvr/uvs. Harmless here.)
+# Stub generators for the four tools Core now hooks itself (#449). A real box has some
+# subset of these installed; the sandbox has none, so without stubs the helpers bail on
+# ${commands[…]} and all four lines are silent no-ops that could rot unnoticed. (Side effect
+# worth naming so nobody chases it: the `uv` stub sets HAVE_UV, so 20-aliases.zsh defines
+# uvr/uvs. Harmless here.)
+#
+# TWO SHAPES, because the two mechanisms have different observable end states (#579):
+#   direnv is still SOURCED, so its generated init is a sentinel print and the sentinel
+#   reaching stdout proves generate→cache→source ran, at band 00, under the real loader.
+#   gh/uv/ty are no longer sourced at all — they are written into an fpath dir and autoloaded
+#   — so a sentinel print would prove nothing and never appear. Their stubs emit a REAL
+#   clap_complete-shaped script (`#compdef` header + the autoload shim), and the assertion
+#   below reads $_comps instead. That is the stronger claim anyway: it checks the completion
+#   is REGISTERED for the command in a live shell, which is the user-facing fact, and it
+#   survives a future change of mechanism without needing to be rewritten again.
 INTEGBIN="$SANDBOX/integ-bin"
 mkdir -p "$INTEGBIN"
-for _it in direnv gh uv ty; do
-  printf '#!/bin/sh\nprintf "%%s\\n" "print -r -- CORE_INIT_%s"\n' \
-    "$(printf '%s' "$_it" | tr '[:lower:]' '[:upper:]')" >"$INTEGBIN/$_it"
-  chmod +x "$INTEGBIN/$_it"
+printf '#!/bin/sh\nprintf "%%s\\n" "print -r -- CORE_INIT_DIRENV"\n' >"$INTEGBIN/direnv"
+for _it in gh uv ty; do
+  printf '#!/bin/sh\ncat <<STUB\n#compdef %s\n_%s() { _message CORE_INIT_%s }\nif [ "\$funcstack[1]" = "_%s" ]; then\n  _%s "\$@"\nelse\n  compdef _%s %s\nfi\nSTUB\n' \
+    "$_it" "$_it" "$(printf '%s' "$_it" | tr '[:lower:]' '[:upper:]')" "$_it" "$_it" "$_it" "$_it" >"$INTEGBIN/$_it"
 done
+for _it in direnv gh uv ty; do chmod +x "$INTEGBIN/$_it"; done
 unset _it
 cat >"$INTEG/80-os.zsh" <<'OSZSH'
 # stub 80-os.zsh — must be able to use the API Core promises the OS layer.
@@ -6904,6 +6918,8 @@ LOCALZSH
   printf 'ZSH_CFG=%q\n' "$INTEG"
   printf 'CORE_PROFILE=full\n'
   printf 'source "$ZSH_CFG/loader.zsh"\n'
+  # Report the COMPLETION REGISTRATION for the three that are no longer sourced (#579).
+  printf 'for _t in gh uv ty; do print -r -- "CORE_COMP_${(U)_t}=${_comps[$_t]:-NONE}"; done\n'
   printf 'print -r -- "INTEG_OK"\n'
 } >"$INTEG/.zshrc"
 integ_out="$(
@@ -6931,14 +6947,28 @@ fi
 # rather than as a set: when this breaks it is nearly always ONE tool (a renamed generator
 # subcommand, a line moved across a band boundary), and a combined check would only say
 # "something".
-for _it in DIRENV GH UV TY; do
-  if grep -q "^CORE_INIT_$_it\$" <<<"$integ_out"; then
-    pass "consumer load: Core sourced the $_it init (was the OS layer's job until #449)"
+#
+# direnv is SOURCED, so the sentinel its stub prints must reach stdout.
+if grep -q '^CORE_INIT_DIRENV$' <<<"$integ_out"; then
+  pass "consumer load: Core sourced the DIRENV init (was the OS layer's job until #449)"
+else
+  fail "consumer load: Core never sourced the DIRENV init — the block is not reaching a real shell"
+fi
+# gh/uv/ty are NOT sourced (#579) — they are generated into an fpath dir at band 00 and
+# autoloaded by compinit at band 10. So assert the end state that actually matters: the
+# command is REGISTERED to the tool's own completion function, in a real shell, under the
+# real loader and the real band order. This also pins the carapace-precedence half — the
+# band-45 re-assert runs after carapace in this load, so a regression that let the bridge
+# win would show up here as the wrong function name, not merely as an absent one.
+for _it in GH UV TY; do
+  _it_lc="$(printf '%s' "$_it" | tr '[:upper:]' '[:lower:]')"
+  if grep -q "^CORE_COMP_$_it=_$_it_lc\$" <<<"$integ_out"; then
+    pass "consumer load: the $_it completion is registered from fpath (_comps[$_it_lc] = _$_it_lc)"
   else
-    fail "consumer load: Core never sourced the $_it init — the block is not reaching a real shell"
+    fail "consumer load: the $_it completion never registered — got '$(grep -o "^CORE_COMP_$_it=.*" <<<"$integ_out")'"
   fi
 done
-unset _it
+unset _it _it_lc
 
 # ── A2b. _cache_eval convergence (#580) ──────────────────────────────────────
 # _cache_eval decides "is this cache usable?" on `-s` alone, and it writes the generator's
@@ -7051,6 +7081,122 @@ else
   printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
 fi
 unset _ce_out
+
+# ── _cache_completion: fpath autoload, not a source (#579) ────────────────────
+# _cache_eval ends in `source`, which for uv means 6,976 lines read into EVERY interactive
+# shell to serve a completion most shells never invoke — measured here at +35 ms per shell.
+# _cache_completion writes the same generated text into an fpath directory instead. Same
+# fixtures, same technique as the block above: extract the REAL function out of 00-tools.zsh
+# and drive it across separate shells, so the code under test is the shipped code.
+hdr "_cache_completion (fpath autoload)"
+CCM="$SANDBOX/cachecomp"
+rm -rf "$CCM"
+mkdir -p "$CCM/bin"
+# a healthy clap_complete-shaped generator: #compdef header + the autoload shim footer
+printf '#!/bin/sh\nprintf %%s "#compdef cc-good\\n_cc-good() { _message ok }\\n"\n' >"$CCM/bin/cc-good"
+# exits 0, prints nothing — the #580 shape, which must converge here too
+printf '#!/bin/sh\nexit 0\n' >"$CCM/bin/cc-empty"
+chmod +x "$CCM/bin"/cc-*
+
+_cc_run() { # _cc_run <tool> → drives the real _cache_completion in a fresh shell
+  XDG_CACHE_HOME="$CCM/cache" PATH="$CCM/bin:$PATH" HOME="$SANDBOX" \
+    zsh -fc '
+      setopt NO_CLOBBER   # 10-options.zsh sets this; the >| redirections depend on it
+      eval "$(sed -n "/^_cache_completion() {/,/^}/p" "'"$HERE"'/zsh/00-tools.zsh")"
+      _cache_completion '"$1"' '"$1"'
+    ' 2>/dev/null
+}
+
+# 1. THE POINT OF THE CHANGE: it writes a file and sources NOTHING. A regression back to
+#    `source` would still leave a working completion, so the only observable difference is
+#    that the generator's output does not enter the calling shell.
+rm -rf "$CCM/cache"
+_cc_out="$(XDG_CACHE_HOME="$CCM/cache" PATH="$CCM/bin:$PATH" HOME="$SANDBOX" \
+  zsh -fc '
+    setopt NO_CLOBBER
+    eval "$(sed -n "/^_cache_completion() {/,/^}/p" "'"$HERE"'/zsh/00-tools.zsh")"
+    _cache_completion cc-good cc-good
+    print -r -- "defined=${+functions[_cc-good]}"
+  ' 2>/dev/null)"
+if [[ -s "$CCM/cache/zsh/completions/_cc-good" ]] && [[ "$_cc_out" == "defined=0" ]]; then
+  pass "_cache_completion: writes _<tool> into the fpath dir and sources nothing into the shell"
+else
+  fail "_cache_completion: did not write the fpath file, or leaked the completion into the shell ($_cc_out)"
+fi
+
+# 2. It lands in the CACHE dir, never in zsh/completions/ — that directory is Core's authored
+#    set, listed per-file in core.manifest so an added file is a manifest failure.
+if [[ ! -e "$HERE/zsh/completions/_cc-good" ]]; then
+  pass "_cache_completion: generated files stay out of Core's authored zsh/completions/"
+else
+  fail "_cache_completion: wrote a generated completion into the manifest-checked authored dir"
+fi
+
+# 3. The compdump is invalidated on a regeneration. Without this the new file is INVISIBLE
+#    for up to 24h: 10-options.zsh takes `compinit -C` when the dump is under a day old, and
+#    -C skips the scan for new completion functions entirely.
+rm -rf "$CCM/cache"
+mkdir -p "$CCM/cache/zsh"
+: >"$CCM/cache/zsh/zcompdump"
+: >"$CCM/cache/zsh/zcompdump.zwc"
+_cc_run cc-good
+if [[ ! -e "$CCM/cache/zsh/zcompdump" && ! -e "$CCM/cache/zsh/zcompdump.zwc" ]]; then
+  pass "_cache_completion: a regeneration invalidates the compdump (else compinit -C never sees the new file)"
+else
+  fail "_cache_completion: the stale compdump survived a regeneration — the completion would be invisible for 24h"
+fi
+
+# 4. …and a run that regenerates NOTHING must leave the dump alone, or every shell pays a
+#    full compinit and the fast path is gone.
+: >"$CCM/cache/zsh/zcompdump"
+_cc_run cc-good
+if [[ -e "$CCM/cache/zsh/zcompdump" ]]; then
+  pass "_cache_completion: a no-op run leaves the compdump intact (the compinit -C fast path survives)"
+else
+  fail "_cache_completion: deleted the compdump when nothing was regenerated"
+fi
+
+# 5. An absent binary writes nothing and says nothing — the invariant that lets these callers
+#    ship with no HAVE_* flag.
+rm -rf "$CCM/cache"
+_cc_out="$(_cc_run cc-absent-tool)"
+if [[ -z "$_cc_out" && ! -d "$CCM/cache/zsh/completions" ]]; then
+  pass "_cache_completion: an absent binary writes nothing and prints nothing (no HAVE_* flag needed)"
+else
+  fail "_cache_completion: an absent binary produced output or a cache dir ($_cc_out)"
+fi
+
+# 6. A generator that cannot succeed must CONVERGE, or every shell re-forks it forever
+#    (#580). The marker is deliberately NOT an `_<tool>` stub: any file named _cc-empty in
+#    fpath IS a completion function, so a stub would register an empty completion and shadow
+#    whatever carapace would otherwise have bridged. Assert both halves.
+rm -rf "$CCM/cache"
+_cc_run cc-empty
+_cc_run cc-empty
+if [[ -e "$CCM/cache/zsh/completions/.cc-empty.failed" ]] &&
+  [[ ! -e "$CCM/cache/zsh/completions/_cc-empty" ]]; then
+  pass "_cache_completion: a failing generator converges on a dotfile marker, NOT an _<tool> stub that would shadow the bridged completion"
+else
+  fail "_cache_completion: failing generator did not converge, or wrote a stub into fpath"
+fi
+
+# 7. An upgrade re-opens the question: the binary's mtime is the only invalidation key.
+rm -rf "$CCM/cache"
+_cc_run cc-good
+_cc_sz0="$(wc -c <"$CCM/cache/zsh/completions/_cc-good" | tr -d ' ')"
+printf '#!/bin/sh\nprintf %%s "#compdef cc-good\\n_cc-good() { _message v2 }\\n# grown\\n"\n' >"$CCM/bin/cc-good"
+chmod +x "$CCM/bin/cc-good"
+touch "$CCM/bin/cc-good"
+_cc_run cc-good
+_cc_sz1="$(wc -c <"$CCM/cache/zsh/completions/_cc-good" | tr -d ' ')"
+if [[ "$_cc_sz1" != "$_cc_sz0" ]]; then
+  pass "_cache_completion: a newer binary regenerates the completion (mtime is the invalidation key)"
+else
+  fail "_cache_completion: an upgraded binary did not regenerate ($_cc_sz0 -> $_cc_sz1)"
+fi
+unset _cc_out _cc_sz0 _cc_sz1 CCM
+unset -f _cc_run
+
 # ── CI modernization floor: rules 2 and 7 (#521) ─────────────────────────────
 # check-modern.sh had no behavioural coverage — every rule was "green on this tree",
 # which cannot distinguish a rule that PASSES from a rule that never MATCHES. Rule 2 was
@@ -8847,25 +8993,32 @@ _z_carapace="$(_zln "$PLUGINS_FILE" '_cache_eval[[:space:]]+--salt.*carapace')"
 _zsay "direnv's hook is in 00-tools.zsh, not 45-plugins.zsh — band 45 is profile-gated (minimal ceils at 30), so .envrc loading would silently die on minimal hosts" \
   "$([[ -n "$_z_direnv_t" && -z "$_z_direnv_p" ]] && echo ok)"
 
-# (2) …and the three completions stay at band 45, because they call compdef.
+# (2) …and the three completions are GENERATED at band 00 (#579). Inverted from what this
+# asserted before: they used to be sourced at band 45 because they called compdef. They are
+# now written into an fpath directory instead, and fpath must be populated BEFORE compinit
+# scans it — compinit is band 10, so band 00 is the only band that can guarantee it. Filed at
+# band 45 the file would be written a whole shell too late to be seen.
 _z_ok=1
 for _zt in gh uv ty; do
-  [[ -n "$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  [[ -n "$(_zln "$TOOLS_FILE" "^_cache_completion[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  [[ -z "$(_zln "$PLUGINS_FILE" "^_cache_completion[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  # …and nothing SOURCES them any more. _cache_eval ends in `source`, which is the entire
+  # 35 ms this change removes; a caller that slid back to it would be silent otherwise.
   [[ -z "$(_zln "$TOOLS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  [[ -z "$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
 done
 unset _zt
-_zsay "gh/uv/ty are in 45-plugins.zsh, not 00-tools.zsh — they call compdef, which does not exist until 10-options.zsh has run compinit" "$_z_ok"
+_zsay "gh/uv/ty are GENERATED by _cache_completion in 00-tools.zsh and sourced by nothing — fpath must be populated before compinit (band 10) scans it, and _cache_eval would source 6,976 lines per shell" "$_z_ok"
 
-# (3) …and AFTER carapace. carapace bridges a gh completion; the last compdef owns the
-# command, so this ordering is the only thing keeping gh's own completion in front of the
-# bridged one. It is the order they ran in at band 80, so it preserves behaviour.
-_z_ok=1
-for _zt in gh uv ty; do
-  _zl="$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")"
-  [[ -n "$_z_carapace" && -n "$_zl" ]] && (( _zl > _z_carapace )) || _z_ok=""
-done
-unset _zt _zl
-_zsay "gh/uv/ty are registered AFTER the carapace block — whichever compdef runs last owns the command, so moving them above it hands gh back to the bridged completion, silently" "$_z_ok"
+# (3) …and the compdef re-assert is still AFTER carapace. This is the half that survives the
+# move, and it is the whole reason a band-45 line still exists: fpath autoloading registers
+# these at COMPINIT — band 10, i.e. BEFORE carapace at band 45 — so without re-asserting here
+# the move would silently hand gh back to the bridged completion. Whichever compdef runs last
+# owns the command.
+_z_compdef="$(_zln "$PLUGINS_FILE" 'compdef "_\$t" "\$t"')"
+_zsay "the gh/uv/ty compdef re-assert is AFTER the carapace block — fpath autoload registers at band 10, before carapace, so without this the bridged completion silently wins" \
+  "$([[ -n "$_z_carapace" && -n "$_z_compdef" ]] && (( _z_compdef > _z_carapace )) && echo ok)"
+unset _z_compdef
 
 # (4) direnv after mise. Both PREPEND their hooks, so the one sourced last runs FIRST.
 _zsay "direnv is initialised AFTER mise — both PREPEND their hooks, so the one sourced last runs first; inverting this changes per-directory env resolution with no visible symptom" \
