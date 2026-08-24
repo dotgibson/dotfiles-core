@@ -368,6 +368,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   disagreed with itself two functions apart, and `pr-link-check.yml` described ci.yml's matrix
   as "macOS + seven distros" when it is ubuntu + macOS + alpine + arch. (#519)
 
+- **The CI floor's first-party SHA-pin exemption was wider than the policy it was named for.**
+  Rule 3 exempted any `uses:` whose owner is `dotgibson` with a bare owner-string match, so
+  `uses: dotgibson/anything@main` passed the gate outright.
+
+  `RELEASE-STRATEGY.md`'s exemption is narrower than that: it is the `@vN` moving-major policy
+  for the fleet's own **reusable workflows**. Nothing asserted that shape, so the policy was
+  documented in one place and enforced in none.
+
+  The exemption now requires `dotgibson/<repo>/.github/workflows/<name>.yml@v<N>`. Anything
+  else from the same owner **falls through** to the 40-hex requirement rather than being
+  rejected outright — a first-party caller that chose to SHA-pin is stricter than `@vN`, not
+  weaker, and must not be told off for it.
+
+  **Fix-first, in the same PR:** `core-integrity-call.yml`'s copy-paste caller stub documented
+  `@main`. It was the only non-`@v4` first-party ref in `.github/`, and it contradicted
+  `bootstrap-test.yml`, which spells out that stubs pin `@vN` "NOT @main". That mattered more
+  than a stray doc comment usually would — the stub advertised the exact shape whose acceptance
+  the exemption's own premise depends on being impossible. (#521)
+
 ### Changed
 
 - **`zsh-syntax-highlighting` pin moves to `2fc57d63067c`.** The only pin of the eight that

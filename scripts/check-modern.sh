@@ -93,8 +93,27 @@ if _yaml_bool require_action_sha_pin; then
     ref="${m##*@}"
     spec="${m#*uses:}"; spec="${spec#"${spec%%[![:space:]]*}"}"  # text after `uses:`, ltrimmed
     owner="${spec%%/*}"
-    { [ -n "$exempt" ] && [ "$owner" = "$exempt" ]; } && continue   # own reusable workflows: @vN policy
-    grep -qE '^[0-9a-f]{40}$' <<<"$ref" || note "unpinned action (need a 40-hex SHA): $m"
+    # THE FIRST-PARTY EXEMPTION IS NARROW, and it has to be. This was a bare `continue` on an
+    # owner-string match, so `uses: dotgibson/anything@main` passed the gate outright — and
+    # nothing else in the tree asserted the `@vN` policy that JUSTIFIES the exemption, so the
+    # policy was documented in RELEASE-STRATEGY.md and enforced nowhere.
+    #
+    # What the policy actually says is narrower than "this owner is trusted": it is the moving
+    # MAJOR tag, on the fleet's own REUSABLE WORKFLOWS. So require that exact shape —
+    # dotgibson/<repo>/.github/workflows/<name>.yml@v<N> — and let anything else from the same
+    # owner fall through to the 40-hex requirement, which is the right default for a ref whose
+    # contract is not governed by the release process.
+    why="unpinned action (need a 40-hex SHA)"
+    if [ -n "$exempt" ] && [ "$owner" = "$exempt" ]; then
+      if grep -qE "^${exempt}/[A-Za-z0-9_.-]+/\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml@v[0-9]+$" <<<"$spec"; then
+        continue                                                     # @vN reusable workflow: the policy's own shape
+      fi
+      # Not the policy's shape — so it FALLS THROUGH to the same 40-hex requirement everything
+      # else faces, rather than being rejected outright. A first-party caller that chose to
+      # SHA-pin is stricter than @vN, not weaker, and must not be told off for it.
+      why="first-party ref outside the @vN reusable-workflow policy (use @vN, or pin a 40-hex SHA)"
+    fi
+    grep -qE '^[0-9a-f]{40}$' <<<"$ref" || note "$why: $m"
   done < <(grep -HnoE "uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[^[:space:]\"']+" "${FILES[@]}" 2>/dev/null || true)
 fi
 
