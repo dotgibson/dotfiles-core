@@ -3,8 +3,9 @@
 All notable changes to **dotfiles-core** are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Core is the single source of truth vendored into nine repos via
-`git subtree pull --prefix=core <core-remote> main --squash` (see `scripts/sync-core.sh`).
+Core is the single source of truth vendored into nine repos by `scripts/sync-core.sh`,
+which materializes `core/` at the exact commit it resolved (it stopped using
+`git subtree pull` in #587, and stopped re-resolving the branch at vendor time in #556).
 Every entry below is therefore a change those repos receive on their next sync —
 this file is the human-readable record of _what_ a sync will bring, complementing
 the SHA that `scripts/sync-core.sh` now prints. To cut a release, move the
@@ -158,6 +159,71 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   cover: under `set-clipboard on` tmux accepts the escape **and** creates a tmux paste
   buffer, so the code is readable via `tmux show-buffer` by anything that can reach the tmux
   socket — which "never lands in your shell history/scrollback" does not address. (#525)
+
+- **`make sync` vendored the branch tip while stamping the SHA it resolved ~250s earlier.**
+  `sync-core.sh` resolves Core's tip once, up front, then runs the pre-fan-out audit, then
+  vendored by re-resolving the **branch**. Those are two different resolutions of `main`. A
+  push to Core inside that window — a docs PR merging, say — gave `core/` the newer tree
+  while `core.lock` recorded the older SHA, and `make core-integrity` then reported the repo
+  `TAMPERED (core/ edited since sync)`. For a tree nobody hand-edited. The diagnosis pointed
+  at the wrong thing entirely, which is the part that cost the most time. Reported firing
+  three times in a single afternoon.
+
+  The fix pins everything to the commit that was resolved: the fetch asks for that SHA
+  (falling back to a ref fetch purely as an object-delivery mechanism on remotes that refuse
+  unadvertised wants), and the tree is materialized as `<sha>^{tree}` — never `FETCH_HEAD`,
+  which is by definition the new tip and would have re-created the bug inside its own fix.
+
+  A serial fan-out is now consistent **by construction**: every repo materializes the same
+  commit however long the loop takes. And a warm repo needs no network at all, because the
+  fetch short-circuits on `cat-file`, which makes a re-run of the same sync fully offline.
+
+  Two further instances of the same bug are fixed with it, neither of which was in the
+  report:
+
+  - **`core_tag`** was resolved with a `|| git describe "$CORE_BRANCH"` fallback that
+    re-resolved the branch at describe time — so a moved branch stamped a tag belonging to a
+    **different commit**, into `core.lock` _and_ onto every rewritten workflow pin comment in
+    all nine repos. That comment is what Renovate reads to pick the next bump.
+  - **The `git-subtree-split:` trailer** was stamped from the same stale snapshot. Consumer
+    tooling (`dotfiles-MacBook`'s `verify-core`) warns when it disagrees with the lock, so
+    the fleet was emitting a wrong marker too.
+
+  And the `unknown` path turned out to be a third producer of the identical symptom, with no
+  race required: it materialized `core/` from the branch and then skipped writing `core.lock`
+  entirely. A sync must vendor a **named** commit, so that now refuses outright, before the
+  audit and before anything is written. Two latent defects on that path are fixed as well —
+  an unreachable remote killed the script at `set -e` with exit 128 and **no output at all**
+  (`ls-remote`'s stderr is deliberately suppressed), and the bare `git rev-parse` fallback
+  echoed the unresolvable ref to stdout, so the `unknown` sentinel it was tested against
+  could never actually be produced by that path.
+
+  The sync now **checks its own work**: after each repo it compares `HEAD:core` against the
+  pinned tree. That comparison moved into a new shared `scripts/lib/core-lock.sh` so the
+  producer's self-check and `core-integrity.sh`'s verdict are one implementation — two would
+  let a sync pass its own assertion and still be reported dirty. It reports and buckets the
+  repo as failed rather than exiting, because `sync-fanout.yml` runs the script under
+  `bash -e` and an abort would deny PRs to every repo that synced correctly; and it prints
+  the recovery command rather than auto-reverting, since on the idempotent path no commit was
+  made and a blind `reset --hard HEAD~1` would destroy a good one.
+
+  `sync-fanout.yml` gains the matching post-condition. Its three existing ones all compare
+  the **lock to the intent**; none looked at what `core/` actually contained, which is the
+  axis this bug broke.
+
+  The audit gate now compares **full** SHAs — `rev-parse --short=12` returns _more_ than 12
+  characters when 12 would be ambiguous, a latent spurious refusal that grows more likely as
+  history does — and the parallel prefetch is pinned too, picking up the `--no-tags` it was
+  missing (without it every prefetch dragged Core's whole tag namespace, including the moving
+  `v4` alias, into every OS repo).
+
+  Twelve new fixtures. The race is reproduced **deterministically**, with no sleeps, by
+  having the stub audit push to Core mid-run — the audit gate is the one place guaranteed to
+  sit inside the window. It runs three ways: direct-SHA fetch, with `allowReachableSHA1InWant`
+  **off** so the fallback is exercised (the case that catches a `FETCH_HEAD`-based fallback),
+  and with the parallel prefetch on. `core-integrity.sh` also gains its first behavioural
+  coverage, since extracting its classifier could otherwise have changed the verdict
+  silently. All three race fixtures fail against the previous implementation. (#556)
 
 ### Changed
 
