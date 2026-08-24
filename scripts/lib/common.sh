@@ -446,6 +446,52 @@ _core_owned_block_owner() { # _core_owned_block_owner <rule-id>
   esac
 }
 
+# ── _core_gitleaks_policy_hits: a secret scan measured by Core's policy, or nobody's ──
+# _core_gitleaks_policy_hits <file> — print `<line>:<reason>` for every gitleaks invocation
+# in <file> that does not carry a config flag. Silence = clean.
+#
+# WHY. Core's reusable lint-call.yml secrets leg states the rule: ONE POLICY FILE, Core's, so
+# every repo is measured the same way and no repo can widen its own allowlist. The rule is
+# stated in Core and honoured by Core's reusable — and nothing enforced it on the repo side.
+# On the 2026-08-23 sync four repos ran their own gitleaks with NO config, so they used the
+# stock rule set; `curl-auth-user` matches on credential-shaped POSITION rather than content,
+# so the vendored core/CHANGELOG.md — which documents that very allowlist and quotes the
+# example it was written for — was flagged. Core's explanation of the rule read as a
+# violation of it, on a sync that carried no credential (#623).
+#
+# Two more repos were green only because each keeps its OWN root .gitleaks.toml that gitleaks
+# auto-discovers — the "repo widens its own allowlist" case the policy argues against, failing
+# in the quiet direction, which is worse (#624).
+#
+# THE RULE IS "CARRIES A CONFIG FLAG", NOT "NAMES CORE'S FILE", and that is deliberate. A repo
+# may legitimately need a local rule set for a distro-specific pattern Core has no business
+# knowing about; the honest shape there is to EXTEND Core's rather than replace it. So this
+# scan answers "is a policy passed at all", and whether that policy descends from Core's is
+# the separate question audit-core.sh §5g asks of the config file itself. Splitting them keeps
+# each check able to say something true on its own.
+#
+# THE FALSE-POSITIVE TRAP, which cost real time while surveying for the issue: a naive
+# `-c|--config` match also fires on the `-c` inside `--exit-code`, which two of the repos in
+# scope actually pass. The flag must be matched as a WHOLE WORD — hence the `(^|[[:space:]])`
+# prefix and the `(=|[[:space:]])` suffix on the short form.
+#
+# Comment lines are skipped, so a repo may describe the policy in the comment above the call —
+# which every already-corrected repo does, at length.
+_core_gitleaks_policy_hits() { # _core_gitleaks_policy_hits <file>
+  local f="${1:-}" line n=0 body
+  [ -f "$f" ] || return 0
+  while IFS= read -r line; do
+    n=$((n + 1))
+    body="${line#"${line%%[![:space:]]*}"}"
+    case "$body" in '#'* | '@#'*) continue ;; esac
+    # An invocation, not a mention: `gitleaks` followed by one of its scanning subcommands.
+    printf '%s\n' "$line" | grep -qE '(^|[^[:alnum:]_-])gitleaks[[:space:]]+(dir|detect|git)([[:space:]]|$)' || continue
+    # Whole-word config flag. `--exit-code` must NOT count as `-c`.
+    printf '%s\n' "$line" | grep -qE '(^|[[:space:]])(-c(=|[[:space:]])|--config(=|[[:space:]]))' && continue
+    printf '%s:%s\n' "$n" "no-config"
+  done <"$f"
+}
+
 # ── _audit_ls: the file set the CONTENT gates inspect ─────────────────────────
 # Tracked files PLUS untracked-but-not-ignored ones. The distinction matters, and it
 # cost a real round-trip: a brand-new script is invisible to `git ls-files` until the

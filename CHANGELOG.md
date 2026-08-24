@@ -16,6 +16,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The adoption audit now covers the files it could not see: workflows and Makefiles.**
+  `audit-core.sh` §5f reports which OS repos have not adopted `lib/bootstrap-lib.sh`'s
+  helpers, and it greps `bootstrap.sh` **only**. The identical drift class — Core grows a
+  capability, some repos keep a hand-rolled predecessor, nothing notices — lives in the
+  workflow and Makefile dimension too, and it went red across four repos on the 2026-08-23
+  sync.
+
+  Core's reusable `lint-call.yml` secrets leg states the rule (_one policy file, Core's, so
+  no repo can widen its own allowlist_) and passes `-c`. Repos running their own gitleaks with
+  no config used the **stock** rule set instead, where `curl-auth-user` matches on
+  credential-shaped position rather than content — so the vendored `core/CHANGELOG.md`, which
+  documents that very allowlist, was flagged. Core's explanation of the rule read as a
+  violation of it, on a sync that carried no credential.
+
+  New §5g makes two claims, kept separate so each can be true alone: every
+  `gitleaks dir|detect|git` invocation carries a config flag, and a repo-local
+  `.gitleaks.toml` must `[extend]` `core/gitleaks.toml` rather than replace it. A repo that
+  needs a distro-specific rule is not doing anything wrong; dropping the fleet's policy to get
+  it is. Advisory and skipped when siblings are absent, exactly like §5f.
+
+  The matcher lives in `scripts/lib/common.sh :: _core_gitleaks_policy_hits` and is
+  fixture-tested in both directions, because of a trap worth naming: a naive `-c|--config`
+  match also fires on the `-c` inside `--exit-code`, which two of the repos in scope actually
+  pass. The flag is matched as a whole word, and the test pins it.
+
 - **A gate × repo coverage register — `scripts/fleet-coverage.sh` and `make fleet-coverage`.**
   There was no single place recording which repo satisfies which gate, and how. Coverage was
   inferred by reading the `uses:` lines in each repo's workflows — and that inference is wrong
@@ -169,6 +194,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Docs only; no behavioural change to the workflow.
 
 ### Fixed
+
+- **`CHANGELOG.md` contained a credential-shaped string that tripped stock secret scanners.**
+  The v4.x entry documenting `gitleaks.toml` quoted, in a code fence, the exact healthcheck
+  line the allowlist was written for. That put a credential-shaped token in a public file
+  vendored into every consumer — so any repo scanning the vendored tree under the stock rule
+  set flagged this paragraph, and four did.
+
+  The example is now described rather than quoted, which loses nothing: the point was always
+  the _shape_, and the prose states it. Verified with the pinned gitleaks 8.30.1 — the
+  vendored tree scanned under stock rules reports **1 leak before, 0 after**. This removes the
+  hazard for every downstream scanner rather than requiring all nine to opt into the policy,
+  and it is independent of the audit work above. (#623)
 
 - **`bootstrap-test.yml`'s header claimed no gate in the fleet runs `provision()` — false in
   two directions.** The block stated, in capitals, that `--links-only` returns before
@@ -331,6 +368,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   went 0 → 4, matching the CLI exactly, and conform's format went from leaving the buffer untouched
   to actually rewriting it. Windows receives this on its next `nvim-sync.ps1`.
   (`nvim/lua/gerrrt/plugins/nvim-lint.lua`, `nvim/lua/gerrrt/plugins/conform.lua`)
+||||||| parent of fcb0308 (feat(audit): extend the adoption audit to the secret-scan policy (#623))
 
 ## [v4.17.0] - 2026-08-24
 
@@ -884,13 +922,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   brings new detections, and removes nothing. It narrows exactly one false-positive class:
   a credential position holding a **variable reference** rather than a value. Several
   default rules match on position rather than content — `curl-auth-user` fires on anything
-  after `curl -u` — and infra config in this fleet routinely puts a variable there, which
-  is the _secure_ shape. The fleet's only finding was dotfiles-Defense's OpenSearch
-  healthcheck:
+  in the credential slot of curl's basic-auth flag — and infra config in this fleet routinely
+  puts a variable there, which is the _secure_ shape. The fleet's only finding was
+  dotfiles-Defense's OpenSearch healthcheck: a Compose `CMD-SHELL` test that passes the user
+  `admin`, and a `$$`-escaped reference to `OPENSEARCH_INITIAL_ADMIN_PASSWORD` as the
+  password, into that flag.
 
-  ```yaml
-  test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD ..."]
-  ```
+  (Described rather than quoted, deliberately. Reproducing the literal line here put a
+  credential-SHAPED token in this file, which is a public repo vendored into every consumer —
+  so any repo scanning the vendored tree under the stock rule set flagged this paragraph, and
+  four of them did on the 2026-08-23 sync. Core's explanation of the allowlist read as a
+  violation of it. Please do not restore the code fence. See #623.)
 
   The `$$` is deliberate — it stops Compose interpolating at render time, keeping the
   password out of `docker compose config` and `docker inspect`. Reporting that as a leak

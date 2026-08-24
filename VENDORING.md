@@ -266,6 +266,43 @@ in CI, where only Core is checked out. Role repos (`dotfiles-Defense`, `dotfiles
 layer on an OS bootstrap and install no packages, so the two keepalive/PATH helpers are
 exempt for them.
 
+### The gates you run OVER the vendored tree
+
+The contract above is about what your `bootstrap.sh` calls. This is the other half, unwritten
+until #623: a repo also runs **its own gates** over `core/`, and those have to agree with
+Core's policy or they measure a different thing.
+
+**Secret scanning is the concrete case.** Core's reusable `lint-call.yml` states the rule —
+_one policy file, Core's, so every repo is measured the same way and no repo can widen its own
+allowlist_ — and passes `-c` accordingly. So must yours:
+
+```sh
+gitleaks dir . -c core/gitleaks.toml --no-banner --redact
+```
+
+Without `-c`, gitleaks uses the **stock** rule set, where several rules match on
+credential-shaped _position_ rather than on content. On the 2026-08-23 sync that flagged the
+vendored `core/CHANGELOG.md` in four repos — Core's own explanation of the allowlist read as
+a violation of it, on a sync carrying no credential.
+
+**A repo-local `.gitleaks.toml` is permitted, but it must extend Core's, not replace it.**
+gitleaks auto-discovers a config at the scan root, so a private one silently governs _every_
+scan in that repo — including invocations that pass no `-c` and look, from the command line,
+like a stock scan. If you need a distro-specific rule:
+
+```toml
+[extend]
+path = "core/gitleaks.toml"
+```
+
+`useDefault` is not needed and should be omitted: Core's own config already extends the
+upstream defaults, and that inheritance carries through. Verified with the pinned gitleaks
+8.30.1 — the variable-reference form Core allowlists passes, and a real literal credential in
+the same position is still caught.
+
+`audit-core.sh` §5g reports repos that do neither — **advisory, not blocking**, and skipped
+entirely when the siblings are not checked out, exactly like §5f above.
+
 ### Declaring how you satisfy a gate you do not call
 
 Core publishes its CI as **reusable workflows**, and most repos consume them as a 3–5 line
