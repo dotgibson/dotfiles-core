@@ -16,6 +16,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **A weekly, genuinely unstubbed bootstrap — `real-bootstrap.yml`.** The per-PR gates cover
+  two thirds of the problem and cannot cover the third. `bootstrap-test.yml`'s `--links-only`
+  leg returns before `provision()` and asserts the wiring; its opt-in `provision-stub` leg
+  executes `provision()` with the package managers and downloaders shimmed, covering the
+  control flow. Neither installs anything, so a **wrong package name**, a **bad or rotated
+  repo key**, any **failure branch** (the stubs always return 0), and anything invoked by
+  **absolute path** are invisible to both.
+
+  Enabling the stubbed run across the fleet also proved a hard limit: a run that installs
+  nothing can never satisfy a bootstrap that verifies a tool is PRESENT afterwards. openSUSE's
+  exits 2 for exactly that reason — an honest "this box is half-provisioned" signal. Neither
+  side should bend: weakening the exit removes the one signal an operator needs, and teaching
+  the job to tolerate exit 2 masks a genuine abort. The only honest resolution is a run where
+  the packages really install.
+
+  **The matrix is derived, not listed.** `scripts/fleet-bootstrap-matrix.py` reads each repo's
+  own `bootstrap-test.yml` caller for its `image:` and `prep:`, so the weekly run can never
+  drift from what the per-PR gate actually uses — a repo bumping its image is followed with no
+  edit in Core. Eight legs today, across seven repos.
+
+  **Advisory: it files an issue, it blocks nothing.** Weekly and network-bound, it asserts
+  other people's package archives as much as our own scripts, and a hard gate on that reds
+  unrelated PRs whenever a mirror hiccups — which is how these lanes get switched off. It
+  reuses `notify-failure-call.yml`, the same posture the other sweeps already take. A run that
+  derives zero legs fails loudly rather than passing green, because an advisory gate that
+  silently never runs reads as coverage.
+
+  MacBook and Defense are deliberately outside it, and both say so in their own
+  `.github/core-gates.txt`: MacBook's `provision()` hard-exits without the Command Line Tools
+  and this job is Linux-container-only, and Defense's `fresh-bootstrap.yml` already boots a
+  bare image and runs `bootstrap.sh` for real. (#589)
+
 - **The adoption audit now covers the files it could not see: workflows and Makefiles.**
   `audit-core.sh` §5f reports which OS repos have not adopted `lib/bootstrap-lib.sh`'s
   helpers, and it greps `bootstrap.sh` **only**. The identical drift class — Core grows a
