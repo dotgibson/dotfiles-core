@@ -7171,6 +7171,44 @@ jobs:
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
+  # Rule 3's first-party exemption must be the POLICY's shape, not the whole owner. A bare
+  # owner match let `uses: dotgibson/anything@main` through outright — wider than the @vN
+  # policy it was named for, and asserted nowhere else, so the policy was documented in
+  # RELEASE-STRATEGY.md and enforced by nothing.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  ok1:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v4
+  bad1:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@main
+  bad2:
+    uses: dotgibson/some-action@v1')"
+  if [[ "$(grep -c 'outside the @vN reusable-workflow policy' <<<"$_cm_out")" == 2 ]] \
+    && ! grep -q 'lint-call.yml@v4' <<<"$_cm_out"; then
+    pass "check-modern rule 3: first-party @main and non-workflow refs are caught, @vN is not"
+  else
+    fail "check-modern rule 3: the owner exemption is still wider than the @vN policy"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+  # A SHA-pinned first-party ref must also pass — the exemption is a shortcut, not the only
+  # acceptable form, and a repo that chose to pin its caller must not be told off for it.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  ok:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')"
+  if ! grep -qE 'unpinned action|@vN reusable-workflow policy' <<<"$_cm_out"; then
+    pass "check-modern rule 3: a SHA-pinned first-party ref is still accepted"
+  else
+    fail "check-modern rule 3: SHA-pinned first-party ref was rejected"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
   # Rule 7: a `${{ }}` expression is substituted by the runner, textually, BEFORE the
   # shell parses the script — so an attacker-controlled value there is code, not data.
   # Both the block-scalar and the one-line `run:` forms must be caught.
