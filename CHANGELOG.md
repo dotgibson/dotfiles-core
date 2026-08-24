@@ -400,7 +400,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   went 0 → 4, matching the CLI exactly, and conform's format went from leaving the buffer untouched
   to actually rewriting it. Windows receives this on its next `nvim-sync.ps1`.
   (`nvim/lua/gerrrt/plugins/nvim-lint.lua`, `nvim/lua/gerrrt/plugins/conform.lua`)
-||||||| parent of fcb0308 (feat(audit): extend the adoption audit to the secret-scan policy (#623))
 
 - **`Ctrl+\` (toggle autosuggestions) was dead inside tmux — which is every shell.**
   `zsh/40-bindings.zsh` binds `^\` to `autosuggest-toggle`, and `tmux/scripts/tmux-cheat.sh`
