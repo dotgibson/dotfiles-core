@@ -84,7 +84,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   DevKit, so every C-extension gem fails to build and `ruby-lsp` (with `rubocop`) dies on
   `prism` with an error naming neither ruby nor the missing toolchain:
 
-  ```
+  ```text
   make: *** No rule to make target '/C/Ruby40-x64/include/ruby-4.0.0/ruby.h' ...
   ```
 
@@ -93,7 +93,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   `jdtls.lua` and `kotlin_language_server.lua` misled without breaking: Windows gets a JDK
   either way, just scoop-owned **openjdk25** rather than mise's temurin-21 — a different owner
-  *and* a different major, both of which satisfy the servers. Their qualifiers are one clause
+  _and_ a different major, both of which satisfy the servers. Their qualifiers are one clause
   each, proportional to the stakes; ruby's earns the longer note.
 
   All three now name the fleet they describe. `intelephense.lua` already modelled this by
