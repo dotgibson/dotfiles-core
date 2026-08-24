@@ -46,7 +46,19 @@ optoken() {
   }
   local otp
   otp=$(op item get "$1" --otp) || return 1
-  printf '%s' "$otp" | clip && _core_ok "TOTP copied to clipboard"
+  # Two honest limits on the success message below, both specific to clip's OSC 52 last
+  # resort (a real backend — pbcopy/wl-copy/xclip — has neither):
+  #
+  #   1. OSC 52 succeeds as soon as the escape is WRITTEN, not when a terminal accepts
+  #      it. Clipboard WRITES are refused by default in several emulators (xterm's
+  #      disallowedWindowOps) and unimplemented in others, and the failure is a silent
+  #      drop. So "sent" is the strongest true claim; "copied" was not.
+  #   2. Under tmux with `set-clipboard on`, tmux accepts the escape and ALSO creates a
+  #      tmux paste buffer. The code is then readable via `tmux show-buffer` by anything
+  #      that can reach the tmux socket — which the "never lands in your history or
+  #      scrollback" rationale above does not cover. Worth knowing before you use this
+  #      on a shared box.
+  printf '%s' "$otp" | clip && _core_ok "TOTP sent to the clipboard"
 }
 
 # opssh — list SSH keys stored in 1Password

@@ -109,6 +109,56 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `inputs.*`, and `if:`/`env:`/`concurrency:`/`with:` contexts do **not** fire. Both new
   rules' fixtures fail against the previous script. (#521)
 
+- **`clip`'s OSC 52 fallback was unreachable from the one tmux binding that names it.**
+  `bin/clip`'s header claimed tmux needed no special handling, because `set-clipboard on`
+  makes tmux consume a pane's OSC 52 and forward it. That is true for a **pane** process —
+  nvim, `optoken`, the cheat popup. It is not true for the yank binding:
+
+  ```text
+  tmux.reset.conf:  bind -T copy-mode-vi y  send -X copy-pipe-and-cancel "clip"
+  ```
+
+  `copy-pipe` runs its command through tmux's `job_run()` — a child of the **daemonized
+  server**, which has called `setsid()` and has no controlling terminal, and whose stderr is
+  `dup2`'d to `/dev/null`. So the `/dev/tty` open fails with `ENXIO`, the error message goes
+  nowhere, and `clip` exits 1 in silence.
+
+  Prefix-`y` still copied only because `window_copy_copy_pipe()` also calls
+  `window_copy_copy_buffer()`, which under `set-clipboard on` emits its **own** OSC 52 from
+  the server side. That is tmux covering for us, not `clip` working — so the comment credited
+  the wrong mechanism, and the next person to touch `set-clipboard` would have lost copy-out
+  on exactly the headless box the fallback was written for, with an in-file comment saying it
+  was handled.
+
+  `_osc52_copy` now falls back to `tmux load-buffer -w -`, which reaches the client from the
+  **server** side and needs no tty at all. The raw payload is reconstructed by decoding the
+  base64 rather than being stashed on the way in: a shell variable is not binary-safe
+  (command substitution strips trailing newlines and cannot carry a NUL), and a temp file
+  would add `mktemp`/`cat`/`rm` to a path that runs on the most minimal boxes we support —
+  and would put a TOTP on disk, since `optoken` pipes one through here. Verified byte-exact
+  for tabs and trailing newlines.
+
+  The large-payload write-splitting hazard is now stated in the file rather than left
+  implicit: writing to a character device is line-buffered and the sequence contains no
+  newline, so a payload past `BUFSIZ` leaves as several `write()` calls on a tty the
+  foreground TUI also owns.
+
+  New fixtures reproduce the real shape with `setsid` — the only faithful reproduction, since
+  a redirected or closed stdin does not detach the controlling terminal — and skip on macOS,
+  which has no `setsid`. Both fail against the previous `bin/clip`. (#525)
+- **`tmux-cheat`'s `copy()` discarded `clip`'s exit status,** so a failed copy was completely
+  silent. It now propagates, and the caller reports through `tmux display-message` rather
+  than stderr: the script runs under `display-popup -E`, which tears the popup down the
+  instant the command exits, so anything on stderr is painted and destroyed in the same
+  frame. (#525)
+- **`optoken` overclaimed.** OSC 52 succeeds as soon as the escape is **written**, not when a
+  terminal accepts it — clipboard writes are refused by default in several emulators and
+  unimplemented in others, and the failure is a silent drop. The message is now "TOTP sent to
+  the clipboard". The function also now documents a disclosure its own rationale did not
+  cover: under `set-clipboard on` tmux accepts the escape **and** creates a tmux paste
+  buffer, so the code is readable via `tmux show-buffer` by anything that can reach the tmux
+  socket — which "never lands in your shell history/scrollback" does not address. (#525)
+
 ### Changed
 
 - **`zsh-syntax-highlighting` pin moves to `2fc57d63067c`.** The only pin of the eight that
