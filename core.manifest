@@ -116,6 +116,13 @@ mise/config.toml
 # ── sesh — portable session-manager config (SEEDED to ~/.config/sesh/sesh.toml;
 #    copied, not symlinked — engagement layouts live in dotfiles-Offense) ──────────
 sesh/sesh.toml.example
+# ── tealdeer — the `tldr` binary's config; symlinked to
+#    ~/.config/tealdeer/config.toml. Turns ON auto_update, which upstream ships
+#    OFF: `help` is a Core alias (20-aliases.zsh, HAVE_TLDR) but nothing on any
+#    box refreshes the page cache — maint/dotfiles-maint.sh has no tldr step —
+#    so a fresh box's `help` fails until you run `tldr --update` by hand.
+#    Deliberately holds only pre-1.8.0 keys: 1.9.0 errors on unknown ones. ──────
+tealdeer/config.toml
 # ── ssh — portable client config; symlinked to ~/.ssh/config. Host-local and
 #    OS-specific bits go to ~/.ssh/config.d/ drop-ins (ssh/os.conf -> 50-os.conf),
 #    which the file Includes FIRST so they win ssh's first-match-wins resolution.
