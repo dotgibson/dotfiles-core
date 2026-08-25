@@ -252,6 +252,9 @@ w "$TARGET/.gitignore" <<'EOF'
 zsh/99-local.zsh
 .config/git/local.gitconfig
 *.zwc
+# Crash dumps. `core.[0-9]*`, NOT `core.*`: this repo tracks core.lock, and bare `core` is
+# the vendored Core DIRECTORY — a blanket rule would hide either one silently.
+core.[0-9]*
 EOF
 
 w "$TARGET/README.md" <<EOF

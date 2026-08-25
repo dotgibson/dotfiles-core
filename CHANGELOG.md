@@ -14,44 +14,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
-### Fixed
-
-- **The audit reported a luacheck that could not RUN as "luacheck reported issues".** §4 treated
-  every non-zero exit as a lint result, so a broken toolchain was announced as a defect in
-  `nvim/` — and the repair it printed, re-run luacheck, only reproduced the error. It sent the
-  reader hunting through clean code.
-
-  **Exit status alone cannot decide this**, which is why the fix is a probe rather than a
-  threshold. luacheck's own vocabulary is `0` clean / `1` warnings / `2` syntax errors / `3` I/O
-  error — and a **load** failure also exits `1`. That is the documented `mise/config.toml` trap,
-  not a hypothetical: luacheck 1.2.0 cannot load under Lua 5.5 at all ("attempt to assign to
-  const variable" in its own source), so the likeliest toolchain break lands on the same code as
-  honest warnings. A missing interpreter is the easier shape — the shell's 126/127 — and would
-  have been separable; the 5.5 one is not.
-
-  §4 now runs `luacheck --version` first. It lints nothing and loads the same modules, so any
-  failure from it is a toolchain failure by construction. `have luacheck` was never enough on
-  its own: a luarocks wrapper `exec`s an **absolute** interpreter path, so it keeps answering
-  `command -v` long after the Lua it was built against is upgraded away.
-
-  Three verdicts now, not two — `broken`, `broken-midrun` (126/127 _after_ a passing probe, so
-  the tool stopped being runnable mid-audit) and `issues` — decided by
-  `_core_luacheck_verdict` in `scripts/lib/common.sh` so `test-core.sh` can drive every branch.
-  Same split §1b uses, and for the same reason: §4 renders, the helper judges. Twelve cases,
-  including both sides of the 126 boundary and a canary asserting §4 still routes through it.
-
-  §4b solved this class ten lines below — _"gate on the EXIT STATUS as well as the output ... a
-  silent non-zero exit reads as a passing gate, which is the one outcome a backstop must never
-  produce"_ — and §4 had simply never had the same pass applied.
-
-- **The Lua 5.4 requirement now appears where someone installing luacheck will meet it.** It was
-  only in `mise/config.toml`, a runtime pin file nobody reaching for `luarocks install luacheck`
-  reads — and that comment predicts this exact outcome: _"the audit's luacheck leg breaks with
-  an error that names neither mise nor this file."_ It is now in `CONTRIBUTING.md` beside the
-  other luacheck note, and in §4's own `not installed` skip message, which is the moment the
-  reader learns they need the tool.
-
 ### Added
+
+- **`.gitignore` now drops crash dumps — as `core.[0-9]*`, deliberately not `core.*`.** A
+  `core.<pid>` dump landing in a repo was untracked noise nothing ignored.
+
+  The obvious spelling is the trap. This repo **tracks** `core.manifest` and `core.version`,
+  and every OS repo also tracks `core.lock` — while bare `core` is the vendored Core
+  **directory** there. `core.*` would hide the next such file the moment someone added one,
+  silently, which is exactly the failure #700 already cost us. Pinned in `test-core.sh`
+  against the real `.gitignore`, with `--no-index` so the assertions answer from the rules
+  rather than the index: without that flag, `check-ignore` never calls an already-tracked path
+  ignored and the `core.manifest` / `core.version` cases would pass under `core.*` too —
+  tautologies guarding nothing. Verified by mutating the rule; all three go red.
+
+  `scripts/new-os-repo.sh` seeds the same rule, so a repo generated tomorrow starts with it.
+
+- **`mise.lock` is deliberately NOT ignored, and the reason is recorded where it would be
+  re-proposed.** It was suggested alongside the crash dumps, and it would have been a quiet
+  regression: `mise/config.toml` sets `lockfile = true` precisely so mise records exact
+  resolved versions and checksums — _"the same idea as Cargo.lock / package-lock.json"_ — and
+  that comment says **commit it**. A bare `mise.lock` line carries no slash, so it matches at
+  every depth and would have swallowed `mise/mise.lock`, turning off hermetic tool resolution
+  with nothing to show for it. The `.gitignore` now says so at the point someone would add it,
+  and a test asserts `mise/mise.lock` stays trackable.
 
 - **`audit-core.sh` §1c: a `.claude/` file that ships nowhere and that nothing reports.** §1b
   (#709) catches a `.claude/` path a routine _names_ but git does not carry. It only fires
@@ -153,6 +139,43 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   via `brew lua@5.4`, `.claude/hooks/session-start.sh` via distro `lua5.4`). Anyone who installs
   luacheck against _this_ lua gets an audit failure naming neither mise nor that file, which is
   why the warning sits at the pin rather than in a commit message.
+
+### Fixed
+
+- **The audit reported a luacheck that could not RUN as "luacheck reported issues".** §4 treated
+  every non-zero exit as a lint result, so a broken toolchain was announced as a defect in
+  `nvim/` — and the repair it printed, re-run luacheck, only reproduced the error. It sent the
+  reader hunting through clean code.
+
+  **Exit status alone cannot decide this**, which is why the fix is a probe rather than a
+  threshold. luacheck's own vocabulary is `0` clean / `1` warnings / `2` syntax errors / `3` I/O
+  error — and a **load** failure also exits `1`. That is the documented `mise/config.toml` trap,
+  not a hypothetical: luacheck 1.2.0 cannot load under Lua 5.5 at all ("attempt to assign to
+  const variable" in its own source), so the likeliest toolchain break lands on the same code as
+  honest warnings. A missing interpreter is the easier shape — the shell's 126/127 — and would
+  have been separable; the 5.5 one is not.
+
+  §4 now runs `luacheck --version` first. It lints nothing and loads the same modules, so any
+  failure from it is a toolchain failure by construction. `have luacheck` was never enough on
+  its own: a luarocks wrapper `exec`s an **absolute** interpreter path, so it keeps answering
+  `command -v` long after the Lua it was built against is upgraded away.
+
+  Three verdicts now, not two — `broken`, `broken-midrun` (126/127 _after_ a passing probe, so
+  the tool stopped being runnable mid-audit) and `issues` — decided by
+  `_core_luacheck_verdict` in `scripts/lib/common.sh` so `test-core.sh` can drive every branch.
+  Same split §1b uses, and for the same reason: §4 renders, the helper judges. Twelve cases,
+  including both sides of the 126 boundary and a canary asserting §4 still routes through it.
+
+  §4b solved this class ten lines below — _"gate on the EXIT STATUS as well as the output ... a
+  silent non-zero exit reads as a passing gate, which is the one outcome a backstop must never
+  produce"_ — and §4 had simply never had the same pass applied.
+
+- **The Lua 5.4 requirement now appears where someone installing luacheck will meet it.** It was
+  only in `mise/config.toml`, a runtime pin file nobody reaching for `luarocks install luacheck`
+  reads — and that comment predicts this exact outcome: _"the audit's luacheck leg breaks with
+  an error that names neither mise nor this file."_ It is now in `CONTRIBUTING.md` beside the
+  other luacheck note, and in §4's own `not installed` skip message, which is the moment the
+  reader learns they need the tool.
 
 ## [v4.19.0] - 2026-08-25
 

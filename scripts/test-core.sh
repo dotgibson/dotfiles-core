@@ -1931,6 +1931,48 @@ if [[ "$_cr_live" == *":.claude/tool-decisions.md" ]]; then
   pass "routine reference scan: the live routine doc still parses (tool-scout.md names the ledger)"
 else fail "routine reference scan: .claude/commands/tool-scout.md yielded '${_cr_live//$'\n'/, }' — the routines stopped writing paths as code spans, so §1b is scanning for a shape that no longer exists"; fi
 
+# ── .gitignore: crash dumps vs the core.* files this repo actually tracks ─────
+# The rule is `core.[0-9]*`, and the whole point is what it does NOT match. `core.*` is the
+# obvious spelling and is wrong twice: this repo tracks core.manifest and core.version, every
+# OS repo also tracks core.lock, and in those repos bare `core` is the vendored Core
+# DIRECTORY. Gitignore does not untrack a file that is already tracked, so the damage from
+# "simplifying" this would not show up here — it would show up the next time someone adds a
+# core.<something> and git silently declines to see it. That is #700's failure mode exactly,
+# which is why this is pinned rather than left to a comment.
+#
+# Asserted against the REAL .gitignore via git check-ignore, not a fixture: the question is
+# what this repo's own rules do, and a fixture would only test a copy of them.
+#
+# --no-index is load-bearing. Without it check-ignore consults the INDEX first and never calls
+# an already-tracked path ignored — so the core.manifest and core.version cases would pass
+# under `core.*` as readily as under the correct rule, and this block would be three tautologies
+# guarding nothing. Verified: with the rule mutated to `core.*`, all three go red only with
+# --no-index; without it, only core.lock (untracked HERE) catches the mistake.
+if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
+  hdr ".gitignore: crash dumps, without swallowing core.* files"
+  _gi_is() { # _gi_is <path> <ignored|tracked-able> <why>
+    local want="$2" got
+    if git -C "$HERE" check-ignore -q --no-index "$1" 2>/dev/null; then got="ignored"; else got="tracked-able"; fi
+    if [[ "$got" == "$want" ]]; then
+      pass "gitignore: $1 is $want ($3)"
+    else
+      fail "gitignore: $1 is $got, want $want ($3)"
+    fi
+  }
+  _gi_is "core.1234"      ignored      "a crash dump is noise"
+  _gi_is "core.99999"     ignored      "any pid width"
+  _gi_is "core.manifest"  tracked-able "TRACKED here — core.* would have hidden it"
+  _gi_is "core.version"   tracked-able "TRACKED here — core.* would have hidden it"
+  _gi_is "core.lock"      tracked-able "TRACKED in every OS repo; keep the rule fleet-safe"
+  # A bare `mise.lock` line would have no slash, so it would match at EVERY depth. mise's
+  # lockfile is meant to be COMMITTED (mise/config.toml sets lockfile = true and its comment
+  # says so), and the file lands next to that config — so this is the path that matters.
+  _gi_is "mise/mise.lock" tracked-able "lockfile = true wants this COMMITTED, not ignored"
+  unset -f _gi_is
+else
+  skip "gitignore crash-dump rule (not a git checkout)"
+fi
+
 # ── luacheck verdict (common.sh :: _core_luacheck_verdict) ───────────────────
 # WHY THIS IS TESTED. audit-core.sh §4 used to treat EVERY non-zero luacheck exit as
 # "luacheck reported issues", so a toolchain that never ran was announced as a lint failure in
