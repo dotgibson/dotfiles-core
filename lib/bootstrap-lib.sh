@@ -249,8 +249,19 @@ blib_seed() {
 #     "a different directory" is not enough, and it looks completely fine when it is wrong.
 #   · NEITHER `mise current` NOR `mise which` DETECTS THAT. Measured: under the confounded
 #     cwd both report the project value and agree with each other, so cross-checking the two
-#     proves nothing. `mise config ls` is the safeguard — it lists the files actually loaded,
-#     and a count higher than the fixtures you created is the confound, made visible.
+#     proves nothing.
+#   · `mise config ls` CATCHES ONLY THE LOUD SHAPE, so do not lean on it. There are two, and
+#     only the second produced the wrong note here:
+#       SHAPE 1  cwd sits in some OTHER project that has its own mise/config.toml. That file
+#                is a distinct path, so `mise config ls` shows an extra entry — and in
+#                practice mise refuses it outright until `mise trust`, so this shape
+#                announces itself. A file-count check works here.
+#       SHAPE 2  cwd sits UNDER the XDG tree itself, so the GLOBAL config.toml is ALSO
+#                discovered as the project config. Same path, already trusted, no prompt —
+#                `mise config ls` prints exactly your fixture count and exactly your fixture
+#                paths. Nothing looks wrong, and the ordering is still inverted.
+#     So the only safeguard that covers both is the cwd rule in the bullet above: no
+#     `mise/config.toml` in ANY ancestor. Check that, not the file count.
 #
 # The hazard is WHERE `mise use -g` writes — the highest-precedence file that ALREADY
 # EXISTS. With Core's pins in a conf.d file that gives two failures and no good case:
