@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.19.0] - 2026-08-25
+
 ### Added
 
 - **The CI floor now requires `timeout-minutes:` on every runner job — `require_job_timeout`.**
