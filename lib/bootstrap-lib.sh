@@ -228,15 +228,25 @@ blib_seed() {
 # elsewhere in this repo. Reconciling is the user's call: theirs wins by default.
 #
 # Deliberately NOT conf.d. mise reads ~/.config/mise/conf.d/*.toml, which looks like the
-# tidier home for a shared layer, but its precedence runs the wrong way for this purpose.
-# Measured on mise 2026.5.16 in an isolated XDG_CONFIG_HOME:
-#   · conf.d OUTRANKS config.toml — conf.d/00-core.toml ruby=3.4 beat config.toml ruby=9.9
+# tidier home for a shared layer. It does not help, and it can REPRODUCE the bug above.
+# Measured on mise 2026.5.16, isolated XDG_CONFIG_HOME, NEUTRAL cwd — mise walks up from
+# the cwd, so run these from outside any repo or you will read a project config instead:
+#   · conf.d OUTRANKS config.toml, in both directions. mise states this itself:
+#       "lua is defined in …/conf.d/00-core.toml which overrides the global config"
 #   · inside conf.d the LOWEST-numbered file wins — 00-core.toml beat 99-local.toml,
 #     the REVERSE of the systemd conf.d convention almost everyone will assume
-# Since `mise use -g` writes to config.toml, putting Core's pins in conf.d would leave
-# that command writing to the lowest-precedence file in the stack: a SILENT no-op. That
-# trades a loud, already-detected failure (a tampered tree) for an undetectable one, on
-# the single command a human is most likely to type. Verify before "fixing" this.
+#   · read this with `mise current <tool>`, NOT `mise ls` / `mise ls --current`: those
+#     print one line per config file, which is easy to misread as a precedence answer
+#
+# The hazard is WHERE `mise use -g` writes — the highest-precedence file that ALREADY
+# EXISTS. With Core's pins in a conf.d file that gives two failures and no good case:
+#   · fresh box, no ~/.config/mise/config.toml yet — `mise use -g lua@5.5.1` writes
+#     straight INTO conf.d/00-core.toml. Where that is Core's symlink, this is the
+#     original write-through bug, reproduced exactly.
+#   · config.toml already present — the write lands there and is then SHADOWED by Core's
+#     conf.d entry. mise does WARN, so it is not silent, but the user's global choice
+#     does not take effect and the warning names two paths rather than the cause.
+# A plain copy has neither failure. Verify with `mise current` before "fixing" this.
 blib_adopt() {
   local src="$1" dst="$2" note="$3" was=""
   if [[ ! -f "$src" ]]; then

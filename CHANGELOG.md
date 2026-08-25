@@ -107,12 +107,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   become: edit, release, sync, re-bootstrap.
 
   **Deliberately NOT `conf.d`**, recorded at `blib_adopt` because the next reader will
-  otherwise "fix" it backwards. Measured on mise 2026.5.16 in an isolated
-  `XDG_CONFIG_HOME`: `conf.d` OUTRANKS `config.toml`, and within `conf.d` the
-  LOWEST-numbered file wins (`00-` beats `99-`, the reverse of the systemd convention).
-  Since `mise use -g` writes to `config.toml`, putting Core's pins in `conf.d` would make
-  that command a SILENT no-op — trading a loud, already-detected failure for an
-  undetectable one, on the command a human is most likely to type.
+  otherwise "fix" it backwards. Measured on mise 2026.5.16, isolated `XDG_CONFIG_HOME`,
+  neutral cwd: `conf.d` OUTRANKS `config.toml` in both directions — mise states this
+  itself (`"lua is defined in …/conf.d/00-core.toml which overrides the global config"`)
+  — and within `conf.d` the LOWEST-numbered file wins (`00-` beats `99-`, the reverse of
+  the systemd convention). Read it with `mise current <tool>`; `mise ls` prints one line
+  per config file and is easy to misread as a precedence answer.
+
+  The hazard is **where `mise use -g` writes** — the highest-precedence file that already
+  exists — which gives `conf.d` two failures and no good case. On a fresh box with no
+  `config.toml`, the write lands **inside `conf.d/00-core.toml`**; where that is Core's
+  symlink, it reproduces the original write-through bug exactly. Where `config.toml` does
+  exist, the write lands there and is then shadowed by Core's `conf.d` entry — mise warns,
+  so it is not silent, but the user's global choice does not take effect. A plain copy has
+  neither failure.
 
   **Scope.** `blib_link` remains correct for the ~34 configs a tool only READS — the
   symlink is what makes a Core edit reach every box for free. `blib_adopt` is only for
@@ -130,9 +138,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `core/mise/config.toml`, so a `mise use -g` writes straight through the symlink into vendored
   Core, and `core-integrity` reports such a tree as TAMPERED. (This entry first said the edit
   was "on course to be silently reverted on the next sync". That is wrong and worth correcting
-  in place, because the real behaviour is the opposite: `sync-core.sh:560` refuses to fan out
-  into a repo with a dirty tree, so the repo is SKIPPED and the edit survives. Nothing is lost;
-  the repo just stops receiving Core until someone notices.)
+  in place, because the real behaviour is the opposite: `sync-core.sh:559-563` refuses to fan
+  out into a repo with a dirty tree, so the edit SURVIVES and the repo is counted a FAILURE —
+  `err "$repo has uncommitted changes"` then `repos_failed=$((repos_failed + 1))`. Nothing is
+  lost, and the fan-out reports the repo as failed rather than merely quiet.)
   The through-the-symlink write also **stripped the trailing comments** that say why each pin
   exists; they are restored here. Four more configs have the same exposure (`atuin`, `lazygit`,
   `jj`, `tealdeer`), so the shape will recur.
