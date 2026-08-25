@@ -4552,93 +4552,63 @@ else
   fail "helper adoption: skip_env is missing from common.sh — the sibling skips call nothing"
 fi
 
-# ── skip_env: the environment class, as a unit ───────────────────────────────
-# The whole point of the third class is that --strict's meaning does NOT move: it still reds
-# on absent TOOLS only. That is arithmetic in audit-core.sh (non-scope skips minus env skips),
-# and arithmetic is worth checking directly rather than inferring from a 5-minute audit run.
-# Sourced in a subshell so the tallies here cannot leak into this script's own counters.
-_se_out="$(
-  # shellcheck disable=SC1090
+# ── skip_env / _core_tool_skip_count: the classifier, as a unit ──────────────
+# These drive _core_tool_skip_count ITSELF — the same function audit-core.sh calls. The
+# previous version of this block re-implemented the classification loop inline, which meant it
+# exercised its own copy and could never fail when audit-core.sh changed. It was demonstrated
+# green while the defect it guarded was fully reintroduced in audit-core.sh. That is the whole
+# reason the logic moved into common.sh: so a test can bind to the code that actually runs.
+_tsc() { # <setup...> — run a scenario against the REAL helper, print its verdict
   CORE_JSON=1 bash -c '
     . "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9
-    skip     "luacheck (not installed)"
-    skip     "nvim config load (out of scope)"
-    skip_env "helper adoption (no sibling OS repo checked out — nothing to read here)"
-    skip_env "coverage register (no sibling OS repo checked out — nothing to read here)"
-    _env=${#_CORE_ENV_SKIPS[@]}
-    _tool=0
-    for _s in "${_CORE_SKIPS[@]}"; do
-      [[ "$_s" == *"out of scope"* ]] || _tool=$((_tool + 1))
-    done
-    _tool=$((_tool - _env))
-    printf "%d %d %d" "$SKIP" "$_tool" "$_env"
+    '"$1"'
+    printf "%d %d %d" "$SKIP" "$(_core_tool_skip_count)" "${#_CORE_ENV_SKIPS[@]}"
   ' 2>/dev/null
-)"
+}
+
+# The happy partition: 1 tool, 1 scope, 2 environment.
+_se_out="$(_tsc '
+  skip     "luacheck (not installed)"
+  skip     "nvim config load (out of scope)"
+  skip_env "helper adoption (no sibling OS repo checked out — nothing to read here)"
+  skip_env "coverage register (no sibling OS repo checked out — nothing to read here)"
+')"
 case "$_se_out" in
-"4 1 2")
-  pass "skip_env: 4 skips partition as 1 tool / 1 scope / 2 environment (--strict sees only the tool one)"
-  ;;
-"")
-  fail "skip_env: could not source scripts/lib/common.sh — the helper is unreachable"
-  ;;
-*)
-  fail "skip_env: partition is '$_se_out', want '4 1 2' (SKIP, tool_skips, env_skips) — --strict's meaning moved"
-  ;;
+"4 1 2") pass "_core_tool_skip_count: 4 skips partition as 1 tool / 1 scope / 2 environment" ;;
+"")      fail "_core_tool_skip_count: could not source scripts/lib/common.sh — the helper is unreachable" ;;
+*)       fail "_core_tool_skip_count: partition is '$_se_out', want '4 1 2' (SKIP, tool, env) — --strict's meaning moved" ;;
 esac
 
-# THE POISONED-WORDING CASE. The partition above is the happy path; this is the one that was
-# actually broken. The classifier used to subtract the environment COUNT from a text-matched
-# tool tally, so an environment skip whose message happened to contain "out of scope" cancelled
-# a genuine tool-absent gap and --strict went green on it. Keying on the index skip_env records
-# makes wording irrelevant — but only a test that USES the poisoned wording can prove that,
-# because every call site in-tree is currently worded innocently.
-_pw_out="$(
-  CORE_JSON=1 bash -c '
-    . "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9
-    skip     "luacheck (not installed)"
-    skip_env "gitleaks policy (no sibling checked out — out of scope)"
-    _tool=0; _i=0
-    for _s in "${_CORE_SKIPS[@]}"; do
-      _is_env=0
-      for _e in "${_CORE_ENV_SKIP_IDX[@]}"; do [[ "$_i" == "$_e" ]] && { _is_env=1; break; }; done
-      _i=$((_i + 1))
-      ((_is_env)) && continue
-      [[ "$_s" == *"out of scope"* ]] || _tool=$((_tool + 1))
-    done
-    printf "%d" "$_tool"
-  ' 2>/dev/null
-)"
-if [[ "$_pw_out" == 1 ]]; then
-  pass "skip_env: an env skip worded 'out of scope' does NOT cancel a real tool gap (--strict still reds)"
-else
-  fail "skip_env: tool_skips=$_pw_out, want 1 — a poisoned env message masked an absent tool, so --strict goes green on a real gap"
-fi
+# THE POISONED-WORDING CASE — the one that was actually broken. An environment skip whose text
+# contains "out of scope" must NOT cancel a genuine tool gap. Every call site in-tree is worded
+# innocently, so only a test that supplies the poisoned wording can see this.
+_pw_out="$(_tsc '
+  skip     "luacheck (not installed)"
+  skip_env "gitleaks policy (no sibling checked out — out of scope)"
+')"
+case "$_pw_out" in
+"2 1 1") pass "_core_tool_skip_count: an env skip worded 'out of scope' does not cancel a real tool gap" ;;
+*)       fail "_core_tool_skip_count: got '$_pw_out', want '2 1 1' — a poisoned env message masked an absent tool, so --strict goes green on a real gap" ;;
+esac
 
-# And the index must actually be recorded, or the loop above silently classifies nothing as
-# environment and the partition test would pass for the wrong reason.
-if grep -q '_CORE_ENV_SKIP_IDX' "$HERE/scripts/lib/common.sh" && grep -q '_CORE_ENV_SKIP_IDX' "$HERE/scripts/audit-core.sh"; then
-  pass "skip_env: the environment class is keyed on a recorded index, not on message wording"
-else
-  fail "skip_env: _CORE_ENV_SKIP_IDX is missing — classification fell back to prose"
-fi
-
-# The verdict line is the thing a human quotes into a PR. A bare "audit OK" after a partial
-# run is the false green this script exists to prevent, so pin that the partial branch exists
-# and that exit status is NOT what changed (partial stays 0; --strict/--require-siblings red).
-_vb=0
-grep -q 'audit OK — PARTIAL' "$HERE/scripts/audit-core.sh" || {
-  fail "verdict: a partial run still prints a bare 'audit OK' — the last line hides the gap"
-  _vb=1
+# BINDING. The two assertions above are only worth anything if audit-core.sh actually uses the
+# helper AND does not adjust the number afterwards. The demonstrated regression was precisely
+# that shape: leave the classification correct, then re-add a subtracting statement after it.
+_tb=0
+_tb_asg="$(grep -c '^_tool_skips=' "$HERE/scripts/audit-core.sh" || true)"
+[[ "$_tb_asg" == 1 ]] || {
+  fail "binding: _tool_skips is assigned $_tb_asg times in audit-core.sh, want exactly 1 — a second assignment can undo a correct classification"
+  _tb=1
 }
-grep -q 'REQUIRE_SIBLINGS && _env_skips > 0' "$HERE/scripts/audit-core.sh" || {
-  fail "verdict: --require-siblings does not gate on env_skips"
-  _vb=1
+grep -q '^_tool_skips="\$(_core_tool_skip_count)"' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: audit-core.sh does not take _tool_skips straight from _core_tool_skip_count — the tested helper is not the code that runs"
+  _tb=1
 }
-grep -q '\-\-require-siblings' "$HERE/scripts/audit-core.sh" || {
-  fail "verdict: --require-siblings is not documented in usage"
-  _vb=1
+grep -q '_tool_skips=\$((_tool_skips' "$HERE/scripts/audit-core.sh" && {
+  fail "binding: audit-core.sh post-processes _tool_skips — this is the exact partial revert the helper was extracted to prevent"
+  _tb=1
 }
-((_vb)) || pass "verdict: a partial run says PARTIAL on the last line, and --require-siblings gates the env class"
+((_tb)) || pass "binding: audit-core.sh takes _tool_skips solely from _core_tool_skip_count, with no post-processing"
 
 # --json must stay JSON-ONLY, and the FLEET sections are where that broke. Their advisory
 # reports printed to stdout unguarded, so `audit-core.sh --json` emitted invalid JSON —

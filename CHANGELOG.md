@@ -142,6 +142,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **#732's fix was right; its test could not fail.** The test re-implemented the classification
+  loop inline in `test-core.sh`, so it exercised its own copy and never `audit-core.sh`'s.
+  Demonstrated in review: leaving the new index loop exactly as written and re-adding the two
+  deleted lines after it reintroduces the masked-tool-gap defect in full — and the behavioural
+  test, plus the `grep` guard for `_CORE_ENV_SKIP_IDX`, both stay **green**. A test that cannot
+  fail when the shipped logic changes is documentation, not a gate.
+
+  The classifier is now `_core_tool_skip_count` in `scripts/lib/common.sh`, and both
+  `audit-core.sh` and `test-core.sh` call that one function — the same render-vs-judge split
+  `_core_luacheck_verdict` uses (#728), and the split `skip_env` itself already used.
+
+  Guarded against **both** revert shapes, each verified by mutation: reverting the helper's
+  logic fails the behavioural tests (`4 0 2` instead of `4 1 2`), while the partial revert —
+  helper untouched, arithmetic re-added in `audit-core.sh` — leaves those green and fails a new
+  static assertion that `_tool_skips` is assigned exactly once, straight from the helper, and
+  never post-processed. Neither shape passes now; before, the second one did.
+
+  This is the third defect in this series found by review rather than by the tests shipped
+  alongside it. The tell each time was the same and is worth stating plainly: revert the fix and
+  watch the test. If it still passes, it is not guarding anything — and check that the revert is
+  applied where the shipped logic lives, not to a copy of it.
+
 - **The `blib_adopt` note named the wrong safeguard for the confound it warns about.** #731 said
   `mise config ls` makes the double-load visible, because "a count higher than the fixtures you
   created is the confound". That is true of only one of the two shapes — and not the one that
