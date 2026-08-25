@@ -126,7 +126,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `_CORE_DOCTOR_OPTIN`, which is derived from `PORTING-MATRIX.md`'s footnote ²¹ and asserted
   against it — a matrix change, not a list edit, and a separate piece of work. (#581)
 
-- **`audit-core.sh` §5h fails when a tracked file carries a leftover conflict marker.**
+- **`audit-core.sh` §5i fails when a tracked file carries a leftover conflict marker.**
   `bcdd7dd` (#650) committed a literal base marker into `CHANGELOG.md`, at the end of
   `[Unreleased]`'s Fixed section, and it sat on `main` undetected until #656 tripped over it.
   Under `zdiff3` a conflict has **four** marker lines, not three, and the base one is the half

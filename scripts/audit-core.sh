@@ -852,7 +852,7 @@ else
   unset _fc_out _fc_rc
 fi
 
-# ── 5h. leftover conflict markers (tracked files) ────────────────────────────
+# ── 5i. leftover conflict markers (tracked files) ────────────────────────────
 # A conflict resolved by hand can leave a marker behind, and bcdd7dd (#650) did exactly
 # that: a literal base marker landed in CHANGELOG.md at the end of [Unreleased]'s Fixed
 # section and sat on main undetected. Under zdiff3 a conflict has FOUR marker lines, not
