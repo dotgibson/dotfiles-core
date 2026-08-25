@@ -14,6 +14,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`audit-core.sh` §1c: a `.claude/` file that ships nowhere and that nothing reports.** §1b
+  (#709) catches a `.claude/` path a routine _names_ but git does not carry. It only fires
+  because something pointed at the missing file — which is why #700 was catchable at all: three
+  routine files referenced the ledger. A `.claude/` file **nothing references** — a new
+  subagent, a convention-named config a hook reads, a second ledger — has no such witness.
+
+  Nothing else reports it either, and that is the whole point. `.gitignore` blocks `.claude/*`
+  wholesale, so git is silent in every direction: not in `git status`, not added by
+  `git add -A`, and invisible to every content gate here, since they all read the working tree
+  where the file is present and correct. The audit was faithfully answering "is this tree
+  consistent" — it was — while nobody was asking "will this reach a clone".
+
+  **The verdict is the `.gitignore` rule that wins,** which is what keeps the gate from needing
+  a hand-kept allowlist. `git check-ignore -v` names the line that hid the file: the blanket
+  `.claude/*` means nobody decided anything about it (a finding), while any more specific rule
+  means somebody wrote a line naming it (a decision, and silent). So `settings.local.json` is
+  exempt because `.gitignore` names it, not because §1c lists it — and the next per-machine
+  file becomes exempt the moment its rule is written, with no edit to the scanner.
+
+  **Untracked-but-visible is deliberately not a finding.** A new file git can still see is
+  already `git status`'s job, and flagging it would red the audit on every work-in-progress
+  file. The defect this exists for is invisibility.
+
+  Blocking on arrival, the §5i argument: `settings.local.json` is the only untracked file under
+  `.claude/` and it carries its own rule, so the tree is green as this lands and every future
+  hit is a regression in the commit under test. Nine fixture cases in `test-core.sh`, each on a
+  throwaway git repo with its own index and `.gitignore` — no text fixture can stand in for
+  "which rule wins" — plus a live canary asserting `.gitignore` still uses the blanket spelling
+  the scanner keys on, so the gate cannot go green by recognising nothing.
+
 ### Changed
 
 - **`mise/config.toml`: `ruby` 3.4 → 4.0, `lua` 5.4 → 5.5.** Both verified resolvable before

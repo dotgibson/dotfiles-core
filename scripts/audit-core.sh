@@ -405,6 +405,49 @@ EOF
   unset cref_fail cref_tracked cref_src cref_hit cref_line cref_path
 fi
 
+# ── 1c. unreferenced .claude/ files (the half §1b structurally cannot reach) ──
+# §1b asks whether every .claude/ path a routine NAMES is shipped. That only fires because
+# something pointed at the file. This asks the question with no reference to lean on: is any
+# file under .claude/ sitting on this disk and going nowhere?
+#
+# WHY BOTH ARE NEEDED. #700 was caught only because three routine files named the ledger. A
+# .claude/ file nothing references — a new subagent, a convention-named config a hook reads,
+# a second ledger — has no such witness, and `.gitignore`'s blanket `.claude/*` means git
+# prints nothing about it: not in `git status`, not added by `git add -A`, not in any content
+# gate here (they all read the working tree, where it is present and correct). The audit was
+# answering "is this tree consistent" — it was — while nobody asked "will this reach a clone".
+#
+# THE RULE THAT WINS IS THE VERDICT. The scanner asks `git check-ignore -v` which line hid the
+# file. The blanket `.claude/*` means nobody decided anything about it; any more specific rule
+# means somebody wrote a line naming it, which is a decision and stays quiet. So
+# settings.local.json is exempt because .gitignore names it, not because this gate lists it,
+# and the next per-machine file becomes exempt the moment its rule is written.
+#
+# The two verdicts §1b separates do not arise here: a file this gate sees always EXISTS (it
+# was found on disk), so "author it" is never the repair. The repair is always one .gitignore
+# line — a negation if it should ship, a specific rule if it should not.
+#
+# WHY IT BLOCKS ON ARRIVAL, the §5i/§1b argument: the tree is green the moment this lands —
+# settings.local.json is the only untracked file under .claude/, and it carries its own rule —
+# so every future hit is a regression introduced by the commit under test.
+hdr "unreferenced .claude/ files"
+if ! have git || ! git rev-parse --git-dir >/dev/null 2>&1; then
+  skip "unreferenced .claude/ files (not a git checkout)"
+elif [[ ! -d .claude ]]; then
+  skip "unreferenced .claude/ files (no .claude/ directory)"
+else
+  cunt_fail=0
+  while IFS= read -r cunt_path; do
+    [[ -z "$cunt_path" ]] && continue
+    fail "$cunt_path exists here but git will never ship it — it is hidden by the blanket \`.claude/*\` rule, so it reaches no clone, no CI run and none of the nine vendored repos, and nothing else reports it. Negate it in .gitignore if it is shared; give it its own ignore rule if it is per-machine (#700)"
+    cunt_fail=1
+  done <<EOF
+$(_core_claude_untracked_hits "$HERE")
+EOF
+  ((cunt_fail)) || pass "unreferenced .claude/ files (every file under .claude/ either ships or is deliberately ignored)"
+  unset cunt_fail cunt_path
+fi
+
 # ── 2. executable-bit assertions ─────────────────────────────────────────────
 hdr "executable bits"
 if have git && git rev-parse --git-dir >/dev/null 2>&1; then
