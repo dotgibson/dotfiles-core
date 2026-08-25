@@ -550,10 +550,38 @@ end
 -- hermetically anyway (it needs lazy.nvim, nvim-lint AND mason really installed, i.e. the network).
 -- Dropping the dependency is luacheck-clean, load-clean and regresses only intermittently on a real
 -- machine, which is exactly the profile that needs a static gate.
-do
-  local ok, spec = pcall(require, "gerrrt.plugins.nvim-lint")
+-- #703 EXTENDS THE SAME NET TO conform.nvim, which had the identical undeclared dependency
+-- with a WORSE failure shape. plugins/conform.lua loads on `BufWritePre` and spawns Mason-installed
+-- formatters (prettierd, gofumpt, clang-format, php-cs-fixer, sql-formatter, ktlint,
+-- google-java-format, taplo, ...); it declared no dependencies at all, and mason arrived only
+-- incidentally via nvim-lspconfig / mason-tool-installer. Unlike #652 that is NOT a race: `-c`
+-- commands run BEFORE VimEnter, so in the one-shot/scripted shape neither VeryLazy nor the
+-- vim.schedule'd `User FilePost` emit has fired and mason has NEVER loaded by BufWritePre.
+-- MEASURED on macOS with a `{"a":1,   "b":[1,2,3]}` fixture and prettierd (Mason-only; stylua and
+-- shfmt also live on the base PATH and MASK this):
+--   one-shot `nvim --headless f.json -c write -c qa!` -> 0/4 formatted (mason loaded=false,
+--     executable("prettierd")=0 at BufWritePre); the same write deferred past startup (the
+--     interactive shape) -> 4/4 (mason loaded=true, =1).
+-- And it fails SILENTLY -- conform auto-skips a formatter that is not on PATH, so there is no
+-- error and no notification, the file is just written unformatted.
+-- ONE table-driven check rather than two copies: the assertion is identical, the per-entry `why`
+-- keeps the failure message specific, and the next Mason-spawning spec is one more line.
+for _, case in ipairs({
+  {
+    mod = "gerrrt.plugins.nvim-lint",
+    file = "plugins/nvim-lint.lua",
+    why = "its on-open replay will race mason's PATH prepend again (#652)",
+  },
+  {
+    mod = "gerrrt.plugins.conform",
+    file = "plugins/conform.lua",
+    why = "format-on-save will silently skip every Mason-installed formatter in the "
+      .. "one-shot/scripted shape again (#703)",
+  },
+}) do
+  local ok, spec = pcall(require, case.mod)
   if not ok or type(spec) ~= "table" then
-    errs[#errs + 1] = "nvim-lint mason dep: plugins/nvim-lint.lua did not load as a spec table"
+    errs[#errs + 1] = "mason dep: " .. case.file .. " did not load as a spec table"
   else
     local found = false
     for _, d in ipairs(spec.dependencies or {}) do
@@ -564,9 +592,8 @@ do
       end
     end
     if not found then
-      errs[#errs + 1] = "nvim-lint mason dep: plugins/nvim-lint.lua no longer declares "
-        .. "mason-org/mason.nvim in `dependencies` -- its on-open replay will race mason's "
-        .. "PATH prepend again (#652)"
+      errs[#errs + 1] = "mason dep: " .. case.file .. " no longer declares "
+        .. "mason-org/mason.nvim in `dependencies` -- " .. case.why
     end
   end
 end
