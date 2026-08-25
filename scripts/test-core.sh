@@ -535,6 +535,41 @@ for _, f in ipairs(vim.fn.readdir(pdir) or {}) do
     end
   end
 end
+-- #652 REGRESSION NET — nvim-lint must DECLARE mason.nvim as a dependency.
+-- plugins/nvim-lint.lua loads on `User FilePost` and replays the triggering buffer at the end of
+-- its config(), spawning Mason-installed linters (rubocop, markdownlint-cli2, eslint_d, ...). Those
+-- resolve only once mason.setup() has prepended <data>/mason/bin to vim.env.PATH. nvim-lspconfig
+-- loads on the SAME event and pulls mason in, but lazy.nvim orders a plugin against its DECLARED
+-- dependencies only -- never against another plugin on the same event -- so without this edge the
+-- replay raced mason's PATH prepend and lost about half the time: rubocop linted on open 4/6 on
+-- macOS (dotgibson/dotfiles-MacBook#191) and 3/6 on Windows, while shellcheck, which lives on the
+-- inherited PATH, was 6/6. vim.uv.spawn got ENOENT -- silently on Windows, where it read as "this
+-- file is clean" rather than as an error.
+-- ASSERTED AT SPEC LEVEL, deliberately: the ordering this guards is a lazy.nvim guarantee, so
+-- re-deriving it at runtime would test lazy rather than this config -- and it cannot be tested
+-- hermetically anyway (it needs lazy.nvim, nvim-lint AND mason really installed, i.e. the network).
+-- Dropping the dependency is luacheck-clean, load-clean and regresses only intermittently on a real
+-- machine, which is exactly the profile that needs a static gate.
+do
+  local ok, spec = pcall(require, "gerrrt.plugins.nvim-lint")
+  if not ok or type(spec) ~= "table" then
+    errs[#errs + 1] = "nvim-lint mason dep: plugins/nvim-lint.lua did not load as a spec table"
+  else
+    local found = false
+    for _, d in ipairs(spec.dependencies or {}) do
+      -- lazy accepts a bare "owner/name" or a { "owner/name", opts = ... } fragment
+      local dep = type(d) == "table" and d[1] or d
+      if dep == "mason-org/mason.nvim" then
+        found = true
+      end
+    end
+    if not found then
+      errs[#errs + 1] = "nvim-lint mason dep: plugins/nvim-lint.lua no longer declares "
+        .. "mason-org/mason.nvim in `dependencies` -- its on-open replay will race mason's "
+        .. "PATH prepend again (#652)"
+    end
+  end
+end
 -- LSP layer: servers/init.lua wires 19 server configs + the on_attach/diagnostics
 -- helpers, but ALL of it runs inside a deferred plugin callback (plugins/nvim-lspconfig)
 -- — so the loop above never touches it, and luacheck (static) was its only gate. A bad
