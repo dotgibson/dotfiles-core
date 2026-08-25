@@ -1,12 +1,26 @@
-# core/mise/config.toml  → symlinked to ~/.config/mise/config.toml
+# core/mise/config.toml  → COPIED to ~/.config/mise/config.toml (NOT symlinked)
 # ──────────────────────────────────────────────────────────────────────────────
 # Global runtime versions, managed by mise (https://mise.jdx.dev). Portable —
 # identical on every machine. Per-project versions live in a project-local
 # mise.toml / legacy .nvmrc/.python-version and override these automatically.
 #
 #   mise install              # install everything declared here
-#   mise use -g node@22       # change a global (rewrites this file)
+#   mise use -g node@22       # change a global (REWRITES ~/.config/mise/config.toml)
 #   mise ls                   # show installed + active versions
+#
+# COPIED, NOT SYMLINKED — and the `mise use -g` line above is exactly why. This file
+# used to be symlinked to ~/.config/mise/config.toml, which made that documented command
+# a WRITE PATH INTO THE VENDORED core/ TREE: it rewrote vendored Core in place, stripped
+# the trailing comments below (mise rewrites the file, it does not edit the line), left
+# the tree TAMPERED per core-integrity, and made sync-core.sh skip that repo on the next
+# fan-out with an error naming nothing about mise. bootstrap now ADOPTS this file
+# (core/lib/bootstrap-lib.sh → blib_adopt): the copy at ~/.config/mise/config.toml is
+# yours, `mise use -g` writes there, and core/ is never touched.
+#
+# THE TRADE: your copy no longer tracks this file. Editing a pin HERE does not reach an
+# already-provisioned box — re-run bootstrap, which reports drift rather than clobbering
+# what you have. Changing a pin fleet-wide therefore means: edit here, release, sync,
+# re-bootstrap. Your local copy always wins; that is the point.
 # ──────────────────────────────────────────────────────────────────────────────
 
 [tools]
