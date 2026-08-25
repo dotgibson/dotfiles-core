@@ -10982,6 +10982,103 @@ ucheck "serve: a failed default route does not reprint the tunnel addr as (lan)"
 # core.manifest lists nvim/ as a DIRECTORY, so the audit's manifest⇄fs check auto-lists
 # every path under it and cannot see an orphan. §4b of the audit is the backstop; this
 # proves the backstop actually catches what it claims to, rather than merely existing —
+# ── routine allowed-tools ⇄ workflow --allowedTools mirror (#633) ─────────────
+# .github/workflows/claude-routines.yml states the invariant: "each job's --allowedTools MIRRORS
+# the routine's own allowed-tools frontmatter (.claude/commands/<routine>.md) and is never
+# broader." Nothing enforced it. The two live ~200 lines apart in different files, in different
+# spellings (", " vs ","), and a routine that drifts BROADER hands a scheduled, token-bearing,
+# Opus-driven job a capability its own definition never granted — while one that drifts NARROWER
+# fails at runtime, weekly, in a job nobody watches unless it files an issue.
+#
+# Driven off the WORKFLOW side: every --allowedTools in the two rails must match the frontmatter
+# of the routine its `claude -p "/<name>"` names. A command with no mirror is simply not
+# scheduled (release-notes is dispatch-only, several are unscheduled) and is not a finding; a
+# mirror naming a command that does not exist is.
+if have python3; then
+  hdr "routine allowed-tools mirror the workflow --allowedTools (#633)"
+  _atm_out="$(
+    HERE="$HERE" python3 - <<'PY'
+import os, re, sys, glob
+
+here = os.environ["HERE"]
+rails = [".github/workflows/claude-routines.yml", ".github/workflows/claude-routines-call.yml"]
+
+def norm(tools):
+    # the two files spell the same list differently; compare as SETS of trimmed entries so
+    # ordering and whitespace are not findings, but a missing or extra capability is.
+    return frozenset(t.strip() for t in tools.split(",") if t.strip())
+
+def frontmatter_tools(cmd):
+    p = os.path.join(here, ".claude/commands/%s.md" % cmd)
+    if not os.path.exists(p):
+        return None
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    m = re.match(r"---\n(.*?)\n---\n", text, re.S)
+    if not m:
+        return None
+    m2 = re.search(r"^allowed-tools:[ \t]*(.+)$", m.group(1), re.M)
+    return norm(m2.group(1)) if m2 else None
+
+problems, checked = [], 0
+for rail in rails:
+    path = os.path.join(here, rail)
+    if not os.path.exists(path):
+        continue
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    # pair each --allowedTools with the nearest PRECEDING `claude -p "/<routine>"`
+    for m in re.finditer(r'--allowedTools\s+"([^"]*)"', text):
+        before = text[: m.start()]
+        names = re.findall(r'claude -p "/([A-Za-z0-9_-]+)[^"]*"', before)
+        if not names:
+            problems.append("a --allowedTools with no `claude -p \"/<routine>\"` above it in %s" % rail)
+            continue
+        cmd = names[-1]
+        checked += 1
+        want = frontmatter_tools(cmd)
+        if want is None:
+            problems.append("%s: mirrors /%s, which has no .claude/commands/%s.md with allowed-tools"
+                            % (rail, cmd, cmd))
+            continue
+        got = norm(m.group(1))
+        if got != want:
+            extra = sorted(got - want)
+            missing = sorted(want - got)
+            bits = []
+            if extra:
+                bits.append("BROADER than the frontmatter by: %s" % ", ".join(extra))
+            if missing:
+                bits.append("NARROWER than the frontmatter, missing: %s" % ", ".join(missing))
+            problems.append("/%s in %s is %s" % (cmd, rail, "; and ".join(bits)))
+
+if checked == 0:
+    print("NONE")
+elif problems:
+    print("BAD %d" % checked)
+    for p in problems:
+        print("  " + p)
+else:
+    print("OK %d" % checked)
+PY
+  )"
+  case "$_atm_out" in
+  "OK "*)
+    pass "allowed-tools mirror: every scheduled routine matches its workflow --allowedTools (${_atm_out#OK } mirror(s))"
+    ;;
+  NONE)
+    fail "allowed-tools mirror: found no --allowedTools to check — the scan is broken, not the tree"
+    ;;
+  *)
+    fail "allowed-tools mirror: a routine's frontmatter and its workflow --allowedTools disagree"
+    fail_detail "$_atm_out"
+    ;;
+  esac
+  unset _atm_out
+else
+  skip "allowed-tools mirror (python3 not installed)"
+fi
+
 # the same lesson the atuin-guard verification exists to enforce. Hermetic: a synthetic
 # git repo with a miniature gerrrt tree, so it asserts the LOGIC, never this repo's tree.
 #
