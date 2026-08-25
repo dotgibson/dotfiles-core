@@ -4586,6 +4586,42 @@ case "$_se_out" in
   ;;
 esac
 
+# THE POISONED-WORDING CASE. The partition above is the happy path; this is the one that was
+# actually broken. The classifier used to subtract the environment COUNT from a text-matched
+# tool tally, so an environment skip whose message happened to contain "out of scope" cancelled
+# a genuine tool-absent gap and --strict went green on it. Keying on the index skip_env records
+# makes wording irrelevant — but only a test that USES the poisoned wording can prove that,
+# because every call site in-tree is currently worded innocently.
+_pw_out="$(
+  CORE_JSON=1 bash -c '
+    . "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9
+    skip     "luacheck (not installed)"
+    skip_env "gitleaks policy (no sibling checked out — out of scope)"
+    _tool=0; _i=0
+    for _s in "${_CORE_SKIPS[@]}"; do
+      _is_env=0
+      for _e in "${_CORE_ENV_SKIP_IDX[@]}"; do [[ "$_i" == "$_e" ]] && { _is_env=1; break; }; done
+      _i=$((_i + 1))
+      ((_is_env)) && continue
+      [[ "$_s" == *"out of scope"* ]] || _tool=$((_tool + 1))
+    done
+    printf "%d" "$_tool"
+  ' 2>/dev/null
+)"
+if [[ "$_pw_out" == 1 ]]; then
+  pass "skip_env: an env skip worded 'out of scope' does NOT cancel a real tool gap (--strict still reds)"
+else
+  fail "skip_env: tool_skips=$_pw_out, want 1 — a poisoned env message masked an absent tool, so --strict goes green on a real gap"
+fi
+
+# And the index must actually be recorded, or the loop above silently classifies nothing as
+# environment and the partition test would pass for the wrong reason.
+if grep -q '_CORE_ENV_SKIP_IDX' "$HERE/scripts/lib/common.sh" && grep -q '_CORE_ENV_SKIP_IDX' "$HERE/scripts/audit-core.sh"; then
+  pass "skip_env: the environment class is keyed on a recorded index, not on message wording"
+else
+  fail "skip_env: _CORE_ENV_SKIP_IDX is missing — classification fell back to prose"
+fi
+
 # The verdict line is the thing a human quotes into a PR. A bare "audit OK" after a partial
 # run is the false green this script exists to prevent, so pin that the partial branch exists
 # and that exit status is NOT what changed (partial stays 0; --strict/--require-siblings red).

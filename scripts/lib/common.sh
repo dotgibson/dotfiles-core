@@ -78,6 +78,9 @@ _CORE_SKIPS=()
 # Recording the class STRUCTURALLY (here) instead of textually lets the wording say what
 # is actually true and lets --require-siblings gate it. Appended by skip_env() below.
 _CORE_ENV_SKIPS=()
+# Indices into _CORE_SKIPS of the entries above — see skip_env() for why the index and not
+# the text is what the classifier keys on.
+_CORE_ENV_SKIP_IDX=()
 
 # _core_set_color <when> — validate WHEN (auto|always|never) and re-evaluate the palette.
 # Non-zero on a bad value so the caller can usage-error. Every gate script's `--color`
@@ -115,6 +118,13 @@ skip() {
 # as opposed to one the caller narrowed away. Tallies like any other skip, and additionally
 # records the class so the summary can name it and --require-siblings can red on it.
 skip_env() {
+  # Record the INDEX this skip will occupy in _CORE_SKIPS, not just its text. The classifier
+  # needs to identify environment skips WITHOUT re-reading their wording — recording the text
+  # alone forced the caller to subtract counts, and that subtraction was only correct while no
+  # skip_env message happened to contain "out of scope". Which is the exact defect the
+  # environment class was introduced to remove, one layer down: prose deciding a gate. $SKIP is
+  # still the pre-increment count here, so it IS the 0-based index of the entry skip() appends.
+  _CORE_ENV_SKIP_IDX+=("$SKIP")
   _CORE_ENV_SKIPS+=("$*")
   skip "$@"
 }
