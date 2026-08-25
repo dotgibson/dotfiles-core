@@ -186,6 +186,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   fine. Still skipped when siblings are not checked out, exactly like §5f, so it is inert in CI
   (which clones only Core) and bites locally and in fleet sweeps.
 
+- **`V5-PROPOSAL.md` §11 records the bare-verb-name decision instead of deferring it.**
+  The section listed retiring `up` / `serve` / `gsync` / `maint-*` as an open question
+  tracked in #692, ending _"it must be decided before the tag, not left open for a whole
+  major cycle."_ #692 is now closed `not_planned` — the names stay — so the paragraph
+  asserted an open decision that had already been made.
+
+  It now records the outcome and the grounds for revisiting: the additive dispatcher in
+  #684 already buys the coherence, while deletion buys namespace purity at the cost of
+  daily friction on the most-typed verbs plus churn across 28 completions, `core-help`'s
+  rows, `_core_suggest`, `aliases.md` and `PARITY.md` (a two-repo change). Reopening needs
+  evidence of a real collision — `up` and `serve` are genuinely collision-prone and a
+  shadowing `up` fails silently — not a fresh aesthetic objection.
+
+  The point of #692 was that an unrecorded decision gets silently re-proposed, so leaving
+  the RFC saying "must be decided" while the answer sat only in a closed issue was the
+  same failure one level up. (#692)
+
 ### Fixed
 
 - **Opening a file linted it only about half the time — nvim-lint's on-open replay raced

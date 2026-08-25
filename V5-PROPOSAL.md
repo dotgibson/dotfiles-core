@@ -389,12 +389,18 @@ major.
   `V4-PROPOSAL.md` §9 resolved against it: bands are conventions, the 61-69 gap is
   headroom. The band *ownership* problem is real, and §5 closes it by deleting the
   profile rather than by renumbering.
-- **Retiring the bare verb names** (`up`, `serve`, `gsync`, `maint-*`). Tracked as
-  an explicit decision in
-  [#692](https://github.com/dotgibson/dotfiles-core/issues/692) because v5 is the
-  only window. The recommendation there is **don't** — the additive dispatcher
-  buys the coherence, and deletion costs daily friction. Whichever way it goes, it
-  must be decided before the tag, not left open for a whole major cycle.
+- **Retiring the bare verb names** (`up`, `serve`, `gsync`, `maint-*`) — **decided
+  against**, [#692](https://github.com/dotgibson/dotfiles-core/issues/692), closed
+  `not_planned`. v5 was the only window (removing a public function name is a MAJOR
+  per `RELEASE-STRATEGY.md:106-109`) and it passed deliberately. The additive
+  dispatcher in [#684](https://github.com/dotgibson/dotfiles-core/issues/684)
+  already buys the coherence — one front door, `core help` as the index, the
+  generic verbs reachable under a namespace. Deletion buys namespace purity and
+  costs daily friction on the most-typed verbs, plus churn across 28 completions,
+  `core-help`'s rows, `_core_suggest`, `aliases.md` and `PARITY.md` (a two-repo
+  change). **Revisit only on evidence of a real collision** — `up` and `serve` are
+  genuinely collision-prone and a shadowing `up` would fail silently — not on a
+  fresh aesthetic objection.
 - **Consolidating `bootstrap.sh`.** The spread is real (MacBook 1,505 lines vs Arch
   395) but `audit-core.sh` §5f already reports `blib_*` adoption and is the right
   incremental mechanism.
