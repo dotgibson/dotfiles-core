@@ -142,6 +142,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The `blib_adopt` note named the wrong safeguard for the confound it warns about.** #731 said
+  `mise config ls` makes the double-load visible, because "a count higher than the fixtures you
+  created is the confound". That is true of only one of the two shapes — and not the one that
+  produced the wrong precedence note in the first place.
+
+  `SHAPE 1` the cwd sits in some other project carrying its own `mise/config.toml`. Distinct
+  path, so `config ls` does show an extra entry — and mise refuses it until `mise trust`, so
+  this shape announces itself twice over. `SHAPE 2` the cwd sits **under the XDG tree itself**,
+  so the global `config.toml` is also discovered as the project config. Same path, already
+  trusted, no prompt: `config ls` prints exactly your fixture count and exactly your fixture
+  paths, and the ordering is still inverted. Both measured.
+
+  So the file count is **reassurance, not a check** — and it reassures hardest in the case where
+  it is blind, which is how both readers of that note reached the wrong conclusion. The note now
+  says which shape it covers and points at the one safeguard covering both: no
+  `mise/config.toml` in ANY ancestor of the cwd. A comment that tells the reader how to verify
+  has to be right about the verification, or it is worse than saying nothing.
+
 - **The environment-skip classifier decided a gate by prose again, one layer down.** #730 split
   skips into `tool` / `out of scope` / `environment` precisely so wording would stop being
   load-bearing — then computed the tool tally as _(skips whose text lacks `out of scope`) minus
