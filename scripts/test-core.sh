@@ -4481,32 +4481,121 @@ fi
 # everywhere — including the minimal containers where the heavier fixtures skip.
 hdr "helper-adoption section is --strict-safe (audit-core.sh §5f)"
 # The adoption section reads SIBLING repos off disk, and CI checks out only Core — so every
-# run there takes a skip branch. audit-core.sh treats a skip whose text lacks the literal
-# "out of scope" as a real coverage gap and reds `--strict`, which is what CI runs (ci.yml
-# passes $strict). A section that skips with any other wording would therefore turn the whole
-# fleet's CI red the moment it landed, on every repo, for a purely advisory check.
+# run there takes a skip branch. --strict (which ci.yml passes) reds on TOOL-absent skips, so
+# a sibling-absence skip landing in that class would turn the whole fleet's CI red the moment
+# it landed, on every repo, for a purely advisory check.
+#
+# THIS CONTRACT CHANGED SHAPE. It used to be a WORDING rule: the skip text had to contain the
+# literal "out of scope", because a substring test was what classified skips. That made the
+# message the gate — you could not make the wording honest without moving a gate — and it
+# filed "this box has no sibling to read" under the same heading as "you asked me to narrow
+# this run". The class is recorded structurally now, by skip_env(), so what must be pinned is
+# the CALL, not the prose. Wording is free to change; the classifier is not.
 #
 # Asserted statically on the source rather than by running the audit: reproducing "no sibling
-# checked out" means a fake fleet root, and the property worth pinning is the WORDING, which
-# is exactly what a static read can see.
+# checked out" means a fake fleet root, and the property worth pinning is which function the
+# section calls, which is exactly what a static read can see.
 _ha_bad=0
 while IFS= read -r _ha_line; do
   [ -n "$_ha_line" ] || continue
   case "$_ha_line" in
-  *"out of scope"*) ;;
+  *skip_env*) ;;
   *)
-    fail "helper adoption: a skip without 'out of scope' would red --strict in CI — $_ha_line"
+    fail "helper adoption: a plain skip() here lands in the TOOL-absent class and reds --strict in CI — $_ha_line"
     _ha_bad=1
     ;;
   esac
 done <<EOF
-$(grep -n 'skip "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+$(grep -n 'skip[_a-z]* "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
 EOF
-if ((_ha_bad == 0)) && grep -q 'skip "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
-  pass "helper adoption: every skip is worded 'out of scope', so --strict stays green in CI"
+if ((_ha_bad == 0)) && grep -q 'skip_env "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
+  pass "helper adoption: every sibling skip goes through skip_env, so --strict stays green in CI"
 elif ((_ha_bad == 0)); then
   fail "helper adoption: audit-core.sh has no helper-adoption skip at all — the section is gone or renamed"
 fi
+# skip_env must actually EXIST and be the thing that records the class — otherwise the
+# assertion above passes against a typo'd call that silently becomes an unbound command.
+if grep -q '^skip_env()' "$HERE/scripts/lib/common.sh" && grep -q '_CORE_ENV_SKIPS' "$HERE/scripts/lib/common.sh"; then
+  pass "helper adoption: skip_env is defined in common.sh and records the environment class"
+else
+  fail "helper adoption: skip_env is missing from common.sh — the sibling skips call nothing"
+fi
+
+# ── skip_env: the environment class, as a unit ───────────────────────────────
+# The whole point of the third class is that --strict's meaning does NOT move: it still reds
+# on absent TOOLS only. That is arithmetic in audit-core.sh (non-scope skips minus env skips),
+# and arithmetic is worth checking directly rather than inferring from a 5-minute audit run.
+# Sourced in a subshell so the tallies here cannot leak into this script's own counters.
+_se_out="$(
+  # shellcheck disable=SC1090
+  CORE_JSON=1 bash -c '
+    . "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9
+    skip     "luacheck (not installed)"
+    skip     "nvim config load (out of scope)"
+    skip_env "helper adoption (no sibling OS repo checked out — nothing to read here)"
+    skip_env "coverage register (no sibling OS repo checked out — nothing to read here)"
+    _env=${#_CORE_ENV_SKIPS[@]}
+    _tool=0
+    for _s in "${_CORE_SKIPS[@]}"; do
+      [[ "$_s" == *"out of scope"* ]] || _tool=$((_tool + 1))
+    done
+    _tool=$((_tool - _env))
+    printf "%d %d %d" "$SKIP" "$_tool" "$_env"
+  ' 2>/dev/null
+)"
+case "$_se_out" in
+"4 1 2")
+  pass "skip_env: 4 skips partition as 1 tool / 1 scope / 2 environment (--strict sees only the tool one)"
+  ;;
+"")
+  fail "skip_env: could not source scripts/lib/common.sh — the helper is unreachable"
+  ;;
+*)
+  fail "skip_env: partition is '$_se_out', want '4 1 2' (SKIP, tool_skips, env_skips) — --strict's meaning moved"
+  ;;
+esac
+
+# The verdict line is the thing a human quotes into a PR. A bare "audit OK" after a partial
+# run is the false green this script exists to prevent, so pin that the partial branch exists
+# and that exit status is NOT what changed (partial stays 0; --strict/--require-siblings red).
+_vb=0
+grep -q 'audit OK — PARTIAL' "$HERE/scripts/audit-core.sh" || {
+  fail "verdict: a partial run still prints a bare 'audit OK' — the last line hides the gap"
+  _vb=1
+}
+grep -q 'REQUIRE_SIBLINGS && _env_skips > 0' "$HERE/scripts/audit-core.sh" || {
+  fail "verdict: --require-siblings does not gate on env_skips"
+  _vb=1
+}
+grep -q '\-\-require-siblings' "$HERE/scripts/audit-core.sh" || {
+  fail "verdict: --require-siblings is not documented in usage"
+  _vb=1
+}
+((_vb)) || pass "verdict: a partial run says PARTIAL on the last line, and --require-siblings gates the env class"
+
+# --json must stay JSON-ONLY, and the FLEET sections are where that broke. Their advisory
+# reports printed to stdout unguarded, so `audit-core.sh --json` emitted invalid JSON —
+# but ONLY on a box with sibling repos checked out, because otherwise the sections skip
+# before reaching the report. CI checks out just this repo, so CI never saw it. That is the
+# same blind spot --require-siblings exists for, which is why this assertion lives here.
+# ANCHORED to statement position (^[[:space:]]*printf) on purpose: a bare /printf/ also
+# matches a printf inside a $( ) that BUILDS A STRING — §5g composes its report that way —
+# and flagging those would be a false fire that teaches the next reader to widen the guard
+# where no guard belongs. Only a printf that is the statement can reach stdout.
+_jg_bad=0
+while IFS= read -r _jg_line; do
+  [ -n "$_jg_line" ] || continue
+  case "$_jg_line" in
+  *CORE_JSON*) ;;
+  *)
+    fail "--json: an unguarded fleet-section printf breaks JSON-only stdout — $_jg_line"
+    _jg_bad=1
+    ;;
+  esac
+done <<EOF
+$(awk 'NR>=860 && NR<=1045 && /^[[:space:]]*printf/ && !/>&2/ {printf "%d: %s\n", NR, $0}' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+EOF
+((_jg_bad)) || pass "--json: every fleet-section report line is CORE_JSON-guarded (stdout stays parseable)"
 # The other half of "advisory": the section must not be able to FAIL. A future edit that
 # swaps the report for a fail() would red every repo's CI on arrival, since 8 of 9 are short.
 if ! grep -q 'fail "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then

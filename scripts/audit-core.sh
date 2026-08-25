@@ -56,6 +56,9 @@ cd "$HERE" || exit 1
 QUIET=0
 JSON=0           # --json: machine-readable summary on stdout (implies quiet); for CI/editors
 STRICT=0         # --strict: treat any SKIP as a failure (a gate that didn't actually run)
+REQUIRE_SIBLINGS=0 # --require-siblings: fail if a fleet-wide gate had no sibling OS repo
+                   # to read. Opt-in: absent siblings are normal on a dev box, and the
+                   # default must not red for where you happened to invoke from.
 CHANGED=0        # --changed: derive the scope from the local git diff (fast dev loop)
 SCOPE_EXPLICIT=0 # an explicit --scope always wins over --changed
 # Scope gates the SLOW, area-specific sections so a per-area push (driven by
@@ -100,6 +103,7 @@ while (($#)); do
   -q | --quiet) QUIET=1 ;;
   --json) JSON=1 QUIET=1 CORE_JSON=1 && export CORE_JSON ;; # only JSON on stdout (incl. nested skips)
   --strict) STRICT=1 ;;
+  --require-siblings) REQUIRE_SIBLINGS=1 ;;
   --scope)
     # Require an explicit value: without this, `--scope --quiet` would swallow the
     # next flag as the scope list and silently drop it.
@@ -133,20 +137,28 @@ while (($#)); do
     ;;
   -h | --help)
     cat <<'EOF'
-usage: audit-core.sh [-q|--quiet] [--strict] [--scope LIST] [--changed] [--color WHEN] [--json] [-h|--help]
+usage: audit-core.sh [-q|--quiet] [--strict] [--require-siblings] [--scope LIST] [--changed]
+                     [--color WHEN] [--json] [-h|--help]
 
 THE audit button — manifest/exec-bit/syntax/lint/config/markdown/workflow/
 version/behavioral checks. CI and pre-commit run this exact script.
 
   -q, --quiet     only print SKIP/FAIL lines and the final summary
   --json          emit a machine-readable summary object on stdout (implies --quiet):
-                  {pass,skip,fail,seconds,strict,tool_skips,skipped[],result}. For CI
+                  {pass,skip,fail,seconds,strict,tool_skips,env_skips,partial,
+                  skipped[],result}. `partial` is true whenever anything skipped. For CI
                   steps / editor integrations that want to parse, not scrape, the result.
   --strict        fail if any gate SKIPPED because its TOOL is absent — that gate did
                   not actually run, so a "green" with such skips is only PARTIAL. An
                   out-of-scope skip (a narrowed --scope/--changed run) is intentional and
                   does NOT trip --strict, so this is safe on a fully-provisioned CI leg
                   where every IN-SCOPE tool is installed. The summary names every skip.
+  --require-siblings
+                  fail if a FLEET-WIDE gate (helper adoption, the gitleaks-policy sweep,
+                  the coverage register) had no sibling OS repo checked out to read.
+                  Those gates skip silently-by-default on a lone clone — including in CI,
+                  which checks out only this repo — so they have never actually run there.
+                  This is the flag that says "I expect full fleet coverage from this run".
   --scope LIST    limit the slow area-specific sections to a comma list:
                   shell, nvim, atuin, all (default), none. Cheap structural/config/
                   markdown/workflow/version checks always run. CI sets this from
@@ -842,10 +854,13 @@ fi
 # run, and a gate that is red on arrival is a gate someone turns off. It states the gap and
 # leaves remediation to per-repo work. Turn it into a fail only once the fleet is clean.
 #
-# --STRICT SAFETY: the "sibling not checked out" skip is worded with the literal
-# "out of scope" because --strict counts every OTHER skip as a real coverage gap and reds
-# the run. CI checks out only this repo, so without that wording this section would break
-# --strict everywhere it matters. Same graceful-degradation shape core-integrity.sh uses.
+# --STRICT SAFETY: the "sibling not checked out" skip goes through skip_env, which records
+# it as an ENVIRONMENT skip. --strict counts only TOOL-absent skips, so this section stays
+# inert there — CI checks out only this repo. It used to achieve that by WORDING the skip
+# "out of scope" so the substring classifier would let it through, which made the message
+# text the gate and conflated "you narrowed this" with "this box cannot run it". The class
+# is structural now, so the wording is free to say what is actually true, and
+# --require-siblings can red on precisely this case without touching --strict.
 #
 # Reads scripts/os-repos.txt with the light sed idiom (as freshness-dashboard.sh does) and
 # NOT the three-script pattern with a hardcoded fallback array: os-repos.txt documents that
@@ -854,7 +869,7 @@ fi
 hdr "bootstrap-lib helper adoption (advisory)"
 _ha_root="$(cd "$HERE/.." && pwd)"
 if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
-  skip "helper adoption (scripts/os-repos.txt unreadable — out of scope)"
+  skip_env "helper adoption (scripts/os-repos.txt unreadable — cannot enumerate the fleet)"
 else
   # <helper> <what its absence costs>. Kept here rather than in bootstrap-lib.sh so the
   # rationale lives with the check that reports it; VENDORING.md carries the human contract.
@@ -886,12 +901,12 @@ else
     done
     if [[ -n "$_ha_gaps" ]]; then
       _ha_missing=$((_ha_missing + 1))
-      printf '  %s%s%s %s does not call:%s\n' "${c_yel}" "•" "${c_rst}" "$_ha_repo" "$_ha_gaps"
+      ((${CORE_JSON:-0})) || printf '  %s%s%s %s does not call:%s\n' "${c_yel}" "•" "${c_rst}" "$_ha_repo" "$_ha_gaps"
     fi
   done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
 
   if ((_ha_checked == 0)); then
-    skip "helper adoption (no sibling OS repo checked out — out of scope)"
+    skip_env "helper adoption (no sibling OS repo checked out — nothing to read here)"
   elif ((_ha_missing)); then
     # pass(), not fail(): see REPORT, DO NOT BLOCK above. The count is the signal; the
     # per-repo lines printed just above are the detail.
@@ -899,7 +914,7 @@ else
   else
     pass "helper adoption: every checked-out OS repo calls the whole bootstrap-lib contract ($_ha_checked repo(s))"
   fi
-  ((_ha_absent)) && skip "helper adoption: $_ha_absent repo(s) not checked out — out of scope"
+  ((_ha_absent)) && skip_env "helper adoption: $_ha_absent repo(s) not checked out — not covered by this run"
 fi
 
 # ── 5g. the secret-scan policy, in the files §5f cannot see ──────────────────
@@ -942,13 +957,13 @@ fi
 # it to Core's, and the next person to look sees a passing gate. Advisory is the wrong posture
 # for a finding whose whole hazard is that it looks fine.
 #
-# Same "out of scope" skip wording as §5f — --strict counts every OTHER skip as a coverage gap,
-# and CI checks out only this repo, so this is inert there and bites locally and in any sweep
-# that clones the fleet.
+# Same skip_env (ENVIRONMENT) class as §5f — --strict counts only TOOL-absent skips, so this
+# is inert there (CI checks out only this repo) and bites locally and in any sweep that clones
+# the fleet. --require-siblings is what makes an absent sibling red.
 hdr "secret-scan policy adoption"
 _gp_root="$(cd "$HERE/.." && pwd)"
 if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
-  skip "gitleaks policy (scripts/os-repos.txt unreadable — out of scope)"
+  skip_env "gitleaks policy (scripts/os-repos.txt unreadable — cannot enumerate the fleet)"
 else
   _gp_checked=0
   _gp_bad=0
@@ -978,18 +993,18 @@ else
     fi
     if [[ -n "$_gp_gaps" ]]; then
       _gp_bad=$((_gp_bad + 1))
-      printf '  %s%s%s %s%s\n' "${c_yel}" "•" "${c_rst}" "$_gp_repo" "$_gp_gaps"
+      ((${CORE_JSON:-0})) || printf '  %s%s%s %s%s\n' "${c_yel}" "•" "${c_rst}" "$_gp_repo" "$_gp_gaps"
     fi
   done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
 
   if ((_gp_checked == 0)); then
-    skip "gitleaks policy (no sibling OS repo checked out — out of scope)"
+    skip_env "gitleaks policy (no sibling OS repo checked out — nothing to read here)"
   elif ((_gp_bad)); then
     fail "gitleaks policy: $_gp_bad of $_gp_checked checked-out repo(s) do not measure by Core's policy (see the lines above; VENDORING.md has the contract)"
   else
     pass "gitleaks policy: every checked-out OS repo scans under Core's policy ($_gp_checked repo(s))"
   fi
-  ((_gp_absent)) && skip "gitleaks policy: $_gp_absent repo(s) not checked out — out of scope"
+  ((_gp_absent)) && skip_env "gitleaks policy: $_gp_absent repo(s) not checked out — not covered by this run"
 fi
 
 # ── 5h. the gate x repo coverage register ────────────────────────────────────
@@ -1013,12 +1028,12 @@ else
   _fc_out="$("$HERE/scripts/fleet-coverage.sh" --check 2>&1)"
   _fc_rc=$?
   if [[ "$_fc_out" == *"no sibling repo checked out"* ]]; then
-    skip "coverage register (no sibling OS repo checked out — out of scope)"
+    skip_env "coverage register (no sibling OS repo checked out — nothing to read here)"
   elif ((_fc_rc == 0)); then
     pass "coverage register: $_fc_out"
   else
     # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f.
-    printf '%s\n' "$_fc_out" | sed 's/^/  /'
+    ((${CORE_JSON:-0})) || printf '%s\n' "$_fc_out" | sed 's/^/  /'
     pass "coverage register: undeclared gate x repo cell(s) — advisory; each repo declares in .github/core-gates.txt (VENDORING.md has the contract)"
   fi
   unset _fc_out _fc_rc
@@ -1394,12 +1409,23 @@ else
   fi
 fi
 
-# Count tool-skips (absent tool = real coverage gap) vs out-of-scope skips up front so
-# both the human summary and the --json object can report it. (Done before either render.)
+# Partition the skips up front so both the human summary and the --json object can report
+# it. (Done before either render.) Three classes, not two:
+#   tool         absent tool — a real coverage gap; --strict reds
+#   out of scope the caller narrowed the run (--scope/--changed) — intentional
+#   environment  a sibling OS repo isn't checked out — recorded STRUCTURALLY by skip_env,
+#                not by wording, so the message can say what is true without moving a gate
+# Environment skips are subtracted rather than string-matched: they are already counted in
+# the non-"out of scope" tally above, and skip_env is the only thing that declares them.
+# This keeps --strict's meaning EXACTLY as it was (absent tools only) while letting
+# --require-siblings gate the third class on its own.
+_env_skips=${#_CORE_ENV_SKIPS[@]}
 _tool_skips=0
 for _s in ${_CORE_SKIPS[@]+"${_CORE_SKIPS[@]}"}; do
   [[ "$_s" == *"out of scope"* ]] || _tool_skips=$((_tool_skips + 1))
 done
+_tool_skips=$((_tool_skips - _env_skips))
+((_tool_skips < 0)) && _tool_skips=0
 
 # ── machine-readable summary (--json): one object on stdout, then exit with the same
 # status the human path would. Lets a CI step / editor parse the result instead of
@@ -1409,9 +1435,16 @@ if ((JSON)); then
     _result=failed
   elif ((STRICT && _tool_skips > 0)); then
     _result=failed-strict
+  elif ((REQUIRE_SIBLINGS && _env_skips > 0)); then
+    # New verdict, but only reachable via --require-siblings, which nothing passes today —
+    # so it cannot move an existing consumer's result. `ok` deliberately keeps its meaning:
+    # `partial` below is ADDITIVE rather than a new `ok-*` spelling, because the "--json
+    # must not change the VERDICT" invariant compares this string against the plain run.
+    _result=failed-siblings
   else _result=ok; fi
-  printf '{"pass":%d,"skip":%d,"fail":%d,"seconds":%d,"strict":%s,"tool_skips":%d,"skipped":[' \
-    "$PASS" "$SKIP" "$FAIL" "$SECONDS" "$( ((STRICT)) && echo true || echo false)" "$_tool_skips"
+  printf '{"pass":%d,"skip":%d,"fail":%d,"seconds":%d,"strict":%s,"tool_skips":%d,"env_skips":%d,"partial":%s,"skipped":[' \
+    "$PASS" "$SKIP" "$FAIL" "$SECONDS" "$( ((STRICT)) && echo true || echo false)" "$_tool_skips" "$_env_skips" \
+    "$( ((SKIP > 0)) && echo true || echo false)"
   _first=1
   for _s in ${_CORE_SKIPS[@]+"${_CORE_SKIPS[@]}"}; do
     _s="${_s//\\/\\\\}"
@@ -1443,6 +1476,15 @@ if ((SKIP > 0)); then
     printf '    %s–%s %s\n' "$c_yel" "$c_rst" "$_s" >&2
   done
 fi
+# Say what the fleet-wide gates need, and how to get it. These skip on ANY lone clone —
+# including CI, which checks out only this repo — so without this line the reader has no
+# way to learn that three gates have simply never run for them.
+if ((_env_skips > 0)); then
+  printf '  %s%d of those are FLEET-WIDE gates with no sibling repo to read — they did not run.%s\n' \
+    "$c_yel" "$_env_skips" "$c_rst" >&2
+  printf '  %sClone the OS repos beside this one (see scripts/os-repos.txt), or pass --require-siblings to make this red.%s\n' \
+    "$c_yel" "$c_rst" >&2
+fi
 ((FAIL == 0)) || {
   printf '%saudit FAILED%s\n' "$c_red" "$c_rst" >&2
   exit 1
@@ -1451,4 +1493,17 @@ if ((STRICT && _tool_skips > 0)); then
   printf '%saudit FAILED (--strict: %d gate(s) skipped because their tool is absent — must all run)%s\n' "$c_red" "$_tool_skips" "$c_rst" >&2
   exit 1
 fi
-printf '%saudit OK%s\n' "$c_grn" "$c_rst"
+if ((REQUIRE_SIBLINGS && _env_skips > 0)); then
+  printf '%saudit FAILED (--require-siblings: %d fleet-wide gate(s) had no sibling OS repo to read)%s\n' "$c_red" "$_env_skips" "$c_rst" >&2
+  exit 1
+fi
+# THE LAST LINE IS THE ONE PEOPLE READ. A bare "audit OK" after a run that skipped a third
+# of the fleet-wide gates is the false green this whole script exists to prevent — the body
+# said PARTIAL, but the verdict said OK, and the verdict is what gets quoted in a PR. Say it
+# where it cannot be missed. Exit status is unchanged (0): partial is not failure, and
+# --strict / --require-siblings remain the ways to make it one.
+if ((SKIP > 0)); then
+  printf '%saudit OK — PARTIAL (%d check(s) skipped; see above)%s\n' "$c_yel" "$SKIP" "$c_rst"
+else
+  printf '%saudit OK%s\n' "$c_grn" "$c_rst"
+fi
