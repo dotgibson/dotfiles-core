@@ -36,12 +36,22 @@ _Repo status_ at the bottom).
 
 > **The Kali column changed owner.** It described `dotfiles-Offense` while that repo carried
 > the Kali OS band. It no longer does — `dotfiles-Offense` shed its OS-native layer entirely,
-> and the lane moved to `dotfiles-Debian`'s `only:kali` / `skip:kali` tiers. The three cells
-> the move demonstrably falsified are corrected (`lazygit`, `starship`, `atuin`), and so are
-> the two footnotes that asserted "Kali installs nothing" — but the column as a whole has
+> and the lane moved to `dotfiles-Debian`'s `only:kali` / `skip:kali` tiers. The seven cells
+> the move demonstrably falsified are corrected (`lazygit`, `starship`, `atuin` in the first
+> round; `git-delta`, `difftastic`, `mise`, `uv` in the second), and so are the two footnotes
+> that asserted "Kali installs nothing" — but the column as a whole has
 > **not** been re-derived cell-by-cell against the new owner. Treat unmarked Kali cells as
 > inherited rather than verified until `/os-package-availability` has run against
 > `dotfiles-Debian`'s kali tier. (²¹ᵃ marks this caveat, not a per-cell claim.)
+>
+> **The second round is what this caveat predicted, and it arrived by the predicted route.**
+> All four were resolved against `dotfiles-Debian` rather than inherited: `git-delta` is
+> `# skip:kali` because it is in apt on noble and trixie and absent from kali-rolling;
+> `difftastic` never made the `only:kali` tier at all; and `mise` and `uv` are fetched by
+> `verified_install` on every target, so their apt availability — `uv` genuinely _is_ in
+> kali-rolling — was never what the cell should have recorded. **A cell here documents what
+> this fleet installs, not what the archive contains.** That distinction is what made `uv`
+> wrong while looking right, and it is the one to apply to the cells still unmarked.
 
 | Tool             | Arch              | openSUSE      | Alpine            | Gentoo (atom)              | Kali (apt)²¹ᵃ     | Debian/Ubuntu |
 | ---------------- | ----------------- | ------------- | ----------------- | -------------------------- | ----------------- | ------------- |
@@ -51,7 +61,7 @@ _Repo status_ at the bottom).
 | ripgrep          | `ripgrep`         | `ripgrep`     | `ripgrep`         | `sys-apps/ripgrep`         | `ripgrep`         | `ripgrep`     |
 | zoxide           | `zoxide`          | `zoxide`      | `zoxide`          | `app-shells/zoxide`        | `zoxide`          | `zoxide`      |
 | fzf              | `fzf`             | `fzf`         | `fzf`             | `app-shells/fzf`           | `fzf`             | `fzf`         |
-| git-delta        | `git-delta`       | `git-delta`   | `delta`           | `dev-util/git-delta`       | `git-delta`       | `git-delta`   |
+| git-delta        | `git-delta`       | `git-delta`   | `delta`           | `dev-util/git-delta`       | asset²⁸           | `git-delta`   |
 | btop             | `btop`            | `btop`        | `btop`            | `sys-process/btop`         | `btop`            | `btop`        |
 | tldr             | `tealdeer`        | `tealdeer`¹   | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        | `tealdeer`    |
 | neovim³³         | `neovim`          | `neovim`      | `neovim`          | `app-editors/neovim`       | `neovim`          | asset²⁸       |
@@ -60,7 +70,7 @@ _Repo status_ at the bottom).
 | tmux             | `tmux`            | `tmux`        | `tmux`            | `app-misc/tmux`            | `tmux`            | `tmux`        |
 | starship         | `starship`        | `starship`¹⁸  | `starship`        | `app-shells/starship`      | `starship`        | asset²⁸       |
 | atuin²⁰          | `atuin`           | `atuin`¹⁸     | `atuin`           | `app-shells/atuin`         | asset²⁸           | asset²⁸       |
-| mise³⁰           | `mise`            | script³⁰      | script³⁰          | script³⁰                   | script³⁰          | asset²⁸       |
+| mise³⁰           | `mise`            | script³⁰      | script³⁰          | script³⁰                   | asset²⁸           | asset²⁸       |
 | direnv³²         | `direnv`          | `direnv`      | `direnv`          | `app-shells/direnv`¹²      | `direnv`          | `direnv`      |
 | yazi             | `yazi`            | `yazi`¹⁸      | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
 | tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter` | `tree-sitter-cli` | `dev-util/tree-sitter-cli` | `tree-sitter-cli` | asset²⁸       |
@@ -88,10 +98,10 @@ _Repo status_ at the bottom).
 | ouch²¹           | `ouch`            | `ouch`¹⁸      | testing¹⁴         | cargo²¹                    | cargo²¹           | —²⁹           |
 | jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`     | `jujutsu`         | `dev-vcs/jj`²¹             | cargo²¹           | —²⁹           |
 | sesh⁹            | AUR⁹              | go⁹           | go⁹               | go⁹                        | go⁹               | go³           |
-| difftastic¹⁰     | `difftastic`      | `difftastic`  | `difftastic`      | `dev-util/difftastic`      | `difftastic`      | asset²⁸       |
+| difftastic¹⁰     | `difftastic`      | `difftastic`  | `difftastic`      | `dev-util/difftastic`      | asset²⁸           | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`  | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸  | `ast-grep`        | cargo²¹                    | cargo²¹           | —²⁹           |
-| uv³⁰             | `uv`              | `python-uv`   | `uv`              | `dev-python/uv`            | `uv`              | asset²⁸       |
+| uv³⁰             | `uv`              | `python-uv`   | `uv`              | `dev-python/uv`            | asset²⁸           | asset²⁸       |
 | w3m              | `w3m`             | `w3m`         | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (1.8.0). **Not in Leap 16.0 or 16.1** —
@@ -351,7 +361,7 @@ differs per machine is how the daemon gets **launched**, so that half lives in t
 
 | Machine                                                              | How the daemon runs                                                                                                                                                                                                              | What the OS layer exports                                     |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Fedora✔ · Debian/Ubuntu✔ · Arch · openSUSE · Gentoo (systemd) · Kali | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true`                                  |
+| Fedora✔ · Debian/Ubuntu/Kali✔ · Arch · openSUSE · Gentoo (systemd)   | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true`                                  |
 | Alpine✔ (musl, no systemd)                                           | atuin supervises its own daemon — no unit, no service manager, nothing to install                                                                                                                                                | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
 | macOS                                                                | same as Alpine: `autostart` beats hand-writing a launchd plist — the socket path is atuin's own to resolve (see the note below the table)                                                                                        | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
 | Windows                                                              | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell                                                                                                                                | —                                                             |
@@ -376,24 +386,36 @@ config: Core is vendored identically to every repo, so a per-machine value there
 wrong on the other eight. `autostart` is mutually exclusive with `systemd_socket = true` —
 pick the unit or pick autostart, not both.
 
-**✔ marks the machines where the exports are actually wired today — Fedora, Debian/Ubuntu
-and Alpine, three of the eight Core-vendoring machines this table covers.** The marker is
-per **machine**, not per row: the systemd row holds a wired Fedora and a wired
-Debian/Ubuntu alongside four unwired ones. For the other five — Arch, openSUSE, Gentoo and
-Kali (sharing that row with Fedora) plus macOS — the cell is the documented recipe, not a
-shipped state, so follow the rollout order below (Fedora first as the template, Alpine
-second as the design's real constraint, then the rest) rather than assuming your repo
+**✔ marks the machines where the exports are actually wired today — Fedora,
+Debian/Ubuntu/Kali and Alpine, three of the seven Core-vendoring machines this table
+covers.** The marker is per **machine**, not per row: the systemd row holds a wired Fedora
+and a wired Debian/Ubuntu/Kali alongside three unwired ones. For the other four — Arch,
+openSUSE and Gentoo (sharing that row with Fedora) plus macOS — the cell is the documented
+recipe, not a shipped state, so follow the rollout order below (Fedora first as the template,
+Alpine second as the design's real constraint, then the rest) rather than assuming your repo
 already does this.
+
+**`Kali` is not a machine of its own here, and used to be listed as one.** It was
+`dotfiles-Offense`'s identity while that repo carried the Kali OS band; the band moved to
+`dotfiles-Debian`'s `only:kali` tier, so Kali is now one of that repo's three targets and
+inherits its wiring — which is why it moved into the wired cell rather than staying beside
+it. Nothing was left owning a `Kali` row.
 
 `dotfiles-Debian` is wired end to end: its `os/debian.zsh` exports `ENABLED`, and — because
 Ubuntu **has** systemd, so the `AUTOSTART` fallback never fires there — its `bootstrap.sh`
 also installs and enables the `systemd --user` unit. Exporting `ENABLED` without installing
 a launcher is the one state this note warns against, and on a systemd box the autostart
 escape hatch does not cover for it. The `Windows` row is neither wired nor pending:
-it is out of scope, vendoring no `core/` at all. **`Defense` has no row here by design** —
-it is distro-agnostic and carries no `os/` layer, so its atuin exports come from whichever
-OS repo is underneath it (see "Repo status"). Eight machines + `Defense` = the nine
-Core-vendoring repos in `scripts/os-repos.txt`.
+it is out of scope, vendoring no `core/` at all. **Neither role repo has a row here, both
+by the same design** — `Defense` and `Offense` are distro-agnostic and carry no `os/`
+layer, so their atuin exports come from whichever OS repo is underneath them (see "Repo
+status"). Seven machines + `Offense` + `Defense` = the nine Core-vendoring repos in
+`scripts/os-repos.txt`.
+
+That used to read "eight machines + `Defense`", which counted `Offense` as a machine. The
+arithmetic was right and the label was a release out of date: `Offense` shed `os/`,
+`install/packages.txt` and `scripts/tool-versions.env` when the Kali lane moved, so it now
+qualifies for exactly the exemption this paragraph grants `Defense`.
 
 **For those exports to work at all, `atuin/config.toml` must leave `enabled` and `autostart`
 unset** — and it does. atuin builds its config as defaults → environment → config **file**,
@@ -868,13 +890,25 @@ and hand-placing the upstream binary in `~/.local/bin` would silently shadow it 
 `dotfiles-Offense` installs no carapace at all: it stopped being an OS-native layer, and the
 Debian family it used to cover is `dotfiles-Debian`'s job now.
 
-²⁸ **Debian/Ubuntu — pinned upstream release asset.** `dotfiles-Debian` installs this
-from a version- and SHA-256-pinned GitHub release asset via `bootstrap.sh`'s
-`verified_install` (pins in its `install/tool-versions.env`, refreshed by
-`scripts/update-tool-checksums.sh`), because Ubuntu 24.04 either has no package at all
-or has one below the version Core needs. It is fail-closed: a missing pin, failed
+²⁸ **Pinned upstream release asset** — on Debian/Ubuntu, on Kali, or on both.
+`dotfiles-Debian` installs this from a version- and SHA-256-pinned GitHub release asset via
+`bootstrap.sh`'s `verified_install` (pins in its `install/tool-versions.env`, refreshed by
+`scripts/update-tool-checksums.sh`). It is fail-closed: a missing pin, failed
 download, or hash mismatch skips that tool loudly rather than installing anything
-unverified. **Neovim is the exception in shape** — its asset is a directory tree
+unverified.
+
+**The two columns reach this cell for opposite reasons**, which is why the marker now
+appears in both. On **Debian/Ubuntu** it is scarcity: Ubuntu 24.04 either has no package at
+all or has one below the version Core needs. On **Kali** it is more often the reverse —
+`verified_install` is `command -v`-guarded, so on a tool apt _does_ supply it no-ops and the
+apt name wins; the asset fires only where kali-rolling genuinely lacks the name (`delta`,
+`hexyl` — the two apt has on noble and trixie but not on kali-rolling), or where the repo
+takes the pinned asset on **every** target regardless of the archive (`mise`, `uv`, and the
+rest of the `verified_install` block). That last case is the one that reads wrong: a cell
+saying `uv` was defensible from kali-rolling's contents and still false about what gets
+installed. **A cell records what this fleet installs.**
+
+**Neovim is the exception in shape** — its asset is a directory tree
 (`bin/` + `lib/` + `share/nvim/runtime`), so it uses `verified_tree_install` and lands
 in `~/.local/opt` with a symlink into `~/.local/bin`; copying the bare binary yields an
 editor whose `$VIMRUNTIME` points at nothing. Deliberately _not_ the AppImage: Ubuntu
@@ -897,15 +931,25 @@ the one promise `zsh/30-functions.zsh`'s "install missing" hint makes. **`mise` 
 chicken-and-egg row**: footnotes ¹, ⁶, ⁷, ¹⁰, ¹¹ and ²⁹ all prescribe `mise use -g <x>` as
 a fallback, and every `bootstrap.sh` reaches for `mise exec go@latest` when no Go toolchain
 is present, so it is a prerequisite of this table rather than an entry in it. Only **Arch**
-packages it (`extra`); openSUSE, Gentoo and Kali have none, and the bootstraps there use the
+packages it (`extra`); openSUSE and Gentoo have none, and the bootstraps there use the
 official installer (`curl -fsSL https://mise.run | sh`, landing in `~/.local/bin`). Alpine
 _does_ carry `mise` in `community`, but `dotfiles-Alpine` still takes `mise.run` for the musl
-build — hence `script³⁰`, not a package name, in that cell.
+build — hence `script³⁰`, not a package name, in that cell. **Kali used to be in that
+sentence and no longer belongs there:** its bootstrap is now `dotfiles-Debian`'s, which never
+calls `mise.run` at all — it takes the pinned `MISE_VERSION` asset on every target, Kali
+included, so that cell is `asset²⁸`.
 
-`uv` is the cleanest illustration of why the Kali and Debian/Ubuntu columns had to be split
-at all (`dotgibson/dotfiles-core#431`): **kali-rolling ships `uv` 0.9.17 and Ubuntu 24.04
-ships nothing**, because uv reached Debian only in sid/trixie. `dotfiles-Debian` therefore
-pins it as a `verified_install` asset ²⁸. openSUSE's is named `python-uv` (Tumbleweed — Leap
+`uv` used to be filed here as the cleanest illustration of why the Kali and Debian/Ubuntu
+columns had to be split at all (`dotgibson/dotfiles-core#431`), on the grounds that
+**kali-rolling ships `uv` 0.9.17 while Ubuntu 24.04 ships nothing** — uv reached Debian only
+in sid/trixie. Both halves of that are still true about the **archives**, and it is no longer
+the right reading of the row: `uv` is absent from the `only:kali` tier and
+`dotfiles-Debian`'s `bootstrap.sh` fetches the pinned `UV_VERSION` asset on **every** target,
+so both columns are `asset²⁸` and neither is derived from apt. The split earns its keep
+elsewhere (`difftastic`, `git-delta`, `hexyl` — names apt has on noble and trixie and not on
+kali-rolling); `uv` is instead the cleanest illustration of the failure the ²¹ᵃ caveat above
+warns about, a cell that recorded what the archive **contains** rather than what the repo
+**installs**. openSUSE's is named `python-uv` (Tumbleweed — Leap
 was not separately audited, so verify with `zypper se python-uv` and fall back to ³ there),
 and Gentoo's is `dev-python/uv`, not a bare `uv`.
 
