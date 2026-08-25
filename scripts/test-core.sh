@@ -7879,7 +7879,7 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # describing state that can change under a LIVE shell, so a consumer polling it needs both
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
-  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"detection\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"]); assert set(d[\"detection\"]) == set([\"ran\",\"missed\"]); assert isinstance(d[\"detection\"][\"ran\"], bool) and isinstance(d[\"detection\"][\"missed\"], list)"'
+  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"detection\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"]); assert set(d[\"detection\"]) == set([\"ran\",\"missed\",\"stale\"]); assert isinstance(d[\"detection\"][\"ran\"], bool) and isinstance(d[\"detection\"][\"missed\"], list) and isinstance(d[\"detection\"][\"stale\"], list)"'
 # The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
 # construction and this assertion should be tautological. It is kept precisely for that
 # reason: it is the guard that stays red if someone reintroduces a second literal — which is
@@ -8029,6 +8029,78 @@ import json, os, re
 # Same two trims as the parity test this mirrors: line 1 is the legend (it contains the
 # glyphs), and everything from the opt-in recap on re-lists names. The not-wired block sits
 # AFTER opt-in precisely so this second trim covers it structurally.
+body = os.environ[\"_CD_R\"].split(chr(10), 1)[1]
+body = body.split(chr(10) + \"opt-in\")[0]
+shown = set(re.findall(r\"[✓✗·] ([A-Za-z0-9_.-]+)\", body))
+keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
+assert shown, \"parsed no tools out of the rendered report\"
+assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
+"'
+
+# ── #631: the MIRROR of #545 — a flag set at band 00 for a binary that is now GONE ───────
+# #545's case is present-but-unprobed. This is probed-but-absent: HAVE_* is still set, so
+# 20-aliases.zsh's guard passed and defined an alias against a binary that no longer resolves.
+# Deliberately NO fifth glyph — the row keeps its honest ✗ and the remedy lives in a `stale`
+# block, so the legend and the render⇄json parity regex are both untouched.
+check "core-doctor reports a stale flag in a 'stale' block, with no new glyph" \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 1)
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"stale"* ]]  || { print -r -- "no stale block for a probed-then-absent tool"; exit 1 }
+   [[ $out == *"procs"* ]]  || { print -r -- "stale block does not name the tool"; exit 1 }
+   [[ $out == *"✗ procs"* ]] || { print -r -- "the row should still render an honest ✗"; exit 1 }'
+# The point of the block is the ALIAS, not the tool: `ps` is the command that breaks, `procs`
+# is trivia the user never typed. Read from the live `aliases` table, so it cannot drift from
+# 20-aliases.zsh.
+check "core-doctor names the ALIAS a stale flag left pointing at nothing" \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 1)
+   alias ps=procs
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"ps → procs"* ]] || { print -r -- "did not name the broken alias; got: ${out##*stale}"; exit 1 }'
+# Both ledger gates apply here exactly as they do to the unwired axis — a doctor that claims
+# staleness with no ledger would flag every absent tool on a bare box, which is most of them.
+check "core-doctor makes no staleness claim when detection never ran" \
+  '_core_have() { return 1 }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out != *"stale"* ]] || { print -r -- "stale block rendered with no ledger"; exit 1 }'
+# With _core_have stubbed FALSE every row is absent, so the second gate here is not "no block
+# at all" (as it is for #545's ⚠, which fires on the present branch) but "only ledger rows
+# appear in it". Asserted on the NAMES line alone — the prose underneath contains "open a new
+# shell", and a substring match for a tool called `op` finds the "op" in "open".
+check "core-doctor's stale block lists only rows Core actually probes" \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(eza 1)
+   names=$(NO_COLOR=1 core-doctor 2>&1 | awk "/^stale\$/{getline; print; exit}")
+   [[ ${names// /} == eza ]] \
+     || { print -r -- "stale names line should be exactly \"eza\", got: [$names]"; exit 1 }'
+# …and the false-positive mirror: a tool the ledger says was ABSENT at band 00 and is still
+# absent is simply missing, not stale. Nothing was wired, so no alias can be dangling.
+check "core-doctor does not call a never-detected tool stale" \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 0)
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out != *"stale"* ]] || { print -r -- "an absent-at-band-00 tool was reported stale"; exit 1 }'
+check_dep "core-doctor --json exposes detection.stale, disjoint from detection.missed" python3 \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 1 jnv 0)
+   core-doctor --json | python3 -c "
+import json, sys
+d = json.load(sys.stdin)[\"detection\"]
+assert d[\"ran\"] is True, d
+assert \"procs\" in d[\"stale\"], d
+assert \"jnv\" not in d[\"stale\"], d
+assert set(d[\"stale\"]) & set(d[\"missed\"]) == set(), d
+"'
+# The parity test stubs _core_have FALSE, which is exactly the branch this axis fires on — so
+# unlike #545's ⚠ it CAN perturb that comparison. Re-run it with the stale axis active to show
+# the `stale` block is invisible to it (it sits past the opt-in trim, like `not wired`).
+check_dep "the render⇄json tool sets still match with the stale axis firing" python3 \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 1 btop 1)
+   alias ps=procs
+   _CD_R="$(NO_COLOR=1 core-doctor 2>&1)" _CD_J="$(core-doctor --json)" python3 -c "
+import json, os, re
 body = os.environ[\"_CD_R\"].split(chr(10), 1)[1]
 body = body.split(chr(10) + \"opt-in\")[0]
 shown = set(re.findall(r\"[✓✗·] ([A-Za-z0-9_.-]+)\", body))
