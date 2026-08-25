@@ -1931,6 +1931,100 @@ if [[ "$_cr_live" == *":.claude/tool-decisions.md" ]]; then
   pass "routine reference scan: the live routine doc still parses (tool-scout.md names the ledger)"
 else fail "routine reference scan: .claude/commands/tool-scout.md yielded '${_cr_live//$'\n'/, }' — the routines stopped writing paths as code spans, so §1b is scanning for a shape that no longer exists"; fi
 
+# ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
+# WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
+# extraction, every verdict here comes from git: is the path tracked, and which .gitignore
+# rule wins. No text fixture can stand in for that, so each case builds a throwaway repo with
+# its own index and .gitignore — the same approach the nvim-reachability tests take, and for
+# the same reason.
+#
+# The discriminator under test is the one that makes the gate self-maintaining: a file hidden
+# by the BLANKET `.claude/*` is a finding, one named by a MORE SPECIFIC rule is a decision.
+# Get that backwards in either direction and the gate either cries wolf on every per-machine
+# file or goes silent on the defect it exists for (#700).
+if have git; then
+  hdr "unreferenced .claude/ scanner (_core_claude_untracked_hits)"
+  _cud="$SANDBOX/claudeuntracked"
+  _cu_fresh() { # a repo whose .gitignore mirrors Core's: blanket + per-path negations
+    rm -rf "$_cud"
+    mkdir -p "$_cud/.claude/commands" "$_cud/.claude/agents"
+    git -C "$_cud" init -q
+    git -C "$_cud" config user.email t@example.com
+    git -C "$_cud" config user.name tester
+    cat >"$_cud/.gitignore" <<'GI'
+.claude/*
+!.claude/commands/
+!.claude/agents/
+!.claude/tool-decisions.md
+.claude/settings.local.json
+GI
+    printf 'cmd\n' >"$_cud/.claude/commands/a.md"
+    git -C "$_cud" add -A >/dev/null 2>&1
+    git -C "$_cud" commit -qm init >/dev/null 2>&1
+  }
+  _cu_is() { # _cu_is <label> <expected>
+    local got
+    got="$(_core_claude_untracked_hits "$_cud")"
+    if [[ "$got" == "$2" ]]; then
+      pass "unreferenced .claude/ scan: $1"
+    else
+      fail "unreferenced .claude/ scan: $1 (got '${got//$'\n'/, }', want '${2//$'\n'/, }')"
+    fi
+  }
+
+  # ── what it must catch ──
+  # THE #700 SHAPE, with no reference to betray it: a top-level file under the blanket rule.
+  _cu_fresh
+  printf 'ledger\n' >"$_cud/.claude/tool-decisions-v2.md"
+  _cu_is "a top-level file hidden by the blanket rule is a finding" ".claude/tool-decisions-v2.md"
+  # …and #700 itself, exactly: the negations are per-path, so a name one character off the
+  # negated one is invisible.
+  _cu_fresh
+  printf 'x\n' >"$_cud/.claude/tool-decisions.md.bak"
+  _cu_is "a near-miss on a negated filename is a finding" ".claude/tool-decisions.md.bak"
+
+  # ── what it must NOT catch ──
+  _cu_fresh
+  _cu_is "a clean tree yields nothing" ""
+  # The negated file, actually tracked — the state the gate wants the tree in.
+  _cu_fresh
+  printf 'ledger\n' >"$_cud/.claude/tool-decisions.md"
+  git -C "$_cud" add -A >/dev/null 2>&1
+  git -C "$_cud" commit -qm ledger >/dev/null 2>&1
+  _cu_is "a tracked file is not a finding" ""
+  # THE EXEMPTION THAT MUST HOLD: its own .gitignore line is a decision, not an oversight.
+  # If this regresses, every developer's per-machine settings turn the audit red.
+  _cu_fresh
+  printf '{}\n' >"$_cud/.claude/settings.local.json"
+  _cu_is "a file with its own specific ignore rule is exempt" ""
+  # UNTRACKED BUT VISIBLE is deliberately out of scope — inside a negated directory git shows
+  # the file in `git status`, so this gate flagging it would red the audit on every
+  # work-in-progress file. The scope is invisibility, not un-added-ness.
+  _cu_fresh
+  printf 'new\n' >"$_cud/.claude/commands/b.md"
+  _cu_is "an untracked file git can still SEE is not a finding" ""
+  # Degenerate inputs: silence, never a crash or a false claim.
+  rm -rf "$_cud"; mkdir -p "$_cud"
+  _cu_is "a directory with no .claude/ yields nothing" ""
+  rm -rf "$_cud"; mkdir -p "$_cud/.claude"; printf 'x\n' >"$_cud/.claude/f.md"
+  _cu_is "a non-git directory yields nothing (no repo, no claim)" ""
+
+  # LIVE CANARY, the _core_claude_ref_hits lesson: every case above is synthetic, so all of
+  # them would still pass if .gitignore stopped using the blanket spelling the scanner
+  # matches — leaving a gate that is green because it recognises nothing. Assert the real
+  # rule still exists in the form the case arm keys on.
+  if grep -qxE '\.claude/\*\*?' "$HERE/.gitignore"; then
+    pass "unreferenced .claude/ scan: .gitignore still uses the blanket rule the scanner keys on"
+  else
+    fail "unreferenced .claude/ scan: .gitignore no longer carries a bare '.claude/*' line — _core_claude_untracked_hits keys its finding on that exact pattern, so it now recognises nothing and passes vacuously"
+  fi
+  rm -rf "$_cud"
+  unset -f _cu_fresh _cu_is
+  unset _cud
+else
+  skip "unreferenced .claude/ scanner (git not installed)"
+fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the

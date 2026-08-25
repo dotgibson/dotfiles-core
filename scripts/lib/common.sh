@@ -625,6 +625,61 @@ _core_conflict_marker_hits() { # _core_conflict_marker_hits <file>
 # resolving it would mean inventing a semantics the referencing prose does not have.
 # A trailing `:NN` line reference is stripped: `.claude/commands/tool-scout.md:164` is a
 # citation of the same file, and the line number is not part of the name.
+# ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
+# _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
+# not ship AND that nothing will ever tell you about. Silence = clean.
+#
+# THE OTHER HALF OF §1b. _core_claude_ref_hits finds a file a routine NAMES but git does not
+# carry. That only works because something pointed at the missing file. A .claude/ file
+# nothing references — a new subagent, a config a hook reads by convention, a second ledger —
+# vanishes with no reference to betray it, and #700's whole lesson was that the vanishing is
+# silent (see the .gitignore comment block).
+#
+# THE DISCRIMINATOR IS THE RULE THAT WINS, NOT A HAND-KEPT ALLOWLIST. `.gitignore` blocks
+# `.claude/*` wholesale and re-admits members one by one, so "untracked" alone cannot separate
+# a file someone forgot to negate from one that is ignored ON PURPOSE. `git check-ignore -v`
+# names the winning rule, and that answers it exactly:
+#   · the blanket `.claude/*`  → nobody decided anything about this file → FINDING
+#   · any more specific rule   → someone wrote a line naming it → deliberate, stays quiet
+# So `.claude/settings.local.json`, which has its own line, is exempt by construction rather
+# than by being listed here — and a future per-machine file becomes exempt the moment someone
+# writes its rule, with no edit to this function.
+#
+# UNTRACKED-BUT-VISIBLE IS DELIBERATELY NOT A FINDING. A new file that git can see is already
+# `git status`'s job, and flagging it would turn the audit red for every work-in-progress file
+# in the tree. The defect this exists for is invisibility: a blanket rule hid the file, so no
+# other signal exists. That is the whole scope.
+_core_claude_untracked_hits() { # _core_claude_untracked_hits <repo-root>
+  local root="${1:-.}" tracked f rel line before pat
+  [ -d "$root/.claude" ] || return 0
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  # Newline-DELIMITED for a whole-line membership test with no subprocess per file, and so
+  # `.claude/a.md` is not satisfied by `x.claude/a.md` — the same reasoning audit-core.sh
+  # §1b gives for its own tracked list.
+  tracked=$'\n'"$(git -C "$root" ls-files '.claude/*')"$'\n'
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    rel="${f#"$root"/}"
+    [ "$tracked" != "${tracked/$'\n'"$rel"$'\n'/}" ] && continue # already ships
+    # check-ignore exits 1 when the path is NOT ignored, which is the untracked-but-visible
+    # case above — no output, so the loop below simply does not run. Fed by a heredoc, not a
+    # pipe: audit-core.sh runs with pipefail and that exit 1 would read as a scanner failure.
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      before="${line%%	*}" # the `source:line:pattern` half, before the tab
+      pat="${before#*:}"
+      pat="${pat#*:}"
+      case "$pat" in
+      '.claude/*' | '.claude/**') printf '%s\n' "$rel" ;;
+      esac
+    done <<EOF
+$(git -C "$root" check-ignore -v "$rel" 2>/dev/null)
+EOF
+  done <<EOF
+$(find "$root/.claude" -type f 2>/dev/null | sort)
+EOF
+}
+
 _core_claude_ref_hits() { # _core_claude_ref_hits <file>
   local f="${1:-}" line n p
   [ -f "$f" ] || return 0
