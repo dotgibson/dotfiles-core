@@ -49,6 +49,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   fails at runtime, weekly, in a job nobody watches. Verified in both directions; 9 mirrors
   currently match.
 
+- **`core-doctor` reports the mirror of #545: a `HAVE_*` flag set for a binary that is now
+  gone.** #545 shipped the silent half — present at report time, never wired. This is the other
+  state: detected at band 00, flag set, `20-aliases.zsh`'s guard passed and defined the alias —
+  and the binary is no longer on `PATH`.
+
+  #631 filed this as low-priority and argued against taking it, on the grounds that the failure
+  is loud and self-explanatory and would need a fifth glyph. **Both halves turn out not to
+  hold, and that is why this landed.**
+
+  It is loud only for tools that shadow nothing. Six aliases shadow **classic commands** — `ps`,
+  `top`/`htop`, `watch`, `df`, `ping`, `help` — and there a stale flag does not fail to give you
+  `procs`, it **breaks `ps`**, with a message naming a binary the user never typed. `core-doctor`
+  is what you reach for at that point, and `✗ procs` does not connect to "your `ps` is broken".
+  So the block names the dangling **aliases**, not the tools, read from the live `aliases` table
+  so it cannot drift from `20-aliases.zsh`.
+
+  And it needs **no fifth glyph**. The row keeps its honest `✗` — which is already correct about
+  presence — and the remedy lives in a `stale` block, exactly as `not wired` does. The legend
+  keeps its three states, the alarm-fatigue budget #620 was careful with is not spent, and the
+  render⇄json parity regex is untouched (the block sits past the `opt-in` trim, structurally
+  invisible to it). That comparison is re-run with this axis actively firing, since unlike
+  #545's `⚠` it fires on the branch the parity test stubs.
+
+  PATH shrinking mid-session is not exotic here: `mise activate zsh` registers a `chpwd` hook
+  that rewrites `PATH` on every `cd`, so a toolchain two directories away can take a binary with
+  it. `--json` gains `detection.stale` beside `missed` — its own key, not a widened one, and
+  disjoint from `missed` by construction. Both ledger gates from `_core_doctor_unwired` apply
+  unchanged; only the comparison flips.
+
 - **A decided-and-rejected ledger for `/tool-scout` — `.claude/tool-decisions.md`.** The
   routine's baseline is five files (`PORTING-MATRIX.md`, `zsh/00-tools.zsh`,
   `zsh/20-aliases.zsh`, `mise/config.toml`, `zsh/45-plugins.zsh` + `nvim/lazy-lock.json`) that
