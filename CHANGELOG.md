@@ -66,6 +66,49 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     avoid forking a `grep` per invocation. Adding a file read and parse to that path would
     spend exactly what that optimisation bought, for a value that changes once per machine.
 
+- **A recorded jq security floor of ≥ 1.8.2 — `PORTING-MATRIX.md` footnote ³⁴.** jq 1.8.2
+  (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an integer
+  overflow, a use-after-free and a hash-collision DoS — every one reachable **through parsing
+  input**, which is the tool's entire job. That is load-bearing here because jq is pointed at
+  output produced by machines other than yours: Core sets `HAVE_JQ` and this repo prescribes
+  `jq -e '.detection.missed == []'` as the provisioning gate a role layer runs against
+  `core-doctor --json`. Below the floor today: Alpine 3.22–3.24 and Fedora 43/44 (1.8.1),
+  Debian 13 / Ubuntu 24.04 (1.7.1), Leap 15.x (1.6).
+
+  **It is recorded, and deliberately not enforced.** Debian backports security fixes without
+  bumping the version, so on the whole Debian/Kali/Ubuntu lane a `1.7.1-x` build may carry all,
+  some or none of these and `jq --version` is not evidence either way — a version gate would
+  false-positive across the lane. The footnote states this as a third shape alongside the two
+  version-sensitive rows already in the file, because they point opposite ways and the
+  distinction is the whole content: `⁵` (tree-sitter) **mandates** a version check, since apk is
+  honestly old; `²²` (`sd`) **forbids** one and mandates capability probing, since `--version`
+  lies. jq's version is neither honest nor probeable — nothing in the CLI surface reveals which
+  patches a build carries — so there is nothing to detect from the shell. Core itself is
+  unaffected: `HAVE_JQ` is detect-only with no alias, and nothing in Core shells out to jq. (#702)
+
+- **`examples/mise.tools.toml` — the tools nothing upgrades, routed through the step that already
+  runs.** `maint/dotfiles-maint.sh` runs `mise upgrade --yes` and `rustup update` and has **no**
+  cargo/go re-install step, so roughly fifteen tools — `viddy`, `yazi`, `ouch`, `jj`, `ast-grep`,
+  `jnv`, `watchexec`, `tealdeer`, `dust`, `sesh`, `doggo`, `gron`, `shfmt`, `glow`, `yq`, `duf`,
+  plus `carapace`/`starship`/`atuin` — are installed once and then rot silently on up to eight
+  machines. `PORTING-MATRIX.md` already recorded the gap twice (footnote ²⁵'s "no
+  `cargo install-update` step", footnote ²⁷'s "nothing upgrades carapace afterwards"); footnote
+  ²⁵ now carries the path out instead of only the complaint.
+
+  Declaring a tool under `[tools]` with a `cargo:` / `go:` / `ubi:` backend makes the existing
+  maintenance step do the work, and `lockfile = true` records exact resolved versions **and
+  checksums** — a strictly better trust anchor than the unsigned release-URL route ²⁷ warns
+  about. Two caveats are written into the file rather than assumed: **Alpine must take `cargo:`,
+  never `ubi:`/`aqua:`** (those prebuilts are glibc-linked — the same trap `mise/config.toml`
+  documents for `foundry`), and **`ouch` must force a build without default features** there,
+  since bzip3's build script runs bindgen, which `dlopen`s libclang, which a static musl link
+  defeats (footnote ¹⁴).
+
+  **Core's share is the example and the paragraph, by design.** Which backend a given box needs
+  is an OS question, so the real `[tools]` declarations belong in each OS repo — Core cannot
+  answer it for eight of them at once. Like everything in `examples/`, it is wired into no
+  bootstrap. (#702)
+
 - **`/freshness-triage` can see the two bump classes it was blind to, and a guard that keeps the
   routine rails honest.** Both gaps were _structural_ — they recurred on every run, not just the
   one that reported them.
@@ -308,6 +351,43 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Declaring `dependencies = { { "mason-org/mason.nvim", opts = {} } }` fixes it at **4/4** and costs
   nothing (startup over five runs: 92.3 ms before, 89.9 ms after — noise). `scripts/test-core.sh`
   §D's #652 assertion is now table-driven and covers both specs. (#703)
+
+- **Two `PORTING-MATRIX.md` claims about atuin that upstream had not yet earned.** Footnote ²⁰
+  asserted the daemon socket default _"moved in atuin **18.20.0**"_. It has moved in **no
+  release, stable or beta**: PR #3910 merged 2026-08-12, _after_ `v18.20.0-beta.3` (2026-08-07),
+  and the newest stable is 18.19.0 (2026-08-03), which still resolves the old path. The change is
+  now dated by its **merge** rather than by a version — naming an unshipped version is how a
+  reader concludes their box is already on the new path. #518's pre-emptive handling stands
+  unchanged: probing the new default and both legacy paths is ahead of upstream, which is the
+  right direction, and only the prose was wrong.
+
+  The same footnote also gains a watch note on **`atuinsh/atuin#3957`** (opened 2026-08-20, open,
+  unreviewed), which would make the _daemon_ unlink a stale socket on bind failure. Footnote ²⁰'s
+  finding that "the healing lives in the **client**" is the measured basis of `--premise
+  autostart` and of `CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST`; if #3957 merges, that premise stops
+  holding. Recorded, not acted on — and the note says explicitly not to touch the anchor, which
+  is a claim the premise was **re-measured**, not a version bump. (#702)
+
+- **The decided-and-rejected ledger held two rows while ten scans' worth of decisions sat only in
+  closed issues.** `.claude/tool-decisions.md` shipped seeded with `hexyl` and `fastgron` — the
+  two the CHANGELOG named — but #327, #376 and #518 had between them declined a further fifteen
+  tools with real recorded reasoning that the file did not carry. A ledger the routine is
+  _required_ to read is only as good as its coverage, and the gap was invisible from inside it.
+  Backfilled from the issues themselves rather than from memory.
+
+  It also grows a **Watching** section, which it lacked entirely — a held-not-declined tool had
+  nowhere to live, so it read as either adopted or rejected. Every watch row now names the
+  **event** that would end the hold, because two of the three had their original reason expire
+  without anyone noticing. `xan` is the worked example and gets the long form: it was held on
+  packaging (#376) and on frequency (#327), and **both have expired** — 0.60.0 is in Arch
+  official, Gentoo GURU, Homebrew and nixpkgs, and Core's bar for an opt-in `HAVE_*`-gated tool
+  is visibly lower already (`jnv` is in no `packages.txt` anywhere and was adopted regardless).
+  The reason it stays held is a new and more durable one: 0.60.0's notes _lead_ with breaking
+  command-line argument changes, and Core has been bitten by exactly that in exactly this family
+  — `sd` 1.1.0, where the failure was silent and `--version` could not tell you which behaviour
+  you had (footnote ²²). The condition is now stated: two consecutive minors with no breaking
+  argument changes. A stale hold is the failure mode this file exists to stop, in the same way a
+  forgotten decline is. (#702)
 
 - **Seven prose claims that the fleet had already falsified.** The 2026-08-25 `/doc-audit`
   sweep (#701) read ~326 matrix cells, ~150 aliases and all 69 manifest entries and found the
