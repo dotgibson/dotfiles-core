@@ -16,6 +16,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **A decided-and-rejected ledger for `/tool-scout` — `.claude/tool-decisions.md`.** The
+  routine's baseline is five files (`PORTING-MATRIX.md`, `zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `mise/config.toml`, `zsh/45-plugins.zsh` + `nvim/lazy-lock.json`) that
+  all describe what Core **has**. Nothing recorded what Core **considered and declined**, so a
+  rejected tool was indistinguishable from one never evaluated.
+
+  `hexyl` came back ranked #3 "adopt" on 2026-08-18, six days after #395 closed it
+  `NOT_PLANNED` and refiled it as `dotfiles-Kali#182`. #395's own body anticipated it —
+  _"filed so the decision is recorded rather than silently re-proposed by next week's scan"_ —
+  and recording it was not enough, because nothing in the routine read it.
+
+  The cost is not a wasted ranking slot. A re-proposal arrives with a fresh case-for and **no
+  counter-argument attached**, so the decision gets re-made on half the evidence; `hexyl` would
+  have been adopted on that pass if the report had been actioned without someone happening to
+  remember. `fastgron` is the near-miss in the same report — correctly skipped, with reasoning
+  the report itself noted should be written down, caught by luck rather than by process.
+
+  Seeded with both. The load-bearing half is that **the routine is made to read it**: the
+  instruction lands in `.claude/commands/tool-scout.md` _and_ `.claude/agents/tool-scout.md`,
+  since the subagent does the actual ranking and would otherwise get it second-hand. A listed
+  tool may be re-proposed only against the recorded reasoning, naming what changed, and the
+  report states the prior decision per candidate — explicitly "none" when there is none, since
+  an omitted line reads the same as an unchecked one.
+
+  `/os-package-availability` and `/modernize` share the shape but are deliberately left alone:
+  both already carry a working in-band equivalent (the "intentionally excluded" comments in
+  `packages.txt`, and the machine-readable floor in `scripts/modern-baseline.yml`). That
+  reasoning is recorded in the ledger itself so it is not re-proposed either.
+
 - **`V5-PROPOSAL.md` — the design record for the next major.** Core is at `4.18.0`
   with the whole fleet synced to it and an empty backlog; nothing in the repo
   proposed a v5, and the only `v5` strings anywhere were `RELEASE-RUNBOOK.md` using
@@ -62,6 +91,79 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   `V5-PROPOSAL.md` joins the `META_ALLOWLIST` in `scripts/audit-core.sh` beside
   `V4-PROPOSAL.md`, so §1's manifest-drift check accounts for it.
+
+### Changed
+
+- **The secret-scan policy gate (`audit-core.sh` §5g) now BLOCKS.** It shipped advisory in
+  #623, on the principle §5f states: repos are short on arrival, and a gate that is red from
+  its first run is a gate someone turns off. That reason has expired — the fleet is clean.
+
+  `dotfiles-Alpine` and `dotfiles-Gentoo` each carried a root `.gitleaks.toml`. gitleaks
+  auto-discovers a config at the scan root, so those files silently governed **every** local
+  scan in their repos, including invocations that pass no `-c` and look, from the command line,
+  like stock scans. Both rule sets were simultaneously _narrower_ than Core's (gitleaks' stock
+  defaults, with Core's variable-reference allowlist dropped) and _wider_ (whole-path
+  exemptions for `core/`, and in Gentoo's case `README.md`). Being green under them was not
+  evidence of being clean; it was evidence of being measured differently.
+
+  CI was never affected: the reusable `lint-call.yml` secrets leg passes `-c` explicitly and an
+  explicit config beats auto-discovery. The entire divergence lived in the author-time path —
+  which is where it is least likely to be noticed, and where a hook greener than CI does the
+  most damage.
+
+  Both are now deleted (`dotfiles-Alpine#133`, `dotfiles-Gentoo#125`), and both repos verified
+  clean under `core/gitleaks.toml` — working tree, plus all 271 commits of Gentoo's history,
+  which is what proved its `README.md` exemption stale. No Core sync was needed: Core's
+  variable-reference allowlist already covers the `core/CHANGELOG.md` line the stock
+  `curl-auth-user` rule flags. All nine OS repos now measure by the same policy.
+
+  Blocking is the right posture here specifically because this failure is **quiet**. A repo
+  running its own rule set is green, and stays green as that rule set drifts, because nothing
+  compares it to Core's — so the next person to look sees a passing gate, which is worse than a
+  red one. Advisory suits a finding people can see; not one whose whole hazard is that it looks
+  fine. Still skipped when siblings are not checked out, exactly like §5f, so it is inert in CI
+  (which clones only Core) and bites locally and in fleet sweeps.
+
+### Fixed
+
+- **Opening a file linted it only about half the time — nvim-lint's on-open replay raced
+  mason.nvim's `PATH` prepend.** `plugins/nvim-lint.lua` loads on `User FilePost` and replays
+  the triggering buffer at the end of its `config()`, because that buffer's real `BufReadPost`
+  has already fired by then. The replay spawns Mason-installed linters, which resolve only once
+  `mason.setup()` has prepended `<data>/mason/bin` to `vim.env.PATH` — and nvim-lint declared no
+  dependencies at all. `nvim-lspconfig` loads on the **same event** and pulls mason in as its
+  own dependency, but lazy.nvim orders a plugin against its **declared dependencies only**,
+  never against another plugin on the same event. Which of the two ran first was therefore
+  undefined, and losing the race meant `vim.uv.spawn` got `ENOENT` on a bare `rubocop`.
+
+  Measured over six opens each: ruby/rubocop linted **4/6** on macOS and **3/6** on native
+  Windows, markdown/markdownlint-cli2 **2/6**. The controls are what pin it — `sh`/shellcheck,
+  which lives on the PATH nvim inherits rather than under Mason, was **6/6** and never failed,
+  and rubocop itself went **6/6** when Mason's bin directory was pre-seeded onto `PATH` before
+  nvim started. Nothing about the linters, the filetypes or the config gates was involved.
+
+  It read as flakiness for two issues rather than as a missing binary because `:w` always
+  worked: by the first save mason has long since fixed `PATH`. On Windows the failure was also
+  **fully silent** — no error, no notification, no `:messages` entry — so an unlinted file was
+  indistinguishable from a clean one (macOS at least printed `Error running rubocop: ENOENT`).
+  Both rows in the original Windows report were Mason binaries, so it had no base-PATH linter
+  acting as a control, which is why the scope sat at "Windows-only" until it was measured
+  elsewhere.
+
+  The fix is one declaration: nvim-lint now names `mason-org/mason.nvim` in its `dependencies`,
+  so lazy loads mason — `setup()` and all — before the replay runs. It costs no startup time,
+  because mason was already being loaded at that event; the edge simply was not written down.
+  Verified on macOS by A/B on one box: **3/6 before, 6/6 after**, with every `ENOENT` gone.
+
+  `scripts/test-core.sh` §D gains a spec-level assertion as the regression net. The ordering
+  being guarded is a lazy.nvim guarantee, so re-deriving it at runtime would test lazy rather
+  than this config, and the race cannot be reproduced hermetically anyway (it needs lazy,
+  nvim-lint and mason really installed) — whereas _dropping_ the dependency is luacheck-clean,
+  load-clean and regresses only intermittently on a real machine, which is exactly the profile
+  that needs a static gate. Two comments that had gone stale against the replay are corrected
+  in the same change: `config/autocmds.lua`'s "nvim-lint is driven by BufWritePost/InsertLeave
+  only — nothing to replay", and `nvim-lint.lua`'s own header. (#652,
+  dotgibson/dotfiles-MacBook#191)
 
 ## [v4.18.0] - 2026-08-24
 
