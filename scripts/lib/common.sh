@@ -625,6 +625,32 @@ _core_conflict_marker_hits() { # _core_conflict_marker_hits <file>
 # resolving it would mean inventing a semantics the referencing prose does not have.
 # A trailing `:NN` line reference is stripped: `.claude/commands/tool-scout.md:164` is a
 # citation of the same file, and the line number is not part of the name.
+# ── _core_luacheck_verdict: is that non-zero a LINT finding or a broken tool? ──
+# _core_luacheck_verdict <probe-rc> <lint-rc> — print exactly one of:
+#   ok             clean
+#   broken         luacheck cannot run at all (the --version probe failed)
+#   broken-midrun  it stopped being runnable between the probe and the lint pass
+#   issues         luacheck ran and has something to say about nvim/
+#
+# WHY A PROBE RC IS AN INPUT AT ALL, rather than deciding from the lint rc alone. luacheck's
+# own vocabulary is 0 clean / 1 warnings / 2 syntax errors / 3 I/O error — and a LOAD failure
+# also exits 1. That is not hypothetical: luacheck 1.2.0 cannot load under Lua 5.5 ("attempt
+# to assign to const variable" in its own source, see mise/config.toml), so the single most
+# likely toolchain failure lands on the same code as honest warnings and is UNDECIDABLE here
+# without a second signal. `luacheck --version` lints nothing and loads the same modules, so
+# its rc is that signal.
+#
+# 126/127 are the shell's "could not exec", never one of luacheck's codes, so a lint rc in
+# that range after a passing probe means the tool broke mid-audit — a different sentence to
+# print, and cheap to separate (#726).
+_core_luacheck_verdict() { # _core_luacheck_verdict <probe-rc> <lint-rc>
+  local probe_rc="${1:-0}" lint_rc="${2:-0}"
+  case "$probe_rc" in 0) ;; *) printf 'broken\n'; return 0 ;; esac
+  case "$lint_rc" in 0) printf 'ok\n'; return 0 ;; esac
+  if [ "$lint_rc" -ge 126 ] 2>/dev/null; then printf 'broken-midrun\n'; return 0; fi
+  printf 'issues\n'
+}
+
 # ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
 # _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
 # not ship AND that nothing will ever tell you about. Silence = clean.
