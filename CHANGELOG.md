@@ -205,6 +205,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A scripted `nvim -c 'write'` never formatted anything — conform.nvim spawns Mason formatters
+  without declaring mason as a dependency.** The same undeclared edge as the nvim-lint fix below
+  (#652), in `plugins/conform.lua`, with a worse shape. conform loads on `BufWritePre` and spawns
+  Mason-installed formatters (`prettierd`, `gofumpt`, `clang-format`, `php-cs-fixer`,
+  `sql-formatter`, `ktlint`, `google-java-format`, `taplo`, …), which resolve only once
+  `mason.setup()` has prepended `<data>/mason/bin` to `vim.env.PATH`; conform declared **no
+  `dependencies` at all**, and mason arrived incidentally via `nvim-lspconfig` (`User FilePost`)
+  and `mason-tool-installer` (`VeryLazy`) — neither of which lazy.nvim orders against it.
+
+  Unlike #652 this is **not a race**: `-c` commands run _before_ `VimEnter`, so `VeryLazy` has not
+  fired and the `vim.schedule`'d `User FilePost` emit in `config/autocmds.lua` has not either.
+  mason has therefore _never_ loaded by `BufWritePre`, deterministically. Measured on macOS with a
+  `{"a":1,   "b":[1,2,3]}` fixture and `prettierd` (Mason-**only** here — `stylua` and `shfmt` also
+  sit on the base `PATH` and mask this): `nvim --headless f.json -c 'write' -c 'qa!'` formatted
+  **0/4**, with mason unloaded and `executable("prettierd")` = 0 at `BufWritePre`; the same write
+  deferred past startup — the interactive shape — formatted **4/4**.
+
+  It failed **silently**, which is why it survived: conform auto-skips a formatter that is not on
+  `PATH` (the same self-gating that makes the optional formatters in the map safe on a box without
+  them), so there was no error, no `vim.notify`, nothing in `:messages` — the file was just written
+  unformatted, and a later `:ConformInfo` showed the formatter as available. Invisible
+  interactively, and every time for `nvim -c` writes in a Makefile, git hook, or CI check.
+  Declaring `dependencies = { { "mason-org/mason.nvim", opts = {} } }` fixes it at **4/4** and costs
+  nothing (startup over five runs: 92.3 ms before, 89.9 ms after — noise). `scripts/test-core.sh`
+  §D's #652 assertion is now table-driven and covers both specs. (#703)
+
 - **Opening a file linted it only about half the time — nvim-lint's on-open replay raced
   mason.nvim's `PATH` prepend.** `plugins/nvim-lint.lua` loads on `User FilePost` and replays
   the triggering buffer at the end of its `config()`, because that buffer's real `BufReadPost`
