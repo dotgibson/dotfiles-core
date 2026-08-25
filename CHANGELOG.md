@@ -14,6 +14,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Opening a file linted it only about half the time — nvim-lint's on-open replay raced
+  mason.nvim's `PATH` prepend.** `plugins/nvim-lint.lua` loads on `User FilePost` and replays
+  the triggering buffer at the end of its `config()`, because that buffer's real `BufReadPost`
+  has already fired by then. The replay spawns Mason-installed linters, which resolve only once
+  `mason.setup()` has prepended `<data>/mason/bin` to `vim.env.PATH` — and nvim-lint declared no
+  dependencies at all. `nvim-lspconfig` loads on the **same event** and pulls mason in as its
+  own dependency, but lazy.nvim orders a plugin against its **declared dependencies only**,
+  never against another plugin on the same event. Which of the two ran first was therefore
+  undefined, and losing the race meant `vim.uv.spawn` got `ENOENT` on a bare `rubocop`.
+
+  Measured over six opens each: ruby/rubocop linted **4/6** on macOS and **3/6** on native
+  Windows, markdown/markdownlint-cli2 **2/6**. The controls are what pin it — `sh`/shellcheck,
+  which lives on the PATH nvim inherits rather than under Mason, was **6/6** and never failed,
+  and rubocop itself went **6/6** when Mason's bin directory was pre-seeded onto `PATH` before
+  nvim started. Nothing about the linters, the filetypes or the config gates was involved.
+
+  It read as flakiness for two issues rather than as a missing binary because `:w` always
+  worked: by the first save mason has long since fixed `PATH`. On Windows the failure was also
+  **fully silent** — no error, no notification, no `:messages` entry — so an unlinted file was
+  indistinguishable from a clean one (macOS at least printed `Error running rubocop: ENOENT`).
+  Both rows in the original Windows report were Mason binaries, so it had no base-PATH linter
+  acting as a control, which is why the scope sat at "Windows-only" until it was measured
+  elsewhere.
+
+  The fix is one declaration: nvim-lint now names `mason-org/mason.nvim` in its `dependencies`,
+  so lazy loads mason — `setup()` and all — before the replay runs. It costs no startup time,
+  because mason was already being loaded at that event; the edge simply was not written down.
+  Verified on macOS by A/B on one box: **3/6 before, 6/6 after**, with every `ENOENT` gone.
+
+  `scripts/test-core.sh` §D gains a spec-level assertion as the regression net. The ordering
+  being guarded is a lazy.nvim guarantee, so re-deriving it at runtime would test lazy rather
+  than this config, and the race cannot be reproduced hermetically anyway (it needs lazy,
+  nvim-lint and mason really installed) — whereas _dropping_ the dependency is luacheck-clean,
+  load-clean and regresses only intermittently on a real machine, which is exactly the profile
+  that needs a static gate. Two comments that had gone stale against the replay are corrected
+  in the same change: `config/autocmds.lua`'s "nvim-lint is driven by BufWritePost/InsertLeave
+  only — nothing to replay", and `nvim-lint.lua`'s own header. (#652,
+  dotgibson/dotfiles-MacBook#191)
+
 ## [v4.18.0] - 2026-08-24
 
 ### Added
