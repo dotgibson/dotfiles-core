@@ -1931,6 +1931,59 @@ if [[ "$_cr_live" == *":.claude/tool-decisions.md" ]]; then
   pass "routine reference scan: the live routine doc still parses (tool-scout.md names the ledger)"
 else fail "routine reference scan: .claude/commands/tool-scout.md yielded '${_cr_live//$'\n'/, }' — the routines stopped writing paths as code spans, so §1b is scanning for a shape that no longer exists"; fi
 
+# ── luacheck verdict (common.sh :: _core_luacheck_verdict) ───────────────────
+# WHY THIS IS TESTED. audit-core.sh §4 used to treat EVERY non-zero luacheck exit as
+# "luacheck reported issues", so a toolchain that never ran was announced as a lint failure in
+# nvim/ — and the repair it printed ("re-run luacheck") only reproduced the error (#726). The
+# fix is a three-way decision, and the whole value is that the three stay distinguishable.
+#
+# THE CASE THAT MAKES THE PROBE NECESSARY is `a load failure also exits 1`. luacheck's own
+# codes are 0/1/2/3, and luacheck 1.2.0 failing to load under Lua 5.5 — the documented
+# mise/config.toml trap, and the likeliest toolchain break going forward — exits 1 too. So the
+# lint rc ALONE cannot separate "warnings" from "did not run", at any threshold. If someone
+# later "simplifies" this to a status check on the lint rc, these cases fail.
+hdr "luacheck verdict (_core_luacheck_verdict)"
+_lv_is() { # _lv_is <label> <probe-rc> <lint-rc> <expected>
+  local got
+  got="$(_core_luacheck_verdict "$2" "$3")"
+  if [[ "$got" == "$4" ]]; then
+    pass "luacheck verdict: $1"
+  else
+    fail "luacheck verdict: $1 (probe=$2 lint=$3 → '$got', want '$4')"
+  fi
+}
+# ── the tool ran ──
+_lv_is "a clean run is ok" 0 0 ok
+_lv_is "exit 1 after a passing probe is warnings, not a broken tool" 0 1 issues
+_lv_is "exit 2 (syntax errors in a checked file) is still a lint result" 0 2 issues
+_lv_is "exit 3 (luacheck's I/O error) is still a lint result" 0 3 issues
+# ── the tool did not run ──
+# The #726 shape: the luarocks wrapper execs an absolute interpreter path that is gone.
+_lv_is "a failing probe is a broken tool even when the lint rc looks clean" 127 0 broken
+# THE UNDECIDABLE-WITHOUT-A-PROBE CASE: luacheck 1.2.0 under Lua 5.5 fails to LOAD and exits
+# 1 — byte-identical in status to honest warnings. Only the probe separates them.
+_lv_is "a load failure that exits 1 is broken, not warnings" 1 1 broken
+_lv_is "a failing probe wins over any lint rc" 1 2 broken
+# 126/127 are the shell's "could not exec", never one of luacheck's codes, so after a passing
+# probe they can only mean it stopped being runnable mid-audit — its own sentence.
+_lv_is "exit 127 after a passing probe is a mid-run break" 0 127 broken-midrun
+_lv_is "exit 126 (found but not executable) is a mid-run break" 0 126 broken-midrun
+# The boundary itself, both sides — 3 is luacheck's highest own code.
+_lv_is "exit 125 stays a lint result (below the shell's exec-failure range)" 0 125 issues
+# Defaults: called with nothing, claim nothing is wrong rather than inventing a failure.
+_lv_is "no arguments is ok (no inputs, no claim)" "" "" ok
+
+# LIVE CANARY, the _core_claude_ref_hits lesson: every case above is synthetic, so all of them
+# would still pass if §4 stopped consulting this function. Assert the real gate still routes
+# through it — otherwise these tests pin a helper nothing calls, which is the shape of a gate
+# that is green because it checks nothing.
+if grep -q '_core_luacheck_verdict' "$HERE/scripts/audit-core.sh"; then
+  pass "luacheck verdict: audit-core.sh §4 still routes its verdict through this function"
+else
+  fail "luacheck verdict: audit-core.sh no longer calls _core_luacheck_verdict — §4 decides on its own again, so every case above pins a helper nothing uses (#726)"
+fi
+unset -f _lv_is
+
 # ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
 # WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
 # extraction, every verdict here comes from git: is the path tracked, and which .gitignore
