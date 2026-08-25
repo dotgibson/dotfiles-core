@@ -107,6 +107,53 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `packages.txt`, and the machine-readable floor in `scripts/modern-baseline.yml`). That
   reasoning is recorded in the ledger itself so it is not re-proposed either.
 
+- **`V5-PROPOSAL.md` — the design record for the next major.** Core is at `4.18.0`
+  with the whole fleet synced to it and an empty backlog; nothing in the repo
+  proposed a v5, and the only `v5` strings anywhere were `RELEASE-RUNBOOK.md` using
+  `v4`→`v5` as the worked example for the moving-alias procedure. So the machinery
+  for cutting a major was documented and rehearsed while the _content_ of one was
+  not written down anywhere.
+
+  The proposal follows `V4-PROPOSAL.md`'s structure and states one thesis: **the OS
+  layer becomes a contract instead of a convention.** v4 made the _load order_
+  declarative — modules stopped being a hand-listed array and became `NN-` fragments
+  the loader globs — and v5 does the same to capability, payload and surface. Four
+  bundled changes, chosen because they touch the same three contracts (the
+  `bootstrap.sh` symlink set, the load chain, and what a vendored `core/` contains),
+  so the fleet re-bootstraps once rather than four times:
+
+  1. **`os.capabilities`** — each OS repo declares its package-manager verbs,
+     clipboard backend, scheduler and opt-in tool split, and Core dispatches through
+     the declaration. Core currently carries **154 package-manager references** —
+     88 in `zsh/60-update.zsh`, 49 in `maint/dotfiles-maint.sh`, 17 in
+     `zsh/30-functions.zsh` — in the layer whose own test is "if it changes when the
+     OS changes, it's not Core". `CHANGELOG.md:927-931` already recorded that fixing
+     `core-doctor`'s opt-in classification "needs a per-repo manifest"; this is it.
+  2. **Vendor only what is Core** — the `core.manifest` payload is 1.4 MB and a
+     vendored `core/` is 5.9 MB, so **76% of what ships to every machine is not
+     Core**. The largest single item is `assets/demo.gif` at 1.8 MB, larger than the
+     entire Core payload, replicated into nine trees where no README displays it.
+  3. **Retire what nothing uses, declare what things do** — delete `CORE_PROFILE`
+     (nothing writes the `$ZSH_CFG/profile` it reads, no OS repo mentions it, and
+     `bootstrap-test.yml` asserts `~/.zshrc` must not set it), which also closes the
+     unenforceable band-squatting footgun `VENDORING.md:185-192` documents; and turn
+     `HAVE_*` from 43 accidental exports into a stated API, since five are consumed
+     downstream and none are declared anywhere.
+  4. **`clip` learns what a secret is** — `optoken` pipes a live TOTP through `clip`,
+     which on a headless box reaches OSC 52 and, under the `set-clipboard on` that
+     `tmux/tmux.conf:45` itself sets, leaves the code in a `tmux show-buffer`-readable
+     paste buffer.
+
+  §11 records the non-goals with their reasons — renumbering the bands (~470
+  references across 62 files, and `V4-PROPOSAL.md` §9 already resolved against it),
+  retiring the bare verb names, consolidating `bootstrap.sh`, and an nvim overhaul —
+  plus four open questions the implementation must answer rather than assume. It is
+  **report-first**: nothing here is implemented, and an issue the proposal rejects
+  should be closed `not_planned` with a reason rather than left open.
+
+  `V5-PROPOSAL.md` joins the `META_ALLOWLIST` in `scripts/audit-core.sh` beside
+  `V4-PROPOSAL.md`, so §1's manifest-drift check accounts for it.
+
 ### Changed
 
 - **The secret-scan policy gate (`audit-core.sh` §5g) now BLOCKS.** It shipped advisory in
