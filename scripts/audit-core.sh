@@ -770,10 +770,24 @@ fi
 # A repo that legitimately needs local rules is not doing anything wrong; replacing Core's
 # policy rather than extending it is.
 #
-# REPORT, DO NOT BLOCK, for the same reason §5f gives: repos are short on arrival, and a gate
-# that is red from its first run is a gate someone turns off. Same "out of scope" skip wording
-# too — --strict counts every OTHER skip as a coverage gap, and CI checks out only this repo.
-hdr "secret-scan policy adoption (advisory)"
+# BLOCKING as of #624 — it shipped advisory, for the reason §5f gives: repos are short on
+# arrival, and a gate that is red from its first run is a gate someone turns off. That reason
+# has expired. The fleet is clean: dotfiles-Alpine and dotfiles-Gentoo each carried a private
+# .gitleaks.toml that gitleaks auto-discovered, so every local scan there ran under a rule set
+# that was simultaneously narrower than Core's (stock defaults, Core's variable-reference
+# allowlist dropped) and wider (whole-path exemptions). Both are gone, both verified clean under
+# core/gitleaks.toml — working tree and, for Gentoo, all 271 commits of history. All 9 repos now
+# measure the same way, so this can hold the line instead of narrating it. Same move §5i makes,
+# for the same stated reason.
+#
+# The failure is quiet by nature — a private allowlist widens over time with nothing comparing
+# it to Core's, and the next person to look sees a passing gate. Advisory is the wrong posture
+# for a finding whose whole hazard is that it looks fine.
+#
+# Same "out of scope" skip wording as §5f — --strict counts every OTHER skip as a coverage gap,
+# and CI checks out only this repo, so this is inert there and bites locally and in any sweep
+# that clones the fleet.
+hdr "secret-scan policy adoption"
 _gp_root="$(cd "$HERE/.." && pwd)"
 if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
   skip "gitleaks policy (scripts/os-repos.txt unreadable — out of scope)"
@@ -813,7 +827,7 @@ else
   if ((_gp_checked == 0)); then
     skip "gitleaks policy (no sibling OS repo checked out — out of scope)"
   elif ((_gp_bad)); then
-    pass "gitleaks policy: $_gp_bad of $_gp_checked checked-out repo(s) do not measure by Core's policy (advisory — see the lines above; VENDORING.md has the contract)"
+    fail "gitleaks policy: $_gp_bad of $_gp_checked checked-out repo(s) do not measure by Core's policy (see the lines above; VENDORING.md has the contract)"
   else
     pass "gitleaks policy: every checked-out OS repo scans under Core's policy ($_gp_checked repo(s))"
   fi
