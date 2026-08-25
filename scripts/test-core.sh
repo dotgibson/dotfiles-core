@@ -1763,7 +1763,7 @@ _cm_write clean.md "## [Unreleased]
 
 ### Fixed
 
-- something" 
+- something"
 _cm_is "a clean file is silent" clean.md ""
 
 # Column 0 is what git keys on, so it is what the scanner keys on — and indenting is the
