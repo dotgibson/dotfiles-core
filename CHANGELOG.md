@@ -206,6 +206,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **nvim plugin pins move forward for three plugins.** `alpha-nvim`, `nvim-lspconfig` and
+  `schemastore.nvim` advance to the commits a sandboxed headless `Lazy! sync` resolved:
+  `6c6a89d` → `4ba26e4`, `221c438` → `af9adce`, and `73e89eb` → `5f2a3b5`.
+
+  Every new SHA was verified to exist upstream and to be a strict fast-forward of the one it
+  replaces (`status=ahead`, `behind_by=0` in all three — no rewrite or force-push), and each
+  range was read before promotion:
+
+  - **`alpha-nvim`** one commit: _clear stale button keymaps on redraw_. Core does define its
+    own dashboard buttons (`plugins/alpha-nvim.lua` sets `startify.section.top_buttons.val`),
+    so this is a fix that lands on configuration Core actually ships, not a no-op.
+  - **`nvim-lspconfig`** six commits: two new server configs (`ms_terraform_lsp`,
+    `rust_glancer`), one fix making `rust_analyzer` show a non-error message when `rustc` or
+    `cargo` is missing, and three generated `configs.md` updates. Core registers neither new
+    server and does not configure `rust_analyzer` — its Terraform server is `terraformls`,
+    untouched here.
+  - **`schemastore.nvim`** one commit: a catalog refresh.
+
+  Nothing renames or removes an API Core calls.
+
+  **Recorded after the fact.** The roll landed in #675 as a lockfile-only commit, so it
+  reached `main` with no `[Unreleased]` entry — `CONTRIBUTING.md` requires one and nothing in
+  `audit-core.sh` can enforce it (§9 checks that `core.version` has a matching dated heading,
+  not that a change brought an entry). Pins are what stop plugins floating silently into
+  eight repos, so every roll is a change those repos receive on their next sync, and there is
+  no carve-out for automation. Same finding, same argument, as the sweep recorded earlier in
+  this file. (`nvim/lazy-lock.json`, #675)
+
 - **The secret-scan policy gate (`audit-core.sh` §5g) now BLOCKS.** It shipped advisory in
   #623, on the principle §5f states: repos are short on arrival, and a gate that is red from
   its first run is a gate someone turns off. That reason has expired — the fleet is clean.
@@ -280,6 +308,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Declaring `dependencies = { { "mason-org/mason.nvim", opts = {} } }` fixes it at **4/4** and costs
   nothing (startup over five runs: 92.3 ms before, 89.9 ms after — noise). `scripts/test-core.sh`
   §D's #652 assertion is now table-driven and covers both specs. (#703)
+
+- **Seven prose claims that the fleet had already falsified.** The 2026-08-25 `/doc-audit`
+  sweep (#701) read ~326 matrix cells, ~150 aliases and all 69 manifest entries and found the
+  code right and the prose behind it in seven places. Corrected here; two of the seven were
+  wider than the report said.
+
+  - **`lib/bootstrap-lib.sh` retired a migration that is still open.** It said _"BOTH role
+    repos now call this helper, so there is nothing left to migrate."_ `Offense` does;
+    `Defense` still hand-rolls the band in its own `wire_defense_stage` and never names
+    `blib_link_role_layer`. `core.manifest` and `PORTING-MATRIX.md` both record the split
+    correctly — this comment was the only one of the three that claimed it was finished. Its
+    companion paragraph is also moved back to the present tense: Defense's `BLIB_DRY` fork is
+    live, not historical, and is precisely what adopting the helper would retire.
+  - **Four Kali cells in `PORTING-MATRIX.md` are `asset²⁸`, not package names** —
+    `git-delta`, `difftastic`, `mise` and `uv`. #701 named the first three; `uv` carries the
+    identical defect and reads _more_ plausible, because kali-rolling genuinely does ship
+    `uv` 0.9.17 — but `dotfiles-Debian` fetches the pinned `UV_VERSION` asset on every
+    target, so the cell was recording what the archive **contains** rather than what the repo
+    **installs**. That is exactly the failure the `²¹ᵃ` inherited-not-verified caveat warns
+    about, and it is now stated there as the test to apply to the cells still unmarked.
+    `difftastic` is the sharpest: `dotfiles-Debian`'s `packages.txt` carries a five-line
+    postmortem about this specific mistake, and the matrix still carried the error it
+    describes. Footnote ²⁸ widens past its Debian-only framing (the two columns reach the
+    same cell for opposite reasons) and ³⁰ drops the claim that Kali's bootstrap uses
+    `mise.run` — it has not since the lane moved.
+  - **"Eight machines + `Defense` = the nine" counted `Offense` as a machine.** Arithmetic
+    right, taxonomy a release out of date: `Offense` shed `os/` when the Kali lane moved to
+    `dotfiles-Debian`, so it qualifies for the exemption that sentence grants `Defense`. Now
+    seven machines + `Offense` + `Defense`. This was a passage, not a line — the surrounding
+    atuin-daemon block counted eight in three more places and still listed `Kali` as a
+    machine of its own, an identity no repo has owned since the move. Kali folds into the
+    `Debian/Ubuntu` row, which is wired, so the wired count is three of seven.
+  - **`README.md` listed the verbs that live only in `core help` and missed two.** `up` and
+    `update-check` are both real (`zsh/60-update.zsh`) and absent from `aliases.md`. Walking
+    `core-help`'s full `rows` array against the cheat sheet says those are the only two
+    function verbs missing — so the list is completed rather than softened to "e.g.", and
+    the keybindings group (in neither document) is now named too.
+
+  The sweep's remaining findings were already correct and are recorded as clean: every
+  manifest entry traced both directions, all three alias sets resolving, and the
+  release-pinned `dotfiles-web` mirror correctly lagging `main` by exactly one unreleased
+  paragraph rather than drifting. (#701)
 
 - **`.claude/tool-decisions.md` was written, referenced from four places, and never tracked.**
   #661 taught `/tool-scout` to consult the decided-and-rejected ledger and shipped the three
