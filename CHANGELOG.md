@@ -142,6 +142,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`lockfile = true` does not do what `mise/config.toml` says it does.** The comment sells
+  hermetic tool resolution — _"`mise install` reproduces the same toolchain everywhere"_ — but
+  `lockfile` is **project-scoped**, and on a provisioned box that file IS the global config.
+  Measured on mise 2026.5.16 with this exact file as the global config and all 11 tools
+  declared: `mise lock` answers `! No tools configured to lock` and writes nothing. The
+  identical content as a project `mise.toml` locks all 7 platforms normally.
+
+  The fleet corroborates it: the setting has been on for some time, real installs have gone
+  through it (ruby 4.0.6 and lua 5.5.1 are installed), and there is **no `mise.lock` anywhere
+  in any of the ten repos**. The floating `lts`/`latest`/`stable` pins are still what a box
+  actually resolves, so two boxes provisioned a month apart can differ — exactly the thing the
+  paragraph promised was solved. The setting is kept (it is live when this repo is entered as
+  a project, which is why `mise/mise.lock` is deliberately trackable — #729); what changes is
+  that the file no longer claims a fleet-wide guarantee it cannot deliver.
+
+- **The `blib_adopt` conf.d note now records how verifying it goes wrong.** It tells the reader
+  to verify before "fixing" the ordering, and two of us independently got it backwards the
+  same way: mise walks up from the cwd and treats `mise/config.toml` as a PROJECT config path,
+  so a fixture root containing `mise/config.toml` loads it twice — once global, once project —
+  and project outranks global `conf.d`. The ordering then inverts and looks fine.
+
+  Worth recording because the obvious cross-check does not catch it: **neither `mise current`
+  nor `mise which` detects the confound** — under it both report the project value and agree
+  with each other. `mise config ls` is the safeguard, since it lists the files actually loaded.
+  A note that says "verify this" owes the reader the two ways verification fails.
+
 - **A run that skipped a third of the fleet-wide gates still signed off `audit OK`.** The
   summary body said `PARTIAL` and named every skip, but the LAST line — the one a human
   quotes into a PR — said `audit OK` and nothing else. The verdict now reads
