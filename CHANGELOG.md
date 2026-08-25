@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.18.0] - 2026-08-24
+
 ### Added
 
 - **A weekly, genuinely unstubbed bootstrap — `real-bootstrap.yml`.** The per-PR gates cover
