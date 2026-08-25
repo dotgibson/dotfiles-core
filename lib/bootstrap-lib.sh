@@ -235,8 +235,22 @@ blib_seed() {
 #       "lua is defined in …/conf.d/00-core.toml which overrides the global config"
 #   · inside conf.d the LOWEST-numbered file wins — 00-core.toml beat 99-local.toml,
 #     the REVERSE of the systemd conf.d convention almost everyone will assume
-#   · read this with `mise current <tool>`, NOT `mise ls` / `mise ls --current`: those
-#     print one line per config file, which is easy to misread as a precedence answer
+#   · read this with `mise current <tool>` or `mise which <tool>`, NOT `mise ls` /
+#     `mise ls --current`: those print one line per config file, which is easy to misread
+#     as a precedence answer — that misreading produced the first, wrong version of this note
+#
+# HOW VERIFYING THIS GOES WRONG. Both ways below were hit for real while establishing the
+# above — by two people independently — so spend the two minutes:
+#   · THE CWD IS THE WHOLE STORY. mise walks UP from the cwd and treats `mise/config.toml`
+#     as a PROJECT config path, so a fixture root containing mise/config.toml loads that
+#     file TWICE — once as the global config via XDG_CONFIG_HOME, once as a project config —
+#     and PROJECT outranks global conf.d. config.toml then appears to win and the whole
+#     conclusion inverts. Run from a directory with no `mise/config.toml` in ANY ancestor;
+#     "a different directory" is not enough, and it looks completely fine when it is wrong.
+#   · NEITHER `mise current` NOR `mise which` DETECTS THAT. Measured: under the confounded
+#     cwd both report the project value and agree with each other, so cross-checking the two
+#     proves nothing. `mise config ls` is the safeguard — it lists the files actually loaded,
+#     and a count higher than the fixtures you created is the confound, made visible.
 #
 # The hazard is WHERE `mise use -g` writes — the highest-precedence file that ALREADY
 # EXISTS. With Core's pins in a conf.d file that gives two failures and no good case:

@@ -76,6 +76,28 @@ quiet = false
 # Cargo.lock / package-lock.json. Generate/refresh it on a real box: `mise install`
 # (or `mise lock`) writes mise.lock; commit it. Until it's committed mise resolves
 # floating as before, so this is a safe no-op until the lock lands.
+#
+# READ THIS BEFORE RELYING ON THE PARAGRAPH ABOVE: `lockfile` is PROJECT-SCOPED. mise does
+# not lock a GLOBAL config's tools — and on a provisioned box this file IS the global config
+# (~/.config/mise/config.toml). Measured on mise 2026.5.16, with this exact file as the
+# global config and all 11 tools declared:
+#
+#     $ mise lock
+#     ! No tools configured to lock            # …and no mise.lock written
+#
+# The identical content as a project mise.toml locks all 7 platforms normally. The fleet
+# corroborates it: `lockfile = true` has been set for some time, real installs have gone
+# through it (ruby 4.0.6, lua 5.5.1 are installed), and there is no mise.lock anywhere in
+# any of the ten repos. So "reproduces the same toolchain everywhere" does NOT hold for the
+# global use today — the floating lts/latest/stable pins above are what a box actually
+# resolves, and two boxes provisioned a month apart can still differ. Here, this is inert.
+#
+# Where it DOES bite: this repo keeps the file at mise/config.toml, a path mise treats as a
+# PROJECT config — so entering dotfiles-core loads it a second time as a project config (the
+# same double-load the global-only-settings note below describes), and `mise install` /
+# `mise lock` run from in here will write mise/mise.lock. That file is deliberately
+# trackable and NOT gitignored (#729). Keeping this setting is therefore correct; believing
+# it makes the FLEET hermetic is not. That would need a different mechanism, not this flag.
 lockfile = true
 
 # NB: mise's GLOBAL-ONLY settings (paranoid, trusted_config_paths, …) are intentionally
