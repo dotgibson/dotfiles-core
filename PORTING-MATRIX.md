@@ -74,7 +74,7 @@ _Repo status_ at the bottom).
 | direnv³²         | `direnv`          | `direnv`      | `direnv`          | `app-shells/direnv`¹²      | `direnv`          | `direnv`      |
 | yazi             | `yazi`            | `yazi`¹⁸      | `yazi`            | `app-misc/yazi`¹²          | cargo³            | —²⁹           |
 | tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter` | `tree-sitter-cli` | `dev-util/tree-sitter-cli` | `tree-sitter-cli` | asset²⁸       |
-| jq               | `jq`              | `jq`          | `jq`              | `app-misc/jq`              | `jq`              | `jq`          |
+| jq³⁴             | `jq`              | `jq`          | `jq`              | `app-misc/jq`              | `jq`              | `jq`          |
 | yq⁶              | `go-yq`           | `yq`          | `yq-go`           | `app-misc/yq-go`           | `yq-go`           | go³           |
 | duf              | `duf`             | `duf`         | testing¹⁴         | `sys-fs/duf`               | `duf`             | `duf`         |
 | dust             | `dust`            | `dust`        | `dust`            | `sys-block/dust`           | `du-dust`⁴        | asset²⁸       |
@@ -366,20 +366,29 @@ differs per machine is how the daemon gets **launched**, so that half lives in t
 | macOS                                                                | same as Alpine: `autostart` beats hand-writing a launchd plist — the socket path is atuin's own to resolve (see the note below the table)                                                                                        | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
 | Windows                                                              | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell                                                                                                                                | —                                                             |
 
-**Where the daemon socket lives moved in atuin 18.20.0.** Upstream PR #3910 (merged
-2026-08-12) changed the default for `systemd_socket = false` — the shape Core recommends —
-from `$XDG_RUNTIME_DIR/atuin.sock` (falling back to `$XDG_DATA_HOME/atuin/atuin.sock` where
-that is unset) to **`$TMPDIR/atuin-$UID/atuin.sock`**. `systemd_socket = true` is unchanged.
+**Where the daemon socket lives is changing, and has NOT shipped in any release yet.**
+Upstream PR #3910 (merged 2026-08-12) changes the default for `systemd_socket = false` — the
+shape Core recommends — from `$XDG_RUNTIME_DIR/atuin.sock` (falling back to
+`$XDG_DATA_HOME/atuin/atuin.sock` where that is unset) to **`$TMPDIR/atuin-$UID/atuin.sock`**.
+`systemd_socket = true` is unchanged.
 
-Two consequences worth recording. The old macOS reasoning — "`XDG_RUNTIME_DIR` is unset there
-so the socket lands in the data dir" — stops being true, and on 18.20.0 macOS's per-user
-`$TMPDIR` actually _unifies_ macOS and Linux rather than splitting them. And atuin's own
-client gained a legacy search list, while Core's guard resolved exactly one expression: on
-18.20.0 it would have probed a path nothing binds, exported `ATUIN_DAEMON__ENABLED=false` at
-every shell's first precmd and unhooked the watchdog — permanently, and with **no warning**,
-because `_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path. Fixed pre-emptively in #518:
-the guard now probes the new default and both legacy paths, newest first, so it follows a
-daemon across the version boundary in either direction.
+**This note used to say the move landed in 18.20.0. It has landed in no release, stable or
+beta.** #3910 merged 2026-08-12, _after_ `v18.20.0-beta.3` (2026-08-07); the newest stable is
+**18.19.0** (2026-08-03), which still resolves the old path. Date the change by its merge, not
+by a version, until a release actually carries it — naming an unshipped version is how a
+reader concludes their box is already on the new path.
+
+Two consequences worth recording, both stated against the merged behaviour rather than a
+release. The old macOS reasoning — "`XDG_RUNTIME_DIR` is unset there so the socket lands in
+the data dir" — stops being true, and macOS's per-user `$TMPDIR` actually _unifies_ macOS and
+Linux rather than splitting them. And atuin's own client gained a legacy search list, while
+Core's guard resolved exactly one expression: once this ships it would have probed a path
+nothing binds, exported `ATUIN_DAEMON__ENABLED=false` at every shell's first precmd and
+unhooked the watchdog — permanently, and with **no warning**, because
+`_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path. Fixed pre-emptively in #518: the guard
+now probes the new default and both legacy paths, newest first, so it follows a daemon across
+the version boundary in either direction. Being ahead of upstream here is the right
+direction — only the prose claiming a shipped version was wrong.
 
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
@@ -482,6 +491,14 @@ fresh process, so "fire-and-forget" can only mean that a crashed daemon's leftov
 defeats the spawn, and a check that only tried an absent socket would miss it. And the healing
 lives in the **client**: `atuin daemon start` on its own refuses over a stale inode with
 `Address already in use`, while the autostart path unlinks it first.
+
+**Watch `atuinsh/atuin#3957` — it would make that last sentence wrong.** Opened 2026-08-20,
+still open and unreviewed, it makes the **daemon** unlink a stale socket on bind failure. The
+"healing lives in the client" finding is the measured basis of `--premise autostart` and of
+`CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST` in `zsh/00-tools.zsh`; if #3957 merges, the daemon
+heals itself and the premise the stand-down rests on no longer holds. **No action while it is
+unmerged** — and in particular do not edit that anchor, which is a claim the premise was
+re-measured, not a version bump. Re-run `make verify-atuin-guard-autostart` if it lands.
 
 Still not covered, so the default `--premise discard` caveats are not the only ones: the
 scheduled job runs on glibc Linux, which is neither of the two machines this premise protects,
@@ -698,8 +715,27 @@ Do **not** read **Kali's** `cargo` cell as a `³`: no `bootstrap.sh` installs it
 the opt-in extras block `--no-extras` skips. Either way `maint/dotfiles-maint.sh` runs
 `rustup update` but has no `cargo install-update` step, so a `cargo`-installed `watchexec`
 is never refreshed by the maintenance job — which bites the Gentoo box too, bootstrap or
-not. That is already true of `ouch`/`jj`/`ast-grep` — a documentation gap this footnote
-records rather than a new one.
+not. That is already true of `ouch`/`jj`/`ast-grep`.
+
+**That gap now has a prescribed path: declare the tool as a mise backend and the maintenance
+job already runs the upgrade.** `maint/dotfiles-maint.sh` runs `mise upgrade --yes` and
+`rustup update` and has no cargo/go re-install step, so roughly fifteen tools across the stack
+— `viddy`, `yazi`, `ouch`, `jj`, `ast-grep`, `jnv`, `watchexec`, `tealdeer`, `dust`, `sesh`,
+`doggo`, `gron`, `shfmt`, `glow`, `yq`, `duf`, plus `carapace`/`starship`/`atuin` ²⁷ — are
+installed once and then never refreshed on up to eight machines. Declaring them under
+`[tools]` with a `cargo:` / `go:` / `ubi:` backend makes the step that **already runs** do the
+work, and `lockfile = true` records the exact resolved versions and checksums — a strictly
+better trust anchor than the unsigned release-URL route ²⁷ warns about. `examples/mise.tools.toml`
+is the worked global-tools example.
+
+Two caveats that decide whether this works rather than merely resolves. **Alpine must take
+`cargo:`, never `ubi:` or `aqua:`** — those prebuilts are glibc-linked, the exact trap
+`mise/config.toml` documents for `foundry`. And **`ouch` on Alpine must force a source build
+without default features**, per ¹⁴ — the default set cannot build on musl at all.
+
+**Core's share of this is the example and this paragraph.** The `[tools]` declarations
+themselves are per-OS-repo work, which is the correct layering: which backend a given box
+needs is an OS question, and Core cannot answer it for eight of them at once.
 
 ²⁶ git-absorb: OPT-IN — works out which earlier commit each **staged hunk** belongs to and
 writes the `fixup!` commits for you; `git rebase -i --autosquash` then folds them in, and
@@ -1066,6 +1102,32 @@ declared floor is not reachable. Filed as dotfiles-Gentoo#116, verified 2026-08-
 **If you stamp a new source-based or stable/testing-split target, ask the keyword question,
 not just the name question.** Every other column here is rolling, which is why this trap has
 only ever shown up on the fleet's two non-rolling lanes.
+
+³⁴ **jq — a recorded security floor of ≥ 1.8.2, and deliberately NOT a version gate.**
+1.8.2 (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an
+integer overflow, a use-after-free, and a hash-collision DoS. Every one of them is reachable
+**through parsing input**, which is the entire job of the tool. That matters here because jq
+is pointed at output produced by machines other than yours: Core sets `HAVE_JQ`
+(`zsh/00-tools.zsh`) and this file prescribes `jq -e '.detection.missed == []'` as the
+provisioning gate a role layer runs against `core-doctor --json` ²⁰.
+
+Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
+Tumbleweed, Homebrew and Alpine edge. **Below it** on Alpine 3.22/3.23/3.24 and Fedora 43/44
+(1.8.1), Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+
+**Do not build a guard on `jq --version`.** On the Debian family the version string is not
+evidence either way — Debian backports security fixes without bumping the version, so a
+`1.7.1-x` build may carry all, some or none of these, and a version gate would false-positive
+across the whole Debian/Kali/Ubuntu lane. This is a third shape, distinct from the two other
+version-sensitive rows in this file, and the distinction is the point: `⁵` (tree-sitter)
+mandates a **version** check because apk is honestly old, and `²²` (`sd`) forbids one and
+mandates **capability probing** because `--version` lies. jq's version is neither honest nor
+probeable — nothing in the CLI surface reveals which patches a build carries. So this is a
+floor you _record_ and act on when provisioning, not one you can detect from the shell.
+
+Core itself is unaffected: nothing in Core shells out to jq (`HAVE_JQ` is detect-only, no
+alias — the same shape as `gron`/`sd`). This is a note for the role layers and for anyone
+piping untrusted JSON through a distro jq.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
