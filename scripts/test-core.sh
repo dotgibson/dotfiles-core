@@ -7849,8 +7849,15 @@ CAPS
     "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_SEARCH]]"')" "[dnf whatprovides]"
   # Junk must not merely be tolerated — it must be ABSENT. A lowercase or mixed-case key
   # half-parsed into the table would be a capability nothing ever reads and nothing reports.
-  _cap_is "only well-formed KEYS land in the table" \
-    "$(_cap_probe "$CAPD/good" 'print -r -- "${(ko)_CORE_CAP}"')" \
+  #
+  # zsh emits the keys UNSORTED, one per line, and bash sorts them. The obvious spelling —
+  # `print -r -- "${(ko)_CORE_CAP}"` — silently does NOT sort: inside double quotes the
+  # expansion is joined into a single word before the `o` flag applies, so `o` has one word
+  # to order and returns hash order. It read as sorted and was not, which is precisely the
+  # kind of assertion that passes for the wrong reason later. Sorting outside zsh depends on
+  # no expansion-flag subtlety at all; LC_ALL=C pins collation across the four CI legs.
+  _cap_keys="$(_cap_probe "$CAPD/good" 'print -rl -- ${(k)_CORE_CAP}' | LC_ALL=C sort | tr '\n' ' ')"
+  _cap_is "only well-formed KEYS land in the table" "${_cap_keys% }" \
     "PKG_EMPTY PKG_INSTALL PKG_SEARCH PKG_TRAILING SCHEDULER"
   # The parser's scratch variables must not leak into the interactive shell. They cannot be
   # `local` (the fragment is sourced at top level), so the explicit unset is load-bearing.
