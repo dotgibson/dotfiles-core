@@ -1846,6 +1846,91 @@ if [[ -z "$(_core_conflict_marker_hits "$HERE/scripts/test-core.sh")" ]]; then
   pass "conflict-marker scan: this test file does not report itself"
 else fail "conflict-marker scan: test-core.sh reports itself — a fixture was typed literally instead of built with printf"; fi
 
+# ── routine reference scanner (scripts/lib/common.sh :: _core_claude_ref_hits) ─
+# WHY THIS IS TESTED. audit-core.sh §1b is the backstop for a defect that shipped and was
+# then reported wrong twice: #661 wired /tool-scout to read .claude/tool-decisions.md and
+# never tracked the file, because .gitignore's `.claude/*` negations are per-DIRECTORY. The
+# gate's value is entirely in what it EXTRACTS — §1b decides existence and trackedness from
+# git, which no fixture can stand in for, so the scanner is the half that can be pinned
+# here. Driven on fixtures for the same reason the digest below is: making the real gate
+# fail means un-tracking a file mid-audit, and CI cannot repeat that.
+#
+# The line numbers are load-bearing, not decoration: §1b prints `<src>:<line> names <path>`
+# and that citation is the whole repair instruction. So these assert exact output.
+hdr "routine reference scanner (_core_claude_ref_hits)"
+_crd="$SANDBOX/clauderef"
+mkdir -p "$_crd"
+_cr_bt="$(printf '\140')"
+_cr_write() { printf '%s\n' "$2" >"$_crd/$1"; } # _cr_write <name> <body>
+_cr_is() {                                      # _cr_is <label> <file> <expected>
+  local got
+  got="$(_core_claude_ref_hits "$_crd/$2")"
+  if [[ "$got" == "$3" ]]; then
+    pass "routine reference scan: $1"
+  else
+    fail "routine reference scan: $1 (got '${got//$'\n'/, }', want '${3//$'\n'/, }')"
+  fi
+}
+
+# ── what it must catch ──
+# The real shape, verbatim from .claude/commands/tool-scout.md — a code span in a bullet.
+_cr_write bullet.md "Those five describe what Core has. One more describes what it turned down:
+
+- ${_cr_bt}.claude/tool-decisions.md${_cr_bt} — tools considered and declined."
+_cr_is "a backticked path in a bullet is reported with its line" bullet.md "3:.claude/tool-decisions.md"
+
+_cr_write two.md "read ${_cr_bt}.claude/tool-decisions.md${_cr_bt} first
+then ${_cr_bt}.claude/agents/tool-scout.md${_cr_bt} too"
+_cr_is "every reference reports, one per line" two.md "1:.claude/tool-decisions.md
+2:.claude/agents/tool-scout.md"
+
+# Two on ONE line. grep -o emits both with the same line number, which is what the operator
+# needs — the citation points at the line, and a line can make two claims.
+_cr_write same.md "both ${_cr_bt}.claude/a.md${_cr_bt} and ${_cr_bt}.claude/b.md${_cr_bt} are read"
+_cr_is "two references on one line both report" same.md "1:.claude/a.md
+1:.claude/b.md"
+
+# A citation carries a line number; the FILE is still the claim being made.
+_cr_write cite.md "see ${_cr_bt}.claude/commands/tool-scout.md:164${_cr_bt} for the wording"
+_cr_is "a trailing :NN is stripped — a citation names a file, not a line" cite.md "1:.claude/commands/tool-scout.md"
+
+# ── what it must NOT catch ──
+# A pattern describes a SET. Resolving it would mean inventing a semantics the prose does
+# not have, and the first false positive is what gets a gate switched off (the §5f argument).
+_cr_write glob.md "the routines live in ${_cr_bt}.claude/commands/*.md${_cr_bt}"
+_cr_is "a glob is NOT a file claim" glob.md ""
+
+_cr_write dir.md "everything under ${_cr_bt}.claude/agents/${_cr_bt} is shared"
+_cr_is "a directory is NOT a file claim" dir.md ""
+
+# Prose that merely says the word is not asserting a path exists. Requiring the code span
+# is what keeps this gate keyed on "this exact file" rather than on any mention of .claude.
+_cr_write prose.md "The .claude/tool-decisions.md ledger is worth reading."
+_cr_is "an unbackticked mention is NOT a finding" prose.md ""
+
+_cr_write other.md "read ${_cr_bt}PORTING-MATRIX.md${_cr_bt} and ${_cr_bt}zsh/00-tools.zsh${_cr_bt}"
+_cr_is "paths outside .claude/ are out of scope" other.md ""
+
+_cr_is "a missing file is silent, not an error" nosuchfile.md ""
+
+# NO SELF-REFERENCE GUARD HERE, unlike the conflict-marker matcher above, and the
+# difference is real rather than an omission. That scanner reads EVERY tracked file, so
+# common.sh is inside its own scan set and a literally-typed pattern would redden the audit
+# permanently. This one only ever opens .claude/{commands,agents}/*.md — common.sh is not in
+# the set, and the backticked `.claude/…` examples in its own comments are documentation of
+# the contract, not claims about files. Asserting silence here would forbid the scanner from
+# being explained in prose, which is a worse trade than it looks.
+#
+# What IS worth pinning is the scanner against the real routine docs rather than fixtures.
+# Every assertion above is synthetic; this one fails if the house form ever moves away from
+# a code span (an autolink, a markdown link, a bare path), which would leave §1b silently
+# scanning for a shape nobody writes any more — a gate that passes because it found nothing
+# to check, which is the exact failure #700 was.
+_cr_live="$(_core_claude_ref_hits "$HERE/.claude/commands/tool-scout.md")"
+if [[ "$_cr_live" == *":.claude/tool-decisions.md" ]]; then
+  pass "routine reference scan: the live routine doc still parses (tool-scout.md names the ledger)"
+else fail "routine reference scan: .claude/commands/tool-scout.md yielded '${_cr_live//$'\n'/, }' — the routines stopped writing paths as code spans, so §1b is scanning for a shape that no longer exists"; fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
@@ -2029,7 +2114,17 @@ if have git; then
   # that would carry it onto main — which is precisely the untracked-but-not-ignored window
   # `_audit_ls` covers and bare `git ls-files` does not. Its pathspec is `*` rather than a
   # glob list because the defect that motivated it (#650) was in markdown, not in shell.
-  _als_expect="audit-core.sh:10:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  #
+  # DIRECT 3→5: §1b (routine reference integrity) takes bare `git ls-files` twice, and this
+  # is the one gate where the choice is not a preference. It asks whether a file the
+  # routines claim to read is SHIPPED — a pure "what does git record?" question — and the
+  # defect it exists for (#700) was a file present on the author's disk and ignored by git.
+  # `_audit_ls` includes untracked-but-not-ignored files, so using it here would wave that
+  # exact file through while every clone stayed broken: the gate would be green precisely
+  # on the machine where the bug is invisible. Both call sites are the same question — one
+  # builds the tracked set to test membership against, the other picks the routine docs to
+  # scan — so both take the git-state side.
+  _als_expect="audit-core.sh:10:5 check-modern.sh:2:0 nvim-reachability.sh:2:0"
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"
