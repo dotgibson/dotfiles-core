@@ -18,11 +18,18 @@ python = "3.14"       # many pentest tools (impacket, bloodhound-python) want a 
 # the one those global tools run on. uv owns PER-PROJECT envs (.venv) and tool running: inside a
 # project use `uv run` / `uv sync` (aliased uvr/uvs in zsh/20-aliases.zsh), which resolve the
 # project's venv with no manual activation. Project deps belong in that project's pyproject.toml.
-ruby   = "3.4"        # evil-winrm, some Metasploit modules, web tooling
+ruby   = "4.0"        # evil-winrm, some Metasploit modules, web tooling
 go     = "latest"     # lots of security tooling is `go install`-able; enables gopls
 rust   = "stable"     # see distro note below
 java   = "temurin-21" # Burp Suite, BloodHound legacy — recent LTS
-lua    = "5.4"        # handy when hacking on the Neovim config
+lua    = "5.5"        # handy when hacking on the Neovim config
+# NOT the interpreter luacheck runs on, and do not "harmonize" the two. luacheck 1.2.0
+# (its last release) cannot even LOAD under 5.5 — 5.5 made some locals const, which trips
+# "attempt to assign to const variable" inside luacheck's own source. Both places that
+# install it therefore pin an explicit 5.4 of their own and are unaffected by this line:
+# .github/workflows/ci.yml (brew lua@5.4) and .claude/hooks/session-start.sh (distro
+# lua5.4 + liblua5.4-dev). If you install luacheck against THIS lua, the audit's luacheck
+# leg breaks with an error that names neither mise nor this file.
 
 # Toolchains that back Neovim's conform formatters (plugins/conform.lua declares these fleet-wide,
 # so :checkhealth flags them as "unavailable" on any box that lacks the binary). Declared here so
