@@ -3923,6 +3923,13 @@ if have git; then
   _lr_is_link_to "$LR/config/lazygit/config.yml" "$LR/dotfiles/core/lazygit/config.yml" || _lr_bad="$_lr_bad lazygit"
   _lr_is_link_to "$LR/config/jj/config.toml" "$LR/dotfiles/core/jujutsu/config.toml" || _lr_bad="$_lr_bad jj"
   _lr_is_link_to "$LR/config/tealdeer/config.toml" "$LR/dotfiles/core/tealdeer/config.toml" || _lr_bad="$_lr_bad tealdeer"
+  # mise and atuin were absent from this group for as long as it has existed (#718) — the
+  # gap the checklist rewrite predicts, found by reading the list it now tells you to edit.
+  # Both are in the `tools` group beside lazygit/jj/tealdeer and were only ever covered by
+  # the fixture-directory list above, which proves the SOURCE was copied, not that the LINK
+  # lands where bootstrap promises.
+  _lr_is_link_to "$LR/config/mise/config.toml" "$LR/dotfiles/core/mise/config.toml" || _lr_bad="$_lr_bad mise"
+  _lr_is_link_to "$LR/config/atuin/config.toml" "$LR/dotfiles/core/atuin/config.toml" || _lr_bad="$_lr_bad atuin"
   _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
   _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
   # Resolve the target, don't just prove it is *a* symlink — a dangling link, or one
@@ -3930,7 +3937,7 @@ if have git; then
   _lr_is_link_to "$LR/config/tmux/scripts" "$LR/dotfiles/core/tmux/scripts" || _lr_bad="$_lr_bad tmux/scripts"
   [[ -d "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts(dangling)"
   if [[ -z "$_lr_bad" ]]; then
-    pass "link run: tmux, starship, lazygit, jj, tealdeer, gitconfig and vimrc land where bootstrap promises"
+    pass "link run: tmux, starship, lazygit, jj, tealdeer, mise, atuin, gitconfig and vimrc land where bootstrap promises"
   else
     fail "link run: wrong or missing links —$_lr_bad"
   fi

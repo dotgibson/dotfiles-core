@@ -352,6 +352,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`CONTRIBUTING.md`'s "adding a new Core file" checklist named a list that no longer exists,
+  and omitted three that do.** Step 6 sent you to give the new directory a home in "the two
+  path lists", one of which was §5c of `scripts/audit-core.sh` — whose scope became
+  **manifest-derived**, as `scripts/audit-core.sh:583` says out loud. So the step sent a
+  careful reader looking for something to edit that is not there, at the one moment they were
+  most likely to be careful.
+
+  The three lists it did **not** name are the ones with no gate behind them:
+  `scripts/test-core.sh`'s `_lr_d` fixture directory list — **the one that fails quietly**,
+  because a missing source makes `blib_link` early-return (`lib/bootstrap-lib.sh:127-131`) and
+  every assertion below it pass vacuously; the grouped `_lr_is_link_to` assertions; and
+  `dotfiles-MacBook/bootstrap.sh`'s `--uninstall` `dests` array, the only hand-maintained one
+  in the fleet. The rewrite also names all **three** prose enumerations in
+  `lib/bootstrap-lib.sh` that `:436` tells you to keep in step, where the checklist mentioned
+  none.
+
+  **Reading the list it now tells you to edit found the gap it predicts:** `mise/config.toml`
+  and `atuin/config.toml` had never been in the `_lr_is_link_to` group, so the link run proved
+  their sources were copied but never that the links land where bootstrap promises. Both are
+  asserted now. (#718)
+
 - **A missing `os/<os>.capabilities` warned on every shell, on every box, with a remedy that
   could not work.** `zsh/02-capabilities.zsh`'s `else` branch was unconditional and
   unthrottled, and three facts composed into a fleet-wide stderr leak: no OS repo has authored
