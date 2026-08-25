@@ -1419,13 +1419,37 @@ fi
 # the non-"out of scope" tally above, and skip_env is the only thing that declares them.
 # This keeps --strict's meaning EXACTLY as it was (absent tools only) while letting
 # --require-siblings gate the third class on its own.
+# Classified BY INDEX, not by arithmetic on counts. The previous form tallied every skip whose
+# text lacked "out of scope" and then SUBTRACTED the environment count. That is correct only
+# while no skip_env message ever contains "out of scope" — a property nothing enforced, held
+# purely by the wording each call site happened to use. One such message and a genuine
+# tool-absent gap is cancelled out and --strict goes GREEN on it:
+#
+#     skip     "luacheck (not installed)"                                # a real gap
+#     skip_env "gitleaks policy (no sibling checked out — out of scope)"  # poisoned wording
+#     raw tool tally 1 − env 1 = 0                                      → --strict green
+#
+# That is the false green this gate exists to prevent, and it is the SAME defect the
+# environment class was introduced to remove — prose deciding a gate — reintroduced one layer
+# down. Keying on the index skip_env recorded makes the wording irrelevant, and also makes two
+# identically-worded skips (one plain, one env) impossible to confuse. No subtraction, so no
+# underflow, so no clamp: the old `((_tool_skips < 0)) && _tool_skips=0` floor turned an
+# impossible state into a plausible zero rather than surfacing it.
 _env_skips=${#_CORE_ENV_SKIPS[@]}
 _tool_skips=0
+_i=0
 for _s in ${_CORE_SKIPS[@]+"${_CORE_SKIPS[@]}"}; do
+  _is_env=0
+  for _e in ${_CORE_ENV_SKIP_IDX[@]+"${_CORE_ENV_SKIP_IDX[@]}"}; do
+    [[ "$_i" == "$_e" ]] && {
+      _is_env=1
+      break
+    }
+  done
+  _i=$((_i + 1))
+  ((_is_env)) && continue
   [[ "$_s" == *"out of scope"* ]] || _tool_skips=$((_tool_skips + 1))
 done
-_tool_skips=$((_tool_skips - _env_skips))
-((_tool_skips < 0)) && _tool_skips=0
 
 # ── machine-readable summary (--json): one object on stdout, then exit with the same
 # status the human path would. Lets a CI step / editor parse the result instead of

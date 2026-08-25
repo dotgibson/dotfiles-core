@@ -142,6 +142,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The environment-skip classifier decided a gate by prose again, one layer down.** #730 split
+  skips into `tool` / `out of scope` / `environment` precisely so wording would stop being
+  load-bearing — then computed the tool tally as _(skips whose text lacks `out of scope`) minus
+  the environment COUNT_. That subtraction is correct only while no `skip_env` message ever
+  contains `out of scope`, a property nothing enforced and which held purely by how each call
+  site happened to be worded. One such message cancels a genuine gap:
+
+  ```text
+  skip     "luacheck (not installed)"                                 # a real tool gap
+  skip_env "gitleaks policy (no sibling checked out — out of scope)"  # poisoned wording
+  raw tool tally 1 − env 1 = 0                                        → --strict GREEN
+  ```
+
+  That is the false green the gate exists to prevent, reintroduced by the fix for it. The
+  classifier now keys on the **index** `skip_env` records rather than on the message, so wording
+  is irrelevant and two identically-worded skips cannot be confused. No subtraction means no
+  underflow, so the `((_tool_skips < 0)) && _tool_skips=0` floor is gone too — it turned an
+  impossible state into a plausible zero instead of surfacing it.
+
+  Pinned by a test that uses the poisoned wording, since every in-tree call site is worded
+  innocently and a happy-path partition test cannot see this. Found in review, not by the
+  tests that shipped with #730.
+
 - **`lockfile = true` does not do what `mise/config.toml` says it does.** The comment sells
   hermetic tool resolution — _"`mise install` reproduces the same toolchain everywhere"_ — but
   `lockfile` is **project-scoped**, and on a provisioned box that file IS the global config.
