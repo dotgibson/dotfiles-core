@@ -16,6 +16,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The CI floor now requires `timeout-minutes:` on every runner job — `require_job_timeout`.**
+  Left unset, GitHub's default is **360 minutes**: six hours of a held runner and a live
+  `GITHUB_TOKEN` for a job that hung on a prompt, a network stall, or a step that was
+  tampered with.
+
+  Unlike the rest of `scripts/modern-baseline.yml` this rule is **not** driven by a dated
+  upstream deprecation, and the baseline comment says so plainly rather than dressing it up.
+  The reason to encode it now is structural: Core owns all six `*-call.yml@v4` reusable
+  workflows the fleet consumes, so the jobs the OS repos actually execute are defined here. A
+  floor rule locks in a property currently held only by convention across 47 jobs — cheap
+  while the fleet is at 47/47, expensive once someone lands job 48 without one.
+
+  **Keyed on `runs-on:`, not on "every job."** A job that calls a reusable workflow (`uses:`
+  at job level — there are 10, every one a `notify-failure-call`/`notify-web-call`) cannot
+  legally carry `timeout-minutes`, so requiring it there would be a guaranteed false fire.
+  Both directions are covered by fixtures in the existing hermetic `check-modern` harness:
+  one job missing a timeout is caught while its declaring sibling is not, and a
+  reusable-workflow call job does not fire.
+
+  **No workflow edits — nothing was below the proposed floor.** Adopted at zero fix-first
+  cost. (#707)
+
 - **`tealdeer/config.toml` — the page cache nothing was refreshing.** `help` is a Core alias
   (`zsh/20-aliases.zsh`, `HAVE_TLDR`-guarded) and tealdeer is packaged across the fleet, but Core
   shipped no config for it and `maint/dotfiles-maint.sh` has no `tldr --update` step. Upstream's

@@ -7667,7 +7667,7 @@ unset -f _cc_run
 # Hermetic: a throwaway git repo (the gate inventories through `git ls-files`, so a plain
 # directory yields "no workflow/action files to check" and every assertion below would
 # vacuously pass) holding only the script, its lib and a crafted workflow.
-hdr "CI modernization floor (scripts/check-modern.sh rules 2 + 7)"
+hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 7 + 8)"
 if ! have git; then
   skip "check-modern rule fixtures (git not installed)"
 else
@@ -7876,6 +7876,53 @@ jobs:
     fail "check-modern rule 7: false positive — this shape is the prescribed remedy"
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
+  # Rule 8: a runner job with no timeout-minutes. GitHub's default is 360 minutes — six
+  # hours of a held runner and a live GITHUB_TOKEN for a job that hung. `b` is the control
+  # in the SAME fixture: a job that declares one must not be flagged, so a rule that simply
+  # fired on every job would fail here rather than pass the negative case by luck.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+  b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo hi')"
+  if [[ "$(grep -c 'without timeout-minutes' <<<"$_cm_out")" == 1 ]] \
+    && grep -q 'without timeout-minutes.*: a$' <<<"$_cm_out"; then
+    pass "check-modern rule 8: a runner job with no timeout-minutes is caught (and only that one)"
+  else
+    fail "check-modern rule 8: want exactly one hit, naming job 'a'"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # THE FALSE-FIRE THIS RULE IS SHAPED AROUND. A job that calls a reusable workflow (`uses:`
+  # at job level) CANNOT legally carry timeout-minutes — GitHub rejects the workflow. Ten
+  # jobs in this repo are exactly that shape, every one a notify-failure-call/notify-web-call.
+  # Keying on `runs-on:` rather than "every job" is the whole reason the rule is written the
+  # way it is, and this is the assertion that keeps it that way.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  call:
+    uses: ./.github/workflows/other.yml
+  local:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v4')"
+  if ! grep -q 'without timeout-minutes' <<<"$_cm_out"; then
+    pass "check-modern rule 8: a reusable-workflow call job does not fire (it cannot carry one)"
+  else
+    fail "check-modern rule 8: false positive on a job that cannot legally set timeout-minutes"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
   unset _cm_out _cm_clean
   unset -f _cm_run
 fi
