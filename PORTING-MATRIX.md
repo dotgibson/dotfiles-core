@@ -427,6 +427,15 @@ mise's per-directory hook), and the remedy is to move that prepend into `00-tool
 bindir list. `ran` is false wherever band 00 never loaded — a script, `zsh -c`, the unit
 harness — and `missed` is then necessarily empty and means nothing, so a provisioning gate
 should read `jq -e '.detection.missed == []'` only after checking `.detection.ran`.
+
+`detection.stale` is its mirror (#631): tools Core **did** detect at band 00 and that are gone
+from `PATH` now. The flag is still set, so `20-aliases.zsh` already defined the alias it gated
+— which matters most for the six that shadow classic commands (`ps`, `top`/`htop`, `watch`,
+`df`, `ping`, `help`), where the result is not a missing `procs` but a broken `ps`. The report
+names the dangling **aliases** rather than the tools for that reason. The usual cause on a live
+shell is mise's `chpwd` hook taking a toolchain away on a `cd`. Same `ran` caveat, same gate
+shape: `jq -e '.detection.stale == []'`. The two lists are disjoint by construction — a row is
+present-and-unprobed or absent-and-probed, never both.
 `CORE_ATUIN_PROBE_INTERVAL` tunes the window for a box where `connect(2)` on that path is not
 cheap. One wrinkle worth knowing: the disable is an `export` (that is how it reaches the `atuin`
 binary), so a shell started _from_ a degraded shell inherits `ATUIN_DAEMON__ENABLED=false` and
