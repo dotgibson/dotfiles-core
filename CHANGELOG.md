@@ -281,6 +281,40 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   nothing (startup over five runs: 92.3 ms before, 89.9 ms after — noise). `scripts/test-core.sh`
   §D's #652 assertion is now table-driven and covers both specs. (#703)
 
+- **`.claude/tool-decisions.md` was written, referenced from four places, and never tracked.**
+  #661 taught `/tool-scout` to consult the decided-and-rejected ledger and shipped the three
+  files that point at it. It did not ship the ledger: `.gitignore`'s `.claude/*` carries
+  **per-directory** negations, so `commands/` and `agents/` vendored out while the file they
+  read stayed ignored. It existed only on the machine that authored it.
+
+  That is worse than a plain missing file, because the routine's own instruction is to say
+  _"none"_ when a candidate has no prior decision. With no ledger **every** candidate resolves
+  to "none" — in the exact voice that means _checked_ — so the report asserts the ledger was
+  consulted while consulting nothing. #634 was filed because a rejected tool was
+  indistinguishable from one never evaluated; it still was, now with a line claiming otherwise.
+  `hexyl` came back ranked #3 "adopt" six days after #395 closed it, which is the recurrence
+  the ledger exists to stop.
+
+  The fix is one `.gitignore` line, and the reason it took three reports to find is that
+  everything else pointed the other way — `.claude/` is repo-meta, correctly allowlisted
+  wholesale by `audit-core.sh`, so no manifest question was ever wrong.
+
+  **`audit-core.sh` §1b makes the class detectable.** §1 asks whether every _tracked_ file is
+  accounted for, in both directions, and its reverse walk is fed by `git ls-files` — so it
+  catches a tracked file that is unaccounted for and structurally cannot see an accounted-for
+  file that was never tracked. §1b asks the mirror question: every `` `.claude/…` `` path the
+  routines say they read must **resolve on disk and be tracked**. Absent and
+  present-but-untracked report as different failures, since they have different repairs — and
+  this one was the second, which all three reports of it called the first. It blocks rather
+  than advises on the §5i grounds: the tree is green on arrival, so every future hit is a
+  regression in the commit under test. (`_core_claude_ref_hits` in `scripts/lib/common.sh`,
+  with its unit in `scripts/test-core.sh`.)
+
+  It rhymes with `core.manifest` naming a `verify-core` backstop that never existed (#454) —
+  an assertion pointing at a file nobody created. The sharper version here: #634 shipped a
+  mechanism to stop decisions being recorded where nothing reads them, and the mechanism
+  itself was recorded where nothing can read it. (#700)
+
 - **Opening a file linted it only about half the time — nvim-lint's on-open replay raced
   mason.nvim's `PATH` prepend.** `plugins/nvim-lint.lua` loads on `User FilePost` and replays
   the triggering buffer at the end of its `config()`, because that buffer's real `BufReadPost`

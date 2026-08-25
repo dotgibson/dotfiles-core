@@ -11,6 +11,10 @@
 # Checks (each is a section; a failure in one does not abort the others):
 #   1. manifest <-> filesystem drift   — every manifest path exists; every
 #                                         tracked Core file is listed or allowlisted
+#  1b. routine reference integrity     — every .claude/ path the maintenance routines
+#                                         say they READ exists and is tracked (the
+#                                         mirror of §1: an accounted-for file that was
+#                                         never tracked is invisible to git ls-files)
 #   2. executable-bit assertions       — *.sh and bin/clip* must be +x in the
 #                                         git index; zsh/*.zsh must NOT be (sourced)
 #   3. shell syntax                     — bash -n on bash scripts; zsh -n on zsh modules
@@ -331,6 +335,74 @@ if have git && git rev-parse --git-dir >/dev/null 2>&1; then
   pass "reverse-drift scan complete (tracked files all accounted for)"
 else
   skip "reverse-drift scan (not a git checkout)"
+fi
+
+# ── 1b. routine reference integrity (the inverse of §1's reverse drift) ──────
+# §1 above asks, in both directions, whether every TRACKED file is accounted for. This
+# asks the mirror question: is every file the maintenance routines say they READ actually
+# there, and actually shipped? Those are different failures and §1 structurally cannot see
+# the second one — its reverse walk is fed by `git ls-files`, so a file that was never
+# tracked is not in the stream and `is_listed` is never called on it. The manifest
+# direction never looks either: .claude/ is repo-meta, allowlisted wholesale by
+# META_PREFIXES, which is correct and is also why nothing was watching.
+#
+# WHY IT EXISTS. #661 taught /tool-scout to consult a decided-and-rejected ledger at
+# .claude/tool-decisions.md, shipped the three files that reference it, and did not ship
+# the ledger: .gitignore's `.claude/*` negations are per-DIRECTORY, so commands/ and
+# agents/ vendored out while the file they point at stayed untracked (#700). The routine's
+# own instruction is to say "none" when a candidate has no prior decision — so with no
+# file every candidate resolves to "none", in the exact voice that means CHECKED. The
+# report then asserts the ledger was consulted while consulting nothing, which is worse
+# than the ambiguity #634 was filed to remove, because the absence is no longer visible.
+# It is the same shape as core.manifest naming a verify-core backstop that never existed
+# (#454): an assertion pointing at a file nobody created.
+#
+# TWO VERDICTS, NOT ONE. "absent" and "present but untracked" are different bugs with
+# different fixes — author the file, versus negate it in .gitignore — and this defect was
+# the second, which every report of it so far has called the first. Collapsing them into
+# one message would hand the reader the wrong repair.
+#
+# PLAIN `git ls-files`, NOT _audit_ls. The rule is in common.sh: a gate asking "what does
+# GIT RECORD?" takes the tracked list, and _audit_ls deliberately adds
+# untracked-but-not-ignored files. Here that inclusion would be fatal rather than noisy —
+# an ignored file is exactly what this gate exists to catch, and _audit_ls would wave the
+# one on the author's disk straight through while every clone stayed broken.
+#
+# WHY IT BLOCKS ON ARRIVAL, the §5i argument: the tree is green the moment this lands (the
+# four references all resolve), so every future hit is a regression introduced by the
+# commit under test, not inherited fleet drift.
+hdr "routine reference integrity"
+if ! have git || ! git rev-parse --git-dir >/dev/null 2>&1; then
+  skip "routine reference integrity (not a git checkout)"
+else
+  cref_fail=0
+  # Newline-DELIMITED, not merely newline-separated: the leading and trailing newlines let
+  # the membership test below match a whole line without a subprocess, and without
+  # `.claude/tool-decisions.md` being satisfied by a hypothetical `x.claude/tool-decisions.md`.
+  # A `grep -qxF` per reference would be the obvious spelling and is exactly what §5d
+  # forbids — a shell string piped into a reader that exits early.
+  cref_tracked=$'\n'"$(git ls-files)"$'\n'
+  while IFS= read -r cref_src; do
+    [[ -z "$cref_src" ]] && continue
+    while IFS= read -r cref_hit; do
+      [[ -z "$cref_hit" ]] && continue
+      cref_line="${cref_hit%%:*}"
+      cref_path="${cref_hit#*:}"
+      if [[ ! -e "$cref_path" ]]; then
+        fail "$cref_src:$cref_line names $cref_path, which does not exist — a routine instructed to read a missing file reports 'none' rather than failing, so the absence reads as a clean check"
+        cref_fail=1
+      elif [[ "$cref_tracked" != *$'\n'"$cref_path"$'\n'* ]]; then
+        fail "$cref_src:$cref_line names $cref_path, which exists here but is NOT TRACKED — it reaches no clone, no CI run and none of the nine vendored repos. Negate it in .gitignore (#700)"
+        cref_fail=1
+      fi
+    done <<EOF
+$(_core_claude_ref_hits "$cref_src")
+EOF
+  done <<EOF
+$(git ls-files '.claude/commands/*.md' '.claude/agents/*.md')
+EOF
+  ((cref_fail)) || pass "routine reference integrity (every .claude/ path the routines name resolves and is tracked)"
+  unset cref_fail cref_tracked cref_src cref_hit cref_line cref_path
 fi
 
 # ── 2. executable-bit assertions ─────────────────────────────────────────────
