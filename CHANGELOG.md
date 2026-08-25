@@ -16,6 +16,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`tealdeer/config.toml` — the page cache nothing was refreshing.** `help` is a Core alias
+  (`zsh/20-aliases.zsh`, `HAVE_TLDR`-guarded) and tealdeer is packaged across the fleet, but Core
+  shipped no config for it and `maint/dotfiles-maint.sh` has no `tldr --update` step. Upstream's
+  `auto_update` defaults to **false**, so the two facts compose into a gap nobody owned: on a
+  fresh box `help ls` fails with _"page not found"_ until someone runs `tldr --update` by hand,
+  and on an old box the pages rot silently. Three lines of `[updates]` fix both without touching
+  the maintenance runner. `auto_update_interval_hours` is set to 168 rather than upstream's 720
+  so the refresh tracks the weekly maintenance cadence instead of lagging a month behind it.
+
+  **The file is deliberately conservative, and the reason is not the obvious one.** tealdeer
+  1.9.0 (2026-08-24) made config parsing **error on unknown keys** (upstream #516); before that
+  an unknown key was silently ignored. So the risk does not run the direction it first appears:
+  a newer key is not what breaks an old build — an old build ignores it — but any key this file
+  gets wrong is now a hard failure on every 1.9.0+ box, surfacing on **every** `tldr` invocation,
+  which on this fleet means `help` stops working outright. Core is vendored to nine repos running
+  whatever tealdeer their distro ships (`PORTING-MATRIX.md` ¹: Tumbleweed 1.8.0; Leap 16.x has no
+  package at all), so nothing here is newer than 1.8.0 — and `updates.warn_cache_age`, which is
+  1.9.0-only, is left out on purpose rather than by omission.
+
+  Symlinked, not seeded: Core owns the file and it is identical everywhere, so `blib_link` is
+  right and `blib_seed` (`sesh.toml`, `local.gitconfig` — files the user edits locally) is not.
+  Wired into the existing `tools` group, so no new `BLIB_MODULES` entry. (#702)
+
 - **The OS layer can now DECLARE its package-manager verbs instead of Core hardcoding
   them.** Core's own test (`CONTRIBUTING.md`) is _"if it changes when the OS changes, it is
   not Core"_ — and Core broke it **154 times**: 88 package-manager references in

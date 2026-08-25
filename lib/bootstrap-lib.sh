@@ -308,8 +308,8 @@ blib_read_pkgs_into() {
 #   tmux   — tmux.conf/reset/scripts + tpm, os/<os>.conf, <role>/<role>.conf
 #   git    — core gitconfig, os/<os>.gitconfig, the once-seeded local identity
 #   prompt — starship.toml
-#   tools  — lazygit, mise, jujutsu, atuin, bin/clip*, core/ssh/config (+ ssh/os.conf),
-#            the seeded sesh config
+#   tools  — lazygit, mise, jujutsu, atuin, tealdeer, bin/clip*, core/ssh/config
+#            (+ ssh/os.conf), the seeded sesh config
 # Default (neither BLIB_ONLY nor BLIB_SKIP set) wires EVERYTHING, so every existing
 # caller is byte-for-byte unaffected. A bootstrap's arg loop routes its --only/--skip
 # to blib_select; the helpers consult blib_want. bash 3.2-safe (no arrays needed).
@@ -430,7 +430,7 @@ blib_migrate_v4() {
 # ── symlink the vendored Core surface ─────────────────────────────────────────
 # blib_link_core <dotfiles> <config> — link everything Core ships, identically on
 # every OS: the zsh modules, tmux base + reset + popup scripts, starship, nvim (+ the
-# core/vim/vimrc fallback), lazygit, mise, jujutsu, atuin, git config (+ a once-seeded
+# core/vim/vimrc fallback), lazygit, mise, jujutsu, atuin, tealdeer, git config (+ a once-seeded
 # local identity), the cross-OS bin/clip* helpers, the ssh client config, a once-seeded
 # sesh config, and a one-time tpm clone. Keep this in step with the group list at the
 # top of this file — that is the canonical enumeration. OS-specific overlays
@@ -507,8 +507,8 @@ blib_link_core() {
       "FILL IN your name & email"
   fi
 
-  # ── tools — lazygit, mise, jujutsu, atuin, the cross-OS bin/clip* helpers, ssh,
-  #    the seeded sesh config ───────────────────────────────────────────────────
+  # ── tools — lazygit, mise, jujutsu, atuin, tealdeer, the cross-OS bin/clip*
+  #    helpers, ssh, the seeded sesh config ──────────────────────────────────────
   if blib_want tools; then
     # lazygit tokyonight theme — DEFAULT path (reached via the `lg` alias + the
     # `prefix + g` tmux popup). In core.manifest, so it wires like starship above.
@@ -527,6 +527,11 @@ blib_link_core() {
     # the config file as a source AFTER the environment, so the file wins). See that file's
     # header for the ten it sets; varying one of those means deleting it, not exporting.
     [[ -f "$dotfiles/core/atuin/config.toml" ]] && blib_link "$dotfiles/core/atuin/config.toml" "$config/atuin/config.toml"
+    # tealdeer — the `tldr` binary's config, DEFAULT path. Linked unconditionally like the
+    # three above and inert without the binary. It exists to turn ON auto_update, which
+    # upstream ships OFF: `help` is a Core alias but nothing refreshes the page cache, so a
+    # fresh box's `help` fails until someone runs `tldr --update` by hand.
+    [[ -f "$dotfiles/core/tealdeer/config.toml" ]] && blib_link "$dotfiles/core/tealdeer/config.toml" "$config/tealdeer/config.toml"
     # portable sesh config, seeded ONCE (edited locally, never tracked back).
     blib_seed "$dotfiles/core/sesh/sesh.toml.example" "$config/sesh/sesh.toml" \
       "edit freely; not tracked from here"

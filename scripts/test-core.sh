@@ -2171,6 +2171,9 @@ _classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examp
 # module that can break it.
 _classify_is "zsh/00-tools.zsh change → shell AND atuin (guard's own module)" 'zsh/00-tools.zsh' true false true
 _classify_is "atuin/ config change → shell AND atuin" 'atuin/config.toml' true false true
+# tealdeer is a plain tools-group config: shell gate only. NOT the atuin axis — that one
+# gates the premise detector's hermetic self-test and is kept narrow on purpose.
+_classify_is "tealdeer/ config change → shell gate only" 'tealdeer/config.toml' true false false
 _classify_is "a plain zsh/ change does NOT pay the atuin gate" 'zsh/45-plugins.zsh' true false false
 _classify_is "mixed atuin+nvim set → union across all three axes" $'atuin/config.toml\nnvim/init.lua' true true true
 
@@ -3866,7 +3869,7 @@ if have git; then
   # both a race and a violation of the read-only assumption the whole suite is built on.
   # Copying per top-level directory keeps .git out without needing a non-portable tar flag.
   mkdir -p "$LR/dotfiles/core"
-  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh ssh bin lib; do
+  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin tealdeer sesh ssh bin lib; do
     [[ -e "$HERE/$_lr_d" ]] && cp -R "$HERE/$_lr_d" "$LR/dotfiles/core/$_lr_d"
   done
   mkdir -p "$LR/config/tmux/plugins/tpm"   # pre-seed: skips the tpm clone (offline)
@@ -3919,6 +3922,7 @@ if have git; then
   _lr_is_link_to "$LR/config/starship.toml" "$LR/dotfiles/core/starship/starship.toml" || _lr_bad="$_lr_bad starship.toml"
   _lr_is_link_to "$LR/config/lazygit/config.yml" "$LR/dotfiles/core/lazygit/config.yml" || _lr_bad="$_lr_bad lazygit"
   _lr_is_link_to "$LR/config/jj/config.toml" "$LR/dotfiles/core/jujutsu/config.toml" || _lr_bad="$_lr_bad jj"
+  _lr_is_link_to "$LR/config/tealdeer/config.toml" "$LR/dotfiles/core/tealdeer/config.toml" || _lr_bad="$_lr_bad tealdeer"
   _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
   _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
   # Resolve the target, don't just prove it is *a* symlink — a dangling link, or one
@@ -3926,7 +3930,7 @@ if have git; then
   _lr_is_link_to "$LR/config/tmux/scripts" "$LR/dotfiles/core/tmux/scripts" || _lr_bad="$_lr_bad tmux/scripts"
   [[ -d "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts(dangling)"
   if [[ -z "$_lr_bad" ]]; then
-    pass "link run: tmux, starship, lazygit, jj, gitconfig and vimrc land where bootstrap promises"
+    pass "link run: tmux, starship, lazygit, jj, tealdeer, gitconfig and vimrc land where bootstrap promises"
   else
     fail "link run: wrong or missing links —$_lr_bad"
   fi
