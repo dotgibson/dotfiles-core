@@ -199,6 +199,91 @@ blib_seed() {
   BLIB_SEEDED=$((BLIB_SEEDED + 1))
 }
 
+# ── adopt a config the TOOL ITSELF rewrites ───────────────────────────────────
+# blib_adopt <src> <dst> <note> — like blib_seed, but it also MIGRATES an existing
+# symlink at dst into a real file, and reports drift once Core moves on.
+#
+# Why this exists, in one sentence: a symlinked config is a WRITE PATH BACK INTO THE
+# VENDORED TREE, and for a config whose own tool rewrites it, that path gets used.
+#
+# The case that produced this: ~/.config/mise/config.toml was symlinked to
+# core/mise/config.toml, so `mise use -g ruby@4.0` — an ordinary, documented command,
+# and the exact one mise's own header advertises — wrote straight THROUGH the symlink
+# into vendored Core. That tree must byte-match upstream (core-integrity reports it as
+# TAMPERED otherwise) and sync-core.sh refuses to fan out into a repo with a dirty tree,
+# so one routine command silently took that repo out of the next fleet sync. The write
+# also stripped the trailing comments explaining each pin, because mise rewrites the
+# file rather than editing the line.
+#
+# blib_link is still right for the ~34 configs a tool only ever READS (tmux, starship,
+# lazygit, vimrc): the symlink is what makes a Core edit reach every box for free, and
+# nothing writes back through it. Reach for blib_adopt ONLY where the tool writes its
+# own config. The `jj` config is the other live instance of that shape — `jj config set
+# --user` rewrites it in place — and atuin/lazygit/tealdeer are worth re-checking.
+#
+# The trade this makes, stated plainly: dst stops tracking Core. A later Core edit no
+# longer reaches an adopted box on its own. That is why drift is REPORTED rather than
+# silently tolerated — the divergence becomes a visible, checkable condition instead of
+# an invisible override, the same bargain fleet-drift.sh and core-integrity already make
+# elsewhere in this repo. Reconciling is the user's call: theirs wins by default.
+#
+# Deliberately NOT conf.d. mise reads ~/.config/mise/conf.d/*.toml, which looks like the
+# tidier home for a shared layer, but its precedence runs the wrong way for this purpose.
+# Measured on mise 2026.5.16 in an isolated XDG_CONFIG_HOME:
+#   · conf.d OUTRANKS config.toml — conf.d/00-core.toml ruby=3.4 beat config.toml ruby=9.9
+#   · inside conf.d the LOWEST-numbered file wins — 00-core.toml beat 99-local.toml,
+#     the REVERSE of the systemd conf.d convention almost everyone will assume
+# Since `mise use -g` writes to config.toml, putting Core's pins in conf.d would leave
+# that command writing to the lowest-precedence file in the stack: a SILENT no-op. That
+# trades a loud, already-detected failure (a tampered tree) for an undetectable one, on
+# the single command a human is most likely to type. Verify before "fixing" this.
+blib_adopt() {
+  local src="$1" dst="$2" note="$3" was=""
+  if [[ ! -f "$src" ]]; then
+    blib_say "skip (missing): ${src##*/}"
+    BLIB_SKIPPED=$((BLIB_SKIPPED + 1))
+    return 0
+  fi
+  # A symlink here is a box provisioned by the OLDER layout. Migrate it: the content is
+  # identical either way (it resolves to src), so this loses nothing and closes the write
+  # path. readlink, not realpath — a DANGLING link still reports what it recorded, which
+  # is what someone reading the log afterwards needs.
+  if [[ -L "$dst" ]]; then
+    was="$(readlink "$dst")"
+    if _blib_dry; then
+      blib_say "would adopt: $dst (currently -> $was) — $note"
+      BLIB_SEEDED=$((BLIB_SEEDED + 1))
+      return 0
+    fi
+    rm -f "$dst"
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+    blib_say "adopted $dst — was a symlink -> $was; now a real file you own ($note)"
+    BLIB_SEEDED=$((BLIB_SEEDED + 1))
+    return 0
+  fi
+  if [[ ! -e "$dst" ]]; then
+    if _blib_dry; then
+      blib_say "would seed: $dst ($note)"
+      BLIB_SEEDED=$((BLIB_SEEDED + 1))
+      return 0
+    fi
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+    blib_say "seeded $dst — $note"
+    BLIB_SEEDED=$((BLIB_SEEDED + 1))
+    return 0
+  fi
+  # dst is a real file the user owns. NEVER clobber it — just say whether it still
+  # matches Core. git hash-object rather than cmp/diff: byte-exact, needs no repository,
+  # and removes the diffutils dependency instead of probing for it (the #572 box had git
+  # but neither cmp nor diff).
+  if [[ "$(git hash-object -- "$src" 2>/dev/null)" != "$(git hash-object -- "$dst" 2>/dev/null)" ]]; then
+    blib_warn "drift: $dst differs from Core's ${src##*/} — yours is kept; reconcile by hand if you want Core's version"
+  fi
+  return 0
+}
+
 # ── read a package list ───────────────────────────────────────────────────────
 # blib_read_pkgs <file> — print one clean package name per line, stripping inline
 # (#...) comments and all whitespace (package names contain none).
@@ -513,7 +598,11 @@ blib_link_core() {
     # lazygit tokyonight theme — DEFAULT path (reached via the `lg` alias + the
     # `prefix + g` tmux popup). In core.manifest, so it wires like starship above.
     [[ -f "$dotfiles/core/lazygit/config.yml" ]] && blib_link "$dotfiles/core/lazygit/config.yml" "$config/lazygit/config.yml"
-    [[ -f "$dotfiles/core/mise/config.toml" ]] && blib_link "$dotfiles/core/mise/config.toml" "$config/mise/config.toml"
+    # mise — ADOPTED (real file), not symlinked, because mise REWRITES this file:
+    # `mise use -g <tool>@<ver>` is documented in the config's own header, and through a
+    # symlink it wrote into vendored core/ and stripped the pin comments on the way. See
+    # blib_adopt for the full reasoning, the drift trade, and why conf.d is the wrong fix.
+    [[ -f "$dotfiles/core/mise/config.toml" ]] && blib_adopt "$dotfiles/core/mise/config.toml" "$config/mise/config.toml" "mise rewrites this file; yours to edit"
     # jujutsu (jj) — OPT-IN colocated git companion. Linked unconditionally (like lazygit
     # above); the config is inert without the jj binary, and the zsh aliases are HAVE_JJ-gated.
     [[ -f "$dotfiles/core/jujutsu/config.toml" ]] && blib_link "$dotfiles/core/jujutsu/config.toml" "$config/jj/config.toml"

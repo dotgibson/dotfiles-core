@@ -4075,7 +4075,9 @@ if have git; then
   # Both are in the `tools` group beside lazygit/jj/tealdeer and were only ever covered by
   # the fixture-directory list above, which proves the SOURCE was copied, not that the LINK
   # lands where bootstrap promises.
-  _lr_is_link_to "$LR/config/mise/config.toml" "$LR/dotfiles/core/mise/config.toml" || _lr_bad="$_lr_bad mise"
+  # mise is deliberately NOT in this group — it is ADOPTED (a real file), not linked,
+  # because `mise use -g` rewrites it and a symlink pointed that write into vendored
+  # core/. Asserted separately below.
   _lr_is_link_to "$LR/config/atuin/config.toml" "$LR/dotfiles/core/atuin/config.toml" || _lr_bad="$_lr_bad atuin"
   _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
   _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
@@ -4084,10 +4086,39 @@ if have git; then
   _lr_is_link_to "$LR/config/tmux/scripts" "$LR/dotfiles/core/tmux/scripts" || _lr_bad="$_lr_bad tmux/scripts"
   [[ -d "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts(dangling)"
   if [[ -z "$_lr_bad" ]]; then
-    pass "link run: tmux, starship, lazygit, jj, tealdeer, mise, atuin, gitconfig and vimrc land where bootstrap promises"
+    pass "link run: tmux, starship, lazygit, jj, tealdeer, atuin, gitconfig and vimrc land where bootstrap promises"
   else
     fail "link run: wrong or missing links —$_lr_bad"
   fi
+
+  # ── mise is ADOPTED, not linked ─────────────────────────────────────────────
+  # The regression this pins: a symlink here is a write path back into the vendored
+  # core/ tree. `mise use -g ruby@4.0` followed it, tampered the tree, and took the
+  # repo out of the next fleet sync. Asserting "not a symlink" IS the contract.
+  if [[ -f "$LR/config/mise/config.toml" && ! -L "$LR/config/mise/config.toml" ]]; then
+    pass "adopt run: mise config is a real file, not a symlink into core/"
+  else
+    fail "adopt run: mise config is missing or is a symlink (the write-through regression)"
+  fi
+  if [[ "$(git hash-object -- "$LR/config/mise/config.toml" 2>/dev/null)" == \
+        "$(git hash-object -- "$LR/dotfiles/core/mise/config.toml" 2>/dev/null)" ]]; then
+    pass "adopt run: a freshly adopted mise config matches Core byte-for-byte"
+  else
+    fail "adopt run: adopted mise config does not match Core's source"
+  fi
+  # And the write that started all this must now stay local: simulate the rewrite and
+  # prove the vendored tree is untouched.
+  _lr_core_before="$(git hash-object -- "$LR/dotfiles/core/mise/config.toml")"
+  cp "$LR/config/mise/config.toml" "$SANDBOX/mise-adopted.orig"
+  printf '\n[tools]\nruby = "4.0"\n' >>"$LR/config/mise/config.toml"
+  if [[ "$(git hash-object -- "$LR/dotfiles/core/mise/config.toml")" == "$_lr_core_before" ]]; then
+    pass "adopt run: a local mise rewrite does NOT reach vendored core/"
+  else
+    fail "adopt run: a local mise rewrite wrote through into vendored core/"
+  fi
+  # Restore: the later "second pass is a true no-op" assertion shares this fixture, and a
+  # drifted file there would make THIS test the cause of an unrelated failure.
+  cp "$SANDBOX/mise-adopted.orig" "$LR/config/mise/config.toml"
   # clip is SYMLINKED onto PATH — bootstrap-lib chmod +x's the SOURCE, not the link — so
   # assert the target as well as the mode. nvim's clipboard provider, tmux copy-pipe and
   # the zsh helpers all shell out to it by name, so a dangling link breaks copy on every
