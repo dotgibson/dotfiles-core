@@ -349,6 +349,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`zsh/35-fzf.zsh` claimed the shell and tmux share one session picker. They do not.** The
+  `Ctrl-G` widget runs its own inline `sesh list | fzf`; `tmux/scripts/tmux-sesh.sh`'s richer
+  picker — `--height 100%`, a border label, and the `ctrl-a`/`ctrl-t`/`ctrl-g`/`ctrl-d`
+  mode-switch reloads — is reached **only when sesh is absent**, on the fallback path. So the two
+  have been drifting in the one direction the comment promised they could not, and a reader
+  fixing the tmux picker had no reason to look at the shell one. The comment now says which path
+  is which and points at the row that records the option of collapsing them.
+
+  **That row is the other half.** `/tool-scout` (#702) ranked adopting sesh's built-in
+  `sesh picker` as _adopt, low priority_, on the grounds that **both** recorded blockers were
+  spent. Only one is. #518 held it on _"no preview"_ — genuinely spent, since sesh 2.28.0
+  (2026-07-27) added an opt-in preview pane, custom icons and index jumping. #376 held it on
+  **loss of fzf theming**, and that one still stands: verified against the binary rather than the
+  docs, the complete `[tui]` key set is `prompt`, `placeholder`, `show_icons`, `show_windows`,
+  `preview`, `preview_width`, `preview_min_width`, `preview_border`, the three `alias_*` keys and
+  `separator_aware` — **no colour key of any kind, and no `SESH_*` environment override**
+  (`preview_border` picks a divider glyph, not a colour).
+
+  Core's tokyonight-storm palette lives **once**, in `FZF_DEFAULT_OPTS`, and every picker
+  inherits it deliberately. Adopting would swap the two most-used pickers on the box for
+  unthemeable ones across eight machines, to gain a preview pane the fzf path already has via
+  `--preview 'sesh preview {}'`. Declined and recorded in `.claude/tool-decisions.md` under
+  Watching, with the condition that would reverse it: a colour schema under `[tui]` — not a new
+  release, and not the preview pane, which is already here. (#702)
+
 - **A scripted `nvim -c 'write'` never formatted anything — conform.nvim spawns Mason formatters
   without declaring mason as a dependency.** The same undeclared edge as the nvim-lint fix below
   (#652), in `plugins/conform.lua`, with a worse shape. conform loads on `BufWritePre` and spawns

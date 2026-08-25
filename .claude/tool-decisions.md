@@ -95,6 +95,7 @@ no longer a watch, and re-proposing it needs a fresh argument rather than the ol
 | `xan` | [#327](https://github.com/dotgibson/dotfiles-core/issues/327), [#376](https://github.com/dotgibson/dotfiles-core/issues/376), re-held [#702](https://github.com/dotgibson/dotfiles-core/issues/702) | two consecutive minors with **no breaking argument changes** — see the long form; the original packaging and frequency reasons have both expired |
 | `csvlens` | [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | reaching Alpine `community`. **Still unmet** as of 2026-08-25 (0.15.1, 2026-01-08; Arch/Homebrew/nixpkgs only) |
 | `trippy` | [#327](https://github.com/dotgibson/dotfiles-core/issues/327), [#376](https://github.com/dotgibson/dotfiles-core/issues/376), [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | a release that lands, **plus** an answer to `CAP_NET_RAW`. Neither has moved: 0.13.0 is from 2025-05-05, and 0.14.0's behaviour change was pre-announced and undelivered |
+| `sesh picker` (sesh's built-in TUI, replacing the `sesh list \| fzf` pipe) | [#376](https://github.com/dotgibson/dotfiles-core/issues/376), [#518](https://github.com/dotgibson/dotfiles-core/issues/518), re-held [#702](https://github.com/dotgibson/dotfiles-core/issues/702) | a **colour/theme schema in `[tui]`**. #518's "no preview" blocker is spent; #376's "loss of fzf theming" is **not**, and it is the one that costs something |
 
 ### `xan` — the long form, because its reason changed
 
@@ -121,6 +122,45 @@ the boxes that upgrade first, and this fleet upgrades at eight different rates.
 Not a wider package footprint — that argument is already spent — and not a better `xan`.
 
 [#327]: https://github.com/dotgibson/dotfiles-core/issues/327
+
+### `sesh picker` — the long form, because the report said this was settled
+
+The 2026-08-25 scan ([#702]) ranked this *adopt, low priority* on the grounds that **both**
+recorded blockers were "factually spent" and that any future decline "has to argue ergonomics,
+not capability". Half of that is right. The other half is why this row exists.
+
+**Spent:** [#518] held it on "no preview; feature-detect with fallback". sesh **2.28.0**
+(2026-07-27) added an opt-in preview pane, custom icons, `#{1-9}` index jump and aliases. That
+blocker is genuinely gone, and the subcommand is real — `sesh picker` carries `--preview`,
+`--prompt`, `--placeholder`, `--icons`, `--query` and the `-c`/`-t`/`-z` mode flags that match
+the four reload binds `tmux/scripts/tmux-sesh.sh` builds by hand.
+
+**Not spent:** [#376] held it on **loss of fzf theming**, and sesh still has no way to be
+themed. Verified against the 2026-08-25 binary rather than the docs — the complete set of
+`[tui]` keys is `prompt`, `placeholder`, `show_icons`, `show_windows`, `preview`,
+`preview_width`, `preview_min_width`, `preview_border`, `alias_auto_connect`,
+`alias_auto_connect_delay`, `alias_filter_prefix` and `separator_aware`. **No colour key of any
+kind, and no `SESH_*` environment override either.** `preview_border` picks a divider glyph
+(`line`/`thick`/`double`/`none`), not a colour.
+
+That is not an ergonomic preference, it is the recorded blocker still standing. Core's
+tokyonight-storm palette lives **once**, in `FZF_DEFAULT_OPTS` (`zsh/35-fzf.zsh`), and every
+picker in the stack inherits it — deliberately, so a themed prompt and an unthemed picker never
+sit next to each other. Adopting `sesh picker` would swap the two most-used pickers on the box
+(`Ctrl-G` in the shell, `prefix + f` in tmux) for ones that cannot be themed at all, on eight
+machines, to gain a preview pane the fzf path **already has** via `--preview 'sesh preview {}'`.
+
+**What would change the decision:** a colour or theme schema under `[tui]` — at which point the
+palette question becomes "where does it live" rather than "can it exist", and the answer is a
+`[tui]` block in `sesh/sesh.toml.example` carrying a comment that names `zsh/35-fzf.zsh` as the
+source of truth. Not a new release on its own, and not the preview pane, which is already here.
+
+**Worth doing regardless, and independent of this decision:** `zsh/35-fzf.zsh` claims the shell
+and tmux "share one picker". They do not — the shell widget runs its own inline, less-featured
+copy and only delegates to `tmux/scripts/tmux-sesh.sh` when sesh is **absent**. That comment is
+wrong today whichever way this row goes.
+
+[#702]: https://github.com/dotgibson/dotfiles-core/issues/702
 
 ## Reversed
 
