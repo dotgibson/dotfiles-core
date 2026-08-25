@@ -7025,6 +7025,72 @@ $(printf '%s\n' "$_sj_out" | grep -v '^{' | head -5)"
   unset _sj_out _sj_lines _sj_result _sj_plain
 fi
 
+# ── C9. os.capabilities schema validator (scripts/check-capabilities.sh) ─────
+# The strict half of #663. The reader (band 02) is asserted in section A4, which is
+# zsh-gated; this is NOT, and deliberately sits ABOVE that gate so it runs on every box
+# — a bare container, a docs-scoped CI leg — where the reader itself cannot be exercised.
+#
+# It was written below the gate first, and never ran here at all: `have zsh` guards an
+# early `exit 0`, so a bash assertion placed after it is silently absent rather than
+# skipped. That is the green-because-absent result, and it is worth a comment because the
+# file gives no other hint that its second half is conditional.
+hdr "os.capabilities schema validator"
+CAPCHK="$HERE/scripts/check-capabilities.sh"
+CAPEX="$HERE/examples/os.capabilities.example"
+if [[ ! -x "$CAPCHK" || ! -r "$CAPEX" ]]; then
+  fail "check-capabilities.sh or the example declaration is missing"
+else
+  CAPV="$SANDBOX/capval"
+  mkdir -p "$CAPV"
+  # _cap_rejects <label> <sed-or-append expression applied to the example>
+  _cap_rejects() { # <label> <file>
+    if "$CAPCHK" "$2" >/dev/null 2>&1; then
+      fail "validator: accepted $1 (it must not)"
+    else
+      pass "validator: rejects $1"
+    fi
+  }
+  if "$CAPCHK" "$CAPEX" >/dev/null 2>&1; then
+    pass "validator: the shipped example passes its own schema"
+  else
+    fail "validator: examples/os.capabilities.example does NOT satisfy the schema it documents"
+  fi
+  # An unknown key is the case that matters most: the reader ignores it in silence, so the
+  # validator is the ONLY thing standing between a typo and a capability nothing dispatches.
+  { cat "$CAPEX"; printf 'CLIPBOARD=wl-copy\n'; } >"$CAPV/unknown"
+  _cap_rejects "an unknown key" "$CAPV/unknown"
+  grep -v '^PKG_OWNS=' "$CAPEX" >"$CAPV/missing"
+  _cap_rejects "a missing required key" "$CAPV/missing"
+  sed 's/^PKG_SEARCH=.*/PKG_SEARCH=/' "$CAPEX" >"$CAPV/blank"
+  _cap_rejects "a required key declared empty" "$CAPV/blank"
+  sed 's/^SCHEDULER=.*/SCHEDULER=cron/' "$CAPEX" >"$CAPV/sched"
+  _cap_rejects "a SCHEDULER outside the enum" "$CAPV/sched"
+  { cat "$CAPEX"; printf 'PKG_SEARCH=dnf search\n'; } >"$CAPV/dupe"
+  _cap_rejects "a duplicate key" "$CAPV/dupe"
+  { cat "$CAPEX"; printf 'this is not an assignment\n'; } >"$CAPV/junk"
+  _cap_rejects "a line that is not KEY=value" "$CAPV/junk"
+  # Trailing whitespace: the reader TRIMS it, so a value carrying it would validate one way
+  # and behave another. Rejecting it keeps the two halves of #663 telling the same story.
+  { grep -v '^PKG_REMOVE=' "$CAPEX"; printf 'PKG_REMOVE=sudo dnf remove -y \n'; } >"$CAPV/ws"
+  _cap_rejects "a value with trailing whitespace" "$CAPV/ws"
+  _cap_rejects "an unreadable file" "$CAPV/nope-does-not-exist"
+  # `none` is a REAL scheduler answer (a container, a box with neither init), not a
+  # placeholder — asserting it keeps someone from "tightening" the enum to systemd|launchd.
+  sed 's/^SCHEDULER=.*/SCHEDULER=none/' "$CAPEX" >"$CAPV/sched-none"
+  if "$CAPCHK" "$CAPV/sched-none" >/dev/null 2>&1; then
+    pass "validator: SCHEDULER=none is accepted (containers, boxes with neither init)"
+  else
+    fail "validator: SCHEDULER=none was rejected — it is a real answer, not a placeholder"
+  fi
+  # TOOLS_OPTIN is OPTIONAL: absent means "Core's built-in default applies".
+  grep -v '^TOOLS_OPTIN=' "$CAPEX" >"$CAPV/no-optin"
+  if "$CAPCHK" "$CAPV/no-optin" >/dev/null 2>&1; then
+    pass "validator: TOOLS_OPTIN is optional (absent ⇒ Core's default)"
+  else
+    fail "validator: TOOLS_OPTIN was treated as required — it is not"
+  fi
+fi
+
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall
 # through to the shared summary, so a Section-C failure still surfaces as exit 1.
@@ -7686,28 +7752,31 @@ hdr "profile filtering (CORE_PROFILE ceilings + resolution)"
 PROF="$SANDBOX/prof"
 mkdir -p "$PROF"
 ln -s "$HERE/zsh/loader.zsh" "$PROF/loader.zsh"
-for nn in 00 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99; do
+for nn in 00 02 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99; do
   printf 'print -r -- "F%s"\n' "$nn" >"$PROF/$nn-stub.zsh"
 done
 # _prof_load <pre-source snippet> → space-joined NN list actually loaded. The snippet runs
 # before `source loader.zsh`, so it can set CORE_PROFILE in the env or leave it unset.
 _prof_load() { zsh -f -c "ZSH_CFG='$PROF'; $1; source '$PROF/loader.zsh'" 2>/dev/null | tr '\n' ' ' | sed 's/F//g; s/ *$//'; }
 _prof_is() { if [[ "$2" == "$3" ]]; then pass "profile: $1"; else fail "profile: $1 — got [$2] want [$3]"; fi; }
-_ALL="00 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99"
+# 02 is in every expectation below, not just _ALL: zsh/02-capabilities.zsh reads the OS
+# layer's capability declaration, and a profile that dropped it would leave $_CORE_CAP
+# empty — the dispatch table silently absent on exactly the lean boxes (#663).
+_ALL="00 02 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99"
 _prof_is "full loads every band"          "$(_prof_load 'CORE_PROFILE=full')"     "$_ALL"
-_prof_is "minimal = 00-30 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=minimal')"  "00 05 10 15 20 25 30 80 85 99"
-_prof_is "standard = 00-50 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+_prof_is "minimal = 00-30 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=minimal')"  "00 02 05 10 15 20 25 30 80 85 99"
+_prof_is "standard = 00-50 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=standard')" "00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
 _prof_is "unknown value falls back to full" "$(_prof_load 'CORE_PROFILE=bogus')"   "$_ALL"
 _prof_is "unset defaults to full"         "$(_prof_load 'true')"                  "$_ALL"
 printf 'minimal\n' >"$PROF/profile"                       # persistent one-liner
-_prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 05 10 15 20 25 30 80 85 99"
-_prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+_prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 02 05 10 15 20 25 30 80 85 99"
+_prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
 # v4.0.1: a slightly-malformed $ZSH_CFG/profile one-liner must still resolve by its FIRST
 # FIELD. Before the fix, a trailing space / extra token / surrounding whitespace landed in
 # CORE_PROFILE verbatim, so the `case` matched no arm and silently fell through to `full`.
 # `read -r CORE_PROFILE _` now takes just the first word (and trims surrounding whitespace).
-_MIN="00 05 10 15 20 25 30 80 85 99"
-_STD="00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+_MIN="00 02 05 10 15 20 25 30 80 85 99"
+_STD="00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
 printf 'minimal \n' >"$PROF/profile" # trailing space
 _prof_is "profile w/ trailing space still selects minimal" "$(_prof_load 'true')" "$_MIN"
 printf 'standard extra tokens\n' >"$PROF/profile" # stray extra tokens after the profile word
@@ -7726,6 +7795,121 @@ printf 'print -r -- r10\n' >"$PROF/85-r10.zsh"
 _tie="$(zsh -f -c "ZSH_CFG='$PROF'; setopt numericglobsort; source '$PROF/loader.zsh'" 2>/dev/null | grep -E '^r(2|10)$' | tr '\n' ' ' | sed 's/ *$//')"
 if [[ "$_tie" == "r10 r2" ]]; then pass "profile: same-NN tie breaks lexically (r10 before r2), even under NUMERIC_GLOB_SORT"; else fail "profile: same-NN tiebreak wrong — got [$_tie] want [r10 r2]"; fi
 rm -f "$PROF/85-r2.zsh" "$PROF/85-r10.zsh"
+
+# ── A4. os.capabilities reader (zsh/02-capabilities.zsh) ─────────────────────
+# The reader is deliberately the PERMISSIVE half of #663: it skips anything it does not
+# understand rather than breaking a login shell over a typo, and strictness lives in
+# scripts/check-capabilities.sh (exercised further down, in bash, so it is covered even
+# on a box with no zsh). What must be asserted here is that "permissive" does not mean
+# "vague" — a value survives byte-for-byte, junk never lands in the table, and a box with
+# NO declaration still gets a working shell.
+#
+# Every probe runs under `zsh -f`, which is the point: EXTENDED_GLOB is 10-options.zsh's,
+# eight bands after this fragment, so the reader must parse with plain globbing. An earlier
+# draft trimmed trailing space with ${v%%[[:space:]]##} and would have matched NOTHING here
+# — silently, which is the failure mode this section exists to catch.
+hdr "os.capabilities reader (band 02)"
+if ! have zsh; then
+  skip "os.capabilities reader (no zsh)"
+else
+  CAPD="$SANDBOX/caps"
+  mkdir -p "$CAPD"
+  # _cap_probe <capabilities-file-or-empty> <zsh snippet> → stdout of the snippet, run with
+  # the fragment sourced exactly as the loader would source it (at top level, not in a
+  # function — which is why the fragment cannot use `local`).
+  _cap_probe() {
+    local _f="$1" _snip="$2"
+    zsh -f -c "CORE_CAPABILITIES_FILE='$_f'; CORE_CAP_QUIET=1; source '$HERE/zsh/02-capabilities.zsh'; $_snip" 2>/dev/null
+  }
+  _cap_is() { if [[ "$2" == "$3" ]]; then pass "capabilities: $1"; else fail "capabilities: $1 — got [$2] want [$3]"; fi; }
+
+  # A well-formed declaration, plus every shape the reader must IGNORE.
+  cat >"$CAPD/good" <<'CAPS'
+# a comment
+   # an indented comment
+
+PKG_INSTALL=sudo dnf install -y
+PKG_SEARCH=dnf search
+lowercase_key=ignored
+Mixed_Case=ignored
+not an assignment at all
+PKG_EMPTY=
+SCHEDULER=systemd
+CAPS
+  printf 'PKG_TRAILING=dnf provides   \n' >>"$CAPD/good"
+  printf 'PKG_SEARCH=dnf whatprovides\n' >>"$CAPD/good"   # duplicate: LAST wins
+
+  # A multi-word value is the whole reason this is not blib_read_pkgs (which strips ALL
+  # whitespace); interior spacing must survive verbatim.
+  _cap_is "multi-word value survives verbatim" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_INSTALL]]"')" "[sudo dnf install -y]"
+  _cap_is "trailing whitespace is trimmed" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_TRAILING]]"')" "[dnf provides]"
+  _cap_is "duplicate key: the last one wins" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_SEARCH]]"')" "[dnf whatprovides]"
+  # Junk must not merely be tolerated — it must be ABSENT. A lowercase or mixed-case key
+  # half-parsed into the table would be a capability nothing ever reads and nothing reports.
+  #
+  # zsh emits the keys UNSORTED, one per line, and bash sorts them. The obvious spelling —
+  # `print -r -- "${(ko)_CORE_CAP}"` — silently does NOT sort: inside double quotes the
+  # expansion is joined into a single word before the `o` flag applies, so `o` has one word
+  # to order and returns hash order. It read as sorted and was not, which is precisely the
+  # kind of assertion that passes for the wrong reason later. Sorting outside zsh depends on
+  # no expansion-flag subtlety at all; LC_ALL=C pins collation across the four CI legs.
+  _cap_keys="$(_cap_probe "$CAPD/good" 'print -rl -- ${(k)_CORE_CAP}' | LC_ALL=C sort | tr '\n' ' ')"
+  _cap_is "only well-formed KEYS land in the table" "${_cap_keys% }" \
+    "PKG_EMPTY PKG_INSTALL PKG_SEARCH PKG_TRAILING SCHEDULER"
+  # The parser's scratch variables must not leak into the interactive shell. They cannot be
+  # `local` (the fragment is sourced at top level), so the explicit unset is load-bearing.
+  _cap_is "parser scratch vars do not leak" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[${_cap_line-unset}${_cap_k-unset}${_cap_v-unset}]"')" \
+    "[unsetunsetunset]"
+
+  # _core_cap is THE accessor, and its contract is that "declared empty" and "never
+  # declared" behave identically — otherwise every consumer needs both checks.
+  _cap_is "_core_cap returns a declared value" \
+    "$(_cap_probe "$CAPD/good" '_core_cap PKG_SEARCH')" "dnf whatprovides"
+  _cap_is "_core_cap falls back for an ABSENT key" \
+    "$(_cap_probe "$CAPD/good" '_core_cap PKG_NOPE "the fallback"')" "the fallback"
+  _cap_is "_core_cap falls back for a DECLARED-EMPTY key" \
+    "$(_cap_probe "$CAPD/good" '_core_cap PKG_EMPTY "the fallback"')" "the fallback"
+  _cap_is "_core_cap with no fallback is the empty string" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$(_core_cap PKG_NOPE)]"')" "[]"
+
+  # THE ABSENCE CONTRACT, which is the one this issue argued about: a box with no
+  # declaration must get a WORKING shell and a warning, never a hard failure. The whole
+  # point is that you can still fix the box you are SSH'd into.
+  _cap_is "missing file still yields a usable shell" \
+    "$(_cap_probe "$CAPD/does-not-exist" 'print -r -- "[${#_CORE_CAP}][$(_core_cap PKG_INSTALL fallback)]"')" \
+    "[0][fallback]"
+  _cap_absent_rc="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>/dev/null; printf '%s' "$?")"
+  _cap_is "missing file exits 0 (a warning, not a failure)" "$_cap_absent_rc" "0"
+  # ...and the warning goes to STDERR, so it never pollutes a $(...) capture from a login
+  # shell — the way a warning on stdout silently corrupts every script that captures one.
+  _cap_warn_out="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>/dev/null)"
+  _cap_is "the missing-file warning is NOT on stdout" "[$_cap_warn_out]" "[]"
+  _cap_warn_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null | head -n1)"
+  case "$_cap_warn_err" in
+    *"no OS capability declaration"*) pass "capabilities: the missing-file warning is on stderr" ;;
+    *) fail "capabilities: expected a stderr warning for a missing declaration — got [$_cap_warn_err]" ;;
+  esac
+  # CORE_CAP_QUIET is what bootstrap and this suite set: they KNOW the file is absent and
+  # do not want the warning on every shell they spawn.
+  _cap_quiet_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; CORE_CAP_QUIET=1; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null)"
+  _cap_is "CORE_CAP_QUIET suppresses the warning" "[$_cap_quiet_err]" "[]"
+
+  # A file with no trailing newline: the `|| [[ -n "$line" ]]` arm. Without it the last
+  # assignment in a hand-edited declaration is dropped, silently.
+  printf 'PKG_INSTALL=apk add' >"$CAPD/no-newline"
+  _cap_is "a final line with no trailing newline is still read" \
+    "$(_cap_probe "$CAPD/no-newline" 'print -r -- "[$_CORE_CAP[PKG_INSTALL]]"')" "[apk add]"
+
+  # An EMPTY declaration is well-formed input, not an error: the audit is what says a
+  # required key is missing.
+  : >"$CAPD/empty"
+  _cap_is "an empty declaration yields an empty table, not an error" \
+    "$(_cap_probe "$CAPD/empty" 'print -r -- "[${#_CORE_CAP}]"')" "[0]"
+fi
 
 # ── B. function unit tests ────────────────────────────────────────────────────
 hdr "function unit tests (functions.zsh)"

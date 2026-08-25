@@ -574,9 +574,10 @@ blib_link_core() {
 }
 
 # ── symlink the OS-native overlays ────────────────────────────────────────────
-# blib_link_os_layer <dotfiles> <config> <os> — link the four OS overlay files when
+# blib_link_os_layer <dotfiles> <config> <os> — link the five OS overlay files when
 # present: os/<os>.conf → tmux/os.conf, os/<os>.zsh → zsh/80-os.zsh (the loader's OS
-# band), os/<os>.gitconfig → git/os.gitconfig (included by Core's gitconfig), and
+# band), os/<os>.gitconfig → git/os.gitconfig (included by Core's gitconfig),
+# os/<os>.capabilities → zsh/os.capabilities (read by Core's 02-capabilities.zsh), and
 # ssh/os.conf → ~/.ssh/config.d/50-os.conf (Included by Core's ssh/config).
 #
 # The ssh overlay is the ESCAPE HATCH for #450, and it is deliberately the only one
@@ -600,6 +601,25 @@ blib_link_os_layer() {
     # v4: the OS layer is the numbered fragment 80-os.zsh (band 70-84). The loader globs
     # it by NN prefix; it always loads (>=70), independent of CORE_PROFILE.
     blib_link "$dotfiles/os/$os.zsh" "$config/zsh/80-os.zsh"
+  fi
+  # v5: the capability DECLARATION (#663) — the OS layer's package-manager verbs,
+  # scheduler and opt-in tool list as KEY=value data, read (never sourced) by Core's
+  # zsh/02-capabilities.zsh and by maint/dotfiles-maint.sh, which is bash.
+  #
+  # It rides with the zsh group and lands in $ZSH_CFG beside the fragments because that
+  # is the one directory both readers already know how to find. It is NOT itself a
+  # fragment: the loader globs [0-9][0-9]-*.zsh, so an un-numbered, un-.zsh file is
+  # never sourced into your shell — which is the entire point of shipping it as data.
+  #
+  # UNNUMBERED DESTINATION, deliberately. os/<os>.zsh lands at 80- because it is ORDERED
+  # against the rest of the chain; a declaration is read on demand by whoever wants it,
+  # so a band number would only imply a load position it does not have.
+  #
+  # The [[ -f ]] guard is the migration path: until an OS repo authors its declaration
+  # (#667) nothing is linked, Core's 02-capabilities.zsh warns once, and every existing
+  # hardcoded ladder keeps working. Absence is enforced by the audit, not by bootstrap.
+  if blib_want zsh && [[ -f "$dotfiles/os/$os.capabilities" ]]; then
+    blib_link "$dotfiles/os/$os.capabilities" "$config/zsh/os.capabilities"
   fi
   # ssh overlay → a config.d drop-in. Numbered 50- so a host-local file can sort either
   # side of it deliberately; Core's Include globs *.conf in lexical order, and ssh's

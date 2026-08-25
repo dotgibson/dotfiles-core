@@ -109,29 +109,41 @@ dispatches through. At minimum it expresses:
   across archives)
 - **the upgrade dialect** where a distro has more than one (Tumbleweed `dup` vs
   Leap `up`)
-- **clipboard backend** for `bin/clip`'s ladder
 - **scheduler** — launchd vs systemd, today branched inside `zsh/55-maint.zsh`
 - **the opt-in vs expected tool split** that `core-doctor` needs
+
+It deliberately does **not** express a **clipboard backend**. This section listed one
+until #663 measured the cost: `bin/clip` is re-exec'd by nvim and tmux on *every* yank
+and paste, and its WSL probe was already rewritten to avoid forking a `grep` per
+invocation (`bin/clip:8-11`). Adding a file read and parse to that path would spend
+exactly what that optimisation bought, on a value that changes once per machine. Its
+`exec` ladder stays hardcoded.
 
 Most of the content already exists in tabulated form and should be transcribed,
 not re-derived — `PORTING-MATRIX.md` §"Package-manager commands" covers all seven
 archives, and its ²¹ footnotes carry the opt-in split.
 
-Four decisions the implementation must make:
+Four decisions the implementation had to make. #663 settled all four:
 
-1. **Format.** Read by both zsh and bash (`lib/bootstrap-lib.sh`,
-   `maint/dotfiles-maint.sh`), so not a zsh-only structure.
-   `install/tool-versions.env`'s flat `KEY=value` and `scripts/os-repos.txt`'s
-   one-per-line-with-trailing-comment are both in-repo precedents with existing
-   readers in `scripts/lib/common.sh`.
-2. **Load position.** Before any consumer, so before `20-aliases`. That is the
+1. **Format.** Flat `KEY=value`, **read and never sourced** — sourcing a per-repo file
+   into a login shell is a code-execution surface, and extraction is not. The precedent
+   is `scripts/tool-versions.env`, and the reason is already recorded at
+   `scripts/setup.sh:23-26`. Values are multi-word command prefixes; the same shape is
+   one `sed` away in bash, which `maint/dotfiles-maint.sh` needs.
+2. **Load position.** A new Core fragment at **band 02** (`zsh/02-capabilities.zsh`),
+   inside the Core band so every `CORE_PROFILE` loads it — `minimal`'s ceiling is 30,
+   and a lean profile must not silently lose the dispatch table. That is the
    load-chain change.
-3. **Wiring.** `blib_link` links it — the symlink-contract change. Reuse
-   `blib_link_role_layer` (v4.13.1+) as the shape rather than hand-rolling a third
-   linker.
-4. **Absence behaviour.** A box with no `os.capabilities` must degrade, not break.
-   Decide between a hard bootstrap failure and a one-release fallback to today's
-   ladder.
+3. **Wiring.** A fifth overlay inside the existing **`blib_link_os_layer`**, not a
+   third linker: `os/<os>.capabilities` → `$ZDOTDIR/os.capabilities`, beside the
+   `.zsh`/`.conf`/`.gitconfig` it already links. Every OS repo's `bootstrap.sh` calls
+   that helper today, so no repo edits a bootstrap to adopt this — it authors a file.
+   That is the symlink-contract change.
+4. **Absence behaviour.** **Warn once and fall back**, not a hard failure. A hard
+   failure at shell startup leaves an unusable interactive shell on a box you are
+   likely SSH'd into precisely to fix it. Absence is enforced by the gate
+   (`scripts/check-capabilities.sh`, which each OS repo runs on its own declaration),
+   not by the login shell.
 
 The Makefile vocabulary is the same contract at the repo level and lands in the
 same pass, since [#667](https://github.com/dotgibson/dotfiles-core/issues/667)
