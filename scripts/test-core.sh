@@ -7188,6 +7188,38 @@ else
   else
     fail "validator: TOOLS_OPTIN was treated as required — it is not"
   fi
+  # An inline `#` is NOT a comment inside a value (#715). This file looks like an env file
+  # and its own header is dense with `#`, so this is the natural thing to author — and every
+  # other rule waved it through, leaving the declared verb as the whole string, comment and
+  # all, for a shell to run.
+  { grep -v '^PKG_OWNS=' "$CAPEX"; printf 'PKG_OWNS=dnf provides   # which package owns this\n'; } >"$CAPV/inline-hash"
+  _cap_rejects "an inline '#' inside a value" "$CAPV/inline-hash"
+  # ...while a genuinely indented COMMENT must still be skipped. These two travel together:
+  # the comment arm used to be spelled `[[:space:]]*'#'*`, a glob that matches one space then
+  # anything then '#', which conflated the two cases in both directions.
+  { cat "$CAPEX"; printf '   # an indented comment, itself containing a # character\n'; } >"$CAPV/indented-comment"
+  if "$CAPCHK" "$CAPV/indented-comment" >/dev/null 2>&1; then
+    pass "validator: an indented comment is still skipped"
+  else
+    fail "validator: rejected an indented comment — the comment arm is too strict"
+  fi
+  # A dangling `--packages` used to spin forever: `shift 2` with one positional left returns
+  # non-zero AND does not shift, so `|| true` produced an infinite loop. Nine OS repos call
+  # this from `make lint`, where that is a job burning to the runner timeout. `timeout` is
+  # the assertion here — without it a regression HANGS THE SUITE instead of failing it.
+  if have timeout; then
+    timeout 10 "$CAPCHK" "$CAPEX" --packages >/dev/null 2>&1
+    _cap_dangle_rc=$?
+    if [[ "$_cap_dangle_rc" -eq 2 ]]; then
+      pass "validator: a dangling --packages exits 2 (does not loop forever)"
+    elif [[ "$_cap_dangle_rc" -eq 124 ]]; then
+      fail "validator: a dangling --packages HUNG — the arity guard on shift 2 is gone (#715)"
+    else
+      fail "validator: a dangling --packages should exit 2, got $_cap_dangle_rc"
+    fi
+  else
+    skip "validator: dangling --packages (no timeout(1) to bound a possible hang)"
+  fi
 fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
@@ -7918,7 +7950,7 @@ else
   # function — which is why the fragment cannot use `local`).
   _cap_probe() {
     local _f="$1" _snip="$2"
-    zsh -f -c "CORE_CAPABILITIES_FILE='$_f'; CORE_CAP_QUIET=1; source '$HERE/zsh/02-capabilities.zsh'; $_snip" 2>/dev/null
+    zsh -f -c "CORE_CAPABILITIES_FILE='$_f'; source '$HERE/zsh/02-capabilities.zsh'; $_snip" 2>/dev/null
   }
   _cap_is() { if [[ "$2" == "$3" ]]; then pass "capabilities: $1"; else fail "capabilities: $1 — got [$2] want [$3]"; fi; }
 
@@ -7985,17 +8017,29 @@ CAPS
   _cap_is "missing file exits 0 (a warning, not a failure)" "$_cap_absent_rc" "0"
   # ...and the warning goes to STDERR, so it never pollutes a $(...) capture from a login
   # shell — the way a warning on stdout silently corrupts every script that captures one.
-  _cap_warn_out="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>/dev/null)"
+  _cap_warn_out="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; CORE_CAP_LOUD=1; source '$HERE/zsh/02-capabilities.zsh'" 2>/dev/null)"
   _cap_is "the missing-file warning is NOT on stdout" "[$_cap_warn_out]" "[]"
-  _cap_warn_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null | head -n1)"
+  _cap_warn_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; CORE_CAP_LOUD=1; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null | head -n1)"
   case "$_cap_warn_err" in
     *"no OS capability declaration"*) pass "capabilities: the missing-file warning is on stderr" ;;
     *) fail "capabilities: expected a stderr warning for a missing declaration — got [$_cap_warn_err]" ;;
   esac
-  # CORE_CAP_QUIET is what bootstrap and this suite set: they KNOW the file is absent and
-  # do not want the warning on every shell they spawn.
-  _cap_quiet_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; CORE_CAP_QUIET=1; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null)"
-  _cap_is "CORE_CAP_QUIET suppresses the warning" "[$_cap_quiet_err]" "[]"
+  # THE REGRESSION GUARD FOR #715. Silence on a missing declaration is the DEFAULT, and
+  # this is the assertion that keeps it that way: absence is the normal state for every
+  # box in the fleet until an OS repo authors its declaration, so a default-on warning
+  # here is two lines of stderr on every shell, every tmux split and every `zsh -i -c`
+  # everywhere. It shipped that way once. Asserting the SILENCE, not just that the opt-in
+  # works, is what makes flipping the default back a red test rather than a fleet-wide
+  # regression nobody notices until it is vendored out.
+  _cap_quiet_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null)"
+  _cap_is "a missing declaration is SILENT by default (no CORE_CAP_LOUD)" "[$_cap_quiet_err]" "[]"
+  # The hint must point at AUTHORING the declaration. It used to say `--links-only`, which
+  # re-runs the same `[[ -f ]]` guard that skipped the link — advice that cannot work.
+  _cap_hint="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; CORE_CAP_LOUD=1; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null)"
+  case "$_cap_hint" in
+    *"os.capabilities.example"*) pass "capabilities: the warning points at authoring a declaration" ;;
+    *) fail "capabilities: the warning should name the example file — got [$_cap_hint]" ;;
+  esac
 
   # A file with no trailing newline: the `|| [[ -n "$line" ]]` arm. Without it the last
   # assignment in a hand-edited declaration is dropped, silently.
@@ -8160,6 +8204,7 @@ check "core-version --help returns 0 (not mis-read)" \
 # somewhere in the report. (Parity then carries this to --json: render set == tools keys.)
 check "core-doctor renders every group label and files watchexec under dev / repo" \
   '_core_have() { return 1; }
+   _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
      && [[ $out == *"modern CLI"* && $out == *"integrations"* ]] \
      && [[ $out == *"data / net"* && $out == *"dev / repo"* ]] \
@@ -8177,6 +8222,7 @@ check "core-doctor renders a health report and returns 0" \
 # single-tool version of this test passes against the unfixed code and guards nothing.
 check "core-doctor -v annotates versions and leaks no _v= lines" \
   '_core_have() { [[ "$1" == (eza|bat) ]]; }
+   _core_doctor_present() { [[ "$1" == (eza|bat) ]]; }
    eza() { print -r -- "eza 9.9.9"; }
    bat() { print -r -- "bat 8.8.8"; }
    out=$(NO_COLOR=1 core-doctor -v 2>&1); (( $? == 0 )) \
@@ -8201,6 +8247,7 @@ check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/res
 # thing the regex can match. Skips rather than fails without python3, like the linters above.
 check_dep "core-doctor's rendered tool set == --json tools (the two inventories can't drift)" python3 \
   '_core_have() { return 1; }
+   _core_doctor_present() { return 1; }
    _r=$(NO_COLOR=1 core-doctor 2>&1); _j=$(core-doctor --json)
    _CD_R="$_r" _CD_J="$_j" python3 -c "
 import json, os, re
@@ -8219,6 +8266,7 @@ assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys
 # ones that were never coming.
 check "core-doctor renders opt-in absence as · and expected absence as ✗" \
   '_core_have() { return 1; }
+   _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1)
    [[ $out == *"· lnav"* ]] && [[ $out == *"· git-absorb"* ]] \
      && [[ $out == *"✗ eza"* ]] && [[ $out == *"✗ jq"* ]] \
@@ -8234,6 +8282,7 @@ check "core-doctor's legend names all three states" \
 # separation is pinned rather than left to whoever edits next.
 check "core-doctor does not reuse the wired block's ○ for opt-in tools" \
   '_core_have() { return 1; }
+   _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1)
    [[ $out != *"○ lnav"* ]] && [[ $out != *"○ ouch"* ]]'
 # An opt-in tool must NOT join the "install missing" list. That block exists to tell the
@@ -8241,6 +8290,7 @@ check "core-doctor does not reuse the wired block's ○ for opt-in tools" \
 # fatigue one layer down.
 check "core-doctor keeps opt-in tools out of the install-missing list" \
   '_core_have() { return 1; }
+   _core_doctor_present() { return 1; }
    _pkgup_mgr() { print -r -- apt; }
    out=$(NO_COLOR=1 core-doctor 2>&1)
    inst=${out#*"install missing"}; inst=${inst%%"opt-in"*}
@@ -8250,6 +8300,7 @@ check "core-doctor keeps opt-in tools out of the install-missing list" \
 # false on every correctly-provisioned box, so a provisioning gate could not be written at all.
 check_dep "core-doctor --json exposes 'expected', so a gate can assert what actually matters" python3 \
   '_core_have() { return 1; }
+   _core_doctor_present() { return 1; }
    _CD_J="$(core-doctor --json)" python3 -c "
 import json, os
 d = json.loads(os.environ[\"_CD_J\"])
@@ -8304,6 +8355,7 @@ assert want == have, \"matrix-only: %s | list-only: %s\" % (sorted(want - have),
 # body sets, which is exactly the control this needs.
 check "core-doctor marks a present-but-unwired tool with ⚠ and names it" \
   '_core_have() { return 0 }
+   _core_doctor_present() { return 0 }
    typeset -gA _CORE_PROBED=(eza 1 procs 0)
    out=$(_CORE_FORCE_COLOR= core-doctor)
    [[ $out == *"procs⚠"* ]] || { print -r -- "no ⚠ on procs"; exit 1 }
@@ -8315,16 +8367,19 @@ check "core-doctor marks a present-but-unwired tool with ⚠ and names it" \
 # tools there would be worse than silence, and would red every unit harness in the suite.
 check "core-doctor makes no wiring claim when detection never ran" \
   '_core_have() { return 0 }
+   _core_doctor_present() { return 0 }
    out=$(_CORE_FORCE_COLOR= core-doctor)
    [[ $out != *"⚠"* ]]        || { print -r -- "⚠ rendered with no ledger"; exit 1 }
    [[ $out != *"not wired"* ]] || { print -r -- "not-wired block rendered with no ledger"; exit 1 }'
 check_dep "core-doctor --json reports detection.ran=false when band 00 never loaded" python3 \
   '_core_have() { return 0 }
+   _core_doctor_present() { return 0 }
    core-doctor --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"detection\"][\"ran\"] is False, d[\"detection\"]; assert d[\"detection\"][\"missed\"] == [], d[\"detection\"]"'
 # Second gate: a row Core does not probe AT ALL must draw no claim either. Without this,
 # every doctor row with no 00-tools.zsh probe behind it would false-positive as unwired.
 check "core-doctor makes no wiring claim for a row Core never probes" \
   '_core_have() { return 0 }
+   _core_doctor_present() { return 0 }
    typeset -gA _CORE_PROBED=(eza 1)
    out=$(_CORE_FORCE_COLOR= core-doctor)
    [[ $out != *"op⚠"* ]] || { print -r -- "⚠ on a row with no ledger entry"; exit 1 }'
@@ -8333,6 +8388,7 @@ check "core-doctor makes no wiring claim for a row Core never probes" \
 # claim. Re-run the same comparison with the axis ACTIVELY firing.
 check_dep "the render⇄json tool sets still match with the ⚠ axis firing" python3 \
   '_core_have() { return 0 }
+   _core_doctor_present() { return 0 }
    typeset -gA _CORE_PROBED=(procs 0 jnv 0)
    _CD_R="$(NO_COLOR=1 core-doctor 2>&1)" _CD_J="$(core-doctor --json)" python3 -c "
 import json, os, re
@@ -8354,6 +8410,7 @@ assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys
 # block, so the legend and the render⇄json parity regex are both untouched.
 check "core-doctor reports a stale flag in a 'stale' block, with no new glyph" \
   '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
    typeset -gA _CORE_PROBED=(procs 1)
    out=$(NO_COLOR=1 core-doctor 2>&1)
    [[ $out == *"stale"* ]]  || { print -r -- "no stale block for a probed-then-absent tool"; exit 1 }
@@ -8364,14 +8421,31 @@ check "core-doctor reports a stale flag in a 'stale' block, with no new glyph" \
 # 20-aliases.zsh.
 check "core-doctor names the ALIAS a stale flag left pointing at nothing" \
   '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
    typeset -gA _CORE_PROBED=(procs 1)
    alias ps=procs
    out=$(NO_COLOR=1 core-doctor 2>&1)
    [[ $out == *"ps → procs"* ]] || { print -r -- "did not name the broken alias; got: ${out##*stale}"; exit 1 }'
+# THE REGRESSION GUARD FOR #715, and the reason _core_doctor_present exists at all. This one
+# does NOT stub the presence probe: it drives the REAL one, because the bug was IN the real
+# one. `_core_have` is `command -v` and zsh's `command -v` resolves aliases, so a tool that
+# had left $PATH still answered yes off the alias 20-aliases.zsh defines for it — the row
+# rendered ✓, the else-branch never ran, and the tool never joined `stale`. `rg` was blind
+# this way on every distro. Stubbing presence here would test the stub; shadowing a tool with
+# an alias and asserting the row is still honest tests the thing that broke.
+check "_core_doctor_present is blind to aliases (where _core_have was not)" \
+  '_cdp_name=__core_alias_only_probe__
+   alias $_cdp_name="true --pretend"
+   _core_have "$_cdp_name" || { print -r -- "precondition gone: command -v no longer resolves aliases"; exit 1 }
+   ! _core_doctor_present "$_cdp_name" || { print -r -- "presence probe still reads an alias as a tool"; exit 1 }
+   _core_doctor_present sh || { print -r -- "presence probe lost a real PATH binary"; exit 1 }
+   _core_doctor_present "$(command -v sh)" || { print -r -- "presence probe lost an absolute path"; exit 1 }
+   ! _core_doctor_present /nope/not/a/binary || { print -r -- "presence probe accepted a bogus path"; exit 1 }'
 # Both ledger gates apply here exactly as they do to the unwired axis — a doctor that claims
 # staleness with no ledger would flag every absent tool on a bare box, which is most of them.
 check "core-doctor makes no staleness claim when detection never ran" \
   '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
    out=$(NO_COLOR=1 core-doctor 2>&1)
    [[ $out != *"stale"* ]] || { print -r -- "stale block rendered with no ledger"; exit 1 }'
 # With _core_have stubbed FALSE every row is absent, so the second gate here is not "no block
@@ -8380,6 +8454,7 @@ check "core-doctor makes no staleness claim when detection never ran" \
 # shell", and a substring match for a tool called `op` finds the "op" in "open".
 check "core-doctor's stale block lists only rows Core actually probes" \
   '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
    typeset -gA _CORE_PROBED=(eza 1)
    names=$(NO_COLOR=1 core-doctor 2>&1 | awk "/^stale\$/{getline; print; exit}")
    [[ ${names// /} == eza ]] \
@@ -8388,11 +8463,13 @@ check "core-doctor's stale block lists only rows Core actually probes" \
 # absent is simply missing, not stale. Nothing was wired, so no alias can be dangling.
 check "core-doctor does not call a never-detected tool stale" \
   '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
    typeset -gA _CORE_PROBED=(procs 0)
    out=$(NO_COLOR=1 core-doctor 2>&1)
    [[ $out != *"stale"* ]] || { print -r -- "an absent-at-band-00 tool was reported stale"; exit 1 }'
 check_dep "core-doctor --json exposes detection.stale, disjoint from detection.missed" python3 \
   '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
    typeset -gA _CORE_PROBED=(procs 1 jnv 0)
    core-doctor --json | python3 -c "
 import json, sys
@@ -8407,6 +8484,7 @@ assert set(d[\"stale\"]) & set(d[\"missed\"]) == set(), d
 # the `stale` block is invisible to it (it sits past the opt-in trim, like `not wired`).
 check_dep "the render⇄json tool sets still match with the stale axis firing" python3 \
   '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
    typeset -gA _CORE_PROBED=(procs 1 btop 1)
    alias ps=procs
    _CD_R="$(NO_COLOR=1 core-doctor 2>&1)" _CD_J="$(core-doctor --json)" python3 -c "
@@ -8505,6 +8583,7 @@ check "every core-doctor row has detection behind it (the exemption list is empt
 # the emitter tracks detection per tool instead of painting the whole object one way.
 check_dep "core-doctor --json emits the hyphenated git-absorb key and tracks its detection" python3 \
   '_core_have() { [[ "$1" == git-absorb ]]; }
+   _core_doctor_present() { [[ "$1" == git-absorb ]]; }
    _CD_J="$(core-doctor --json)" python3 -c "
 import json, os
 tools = json.loads(os.environ[\"_CD_J\"])[\"tools\"]
@@ -8520,6 +8599,7 @@ assert tools[\"eza\"] is False, tools[\"eza\"]
 check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpackaged tools" \
   '_pkgup_mgr() { print -r -- apt; }
    _core_have() { return 1; }
+   _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
      && [[ $out == *"install missing"* && $out == *"sudo apt install"* && $out == *"PORTING-MATRIX.md"* ]]'
 # ...and the hint must NOT concatenate the manager verb with the tool list. That form read as
@@ -8531,6 +8611,7 @@ check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpack
 check "core-doctor's install hint offers a per-tool template, not a paste-ready batch command" \
   '_pkgup_mgr() { print -r -- apt; }
    _core_have() { return 1; }
+   _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
      && [[ $out == *"sudo apt install <pkg>"* ]] \
      && [[ $out != *"sudo apt install eza"* ]] \
