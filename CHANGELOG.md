@@ -45,6 +45,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `packages.txt`, and the machine-readable floor in `scripts/modern-baseline.yml`). That
   reasoning is recorded in the ledger itself so it is not re-proposed either.
 
+### Changed
+
+- **The secret-scan policy gate (`audit-core.sh` §5g) now BLOCKS.** It shipped advisory in
+  #623, on the principle §5f states: repos are short on arrival, and a gate that is red from
+  its first run is a gate someone turns off. That reason has expired — the fleet is clean.
+
+  `dotfiles-Alpine` and `dotfiles-Gentoo` each carried a root `.gitleaks.toml`. gitleaks
+  auto-discovers a config at the scan root, so those files silently governed **every** local
+  scan in their repos, including invocations that pass no `-c` and look, from the command line,
+  like stock scans. Both rule sets were simultaneously _narrower_ than Core's (gitleaks' stock
+  defaults, with Core's variable-reference allowlist dropped) and _wider_ (whole-path
+  exemptions for `core/`, and in Gentoo's case `README.md`). Being green under them was not
+  evidence of being clean; it was evidence of being measured differently.
+
+  CI was never affected: the reusable `lint-call.yml` secrets leg passes `-c` explicitly and an
+  explicit config beats auto-discovery. The entire divergence lived in the author-time path —
+  which is where it is least likely to be noticed, and where a hook greener than CI does the
+  most damage.
+
+  Both are now deleted (`dotfiles-Alpine#133`, `dotfiles-Gentoo#125`), and both repos verified
+  clean under `core/gitleaks.toml` — working tree, plus all 271 commits of Gentoo's history,
+  which is what proved its `README.md` exemption stale. No Core sync was needed: Core's
+  variable-reference allowlist already covers the `core/CHANGELOG.md` line the stock
+  `curl-auth-user` rule flags. All nine OS repos now measure by the same policy.
+
+  Blocking is the right posture here specifically because this failure is **quiet**. A repo
+  running its own rule set is green, and stays green as that rule set drifts, because nothing
+  compares it to Core's — so the next person to look sees a passing gate, which is worse than a
+  red one. Advisory suits a finding people can see; not one whose whole hazard is that it looks
+  fine. Still skipped when siblings are not checked out, exactly like §5f, so it is inert in CI
+  (which clones only Core) and bites locally and in fleet sweeps.
+
 ### Fixed
 
 - **Opening a file linted it only about half the time — nvim-lint's on-open replay raced

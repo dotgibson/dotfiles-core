@@ -300,8 +300,16 @@ upstream defaults, and that inheritance carries through. Verified with the pinne
 8.30.1 — the variable-reference form Core allowlists passes, and a real literal credential in
 the same position is still caught.
 
-`audit-core.sh` §5g reports repos that do neither — **advisory, not blocking**, and skipped
-entirely when the siblings are not checked out, exactly like §5f above.
+`audit-core.sh` §5g **fails** on a repo that does neither. It shipped advisory, on the
+principle that a gate red from its first run is a gate someone turns off; once the fleet was
+clean (#624 — `dotfiles-Alpine` and `dotfiles-Gentoo` each carried a private config that
+replaced Core's rather than extending it) that reason expired, and the posture flipped. Still
+skipped entirely when the siblings are not checked out, exactly like §5f above — so it is inert
+in CI, which clones only Core, and bites locally and in any sweep that clones the fleet.
+
+The reason it is worth blocking on: this failure is **quiet**. A repo running its own rule set
+is green, and stays green as that rule set drifts, because nothing compares it to Core's. The
+next person to look sees a passing gate — which is worse than a red one, not better.
 
 ### Declaring how you satisfy a gate you do not call
 
