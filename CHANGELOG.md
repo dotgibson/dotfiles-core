@@ -142,6 +142,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A run that skipped a third of the fleet-wide gates still signed off `audit OK`.** The
+  summary body said `PARTIAL` and named every skip, but the LAST line — the one a human
+  quotes into a PR — said `audit OK` and nothing else. The verdict now reads
+  `audit OK — PARTIAL (N check(s) skipped; see above)`. Exit status is unchanged: partial is
+  not failure, and `--strict` / the new `--require-siblings` remain the ways to make it one.
+
+  **The deeper problem was that a skip's WORDING was its classification.** Skips were sorted
+  into "tool absent" (a real gap, reds `--strict`) and "out of scope" (an intentional
+  `--scope`/`--changed` narrowing) by testing the message text for the literal `out of scope`.
+  The three fleet-wide gates — helper adoption, the gitleaks-policy sweep, the coverage
+  register — read SIBLING OS repos, which CI never checks out, so their skips were
+  deliberately PHRASED `out of scope` to keep `--strict` green. That made the prose
+  load-bearing: honest wording would have moved a gate. It also filed two different claims —
+  "you asked me to narrow this run" and "this box cannot cover it" — under one heading.
+
+  There is now a third class, recorded STRUCTURALLY by `skip_env()` rather than by text:
+  `tool` / `out of scope` / `environment`. `--strict` keeps its exact previous meaning
+  (absent tools only — verified A/B against `main` on a lone clone: same exit, same
+  `tool_skips: 1`, same message), so CI does not move. `--require-siblings` is the new opt-in
+  that reds on the environment class, and the summary now names the gap and says how to close
+  it rather than leaving the reader to infer that three gates never ran.
+
+  **`--json` was emitting invalid JSON, and only on a full fleet checkout.** The fleet
+  sections' advisory reports printed to stdout unguarded, so `audit-core.sh --json` produced
+  bullets ahead of the object — but only where sibling repos exist, since otherwise those
+  sections skip before reaching the report. CI checks out one repo, so CI never saw it. Now
+  guarded and pinned by a test. That bug is this entry's thesis in miniature: a gate that
+  never runs cannot report its own breakage. Adds `env_skips` and `partial` to the JSON
+  object; `result` keeps its existing vocabulary so the "`--json` must not change the
+  verdict" invariant still holds.
+
 - **The audit reported a luacheck that could not RUN as "luacheck reported issues".** §4 treated
   every non-zero exit as a lint result, so a broken toolchain was announced as a defect in
   `nvim/` — and the repair it printed, re-run luacheck, only reproduced the error. It sent the

@@ -63,6 +63,22 @@ _core_palette
 # idempotent), appended by skip() below.
 _CORE_SKIPS=()
 
+# ENVIRONMENT skips — a THIRD class, distinct from the two the summary already knew about.
+# A skip is one of:
+#   · tool absent      — a real coverage gap; --strict reds on it
+#   · out of scope     — the caller NARROWED the run (--scope/--changed); intentional
+#   · environment      — the run COULD NOT cover it here: a sibling OS repo isn't checked
+#                        out, so the fleet-wide gates have nothing to read
+# The third used to be filed under the second by WORDING: the sibling-absence skips were
+# deliberately phrased "out of scope" so the substring test that classifies skips would
+# keep --strict green. That made the message text the classifier, so making the wording
+# honest would have silently changed gate behaviour — and it conflated "you asked me to
+# narrow this" with "this box can't run it", which are not the same claim. A run narrowed
+# by --scope is a request; an absent sibling is an accident of where you invoked from.
+# Recording the class STRUCTURALLY (here) instead of textually lets the wording say what
+# is actually true and lets --require-siblings gate it. Appended by skip_env() below.
+_CORE_ENV_SKIPS=()
+
 # _core_set_color <when> — validate WHEN (auto|always|never) and re-evaluate the palette.
 # Non-zero on a bad value so the caller can usage-error. Every gate script's `--color`
 # flag routes through this; `CORE_COLOR=<when>` in the environment works without a flag
@@ -94,6 +110,13 @@ skip() {
   # where stdout must carry only the JSON object (CORE_JSON=1, set by the caller's --json
   # arm and exported to nested gates). The skip is still tallied + recorded either way.
   ((${CORE_JSON:-0})) || printf '%s–%s %s\n' "$c_yel" "$c_rst" "$*"
+}
+# skip_env <label> — a skip this BOX could not cover (a sibling OS repo isn't checked out),
+# as opposed to one the caller narrowed away. Tallies like any other skip, and additionally
+# records the class so the summary can name it and --require-siblings can red on it.
+skip_env() {
+  _CORE_ENV_SKIPS+=("$*")
+  skip "$@"
 }
 fail() {
   FAIL=$((FAIL + 1))
