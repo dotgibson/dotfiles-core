@@ -128,6 +128,38 @@ skip_env() {
   _CORE_ENV_SKIPS+=("$*")
   skip "$@"
 }
+# _core_tool_skip_count — how many skips are a REAL coverage gap (an absent tool), printed
+# to stdout. The three classes are tool / out-of-scope / environment; this counts the first.
+#
+# It lives HERE, in the shared lib, rather than inline in audit-core.sh's summary — and that
+# placement is the point, not tidiness. The previous version was inline, and the test meant to
+# guard it re-implemented the same loop in the test file. Both stayed green while the defect
+# they existed to catch was fully reintroduced in audit-core.sh, because the test exercised its
+# own copy and never the code that runs. A test that cannot fail when the shipped logic changes
+# is documentation, not a gate.
+#
+# Same render-vs-judge split as _core_luacheck_verdict (#728) and §1b: the caller renders, the
+# helper decides, and test-core.sh drives the helper directly.
+#
+# Environment skips are identified by the INDEX skip_env recorded, never by their wording —
+# see skip_env() for why. Out-of-scope skips are still matched on text, which is correct: that
+# class IS a statement the caller makes in prose about a run it deliberately narrowed.
+_core_tool_skip_count() {
+  local _s _e _i=0 _n=0 _is_env
+  for _s in ${_CORE_SKIPS[@]+"${_CORE_SKIPS[@]}"}; do
+    _is_env=0
+    for _e in ${_CORE_ENV_SKIP_IDX[@]+"${_CORE_ENV_SKIP_IDX[@]}"}; do
+      [[ "$_i" == "$_e" ]] && {
+        _is_env=1
+        break
+      }
+    done
+    _i=$((_i + 1))
+    ((_is_env)) && continue
+    [[ "$_s" == *"out of scope"* ]] || _n=$((_n + 1))
+  done
+  printf '%d' "$_n"
+}
 fail() {
   FAIL=$((FAIL + 1))
   printf '%s✗%s %s\n' "$c_red" "$c_rst" "$*" >&2
