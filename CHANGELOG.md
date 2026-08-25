@@ -16,6 +16,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`/freshness-triage` can see the two bump classes it was blind to, and a guard that keeps the
+  routine rails honest.** Both gaps were _structural_ — they recurred on every run, not just the
+  one that reported them.
+
+  **The Renovate dashboard.** Renovate parks bumps on a per-repo Dependency Dashboard issue
+  without opening a PR — rate-limited, awaiting approval, or grouped-and-pending. Reading it
+  needs `gh issue list`, which was outside the command's `allowed-tools`, so the routine derived
+  its Renovate verdict from PR absence alone. PR absence is equally consistent with _nothing to
+  bump_ and _several bumps parked on the dashboard_. The report said "not assessed" — honest, and
+  it said it every week.
+
+  **Bot liveness.** Zero open PRs is likewise consistent with the bot never having run. A healthy
+  `freshness.yml` with nothing to do and one that has not fired in a month produced the
+  **identical** report. That is the failure a freshness routine most needs to catch, since a
+  silently dead bot degrades exactly like a current tree. `gh run list --workflow=freshness.yml`
+  is now allowed, and a run that has not _completed successfully_ within **10 days** — one missed
+  weekly run plus slack — is a finding in its own right, reported above the per-PR verdicts,
+  because a dead updater invalidates the "nothing to triage" reading underneath it.
+
+  Neither is covered by the #636 dashboard, which counts open Renovate _PRs_ and _links_ the
+  dashboard issue without reading it, and has no liveness signal at all. `release-readiness`
+  already carries both capabilities, so this is no new security posture; the nvim build-hook
+  restriction is untouched.
+
+  **The guard.** `claude-routines.yml` states the invariant — each job's `--allowedTools` mirrors
+  the routine's own frontmatter and is never broader — and nothing enforced it. The two live
+  ~200 lines apart, in different files, in different spellings. `test-core.sh` now checks every
+  mirror in both rails against the frontmatter of the routine its `claude -p "/<name>"` names,
+  comparing as sets so ordering and whitespace are not findings. Drift **broader** hands a
+  scheduled, token-bearing job a capability its definition never granted; drift **narrower**
+  fails at runtime, weekly, in a job nobody watches. Verified in both directions; 9 mirrors
+  currently match.
+
 - **A decided-and-rejected ledger for `/tool-scout` — `.claude/tool-decisions.md`.** The
   routine's baseline is five files (`PORTING-MATRIX.md`, `zsh/00-tools.zsh`,
   `zsh/20-aliases.zsh`, `mise/config.toml`, `zsh/45-plugins.zsh` + `nvim/lazy-lock.json`) that
