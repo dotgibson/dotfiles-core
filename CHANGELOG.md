@@ -14,6 +14,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **A decided-and-rejected ledger for `/tool-scout` — `.claude/tool-decisions.md`.** The
+  routine's baseline is five files (`PORTING-MATRIX.md`, `zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `mise/config.toml`, `zsh/45-plugins.zsh` + `nvim/lazy-lock.json`) that
+  all describe what Core **has**. Nothing recorded what Core **considered and declined**, so a
+  rejected tool was indistinguishable from one never evaluated.
+
+  `hexyl` came back ranked #3 "adopt" on 2026-08-18, six days after #395 closed it
+  `NOT_PLANNED` and refiled it as `dotfiles-Kali#182`. #395's own body anticipated it —
+  _"filed so the decision is recorded rather than silently re-proposed by next week's scan"_ —
+  and recording it was not enough, because nothing in the routine read it.
+
+  The cost is not a wasted ranking slot. A re-proposal arrives with a fresh case-for and **no
+  counter-argument attached**, so the decision gets re-made on half the evidence; `hexyl` would
+  have been adopted on that pass if the report had been actioned without someone happening to
+  remember. `fastgron` is the near-miss in the same report — correctly skipped, with reasoning
+  the report itself noted should be written down, caught by luck rather than by process.
+
+  Seeded with both. The load-bearing half is that **the routine is made to read it**: the
+  instruction lands in `.claude/commands/tool-scout.md` _and_ `.claude/agents/tool-scout.md`,
+  since the subagent does the actual ranking and would otherwise get it second-hand. A listed
+  tool may be re-proposed only against the recorded reasoning, naming what changed, and the
+  report states the prior decision per candidate — explicitly "none" when there is none, since
+  an omitted line reads the same as an unchecked one.
+
+  `/os-package-availability` and `/modernize` share the shape but are deliberately left alone:
+  both already carry a working in-band equivalent (the "intentionally excluded" comments in
+  `packages.txt`, and the machine-readable floor in `scripts/modern-baseline.yml`). That
+  reasoning is recorded in the ledger itself so it is not re-proposed either.
+
 ### Fixed
 
 - **Opening a file linted it only about half the time — nvim-lint's on-open replay raced
