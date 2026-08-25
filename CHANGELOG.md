@@ -16,6 +16,56 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The OS layer can now DECLARE its package-manager verbs instead of Core hardcoding
+  them.** Core's own test (`CONTRIBUTING.md`) is _"if it changes when the OS changes, it is
+  not Core"_ — and Core broke it **154 times**: 88 package-manager references in
+  `zsh/60-update.zsh`, 49 in `maint/dotfiles-maint.sh`, 17 in `zsh/30-functions.zsh`,
+  including a `grep -qi tumbleweed /etc/os-release` to choose `zypper dup` over `zypper up`.
+
+  `ARCHITECTURE.md` defended that as _"one verb with N backends"_, and the defence of the
+  **verb** is right — `up` belongs in Core so every machine has the same muscle memory. What
+  expired is the defence of the **implementation**: one verb with N backends is what a
+  dispatch table is for. The verb stays; the backends move to the layer that changes with
+  the OS.
+
+  An OS repo now authors `os/<os>.capabilities` — flat `KEY=value`, **read and never
+  sourced**, so a per-repo file is not a code-execution surface in your login shell (the
+  precedent and the reasoning are `scripts/tool-versions.env` and `scripts/setup.sh:23-26`).
+  Values are multi-word command prefixes, which is why `blib_read_pkgs` could not be reused:
+  it strips _all_ whitespace.
+
+  - `zsh/02-capabilities.zsh` — a new Core fragment at **band 02** that reads the
+    declaration into `$_CORE_CAP`, with `_core_cap <key> [fallback]` as the accessor.
+    Inside the Core band, so **every** `CORE_PROFILE` loads it: `minimal`'s ceiling is 30,
+    and a lean profile must not silently lose the dispatch table.
+  - `blib_link_os_layer` links it as a **fifth** OS overlay, beside the `.zsh`/`.conf`/
+    `.gitconfig` it already links. Every OS repo's `bootstrap.sh` calls that helper today,
+    so no repo edits a bootstrap to adopt this — it authors a file.
+  - `scripts/check-capabilities.sh` is the schema, and the gate: unknown key, missing or
+    empty required verb, duplicate key, `SCHEDULER` outside `systemd|launchd|none`, and
+    trailing whitespace are all failures. It takes a **path**, so the same validator runs
+    from Core's `make audit` (on the shipped example) and from each OS repo's own lint as
+    `core/scripts/check-capabilities.sh os/<os>.capabilities` — nine repos gated by one
+    definition instead of nine greps that drift. `--packages install/packages.txt` adds an
+    opt-in cross-check that each verb's binary is one the repo installs.
+  - `examples/os.capabilities.example` — the Fedora declaration to copy from, held to that
+    same gate so the fleet's template cannot drift from the fleet's schema.
+
+  **Nothing in Core dispatches through `$_CORE_CAP` yet** — `up`, the maint scheduler and
+  `core-doctor`'s opt-in split are separate changes. Landing the schema alone keeps the
+  foundational commit reviewable, and means a box with no declaration is byte-for-byte
+  unaffected.
+
+  Two decisions worth recording, because both went against the original proposal:
+
+  - **A missing declaration warns and falls back; it does not fail.** A hard failure at
+    shell startup leaves an unusable interactive shell on a box you are very likely SSH'd
+    into precisely to fix it. Enforcement belongs in a gate you run, not in the login shell.
+  - **The clipboard backend is deliberately _not_ in the schema.** `bin/clip` is re-exec'd
+    by nvim and tmux on **every** yank and paste, and its WSL probe was already rewritten to
+    avoid forking a `grep` per invocation. Adding a file read and parse to that path would
+    spend exactly what that optimisation bought, for a value that changes once per machine.
+
 - **`/freshness-triage` can see the two bump classes it was blind to, and a guard that keeps the
   routine rails honest.** Both gaps were _structural_ — they recurred on every run, not just the
   one that reported them.

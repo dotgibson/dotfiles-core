@@ -202,9 +202,20 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
 # in the Gentoo and Kali CELLS — Arch, openSUSE and Alpine package and install them. A
 # Core-side list cannot express "opt-in over there, expected here", and muting them globally
 # would hide a genuine ✗ on the repos that do install them. So they stay expected, and are
-# ✗ on the two repos where they are not. Fixing that properly needs a per-repo manifest
-# (an `install/expected-tools.txt` each bootstrap ships); this list is the fallback default
-# that keeps every repo rendering sensibly until one exists.
+# ✗ on the two repos where they are not.
+#
+# THE PER-REPO ANSWER IS NAMED AND LANDING: `TOOLS_OPTIN` in the OS layer's os.capabilities
+# declaration (#663), read into $_CORE_CAP by zsh/02-capabilities.zsh. This comment used to
+# specify a different artifact — "an `install/expected-tools.txt` each bootstrap ships" — and
+# v5 deliberately decided against it: one declaration per OS repo carrying the package verbs,
+# the scheduler AND the tool split beats a second per-repo file with its own path, its own
+# reader and its own way to go stale. Recorded rather than silently reworded, because a Core
+# comment specifying a file the system decided not to build is exactly the drift #662 exists
+# to stop.
+#
+# So the array below is NOT a placeholder awaiting that file. It is the DEFAULT a box falls
+# back to when its OS repo declares no TOOLS_OPTIN — which, until #666 wires the doctor
+# through $_CORE_CAP, is still every box.
 typeset -ga _CORE_DOCTOR_OPTIN=(
   lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 )

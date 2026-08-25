@@ -1087,6 +1087,35 @@ else
   skip "version consistency ($VERSIONS_ENV or $PRECOMMIT_CFG unreadable)"
 fi
 
+# ── 9a. os.capabilities schema (the shipped example is held to the fleet's gate) ──
+# scripts/check-capabilities.sh defines the v5 capability schema (#663) and is the
+# validator each OS repo runs on its own os/<os>.capabilities. Core has no declaration
+# of its own — it is the CONSUMER, not an OS layer — so what there is to gate here is
+# the EXAMPLE the nine repos copy from.
+#
+# That is not a formality. examples/os.capabilities.example is the thing a human reads
+# when authoring a real one (#667), so an example carrying a key the validator rejects
+# would hand every OS repo the same defect nine times, and Core's own reader would skip
+# it in silence. Running the fleet's gate on the fleet's template closes that: the
+# example cannot drift from the schema without reddening this audit.
+hdr "os.capabilities schema (example ↔ validator)"
+CAP_CHECK="scripts/check-capabilities.sh"
+CAP_EXAMPLE="examples/os.capabilities.example"
+if [[ -x "$CAP_CHECK" && -r "$CAP_EXAMPLE" ]]; then
+  if cap_out="$("$CAP_CHECK" "$CAP_EXAMPLE" 2>&1)"; then
+    pass "os.capabilities example validates against the schema"
+  else
+    while IFS= read -r cap_line; do
+      [ -n "$cap_line" ] || continue
+      fail "os.capabilities: $cap_line"
+    done <<EOF
+$cap_out
+EOF
+  fi
+else
+  skip "os.capabilities schema ($CAP_CHECK or $CAP_EXAMPLE missing)"
+fi
+
 # ── 9b. tool download integrity (every downloaded *_VERSION has a *_SHA256) ────
 # The setup-core-tools composite action verifies each release download against a
 # pinned SHA-256 from tool-versions.env before installing it — the real supply-chain
