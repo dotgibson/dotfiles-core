@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.0.1] - 2026-08-25
+
 ## [v5.0.0] - 2026-08-25
 
 ### Breaking
