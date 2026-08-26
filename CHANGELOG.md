@@ -14,6 +14,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.0.0] - 2026-08-25
+
+### Breaking
+
+- **`~/.config/mise/config.toml` is no longer a symlink into vendored `core/`.** `bootstrap.sh`
+  now ADOPTS it — the file becomes a real copy you own (`blib_adopt`). This is the change that
+  makes the release a MAJOR: it alters the `bootstrap.sh` symlink contract.
+
+  **No host breaks, and nothing is lost.** Re-running `./bootstrap.sh` migrates an existing
+  symlink to a real file automatically, with identical content, and a copy you have edited is
+  never clobbered. There is no manual step on a host and no command goes away.
+
+  **What you must adapt to is propagation.** That file no longer tracks Core, so a pin change
+  landed here stops reaching a provisioned box on its own — the box picks it up when it
+  re-bootstraps, and `bootstrap.sh` reports drift when your copy has diverged. Fleet-wide pin
+  changes are now: edit Core → release → sync → re-bootstrap. That is the deliberate trade;
+  the alternative was leaving `mise use -g` able to write into the vendored tree, which is
+  what #724 and #727 were fixing.
+
+  **For repo maintainers:** `v4` stays frozen where it is, so nothing pinned `@v4` changes
+  underneath you. Adopting this major means bumping `uses: dotgibson/dotfiles-core/.github/
+  workflows/*@v4` to `@v5` by hand — 52 references across nine repos at time of writing.
+  `make fleet-drift` does NOT surface these: it compares `core.lock` provenance, not workflow
+  pins, so finding them is a `grep -rl 'uses:.*@v4' .github/workflows` sweep.
+  **`dotfiles-Windows` is invisible to that sweep** — it vendors no `core/`, is absent from
+  `scripts/os-repos.txt`, and SHA-pins its caller deliberately. Check it by hand.
+
 ### Added
 
 - **`.gitignore` now drops crash dumps — as `core.[0-9]*`, deliberately not `core.*`.** A
