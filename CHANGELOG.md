@@ -16,6 +16,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`real-bootstrap.yml` carried a step NAMED for an assertion it did not perform.**
+  `Assert the wiring survived provisioning` was a bare `echo` into the step summary. It could
+  never have been anything else where it sat: the previous step is `docker run --rm`, so the
+  filesystem the check needs is destroyed before the step starts. The sweep's only per-leg
+  check was therefore decorative — the exact "an advisory gate that never runs reads as
+  coverage" failure the same file's header warns about, and the reason the class of bug it
+  names (dotgibson/dotfiles-Debian#2: a bootstrap that aborts AFTER `provision()` and BEFORE
+  `wire_links`, leaving a box with the whole stack and not one symlink) would have passed this
+  gate green.
+  The assertion now runs INSIDE the container, on the same two links `bootstrap-test.yml`
+  already checks on the far side of its stubbed `provision()`. The outer step is reduced to
+  the reporting line it always was, and renamed to say so.
+
+- **`bootstrap-test.yml` under-specified `prep:`, and a caller took it at its word.** The
+  input read "install bootstrap's deps (at least bash)" — so dotfiles-Debian shipped two
+  callers installing `bash zsh` while its own preflight had required `curl` since the repo's
+  first commit, and both Debian legs died in preflight on the first unstubbed sweep. Neither
+  per-PR job can catch that: `--links-only` is exempt from the requirement list by design, and
+  the provision-stub job PREPENDS A CURL SHIM, so a missing curl is satisfied by the very
+  thing that makes the leg fake. The description now says a caller must satisfy its own
+  `preflight_cmds` list, names the two real lists, and records why only the weekly sweep can
+  see a shortfall.
+
+- **`README.md` had the prerequisites backwards.** It promised that "all you need up front is
+  **Git**". On the Debian and Fedora families the truth is inverted: `curl` is a hard
+  requirement that exits 1 before provisioning, and `git` is needed only for the one-time
+  `tpm` clone and merely warns. dotfiles-Debian corrected its own README after the sweep;
+  Core's was still fanning the wrong claim out to the fleet.
+
 - **The weekly `real-bootstrap` sweep went red on four of eight legs on its first-ever run,
   and one of them was red because of this workflow rather than the bootstrap it tested.**
   Gentoo builds from source — `emerge --sync` alone consumed 22 minutes before a package was
