@@ -14,6 +14,52 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`audit-core.sh` §8a — a reusable workflow pinned to a foreign major is now a FAILURE.**
+  The `*-call.yml` workflows check dotfiles-core out a second time, at a hardcoded
+  `ref: vN`, to supply the scripts the job actually runs. That ref has to move on every
+  major bump, and it has now failed to twice:
+
+  - **v3 → v4** — four sites left on `ref: v3` (frozen at v3.9.0). Shipped in `v4.0.0`
+    and not corrected until **`v4.10.0`**: ten minor releases running the previous
+    major's scripts.
+  - **v4 → v5** — six sites left on `ref: v4` (frozen at v4.19.0) while every caller
+    moved to `@v5`, so the workflow body was v5 and the scripts it ran were not (#744).
+
+  Both times the repair shipped with a comment telling the next person to keep it in
+  step. `claude-routines-call.yml` still carries the v3 one; `lint-call.yml:90` says
+  _"keep in step on a major bump"_ in as many words. Both were written **after** the
+  first occurrence and neither prevented the second, because **nothing failed**: the ref
+  resolves, the checkout succeeds, the job goes green, and it silently runs older code.
+  Green-because-absent, the same shape as #700 — and the same lesson already recorded on
+  `_core_tool_skip_count`: a comment is not a gate.
+
+  The gate compares each `ref: vN` against the major in `core.version` — the major the
+  tree IS, versus the major it CLAIMS to run. Those cannot legitimately disagree, so
+  there is no list to maintain and no allowlist to drift. It is **always-on**: no tool to
+  be absent, so it can never skip, which is the failure mode it exists to close.
+
+  Judgment lives in `_core_workflow_ref_hits` (`scripts/lib/common.sh`) and `audit-core.sh`
+  only renders it — the render-vs-judge split `_core_tool_skip_count` and §1b already use,
+  so `test-core.sh` drives the shipped function rather than a copy of its loop. The suite
+  **rebuilds the `v4.0.0` and `v5.0.2` trees from their tags and requires the guard to red
+  on both**; a guard for a historical defect that is never run against that defect is the
+  same category error it exists to fix. Proven failing before being trusted: mutating one
+  live `ref:` reds it at the exact file:line, and restoring it greens it.
+
+  **Release ordering this implies, recorded so a red release is not "fixed" by loosening
+  the gate:** `make release VERSION=6.0.0` bumps `core.version`, so §8a goes red until the
+  refs move to `v6` in the same change. That is the intent — the "keep in step" comment made
+  executable. It is safe even though the `v6` alias does not exist until `make publish`,
+  because Core's own CI never exercises these files (they are for OS repos to _call_), and
+  an OS repo still pinned `@v5` reads the v5-**tagged** copy, which still says `v5`.
+
+  **Deliberately not judged:** a `ref:` that is not `v<digits>` (a SHA, a branch, an
+  expression). This gate answers "which major"; a second opinion about pinning style would
+  make it two gates wearing one name. The association is per **step**, so a `ref:` belonging
+  to another repository's checkout is never attributed to Core.
+
 ### Fixed
 
 - **`real-bootstrap.yml` carried a step NAMED for an assertion it did not perform.**
@@ -44,6 +90,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   requirement that exits 1 before provisioning, and `git` is needed only for the one-time
   `tpm` clone and merely warns. dotfiles-Debian corrected its own README after the sweep;
   Core's was still fanning the wrong claim out to the fleet.
+
+- **`pr-link-check` could get stuck red with no way to clear it, because it judged a stale
+  copy of the PR body.** The enforce step read `github.event.pull_request.body` — the
+  payload of the event that started the run — so it could only ever see a `No-Issue:` line
+  or a closing keyword that a _fresh_ `pull_request` event had delivered. When such an event
+  was dropped or delayed, the failure message's own advice ("editing the PR body re-runs
+  this check automatically") silently stopped being true, and `gh run rerun` was no escape
+  either: it replays the original payload, stale body and all.
+  Seen live during the 2026-08-26 Actions incident on #743 — the body carried its
+  `No-Issue:` reason from 16:36Z, three separate body edits over ~20 minutes produced no run
+  at all, and the only way to clear the check was pushing an empty commit to force a
+  `synchronize` event. A commit, to satisfy a check about prose.
+  The step now reads the current title and body from the API, alongside the
+  `closingIssuesReferences` probe that was already API-based and therefore already immune.
+  Retried three times and then **fallen back to the payload rather than failed** — a 503 on
+  a convenience read must not become a verdict about the PR, which is the lesson #500
+  recorded. `jq -r '.body // ""'` guards the empty-body case, where a bare `jq -r` would
+  hand the rule the four-letter string `null` to grep.
+  This also partly closes the workflow's other documented gap: a re-run after a
+  Development-sidebar link now judges current state instead of re-deciding stale text. The
+  trigger list is unchanged — `edited` is still the fast path, just no longer the only one
+  that works.
 
 - **The weekly `real-bootstrap` sweep went red on four of eight legs on its first-ever run,
   and one of them was red because of this workflow rather than the bootstrap it tested.**
