@@ -22,6 +22,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   now ADOPTS it — the file becomes a real copy you own (`blib_adopt`). This is the change that
   makes the release a MAJOR: it alters the `bootstrap.sh` symlink contract.
 
+  **Why it had to change.** A symlinked config is a write path back into the vendored tree, and for
+  a config whose own tool rewrites it, that path gets used. `mise use -g ruby@4.0` — an
+  ordinary command, and the one mise's own header advertises — wrote straight through the
+  symlink into `core/mise/config.toml`: vendored Core edited in place, the trailing pin
+  comments stripped (mise rewrites the file rather than editing the line), the tree
+  TAMPERED per `core-integrity`, and `sync-core.sh` skipping that repo on the next
+  fan-out with an error naming nothing about mise. The entry below restored the stripped
+  comments; this removes the write path that stripped them.
+
   **No host breaks, and nothing is lost.** Re-running `./bootstrap.sh` migrates an existing
   symlink to a real file automatically, with identical content, and a copy you have edited is
   never clobbered. There is no manual step on a host and no command goes away.
@@ -32,6 +41,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   changes are now: edit Core → release → sync → re-bootstrap. That is the deliberate trade;
   the alternative was leaving `mise use -g` able to write into the vendored tree, which is
   what #724 and #727 were fixing.
+
+  **Deliberately NOT `conf.d`**, recorded at `blib_adopt` because the next reader will
+  otherwise "fix" it backwards. Measured on mise 2026.5.16, isolated `XDG_CONFIG_HOME`,
+  neutral cwd: `conf.d` OUTRANKS `config.toml` in both directions — mise states this
+  itself (`"lua is defined in …/conf.d/00-core.toml which overrides the global config"`)
+  — and within `conf.d` the LOWEST-numbered file wins (`00-` beats `99-`, the reverse of
+  the systemd convention). Read it with `mise current <tool>`; `mise ls` prints one line
+  per config file and is easy to misread as a precedence answer.
+
+  The hazard is **where `mise use -g` writes** — the highest-precedence file that already
+  exists — which gives `conf.d` two failures and no good case. On a fresh box with no
+  `config.toml`, the write lands **inside `conf.d/00-core.toml`**; where that is Core's
+  symlink, it reproduces the original write-through bug exactly. Where `config.toml` does
+  exist, the write lands there and is then shadowed by Core's `conf.d` entry — mise warns,
+  so it is not silent, but the user's global choice does not take effect. A plain copy has
+  neither failure.
+
+  **Scope.** `blib_link` remains correct for the ~34 configs a tool only READS — the
+  symlink is what makes a Core edit reach every box for free. `blib_adopt` is only for
+  configs the tool itself writes. `jj` is the other live instance of that shape
+  (`jj config set --user` rewrites in place) and is NOT converted here; `atuin`,
+  `lazygit` and `tealdeer` remain unconverted and unaudited.
 
   **For repo maintainers:** `v4` stays frozen where it is, so nothing pinned `@v4` changes
   underneath you. Adopting this major means bumping `uses: dotgibson/dotfiles-core/.github/
@@ -97,49 +128,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the scanner keys on, so the gate cannot go green by recognising nothing.
 
 ### Changed
-
-- **`~/.config/mise/config.toml` is now a COPY, not a symlink into vendored `core/` —
-  `blib_adopt`.** A symlinked config is a write path back into the vendored tree, and for
-  a config whose own tool rewrites it, that path gets used. `mise use -g ruby@4.0` — an
-  ordinary command, and the one mise's own header advertises — wrote straight through the
-  symlink into `core/mise/config.toml`: vendored Core edited in place, the trailing pin
-  comments stripped (mise rewrites the file rather than editing the line), the tree
-  TAMPERED per `core-integrity`, and `sync-core.sh` skipping that repo on the next
-  fan-out with an error naming nothing about mise. The entry below restored the stripped
-  comments; this removes the write path that stripped them.
-
-  **Adopted, not merely seeded.** `blib_adopt` migrates an existing symlink into a real
-  file, so already-provisioned boxes convert on their next bootstrap rather than needing
-  a manual step. A real file that differs from Core is never clobbered — the divergence
-  is REPORTED and yours is kept.
-
-  **The trade, stated plainly:** the copy stops tracking Core, so a pin edit here no
-  longer reaches a provisioned box on its own. Drift is reported instead of silently
-  tolerated — the same bargain `fleet-drift.sh` and `core-integrity` already make, a
-  visible checkable condition rather than an invisible override. Fleet-wide pin changes
-  become: edit, release, sync, re-bootstrap.
-
-  **Deliberately NOT `conf.d`**, recorded at `blib_adopt` because the next reader will
-  otherwise "fix" it backwards. Measured on mise 2026.5.16, isolated `XDG_CONFIG_HOME`,
-  neutral cwd: `conf.d` OUTRANKS `config.toml` in both directions — mise states this
-  itself (`"lua is defined in …/conf.d/00-core.toml which overrides the global config"`)
-  — and within `conf.d` the LOWEST-numbered file wins (`00-` beats `99-`, the reverse of
-  the systemd convention). Read it with `mise current <tool>`; `mise ls` prints one line
-  per config file and is easy to misread as a precedence answer.
-
-  The hazard is **where `mise use -g` writes** — the highest-precedence file that already
-  exists — which gives `conf.d` two failures and no good case. On a fresh box with no
-  `config.toml`, the write lands **inside `conf.d/00-core.toml`**; where that is Core's
-  symlink, it reproduces the original write-through bug exactly. Where `config.toml` does
-  exist, the write lands there and is then shadowed by Core's `conf.d` entry — mise warns,
-  so it is not silent, but the user's global choice does not take effect. A plain copy has
-  neither failure.
-
-  **Scope.** `blib_link` remains correct for the ~34 configs a tool only READS — the
-  symlink is what makes a Core edit reach every box for free. `blib_adopt` is only for
-  configs the tool itself writes. `jj` is the other live instance of that shape
-  (`jj config set --user` rewrites in place) and is NOT converted here; `atuin`,
-  `lazygit` and `tealdeer` remain unconverted and unaudited.
 
 - **`mise/config.toml`: `ruby` 3.4 → 4.0, `lua` 5.4 → 5.5.** Both verified resolvable before
   pinning (`mise latest ruby@4.0` → 4.0.6, `lua@5.5` → 5.5.1) — a global pin that does not
