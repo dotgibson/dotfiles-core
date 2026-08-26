@@ -16,6 +16,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The weekly `real-bootstrap` sweep went red on four of eight legs on its first-ever run,
+  and one of them was red because of this workflow rather than the bootstrap it tested.**
+  Gentoo builds from source — `emerge --sync` alone consumed 22 minutes before a package was
+  touched — and the leg was cancelled mid-install at the flat `timeout-minutes: 45` while
+  still making steady forward progress. `dotfiles-Gentoo/bootstrap.sh` says so in its own
+  header ("emerge COMPILES"; "a single `emerge` can run for HOURS"); the sweep did not
+  listen.
+  The ceiling is now **per-leg**, derived from each repo's own caller like `image:` and
+  `prep:` already are, rather than raised for everyone. A flat increase would hand the seven
+  fast legs a ceiling far above their real runtime, so a genuine hang would sit there burning
+  runner time — the opposite of what `check-modern.sh`'s rule 8 exists to prevent.
+  The value travels through `bootstrap-test.yml`'s new optional `bootstrap_timeout` input
+  because **a job that calls a reusable workflow cannot legally carry `timeout-minutes`** —
+  the same constraint rule 8 already records as the reason it keys on `runs-on:`. The input is
+  read STATICALLY by `scripts/fleet-bootstrap-matrix.py`; `bootstrap-test.yml`'s own jobs
+  deliberately do not consume it, and say so, since they are stubbed and fast and widening
+  them would surrender that protection for nothing. Defaults to 45, so a repo that declares
+  nothing is unaffected, and a non-numeric value warns and falls back rather than crashing the
+  matrix job and taking all eight legs down over one typo.
+
+- **`real-bootstrap.yml` shipped a worked example that was false, and filed it as triage
+  guidance.** Its header and the `details:` string both explained openSUSE's exit 2 by naming
+  `yazi` as the tool left absent. openSUSE has since packaged yazi first-class and deleted the
+  broken cargo path, so when the sweep actually ran, the real exit 2 was `doggo` and `sesh`
+  from an unrelated defect. Because `details:` is copied verbatim into every issue this job
+  files, the dead example reached the investigation and pointed it at the wrong tool.
+  Both now state the MECHANISM and let the run report which tool, with a note recording why
+  naming one is a trap. The `details:` text additionally distinguishes the two failure shapes
+  an operator sees — an exit 2 is a bootstrap that finished and printed a ledger naming what
+  did not install, while a leg cancelled at its timeout is not a hang unless the log stalled.
+
 - **The reusable workflows fetched their scripts from `v4` while their callers ran at
   `@v5`.** Six `ref: v4` checkouts — `auto-tag-call.yml`, `claude-routines-call.yml`, and
   `lint-call.yml` (×4) — pin a second checkout of dotfiles-core to supply the scripts the

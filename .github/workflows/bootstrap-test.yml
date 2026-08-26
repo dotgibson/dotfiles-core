@@ -188,6 +188,27 @@ on:
           its own scripts/pkg-filter.sh) should point this at a pre-filtered file instead.
         type: string
         default: install/packages.txt
+      bootstrap_timeout:
+        description: >-
+          Minutes a GENUINELY UNSTUBBED bootstrap needs on this image. Declared here, next
+          to image and prep, because this block is the one place a repo describes its
+          bootstrap CI — but it is NOT consumed by the jobs below. It is read STATICALLY
+          from this caller by scripts/fleet-bootstrap-matrix.py, which feeds the weekly
+          real-bootstrap.yml sweep; that is the only job that installs anything, so it is
+          the only one whose runtime this describes.
+
+          THE JOBS IN THIS FILE DELIBERATELY KEEP THEIR OWN TIGHT TIMEOUTS. They are
+          stubbed and finish in seconds to minutes, so widening them would surrender
+          check-modern rule 8's hang protection for no benefit. Do not "fix" the apparent
+          unused input by wiring it into them.
+
+          Default 45 matches what real-bootstrap.yml used for every leg before this
+          existed, so a repo that declares nothing is unaffected. Raise it only for a
+          bootstrap that genuinely cannot finish in 45m — dotfiles-Gentoo emerges from
+          source and needs hours (dotgibson/dotfiles-core#742). GitHub's per-job ceiling
+          is 360.
+        type: number
+        default: 45
 
 permissions:
   contents: read
