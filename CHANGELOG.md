@@ -14,6 +14,46 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The reusable workflows fetched their scripts from `v4` while their callers ran at
+  `@v5`.** Six `ref: v4` checkouts — `auto-tag-call.yml`, `claude-routines-call.yml`, and
+  `lint-call.yml` (×4) — pin a second checkout of dotfiles-core to supply the scripts the
+  job actually executes. The `@v4`→`@v5` caller sweep moved the workflow **bodies**; these
+  did not move with them, so every repo on `@v5` ran v5 workflow logic against v4.19.0
+  scripts. Now `ref: v5`.
+
+  **This is the second time.** `claude-routines-call.yml` already carried a comment
+  recording the identical failure at v3→v4 — _"`v3` is frozen at v3.9.0, so pinning it here
+  silently ran every routine from a prompt two majors of fixes stale"_ — and
+  `lint-call.yml:90` says _"keep in step on a major bump"_ in as many words. Both were
+  written after the first occurrence and neither prevented the second, because **nothing
+  fails when this line points at the wrong major**: the ref resolves, the checkout succeeds,
+  and the job runs older code. It is green-because-absent, the same shape as #700.
+
+  It also quietly voided the guarantee `RELEASE-STRATEGY.md` §"Pinning reusable workflows"
+  sells — _"a caller's behavior can change **only via a Core release** (deterministic between
+  releases)"_. With a moving alias inside the workflow, behavior tracks whatever that alias
+  points at: cutting a v4.19.1 today would change every `@v5` caller's behavior with no v5
+  release involved.
+
+  A guard belongs here — asserting each `ref:` in `*-call.yml` matches the major in
+  `core.version` — and is tracked in #672 rather than landed with the fix, so the repair is
+  reviewable on its own.
+
+- **Stale `@v4` in the callers' own usage examples and two live claims.** The `# uses: …@v4`
+  header examples in all six `*-call.yml` files plus `bootstrap-test.yml` would have taught
+  the next caller to pin the frozen major. `CLAUDE.md` described the routines idiom as a
+  `@v4` caller and `RELEASE-RUNBOOK.md:183` said the fleet pins _"currently `@v4`"_; both now
+  say `@v5`. `sync-fanout.yml`'s illustrative `@v4` became `@vN`, which is version-neutral
+  and needs no bump on the next major.
+
+  Untouched deliberately: `CHANGELOG.md`'s own history, `V5-PROPOSAL.md`, and
+  `RELEASE-RUNBOOK.md`'s worked `@v4`→`@v5` examples, which describe the release just cut and
+  are correct as written. Also untouched: `bootstrap-test.yml`'s four `v4` mentions, which are
+  the **architecture generation** — `dotfiles-managed v4` is a literal marker string written
+  into `~/.zshrc` by `lib/bootstrap-lib.sh:904`, not a tag alias.
+
 ## [v5.0.2] - 2026-08-25
 
 ### Fixed
