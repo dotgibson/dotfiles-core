@@ -16,6 +16,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [v5.0.1] - 2026-08-25
 
+### Fixed
+
+- **v5.0.0 turned the fleet's `links-only` job red: `bootstrap-test.yml` still asserted the
+  mise SYMLINK.** The contract changed in `bootstrap-lib.sh` (mise is adopted, not linked) and
+  this workflow kept checking the old one, so every OS repo's sync PR failed with
+  `MISSING symlink: $HOME/.config/mise/config.toml` — correctly, against a bootstrap that had
+  deliberately stopped creating it.
+  **It shipped green because nothing in Core runs this workflow.** `bootstrap-test.yml` is a
+  reusable workflow that only ever executes from an OS repo's caller; Core's own audit never
+  invokes it, so no gate here could see the stale assertion. That is the same false-green shape
+  three other fixes in this release address — a gate that never runs cannot report its own
+  breakage — and it is the one that reached the fleet.
+  The assertion is inverted rather than deleted: a symlink at that path is now the FAILURE
+  (`STILL A SYMLINK … bootstrap must ADOPT it`), a missing file is a failure, and a fresh adopt
+  must match `core/mise/config.toml` byte-for-byte. Compared with `git hash-object`, not `cmp` —
+  Core keeps diffutils optional and the audit gates on it.
+  **Rollout note:** repos still calling `@v4` get the v4 test, which asserts the old contract
+  and will keep failing against v5-vendored Core. The `@v4` → `@v5` caller bump is not
+  cosmetic — it is what makes a repo's CI agree with the Core it vendors.
+
 ## [v5.0.0] - 2026-08-25
 
 ### Breaking
@@ -158,27 +178,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   why the warning sits at the pin rather than in a commit message.
 
 ### Fixed
-
-- **v5.0.0 turned the fleet's `links-only` job red: `bootstrap-test.yml` still asserted the
-  mise SYMLINK.** The contract changed in `bootstrap-lib.sh` (mise is adopted, not linked) and
-  this workflow kept checking the old one, so every OS repo's sync PR failed with
-  `MISSING symlink: $HOME/.config/mise/config.toml` — correctly, against a bootstrap that had
-  deliberately stopped creating it.
-
-  **It shipped green because nothing in Core runs this workflow.** `bootstrap-test.yml` is a
-  reusable workflow that only ever executes from an OS repo's caller; Core's own audit never
-  invokes it, so no gate here could see the stale assertion. That is the same false-green shape
-  three other fixes in this release address — a gate that never runs cannot report its own
-  breakage — and it is the one that reached the fleet.
-
-  The assertion is inverted rather than deleted: a symlink at that path is now the FAILURE
-  (`STILL A SYMLINK … bootstrap must ADOPT it`), a missing file is a failure, and a fresh adopt
-  must match `core/mise/config.toml` byte-for-byte. Compared with `git hash-object`, not `cmp` —
-  Core keeps diffutils optional and the audit gates on it.
-
-  **Rollout note:** repos still calling `@v4` get the v4 test, which asserts the old contract
-  and will keep failing against v5-vendored Core. The `@v4` → `@v5` caller bump is not
-  cosmetic — it is what makes a repo's CI agree with the Core it vendors.
 
 - **#732's fix was right; its test could not fail.** The test re-implemented the classification
   loop inline in `test-core.sh`, so it exercised its own copy and never `audit-core.sh`'s.
