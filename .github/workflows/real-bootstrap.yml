@@ -17,11 +17,19 @@ name: real-bootstrap
 #
 # And one hard limit the option-1 rollout exposed: a stubbed run installs nothing, so any
 # bootstrap that verifies a tool is PRESENT afterwards can never pass. openSUSE's exits 2
-# because yazi is not on PATH — an HONEST result its bootstrap.sh deliberately produces so a
-# caller can tell the box is half-provisioned. Neither side should bend to close that gap:
-# weakening the exit removes the one signal an operator needs, and teaching the job to
-# tolerate exit 2 masks a genuine abort. The only honest resolution is a run where the
-# packages are really installed. That is this workflow.
+# in exactly that case — an HONEST result its bootstrap.sh deliberately produces so a caller
+# can tell the box is half-provisioned. Neither side should bend to close that gap: weakening
+# the exit removes the one signal an operator needs, and teaching the job to tolerate exit 2
+# masks a genuine abort. The only honest resolution is a run where the packages are really
+# installed. That is this workflow.
+#
+# NAMING THE TOOL HERE IS A TRAP — DO NOT. This note used to cite yazi as the worked example.
+# openSUSE later packaged yazi first-class and deleted the broken cargo path, so by the time
+# the sweep first ran the claim was false: the real exit 2 was doggo and sesh, from an
+# unrelated defect (a mise probe that missed its own off-PATH install). Because the `details:`
+# string below is copied VERBATIM into every issue this job files, that dead example shipped
+# as triage guidance and pointed the first investigation at the wrong tool (#742). State the
+# MECHANISM; let the run report which tool.
 #
 # ADVISORY, AND IT FILES AN ISSUE RATHER THAN BLOCKING ANYTHING. It is weekly, not per-PR,
 # and network-bound: it asserts other people's package archives as much as our own scripts.
@@ -101,7 +109,18 @@ jobs:
     name: ${{ matrix.leg.name }}
     needs: matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # PER-LEG, from each repo's own caller — a single shared ceiling cannot fit this matrix.
+    # Gentoo emerges from SOURCE: its `emerge --sync` alone ran 22 minutes before a package
+    # was touched, and the leg was cancelled mid-install at the old flat 45m while still
+    # making steady forward progress (#742). Raising that flat number instead would hand
+    # every OTHER leg a ceiling far above its real runtime, so a genuine hang on a fast
+    # distro would sit there burning runner time.
+    #
+    # The value rides in via the caller's `with:` block because a job that calls a reusable
+    # workflow CANNOT legally carry timeout-minutes — the same constraint scripts/check-modern.sh
+    # records as the reason its rule 8 keys on `runs-on:` rather than on every job. The matrix
+    # script emits a timeout for every leg (default 45), so this is never empty.
+    timeout-minutes: ${{ matrix.leg.timeout }}
     strategy:
       fail-fast: false # one distro's broken mirror must not hide the other seven
       matrix:
@@ -160,4 +179,4 @@ jobs:
       workflow: real-bootstrap
       title: "ci-failure: the weekly real bootstrap is red"
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "A genuinely unstubbed `./bootstrap.sh` failed on at least one distro image. This is the only gate that installs anything, so it is the only one that can see a wrong package name, a rotated repo key, a failure branch, or a step invoked by absolute path — check which leg went red before assuming an upstream mirror hiccup. Note openSUSE's bootstrap deliberately exits 2 when a tool it verifies is absent afterwards; that is an honest half-provisioned signal, not a flake."
+      details: "A genuinely unstubbed `./bootstrap.sh` failed on at least one distro image. This is the only gate that installs anything, so it is the only one that can see a wrong package name, a rotated repo key, a failure branch, or a step invoked by absolute path — check which leg went red before assuming an upstream mirror hiccup. Two failure shapes read differently: an exit 2 is a bootstrap that finished and REPORTED its own half-provisioned state, so the ledger it printed names the tools that did not install and is the place to start; a leg cancelled at its timeout is not a hang unless the log actually stalled — Gentoo builds from source and legitimately takes hours. Read the ledger or the last log lines before blaming a mirror."
