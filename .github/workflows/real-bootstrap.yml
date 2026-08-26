@@ -155,17 +155,38 @@ jobs:
             # Pre-seed tpm so the run does not depend on a network clone it does not test.
             mkdir -p "$HOME/.tmux/plugins/tpm"
             ./bootstrap.sh
+
+            # THE FAR-SIDE ASSERTION, AND IT MUST LIVE IN HERE. bootstrap.sh returning 0 is
+            # necessary but not sufficient: the bug this class of gate exists for aborted
+            # AFTER provision() did its work and BEFORE wire_links, leaving a box carrying
+            # the whole stack and not one symlink (dotgibson/dotfiles-Debian#2).
+            #
+            # It used to sit in a step of its own, one level out — where it could only ever
+            # echo, because `docker run --rm` has already destroyed the filesystem it would
+            # need to look at by the time that step starts. So the sweep carried a step
+            # NAMED for an assertion it did not perform, on the only per-leg check it
+            # claimed: the exact "an advisory gate that never runs reads as coverage"
+            # failure the header of this workflow warns about (#742).
+            #
+            # Same two links bootstrap-test.yml asserts on the far side of its stubbed
+            # provision(); keep the pair in step. NO SINGLE QUOTES in here — the whole block
+            # is inside a single-quoted `sh -euc ...` and one apostrophe closes it.
+            for link in "$HOME/.config/zsh/loader.zsh" "$HOME/.gitconfig"; do
+              if [ ! -L "$link" ]; then
+                echo "MISSING symlink after a full run: $link — provision() may have aborted before wire_links" >&2
+                exit 1
+              fi
+            done
+            echo "wiring survived provisioning"
           '
 
-      # A green run means the packages really installed AND the wiring survived. Assert the
-      # far side explicitly: the bug this class of gate exists for aborted AFTER provision
-      # did its work and BEFORE wire_links — a box carrying the whole stack and not one
-      # symlink (dotgibson/dotfiles-Debian#2).
-      - name: Assert the wiring survived provisioning
+      # Reporting only — the assertion itself ran in the container above, where the
+      # filesystem it checks still exists. This step reaching at all means the leg passed.
+      - name: Record the leg in the run summary
         env:
           IMAGE: ${{ matrix.leg.image }}
         run: |
-          echo "bootstrap.sh returned 0 on $IMAGE with no stubbing" >>"$GITHUB_STEP_SUMMARY"
+          echo "bootstrap.sh returned 0 on $IMAGE with no stubbing, and the wiring survived" >>"$GITHUB_STEP_SUMMARY"
 
   # A red run FILES AN ISSUE; it blocks nothing. See the posture note in the header.
   notify-failure:
