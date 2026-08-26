@@ -14,7 +14,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
-## [v5.0.1] - 2026-08-25
+## [v5.0.2] - 2026-08-25
 
 ### Fixed
 
@@ -35,6 +35,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   **Rollout note:** repos still calling `@v4` get the v4 test, which asserts the old contract
   and will keep failing against v5-vendored Core. The `@v4` → `@v5` caller bump is not
   cosmetic — it is what makes a repo's CI agree with the Core it vendors.
+
+- **v5.0.1 was cut but never tagged**, so its number is retired rather than reused: the
+  release commit carried an empty `[v5.0.1]` section and `make publish` correctly refused
+  it (`release.yml` rejects an empty Release body, and a published tag is immutable here).
+  The entry below was written for that cut and ships as v5.0.2 unchanged.
 
 ## [v5.0.0] - 2026-08-25
 
