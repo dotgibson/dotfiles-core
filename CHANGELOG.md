@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.0.3] - 2026-08-26
+
 ### Added
 
 - **`audit-core.sh` §8a — a reusable workflow pinned to a foreign major is now a FAILURE.**
