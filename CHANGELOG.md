@@ -16,6 +16,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`pr-link-check` could get stuck red with no way to clear it, because it judged a stale
+  copy of the PR body.** The enforce step read `github.event.pull_request.body` — the
+  payload of the event that started the run — so it could only ever see a `No-Issue:` line
+  or a closing keyword that a _fresh_ `pull_request` event had delivered. When such an event
+  was dropped or delayed, the failure message's own advice ("editing the PR body re-runs
+  this check automatically") silently stopped being true, and `gh run rerun` was no escape
+  either: it replays the original payload, stale body and all.
+  Seen live during the 2026-08-26 Actions incident on #743 — the body carried its
+  `No-Issue:` reason from 16:36Z, three separate body edits over ~20 minutes produced no run
+  at all, and the only way to clear the check was pushing an empty commit to force a
+  `synchronize` event. A commit, to satisfy a check about prose.
+  The step now reads the current title and body from the API, alongside the
+  `closingIssuesReferences` probe that was already API-based and therefore already immune.
+  Retried three times and then **fallen back to the payload rather than failed** — a 503 on
+  a convenience read must not become a verdict about the PR, which is the lesson #500
+  recorded. `jq -r '.body // ""'` guards the empty-body case, where a bare `jq -r` would
+  hand the rule the four-letter string `null` to grep.
+  This also partly closes the workflow's other documented gap: a re-run after a
+  Development-sidebar link now judges current state instead of re-deciding stale text. The
+  trigger list is unchanged — `edited` is still the fast path, just no longer the only one
+  that works.
+
 - **The weekly `real-bootstrap` sweep went red on four of eight legs on its first-ever run,
   and one of them was red because of this workflow rather than the bootstrap it tested.**
   Gentoo builds from source — `emerge --sync` alone consumed 22 minutes before a package was
