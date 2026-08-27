@@ -4377,6 +4377,19 @@ else
   # vary between awks, and the Alpine leg runs busybox), keep the result in a variable,
   # and make "could not read the block" its own loud failure that can never be mistaken
   # for either of the two real findings.
+  #
+  # The content checks are bash pattern matches, NOT `printf ... | grep -q`. That spelling
+  # is the SIGPIPE hazard scripts/audit-core.sh gates for, and it fails in the worst
+  # direction: `grep -q` exits the instant it matches, the producer takes SIGPIPE, and
+  # under `set -o pipefail` the pipeline reports non-zero BECAUSE the pattern was found.
+  #
+  # It is a RACE, not a certainty, which is exactly why it must not be left in. Measured:
+  # at this block's real size (59 lines) the producer finishes first and the pipeline
+  # returns 0, so it would not bite today; at 20k lines with the match on line 1 it
+  # returns 141. A latent failure that switches on when the file grows — and it would
+  # switch on as the POSTCHECK assertion failing precisely when the postcheck is
+  # correctly placed, i.e. the same wrong-cause report this commit exists to remove,
+  # reintroduced one line below it. Written that way first; the audit caught it.
   _rb_open="$(grep -n "sh -euc '\$" "$_fbm_wf" | head -1 | cut -d: -f1)"
   _rb_close=""
   _rb_block=""
@@ -4393,7 +4406,7 @@ else
     # NOT a claim about where POSTCHECK sits. This is the harness failing to read the
     # file, and saying so plainly beats accusing the workflow of a defect it does not have.
     fail "real-bootstrap: could not extract the sh -euc block (opener line: ${_rb_open:-none}, closing line: ${_rb_close:-none}) — the extraction in test-core.sh has drifted from the workflow's shape; fix the harness, not real-bootstrap.yml"
-  elif ! printf '%s\n' "$_rb_block" | grep -q 'POSTCHECK'; then
+  elif [[ "$_rb_block" != *POSTCHECK* ]]; then
     fail "real-bootstrap: \$POSTCHECK is referenced OUTSIDE the sh -euc block — docker run --rm has destroyed that filesystem by then (#742)"
   else
     pass "real-bootstrap: the postcheck runs inside the container, where the box it asserts still exists"
@@ -4408,10 +4421,10 @@ else
   # assertion over possibly-nothing, and it goes green when it has read nothing.
   if [[ -z "$_rb_block" ]]; then
     fail "real-bootstrap: cannot check the sh -euc block for apostrophes — the block could not be extracted (see the failure above); refusing to report this as clean"
-  elif printf '%s\n' "$_rb_block" | grep -q "'"; then
+  elif [[ "$_rb_block" == *"'"* ]]; then
     fail "real-bootstrap: an apostrophe has appeared inside the single-quoted sh -euc block — it closes the quote early"
   else
-    pass "real-bootstrap: the sh -euc block is still apostrophe-free ($(printf '%s\n' "$_rb_block" | wc -l | tr -d ' ') lines read)"
+    pass "real-bootstrap: the sh -euc block is still apostrophe-free ($(wc -l <<<"$_rb_block" | tr -d ' ') lines read)"
   fi
   unset _rb_open _rb_close _rb_block
 
