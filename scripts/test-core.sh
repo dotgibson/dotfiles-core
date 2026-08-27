@@ -3661,7 +3661,7 @@ if ((_sc_subtree)); then
   # asserted the four agreed — a backstop for a design flaw rather than a fix. The arrays
   # are gone; what is worth policing now is that they stay gone, and that the one remaining
   # source is actually loadable. Three assertions, in that order.
-  if load_os_repos "$HERE/scripts/os-repos.txt"; then
+  if load_os_repos; then
     pass "fleet list: scripts/os-repos.txt is readable and names ${#CORE_OS_REPOS[@]} repo(s)"
   else
     fail "fleet list: $CORE_OS_REPOS_ERR — every fleet script now hard-fails on this"

@@ -839,8 +839,14 @@ _CORE_OS_REPOS_FILE="$(cd -P "${BASH_SOURCE[0]%/*}/.." 2>/dev/null && pwd)/os-re
 # A global array rather than stdout, deliberately: bash 3.2 has no mapfile (this runs on
 # macOS), and `while read … < <(load_os_repos)` would throw away the return code in the
 # process substitution — which is the whole signal.
-load_os_repos() { # load_os_repos [<file>] — fill CORE_OS_REPOS from the fleet list
-  local f="${1:-$_CORE_OS_REPOS_FILE}" line
+#
+# Takes NO arguments, deliberately. An optional `[<file>]` override was the obvious shape
+# and every caller passed nothing, which is exactly what shellcheck SC2119 flags: a function
+# with an unused optional $1 makes a bare call ambiguous with "inherit the script's $1", and
+# it fired on all six callers. There is one fleet list; a seam nobody uses is not worth a
+# per-call-site disable comment.
+load_os_repos() { # load_os_repos — fill CORE_OS_REPOS from the fleet list
+  local f="$_CORE_OS_REPOS_FILE" line
   CORE_OS_REPOS=()
   CORE_OS_REPOS_ERR=""
   [[ -r "$f" ]] || {
