@@ -4353,9 +4353,60 @@ else
   # step NAMED for an assertion it could not perform. A postcheck placed there would be the
   # identical bug wearing a new name, and it would still look green. So: the reference has
   # to sit between the `sh -euc ...` opener and the line that closes it.
+  # EXTRACT THE BLOCK ONCE, AND PROVE IT IS NON-EMPTY BEFORE ASSERTING ANYTHING ABOUT IT.
+  # Both assertions below used to re-run the same inline
+  #     awk "/sh -euc '$/{f=1;next} f&&/^ *'$/{f=0} f"
+  # and neither checked that it had matched. That is two bugs, one of them the exact
+  # failure this file exists to prevent:
+  #
+  #   * the POSTCHECK assertion fails with a message that names the WRONG CAUSE. It says
+  #     "$POSTCHECK is referenced OUTSIDE the sh -euc block", which is a specific,
+  #     alarming, actionable claim — and it is what you get when the extraction simply
+  #     returned nothing, whatever the reason. Observed for real: green on Ubuntu, Arch
+  #     and macOS, red on Alpine, with the workflow byte-identical and the postcheck
+  #     correctly inside the block. Hours went into looking for a misplaced reference
+  #     that was never misplaced.
+  #   * the apostrophe assertion PASSES VACUOUSLY. It is a negative check — `if ... |
+  #     grep -q "'"` — so an empty extraction means no apostrophe found means green. The
+  #     one assertion guarding a quote-injection hazard reports success precisely when it
+  #     has read nothing at all. That is "a gate that never runs reads as coverage", in a
+  #     test written to stop that.
+  #
+  # So: locate the block with grep/sed line numbers rather than a multi-rule awk program
+  # (fewer dialect corners — `next`, a boolean-guarded pattern and a bare `f` action all
+  # vary between awks, and the Alpine leg runs busybox), keep the result in a variable,
+  # and make "could not read the block" its own loud failure that can never be mistaken
+  # for either of the two real findings.
+  #
+  # The content checks are bash pattern matches, NOT `printf ... | grep -q`. That spelling
+  # is the SIGPIPE hazard scripts/audit-core.sh gates for, and it fails in the worst
+  # direction: `grep -q` exits the instant it matches, the producer takes SIGPIPE, and
+  # under `set -o pipefail` the pipeline reports non-zero BECAUSE the pattern was found.
+  #
+  # It is a RACE, not a certainty, which is exactly why it must not be left in. Measured:
+  # at this block's real size (59 lines) the producer finishes first and the pipeline
+  # returns 0, so it would not bite today; at 20k lines with the match on line 1 it
+  # returns 141. A latent failure that switches on when the file grows — and it would
+  # switch on as the POSTCHECK assertion failing precisely when the postcheck is
+  # correctly placed, i.e. the same wrong-cause report this commit exists to remove,
+  # reintroduced one line below it. Written that way first; the audit caught it.
+  _rb_open="$(grep -n "sh -euc '\$" "$_fbm_wf" | head -1 | cut -d: -f1)"
+  _rb_close=""
+  _rb_block=""
+  if [[ -n "$_rb_open" ]]; then
+    # First line at or after the opener that is nothing but a closing quote.
+    _rb_close="$(tail -n +"$((_rb_open + 1))" "$_fbm_wf" | grep -n "^[[:space:]]*'[[:space:]]*\$" | head -1 | cut -d: -f1)"
+    [[ -n "$_rb_close" ]] && _rb_close="$((_rb_open + _rb_close))"
+    [[ -n "$_rb_close" ]] && _rb_block="$(sed -n "$((_rb_open + 1)),$((_rb_close - 1))p" "$_fbm_wf")"
+  fi
+
   if ! grep -q 'docker run .*-e POSTCHECK' "$_fbm_wf"; then
     fail "real-bootstrap: the docker run does not pass -e POSTCHECK — the value never reaches the container"
-  elif ! awk "/sh -euc '\$/{f=1;next} f&&/^ *'\$/{f=0} f" "$_fbm_wf" | grep -q 'POSTCHECK'; then
+  elif [[ -z "$_rb_block" ]]; then
+    # NOT a claim about where POSTCHECK sits. This is the harness failing to read the
+    # file, and saying so plainly beats accusing the workflow of a defect it does not have.
+    fail "real-bootstrap: could not extract the sh -euc block (opener line: ${_rb_open:-none}, closing line: ${_rb_close:-none}) — the extraction in test-core.sh has drifted from the workflow's shape; fix the harness, not real-bootstrap.yml"
+  elif [[ "$_rb_block" != *POSTCHECK* ]]; then
     fail "real-bootstrap: \$POSTCHECK is referenced OUTSIDE the sh -euc block — docker run --rm has destroyed that filesystem by then (#742)"
   else
     pass "real-bootstrap: the postcheck runs inside the container, where the box it asserts still exists"
@@ -4365,11 +4416,17 @@ else
   # The whole script is one single-quoted `sh -euc '...'` argument; a single apostrophe
   # closes it early and the rest is reinterpreted by the outer shell. The existing block
   # says so twice in comments, which is not a gate.
-  if awk "/sh -euc '\$/{f=1;next} f&&/^ *'\$/{f=0} f" "$_fbm_wf" | grep -q "'"; then
+  #
+  # Guarded on a non-empty block for the reason above: unguarded, this is a negative
+  # assertion over possibly-nothing, and it goes green when it has read nothing.
+  if [[ -z "$_rb_block" ]]; then
+    fail "real-bootstrap: cannot check the sh -euc block for apostrophes — the block could not be extracted (see the failure above); refusing to report this as clean"
+  elif [[ "$_rb_block" == *"'"* ]]; then
     fail "real-bootstrap: an apostrophe has appeared inside the single-quoted sh -euc block — it closes the quote early"
   else
-    pass "real-bootstrap: the sh -euc block is still apostrophe-free"
+    pass "real-bootstrap: the sh -euc block is still apostrophe-free ($(wc -l <<<"$_rb_block" | tr -d ' ') lines read)"
   fi
+  unset _rb_open _rb_close _rb_block
 
   unset -f _fbm_caller _fbm_key
   unset _fbm_root _fbm_json _fbm_emits _fbm_missing _fbm_k
