@@ -14,6 +14,52 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **The weekly sweep can finally tell a full box from a half-provisioned one (#750).**
+  `real-bootstrap.yml` is the only job in the fleet that installs anything, and it asserted
+  exactly two things on the far side of `./bootstrap.sh`: that it returned 0, and that the
+  wiring survived. Both necessary; neither can see whether the packages actually arrived.
+
+  The Gentoo leg proved it. The first leg of this sweep ever to run to completion — 75.3
+  minutes, 131 packages emerged — was **green** while the bootstrap printed a ledger naming
+  two steps that did not complete: one atom unreachable through its own dependency chain, one
+  whose upstream build cannot succeed on that toolchain at all. Both were real, and both are
+  now fixed in the OS repo (#751 corrected the matrix cells that had pointed at them). The
+  **reporting** gap is this repo's, and it outlives whichever two tools exposed it: this job
+  was the only one in the fleet that could ever have caught them, and it reported success.
+
+  New opt-in `bootstrap_postcheck` input on `bootstrap-test.yml`, declared where every other
+  per-leg knob already lives — the repo's own caller — and read **statically** by
+  `scripts/fleet-bootstrap-matrix.py`, exactly as `bootstrap_timeout` is. The value is a
+  command run **inside** the `docker run`, after `./bootstrap.sh`, where the box it asserts
+  still exists; `--rm` has destroyed that filesystem by the time a following step starts,
+  which is the bug the wiring assertion itself carried until #742. Absent by default, so no
+  leg changes behaviour on landing.
+
+  **Not `--strict`**, which is the obvious lever and the wrong instrument. It turns each
+  bootstrap's end-of-run ledger into a non-zero exit, and that ledger deliberately mixes a
+  genuine provisioning gap (an atom that will never install) with an infrastructure blip (a
+  rate-limited `mise.run`, a GURU sync hiccup, a failed `tpm` clone). `--strict` cannot tell
+  them apart, so it would red an advisory lane over somebody else's outage — per this
+  workflow's own header, "exactly how these lanes get switched off". `dotfiles-Fedora`'s
+  `bootstrap-full.yml` refused it in those words and did a far-side presence assertion
+  instead; this is that, made reusable and derived rather than listed. A repo's own script
+  **can** make the distinction Core cannot, because it knows which tools its own list
+  promises, so the bootstrap exit code stays an honest signal nobody weakens.
+
+  **A leg with no postcheck now says so** — in the fleet listing at the top of the run and
+  again in its own summary line. The previous single sentence read identically whether the
+  packages had been asserted or not, which is the pass that hid those two atoms behind a
+  green tick. `dotfiles-Gentoo` ships `scripts/assert-provisioned.sh` already, so the hook
+  has a real consumer as soon as `@v5` moves.
+
+  First tests for `fleet-bootstrap-matrix.py`, which had none: a scratch-fleet fixture
+  covering declared/absent/non-string, plus two assertions that encode #742 — that every
+  `matrix.leg.<key>` the sweep reads is a key the script actually **emits** (a mismatch
+  would make the hook a permanent silent no-op that reads as coverage), and that the
+  postcheck reference sits inside the `sh -euc` block rather than in a later step.
+
 ### Changed
 
 - **`scripts/os-repos.txt` is now the single source of the fleet, not one of four (#669).**
