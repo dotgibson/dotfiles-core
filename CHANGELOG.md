@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.1.0] - 2026-08-27
+
 ### Added
 
 - **The weekly sweep can finally tell a full box from a half-provisioned one (#750).**
