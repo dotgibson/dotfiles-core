@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.2.0] - 2026-08-27
+
 ### Changed
 
 - **`up` is a dispatcher now, not a seven-package-manager driver (#664).** `zsh/60-update.zsh`
