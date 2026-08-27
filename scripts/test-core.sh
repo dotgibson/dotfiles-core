@@ -1712,23 +1712,36 @@ unset _ob_core_ok _obf
 _ob_fleet_seen=0 _ob_fleet_dirty=""
 # Siblings of this repo, the layout every fleet script assumes (see scripts/sync-core.sh).
 _ob_root="$(cd "$HERE/.." && pwd)"
-for _obr in dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-openSUSE; do
-  _obp="$(resolve_repo_dir "$_ob_root" "$_obr" 2>/dev/null)" || continue
-  [[ -n "$_obp" && -d "$_obp" ]] || continue
-  for _obf in "$_obp"/os/*.zsh; do
-    [[ -f "$_obf" ]] || continue
-    _ob_fleet_seen=$((_ob_fleet_seen + 1))
-    [[ -z "$(_core_owned_block_hits "$_obf")" ]] || _ob_fleet_dirty="$_ob_fleet_dirty ${_obr}"
+# The fleet comes from scripts/os-repos.txt via load_os_repos (#669). It used to be a
+# hand-typed list of SEVEN of the nine names right here — dotfiles-Defense and
+# dotfiles-Offense were silently never scanned, in the very file that asserted the other
+# three copies of this list agreed. A fourth copy nobody was policing is the argument for
+# having no copies.
+_ob_fleet=1
+load_os_repos || _ob_fleet=0
+# Guarded rather than looped-over-empty: "${CORE_OS_REPOS[@]}" on an empty array trips
+# `set -u` on bash <= 4.3, and this file runs on macOS's bash 3.2.
+if ((_ob_fleet)); then
+  for _obr in "${CORE_OS_REPOS[@]}"; do
+    _obp="$(resolve_repo_dir "$_ob_root" "$_obr" 2>/dev/null)" || continue
+    [[ -n "$_obp" && -d "$_obp" ]] || continue
+    for _obf in "$_obp"/os/*.zsh; do
+      [[ -f "$_obf" ]] || continue
+      _ob_fleet_seen=$((_ob_fleet_seen + 1))
+      [[ -z "$(_core_owned_block_hits "$_obf")" ]] || _ob_fleet_dirty="$_ob_fleet_dirty ${_obr}"
+    done
   done
-done
-if (( _ob_fleet_seen == 0 )); then
+fi
+if (( ! _ob_fleet )); then
+  skip "owned-block scan: $CORE_OS_REPOS_ERR (fleet regression check)"
+elif (( _ob_fleet_seen == 0 )); then
   skip "owned-block scan: no sibling OS repo checked out (fleet regression check)"
 elif [[ -n "$_ob_fleet_dirty" ]]; then
   skip "owned-block scan: fan-out pending —$_ob_fleet_dirty still carry a Core-owned block (#449 step 7)"
 else
   pass "owned-block scan: all $_ob_fleet_seen checked-out os layers are free of Core-owned blocks"
 fi
-unset _ob_fleet_seen _ob_fleet_dirty _ob_root _obr _obp _obf
+unset _ob_fleet_seen _ob_fleet_dirty _ob_fleet _ob_root _obr _obp _obf
 
 # ── ONE definition, and it must stay one (same contract as the RETURN leg above) ──
 _ob_wf="$HERE/.github/workflows/lint-call.yml"
@@ -2914,8 +2927,12 @@ hdr "dashboard live-signal error handling (scripts/freshness-dashboard.sh)"
 FDR="$SANDBOX/fdrepo"
 FDBIN="$SANDBOX/fdbin"
 rm -rf "$FDR" "$FDBIN"
-mkdir -p "$FDR/scripts" "$FDBIN" "$SANDBOX/fdfleet"
+mkdir -p "$FDR/scripts/lib" "$FDR/lib" "$FDBIN" "$SANDBOX/fdfleet"
 cp "$HERE/scripts/freshness-dashboard.sh" "$FDR/scripts/"
+# The board sources lib/common.sh for load_os_repos (#669), and common.sh sources
+# ../../lib/ux.sh — same two libs the fleet-drift fixture below carries, for the same reason.
+cp "$HERE/scripts/lib/common.sh" "$FDR/scripts/lib/"
+cp "$HERE/lib/ux.sh" "$FDR/lib/"
 for _fd_s in fleet-drift core-integrity update-plugins update-nvim-plugins; do
   printf '#!/bin/sh\nexit 0\n' >"$FDR/scripts/$_fd_s.sh"
   chmod +x "$FDR/scripts/$_fd_s.sh"
@@ -3274,6 +3291,29 @@ if have git; then
   if [[ $? -eq 2 ]]; then pass "drift: an unresolvable --ref exits 2 instead of falling back"
   else fail "drift: unresolvable --ref did not exit 2"; fi
 
+  # An unusable fleet list must STOP the sweep, not degrade to a hardcoded fleet (#669).
+  # fleet-drift.sh used to carry an inline nine-name array for exactly this case, so an
+  # unreadable os-repos.txt produced a full green sweep of a list nobody chose — a report
+  # that looks like coverage and is not. Same exit 2 as any other usage error here.
+  _fdd_fleet="$FDC/scripts/os-repos.txt"
+  _fdd_body="$(cat "$_fdd_fleet")"
+  _fdd_lock "core_sha=$FD_REL" # a state that WOULD sweep green, so only the load can red it
+  for _fdd_case in absent empty; do
+    case "$_fdd_case" in
+    absent) rm -f "$_fdd_fleet" ;;
+    empty) printf '# nothing but comments\n\n' >"$_fdd_fleet" ;;
+    esac
+    _fdd_out="$(_fdd_run)"
+    _fdd_rc=$?
+    if [[ $_fdd_rc -eq 2 ]] && grep -qE 'fleet list (unreadable|is empty)' <<<"$_fdd_out"; then
+      pass "drift: an $_fdd_case fleet list exits 2 instead of sweeping a fallback fleet"
+    else
+      fail "drift: an $_fdd_case fleet list did not stop the sweep (rc=$_fdd_rc want=2)"
+    fi
+  done
+  printf '%s\n' "$_fdd_body" >"$_fdd_fleet"
+  unset _fdd_fleet _fdd_body _fdd_case _fdd_out _fdd_rc
+
   # --strict is documented to FAIL on a repo that isn't checked out. It printed red but
   # returned 0, so every caller read the run as clean. The root must EXIST and merely be
   # empty — a missing root is a separate usage error (exit 2) and would mask the regression.
@@ -3560,50 +3600,97 @@ if ((_sc_subtree)); then
 
   # --- dotfiles-Windows is never a target -------------------------------------
   # It vendors no core/ (its host layer is native PowerShell), so fanning into it would
-  # be wrong, not merely useless. The fallback array inside the script must agree with
-  # scripts/os-repos.txt on that — assert the SHIPPED data file, not the fixture's.
-  if ! grep -qE '^[[:space:]]*dotfiles-Windows[[:space:]]*$' "$HERE/scripts/os-repos.txt" &&
-    ! grep -q 'dotfiles-Windows' <<<"$(sed -n '/^ALL_OS_REPOS=(/,/^)/p' "$HERE/scripts/sync-core.sh")"; then
-    pass "sync-core: dotfiles-Windows is in neither the fleet file nor the fallback array"
+  # be wrong, not merely useless. Since #669 the data file is the ONLY place it could be
+  # wrongly added — the second clause here used to grep sync-core.sh's ALL_OS_REPOS array,
+  # which no longer exists and would now pass vacuously. Assert the SHIPPED data file, not
+  # the fixture's.
+  if ! grep -qE '^[[:space:]]*dotfiles-Windows[[:space:]]*$' "$HERE/scripts/os-repos.txt"; then
+    pass "sync-core: dotfiles-Windows is not in the fleet file"
   else
     fail "sync-core: dotfiles-Windows would be fanned into (it carries no core/ subtree)"
   fi
 
-  # --- every shipped fallback array equals the canonical fleet -----------------
-  # scripts/os-repos.txt is the single source, but sync-core.sh, fleet-drift.sh and
-  # core-integrity.sh EACH keep a hardcoded array for when that file is missing or
-  # unreadable — and that array is what actually runs in exactly the situation you are
-  # least able to notice it. Registering dotfiles-Debian in the data file alone would
-  # have left three silent omissions, so assert the SHIPPED arrays against the SHIPPED
-  # file rather than trusting that whoever adds the next target remembers all four.
-  _fleet_canon="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e 's/[[:space:]]//g' \
-    "$HERE/scripts/os-repos.txt" | sort)"
-  # shellcheck disable=SC2043
-  for _fb in "sync-core.sh:ALL_OS_REPOS" "fleet-drift.sh:OS_REPOS" "core-integrity.sh:OS_REPOS"; do
-    _fb_file="${_fb%%:*}" _fb_var="${_fb##*:}"
-    # Take the FIRST array literal for that name: fleet-drift/core-integrity use the
-    # `((${#VAR[@]})) || VAR=(…)` form, so the assignment is the one with a `(` on it.
-    # awk, not a sed range. A `sed -n '/VAR=(/,/^)/p' ` range restarts on every later
-    # match of the opening address and happily ran on to the end of the file, dragging
-    # in every `dotfiles-core` mentioned in the usage heredoc below. awk with an explicit
-    # in/out flag stops at the FIRST closing paren, which is the array and nothing else.
-    # Comments are stripped too: both files carry prose INSIDE the block explaining why
-    # dotfiles-Windows is excluded, and that prose is otherwise scraped as membership.
-    _fb_list="$(awk -v v="$_fb_var" '
-        $0 ~ "^[[:space:]]*" v "=\\(" { inarr = 1; next }
-        inarr && /^[[:space:]]*\)/     { exit }
-        inarr                           { sub(/#.*/, ""); print }
-      ' "$HERE/scripts/$_fb_file" |
-      tr ' ' '\n' | grep -oE '^dotfiles-[A-Za-z]+$' | sort -u)"
-    if [[ -z "$_fb_list" ]]; then
-      fail "$_fb_file: could not parse the $_fb_var fallback array (did its shape change?)"
-    elif [[ "$_fb_list" == "$_fleet_canon" ]]; then
-      pass "$_fb_file: the $_fb_var fallback matches scripts/os-repos.txt exactly"
+  # --- an unusable fleet list STOPS the fan-out, it does not degrade -----------
+  # The whole point of #669. sync-core.sh used to fall back to a hardcoded nine-name array
+  # when scripts/os-repos.txt was missing — the one moment nobody could see it — so a repo
+  # registered in the file alone silently vanished from the fan-out. Now it exits 2 and
+  # touches nothing. Driven for real rather than asserted by grep: a comment claiming the
+  # script fails closed is exactly what the old fallback's comment also claimed.
+  _sc_fleet_file="$SCF/core/scripts/os-repos.txt"
+  _sc_fleet_body="$(cat "$_sc_fleet_file")"
+  _sc_head_pre="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  for _sc_case in absent empty; do
+    case "$_sc_case" in
+    absent) rm -f "$_sc_fleet_file" ;;
+    # Comments-only is the same hazard as absent and a far likelier edit slip: the reader
+    # would yield zero names and the sweep would report a clean fleet of nobody.
+    empty) printf '# every entry commented out\n\n' >"$_sc_fleet_file" ;;
+    esac
+    _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+    _sc_rc=$?
+    if [[ "$_sc_rc" == 2 ]] && grep -qE 'fleet list (unreadable|is empty)' <<<"$_sc_out" &&
+      [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_pre" ]]; then
+      pass "sync-core: an $_sc_case fleet list exits 2 and fans out into nothing"
     else
-      fail "$_fb_file: $_fb_var drifted from scripts/os-repos.txt — missing: $(comm -23 <(printf '%s\n' "$_fleet_canon") <(printf '%s\n' "$_fb_list") | tr '\n' ' ')extra: $(comm -13 <(printf '%s\n' "$_fleet_canon") <(printf '%s\n' "$_fb_list") | tr '\n' ' ')"
+      fail "sync-core: an $_sc_case fleet list did not stop the fan-out (rc=$_sc_rc, want 2) — the maintain button degraded silently"
     fi
   done
-  unset _fleet_canon _fb _fb_file _fb_var _fb_list
+  printf '%s\n' "$_sc_fleet_body" >"$_sc_fleet_file"
+
+  # Naming targets on the CLI must NOT need the fleet list — the file describes the default
+  # fan-out, not the argument parser, and coupling the two would make a broken data file
+  # block the one-repo recovery sync you reach for to fix it.
+  # Called directly, not through _sc_run: that helper appends its "$@" as env-var prefixes
+  # BEFORE `bash`, so it cannot carry script arguments. --dry-run keeps this hermetic — the
+  # fleet load happens during target selection either way, which is the thing under test.
+  rm -f "$_sc_fleet_file"
+  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
+    REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 \
+    bash "$_SCS" --dry-run dotfiles-Test 2>&1)" || true
+  if grep -q 'dotfiles-Test' <<<"$_sc_out" && ! grep -qE 'fleet list (unreadable|is empty)' <<<"$_sc_out"; then
+    pass "sync-core: an explicitly named target still syncs with no fleet list present"
+  else
+    fail "sync-core: a named target was blocked by the missing fleet list it does not need"
+  fi
+  printf '%s\n' "$_sc_fleet_body" >"$_sc_fleet_file"
+  unset _sc_fleet_file _sc_fleet_body _sc_head_pre _sc_case _sc_rc
+
+  # --- the fleet list is the single source, and no copy has grown back ---------
+  # This REPLACES the old four-way agreement assertion (#669). sync-core.sh, fleet-drift.sh
+  # and core-integrity.sh each used to carry a hardcoded fallback array, and this suite
+  # asserted the four agreed — a backstop for a design flaw rather than a fix. The arrays
+  # are gone; what is worth policing now is that they stay gone, and that the one remaining
+  # source is actually loadable. Three assertions, in that order.
+  if load_os_repos; then
+    pass "fleet list: scripts/os-repos.txt is readable and names ${#CORE_OS_REPOS[@]} repo(s)"
+  else
+    fail "fleet list: $CORE_OS_REPOS_ERR — every fleet script now hard-fails on this"
+  fi
+
+  for _fb_file in sync-core.sh fleet-drift.sh core-integrity.sh; do
+    if grep -q 'load_os_repos' "$HERE/scripts/$_fb_file"; then
+      pass "$_fb_file: reads the fleet through load_os_repos (lib/common.sh)"
+    else
+      fail "$_fb_file: no longer calls load_os_repos — it has its own fleet reader again"
+    fi
+    # Two fleet names on one line, comments stripped: the signature of a pasted-back array,
+    # and it catches the `for r in a b c` shape as well as a `VAR=(…)` literal.
+    # Deliberately not a bare `dotfiles-[A-Za-z]+` scan — sync-core.sh legitimately carries
+    # the `dotfiles-*)` arg glob and a `dotfiles-Fedora` example, and a check that cannot
+    # tell those from an array is a check nobody will keep. Usage lines are dropped too: an
+    # example INVOKING the script ("sync-core.sh dotfiles-Fedora dotfiles-Arch") is prose
+    # that happens to name two repos, and reporting it as a re-grown array would be a false
+    # positive whose message actively misleads. Names may contain digits and further hyphens;
+    # the old assertion's `^dotfiles-[A-Za-z]+$` would have silently dropped such a repo and
+    # reported false DRIFT, so do not narrow this back.
+    if sed -e 's/#.*//' -e "/$_fb_file/d" "$HERE/scripts/$_fb_file" |
+      grep -qE 'dotfiles-[A-Za-z0-9-]+[[:space:]]+dotfiles-[A-Za-z0-9-]+'; then
+      fail "$_fb_file: a hardcoded fleet list has grown back — scripts/os-repos.txt is the only source"
+    else
+      pass "$_fb_file: carries no hardcoded fleet list of its own"
+    fi
+  done
+  unset _fb_file
 
   # --- --dry-run mutates nothing ----------------------------------------------
   _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"

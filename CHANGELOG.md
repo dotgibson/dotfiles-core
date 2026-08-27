@@ -14,6 +14,53 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **`scripts/os-repos.txt` is now the single source of the fleet, not one of four (#669).**
+  The file was documented as canonical and its own header admitted it was not: `sync-core.sh`,
+  `fleet-drift.sh` and `core-integrity.sh` each carried a hardcoded nine-name fallback array
+  for when the file was missing or unreadable. Adding a target meant **four** coordinated
+  edits, and **the copy you forgot was the one that ran** — the fallback fires precisely when
+  the data file is already broken, which is the moment nobody is watching. `test-core.sh`
+  asserted the four agreed, which is a backstop for a design flaw rather than a fix.
+
+  All three arrays are deleted. There is one parser, `load_os_repos` in
+  `scripts/lib/common.sh`, and **no fallback anywhere**: an absent, unreadable or
+  commented-out-to-empty fleet list now exits 2 in those three gates instead of sweeping a
+  list nobody chose. That is the posture `real-bootstrap.yml` already takes when it derives
+  zero legs — a gate that silently never runs reads as coverage.
+
+  Rejected the alternative of _generating_ the fallbacks from the file: it trades one
+  duplication for a codegen step plus a new gate asserting the generated output is current,
+  i.e. the same "these must agree" problem with an extra moving part — and the generated
+  array would still run silently when its source was unreadable. Regenerating stale data
+  more reliably does not stop it being substituted.
+
+  `resolve_repo_dir` is untouched, so a repo renamed upstream still resolves from a clone
+  sitting under its old directory name. The loader turns the file into names; that function
+  still turns a name into a path.
+
+  **Seven further copies folded in while the list was open**, because "one edit" has to mean
+  every consumer:
+
+  - `test-core.sh`'s owned-block fleet scan hardcoded **seven of the nine** names —
+    `dotfiles-Defense` and `dotfiles-Offense` were silently never scanned, in the same file
+    that policed the other three arrays.
+  - `fleet-coverage.sh` swallowed an unreadable file with `2>/dev/null` and rendered an
+    **empty coverage register**, indistinguishable from a fleet where nothing is covered.
+  - `audit-core.sh`'s two sibling checks and `freshness-dashboard.sh` each hand-rolled the
+    same parse. The advisory ones keep their `skip_env` posture — they now say they could
+    not enumerate the fleet rather than implying they covered it.
+  - `claude-routines.yml`'s doc-audit and drift-triage sweeps each spelled the nine names out
+    inline, uncovered by any test; a tenth repo would have left both blind to it.
+
+  The `test-core.sh` agreement assertion is **repurposed**, not just deleted: it now asserts
+  the file is loadable, that each of the three scripts calls `load_os_repos`, and that no
+  hardcoded list has grown back — plus new fixtures that **drive** the fail-closed path
+  (absent and comments-only) and check the fan-out touched nothing, rather than trusting a
+  comment that says it fails closed. Registering a fleet target is one line, and
+  `new-os-repo.sh` now says so at the end of a scaffold.
+
 ## [v5.0.3] - 2026-08-26
 
 ### Added
