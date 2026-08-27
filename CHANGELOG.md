@@ -14,6 +14,78 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **The scheduled runner dispatches through `os.capabilities` too (#665).** `maint/dotfiles-maint.sh`
+  carried **49 package-manager references** — the second-largest concentration of OS knowledge in
+  Core, and a second copy of the ladder #664 just removed from `zsh/60-update.zsh`. Two copies of
+  one fact drift, and these had: the maint ladder grew **no emerge arm at all**, so a Gentoo box's
+  daily run has never counted anything, and its zypper apply says `up` where the interactive one
+  says `dup` on Tumbleweed. There is now one.
+
+  `zsh/55-maint.zsh` keeps `_maint_scheduler` as the dispatcher — switching on a capability rather
+  than an OS name was always the right shape — but the answer now comes from the OS layer's
+  declared `SCHEDULER`, with the probe as the fallback for a box that has not declared.
+
+- **`SCHEDULER` gains `cron`, which was a defect in the schema rather than a judgement about cron.**
+  Core's `_maint_scheduler` has had a live cron arm all along — it is what an OpenRC box (Alpine,
+  Gentoo) gets, having `crontab` and no systemd — so #663's enum was rejecting a value Core itself
+  produces, and `scripts/test-core.sh` asserted that rejection. Alpine's only honest declaration was
+  `none`, which means "this box cannot hold a timer", on a box that can.
+
+- **A bash reader for the declaration, which the contract promised and nothing implemented.**
+  `examples/os.capabilities.example` and `lib/bootstrap-lib.sh` both said `maint/dotfiles-maint.sh`
+  reads the same file with `sed`; it did not. It now does — extracted, never sourced, for the reason
+  #663 chose flat `KEY=value`: sourcing a per-repo file into the one process in this system that may
+  call `sudo -n` is a code-execution surface, and extraction cannot execute anything. Same strictness
+  and the same trailing-whitespace trim as the zsh reader, so the two cannot disagree about one file.
+
+### Added
+
+- **`SCHEDULER_UNIT_DIR` — the key that gets the last OS-absolute path out of Core.**
+  `~/Library/LaunchAgents` appeared at **six sites** in `zsh/55-maint.zsh` and was the reason
+  `audit-core.sh` §5c carried a per-file exception. It now survives in exactly one place: the
+  built-in fallback for a box that has not declared. #667 authors the key across the fleet and
+  deletes that block, **and the §5c exception goes with it** — together with #664's sibling
+  package-manager fallback.
+
+  A **directory**, not a path, and the split is load-bearing: where units live is an OS fact, but
+  what Core calls its own job (`dotfiles-maint.service`, `com.dotfiles.maint`) is Core's identity and
+  is what `systemctl enable` and `launchctl` name. A declaration that could rename the file would
+  decouple the unit Core writes from the one it then enables — installed, reported healthy, never
+  run. The validator rejects a value ending in `.service`/`.plist`/`.timer` for that reason.
+
+  The plist and unit **templates stay in Core**, and are not the exception. They are portable text
+  parameterised by paths, selected by `_maint_scheduler`. Pushing them outward would put one systemd
+  unit in seven copies with no owner — the hand-maintained N-way drift `VENDORING.md` records as the
+  #449 failure. The OS layer owns _where_ the unit goes, not _what it says_.
+
+- **`MAINT_UNATTENDED_UPGRADE`, and the direction of its default is the whole point.** Scheduled
+  system upgrades are now gated twice: the operator's `MAINT_SYSTEM_UPGRADE=1` env var **and** the
+  repo's declared opt-in. **Omitting it refuses.** A fail-open here silently applies full system
+  upgrades on an engagement box, unattended, on a schedule nobody is watching — so `=0` is _rejected_
+  by the validator rather than read as "declared", which is how a value written to forbid something
+  would have permitted it.
+
+  This replaces two hand-rolled refusals: Kali, read out of `/etc/os-release` (OS knowledge in Core),
+  and Arch/Gentoo, inferred from `have pacman || have emerge` — a probe for a **binary** standing in
+  for a claim about a **distro**, true on any box with pacman installed for other reasons. Each repo
+  now says so itself, and a repo Core has never heard of refuses by default instead of being waved
+  through.
+
+### Fixed
+
+- **`XDG_CONFIG_HOME` was never defaulted in `maint/dotfiles-maint.sh`.** It defaults `XDG_CACHE_HOME`,
+  `XDG_STATE_HOME` and `XDG_DATA_HOME` but not `CONFIG`, so the new declaration path would have
+  resolved to a bare `/zsh/os.capabilities` on a box that does not export it — unreadable, and the
+  runner would have silently behaved as though the box declared nothing. Found while wiring the
+  reader; it would have been a silent no-op rather than an error.
+
+- **An empty assume-yes vector no longer risks a bash 3.2 `set -u` abort.** Expanding an empty array
+  as `"${a[@]}"` is an unbound-variable error on bash 3.2, which macOS still ships and every gate here
+  is held to — and an archive that declares no `PKG_ASSUME_YES` (Arch, Gentoo, Alpine) is exactly the
+  empty case. Uses the `${a[@]+"${a[@]}"}` guard.
+
 ## [v5.2.0] - 2026-08-27
 
 ### Changed
