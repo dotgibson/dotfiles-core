@@ -122,14 +122,79 @@ _pkgup_count() {
     apk list -u 2>/dev/null | grep -c .
     ;;
   emerge)
-    # Gentoo: a real @world calc is far too heavy to background. Only report if
-    # eix is present (cheap, reads its own cache); otherwise stay silent (-1).
-    if command -v eix >/dev/null 2>&1; then
-      eix -u --only-names 2>/dev/null | grep -c .
-    else echo -1; fi
+    # Gentoo: ask PORTAGE, not eix. See _pkgup_emerge_pending for why, and for why
+    # "too heavy to background" — which this branch used to say — was answering the
+    # wrong question. A failed resolve emits nothing and reports -1 (unknown) rather
+    # than 0, so a broken Portage never reads as "nothing to do".
+    # NOT `_pkgup_emerge_pending | grep -c . || echo -1`: grep exits 1 on ZERO
+    # matches, which is the healthy "nothing to update" case, so that spelling emits
+    # both "0" and "-1" and the caller reads the pair as garbage. It also masks the
+    # real failure, since a pipeline's status is grep's, not emerge's. Capture first,
+    # branch on THAT status, and count second.
+    local _p
+    if _p="$(_pkgup_emerge_pending)"; then
+      print -r -- "$_p" | grep -c .
+    else
+      echo -1
+    fi
     ;;
   *) echo -1 ;;
   esac </dev/null
+}
+
+# _pkgup_emerge_pending — the packages a `@world` update would ACTUALLY change, on
+# Gentoo. One implementation feeding both _pkgup_count and _pkgup_list, so the number
+# the nudge shows and the list `up` previews can never disagree.
+#
+# WHY NOT eix, WHICH THIS USED TO USE. `eix -u` answers "is a higher version present
+# in the tree?"; `up` runs `emerge -uDN @world`, which answers "what will actually
+# change?". On a healthy, fully-updated box those are permanently different questions,
+# and the gap is not small — measured on a real machine (dotgibson/dotfiles-core#753):
+# eix said 70 while emerge merged 8, and after a full update and depclean eix still
+# said 2 against emerge's 0. Three distinct causes, only the first of which an
+# operator can ever clear:
+#
+#   orphans        a package left installed but no longer reachable from @world. Any
+#                  `emerge --unmerge` creates them; eix counts them, the resolver does
+#                  not. 60 of the 64 on that box. Clears on --depclean.
+#   SLOTS          dev-lang/lua-5.1.5-r200 IS the newest thing in SLOT 5.1, and six
+#                  packages want that slot. eix compares against the highest version
+#                  across ALL slots (5.4.8) and reports an upgrade that cannot exist.
+#   consumer pins  app-editors/neovim-0.12.3 RDEPENDs `=dev-libs/tree-sitter-c-0.24.1*`.
+#                  Both versions are stable and same-slot; the resolver refuses to move
+#                  because a dependent pinned it. eix sees only the tree.
+#
+# The last two NEVER clear. So this was not eix being imprecise — it was eix being
+# structurally unable to answer the question, and no filter over its output fixes
+# slots or pins. Only the resolver knows, so ask it.
+#
+# ON THE COST, because this branch used to say a real calc was "far too heavy to
+# background" and that judgement is now reversed. Measured: ~10s against eix's 0.25s.
+# But the caller that pays it is throttled to UPDATE_CHECK_INTERVAL (once a day) and
+# runs disowned — it never blocks a prompt, and `up`'s own foreground use already sits
+# behind _core_spin. A once-a-day background resolve is affordable; a permanently wrong
+# number is not, because a nudge that cannot reach zero on a healthy box stops being a
+# signal that anything needs doing.
+#
+# Root is NOT needed (--pretend resolves and installs nothing), and it takes no merge
+# lock, so this is safe to run beside a real emerge.
+_pkgup_emerge_pending() {
+  local _out
+  # Same selection `up` executes (-uDN @world), so the preview cannot drift from the
+  # action. Failure emits nothing AND returns non-zero, so callers can tell "no
+  # updates" from "could not ask".
+  _out="$(emerge --pretend --update --deep --newuse @world 2>/dev/null)" || return 1
+  print -r -- "$_out" | awk '
+    # Only real merges. [nomerge]/[blocks]/[uninstall] are not upgrades.
+    /^\[(ebuild|binary)/ {
+      sub(/^\[[^]]*\][[:space:]]*/, "")
+      split($0, f, /[[:space:]]+/)
+      atom = f[1]
+      sub(/::.*/, "", atom)                       # drop ::repo
+      sub(/-r[0-9]+$/, "", atom)                  # PVR is PV plus an optional -rN,
+      sub(/-[0-9][^-]*$/, "", atom)               #   so the revision comes off first
+      if (atom ~ /\//) print atom
+    }'
 }
 
 # Best-effort LIST of upgradable package names — the names behind _pkgup_count's
@@ -152,7 +217,7 @@ _pkgup_list() {
   zypper) zypper -q list-updates 2>/dev/null | awk -F'|' '/^v /{gsub(/[[:space:]]/,"",$3); print $3}' ;;
   apt) apt-get -s upgrade 2>/dev/null | awk '/^Inst /{print $2}' ;;
   apk) apk list -u 2>/dev/null | awk '{print $1}' ;;
-  emerge) command -v eix >/dev/null 2>&1 && eix -u --only-names 2>/dev/null ;;
+  emerge) _pkgup_emerge_pending ;;
   esac </dev/null
 }
 
