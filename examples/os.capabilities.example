@@ -102,6 +102,18 @@ MAINT_UNATTENDED_UPGRADE=1
 # Space-separated tools core-doctor reports as OPT-IN rather than MISSING on this OS:
 # things the archive has but this repo deliberately does not install. Omit the key
 # entirely to accept Core's built-in default (_CORE_DOCTOR_OPTIN, zsh/30-functions.zsh).
+#
+# A DECLARED LIST IS COMPLETE FOR THIS BOX — it REPLACES Core's default, it does not add to
+# it. So a repo that declares this key must re-state every tool it still considers optional,
+# not only the ones it is adding: declaring `TOOLS_OPTIN=jj` alone would make lnav,
+# hyperfine and the rest of Core's default list report as MISSING here. Start from the
+# default above and edit it.
+#
+# THIS KEY IS THE ONE PLACE A PARTIAL DECLARATION FALLS BACK per-key (#666). Everywhere
+# else — PKG_ASSUME_YES, PKG_UPGRADE_PARTIAL, MAINT_UNATTENDED_UPGRADE — an omission is a
+# SAFETY statement and Core honours it exactly. Omitting this one says only that you have
+# not curated a list, so Core's default applies rather than "nothing here is optional",
+# which would mark every uninstalled optional tool as degraded.
 TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 
 # ──────────────────────────────────────────────────────────────────────────────
