@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.4.0] - 2026-08-27
+
 ### Added
 
 - **The fleet declares (#667).** #663 defined `os.capabilities` and #664/#665/#666 made `up`, the
