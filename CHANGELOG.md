@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.4.1] - 2026-08-28
+
 ### Fixed
 
 - **The `os.capabilities` fleet gate deadlocked the fan-out it depends on (#667).** §9c shipped
