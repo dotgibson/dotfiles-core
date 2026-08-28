@@ -1408,14 +1408,25 @@ else
     fi
   done
 
+  # A ROLE REPO IS REPORTED IN THE PASS LINE, NOT AS A SKIP, and the distinction is not
+  # cosmetic. `skip` means "this gate did not run"; --strict reds on any skip that is not
+  # an environment or out-of-scope one, and _core_tool_skip_count classifies exactly that
+  # way. But a Role repo carrying no declaration is the CORRECT answer, fully determined
+  # by this run — nothing went unchecked. Emitting it as a skip made `--strict` fail on a
+  # complete, green fleet, and put "2 Role repo(s) exempt" in the summary's "this run is
+  # PARTIAL" list, where it claimed the opposite of what is true.
+  _cf_role_note=""
+  ((_cf_role)) && _cf_role_note="; $_cf_role Role repo(s) exempt — no os/ band of their own"
   if ((_cf_checked == 0)); then
     skip_env "os.capabilities fleet coverage (no sibling OS repo checked out — nothing to read here)"
   elif ((_cf_bad)); then
     fail "os.capabilities: $_cf_bad of $_cf_checked checked-out OS repo(s) do not satisfy the schema (see the lines above)"
   else
-    pass "os.capabilities: every checked-out OS repo declares and validates ($_cf_checked repo(s))"
+    pass "os.capabilities: every checked-out OS repo declares and validates ($_cf_checked repo(s)$_cf_role_note)"
   fi
-  ((_cf_role)) && skip "os.capabilities: $_cf_role Role repo(s) exempt — no os/ band of their own"
+  # An ABSENT sibling is genuinely uncovered, so it stays a skip — and an ENVIRONMENT one,
+  # which --strict ignores because CI checks out this repo alone. --require-siblings is
+  # what reds it.
   ((_cf_absent)) && skip_env "os.capabilities: $_cf_absent repo(s) not checked out — not covered by this run"
 fi
 
