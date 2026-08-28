@@ -1339,6 +1339,29 @@ fi
 # #667: nine repos, zero declarations, `blib_link_os_layer`'s `[[ -f ]]` guard linking
 # nothing, and every consumer silently on Core's built-in fallback rows.
 #
+# TWO FINDINGS, TWO SEVERITIES, AND THE SPLIT IS LOAD-BEARING.
+#
+#   a malformed declaration  BLOCKING. The repo authored one and got it wrong; nothing
+#                            about the release cycle makes that temporarily acceptable.
+#   no declaration at all    ADVISORY, for one release cycle.
+#
+# THE SECOND ONE SHIPPED BLOCKING AND DEADLOCKED THE FAN-OUT. scripts/sync-core.sh runs
+# `make audit` over a fleet checkout BEFORE it vendors anything — deliberately, so a red
+# tree never reaches nine repos. But a declaration cannot be merged into an OS repo until
+# that repo has vendored the Core whose validator accepts it, and that vendoring IS the
+# fan-out. So a blocking "you have no declaration" refused to fan out the very release
+# that would let the declarations land. v5.4.0 published, the fan-out failed, and zero
+# vendor PRs opened.
+#
+# This is the same red-on-arrival shape §5f and the owned-block gate in lint-call.yml both
+# name, and both answer the same way: warn for a cycle, then flip. It is also the shape
+# THIS FILE's own lint-call.yml step already got right — that step makes a missing
+# declaration advisory and a malformed one blocking, and the asymmetry with this section
+# was the defect, not the reasoning there.
+#
+# FLIP IT TO BLOCKING once `make fleet-drift` shows every OS repo carrying a declaration —
+# a three-line change, and the tracking issue is #763's sibling.
+#
 # THE ROLE-REPO EXEMPTION IS STRUCTURAL, NOT A NAME LIST. dotfiles-Offense and
 # dotfiles-Defense sit ON TOP of an OS-native layer rather than being one: neither has an
 # os/ directory, neither calls blib_link_os_layer, and the OS band belongs to the repo
@@ -1368,6 +1391,7 @@ else
   _cf_bad=0
   _cf_absent=0
   _cf_role=0
+  _cf_undeclared=0
   for _cf_repo in "${CORE_OS_REPOS[@]}"; do
     _cf_dir="$(resolve_repo_dir "$_cf_root" "$_cf_repo")" || _cf_dir="$_cf_root/$_cf_repo"
     if [[ ! -d "$_cf_dir/.git" ]]; then
@@ -1398,9 +1422,13 @@ else
       ${_cf_f#"$_cf_dir"/}: $(printf '%s' "$_cf_out" | grep '^FAIL' | tr '\n' ';' | sed 's/;$//')"
       fi
     done
+    # UNDECLARED IS COUNTED SEPARATELY FROM MALFORMED — see the header. Rolling it into
+    # _cf_gaps is what made this blocking and deadlocked the fan-out.
     if ((_cf_found == 0)); then
-      _cf_gaps="$_cf_gaps
-      no os/*.capabilities — this repo has an OS band and must declare one (see examples/os.capabilities.example)"
+      _cf_undeclared=$((_cf_undeclared + 1))
+      ((${CORE_JSON:-0})) || printf '  %s%s%s %s\n      no os/*.capabilities — Core is running its built-in fallback rows here (see examples/os.capabilities.example)\n' \
+        "${c_yel}" "•" "${c_rst}" "$_cf_repo"
+      continue
     fi
     if [[ -n "$_cf_gaps" ]]; then
       _cf_bad=$((_cf_bad + 1))
@@ -1420,7 +1448,13 @@ else
   if ((_cf_checked == 0)); then
     skip_env "os.capabilities fleet coverage (no sibling OS repo checked out — nothing to read here)"
   elif ((_cf_bad)); then
-    fail "os.capabilities: $_cf_bad of $_cf_checked checked-out OS repo(s) do not satisfy the schema (see the lines above)"
+    fail "os.capabilities: $_cf_bad of $_cf_checked checked-out OS repo(s) have a declaration that does not satisfy the schema (see the lines above)"
+  elif ((_cf_undeclared)); then
+    # ADVISORY, not a skip and not a failure. `pass` is honest here — the sweep RAN and
+    # answered; what it found is a gap the fleet is mid-way through closing. A skip would
+    # claim the check did not run (and --strict would red on it); a fail deadlocks the
+    # fan-out that closes the gap.
+    pass "os.capabilities: $_cf_undeclared of $_cf_checked checked-out OS repo(s) have not declared yet — advisory until the fleet is stamped (#667), then this blocks$_cf_role_note"
   else
     pass "os.capabilities: every checked-out OS repo declares and validates ($_cf_checked repo(s)$_cf_role_note)"
   fi
