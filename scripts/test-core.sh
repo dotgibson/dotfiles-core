@@ -9142,6 +9142,77 @@ check "core-doctor's legend names all three states" \
 # `·` and not `○`: the wired block below the tools uses ○ for "installed but IDLE". Two
 # meanings for one glyph on one screen is the legibility problem this change is about, so the
 # separation is pinned rather than left to whoever edits next.
+# ── the opt-in split is PER REPO now (#666) ──────────────────────────────────
+# The bug: one Core-side list cannot say "opt-in over there, expected here", so `jj` and
+# `ast-grep` — 21 in the Gentoo and Kali cells ONLY — were reported as expected on every
+# box, showing a degraded integration where nothing was wrong. That is the failure mode
+# most likely to train an operator to ignore the report.
+#
+# `check` sources ui + 30-functions only, so these need 02-capabilities and a seeded
+# declaration; hence a local runner rather than reusing it.
+CAPD_DOC="$SANDBOX/capdoc"
+rm -rf "$CAPD_DOC"
+mkdir -p "$CAPD_DOC"
+_doccheck() { # _doccheck <label> <decl> <zsh-body>
+  local label="$1" decl="$2" body="$3" out
+  printf '%s\n' "$decl" >"$CAPD_DOC/os.capabilities"
+  if out="$(HOME="$SANDBOX" CORE_CAPABILITIES_FILE="$CAPD_DOC/os.capabilities" \
+      zsh -fc "source '$UI' || exit 1; source '$HERE/zsh/02-capabilities.zsh' || exit 1; source '$FN' || exit 1; $body" 2>&1)"; then
+    pass "$label"
+  else
+    fail "$label"
+    [[ -n "$out" ]] && printf '%s\n' "$out" | sed 's/^/    /' >&2
+  fi
+}
+# THE FIX, stated as the bug it closes: a repo that declares jj opt-in gets a dot, and the
+# same tool stays a cross on a repo that does not — the sentence the old list could not
+# express in both directions at once.
+_doccheck "core-doctor: a declared TOOLS_OPTIN reclassifies jj as opt-in" \
+  'TOOLS_OPTIN=jj ast-grep' \
+  '_core_doctor_optin jj && _core_doctor_optin ast-grep'
+_doccheck "core-doctor: a tool absent from a declared TOOLS_OPTIN is EXPECTED" \
+  'TOOLS_OPTIN=jj ast-grep' \
+  '! _core_doctor_optin lnav'
+# ...and the JSON contract moves with the render, because a gate asserting `expected` must
+# not disagree with the glyph a human reads two lines above it.
+_doccheck "core-doctor --json: expected follows the declared split, not Core's list" \
+  'TOOLS_OPTIN=jj ast-grep' \
+  '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
+   out=$(core-doctor --json 2>&1)
+   q=$(printf \\42)
+   exp=${out#*expected}
+   [[ $exp == *${q}jj${q}:false* ]] && [[ $exp == *${q}lnav${q}:true* ]]'
+# PER-KEY FALLBACK, and deliberately unlike `up` and the maint runner. A declaration is
+# authoritative there because an OMISSION IS A SAFETY STATEMENT (no assume-yes token means
+# never auto-confirm). TOOLS_OPTIN carries no such claim — omitting it says the repo has not
+# curated a list, not that nothing is optional — and reading it as "nothing is opt-in" would
+# mark every uninstalled optional tool degraded, manufacturing the alarm fatigue the state
+# exists to prevent.
+_doccheck "core-doctor: a declaration with no TOOLS_OPTIN falls back to Core's default" \
+  'PKG_UPGRADE=sudo dnf upgrade --refresh' \
+  '_core_doctor_optin lnav && ! _core_doctor_optin jj'
+# An EMPTY declared value is the same as absent — _core_cap's own contract, and the thing
+# that stops `TOOLS_OPTIN=` from silently meaning "everything is expected".
+_doccheck "core-doctor: an empty TOOLS_OPTIN is 'not declared', not 'nothing is opt-in'" \
+  'TOOLS_OPTIN=' \
+  '_core_doctor_optin lnav'
+# #666 warned these two could disagree: #697 added stale-flag reporting, and this changes
+# what "expected" means underneath it. They are independent by construction —
+# _core_doctor_stale runs on BOTH the opt-in and the missing branch — and this pins that, so
+# a future edit cannot quietly make a reclassified tool stop being checked for a stale flag.
+# _CORE_PROBED is band 00's ledger and these tests source three fragments, so it is seeded
+# here: without it _core_doctor_stale returns early ("detection never ran") and the
+# assertion would pass for the wrong reason on a run that proved nothing.
+_doccheck "core-doctor: reclassifying a tool opt-in does not stop stale-flag reporting (#697)" \
+  'TOOLS_OPTIN=jq' \
+  '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
+   HAVE_JQ=1
+   typeset -gA _CORE_PROBED=(jq 1)
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"· jq"* ]] && [[ $out == *stale* ]]'
+
 check "core-doctor does not reuse the wired block's ○ for opt-in tools" \
   '_core_have() { return 1; }
    _core_doctor_present() { return 1; }
@@ -9183,9 +9254,12 @@ assert not (set(gate) & set(optin)), \"a tool cannot be both\"
 #
 # The rule, stated once here and in the array's comment: a tool is opt-in iff its Tool cell
 # carries a ROW-level ²¹, or one of the two footnotes ²¹ itself calls "the same shape" (¹⁷
-# jnv, ¹⁹ gping). Cell-level ²¹ (jj, ast-grep — Gentoo and Kali only) is deliberately NOT
-# included: a Core-side list cannot say "opt-in there, expected here", and muting them
-# globally would hide a real ✗ on the repos that do install them.
+# jnv, ¹⁹ gping). Cell-level ²¹ (jj, ast-grep — Gentoo and Kali only) is still deliberately
+# NOT included, but the REASON changed in #666. It used to be that a Core-side list could not
+# say "opt-in there, expected here" at all, so muting them globally would have hidden a real
+# ✗ on the repos that do install them. Now it can — the OS repo says so in TOOLS_OPTIN — and
+# this array is only the DEFAULT for a box that has not. A cell-level case belongs to the
+# repo whose cell it is, so it must still stay out of here.
 check_dep "core-doctor's opt-in list is derivable from PORTING-MATRIX footnote 21" python3 \
   '_MATRIX="'"$HERE"'/PORTING-MATRIX.md" _OPTIN="${_CORE_DOCTOR_OPTIN[*]}" python3 -c "
 import os, re

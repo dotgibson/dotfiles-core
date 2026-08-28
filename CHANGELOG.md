@@ -86,6 +86,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   is held to — and an archive that declares no `PKG_ASSUME_YES` (Arch, Gentoo, Alpine) is exactly the
   empty case. Uses the `${a[@]+"${a[@]}"}` guard.
 
+- **`core-doctor` classified opt-in-vs-expected from one Core-side list, so it reported
+  healthy boxes as degraded (#666).** A tool that is genuinely optional on one distro and
+  expected on another was reported as expected everywhere. `jj` and `ast-grep` are the known
+  cases — `PORTING-MATRIX.md` marks them 21 in the **Gentoo and Kali cells only**, while Arch,
+  openSUSE and Alpine package them — and `dust` is the same shape on the Debian family. The
+  result was a health report showing a degraded integration on a box where nothing was wrong,
+  which is the failure mode most likely to train an operator to ignore the report.
+
+  Core recorded this as unfixable without a new artifact and said so in its own words:
+  _"a Core-side list cannot say 'opt-in there, expected here' … Fixing that properly needs a
+  per-repo manifest; this is the fallback default until one exists."_ #663 landed the
+  manifest; this spends it. `core-doctor` now reads the split from the repo's own
+  `TOOLS_OPTIN`, and the JSON `expected` object moves with the render so a gate asserting it
+  cannot disagree with the glyph a human reads two lines above.
+
+  **A declared list REPLACES Core's default rather than adding to it**, so a repo declaring
+  this key must re-state everything it still considers optional — recorded in the example,
+  because the failure mode is silent and lands on whoever authors the nine declarations.
+
+  **This key falls back per-key, and that is deliberately unlike `up` and the maint runner.**
+  Those treat a declaration as authoritative all-or-nothing because for them an omission is a
+  SAFETY statement — no `PKG_ASSUME_YES` means never auto-confirm, no
+  `MAINT_UNATTENDED_UPGRADE` means refuse — and answering a refusal with a Core default would
+  permit what the repo forbade. `TOOLS_OPTIN` carries no such claim: omitting it says the repo
+  has not curated a list, not that nothing is optional. Reading it the other way would mark
+  every uninstalled optional tool as degraded and manufacture exactly the alarm fatigue the
+  opt-in state exists to prevent.
+
+  #666 flagged that this could disagree with #697's stale-flag reporting, since it changes
+  what "expected" means underneath it. They are independent by construction —
+  `_core_doctor_stale` runs on both the opt-in and the missing branch — and there is now a
+  test pinning that, so a future edit cannot quietly stop checking a reclassified tool.
+
 ## [v5.2.0] - 2026-08-27
 
 ### Changed
