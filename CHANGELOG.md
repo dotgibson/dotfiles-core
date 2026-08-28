@@ -29,7 +29,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   all** is advisory for one cycle, then flips.
 
   This is the same red-on-arrival shape §5f and `lint-call.yml`'s owned-block gate both name, and
-  both answer the same way. It is also the shape this change's *own* `lint-call.yml` step already
+  both answer the same way. It is also the shape this change's _own_ `lint-call.yml` step already
   got right — that step makes a missing declaration advisory and a malformed one blocking. The
   asymmetry between the two halves was the defect, not the reasoning in the workflow.
 
