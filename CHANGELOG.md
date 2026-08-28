@@ -14,6 +14,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `os.capabilities` fleet gate deadlocked the fan-out it depends on (#667).** §9c shipped
+  BLOCKING on a missing declaration, and `scripts/sync-core.sh` runs `make audit` over a fleet
+  checkout **before** it vendors anything — deliberately, so a red tree never reaches nine repos.
+  But a declaration cannot merge into an OS repo until that repo has vendored the Core whose
+  validator accepts it, and **that vendoring is the fan-out**. So the gate refused to fan out the
+  very release that would let the declarations land: v5.4.0 published, `sync-fanout` failed, and
+  zero vendor PRs opened.
+
+  The two findings now carry two severities. A **malformed** declaration still blocks — the repo
+  authored one and got it wrong, and no release cycle makes that acceptable. **No declaration at
+  all** is advisory for one cycle, then flips.
+
+  This is the same red-on-arrival shape §5f and `lint-call.yml`'s owned-block gate both name, and
+  both answer the same way. It is also the shape this change's *own* `lint-call.yml` step already
+  got right — that step makes a missing declaration advisory and a malformed one blocking. The
+  asymmetry between the two halves was the defect, not the reasoning in the workflow.
+
 ## [v5.4.0] - 2026-08-27
 
 ### Added
