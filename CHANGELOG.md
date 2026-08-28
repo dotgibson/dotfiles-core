@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.3.0] - 2026-08-27
+
 ### Changed
 
 - **The scheduled runner dispatches through `os.capabilities` too (#665).** `maint/dotfiles-maint.sh`
