@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.4.2] - 2026-08-28
+
 ### Fixed
 
 - **The docs still taught `git subtree` as the live mechanism (#668).** #587 replaced the
