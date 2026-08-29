@@ -124,7 +124,7 @@ it cheaply at all, pays for a real resolve rather than the fast wrong answer.
 | difftastic¹⁰     | `difftastic`      | `difftastic`  | `difftastic`      | `dev-util/difftastic`      | asset²⁸           | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`  | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸  | `ast-grep`        | cargo²¹                    | cargo²¹           | —²⁹           |
-| uv³⁰             | `uv`              | `python-uv`   | `uv`              | `dev-python/uv`            | asset²⁸           | asset²⁸       |
+| uv³⁰             | `uv`              | `python3-uv`  | `uv`              | `dev-python/uv`            | asset²⁸           | asset²⁸       |
 | w3m              | `w3m`             | `w3m`         | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (1.8.0). **Not in Leap 16.0 or 16.1** —
@@ -1032,9 +1032,17 @@ so both columns are `asset²⁸` and neither is derived from apt. The split earn
 elsewhere (`difftastic`, `git-delta`, `hexyl` — names apt has on noble and trixie and not on
 kali-rolling); `uv` is instead the cleanest illustration of the failure the ²¹ᵃ caveat above
 warns about, a cell that recorded what the archive **contains** rather than what the repo
-**installs**. openSUSE's is named `python-uv` (Tumbleweed — Leap
-was not separately audited, so verify with `zypper se python-uv` and fall back to ³ there),
-and Gentoo's is `dev-python/uv`, not a bare `uv`.
+**installs**. **openSUSE's is `python3-uv`**, and `python-uv` — what this cell used to say —
+is the _source_ package: no binary of that name is published, so `zypper in python-uv` cannot
+resolve on Tumbleweed or on Leap 16.0/16.1. The binary is Python-flavored (`python313-uv`), and
+`python3-uv` is the flavor-agnostic `Provides` that tracks whichever flavor is primary. Bare
+`uv` is a `Provides` too, but on **Tumbleweed it is ambiguous** — `python313-uv` and
+`python314-uv` both provide it, so `zypper in uv` makes you pick — whereas `python3-uv` has
+exactly one provider on all three targets. Verified against the OBS published-binary index on
+Tumbleweed (`openSUSE:Factory`, 0.12.7) and Leap 16.0/16.1 (`SUSE:SLFO:1.2`/`1.3`, 0.7.18), so
+no ³ fallback is needed there. **This is the same failure the paragraph above describes**:
+`python-uv` is the name the archive **contains**, not the one the repo **installs**. Gentoo's
+is `dev-python/uv`, not a bare `uv`.
 
 **mise also appears in this table as a _provider_, in exactly one cell: `gum` on Gentoo.**
 Charm's gum is packaged nowhere Portage can reach — not `::gentoo`, not GURU, in any category
