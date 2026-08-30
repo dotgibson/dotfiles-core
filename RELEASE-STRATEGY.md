@@ -217,8 +217,11 @@ the script's usage:
 above only for a deliberate single-repo pin or rollback. Either way, `sync-core.sh` is the
 **only** sanctioned writer of `core.lock` — never a raw `git subtree pull`, which moves
 `core/` but not the lock and leaves `core-integrity.sh` reporting `TAMPERED` (see
-`VENDORING.md`), and never a per-repo `make core-lock`: three consumers carry an
-independent generator of a format Core owns, and all three have already drifted from it.
+`VENDORING.md`), and never a per-repo `make core-lock`: three consumers carried an
+independent generator of a format Core owns and all three had drifted from it, so #593
+retired them into redirects that write nothing. The one sanctioned second writer is
+`dotfiles-Offense`, which vendors Core on its own schedule and stamps the lock from what it
+pulled; `VENDORING.md` has the contract.
 
 Now "what Alpine runs" is a frozen, named version, and rolling one OS back touches no
 other repo. `sync-core.sh`

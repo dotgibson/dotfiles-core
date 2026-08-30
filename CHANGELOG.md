@@ -14,6 +14,55 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`VENDORING.md` described a resolved `core.lock` defect as a live hazard (#670).** It
+  warned, in the present tense, that three OS repos independently generate `core.lock` and
+  "have already drifted from it and from each other" — naming Arch's hardcoded
+  `core_branch=main`, openSUSE's SHA-in-that-field, and MacBook's read-back of the previous
+  value. #593 retired all three more than a release ago. Every one of the four `make
+  core-lock` targets in the fleet is now an echo-only redirect that writes nothing and names
+  its own retired defect in the past tense (Offense's runs a read-only freshness check and
+  points at its own pull). Telling a reader the fleet is in a state it is not in is worse
+  than silence: it also spends the credibility of the surrounding warnings, which are still
+  live.
+
+  The paragraph now states the rule that survives — Core's `sync-core.sh` is the only writer
+  of `core.lock` in a fan-out repo, because it stamps the lock in the same commit that
+  materializes `core/` — and records the four redirects as the **enforcement** of that rule
+  rather than as breaches of it. The three retired generators stay in the text as the
+  evidence for why a second writer cannot be kept in step by discipline; they are no longer
+  presented as something to go and fix.
+
+- **The same stale claim stood in a second document.** `RELEASE-STRATEGY.md` also read
+  "three consumers carry an independent generator of a format Core owns, and all three have
+  already drifted from it", so correcting `VENDORING.md` alone would have left two Core
+  documents disagreeing about the repo's own rule — the shape of defect #668 had just
+  finished clearing out. Both now say one thing.
+
+### Changed
+
+- **`core_branch` is documented as gone, and the flat "only sanctioned writer" claim is
+  qualified (#670).** Two things were true but unwritten. First, `dotfiles-Offense` is a
+  real second writer: `make core-sync` runs that repo's own `scripts/sync-core.sh`, a
+  `git subtree pull --squash` that stamps all four fields, and Offense's `CONTRIBUTING.md`
+  teaches it as the update route there. It is sanctioned — unlike the three retired
+  generators it writes Core's format from what it actually pulled, taking `core_sha` from the
+  squash commit's `git-subtree-split` trailer and `core_version` from the tree on disk, so
+  the lock cannot name a commit its own `core/` does not contain — but an unqualified "only
+  sanctioned writer" read as covering it and did not. `VENDORING.md` now names it as the one
+  exception, and notes the consequence: Offense has two paths into `core/`, the fan-out which
+  replaces the tree and its own pull which merges, and `core-integrity` gates both because
+  both stamp the lock.
+
+  Second, the pre-#453 `core_branch` field survives in no `core.lock` anywhere — all nine
+  fleet locks are Core-stamped with `core_ref` — so it is now documented as gone as of v5,
+  and a lock still carrying it is pre-v5 and fixed by a sync rather than by hand. Offense's
+  reader-side fallback (`scripts/sync-core.sh:80-82,183`,
+  `test/check-core-freshness.sh:59-63`) is the last consumer of the old name and is dead
+  against every lock that exists; retiring it is a `dotfiles-Offense` change, tracked
+  separately.
+
 ## [v5.4.2] - 2026-08-28
 
 ### Fixed
