@@ -13803,7 +13803,7 @@ if [[ -x /usr/bin/grep ]]; then
   # and shellcheck reports SC2030 there and SC2031 here — a false pair on two unrelated
   # tests. This is the same shape as that earlier block, which is clean for the same
   # reason: the assignment is scoped to the subshell and nothing reads PATH after it.
-  _mg_bb_out="$( PATH="$_mg_bb:/usr/bin:/bin"; _core_make_gate_hits "$HERE/.." )"
+  _mg_bb_out="$( PATH="$_mg_bb:/usr/bin:/bin"; hash -r 2>/dev/null; _core_make_gate_hits "$HERE" )"
   if [[ -z "$_mg_bb_out" ]]; then
     pass "make-gate: Core stays clean under a grep that rejects GNU-only flags (the Alpine case)"
   else
@@ -13816,9 +13816,29 @@ fi
 rm -rf "$_mg_bb"
 unset _mg_bb
 
+# ── The scan's OWN failure must not read as a clean repo. An awk that cannot run returns
+# nothing, and nothing is indistinguishable from "no findings" — the gate would go green
+# having judged nothing, which is the green-because-absent shape this whole function
+# exists to catch. It bit this file once already, via the busybox grep flags above.
+_mg_bad="$SANDBOX/badawk"
+mkdir -p "$_mg_bad"
+printf '#!/bin/sh\nexit 3\n' >"$_mg_bad/awk"
+chmod +x "$_mg_bad/awk"
+# `hash -r` is load-bearing: this suite has already run awk hundreds of times, so bash's
+# command-hash still points at the real one and a PATH change alone never reaches the shim.
+# Without it this case passes for the wrong reason (real awk, no findings, silence).
+_mg_bad_out="$( PATH="$_mg_bad:/usr/bin:/bin"; hash -r 2>/dev/null; _core_make_gate_hits "$HERE" )"
+if [[ -n "$_mg_bad_out" ]]; then
+  pass "make-gate: a scanner failure is reported, not mistaken for a clean repo"
+else
+  fail "make-gate: a broken awk produced SILENCE — the gate would go green having judged nothing"
+fi
+rm -rf "$_mg_bad"
+unset _mg_bad _mg_bad_out
+
 # ── Core must satisfy the rule it authors. §8d asserts this in the audit; asserting it
 # here too means a `make test` catches it without a full audit run.
-if [[ -z "$(_core_make_gate_hits "$HERE/..")" ]]; then
+if [[ -z "$(_core_make_gate_hits "$HERE")" ]]; then
   pass "make-gate: Core's own Makefile meets the rule it sets for the fleet"
 else
   fail "make-gate: Core's own Makefile breaks the rule §8d applies to every caller"

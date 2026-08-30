@@ -77,6 +77,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   different facts and only one is a defect. Pinned by a fixture that rejects those flags
   exactly as busybox does, so a developer box catches it without an Alpine runner.
 
+  Two more things the scanner now refuses to get wrong, both found chasing that Alpine
+  red. **A scan that cannot run is not a clean repo**: if `awk` fails, the function used to
+  return nothing, and nothing is indistinguishable from "no findings" — so a scanner
+  failure is now reported as a finding. And three of the new tests pointed at `$HERE/..`
+  when `$HERE` is already the repo root, so they were judging the directory *above* the
+  repo, which has no `Makefile`; two of them passed by examining nothing. The one case that
+  required a non-empty result is what exposed it. Both are pinned.
+
   Complements, and does not replace, `dotfiles-MacBook/test/check-skip-guards.sh`, which
   tests the first shape at _runtime_ by rebuilding a PATH without the guarded tool. That
   is stronger evidence per finding but can only judge the repo it sits in; this is the

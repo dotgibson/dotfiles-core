@@ -1099,7 +1099,16 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
   # grep is present.
   [ "$probed" = 1 ] || mirror=1
 
-  awk -v cfg="$( [ -f "$root/.markdownlint.jsonc" ] && echo 1 || echo 0 )" -v mirror="$mirror" '
+  # The scan's OWN failure must not read as a clean repo. If awk cannot run — a userland
+  # without it, a construct it rejects, a mangled Makefile — an empty result is
+  # indistinguishable from "no findings", and the gate would go green having judged
+  # nothing. That is the green-because-absent shape this whole function exists to catch,
+  # and it has now bitten this file once already (the busybox grep flags above). So the
+  # status is captured and a scanner failure is reported AS a finding: unknown is not
+  # clean. The awk program itself is POSIX — verified identical under `gawk --posix`
+  # across every repo in the fleet — so this should stay unreachable.
+  local _out _rc
+  _out="$(awk -v cfg="$( [ -f "$root/.markdownlint.jsonc" ] && echo 1 || echo 0 )" -v mirror="$mirror" '
     # tool_runs(line, tool) — does `line` INVOKE tool, as opposed to merely probing for it
     # with `command -v tool`? The probes are erased first, so `command -v zsh` alone is not
     # an invocation while `zsh -n "$f"` is. This is the whole difference between a guard
@@ -1186,5 +1195,12 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
         print "Makefile:1: .markdownlint.jsonc exists but nothing in this repo runs markdownlint — the reusable gate has BLOCKED on it since dotgibson/dotfiles-core#592, so this is a required check with no local mirror"
       }
     }
-  ' "$mk"
+  ' "$mk")"
+  _rc=$?
+  if [ "$_rc" -ne 0 ]; then
+    printf 'Makefile:1: the Makefile-gate scan itself failed (awk exit %s) — this repo was NOT judged, which is not the same as clean\n' "$_rc"
+    return 0
+  fi
+  [ -n "$_out" ] && printf '%s\n' "$_out"
+  return 0
 }
