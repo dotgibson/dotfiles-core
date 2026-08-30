@@ -81,7 +81,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   red. **A scan that cannot run is not a clean repo**: if `awk` fails, the function used to
   return nothing, and nothing is indistinguishable from "no findings" — so a scanner
   failure is now reported as a finding. And three of the new tests pointed at `$HERE/..`
-  when `$HERE` is already the repo root, so they were judging the directory *above* the
+  when `$HERE` is already the repo root, so they were judging the directory _above_ the
   repo, which has no `Makefile`; two of them passed by examining nothing. The one case that
   required a non-empty result is what exposed it. Both are pinned.
 
