@@ -84,6 +84,40 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Footnote `¹⁴` said `ouch` was "unpackaged on Alpine outright". It is in
+  `edge/testing`, and the matrix already said so one line away.** `PORTING-MATRIX.md`'s
+  `ouch` row carries `testing¹⁴` in its Alpine cell; the footnote that cell points at then
+  denied it, splitting `ouch` off from `duf`/`glow`/`tealdeer` as a fourth, distinct case.
+  Re-queried on pkgs.alpinelinux.org: **`ouch` 0.6.1-r0, `edge`/`testing`**, maintainer
+  listed, built 2025-05-28, on x86_64 and aarch64 — and absent from v3.21, v3.22, v3.23 and
+  v3.24, each queried individually. That is exactly the other three's shape
+  (`duf` 0.9.1-r9, `glow` 3.0.0-r0, `tealdeer` 1.8.0-r0, all `edge`/`testing`, none on
+  stable). The footnote now reads `testing`-only and groups all four; the table cell was
+  right and is unchanged.
+
+  **How the file came to contradict itself is the part worth recording.** This cell was
+  already corrected once, the OTHER way: an earlier `/os-package-availability` stamp set
+  Alpine's `ouch` to `testing`. Then #519 flipped `¹⁴` back, citing `dotfiles-Alpine`'s
+  `bootstrap.sh` comment ("also unpackaged on Alpine — cargo only") as its evidence — and
+  that comment was itself wrong. Two documents agreeing is not two sources; a claim about
+  what a distro packages is only ever settled by querying the distro. The `bootstrap.sh`
+  comment is corrected in the same sweep (dotgibson/dotfiles-Alpine#146), so the citation
+  and the cited now say the same true thing.
+
+  **Nothing operational changes.** `testing` is not enabled on a stable release and `ouch`
+  is on no stable branch, so `cargo install --locked ouch --no-default-features` remains
+  its real source on Alpine — as does the bzip3/bindgen reason for those flags, which is
+  unaffected and kept verbatim. The neighbouring `¹⁷` is also left alone: `jnv` returns no
+  results on edge including `testing`, so it is the genuinely-unpackaged one.
+
+- **Footnote `³⁴`'s jq security floor omitted the branch furthest below it.** The fleet
+  position named Alpine 3.22/3.23/3.24 (1.8.1) as below the recorded ≥ 1.8.2 floor but
+  skipped **Alpine 3.21, which carries 1.7.1-r0** — further below than any Alpine branch
+  listed, and a branch the fleet still supports (EOL 2026-11-01; `dotfiles-Alpine`'s
+  `install/packages.txt` reasons about it explicitly for `yazi` and `gron`). Now listed with
+  the other 1.7.1 builds. Verified alongside the rest: edge 1.8.2-r0, v3.22/v3.23/v3.24
+  1.8.1-r0, v3.21 1.7.1-r0.
+
 - **`watchexec` 2.7.0 on Arch and Homebrew — the same bullet, one release later.**
   (`PORTING-MATRIX.md`) Footnote `²⁵`'s Arch/Homebrew bullet read 2.6.1, with `2.6.1-1` as Arch's
   package revision. Both have moved to **2.7.0** (`2.7.0-1`), and the block's `versions
