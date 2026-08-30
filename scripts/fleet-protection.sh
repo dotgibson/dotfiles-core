@@ -38,6 +38,11 @@
 #   ./scripts/fleet-protection.sh             report only (default; writes nothing)
 #   ./scripts/fleet-protection.sh --migrate   copy classic-only checks into rulesets
 #   ./scripts/fleet-protection.sh --retire    migrate, verify, then delete classic
+#   ./scripts/fleet-protection.sh --rulesets-only
+#                                             check rulesets only, skipping the classic
+#                                             probe — for CI, whose GITHUB_TOKEN has no
+#                                             admin. Rulesets ARE publicly readable, so
+#                                             this needs no privileged token at all.
 #
 set -uo pipefail
 
@@ -47,20 +52,35 @@ ORG=dotgibson
 ACTIONS_APP_ID=15368   # GitHub Actions — the app that reports every check in this fleet
 
 MODE=report
-case "${1:-}" in
-  --migrate) MODE=migrate ;;
-  --retire)  MODE=retire  ;;
-  -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
-  "")        ;;
-  *)         echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
-esac
+SKIP_CLASSIC=0
+for arg in "$@"; do
+  case "$arg" in
+    --migrate)       MODE=migrate ;;
+    --retire)        MODE=retire  ;;
+    --rulesets-only) SKIP_CLASSIC=1 ;;
+    -h|--help)       sed -n '2,46p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $arg (try --help)" >&2; exit 2 ;;
+  esac
+done
+if (( SKIP_CLASSIC )) && [[ "$MODE" != report ]]; then
+  echo "--rulesets-only is report-only: migrating needs to READ classic protection" >&2; exit 2
+fi
 
 command -v gh >/dev/null || { echo "gh not installed" >&2; exit 1; }
 command -v jq >/dev/null || { echo "jq not installed" >&2; exit 1; }
 
-# The id of the ruleset governing the default branch, or empty. By target+condition.
+# The id of the ruleset governing the default branch, by target+condition (never by
+# name — the fleet calls the same thing First/Second/main-protection).
+#
+# Prints the id on stdout. Exit 0 = answered (id, or empty for "none governs main");
+# exit 3 = COULD NOT READ. Those must stay separable: collapsing them makes an
+# unreadable repo indistinguishable from an unprotected one, which is the same
+# can't-see-vs-not-there confusion this script exists to catch, merely inverted.
 main_ruleset() {
-  gh api "repos/$ORG/$1/rulesets" --jq '.[].id' 2>/dev/null | while read -r id; do
+  local body ids id
+  body="$(gh api "repos/$ORG/$1/rulesets" 2>/dev/null)" || return 3
+  ids="$(jq -r '.[].id' <<<"$body" 2>/dev/null)" || return 3
+  for id in $ids; do
     gh api "repos/$ORG/$1/rulesets/$id" --jq '
       select(.target == "branch"
              and ((.conditions.ref_name.include // [])
@@ -71,27 +91,44 @@ main_ruleset() {
 
 rc=0
 for repo in "${REPOS[@]}"; do
-  rs_id="$(main_ruleset "$repo")"
+  if ! rs_id="$(main_ruleset "$repo")"; then
+    echo "✗ $repo: CANNOT READ rulesets — this is 'could not check', not 'checked and clean'."
+    echo "      Is gh authenticated? (\`gh auth status\`). In CI set GH_TOKEN."
+    rc=1; continue
+  fi
   if [[ -z "$rs_id" ]]; then
     echo "✗ $repo: NO ruleset governs main — classic protection alone does not bind admins"
     rc=1; continue
   fi
 
-  rs="$(gh api "repos/$ORG/$repo/rulesets/$rs_id")"
+  if ! rs="$(gh api "repos/$ORG/$repo/rulesets/$rs_id" 2>/dev/null)"; then
+    echo "✗ $repo: cannot read ruleset $rs_id — not treating that as a pass"; rc=1; continue
+  fi
   bypass="$(jq '.bypass_actors | length' <<<"$rs")"
   have="$(jq '[.rules[] | select(.type=="required_status_checks")
                | .parameters.required_status_checks[].context]' <<<"$rs")"
-  # Probe for classic protection FIRST. On a repo where it is absent `gh api` prints a
-  # 404 body to STDOUT, so a `|| echo '[]'` fallback yields two concatenated JSON docs
-  # and every later --argjson dies. Ask whether it exists, then ask what is in it.
-  if gh api "repos/$ORG/$repo/branches/main/protection" >/dev/null 2>&1; then
+  # Probe for classic protection FIRST, and DISTINGUISH ITS FAILURES. On a repo where it
+  # is absent `gh api` prints a 404 body to STDOUT, so a `|| echo '[]'` fallback yields
+  # two concatenated JSON docs and every later --argjson dies.
+  #
+  # The sharper trap: reading classic protection needs ADMIN, and without it the API
+  # answers 401/403 — which a bare `if gh api …; then` reads as "no classic protection
+  # here", reporting a cheerful ✓ for a repo it cannot actually see. That is
+  # green-because-absent, the failure this whole script exists to catch, so a probe that
+  # cannot see is a HARD ERROR and never a pass. `gh` puts the code in .status on the
+  # error body, which is what makes 404 (genuinely absent) separable from 401/403 (blind).
+  if (( SKIP_CLASSIC )); then
+    has_classic=0; classic='[]'
+  elif classic_body="$(gh api "repos/$ORG/$repo/branches/main/protection" 2>/dev/null)"; then
     has_classic=1
-    classic="$(gh api "repos/$ORG/$repo/branches/main/protection" \
-                 --jq '[.required_status_checks.contexts[]?]' 2>/dev/null)"
-    [[ -n "$classic" ]] || classic='[]'
+    classic="$(jq '[.required_status_checks.contexts[]?]' <<<"$classic_body")"
   else
-    has_classic=0
-    classic='[]'
+    case "$(jq -r '.status // empty' <<<"${classic_body:-{\}}" 2>/dev/null)" in
+      404) has_classic=0; classic='[]' ;;
+      *)   echo "✗ $repo: cannot read classic branch protection ($(jq -r '.message // "unknown error"' <<<"${classic_body:-{\}}" 2>/dev/null))."
+           echo "      Needs a token with repo ADMIN. Re-run with --rulesets-only to check rulesets alone."
+           rc=1; continue ;;
+    esac
   fi
   missing="$(jq -n --argjson c "$classic" --argjson u "$have" '$c - $u')"
   n_missing="$(jq length <<<"$missing")"
