@@ -13776,6 +13776,46 @@ printf '{}\n' >"$_mg_/.markdownlint.jsonc"
 _mg_count "a .markdownlint.jsonc with no local runner is a finding" 1
 rm -f "$_mg_/.markdownlint.jsonc"
 
+# ── R3's reachability probe must not use GNU-only grep flags, and must not read a grep
+# ERROR as "absent". The first draft used `--exclude-dir` and `-I`; busybox grep rejects
+# the former, so on Alpine the probe exited 2, was read as "no mirror", and reported CORE —
+# the repo that authors this rule — as the one repo missing it. A false finding produced by
+# an unsupported flag, in the gate whose whole subject is checks that answer wrongly.
+#
+# The fixture is a grep that rejects those flags exactly as busybox's does, so this case
+# fails on the old shape and passes on the new one WITHOUT needing an Alpine runner. The
+# audit-alpine CI leg is the real proof; this is the one that runs on a developer box.
+_mg_bb="$SANDBOX/bbgrep"
+mkdir -p "$_mg_bb"
+cat >"$_mg_bb/grep" <<'BBEOF'
+#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    --exclude-dir=*|-I) echo "grep: unrecognized option: ${a#--}" >&2; exit 2 ;;
+  esac
+done
+exec /usr/bin/grep "$@"
+BBEOF
+chmod +x "$_mg_bb/grep"
+if [[ -x /usr/bin/grep ]]; then
+  # An ABSOLUTE PATH set inside the substitution, never `$PATH` prefixed onto the call.
+  # Reading $PATH anywhere here pairs with the subshell PATH assignment ~350 lines above
+  # and shellcheck reports SC2030 there and SC2031 here — a false pair on two unrelated
+  # tests. This is the same shape as that earlier block, which is clean for the same
+  # reason: the assignment is scoped to the subshell and nothing reads PATH after it.
+  _mg_bb_out="$( PATH="$_mg_bb:/usr/bin:/bin"; _core_make_gate_hits "$HERE/.." )"
+  if [[ -z "$_mg_bb_out" ]]; then
+    pass "make-gate: Core stays clean under a grep that rejects GNU-only flags (the Alpine case)"
+  else
+    fail "make-gate: a busybox-style grep makes the mirror probe report a false finding: $_mg_bb_out"
+  fi
+  unset _mg_bb_out
+else
+  skip "make-gate: busybox-grep fixture (no /usr/bin/grep to delegate to)"
+fi
+rm -rf "$_mg_bb"
+unset _mg_bb
+
 # ── Core must satisfy the rule it authors. §8d asserts this in the audit; asserting it
 # here too means a `make test` catches it without a full audit run.
 if [[ -z "$(_core_make_gate_hits "$HERE/..")" ]]; then

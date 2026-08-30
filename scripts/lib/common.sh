@@ -1075,14 +1075,29 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
   # Makefile spells it. Core runs it from scripts/audit-core.sh §7 behind `make audit`, so
   # a Makefile-only test would report Core — the repo that authored the rule — as the one
   # repo missing it. Look in the repo-owned scripts too, and never inside vendored core/.
-  local _p
+  local _p _rc probed=0
   for _p in "$mk" "$root/scripts" "$root/test" "$root/tests"; do
     [ -e "$_p" ] || continue
-    if grep -rqI --exclude-dir=core --exclude-dir=.git 'markdownlint' "$_p" 2>/dev/null; then
-      mirror=1
-      break
-    fi
+    # NO --exclude-dir / -I. Both are GNU extensions; busybox grep REJECTS the first, so on
+    # Alpine this probe exited non-zero, was read as "no mirror", and reported Core — the
+    # repo that authors the rule — as the one repo missing it. A false finding produced by
+    # an unsupported flag, inside the gate whose entire subject is checks that answer
+    # wrongly. Neither flag was needed: none of the paths searched is core/ or .git.
+    grep -rq 'markdownlint' "$_p" 2>/dev/null
+    _rc=$?
+    case "$_rc" in
+      0) mirror=1; probed=1; break ;;
+      1) probed=1 ;;  # searched it, genuinely absent
+      *) : ;;         # grep could not search this path — that is not evidence of absence
+    esac
   done
+  # If NOTHING could be searched, R3 has no evidence either way, so it says nothing rather
+  # than asserting a missing mirror. Unknown and absent are different facts and only one is
+  # a defect — the same distinction scripts/os-repos.txt draws for the fan-out gates, which
+  # fail loudly rather than sweep a substituted list. Suppressing here is the safe
+  # direction: R1/R2/R4 still run, and a real missing mirror surfaces the moment a working
+  # grep is present.
+  [ "$probed" = 1 ] || mirror=1
 
   awk -v cfg="$( [ -f "$root/.markdownlint.jsonc" ] && echo 1 || echo 0 )" -v mirror="$mirror" '
     # tool_runs(line, tool) — does `line` INVOKE tool, as opposed to merely probing for it

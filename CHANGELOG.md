@@ -67,6 +67,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     against a defect injected into Core's own `Makefile`. A guard for a historical defect
     that is never run against that defect is the same category error it exists to fix.
 
+  The `audit-alpine` leg caught the guard doing the thing it hunts. Its markdownlint
+  reachability probe used `grep --exclude-dir` and `-I`, both GNU extensions; busybox grep
+  rejects the first, so the probe exited 2, that was read as "no mirror", and Core — the
+  repo that authors the rule — was reported as the one repo missing it. **A false finding
+  produced by an unsupported flag, in the gate whose entire subject is checks that answer
+  wrongly.** Neither flag was needed. The probe now also distinguishes "searched, absent"
+  from "could not search", and stays silent in the second case: unknown and absent are
+  different facts and only one is a defect. Pinned by a fixture that rejects those flags
+  exactly as busybox does, so a developer box catches it without an Alpine runner.
+
   Complements, and does not replace, `dotfiles-MacBook/test/check-skip-guards.sh`, which
   tests the first shape at _runtime_ by rebuilding a PATH without the guarded tool. That
   is stronger evidence per finding but can only judge the repo it sits in; this is the
