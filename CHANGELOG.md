@@ -14,6 +14,74 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **A gate for local gates that cannot do what their name says (#775).**
+  `scripts/lib/common.sh :: _core_make_gate_hits` reads a repo's `Makefile` and reports
+  three shapes, all found by hand across the fleet and none previously catchable:
+
+  - **A skip that cannot skip.** `command -v x || { echo "skipping"; exit 0; }` on one
+    recipe line, the tool on the next. `make` gives each recipe line its own shell, so the
+    `exit 0` ends only that line — the target announces a skip and then runs the missing
+    tool, exiting 127. Found in Debian, Fedora (×2), Offense (×3) and Defense (×2).
+  - **A check that cannot fail.** A checker ended with `;` before a success echo: the echo
+    runs regardless _and_ becomes the line's exit status, so findings print and the target
+    exits 0. openSUSE's `lint-sh` did this while its two siblings used `&&` and
+    `|| exit 1` — which is exactly why nobody looked at it.
+  - **A blocking CI leg with no local mirror.** A `.markdownlint.jsonc` that only CI ever
+    read, for a leg blocking since #592, plus the narrower case where the local target
+    globs `'*.md'` (top-level only) while the gate lints `git ls-files` recursively.
+
+  Rendered in two places, because the defect is in the callers and Core's audit can only
+  see Core: **§8d** of `audit-core.sh` keeps the authoring repo honest, and a new
+  **`make-gates`** leg in `lint-call.yml` judges each caller's own `Makefile`. Both drive
+  the shipped function rather than a copy — the discipline `_core_tool_skip_count`
+  records, where a test that re-implemented its subject stayed green while the defect it
+  existed to catch was fully reintroduced.
+
+  **Blocking**, and only because the fleet was cleared first. #592's markdown leg had to
+  ship advisory for a release because seven of nine callers would have gone red before a
+  maintainer could act; the nine #775 PRs merged while this was in review, so every
+  caller's `main` measures 0 and that staging is unnecessary here. The measurement is the
+  precondition, not a formality: a future rule that any caller fails must ship advisory
+  the way #592 did, because callers read `lint-call.yml` at the **moving** `@v5` tag and
+  meet a new rule the moment `auto-tag` moves — red on arrival, in a repo whose author
+  changed nothing. Recorded on the job so nobody loosens the rule to get past a red.
+
+  Three things worth recording about how it was built, because they are the reason to
+  trust it:
+
+  - **It found four defects the hand sweep missed** — Offense's `shellcheck` and `secrets`
+    (both exit 127 with the tool absent) and Defense's `core-check`, which is the worst of
+    the set: it prints its skip notice, runs `gh` anyway, and reports
+    `vendored core is 5.4.1, upstream is  — a sync from dotfiles-core is owed` from an
+    empty variable. A confidently wrong answer about fleet drift, not a crash.
+  - **The false positives shaped the rules more than the true ones.** A first draft used
+    "any `exit 0` before the last recipe line" and reported Alpine's `shell`, which guards
+    shellcheck and runs it _on the same line_ — a correct skip. It also flagged `lint-zsh`
+    and `zsh-syntax`, which handle failure with `|| exit 1` inside the loop. All three are
+    pinned as must-not-fire cases: a gate that cries wolf on working code teaches the
+    fleet to ignore it.
+  - **It was seen failing before being trusted.** The fixtures are the real pre-fix and
+    post-fix recipes copied verbatim, not synthetic approximations, and §8d was run
+    against a defect injected into Core's own `Makefile`. A guard for a historical defect
+    that is never run against that defect is the same category error it exists to fix.
+
+  The `audit-alpine` leg caught the guard doing the thing it hunts. Its markdownlint
+  reachability probe used `grep --exclude-dir` and `-I`, both GNU extensions; busybox grep
+  rejects the first, so the probe exited 2, that was read as "no mirror", and Core — the
+  repo that authors the rule — was reported as the one repo missing it. **A false finding
+  produced by an unsupported flag, in the gate whose entire subject is checks that answer
+  wrongly.** Neither flag was needed. The probe now also distinguishes "searched, absent"
+  from "could not search", and stays silent in the second case: unknown and absent are
+  different facts and only one is a defect. Pinned by a fixture that rejects those flags
+  exactly as busybox does, so a developer box catches it without an Alpine runner.
+
+  Complements, and does not replace, `dotfiles-MacBook/test/check-skip-guards.sh`, which
+  tests the first shape at _runtime_ by rebuilding a PATH without the guarded tool. That
+  is stronger evidence per finding but can only judge the repo it sits in; this is the
+  static, fleet-portable half.
+
 ### Fixed
 
 - **`VENDORING.md` described a resolved `core.lock` defect as a live hazard (#670).** It
