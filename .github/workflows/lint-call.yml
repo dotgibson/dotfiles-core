@@ -705,7 +705,7 @@ jobs:
           echo "policy: dotfiles-core gitleaks.toml"
           gitleaks dir . -c "$GITLEAKS_CONFIG" --no-banner --redact -v --no-color
 
-  # ── ADVISORY: Makefile gates that cannot do what their name says ────────────
+  # ── BLOCKING: Makefile gates that cannot do what their name says ────────────
   # Every other leg here reads the caller's CODE. This one reads the caller's own LOCAL
   # GATES, which nothing has ever checked — and dotgibson/dotfiles-core#775 swept the fleet
   # by hand and found ELEVEN defects across eight repos in three shapes:
@@ -725,28 +725,29 @@ jobs:
   # markdown leg reads their .markdownlint.jsonc: check the caller out beside Core and
   # judge it from outside.
   #
-  # ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT — the same staging #592 used for the
-  # markdown leg, and for the same mechanical reason: callers pin the moving `@v5` tag, so
-  # they meet a new leg the moment auto-tag moves, before a maintainer could act. Measured
-  # across the fleet with the PRs from #775 applied:
+  # BLOCKING ON ARRIVAL, and only because the fleet was cleared FIRST. #592's markdown leg
+  # had to ship advisory for a release because seven of nine callers would have gone red
+  # before a maintainer could act; the nine #775 PRs merged while this was still in review,
+  # so that staging is unnecessary here. Measured against each repo's `main`, not a branch:
   #
-  #   Core 0 · Alpine 0 · MacBook 0 · Arch 0 · Debian 0 · Fedora 0 · openSUSE 0
-  #   · Offense 2 · Defense 1
+  #   Core 0 · Alpine 0 · MacBook 0 · Arch 0 · Debian 0 · Fedora 0 · Gentoo 0
+  #   · openSUSE 0 · Offense 0 · Defense 0
   #
-  # Seven of nine are already clean; the three remaining are real and confirmed by running
-  # the targets with the tool absent (two exit 127, and Defense's `core-check` prints
-  # "vendored core is 5.4.1, upstream is  — a sync is owed" from an empty variable, which
-  # is worse than a crash). The flip to `continue-on-error: false` is a one-line follow-up
-  # once those land.
+  # That measurement is the precondition, not a formality. RE-MEASURE BEFORE ADDING A RULE:
+  # a new rule that any caller fails must ship advisory the way #592 did, because callers
+  # read this file at the MOVING `@v5` tag and therefore meet it the moment auto-tag moves —
+  # red on arrival, in a repo whose author changed nothing.
+  #
+  # Stated so nobody loosens the gate to get past it, the same way §8a records its release
+  # ordering: when this reds, the fix is to clear the finding, never to soften the rule.
   #
   # It reuses the SHIPPED function rather than a copy — the discipline recorded on
   # _core_tool_skip_count, where a test that re-implemented its subject stayed green while
   # the defect it existed to catch was fully reintroduced.
   make-gates:
-    name: Makefile gates (advisory)
+    name: Makefile gates
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -770,8 +771,8 @@ jobs:
             echo "every Makefile gate skips, fails and scopes as its help text claims"
             exit 0
           fi
-          # One ::warning:: per finding while advisory, so each shows against its own line
-          # in the Files-changed view rather than as one wall of text in the log.
+          # One ::error:: per finding, so each anchors to its own line in the
+          # Files-changed view rather than arriving as one wall of text in the log.
           printf '%s\n' "$out" | while IFS= read -r line; do
             [ -n "$line" ] || continue
             # Split `Makefile:LINE: message` into a real annotation so GitHub anchors it to
@@ -780,9 +781,10 @@ jobs:
             n="${line#Makefile:}"; n="${n%%:*}"
             msg="${line#Makefile:*: }"
             case "$n" in
-              ''|*[!0-9]*) echo "::warning file=Makefile::$line" ;;
-              *)           echo "::warning file=Makefile,line=$n::$msg" ;;
+              ''|*[!0-9]*) echo "::error file=Makefile::$line" ;;
+              *)           echo "::error file=Makefile,line=$n::$msg" ;;
             esac
           done
           printf '%s\n' "$out"
-          echo "advisory for this release — see dotgibson/dotfiles-core#775 for the fix shapes"
+          echo "see dotgibson/dotfiles-core#775 for each shape and the fix that cleared it"
+          exit 1

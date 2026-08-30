@@ -39,9 +39,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   records, where a test that re-implemented its subject stayed green while the defect it
   existed to catch was fully reintroduced.
 
-  **Advisory in this release, blocking in the next**, the same staging #592 used for the
-  markdown leg and for the same mechanical reason: callers pin the moving `@v5` tag, so
-  they meet a new leg the moment `auto-tag` moves, before a maintainer could act.
+  **Blocking**, and only because the fleet was cleared first. #592's markdown leg had to
+  ship advisory for a release because seven of nine callers would have gone red before a
+  maintainer could act; the nine #775 PRs merged while this was in review, so every
+  caller's `main` measures 0 and that staging is unnecessary here. The measurement is the
+  precondition, not a formality: a future rule that any caller fails must ship advisory
+  the way #592 did, because callers read `lint-call.yml` at the **moving** `@v5` tag and
+  meet a new rule the moment `auto-tag` moves — red on arrival, in a repo whose author
+  changed nothing. Recorded on the job so nobody loosens the rule to get past a red.
 
   Three things worth recording about how it was built, because they are the reason to
   trust it:
