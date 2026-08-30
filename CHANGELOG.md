@@ -108,6 +108,44 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   documents disagreeing about the repo's own rule — the shape of defect #668 had just
   finished clearing out. Both now say one thing.
 
+- **The runbook told you a patch cut moves `v4`, four lines after saying the fleet pins
+  `@v5` (#672).** The v5.0.0 sweep corrected `RELEASE-RUNBOOK.md:183` to "currently `@v5`"
+  and stopped there, leaving the bullet 26 lines below it saying a PATCH or MINOR keeps "the
+  **same** alias (`v4` today)" and that every caller pinned `@v4` picks the change up. Read
+  literally on the next patch cut, that force-advances the **frozen** major — the exact
+  motion `RELEASE-STRATEGY.md` §"Pinning reusable workflows" forbids, and the one §8a was
+  built to catch on the receiving end. Three more live claims had gone the same way: the
+  straggler-hunt command (`grep -rl 'uses:.*@v4'`) now matches nothing fleet-wide and so
+  reports a clean sweep by construction, and `RELEASE-RUNBOOK.md` §2/§3a plus
+  `RELEASE-STRATEGY.md`'s release-paths table each described `dotfiles-Windows` as
+  SHA-pinning "rather than tracking `@v4`" — a contrast drawn against an alias nothing
+  tracks.
+
+  **The rest went version-neutral rather than being bumped**, which is the point: an `@vN`
+  that names no major cannot go stale, so this is the last time these lines need a sweep.
+  That covers `VENDORING.md`'s two live rules, the `freshness-triage` and `modernize`
+  routines' descriptions of what the fleet pins, and — deliberately outside the docs — the
+  same claims where they are stated in code. `sync-core.sh:370` was a verbatim twin of
+  `VENDORING.md`'s sentence about the mutable alias. Fixing the prose alone would have left
+  the docs and the code contradicting each other on one rule, which is the defect #668 and
+  #670 just finished clearing.
+
+  One site took the opposite treatment, and the distinction is the rule: `sync-core.sh`'s
+  `--help` still offered `refs/tags/v4` as the tag to vendor a new repo at — a ref the
+  reader **pastes**, not a claim they read, so it is corrected to a concrete `refs/tags/v5`
+  rather than genericized. That matches its own file's header, `ARCHITECTURE.md`,
+  `VENDORING.md`, `PORTING-MATRIX.md`, and the live default in `new-os-repo.sh`. It is the
+  one instance the v5.4.2 sweep missed while correcting its sibling in `new-os-repo.sh`, and
+  it was user-facing output the whole time.
+
+  The MAJOR worked example is now `@vN` → `@vN+1`, with the concrete v4→v5 commands kept but
+  framed as the historical cut they are. This **supersedes** the v5.0.0 note above declaring
+  that block "correct as written": it was, on the day it was written, and it stopped being
+  correct the moment `v5` shipped — which is the argument for not writing a present tense
+  that has to be swept every major. `CHANGELOG.md`, the proposal docs, the #515 history, and
+  the `dotfiles-managed v4` marker chain are untouched; the marker is an architecture
+  generation asserted by `bootstrap-test.yml` and the suite, not a tag alias.
+
 ### Changed
 
 - **`core_branch` is documented as gone, and the flat "only sanctioned writer" claim is

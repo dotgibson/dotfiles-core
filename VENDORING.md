@@ -54,7 +54,7 @@ core_ref=v4.10.0-release      # the ref that was FOLLOWED — see below
 core_tag=v4.10.0              # only once Core carries a tag describing that commit
 ```
 
-`core_tag` names the **specific release**, never the moving `v4` major alias. Both tags point
+`core_tag` names the **specific release**, never the moving `vN` major alias. Both tags point
 at a release commit, and `git describe` used to be free to pick either — so every repo in the
 fleet once stamped `core_tag=v4`, a provenance field whose target is deliberately re-pointed on
 the next cut (#515). `sync-core.sh` now filters describe to the `vX.Y.Z` shape; when only the
@@ -118,7 +118,7 @@ workflow.
 `sync-core.sh` therefore moves the pins in the **same commit** that stamps `core.lock`. Two
 rules govern what it touches:
 
-- Only an **existing 40-hex pin** moves. A caller on the mutable `@v4` alias is left alone —
+- Only an **existing 40-hex pin** moves. A caller on the mutable `@vN` alias is left alone —
   taking the alias is a deliberate per-repo policy (most of the fleet does, and it is what
   lets a guard fix reach them with no edit), so converting one into a SHA pin would change
   that repo's update model behind its back.
