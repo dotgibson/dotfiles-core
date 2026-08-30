@@ -84,6 +84,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`watchexec` 2.7.0 on Arch and Homebrew — the same bullet, one release later.**
+  (`PORTING-MATRIX.md`) Footnote `²⁵`'s Arch/Homebrew bullet read 2.6.1, with `2.6.1-1` as Arch's
+  package revision. Both have moved to **2.7.0** (`2.7.0-1`), and the block's `versions
+  re-verified` stamp is now 2026-08-30. The `verified 2026-08-12` and `Linux-repo coverage
+  re-verified 2026-08-21` stamps beside it are deliberately unchanged: only versions were
+  re-checked, not availability or which Linux repos carry it.
+
+  Re-checked against each repo's own package pages, per the convention the footnote declares —
+  `formulae.brew.sh` (2.7.0, neither deprecated nor disabled) and `archlinux.org` (2.7.0-1). The
+  other four bullets hold unchanged: openSUSE Tumbleweed and nixpkgs 2.5.1, Alpine `community`
+  2.5.1-r0, GURU 2.5.0 (still the top non-`9999` ebuild), and Fedora/Debian/Kali packaging it
+  nowhere. So the two-way split #611 introduced is still the right shape, and the parenthetical
+  explaining it still reads true — Arch and Homebrew moved together again.
+
+  This is the **second** bump of this line in eight days; #611 stamped 2.6.1 on 2026-08-23. That
+  cadence is inherent to recording an exact version for a fast-moving upstream, and it is still
+  worth recording here, because the cell's whole claim is that Homebrew packages `watchexec`
+  while the MacBook `Brewfile` is the one ²¹ entry that deliberately declines it — a reader
+  checking that wants a date beside the number. That assertion is unchanged, and so is the
+  `Brewfile`: the audit that surfaced this found all 77 entries resolving under their canonical
+  names, none deprecated or disabled.
+
+  Surfaced by `/os-package-availability macbook` (dotfiles-MacBook#211).
+
 - **`VENDORING.md` described a resolved `core.lock` defect as a live hazard (#670).** It
   warned, in the present tense, that three OS repos independently generate `core.lock` and
   "have already drifted from it and from each other" — naming Arch's hardcoded
