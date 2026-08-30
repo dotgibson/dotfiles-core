@@ -300,10 +300,10 @@ which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali)
 (Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
 (Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
 the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
-¹⁴ Alpine **testing-or-unpackaged** (`duf`, `glow`, `tealdeer` — plus `ouch`, which is not in
-`testing` either, it is **unpackaged on Alpine outright**; `bootstrap.sh` says so at its cargo
-call site). The first three are musl-fine tools that live in `testing` (never promoted to
-`community` on stable, incl. 3.24), which isn't enabled by default on a stable release. bootstrap.sh builds them from source instead of force-enabling `testing`,
+¹⁴ Alpine **`testing`-only** (`duf`, `glow`, `tealdeer`, `ouch`). All four are musl-fine
+tools that live in `testing` on edge (never promoted to `community` on any stable release,
+incl. 3.24), which isn't enabled by default on a stable release. bootstrap.sh builds them
+from source instead of force-enabling `testing`,
 and the paths are **not** all the same one: `duf` + `glow` take `go install` (static,
 musl-safe), `tealdeer` takes a plain `cargo install --locked tealdeer` (it is the `tldr` row's
 `cargo³`, which is why that row does not cite this note), while `ouch` takes
@@ -1168,7 +1168,7 @@ provisioning gate a role layer runs against `core-doctor --json` ²⁰.
 
 Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
 Tumbleweed, Homebrew and Alpine edge. **Below it** on Alpine 3.22/3.23/3.24 and Fedora 43/44
-(1.8.1), Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+(1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
 
 **Do not build a guard on `jq --version`.** On the Debian family the version string is not
 evidence either way — Debian backports security fixes without bumping the version, so a
