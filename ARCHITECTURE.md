@@ -220,9 +220,8 @@ The zsh fragment chain is sourced in one canonical order, declared in
 ```
 
 The order encodes real dependencies: `02-capabilities` reads the OS layer's capability
-declaration before any consumer (the earliest is `30-functions`), and sits inside the Core
-band so every `CORE_PROFILE` loads it — `minimal`'s ceiling is 30, and a lean profile must
-not silently lose the dispatch table; `00-tools` initializes atuin and `35-fzf`
+declaration before any consumer (the earliest is `30-functions`), as early as it can go
+while still following `00-tools`; `00-tools` initializes atuin and `35-fzf`
 defines its widgets before `45-plugins` loads zsh-vi-mode (which fires the binding
 hook); `10-options` runs `compinit` before `45-plugins` (fzf-tab and carapace need
 it — and so do the tool-native `gh`/`uv`/`ty` completions Core registers on the line

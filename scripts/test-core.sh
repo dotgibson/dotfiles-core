@@ -8217,10 +8217,10 @@ fi
 
 # ── A. load-order smoke test (drives the v4 numbered-fragment loader) ─────────
 hdr "load-order smoke test (v4 numbered-fragment loader)"
-# v4: an OS .zshrc sets ZSH_CFG + CORE_PROFILE and sources the vendored loader, which
-# globs the numbered fragments (NN-*.zsh) in ZSH_CFG, sorts by NN, and sources each. We
+# v4: an OS .zshrc sets ZSH_CFG and sources the vendored loader, which globs the
+# numbered fragments (NN-*.zsh) in ZSH_CFG, sorts by NN, and sources each. We
 # build a sandbox ZSH_CFG of SYMLINKS to the repo's Core fragments + the loader, then
-# drive it exactly as a host would — exercising the REAL glob/sort/profile path, not a
+# drive it exactly as a host would — exercising the REAL glob/sort/compile path, not a
 # hand-rolled source loop. The .zwc land beside the symlinks in the sandbox, never the repo.
 ZDOT="$SANDBOX/zdot"
 mkdir -p "$ZDOT"
@@ -8233,7 +8233,7 @@ for f in "${core_frags[@]}"; do ln -s "$f" "$ZDOT/$(basename "$f")"; done
 # once in common.sh (_seed_plugin_dirs), shared with the integration + bench.
 _seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
 
-# Generate the sandbox .zshrc the v4 way: set ZSH_CFG + CORE_PROFILE, source the loader,
+# Generate the sandbox .zshrc the v4 way: set ZSH_CFG, source the loader,
 # print a sentinel. We deliberately do NOT key success on each fragment's exit code — a
 # fragment whose LAST statement is a false guard (e.g. 20-aliases.zsh ends on
 # `[[ -n $HAVE_GPING ]] && alias ping=gping`, false on a bare box) returns non-zero while
@@ -8243,7 +8243,6 @@ _seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
 # already caught per-file by audit-core.sh's `zsh -n`.
 {
   printf 'ZSH_CFG=%q\n' "$ZDOT"
-  printf 'CORE_PROFILE=full\n'
   printf 'source "$ZSH_CFG/loader.zsh"\n'
   printf 'print -r -- "SMOKE_OK"\n'
 } >"$ZDOT/.zshrc"
@@ -8278,7 +8277,7 @@ fi
 # ── A2. consumer integration (Core + 80-os + 99-local via the loader) ─────────
 # Core NEVER loads alone in production: a host also carries the OS layer (80-os.zsh) and
 # any machine overrides (99-local.zsh), both globbed by the loader from ZSH_CFG (bands
-# >=70 always load, independent of CORE_PROFILE). Section A proves Core-in-isolation;
+# globbed out of the same flat ZSH_CFG as Core's own). Section A proves Core-in-isolation;
 # this proves the documented CONSUMPTION — the Core→OS CONTRACT at the real fan-out shape.
 # The 80-os stub uses exactly what an OS layer relies on Core to have left defined:
 # _cache_eval (00-tools's API — NOT unfunctioned like _have is), _core_is_wsl (the second
@@ -8344,7 +8343,6 @@ UPDATE_CHECK_ENABLED=0
 LOCALZSH
 {
   printf 'ZSH_CFG=%q\n' "$INTEG"
-  printf 'CORE_PROFILE=full\n'
   printf 'source "$ZSH_CFG/loader.zsh"\n'
   # Report the COMPLETION REGISTRATION for the three that are no longer sourced (#579).
   printf 'for _t in gh uv ty; do print -r -- "CORE_COMP_${(U)_t}=${_comps[$_t]:-NONE}"; done\n'
@@ -8894,59 +8892,77 @@ jobs:
   unset -f _cm_run
 fi
 
-# ── A3. profile filtering (CORE_PROFILE ceilings + env/file resolution) ───────
-# A2 proves the FULL chain; this proves the minimal/standard ceilings, that outer
-# fragments (>=70) ALWAYS load regardless of profile, that an unknown/unset profile falls
-# back to full, and that CORE_PROFILE resolves from the environment (wins) or a persistent
-# $ZSH_CFG/profile one-liner. Uses lightweight STUB fragments (each echoes its NN) so it is
-# fast and asserts the EXACT loaded set — independent of the real modules' side effects.
-hdr "profile filtering (CORE_PROFILE ceilings + resolution)"
-PROF="$SANDBOX/prof"
-mkdir -p "$PROF"
-ln -s "$HERE/zsh/loader.zsh" "$PROF/loader.zsh"
+# ── A3. loader glob + sort contract (what is a fragment, and in what order) ───
+# A2 proves the real chain loads; this proves the RULES the loader uses to decide what a
+# fragment IS and what order it runs in — which is now the WHOLE of its filtering logic,
+# because v5 deleted CORE_PROFILE (#677). That deletion did not shrink this section, it
+# promoted it: the glob used to be one of two filters with zero assertions against it while
+# the ceiling had twelve, and it is now the only one. Both remaining rules fail SILENTLY — a
+# fragment that never matches the glob simply does not run, and a mis-sorted pair still
+# produces a perfectly working shell right up until one of them needed the other first.
+#
+# Lightweight STUB fragments (each echoes its NN) rather than the real modules, so this is
+# fast and asserts the EXACT loaded set, independent of any module's side effects. The NN
+# list mirrors the real band layout on purpose, outer bands included: "every fragment, in
+# order" is a claim about the whole fan-out shape, not about Core alone.
+hdr "loader glob + sort contract (zsh/loader.zsh)"
+FRAG="$SANDBOX/frag"
+mkdir -p "$FRAG"
+ln -s "$HERE/zsh/loader.zsh" "$FRAG/loader.zsh"
 for nn in 00 02 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99; do
-  printf 'print -r -- "F%s"\n' "$nn" >"$PROF/$nn-stub.zsh"
+  printf 'print -r -- "F%s"\n' "$nn" >"$FRAG/$nn-stub.zsh"
 done
-# _prof_load <pre-source snippet> → space-joined NN list actually loaded. The snippet runs
-# before `source loader.zsh`, so it can set CORE_PROFILE in the env or leave it unset.
-_prof_load() { zsh -f -c "ZSH_CFG='$PROF'; $1; source '$PROF/loader.zsh'" 2>/dev/null | tr '\n' ' ' | sed 's/F//g; s/ *$//'; }
-_prof_is() { if [[ "$2" == "$3" ]]; then pass "profile: $1"; else fail "profile: $1 — got [$2] want [$3]"; fi; }
-# 02 is in every expectation below, not just _ALL: zsh/02-capabilities.zsh reads the OS
-# layer's capability declaration, and a profile that dropped it would leave $_CORE_CAP
-# empty — the dispatch table silently absent on exactly the lean boxes (#663).
+# _frag_load <pre-source snippet> → what actually loaded, space-joined IN LOAD ORDER — the
+# join IS the order assertion. The snippet runs before `source loader.zsh`, so a case can set
+# an option on the CALLER that the loader must not be at the mercy of.
+_frag_load() { zsh -f -c "ZSH_CFG='$FRAG'; $1; source '$FRAG/loader.zsh'" 2>/dev/null | tr '\n' ' ' | sed 's/F//g; s/ *$//'; }
+_frag_is() { if [[ "$2" == "$3" ]]; then pass "loader: $1"; else fail "loader: $1 — got [$2] want [$3]"; fi; }
 _ALL="00 02 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99"
-_prof_is "full loads every band"          "$(_prof_load 'CORE_PROFILE=full')"     "$_ALL"
-_prof_is "minimal = 00-30 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=minimal')"  "00 02 05 10 15 20 25 30 80 85 99"
-_prof_is "standard = 00-50 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=standard')" "00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
-_prof_is "unknown value falls back to full" "$(_prof_load 'CORE_PROFILE=bogus')"   "$_ALL"
-_prof_is "unset defaults to full"         "$(_prof_load 'true')"                  "$_ALL"
-printf 'minimal\n' >"$PROF/profile"                       # persistent one-liner
-_prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 02 05 10 15 20 25 30 80 85 99"
-_prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
-# v4.0.1: a slightly-malformed $ZSH_CFG/profile one-liner must still resolve by its FIRST
-# FIELD. Before the fix, a trailing space / extra token / surrounding whitespace landed in
-# CORE_PROFILE verbatim, so the `case` matched no arm and silently fell through to `full`.
-# `read -r CORE_PROFILE _` now takes just the first word (and trims surrounding whitespace).
-_MIN="00 02 05 10 15 20 25 30 80 85 99"
-_STD="00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
-printf 'minimal \n' >"$PROF/profile" # trailing space
-_prof_is "profile w/ trailing space still selects minimal" "$(_prof_load 'true')" "$_MIN"
-printf 'standard extra tokens\n' >"$PROF/profile" # stray extra tokens after the profile word
-_prof_is "profile w/ extra tokens still selects standard" "$(_prof_load 'true')" "$_STD"
-printf '  full  \n' >"$PROF/profile" # surrounding whitespace
-_prof_is "profile w/ surrounding whitespace still selects full" "$(_prof_load 'true')" "$_ALL"
-# and the persisted CORE_PROFILE must be the TRIMMED first field, not the raw line.
-_prof_val() { zsh -f -c "ZSH_CFG='$PROF'; $1; source '$PROF/loader.zsh'; print -r -- \"[\$CORE_PROFILE]\"" 2>/dev/null | tail -1; }
-printf 'minimal \n' >"$PROF/profile"
-_prof_is "CORE_PROFILE persists as the trimmed first field" "$(_prof_val 'true')" "[minimal]"
-rm -f "$PROF/profile"
-# same-NN tiebreak: two 85- fragments must load in LEXICAL order (85-r10 before 85-r2), NOT
-# numeric/natural order — the loader's contract, and it must hold even under NUMERIC_GLOB_SORT.
-printf 'print -r -- r2\n' >"$PROF/85-r2.zsh"
-printf 'print -r -- r10\n' >"$PROF/85-r10.zsh"
-_tie="$(zsh -f -c "ZSH_CFG='$PROF'; setopt numericglobsort; source '$PROF/loader.zsh'" 2>/dev/null | grep -E '^r(2|10)$' | tr '\n' ' ' | sed 's/ *$//')"
-if [[ "$_tie" == "r10 r2" ]]; then pass "profile: same-NN tie breaks lexically (r10 before r2), even under NUMERIC_GLOB_SORT"; else fail "profile: same-NN tiebreak wrong — got [$_tie] want [r10 r2]"; fi
-rm -f "$PROF/85-r2.zsh" "$PROF/85-r10.zsh"
+# (1) THE contract, replacing the CORE_PROFILE ceiling matrix this section used to be: every
+# NN-*.zsh present is sourced, in NN order, with nothing skipped for any reason. A band is a
+# reservation convention between the layers now — something an author respects so a later
+# Core release cannot collide with a number an OS repo took — not something the loader
+# enforces, which is why a squatted number is merely unconventional instead of destructive.
+_frag_is "every NN-*.zsh loads, in NN order — nothing gated (#677 deleted the profile ceiling)" \
+  "$(_frag_load 'true')" "$_ALL"
+# (2) …and since the glob is now the ONLY filter, its shape is load-bearing on its own and
+# was never asserted while the ceiling was there to share the blame. `[0-9][0-9]-` is exactly
+# two digits and a dash: a one-digit `1-`, a three-digit `100-`, and a name with no NN prefix
+# at all must be IGNORED — not mis-banded, not loaded at some improvised position. The
+# un-prefixed case is the one that earns this test: loader.zsh's own symlink sits in the very
+# directory it globs, and a glob widened to catch it would source the loader from inside
+# itself. Name that symptom, because it is not a clean failure — the shell dies on recursion
+# rather than reporting anything this harness could read.
+printf 'print -r -- "X1"\n' >"$FRAG/1-toofew.zsh"
+printf 'print -r -- "X100"\n' >"$FRAG/100-toomany.zsh"
+printf 'print -r -- "Xnone"\n' >"$FRAG/noprefix.zsh"
+_frag_is "malformed names (1-, 100-, no NN prefix) are ignored, not mis-banded" \
+  "$(_frag_load 'true')" "$_ALL"
+rm -f "$FRAG/1-toofew.zsh" "$FRAG/100-toomany.zsh" "$FRAG/noprefix.zsh"
+# (3) a DANGLING fragment symlink must be skipped SILENTLY. The glob matches names, not
+# contents, so a fragment whose repo file moved — the ordinary state mid-`git pull` or
+# mid-vendor-sync in a dir that is nothing but symlinks — is still a match, and `source` on
+# it writes to stderr, which section A reads as a broken load-order chain. The loader's
+# `[[ -r ]]` guard is what prevents that; before #677 it sat next to the profile gate and
+# was easy to mistake for part of it, so pin it now that it stands alone.
+ln -s "$FRAG/no-such-target" "$FRAG/65-dangling.zsh"
+_frag_is "a dangling fragment symlink is skipped, not sourced" "$(_frag_load 'true')" "$_ALL"
+_dang="$(zsh -f -c "ZSH_CFG='$FRAG'; source '$FRAG/loader.zsh'" 2>&1 >/dev/null)"
+if [[ -z "$_dang" ]]; then pass "loader: a dangling fragment symlink is silent on stderr"; else fail "loader: dangling symlink wrote to stderr — [$_dang]"; fi
+rm -f "$FRAG/65-dangling.zsh"
+# (4) same-NN tiebreak: two 85- fragments must load in LEXICAL order (85-r10 BEFORE 85-r2),
+# not numeric/natural order, and must do so even when the CALLER has set NUMERIC_GLOB_SORT —
+# which is the entire reason the loader sorts with the `(@o)` parameter flag instead of the
+# glob's own `n` qualifier. A same-NN pair is a misconfiguration the bands exist to prevent;
+# being DETERMINISTIC about it is the point, so a host that hits one gets the same answer on
+# every machine. Asserted through _frag_load rather than in isolation so the expectation also
+# pins WHERE the tied pair lands in the full chain, and a got/want of the whole list says so.
+printf 'print -r -- r2\n' >"$FRAG/85-r2.zsh"
+printf 'print -r -- r10\n' >"$FRAG/85-r10.zsh"
+_frag_is "a same-NN tie breaks lexically (85-r10 before 85-r2), even under NUMERIC_GLOB_SORT" \
+  "$(_frag_load 'setopt numericglobsort')" \
+  "00 02 05 10 15 20 25 30 35 40 45 50 55 60 80 r10 r2 85 99"
+rm -f "$FRAG/85-r2.zsh" "$FRAG/85-r10.zsh"
 
 # ── A4. os.capabilities reader (zsh/02-capabilities.zsh) ─────────────────────
 # The reader is deliberately the PERMISSIVE half of #663: it skips anything it does not
@@ -9834,11 +9850,13 @@ check "core doctor routes to core-doctor" \
   'out=$(NO_COLOR=1 core doctor 2>&1); (( $? == 0 )) && [[ $out == *"modern CLI"* ]]'
 check "core rejects an unknown subcommand with a did-you-mean" \
   'out=$(core verzion 2>&1); (( $? != 0 )) && [[ $out == *"did you mean core version"* ]]'
-# Profile awareness (B1): under minimal/standard, 60-update is not loaded, so `up` is
-# undefined. `core update` must report cleanly (mentioning CORE_PROFILE) rather than reach a
-# missing command. Simulate the gated state by unfunction-ing `up` in a subshell.
-check "core update reports cleanly when up is gated by CORE_PROFILE" \
-  '( unfunction up 2>/dev/null; out=$(core update 2>&1); (( $? != 0 )) && [[ $out == *CORE_PROFILE* ]] )'
+# Availability awareness (B1): `up` is band 60 and `core` is band 30, so the dispatcher is
+# reachable in a shell the updater never loaded — including this harness, which sources
+# 05-ui and 30-functions and nothing else. It must fail cleanly and NAME THE FRAGMENT that
+# would supply it, the only thing the reader can act on. The literal pins the message to
+# 60-update.zsh, which core.manifest also pins: rename that file and this fails, correctly.
+check "core update reports cleanly, naming 60-update.zsh, when up is not loaded" \
+  '( unfunction up 2>/dev/null; out=$(core update 2>&1); (( $? != 0 )) && [[ $out == *60-update* ]] )'
 # U5: a usage error points back at the discoverability surface — `see: core-help <verb>`,
 # the verb derived from the synopsis's first token, so every verb gets it for free.
 check "usage errors carry a 'see: core-help <verb>' footer (U5)" \
@@ -10802,10 +10820,16 @@ _z_direnv_p="$(_zln "$PLUGINS_FILE" '^_cache_eval[[:space:]]+direnv')"
 _z_mise="$(_zln "$TOOLS_FILE" '_cache_eval[[:space:]]+mise')"
 _z_carapace="$(_zln "$PLUGINS_FILE" '_cache_eval[[:space:]]+--salt.*carapace')"
 
-# (1) direnv stays at band 00. Band 45 is profile-gated (loader.zsh ceils `minimal` at 30)
-# while band 80 — where this used to live — always loads, so filing it under 45 stops .envrc
-# files loading on every minimal host and nothing anywhere says so.
-_zsay "direnv's hook is in 00-tools.zsh, not 45-plugins.zsh — band 45 is profile-gated (minimal ceils at 30), so .envrc loading would silently die on minimal hosts" \
+# (1) direnv's hook is initialised in 00-tools.zsh, and in exactly one file. The louder half
+# of this rationale died with CORE_PROFILE (#677): band 45 is no longer gated, so filing it
+# there would no longer stop .envrc files loading dead on every `minimal` host. Two reasons
+# survive, both still silent when broken. BAND — this registers a HOOK, not a compdef, so it
+# gains nothing from waiting for 10-options.zsh's compinit and belongs beside the three other
+# hook inits at band 00. OWNERSHIP — the half (4) below cannot see, because (4) compares two
+# line numbers WITHIN 00-tools.zsh and stays green if a SECOND copy reappears at band 45.
+# #449 hoisted this out of seven os/*.zsh copies that had already drifted (one suppressed the
+# generator's stderr, two carried half the block); a duplicate anywhere is that defect back.
+_zsay "direnv's hook is in 00-tools.zsh and in no other band — it registers a hook, not a compdef, so band 00 (ahead of compinit) is where it belongs, and a second copy at band 45 is the pre-#449 drift returning" \
   "$([[ -n "$_z_direnv_t" && -z "$_z_direnv_p" ]] && echo ok)"
 
 # (2) …and the three completions are GENERATED at band 00 (#579). Inverted from what this
@@ -12357,8 +12381,8 @@ ucheck "update: dnf's exit 100 (updates EXIST) is not read as a failure" \
 #
 # Every stub here prints its own argv, so the assertion is on the exact command line `up`
 # builds — the thing a host notices — rather than on an exit status that a no-op also
-# produces. 02-capabilities.zsh is sourced alongside update.zsh (it is band 02 and loads
-# under every profile) and pointed at a scratch declaration via CORE_CAPABILITIES_FILE.
+# produces. 02-capabilities.zsh is sourced alongside update.zsh (it is band 02, far ahead of
+# every consumer) and pointed at a scratch declaration via CORE_CAPABILITIES_FILE.
 hdr "update.zsh dispatch through os.capabilities (#664)"
 CAPD_UP="$SANDBOX/capup"
 rm -rf "$CAPD_UP"

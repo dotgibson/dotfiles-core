@@ -16,6 +16,44 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **BREAKING — `CORE_PROFILE` is deleted (#677).** The `minimal`/`standard`/`full` knob
+  shipped as one of v4.0.0's three headline features and never acquired a single adopter.
+  Nothing in this repo or any of the nine OS repos ever wrote the `$ZSH_CFG/profile` file
+  the loader read; no OS repo mentioned the variable at all; and `bootstrap-test.yml`
+  asserted that a managed `~/.zshrc` must _not_ set it. Every host has always run `full`.
+
+  `zsh/loader.zsh` now globs `NN-*.zsh`, sorts, byte-compiles and sources — with **no
+  ceiling and no filter**. Three consequences, in the order they are likely to bite:
+
+  1. **The loader no longer sets `CORE_PROFILE` in your shell.** It used to leave the
+     resolved value behind deliberately. A host-local `99-local.zsh` that branches on
+     `$CORE_PROFILE` now silently takes the empty branch — this is the one breakage that
+     cannot be detected from here, and the reason this is a major.
+  2. **`$ZSH_CFG/profile` is inert.** It is no longer read, and a host that hand-wrote one
+     gets no warning that it stopped mattering. Delete it.
+  3. **`core update` no longer names a profile** when the updater is missing; it names
+     `60-update.zsh`, which is the fact you can act on.
+
+  **It also closes the band-squatting footgun `VENDORING.md` documented but could not
+  enforce.** The loader has no owner metadata — everything is flattened into one
+  `$ZSH_CFG` — so the ceiling gated by _number_, not authorship: an OS repo filing
+  `22-foo.zsh` in a Core band gap was treated as Core and _silently vanished_ under
+  `CORE_PROFILE=minimal`. With nothing skipping fragments, a squatted number is merely
+  unconventional. Bands remain a reservation convention worth respecting for the reason
+  that outlives the gate: a flat directory holds exactly one `22-foo.zsh`, so a number an
+  OS repo takes is a number a later Core release cannot.
+
+  The alternative was building the profile-aware discovery surface `V4-PROPOSAL.md` §9
+  deferred and never delivered — `core-help`'s rows and `_core_suggest`'s candidates are
+  static literals that advertise band-55/60 verbs which `minimal` and `standard` did not
+  load. That is real work for a feature with no users.
+
+  `scripts/test-core.sh`'s profile section is **repurposed, not deleted**: eleven of its
+  twelve assertions were ceiling-specific, but the glob and the sort are now the loader's
+  entire filtering contract, so the section became the loader glob/sort contract — keeping
+  the same-NN lexical tiebreak and adding the malformed-prefix, self-exclusion and
+  dangling-symlink coverage the loader documented but nothing had ever asserted.
+
 - **`tag-release.sh` refuses a breaking change in a non-major release.** The one rule in
   `RELEASE-STRATEGY.md` that nothing enforced, and the one whose failure is silent and
   fleet-wide: `MAJOR` is derived from the version, so a `BREAKING` entry tagged `X.Y+1.0`

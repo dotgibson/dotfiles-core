@@ -97,7 +97,7 @@ CORE_MODULES=(00-tools 05-ui 10-options 15-history 20-aliases 25-git 30-function
 export CORE_DIR="$HERE/zsh"
 
 # AGGREGATE benchmark: drive the REAL v4 loader against a symlinked $ZSH_CFG (like the smoke
-# test), so the number includes glob + profile resolution + the compile/wordcode fast path —
+# test), so the number includes the glob, the sort and the compile/wordcode fast path —
 # a faithful production startup, and a regression in the loader itself is now visible. (The
 # --profile mode below keeps direct per-fragment sourcing, which is what per-module timing needs.)
 ln -s "$HERE/zsh/loader.zsh" "$SANDBOX/zdot/loader.zsh"

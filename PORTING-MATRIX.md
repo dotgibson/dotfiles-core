@@ -1088,9 +1088,11 @@ absent binary, so the hook needs no flag to guard it. Since #581 `core-doctor` d
 presence are different questions, and the latter is what would need detection. Since **v4.14.1**
 the `direnv hook zsh` that makes it work lives in Core, at `zsh/00-tools.zsh` **band 00**,
 where #449 pulled seven byte-drifted `os/*.zsh` copies up into one. Band 00 and not 45,
-because it registers a hook rather than a compdef and band 00 loads under every
-`CORE_PROFILE` while 45 is ceilinged out of `minimal`; filed under 45 it would silently stop
-`.envrc` files loading on minimal hosts. (Since #579 the gh/uv/ty completions are generated
+because it registers a hook rather than a compdef, so it needs nothing from `compinit` and
+belongs beside the other per-directory hook inits. (Until v5 it had a sharper reason too:
+band 45 was ceilinged out of `CORE_PROFILE=minimal`, so filing it there stopped `.envrc`
+files loading outright on lean hosts; #677 deleted the profile and that half went with it.)
+(Since #579 the gh/uv/ty completions are generated
 at band 00 too, but for a different reason — an `fpath` directory has to be populated before
 `compinit` scans it — and they keep a `compdef` re-assert at band 45.) It is sourced **last** of the
 four inits on purpose: direnv prepends `_direnv_hook` to `precmd_functions` and

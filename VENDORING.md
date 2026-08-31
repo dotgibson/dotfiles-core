@@ -234,7 +234,7 @@ pre-v5, and the fix is a sync, not a hand-patch.
 ## Number bands — where your files go
 
 `core/zsh/loader.zsh` globs `$ZSH_CFG/[0-9][0-9]-*.zsh` and sources them in numeric
-order. The band decides the owner:
+order. The band declares the owner:
 
 | Band | Owner | Example |
 | --- | --- | --- |
@@ -243,17 +243,20 @@ order. The band decides the owner:
 | `85`–`94` | **Role** | Offense / Defense fragments |
 | `95`–`99` | **host-local** | `99-local.zsh` (gitignored, never committed) |
 
-### The footgun: `CORE_PROFILE` gates by NUMBER, not by authorship
+The loader does not enforce this table — it has no owner metadata, because every layer is
+flattened into one `$ZSH_CFG`. It globs, sorts and sources; that is all. A file you drop in
+a _gap in the Core band_ — say `22-mytweak.zsh` — therefore loads exactly where it asked to.
 
-The loader has no owner metadata. `CORE_PROFILE` sets a ceiling — `minimal=30`,
-`standard=50`, otherwise `69` — and **skips Core-band fragments above it**. Fragments
-numbered **≥ 70 always load**, regardless of profile.
+**Claim a number in your own band anyway.** A flat directory holds exactly one
+`22-mytweak.zsh`, so a number you take is a number a later Core release cannot: your file
+and a new Core fragment would collide on the next sync. OS work goes at 70–84, role work at
+85–94, anything machine-specific at 95–99.
 
-So a file you drop in a _gap in the Core band_ — say `22-mytweak.zsh` — is not treated as
-yours. It is treated as Core, and it will silently vanish under `CORE_PROFILE=minimal`.
-
-**Claim a number in your own band.** OS work goes at 70–84, role work at 85–94, anything
-machine-specific at 95–99.
+> Until v5 this was sharper than a collision risk. `CORE_PROFILE` gated the Core band by
+> NUMBER rather than authorship, so a squatted `22-mytweak.zsh` was treated as Core and
+> silently vanished under `CORE_PROFILE=minimal`. [#677](https://github.com/dotgibson/dotfiles-core/issues/677)
+> deleted the profile, which closed that footgun as a side effect — nothing skips a fragment
+> any more.
 
 ## Adding your OS layer
 
@@ -326,7 +329,7 @@ three drifted variants, until #449. Core owns these now:
 
 | Don't write | Because Core already does it |
 | --- | --- |
-| `direnv hook zsh` | `core/zsh/00-tools.zsh`, band 00 — loads under every `CORE_PROFILE` |
+| `direnv hook zsh` | `core/zsh/00-tools.zsh`, band 00 — beside the other per-directory hook inits, before `compinit` |
 | `gh completion -s zsh` | `core/zsh/00-tools.zsh`, band 00 — generated into an `fpath` dir and autoloaded, with a `compdef` re-assert at band 45 so carapace's bridge does not win |
 | `uv generate-shell-completion zsh` | same |
 | `ty generate-shell-completion zsh` | same |
