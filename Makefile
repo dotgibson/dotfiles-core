@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag publish release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -95,6 +95,12 @@ check-pins: ## Report whether the zsh-plugin + nvim pins are behind upstream (th
 
 check-modern: ## Check CI meets the modern floor (scripts/modern-baseline.yml) — also run inside `make audit`
 	@./scripts/check-modern.sh
+
+gen-theme: ## Regenerate every themed config from theme/palette.toml (the ONE place a colour is edited)
+	@./scripts/gen-theme.sh
+
+check-theme: ## Report whether any generated config has drifted from theme/palette.toml — also run inside `make audit`
+	@./scripts/gen-theme.sh --check
 
 release: ## Cut a release: bump core.version + CHANGELOG, run the audit (usage: make release VERSION=X.Y.Z)
 	@./scripts/release.sh $(VERSION)

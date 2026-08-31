@@ -505,8 +505,9 @@ fi
 #     anywhere, so none of this can collide with zsh-vi-mode.
 #
 # (2) The SEPARATOR RULE (Pass 2, P12): a thin full-width rule above each prompt that
-#     FOLLOWED a command, colored by its exit status — dim (#414868) on success, red
-#     (#f7768e) on failure. Scan the left edge for red to find what broke. STARSHIP-ONLY
+#     FOLLOWED a command, colored by its exit status — the muted rule tone on success,
+#     the error tone on failure (role_rule / role_err in theme/palette.toml; the line
+#     itself is generated). Scan the left edge for red to find what broke. STARSHIP-ONLY
 #     (it is a prompt cosmetic), where the marks must work on a bare box and over SSH —
 #     so the hooks live OUTSIDE the HAVE_STARSHIP gate and only the rule stays inside it.
 #     One code path, two independently-gated outputs.
@@ -574,7 +575,9 @@ if [[ -n ${HAVE_STARSHIP:-} || -n ${_CORE_OSC133:-} ]]; then
       [[ -n ${_CORE_OSC133:-} ]] && print -rn -- $'\e]133;D;'"$ec"$'\e\\'
       if [[ -n ${HAVE_STARSHIP:-} ]]; then
         local w=${COLUMNS:-80} col
+        # core:theme:gen sep-rule-colors
         if (( ec == 0 )); then col='%F{#414868}'; else col='%F{#f7768e}'; fi
+        # core:theme:end sep-rule-colors
         print -rP -- "${col}${(l:w::─:)}%f"
       fi
     fi

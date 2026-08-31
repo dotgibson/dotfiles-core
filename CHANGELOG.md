@@ -160,6 +160,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   unreferenced and gc-prunable. It now says it never changes a repo's **tracked state**,
   which is the claim that is actually true and the one that matters.
 
+- **Three shell colours now match what nvim actually renders (#679).** Core's shell
+  config carried `#27a1b9`, `#16161e` and `#283457` for tokyonight's `border_highlight`,
+  `black` and `bg_visual`. Against the pinned tokyonight commit the plugin resolves
+  `#29a4bd`, `#1d202f` and `#2e3c64` — so nvim and the shell have been painting different
+  colours, and the hand-copied values were simply stale. Visible in fzf's border,
+  scrollbar and gutter, and in lazygit's inactive border and selected-line background.
+  This is the drift the generator exists to prevent, found by building it.
+
 ### Added
 
 - **`scripts/lib/core-vendor.sh` — one definition of the vendored set (#676).**
@@ -197,6 +205,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   in `common.sh` does the extraction and documents what it deliberately cannot see
   (computed paths, Lua `require`s, YAML); those four paths are hand-listed in `core.vendor`
   with their consumers named, the posture §1b already takes toward `.claude/`.
+
+- **`theme/palette.toml` is the single source of truth for colour, and
+  `scripts/gen-theme.sh` renders every consumer from it (#679).** Around ninety hex
+  literals were previously kept in step **by comment** across thirteen files —
+  `tmux/tmux.conf`, three `tmux/scripts/*.sh` helpers, `starship/starship.toml`,
+  `lazygit/config.yml`, five `zsh/*.zsh` modules, `lib/ux.sh` and
+  `examples/starship.showcase.toml`. Six of those comments said "kept in sync with
+  starship.toml + tmux.conf `@tn_*`" in as many words, and nothing checked any of them:
+  a hand-edit to one file was a valid, lintable, shippable change that fanned a
+  half-recoloured stack out to nine repos.
+
+  `nvim/` never had the problem — it holds zero hex literals and asks the plugin
+  (`nvim/lua/gerrrt/utils/palette.lua`). This applies that argument to everything else.
+  Consumers carry marked `# core:theme:gen <id>` regions; everything outside them stays
+  hand-authored. `make gen-theme` renders, `make check-theme` reports drift, and
+  `audit-core.sh` §9d makes it a blocking gate on every commit and every CI leg.
+
+  The palette is **derived, not typed**: `--refresh` resolves it from the tokyonight
+  commit pinned in `nvim/lazy-lock.json`, and refuses to run against an installed plugin
+  that is off that pin or a `style` that disagrees with `palette.lua` — which finally
+  makes that file's "keep the two in sync" comment a machine check. Style selection is
+  **generation-time only**: there is no runtime `CORE_THEME` and none is planned, because
+  the consumers are static files (starship and lazygit read fixed config paths) and
+  regenerating on a live box would dirty the vendored `core/` tree that
+  `scripts/core-integrity.sh` exists to keep pristine.
+
+  `theme/palette.toml` is **not vendored** — it is a generation-time input, accounted for
+  in `audit-core.sh`'s `META_ALLOWLIST`. Its outputs ship; it does not.
 
 ### Removed
 

@@ -40,6 +40,7 @@ continuation_prompt = "[∙](fg:color_comment) "   # the > > on multi-line input
 palette = 'tokyonight_storm'
 # Flip to a second palette by changing ONE line above. Define more below.
 [palettes.tokyonight_storm]
+# core:theme:gen starship-showcase-palette
 color_fg0='#c0caf5'
 color_blue='#7aa2f7'
 color_aqua='#7dcfff'
@@ -51,6 +52,7 @@ color_yellow='#e0af68'
 color_comment='#565f89'
 color_srf1='#24283b'
 color_srf2='#1f2335'
+# core:theme:end starship-showcase-palette
 
 # ── fill: stretches between left and right halves ────────────────────────────
 [fill]
