@@ -14,6 +14,60 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.5.0] - 2026-08-30
+
+### Changed
+
+- **`atuin/config.toml` no longer pins `search_mode`, so a machine can finally choose it.**
+  The line asserted `"fuzzy"` — which is atuin's OWN default (`atuin default-config` ships
+  it commented out at that value), so it pinned a default rather than choosing anything.
+  What it DID do was shadow `ATUIN_SEARCH_MODE`, under the same precedence rule `[daemon]`
+  documents at length: atuin builds config as defaults → Environment → **file**, and the
+  later source wins, so any key present here beats the environment.
+
+  That blocked the one mode worth opting into. **`daemon-fuzzy`** routes interactive search
+  through the atuin daemon, and is meaningful only where that daemon runs — which Core
+  ships **off**, per machine, for the reasons already recorded in `[daemon]`. It cannot be
+  a fleet-wide assertion: even on a host that opted in, `os/alpine.zsh` deliberately leaves
+  the daemon off **inside containers**, and these repos target containers as much as hosts,
+  so a blanket `daemon-fuzzy` would apply on precisely the shells with no daemon to talk to.
+
+  **No host changes behaviour.** atuin still defaults to `"fuzzy"`, so an unset key and the
+  old assertion are the same thing everywhere — the difference is only that the override
+  now reaches. A machine running the daemon sets `ATUIN_SEARCH_MODE=daemon-fuzzy` from its
+  OS layer (`os/<os>.zsh`) or host layer (`99-local`), beside the `ATUIN_DAEMON__*` exports
+  that turned the daemon on.
+
+  This is the trap `[daemon]` already warned about, found in the block above it: _"The same
+  trap applies to any future per-machine key: if a machine is meant to override it via
+  `ATUIN_*`, it must not be written here."_ `search_mode` was written here.
+
+### Fixed
+
+- **`make publish` reported a network failure for a stale tag, and hid the evidence.**
+  `scripts/tag-release.sh` opened phase 2 with `git fetch -q --tags origin 2>/dev/null`.
+  The `vN` major alias is **force-moved to every release**, so any clone that missed one
+  carries a stale local `vN` — and a plain `git fetch --tags` REFUSES to move it
+  (`! [rejected] v5 -> v5 (would clobber existing tag)`), exits 1, and takes `publish`
+  down with it. Nothing was wrong with the network, but with stderr redirected to
+  `/dev/null` the only thing the operator saw was `could not fetch origin — publishing
+  needs the remote's view of main`, which points at exactly the wrong thing. Hit cutting
+  **v5.4.3**, on a clone whose `v4` and `v5` were both behind; the actual repair was a
+  one-line tag update.
+
+  The fetch now passes `--force` and no longer swallows stderr, so a real failure names
+  its cause (`Could not resolve host: …`) instead of wearing the generic message.
+  Forcing is correct rather than merely convenient: `vN` is a MOVING alias whose remote
+  value is authoritative by definition, so a local ref that disagrees is stale, never a
+  competing truth. Immutable `vX.Y.Z` release tags are unaffected — they never move, so
+  `--force` has nothing to overwrite there, and the tag ruleset forbids it regardless.
+
+  Verified both ways: with `v5` deliberately pointed at `v5.4.2`, the old fetch exits 1
+  and the new one exits 0 and realigns it, leaving `v5.4.2`/`v5.4.3` untouched; against
+  an unresolvable remote it still exits 1, now printing the reason.
+
+## [v5.4.3] - 2026-08-30
+
 ### Added
 
 - **`scripts/lib/core-vendor.sh` — one definition of the vendored set (#676).**
@@ -119,6 +173,64 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   static, fleet-portable half.
 
 ### Fixed
+
+- **Footnote `¹⁴` said `ouch` was "unpackaged on Alpine outright". It is in
+  `edge/testing`, and the matrix already said so one line away.** `PORTING-MATRIX.md`'s
+  `ouch` row carries `testing¹⁴` in its Alpine cell; the footnote that cell points at then
+  denied it, splitting `ouch` off from `duf`/`glow`/`tealdeer` as a fourth, distinct case.
+  Re-queried on pkgs.alpinelinux.org: **`ouch` 0.6.1-r0, `edge`/`testing`**, maintainer
+  listed, built 2025-05-28, on x86_64 and aarch64 — and absent from v3.21, v3.22, v3.23 and
+  v3.24, each queried individually. That is exactly the other three's shape
+  (`duf` 0.9.1-r9, `glow` 3.0.0-r0, `tealdeer` 1.8.0-r0, all `edge`/`testing`, none on
+  stable). The footnote now reads `testing`-only and groups all four; the table cell was
+  right and is unchanged.
+
+  **How the file came to contradict itself is the part worth recording.** This cell was
+  already corrected once, the OTHER way: an earlier `/os-package-availability` stamp set
+  Alpine's `ouch` to `testing`. Then #519 flipped `¹⁴` back, citing `dotfiles-Alpine`'s
+  `bootstrap.sh` comment ("also unpackaged on Alpine — cargo only") as its evidence — and
+  that comment was itself wrong. Two documents agreeing is not two sources; a claim about
+  what a distro packages is only ever settled by querying the distro. The `bootstrap.sh`
+  comment is corrected in the same sweep (dotgibson/dotfiles-Alpine#146), so the citation
+  and the cited now say the same true thing.
+
+  **Nothing operational changes.** `testing` is not enabled on a stable release and `ouch`
+  is on no stable branch, so `cargo install --locked ouch --no-default-features` remains
+  its real source on Alpine — as does the bzip3/bindgen reason for those flags, which is
+  unaffected and kept verbatim. The neighbouring `¹⁷` is also left alone: `jnv` returns no
+  results on edge including `testing`, so it is the genuinely-unpackaged one.
+
+- **Footnote `³⁴`'s jq security floor omitted the branch furthest below it.** The fleet
+  position named Alpine 3.22/3.23/3.24 (1.8.1) as below the recorded ≥ 1.8.2 floor but
+  skipped **Alpine 3.21, which carries 1.7.1-r0** — further below than any Alpine branch
+  listed, and a branch the fleet still supports (EOL 2026-11-01; `dotfiles-Alpine`'s
+  `install/packages.txt` reasons about it explicitly for `yazi` and `gron`). Now listed with
+  the other 1.7.1 builds. Verified alongside the rest: edge 1.8.2-r0, v3.22/v3.23/v3.24
+  1.8.1-r0, v3.21 1.7.1-r0.
+
+- **`watchexec` 2.7.0 on Arch and Homebrew — the same bullet, one release later.**
+  (`PORTING-MATRIX.md`) Footnote `²⁵`'s Arch/Homebrew bullet read 2.6.1, with `2.6.1-1` as Arch's
+  package revision. Both have moved to **2.7.0** (`2.7.0-1`), and the block's `versions
+  re-verified` stamp is now 2026-08-30. The `verified 2026-08-12` and `Linux-repo coverage
+  re-verified 2026-08-21` stamps beside it are deliberately unchanged: only versions were
+  re-checked, not availability or which Linux repos carry it.
+
+  Re-checked against each repo's own package pages, per the convention the footnote declares —
+  `formulae.brew.sh` (2.7.0, neither deprecated nor disabled) and `archlinux.org` (2.7.0-1). The
+  other four bullets hold unchanged: openSUSE Tumbleweed and nixpkgs 2.5.1, Alpine `community`
+  2.5.1-r0, GURU 2.5.0 (still the top non-`9999` ebuild), and Fedora/Debian/Kali packaging it
+  nowhere. So the two-way split #611 introduced is still the right shape, and the parenthetical
+  explaining it still reads true — Arch and Homebrew moved together again.
+
+  This is the **second** bump of this line in eight days; #611 stamped 2.6.1 on 2026-08-23. That
+  cadence is inherent to recording an exact version for a fast-moving upstream, and it is still
+  worth recording here, because the cell's whole claim is that Homebrew packages `watchexec`
+  while the MacBook `Brewfile` is the one ²¹ entry that deliberately declines it — a reader
+  checking that wants a date beside the number. That assertion is unchanged, and so is the
+  `Brewfile`: the audit that surfaced this found all 77 entries resolving under their canonical
+  names, none deprecated or disabled.
+
+  Surfaced by `/os-package-availability macbook` (dotfiles-MacBook#211).
 
 - **`VENDORING.md` described a resolved `core.lock` defect as a live hazard (#670).** It
   warned, in the present tense, that three OS repos independently generate `core.lock` and
