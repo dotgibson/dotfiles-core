@@ -304,6 +304,13 @@ META_ALLOWLIST=(
   Makefile cliff.toml
   nvim/.luacheckrc
   CODEOWNERS pull_request_template.md
+  # theme/palette.toml is a generation-time INPUT to scripts/gen-theme.sh (already covered
+  # by the scripts/ prefix below), not shipped Core: nothing symlinks it and no OS repo
+  # reads it out of core/. Its OUTPUTS ship — the generated blocks in zsh/, tmux/,
+  # starship/, lazygit/ and lib/ux.sh — which is exactly the core.manifest-vs-core.vendor
+  # distinction those two files draw. Listed as an EXACT path, not a theme/ prefix, so a
+  # second file dropped into that directory has to be accounted for deliberately.
+  theme/palette.toml
 )
 # Directory prefixes whose tracked contents are allowlisted wholesale. scripts/ is
 # this repo's DEV TOOLING (audit/test/bench/sync/update-plugins) — the gate scripts

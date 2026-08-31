@@ -2493,6 +2493,16 @@ _classify_is "atuin/ config change → shell AND atuin" 'atuin/config.toml' true
 # tealdeer is a plain tools-group config: shell gate only. NOT the atuin axis — that one
 # gates the premise detector's hermetic self-test and is kept narrow on purpose.
 _classify_is "tealdeer/ config change → shell gate only" 'tealdeer/config.toml' true false false
+# theme/ is a plain config tree whose consumers are zsh + tmux + starship + lazygit, so it
+# rides the shell gate. NOT nvim: nvim's colours come from the tokyonight PLUGIN, which is
+# gen-theme.sh --refresh's SOURCE, not one of its outputs — a palette edit cannot change
+# what nvim renders. NOT atuin, for the reason the tealdeer row above records.
+_classify_is "theme/ palette change → shell gate only (consumers are zsh+tmux+starship+lazygit)" 'theme/palette.toml' true false false
+# The negative half, and the one that matters: the GENERATOR is infra by the scripts/ arm
+# and must stay that way. It can rewrite every consumer in one run, so narrowing it to
+# `shell` would let a regression in the generator itself ship with the nvim and atuin gates
+# unrun. This pins that it never narrows.
+_classify_is "scripts/gen-theme.sh change → full run (it can rewrite every consumer)" 'scripts/gen-theme.sh' true true true
 _classify_is "a plain zsh/ change does NOT pay the atuin gate" 'zsh/45-plugins.zsh' true false false
 _classify_is "mixed atuin+nvim set → union across all three axes" $'atuin/config.toml\nnvim/init.lua' true true true
 
