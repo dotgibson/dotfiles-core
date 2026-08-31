@@ -36,9 +36,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   OS layer (`os/<os>.zsh`) or host layer (`99-local`), beside the `ATUIN_DAEMON__*` exports
   that turned the daemon on.
 
-  This is the trap `[daemon]` already warned about, found in the block above it: *"The same
+  This is the trap `[daemon]` already warned about, found in the block above it: _"The same
   trap applies to any future per-machine key: if a machine is meant to override it via
-  `ATUIN_*`, it must not be written here."* `search_mode` was written here.
+  `ATUIN_*`, it must not be written here."_ `search_mode` was written here.
 
 ### Fixed
 
