@@ -16,6 +16,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`tag-release.sh` refuses a breaking change in a non-major release.** The one rule in
+  `RELEASE-STRATEGY.md` that nothing enforced, and the one whose failure is silent and
+  fleet-wide: `MAJOR` is derived from the version, so a `BREAKING` entry tagged `X.Y+1.0`
+  both files the break as a minor **and** force-moves the `vN` alias onto it — pushing it
+  to every caller still pinned `@vN`, which is the whole fleet. It now fails at tag time
+  unless the version is `X.0.0`.
+
+  It reads the section for the version being released, not `[Unreleased]`: `release.sh`
+  has already promoted the entries under `## [vX.Y.Z]` by then, so scanning `[Unreleased]`
+  would read the empty section that was just opened and pass every time.
+
+  No bypass, unlike `TAG_SKIP_AUDIT`. If the check fires and the entry is not really
+  breaking, the answer is to reword the entry — a bypass here would be exercised exactly
+  once, on the release that needed it most.
+
 - **BREAKING — a vendored `core/` is no longer a copy of this whole repo (#676).**
   `scripts/sync-core.sh` now materializes exactly `core.manifest` ∪ a new **`core.vendor`**
   and nothing else. A vendored tree goes from **285 files / 5.6 MB to 182 files / 1.2 MB**
