@@ -128,9 +128,10 @@ same one-liners those surfaces print.
 | `genpw [length]` | random alphanumeric password (default 16) via openssl, `/dev/urandom` fallback |
 | `please` | re-run the last command with sudo (previews + confirms first) |
 | `pullall [dir]` | pull every git repo under a dir in parallel (prunes, stashes, fast-forwards trunk) |
-| `core [verb]` | the front door: `core help` / `doctor` / `version` / `update` |
+| `core [verb]` | the front door: `core help` / `doctor` / `version` / `update` / `whatsnew` |
 | `core-doctor` | health report: which tools are present, which Core actually wired, which integrations registered |
 | `core-version` | which Core version this machine carries (reads `core.version`) |
+| `core whatsnew [--full]` | what changed in Core since this box last looked — the release notes between your last-read version and the one you run, from the vendored `CHANGELOG.recent.md` (`--all` for every release it carries) |
 
 Note `cdup`, not `up` — `up` is the package-updater in `zsh/60-update.zsh`.
 

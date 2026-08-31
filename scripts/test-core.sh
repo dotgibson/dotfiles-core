@@ -2476,6 +2476,10 @@ _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
 _classify_is "zsh/ change → shell gate only" 'zsh/05-ui.zsh' true false false
 _classify_is "nvim/ change → nvim gate only" 'nvim/init.lua' false true false
 _classify_is "docs (*.md) change → no gate" 'README.md' false false false
+# The generated digest is 49 KB of markdown that changes on EVERY release (#680). It must
+# not drag a full CI run along with it — it already matches the *.md inert arm, and this
+# pins that so a future classifier tweak cannot quietly make every release a full run.
+_classify_is "generated digest (CHANGELOG.recent.md) → no gate" 'CHANGELOG.recent.md' false false false
 _classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true true
 _classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true true
 _classify_is "__ALL__ sentinel → full run" '__ALL__' true true true
@@ -4275,6 +4279,137 @@ fi
 # that does not vendors its whole tree. That is what let #676 land with no flag day, so both
 # branches are asserted here — a test that only covered the new shape would not have caught
 # a change that broke every repo still pinning an older Core.
+# ── CHANGELOG digest generator (scripts/gen-changelog-recent.sh) ─────────────
+# CHANGELOG.recent.md is the ONLY changelog a box has (#680): CHANGELOG.md is not vendored
+# and will not be (~707 KB, 36% of the vendored tree — the freight #676 removed). The
+# generator is therefore the whole feature's data source, driven here against FIXTURES
+# rather than this repo's real changelog, so the assertions are about SLICING and
+# DETERMINISM, not about whatever happened to ship. audit-core.sh §9e owns the separate
+# claim that the committed digest matches the real CHANGELOG.md.
+hdr "CHANGELOG digest generator (scripts/gen-changelog-recent.sh)"
+GCR="$HERE/scripts/gen-changelog-recent.sh"
+if [[ ! -x "$GCR" ]]; then
+  fail "scripts/gen-changelog-recent.sh missing or not executable"
+else
+  GCRD="$(mktemp -d "$SANDBOX/gencr.XXXXXX")"
+  # TEN releases plus an [Unreleased] section, so the N=8 window has something to drop at
+  # BOTH ends and the [Unreleased] exclusion is observable rather than vacuous.
+  {
+    printf '# Changelog\n\nPreamble prose.\n\n## [Unreleased]\n\n### Added\n\n- UNRELEASED-MARKER work in flight\n\n'
+    for _i in 10 9 8 7 6 5 4 3 2 1; do
+      printf '## [v1.0.%s] - 2026-01-%02d\n\n### Added\n\n- entry for 1.0.%s\n\n' "$_i" "$_i" "$_i"
+    done
+  } >"$GCRD/CHANGELOG.md"
+
+  gcr() { "$GCR" --source "$GCRD/CHANGELOG.md" --out "$GCRD/recent.md" "$@"; }
+
+  # (1) THE WINDOW. Exactly RECENT_RELEASES sections, no more, no fewer.
+  _gcr_n="$(gcr --stdout | grep -c '^## \[')"
+  if [[ "$_gcr_n" == 8 ]]; then
+    pass "digest renders exactly 8 release sections"
+  else
+    fail "digest rendered $_gcr_n release sections (want 8) — the N window is not being applied"
+  fi
+
+  # (2) WHICH EIGHT. The newest must be in; the two that fall off the end must be out.
+  _gcr_out="$(gcr --stdout)"
+  if [[ "$_gcr_out" == *'## [v1.0.10]'* && "$_gcr_out" == *'## [v1.0.3]'* &&
+    "$_gcr_out" != *'## [v1.0.2]'* && "$_gcr_out" != *'## [v1.0.1]'* ]]; then
+    pass "digest keeps the 8 NEWEST releases and drops the older two"
+  else
+    fail "digest window is off by one or reversed — want v1.0.10..v1.0.3 in, v1.0.2/v1.0.1 out"
+  fi
+
+  # (3) [Unreleased] IS EXCLUDED — heading AND body. A box runs a RELEASED core.version, so
+  # an [Unreleased] entry describes code it does not have; including it would also make the
+  # digest stale on every changelog bullet and red §9e on nearly every PR.
+  if [[ "$_gcr_out" != *'[Unreleased]'* && "$_gcr_out" != *UNRELEASED-MARKER* ]]; then
+    pass "digest excludes the [Unreleased] section (heading and body)"
+  else
+    fail "digest carries [Unreleased] — the verb would describe code the box does not run, and §9e would red on every PR"
+  fi
+
+  # (4) DETERMINISM, two ways. §9e asserts byte-identity against a fresh render, so any
+  # non-determinism reads as PERMANENT staleness that no regeneration could clear.
+  if [[ "$(gcr --stdout)" == "$_gcr_out" ]]; then
+    pass "digest render is deterministic across runs"
+  else
+    fail "digest render is NOT deterministic — §9e would red forever and no regeneration could fix it"
+  fi
+  if [[ "$_gcr_out" != *"$(date +%Y-%m-%d)"* ]]; then
+    pass "digest embeds no generated-on date (fixture dates are 2026-01-xx)"
+  else
+    fail "digest embeds today's date — it would go stale at midnight, with §9e red until someone re-ran the generator"
+  fi
+
+  # (5) THE HEADER MUST DEFEND ITSELF. A vendored copy is read by someone who has never seen
+  # this repo; if it does not say "generated" and name its generator, it gets hand-edited.
+  if [[ "$_gcr_out" == *'GENERATED FILE'* && "$_gcr_out" == *'gen-changelog-recent.sh'* &&
+    "$_gcr_out" == *'CHANGELOG.md'* ]]; then
+    pass "digest header self-identifies as generated, names its generator and the full log"
+  else
+    fail "digest header does not self-identify — a vendored copy invites the hand edits §9e then reds on"
+  fi
+
+  # (6) MARKDOWNLINT SEAMS. §7 lints '**/*.md', so the generator's own header is the only
+  # NEW markdown in the tree and its seams are where a bug would land: exactly one H1
+  # (MD025), and a last line that is not blank (MD047 + pre-commit end-of-file-fixer).
+  _gcr_h1="$(printf '%s\n' "$_gcr_out" | grep -c '^# ')"
+  _gcr_last="$(printf '%s\n' "$_gcr_out" | tail -n1)"
+  if [[ "$_gcr_h1" == 1 && -n "$_gcr_last" ]]; then
+    pass "digest has exactly one H1 and no trailing blank line (MD025 / MD047 seams)"
+  else
+    fail "digest markdown seams are wrong: $_gcr_h1 H1 heading(s), last line '${_gcr_last}'"
+  fi
+
+  # (7) --check is the human/Makefile mirror of audit §9e: 0 when fresh, non-zero when not.
+  gcr >/dev/null 2>&1
+  if gcr --check >/dev/null 2>&1; then
+    pass "--check returns 0 against a file the generator just wrote"
+  else
+    fail "--check reds on its own fresh output — the audit gate would be unfixable"
+  fi
+  printf 'hand edit\n' >>"$GCRD/recent.md"
+  if gcr --check >/dev/null 2>&1; then
+    fail "--check passed a HAND-EDITED digest — the gate cannot detect the thing it exists for"
+  else
+    pass "--check rejects a hand-edited digest"
+  fi
+
+  # (8) FEWER RELEASES THAN N is not an error — a young fork, or this repo at v1.0.1.
+  printf '# Changelog\n\n## [v0.2.0] - 2026-01-02\n\n- b\n\n## [v0.1.0] - 2026-01-01\n\n- a\n' >"$GCRD/short.md"
+  _gcr_short="$("$GCR" --source "$GCRD/short.md" --stdout 2>/dev/null)"
+  if [[ "$(printf '%s\n' "$_gcr_short" | grep -c '^## \[')" == 2 ]]; then
+    pass "a changelog with fewer than 8 releases renders all of them and exits 0"
+  else
+    fail "a short changelog is mishandled — a young repo could not generate a digest at all"
+  fi
+
+  # (9) NO releases at all → refuse LOUDLY rather than commit an empty digest that the verb
+  # would then have to explain away on nine boxes.
+  printf '# Changelog\n\n## [Unreleased]\n\n- only unreleased\n' >"$GCRD/none.md"
+  if "$GCR" --source "$GCRD/none.md" --stdout >/dev/null 2>&1; then
+    fail "a changelog with NO released section produced a digest — it would ship empty"
+  else
+    pass "a changelog with no released section is refused (non-zero), not shipped empty"
+  fi
+
+  # (10) THE VENDORING DECISION, pinned. #680 ships a 49 KB digest precisely BECAUSE
+  # #676/#784 measured CHANGELOG.md at 36% of the vendored tree. Re-adding the full file
+  # would silently undo that, and this is the only place that would notice.
+  if grep -qE '^CHANGELOG\.recent\.md([[:space:]]|$)' "$HERE/core.vendor"; then
+    pass "core.vendor ships CHANGELOG.recent.md (the digest core whatsnew reads)"
+  else
+    fail "core.vendor does not list CHANGELOG.recent.md — core whatsnew would find nothing on any box"
+  fi
+  if grep -qE '^CHANGELOG\.md([[:space:]]|$)' "$HERE/core.vendor"; then
+    fail "core.vendor lists the FULL CHANGELOG.md — ~707 KB, 36% of the vendored tree, the freight #676 removed"
+  else
+    pass "core.vendor does not ship the full CHANGELOG.md (the digest is the whole point)"
+  fi
+  unset _gcr_n _gcr_out _gcr_h1 _gcr_last _gcr_short _i
+fi
+
 hdr "vendoring filter (core.vendor) + the version switch"
 if have git; then
   VF="$SANDBOX/vendorfilter"
@@ -5700,6 +5835,10 @@ if have git; then
   chmod +x "$TR/origin/scripts/audit-core.sh" "$TR/origin/scripts/tag-release.sh"
   printf '1.0.0\n' >"$TR/origin/core.version"
   printf '# Changelog\n\n## [Unreleased]\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/origin/CHANGELOG.md"
+  # The vendored digest is a THIRD release file since #680 — release.sh regenerates it and
+  # tag-release.sh must commit it. The fixture carries it so these tests exercise the real
+  # three-file pathspec; without it they would only ever prove the two-file case still works.
+  printf '# Changelog — recent releases\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/origin/CHANGELOG.recent.md"
   _trg "$TR/origin" init -q >/dev/null 2>&1
   _tr_ident "$TR/origin"
   _trg "$TR/origin" symbolic-ref HEAD refs/heads/main
@@ -5715,6 +5854,7 @@ if have git; then
   # Stage a 1.1.0 release in the clone, exactly as release.sh would leave it.
   printf '1.1.0\n' >"$TR/work/core.version"
   printf '# Changelog\n\n## [Unreleased]\n\n## [v1.1.0] - 2026-02-02\n\n- new\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/work/CHANGELOG.md"
+  printf '# Changelog — recent releases\n\n## [v1.1.0] - 2026-02-02\n\n- new\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/work/CHANGELOG.recent.md"
 
   # LC_ALL=C so assertions on this output mean the same thing on every box: the script's
   # own strings are ours and stable, but anything bash or git emits — notably a shell's
@@ -10170,6 +10310,127 @@ check "core rejects an unknown subcommand with a did-you-mean" \
 # 60-update.zsh, which core.manifest also pins: rename that file and this fails, correctly.
 check "core update reports cleanly, naming 60-update.zsh, when up is not loaded" \
   '( unfunction up 2>/dev/null; out=$(core update 2>&1); (( $? != 0 )) && [[ $out == *60-update* ]] )'
+
+# core whatsnew (#680): the digest is CHANGELOG.recent.md — the last 8 RELEASED sections,
+# vendored via core.vendor because CHANGELOG.md is not (~707 KB, 36% of the vendored tree).
+# Driven against a FIXTURE digest and a fixture state file so these assert the SLICING and
+# the degradation modes, not whatever this repo happens to have released. The module
+# captures $_CORE_WHATSNEW_FILE at source time (the _CORE_VERSION_FILE pattern), so each
+# body repoints the globals AFTER sourcing — no product-code test hook is needed.
+_ws="$SANDBOX/whatsnew"
+mkdir -p "$_ws/state/dotfiles-core"
+printf '# Changelog — recent releases\n\n## [v2.0.0] - 2026-02-03\n\n### Added\n\n- **newest thing (#1).** prose\n\n## [v1.9.0] - 2026-02-02\n\n### Fixed\n\n- **middle thing (#2).** prose\n\n## [v1.8.0] - 2026-02-01\n\n### Added\n\n- **oldest thing (#3).** prose\n' >"$_ws/CHANGELOG.recent.md"
+printf '2.0.0\n' >"$_ws/core.version"
+# Repointed globals + a deterministic render environment, prefixed to every body below.
+_ws_env="_CORE_WHATSNEW_FILE='$_ws/CHANGELOG.recent.md'; _CORE_VERSION_FILE='$_ws/core.version'; _CORE_WHATSNEW_STATE='$_ws/state/dotfiles-core/whatsnew'; export CORE_NO_PAGER=1 NO_COLOR=1;"
+_ws_state="$_ws/state/dotfiles-core/whatsnew"
+
+# (1) THE SLICE — the issue's headline assertion. State names the OLDEST of three headings;
+# the render must carry the two NEWER ones and must NOT re-show the one already read.
+check "core-whatsnew renders only the sections newer than the last-seen version" \
+  "$_ws_env print -r -- 'seen=1.8.0' >| '$_ws_state'
+   out=\$(core-whatsnew 2>&1); (( \$? == 0 )) &&
+   [[ \$out == *'2.0.0'* && \$out == *'1.9.0'* && \$out != *'1.8.0 2026'* && \$out != *'oldest thing'* ]]"
+
+# (2) FIRST RUN, NO STATE FILE — the issue's "degrades cleanly rather than dumping 8,000
+# lines". Asserted STRUCTURALLY (the older sections are absent), not with a line count that
+# would drift: a first run shows the CURRENT release only, and seeds the mark so the next
+# run is quiet. Same once-per-machine shape as _core_welcome's sentinel.
+check "core-whatsnew's first run is bounded to the current release and seeds the state file" \
+  "$_ws_env rm -f '$_ws_state'
+   out=\$(core-whatsnew 2>&1); (( \$? == 0 )) &&
+   [[ \$out == *'2.0.0'* && \$out != *'middle thing'* && \$out != *'oldest thing'* && \$out == *'first look'* ]] &&
+   [[ \$(<'$_ws_state') == *'seen=2.0.0'* ]]"
+
+# (3) THE DIGEST IS ABSENT — the state #676 created for CHANGELOG.md, and the state every OS
+# repo pinning a pre-#680 Core is in right now. Must fail in CORE'S VOICE, naming the file,
+# never as a raw zsh "no such file or directory".
+check "core-whatsnew degrades honestly when the digest is absent (Core's voice, not a raw error)" \
+  "$_ws_env _CORE_WHATSNEW_FILE='$_ws/absent-core/CHANGELOG.recent.md'
+   out=\$(core-whatsnew 2>&1); (( \$? != 0 )) &&
+   [[ \$out == *'CHANGELOG.recent.md'* && \$out == *'core.vendor'* && \${(L)out} != *'no such file or directory'* ]]"
+
+# (4) ALREADY CURRENT. Without this, the common post-sync case (nothing new) is
+# indistinguishable from a broken slice.
+check "core-whatsnew says nothing is new when the last-seen version is current" \
+  "$_ws_env print -r -- 'seen=2.0.0' >| '$_ws_state'
+   out=\$(core-whatsnew 2>&1); (( \$? == 0 )) &&
+   [[ \$out == *'nothing new'* && \$out != *'newest thing'* ]]"
+
+# (5) THE WINDOW WAS EXCEEDED — last-seen predates every section the digest carries. The
+# digest is 8 RELEASES deep, not a calendar window, so at a fast cadence this is a routine
+# path: it must render what there is AND admit the truncation, pointing at the full log.
+check "core-whatsnew admits when the last-seen version predates the whole digest" \
+  "$_ws_env print -r -- 'seen=0.9.0' >| '$_ws_state'
+   out=\$(core-whatsnew 2>&1); (( \$? == 0 )) &&
+   [[ \$out == *'oldest thing'* && \$out == *'only reach back to 1.8.0'* && \$out == *CHANGELOG* ]]"
+
+# (6) ROLLBACK — this box runs OLDER than what was already read. Show nothing, and leave the
+# mark ALONE so a roll-forward does not replay notes the user has seen.
+check "core-whatsnew reports a rollback and does NOT move the read mark" \
+  "$_ws_env print -r -- 'seen=2.0.0' >| '$_ws_state'; print -r -- '1.9.0' >| '$_ws/core.version'
+   out=\$(core-whatsnew 2>&1); (( \$? == 0 )) && [[ \$out == *'already read 2.0.0'* ]] &&
+   [[ \$(<'$_ws_state') == *'seen=2.0.0'* ]]
+   print -r -- '2.0.0' >| '$_ws/core.version'"
+
+# (7) NO ANCHOR — core.version unreadable. Not fatal (the newest section is still worth
+# showing), but the mark must NOT advance: there is nothing trustworthy to record.
+check "core-whatsnew with an unreadable core.version shows the newest and does not move the mark" \
+  "$_ws_env _CORE_VERSION_FILE='$_ws/gone'; print -r -- 'seen=1.8.0' >| '$_ws_state'
+   out=\$(core-whatsnew 2>&1); (( \$? == 0 )) && [[ \$out == *'no anchor'* ]] &&
+   [[ \$(<'$_ws_state') == *'seen=1.8.0'* ]]"
+
+# (8) --full is the escape hatch to the prose the default render summarises to leads — and
+# the leads footer SUGGESTS it by name, so it must work as the immediate next command. It
+# did not: the first render advanced the mark, so the very command the footer recommended
+# answered "nothing new". The `from` key makes the follow-up re-show that same slice. This
+# asserts the two-command sequence a user actually types, not each verb in isolation.
+check "core-whatsnew --full, run right after the leads its footer suggests it from, shows the prose" \
+  "$_ws_env print -r -- 'seen=1.8.0' >| '$_ws_state'
+   lead=\$(core-whatsnew 2>&1); full=\$(core-whatsnew --full 2>&1)
+   [[ \$lead != *'### Added'* && \$lead == *'--full'* ]] &&
+   [[ \$full == *'### Added'* && \$full == *'prose'* && \$full == *'already read'* ]]"
+# A re-show is not new reading: re-running must not re-stamp the mark, or a third run would
+# lose the anchor and fall back to "nothing new" — the defect, one step later.
+check "core-whatsnew's re-show leaves the state file untouched" \
+  "$_ws_env print -r -- 'seen=1.8.0' >| '$_ws_state'
+   core-whatsnew >/dev/null 2>&1; before=\$(<'$_ws_state')
+   core-whatsnew >/dev/null 2>&1; core-whatsnew --full >/dev/null 2>&1
+   [[ \$(<'$_ws_state') == \$before && \$before == *'from=1.8.0'* ]]"
+# The genuine caught-up state still exists: no anchor recorded (a box that has been on this
+# version since before it ever ran the verb) really has nothing to re-show.
+check "core-whatsnew still reports a true caught-up state when there is no anchor to re-show" \
+  "$_ws_env printf 'seen=2.0.0\\nannounced=2.0.0\\n' >| '$_ws_state'
+   out=\$(core-whatsnew 2>&1); (( \$? == 0 )) && [[ \$out == *'nothing new'* ]]"
+
+# (9) --all ignores the read mark entirely.
+check "core-whatsnew --all renders every section the digest carries" \
+  "$_ws_env print -r -- 'seen=2.0.0' >| '$_ws_state'
+   out=\$(core-whatsnew --all 2>&1); (( \$? == 0 )) &&
+   [[ \$out == *'2.0.0'* && \$out == *'1.9.0'* && \$out == *'1.8.0'* ]]"
+
+# (10) The uniform -h/--help contract (U6): stdout, return 0, never mis-read as an operand.
+check "core-whatsnew --help returns 0 and prints usage (U6)" \
+  'out=$(core-whatsnew --help); (( $? == 0 )) && [[ $out == *"usage: core-whatsnew"* ]]'
+
+# (11) An unknown flag is REJECTED with a did-you-mean, never silently ignored.
+check "core-whatsnew rejects an unknown flag with a did-you-mean" \
+  "$_ws_env out=\$(core-whatsnew --fll 2>&1); (( \$? != 0 )) && [[ \$out == *'did you mean --full'* ]]"
+
+# (12) The dispatcher route, and the single _CORE_SUBCMDS source that the completion and the
+# did-you-mean both read.
+check "core whatsnew routes to core-whatsnew" \
+  "$_ws_env print -r -- 'seen=1.8.0' >| '$_ws_state'
+   out=\$(core whatsnew 2>&1); (( \$? == 0 )) && [[ \$out == *'2.0.0'* ]]"
+check "whatsnew is registered in \$_CORE_SUBCMDS (the completion + did-you-mean read it)" \
+  '[[ " ${_CORE_SUBCMDS[*]} " == *" whatsnew "* ]]'
+
+# (13) A junk or truncated state file must degrade to "no mark", never propagate garbage
+# into the render or (via the nudge) into a `print -P` prompt string.
+check "core-whatsnew ignores a junk state file rather than trusting it" \
+  "$_ws_env print -r -- 'garbage' >| '$_ws_state'; print -r -- 'seen=not-a-version' >> '$_ws_state'
+   out=\$(core-whatsnew 2>&1); (( \$? == 0 )) && [[ \$out == *'first look'* ]]"
+
 # U5: a usage error points back at the discoverability surface — `see: core-help <verb>`,
 # the verb derived from the synopsis's first token, so every verb gets it for free.
 check "usage errors carry a 'see: core-help <verb>' footer (U5)" \
@@ -12546,7 +12807,7 @@ ucheck "core-help lists every first-party verb (derived B2 coverage gate)" \
 # from `up` (or renaming `--local`) without updating its #compdef now FAILS here instead
 # of silently shipping a completion that offers a flag the verb rejects to all nine repos.
 # Pure sed+grep (busybox-safe); comment lines in the completion are stripped first.
-hdr "completion ↔ source flag drift (serve, up)"
+hdr "completion ↔ source flag drift (serve, up, core-whatsnew)"
 _flag_drift() { # _flag_drift <verb> <completion-file> <source-file>
   local verb="$1" comp="$2" src="$3" f flags miss=0
   flags="$(sed 's/^[[:space:]]*#.*//' "$comp" | grep -oE -- '--[a-z][a-z-]+' | sort -u)"
@@ -12560,6 +12821,7 @@ _flag_drift() { # _flag_drift <verb> <completion-file> <source-file>
 }
 _flag_drift serve "$HERE/zsh/completions/_serve" "$HERE/zsh/30-functions.zsh"
 _flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/60-update.zsh"
+_flag_drift core-whatsnew "$HERE/zsh/completions/_core-whatsnew" "$HERE/zsh/30-functions.zsh"
 
 # ── git helper unit tests (git.zsh) (B2) ──────────────────────────────────────
 # git.zsh's trunk/branch resolution (git_main_branch's 6-way ref search, git_current_branch's
@@ -12605,6 +12867,55 @@ fi
 # or blank row would ship silently to that one distro's repo. Pin each: isolate PATH to a
 # lone manager stub (+ the coreutils its pipeline forks) so _pkgup_mgr resolves to it, feed
 # canned `outdated` output, and assert the parsed count/names. Mirrors the apt stub above.
+hdr "core whatsnew version-bump nudge (60-update.zsh)"
+# ── the version-bump nudge (zsh/60-update.zsh) ────────────────────────────────
+# Band 60, and it calls band-30 helpers — so these source ui + functions + update, the
+# loader's real order. `up`'s module early-returns on a non-interactive shell, hence ucheck
+# (zsh -fic) rather than check. CORE_WHATSNEW_NUDGE=0 suppresses the module's OWN call site
+# so each body drives the function itself, one "shell start" at a time.
+_wsn="$SANDBOX/whatsnew-nudge"
+mkdir -p "$_wsn"
+printf '5.5.0\n' >"$_wsn/core.version"
+_wsn_src="source '$UI'; source '$FN'; source '$UPD'; _CORE_VERSION_FILE='$_wsn/core.version'; _CORE_WHATSNEW_STATE='$_wsn/whatsnew';"
+
+# A fresh box has no state and no honest "from" version — _core_welcome greets it instead.
+# The suppression is STRUCTURAL (no `announced` key ⇒ seed and stay silent), not a matter of
+# print order, so a later refactor cannot reintroduce a spurious "Core moved" on install.
+ucheck "the bump nudge seeds silently on a box with no state (a fresh install gets the welcome, not this)" \
+  "$_wsn_src rm -f '$_wsn/whatsnew'
+   out=\$(_core_whatsnew_nudge 2>&1); [[ -z \$out ]] && [[ \$(<'$_wsn/whatsnew') == *'announced=5.5.0'* ]]" \
+  NO_COLOR=1 UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_WHATSNEW_NUDGE=0
+
+ucheck "the bump nudge fires ONCE on a version bump, then stays quiet" \
+  "$_wsn_src printf 'seen=5.5.0\\nannounced=5.5.0\\n' >| '$_wsn/whatsnew'
+   print -r -- '5.6.0' >| '$_wsn/core.version'
+   first=\$(_core_whatsnew_nudge 2>&1); second=\$(_core_whatsnew_nudge 2>&1)
+   [[ \$first == *'Core moved 5.5.0'*'5.6.0'* && \$first == *'core whatsnew'* && -z \$second ]]" \
+  NO_COLOR=1 UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_WHATSNEW_NUDGE=0
+
+# `seen` is carried through announcements UNCHANGED, so a host that ignored two bumps is told
+# the REAL span. Collapsing the two keys would understate it as "5.6.0 → 5.7.0".
+ucheck "the bump nudge names the last-READ version, not the last-announced one (multi-hop)" \
+  "$_wsn_src printf 'seen=5.5.0\\nannounced=5.6.0\\n' >| '$_wsn/whatsnew'
+   print -r -- '5.7.0' >| '$_wsn/core.version'
+   out=\$(_core_whatsnew_nudge 2>&1); [[ \$out == *'Core moved 5.5.0'*'5.7.0'* ]]" \
+  NO_COLOR=1 UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_WHATSNEW_NUDGE=0
+
+# THE never-nag-forever CONTRACT (_core_welcome's rule). A state file it cannot write means
+# it cannot remember having spoken — so it must not speak, and must not leak the shell's own
+# "permission denied" from the failed redirection either. Both would recur on EVERY shell.
+if [[ "$(id -u)" == 0 ]]; then
+  skip "the bump nudge stays silent when the state cannot be written (running as root — file modes do not apply)"
+else
+  printf 'seen=5.5.0\nannounced=5.5.0\n' >"$_wsn/whatsnew"
+  printf '5.9.0\n' >"$_wsn/core.version"
+  chmod 444 "$_wsn/whatsnew"
+  ucheck "the bump nudge stays SILENT (stdout and stderr) when the state file cannot be written" \
+    "$_wsn_src a=\$(_core_whatsnew_nudge 2>&1); b=\$(_core_whatsnew_nudge 2>&1); [[ -z \$a && -z \$b ]]" \
+    NO_COLOR=1 UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_WHATSNEW_NUDGE=0
+  chmod 644 "$_wsn/whatsnew"
+fi
+
 hdr "update.zsh per-manager parse (apk / dnf / zypper / pacman)"
 _mgr_stub() { # _mgr_stub <mgr> <sh-body>
   rm -rf "$PMBIN"

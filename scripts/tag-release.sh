@@ -98,8 +98,15 @@ git rev-parse --git-dir >/dev/null 2>&1 || {
 
 CHANGELOG="CHANGELOG.md"
 VERFILE="core.version"
-[[ -r "$VERFILE" && -r "$CHANGELOG" ]] || {
-  fail "tag-release.sh: $VERFILE or $CHANGELOG missing/unreadable"
+# The vendored digest release.sh regenerates (#680). It is a THIRD release file, and the
+# commit pathspec below is explicit — so an unlisted one is not "left for later", it is
+# silently dropped from the release commit while the WORKTREE audit stays green. That ships
+# nine repos a `core whatsnew` describing a different Core than they received. Guarding its
+# readability here is load-bearing under TAG_SKIP_AUDIT=1, which skips the gate that would
+# otherwise notice.
+RECENT="CHANGELOG.recent.md"
+[[ -r "$VERFILE" && -r "$CHANGELOG" && -r "$RECENT" ]] || {
+  fail "tag-release.sh: $VERFILE, $CHANGELOG or $RECENT missing/unreadable"
   exit 1
 }
 
@@ -395,14 +402,16 @@ else
   fi
 fi
 
-# Commit the two release files iff they actually differ from HEAD (release.sh left them
+# Commit the three release files iff they actually differ from HEAD (release.sh left them
 # modified). Re-running after the commit already landed is a no-op, not an error. The
-# explicit pathspec commits ONLY these two files, so unrelated staged work is never
-# swept into the release commit.
-if git diff --quiet HEAD -- "$VERFILE" "$CHANGELOG"; then
-  pass "release commit already present ($VERFILE/$CHANGELOG match HEAD)"
+# explicit pathspec commits ONLY these three files, so unrelated staged work is never
+# swept into the release commit — and every file release.sh touches MUST be named here, or
+# it is dropped from the commit rather than deferred (#680: the digest is vendored, so a
+# dropped one fans a stale changelog out to nine repos).
+if git diff --quiet HEAD -- "$VERFILE" "$CHANGELOG" "$RECENT"; then
+  pass "release commit already present ($VERFILE/$CHANGELOG/$RECENT match HEAD)"
 else
-  if git commit -q -m "release $TAG" -- "$VERFILE" "$CHANGELOG"; then
+  if git commit -q -m "release $TAG" -- "$VERFILE" "$CHANGELOG" "$RECENT"; then
     pass "committed release $TAG"
   else
     fail "tag-release.sh: commit failed"
