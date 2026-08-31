@@ -34,6 +34,8 @@
 #  8b. secrets                           — gitleaks working-tree scan (if present)
 #  8d. Makefile gates                    — no skip that cannot skip, no checker whose
 #                                          status is discarded, no missing local mirror
+#  9d. theme drift                      — every generated block still matches
+#                                          theme/palette.toml (gen-theme.sh --check)
 #   9. version consistency              — pre-commit hook revs == tool-versions.env;
 #                                         core.version SemVer + CHANGELOG coherence
 #  10. behavioral                       — load-order smoke + function units (test-core.sh)
@@ -304,6 +306,13 @@ META_ALLOWLIST=(
   Makefile cliff.toml
   nvim/.luacheckrc
   CODEOWNERS pull_request_template.md
+  # theme/palette.toml is a generation-time INPUT to scripts/gen-theme.sh (already covered
+  # by the scripts/ prefix below), not shipped Core: nothing symlinks it and no OS repo
+  # reads it out of core/. Its OUTPUTS ship — the generated blocks in zsh/, tmux/,
+  # starship/, lazygit/ and lib/ux.sh — which is exactly the core.manifest-vs-core.vendor
+  # distinction those two files draw. Listed as an EXACT path, not a theme/ prefix, so a
+  # second file dropped into that directory has to be accounted for deliberately.
+  theme/palette.toml
 )
 # Directory prefixes whose tracked contents are allowlisted wholesale. scripts/ is
 # this repo's DEV TOOLING (audit/test/bench/sync/update-plugins) — the gate scripts
@@ -1719,6 +1728,48 @@ if [[ -r core.version && -r CHANGELOG.md ]]; then
 else
   skip "core.version ↔ CHANGELOG coherence (a file is unreadable)"
 fi
+
+# ── 9d. theme drift (theme/palette.toml ↔ every generated block) ─────────────
+# theme/palette.toml is the ONE place a colour is authored; scripts/gen-theme.sh renders
+# the ~90 literals that were previously kept in step BY COMMENT across thirteen files.
+# Those comments said "kept in sync with starship.toml + tmux.conf @tn_*" — six of them,
+# in as many words — and nothing checked any of them, which is the whole defect: a
+# hand-edit to one file was a valid, lintable, shippable change that fanned a
+# half-recoloured stack out to nine repos. A comment is not a gate (the lesson
+# _core_workflow_ref_hits records twice over).
+#
+# Numbered 9d because the §9 family is derived-copy consistency — 9 is
+# tool-versions.env ↔ .pre-commit-config.yaml, 9b is *_VERSION ⇒ *_SHA256 and
+# core.version ↔ CHANGELOG. Appended, never renumbered: §9c's own comment records why
+# section numbers are append-only once a CHANGELOG entry has pinned them.
+#
+# ALWAYS ON, no `have` gate — §8c's posture, for §8c's reason. gen-theme.sh --check is
+# pure bash + awk with no optional dependency, so it can never SKIP, so --strict on the
+# Linux leg can never trip on it and the Alpine and Arch container legs run it
+# identically. The moment this needs python3 it stops being a gate on a bare macOS box
+# and becomes a suggestion.
+#
+# NOT SCOPE-GUARDED, for §5c's reason: the consumers include starship.toml,
+# lazygit/config.yml and examples/starship.showcase.toml, and `examples/` and `*.md` are
+# INERT to ci-classify.sh — so a showcase-only push arrives here as --scope none and must
+# still be gated. A narrowed run must not be able to skip a fan-out-correctness check.
+#
+# THE EXIT CODES ARE THE CONTRACT, and the two failures are different facts. 1 = DRIFT (a
+# generated block is stale). 2 or anything else = the generator could not run, which must
+# NOT be rendered as drift: a crashing gate that reports "theme drift" teaches everyone to
+# re-run it and ignore it, which is how a gate stops being one.
+hdr "theme drift (gen-theme.sh --check)"
+_gt_out="$("$HERE/scripts/gen-theme.sh" --check 2>&1)" && _gt_rc=0 || _gt_rc=$?
+if ((_gt_rc == 0)); then
+  pass "gen-theme (every generated block matches theme/palette.toml)"
+elif ((_gt_rc == 1)); then
+  fail "theme drift — a generated block no longer matches theme/palette.toml; run: make gen-theme"
+  fail_detail "$_gt_out"
+else
+  fail "gen-theme.sh --check could not run (exit $_gt_rc) — the drift gate checked NOTHING this run"
+  fail_detail "$_gt_out"
+fi
+unset _gt_out _gt_rc
 
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
 # Static analysis above proves the modules PARSE; this proves they LOAD TOGETHER

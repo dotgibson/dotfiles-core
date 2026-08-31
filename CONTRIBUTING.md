@@ -45,6 +45,13 @@ nothing else. Repo-meta and dev tooling (this file, `LICENSE`, `CHANGELOG.md`,
 into OS repos, so they live in the allowlist in `scripts/audit-core.sh` rather than
 in either list.
 
+`theme/palette.toml` is in that allowlist too, and it is the one entry that is neither
+a doc nor a script — so it is worth saying why it is not Core. It is a **generation-time
+input**: `scripts/gen-theme.sh` reads it to render the colour blocks in `tmux/`,
+`starship/`, `lazygit/`, `zsh/` and `lib/ux.sh`. Those rendered files are Core and are
+vendored; the table they were rendered from is not, because nothing on a box reads it
+and no OS repo needs it. Same shape as `scripts/modern-baseline.yml`.
+
 > That last paragraph was false until #676. The allowlist only kept those files out
 > of `core.manifest`, which governs **symlinking**, not what lands on disk — the
 > subtree copied the whole repo regardless, 5.6 MB into each of nine repos of which

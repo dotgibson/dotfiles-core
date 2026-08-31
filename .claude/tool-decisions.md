@@ -144,7 +144,8 @@ kind, and no `SESH_*` environment override either.** `preview_border` picks a di
 (`line`/`thick`/`double`/`none`), not a colour.
 
 That is not an ergonomic preference, it is the recorded blocker still standing. Core's
-tokyonight-storm palette lives **once**, in `FZF_DEFAULT_OPTS` (`zsh/35-fzf.zsh`), and every
+tokyonight palette lives **once**, in `theme/palette.toml` (#679) — `zsh/35-fzf.zsh`'s
+`FZF_DEFAULT_OPTS` is now a generated consumer of it, not the source — and every
 picker in the stack inherits it — deliberately, so a themed prompt and an unthemed picker never
 sit next to each other. Adopting `sesh picker` would swap the two most-used pickers on the box
 (`Ctrl-G` in the shell, `prefix + f` in tmux) for ones that cannot be themed at all, on eight
@@ -152,8 +153,8 @@ machines, to gain a preview pane the fzf path **already has** via `--preview 'se
 
 **What would change the decision:** a colour or theme schema under `[tui]` — at which point the
 palette question becomes "where does it live" rather than "can it exist", and the answer is a
-`[tui]` block in `sesh/sesh.toml.example` carrying a comment that names `zsh/35-fzf.zsh` as the
-source of truth. Not a new release on its own, and not the preview pane, which is already here.
+`[tui]` block in `sesh/sesh.toml.example` rendered from `theme/palette.toml` like every other
+consumer — a new emitter in `scripts/gen-theme.sh`, not a hand-copied hex. Not a new release on its own, and not the preview pane, which is already here.
 
 **Worth doing regardless, and independent of this decision:** `zsh/35-fzf.zsh` claims the shell
 and tmux "share one picker". They do not — the shell widget runs its own inline, less-featured

@@ -2493,6 +2493,16 @@ _classify_is "atuin/ config change → shell AND atuin" 'atuin/config.toml' true
 # tealdeer is a plain tools-group config: shell gate only. NOT the atuin axis — that one
 # gates the premise detector's hermetic self-test and is kept narrow on purpose.
 _classify_is "tealdeer/ config change → shell gate only" 'tealdeer/config.toml' true false false
+# theme/ is a plain config tree whose consumers are zsh + tmux + starship + lazygit, so it
+# rides the shell gate. NOT nvim: nvim's colours come from the tokyonight PLUGIN, which is
+# gen-theme.sh --refresh's SOURCE, not one of its outputs — a palette edit cannot change
+# what nvim renders. NOT atuin, for the reason the tealdeer row above records.
+_classify_is "theme/ palette change → shell gate only (consumers are zsh+tmux+starship+lazygit)" 'theme/palette.toml' true false false
+# The negative half, and the one that matters: the GENERATOR is infra by the scripts/ arm
+# and must stay that way. It can rewrite every consumer in one run, so narrowing it to
+# `shell` would let a regression in the generator itself ship with the nvim and atuin gates
+# unrun. This pins that it never narrows.
+_classify_is "scripts/gen-theme.sh change → full run (it can rewrite every consumer)" 'scripts/gen-theme.sh' true true true
 _classify_is "a plain zsh/ change does NOT pay the atuin gate" 'zsh/45-plugins.zsh' true false false
 _classify_is "mixed atuin+nvim set → union across all three axes" $'atuin/config.toml\nnvim/init.lua' true true true
 
@@ -5958,6 +5968,309 @@ if have git; then
   fi
 else
   skip "tag-release.sh two-phase ordering (git unavailable)"
+fi
+
+# ── F10. theme generation (scripts/gen-theme.sh) ──────────────────────────────
+# theme/palette.toml is the ONE place a colour is authored; gen-theme.sh renders it
+# into every consumer, and audit-core.sh §9d gates the result. What is worth pinning
+# here is NOT that generation works — §9d proves that against the real tree on every
+# run — but the failure directions, which the real tree can never exercise without
+# mutating tracked files.
+#
+# ONE FIXTURE PER ENCODING, not per consumer. The palette lives in FOUR forms across
+# the tree — bare #rrggbb, zsh %F{#rrggbb} prompt specs, 24-bit decimal SGR triplets
+# (lib/ux.sh:50 has no hex in it AT ALL), and hand-picked 256-colour indices. A
+# fixture set covering only the first would pass a generator that silently skipped
+# lib/ux.sh, and the gate would then be green about a file it no longer rendered.
+# That is the exact shape of coverage-loss-reading-as-health this whole feature
+# exists to end, so each encoding gets its own row below.
+if have git; then
+  hdr "theme generation (scripts/gen-theme.sh)"
+  GT="$HERE/scripts/gen-theme.sh"
+  GTR="$SANDBOX/themerepo"
+
+  # _gt_fixture — rebuild a pristine fixture tree. Every assertion starts from this,
+  # so a mutation in one row cannot leak into the next.
+  _gt_fixture() {
+    rm -rf "$GTR"
+    mkdir -p "$GTR/theme" "$GTR/scripts" "$GTR/scripts/lib" "$GTR/zsh" "$GTR/lib" "$GTR/tmux"
+    cp "$HERE/scripts/gen-theme.sh" "$GTR/scripts/"
+    cp "$HERE/scripts/lib/common.sh" "$GTR/scripts/lib/"
+    cat >"$GTR/theme/palette.toml" <<'GTPAL'
+schema = 1
+style = "storm"
+# core:theme:gen palette-colors
+color_bg                = "#24283b"
+color_bg_dark           = "#1f2335"
+color_bg_highlight      = "#292e42"
+color_bg_visual         = "#2e3c64"
+color_black             = "#1d202f"
+color_blue              = "#7aa2f7"
+color_blue1             = "#2ac3de"
+color_border_highlight  = "#29a4bd"
+color_comment           = "#565f89"
+color_cyan              = "#7dcfff"
+color_dark3             = "#545c7e"
+color_fg                = "#c0caf5"
+color_fg_dark           = "#a9b1d6"
+color_green             = "#9ece6a"
+color_magenta           = "#bb9af7"
+color_magenta2          = "#ff007c"
+color_orange            = "#ff9e64"
+color_red               = "#f7768e"
+color_red1              = "#db4b4b"
+color_terminal_black    = "#414868"
+color_yellow            = "#e0af68"
+# core:theme:end palette-colors
+role_accent = "blue"
+role_muted  = "comment"
+role_ok     = "green"
+role_err    = "red"
+role_rule   = "terminal_black"
+fallback_accent_sgr  = 111
+fallback_muted_sgr   = 103
+fallback_accent_spec = 75
+fallback_muted_spec  = 244
+GTPAL
+    # Encoding 1: bare #rrggbb, and a HAND-AUTHORED line on either side of the block.
+    cat >"$GTR/tmux/tmux.conf" <<'GTTMUX'
+# hand-authored above
+set -g cursor-style block
+# core:theme:gen tmux-palette
+# core:theme:end tmux-palette
+set -g status-position top
+GTTMUX
+    # Encoding 2: zsh %F{#rrggbb} prompt specs.
+    cat >"$GTR/zsh/00-tools.zsh" <<'GTTOOLS'
+# core:theme:gen sep-rule-colors
+# core:theme:end sep-rule-colors
+GTTOOLS
+    # Encodings 3 + 4: decimal SGR triplets AND hand-picked 256-colour indices —
+    # lib/ux.sh carries NO hex at all, which is why it needs its own rows below.
+    # The REAL file, not a stub: scripts/lib/common.sh sources ../../lib/ux.sh for
+    # its own palette, so a stub here breaks the generator before it starts. Using
+    # the real one also means these rows exercise the shipped block, not a mock.
+    cp "$HERE/lib/ux.sh" "$GTR/lib/ux.sh"
+  }
+
+  # _gt_run <args...> — invoke the generator against the fixture, echo its exit code.
+  # env -u CORE_JSON: CORE_JSON is exported to nested gates and would suppress the
+  # child's human output (see the boundary note at the top of this file).
+  _gt_run() { (cd "$GTR" && env -u CORE_JSON bash ./scripts/gen-theme.sh "$@" >/dev/null 2>&1; echo $?); }
+  _gt_out() { (cd "$GTR" && env -u CORE_JSON bash ./scripts/gen-theme.sh "$@" 2>&1); }
+
+  _gt_fixture
+  _gt_gen_rc="$(_gt_run)"
+  if [[ "$_gt_gen_rc" == 0 ]]; then
+    pass "gen-theme: renders a fixture tree clean"
+  else
+    fail "gen-theme: bare run failed on a clean fixture (rc=$_gt_gen_rc)"
+  fi
+
+  # 1. POSITIVE — a freshly generated tree is, by definition, not drifted.
+  if [[ "$(_gt_run --check)" == 0 ]]; then
+    pass "gen-theme: --check is 0 on a freshly generated tree"
+  else
+    fail "gen-theme: --check reported drift on its own output"
+  fi
+
+  # Each encoding actually landed. Asserting the RENDERED BYTES, not just an exit
+  # code: a generator that wrote empty blocks would satisfy --check forever.
+  if grep -q 'set -g @tn_blue    "#7aa2f7"' "$GTR/tmux/tmux.conf"; then
+    pass "gen-theme: renders the bare-hex encoding (tmux @tn_*)"
+  else
+    fail "gen-theme: bare-hex encoding missing from the tmux fixture"
+  fi
+  if grep -q "col='%F{#414868}'" "$GTR/zsh/00-tools.zsh"; then
+    pass "gen-theme: renders the zsh %F{} prompt-spec encoding"
+  else
+    fail "gen-theme: %F{} encoding missing from the 00-tools fixture"
+  fi
+  # 122;162;247 IS #7aa2f7 in decimal. The derivation is the assertion.
+  if grep -q '38;2;122;162;247' "$GTR/lib/ux.sh"; then
+    pass "gen-theme: derives the 24-bit decimal-SGR encoding from the hex"
+  else
+    fail "gen-theme: decimal-SGR encoding missing or underived in the ux.sh fixture"
+  fi
+  if grep -q '38;5;111' "$GTR/lib/ux.sh"; then
+    pass "gen-theme: emits the hand-picked 256-colour fallbacks verbatim"
+  else
+    fail "gen-theme: 256-colour fallback missing from the ux.sh fixture"
+  fi
+
+  # 2. NEGATIVE — drift INSIDE a block is caught, exits 1, and NAMES the file. A gate
+  # that reds on everything is as useless as one that reds on nothing.
+  _gt_fixture && _gt_run >/dev/null
+  sed -i.bak 's/#7aa2f7/#deadbe/' "$GTR/tmux/tmux.conf" && rm -f "$GTR/tmux/tmux.conf.bak"
+  _gt_drift_rc="$(_gt_run --check)"
+  if [[ "$_gt_drift_rc" == 1 ]]; then
+    pass "gen-theme: --check exits 1 on drift inside a block"
+  else
+    fail "gen-theme: --check did not report drift as 1 (rc=$_gt_drift_rc)"
+  fi
+  # Captured, NOT piped into `grep -q`: an early-exiting reader SIGPIPEs the
+  # producer and, under pipefail, fails the pipeline no matter what it printed.
+  # That is the §5d hazard audit-core.sh gates, and it fires here too.
+  _gt_drift_out="$(_gt_out --check)"
+  if grep -q 'tmux/tmux.conf' <<<"$_gt_drift_out"; then
+    pass "gen-theme: the drift report names the file that drifted"
+  else
+    fail "gen-theme: drift reported without naming the file"
+  fi
+
+  # 3. NEGATIVE, INVERSE — the region markers are the whole mechanism. Without this
+  # row a generator that simply diffed WHOLE FILES passes row 2 and is still wrong:
+  # every consumer carries hand-authored prose around its palette.
+  _gt_fixture && _gt_run >/dev/null
+  printf '# a hand-authored line added after generation\n' >>"$GTR/tmux/tmux.conf"
+  if [[ "$(_gt_run --check)" == 0 ]]; then
+    pass "gen-theme: an edit OUTSIDE a block is not drift"
+  else
+    fail "gen-theme: --check fired on a hand-authored line outside the markers"
+  fi
+  # …and regeneration must not eat it.
+  _gt_run >/dev/null
+  if grep -q 'a hand-authored line added after generation' "$GTR/tmux/tmux.conf"; then
+    pass "gen-theme: regeneration preserves hand-authored content outside blocks"
+  else
+    fail "gen-theme: regeneration ate a hand-authored line"
+  fi
+
+  # 4. The decimal-SGR row, which is the one a hex-only drift check cannot see.
+  _gt_fixture && _gt_run >/dev/null
+  sed -i.bak 's/38;2;122;162;247/38;2;122;162;248/' "$GTR/lib/ux.sh" && rm -f "$GTR/lib/ux.sh.bak"
+  if [[ "$(_gt_run --check)" == 1 ]]; then
+    pass "gen-theme: catches drift in the decimal-SGR encoding (no hex to grep)"
+  else
+    fail "gen-theme: decimal-SGR drift went undetected — lib/ux.sh is unguarded"
+  fi
+
+  # 5. The 256-colour row, same argument.
+  _gt_fixture && _gt_run >/dev/null
+  sed -i.bak 's/38;5;111/38;5;110/' "$GTR/lib/ux.sh" && rm -f "$GTR/lib/ux.sh.bak"
+  if [[ "$(_gt_run --check)" == 1 ]]; then
+    pass "gen-theme: catches drift in the 256-colour fallback encoding"
+  else
+    fail "gen-theme: 256-colour drift went undetected"
+  fi
+
+  # 6. IDEMPOTENCE. A generator that reorders keys or stamps a timestamp makes
+  # --check permanently red on a clean tree, which is how a gate gets turned off.
+  _gt_fixture && _gt_run >/dev/null
+  cp -R "$GTR" "$GTR.first"
+  _gt_run >/dev/null
+  # `git diff --no-index`, not `diff -r`: audit-core.sh forbids the diffutils
+  # binaries (#572), and this drops the dependency on the Alpine leg too.
+  if git --no-pager diff --no-index --quiet -- "$GTR.first" "$GTR" 2>/dev/null; then
+    pass "gen-theme: generation is idempotent (second run is byte-identical)"
+  else
+    fail "gen-theme: a second run changed the tree — --check can never be stably green"
+  fi
+  rm -rf "$GTR.first"
+
+  # 7. --check MUST NOT WRITE. A drift gate that quietly repairs can never be red,
+  # so CI would go green on a tree nobody regenerated.
+  _gt_fixture && _gt_run >/dev/null
+  sed -i.bak 's/#7aa2f7/#deadbe/' "$GTR/tmux/tmux.conf" && rm -f "$GTR/tmux/tmux.conf.bak"
+  _gt_before="$(git hash-object "$GTR/tmux/tmux.conf")"
+  _gt_run --check >/dev/null
+  _gt_after="$(git hash-object "$GTR/tmux/tmux.conf")"
+  if [[ "$_gt_before" == "$_gt_after" ]]; then
+    pass "gen-theme: --check writes nothing, even to a drifted file"
+  else
+    fail "gen-theme: --check REPAIRED a drifted file — the gate can never be red"
+  fi
+
+  # 8. FAIL CLOSED: no palette. Must be non-zero AND must not be 1 — "cannot run" and
+  # "drift" are different facts, and §9d renders them differently on purpose. A gate
+  # that reports a crash as drift teaches everyone to re-run it and ignore it.
+  _gt_fixture && _gt_run >/dev/null
+  rm -f "$GTR/theme/palette.toml"
+  _gt_nopal_rc="$(_gt_run --check)"
+  if [[ "$_gt_nopal_rc" != 0 && "$_gt_nopal_rc" != 1 ]]; then
+    pass "gen-theme: a missing palette is 'cannot run' (rc=$_gt_nopal_rc), not drift"
+  else
+    fail "gen-theme: missing palette reported as rc=$_gt_nopal_rc (want non-zero, not 1)"
+  fi
+
+  # 9. FAIL CLOSED: stripped markers. Otherwise deleting two comment lines is an
+  # undetectable way to opt a file out of the gate forever.
+  _gt_fixture && _gt_run >/dev/null
+  sed -i.bak '/core:theme:gen tmux-palette/d;/core:theme:end tmux-palette/d' "$GTR/tmux/tmux.conf"
+  rm -f "$GTR/tmux/tmux.conf.bak"
+  if [[ "$(_gt_run --check)" != 0 ]]; then
+    pass "gen-theme: stripping a block's markers FAILS (cannot silently opt out)"
+  else
+    fail "gen-theme: a file whose markers were deleted still passed --check"
+  fi
+
+  # 10. FAIL CLOSED: a malformed palette, naming the offending key. The alternative is
+  # emitting a literal `chartreuse` into fzf's --color, which fzf accepts silently.
+  _gt_fixture
+  sed -i.bak 's/^role_accent = "blue"/role_accent = "chartreuse"/' "$GTR/theme/palette.toml"
+  rm -f "$GTR/theme/palette.toml.bak"
+  _gt_bad_out="$(_gt_out --check)"
+  if [[ "$(_gt_run --check)" != 0 ]] && grep -q 'role_accent' <<<"$_gt_bad_out"; then
+    pass "gen-theme: a role naming an undefined colour FAILS, and names the key"
+  else
+    fail "gen-theme: a malformed palette was accepted, or the message did not name the key"
+  fi
+
+  # 11. The comment-strip trap. Every value in palette.toml starts with '#', so a
+  # naive sub(/#.*/,"") reader eats the colour itself and yields an empty string.
+  # Asserting the RENDERED value is what proves the reader survived its own syntax.
+  _gt_fixture && _gt_run >/dev/null
+  if grep -qE 'set -g @tn_bg +"#24283b"' "$GTR/tmux/tmux.conf"; then
+    pass "gen-theme: the TOML reader does not mistake a hex value for a comment"
+  else
+    fail "gen-theme: a colour rendered empty or wrong — the comment-strip ate the value"
+  fi
+
+  # 12. --list is the coverage surface, so it must agree with the tree rather than
+  # with a second hand-maintained list inside the script.
+  _gt_fixture
+  if [[ "$(_gt_out --list | grep -c .)" == 4 ]]; then
+    pass "gen-theme: --list enumerates exactly the blocks present in the tree"
+  else
+    fail "gen-theme: --list disagreed with the fixture ($(_gt_out --list | grep -c .) of 4)"
+  fi
+
+  # 13. LIVE SMOKE against the real tree. Deliberately duplicates audit-core.sh §9d:
+  # `make test` runs without the audit, and check-modern.sh sets the same precedent.
+  if [[ "$(cd "$HERE" && env -u CORE_JSON bash "$GT" --check >/dev/null 2>&1; echo $?)" == 0 ]]; then
+    pass "gen-theme: the real tree matches theme/palette.toml"
+  else
+    fail "gen-theme: the real tree has drifted — run: make gen-theme"
+  fi
+
+  # 14. The cross-repo needle parity-check.sh greps in BOTH shells. Reformatting the
+  # fzf block — one-per-line to a single line, reordering, dropping :regular — breaks
+  # that gate even with an identical palette, so it is pinned HERE, in the PR that
+  # would break it, rather than in the weekly cross-repo sweep.
+  _gt_fg="$(sed -nE 's/^color_fg[[:space:]]*=[[:space:]]*"(#[0-9a-f]{6})".*/\1/p' "$HERE/theme/palette.toml" | head -n1)"
+  if [[ -n "$_gt_fg" ]] && grep -qF "query:${_gt_fg}:regular" "$HERE/zsh/35-fzf.zsh"; then
+    pass "gen-theme: the fzf palette keeps parity-check.sh's query:<fg>:regular token intact"
+  else
+    fail "gen-theme: zsh/35-fzf.zsh no longer carries query:${_gt_fg:-<fg>}:regular — parity-check.sh will misfire"
+  fi
+
+  # NOT COVERED HERE, deliberately: --refresh reaches the tokyonight plugin tree, so it
+  # needs nvim AND the pinned plugin installed — neither is guaranteed on a CI leg or a
+  # bare box. What IS asserted is that it REFUSES rather than emitting an empty palette.
+  _gt_fixture
+  _gt_refresh_rc="$(cd "$GTR" && env -u CORE_JSON PATH=/nonexistent-for-this-test \
+    /usr/bin/env bash ./scripts/gen-theme.sh --refresh >/dev/null 2>&1; echo $?)"
+  if [[ "$_gt_refresh_rc" != 0 ]]; then
+    pass "gen-theme: --refresh refuses when nvim is unreachable (never a silent no-op)"
+  else
+    fail "gen-theme: --refresh returned 0 with no nvim — it cannot have resolved anything"
+  fi
+
+  rm -rf "$GTR"
+  unset _gt_gen_rc _gt_drift_rc _gt_before _gt_after _gt_nopal_rc _gt_fg _gt_refresh_rc
+  unset _gt_drift_out _gt_bad_out
+else
+  skip "theme generation (git unavailable)"
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────

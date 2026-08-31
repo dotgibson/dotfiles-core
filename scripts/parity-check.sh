@@ -62,10 +62,24 @@ WIN="$ROOT/dotfiles-Windows"
 # Mirrors PARITY.md's `aligned` rows one-to-one — every aligned row has a check here,
 # which is what makes the row "enforced" (PARITY.md's Enforcement section).
 CHECKS=(
+  # PARITY.md:27's Theme row, which was marked `aligned` with NO check behind it
+  # (#682 Bug 3) — one of the four rows that made PARITY.md's "every aligned row has a
+  # check here" claim false. It shares its pwsh evidence with the fzf palette row below,
+  # because the fzf --color block is the ONLY place dotfiles-Windows carries tokyonight
+  # colours at all: it has no _CORE_ACCENT_SPEC equivalent. So this is honest coverage of
+  # "pwsh tracks Core's theme", not independent proof, and the accent half stays a real
+  # gap — filed against dotfiles-Windows rather than papered over here.
+  "theme: tokyonight|zsh/35-fzf.zsh|--color=|powershell/core/10-tools.ps1|--color="
   "prompt: starship|zsh/00-tools.zsh|starship init|powershell/core/10-tools.ps1|starship init"
   "smart cd: zoxide|zsh/00-tools.zsh|zoxide init|powershell/core/10-tools.ps1|zoxide init"
   "history: atuin|zsh/00-tools.zsh|atuin init|powershell/core/10-tools.ps1|atuin init"
-  "fzf tokyonight palette|zsh/35-fzf.zsh|query:#c0caf5:regular|powershell/core/10-tools.ps1|query:#c0caf5:regular"
+  # STRUCTURAL, not a pinned hex. This needled `query:#c0caf5:regular` until #679: a
+  # value that a deliberate style change is SUPPOSED to move, in a gate that would then
+  # fail on BOTH shells — including zsh, which had just been regenerated correctly — with
+  # no fix available inside this repo. The row's claim is "both shells set an explicit
+  # fzf palette"; that is what it now tests. The VALUE comparison follows the loop below,
+  # where it can name the hex pwsh is missing instead of asserting a missing string.
+  "fzf explicit palette|zsh/35-fzf.zsh|--color=query:|powershell/core/10-tools.ps1|--color=query:"
   "fzf default command (fd)|zsh/35-fzf.zsh|fd --type f|powershell/core/10-tools.ps1|fd --type f"
   "file picker on Ctrl+T|zsh/40-bindings.zsh|'^T' _fzf_file_no_hidden|powershell/core/10-tools.ps1|PSReadlineChordProvider 'Ctrl+t'"
   "atuin on Ctrl+E|zsh/40-bindings.zsh|'^E' _atuin_search_widget|powershell/core/10-tools.ps1|-Chord 'Ctrl+e'"
@@ -115,6 +129,52 @@ for _row in "${CHECKS[@]}"; do
     DRIFT=1
   fi
 done
+
+# ── fzf palette VALUE parity — compared, never pinned ────────────────────────
+# The CHECKS row above asserts both shells set an explicit palette. This asserts they
+# set the SAME one, and that Core's matches theme/palette.toml.
+#
+# WHY THIS IS NOT A NEEDLE. Until #679 the row pinned the literal string
+# `query:#c0caf5:regular` in both files. Core's half is now GENERATED, so a style
+# change rewrites zsh/35-fzf.zsh and leaves dotfiles-Windows — which is hand-maintained
+# and out of the generator's scope — untouched. The pinned form then failed on both
+# halves, including the one that had just done exactly the right thing, and named no
+# fix that could be made from this repo. Extracting and comparing turns a two-sided
+# false-plus-true into a one-sided TRUE finding, in the repo that can act on it.
+_qcolor() { # $1 = file -> the hex fzf is told to paint the query with
+  [[ -r "$1" ]] || return 1
+  sed -nE 's/.*--color=query:(#[0-9a-fA-F]{6}).*/\1/p' "$1" | head -n1
+}
+_pal_fg="$(sed -nE 's/^color_fg[[:space:]]*=[[:space:]]*"(#[0-9a-f]{6})".*/\1/p' "$HERE/theme/palette.toml" 2>/dev/null | head -n1)"
+_z_q="$(_qcolor "$HERE/zsh/35-fzf.zsh" || true)"
+
+if [[ -z "$_pal_fg" ]]; then
+  skip "fzf palette value (theme/palette.toml unreadable — nothing to compare against)"
+elif [[ -z "$_z_q" ]]; then
+  fail "fzf palette value — zsh/35-fzf.zsh sets no --color=query at all"
+  DRIFT=1
+elif [[ "$_z_q" != "$_pal_fg" ]]; then
+  # Should be unreachable: gen-theme.sh --check gates this in `make audit`. Kept
+  # because a gate that trusts another gate is how both stop being run.
+  fail "fzf palette value — zsh/35-fzf.zsh has $_z_q but theme/palette.toml says $_pal_fg; run: make gen-theme"
+  DRIFT=1
+else
+  pass "fzf palette value — zsh matches theme/palette.toml ($_pal_fg)"
+fi
+
+if ((WIN_PRESENT)) && [[ -n "$_z_q" ]]; then
+  _p_q="$(_qcolor "$WIN/powershell/core/10-tools.ps1" || true)"
+  if [[ -z "$_p_q" ]]; then
+    fail "fzf palette value — powershell/core/10-tools.ps1 sets no --color=query"
+    DRIFT=1
+  elif [[ "$_p_q" != "$_z_q" ]]; then
+    fail "fzf palette value — Core is on style=$(sed -nE 's/^style[[:space:]]*=[[:space:]]*"([a-z]+)".*/\1/p' "$HERE/theme/palette.toml" 2>/dev/null | head -n1) (query $_z_q); dotfiles-Windows still carries $_p_q. Port powershell/core/10-tools.ps1 by hand — it is outside Core's generation scope."
+    DRIFT=1
+  else
+    pass "fzf palette value — pwsh tracks Core ($_z_q)"
+  fi
+fi
+unset _pal_fg _z_q
 
 # ── data-driven tool-swap alias parity (scripts/parity-aliases.txt) ──────────
 # The CHECKS array above covers the tools/bindings/functions rows; the modern-CLI

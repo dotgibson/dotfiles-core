@@ -160,6 +160,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   unreferenced and gc-prunable. It now says it never changes a repo's **tracked state**,
   which is the claim that is actually true and the one that matters.
 
+- **`scripts/parity-check.sh` derives the fzf palette needle instead of pinning a hex,
+  and `PARITY.md`'s Theme row finally has a check (#679, #682).** The row needled the
+  literal `query:#c0caf5:regular` in both shells. Core's half is now generated, so a
+  style change rewrites `zsh/35-fzf.zsh` and leaves the hand-maintained
+  `dotfiles-Windows` untouched — and the pinned form then failed on **both** halves,
+  including the zsh one that had just done exactly the right thing, naming no fix that
+  could be made from this repo. The row now tests the property it always meant
+  (_both shells set an explicit fzf palette_), and a separate value comparison reports
+  the real divergence: _Core is on style=moon (query #c8d3f5); dotfiles-Windows still
+  carries #c0caf5_.
+
+  `PARITY.md:27`'s **Theme** row had been marked `aligned` since it was written with no
+  check behind it at all — one of the four rows that made PARITY.md's "every `aligned`
+  row has a corresponding check" claim false. It has one now, and PARITY.md records
+  what that check does and does not prove: it shares its pwsh evidence with the FZF
+  palette row, because the fzf `--color` block is the only place `dotfiles-Windows`
+  carries tokyonight colours at all. The accent half stays a genuine `gap`.
+
+  `make check-pins` gains a third leg, `gen-theme.sh --refresh --check`, so
+  "has upstream restyled tokyonight?" is answered on the weekly report-only path where
+  the plugin pins already live — never on a PR's blocking path.
+
+- **Three shell colours now match what nvim actually renders (#679).** Core's shell
+  config carried `#27a1b9`, `#16161e` and `#283457` for tokyonight's `border_highlight`,
+  `black` and `bg_visual`. Against the pinned tokyonight commit the plugin resolves
+  `#29a4bd`, `#1d202f` and `#2e3c64` — so nvim and the shell have been painting different
+  colours, and the hand-copied values were simply stale. Visible in fzf's border,
+  scrollbar and gutter, and in lazygit's inactive border and selected-line background.
+  This is the drift the generator exists to prevent, found by building it.
+
 ### Added
 
 - **`scripts/lib/core-vendor.sh` — one definition of the vendored set (#676).**
@@ -197,6 +227,50 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   in `common.sh` does the extraction and documents what it deliberately cannot see
   (computed paths, Lua `require`s, YAML); those four paths are hand-listed in `core.vendor`
   with their consumers named, the posture §1b already takes toward `.claude/`.
+
+- **`theme/palette.toml` is the single source of truth for colour, and
+  `scripts/gen-theme.sh` renders every consumer from it (#679).** Around ninety hex
+  literals were previously kept in step **by comment** across thirteen files —
+  `tmux/tmux.conf`, three `tmux/scripts/*.sh` helpers, `starship/starship.toml`,
+  `lazygit/config.yml`, five `zsh/*.zsh` modules, `lib/ux.sh` and
+  `examples/starship.showcase.toml`. Six of those comments said "kept in sync with
+  starship.toml + tmux.conf `@tn_*`" in as many words, and nothing checked any of them:
+  a hand-edit to one file was a valid, lintable, shippable change that fanned a
+  half-recoloured stack out to nine repos.
+
+  `nvim/` never had the problem — it holds zero hex literals and asks the plugin
+  (`nvim/lua/gerrrt/utils/palette.lua`). This applies that argument to everything else.
+  Consumers carry marked `# core:theme:gen <id>` regions; everything outside them stays
+  hand-authored. `make gen-theme` renders, `make check-theme` reports drift, and
+  `audit-core.sh` §9d makes it a blocking gate on every commit and every CI leg.
+
+  The palette is **derived, not typed**: `--refresh` resolves it from the tokyonight
+  commit pinned in `nvim/lazy-lock.json`, and refuses to run against an installed plugin
+  that is off that pin or a `style` that disagrees with `palette.lua` — which finally
+  makes that file's "keep the two in sync" comment a machine check. Style selection is
+  **generation-time only**: there is no runtime `CORE_THEME` and none is planned, because
+  the consumers are static files (starship and lazygit read fixed config paths) and
+  regenerating on a live box would dirty the vendored `core/` tree that
+  `scripts/core-integrity.sh` exists to keep pristine.
+
+  `theme/palette.toml` is **not vendored** — it is a generation-time input, accounted for
+  in `audit-core.sh`'s `META_ALLOWLIST`. Its outputs ship; it does not.
+
+### Removed
+
+- **Five dead `FZF_*` exports are deleted (#682).** `FZF_CTRL_T_COMMAND`,
+  `FZF_ALT_C_COMMAND`, `FZF_CTRL_R_OPTS`, `FZF_CTRL_T_OPTS` and `FZF_ALT_C_OPTS` in
+  `zsh/35-fzf.zsh` were read by exactly one thing: fzf's own stock key-binding widgets,
+  which Core **never loads** — there is no `eval "$(fzf --zsh)"` anywhere in `zsh/` or
+  `lib/`, and `zsh/00-tools.zsh` touches fzf only for `HAVE_FZF` detection. Core defines
+  its own widgets, and they ignore every one of these: `_fzf_file_no_hidden` builds its
+  own `fd … | fzf --preview "$_FZF_PREVIEW_CMD"` and `_fzf_history_clean` its own
+  `--prompt`. Same class as config that looks load-bearing and is inert.
+
+  Deleted here rather than in #682 proper because their values embed palette colours, and
+  #679's theme generator would otherwise have carried dead config forward into the new
+  mechanism. #682 remains open for its other two bugs (the unbound `Alt+C`, and
+  `parity-check.sh`'s unproven one-to-one claim).
 
 ## [v5.5.0] - 2026-08-30
 

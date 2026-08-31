@@ -40,6 +40,7 @@ zmodload -F zsh/datetime p:EPOCHSECONDS 2>/dev/null
 # (ui precedes update). The COLORTERM branch below is a STANDALONE fallback for the
 # unit tests, which source this module alone: it reproduces the same truecolor-hex vs
 # 256-colour choice so a 16/256-colour TTY never gets a raw 24-bit escape.
+# core:theme:gen pkgup-accent-tiers
 if [[ -n ${_CORE_ACCENT_SPEC:-} ]]; then
   typeset -g _PKGUP_ACCENT=$_CORE_ACCENT_SPEC _PKGUP_MUTED=$_CORE_MUTED_SPEC
 elif [[ "${COLORTERM:-}" == (24bit|truecolor) ]]; then
@@ -47,6 +48,7 @@ elif [[ "${COLORTERM:-}" == (24bit|truecolor) ]]; then
 else
   typeset -g _PKGUP_ACCENT=75 _PKGUP_MUTED=244
 fi
+# core:theme:end pkgup-accent-tiers
 
 # privilege helper: sudo, else doas (Alpine), else run bare
 _pkgup_priv() {

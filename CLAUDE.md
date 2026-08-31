@@ -32,7 +32,8 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
 - **The manifest is the contract.** `core.manifest` is the canonical inventory.
   Adding a Core file means adding its path to `core.manifest` in the same change;
   `scripts/audit-core.sh` enforces this both directions. Repo-meta and dev tooling
-  (docs, `.github/`, `.claude/`, `scripts/`) live in the audit's allowlist instead.
+  (docs, `.github/`, `.claude/`, `scripts/`, `theme/palette.toml`) live in the
+  audit's allowlist instead.
 - **Never edit vendored `core/` in an OS repo.** That tree is a copy of this repo
   and is overwritten on the next sync. Fix it **here**, then fan out.
 - **Load order is load-bearing.** `tools → capabilities → ui → options → history →
@@ -40,6 +41,11 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   role → local`
   (bands: Core 00-69, OS-native 70-84, Role 85-94 on Offense/Defense, host-local 95-99)
   (the canonical order in `core.manifest`). Don't reorder casually.
+- **Colour is generated, not typed.** `theme/palette.toml` is the only place a hex is
+  authored. `zsh/`, `tmux/`, `starship/`, `lazygit/`, `lib/ux.sh` and `examples/` carry
+  **generated** `# core:theme:gen` blocks — hand-editing one is a gate failure
+  (`audit-core.sh` §9d). Edit the palette, run `make gen-theme`. Comments name palette
+  tokens, never hexes, so prose cannot drift from the code it describes.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
 - **A user-visible change lands in `CHANGELOG.md` under `[Unreleased]`** in the
