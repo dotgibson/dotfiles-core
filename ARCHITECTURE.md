@@ -18,6 +18,17 @@ The shared config is authored once, in `dotfiles-core`, and physically copied in
 each machine repo. There is no N-way reconciliation, no `git submodule update
 --init`, and no per-machine drift to chase after the fact.
 
+Two designs it deliberately rejects, because both break at fleet scale:
+
+- **One `.zshrc` full of `case "$OS"` branches.** Every host parses every other host's
+  logic; BSD-vs-GNU coreutils, systemd-vs-OpenRC and Windows paths do not reduce to clean
+  conditionals; and a single typo in the shared file breaks *all* hosts at once. The blast
+  radius is the whole fleet for every edit.
+- **`common/` plus `os/<name>/` in one monorepo.** Better — but every host still clones
+  every other OS's files, there is no per-OS release isolation (you cannot pin Alpine to an
+  older shared version without pinning everyone), and Windows is PowerShell rather than a
+  Unix tree, so it does not fit the layout at all.
+
 ## The three-layer model
 
 Every file in the fleet has exactly one home, decided by a single question: what
@@ -189,7 +200,7 @@ CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Dist
 Both halves matter: `sync-core.sh` refuses unless Core's `HEAD` is the commit being
 vendored, and the pin must be the **peeled commit** — the release tags are annotated, so
 `refs/tags/v5` resolves to the tag object, which is never that `HEAD`. See
-`RELEASE-STRATEGY.md` §4.
+`RELEASE-STRATEGY.md` §"Safe deployment".
 
 After a Core change, the same helper fans it out to the whole fleet:
 
@@ -231,6 +242,22 @@ source of truth. The chain ends with the OS layer (`80-os`), any role stage
 (`85-*`), then `99-local`, so a machine can override Core last without editing it.
 Bands: Core `00`–`69`, OS-native `70`–`84`, role `85`–`94`, host `95`–`99`. Do not
 reorder casually.
+
+**Bands are a convention, not a partition.** Ordering is a pure numeric sort on the `NN`
+prefix, with a lexical tiebreak when two fragments claim the same number (a
+misconfiguration, but a deterministic one), and the loader carries **no owner metadata** —
+every layer symlinks into one flat `$ZSH_CFG`. So a band is where a fragment usually
+lives, not a fence it cannot cross: any layer may claim a Core gap when it genuinely needs
+to insert mid-chain, and the fifteen slots in the OS band are a default home rather than a
+ceiling. This is why the bands were never renumbered to "fit" — there is nothing to fit.
+
+**Byte-compiled `.zwc` wordcode is the one piece of generated state that stays in the
+config tree.** Everything else mutable lives under XDG — history in `$XDG_STATE_HOME`, the
+compdump in `$XDG_CACHE_HOME`, plugins in `$XDG_DATA_HOME` — but zsh's automatic wordcode
+pickup fires only when `file.zwc` sits *beside* the sourced `file`. Relocating it to
+`$XDG_CACHE_HOME` would either break the fast path or force sourcing a digest, which
+`source` cannot use as wordcode. `$ZSH_CFG` is a real, writable directory of symlinks
+rather than an immutable tree, so wordcode-beside-source is safe and stays there.
 
 ## The one gate
 

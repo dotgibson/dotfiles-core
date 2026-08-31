@@ -12,7 +12,7 @@ A clear description of the proposal.
 ## Is it actually Core?
 
 Core is the config that is **identical on every machine** and **not** offensive
-tooling. Confirm it passes the three-layer test (see CONTRIBUTING.md):
+tooling. Confirm it passes the three-layer test (see ARCHITECTURE.md):
 
 - [ ] It is identical on every machine (not OS-specific: no package manager,
       paths, or clipboard logic).

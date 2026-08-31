@@ -46,7 +46,7 @@ logs, `gf`/`gl`/`gp`/`gpu`/`gpf` (force-with-lease), the `gsta*` stash and `grb*
 rebase families, and `grh`/`grs`/`gm` — resolving to the same intent on both. On pwsh
 the git shorthands that collide with a built-in alias (`gc`→Get-Content, `gl`→Get-Location,
 …) are removed at load so the functions win, and `gbD` is dropped (pwsh is
-case-insensitive, so it can't coexist with `gbd`). Per-shell extras are noted as gaps below.
+case-insensitive, so it can't coexist with `gbd`).
 
 The **aligned tool-swap aliases** (the classic-command → modern-tool re-points) are
 pinned as a flat manifest — [`scripts/parity-aliases.txt`](scripts/parity-aliases.txt)
@@ -95,23 +95,6 @@ canonical. Enforced by `scripts/parity-check.sh` (the `core *` rows).
 | Version | `core version` / `core-version` | `core version` / `core-version` | `aligned` |
 | Update | `core update` / `up` | `core update` / `up` | `aligned` |
 
-## Resolved decisions
-
-The four formerly-open keybinding decisions were settled together and implemented on
-both shells in the same change:
-
-1. **`Ctrl+G` → jump-to-session on both** (Option A). zsh keeps sesh; the Windows host
-   binds a psmux sessionizer (zoxide + project roots → `mux`), the bare-prompt port of
-   `psmux-sesh.ps1`. navi loses its Ctrl+G widget and is now the `navi` command, freeing
-   the key — so Ctrl+G means the same thing everywhere.
-2. **File picker → `Ctrl+T` on both** (the fzf-ecosystem default; zsh moved off `Ctrl+F`).
-3. **atuin → `Ctrl+E` on both**, `Ctrl+R` = quick fzf history on both. (atuin's pwsh
-   module ignores `ATUIN_NOBIND`, so the host rebinds after init: `Ctrl+E` →
-   `Invoke-AtuinSearch`, `Ctrl+R`/arrows handed back.)
-4. **Ported to pwsh** — `gaf`/`grf`/`grsf` fuzzy git staging and `Alt+Z` zoxide jump.
-
-All four rows are now `aligned` and enforced by `parity-check.sh`.
-
 ## Enforcement
 
 `scripts/parity-check.sh` (`make parity-check`) mechanises the `aligned` rows: it
@@ -122,6 +105,5 @@ exactly like `scripts/fleet-drift.sh`. The weekly `.github/workflows/parity-chec
 clones `dotfiles-Windows` and runs it `--strict`, failing red on drift.
 
 When a row here moves to `aligned`, add a matching check to `parity-check.sh` in the
-same change — the check is the enforcement. Every `aligned` row above (including the
-keybindings settled in **Resolved decisions**) has a corresponding check today; a new
-alignment is not done until its needle is added.
+same change — the check is the enforcement. Every `aligned` row above has a corresponding
+check today; a new alignment is not done until its needle is added.

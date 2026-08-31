@@ -7,7 +7,8 @@ and is it healthy?_
 
 ## Is it actually Core?
 
-Before adding anything, run the README's test. It belongs here **only** if:
+Before adding anything, run the three-layer test in [`ARCHITECTURE.md`](ARCHITECTURE.md)
+— the canonical statement of the model. It belongs here **only** if:
 
 - it is **identical on every machine** (not OS-specific), **and**
 - it is **not offensive/engagement** tooling.

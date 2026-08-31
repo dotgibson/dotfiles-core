@@ -10,6 +10,10 @@ or `CONTRIBUTING.md`, those win; fix this.
 > Looking for the **exact commands** to cut a release (Core, the OS-repo rollout, or
 > htpx)? See **`RELEASE-RUNBOOK.md`** — the step-by-step recipe. This doc is the *why*
 > and *when*; the runbook is the *what to type*.
+>
+> Looking for the **three-layer model**, the load-order chain, or why Core is vendored
+> rather than submoduled? See **`ARCHITECTURE.md`** — this doc assumes that shape and
+> describes only how it is released.
 
 The short version: **Core is the only thing that is versioned and released. The
 OS and Role repos are consumers that pull a named Core version when they choose
@@ -20,7 +24,7 @@ systems at once.
 
 ## 1. The unit of release
 
-The fleet is not eight things that each version themselves. It is **one
+The fleet is not nine things that each version themselves. It is **one
 versioned thing (Core) vendored into thin per-OS consumers**:
 
 - **Core** (`dotfiles-core`) carries the SemVer in `core.version` (read it there
@@ -86,7 +90,7 @@ Monday, after that week's freshness PR has merged and baked on `main`), plus
 **out-of-band** for a security fix or a regression that is actively biting a
 host.
 
-Why monthly is the sweet spot for an eight-OS fleet:
+Why monthly is the sweet spot for a nine-repo fleet (`scripts/os-repos.txt`):
 
 - **Weekly tags** would 8× the fan-out churn — every OS repo re-syncs, every
   host re-bootstraps — for changes that are mostly already on `main` and
@@ -99,63 +103,18 @@ Why monthly is the sweet spot for an eight-OS fleet:
 
 ### SemVer, mapped to dotfiles
 
-`release.sh` enforces clean `X.Y.Z` (no pre-release suffix) and a matching dated
-CHANGELOG heading. Choose the bump by **blast radius on a host**, not by how big
-the diff looks:
+The policy is one sentence: **choose the bump by blast radius on a host, not by how big
+the diff looks.** `release.sh` enforces clean `X.Y.Z` (no pre-release suffix) and a
+matching dated CHANGELOG heading around that decision.
 
-- **MAJOR** — a breaking change a host must adapt to: reordering the load chain,
-  removing or renaming a public alias / binding / function, changing the
-  `bootstrap.sh` symlink contract, or dropping a manifest path. These force
-  action on every OS repo; flag them loudly in the CHANGELOG.
-- **MINOR** — additive and backward-compatible: a new zsh module, a new alias,
-  a new function, a new keybinding that displaces nothing.
-- **PATCH** — a fix or doc change with no interface change, including a pin bump
-  that does not change observable behavior.
+The bump table itself lives in **`RELEASE-RUNBOOK.md` §1.0** — one copy, beside the
+commands that act on it, with the three tiebreakers for the ambiguous cases and the note
+that `tag-release.sh` now *enforces* the MAJOR rule rather than merely advising it.
 
-## 3. Repository architecture
+## 3. Safe deployment: testing Arch without breaking Alpine or macOS
 
-The question "`common/` + OS subdirectories, or heavy conditionals in one
-`.zshrc`?" has a third answer, and it is the one already in use because the
-first two break at eight-OS scale.
-
-### Why the two common approaches fail here
-
-- **One `.zshrc` full of `case "$OS"` branches.** Every host parses every other
-  host's logic; BSD-vs-GNU coreutils, systemd-vs-OpenRC, and Windows paths do
-  not reduce to clean conditionals; and a single typo in the shared file breaks
-  *all* hosts at once. The blast radius is the whole fleet for every edit.
-- **`common/` + `os/<name>/` in one monorepo.** Better — but every host still
-  clones every OS's files, there is no per-OS release isolation (you cannot pin
-  Alpine to an older shared version without pinning everyone), and Windows
-  (PowerShell, not a Unix tree) does not fit the layout.
-
-### The model in use (recommended)
-
-A **three-layer, multi-repo model with Core vendored as a pinned copy**:
-
-| Layer | Lives in | Owns |
-| --- | --- | --- |
-| **Core** | `dotfiles-core`, vendored into each OS repo's `core/` | zsh modules, tmux, nvim, git, starship — identical everywhere |
-| **OS-native** | one repo per OS | package manager, clipboard, paths, bootstrap |
-| **Role** | `dotfiles-Offense` (offensive), `dotfiles-Defense` (blue) | engagement / detection tooling layered on an OS |
-
-Each OS repo therefore carries **only** vendored Core plus its own thin OS layer
-— not the other eight OSes' files. The zsh **load order is the contract**
-(`tools → capabilities → ui → options → history → aliases → git → functions → fzf →
-bindings → plugins → op → maint → update → os → local`); OS and Role repos extend it by
-appending stages (`… os offensive local` on Offense, `… os defense local` on
-Defense), never by editing Core.
-
-Why a vendored copy rather than a submodule: the vendored `core/` is present
-offline with no second clone step, the exact Core commit behind it is recorded in
-`core.lock`, and the "edit upstream, then `make sync`" discipline is enforced by
-the audit and `fleet-drift.sh`. The cost — never hand-edit `core/` in an OS repo —
-is the same rule the whole system already lives by.
-
-## 4. Safe deployment: testing Arch without breaking Alpine or macOS
-
-This is the core safety question, and the architecture answers most of it *by
-construction* before any tagging discipline is added.
+This is the core safety question, and the three-layer model (`ARCHITECTURE.md`) answers
+most of it *by construction* before any tagging discipline is added.
 
 ### A change "meant for Arch" is one of two things
 
@@ -166,7 +125,7 @@ construction* before any tagging discipline is added.
    Core?" test doing its job. **If a change is not identical on every machine,
    it is not Core, and it cannot reach another OS.**
 2. **Actually Core** (identical everywhere). Then it is *supposed* to reach all
-   eight — so the safety you want is not isolation but a **staged rollout** with
+   nine — so the safety you want is not isolation but a **staged rollout** with
    a rollback per OS, below.
 
 ### Why a host cannot be broken behind your back
@@ -228,6 +187,12 @@ other repo. `sync-core.sh`
 stamps the release into each `core.lock` as a `core_tag` field (`git describe`
 of the vendored commit), so the named version is recorded automatically and
 `make fleet-drift` reports against it, not just the SHA.
+
+**Rolling back is the same recipe at an older pin** — `git checkout v<previous>`, then the
+same `CORE_BRANCH=...` sync naming only the affected repo. It needs no un-merging: `core/`
+is materialized wholesale from the pinned tree, so the repo ends up byte-identical to that
+release whatever it was carrying before, and it touches no other repo. Push the resulting
+commit, then confirm with `make core-integrity` and `make fleet-drift`.
 
 ### The staged rollout for a Core release
 
@@ -303,57 +268,7 @@ release-blocking:
 - The behavioral suite (`test-core.sh`) checks load order and function units
   cross-shell.
 
-## 5. Checklists
-
-### Cut a Core release
-
-```sh
-make release VERSION=X.Y.Z   # bumps core.version, promotes CHANGELOG, runs the audit
-git diff                     # review the two-file change
-make tag                     # commit core.version + CHANGELOG (no tag yet)
-# ...land the PR, then:
-make publish                 # tag the release commit on origin/main + push both refs
-```
-
-Pushing the tag triggers `.github/workflows/release.yml`, which publishes the
-**GitHub Release** automatically — its body is the curated `CHANGELOG.md` section
-for `vX.Y.Z` (the workflow refuses to publish if the tag doesn't match
-`core.version` or the section is missing). `make release-notes` (git-cliff) stays
-available for drafting a body by hand if you want to edit it before publishing.
-
-### Tag baseline
-
-The fleet has carried annotated `vX.Y.Z` tags since `v1.0.0`, so there is no
-one-time adoption step — `core.version` matches the latest tag (read it there rather
-than trusting a number copied into prose), and the next release just runs the checklist
-above to cut the next patch or minor.
-The `core_tag` provenance only appears in each `core.lock` on the next `make sync`,
-which is when `git describe` first has a tag to resolve against the vendored
-commit.
-
-### Fan out and verify
-
-```sh
-make sync          # vendor the tagged Core into every OS repo (green audit required)
-make fleet-drift   # confirm no repo lags the new tag
-```
-
-### Roll one OS back
-
-```sh
-# from a dotfiles-core checkout, naming only the affected repo — see §4 for why the
-# checkout comes first and why the pin is the PEELED commit, not the tag ref;
-# core.lock is re-stamped in the same commit
-git checkout v<previous>
-CORE_BRANCH="$(git rev-parse v<previous>^{commit})" ./scripts/sync-core.sh dotfiles-<Repo>
-```
-
-A rollback is an ordinary sync at an older pin, and needs no un-merging: `core/` is
-materialized wholesale from the pinned tree, so the repo ends up byte-identical to that
-release whatever it was carrying before. It touches no other repo. Push the resulting
-commit, then confirm with `make core-integrity` and `make fleet-drift`.
-
-## 6. Tooling that backs this policy
+## 4. Tooling that backs this policy
 
 The pieces this policy leaned on are now wired:
 

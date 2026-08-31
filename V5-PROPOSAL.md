@@ -6,8 +6,8 @@
 > to what it decides. An issue this proposal rejects should be closed
 > `not_planned` with a reason, not left open.
 >
-> Written in the same RFC "Current → Proposed → What breaks" voice as
-> `V4-PROPOSAL.md`. When a claim here drifts from `RELEASE-STRATEGY.md`,
+> Written in the RFC "Current → Proposed → What breaks" voice the v4 proposal
+> established. When a claim here drifts from `RELEASE-STRATEGY.md`,
 > `CONTRIBUTING.md` or `ARCHITECTURE.md`, **those win** — fix this.
 
 ## 1. Summary
@@ -37,8 +37,8 @@ They are bundled because they touch the **same three contracts** — the
 `bootstrap.sh` symlink set, the load chain, and what a vendored `core/` contains.
 Shipping them separately would make every OS repo re-bootstrap four times for one
 architectural idea. One `v5.0.0` pays the fan-out cost once — the batching
-discipline `RELEASE-STRATEGY.md §2` is built around, and the same argument
-`V4-PROPOSAL.md §2` made.
+discipline `RELEASE-STRATEGY.md §2` is built around, and the same argument v4
+made for bundling its own three changes.
 
 ## 2. Why these earn a major (and the doc work does not)
 
@@ -55,8 +55,8 @@ path.
 | §5 declare `HAVE_*` | removes nine public globals |
 | §6 `clip --sensitive` | changes observable behaviour of a public binary |
 
-For contrast, §7's ride-alongs — retiring `git subtree` from the docs, deleting
-`V4-PROPOSAL.md`, fixing three stale claims — re-vendor with **zero migration**.
+For contrast, §7's ride-alongs — retiring `git subtree` from the docs, retiring the
+shipped v4 design record, fixing three stale claims — re-vendor with **zero migration**.
 They ride along because a major is when the fleet re-reads its own documentation,
 not because they need one.
 
@@ -250,8 +250,8 @@ silently.
 squatted band number is merely unconventional instead of silently destructive. One
 removal closes two problems.
 
-The alternative — building the profile-aware discovery surface `V4-PROPOSAL.md` §9
-deferred — is real work for a feature with no adopters. `core-help`'s `rows` array
+The alternative — building the profile-aware discovery surface v4 deferred — is
+real work for a feature with no adopters. `core-help`'s `rows` array
 and `_core_suggest`'s candidate list are both static literals advertising band-55
 and band-60 verbs that neither reduced profile loads. If the profile is genuinely
 wanted, reject this half of the change and file the work to make it real *and*
@@ -329,18 +329,19 @@ them ship to nine repos.
   and `RELEASE-STRATEGY.md` §4 and §5 hand the reader a literal
   `git subtree pull --squash` that `VENDORING.md:154` explicitly forbids. Two Core
   documents contradict each other on the repo's central mechanism, and the one
-  giving instructions is wrong. (Line numbers as of the proposal: `RELEASE-STRATEGY.md:194,327`.)
+  giving instructions is wrong. (Section and line numbers as of the proposal:
+  `RELEASE-STRATEGY.md:194,327`; #678 has since renumbered that file.)
 - **Make `os-repos.txt` the single source** (#669). Its own header admits adding a
   target is four coordinated edits.
 - **Three stale claims** (#670, #671, #678). `VENDORING.md` describes `core.lock`
   generators that #593 removed; `dotfiles-Debian/CLAUDE.md` says `clip` has no
-  headless backend when the OSC 52 fallback shipped long ago; `V4-PROPOSAL.md`
+  headless backend when the OSC 52 fallback shipped long ago; the v4 design record
   cites files that no longer exist.
 
 ## 8. Combined blast radius
 
 All four changes land in one `v5.0.0`. A host reaches it only through the three
-independent opt-in gates from `RELEASE-STRATEGY.md §4` — nothing is pushed:
+independent opt-in gates from `RELEASE-STRATEGY.md` §"Safe deployment" — nothing is pushed:
 
 1. Merged, audited green, and **tagged** `v5.0.0` in `dotfiles-core`.
 2. The OS repo **merges its fan-out PR** and commits the new `core.lock`.
@@ -386,7 +387,7 @@ looked.
 The breaking entries land under `## [Unreleased]` in `CHANGELOG.md` — that file is
 the single source of truth, and they move under a `## [v5.0.0]` heading when the
 release is cut. They are deliberately **not** duplicated here, to avoid the
-two-copies drift `V4-PROPOSAL.md §8` also refused.
+two-copies drift v4 also refused.
 
 `RELEASE-STRATEGY.md:109` requires the breaking changes be flagged loudly. The
 per-host action — `./bootstrap.sh --links-only` — belongs in the entry in those
@@ -398,8 +399,8 @@ major.
 **Non-goals (deliberately out of this major):**
 
 - **Renumbering the load-order bands.** Roughly 470 references across 62 files, and
-  `V4-PROPOSAL.md` §9 resolved against it: bands are conventions, the 61-69 gap is
-  headroom. The band *ownership* problem is real, and §5 closes it by deleting the
+  v4 already resolved against it — `ARCHITECTURE.md` § "Load order is load-bearing"
+  carries the reasoning: bands are conventions, the 61-69 gap is headroom. The band *ownership* problem is real, and §5 closes it by deleting the
   profile rather than by renumbering.
 - **Retiring the bare verb names** (`up`, `serve`, `gsync`, `maint-*`) — **decided
   against**, [#692](https://github.com/dotgibson/dotfiles-core/issues/692), closed
