@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v6.0.0] - 2026-08-31
+
 ### Changed
 
 - **`V4-PROPOSAL.md` is deleted, and three duplicated doc sections with it (#678).** The
