@@ -7,8 +7,6 @@
 # fzf core
 # =========================================================
 export FZF_DEFAULT_COMMAND='fd --type f --hidden --strip-cwd-prefix --exclude .git'
-export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
-export FZF_ALT_C_COMMAND='fd --type d --hidden --strip-cwd-prefix --exclude .git'
 
 # --color is an EXPLICIT tokyonight-storm palette (matches starship.toml + the
 # tmux bar), not the terminal default: this keeps fzf on-theme even when we SSH
@@ -36,11 +34,6 @@ export FZF_DEFAULT_OPTS='
   --color=spinner:#ff007c
 '
 
-export FZF_CTRL_R_OPTS='
-  --prompt="History ❯ "
-  --sort
-'
-
 # Previews run in a subshell with the literal command string baked in, so the binary
 # name must be RESOLVED here — not assumed. 00-tools.zsh (loaded before this file) sets
 # $BAT_BIN to the real name (Debian/Ubuntu ship bat as `batcat`); using a literal
@@ -65,8 +58,6 @@ if [[ -n ${HAVE_EZA:-} ]]; then
 else
   export _FZF_DIR_PREVIEW='ls -la {}'
 fi
-export FZF_CTRL_T_OPTS="--preview '$_FZF_PREVIEW_CMD'"
-export FZF_ALT_C_OPTS="--preview '$_FZF_DIR_PREVIEW'"
 
 # =========================================================
 # Widget: Ctrl+T — file picker (no hidden files)

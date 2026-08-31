@@ -198,6 +198,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (computed paths, Lua `require`s, YAML); those four paths are hand-listed in `core.vendor`
   with their consumers named, the posture §1b already takes toward `.claude/`.
 
+### Removed
+
+- **Five dead `FZF_*` exports are deleted (#682).** `FZF_CTRL_T_COMMAND`,
+  `FZF_ALT_C_COMMAND`, `FZF_CTRL_R_OPTS`, `FZF_CTRL_T_OPTS` and `FZF_ALT_C_OPTS` in
+  `zsh/35-fzf.zsh` were read by exactly one thing: fzf's own stock key-binding widgets,
+  which Core **never loads** — there is no `eval "$(fzf --zsh)"` anywhere in `zsh/` or
+  `lib/`, and `zsh/00-tools.zsh` touches fzf only for `HAVE_FZF` detection. Core defines
+  its own widgets, and they ignore every one of these: `_fzf_file_no_hidden` builds its
+  own `fd … | fzf --preview "$_FZF_PREVIEW_CMD"` and `_fzf_history_clean` its own
+  `--prompt`. Same class as config that looks load-bearing and is inert.
+
+  Deleted here rather than in #682 proper because their values embed palette colours, and
+  #679's theme generator would otherwise have carried dead config forward into the new
+  mechanism. #682 remains open for its other two bugs (the unbound `Alt+C`, and
+  `parity-check.sh`'s unproven one-to-one claim).
+
 ## [v5.5.0] - 2026-08-30
 
 ### Changed
