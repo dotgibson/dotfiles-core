@@ -198,6 +198,11 @@ jobs:
           core="$GITHUB_WORKSPACE/fleet/dotfiles-core"
           root="$GITHUB_WORKSPACE/fleet"
           target_sha="$(git -C "$core" rev-parse HEAD)"
+          # ONE definition of "which paths does a vendored core/ carry?" — the same library
+          # sync-core.sh produces through and core-integrity.sh verifies through. The
+          # post-condition below MUST NOT recompute it: see the note there.
+          # shellcheck source=scripts/lib/core-vendor.sh
+          . "$core/scripts/lib/core-vendor.sh"
           short="${target_sha:0:12}"
           branch="sync/core-${TAG}"
           echo ":: fanning out Core $TAG ($short) on branch $branch"
@@ -287,9 +292,18 @@ jobs:
             # The sync now pins the fetch, and asserts this itself per repo — but that
             # verdict cannot reach here (sync-core.sh exits 0 by design; see the note above),
             # so the belt goes where the PR decision is actually made. Same comparison
-            # core-integrity.sh makes: HEAD:core against <target>^{tree}.
+            # core-integrity.sh makes: HEAD:core against the commit's EFFECTIVE tree.
+            #
+            # THROUGH core_vendor_effective_tree, NEVER `${target_sha}^{tree}` (#676). This
+            # line read the whole tree until v6.0.0 and was correct only while a vendored
+            # core/ WAS the whole tree. Once core.vendor filtered it to 185 of 294 paths the
+            # two could never be equal, so this guard rejected all nine repos — every sync
+            # succeeded and self-verified, then the fan-out opened no PRs and the release
+            # could not reach the fleet. core-vendor.sh's own header names this exact hazard
+            # ("#676 would have re-created it one layer down"); the library is the fix, and a
+            # second implementation here is what #556 exists to forbid.
             vend="$(git -C "$path" rev-parse --verify --quiet 'HEAD:core' || true)"
-            exp="$(git -C "$core" rev-parse --verify --quiet "${target_sha}^{tree}" || true)"
+            exp="$(core_vendor_effective_tree "$core" "$target_sha" || true)"
             if [ -z "$vend" ] || [ "$vend" != "$exp" ]; then
               echo "- ❌ \`$r\` vendored core/ tree \`${vend:0:12}\` != Core@\`$short\` tree \`${exp:0:12}\` — not opening a PR" >> "$summary"
               echo "::error::$r: core/ and core.lock name different commits (#556). A PR here would land a tree that core-integrity reports as TAMPERED."
