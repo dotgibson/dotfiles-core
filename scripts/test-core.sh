@@ -4345,6 +4345,27 @@ if have git; then
     fail "filtered tree lost the source file modes (audit §2's exec-bit assertions would follow)"
   fi
 
+  # (e2) CALLED FROM A SUBDIRECTORY. `git -C <subdir> update-index --index-info` resolves its
+  # paths against the cwd PREFIX, so building the index from anywhere but the repo root
+  # matched nothing and returned git's EMPTY tree — with rc 0, so the caller got a
+  # valid-looking object id for a tree containing no files and reported TAMPERED against it.
+  # A vendored `core/scripts/core-integrity.sh --self` hits exactly this: its own $HERE is
+  # <consumer>/core. Assert the root-resolve, and assert the empty tree is never returned for
+  # a non-empty keep list.
+  for _sub in "$VF/core/zsh" "$VF/core/scripts"; do
+    [ -d "$_sub" ] || continue
+    if [[ "$(core_vendor_tree "$_sub" "$vf_new")" == "$vf_tree" ]]; then
+      pass "core_vendor_tree from a subdirectory ($(basename "$_sub")) agrees with the repo root"
+    else
+      fail "core_vendor_tree gave a different tree from $_sub — index paths resolved against the cwd prefix"
+    fi
+  done
+  if [[ "$(core_vendor_tree "$VF/core" "$vf_new")" == "4b825dc642cb6eb9a060e54bf8d69288fbee4904" ]]; then
+    fail "core_vendor_tree returned the EMPTY tree for a non-empty keep list — silently vendors nothing"
+  else
+    pass "core_vendor_tree never returns the empty tree for a non-empty keep list"
+  fi
+
   # (f) END TO END: a consumer materialized by the shared producer classifies pristine, and
   # the SAME lock against a whole-tree vendor classifies TAMPERED. That second case is not
   # hypothetical — it is what a `git subtree pull` (Offense's retired path) would produce.

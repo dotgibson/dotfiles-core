@@ -108,6 +108,17 @@ core_vendor_keeps() { # core_vendor_keeps <path> <keeplist>
 # without being reconstructed — the same property `read-tree --prefix` gave us before.
 core_vendor_tree() { # core_vendor_tree <repo-dir> <sha>
   local repo="$1" sha="$2" keep dir tree rc=0
+  # RESOLVE TO THE REPO ROOT FIRST. `git -C <subdir> update-index --index-info` interprets
+  # its paths against the cwd PREFIX, not the repo root, so handing this function a
+  # subdirectory built a tree from a path set that matched nothing — and returned git's
+  # EMPTY tree (4b825dc6…) with rc 0. Silently: the caller got a valid-looking object id for
+  # a tree with no files in it.
+  #
+  # Not hypothetical. A vendored `core/scripts/core-integrity.sh --self` resolves its own
+  # $HERE to <consumer>/core, which is exactly such a subdirectory, and reported every repo
+  # TAMPERED against an empty expectation.
+  repo="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ -n "$repo" ] || return 1
   core_vendor_is_filtered "$repo" "$sha" || return 1
   keep="$(core_vendor_paths "$repo" "$sha")" || return 1
   [ -n "$keep" ] || return 1
@@ -136,6 +147,13 @@ core_vendor_tree() { # core_vendor_tree <repo-dir> <sha>
   rm -rf -- "$dir"
   [ "$rc" -eq 0 ] || return 1
   [ -n "$tree" ] || return 1
+  # An EMPTY tree out of a NON-EMPTY keep list is never a correct answer — it is the
+  # signature of the filter matching nothing, and handing it back would vendor an empty
+  # core/ or expect one. The empty tree is a legitimate no-op only when there was nothing to
+  # keep, and $keep is non-empty by the guard above, so here it can only mean a bug.
+  if [ "$tree" = 4b825dc642cb6eb9a060e54bf8d69288fbee4904 ]; then
+    return 1
+  fi
   printf '%s\n' "$tree"
 }
 
