@@ -14,6 +14,97 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING — a vendored `core/` is no longer a copy of this whole repo (#676).**
+  `scripts/sync-core.sh` now materializes exactly `core.manifest` ∪ a new **`core.vendor`**
+  and nothing else. A vendored tree goes from **285 files / 5.6 MB to 182 files / 1.2 MB**
+  — about 39 MB reclaimed across the nine repos.
+
+  `CONTRIBUTING.md` had asserted for years that repo-meta and dev tooling were "**not**
+  vendored into OS repos". It was false. The allowlist in `scripts/audit-core.sh` only kept
+  those files out of `core.manifest`, which governs **symlinking into `$HOME`** — the
+  subtree copied them to disk regardless. `audit-core.sh` said so plainly at the time
+  ("'not shipped' means 'not in the manifest', not 'not on disk'") and the two documents
+  simply disagreed. The largest single item shipped to every machine was
+  `assets/demo.gif` at 1.8 MB — bigger than the entire Core payload, replicated nine
+  times, and displayed by no OS repo's README.
+
+  **`core.vendor` is the second list**, in `core.manifest`'s format, and every entry names
+  the consumer that reads it from `core/`: `scripts/tool-versions.env` (MacBook, Offense,
+  Defense), `scripts/check-capabilities.sh` (seven repos), `gitleaks.toml` (six),
+  `.github/actions/setup-core-tools`, `examples/atuin-daemon.service` (Fedora and Debian
+  bootstraps), and a handful more. If you cannot name a consumer, it does not belong there.
+
+  **Dropped:** `CHANGELOG.md` (687 KB), `assets/` (1.8 MB), `.claude/`, `.devcontainer/`,
+  the root docs, and the authoring half of `scripts/` — release tooling, the fan-out
+  itself, benchmarks and dashboards, none of which anything on a box or in an OS repo runs.
+
+  **There is no flag day.** `core_lock_expected_tree()` derives which shape to expect from
+  the **pinned commit**: one carrying `core.vendor` is compared against the filtered tree,
+  one predating it against its whole tree. On the day this merged, all nine repos still
+  pinned older Core, took the whole-tree branch, and stayed `pristine`. The switch flips
+  per-repo, exactly when that repo's `core.lock` moves.
+
+- **BREAKING — `dotfiles-Offense`'s `make core-sync` is retired (#676).** It was the one
+  sanctioned second writer, and the sanction rested on it stamping `core.lock` from _what
+  it actually pulled_. A `git subtree pull --squash` merges the **whole** upstream tree and
+  has no way to apply `core.vendor`, so "what it pulled" is no longer what a vendored
+  `core/` should contain — the first pull after its lock moved would land all 285 files against
+  an expectation of the filtered subset and be reported `TAMPERED`, correctly and with no hand-edit
+  anywhere. Offense now takes the fan-out like every other repo. There is one producer:
+  `core_vendor_materialize`.
+
+- **`scripts/new-os-repo.sh` no longer vendors with `git subtree add` (#676).** A subtree
+  add copies the whole tree, so from the moment `core.vendor` existed it would have
+  scaffolded a repo that was `TAMPERED` on its first `make core-integrity`, before anyone
+  touched it. It goes through the shared producer, so a new repo is born agreeing with the
+  fleet.
+
+- **`core-integrity.sh`'s header stopped overstating itself (#676).** It promised "one
+  rev-parse each side, O(1)" and "never writes to a repo". The filtered side now rebuilds
+  the expected tree (tens of milliseconds), and does so by writing loose objects that are
+  unreferenced and gc-prunable. It now says it never changes a repo's **tracked state**,
+  which is the claim that is actually true and the one that matters.
+
+### Added
+
+- **`scripts/lib/core-vendor.sh` — one definition of the vendored set (#676).**
+  `core_vendor_paths` / `core_vendor_keeps` / `core_vendor_tree` /
+  `core_vendor_effective_tree` / `core_vendor_materialize`. Three callers needed the answer
+  from different sides — `sync-core.sh` and `new-os-repo.sh` produce the tree,
+  `core-integrity.sh` verifies it — and two implementations of one filter would have
+  re-created #556 one layer down: a producer computing a different subset would pass its
+  own post-fan-out assertion and be reported `TAMPERED` by an unrelated command later.
+
+  The filter is read from `${sha}:core.manifest` / `${sha}:core.vendor` — **the commit,
+  never a working tree**. That is what makes the producer building inside the consumer and
+  the verifier rebuilding inside Core agree by construction.
+
+  The tree is built **additively**, feeding only the kept paths into a temporary index via
+  `update-index --index-info`. The subtractive shape ends in
+  `xargs -0 … update-index --force-remove`, whose empty-input behaviour is not portable
+  (GNU needs `-r`, BSD/macOS differs by release, `-r` is not portable) — and an empty
+  keep-set is precisely what a mis-parsed allowlist produces. Additively it is a clean
+  no-op. File modes come straight from `ls-tree`, so the exec bits §2 asserts survive.
+
+- **Three audit sections for the second list (#676).** §1c fails a `core.vendor` entry
+  naming a path that does not exist (a typo matches nothing and silently shrinks the
+  vendored set). §1d fails a path claimed by both lists — a duplicate is harmless to the
+  tree today, which is exactly why it would sit there until someone removed the manifest
+  line and silently unshipped a Core file that "was still listed". §1e walks the
+  **transitive closure** from `# entry` roots declared in `core.vendor` and fails when a
+  vendored script reaches a file nobody vendors.
+
+  §1e walks from declared entry points rather than sweeping every vendored script, and the
+  distinction is load-bearing: a sweep's first two findings are `scripts/release.sh`
+  reaching `CHANGELOG.md` and `gen-release-notes.sh` reaching `cliff.toml`, leaving only
+  the choice between handing back 687 KB and starting a suppression list — and a gate whose
+  first act is to demand a suppression is a gate someone turns off. `_core_vendor_ref_hits`
+  in `common.sh` does the extraction and documents what it deliberately cannot see
+  (computed paths, Lua `require`s, YAML); those four paths are hand-listed in `core.vendor`
+  with their consumers named, the posture §1b already takes toward `.claude/`.
+
 ## [v5.5.0] - 2026-08-30
 
 ### Changed
@@ -69,42 +160,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 ## [v5.4.3] - 2026-08-30
 
 ### Added
-
-- **`scripts/lib/core-vendor.sh` — one definition of the vendored set (#676).**
-  `core_vendor_paths` / `core_vendor_keeps` / `core_vendor_tree` /
-  `core_vendor_effective_tree` / `core_vendor_materialize`. Three callers needed the answer
-  from different sides — `sync-core.sh` and `new-os-repo.sh` produce the tree,
-  `core-integrity.sh` verifies it — and two implementations of one filter would have
-  re-created #556 one layer down: a producer computing a different subset would pass its
-  own post-fan-out assertion and be reported `TAMPERED` by an unrelated command later.
-
-  The filter is read from `${sha}:core.manifest` / `${sha}:core.vendor` — **the commit,
-  never a working tree**. That is what makes the producer building inside the consumer and
-  the verifier rebuilding inside Core agree by construction.
-
-  The tree is built **additively**, feeding only the kept paths into a temporary index via
-  `update-index --index-info`. The subtractive shape ends in
-  `xargs -0 … update-index --force-remove`, whose empty-input behaviour is not portable
-  (GNU needs `-r`, BSD/macOS differs by release, `-r` is not portable) — and an empty
-  keep-set is precisely what a mis-parsed allowlist produces. Additively it is a clean
-  no-op. File modes come straight from `ls-tree`, so the exec bits §2 asserts survive.
-
-- **Three audit sections for the second list (#676).** §1c fails a `core.vendor` entry
-  naming a path that does not exist (a typo matches nothing and silently shrinks the
-  vendored set). §1d fails a path claimed by both lists — a duplicate is harmless to the
-  tree today, which is exactly why it would sit there until someone removed the manifest
-  line and silently unshipped a Core file that "was still listed". §1e walks the
-  **transitive closure** from `# entry` roots declared in `core.vendor` and fails when a
-  vendored script reaches a file nobody vendors.
-
-  §1e walks from declared entry points rather than sweeping every vendored script, and the
-  distinction is load-bearing: a sweep's first two findings are `scripts/release.sh`
-  reaching `CHANGELOG.md` and `gen-release-notes.sh` reaching `cliff.toml`, leaving only
-  the choice between handing back 687 KB and starting a suppression list — and a gate whose
-  first act is to demand a suppression is a gate someone turns off. `_core_vendor_ref_hits`
-  in `common.sh` does the extraction and documents what it deliberately cannot see
-  (computed paths, Lua `require`s, YAML); those four paths are hand-listed in `core.vendor`
-  with their consumers named, the posture §1b already takes toward `.claude/`.
 
 - **A gate for local gates that cannot do what their name says (#775).**
   `scripts/lib/common.sh :: _core_make_gate_hits` reads a repo's `Makefile` and reports
@@ -295,57 +350,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   generation asserted by `bootstrap-test.yml` and the suite, not a tag alias.
 
 ### Changed
-
-- **BREAKING — a vendored `core/` is no longer a copy of this whole repo (#676).**
-  `scripts/sync-core.sh` now materializes exactly `core.manifest` ∪ a new **`core.vendor`**
-  and nothing else. A vendored tree goes from **285 files / 5.6 MB to 182 files / 1.2 MB**
-  — about 39 MB reclaimed across the nine repos.
-
-  `CONTRIBUTING.md` had asserted for years that repo-meta and dev tooling were "**not**
-  vendored into OS repos". It was false. The allowlist in `scripts/audit-core.sh` only kept
-  those files out of `core.manifest`, which governs **symlinking into `$HOME`** — the
-  subtree copied them to disk regardless. `audit-core.sh` said so plainly at the time
-  ("'not shipped' means 'not in the manifest', not 'not on disk'") and the two documents
-  simply disagreed. The largest single item shipped to every machine was
-  `assets/demo.gif` at 1.8 MB — bigger than the entire Core payload, replicated nine
-  times, and displayed by no OS repo's README.
-
-  **`core.vendor` is the second list**, in `core.manifest`'s format, and every entry names
-  the consumer that reads it from `core/`: `scripts/tool-versions.env` (MacBook, Offense,
-  Defense), `scripts/check-capabilities.sh` (seven repos), `gitleaks.toml` (six),
-  `.github/actions/setup-core-tools`, `examples/atuin-daemon.service` (Fedora and Debian
-  bootstraps), and a handful more. If you cannot name a consumer, it does not belong there.
-
-  **Dropped:** `CHANGELOG.md` (687 KB), `assets/` (1.8 MB), `.claude/`, `.devcontainer/`,
-  the root docs, and the authoring half of `scripts/` — release tooling, the fan-out
-  itself, benchmarks and dashboards, none of which anything on a box or in an OS repo runs.
-
-  **There is no flag day.** `core_lock_expected_tree()` derives which shape to expect from
-  the **pinned commit**: one carrying `core.vendor` is compared against the filtered tree,
-  one predating it against its whole tree. On the day this merged, all nine repos still
-  pinned older Core, took the whole-tree branch, and stayed `pristine`. The switch flips
-  per-repo, exactly when that repo's `core.lock` moves.
-
-- **BREAKING — `dotfiles-Offense`'s `make core-sync` is retired (#676).** It was the one
-  sanctioned second writer, and the sanction rested on it stamping `core.lock` from _what
-  it actually pulled_. A `git subtree pull --squash` merges the **whole** upstream tree and
-  has no way to apply `core.vendor`, so "what it pulled" is no longer what a vendored
-  `core/` should contain — the first pull after its lock moved would land all 285 files against
-  an expectation of the filtered subset and be reported `TAMPERED`, correctly and with no hand-edit
-  anywhere. Offense now takes the fan-out like every other repo. There is one producer:
-  `core_vendor_materialize`.
-
-- **`scripts/new-os-repo.sh` no longer vendors with `git subtree add` (#676).** A subtree
-  add copies the whole tree, so from the moment `core.vendor` existed it would have
-  scaffolded a repo that was `TAMPERED` on its first `make core-integrity`, before anyone
-  touched it. It goes through the shared producer, so a new repo is born agreeing with the
-  fleet.
-
-- **`core-integrity.sh`'s header stopped overstating itself (#676).** It promised "one
-  rev-parse each side, O(1)" and "never writes to a repo". The filtered side now rebuilds
-  the expected tree (tens of milliseconds), and does so by writing loose objects that are
-  unreferenced and gc-prunable. It now says it never changes a repo's **tracked state**,
-  which is the claim that is actually true and the one that matters.
 
 - **`core_branch` is documented as gone, and the flat "only sanctioned writer" claim is
   qualified (#670).** Two things were true but unwritten. First, `dotfiles-Offense` is a
