@@ -263,27 +263,34 @@ Then continue to section 2 to roll it out.
 The fan-out from section 1 leaves one open PR per OS repo. Roll them out **canary-first**,
 never all at once (per `RELEASE-STRATEGY.md`).
 
-1. Merge **`dotfiles-MacBook`** first (the canary). Let it bake.
-2. Then merge the remaining Linux/Role repos' `core.lock` PRs.
-3. On each host, the change lands when you re-run `./bootstrap.sh` (or pull).
+**On a MAJOR, step 1 comes before any merge**, and that position is load-bearing — the
+callout below is why. On a PATCH/MINOR there is no step 1: the moving `@vN` alias already
+carried the change, so start at step 2.
 
-**If this was a MAJOR release,** the fan-out `core.lock` PRs are not the whole rollout: any
-repo whose CI pins a reusable workflow at the old `@vN` also needs its `uses:` ref bumped to
-the new major — the deliberate caller edit from §1.1 step 5. `make fleet-drift`
-won't surface this: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance
-against Core, not its workflow `uses:` pins — so finding the stragglers is a manual sweep for
-the **outgoing** major (e.g. `grep -rl 'uses:.*@v<old>' .github/workflows` across the repos in
-`scripts/os-repos.txt`).
+1. **MAJOR only — bump every repo's `uses:` from `@vN` to `@vN+1`, and merge that
+   sweep BEFORE its `core.lock` PR** (one PR per repo, or both changes in the same PR).
+   This is the deliberate caller edit from §1.1 step 5.
+2. Merge **`dotfiles-MacBook`** first (the canary). Let it bake — and note that "baked"
+   means a real shell on a re-bootstrapped host, not a green PR: merging lands files,
+   nothing more (step 4).
+3. Then merge the remaining Linux/Role repos' `core.lock` PRs.
+4. On each host, the change lands when you re-run `./bootstrap.sh` (or pull).
+
+**Finding the stragglers for step 1 is a manual sweep.** `make fleet-drift` won't surface
+them: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance against
+Core, not its workflow `uses:` pins — so grep for the **outgoing** major (e.g.
+`grep -rl 'uses:.*@v<old>' .github/workflows` across the repos in `scripts/os-repos.txt`).
 That sweep has a blind spot worth knowing: **`dotfiles-Windows` is not in `os-repos.txt`** (it
 vendors no `core/`), and it SHA-pins its `auto-tag-call` caller on purpose rather than tracking
 the moving `@vN` alias — so it is invisible to the grep AND unmoved by the alias. Check it by hand on a major,
 and whenever an `auto-tag-call` change should reach it.
-PATCH/MINOR releases skip this entirely: the moving alias already carried them.
+Repos that SHA-pin *and* sit inside the fan-out (`dotfiles-MacBook`, `dotfiles-Defense`)
+need no hand bump: since #482 `sync-core.sh` moves those pins in the same commit that
+stamps `core.lock`. Only alias-pinned repos and Windows are yours.
 
-> **ORDERING TRAP on a major that changes what `core-integrity` expects — read before
-> merging any fan-out PR.** The steps above bump the `@vN` callers *after* merging the
-> `core.lock` PRs. That order is wrong whenever the new major changes the **shape** of a
-> vendored `core/`, and #676 (the vendoring allowlist) is exactly such a major.
+> **WHY STEP 1 IS FIRST — the ordering trap this cost a release to learn.** Bumping the
+> callers *after* merging the `core.lock` PRs is wrong whenever the new major changes the
+> **shape** of a vendored `core/`, and #676 (the vendoring allowlist) is exactly such a major.
 >
 > The fan-out PR lands a **filtered** `core/` — 185 paths, not 285. But that repo's
 > `core-integrity.yml` still says `@v5`, so its CI runs the **outgoing** major's integrity
@@ -293,14 +300,21 @@ PATCH/MINOR releases skip this entirely: the moving alias already carried them.
 > the new code and `TAMPERED` under the old, and the only difference is which Core the
 > verifier came from.
 >
-> So on a major of this kind, **bump each repo's `uses:` from `@vN` to `@vN+1` FIRST** — in
-> its own PR, merged before that repo's `core.lock` PR — or push both in the same PR.
 > `_sync_pin_workflows` cannot do it for you: it rewrites 40-hex SHA pins, and the fleet
 > pins the moving major alias.
 >
-> The general rule, so this survives the next one: *if the major changes what
-> `core_lock_expected_tree` returns, the caller bump precedes the fan-out merge.* If it only
-> changes Core's own content, the documented order is fine.
+> **Step 1 is unconditional on a major even though the hazard is not**, because bump-first
+> is safe in both directions and bump-after is safe in only one. The new major's workflows
+> read an OLD vendored `core/` correctly: `core_vendor_effective_tree` derives the filter
+> from the **pinned commit**, so a repo still on a pre-allowlist `core_sha` takes the
+> whole-tree branch and verifies `pristine` under the new code exactly as it did under the
+> old. Measured at v6.0.0 — the eight caller-bump PRs went green against `core/` still
+> pinned at v5.5.0. So there is no case where bumping first costs anything, and one where
+> bumping second strands the release.
+>
+> The general rule, so the reasoning survives the next one: *if the major changes what
+> `core_lock_expected_tree` returns, the caller bump MUST precede the fan-out merge.*
+> Rather than evaluate that mid-rollout, step 1 just always runs first.
 
 If an OS-repo PR's `links-only` job fails on a **mirror timeout** (e.g. openSUSE's OSS
 CDN), just re-run the job — the prep step retries automatically. A genuinely broken
