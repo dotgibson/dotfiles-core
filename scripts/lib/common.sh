@@ -508,7 +508,7 @@ EOF
 # an unknown id returns non-zero and the caller prints the generic pointer instead.
 _core_owned_block_owner() { # _core_owned_block_owner <rule-id>
   case "$1" in
-  direnv-hook) echo "core/zsh/00-tools.zsh (band 00 — loads under every CORE_PROFILE)" ;;
+  direnv-hook) echo "core/zsh/00-tools.zsh (band 00, beside the other per-directory hook inits)" ;;
   gh-completion | uv-completion | ty-completion) echo "core/zsh/00-tools.zsh (band 00, generated into an fpath dir; compdef re-assert in 45-plugins.zsh after carapace)" ;;
   wsl-detect) echo "core/zsh/00-tools.zsh :: _core_is_wsl" ;;
   *) return 1 ;;

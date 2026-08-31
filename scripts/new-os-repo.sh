@@ -197,9 +197,6 @@ w "$TARGET/zsh/zshrc.zsh" <<'EOF'
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
 ZSH_CFG="${ZDOTDIR:-$HOME/.config/zsh}"
-# CORE_PROFILE (minimal | standard | full) gates Core fragments (bands 00-69). The loader
-# resolves it: environment wins, else a one-liner in "$ZSH_CFG/profile", else full. Do not
-# pre-set it here, or that file could never take effect.
 if [[ -r "$ZSH_CFG/loader.zsh" ]]; then
   source "$ZSH_CFG/loader.zsh"
 else
@@ -210,7 +207,7 @@ EOF
 # ── OS layer stub ─────────────────────────────────────────────────────────────
 w "$TARGET/os/$os_lc.zsh" <<EOF
 # os/$os_lc.zsh — the $OS interactive layer (symlinked to \$ZDOTDIR/80-os.zsh by bootstrap;
-# band 80 = OS-native, so the loader always sources it regardless of CORE_PROFILE).
+# band 80 = OS-native, the range reserved for this repo's own fragment).
 # Put OS-specific aliases, PATH, and package-manager bits HERE — never in Core.
 # It may use any Core helper (00-tools.zsh's _cache_eval and _core_is_wsl, 05-ui.zsh's
 # _core_* primitives).
