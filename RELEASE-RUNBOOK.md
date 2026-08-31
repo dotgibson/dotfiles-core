@@ -50,6 +50,15 @@ When it's ambiguous, decide with these three:
 - "Is this fix visible to a user?" is **not** the MAJOR test — a visible fix is still a
   **PATCH** as long as no interface is added, removed, or renamed.
 
+**This one is now enforced, not just advised.** `tag-release.sh` refuses to cut a release
+whose `CHANGELOG.md` section carries a `**BREAKING` bullet or a `BREAKING CHANGE:` footer
+unless the version is `X.0.0`. It has no bypass, deliberately: the failure it prevents is
+not merely "a break filed under the wrong number" but the alias move in step 5 —
+`MAJOR` is derived from the version, so a breaking change tagged `X.Y+1.0` **force-moves
+`vN` onto it** and pushes the break to every caller still pinned `@vN`, which is the whole
+fleet. If the check fires and you believe the entry is not breaking, reword the entry;
+that is the decision it is asking you to make explicitly.
+
 Two consequences to remember before you type anything:
 
 - **Flag a MAJOR loudly in the CHANGELOG.** It forces action on every OS repo at rollout

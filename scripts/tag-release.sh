@@ -114,6 +114,53 @@ TAG="v$VERSION"
 
 MAJOR="v${VERSION%%.*}"
 
+# ── a BREAKING entry may only ship in a MAJOR ────────────────────────────────
+# The one rule in RELEASE-STRATEGY.md that nothing enforced, and the one whose failure is
+# silent AND fleet-wide. `MAJOR` above is derived from the version, so tagging a breaking
+# change as X.Y+1.0 does two things at once: it files the break as a minor, and — because
+# the publish below FORCE-MOVES the vN alias — it pushes that break onto every caller
+# still pinned `@vN`, which is the whole fleet. The runbook says a major mints vN+1 and
+# leaves vN frozen; that was prose the operator had to remember, at the exact moment
+# (mid-release) when remembering is hardest.
+#
+# WHERE IT LOOKS. release.sh has already promoted [Unreleased] under `## [vX.Y.Z]` by the
+# time this runs, so the entries being released live under the VERSION heading, not under
+# [Unreleased]. Reading [Unreleased] here would scan the empty section release.sh just
+# opened and pass every time — a gate that cannot fail.
+#
+# WHAT COUNTS. The Conventional-Commits/Keep-a-Changelog markers only: a bullet opening
+# `**BREAKING` or the literal `BREAKING CHANGE:`. Prose merely containing the word (e.g.
+# describing a break that was AVOIDED) is not a claim that this release breaks anything.
+#
+# NO ESCAPE HATCH, deliberately, unlike TAG_SKIP_AUDIT. If a release carries a BREAKING
+# entry and you want a minor, the answer is to cut a major or to reword an entry that was
+# not actually breaking — never to wave the check through. A bypass here would be
+# exercised exactly once, on the release that needed it most.
+# LITERAL index() rather than a regex passed through `awk -v`. awk processes escape
+# sequences in a -v value, so "\[" arrived as a bare "[" and the heading pattern silently
+# became a CHARACTER CLASS that matched nothing — the section came back empty and the
+# check passed on every release, including a breaking one. A gate that cannot fail is
+# worse than no gate, and this one was that for its first draft.
+_release_section() { # print the CHANGELOG section for $VERSION
+  awk -v v="$VERSION" '
+    index($0, "## [v" v "]") == 1 || index($0, "## [" v "]") == 1 { inside = 1; next }
+    inside && /^## \[/ { exit }
+    inside { print }
+  ' "$CHANGELOG"
+}
+if _breaking="$(_release_section | grep -nE '^- \*\*BREAKING|BREAKING CHANGE:' | head -3)"; [[ -n "$_breaking" ]]; then
+  if [[ "$VERSION" != *.0.0 ]]; then
+    fail "tag-release.sh: $CHANGELOG's [v$VERSION] section carries a BREAKING entry, but $VERSION is not a major (X.0.0)."
+    printf '%s
+' "$_breaking" | sed 's/^/    /' >&2
+    fail "  A breaking change in a minor/patch also FORCE-MOVES the $MAJOR alias onto it, pushing the break"
+    fail "  to every caller still pinned @$MAJOR — the whole fleet. See RELEASE-STRATEGY.md."
+    fail "  Cut $((${VERSION%%.*} + 1)).0.0 instead, or reword an entry that is not actually breaking."
+    exit 2
+  fi
+  pass "breaking release: [v$VERSION] carries a BREAKING entry and $VERSION is a major"
+fi
+
 # ── PHASE 2 — publish the tags for a release that has ALREADY landed on main ──
 if [[ "$MODE" == publish ]]; then
   hdr "publish $TAG (tag origin/main)"
