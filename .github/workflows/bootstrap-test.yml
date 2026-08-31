@@ -396,12 +396,6 @@ jobs:
             # v4: the .zshrc no longer lists modules — it just sources the vendored loader,
             # which globs the numbered fragments itself.
             grep -q "source .*loader.zsh" "$HOME/.zshrc" || { echo "~/.zshrc does not source the vendored loader" >&2; exit 1; }
-            # It must NOT assign CORE_PROFILE (only mention it in a comment): the loader owns
-            # resolution (env, else $ZSH_CFG/profile, else full), and a pre-set would disable
-            # the profile file. Strip comment lines first, then reject any CORE_PROFILE= / :=.
-            if grep -vE "^[[:space:]]*#" "$HOME/.zshrc" | grep -qE "CORE_PROFILE[[:space:]]*:?="; then
-              echo "~/.zshrc must NOT assign CORE_PROFILE (v4 leaves resolution to the loader)" >&2; exit 1
-            fi
 
             # ── the OS OVERLAY: the entire output of blib_link_os_layer ─────────────
             # None of this was asserted (#473), which is the gap that mattered most: the

@@ -21,12 +21,12 @@ typeset -g _CORE_VERSION_FILE="${${(%):-%x}:A:h:h}/core.version"
 # 154 package-manager references Core carried in portable modules (#663/#667), and they
 # were the only ones left after `up` (#664) and the maint runner (#665) moved.
 #
-# IT ALSO FIXES A REACH THE MAPPING COULD NOT MAKE. $_CORE_CAP is populated at band 02, so
-# EVERY CORE_PROFILE has it — but the <mgr> token the case below needs comes from
-# 60-update.zsh's _pkgup_mgr, which is band 60 and absent under `minimal` and `standard`.
+# IT ALSO FIXES A REACH THE MAPPING COULD NOT MAKE. $_CORE_CAP is populated at band 02, well
+# before this file — but the <mgr> token the case below needs comes from 60-update.zsh's
+# _pkgup_mgr, thirty bands later, which the unit suite's standalone sources do not have.
 # Both call sites therefore guarded on `$+functions[_pkgup_mgr]` and simply printed nothing
-# on a lean profile. On a declaring box the hint now works under every profile, which is
-# why the argument is OPTIONAL: callers that cannot name a manager may ask anyway.
+# when it was absent. On a declaring box the hint now works either way, which is why the
+# argument is OPTIONAL: callers that cannot name a manager may ask anyway.
 _core_install_prefix() {
   emulate -L zsh
   # The declaration is authoritative when there is one — the same all-or-nothing rule
@@ -99,14 +99,18 @@ core() {
   doctor) core-doctor "$@" ;;
   version | -V | --version) core-version "$@" ;;
   update)
-    # `up` lives in 60-update, which the minimal/standard CORE_PROFILEs omit. Dispatch only
-    # when it is actually loaded — otherwise report cleanly instead of reaching a missing
-    # command (the front door stays availability-aware even when the surface is reduced).
+    # `up` lives in 60-update.zsh — band 60, thirty bands after this file. So `core` can be
+    # reached in a shell where the updater never loaded: a $ZSH_CFG missing that symlink, a
+    # chain that aborted before it, or a unit context that sources 30-functions alone.
+    # Dispatch only when it is actually there, and NAME THE FRAGMENT when it is not — "not
+    # loaded" alone sends the reader hunting a broken function instead of a missing file.
+    # (Until v5 this arm printed a CORE_PROFILE readout; #677 deleted the profile, and with
+    # it the only reason a healthy host could ever land here.)
     if (( $+functions[up] )); then
       up "$@"
     else
-      _core_err "core update: the updater (\`up\`) is not loaded under CORE_PROFILE=${CORE_PROFILE:-full}"
-      _core_hint "it lives in the update/maintenance bands — set CORE_PROFILE=full to enable it"
+      _core_err "core update: the updater (\`up\`) is not loaded in this shell"
+      _core_hint "it comes from 60-update.zsh — check that \$ZSH_CFG carries that fragment"
       return 1
     fi
     ;;
@@ -730,11 +734,11 @@ _core_doctor_render() {
   # distro, is a rot-prone duplicate of PORTING-MATRIX.md, which is where that data lives.
   # So: print the names as names, the verb as a template, and point at the matrix.
   #
-  # NO LONGER GATED ON _pkgup_mgr BEING LOADED. That probe is band 60, which `minimal` and
-  # `standard` omit, so this remedy used to vanish on a lean profile — while the ✗ rows it
-  # explains stayed. _core_install_prefix answers from the declaration first (band 02, in
-  # every profile) and only needs the manager token for an UNDECLARED box, so the token is
-  # now passed when it can be and omitted when it cannot.
+  # NO LONGER GATED ON _pkgup_mgr BEING LOADED. That probe is band 60, so this remedy used
+  # to vanish wherever it was absent — while the ✗ rows it explains stayed.
+  # _core_install_prefix answers from the declaration first (band 02, far earlier) and only
+  # needs the manager token for an UNDECLARED box, so the token is now passed when it can be
+  # and omitted when it cannot.
   if ((${#missing})); then
     local _mgr="" _pfx
     (($+functions[_pkgup_mgr])) && _mgr="$(_pkgup_mgr)"
@@ -1570,7 +1574,7 @@ if [[ $- == *i* ]] && ((CORE_CNF_ENABLED)); then
       _core_hint "did you mean ${_sug}?"
     else
       # No near Core verb — offer an install path for THIS box's package manager. The
-      # declaration answers this in every CORE_PROFILE; _pkgup_mgr is band 60 and is only
+      # declaration (band 02) answers this on its own; _pkgup_mgr is band 60 and is only
       # consulted as the undeclared box's fallback, so it is probed rather than required.
       local _pfx _mgr=""
       (($+functions[_pkgup_mgr])) && _mgr="$(_pkgup_mgr)"

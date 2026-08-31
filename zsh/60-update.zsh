@@ -292,11 +292,11 @@ _pkgup_fallback() {
 # all" is a different question from "what is this key", and only the latter has to route
 # through _core_cap so that absent and declared-empty stay indistinguishable.
 #
-# THE $+functions GUARD IS NOT DEFENSIVE PADDING. zsh/02-capabilities.zsh is band 02 and
-# every CORE_PROFILE loads it, so in a real shell _core_cap is always there — but this
-# module is also sourced ALONE by the unit suite, the same situation the colour ladder at
-# the top of this file already has a standalone arm for. Degrade to the built-ins rather
-# than error out of a lone source.
+# THE $+functions GUARD IS NOT DEFENSIVE PADDING. zsh/02-capabilities.zsh is band 02, far
+# ahead of this file, so in a real shell _core_cap is always there — but this module is also
+# sourced ALONE by the unit suite, the same situation the colour ladder at the top of this
+# file already has a standalone arm for. Degrade to the built-ins rather than error out of a
+# lone source.
 _pkgup_verb() {
   emulate -L zsh
   if ((${+functions[_core_cap]})) && ((${#_CORE_CAP})); then
