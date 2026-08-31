@@ -295,8 +295,9 @@ fi
 # ── Pre-fan-out gate: Core must be audit-green, and what you audited must be what
 # fans out. Skipped for --dry-run (nothing is written) and via SYNC_SKIP_AUDIT=1. ──
 if ((!DRY)) && [[ "${SYNC_SKIP_AUDIT:-0}" != 1 ]]; then
-  # 1. The code must pass its own gate before it lands in 8 repos. We run the same
-  #    audit CI and pre-commit run — one definition of "Core is healthy".
+  # 1. The code must pass its own gate before it lands in every repo in os-repos.txt
+  #    (nine today). We run the same audit CI and pre-commit run — one definition of
+  #    "Core is healthy".
   echo ":: pre-fan-out audit (scripts/audit-core.sh --quiet)"
   # Clear DOTFILES_ALLOW_CORE_EDIT (exported above for THIS script's own core/
   # commits) for the audit only: the behavioral suite's core-guard test commits to a

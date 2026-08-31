@@ -3,7 +3,7 @@
 # Publishes a GitHub Release when a vX.Y.Z tag is pushed — the last hand step in
 # the release path. `make release VERSION=X.Y.Z` promotes the CHANGELOG and bumps
 # core.version; `make tag` commits and `make publish` tags origin/main + pushes; this turns
-# that tag push into a published Release automatically (RELEASE-STRATEGY.md §6).
+# that tag push into a published Release automatically (RELEASE-STRATEGY.md §"Tooling that backs this policy").
 #
 # The Release BODY is the curated CHANGELOG.md section for the tag — NOT git-cliff's
 # commit-subject digest. CHANGELOG.md is the hand-written source of truth (rationale,

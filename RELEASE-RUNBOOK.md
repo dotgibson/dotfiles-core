@@ -31,9 +31,9 @@ number — the current major is what the `@vN` alias points at, e.g. `v3` while 
 
 ### 1.0 Pick the bump: major, minor, or patch
 
-Choose by **blast radius on a host, not by how big the diff looks**. The canonical
-policy is `RELEASE-STRATEGY.md` §2 ("SemVer, mapped to dotfiles"); this is the
-operator-facing summary so you don't have to leave the runbook:
+Choose by **blast radius on a host, not by how big the diff looks** — that sentence is
+the policy, and `RELEASE-STRATEGY.md` §2 states it. **This table is the single copy of how
+it maps to a bump**; it lives here, beside the commands that act on it:
 
 | Bump | `X.Y.Z` moves | Cut it when… | Concrete triggers |
 | --- | --- | --- | --- |

@@ -16,6 +16,46 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`V4-PROPOSAL.md` is deleted, and three duplicated doc sections with it (#678).** The
+  v4 design record shipped in `v4.0.0` and had been carrying a status block, a reading
+  guide, and file-path citations to modules its own rename retired (`zsh/maint.zsh`,
+  `zsh/tools.zsh`, `zsh/options.zsh`, …). It was repo-meta, never in `core.manifest` and
+  never vendored since #676, so **no OS repo and no host is affected** — the git history
+  and the `v4.0.0` tag keep it losslessly. Its two surviving rationale paragraphs moved to
+  `ARCHITECTURE.md` § "Load order is load-bearing" first: why bands are a convention rather
+  than a partition, and why byte-compiled `.zwc` wordcode stays beside its fragment while
+  every other mutable file moved to XDG. The third — why `CORE_PROFILE` did not gate
+  bootstrap — died with the profile itself in #677.
+
+  **Three duplicates removed, each of which was the wrong copy:**
+
+  1. `RELEASE-STRATEGY.md` §5 "Checklists" duplicated `RELEASE-RUNBOOK.md` §1.1 while
+     **omitting the `git checkout -b release/vX.Y.Z` step** the runbook calls mandatory —
+     following it reproduced the tag-before-merge situation that burned `v4.11.0`. The
+     runbook is now the only copy; §5's one unique paragraph (a rollback is an ordinary
+     sync at an older pin and needs no un-merging) folded into §"Safe deployment".
+  2. `RELEASE-STRATEGY.md` §3 "Repository architecture" put architecture in a release-policy
+     doc, and its load-order chain **had been missing the `role`/85 band since v4.13**. The
+     two designs it rejected (`case "$OS"` branches; a `common/` + `os/<name>/` monorepo)
+     moved to `ARCHITECTURE.md` § "The problem this solves".
+  3. `PARITY.md` § "Resolved decisions" was a narrative of four shipped keybinding decisions
+     — CHANGELOG content living in a contract doc.
+
+  **Two contradictions closed.** `ARCHITECTURE.md` is now the single home of the three-layer
+  model; `CONTRIBUTING.md` said _"run the README's test"_ while `README.md` linked back to
+  `CONTRIBUTING.md`, and that loop is gone (`CONTRIBUTING.md`'s own table stays — it is the
+  _action_ framing). And the fan-out repo count is nine, sourced from `scripts/os-repos.txt`
+  rather than restated: `RELEASE-STRATEGY.md` had said "nine" in three places and "eight-OS"
+  in four, and `sync-core.sh` said "8 repos" beside its own "nine".
+
+  Also trimmed: `PARITY.md:49` claimed per-shell extras were "noted as gaps below" in a file
+  with zero `gap` rows; `README.md`'s Roadmap section was four checkboxes cargo-culted from
+  Best-README-Template, two of them meta; and `RELEASE-STRATEGY.md`'s SemVer bullets
+  collapsed to the one-sentence policy plus a pointer at `RELEASE-RUNBOOK.md` §1.0, which
+  carries the better table and the three tiebreakers. Section citations across the fleet are
+  now by **name** (`§"Safe deployment"`) rather than by number, so the next renumber cannot
+  silently break them.
+
 - **BREAKING — `CORE_PROFILE` is deleted (#677).** The `minimal`/`standard`/`full` knob
   shipped as one of v4.0.0's three headline features and never acquired a single adopter.
   Nothing in this repo or any of the nine OS repos ever wrote the `$ZSH_CFG/profile` file

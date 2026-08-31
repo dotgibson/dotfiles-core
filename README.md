@@ -57,7 +57,6 @@
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
@@ -77,7 +76,8 @@ platform (macOS, Kali, Fedora, …), which already carries Core inside it. Full 
 at the [documentation site][docs].
 
 The system is three layers — Core here, an OS-native layer per machine, and an optional
-role layer — each building on the one below:
+role layer — each building on the one below. [`ARCHITECTURE.md`](ARCHITECTURE.md) is the
+canonical statement of the model and the boundary test that places a file in one:
 
 | Layer | Lives in | Owns |
 | --- | --- | --- |
@@ -178,7 +178,7 @@ essentials:
    ./bootstrap.sh --links-only --dry-run
    ```
 
-   All nine bootstraps implement `--dry-run`; it was previously shown for macOS only.
+   All nine bootstraps implement `--dry-run`.
 
 3. Provision + Wire
 
@@ -262,18 +262,6 @@ _For more, see the [Documentation][docs]._
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- ROADMAP -->
-## Roadmap
-
-* [x] Add Changelog
-* [x] Add back to top links
-* [ ] Add Additional tools
-* [ ] README.md overhaul for entire project
-
-See the [open issues](https://github.com/dotgibson/dotfiles-core/issues) for a full list of proposed features (and known issues).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 <!-- CONTRIBUTING -->
 ## Contributing
 
@@ -286,14 +274,9 @@ what counts as Core, the manifest contract, and the `make audit` gate. The short
 3. Run `make audit` until it's green
 4. Open a pull request with a [Conventional Commits](https://www.conventionalcommits.org/) title
 
-Two companion documents answer the questions `CONTRIBUTING.md` deliberately does not:
-
-* [`PORTABILITY.md`](PORTABILITY.md) — **how to write Core that survives the fan-out.**
-  The bash 3.2 floor, the BSD/busybox coreutils traps, and the shim pattern for reaching
-  an OS capability without naming a path. Read it before your first Core change.
-* [`VENDORING.md`](VENDORING.md) — **the contract from an OS repo's side.** What `core/`
-  and `core.lock` mean, which load-order band your file may claim, and how to send a fix
-  back upstream.
+Two companion documents answer what `CONTRIBUTING.md` deliberately does not:
+[`PORTABILITY.md`](PORTABILITY.md) (how to write Core that survives the fan-out) and
+[`VENDORING.md`](VENDORING.md) (the same contract read from an OS repo's side).
 
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
