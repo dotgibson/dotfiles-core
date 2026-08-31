@@ -160,6 +160,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   unreferenced and gc-prunable. It now says it never changes a repo's **tracked state**,
   which is the claim that is actually true and the one that matters.
 
+- **`scripts/parity-check.sh` derives the fzf palette needle instead of pinning a hex,
+  and `PARITY.md`'s Theme row finally has a check (#679, #682).** The row needled the
+  literal `query:#c0caf5:regular` in both shells. Core's half is now generated, so a
+  style change rewrites `zsh/35-fzf.zsh` and leaves the hand-maintained
+  `dotfiles-Windows` untouched — and the pinned form then failed on **both** halves,
+  including the zsh one that had just done exactly the right thing, naming no fix that
+  could be made from this repo. The row now tests the property it always meant
+  (_both shells set an explicit fzf palette_), and a separate value comparison reports
+  the real divergence: _Core is on style=moon (query #c8d3f5); dotfiles-Windows still
+  carries #c0caf5_.
+
+  `PARITY.md:27`'s **Theme** row had been marked `aligned` since it was written with no
+  check behind it at all — one of the four rows that made PARITY.md's "every `aligned`
+  row has a corresponding check" claim false. It has one now, and PARITY.md records
+  what that check does and does not prove: it shares its pwsh evidence with the FZF
+  palette row, because the fzf `--color` block is the only place `dotfiles-Windows`
+  carries tokyonight colours at all. The accent half stays a genuine `gap`.
+
+  `make check-pins` gains a third leg, `gen-theme.sh --refresh --check`, so
+  "has upstream restyled tokyonight?" is answered on the weekly report-only path where
+  the plugin pins already live — never on a PR's blocking path.
+
 - **Three shell colours now match what nvim actually renders (#679).** Core's shell
   config carried `#27a1b9`, `#16161e` and `#283457` for tokyonight's `border_highlight`,
   `black` and `bg_visual`. Against the pinned tokyonight commit the plugin resolves

@@ -28,6 +28,9 @@
 #   gen-theme.sh --check      # exit 1 (with a diff) if any block is stale — THE GATE
 #   gen-theme.sh --refresh    # re-resolve the palette from the PINNED tokyonight,
 #                             #   rewrite theme/palette.toml, then regenerate
+#   gen-theme.sh --refresh --check
+#                             # re-resolve and REPORT, writing nothing — the weekly
+#                             #   "has upstream restyled?" leg of `make check-pins`
 #   gen-theme.sh --list       # id<TAB>file for every block (coverage, without grep)
 #
 # PORTED FROM dotfiles-Offense/offensive/companion/gen-views.sh, which does the
@@ -73,11 +76,15 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$HERE/scripts/lib/common.sh"
 
 MODE=bare
+REFRESH=0
 ROOT=""
 while (($#)); do
   case "$1" in
   --check) MODE=check ;;
-  --refresh) MODE=refresh ;;
+  # REFRESH is a separate axis from MODE, so `--refresh --check` composes: re-derive
+  # the palette from the plugin, then REPORT what would change without writing. That
+  # is the form `make check-pins` runs weekly.
+  --refresh) REFRESH=1 ;;
   --list) MODE=list ;;
   --root)
     [[ -n "${2:-}" ]] || { printf 'gen-theme: --root needs a directory\n' >&2; exit 2; }
@@ -674,7 +681,7 @@ fi
 _pal_require || exit 2
 preflight || exit 2
 
-if [[ "$MODE" == refresh ]]; then
+if ((REFRESH)); then
   refresh_palette || exit $?
 fi
 
@@ -717,6 +724,30 @@ while IFS= read -r t; do
 done <<EOF
 $TARGETS
 EOF
+
+# ── PARITY.md's style claim ───────────────────────────────────────────────────
+# PARITY.md:27 and :65 name the style in prose ("tokyonight-storm"), as a cross-repo
+# contract with dotfiles-Windows. It is deliberately NOT generated: a generator
+# rewriting Core's half of a two-repo claim would let a Core-side flip silently rewrite
+# the assertion ABOUT pwsh. So it is checked instead — a flip fails at author time
+# rather than becoming doc-drift for /doc-audit to find weeks later.
+#
+# Advisory-shaped but not silent: it only fires when PARITY.md exists AND names a style.
+if [[ -r PARITY.md ]]; then
+  _pm_style="$(pal_raw style)"
+  if grep -qE '^\| (Theme|FZF palette) ' PARITY.md && ! grep -qF "tokyonight-$_pm_style" PARITY.md; then
+    if [[ "$MODE" == check ]]; then
+      printf 'gen-theme: PARITY.md still names a different style than %s (style = %s).\n' "$PALETTE" "$_pm_style" >&2
+      printf '  Its Theme and FZF-palette rows are a cross-repo contract with dotfiles-Windows,\n' >&2
+      printf '  so they are hand-edited, not generated. Update them (and port the pwsh side).\n' >&2
+      _bump 1
+    else
+      printf 'gen-theme: NOTE — PARITY.md still names a different style than %s (style = %s); update its Theme / FZF-palette rows by hand.\n' \
+        "$PALETTE" "$_pm_style" >&2
+    fi
+  fi
+  unset _pm_style
+fi
 
 if [[ "$MODE" == check && "$rc" == 0 ]]; then
   printf 'gen-theme: every generated block matches %s\n' "$PALETTE"

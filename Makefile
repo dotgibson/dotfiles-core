@@ -90,8 +90,8 @@ update-nvim-plugins: ## Roll the pinned nvim plugin commits in nvim/lazy-lock.js
 update-tool-checksums: ## Recompute the pinned CI tool SHA-256s in tool-versions.env after a version bump
 	@./scripts/update-tool-checksums.sh
 
-check-pins: ## Report whether the zsh-plugin + nvim pins are behind upstream (the weekly freshness gate)
-	@./scripts/update-plugins.sh --check && ./scripts/update-nvim-plugins.sh --check
+check-pins: ## Report whether the zsh-plugin, nvim and theme pins are behind upstream (the weekly freshness gate)
+	@./scripts/update-plugins.sh --check && ./scripts/update-nvim-plugins.sh --check && ./scripts/gen-theme.sh --refresh --check
 
 check-modern: ## Check CI meets the modern floor (scripts/modern-baseline.yml) — also run inside `make audit`
 	@./scripts/check-modern.sh

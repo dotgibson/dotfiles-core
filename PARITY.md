@@ -18,6 +18,13 @@ one of:
 
 > Sources: zsh in `zsh/{00-tools,20-aliases,25-git,35-fzf,40-bindings}.zsh`; pwsh in
 > `dotfiles-Windows/powershell/core/{00-aliases,10-tools,20-functions}.ps1`.
+>
+> **Colour values are not authored in either file.** Core's come from
+> `theme/palette.toml` and are rendered by `scripts/gen-theme.sh` (#679); the pwsh
+> side is still hand-maintained, so a style change is a **two-repo change**.
+> `parity-check.sh` compares the two fzf palettes by value and names the hex pwsh is
+> missing — it no longer pins a hex, because a pinned hex fails on the shell that
+> correctly regenerated.
 
 ## Prompt & tool init
 
@@ -105,5 +112,14 @@ exactly like `scripts/fleet-drift.sh`. The weekly `.github/workflows/parity-chec
 clones `dotfiles-Windows` and runs it `--strict`, failing red on drift.
 
 When a row here moves to `aligned`, add a matching check to `parity-check.sh` in the
-same change — the check is the enforcement. Every `aligned` row above has a corresponding
-check today; a new alignment is not done until its needle is added.
+same change — the check is the enforcement. A new alignment is not done until its
+needle is added.
+
+The **Theme** row went years marked `aligned` with no check behind it, which made the
+stronger form of this claim ("every `aligned` row has a corresponding check") false.
+Issue #679 added one. It is honest but not independent: the fzf `--color` block is the
+only place `dotfiles-Windows` carries tokyonight colours at all, so the Theme and
+**FZF palette** rows share their pwsh evidence. The accent half of the theme — Core's
+`_CORE_ACCENT_SPEC`, which pwsh has no equivalent for — remains a genuine `gap`.
+Three other rows (**History search**, **Word nav**, and the five functions on one row)
+are still unchecked; see dotgibson/dotfiles-core#682.
