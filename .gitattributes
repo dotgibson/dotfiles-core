@@ -29,6 +29,16 @@ bin/clip-paste text eol=lf
 *.gitconfig text eol=lf
 *.md        text eol=lf
 Makefile    text eol=lf
+# ── Generated, not authored ───────────────────────────────────────────────────
+# CHANGELOG.recent.md is rendered from CHANGELOG.md by scripts/gen-changelog-recent.sh and
+# committed (audit §9c fails if the two disagree). The marker collapses its ~50 KB hunk in
+# GitHub's diff view on every release PR, where reviewing it is noise — the CHANGELOG.md
+# hunk beside it is the thing to read. It does NOT affect `git diff`, so the freshness gate
+# and a local review are unchanged. Deliberately NO merge strategy: since #587 the sync
+# replaces core/ wholesale, so a vendored copy cannot conflict, and a custom driver would
+# need per-clone git config nobody in the fleet has. Recover from any conflict by re-running
+# the generator, never by patching the file.
+CHANGELOG.recent.md linguist-generated=true
 # ── Binaries (defensive): never normalize, never diff as text ─────────────────
 *.png       binary
 *.jpg       binary

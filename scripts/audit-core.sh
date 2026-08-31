@@ -38,6 +38,8 @@
 #                                          theme/palette.toml (gen-theme.sh --check)
 #   9. version consistency              — pre-commit hook revs == tool-versions.env;
 #                                         core.version SemVer + CHANGELOG coherence
+#  9e. changelog digest                 — CHANGELOG.recent.md is byte-identical to a
+#                                         fresh scripts/gen-changelog-recent.sh render
 #  10. behavioral                       — load-order smoke + function units (test-core.sh)
 #
 # We deliberately do NOT enforce shfmt: the hand-tuned scripts here use an
@@ -1770,6 +1772,54 @@ else
   fail_detail "$_gt_out"
 fi
 unset _gt_out _gt_rc
+# ── 9e. the vendored CHANGELOG digest is not stale ───────────────────────────
+# CHANGELOG.recent.md is GENERATED (scripts/gen-changelog-recent.sh) and COMMITTED, and
+# core.vendor ships it into every OS repo's core/ so `core whatsnew` can answer offline
+# (#680). Generated-and-committed only works if something proves the commit still matches
+# the generator, and NOTHING ELSE HERE CAN: §1c proves only that the path EXISTS, §1e never
+# walks it (it is DATA, not an `# entry` root), and core-integrity.sh compares TREE HASHES —
+# where a consistently-stale blob hashes consistently and reads as `pristine` in all nine
+# repos. So re-render and compare BYTES.
+#
+# A stale digest is a box being told about releases it does not have, or not told about the
+# one it does — the exact failure the feature exists to prevent, fanned out nine ways.
+# release.sh regenerates at promotion time precisely so this gate PROVES the result rather
+# than reporting staleness the release itself created.
+#
+# ALWAYS-ON: no tool can be absent, so it cannot go green-because-absent. The only skip
+# mirrors the coherence gate above — an unreadable CHANGELOG.md. A missing GENERATOR is a
+# fail, not a skip: it is tracked, so its absence is real drift.
+hdr "vendored CHANGELOG digest (CHANGELOG.recent.md)"
+_cr_gen="scripts/gen-changelog-recent.sh"
+_cr_out="CHANGELOG.recent.md"
+if [[ ! -r CHANGELOG.md ]]; then
+  skip "CHANGELOG digest freshness (CHANGELOG.md unreadable)"
+elif [[ ! -x "$_cr_gen" ]]; then
+  fail "$_cr_gen missing or not executable — nothing can regenerate $_cr_out, and nine repos would vendor whatever last landed"
+elif [[ ! -r "$_cr_out" ]]; then
+  fail "$_cr_out missing — core.vendor ships it to nine repos for \`core whatsnew\`; run: ./$_cr_gen"
+else
+  _cr_tmp="$(mktemp "${TMPDIR:-/tmp}/core-changelog-recent.XXXXXX")"
+  if [[ -z "$_cr_tmp" ]]; then
+    fail "CHANGELOG digest freshness: mktemp failed — cannot render a comparison copy"
+  elif ! ./"$_cr_gen" --stdout >"$_cr_tmp" 2>/dev/null; then
+    fail "$_cr_gen --stdout failed — run it by hand to see why"
+    rm -f "$_cr_tmp"
+  elif core_files_identical "$_cr_tmp" "$_cr_out"; then
+    pass "$_cr_out is byte-identical to a fresh render"
+    rm -f "$_cr_tmp"
+  else
+    # NAME THE FIX IN THE FAIL LINE: the operator has the answer here, not after a round
+    # trip. fail_detail carries the actual delta.
+    fail "$_cr_out is STALE or hand-edited — nine repos would vendor a digest that does not match CHANGELOG.md. Run: ./$_cr_gen"
+    # `git diff --no-index`, not diffutils: same #572 rule as the comparison above — the
+    # delta must render on a box that has no `diff`.
+    fail_detail "$(git --no-pager diff --no-index -- "$_cr_out" "$_cr_tmp" 2>/dev/null)"
+    rm -f "$_cr_tmp"
+  fi
+  unset _cr_tmp
+fi
+unset _cr_gen _cr_out
 
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
 # Static analysis above proves the modules PARSE; this proves they LOAD TOGETHER

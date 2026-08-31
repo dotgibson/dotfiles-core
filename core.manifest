@@ -54,6 +54,7 @@ zsh/completions/_core
 zsh/completions/_core-doctor
 zsh/completions/_core-help
 zsh/completions/_core-version
+zsh/completions/_core-whatsnew
 zsh/completions/_extract
 zsh/completions/_fbr
 zsh/completions/_fcd

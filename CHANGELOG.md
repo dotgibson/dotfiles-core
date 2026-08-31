@@ -192,6 +192,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`core whatsnew` — a box can finally read what changed in the Core it carries (#680).**
+  The verb renders the release-note sections between the version this machine last looked
+  at (a state file under `$XDG_STATE_HOME/dotfiles-core/`) and the `core.version` it runs
+  now, paged through `_core_page` like `core-help` and `core-doctor -v`. `--full` swaps the
+  bullet leads for the prose; `--all` ignores the read mark. A once-per-bump nudge in
+  `60-update.zsh` announces `Core moved X → Y` so the verb is discoverable at the moment it
+  becomes useful, then stays quiet until the next bump.
+
+  **Its data source is a new generated file, `CHANGELOG.recent.md`** — the last **8**
+  released sections, ~49 KB — rendered by `scripts/gen-changelog-recent.sh`, committed, and
+  listed in `core.vendor` so it rides along in every OS repo's `core/`.
+
+  **The full `CHANGELOG.md` stays repo-meta and is still not vendored.** #680 rested on it
+  already being on every box, and warned that #676 must not land "on autopilot" while this
+  issue sat open assuming the file was there — which is exactly what happened. #784 measured
+  `CHANGELOG.md` at ~707 KB, **36 % of the entire vendored tree and larger than all of
+  `zsh/`**, and dropped it, taking this feature's only data source with it. #680 also
+  pre-rejected a truncated changelog because "the vendored file would differ from the
+  authored one, which `core-integrity` would have to special-case". That objection was
+  correct against the old whole-tree comparison and is **obsolete** against #784's: the
+  expected tree is derived from the _pinned commit_, so a file Core generates and commits is
+  an ordinary tree entry needing **zero** special-casing. The digest costs 3.7 % where the
+  file cost 36 %, and answers entirely offline.
+
+  `[Unreleased]` is deliberately **excluded** from the digest. A box runs a released
+  `core.version`, so an `[Unreleased]` entry describes code it does not have — and including
+  it would make the digest stale on every changelog bullet, reddening the new audit gate on
+  nearly every PR. Excluding it means the file changes exactly once per release, with
+  exactly one regeneration site.
+
+  **Three things keep it honest.** `scripts/release.sh` regenerates the digest immediately
+  after promoting `[Unreleased]` — that promotion _changes which eight releases are recent_,
+  so a release would otherwise fan out a digest describing a different Core than it ships.
+  `scripts/tag-release.sh` now commits it alongside `core.version` and `CHANGELOG.md`: its
+  pathspec is explicit, so an unlisted third file is not deferred but **silently dropped**
+  from the release commit, leaving the worktree audit green and nine repos vendoring a stale
+  changelog. And `scripts/audit-core.sh` **§9e** re-renders the digest and compares it
+  byte-for-byte, failing with the exact regeneration command — because nothing else could
+  catch it: §1c proves only that the path exists, §1e never walks it (it is data, not an
+  `# entry` root), and `core-integrity.sh` compares tree hashes, where a consistently-stale
+  blob hashes consistently and reads as `pristine` in all nine repos.
+
 - **`scripts/lib/core-vendor.sh` — one definition of the vendored set (#676).**
   `core_vendor_paths` / `core_vendor_keeps` / `core_vendor_tree` /
   `core_vendor_effective_tree` / `core_vendor_materialize`. Three callers needed the answer

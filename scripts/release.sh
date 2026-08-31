@@ -94,7 +94,30 @@ awk -v ver="$VERSION" -v date="$DATE" '
 ' "$CHANGELOG" >"$tmp" && mv "$tmp" "$CHANGELOG"
 pass "CHANGELOG.md: [Unreleased] → ## [v$VERSION] - $DATE (fresh [Unreleased] opened)"
 
-# 3. prove it green before anyone tags it.
+# 3. Regenerate the vendored CHANGELOG digest — MANDATORY, not optional.
+#    Step 2 just CHANGED WHICH RELEASES ARE RECENT: the section it dated is now the newest
+#    of the eight, and the ninth-oldest falls out of the window. So CHANGELOG.recent.md is
+#    stale by construction the instant step 2 finishes. It is vendored (core.vendor) and is
+#    the ONLY changelog a box has (#680), so a release that shipped it stale would fan out
+#    a digest describing a different Core than the one it ships with.
+#
+#    HERE, before the audit, so §9e PROVES the result instead of reporting the staleness
+#    this script just created.
+GENRECENT="./scripts/gen-changelog-recent.sh"
+if [[ ! -x "$GENRECENT" ]]; then
+  fail "release.sh: $GENRECENT missing or not executable — cannot refresh the vendored digest"
+  fail "  'git checkout -- $VERFILE $CHANGELOG' to abort the release"
+  exit 1
+fi
+if "$GENRECENT" >/dev/null; then
+  pass "CHANGELOG.recent.md regenerated (the vendored digest now leads with v$VERSION)"
+else
+  fail "release.sh: $GENRECENT failed — the vendored digest would ship stale"
+  fail "  'git checkout -- $VERFILE $CHANGELOG' to abort the release"
+  exit 1
+fi
+
+# 4. prove it green before anyone tags it.
 hdr "audit (release must be green before it fans out)"
 if ./scripts/audit-core.sh --quiet; then
   pass "audit green"
@@ -105,7 +128,9 @@ fi
 
 printf '\n%s──────── release %s staged ────────%s\n' "$c_blu" "$VERSION" "$c_rst"
 cat <<EOF
-  review:  git diff
+  review:  git diff        # THREE files: core.version, CHANGELOG.md, and the regenerated
+                           # CHANGELOG.recent.md — the digest is GENERATED, so review the
+                           # CHANGELOG hunk beside it, not the ~50 KB digest hunk.
 
   NOTE: do NOT tag yet. A vX.Y.Z tag must only ever exist on a commit that is already on
   origin/main — a local tag on an unmerged commit can be carried to the remote by any

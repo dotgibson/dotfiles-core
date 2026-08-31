@@ -43,7 +43,9 @@ There are **two** lists, and they answer different questions:
 nothing else. Repo-meta and dev tooling (this file, `LICENSE`, `CHANGELOG.md`,
 `assets/`, `scripts/sync-core.sh`, `scripts/audit-core.sh`, …) are **not** vendored
 into OS repos, so they live in the allowlist in `scripts/audit-core.sh` rather than
-in either list.
+in either list. The full `CHANGELOG.md` stays out for a measured reason — ~707 KB, 36 %
+of the vendored tree — but its ~49 KB generated digest, `CHANGELOG.recent.md`, _is_ in
+`core.vendor`, because `core whatsnew` reads it on the box (#680).
 
 `theme/palette.toml` is in that allowlist too, and it is the one entry that is neither
 a doc nor a script — so it is worth saying why it is not Core. It is a **generation-time
@@ -55,7 +57,7 @@ and no OS repo needs it. Same shape as `scripts/modern-baseline.yml`.
 > That last paragraph was false until #676. The allowlist only kept those files out
 > of `core.manifest`, which governs **symlinking**, not what lands on disk — the
 > subtree copied the whole repo regardless, 5.6 MB into each of nine repos of which
-> ~0.9 MB was Core. A vendored `core/` is now 182 files, not 285.
+> ~0.9 MB was Core. A vendored `core/` is now 183 files, not 285.
 
 Adding to `core.vendor` means naming the consumer in a comment on the same line. If
 you cannot name one, it does not belong there. A path listed in both files is a

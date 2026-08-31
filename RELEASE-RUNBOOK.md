@@ -82,9 +82,13 @@ make audit                          # the one gate — must be green before tagg
 #    branching first means there is nothing to clean up afterwards.
 git checkout -b release/vX.Y.Z
 
-# 2. Stage the release (bumps core.version + promotes CHANGELOG [Unreleased], re-audits).
+# 2. Stage the release (bumps core.version + promotes CHANGELOG [Unreleased], regenerates
+#    the vendored CHANGELOG.recent.md digest, re-audits).
 make release VERSION=X.Y.Z
-git diff                            # sanity-check: only core.version + CHANGELOG heading moved
+git diff                            # sanity-check: THREE files. core.version, the CHANGELOG
+                                    # heading — and CHANGELOG.recent.md, which is GENERATED.
+                                    # Read the CHANGELOG hunk; the ~50 KB digest hunk beside
+                                    # it is mechanical (audit §9e proves it matches).
 
 # 3. Commit the release (re-audits). Creates NO TAG — that is deliberate, see below.
 make tag
