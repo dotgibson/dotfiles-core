@@ -1,19 +1,28 @@
 # v5 proposal — the OS layer becomes a contract
 
-> **Status: PROPOSED — not accepted, nothing implemented.** This is a plan, not a
-> record. It is the artifact [#662](https://github.com/dotgibson/dotfiles-core/issues/662)
-> asks for, and the nineteen other issues on the `v5.0.0` milestone are subordinate
-> to what it decides. An issue this proposal rejects should be closed
-> `not_planned` with a reason, not left open.
+> **Status: PARTIALLY SHIPPED — a record, not an open decision.** Three of the five
+> changes in §2's table are released, as are §7's ride-alongs; **two are still open** ([#690](https://github.com/dotgibson/dotfiles-core/issues/690)
+> and [#694](https://github.com/dotgibson/dotfiles-core/issues/694)). Nothing here is
+> awaiting a verdict, so do **not** close issues against it — the original header said
+> to, and that instruction is withdrawn.
+>
+> **The major it proposes is `v6.0.0`, not `v5.0.0`.**
+> [#736](https://github.com/dotgibson/dotfiles-core/issues/736) renumbered the roadmap's
+> major because `v5.0.0` was spent on the unrelated mise adoption (`6401a68`). Read every
+> bare "v5" below as the *proposal's* name for what shipped as `v6.0.0`; the exception is
+> §3, which did not wait for a major at all (see §2).
 >
 > Written in the RFC "Current → Proposed → What breaks" voice the v4 proposal
-> established. When a claim here drifts from `RELEASE-STRATEGY.md`,
-> `CONTRIBUTING.md` or `ARCHITECTURE.md`, **those win** — fix this.
+> established, and kept in that tense — the "Current" sections describe the tree as it
+> was at `4.18.0`, not as it is. When a claim here drifts from `RELEASE-STRATEGY.md`,
+> `CONTRIBUTING.md` or `ARCHITECTURE.md`, **those win** — fix this. It is the artifact
+> [#662](https://github.com/dotgibson/dotfiles-core/issues/662) asked for.
 
 ## 1. Summary
 
-Core is at `4.18.0` with an empty `[Unreleased]`, and the whole fleet is synced to
-it. This proposes `v5.0.0` as a single coordinated change to one idea:
+Core was at `4.18.0` with an empty `[Unreleased]` when this was written, and the whole
+fleet was synced to it. This proposed a single coordinated major — shipped as `v6.0.0`,
+see the header — around one idea:
 
 **the OS layer stops being a convention and becomes a contract.**
 
@@ -42,18 +51,26 @@ made for bundling its own three changes.
 
 ## 2. Why these earn a major (and the doc work does not)
 
-Per `RELEASE-STRATEGY.md:106-109`, a **MAJOR** is chosen by *blast radius on a
-host*: reordering the load chain, removing or renaming a public alias / binding /
-function, changing the `bootstrap.sh` symlink contract, or dropping a manifest
-path.
+A **MAJOR** is chosen by *blast radius on a host*: reordering the load chain, removing
+or renaming a public alias / binding / function, changing the `bootstrap.sh` symlink
+contract, or dropping a manifest path. (Cited here as `RELEASE-STRATEGY.md:106-109`, a
+block #791 collapsed; the bump table is now `RELEASE-RUNBOOK.md` §1.0 — which
+`RELEASE-STRATEGY.md` §"SemVer, mapped to dotfiles" names as the single copy.)
 
-| change | trigger it clears |
-| ------ | ----------------- |
-| §3 `os.capabilities` | a new bootstrap symlink **and** a new load-order slot before `20-aliases` |
-| §4 vendoring allowlist | changes what a consumer repo receives; `core-integrity` must be retaught in lockstep |
-| §5 delete `CORE_PROFILE` | removes a documented public knob |
-| §5 declare `HAVE_*` | removes nine public globals |
-| §6 `clip --sensitive` | changes observable behaviour of a public binary |
+| change | trigger it clears | outcome |
+| ------ | ----------------- | ------- |
+| §3 `os.capabilities` | a new bootstrap symlink **and** a new load-order slot before `20-aliases` | **shipped `v4.19.0` as a MINOR** (#663) — see below |
+| §4 vendoring allowlist | changes what a consumer repo receives; `core-integrity` must be retaught in lockstep | shipped `v6.0.0` (#676) |
+| §5 delete `CORE_PROFILE` | removes a documented public knob | shipped `v6.0.0` (#677) |
+| §5 declare `HAVE_*` | removes nine public globals | **still open** (#694) |
+| §6 `clip --sensitive` | changes observable behaviour of a public binary | **still open** (#690) |
+
+**This section's own argument did not survive contact.** It named §3 as one of the two
+changes earning the major — "a new `bootstrap.sh` symlink, plus a new load-order slot".
+In the event, #663 shipped in `v4.19.0` as a **MINOR**, and #736 records that as the right
+call: the symlink and the band were additive, and nothing a host already used changed
+meaning. What actually earned the major was §4 and §5, both of which force a host to
+adapt.
 
 For contrast, §7's ride-alongs — retiring `git subtree` from the docs, retiring the
 shipped v4 design record, fixing three stale claims — re-vendor with **zero migration**.
@@ -324,10 +341,12 @@ These break nothing and need no migration. They land with the major because a
 major is when the fleet re-reads its own docs, and because §4 changes which of
 them ship to nine repos.
 
-- **Retire `git subtree` from the record** (#668). #587 replaced subtree-pull with
-  pinned materialization, but twelve files plus `Makefile:52` still assert it —
-  and `RELEASE-STRATEGY.md` §4 and §5 hand the reader a literal
-  `git subtree pull --squash` that `VENDORING.md:154` explicitly forbids. Two Core
+- **Retire `git subtree` from the record** (#668, **shipped**). #587 replaced subtree-pull
+  with pinned materialization, but twelve files plus `Makefile:52` still asserted it —
+  and `RELEASE-STRATEGY.md` §4 and §5 handed the reader a literal
+  `git subtree pull --squash` that `VENDORING.md:154` explicitly forbids. Both are fixed:
+  #791 collapsed those sections, and `RELEASE-STRATEGY.md` now says `sync-core.sh` is the
+  only sanctioned writer of `core.lock`, "never a raw `git subtree pull`". Two Core
   documents contradict each other on the repo's central mechanism, and the one
   giving instructions is wrong. (Section and line numbers as of the proposal:
   `RELEASE-STRATEGY.md:194,327`; #678 has since renumbered that file.)
