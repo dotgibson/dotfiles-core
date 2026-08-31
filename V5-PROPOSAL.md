@@ -355,8 +355,11 @@ Two fleet-wide costs specific to this major:
 - **The `@v4`→`@v5` caller-pin sweep** (#672). `RELEASE-RUNBOOK.md:256` records
   that `make fleet-drift` compares `core.lock` provenance, *not* workflow `uses:`
   pins, so this is a hand grep. `dotfiles-Windows` is absent from
-  `os-repos.txt`, invisible to `fleet-drift`, and its `auto-tag` caller is
-  **already six minors stale at v4.12.0** because nothing advances it.
+  `os-repos.txt`, invisible to `fleet-drift`, and SHA-pins its `auto-tag` caller
+  rather than tracking the moving alias, so nothing advances it automatically —
+  it is moved by hand or not at all. It read `v4.12.0` when this was written; as
+  of the `v6.0.0` rollout it is at **`v5.0.2`** (`db940285`), i.e. it was hand-moved
+  once during the v5 rollout and is now a major behind again.
 - **`core-integrity` must be retaught in the same commit as §4**, or the fan-out
   reports `TAMPERED` in all nine repos at once.
 
