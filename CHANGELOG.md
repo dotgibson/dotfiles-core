@@ -14,6 +14,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`make publish` reported a network failure for a stale tag, and hid the evidence.**
+  `scripts/tag-release.sh` opened phase 2 with `git fetch -q --tags origin 2>/dev/null`.
+  The `vN` major alias is **force-moved to every release**, so any clone that missed one
+  carries a stale local `vN` — and a plain `git fetch --tags` REFUSES to move it
+  (`! [rejected] v5 -> v5 (would clobber existing tag)`), exits 1, and takes `publish`
+  down with it. Nothing was wrong with the network, but with stderr redirected to
+  `/dev/null` the only thing the operator saw was `could not fetch origin — publishing
+  needs the remote's view of main`, which points at exactly the wrong thing. Hit cutting
+  **v5.4.3**, on a clone whose `v4` and `v5` were both behind; the actual repair was a
+  one-line tag update.
+
+  The fetch now passes `--force` and no longer swallows stderr, so a real failure names
+  its cause (`Could not resolve host: …`) instead of wearing the generic message.
+  Forcing is correct rather than merely convenient: `vN` is a MOVING alias whose remote
+  value is authoritative by definition, so a local ref that disagrees is stale, never a
+  competing truth. Immutable `vX.Y.Z` release tags are unaffected — they never move, so
+  `--force` has nothing to overwrite there, and the tag ruleset forbids it regardless.
+
+  Verified both ways: with `v5` deliberately pointed at `v5.4.2`, the old fetch exits 1
+  and the new one exits 0 and realigns it, leaving `v5.4.2`/`v5.4.3` untouched; against
+  an unresolvable remote it still exits 1, now printing the reason.
+
 ## [v5.4.3] - 2026-08-30
 
 ### Added
