@@ -192,6 +192,53 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`core status` — the box can finally answer "am I current?" (#681).** Core shipped two
+  provenance reporters, `scripts/fleet-drift.sh` (staleness) and `scripts/core-integrity.sh`
+  (tamper), and **both are fleet-side**: they run from a dotfiles-core checkout or CI, never
+  from the shell they configure. Meanwhile `core.lock` has been written to the root of every
+  OS repo since B1 and **nothing on a box has ever read it**. So a laptop you had not touched
+  in a month could tell you whether `bat` was installed (`core-doctor`) and which Core it
+  carried (`core-version`, one line), but not whether that Core was current, which layers were
+  live, or whether anything under `core/` had been hand-edited.
+
+  `core status` (and the standalone `core-status`) composes what was already on disk into one
+  scannable panel — no new vendored file, no network, no second implementation of anything:
+
+  ```text
+  dotfiles-core 5.5.0   v5.5.0 · 6a81418e · synced 17 hours ago
+  OS layer      fedora  dnf · systemd
+  Role layer    none
+  Tools         38/41 present · 7/9 wired          core-doctor -v
+  Integrity     core/ matches its commit
+  ```
+
+  Version from `core.version`; tag, commit and sync age from `core.lock` and its own commit
+  date; the OS and role layers from the `80-os.zsh` / `85-<role>.zsh` symlink targets; the
+  package manager and scheduler from `os.capabilities` (#663) through `_core_cap`, which is
+  what the v5 capability declaration was for and the first place it shows itself to a human.
+  The tool counts come from a new `_core_doctor_tally` that walks `_CORE_DOCTOR_GROUPS` and
+  `_CORE_DOCTOR_WIRED` through core-doctor's own predicates, so the summary and the report it
+  points at cannot disagree — a parity assertion pins the two.
+
+  **`--json`** emits the same facts as one object, for a statusline or a provisioning gate,
+  alongside `core-doctor --json`.
+
+  **Every row degrades rather than errors, and the verb returns 0 throughout.** No `core.lock`,
+  no git, a tarball deploy, an OS repo that has not re-bootstrapped since the fan-out — each is
+  a normal state, not a fault, and each renders a stated "unknown" naming what could not be
+  read. A status panel that fails on the box it describes is useless precisely when you need it.
+
+  **Two things it deliberately does not claim.** It does not say how many releases behind you
+  are: that needs Core's tags, and a consumer's `core/` is a vendored tree carrying none of
+  Core's history, so answering would need the network. It does not reproduce
+  `core-integrity.sh`'s `pristine`/`TAMPERED` verdict either: that comparison resolves the
+  expected tree inside a **dotfiles-core** object store, which a consumer does not have — and
+  `scripts/` is in neither `core.manifest` nor `core.vendor`, so those scripts leave the box
+  entirely once #676's filtered vendoring ships. The weaker claim a box **can** make is the one
+  the Integrity row makes: whether anything under `core/` has been edited since it was
+  committed. That is the hazard operators actually hit, since the next `make sync` clobbers a
+  hand-edit silently.
+
 - **`core whatsnew` — a box can finally read what changed in the Core it carries (#680).**
   The verb renders the release-note sections between the version this machine last looked
   at (a state file under `$XDG_STATE_HOME/dotfiles-core/`) and the `core.version` it runs

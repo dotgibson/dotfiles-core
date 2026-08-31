@@ -23,6 +23,20 @@ typeset -g _CORE_WHATSNEW_FILE="${${(%):-%x}:A:h:h}/CHANGELOG.recent.md"
 # 60-update.zsh's .welcomed sentinel, because this is mutable per-box state, not config.
 typeset -g _CORE_WHATSNEW_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-core/whatsnew"
 
+# Resolved path to the vendored PROVENANCE record — the backing store for `core status`
+# (#681), and the first runtime consumer core.lock has ever had. Same %x/:A idiom as the
+# two globals above, but :h:h:h rather than :h:h: core.lock sits at the CONSUMER REPO
+# ROOT, one directory ABOVE core/, deliberately outside the vendored tree so that a
+# `git subtree pull` moves core/ without touching the file that records what core/ is
+# supposed to BE (see the generated header sync-core.sh writes into it).
+#
+# IN DOTFILES-CORE ITSELF this resolves one level above the repo — there is no core/
+# wrapper here and no core.lock, because this repo is the SOURCE, not a consumer. That is
+# the correct answer and not a bug, but it does mean the path may name an unrelated
+# directory, so every consumer of this global must gate on `[[ -r ]]` BEFORE deriving a
+# checkout root from it. _core_status_provenance is where that gate lives.
+typeset -g _CORE_LOCK_FILE="${${(%):-%x}:A:h:h:h}/core.lock"
+
 # _core_install_prefix [mgr] → the copy-pasteable "install" command prefix for this box.
 # Used by core-doctor (U2) and the command-not-found handler (U1) to turn a missing tool
 # into an actionable line instead of a bare ✗. Non-zero when it cannot answer, and the
@@ -87,6 +101,363 @@ core-version() {
   fi
 }
 
+# ── core-status — the provenance panel (B1, #681) ─────────────────────────────
+# THE GAP THIS CLOSES. A box could already answer "is bat installed?" (core-doctor) and
+# "what Core is this?" (core-version, one line). It could not answer "is this box
+# CURRENT, which layers are live, has anything under core/ been touched?" — even though
+# every one of those facts is already sitting on the disk. core.lock in particular has
+# been written to every OS repo since B1 and, until this verb, NOTHING on a box ever
+# read it: the two scripts that do (scripts/fleet-drift.sh, scripts/core-integrity.sh)
+# are fleet-side reporters that run from a dotfiles-core checkout or CI, never from the
+# shell they configure.
+#
+# WHAT THIS VERB DOES NOT CLAIM, and why the honesty matters more than the coverage:
+#
+#   1. NOT "am I behind the latest release". That needs Core's TAGS, which a consumer
+#      repo does not carry — its core/ is a vendored TREE with none of Core's history.
+#      Answering would need the network. What a box can compute offline is how long ago
+#      it was synced (core.lock's own commit date), so that is what the row says.
+#
+#   2. NOT core-integrity.sh's pristine/TAMPERED verdict. That comparison needs the
+#      EXPECTED tree for core_sha, resolved inside a dotfiles-core object store
+#      (scripts/lib/core-lock.sh's core_lock_expected_tree) — a consumer has the vendored
+#      half and not the expected half. Worse, scripts/ is in neither core.manifest nor
+#      core.vendor: those scripts are on today's boxes only because the last release
+#      vendored the whole tree, and #676's filtered vendoring removes them. So this verb
+#      must not shell out to them even where they happen to exist today.
+#
+#      The weaker claim a box CAN make is a different and still useful one: has anything
+#      under core/ been edited since it was committed. That is the hazard operators
+#      actually hit — hand-editing a vendored file, which the next sync silently
+#      clobbers — so the row is worth having as long as it does not overstate itself.
+#
+# EVERY ROW DEGRADES RATHER THAN ERRORS, and the verb returns 0 throughout. A status
+# panel that fails on the box it is describing is useless precisely when you need it: no
+# git, no core.lock, a tarball deploy and a shell where band 60 never loaded are all
+# NORMAL states here, not faults. An unanswerable row says what it could not read.
+
+# _core_status_kv <file> <key> — one core.lock value on stdout, empty when absent.
+# The same key=value shape 02-capabilities.zsh reads, and parsed the same way: in-shell,
+# no fork. Deliberately stricter than a `grep`: an anchored prefix match, first hit wins,
+# so a commented-out or repeated key cannot half-answer.
+_core_status_kv() {
+  emulate -L zsh
+  local _line _k="$2"
+  [[ -r "$1" ]] || return 1
+  while IFS= read -r _line || [[ -n "$_line" ]]; do
+    [[ "$_line" == "${_k}="* ]] || continue
+    print -r -- "${_line#*=}"
+    return 0
+  done <"$1"
+  return 1
+}
+
+# _core_status_age <epoch> — "12 days ago" / "3 hours ago" / "just now" from a unix time.
+# Pure arithmetic on $EPOCHSECONDS (zsh/datetime), so no `date` fork and nothing that
+# differs between GNU and BSD date — the portability trap this repo keeps hitting.
+_core_status_age() {
+  emulate -L zsh
+  zmodload -F zsh/datetime +p:EPOCHSECONDS 2>/dev/null || return 1
+  local -i then=$1 now=$EPOCHSECONDS delta
+  ((delta = now - then))
+  ((delta < 0)) && return 1 # a clock skew or a future commit — say nothing rather than "-3 days ago"
+  if ((delta < 3600)); then print -r -- "just now"
+  elif ((delta < 86400)); then print -r -- "$((delta / 3600)) hours ago"
+  else print -r -- "$((delta / 86400)) days ago"
+  fi
+}
+
+# _core_status_root — the consumer checkout root on stdout, non-zero when this box is not
+# a vendored consumer. THE GATE for every git call in this verb: $_CORE_LOCK_FILE names a
+# directory unconditionally (see its declaration), and in dotfiles-core itself that is the
+# repo's PARENT — running `git -C` there would report on whatever unrelated checkout
+# happens to live above. Requiring a readable core.lock first is what makes the derived
+# root trustworthy, and "no core.lock" is itself the answer the caller renders.
+_core_status_root() {
+  emulate -L zsh
+  [[ -r "$_CORE_LOCK_FILE" ]] || return 1
+  print -r -- "${_CORE_LOCK_FILE:h}"
+}
+
+# _core_status_os — the OS layer's NAME on stdout ("fedora"), non-zero when undeclarable.
+# Read from the 80-os.zsh SYMLINK TARGET rather than from $_CORE_CAP, because the
+# capability schema deliberately has no OS-name key: it declares what the box can DO, never
+# what it IS (scripts/check-capabilities.sh owns that schema). bootstrap-lib.sh's
+# blib_link_os_layer points $ZSH_CFG/80-os.zsh at <checkout>/os/<os>.zsh, so the basename
+# minus its extension is the name the OS repo chose for itself.
+#
+# NOT /etc/os-release: 02-capabilities.zsh exists precisely because Core had 154 places
+# probing the OS directly, and adding a 155th to print a cosmetic label would re-open the
+# hole that file was written to close.
+_core_status_os() {
+  emulate -L zsh
+  local _cfg="${ZSH_CFG:-${XDG_CONFIG_HOME:-$HOME/.config}/zsh}" _t
+  _t="$(readlink "$_cfg/80-os.zsh" 2>/dev/null)" || return 1
+  [[ -n "$_t" ]] || return 1
+  print -r -- "${${_t:t}:r}"
+}
+
+# _core_status_role — the role layer's NAME ("offensive"), non-zero when there is none.
+# The role band is 85-94 and blib_link_role_layer lands exactly one file in it
+# (85-<role>.zsh); a box wiring two roles is explicitly unsupported, so the first match is
+# the answer. (N) makes an empty glob expand to nothing instead of erroring.
+_core_status_role() {
+  emulate -L zsh
+  local _cfg="${ZSH_CFG:-${XDG_CONFIG_HOME:-$HOME/.config}/zsh}"
+  local -a _f=("$_cfg"/(8[5-9]|9[0-4])-*.zsh(N))
+  ((${#_f})) || return 1
+  print -r -- "${${${_f[1]:t}:r}#<->-}"
+}
+
+# _core_status_integrity <root> — sets REPLY to a verdict and REPLY2 to a machine token.
+# See the header above for what this does and does not claim: it compares the WORKTREE
+# against HEAD, which catches an edit that has not been committed. It cannot catch an edit
+# that WAS committed — that needs Core's object store, which is not here.
+_core_status_integrity() {
+  emulate -L zsh
+  local _out
+  if ! _core_have git; then
+    REPLY="unknown (git not available)"; REPLY2=unknown; return 0
+  fi
+  if ! git -C "$1" rev-parse --git-dir >/dev/null 2>&1; then
+    REPLY="unknown (not a git checkout)"; REPLY2=unknown; return 0
+  fi
+  # --porcelain is the STABLE machine format (git's own guarantee); the human `git status`
+  # output is explicitly not. -- core scopes it to the vendored tree, so unrelated work in
+  # the OS repo's own os/ or install/ never reads as a Core integrity problem.
+  _out="$(git -C "$1" status --porcelain -- core 2>/dev/null)"
+  if [[ -z "$_out" ]]; then
+    REPLY="core/ matches its commit"; REPLY2=clean; return 0
+  fi
+  # Split on newlines into an array and count IT. NOT `${(f)#_out}` — that parses as the
+  # `f` flag applied to ${#_out}, i.e. the string's LENGTH, so a single modified file
+  # reported "20 file(s) edited". Caught by the fixture asserting an exact count, which is
+  # why that assertion pins 1 rather than merely "non-zero".
+  local -a _lines=("${(f)_out}")
+  REPLY="${#_lines} file(s) edited since commit"; REPLY2=dirty
+}
+
+core-status() {
+  emulate -L zsh
+  local a
+  for a in "$@"; do [[ "$a" == --json ]] && { _core_status_json; return 0; }; done
+  # Same TTY/paging wrapper as core-doctor and core-whatsnew: force colour through the
+  # capture so a paged panel keeps it, and page only when it does not fit.
+  if [[ -t 1 && -z ${CORE_NO_PAGER:-} ]]; then
+    local _out
+    _out="$(_CORE_FORCE_COLOR=1 _core_status_render "$@")"
+    local _rc=$?
+    [[ -n "$_out" ]] && _core_page "$_out"
+    return $_rc
+  fi
+  _core_status_render "$@"
+}
+
+# _core_status_gather — the ONE probe pass, shared by the renderer and the JSON emitter so
+# the two cannot disagree about the box they are describing. Sets a fixed set of globals
+# rather than returning: zsh has no multi-value return, and a `$(...)` capture per field
+# would re-fork the git calls once each.
+#
+# Every name is prefixed _cs_ and unset by the callers. No `local` here on purpose — the
+# callers need to read these after the call returns.
+_core_status_gather() {
+  emulate -L zsh
+  # Declared together and up front, not at their use sites below. This function's own
+  # scratch (_epoch) and the two outvars _core_status_integrity writes (REPLY/REPLY2) are
+  # assigned inside conditionals, and a `local` there would re-declare an already-set
+  # parameter — which under `emulate -L zsh` prints `name=value` onto stdout and straight
+  # into the panel. That is the bug that shipped literal `_v=` lines into core-doctor -v.
+  local _epoch REPLY REPLY2
+  _cs_ver="unknown"; _cs_root=""; _cs_lock_ver=""; _cs_sha=""; _cs_ref=""; _cs_tag=""
+  _cs_age=""; _cs_os=""; _cs_mgr=""; _cs_sched=""; _cs_role=""; _cs_cap_declared=0
+  _cs_integrity=""; _cs_integrity_token="na"
+  [[ -r "$_CORE_VERSION_FILE" ]] && _cs_ver="$(<"$_CORE_VERSION_FILE")"
+  # The stamp carries a trailing newline; strip ALL whitespace, as the whatsnew nudge does.
+  _cs_ver="${_cs_ver//[[:space:]]/}"
+
+  if _cs_root="$(_core_status_root)"; then
+    _cs_lock_ver="$(_core_status_kv "$_CORE_LOCK_FILE" core_version)"
+    _cs_sha="$(_core_status_kv "$_CORE_LOCK_FILE" core_sha)"
+    _cs_ref="$(_core_status_kv "$_CORE_LOCK_FILE" core_ref)"
+    # core_tag is CONDITIONAL — sync-core.sh omits it entirely when `git describe` finds no
+    # release tag for the vendored commit (an ad-hoc sync off a branch). Absent is normal.
+    _cs_tag="$(_core_status_kv "$_CORE_LOCK_FILE" core_tag)"
+    # WHEN core.lock LAST CHANGED is when this box's Core was last synced: sync-core.sh
+    # commits the file in the SAME commit as the staged core/ tree, so the two dates cannot
+    # drift apart. Reading the file's mtime instead would be wrong — a checkout or a rebase
+    # rewrites mtimes without the vendored Core having moved at all.
+    if _core_have git; then
+      _epoch="$(git -C "$_cs_root" log -1 --format=%ct -- core.lock 2>/dev/null)"
+      [[ "$_epoch" == <-> ]] && _cs_age="$(_core_status_age "$_epoch")"
+    fi
+    _core_status_integrity "$_cs_root"
+    _cs_integrity="$REPLY"; _cs_integrity_token="$REPLY2"
+  fi
+
+  _cs_os="$(_core_status_os)" || _cs_os=""
+  _cs_role="$(_core_status_role)" || _cs_role=""
+  # Band 02 defines both the table and its accessor, and band 60 the package-manager
+  # probe. `core` is reachable in a shell where neither loaded — a $ZSH_CFG missing the
+  # fragment, or a unit context that sources 30-functions alone — so PROBE for each rather
+  # than require it. Consumers must go through _core_cap and never index _CORE_CAP
+  # directly (that accessor is what collapses "declared but empty" and "never declared"
+  # into one behaviour), hence the function guard rather than a bare parameter read.
+  if (($+functions[_core_cap])); then
+    ((${#_CORE_CAP})) && _cs_cap_declared=1
+    _cs_sched="$(_core_cap SCHEDULER)"
+  fi
+  # _pkgup_mgr is band 60, thirty bands after this file — `core` is reachable in a shell
+  # where the updater never loaded, so probe rather than require. Same guard as
+  # _core_doctor_json's pkg_manager field.
+  (($+functions[_pkgup_mgr])) && _cs_mgr="$(_pkgup_mgr)"
+}
+
+_core_status_render() {
+  emulate -L zsh
+  _core_wants_help "$1" && {
+    _core_help "core-status [--json]" "is this box current: Core version + provenance, the live OS/role layers, tool health, and whether core/ has been edited"
+    return 0
+  }
+  # Order-independent and fail-closed, with a did-you-mean — the core-whatsnew shape.
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+    --json) ;; # intercepted by the wrapper; accepted here so a direct render call is not a usage error
+    *)
+      _core_err "core-status: unexpected argument: $arg"
+      local _sug
+      _sug="$(_core_suggest "$arg" --json)"
+      [[ -n "$_sug" ]] && _core_hint "did you mean ${_sug}?"
+      _core_usage "core-status [--json]"
+      return 1
+      ;;
+    esac
+  done
+
+  local c='' d='' r='' y=''
+  if [[ ( -t 1 || -n ${_CORE_FORCE_COLOR:-} ) && -z ${NO_COLOR:-} ]]; then
+    c="${_CORE_C_ACCENT:-$'\e[36m'}" d="${_CORE_C_MUTED:-$'\e[2;37m'}"
+    y="${_CORE_C_YEL:-$'\e[33m'}" r=$'\e[0m'
+  fi
+
+  local _cs_ver _cs_root _cs_lock_ver _cs_sha _cs_ref _cs_tag _cs_age
+  local _cs_os _cs_mgr _cs_sched _cs_role _cs_integrity _cs_integrity_token
+  local -i _cs_cap_declared
+  _core_status_gather
+
+  # ── row 1: version + provenance ────────────────────────────────────────────
+  local _prov
+  if [[ -z "$_cs_root" ]]; then
+    # The two normal reasons, and they are opposite: you are IN dotfiles-core (the source,
+    # which has no lock because it is not a consumer), or a consumer's lock is missing.
+    _prov="${d}provenance unknown (no core.lock beside core/)${r}"
+  else
+    # core_tag when the sync had one, else the short sha — the same display fallback
+    # fleet-drift.sh and core-integrity.sh use for their RECORDED column.
+    local -a _bits=()
+    [[ -n "$_cs_tag" ]] && _bits+=("$_cs_tag")
+    [[ -n "$_cs_sha" ]] && _bits+=("${_cs_sha[1,8]}")
+    [[ -n "$_cs_age" ]] && _bits+=("synced ${_cs_age}")
+    ((${#_bits})) || _bits=("core.lock present but empty")
+    _prov="${d}${(j: · :)_bits}${r}"
+  fi
+  print -r -- "${c}dotfiles-core ${_cs_ver}${r}   ${_prov}"
+  # core.version and core.lock's core_version are stamped by the SAME sync and therefore
+  # always agree. Disagreement is not a staleness signal, it is a TAMPER signal — a
+  # hand-edit, or a bare `git subtree pull` that moved core/ and left the lock behind (the
+  # exact failure core.lock's generated header warns about). Worth a ⚠, which stays a
+  # MODIFIER here and never a row state, per the glyph vocabulary core-doctor established.
+  if [[ -n "$_cs_lock_ver" && "$_cs_ver" != unknown && "$_cs_lock_ver" != "$_cs_ver" ]]; then
+    print -r -- "  ${y}⚠${r} ${d}core.version says ${_cs_ver}, core.lock says ${_cs_lock_ver} — core/ and its lock disagree${r}"
+  fi
+
+  # ── rows 2-5 ───────────────────────────────────────────────────────────────
+  # Built as key|value pairs and padded from the widest key, the same derive-and-pad the
+  # cheat sheet uses, so the value column lines up without a hardcoded width.
+  local -a rows=()
+  local _osval="${_cs_os:-${d}unknown${r}}"
+  local -a _osbits=()
+  [[ -n "$_cs_mgr" ]] && _osbits+=("$_cs_mgr")
+  [[ -n "$_cs_sched" ]] && _osbits+=("$_cs_sched")
+  ((${#_osbits})) && _osval+="  ${d}${(j: · :)_osbits}${r}"
+  # Say WHICH source answered. A box between a Core fan-out and its next
+  # `bootstrap.sh --links-only` has no declaration and runs Core's built-in ladders — that
+  # is a normal migration window (02-capabilities.zsh keeps its warning opt-in for exactly
+  # this reason), but a panel that showed the fallback values unlabelled would be claiming
+  # the OS repo declared them.
+  ((_cs_cap_declared)) || _osval+="  ${d}(built-in defaults — no os.capabilities declared)${r}"
+  rows+=("OS layer|$_osval")
+  rows+=("Role layer|${_cs_role:-${d}none${r}}")
+
+  local -i _tp _tt _tw _tk
+  _core_doctor_tally _tp _tt _tw _tk
+  rows+=("Tools|${_tp}/${_tt} present · ${_tw}/${_tk} wired          ${d}core-doctor -v${r}")
+  rows+=("Integrity|${_cs_integrity:-${d}n/a (this checkout is Core itself, not a consumer)${r}}")
+
+  local -i kw=0
+  local line key val
+  for line in "${rows[@]}"; do
+    key="${line%%|*}"
+    ((${#key} > kw)) && kw=${#key}
+  done
+  for line in "${rows[@]}"; do
+    key="${line%%|*}"; val="${line#*|}"
+    print -r -- "${(r:$kw:)key}  $val"
+  done
+}
+
+# _core_status_json — machine-readable status (#681). One object on stdout, never paged.
+# Same pure-zsh, no-python construction as _core_doctor_json, and the same never-widen
+# contract: a consumer reading .integrity.status must keep working, so a future field is a
+# NEW key, not a changed type on an existing one.
+#
+# Strings that reach this object come from files an OS repo authors (core.lock values) or
+# from symlink basenames, so they are not guaranteed quote-free the way core-doctor's fixed
+# tool-name list is. _core_status_jstr escapes rather than assuming.
+_core_status_jstr() {
+  emulate -L zsh
+  local _s="$1"
+  _s="${_s//\\/\\\\}"
+  _s="${_s//\"/\\\"}"
+  # Control characters would make the object unparseable; core.lock is a text file but
+  # nothing enforces that, so strip them rather than emit invalid JSON.
+  print -rn -- "\"${_s//[[:cntrl:]]/}\""
+}
+
+_core_status_json() {
+  emulate -L zsh
+  local _cs_ver _cs_root _cs_lock_ver _cs_sha _cs_ref _cs_tag _cs_age
+  local _cs_os _cs_mgr _cs_sched _cs_role _cs_integrity _cs_integrity_token
+  local -i _cs_cap_declared
+  _core_status_gather
+
+  local -i _tp _tt _tw _tk
+  _core_doctor_tally _tp _tt _tw _tk
+
+  print -rn -- "{\"version\":"; _core_status_jstr "$_cs_ver"
+  print -rn -- ",\"lock\":{\"present\":"
+  if [[ -n "$_cs_root" ]]; then print -rn -- true; else print -rn -- false; fi
+  print -rn -- ",\"core_version\":"; _core_status_jstr "$_cs_lock_ver"
+  print -rn -- ",\"core_sha\":"; _core_status_jstr "$_cs_sha"
+  print -rn -- ",\"core_ref\":"; _core_status_jstr "$_cs_ref"
+  print -rn -- ",\"core_tag\":"; _core_status_jstr "$_cs_tag"
+  print -rn -- ",\"synced\":"; _core_status_jstr "$_cs_age"
+  print -rn -- "},\"os\":{\"layer\":"; _core_status_jstr "$_cs_os"
+  print -rn -- ",\"pkg_manager\":"; _core_status_jstr "$_cs_mgr"
+  print -rn -- ",\"scheduler\":"; _core_status_jstr "$_cs_sched"
+  print -rn -- ",\"capabilities_declared\":"
+  if ((_cs_cap_declared)); then print -rn -- true; else print -rn -- false; fi
+  print -rn -- "},\"role\":{\"layer\":"; _core_status_jstr "$_cs_role"
+  # The tool counts are the SAME tally the panel renders — one probe pass, two surfaces,
+  # so a statusline and a human reading core status cannot be told different numbers.
+  print -rn -- "},\"tools\":{\"present\":${_tp},\"total\":${_tt},\"wired\":${_tw},\"wirable\":${_tk}"
+  # clean | dirty | unknown | na — a fixed token set, so a gate can branch on it without
+  # parsing the human sentence beside it. `na` is this checkout being Core itself.
+  print -rn -- "},\"integrity\":{\"status\":"; _core_status_jstr "$_cs_integrity_token"
+  print -rn -- ",\"detail\":"; _core_status_jstr "$_cs_integrity"
+  print -r -- "}}"
+}
+
 # ── core — the umbrella front door (B1) ───────────────────────────────────────
 # ONE discoverable namespace over Core's first-party verbs, so a newcomer types a
 # single command (`core`) and finds everything instead of having to already know
@@ -100,9 +471,10 @@ core-version() {
 #   core version          → core-version
 #   core update [-y|-n]   → up
 #   core whatsnew [--full] → core-whatsnew
+#   core status [--json]  → core-status
 # The subcommand list is the single source the completion (_core) and the
 # unknown-subcommand did-you-mean both read, so they can't drift.
-typeset -ga _CORE_SUBCMDS=(help doctor version update whatsnew)
+typeset -ga _CORE_SUBCMDS=(help doctor version status update whatsnew)
 core() {
   emulate -L zsh
   local sub="${1:-}"
@@ -112,6 +484,7 @@ core() {
   doctor) core-doctor "$@" ;;
   version | -V | --version) core-version "$@" ;;
   whatsnew) core-whatsnew "$@" ;;
+  status) core-status "$@" ;;
   update)
     # `up` lives in 60-update.zsh — band 60, thirty bands after this file. So `core` can be
     # reached in a shell where the updater never loaded: a $ZSH_CFG missing that symlink, a
@@ -500,6 +873,51 @@ _core_doctor_bin() {
     ;;
   *)   REPLY="$1" ;;
   esac
+}
+
+# _core_doctor_tally <present-var> <total-var> <wired-var> <wirable-var> — the counts
+# behind `core status`'s one-line tool summary (#681), written into the four named
+# parameters.
+#
+# WHY THIS EXISTS RATHER THAN A SECOND COUNT IN core-status. The summary row has to agree
+# with the report it points the reader at ("core-doctor -v"), and the only way to
+# guarantee that is to ask the SAME questions of the SAME inventories: _CORE_DOCTOR_GROUPS
+# and _CORE_DOCTOR_WIRED, through _core_doctor_bin/_core_doctor_present and
+# _core_have/_core_wired. A hand-rolled loop in the status verb would pass review and then
+# drift the first time a predicate here changed.
+#
+# WHY _core_doctor_json IS NOT REFACTORED TO CALL IT. That object is a published shape with
+# consumers and an explicit never-widen rule (see the "expected"/"stale" notes below), so
+# rewriting its loops to source their counts from here would risk its key order and its
+# per-tool booleans for no gain — it needs the per-tool answers, not the totals. The two
+# are kept honest by a parity assertion in the suite instead, which is the same technique
+# that already pins the render against the JSON.
+#
+# "total" counts every tool in the inventory INCLUDING the opt-in ones, and "present" is
+# simply how many of them resolve. That deliberately reads lower than 100% on a correctly
+# provisioned box — footnote ²¹'s opt-in set is absent on purpose — which is why the panel
+# prints a ratio and defers the verdict to core-doctor, where absence is classified.
+_core_doctor_tally() {
+  emulate -L zsh
+  # Declared together, before the loops. A `local` re-declaring an already-set parameter
+  # prints `name=value` under `emulate -L zsh` (TYPESET_SILENT is off) — the bug that
+  # shipped literal `_v=` lines into core-doctor -v. REPLY is written by _core_doctor_bin.
+  local t REPLY
+  local -a alltools=()
+  local -i _gi present=0 total=0 wired=0 wirable=0
+  for ((_gi = 2; _gi <= ${#_CORE_DOCTOR_GROUPS}; _gi += 2)); do
+    alltools+=(${=_CORE_DOCTOR_GROUPS[_gi]})
+  done
+  for t in $alltools; do
+    ((total++))
+    _core_doctor_bin "$t"
+    _core_doctor_present "$REPLY" && ((present++))
+  done
+  for t in "${_CORE_DOCTOR_WIRED[@]}"; do
+    ((wirable++))
+    _core_have "$t" && _core_wired "$t" && ((wired++))
+  done
+  : "${(P)1::=$present}" "${(P)2::=$total}" "${(P)3::=$wired}" "${(P)4::=$wirable}"
 }
 
 # _core_doctor_json — machine-readable health (B12). The gate scripts emit --json; the
@@ -1925,6 +2343,7 @@ _core_help_render() {
     "up [-y]|apply package updates (interactive; confirms first)"
     "update-check|refresh the 'updates available' nudge"
     "core-whatsnew [--full]|what changed in Core since this box last looked"
+    "core-status|is this box current: version, provenance, live layers, core/ integrity"
     "gsync|push this repo's vendored core/ subtree back upstream to dotfiles-core"
     "maint-install [HH:MM]|schedule the daily safe-update job"
     "maint-run|run daily maintenance now"
@@ -1989,7 +2408,7 @@ _core_help_render() {
     return 0
   fi
   print -r -- "${dc}  1Password: opsecret · openv · optoken · opssh    health: core-doctor · version: core-version${de}"
-  print -r -- "${dc}  front door: core <help|doctor|version|update|whatsnew>  (run \`core\` for this sheet anytime)${de}"
+  print -r -- "${dc}  front door: core <help|doctor|version|status|update|whatsnew>  (run \`core\` for this sheet anytime)${de}"
 }
 alias cheat='core-help'
 
@@ -2011,7 +2430,7 @@ if [[ $- == *i* ]] && ((CORE_CNF_ENABLED)); then
     local -a _verbs=(
       core mkcd cdup extract mkbak fcd serve genpw fif fbr up update-check
       maint-install maint-run maint-log maint-status maint-uninstall
-      core-help core-doctor core-version
+      core-help core-doctor core-version core-status core-whatsnew
       opsecret openv optoken opssh
     )
     # Also weigh this shell's defined ALIASES — the most-typed commands (the g* git set,
