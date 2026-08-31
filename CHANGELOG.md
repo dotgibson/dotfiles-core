@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.5.0] - 2026-08-30
+
 ### Changed
 
 - **`atuin/config.toml` no longer pins `search_mode`, so a machine can finally choose it.**
