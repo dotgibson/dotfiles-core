@@ -23,6 +23,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+# The vendored-set filter and the ONE producer, shared with sync-core.sh (#676). A repo
+# scaffolded here must be born carrying the SAME subset the fan-out would give it, or its
+# very first core-integrity run reports TAMPERED against a filter its creator never applied.
+# shellcheck source=scripts/lib/core-vendor.sh
+source "${BASH_SOURCE[0]%/*}/lib/core-vendor.sh"
 
 # v4: the load order is the numbered fragments' NN prefix, globbed by the vendored
 # loader — a scaffolded .zshrc no longer lists module names, it just sources the loader.
@@ -114,19 +119,43 @@ w() {
 ((DRY)) || git -C "$TARGET" init -q
 
 # ── vendor Core ───────────────────────────────────────────────────────────────
+# NOT `git subtree add --squash` any more (#676). A subtree add copies the WHOLE upstream
+# tree, so from the moment core.vendor exists it would scaffold a repo whose core/ carries
+# 285 files against an expectation of 185 — TAMPERED on the first `make core-integrity`,
+# before anyone had touched it. Materializing through the shared producer means there is one
+# definition of "what a vendored core/ contains" and a new repo starts life agreeing with it.
+#
+# Nothing downstream loses anything: core.lock is the authoritative provenance since #587,
+# and the fan-out stamps it on this repo's first `make sync`.
+_vendor_hint="git -C '$TARGET' fetch '$CORE_REMOTE' '$CORE_BRANCH' && (cd '$HERE' && ./scripts/sync-core.sh dotfiles-$OS)"
 if ((NO_VENDOR)); then
-  skip "skipping subtree add (--no-vendor) — run later: git -C '$TARGET' subtree add --prefix=core '$CORE_REMOTE' '$CORE_BRANCH' --squash"
+  skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then
-  skip "would: git -C '$TARGET' subtree add --prefix=core '$CORE_REMOTE' '$CORE_BRANCH' --squash"
+  skip "would: materialize $TARGET/core from $CORE_REMOTE ($CORE_BRANCH)"
 elif [[ -z "$CORE_REMOTE" ]]; then
   fail "CORE_REMOTE empty (set origin on dotfiles-core, or export CORE_REMOTE) — scaffolding files, skipping vendor"
 else
-  # subtree add needs at least one commit on the new repo first.
+  # The materialize needs at least one commit on the new repo first (it stages into an index
+  # that must have a HEAD to be committed against).
   git -C "$TARGET" commit -q --allow-empty -m "init dotfiles-$OS" 2>/dev/null
-  if git -C "$TARGET" subtree add --prefix=core "$CORE_REMOTE" "$CORE_BRANCH" --squash >/dev/null 2>&1; then
-    pass "vendored Core into core/ (subtree)"
+  # Resolve the ref to a SHA and address the tree by it, for the same reason sync-core.sh
+  # does (#556): the filter and the provenance must name one commit, not "whatever this ref
+  # meant during whichever fetch".
+  _core_sha="$(git ls-remote "$CORE_REMOTE" "$CORE_BRANCH" 2>/dev/null | awk 'NR==1{print $1}')"
+  if [[ -z "$_core_sha" ]]; then
+    fail "could not resolve $CORE_BRANCH on $CORE_REMOTE (offline/unreachable?) — files scaffolded; vendor later with: $_vendor_hint"
+  elif ! git -C "$TARGET" fetch -q --no-tags "$CORE_REMOTE" "$_core_sha" >/dev/null 2>&1 &&
+    ! git -C "$TARGET" fetch -q --no-tags "$CORE_REMOTE" "$CORE_BRANCH" >/dev/null 2>&1; then
+    fail "fetch of Core failed (offline/unreachable?) — files scaffolded; vendor later with: $_vendor_hint"
+  elif core_vendor_materialize "$TARGET" "$_core_sha" &&
+    git -C "$TARGET" commit -q -m "chore(core): vendor Core at ${_core_sha:0:12}"; then
+    if core_vendor_is_filtered "$TARGET" "$_core_sha"; then
+      pass "vendored Core into core/ at ${_core_sha:0:12} (filtered: core.manifest + core.vendor)"
+    else
+      pass "vendored Core into core/ at ${_core_sha:0:12} (whole tree — $CORE_BRANCH predates core.vendor)"
+    fi
   else
-    fail "subtree add failed (offline/unreachable?) — files scaffolded; vendor later with the command in --no-vendor"
+    fail "materializing core/ failed — files scaffolded; vendor later with: $_vendor_hint"
   fi
 fi
 

@@ -20,6 +20,18 @@
 # substitutions (subshells), where a write would be lost anyway, and both callers run under
 # different `set` options (sync-core.sh uses `set -euo pipefail`, core-integrity.sh
 # `set -uo pipefail`), so nothing here may depend on either.
+#
+# ONE EXCEPTION, and it is why core-vendor.sh is a separate file: since #676 the expected
+# tree is not always `${sha}^{tree}` — a commit carrying core.vendor vendors a FILTERED
+# subset, and computing that writes a temporary index. That work lives next door, in
+# scripts/lib/core-vendor.sh, so the purity promise above stays true of everything here.
+
+# scripts/lib/core-vendor.sh holds the vendored-set filter and the version switch
+# core_lock_expected_tree turns on. Sourced with a guard so a caller that already sourced
+# it (sync-core.sh does, for core_vendor_materialize) does not redefine it.
+# shellcheck source=scripts/lib/core-vendor.sh
+[ -n "${_CORE_VENDOR_LIB_SOURCED:-}" ] || . "${BASH_SOURCE[0]%/*}/core-vendor.sh"
+_CORE_VENDOR_LIB_SOURCED=1
 
 # Read a `key=value` value from a core.lock-style file. Tolerates surrounding whitespace;
 # first match wins.
@@ -33,11 +45,29 @@ core_lock_vendored_tree() { # core_lock_vendored_tree <consumer-dir>
   git -C "$1" rev-parse --verify --quiet 'HEAD:core' 2>/dev/null
 }
 
-# The tree object a given Core commit SHOULD produce: dotfiles-core's whole tree at that
-# commit. Fails when the object is absent, which is itself meaningful — the lock names a
-# commit that is not in this Core's history (a phantom or rewritten sha).
+# The tree object a given Core commit SHOULD produce. Fails when the object is absent,
+# which is itself meaningful — the lock names a commit that is not in this Core's history
+# (a phantom or rewritten sha).
+#
+# NOT always `${sha}^{tree}` any more (#676). A commit carrying core.vendor vendors the
+# FILTERED subset `core.manifest` ∪ `core.vendor`; one that does not predates filtering and
+# vendored its whole tree. core_vendor_effective_tree owns that switch — the single copy,
+# shared with the producers — and derives it from the PINNED COMMIT rather than from a
+# flag, an env var, or this checkout's state.
+#
+# That is what let #676 land without a flag day: on the day it merged, all nine repos still
+# pinned pre-core.vendor commits, took the whole-tree branch, and stayed `pristine`. The
+# switch flips per-repo, exactly when that repo's core.lock moves to a filtering commit.
+#
+# It also degrades into the existing verdict rather than a new one: a locked sha that is not
+# here fails `cat-file -e`, falls to the whole-tree branch, fails `rev-parse` too, and
+# core_lock_classify reports UNVERIFIABLE — the same answer as before.
 core_lock_expected_tree() { # core_lock_expected_tree <core-dir> <sha>
-  git -C "$1" rev-parse --verify --quiet "${2}^{tree}" 2>/dev/null
+  # A hard failure, not a silent degrade: if the vendor lib is missing, every repo would
+  # otherwise be compared against a whole tree it no longer carries and reported TAMPERED
+  # en masse. Better to say the gate cannot run than to say the fleet is broken.
+  command -v core_vendor_effective_tree >/dev/null 2>&1 || return 1
+  core_vendor_effective_tree "$1" "$2"
 }
 
 # Classify a consumer's vendored core/ against the commit its core.lock pins.
