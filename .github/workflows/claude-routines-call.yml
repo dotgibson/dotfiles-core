@@ -91,7 +91,7 @@ jobs:
           # every caller moved to `@v5`, so the workflow body was v5 and the scripts it
           # ran were not. `vN` is a moving alias, advanced on each release — a frozen one
           # is invisible, because nothing here fails when it points at the wrong major.
-          ref: v5
+          ref: v6
       # 2) The caller OS repo into caller/ — its install/packages.txt / Brewfile is
       #    what the routine reads (exposed to the CLI via --add-dir).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

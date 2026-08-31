@@ -71,7 +71,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          ref: v5
+          ref: v6
           path: dotfiles-core
           fetch-depth: 1
       - name: Cut the next release tag (idempotent)
