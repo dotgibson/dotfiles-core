@@ -27,12 +27,34 @@ file means adding its path to `core.manifest` in the same change — the audit
 enforces this in both directions:
 
 - every path listed in the manifest must exist on disk, and
-- every tracked file must be either listed in the manifest or in the audit's
-  repo-meta allowlist (docs, CI config, dev tooling).
+- every tracked file must be either listed in the manifest, listed in
+  `core.vendor`, or in the audit's repo-meta allowlist (docs, CI config, dev
+  tooling).
 
-Repo-meta and dev tooling (this file, `LICENSE`, `.github/`, `scripts/sync-core.sh`,
-`scripts/audit-core.sh`, …) are **not** vendored into OS repos, so they live in the
-allowlist in `scripts/audit-core.sh` rather than the manifest.
+There are **two** lists, and they answer different questions:
+
+| file | question | consequence |
+| --- | --- | --- |
+| `core.manifest` | is this **shipped** Core? | vendored into `core/` **and** symlinked into `$HOME` by an OS repo's bootstrap |
+| `core.vendor` | does this **ride along** in `core/` because an OS repo's Makefile, CI or bootstrap reads it from there? | vendored into `core/`, never symlinked |
+
+`scripts/sync-core.sh` materializes exactly `core.manifest` ∪ `core.vendor` and
+nothing else. Repo-meta and dev tooling (this file, `LICENSE`, `CHANGELOG.md`,
+`assets/`, `scripts/sync-core.sh`, `scripts/audit-core.sh`, …) are **not** vendored
+into OS repos, so they live in the allowlist in `scripts/audit-core.sh` rather than
+in either list.
+
+> That last paragraph was false until #676. The allowlist only kept those files out
+> of `core.manifest`, which governs **symlinking**, not what lands on disk — the
+> subtree copied the whole repo regardless, 5.6 MB into each of nine repos of which
+> ~0.9 MB was Core. A vendored `core/` is now 182 files, not 285.
+
+Adding to `core.vendor` means naming the consumer in a comment on the same line. If
+you cannot name one, it does not belong there. A path listed in both files is a
+**failure**, not a warning (`audit-core.sh` §1d): it means nobody decided which it
+is. And if a vendored script `source`s a sibling, §1e's closure walk requires that
+sibling to be vendored too — otherwise the break surfaces on a box, at runtime, one
+fan-out later.
 
 ## Run the audit before you push
 

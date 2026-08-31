@@ -8,6 +8,30 @@ to know what they may touch, what will be overwritten, and how to get a fix upst
 `ARCHITECTURE.md` explains _why_ the system vendors. This explains _how to live with it_.
 When a rule here drifts from `README.md` or `CONTRIBUTING.md`, those win — fix this.
 
+## What your `core/` contains
+
+**Not all of dotfiles-core.** As of #676 the fan-out materializes exactly two lists and
+nothing else:
+
+| list | what it is |
+| --- | --- |
+| `core.manifest` | **shipped** Core — vendored _and_ symlinked into `$HOME` by your bootstrap |
+| `core.vendor` | files that **ride along** because an OS repo reads them from `core/` — `scripts/tool-versions.env`, `scripts/check-capabilities.sh`, `gitleaks.toml`, `.github/actions/setup-core-tools`, the atuin unit, and a handful more |
+
+Everything else stays in dotfiles-core: `CHANGELOG.md`, `assets/`, `.claude/`, the root
+docs, and the authoring half of `scripts/` (release tooling, the fan-out itself,
+benchmarks, dashboards). A vendored `core/` went from 285 files / 5.6 MB to 182 files /
+1.2 MB in the release that carried this.
+
+**If you need a file from `core/` that is not there, do not copy it in** — that is an edit
+to `core/` and the next sync deletes it. Open an issue against dotfiles-core naming the
+file and what reads it; if the need is real it gets a line in `core.vendor` with your repo
+named as the consumer, and arrives on the next sync.
+
+Before #676 this section would have been untrue in the other direction: `CONTRIBUTING.md`
+claimed repo-meta was "not vendored into OS repos" while the subtree copied every byte of
+it, including a 1.8 MB README GIF replicated into nine repos that none of them display.
+
 ## The one rule
 
 **Never edit anything under `core/`.** That tree is a copy, and the next `make sync`
@@ -180,17 +204,26 @@ runs a read-only freshness check and does the same. So the four redirects are th
 of the rule rather than four breaches of it; what they demonstrate is why the rule is worth
 having.
 
-**The one deliberate second writer is `dotfiles-Offense`.** It vendors Core on its own schedule
-rather than only on the fan-out: `make core-sync` runs that repo's own `scripts/sync-core.sh`,
-a `git subtree pull --squash` which then stamps all four fields — the operation the paragraph
-above forbids _by hand_, made safe by the half a hand-pull omits. That is sanctioned, and is
-not the thing the three retired generators were, because it writes Core's format from **what
-it actually pulled**: `core_sha` comes from the squash commit's `git-subtree-split` trailer and
-`core_version` from the tree now on disk, so the lock cannot describe a commit its own `core/`
-does not contain. The consequence worth knowing is that Offense has **two** paths into `core/`
-— the fan-out, which replaces the tree, and its own pull, which merges — and `core-integrity`
-gates both, because both stamp the lock. Any _other_ repo growing a writer is a regression to
-the state above, not a second exception.
+**`dotfiles-Offense`'s `make core-sync` is retired by #676, and this is the reason.** It was
+the one deliberate second writer: a `git subtree pull --squash` that then stamped all four
+fields — sanctioned, unlike the three retired `make core-lock` generators, precisely because
+it wrote Core's format from **what it actually pulled** (`core_sha` from the squash commit's
+`git-subtree-split` trailer, `core_version` from the tree now on disk), so the lock could not
+describe a commit its own `core/` did not contain.
+
+That property is exactly what a filtered vendor takes away. A subtree pull merges the
+**whole** upstream tree; it has no way to apply `core.vendor`, and "what it actually pulled"
+is now, by construction, not what a vendored `core/` should contain. The first pull after
+Offense's lock moved to a filtering commit would land all 285 files against an expectation of
+the filtered subset, and `core-integrity` would report `TAMPERED` — correctly, and with no hand-edit anywhere.
+Teaching it to filter would make it a second **producer** of Core's format, which is the
+thing the sanction was never extended to.
+
+So Offense now takes the fan-out like every other repo, and there is **one** producer:
+`core_vendor_materialize` in `scripts/lib/core-vendor.sh`, shared by `sync-core.sh` and
+`new-os-repo.sh`. Offense loses its independent sync cadence; it gains the property that its
+`core/` cannot disagree with anyone else's. Any repo growing a writer is a regression to the
+state above, not a new exception.
 
 **`core_branch` is gone as of v5.** No `core.lock` in the fleet carries it; all nine are
 Core-stamped with `core_ref`. The last reader of the old name is Offense's `sync-core.sh`,

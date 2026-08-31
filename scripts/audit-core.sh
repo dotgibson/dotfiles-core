@@ -282,14 +282,25 @@ trap _audit_cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Tracked files that live in dotfiles-core but are NOT vendored into OS repos'
-# core/ subtree — repo-meta and dev tooling. Anything tracked, not matched by the
-# manifest, must appear here (or under a META_PREFIXES dir) or section 1 flags it.
+# Tracked files that live in dotfiles-core and are NOT vendored into OS repos' core/
+# subtree — repo-meta and dev tooling. Anything tracked, not matched by the manifest and
+# not in core.vendor, must appear here (or under a META_PREFIXES dir) or section 1 flags it.
+#
+# SINCE #676 THIS IS A CLAIM ABOUT DISK, NOT JUST ABOUT SYMLINKS. It used to say "not
+# vendored" while the subtree copied every one of these files into all nine repos anyway —
+# "not shipped" meant "not in the manifest", not "not on disk", and CONTRIBUTING.md asserted
+# the stronger thing for years. sync-core.sh now materializes `core.manifest` ∪ `core.vendor`
+# and nothing else, so a file here genuinely does not leave this repo.
+#
+# THREE ENTRIES LEFT WHEN #676 LANDED, because an OS repo actually reads them from core/:
+# PORTING-MATRIX.md, core.manifest and gitleaks.toml moved to core.vendor with their
+# consumers named. If you are about to add something back here that a fleet repo greps out
+# of core/, it belongs in core.vendor instead — §1d fails a path that is in both.
 META_ALLOWLIST=(
-  README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
+  README.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
   ARCHITECTURE.md PORTABILITY.md VENDORING.md CODE_OF_CONDUCT.md
   PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V4-PROPOSAL.md V5-PROPOSAL.md
-  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json gitleaks.toml
+  .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json
   Makefile cliff.toml
   nvim/.luacheckrc
   CODEOWNERS pull_request_template.md
@@ -308,8 +319,22 @@ META_ALLOWLIST=(
 # .devcontainer/ is the dev-environment definition (one-command CI parity) — dev tooling
 # too, not part of the shipped Core layer (not in core.manifest).
 # assets/ is README media (the VHS demo tape + rendered gif) — repo-meta for the public
-# showcase, not shipped Core (absent from core.manifest); it rides along physically in the
-# subtree copy but is never symlinked.
+# showcase, not shipped Core (absent from core.manifest). Before #676 it rode along
+# physically in the subtree copy anyway: 1.8 MB of README GIF, larger than the entire Core
+# payload, replicated into nine repos where no README displays it. It no longer ships.
+#
+# THESE PREFIXES ARE THE RESIDUAL, AND THEY OVERLAP core.vendor BY DESIGN. Four of them
+# (examples/, .github/, scripts/, and the root docs above) contain a handful of files an OS
+# repo genuinely reads from core/ — check-capabilities.sh, tool-versions.env,
+# setup-core-tools, the atuin unit. Those are named per-file in core.vendor; everything else
+# under the prefix stays here. Enumerating the non-vendored remainder per-file instead would
+# be ~90 lines that change every time a dev script lands, to state the same thing.
+#
+# So §1's three buckets are NOT a strict partition, and §1d does not pretend otherwise: it
+# fails an EXACT overlap (a path in core.manifest and core.vendor, or hand-listed in both
+# META_ALLOWLIST and core.vendor), which is the drift that actually happens — someone adds a
+# consumer and forgets to remove the old allowlist line. A prefix that contains a vendored
+# file is the intended shape, not drift.
 META_PREFIXES=(examples/ .github/ scripts/ .claude/ .devcontainer/ assets/)
 
 
@@ -322,6 +347,12 @@ MANIFEST_PATHS=()
 while IFS= read -r p; do
   MANIFEST_PATHS+=("$p")
 done < <(sed -e 's/#.*//' -e 's/[[:space:]]*$//' core.manifest | awk 'NF {print $1}')
+# core.vendor is parsed with the SAME parser, deliberately: it shares core.manifest's format
+# so there is one thing to learn and one thing to get wrong (#676).
+VENDOR_PATHS=()
+while IFS= read -r p; do
+  VENDOR_PATHS+=("$p")
+done < <(sed -e 's/#.*//' -e 's/[[:space:]]*$//' core.vendor 2>/dev/null | awk 'NF {print $1}')
 for p in "${MANIFEST_PATHS[@]}"; do
   if [[ "$p" == */ ]]; then
     if [[ -d "$p" ]]; then pass "dir  $p"; else fail "manifest lists missing dir:  $p"; fi
@@ -337,6 +368,10 @@ is_listed() { # $1 = path
     [[ "$f" == "$m" ]] && return 0                # exact file match
     [[ "$m" == */ && "$f" == "$m"* ]] && return 0 # under a listed dir
   done
+  for m in "${VENDOR_PATHS[@]}"; do
+    [[ "$f" == "$m" ]] && return 0                # exact file match
+    [[ "$m" == */ && "$f" == "$m"* ]] && return 0 # under a listed dir
+  done
   for m in "${META_ALLOWLIST[@]}"; do [[ "$f" == "$m" ]] && return 0; done
   for pre in "${META_PREFIXES[@]}"; do [[ "$f" == "$pre"* ]] && return 0; done
   return 1
@@ -349,6 +384,130 @@ if have git && git rev-parse --git-dir >/dev/null 2>&1; then
   pass "reverse-drift scan complete (tracked files all accounted for)"
 else
   skip "reverse-drift scan (not a git checkout)"
+fi
+
+# ── 1c. vendor allowlist ↔ filesystem ────────────────────────────────────────
+# The manifest direction of §1, for the second list. A core.vendor entry naming a path that
+# does not exist would silently shrink the vendored set: core_vendor_tree keeps what the
+# filter matches, and a typo matches nothing. The consumer that needed it then fails at
+# runtime, in ITS repo's CI, one fan-out later.
+hdr "vendor allowlist ↔ filesystem"
+if [[ ! -r core.vendor ]]; then
+  fail "core.vendor is missing or unreadable — sync-core.sh would silently fall back to vendoring the WHOLE tree (core_vendor_effective_tree's version switch keys on this file's presence at a commit)"
+elif ((${#VENDOR_PATHS[@]} == 0)); then
+  fail "core.vendor parses to zero paths — every OS repo would vendor an empty core/"
+else
+  for p in "${VENDOR_PATHS[@]}"; do
+    if [[ "$p" == */ ]]; then
+      if [[ -d "$p" ]]; then pass "vendor dir  $p"; else fail "core.vendor lists missing dir:  $p"; fi
+    else
+      if [[ -e "$p" ]]; then pass "vendor file $p"; else fail "core.vendor lists missing file: $p"; fi
+    fi
+  done
+fi
+
+# ── 1d. the two lists must not disagree about a path ─────────────────────────
+# core.manifest answers "is this SHIPPED Core — symlinked into $HOME?"; core.vendor answers
+# "does this RIDE ALONG in core/ so vendored tooling resolves?". A path in both means nobody
+# decided which it is, and the two lists are read by different code for different purposes.
+#
+# A FAIL, not a warning: the duplicate is harmless to the tree today (the filter unions
+# them), which is exactly why it would sit there accumulating until someone removed the
+# manifest line and silently unshipped a Core file that "was still listed".
+hdr "core.manifest ↔ core.vendor"
+_dupes=0
+for p in "${VENDOR_PATHS[@]}"; do
+  for m in "${MANIFEST_PATHS[@]}"; do
+    if [[ "$p" == "$m" ]] || [[ "$m" == */ && "$p" == "$m"* ]]; then
+      fail "listed in BOTH core.manifest and core.vendor: $p (decide which — shipped Core, or rides along for a consumer)"
+      _dupes=1
+    fi
+  done
+  for m in "${META_ALLOWLIST[@]}"; do
+    if [[ "$p" == "$m" ]]; then
+      fail "listed in BOTH core.vendor and audit-core.sh's META_ALLOWLIST: $p (META_ALLOWLIST is the NOT-vendored list — drop the entry there)"
+      _dupes=1
+    fi
+  done
+done
+((_dupes)) || pass "no path claimed by two lists"
+# The two contract files must vendor themselves. Vendored tooling parses core.manifest from
+# its OWN root (a filtered core/ that omitted it breaks the moment anything in it reads the
+# manifest), and core.vendor is what lets a checkout with no Core objects answer "why are
+# these files here?" from core/ alone.
+for _self in core.manifest core.vendor; do
+  _found=0
+  for p in "${VENDOR_PATHS[@]}"; do [[ "$p" == "$_self" ]] && _found=1; done
+  if ((_found)); then pass "core.vendor lists $_self (self-describing)"
+  else fail "core.vendor does not list $_self — a vendored core/ could not explain or parse itself"; fi
+done
+
+# ── 1e. vendored closure: does a shipped script reach a file nobody ships? ───
+# The gate #676 needs and nothing else provides. Before it, a script that shipped could
+# `source` any sibling, because every sibling shipped. Now core/ carries ~180 of 285 files,
+# so a vendored entry point can reach a path that stayed behind — and NOTHING else catches
+# it: §1's reverse drift sees a tracked, accounted-for file either way, and core-integrity
+# compares tree hashes, where a consistently-wrong subset hashes consistently. It surfaces on
+# a box, at runtime, as "no such file or directory".
+#
+# BFS FROM DECLARED ENTRY POINTS, not a sweep of every vendored script. Entry points are the
+# files a consumer EXECUTES or SOURCES, marked `# entry` in core.vendor. Sweeping everything
+# instead would immediately demand that release-only tooling's references be vendored —
+# scripts/release.sh reaches CHANGELOG.md, gen-release-notes.sh reaches cliff.toml — and the
+# only ways out are to hand back 687 KB or to start a suppression list. A gate whose first
+# act is to demand a suppression is a gate someone turns off (the _core_pipefail_hits
+# argument). Walking from entry points puts that tooling out of scope by construction.
+#
+# See _core_vendor_ref_hits for what the scanner deliberately cannot see (computed paths,
+# Lua requires, YAML). Those paths are hand-listed in core.vendor with their consumer named.
+hdr "vendored closure (core.vendor '# entry' roots)"
+_is_vendored() { # _is_vendored <path>
+  local f="$1" m
+  for m in "${MANIFEST_PATHS[@]}"; do
+    [[ "$f" == "$m" ]] && return 0
+    [[ "$m" == */ && "$f" == "$m"* ]] && return 0
+  done
+  for m in "${VENDOR_PATHS[@]}"; do
+    [[ "$f" == "$m" ]] && return 0
+    [[ "$m" == */ && "$f" == "$m"* ]] && return 0
+  done
+  return 1
+}
+_ENTRIES=()
+while IFS= read -r p; do
+  [[ -n "$p" ]] && _ENTRIES+=("$p")
+done < <(grep -E '^[^#[:space:]]+[[:space:]]+#[[:space:]]*entry([[:space:]]|$)' core.vendor 2>/dev/null | awk '{print $1}')
+if ((${#_ENTRIES[@]} == 0)); then
+  fail "core.vendor declares no '# entry' roots — the closure check has nothing to walk from, so a vendored script could reach an unvendored file unnoticed"
+else
+  # bash 3.2: no associative arrays (this gate runs on macOS's stock 3.2), so `seen` is a
+  # newline-delimited string and membership is a case glob. The frontier is bounded by the
+  # vendored set, so this terminates in a handful of rounds.
+  _seen=$'\n'
+  _queue=("${_ENTRIES[@]}")
+  _closure_bad=0
+  while ((${#_queue[@]})); do
+    _cur="${_queue[0]}"
+    _queue=("${_queue[@]:1}")
+    case "$_seen" in *$'\n'"$_cur"$'\n'*) continue ;; esac
+    _seen="${_seen}${_cur}"$'\n'
+    [[ -f "$_cur" ]] || continue
+    while IFS= read -r _hit; do
+      [[ -n "$_hit" ]] || continue
+      _ln="${_hit%%:*}"; _ref="${_hit#*:}"
+      if _is_vendored "$_ref"; then
+        _queue+=("$_ref")
+      else
+        fail "vendored $_cur:$_ln reaches $_ref, which is NOT vendored — add it to core.vendor (with its consumer named) or stop reaching for it"
+        _closure_bad=1
+      fi
+    # One line per REFERENCED PATH, not per reference. This tree puts a
+    # `# shellcheck source=` directive above every `source` line, so an unvendored sibling
+    # is named twice by construction and the gate would report each break twice — noise that
+    # reads like two problems.
+    done < <(_core_vendor_ref_hits "$_cur" | sort -t: -k2,2 -u)
+  done
+  ((_closure_bad)) || pass "closure clean from ${#_ENTRIES[@]} entry root(s) — every path they reach is vendored"
 fi
 
 # ── 1b. routine reference integrity (the inverse of §1's reverse drift) ──────

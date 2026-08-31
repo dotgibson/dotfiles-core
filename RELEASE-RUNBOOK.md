@@ -267,6 +267,28 @@ the moving `@vN` alias — so it is invisible to the grep AND unmoved by the ali
 and whenever an `auto-tag-call` change should reach it.
 PATCH/MINOR releases skip this entirely: the moving alias already carried them.
 
+> **ORDERING TRAP on a major that changes what `core-integrity` expects — read before
+> merging any fan-out PR.** The steps above bump the `@vN` callers *after* merging the
+> `core.lock` PRs. That order is wrong whenever the new major changes the **shape** of a
+> vendored `core/`, and #676 (the vendoring allowlist) is exactly such a major.
+>
+> The fan-out PR lands a **filtered** `core/` — 185 paths, not 285. But that repo's
+> `core-integrity.yml` still says `@v5`, so its CI runs the **outgoing** major's integrity
+> code, which expects `${core_sha}^{tree}` — the whole tree. It reports
+> `TAMPERED (core/ edited since sync)` against a tree nobody touched, and the fan-out PR
+> cannot merge. Measured, not theorised: the same vendored tree verifies `pristine` under
+> the new code and `TAMPERED` under the old, and the only difference is which Core the
+> verifier came from.
+>
+> So on a major of this kind, **bump each repo's `uses:` from `@vN` to `@vN+1` FIRST** — in
+> its own PR, merged before that repo's `core.lock` PR — or push both in the same PR.
+> `_sync_pin_workflows` cannot do it for you: it rewrites 40-hex SHA pins, and the fleet
+> pins the moving major alias.
+>
+> The general rule, so this survives the next one: *if the major changes what
+> `core_lock_expected_tree` returns, the caller bump precedes the fan-out merge.* If it only
+> changes Core's own content, the documented order is fine.
+
 If an OS-repo PR's `links-only` job fails on a **mirror timeout** (e.g. openSUSE's OSS
 CDN), just re-run the job — the prep step retries automatically. A genuinely broken
 prep still fails loud. `dotfiles-Windows` is **not** in the subtree fan-out — it has its

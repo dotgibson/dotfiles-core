@@ -3456,7 +3456,15 @@ if ((_sc_subtree)); then
   cp "$HERE/scripts/sync-core.sh" "$SCF/coreremote/scripts/"
   # core-lock.sh too: sync-core.sh sources it for its post-fan-out assertion (#556), so
   # without this the whole F6 block dies at `source` rather than failing an assertion.
-  cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/core-lock.sh" "$SCF/coreremote/scripts/lib/"
+  # core-vendor.sh for the same reason since #676 — sync-core.sh sources it directly for
+  # core_vendor_materialize, and core-lock.sh sources it for the version switch.
+  #
+  # NOTE the fixture deliberately carries NO core.manifest and NO core.vendor. That makes
+  # every commit in it take core_vendor_effective_tree's WHOLE-TREE branch — which is exactly
+  # the pre-#676 fleet, so this whole block keeps asserting the migration path for free. The
+  # FILTERED branch is asserted separately in F6f below.
+  cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/core-lock.sh" \
+    "$HERE/scripts/lib/core-vendor.sh" "$SCF/coreremote/scripts/lib/"
   cp "$HERE/lib/ux.sh" "$HERE/lib/bootstrap-lib.sh" "$SCF/coreremote/lib/"
   printf '9.9.9\n' >"$SCF/coreremote/core.version"
   printf 'dotfiles-Test\ndotfiles-Other\ndotfiles-NotCloned\n' >"$SCF/coreremote/scripts/os-repos.txt"
@@ -4025,7 +4033,12 @@ if ((_sc_subtree)); then
     local want_sha want_tree got_tree locked payload trailer pre token
     _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1 || true
     want_sha="$(_scg "$SCF/coreremote" rev-parse HEAD)"
-    want_tree="$(_scg "$SCF/coreremote" rev-parse "${want_sha}^{tree}")"
+    # Through the shared lib, not a bare rev-parse: since #676 "the tree this sha should
+    # produce" is core_vendor_effective_tree's answer, and a test that hardcodes ^{tree}
+    # would keep passing while the thing it claims to check had changed meaning.
+    # shellcheck source=scripts/lib/core-vendor.sh
+    source "$HERE/scripts/lib/core-vendor.sh"
+    want_tree="$(core_vendor_effective_tree "$SCF/coreremote" "$want_sha")"
     # The payload as it stands BEFORE this race — that is what must end up vendored. A
     # fixed marker string will not do: the previous case's race commit becomes this one's
     # baseline, so the second run would compare a value against itself and pass vacuously
@@ -4239,6 +4252,152 @@ if ((_sc_subtree)); then
   unset _sc_st
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
+fi
+
+# ── F6f. the vendoring filter and its version switch (#676) ─────────────────
+# THE ASSERTION THE WHOLE OF #676 RESTS ON. sync-core.sh no longer vendors the upstream
+# tree; it vendors `core.manifest` ∪ `core.vendor`, and core-integrity.sh must expect
+# exactly that subset. If the producer and the verifier ever computed different subsets, a
+# sync would pass its own post-fan-out assertion and the fleet would be reported TAMPERED by
+# an unrelated command later — #556's failure, one layer down.
+#
+# The switch is PRESENCE-BASED: a commit carrying core.vendor vendors the filtered tree, one
+# that does not vendors its whole tree. That is what let #676 land with no flag day, so both
+# branches are asserted here — a test that only covered the new shape would not have caught
+# a change that broke every repo still pinning an older Core.
+hdr "vendoring filter (core.vendor) + the version switch"
+if have git; then
+  VF="$SANDBOX/vendorfilter"
+  rm -rf "$VF"; mkdir -p "$VF/core"
+  _vf() { git -C "$VF/core" "$@" >/dev/null 2>&1; }
+  git init -q "$VF/core"
+  _vf config user.email t@example.com; _vf config user.name t; _vf config commit.gpgsign false
+  # A miniature Core: two shipped files, one that rides along, one that must NOT ship.
+  mkdir -p "$VF/core/zsh" "$VF/core/scripts" "$VF/core/assets"
+  printf 'shipped\n' >"$VF/core/zsh/00-tools.zsh"
+  printf '1.0.0\n'   >"$VF/core/core.version"
+  printf 'consumed by the OS repos\n' >"$VF/core/scripts/tool-versions.env"
+  printf 'a very large gif\n' >"$VF/core/assets/demo.gif"
+  printf 'authoring only\n'   >"$VF/core/scripts/release.sh"
+  printf 'core.version\nzsh/00-tools.zsh\n' >"$VF/core/core.manifest"
+  _vf add -A; _vf commit -m "pre-filter Core"
+  vf_old="$(git -C "$VF/core" rev-parse HEAD)"
+  printf 'core.manifest\ncore.vendor\nscripts/tool-versions.env\n' >"$VF/core/core.vendor"
+  _vf add -A; _vf commit -m "Core carrying core.vendor"
+  vf_new="$(git -C "$VF/core" rev-parse HEAD)"
+
+  # shellcheck source=scripts/lib/core-vendor.sh
+  source "$HERE/scripts/lib/core-vendor.sh"
+  # shellcheck source=scripts/lib/core-lock.sh
+  source "$HERE/scripts/lib/core-lock.sh"
+
+  # (a) the switch itself, both directions
+  if core_vendor_is_filtered "$VF/core" "$vf_new"; then
+    pass "core.vendor at a commit marks it filtered"
+  else
+    fail "a commit carrying core.vendor was not detected as filtered — the whole fleet would keep vendoring 285 files"
+  fi
+  if core_vendor_is_filtered "$VF/core" "$vf_old"; then
+    fail "a commit PREDATING core.vendor was treated as filtered — every repo pinning an older Core would report TAMPERED on the day #676 merged"
+  else
+    pass "a commit predating core.vendor is not filtered (the no-flag-day migration path)"
+  fi
+
+  # (b) the whole-tree branch is still literally ^{tree}, so old locks are untouched
+  if [[ "$(core_vendor_effective_tree "$VF/core" "$vf_old")" == "$(git -C "$VF/core" rev-parse "${vf_old}^{tree}")" ]]; then
+    pass "unfiltered commit → expected tree is still its whole tree"
+  else
+    fail "unfiltered commit → expected tree changed; repos pinning pre-#676 Core would be misreported"
+  fi
+
+  # (c) the filtered tree carries exactly the union, and nothing else
+  vf_tree="$(core_vendor_tree "$VF/core" "$vf_new")"
+  vf_files="$(git -C "$VF/core" ls-tree -r --name-only "$vf_tree" | sort | tr '\n' ' ')"
+  if [[ "$vf_files" == "core.manifest core.vendor core.version scripts/tool-versions.env zsh/00-tools.zsh " ]]; then
+    pass "filtered tree == core.manifest ∪ core.vendor, exactly"
+  else
+    fail "filtered tree carries the wrong set: $vf_files"
+  fi
+  for _drop in assets/demo.gif scripts/release.sh; do
+    if git -C "$VF/core" ls-tree -r --name-only "$vf_tree" | grep -qx "$_drop"; then
+      fail "filtered tree still carries $_drop — it is in neither list"
+    else
+      pass "filtered tree drops $_drop (in neither list)"
+    fi
+  done
+
+  # (d) DETERMINISM. The producer builds this tree inside the consumer and the verifier
+  # rebuilds it inside Core; they agree only because the build is a pure function of the
+  # commit. Two builds must be byte-identical or the fleet flaps between pristine and
+  # TAMPERED depending on who asked.
+  if [[ "$(core_vendor_tree "$VF/core" "$vf_new")" == "$vf_tree" ]]; then
+    pass "filtered tree build is deterministic"
+  else
+    fail "filtered tree build is NOT deterministic — core-integrity would flap"
+  fi
+
+  # (e) modes survive. read-tree --prefix used to give us the exec bits straight from the
+  # tree object; the index-info rebuild must not quietly reconstruct them as 100644.
+  _vf update-index --chmod=+x scripts/tool-versions.env 2>/dev/null || true
+  if git -C "$VF/core" ls-tree -r "$vf_tree" | grep -q '^100644 blob .*zsh/00-tools.zsh$'; then
+    pass "filtered tree preserves file modes from the source tree"
+  else
+    fail "filtered tree lost the source file modes (audit §2's exec-bit assertions would follow)"
+  fi
+
+  # (e2) CALLED FROM A SUBDIRECTORY. `git -C <subdir> update-index --index-info` resolves its
+  # paths against the cwd PREFIX, so building the index from anywhere but the repo root
+  # matched nothing and returned git's EMPTY tree — with rc 0, so the caller got a
+  # valid-looking object id for a tree containing no files and reported TAMPERED against it.
+  # A vendored `core/scripts/core-integrity.sh --self` hits exactly this: its own $HERE is
+  # <consumer>/core. Assert the root-resolve, and assert the empty tree is never returned for
+  # a non-empty keep list.
+  for _sub in "$VF/core/zsh" "$VF/core/scripts"; do
+    [ -d "$_sub" ] || continue
+    if [[ "$(core_vendor_tree "$_sub" "$vf_new")" == "$vf_tree" ]]; then
+      pass "core_vendor_tree from a subdirectory ($(basename "$_sub")) agrees with the repo root"
+    else
+      fail "core_vendor_tree gave a different tree from $_sub — index paths resolved against the cwd prefix"
+    fi
+  done
+  if [[ "$(core_vendor_tree "$VF/core" "$vf_new")" == "4b825dc642cb6eb9a060e54bf8d69288fbee4904" ]]; then
+    fail "core_vendor_tree returned the EMPTY tree for a non-empty keep list — silently vendors nothing"
+  else
+    pass "core_vendor_tree never returns the empty tree for a non-empty keep list"
+  fi
+
+  # (f) END TO END: a consumer materialized by the shared producer classifies pristine, and
+  # the SAME lock against a whole-tree vendor classifies TAMPERED. That second case is not
+  # hypothetical — it is what a `git subtree pull` (Offense's retired path) would produce.
+  rm -rf "$VF/consumer"; mkdir -p "$VF/consumer"
+  git init -q "$VF/consumer"
+  git -C "$VF/consumer" config user.email t@example.com >/dev/null 2>&1
+  git -C "$VF/consumer" config user.name t >/dev/null 2>&1
+  git -C "$VF/consumer" config commit.gpgsign false >/dev/null 2>&1
+  git -C "$VF/consumer" fetch -q --no-tags "$VF/core" "$vf_new" >/dev/null 2>&1
+  if core_vendor_materialize "$VF/consumer" "$vf_new" &&
+    git -C "$VF/consumer" commit -qm vendor >/dev/null 2>&1; then
+    if [[ "$(core_lock_classify "$VF/consumer" "$vf_new" "$VF/core")" == "pristine" ]]; then
+      pass "filtered vendor + filtering lock → pristine"
+    else
+      fail "filtered vendor was not pristine — the producer and the verifier disagree (#556 shape)"
+    fi
+    # now replace core/ with the WHOLE tree, keeping the same lock
+    git -C "$VF/consumer" rm -rq core >/dev/null 2>&1
+    rm -rf "$VF/consumer/core"
+    git -C "$VF/consumer" read-tree --prefix=core/ -u "${vf_new}^{tree}" >/dev/null 2>&1
+    git -C "$VF/consumer" commit -qm whole >/dev/null 2>&1
+    if [[ "$(core_lock_classify "$VF/consumer" "$vf_new" "$VF/core")" == TAMPERED* ]]; then
+      pass "whole-tree vendor against a filtering lock → TAMPERED (catches an unfiltered producer)"
+    else
+      fail "an UNFILTERED core/ passed as pristine — a stray 'git subtree pull' would go unnoticed"
+    fi
+  else
+    skip "vendoring filter end-to-end (could not build the consumer fixture — out of scope)"
+  fi
+  unset -f _vf
+else
+  skip "vendoring filter (git unavailable)"
 fi
 
 # ── F6b. the real-bootstrap matrix (scripts/fleet-bootstrap-matrix.py) ───────

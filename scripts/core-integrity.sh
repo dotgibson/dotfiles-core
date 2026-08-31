@@ -12,17 +12,33 @@
 # exactly one machine and nothing on the surfaces that matter. This is the durable,
 # CI-runnable replacement.
 #
-# How: a vendored core/ is a content-addressed copy of dotfiles-core's WHOLE tree at
-# the commit core.lock pins, so the git tree object of `HEAD:core` in an OS repo must
-# byte-equal `<core_sha>^{tree}` in dotfiles-core. Edit any vendored file and that
-# tree hash diverges. One rev-parse each side, O(1), no file walk.
+# How: a vendored core/ is a content-addressed copy of the subset of dotfiles-core that
+# the pinned commit says it should carry, so the git tree object of `HEAD:core` in an OS
+# repo must byte-equal that tree. Edit any vendored file and the hash diverges.
+#
+# Since #676 that subset is not always the whole tree: a Core commit carrying `core.vendor`
+# vendors `core.manifest` ∪ `core.vendor` (~180 files), while one predating it vendored all
+# 285. scripts/lib/core-vendor.sh owns that switch and derives it from the PINNED COMMIT, so
+# this gate needs no flag and no migration window — a repo still pinning an older Core is
+# still compared against a whole tree, and flips the day its core.lock moves.
+#
+# COST: the whole-tree side is still one rev-parse. The filtered side rebuilds the expected
+# tree (ls-tree, a temp index, write-tree) — tens of milliseconds per repo, not the O(1) this
+# header used to promise. Still no worktree walk, and still content-addressed: the producer
+# builds the same tree in the consumer and the two agree by construction.
 #
 # This is the INTEGRITY companion to fleet-drift.sh (which checks STALENESS — recorded
 # sha vs the latest RELEASED Core tag). They are orthogonal: a repo can be perfectly current AND tampered,
 # or pristine BUT behind. Run both.
 #
-# REPORTER, not mutator — never writes to a repo. Run locally against your checked-out
-# fleet, or in CI (.github/workflows/core-integrity.yml) which clones the fleet first.
+# REPORTER, not mutator — it never changes a repo's tracked state: no commit, no index, no
+# file in a worktree, and nothing under core/. (Since #676 it does write a handful of loose
+# tree objects into the object store while rebuilding the expected tree, and a temp index
+# outside the repo. Both are unreferenced and gc-prunable; nothing you can see in a status,
+# a diff or a log changes. The older "never writes to a repo" was simpler and, after the
+# filter, no longer literally true — so it says what it means instead.) Run locally against
+# your checked-out fleet, or in CI (.github/workflows/core-integrity.yml) which clones the
+# fleet first.
 # Graceful degradation mirrors audit-core.sh / fleet-drift.sh: a repo that isn't
 # checked out is SKIPPED with a notice (not a failure) unless --strict.
 #

@@ -102,6 +102,11 @@ source "${BASH_SOURCE[0]%/*}/lib/common.sh"
 # post-fan-out assertion means exactly what that gate will later report (#556).
 # shellcheck source=scripts/lib/core-lock.sh
 source "${BASH_SOURCE[0]%/*}/lib/core-lock.sh"
+# The vendored-set filter and the ONE producer, shared with new-os-repo.sh (#676). Sourced
+# explicitly rather than leaning on core-lock.sh pulling it in: this script calls
+# core_vendor_materialize directly, so it declares its own dependency.
+# shellcheck source=scripts/lib/core-vendor.sh
+source "${BASH_SOURCE[0]%/*}/lib/core-vendor.sh"
 
 # The fleet that vendors Core, from scripts/os-repos.txt via the ONE reader in common.sh
 # (#669). There is deliberately no inline fallback list any more: the old one ran only when
@@ -511,14 +516,6 @@ _sync_fetch_pinned() { # <repo-path> <remote> <sha> <ref>
 _sync_materialize_core() { # <repo-path> <remote> <sha> <ref> → stages core/ at that commit
   local path="$1" remote="$2" sha="$3" ref="$4"
   _sync_fetch_pinned "$path" "$remote" "$sha" "$ref" || return 1
-  # Clear the prefix from index AND worktree: read-tree --prefix refuses to write over
-  # existing index entries. --ignore-unmatch so a half-repaired repo (entries already
-  # gone, directory still present) is recoverable rather than fatal.
-  git -C "$path" rm -rq --ignore-unmatch -- core || return 1
-  # The rm above removes TRACKED files only. An untracked leftover under core/ would
-  # survive into the new tree and then read as drift to core-integrity, so clear the
-  # directory outright. `${path:?}` guards an empty path expanding this to `rm -rf /core`.
-  rm -rf -- "${path:?}/core"
   # The pinned tree BY SHA, never FETCH_HEAD (#556). FETCH_HEAD is whatever the ref
   # resolved to during THIS fetch — a second, later resolution of the same moving branch
   # that $CORE_SHA_FULL was taken from up top. When Core was pushed to during the ~250s
@@ -527,8 +524,42 @@ _sync_materialize_core() { # <repo-path> <remote> <sha> <ref> → stages core/ a
   # a hand-edit that never happened. Addressing the tree by sha closes the window instead
   # of narrowing it, and makes the serial fan-out consistent by construction: every repo
   # materializes the same commit no matter how long the loop takes.
-  git -C "$path" read-tree --prefix=core/ -u "${sha}^{tree}" || return 1
+  #
+  # The clear-and-read-tree itself now lives in core_vendor_materialize, because since #676
+  # WHICH tree that is depends on the commit: one carrying core.vendor vendors the filtered
+  # subset, one that does not vendors its whole tree. Delegating means the producer and
+  # core-integrity.sh's expectation come from one definition of the filter — a second
+  # implementation here could materialize a tree that passes the assertion below and is
+  # still reported TAMPERED later, which is exactly the #556 shape.
+  core_vendor_materialize "$path" "$sha" || return 1
 }
+
+# What SHAPE is this sync going to vendor? Resolved once, in Core, before the loop — every
+# repo gets the same commit, so they all get the same answer, and $HERE is guaranteed to hold
+# the objects even under --dry-run (which does no fetch).
+#
+# Printed rather than merely computed because #676 made the vendored set a thing a reviewer
+# has to be able to check. A fan-out that silently shrinks nine trees by 100 files should say
+# so in its own log, not only in the diff of the PRs it opens.
+_vendor_shape=""
+if core_vendor_is_filtered "$HERE" "$CORE_SHA_FULL" 2>/dev/null; then
+  _vendor_tree_preview="$(core_vendor_tree "$HERE" "$CORE_SHA_FULL" 2>/dev/null || echo '')"
+  if [[ -n "$_vendor_tree_preview" ]]; then
+    _vendor_n="$(git -C "$HERE" ls-tree -r --name-only "$_vendor_tree_preview" | wc -l | tr -d ' ')"
+    _vendor_all="$(git -C "$HERE" ls-tree -r --name-only "${CORE_SHA_FULL}^{tree}" | wc -l | tr -d ' ')"
+    _vendor_shape="filtered: $_vendor_n of $_vendor_all paths (core.manifest + core.vendor)"
+    echo ":: vendored set = $_vendor_shape"
+  else
+    # The commit carries core.vendor but the tree would not build. Refuse rather than fall
+    # through to the whole tree: that would vendor 100 extra files under a lock that says
+    # filtered, and every repo would report TAMPERED with no hand-edit anywhere.
+    fail "core.vendor is present at ${CORE_SHA_FULL:0:12} but the filtered tree could not be built — refusing to fan out (a whole-tree vendor under a filtering lock reports TAMPERED fleet-wide)"
+    exit 1
+  fi
+else
+  _vendor_shape="whole tree (this Core predates core.vendor)"
+  echo ":: vendored set = $_vendor_shape"
+fi
 
 repos_updated=0 repos_skipped=0 repos_failed=0
 for repo in "${TARGETS[@]}"; do
@@ -544,7 +575,7 @@ for repo in "${TARGETS[@]}"; do
     continue
   fi
   if ((DRY)); then
-    echo "would: materialize $path/core at $CORE_REMOTE ${CORE_SHA_FULL:0:12}   (ref $CORE_BRANCH)"
+    echo "would: materialize $path/core at $CORE_REMOTE ${CORE_SHA_FULL:0:12}   (ref $CORE_BRANCH)  [$_vendor_shape]"
     continue
   fi
   # bail if the OS repo has a dirty tree — an uncommitted edit here would be destroyed
