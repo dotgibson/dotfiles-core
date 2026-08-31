@@ -186,7 +186,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 - **BREAKING — a vendored `core/` is no longer a copy of this whole repo (#676).**
   `scripts/sync-core.sh` now materializes exactly `core.manifest` ∪ a new **`core.vendor`**
-  and nothing else. A vendored tree goes from **285 files / 5.6 MB to 185 files / 1.2 MB**
+  and nothing else. A vendored tree goes from **285 files / 5.6 MB to 182 files / 1.2 MB**
   — about 39 MB reclaimed across the nine repos.
 
   `CONTRIBUTING.md` had asserted for years that repo-meta and dev tooling were "**not**
@@ -218,8 +218,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   sanctioned second writer, and the sanction rested on it stamping `core.lock` from _what
   it actually pulled_. A `git subtree pull --squash` merges the **whole** upstream tree and
   has no way to apply `core.vendor`, so "what it pulled" is no longer what a vendored
-  `core/` should contain — the first pull after its lock moved would land 285 files against
-  an expectation of 185 and be reported `TAMPERED`, correctly and with no hand-edit
+  `core/` should contain — the first pull after its lock moved would land all 285 files against
+  an expectation of the filtered subset and be reported `TAMPERED`, correctly and with no hand-edit
   anywhere. Offense now takes the fan-out like every other repo. There is one producer:
   `core_vendor_materialize`.
 

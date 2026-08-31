@@ -444,7 +444,7 @@ done
 
 # ── 1e. vendored closure: does a shipped script reach a file nobody ships? ───
 # The gate #676 needs and nothing else provides. Before it, a script that shipped could
-# `source` any sibling, because every sibling shipped. Now core/ carries ~185 of 285 files,
+# `source` any sibling, because every sibling shipped. Now core/ carries ~180 of 285 files,
 # so a vendored entry point can reach a path that stayed behind — and NOTHING else catches
 # it: §1's reverse drift sees a tracked, accounted-for file either way, and core-integrity
 # compares tree hashes, where a consistently-wrong subset hashes consistently. It surfaces on

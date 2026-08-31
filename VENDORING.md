@@ -20,7 +20,7 @@ nothing else:
 
 Everything else stays in dotfiles-core: `CHANGELOG.md`, `assets/`, `.claude/`, the root
 docs, and the authoring half of `scripts/` (release tooling, the fan-out itself,
-benchmarks, dashboards). A vendored `core/` went from 285 files / 5.6 MB to 185 files /
+benchmarks, dashboards). A vendored `core/` went from 285 files / 5.6 MB to 182 files /
 1.2 MB in the release that carried this.
 
 **If you need a file from `core/` that is not there, do not copy it in** — that is an edit
@@ -214,8 +214,8 @@ describe a commit its own `core/` did not contain.
 That property is exactly what a filtered vendor takes away. A subtree pull merges the
 **whole** upstream tree; it has no way to apply `core.vendor`, and "what it actually pulled"
 is now, by construction, not what a vendored `core/` should contain. The first pull after
-Offense's lock moved to a filtering commit would land 285 files against an expectation of
-185 and `core-integrity` would report `TAMPERED` — correctly, and with no hand-edit anywhere.
+Offense's lock moved to a filtering commit would land all 285 files against an expectation of
+the filtered subset, and `core-integrity` would report `TAMPERED` — correctly, and with no hand-edit anywhere.
 Teaching it to filter would make it a second **producer** of Core's format, which is the
 thing the sanction was never extended to.
 

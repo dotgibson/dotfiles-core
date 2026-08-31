@@ -74,11 +74,26 @@ PORTING-MATRIX.md      # named by the CORE PAYLOAD in a hint string (zsh/30-func
 # dashboards) with no consumer on a box or in an OS repo, and stays out.
 scripts/tool-versions.env       # pinned tool versions: MacBook ci.yml:115,136,138,315,348,361,363 + Makefile:119, Offense checks.yml:72,127,130 + claude-routines.yml + Makefile:21, Defense Makefile:28 + tests/test-defense.sh:865 + tests/lint-shell.sh:41
 scripts/check-capabilities.sh   # entry — os.capabilities linter run by SEVEN repos: Fedora Makefile:122, Arch:159, Debian:186, openSUSE:162, Alpine:124, Gentoo:117, MacBook:241. Standalone (sources nothing).
-scripts/core-integrity.sh       # entry — the per-repo `--self` tamper gate; MacBook test/verify-core.sh delegates to it rather than re-implementing the tree comparison (#593's move, applied again)
-scripts/lib/common.sh           # entry — sourced directly by MacBook test/check-return-traps.sh:49,68 for _core_return_trap_hits; also the base lib for the above
-scripts/lib/core-lock.sh        # reached from core-integrity.sh
-scripts/lib/core-vendor.sh      # reached from core-lock.sh — the filtered-tree builder itself
-scripts/os-repos.txt            # reached from common.sh :: load_os_repos (fleet mode)
+scripts/lib/common.sh           # entry — sourced directly by MacBook test/check-return-traps.sh:49,68 for _core_return_trap_hits
+scripts/os-repos.txt            # reached from common.sh :: load_os_repos, whose path is computed and so invisible to the §1e walk
+
+# DELIBERATELY ABSENT — do not re-add without a working consumer:
+#   scripts/core-integrity.sh, scripts/lib/core-lock.sh, scripts/lib/core-vendor.sh
+# These shipped in the first draft of #676 on the theory that an OS repo could run
+# `core/scripts/core-integrity.sh --self` as its own tamper gate. It cannot. That gate
+# resolves the expected tree in CORE'S OBJECT STORE, and an OS repo does not have one:
+# Core's commits live in dotfiles-core and are never pushed to a consumer, and the copies a
+# sync fetches are unreferenced and get pruned. Measured on a clone with them gone — the CI
+# shape — it reports `UNVERIFIABLE (locked sha not in Core history)`.
+#
+# It happens to work in the minutes after a sync, while the fetched objects survive. That is
+# worse than not shipping it: a gate that passes on the machine that just synced and is
+# UNVERIFIABLE everywhere else reads as coverage while covering nothing.
+#
+# The consumer that needed a filtered comparison — dotfiles-MacBook test/verify-core.sh —
+# gets it a different way: it fetches upstream itself (which is why it needs no sibling Core
+# clone) and sources the filter from THAT checkout. So it uses Core's real code, at the
+# right commit, without any of it being vendored.
 
 # ── .github/ — only what a consumer's workflow resolves LOCALLY ──────────────
 # Most `uses:` in the fleet are REMOTE refs (dotgibson/dotfiles-core/.github/...@vN) and

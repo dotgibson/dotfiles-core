@@ -47,7 +47,7 @@ in either list.
 > That last paragraph was false until #676. The allowlist only kept those files out
 > of `core.manifest`, which governs **symlinking**, not what lands on disk — the
 > subtree copied the whole repo regardless, 5.6 MB into each of nine repos of which
-> ~0.9 MB was Core. A vendored `core/` is now 185 files, not 285.
+> ~0.9 MB was Core. A vendored `core/` is now 182 files, not 285.
 
 Adding to `core.vendor` means naming the consumer in a comment on the same line. If
 you cannot name one, it does not belong there. A path listed in both files is a

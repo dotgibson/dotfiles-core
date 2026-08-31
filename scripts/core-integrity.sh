@@ -17,7 +17,7 @@
 # repo must byte-equal that tree. Edit any vendored file and the hash diverges.
 #
 # Since #676 that subset is not always the whole tree: a Core commit carrying `core.vendor`
-# vendors `core.manifest` ∪ `core.vendor` (~185 files), while one predating it vendored all
+# vendors `core.manifest` ∪ `core.vendor` (~180 files), while one predating it vendored all
 # 285. scripts/lib/core-vendor.sh owns that switch and derives it from the PINNED COMMIT, so
 # this gate needs no flag and no migration window — a repo still pinning an older Core is
 # still compared against a whole tree, and flips the day its core.lock moves.
