@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v6.0.1] - 2026-09-01
+
 ### Added
 
 - **`make audit` runs the cross-shell parity contract (§9f, #682).** `parity-check.sh`
