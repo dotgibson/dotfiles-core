@@ -106,8 +106,11 @@ canonical. Enforced by `scripts/parity-check.sh` (the `core *` rows).
 ## Enforcement
 
 `scripts/parity-check.sh` (`make parity-check`, and §9f of `make audit`) mechanises the
-`aligned` rows: it asserts a distinctive needle for each is present in BOTH a zsh source
-and the pwsh source, and exits non-zero when one side drifts. It reads pwsh from a sibling
+`aligned` rows: it asserts a distinctive needle for each is present in a zsh source and —
+wherever the capability is *configured* rather than inherited from a framework default —
+in the pwsh source too, and exits non-zero when one side drifts. The one row that is a
+framework default on pwsh is named below and reports that half rather than asserting it;
+the summary counts those halves instead of certifying them. It reads pwsh from a sibling
 `dotfiles-Windows` checkout (skipped with a notice if absent, unless `--strict`), exactly
 like `scripts/fleet-drift.sh`. The weekly `.github/workflows/parity-check.yml` clones
 `dotfiles-Windows` and runs it `--strict`, failing red on drift.

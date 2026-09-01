@@ -14851,12 +14851,18 @@ _pc_fixture() {
   env -u DOTFILES_ROOT "$PCR/scripts/parity-check.sh" --root "$PCR/fleet" --color never >"$PCOUT" 2>&1
 }
 
-# _pc_row <label> <expected-rc> <needle-in-output> <sed-program-against-PARITY.md>
-# An empty sed program means "the real contract, unmodified".
+# _pc_row <label> <expected-rc> <needle-in-output> <awk-program-against-PARITY.md>
+# An empty program means "the real contract, unmodified".
+#
+# AWK, NOT SED, for the mutations. `\n` in a sed REPLACEMENT is a GNU extension: BSD sed
+# (macOS, a supported CI leg) does not expand it, so a row meant to be INSERTED would have
+# merged into the following line and these negative rows would have quietly stopped testing
+# the thing they are named for. A test that cannot fail is the defect this file exists to
+# catch, so the mutations use only portable awk.
 _pc_row() {
   local label="$1" want_rc="$2" want_txt="$3" prog="${4:-}"
   local fx="$SANDBOX/parity-fixture.md" rc=0
-  if [[ -n "$prog" ]]; then sed "$prog" "$HERE/PARITY.md" >"$fx"; else cp "$HERE/PARITY.md" "$fx"; fi
+  if [[ -n "$prog" ]]; then awk "$prog" "$HERE/PARITY.md" >"$fx"; else cp "$HERE/PARITY.md" "$fx"; fi
   _pc_fixture "$fx" || rc=$?
   if ((rc == want_rc)) && grep -qF -- "$want_txt" "$PCOUT"; then
     pass "parity coverage: $label"
@@ -14875,20 +14881,20 @@ _pc_row "the real contract is fully covered" 0 \
 #    a bare count would send the reader diffing two lists by hand.
 _pc_row "an aligned row with no needle fails, and names it" 1 \
   "no check behind them: clipboard-sync" \
-  's#^| Word nav |#| Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |\n| Word nav |#'
+  '/^\| Word nav \|/ { print "| Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |" } { print }'
 
 # 2. The other direction: rename a Capability cell and its check no longer matches a row.
 #    Both halves of the mapping must fire — the old key orphans, the new row is uncovered.
 _pc_row "a renamed row orphans its check, and names the key" 1 \
   "match no PARITY.md table row: session-picker" \
-  's#^| Session picker |#| Session chooser |#'
+  '{ sub(/^\| Session picker \|/, "| Session chooser |"); print }'
 
 # 3. Two rows slugifying alike would let one row's needle certify the other — coverage
 #    would read as complete while a row went untested. That is the #682 failure wearing a
 #    different hat, so it is a hard fail rather than a warning.
 _pc_row "two rows slugifying to one key fail" 1 \
   "both slugify to \`theme\`" \
-  's#^| Word nav |#| Theme | x | y | `aligned` |\n| Word nav |#'
+  '/^\| Word nav \|/ { print "| Theme | x | y | `aligned` |" } { print }'
 
 # 4. The case the PR description got WRONG before review caught it: reclassifying a row
 #    does NOT orphan its check. `deliberate`/`gap` rows may keep one (see `cheat`), and
@@ -14896,7 +14902,7 @@ _pc_row "two rows slugifying to one key fail" 1 \
 #    otherwise in four places, and prose is what this gate exists to stop trusting.
 _pc_row "reclassifying an aligned row keeps its check valid" 0 \
   "aligned PARITY.md rows have a check" \
-  's#^\(| Session picker |.*|\) `aligned` — jump-to-session both |#\1 `deliberate` — test |#'
+  '/^\| Session picker \|/ { sub(/`aligned`/, "`deliberate`") } { print }'
 
 # 5. A misspelled status is the nastiest input this parser takes: the row stays known (so
 #    its check is not orphaned) but stops being REQUIRED, quietly dropping a contract row
@@ -14904,7 +14910,7 @@ _pc_row "reclassifying an aligned row keeps its check valid" 0 \
 #    accepted, and anything else is a hard fail naming the row and what it said.
 _pc_row "an unknown status is rejected, not treated as not-aligned" 1 \
   "has status \`aligend\`" \
-  's#^\(| Word nav |.*|\) `aligned` |#\1 `aligend` |#'
+  '/^\| Word nav \|/ { sub(/`aligned`/, "`aligend`") } { print }'
 
 # 6. A pwsh half that is a framework default must be REPORTED, never certified. The
 #    summary line is the assertion: it may not say "all aligned rows hold" when a half was
@@ -14919,6 +14925,58 @@ fi
 rm -rf "$PCR"
 unset PCR PCOUT
 unset -f _pc_fixture _pc_row
+
+# ── how audit-core.sh §9f CLASSIFIES that run (common.sh :: _core_parity_verdict) ──
+# The rows above drive parity-check.sh directly and never reach the audit integration —
+# which is where both of the falsely-complete reports review found actually lived. The
+# classification is therefore a helper, and this drives it: caller renders, helper decides,
+# test drives the helper (the _core_luacheck_verdict split).
+_pv_is() { # _pv_is <label> <rc> <output> <expected-verdict>
+  local got
+  got="$(_core_parity_verdict "$2" "$3")"
+  if [[ "$got" == "$4" ]]; then
+    pass "parity verdict: $1"
+  else
+    fail "parity verdict: $1 (got '$got', wanted '$4')"
+  fi
+}
+_pv_is "a clean both-shells run is ok-full" 0 "✓ all aligned rows hold across zsh + pwsh" ok-full
+_pv_is "an absent dotfiles-Windows is ok-no-sibling, not a full pass" \
+  0 "– dotfiles-Windows not checked out at /x — pwsh side not verified" ok-no-sibling
+_pv_is "an unasserted framework default is ok-defaults, not a full pass" \
+  0 "– word nav: forward-word on Ctrl+Right — pwsh half is a PSReadLine default; nothing to grep" ok-defaults
+# Precedence: with no sibling repo the pwsh half never runs, so a default can never ALSO be
+# reported. If both notices somehow appear, the weaker claim must win.
+_pv_is "no-sibling outranks framework-default when both appear" \
+  0 "– dotfiles-Windows not checked out — nothing to grep" ok-no-sibling
+_pv_is "exit 1 is drift, whatever it printed" 1 "" drift
+_pv_is "exit 2 is broken, NOT a clean contract" 2 "" broken
+_pv_is "a non-standard exit is broken, not silently ok" 127 "" broken
+unset -f _pv_is
+
+# The verdict is matched on parity-check.sh's own notice wording, and §9f's whole
+# classification rests on reading them. Pin both ends so a reword on either side is a
+# failure HERE rather than a silently-wrong audit line — the luacheck pin's reason (:2035).
+if grep -qF 'dotfiles-Windows not checked out' "$HERE/scripts/parity-check.sh" &&
+  grep -qF 'nothing to grep' "$HERE/scripts/parity-check.sh"; then
+  pass "parity verdict: parity-check.sh still emits both notices _core_parity_verdict reads"
+else
+  fail "parity verdict: parity-check.sh reworded a notice _core_parity_verdict matches on — §9f will misclassify"
+fi
+if grep -q '_core_parity_verdict' "$HERE/scripts/audit-core.sh"; then
+  pass "parity verdict: audit-core.sh §9f classifies via the helper, not an inline if-chain"
+else
+  fail "parity verdict: audit-core.sh §9f stopped using _core_parity_verdict — the classification is untestable again"
+fi
+# CORE_JSON=1 is EXPORTED by `audit --json` and silences common.sh's skip(), which is where
+# both notices above come from. Without the reset at the child boundary a --json run
+# classifies every box as ok-full — it reported a full zsh+pwsh pass on a box with no pwsh
+# file. That reset is one token with no runtime symptom in a normal run, so it is pinned.
+if grep -q 'CORE_JSON=0 "\$HERE/scripts/parity-check.sh"' "$HERE/scripts/audit-core.sh"; then
+  pass "parity verdict: §9f clears CORE_JSON at the child boundary (a --json run would else read no notices)"
+else
+  fail "parity verdict: §9f no longer clears CORE_JSON for the parity child — --json runs will report a full pass on a box with no pwsh file"
+fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary

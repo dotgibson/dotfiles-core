@@ -32,12 +32,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 - **`scripts/parity-check.sh` proves its one-to-one claim instead of asserting it (#682).**
   The script's own comment said it "mirrors PARITY.md's `aligned` rows one-to-one — every
   aligned row has a check here", and `PARITY.md`'s Enforcement section repeated it. Both
-  were false: **21 aligned rows, 18 checks.** Four rows had no check at all (**Theme**,
-  **History search**, **Word nav**, and one row covering five functions) and two were
-  only half-checked, which is worse than none because the row renders green while half of
-  it is fiction — **Dir jump** claimed `Alt+Z` _and_ `Alt+C` while the needle tested only
+  were false: **21 aligned rows, 18 checks.** Three rows had no check at all
+  (**History search**, **Word nav**, and one row covering five functions) and two were only
+  half-checked, which is worse than none because the row renders green while half of it is
+  fiction — **Dir jump** claimed `Alt+Z` _and_ `Alt+C` while the needle tested only
   `Alt+Z`, and **Fuzzy git** claimed `gaf`/`grf`/`grsf` while the needle tested only
-  `gaf`. Honest coverage was 15 of 21. Every check now carries the row-key of the table
+  `gaf`. Honest coverage was **16 of 21**. (#682 reported 17 checks, four unchecked rows
+  and 15 of 21 — one release stale: #679 had just added **Theme**'s check. The shape of
+  the defect was identical either way.) Every check now carries the row-key of the table
   row it enforces, and the script parses `PARITY.md` to assert the mapping in both
   directions: an `aligned` row with no needle fails, and so does a needle whose row was
   renamed or deleted. (Reclassifying a row does _not_ orphan its check — every status

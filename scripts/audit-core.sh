@@ -1848,36 +1848,36 @@ hdr "cross-shell parity (parity-check.sh)"
 # more coverage than it had, which is the defect this whole section exists to end. The
 # child's stdout is captured either way, so nothing leaks into the JSON object on stdout.
 _pc_out="$(CORE_JSON=0 "$HERE/scripts/parity-check.sh" --quiet 2>&1)" && _pc_rc=0 || _pc_rc=$?
-if ((_pc_rc == 0)); then
-  # Report the coverage half (Core-only, always runs) SEPARATELY from the cross-repo half,
-  # and re-emit the child's partial results rather than folding them into one green line.
-  # A bare pass here would read as "zsh and pwsh agree" on a box that never opened a pwsh
-  # file — the same overclaim the contract itself was making.
+# The CLASSIFICATION lives in common.sh (_core_parity_verdict) so test-core.sh can drive it;
+# this block only RENDERS. Both defects review found here — inheriting CORE_JSON and printing
+# an unqualified pass — were in logic that no test could reach from outside the audit.
+case "$(_core_parity_verdict "$_pc_rc" "$_pc_out")" in
+ok-full)
   pass "parity coverage — every aligned PARITY.md row has a check behind it"
-  if [[ "$_pc_out" == *"dotfiles-Windows not checked out"* ]]; then
-    # skip_env, not skip: this is a coverage gap the BOX could not cover (no sibling repo),
-    # so --require-siblings can redden it, exactly like §5f/§9c's fleet-wide gates.
-    skip_env "cross-shell parity: dotfiles-Windows not checked out — the pwsh half was NOT verified"
-  elif [[ "$_pc_out" == *"nothing to grep"* ]]; then
-    # QUALIFIED HERE, not walked back on the next line. An unconditional "holds across zsh +
-    # pwsh" followed by a skip admitting two halves went unasserted is the same overclaim
-    # parity-check.sh's own summary was corrected for — the reader believes the green line.
-    pass "parity contract holds across zsh + pwsh for every CONFIGURED row (framework-default halves are reported below, not asserted)"
-  else
-    pass "parity contract holds across zsh + pwsh"
-  fi
-  # A pwsh half that is a framework default is reported by the child as a skip and must stay
-  # a skip HERE too; swallowing it would re-certify the one thing the child refused to.
-  if [[ "$_pc_out" == *"nothing to grep"* ]]; then
-    skip "cross-shell parity: $(printf '%s\n' "$_pc_out" | grep -c "nothing to grep") pwsh half/halves are framework defaults — reported by parity-check.sh, not asserted"
-  fi
-elif ((_pc_rc == 1)); then
+  pass "parity contract holds across zsh + pwsh"
+  ;;
+ok-defaults)
+  pass "parity coverage — every aligned PARITY.md row has a check behind it"
+  # QUALIFIED HERE, not walked back on the next line: the reader believes the green line.
+  pass "parity contract holds across zsh + pwsh for every CONFIGURED row (framework-default halves are reported below, not asserted)"
+  # A half the child refused to certify must stay uncertified here too.
+  skip "cross-shell parity: $(printf '%s\n' "$_pc_out" | grep -c "nothing to grep") pwsh half/halves are framework defaults — reported by parity-check.sh, not asserted"
+  ;;
+ok-no-sibling)
+  pass "parity coverage — every aligned PARITY.md row has a check behind it"
+  # skip_env, not skip: a coverage gap the BOX could not cover (no sibling repo), so
+  # --require-siblings can redden it, exactly like §5f/§9c's fleet-wide gates.
+  skip_env "cross-shell parity: dotfiles-Windows not checked out — the pwsh half was NOT verified"
+  ;;
+drift)
   fail "cross-shell parity — an aligned PARITY.md row is unenforced or has drifted; run: make parity-check"
   fail_detail "$_pc_out"
-else
+  ;;
+*)
   fail "parity-check.sh could not run (exit $_pc_rc) — the parity contract went UNCHECKED this run"
   fail_detail "$_pc_out"
-fi
+  ;;
+esac
 unset _pc_out _pc_rc
 
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────

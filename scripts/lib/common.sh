@@ -694,6 +694,42 @@ _core_conflict_marker_hits() { # _core_conflict_marker_hits <file>
 # resolving it would mean inventing a semantics the referencing prose does not have.
 # A trailing `:NN` line reference is stripped: `.claude/commands/tool-scout.md:164` is a
 # citation of the same file, and the line number is not part of the name.
+# ── _core_parity_verdict: what did the parity gate actually establish? ────────
+# _core_parity_verdict <rc> <parity-check-output> — print exactly one of:
+#   ok-full        every aligned row is covered AND holds on both shells
+#   ok-defaults    ditto, except one or more pwsh halves are framework defaults that
+#                  parity-check.sh REPORTED rather than asserted
+#   ok-no-sibling  coverage held, but dotfiles-Windows is absent so pwsh was not read
+#   drift          a real finding: an unenforced row, or one that drifted out of a shell
+#   broken         the gate could not run, which must NOT be rendered as a clean contract
+#
+# WHY A HELPER, rather than the `if` chain this replaces. The three success cases are three
+# DIFFERENT claims, and audit-core.sh got the distinction wrong twice in one review round —
+# once by inheriting CORE_JSON=1 (which silences the very skip line the classification reads,
+# so a --json run reported a full zsh+pwsh pass on a box with no pwsh file), and once by
+# printing an unqualified "holds across zsh + pwsh" and only admitting the unasserted halves
+# on the next line. Both shipped as falsely-complete audit reports. Inline in audit-core.sh
+# the logic is unreachable from a test; here test-core.sh drives it directly.
+#
+# Same render-vs-judge split as _core_luacheck_verdict (#728) and §1b: the caller renders,
+# the helper decides. The output is matched on parity-check.sh's own notice wording, which
+# is why test-core.sh also pins that the two stay in step.
+_core_parity_verdict() { # _core_parity_verdict <rc> <output>
+  local rc="${1:-0}" out="${2:-}"
+  case "$rc" in
+  0) ;;
+  1) printf 'drift\n'; return 0 ;;
+  *) printf 'broken\n'; return 0 ;;
+  esac
+  # Order matters: with no sibling repo the pwsh half never runs at all, so the
+  # framework-default rows are never reached and cannot also be reported.
+  case "$out" in
+  *"dotfiles-Windows not checked out"*) printf 'ok-no-sibling\n'; return 0 ;;
+  *"nothing to grep"*) printf 'ok-defaults\n'; return 0 ;;
+  esac
+  printf 'ok-full\n'
+}
+
 # ── _core_luacheck_verdict: is that non-zero a LINT finding or a broken tool? ──
 # _core_luacheck_verdict <probe-rc> <lint-rc> — print exactly one of:
 #   ok             clean
