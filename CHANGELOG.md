@@ -35,6 +35,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   cannot red this always-on gate. Driven against the real regression, not only fixtures:
   the suite rebuilds `v6.0.0` and `v6.0.1` — both of which SHIPPED with seven documented
   examples on `@v5` while every `ref:` read v6 — and requires a red on each.
+  **The audit job now checks out with `fetch-depth: 0`**, which is what makes that real:
+  on the default shallow checkout the tags are absent, so those assertions SKIPPED in CI
+  and the suite passed on synthetic fixtures while claiming otherwise. That was already
+  true of the sibling guard's v4.0.0 / v5.0.2 cases, which have never once run in CI —
+  so this switches on coverage the repo believed it already had.
 
 ### Fixed
 

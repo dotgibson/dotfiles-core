@@ -2205,8 +2205,10 @@ _wfe_count "an uncommented uses: is out of scope (check-modern owns pinning)" 6 
 _wfe_write a.yml '# call this via `dotgibson/dotfiles-core/.github/workflows/notify-failure-call.yml@v5`'
 _wfe_count "a path in prose counts, not only a uses: line" 6 1
 
-_wfe_write a.yml '#  a@v5 b@v5 dotgibson/dotfiles-core/.github/workflows/x.yml@v4 and .../y.yml@v5'
-_wfe_count "only the workflow-path form matches, and every occurrence on the line" 6 1
+# TWO complete paths, deliberately: with only one, a regression that stopped the `while`
+# loop after its first match would still pass and the case would prove nothing.
+_wfe_write a.yml '#  a@v5 b@v5 dotgibson/dotfiles-core/.github/workflows/x.yml@v4 plus dotgibson/dotfiles-core/.github/workflows/y.yml@v3 and .../z.yml@v5'
+_wfe_count "every occurrence on the line is reported, not just the first" 6 2
 
 # BOUNDARY. Without an owner anchor and a left boundary, `dotfiles-core` matches inside
 # ANOTHER repository's name and this always-on gate reds on a file it has no business
