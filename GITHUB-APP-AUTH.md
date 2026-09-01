@@ -228,13 +228,28 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
 1. **Mint fine-grained PATs** with the scopes the App holds — `FLEET_SYNC_TOKEN` needs
    contents, pull-requests and workflows write on the OS repos and `dotfiles-Offense`;
    `WEBHOOK_SECRET` needs contents write on `dotfiles-web`.
-2. **Add each under that name, with visibility covering every repo that needs it.** Naming
-   the secret is not sufficient. A *repo* secret exists only in that one repository, and an
-   *org* secret can be scoped to selected repositories; either can leave another source
-   repo reading an empty string even after step 6. `WEBHOOK_SECRET` is needed by every repo
-   that dispatches (Core, the nine OS repos, and `dotfiles-Windows`); `FLEET_SYNC_TOKEN` by
-   `dotfiles-core` and `htpx`. An org secret set to *all repositories* is the one option
-   that cannot half-apply.
+2. **Add each under that name, scoped to exactly the repos that need it — and no others.**
+
+   > **Do not set either secret to "all repositories".** These are broad, long-lived
+   > credentials: `FLEET_SYNC_TOKEN` can push and open PRs across the fleet. Any workflow
+   > in any repo that can read an org secret can exfiltrate it, so org-wide visibility
+   > hands fleet write access to every repository in the account — recreating, and
+   > widening, the exposure G2 removed. Selected-repository scope is the requirement, not
+   > the careful option.
+
+   The exact lists:
+
+   | Secret | Visible to |
+   | --- | --- |
+   | `WEBHOOK_SECRET` | every repo that dispatches — Core, the nine OS repos, `dotfiles-Windows` |
+   | `FLEET_SYNC_TOKEN` | `dotfiles-core` and `htpx` only |
+
+   Naming the secret is not sufficient: a *repo* secret exists only in that one repository,
+   and an *org* secret reaches only its selected list, so either can leave a source repo
+   reading an empty string even after step 6. **Verify rather than assume** — the listing
+   command in *What the fleet runs today*, run against each repo above, is the check that
+   the scope actually landed. Verification is what makes a narrow scope safe to use; do not
+   reach for a broader one to avoid it.
 3. **Restore the fallback expressions**, replacing each bare read with the two-sided
    form. **The two paths take different secrets — copying one into the other restores the
    wrong credential:**
