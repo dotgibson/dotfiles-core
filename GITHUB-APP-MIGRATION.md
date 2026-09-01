@@ -30,8 +30,10 @@ deleted; this is the record of what the App had to take over:
 
 Both were the same anti-pattern: a **single broad token**, held as a secret in many repos,
 expiring on a date nobody was watching. A GitHub App fixes all three problems at once —
-tokens are **minted per run**, **scoped to just the target repo(s) and permissions** each
-job needs, and **expire in ~1 hour**, so a leak or a missed rotation is bounded.
+tokens are **minted per run**, **scoped to the permissions** each job needs (and, where the
+job passes `repositories:`, to just its target), and **expire in ~1 hour**, so a leak or a
+missed rotation is bounded. The fan-out is the deliberate exception — it omits
+`repositories:` and takes an installation-wide token; see the reference for why.
 
 ## The rollout, as planned
 
@@ -67,7 +69,8 @@ In the order it happened:
   `dotfiles-Windows`' inline `notify-web.yml`, `dotfiles-web/fleet-sync.yml`'s three-way
   expression, and the nine OS-repo callers that were still passing `WEBHOOK_SECRET`.
   `dotfiles-web`'s `docs/WEBHOOK-SETUP.md` — an eleven-repo walkthrough for minting the
-  deleted PAT — was rewritten in the same pass.
+  deleted PAT — was rewritten in the same pass. Verified after merge: none of the nine
+  callers passes the secret on its default branch.
 
 ### The one step still outstanding
 

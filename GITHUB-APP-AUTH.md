@@ -18,9 +18,20 @@ longer exist. Nothing here depends on reading it.
 
 ## What the fleet runs today
 
-Every cross-repo write mints a **GitHub App installation token at run time** — scoped to
-the target repo and permissions the job needs, expiring in about an hour. **There are no
-long-lived PATs anywhere in the fleet, and no fallback behind the App.**
+Every cross-repo write mints a **GitHub App installation token at run time**, expiring in
+about an hour. **There are no long-lived PATs anywhere in the fleet, and no fallback behind
+the App.**
+
+**Two scoping shapes, and the difference is the real authorization boundary:**
+
+- Most jobs pass `repositories:` and get a token good for **only that target** — the
+  `notify-web` dispatch is scoped to `dotfiles-web`, and nothing else.
+- **`sync-fanout.yml` deliberately omits it**, so its token covers the App's **entire
+  installation** — every OS repo, `dotfiles-Offense`, `dotfiles-web` and `dotfiles-core`.
+  That is intentional: hardcoding the fleet there would be a second copy of
+  `scripts/os-repos.txt` that could drift and 403 a newly-added repo, so the installation
+  list stays the one place scope lives. The trade is a broader token for that one job, and
+  it is why the install list should stay minimal.
 
 Two settings make it work, both at the **organization** level:
 
@@ -214,7 +225,7 @@ six steps are ONE change — doing part of it looks like a rollback and does not
 2. **Add each under that name, with visibility covering every repo that needs it.** Naming
    the secret is not sufficient. A *repo* secret exists only in that one repository, and an
    *org* secret can be scoped to selected repositories; either can leave another source
-   repo reading an empty string even after step 4. `WEBHOOK_SECRET` is needed by every repo
+   repo reading an empty string even after step 5. `WEBHOOK_SECRET` is needed by every repo
    that dispatches (Core, the nine OS repos, and `dotfiles-Windows`); `FLEET_SYNC_TOKEN` by
    `dotfiles-core` and `htpx`. An org secret set to *all repositories* is the one option
    that cannot half-apply.

@@ -125,10 +125,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   re-argues. `sync-fanout.yml` now also states that the App's **Workflows: write** grant is
   load-bearing with no safety net: a permission edit awaiting installation approval still
   mints on the old set, failing every fan-out until accepted. **Not** removed:
-  `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads but the nine
-  OS-repo callers still pass while pinning the moving `@v6` alias — dropping it is a
-  caller-visible break, so it is marked deprecated-and-ignored and comes out on the next
-  MAJOR once the callers are bumped (#819).
+  `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads. At the time
+  of this entry the nine OS-repo callers still passed it; they have since been bumped
+  (#819). Dropping the declaration is a caller-visible break either way — it changes the
+  `workflow_call` contract — so it is marked deprecated-and-ignored and comes out on the
+  next MAJOR.
 
 ## [v6.0.1] - 2026-09-01
 
