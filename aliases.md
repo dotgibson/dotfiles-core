@@ -128,7 +128,7 @@ same one-liners those surfaces print.
 | `genpw [length]` | random alphanumeric password (default 16) via openssl, `/dev/urandom` fallback |
 | `please` | re-run the last command with sudo (previews + confirms first) |
 | `pullall [dir]` | pull every git repo under a dir in parallel (prunes, stashes, fast-forwards trunk) |
-| `core [verb]` | the front door: `core help` / `doctor` / `version` / `status` / `update` / `whatsnew` |
+| `core [verb]` | the front door: `core help` / `doctor` / `version` / `status` / `update [check]` / `maint <install\|run\|log\|status\|uninstall>` / `sync` / `whatsnew` — bare `core maint` lists its sub-verbs |
 | `core-doctor` | health report: which tools are present, which Core actually wired, which integrations registered |
 | `core-version` | which Core version this machine carries (reads `core.version`) |
 | `core-status [--json]` | is this box current: the Core version and what `core.lock` records about it (tag, commit, how long since it synced), the live OS and role layers, a tool-health summary, and whether anything under `core/` has been edited since it was committed |
@@ -149,7 +149,7 @@ A function (not an alias), so it works from inside any OS repo's vendored
 
 | Command | Expands To |
 | ------- | ------------ |
-| `gsync` | `.bin/sync-upstream.sh` — pushes an OS repo's vendored `core/` subtree back upstream to dotfiles-core |
+| `gsync` | `.bin/sync-upstream.sh` — pushes an OS repo's vendored `core/` subtree back upstream to dotfiles-core (also `core sync`) |
 
 ---
 

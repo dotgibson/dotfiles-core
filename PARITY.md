@@ -92,16 +92,22 @@ manifest row, not a code change.
 
 The umbrella `core` verb + its standalone twins, so a cross-platform operator
 reaches for the same command on both shells. On pwsh these are thin dispatchers
-over the host's native verbs (`dotfiles-doctor` / `dothelp` / `up`), which stay
-canonical. Enforced by `scripts/parity-check.sh` (the `core *` rows).
+over the host's native verbs (`dotfiles-doctor` / `dothelp` / `up` / `update-check` /
+`maint-*`), which stay canonical. Since #684 the front door also reaches Core's second
+hyphenated family (`maint-*`), the nudge refresher (`update-check`) and the upstream
+pusher (`gsync`); the rows below say which of those pwsh has. Enforced by
+`scripts/parity-check.sh` (the `core *` rows).
 
 | Capability | zsh | pwsh | Status |
 | --- | --- | --- | --- |
-| Front door | `core` (`help`/`doctor`/`version`/`update`) | `core` (same verbs) | `aligned` |
+| Front door | `core` (`help`/`doctor`/`version`/`status`/`update [check]`/`maint`/`sync`/`whatsnew`) | `core` (`help`/`doctor`/`version`/`update [check]`/`maint`) | `aligned` (the shared verbs; `status`/`whatsnew` are zsh-only today, `sync` by design) |
 | Health | `core doctor` / `core-doctor` | `core doctor` / `core-doctor` (→ `dotfiles-doctor`) | `aligned` |
 | Command index | `core help` / `core-help` | `core help` / `core-help` (→ `dothelp`) | `aligned` (name) |
 | Version | `core version` / `core-version` | `core version` / `core-version` | `aligned` |
 | Update | `core update` / `up` | `core update` / `up` | `aligned` |
+| Update check | `core update check` / `update-check` | `core update check` / `update-check` | `aligned` |
+| Maintenance | `core maint <install/run/log/status/uninstall>` / `maint-*` | `core maint <install/run/log/status/uninstall>` / `maint-*` | `aligned` |
+| Upstream sync | `core sync` / `gsync` (pushes the vendored `core/` subtree upstream) | none — Windows replicates Core, it does not vendor `core/` | `deliberate` |
 
 ## Enforcement
 

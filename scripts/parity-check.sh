@@ -172,6 +172,15 @@ CHECKS=(
   "command-index|core help|zsh/30-functions.zsh|core-help()|powershell/os/48-core.ps1|function global:core-help"
   "version|core version|zsh/30-functions.zsh|core-version()|powershell/os/48-core.ps1|function global:core-version"
   "update|core update dispatch|zsh/30-functions.zsh|up \"\$@\"|powershell/os/48-core.ps1|'^update\$'"
+  # #684: the second family. zsh dispatches every maint sub-verb through ONE line reading
+  # $_CORE_MAINT_SUBCMDS, so its side is that single source; pwsh has an explicit arm per
+  # sub-verb, so the row spends a needle per trigger there (the Enforcement section's rule).
+  "update-check|core update check dispatch|zsh/30-functions.zsh|update-check \"\$@\"|powershell/os/48-core.ps1|update-check @urest"
+  "maintenance|core maint sub-verb list|zsh/30-functions.zsh|_CORE_MAINT_SUBCMDS=(install run log status uninstall)|powershell/os/48-core.ps1|'^install\$'"
+  "maintenance|core maint run|zsh/30-functions.zsh|\"maint-\${msub}\" \"\$@\"|powershell/os/48-core.ps1|'^run\$'"
+  "maintenance|core maint log|zsh/30-functions.zsh|\"maint-\${msub}\" \"\$@\"|powershell/os/48-core.ps1|'^log\$'"
+  "maintenance|core maint status|zsh/30-functions.zsh|\"maint-\${msub}\" \"\$@\"|powershell/os/48-core.ps1|'^status\$'"
+  "maintenance|core maint uninstall|zsh/30-functions.zsh|\"maint-\${msub}\" \"\$@\"|powershell/os/48-core.ps1|'^uninstall\$'"
 )
 
 # _has <file> <needle> — fixed-string presence test; non-zero if file missing too.
