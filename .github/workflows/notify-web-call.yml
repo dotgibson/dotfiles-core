@@ -41,7 +41,7 @@ on:
         default: false
     secrets:
       WEBHOOK_SECRET:
-        description: "DEPRECATED AND IGNORED. Was the legacy fallback PAT; that credential was deleted when G2 finished (#683) and nothing reads this any more. It stays DECLARED only so the fleet's callers, which still pass it and pin the moving @v6 alias, do not fail on an undeclared secret — dropping it is a caller-visible break, so it comes out on the next MAJOR once every caller has stopped passing it (#819). Do not pass it in new callers."
+        description: "DEPRECATED AND IGNORED. Was the legacy fallback PAT; that credential was deleted when G2 finished (#683) and nothing reads this any more. The fleet callers have stopped passing it (#819), so what keeps this DECLARED is the published workflow_call contract: removing an accepted secret fails validation for any caller still passing it. It comes out on the next MAJOR, which is safe because a MAJOR mints vN+1 and leaves the outgoing alias FROZEN (RELEASE-RUNBOOK.md 1.1) — @v6 callers keep this contract and meet the removal only when they adopt @v7. Removing it on a PATCH/MINOR would be the harmful case. Do not pass it in new callers."
         required: false
       FLEET_APP_PRIVATE_KEY:
         description: "Fleet GitHub App private key (G2). With the FLEET_APP_ID variable set, mints the dotfiles-web-scoped token used for the dispatch. This is the SOLE active dispatch credential — the legacy PAT it once fell back to was deleted when G2 finished (#683)."

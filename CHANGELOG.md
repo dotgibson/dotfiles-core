@@ -14,6 +14,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **`GITHUB-APP-AUTH.md` split into a live reference and a frozen record (#683).** The
+  file mixed three concerns — how the auth works now, the G2 migration that produced it,
+  and how to recover when the App is not working — and they drifted apart. That is the
+  defect #683 opened on: the top said both PATs were deleted while a paragraph 157 lines
+  down said one was "still present", and the recovery procedure was buried _underneath_
+  that sentence, inside a heading reading "Step 5 — migrate the consumers". An operator
+  reaching for recovery mid-incident had to read a migration runbook to find it, and what
+  they found was a migration-era leftover that no longer worked. `GITHUB-APP-AUTH.md`
+  keeps its name — every inbound reference stays valid — and now holds only what must
+  stay true: what runs today, the permissions the App must hold, where it is installed,
+  how to add a consumer, and **Recovery** promoted to a top-level section.
+  `GITHUB-APP-MIGRATION.md` takes the history, marked frozen and explicitly not a
+  template, since the patterns it prescribes name secrets that no longer exist.
+  Two structural fixes came with it: the recovery procedure is now **self-contained**
+  rather than pointing at a historical section for the fallback pattern it restores — that
+  coupling is what let a live instruction rot when the history around it changed — and the
+  numbered `Step N` headings are gone in favour of named sections, because the one inbound
+  cross-reference in `sync-fanout.yml` pointed at "Step 1" and would have silently aimed
+  at the wrong place. The still-open constraint on `notify-web-call.yml`'s declared
+  `WEBHOOK_SECRET` input lives in the **reference**, not the record: it is a current rule
+  about a future change, and keeping it in a file marked frozen would be the same drift
+  the split removes. The App's registration and private-key handling moved to the reference
+  too rather than the record — key rotation is an operational task, not history. The
+  recovery procedure also gained an exit: it used to end with broad PATs live and no way
+  back, which is the state G2 removed, and worse than pre-G2 because `token-health` — the
+  probe that watched those PATs for silent expiry — was retired because nothing depends on
+  a minted token surviving (each run mints a fresh one, so there is no expiry date to miss;
+  they do expire, in about an hour). Nothing watches a re-provisioned PAT, so it now says so
+  and prescribes reversing all seven steps, deleting the PATs, and verifying it.
+
 ### Added
 
 - **`make audit` gates the reusable workflows' documented caller examples (§8a-bis, #821).**
@@ -99,10 +131,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   re-argues. `sync-fanout.yml` now also states that the App's **Workflows: write** grant is
   load-bearing with no safety net: a permission edit awaiting installation approval still
   mints on the old set, failing every fan-out until accepted. **Not** removed:
-  `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads but the nine
-  OS-repo callers still pass while pinning the moving `@v6` alias — dropping it is a
-  caller-visible break, so it is marked deprecated-and-ignored and comes out on the next
-  MAJOR once the callers are bumped (#819).
+  `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads. At the time
+  of this entry the nine OS-repo callers still passed it; they have since been bumped
+  (#819). Dropping the declaration is a caller-visible break either way — it changes the
+  `workflow_call` contract — so it is marked deprecated-and-ignored and comes out on the
+  next MAJOR.
 
 ## [v6.0.1] - 2026-09-01
 

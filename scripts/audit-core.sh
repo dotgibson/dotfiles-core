@@ -303,7 +303,7 @@ trap 'exit 143' TERM
 META_ALLOWLIST=(
   README.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
   ARCHITECTURE.md PORTABILITY.md VENDORING.md CODE_OF_CONDUCT.md
-  PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V5-PROPOSAL.md
+  PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md GITHUB-APP-MIGRATION.md V5-PROPOSAL.md
   .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json
   Makefile cliff.toml
   nvim/.luacheckrc
