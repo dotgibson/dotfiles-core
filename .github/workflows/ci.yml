@@ -109,7 +109,20 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # PER-OS, and the asymmetry is the point. The Linux lane keeps 15 because the apt-retry
+    # budget below is sized against exactly that number (see the "11 of the 15 minutes"
+    # reasoning on the apt_update bound) — raising it there would silently loosen a bound
+    # another comment still claims is tight.
+    #
+    # macOS gets 30. The v6.0.1 release cut died here: a run that normally finishes in ~5m40s
+    # was still going at 15m35s and was killed by the ceiling, which GitHub reports as
+    # `cancelled` rather than `failed` — a red release PR with no failing test in it, on a
+    # commit that only touched core.version and the CHANGELOG. Note what is NOT known: the
+    # job was killed, so its true runtime is unmeasured. 30 is therefore not "slow run plus
+    # margin" (we cannot compute that) but a ceiling set well clear of the slowest thing we
+    # have observed while still bounding a genuine hang — the failure a timeout exists for.
+    # If this fires again at 30, the job has a real problem and the number is not the fix.
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 30 || 15 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
