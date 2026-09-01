@@ -145,22 +145,25 @@ gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha
 # (dereference to the commit if it returns an annotated-tag object)
 ```
 
-Every consumer in this repo is on **v3.2.0**
-(`bcd2ba49218906704ab6c1aa796996da409d3eb1`) — match them unless you are deliberately
-moving the fleet, in which case move them together.
+**Match the fleet on the PIN** — every consumer is on **v3.2.0**
+(`bcd2ba49218906704ab6c1aa796996da409d3eb1`) — unless you are deliberately moving the
+fleet, in which case move them together.
 
-> **Two known gaps in what the fleet does today.** Match the fleet for consistency, but
-> know what you are matching, because neither is the action's recommended shape:
+> **Do NOT match the fleet on these two.** They are known gaps, not the shape to copy;
+> both are tracked, and a new consumer should be written correctly from the start rather
+> than adding another instance to fix:
 >
 > - **`app-id` is deprecated at this pin.** The action's own `action.yml` carries
 >   `deprecationMessage: "Use 'client-id' instead."`. Every consumer here still passes
 >   `app-id` with the `FLEET_APP_ID` variable, which holds an App ID, not a Client ID —
 >   so a new consumer cannot simply switch inputs without the variable changing too.
->   Migrating the fleet is #831.
+>   **Use `app-id` for now** — it is the only input `FLEET_APP_ID` fits — and expect to
+>   move with the fleet. Migrating it is #831.
 > - **No consumer scopes permissions.** Omitting `permission-*` gives the token the
 >   installation's **full** grant set — Contents + Pull requests + Workflows write — on
->   whatever repositories it covers, however little the job needs. New consumers should
->   scope them (see the template below); tightening the existing ones is #830.
+>   whatever repositories it covers, however little the job needs. **Scope yours** (the
+>   template below does); this is the one place a new consumer should diverge from every
+>   existing one. Tightening those is #830.
 
 Then, in the job:
 
@@ -371,9 +374,17 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
    `release.yml` passes `FLEET_APP_PRIVATE_KEY` alone. Restoring the expression inside the
    reusable without re-adding `WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}` to every
    caller — Core's `release.yml` and the nine OS-repo `notify-web.yml` files — leaves it
-   empty there however the org secret is set. (`secrets: inherit` does the same job in one
-   line.) `sync-fanout.yml` and Core's own inline `notify-web.yml` are not reusable
-   workflows and need only step 3.
+   empty there however the org secret is set.
+
+   > **Map it explicitly. Do not reach for `secrets: inherit`.** It looks like the same
+   > thing in one line and is not: it hands the reusable workflow **every** organization,
+   > repository and environment secret the caller can see — including
+   > `FLEET_APP_PRIVATE_KEY` and anything unrelated — where the explicit mapping passes
+   > exactly one. Under incident pressure that shortcut is tempting and it widens the
+   > blast radius of the very credential you are re-provisioning.
+
+   `sync-fanout.yml` and Core's own inline `notify-web.yml` are not reusable workflows and
+   need only step 3.
 7. **Then unset `FLEET_APP_ID`**, or the restored expression will never choose the PAT.
    `steps.app.outputs.token || secrets.…` prefers the *left* side whenever it is non-empty,
    so an App that still mints — even an under-scoped one whose token 403s on the actual
