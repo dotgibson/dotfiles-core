@@ -189,7 +189,7 @@ API generates none regardless).
   OS-repo callers still pass it and pin the **moving `@v6` alias** — so the removal would
   reach all of them the moment `make publish` advances `v6`. Same hazard as
   `RELEASE-RUNBOOK.md` §2's rule that *the caller bump MUST precede the fan-out merge*.
-  Bump the callers first; drop the input on the next MAJOR.
+  Bump the callers first (#819), then drop the input on the next MAJOR.
 
 **Rollback is not a toggle — there is nothing to fall back to.** Unsetting `FLEET_APP_ID`
 does **not** restore service: it disables the mint, and with the PATs gone that means

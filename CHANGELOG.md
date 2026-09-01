@@ -59,7 +59,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads but the nine
   OS-repo callers still pass while pinning the moving `@v6` alias — dropping it is a
   caller-visible break, so it is marked deprecated-and-ignored and comes out on the next
-  MAJOR once the callers are bumped.
+  MAJOR once the callers are bumped (#819).
 
 - **`scripts/parity-check.sh` proves its one-to-one claim instead of asserting it (#682).**
   The script's own comment said it "mirrors PARITY.md's `aligned` rows one-to-one — every
