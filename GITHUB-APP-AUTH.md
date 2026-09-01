@@ -195,17 +195,21 @@ above, and no caller should pass it.
 
 It is documented here, in the live reference rather than the historical record, because it
 is a **current constraint on a future change**: it cannot be deleted until the next MAJOR.
-Removing a declared secret is a **breaking change to the `v6` reusable-workflow
+Removing a declared secret is a **breaking change to the published `v6` reusable-workflow
 contract**: a caller that passes a secret the reusable no longer declares fails workflow
-validation. The nine OS-repo callers have stopped passing it (#819), which is what unblocks
-the removal — but `@v6` is a single moving tag, so the change reaches every caller tracking
-it the instant `make publish` advances `v6`, with no window to catch a straggler. Any caller
-this repo does not control, or one not yet updated, breaks at that moment. (A caller pinned
-to an older SHA is unaffected — it keeps reading the workflow file at that commit — so
-SHA-pinned repos are not the risk; `@v6` trackers are.) Changing a published contract is
-what a MAJOR is for, which is why it waits for one.
+validation. The nine OS-repo callers have stopped passing it (#819), which is what makes
+the removal safe to schedule — but scheduling it is the whole point.
 
-**Do not remove it as tidy-up.** It comes out on a MAJOR, deliberately.
+**A MAJOR does not push this onto existing callers, and that is exactly why it waits for
+one.** Per `RELEASE-RUNBOOK.md` §1.1, a MAJOR mints `vN+1` and **leaves the outgoing `vN`
+alias frozen** — precisely so a breaking change is not forced on callers still tracking it.
+So `@v6` callers keep the contract they were published against, including this declaration,
+and encounter the removal only when they **explicitly adopt `@v7`** — the deliberate,
+reviewed caller sweep in §2 step 1. Deleting the declaration on a PATCH or MINOR would be
+the harmful case, because there the alias *does* advance in place and every tracker would
+take the change with no adoption step.
+
+**Do not remove it as tidy-up.** It comes out on a MAJOR, paired with that caller bump.
 
 ## Recovery — re-provisioning off the App
 
