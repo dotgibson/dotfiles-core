@@ -131,6 +131,8 @@ triggers is not mechanically forced to carry two needles. That is exactly how `A
 behind `Alt+Z`'s needle for years, so every multi-trigger row here now spends a needle per
 trigger — but adding a trigger to a row still means remembering to add its needle. Saying
 so is the point; a gate that overstated its reach a second time would be the same bug.
+Closing that half is #809, which is a decision about this file's format rather than a
+change to the gate.
 
 This used to be a discipline ("add a check in the same change"), and disciplines do not
 hold. **Theme**, **History search**, **Word nav** and the five-function row were all

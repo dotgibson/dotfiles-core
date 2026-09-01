@@ -183,7 +183,8 @@ fi
 # it and every multi-trigger row uses it (word-nav per direction, the five utility
 # functions, the three fuzzy-git verbs). Adding a trigger to a row means adding its needle;
 # that half is still a discipline, and this comment is the honest statement of the limit
-# rather than a second overclaim.
+# rather than a second overclaim. Tracked as #809 — the fix is a contract-format decision,
+# not a change to this loop.
 #
 # bash 3.2 (macOS ships 2007's bash): no associative arrays, no mapfile — PORTABILITY.md
 # §1, the same discipline gen-theme.sh and check-modern.sh keep. Membership is tested
