@@ -46,6 +46,12 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   **generated** `# core:theme:gen` blocks — hand-editing one is a gate failure
   (`audit-core.sh` §9d). Edit the palette, run `make gen-theme`. Comments name palette
   tokens, never hexes, so prose cannot drift from the code it describes.
+- **`aliases.md`'s tables are generated, not typed.** `scripts/gen-aliases.sh` renders
+  them from `zsh/20-aliases.zsh`, `zsh/25-git.zsh` and `zsh/30-functions.zsh` into
+  `<!-- core:aliases:gen … -->` blocks — hand-editing a table, or adding an alias without
+  listing it in the script's `BLOCKS` registry, is a gate failure (`audit-core.sh` §9g).
+  Edit the zsh source (a trailing `# comment` on an alias line is its Note column), run
+  `make gen-aliases`. The prose around the tables stays hand-written.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
 - **A user-visible change lands in `CHANGELOG.md` under `[Unreleased]`** in the

@@ -6750,6 +6750,17 @@ if have git; then
   else
     fail "gen-aliases: a duplicated end marker was accepted as prose"
   fi
+  # …and with TABS between the marker's fields: marker_id accepts any single whitespace
+  # character, so the counts must too, or a tab-separated duplicate is walked but never
+  # counted and survives as prose.
+  _ga_fixture && _ga_run >/dev/null
+  printf '<!--\tcore:aliases:end\tmodern-cli\t-->\n' >>"$GAR/aliases.md"
+  _ga_stray_out="$(_ga_out --check)"
+  if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'modern-cli has 1 gen marker(s) but 2 end marker(s)' <<<"$_ga_stray_out"; then
+    pass "gen-aliases: a tab-separated duplicate end marker is counted by the same grammar the walker uses"
+  else
+    fail "gen-aliases: a tab-separated duplicate end marker slipped past the marker counts"
+  fi
   _ga_fixture && _ga_run >/dev/null
   printf '<!-- core:aliases:end nope -->\n' >>"$GAR/aliases.md"
   _ga_stray_out="$(_ga_out --check)"
