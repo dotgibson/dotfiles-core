@@ -14898,7 +14898,15 @@ _pc_row "reclassifying an aligned row keeps its check valid" 0 \
   "aligned PARITY.md rows have a check" \
   's#^\(| Session picker |.*|\) `aligned` — jump-to-session both |#\1 `deliberate` — test |#'
 
-# 5. A pwsh half that is a framework default must be REPORTED, never certified. The
+# 5. A misspelled status is the nastiest input this parser takes: the row stays known (so
+#    its check is not orphaned) but stops being REQUIRED, quietly dropping a contract row
+#    out of enforcement with the gate green. Only the three documented statuses are
+#    accepted, and anything else is a hard fail naming the row and what it said.
+_pc_row "an unknown status is rejected, not treated as not-aligned" 1 \
+  "has status \`aligend\`" \
+  's#^\(| Word nav |.*|\) `aligned` |#\1 `aligend` |#'
+
+# 6. A pwsh half that is a framework default must be REPORTED, never certified. The
 #    summary line is the assertion: it may not say "all aligned rows hold" when a half was
 #    skipped. (Windows is absent from the fixture, so this pins the Core-side wording.)
 _pc_fixture "$HERE/PARITY.md" || true

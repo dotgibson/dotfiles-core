@@ -49,8 +49,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   that grows a second trigger is still not forced to grow a second needle, and
   `parity-check.sh` says so rather than overclaiming a second time. Verified the only way
   a gate can be — negatively, in `test-core.sh`: an uncovered row, an orphaned row-key, a
-  slug collision and a reclassified-but-still-checked row each produce the right verdict
-  and exit code.
+  slug collision, a misspelled status and a reclassified-but-still-checked row each produce
+  the right verdict and exit code. The status check matters more than it looks: a typo like
+  `aligend` left the row in the known set (so its check was not orphaned) while dropping it
+  out of the required set, retiring a contract row from enforcement with the gate green.
 
 - **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
   Found by doing the work above, since a contract nothing checks is a contract nothing

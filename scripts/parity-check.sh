@@ -227,10 +227,23 @@ while IFS=$'\t' read -r _slug _status; do
     continue
   fi
   KNOWN_ROWS="$KNOWN_ROWS$_slug "
-  if [[ "$_status" == "aligned" ]]; then
+  # REJECT AN UNKNOWN STATUS rather than treating it as "not aligned". PARITY.md defines
+  # exactly three (its own vocabulary section), and a typo like `aligend` is the worst
+  # possible input here: the row stays in KNOWN_ROWS so its check is not orphaned, but it
+  # never reaches ALIGNED_KEYS, so the row silently stops being required — a contract row
+  # dropped out of enforcement with the gate still green. That is this gate's own failure
+  # mode wearing a spelling mistake, so it is a hard fail, not a lenient default.
+  case "$_status" in
+  aligned)
     ALIGNED_KEYS+=("$_slug")
     ALIGNED_N=$((ALIGNED_N + 1))
-  fi
+    ;;
+  deliberate | gap) ;;
+  *)
+    fail "coverage — PARITY.md row \`$_slug\` has status \`${_status:-<empty>}\`, which is not one of aligned/deliberate/gap; a misspelled status silently drops the row out of enforcement"
+    DRIFT=1
+    ;;
+  esac
 done < <(_parity_rows "$HERE/PARITY.md")
 
 CHECKED_KEYS=()

@@ -1858,6 +1858,11 @@ if ((_pc_rc == 0)); then
     # skip_env, not skip: this is a coverage gap the BOX could not cover (no sibling repo),
     # so --require-siblings can redden it, exactly like §5f/§9c's fleet-wide gates.
     skip_env "cross-shell parity: dotfiles-Windows not checked out — the pwsh half was NOT verified"
+  elif [[ "$_pc_out" == *"nothing to grep"* ]]; then
+    # QUALIFIED HERE, not walked back on the next line. An unconditional "holds across zsh +
+    # pwsh" followed by a skip admitting two halves went unasserted is the same overclaim
+    # parity-check.sh's own summary was corrected for — the reader believes the green line.
+    pass "parity contract holds across zsh + pwsh for every CONFIGURED row (framework-default halves are reported below, not asserted)"
   else
     pass "parity contract holds across zsh + pwsh"
   fi
