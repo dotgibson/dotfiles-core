@@ -35,11 +35,13 @@ tokens are **minted per run**, **scoped by repository** where the job passes
 fan-out is the deliberate exception — it omits `repositories:` and takes an
 installation-wide token; see the reference for why.
 
-**What the rollout did NOT narrow, and this record should not imply it did:** none of the
-migrated jobs passes `permission-*` inputs, so every minted token carries the
-**installation's full grant set** (Contents + Pull requests + Workflows write) on whatever
-repositories it covers. The bound achieved was lifetime and repository reach, not verbs.
-Tightening that is #830.
+**What the rollout did NOT narrow, and this record should not imply it did:** it bounded
+token **lifetime** and **repository reach**. It did not scope *verbs* — the migrated jobs
+passed no `permission-*` inputs, so a minted token carried the installation's full grant
+set on whatever repositories it covered.
+
+Whether that is still true is **not recorded here** — see *What the fleet runs today* in
+[`GITHUB-APP-AUTH.md`](GITHUB-APP-AUTH.md), which tracks the current position.
 
 ## The rollout, as planned
 

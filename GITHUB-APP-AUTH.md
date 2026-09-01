@@ -143,6 +143,19 @@ Every consumer in this repo is on **v3.2.0**
 (`bcd2ba49218906704ab6c1aa796996da409d3eb1`) — match them unless you are deliberately
 moving the fleet, in which case move them together.
 
+> **Two known gaps in what the fleet does today.** Match the fleet for consistency, but
+> know what you are matching, because neither is the action's recommended shape:
+>
+> - **`app-id` is deprecated at this pin.** The action's own `action.yml` carries
+>   `deprecationMessage: "Use 'client-id' instead."`. Every consumer here still passes
+>   `app-id` with the `FLEET_APP_ID` variable, which holds an App ID, not a Client ID —
+>   so a new consumer cannot simply switch inputs without the variable changing too.
+>   Migrating the fleet is #831.
+> - **No consumer scopes permissions.** Omitting `permission-*` gives the token the
+>   installation's **full** grant set — Contents + Pull requests + Workflows write — on
+>   whatever repositories it covers, however little the job needs. New consumers should
+>   scope them (see the template below); tightening the existing ones is #830.
+
 Then, in the job:
 
 ```yaml
