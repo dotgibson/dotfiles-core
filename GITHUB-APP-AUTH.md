@@ -236,12 +236,29 @@ six steps are ONE change — doing part of it looks like a rollback and does not
    wrong credential:**
 
    ```yaml
-   # sync-fanout.yml (Core and htpx) — the cross-repo write path.
-   # Also the git credential rewrite: GIT_CONFIG_VALUE_0 and friends take the same form.
+   # dotfiles-core sync-fanout.yml — the cross-repo write path. FLEET_TOKEN also feeds
+   # the `git config --global url."https://x-access-token:${FLEET_TOKEN}@github.com/"`
+   # rewrite, so fixing these two env values covers git auth here as well.
    env:
      GH_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
      FLEET_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
    ```
+
+   **htpx's fan-out wires git differently — read this before editing it.** It uses
+   step-scoped `GIT_CONFIG_*` rather than `git config --global`, and **the token is
+   interpolated into the KEY, not the value**:
+
+   ```yaml
+   # htpx sync-fanout.yml. GIT_CONFIG_VALUE_0 is the literal match URL — LEAVE IT ALONE.
+   env:
+     GH_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
+     GIT_CONFIG_KEY_0: "url.https://x-access-token:${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}@github.com/.insteadOf"
+     GIT_CONFIG_VALUE_0: "https://github.com/" # unchanged
+   ```
+
+   Putting the fallback in `GIT_CONFIG_VALUE_0` looks plausible and does nothing: the
+   rewrite keeps matching on an empty App token, and every clone and push goes out
+   unauthenticated.
 
    ```yaml
    # notify-web.yml and notify-web-call.yml — the dispatch path.
