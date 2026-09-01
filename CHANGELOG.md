@@ -28,8 +28,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   removed the fallbacks: with no PAT behind it, this warning is the ONLY signal that a repo
   has silently stopped refreshing the showcase, and pointing an operator at the App's
   installation sent them to the wrong place. `sync-fanout.yml`'s preflight comment carried
-  the same loose phrasing and is corrected too, as is the warning text quoted verbatim in
-  `GITHUB-APP-AUTH.md`'s rollback section, which would otherwise have gone stale on merge.
+  the same loose phrasing and is corrected too. `GITHUB-APP-AUTH.md`'s rollback section had
+  the old warning pasted in verbatim and would have gone stale on merge; rather than paste
+  the new one, it now **describes** the degradation, since a copied message is exactly the
+  kind of duplicated fact this changelog entry exists to stop repeating.
 
 - **The fleet PAT retirement is finished in Core, and the docs now agree about it (#683).**
   `GITHUB-APP-AUTH.md` said "both PATs are deleted" on line 9 and "still present until the
