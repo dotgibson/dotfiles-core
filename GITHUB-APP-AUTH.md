@@ -109,16 +109,18 @@ The **App ID** is on the same page and becomes `FLEET_APP_ID`.
 
 ## Where the App is installed
 
-Installed on **`dotgibson`**, on **only the repos that RECEIVE cross-repo writes**:
+Installed on **`dotgibson`**, on the repos something actually writes to — plus one
+exception:
 
-- The Core-vendoring OS repos + `dotfiles-Offense` (targets of `dotfiles-core`'s fan-out,
-  and of `htpx`'s companion fan-out).
-- `dotfiles-web` (target of the `notify-web` dispatch).
-- **`dotfiles-core`** — for its own **self-PRs**: `freshness.yml` opens a pin-bump PR *in
-  Core*, and a PR opened by `GITHUB_TOKEN` has its CI held at `action_required` (GitHub's
-  recursion guard). Installing the App here lets freshness open that PR as the App bot, so
-  its CI runs without a manual "Approve and run". Core is the one repo that is both a
-  *source* and a *target*.
+- **The Core-vendoring OS repos** (`scripts/os-repos.txt`) **and `dotfiles-Offense`** —
+  targets of `dotfiles-core`'s fan-out. `htpx`'s companion fan-out targets
+  **`dotfiles-Offense` only**, not the rest of that group.
+- **`dotfiles-web`** — target of the `notify-web` dispatch.
+- **`dotfiles-core`** — the exception, and **not** a cross-repo write: it is for Core's own
+  **self-PRs**. `freshness.yml` opens a pin-bump PR *in Core*, and a PR opened by
+  `GITHUB_TOKEN` has its CI held at `action_required` (GitHub's recursion guard).
+  Installing the App here lets freshness open that PR as the App bot, so its CI runs
+  without a manual "Approve and run".
 
 The App does **not** need installing on the *source* repos that only mint (`htpx`, and
 `dotfiles-core` for its *fan-out* minting) — a minted token's reach is decided by the
@@ -268,3 +270,22 @@ six steps are ONE change — doing part of it looks like a rollback and does not
    push — keeps winning; and an App that fails to mint fails the *step*, so execution never
    reaches the fallback at all. Unsetting the variable makes the mint step's `if:` false,
    which skips it, which finally leaves the output empty.
+
+### Getting back off the PATs — do not skip this
+
+The state the six steps leave you in **is the state G2 existed to remove**: broad,
+long-lived, hand-rotated credentials in many repos. It is worse than the pre-G2 state in
+one respect — `token-health.yml`, the weekly probe that watched those PATs for silent
+expiry, was retired precisely because minted tokens cannot expire, and it is **not coming
+back on its own**. So while the PATs are live, nothing is watching them.
+
+Treat the workaround as time-boxed:
+
+- **While it is in force**, put the PATs' expiry dates somewhere that will actually reach
+  you. Nothing in CI will warn you; the first symptom is a fan-out or dispatch failing on a
+  403 for no visible reason, which is exactly the failure mode this whole migration closed.
+- **Once the App is working again**, reverse all six steps: re-set `FLEET_APP_ID`, drop the
+  `|| secrets.…` fallbacks back to the bare `${{ steps.app.outputs.token }}`, remove the
+  caller `secrets:` mappings, and **delete the PATs** — from every repo and from the org.
+  Verify with the listing command in *What the fleet runs today*; a forgotten PAT is a
+  live credential nothing is monitoring.

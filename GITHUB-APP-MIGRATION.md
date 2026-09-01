@@ -26,7 +26,7 @@ deleted; this is the record of what the App had to take over:
 | Secret (deleted) | Was used by | What it authorised |
 | --- | --- | --- |
 | `FLEET_SYNC_TOKEN` | `dotfiles-core` `sync-fanout.yml`, `htpx` `sync-fanout.yml` | Clone another repo, push a `sync/…` branch, and open a PR (contents + pull-requests + workflows **write** on the OS repos and `dotfiles-Offense`). Workflows was needed because the sync branch can carry `.github/workflows/*` pin moves. |
-| `WEBHOOK_SECRET` | every source repo's `notify-web.yml` (via `notify-web-call.yml`) | A `Bearer` token POSTing a `repository_dispatch` to `dotfiles-web` to trigger a docs rebuild (contents **write** on `dotfiles-web`). |
+| `WEBHOOK_SECRET` | every source repo's `notify-web.yml` — most via the reusable `notify-web-call.yml`, but `dotfiles-core` and `dotfiles-Windows` carry inline copies | A `Bearer` token POSTing a `repository_dispatch` to `dotfiles-web` to trigger a docs rebuild (contents **write** on `dotfiles-web`). |
 
 Both were the same anti-pattern: a **single broad token**, held as a secret in many repos,
 expiring on a date nobody was watching. A GitHub App fixes all three problems at once —
