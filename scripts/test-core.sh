@@ -14885,7 +14885,7 @@ _pc_fixture() {
 # exactly as the gate will grep for it, escapes resolved, so the fixture cannot disagree with
 # the contract about what a needle says.
 _pc_win() {
-  local win="$PCR/fleet/dotfiles-Windows" row k l zf zn pf pn fg want i
+  local win="$PCR/fleet/dotfiles-Windows" row k l zf zn pf pn fg want i anchor
   local CHECKS=()
   rm -rf "$win"
   eval "$(sed -n '/^CHECKS=(/,/^)$/p' "$HERE/scripts/parity-check.sh")"
@@ -14898,14 +14898,23 @@ _pc_win() {
     # A `count:N:` needle demands N matching LINES (pwsh binds Ctrl+R twice on purpose), so
     # the fixture has to satisfy the count, not just the string.
     want=1
+    anchor=""
     case "$pn" in
     count:[0-9]*:*)
       want="${pn#count:}"
       want="${want%%:*}"
       pn="${pn#count:*:}"
       ;;
+    after:*)
+      # position matters for this one: write the anchor first so the needle lands BELOW it,
+      # rather than relying on the order rows happen to appear in CHECKS.
+      anchor="${pn#after:}"
+      anchor="${anchor%%:*}"
+      pn="${pn#after:*:}"
+      ;;
     esac
     mkdir -p "$win/${pf%/*}"
+    [[ -n "$anchor" ]] && printf '%s\n' "$anchor" >>"$win/$pf"
     i=0
     while ((i < want)); do
       printf '%s\n' "$pn" >>"$win/$pf"
@@ -15020,6 +15029,25 @@ else
   grep -E "coverage|nothing to grep|aligned rows hold|CONFIGURED" "$PCOUT" | sed 's/^/    /' >&2
 fi
 unset _pc_win_rc _pc_win_n
+
+# 9. `after:` is POSITION, not presence — the one property a count cannot express. pwsh's
+#    Ctrl+R re-assertion only means anything BELOW `atuin init`, because atuin ignores
+#    ATUIN_NOBIND there and seizes the chord on init. Hoisting both bindings above the anchor
+#    keeps the count satisfied and must still fail, or the row certifies a runtime break.
+_pc_fixture "$HERE/PARITY.md" win >/dev/null 2>&1 || true
+_pc_f10="$PCR/fleet/dotfiles-Windows/powershell/core/10-tools.ps1"
+{
+  grep -F -- "-Chord 'Ctrl+r'" "$_pc_f10"
+  grep -vF -- "-Chord 'Ctrl+r'" "$_pc_f10"
+} >"$_pc_f10.hoisted" && mv "$_pc_f10.hoisted" "$_pc_f10"
+env -u DOTFILES_ROOT "$PCR/scripts/parity-check.sh" --root "$PCR/fleet" --color never >"$PCOUT" 2>&1 && _pc_ord_rc=0 || _pc_ord_rc=$?
+if ((_pc_ord_rc == 1)) && grep -qF "BELOW 'atuin init'" "$PCOUT"; then
+  pass "parity coverage: two Ctrl+R bindings both ABOVE atuin still fail — count cannot express position"
+else
+  fail "parity coverage: hoisting both Ctrl+R bindings above atuin was accepted (rc=$_pc_ord_rc) — the row would certify a runtime break"
+  grep -E "survives atuin|history search on" "$PCOUT" | sed 's/^/    /' >&2
+fi
+unset _pc_f10 _pc_ord_rc
 
 rm -rf "$PCR"
 unset PCR PCOUT

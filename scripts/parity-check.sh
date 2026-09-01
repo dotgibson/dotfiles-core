@@ -99,24 +99,30 @@ CHECKS=(
   # ATUIN_NOBIND and seizes Ctrl+R, so 10-tools.ps1 re-asserts the chord afterwards in a
   # different place than the lazy-load stub sets it. Both must keep it, and the row's
   # promise (atuin on Ctrl+E, quick fzf history on Ctrl+R) is about the chord.
-  "history-search|history search on Ctrl+R|zsh/40-bindings.zsh|'^R' _fzf_history_clean|powershell/core/10-tools.ps1|count:2:-Chord 'Ctrl+r'"
-  "file-picker|file picker on Ctrl+T|zsh/40-bindings.zsh|'^T' _fzf_file_no_hidden|powershell/core/10-tools.ps1|PSReadlineChordProvider 'Ctrl+t'"
-  "atuin-tui|atuin on Ctrl+E|zsh/40-bindings.zsh|'^E' _atuin_search_widget|powershell/core/10-tools.ps1|-Chord 'Ctrl+e'"
+  "history-search|history search on Ctrl+R|zsh/40-bindings.zsh|-M viins '^R' _fzf_history_clean|powershell/core/10-tools.ps1|count:2:-Chord 'Ctrl+r'"
+  # POSITION, not just presence. The row's real promise is that Ctrl+R still reaches the fzf
+  # history AFTER atuin's init — atuin ignores ATUIN_NOBIND on pwsh and seizes the chord, so
+  # 10-tools.ps1 re-asserts it further down. count:2 proves both bindings exist; only this
+  # proves one of them is below atuin. Core's half is the other side of the same coin:
+  # ATUIN_NOBIND is what stops atuin taking Ctrl+R on zsh in the first place.
+  "history-search|Ctrl+R survives atuin's init|zsh/00-tools.zsh|export ATUIN_NOBIND=true|powershell/core/10-tools.ps1|after:atuin init:-Chord 'Ctrl+r'"
+  "file-picker|file picker on Ctrl+T|zsh/40-bindings.zsh|-M viins '^T' _fzf_file_no_hidden|powershell/core/10-tools.ps1|PSReadlineChordProvider 'Ctrl+t'"
+  "atuin-tui|atuin on Ctrl+E|zsh/40-bindings.zsh|-M viins '^E' _atuin_search_widget|powershell/core/10-tools.ps1|-Chord 'Ctrl+e'"
   # KEY-ANCHORED, like the Ctrl+T row above. This needled the bare `_fzf_zoxide_jump`
   # until #682 — which a rebind to a different key, or a mere COMMENT naming the widget,
   # passed unchanged. The row's claim is about the key, so the needle is too. The same
   # row also claimed `Alt+C`, which neither shell has ever bound; that half is gone. #808
   # tracks whether the capability is wanted for real (it is a two-repo change).
-  "dir-jump|zoxide jump on Alt+Z|zsh/40-bindings.zsh|'^[z' _fzf_zoxide_jump|powershell/core/10-tools.ps1|-Chord 'Alt+z'"
+  "dir-jump|zoxide jump on Alt+Z|zsh/40-bindings.zsh|-M viins '^[z' _fzf_zoxide_jump|powershell/core/10-tools.ps1|-Chord 'Alt+z'"
   # KEY-ANCHORED for the Alt+Z reason, which this row was missed by in the first pass:
   # needling only the function names left `Ctrl+G` untested on BOTH shells, so moving
   # either binding to another key kept the row green.
-  "session-picker|sessionizer on Ctrl+G|zsh/40-bindings.zsh|'^G' _tmux_sessionizer|powershell/core/10-tools.ps1|-Chord 'Ctrl+g'"
+  "session-picker|sessionizer on Ctrl+G|zsh/40-bindings.zsh|-M viins '^G' _tmux_sessionizer|powershell/core/10-tools.ps1|-Chord 'Ctrl+g'"
   # ...and what that chord DOES. Key-anchoring the row above dropped the pwsh behaviour
   # needle, so `Ctrl+G` bound to anything at all satisfied it. Both halves of the claim get a
   # needle under the shared row-key rather than one replacing the other.
   "session-picker|sessionizer target|zsh/35-fzf.zsh|_tmux_sessionizer() {|powershell/core/10-tools.ps1|Invoke-DotfilesSessionizer"
-  "autosuggest-toggle|autosuggest/prediction toggle on Ctrl+\\|zsh/40-bindings.zsh|'^\\' autosuggest-toggle|powershell/core/10-tools.ps1|-Chord 'Ctrl+\\'"
+  "autosuggest-toggle|autosuggest/prediction toggle on Ctrl+\\|zsh/40-bindings.zsh|-M viins '^\\' autosuggest-toggle|powershell/core/10-tools.ps1|-Chord 'Ctrl+\\'"
   # Word nav's pwsh half is a PSReadLine DEFAULT, not configuration: nothing in
   # dotfiles-Windows binds Ctrl+Arrow — 10-tools.ps1's "Ctrl+arrow word movement" comment
   # sits directly above a line that sets Tab. There is no string to grep, so this asserts
@@ -126,8 +132,8 @@ CHECKS=(
   # One needle per DIRECTION: the row promises Ctrl+Right and Ctrl+Left, and a single
   # forward-word needle left `'^[[1;5D' backward-word` free to be deleted with the row
   # still green — the partial-coverage shape this whole gate exists to end.
-  "word-nav|word nav: forward-word on Ctrl+Right|zsh/40-bindings.zsh|'^[[1;5C' forward-word|powershell/core/10-tools.ps1|-"
-  "word-nav|word nav: backward-word on Ctrl+Left|zsh/40-bindings.zsh|'^[[1;5D' backward-word|powershell/core/10-tools.ps1|-"
+  "word-nav|word nav: forward-word on Ctrl+Right|zsh/40-bindings.zsh|-M viins '^[[1;5C' forward-word|powershell/core/10-tools.ps1|-"
+  "word-nav|word nav: backward-word on Ctrl+Left|zsh/40-bindings.zsh|-M viins '^[[1;5D' backward-word|powershell/core/10-tools.ps1|-"
   # One needle per function, not one standing in for five: the row named `extract`,
   # `mkbak`, `serve`, `fif`, `fbr` and nothing tested ANY of them until #682.
   "utility-functions|extract|zsh/30-functions.zsh|extract() {|powershell/core/20-functions.ps1|function extract"
@@ -162,20 +168,38 @@ CHECKS=(
 # tell those two apart.
 _has() {
   local file="$1" needle="$2" want=1
+  local anchor="" a_ln n_ln
   case "$needle" in
   count:[0-9]*:*)
     want="${needle#count:}"
     want="${want%%:*}"
     needle="${needle#count:*:}"
     ;;
+  after:*)
+    anchor="${needle#after:}"
+    anchor="${anchor%%:*}"
+    needle="${needle#after:*:}"
+    ;;
   esac
   [[ -r "$file" ]] || return 1
+  # `after:` — the needle must appear BELOW the anchor's first occurrence. Position is the
+  # claim for exactly one row: pwsh's Ctrl+R re-assertion only means anything if it runs
+  # AFTER `atuin init`, because atuin ignores ATUIN_NOBIND and seizes the chord on init. A
+  # count alone cannot say that — two bindings both ABOVE atuin would satisfy it while the
+  # advertised behaviour (Ctrl+E atuin, Ctrl+R history) was broken at runtime.
+  if [[ -n "$anchor" ]]; then
+    a_ln="$(grep -nF -- "$anchor" "$file" | head -n1 | cut -d: -f1)"
+    n_ln="$(grep -nF -- "$needle" "$file" | tail -n1 | cut -d: -f1)"
+    [[ -n "$a_ln" && -n "$n_ln" ]] && ((n_ln > a_ln))
+    return
+  fi
   [[ "$(grep -cF -- "$needle" "$file")" -ge "$want" ]]
 }
 # _needle_says <needle> — how to describe it in a failure, with the count spelled out.
 _needle_says() {
   case "$1" in
   count:[0-9]*:*) printf "%sx '%s'" "${1#count:}" "${1#count:*:}" | sed "s/:[^x]*x '/x '/" ;;
+  after:*) printf "'%s' BELOW '%s'" "${1#after:*:}" "$(x="${1#after:}"; printf '%s' "${x%%:*}")" ;;
   *) printf "'%s'" "$1" ;;
   esac
 }

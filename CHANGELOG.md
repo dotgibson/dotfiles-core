@@ -75,6 +75,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   needle, so `Ctrl+G` bound to anything satisfied it; the chord and the target now get a
   needle each under the shared row-key, rather than one replacing the other.
 
+  Two needles proved less than their rows claimed in a subtler way still. `count:2:` shows
+  both `Ctrl+R` bindings exist but says nothing about **where**, and the re-assertion only
+  means anything _below_ `atuin init` — atuin ignores `ATUIN_NOBIND` on pwsh and seizes the
+  chord on init. Hoisting both bindings above the anchor satisfied the count while breaking
+  the advertised behaviour at runtime, so needles may now also demand position
+  (`after:atuin init:`), which is the one property a count cannot express. And the word-nav
+  needles matched the `vicmd` bindings four lines below the `viins` ones, so deleting the
+  contractual insert-mode binding left the row green; every keybinding needle now pins its
+  keymap (`-M viins '…'`) rather than matching whichever copy survives.
+
 - **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
   Found by doing the work above, since a contract nothing checks is a contract nothing
   corrects. The three fail differently: one capability did not exist, one existed on both
