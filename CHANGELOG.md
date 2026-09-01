@@ -93,7 +93,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   restores `Ctrl+R` on **two** runtime paths after atuin — the lazy path re-binds the
   `-Chord` stub, the already-loaded path calls `Set-PsFzfOption` — so deleting the
   already-loaded branch left the `-Chord` count at two and the position check passing while
-  atuin kept `Ctrl+R` on that path. Both paths are needled now.
+  atuin kept `Ctrl+R` on that path. Both paths are needled now, each for existence _and_
+  position — the already-loaded branch only means anything below `atuin init` too, so
+  hoisting it keeps the count at two and still fails.
 
 - **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
   Found by doing the work above, since a contract nothing checks is a contract nothing

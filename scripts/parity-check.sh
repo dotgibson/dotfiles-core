@@ -113,6 +113,12 @@ CHECKS=(
   # atuin kept Ctrl+R on that path at runtime. The zsh needle repeats the row's other one on
   # purpose: zsh has a single binding to protect, pwsh has two paths to it.
   "history-search|Ctrl+R restored on both PSFzf paths|zsh/40-bindings.zsh|-M viins '^R' _fzf_history_clean|powershell/core/10-tools.ps1|count:2:-PSReadlineChordReverseHistory 'Ctrl+r'"
+  # ...and POSITION for that branch too, symmetrically with the -Chord row above. The count
+  # proves both Set-PsFzfOption calls exist; only this proves one of them runs BELOW atuin's
+  # init, which is the whole point of the already-loaded restoration path. Without it, moving
+  # the restoration above the anchor (or adding a second call up in the loader and deleting
+  # the real one) keeps the count at two while atuin retains Ctrl+R on that path at runtime.
+  "history-search|Ctrl+R restored below atuin on the PSFzf-option path|zsh/00-tools.zsh|export ATUIN_NOBIND=true|powershell/core/10-tools.ps1|after:atuin init:-PSReadlineChordReverseHistory 'Ctrl+r'"
   "file-picker|file picker on Ctrl+T|zsh/40-bindings.zsh|-M viins '^T' _fzf_file_no_hidden|powershell/core/10-tools.ps1|PSReadlineChordProvider 'Ctrl+t'"
   "atuin-tui|atuin on Ctrl+E|zsh/40-bindings.zsh|-M viins '^E' _atuin_search_widget|powershell/core/10-tools.ps1|-Chord 'Ctrl+e'"
   # KEY-ANCHORED, like the Ctrl+T row above. This needled the bare `_fzf_zoxide_jump`
