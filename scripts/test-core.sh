@@ -14885,7 +14885,7 @@ _pc_fixture() {
 # exactly as the gate will grep for it, escapes resolved, so the fixture cannot disagree with
 # the contract about what a needle says.
 _pc_win() {
-  local win="$PCR/fleet/dotfiles-Windows" row k l zf zn pf pn fg
+  local win="$PCR/fleet/dotfiles-Windows" row k l zf zn pf pn fg want i
   local CHECKS=()
   rm -rf "$win"
   eval "$(sed -n '/^CHECKS=(/,/^)$/p' "$HERE/scripts/parity-check.sh")"
@@ -14895,8 +14895,22 @@ _pc_win() {
     # shellcheck disable=SC2034
     IFS='|' read -r k l zf zn pf pn <<<"$row"
     [[ "$pn" == "-" ]] && continue # the framework defaults: nothing to write, by definition
+    # A `count:N:` needle demands N matching LINES (pwsh binds Ctrl+R twice on purpose), so
+    # the fixture has to satisfy the count, not just the string.
+    want=1
+    case "$pn" in
+    count:[0-9]*:*)
+      want="${pn#count:}"
+      want="${want%%:*}"
+      pn="${pn#count:*:}"
+      ;;
+    esac
     mkdir -p "$win/${pf%/*}"
-    printf '%s\n' "$pn" >>"$win/$pf"
+    i=0
+    while ((i < want)); do
+      printf '%s\n' "$pn" >>"$win/$pf"
+      i=$((i + 1))
+    done
   done
   # The palette VALUE comparison wants a real hex, not just the needle's prefix.
   fg="$(sed -nE 's/^color_fg[[:space:]]*=[[:space:]]*"(#[0-9a-f]{6})".*/\1/p' "$HERE/theme/palette.toml" | head -n1)"
@@ -14979,7 +14993,19 @@ else
   fail "parity coverage: a pwsh-less run did not qualify its summary — it certified a half it never read"
 fi
 
-# 7. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the `-`
+# 7. AN INDENTED ROW IS STILL A ROW. Anchoring the parser at column 0 meant a Markdown-legal
+#    row with one to three leading spaces parsed as nothing: the gate reported "all 20 aligned
+#    rows have a check" and exited 0 while a new aligned row sat there unenforced. Four or
+#    more spaces IS an indented code block, so that one must still be ignored — both
+#    directions are pinned, because a fix that swallowed code blocks would be its own bug.
+_pc_row "a one-space-indented aligned row is enforced, not ignored" 1 \
+  "no check behind them: clipboard-sync" \
+  '/^\| Word nav \|/ { print " | Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |" } { print }'
+_pc_row "a 4-space-indented row is an indented code block, not a contract row" 0 \
+  "aligned PARITY.md rows have a check" \
+  '/^\| Word nav \|/ { print "     | Clipboard sync | `pbcopy` | `x` | `aligned` |" } { print }'
+
+# 8. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the `-`
 #    branch and the qualified summary never ran. With a synthetic dotfiles-Windows in place
 #    both must: each Word-nav half is reported as a skip, and the closing line must NOT say
 #    "all aligned rows hold across zsh + pwsh" — the overclaim this PR exists to remove.

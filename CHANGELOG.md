@@ -61,6 +61,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the right verdict and exit code. The status check matters more than it looks: a typo like
   `aligend` left the row in the known set (so its check was not orphaned) while dropping it
   out of the required set, retiring a contract row from enforcement with the gate green.
+  So does the parser's column anchoring: a Markdown-legal row indented one space parsed as
+  nothing at all, so a new `aligned` row could sit there unenforced while the gate reported
+  full coverage. Up to three leading spaces is now a row (CommonMark's limit); four or more
+  is still an indented code block, and both directions are pinned.
+
+  Two needles also proved less than their rows claimed. `Ctrl+R` on pwsh is bound **twice**
+  on purpose — PSFzf's lazy stub, then a re-assertion after atuin's init seizes the chord —
+  and the two lines are identical but for whitespace, so a presence needle was satisfied by
+  either and deleting the re-assertion left the row green while atuin kept `Ctrl+R`. Needles
+  may now demand a minimum match count (`count:2:`), which is the only thing that separates
+  those two. And key-anchoring the **Session picker** row had dropped its pwsh *behaviour*
+  needle, so `Ctrl+G` bound to anything satisfied it; the chord and the target now get a
+  needle each under the shared row-key, rather than one replacing the other.
 
 - **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
   Found by doing the work above, since a contract nothing checks is a contract nothing

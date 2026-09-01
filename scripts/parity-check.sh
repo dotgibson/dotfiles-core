@@ -99,7 +99,7 @@ CHECKS=(
   # ATUIN_NOBIND and seizes Ctrl+R, so 10-tools.ps1 re-asserts the chord afterwards in a
   # different place than the lazy-load stub sets it. Both must keep it, and the row's
   # promise (atuin on Ctrl+E, quick fzf history on Ctrl+R) is about the chord.
-  "history-search|history search on Ctrl+R|zsh/40-bindings.zsh|'^R' _fzf_history_clean|powershell/core/10-tools.ps1|-Chord 'Ctrl+r'"
+  "history-search|history search on Ctrl+R|zsh/40-bindings.zsh|'^R' _fzf_history_clean|powershell/core/10-tools.ps1|count:2:-Chord 'Ctrl+r'"
   "file-picker|file picker on Ctrl+T|zsh/40-bindings.zsh|'^T' _fzf_file_no_hidden|powershell/core/10-tools.ps1|PSReadlineChordProvider 'Ctrl+t'"
   "atuin-tui|atuin on Ctrl+E|zsh/40-bindings.zsh|'^E' _atuin_search_widget|powershell/core/10-tools.ps1|-Chord 'Ctrl+e'"
   # KEY-ANCHORED, like the Ctrl+T row above. This needled the bare `_fzf_zoxide_jump`
@@ -112,6 +112,10 @@ CHECKS=(
   # needling only the function names left `Ctrl+G` untested on BOTH shells, so moving
   # either binding to another key kept the row green.
   "session-picker|sessionizer on Ctrl+G|zsh/40-bindings.zsh|'^G' _tmux_sessionizer|powershell/core/10-tools.ps1|-Chord 'Ctrl+g'"
+  # ...and what that chord DOES. Key-anchoring the row above dropped the pwsh behaviour
+  # needle, so `Ctrl+G` bound to anything at all satisfied it. Both halves of the claim get a
+  # needle under the shared row-key rather than one replacing the other.
+  "session-picker|sessionizer target|zsh/35-fzf.zsh|_tmux_sessionizer() {|powershell/core/10-tools.ps1|Invoke-DotfilesSessionizer"
   "autosuggest-toggle|autosuggest/prediction toggle on Ctrl+\\|zsh/40-bindings.zsh|'^\\' autosuggest-toggle|powershell/core/10-tools.ps1|-Chord 'Ctrl+\\'"
   # Word nav's pwsh half is a PSReadLine DEFAULT, not configuration: nothing in
   # dotfiles-Windows binds Ctrl+Arrow — 10-tools.ps1's "Ctrl+arrow word movement" comment
@@ -148,7 +152,33 @@ CHECKS=(
 )
 
 # _has <file> <needle> — fixed-string presence test; non-zero if file missing too.
-_has() { [[ -r "$1" ]] && grep -qF -- "$2" "$1"; }
+#
+# A needle may be prefixed `count:N:` to demand at least N MATCHING LINES rather than one.
+# That exists because presence is not always the claim: pwsh binds Ctrl+R twice on purpose —
+# once as PSFzf's lazy stub, then again AFTER atuin's init seizes the chord — and the two
+# lines are identical but for whitespace. A single presence needle is satisfied by either, so
+# deleting the re-assertion left the row green while atuin kept Ctrl+R and the advertised
+# parity (Ctrl+E atuin, Ctrl+R history) silently broke. Counting is the only thing that can
+# tell those two apart.
+_has() {
+  local file="$1" needle="$2" want=1
+  case "$needle" in
+  count:[0-9]*:*)
+    want="${needle#count:}"
+    want="${want%%:*}"
+    needle="${needle#count:*:}"
+    ;;
+  esac
+  [[ -r "$file" ]] || return 1
+  [[ "$(grep -cF -- "$needle" "$file")" -ge "$want" ]]
+}
+# _needle_says <needle> — how to describe it in a failure, with the count spelled out.
+_needle_says() {
+  case "$1" in
+  count:[0-9]*:*) printf "%sx '%s'" "${1#count:}" "${1#count:*:}" | sed "s/:[^x]*x '/x '/" ;;
+  *) printf "'%s'" "$1" ;;
+  esac
+}
 
 hdr "Cross-shell parity (PARITY.md aligned rows)"
 
@@ -194,7 +224,18 @@ fi
 # it. None do; one that did would surface here as an unknown slug rather than silently.
 _parity_rows() { # $1 = PARITY.md -> "<row-slug>\t<status-word>" per table row
   awk -F'|' '
-    /^\|/ {
+    {
+      # LEADING WHITESPACE IS STILL A TABLE ROW. Anchoring on /^\|/ silently ignored any
+      # indented row, so ` | Clipboard sync | ... | `aligned` |` parsed as nothing at all and
+      # the gate reported "all 20 aligned rows have a check" and exited 0 — a valid Markdown
+      # row that bypassed the contract entirely. CommonMark allows up to three leading
+      # spaces; four or more is an indented code block and genuinely not a row, which is the
+      # length test below. Written without an interval expression ({0,3}) so it does not
+      # depend on the awk on the box.
+      line = $0
+      sub(/^[ ]*/, "", line)
+      if (line !~ /^\|/) next
+      if (length($0) - length(line) > 3) next
       cap = $2; status = $(NF - 1)
       if (cap ~ /^[[:space:]]*:?-+:?[[:space:]]*$/) next # the | --- | separator row
       gsub(/[`*]/, "", cap)                              # markdown is not part of a name
@@ -295,7 +336,7 @@ for _row in "${CHECKS[@]}"; do
   if _has "$HERE/$zfile" "$zneedle"; then
     pass "$label — zsh ($zfile)"
   else
-    fail "$label — MISSING from zsh ($zfile): '$zneedle'"
+    fail "$label — MISSING from zsh ($zfile): $(_needle_says "$zneedle")"
     DRIFT=1
   fi
   # pwsh side (only when the Windows repo is present)
@@ -310,7 +351,7 @@ for _row in "${CHECKS[@]}"; do
   if _has "$WIN/$pfile" "$pneedle"; then
     pass "$label — pwsh ($pfile)"
   else
-    fail "$label — MISSING from pwsh ($pfile): '$pneedle'"
+    fail "$label — MISSING from pwsh ($pfile): $(_needle_says "$pneedle")"
     DRIFT=1
   fi
 done
