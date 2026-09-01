@@ -149,9 +149,8 @@ gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha
 (`bcd2ba49218906704ab6c1aa796996da409d3eb1`) — unless you are deliberately moving the
 fleet, in which case move them together.
 
-> **Do NOT match the fleet on these two.** They are known gaps, not the shape to copy;
-> both are tracked, and a new consumer should be written correctly from the start rather
-> than adding another instance to fix:
+> **Two known gaps — and they want opposite treatment.** One you must copy for now, the
+> other you must not. Both are tracked:
 >
 > - **`app-id` is deprecated at this pin.** The action's own `action.yml` carries
 >   `deprecationMessage: "Use 'client-id' instead."`. Every consumer here still passes
@@ -277,19 +276,28 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
    > widening, the exposure G2 removed. Selected-repository scope is the requirement, not
    > the careful option.
 
-   The exact lists:
+   **Derive the list; do not trust one written here.** The set of repos needing each
+   secret is exactly the set of workflows you edit in steps 3 and 6 — a consumer added
+   after this was written would be missed by any frozen list, and would then read an empty
+   token the moment step 7 disables the App:
 
-   | Secret | Visible to |
-   | --- | --- |
-   | `WEBHOOK_SECRET` | every repo that dispatches — Core, the nine OS repos, `dotfiles-Windows` |
-   | `FLEET_SYNC_TOKEN` | `dotfiles-core` and `htpx` only |
+   ```sh
+   # repos needing WEBHOOK_SECRET — anything dispatching, whether via the reusable or inline
+   grep -rln 'notify-web-call.yml@\|repos/dotgibson/dotfiles-web/dispatches' ../*/.github/workflows/
+   # repos needing FLEET_SYNC_TOKEN — anything running a cross-repo fan-out
+   grep -rln 'sync-fanout' ../*/.github/workflows/
+   ```
+
+   At the time of writing that is Core, the nine OS repos and `dotfiles-Windows` for
+   `WEBHOOK_SECRET`, and `dotfiles-core` plus `htpx` for `FLEET_SYNC_TOKEN` — treat it as a
+   sanity check on the grep, not as the answer.
 
    Naming the secret is not sufficient: a *repo* secret exists only in that one repository,
    and an *org* secret reaches only its selected list, so either can leave a source repo
-   reading an empty string even after step 6. **Verify rather than assume** — the listing
-   command in *What the fleet runs today*, run against each repo above, is the check that
-   the scope actually landed. Verification is what makes a narrow scope safe to use; do not
-   reach for a broader one to avoid it.
+   reading an empty string even after step 6. **Verify rather than assume** — run the
+   listing command from *What the fleet runs today* against each repo the grep returned.
+   Verification is what makes a narrow scope safe to use; do not reach for a broader one to
+   avoid it.
 3. **Restore the fallback expressions**, replacing each bare read with the two-sided
    form. **The two paths take different secrets — copying one into the other restores the
    wrong credential:**
@@ -372,9 +380,11 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
 6. **Restore each caller's `secrets:` mapping.** A reusable workflow does **not** inherit
    its caller's secrets: `notify-web-call.yml` sees only what the caller hands it, and
    `release.yml` passes `FLEET_APP_PRIVATE_KEY` alone. Restoring the expression inside the
-   reusable without re-adding `WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}` to every
-   caller — Core's `release.yml` and the nine OS-repo `notify-web.yml` files — leaves it
-   empty there however the org secret is set.
+   reusable without re-adding `WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}` to **every**
+   caller leaves it empty there however the org secret is set. **Use the caller list step 5
+   derived**, not a count from this page — a caller added since would be silently skipped
+   here and then lose dispatches at step 7. At the time of writing that is Core's
+   `release.yml` plus the nine OS-repo `notify-web.yml` files.
 
    > **Map it explicitly. Do not reach for `secrets: inherit`.** It looks like the same
    > thing in one line and is not: it hands the reusable workflow **every** organization,

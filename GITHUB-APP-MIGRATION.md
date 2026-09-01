@@ -97,8 +97,9 @@ is gone, the removal has landed.
 ## What this cost, and what stops a repeat
 
 The defect that prompted the split was not the migration — it was that the document
-describing it kept asserting things nothing checked. `make audit` now covers two of those
-classes:
+describing it kept asserting things nothing checked. Two gates were added in response
+(**§8a** and **§8a-bis** in `scripts/audit-core.sh` as of this record); whether they still
+exist in that form is not this file's to promise — check the script:
 
 - **§8a** — every `ref:` naming a `dotfiles-core` checkout matches `core.version`.
 - **§8a-bis** — every documented `@vN` caller example matches it too (#821), because at
