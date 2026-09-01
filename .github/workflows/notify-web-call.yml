@@ -87,8 +87,15 @@ jobs:
           BEST_EFFORT: ${{ inputs.best_effort }}
         run: |
           set -euo pipefail
+          # An empty TOKEN can only mean the mint step above was SKIPPED — its `if:` found
+          # no FLEET_APP_ID variable, or the CALLER passed no FLEET_APP_PRIVATE_KEY (a
+          # reusable workflow sees only the secrets its caller hands it). A mint that is
+          # ATTEMPTED and fails errors inside create-github-app-token, failing the job
+          # before this step runs. Both causes are named below because nine repos execute
+          # THIS file, and with no PAT fallback left this warning is their only signal that
+          # a dispatch silently stopped happening.
           if [ -z "${TOKEN:-}" ]; then
-            echo "::warning::the fleet App minted no token here — skipping showcase refresh"
+            echo "::warning::fleet App auth unavailable (no FLEET_APP_ID variable, or this caller passed no FLEET_APP_PRIVATE_KEY) — skipping showcase refresh"
             exit 0
           fi
           # Only the two events dotfiles-web actually listens for. A typo'd event_type

@@ -16,6 +16,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The "no dispatch token" warning names the missing credential, not the App's behaviour (#823).**
+  Both dispatchers warned `the fleet App minted no token here` when `TOKEN` was empty. The
+  mint cannot do that: it is gated on `vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'`,
+  and a mint that is ATTEMPTED and fails errors inside `create-github-app-token`, failing the
+  job before the warning branch is reachable. An empty token has exactly one cause — the step
+  was **skipped** — so the message now names that: a missing `FLEET_APP_ID` variable or
+  `FLEET_APP_PRIVATE_KEY` secret. The reusable's wording differs deliberately, because a
+  reusable workflow sees only the secrets its caller hands it, so there the key may simply
+  never have been passed — and nine repos execute that copy. This matters more since #683
+  removed the fallbacks: with no PAT behind it, this warning is the ONLY signal that a repo
+  has silently stopped refreshing the showcase, and pointing an operator at the App's
+  installation sent them to the wrong place. `sync-fanout.yml`'s preflight comment carried
+  the same loose phrasing and is corrected too. `GITHUB-APP-AUTH.md`'s rollback section had
+  the old warning pasted in verbatim and would have gone stale on merge; rather than paste
+  the new one, it now **describes** the degradation, since a copied message is exactly the
+  kind of duplicated fact this changelog entry exists to stop repeating.
+
 - **The fleet PAT retirement is finished in Core, and the docs now agree about it (#683).**
   `GITHUB-APP-AUTH.md` said "both PATs are deleted" on line 9 and "still present until the
   retire step" on line 166, and three workflows plus two `RELEASE-RUNBOOK.md` sites sided
