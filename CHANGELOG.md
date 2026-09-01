@@ -85,6 +85,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   contractual insert-mode binding left the row green; every keybinding needle now pins its
   keymap (`-M viins '…'`) rather than matching whichever copy survives.
 
+  Two more needles matched something adjacent to their claim rather than the claim.
+  `Invoke-DotfilesSessionizer` appears in `10-tools.ps1`'s `provides:` header and its own
+  function definition as well as in the `Ctrl+G` handler, so the Session picker's target
+  needle proved the function _existed_ and never that the chord invoked it — deleting the
+  handler body left both its checks green. It now needles the insertion expression. And pwsh
+  restores `Ctrl+R` on **two** runtime paths after atuin — the lazy path re-binds the
+  `-Chord` stub, the already-loaded path calls `Set-PsFzfOption` — so deleting the
+  already-loaded branch left the `-Chord` count at two and the position check passing while
+  atuin kept `Ctrl+R` on that path. Both paths are needled now.
+
 - **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
   Found by doing the work above, since a contract nothing checks is a contract nothing
   corrects. The three fail differently: one capability did not exist, one existed on both

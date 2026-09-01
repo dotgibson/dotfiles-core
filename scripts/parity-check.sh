@@ -106,6 +106,13 @@ CHECKS=(
   # proves one of them is below atuin. Core's half is the other side of the same coin:
   # ATUIN_NOBIND is what stops atuin taking Ctrl+R on zsh in the first place.
   "history-search|Ctrl+R survives atuin's init|zsh/00-tools.zsh|export ATUIN_NOBIND=true|powershell/core/10-tools.ps1|after:atuin init:-Chord 'Ctrl+r'"
+  # BOTH pwsh restoration paths. After atuin's init, 10-tools.ps1 restores Ctrl+R differently
+  # depending on whether PSFzf is already imported: the lazy path re-binds the -Chord stub
+  # (counted above), the already-loaded path calls Set-PsFzfOption instead. Deleting the
+  # already-loaded branch left the -Chord count at 2 and the position check passing, while
+  # atuin kept Ctrl+R on that path at runtime. The zsh needle repeats the row's other one on
+  # purpose: zsh has a single binding to protect, pwsh has two paths to it.
+  "history-search|Ctrl+R restored on both PSFzf paths|zsh/40-bindings.zsh|-M viins '^R' _fzf_history_clean|powershell/core/10-tools.ps1|count:2:-PSReadlineChordReverseHistory 'Ctrl+r'"
   "file-picker|file picker on Ctrl+T|zsh/40-bindings.zsh|-M viins '^T' _fzf_file_no_hidden|powershell/core/10-tools.ps1|PSReadlineChordProvider 'Ctrl+t'"
   "atuin-tui|atuin on Ctrl+E|zsh/40-bindings.zsh|-M viins '^E' _atuin_search_widget|powershell/core/10-tools.ps1|-Chord 'Ctrl+e'"
   # KEY-ANCHORED, like the Ctrl+T row above. This needled the bare `_fzf_zoxide_jump`
@@ -121,7 +128,11 @@ CHECKS=(
   # ...and what that chord DOES. Key-anchoring the row above dropped the pwsh behaviour
   # needle, so `Ctrl+G` bound to anything at all satisfied it. Both halves of the claim get a
   # needle under the shared row-key rather than one replacing the other.
-  "session-picker|sessionizer target|zsh/35-fzf.zsh|_tmux_sessionizer() {|powershell/core/10-tools.ps1|Invoke-DotfilesSessionizer"
+  # THE INSERTION EXPRESSION, not the bare name: `Invoke-DotfilesSessionizer` also appears in
+  # 10-tools.ps1's `provides:` header and its own function definition, so the bare name stayed
+  # green with the Ctrl+G handler's body deleted — the needle matched the function EXISTING,
+  # never the chord invoking it.
+  "session-picker|sessionizer target|zsh/35-fzf.zsh|_tmux_sessionizer() {|powershell/core/10-tools.ps1|Insert('Invoke-DotfilesSessionizer')"
   "autosuggest-toggle|autosuggest/prediction toggle on Ctrl+\\|zsh/40-bindings.zsh|-M viins '^\\' autosuggest-toggle|powershell/core/10-tools.ps1|-Chord 'Ctrl+\\'"
   # Word nav's pwsh half is a PSReadLine DEFAULT, not configuration: nothing in
   # dotfiles-Windows binds Ctrl+Arrow — 10-tools.ps1's "Ctrl+arrow word movement" comment
