@@ -114,11 +114,14 @@ which is what makes the migration backward-compatible (Step 4).
 
 ## Step 4 — the workflow pattern (backward-compatible)
 
-> **Historical — do not copy this into a new consumer.** Steps 4 and 5 are the migration
-> as it was executed, and the `|| secrets.…` fallback they prescribe below has since been
+> **Historical — the original rollout PLAN, not a record of what ran, and not a template.**
+> Steps 4 and 5 are the migration as it was *planned*; for what actually happened, and the
+> one step still outstanding, read the retirement record at the end of Step 5. They differ:
+> Step 5 prescribes dropping the `WEBHOOK_SECRET` secret input, and that has **not** been
+> done — it is deferred to #819. The `|| secrets.…` fallback prescribed below *has* been
 > removed (#683): the live workflows read `${{ steps.app.outputs.token }}` alone, and the
-> secrets the fallback names no longer exist. Copying Step 4 verbatim would reintroduce a
-> dead secret reference. **A new consumer** takes only the mint step and reads the bare
+> secrets it names no longer exist, so copying Step 4 verbatim would reintroduce a dead
+> secret reference. **A new consumer** takes only the mint step and reads the bare
 > `${{ steps.app.outputs.token }}`. The fallback shape is retained here for exactly one
 > reason: it is the pattern the emergency re-provisioning in *Rollback* restores.
 
