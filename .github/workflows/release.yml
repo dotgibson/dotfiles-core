@@ -126,5 +126,4 @@ jobs:
       event_type: core-release
       best_effort: true
     secrets:
-      WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }} # legacy PAT (fallback)
       FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }} # App auth (G2)

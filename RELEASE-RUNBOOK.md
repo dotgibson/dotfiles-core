@@ -248,7 +248,9 @@ What you do with the alias depends on the bump you chose in §1.0
    not what CI publishes.)
 2. `sync-fanout.yml` opens a `core.lock`-bump PR in every repo in `scripts/os-repos.txt`,
    each vendoring `vX.Y.Z` by materializing `core/` at that commit (#587). **It opens PRs, never merges.**
-   (Requires the `FLEET_SYNC_TOKEN` secret on `dotfiles-core`.)
+   (Requires the fleet GitHub App — the `FLEET_APP_ID` variable + `FLEET_APP_PRIVATE_KEY`
+   secret, both org-level — installed on every target repo. There is no PAT fallback;
+   see `GITHUB-APP-AUTH.md`.)
 
 Then continue to section 2 to roll it out.
 
@@ -472,8 +474,11 @@ git checkout main && git fetch origin && git pull --ff-only origin main
    against `dotfiles-Offense` (bumps `companion.lock` only — never `core.lock`).
 4. Review and merge that dotfiles-Offense PR.
 
-Requires the `FLEET_SYNC_TOKEN` secret on the **htpx** repo (write to dotfiles-Offense).
-htpx is read with the built-in token, so `FLEET_SYNC_TOKEN` needs no htpx access.
+Requires the org-level `FLEET_APP_ID` variable + `FLEET_APP_PRIVATE_KEY` secret to be
+visible to **htpx**, so its workflow can mint a token whose installation includes
+`dotfiles-Offense`. The App needs **no access to htpx itself** — htpx is read with the
+built-in token — so do not add it to the installation on that account. There is no PAT
+fallback: see `GITHUB-APP-AUTH.md`.
 
 ### Backfill an already-released tag
 
@@ -514,7 +519,7 @@ This catches the auth-scope, argument, and resolve-path bugs that PR CI cannot s
 | `tag-release.sh: tag vX.Y.Z already exists` | re-running a finished release | bump `core.version`, or delete the tag to re-cut |
 | fan-out PR's `links-only` fails on `curl error 28` / `No provider of 'zsh'` | distro mirror timeout | re-run the job (prep retries 5x); not a code defect |
 | `sync-fanout` skips with `'' is not a clean vX.Y.Z release tag` | triggered from a commit with no tag on it | use the manual backfill (section 4) with `tag: vX.Y.Z` |
-| fan-out fails `could not read Username for 'https://github.com'` | a git op reading a private repo without auth | the read must be authenticated (built-in token for own repo, `FLEET_SYNC_TOKEN` for cross-repo) |
+| fan-out fails `could not read Username for 'https://github.com'` | a git op reading a private repo without auth | the read must be authenticated (built-in token for own repo, the minted App token for cross-repo) |
 | fan-out aborts `core.lock differs ...` | an htpx sync touched Core | by design — htpx fan-out must never change `core.lock`; investigate the sync |
 | `make tag` refuses: `no '## [vX.Y.Z]' heading` | `make release` wasn't run | run `make release VERSION=X.Y.Z` first |
 | staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, use §1.1 ["Abandoning a cut"](#abandoning-a-cut) — dropping the branch is the whole recipe now, since phase 1 creates no tag |
