@@ -117,6 +117,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `dotfiles-Windows` binds Ctrl+Arrow, so that half reports as a skip carrying the reason
   rather than a needle that cannot fail.
 
+- **`maint-run` no longer looks wedged while a step is working.** `step()` sent every
+  command's stdout and stderr to `$LOG` alone, while `log()` teed the `▶`/`✓`/`✗` lines to
+  the terminal. A foreground `maint-run` therefore printed `▶ mise upgrade` and then showed
+  **nothing at all** until the step ended. That is survivable when a step takes seconds; it
+  is not on musl, where mise's `all_compile` default (every prebuilt runtime being
+  glibc-linked) means `mise upgrade` COMPILES node/python/ruby from source — tens of minutes
+  of dead terminal, against a `MAINT_MISE_TIMEOUT` ceiling of 45 of them **per step**, three
+  mise steps deep. Nothing on screen separates "compiling V8" from "hung", so the operator
+  interrupts it; mise discards the partial build, nothing is installed, and the next run
+  starts the identical compile over. dotfiles-Alpine sat in that loop, rebuilding node
+  24.20.0 from scratch daily and never finishing it.
+
+  `step()` now MIRRORS the step to the terminal when stdout is a tty (`tee -a "$LOG"`), and
+  keeps the exact log-only path when it is not — so **the scheduled run is unchanged** and
+  only the interactive one gains output. Three properties are preserved deliberately:
+  `</dev/null` still hands every step an EOF (the guard the comment above `step()` explains);
+  the reported rc is `${PIPESTATUS[0]}`, the command's own status, not `tee`'s, because
+  `pipefail` would otherwise blame the step for a `tee` that died on a full disk; and stdout
+  is a pipe in the new arm and a file in the old — never a terminal — so a step that
+  colourizes on `isatty` still sees false and `$LOG` keeps the same clean text.
+
+- **The `mise outdated --bump` probe can no longer block on an invisible prompt.** It is the
+  one command in the run that is not a `step()` call, so it alone inherited the caller's
+  stdin — a terminal, under `maint-run` — while its stderr went to `/dev/null`. A mise that
+  decided to prompt there (an untrusted config path, a credential) asked a question nobody
+  could see and blocked until `MAINT_MISE_TIMEOUT` expired. It now takes `</dev/null` like
+  every other command in the file, which turns that into the fast non-zero rc the
+  "bump check UNAVAILABLE" gate directly below it already knows how to report.
+
 ## [v6.0.0] - 2026-08-31
 
 ### Changed

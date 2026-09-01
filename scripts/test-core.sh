@@ -12795,17 +12795,25 @@ ucheck "maint/refresh: a cron runner carrying % (cron's newline metacharacter) i
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question
 # where nobody can see it and then blocks on the tty forever — the run stops dead after the
-# last ✓ with no error. Two separate redirects prevent that, in two different shapes, and
-# both are easy to drop in a refactor without any other test noticing:
+# last ✓ with no error. THREE separate redirects prevent that, in three different shapes,
+# and each is easy to drop in a refactor without any other test noticing:
 #
 #   step()          `"$@" </dev/null >>"$LOG" 2>&1`   — covers every labelled step
 #   package count   `fi </dev/null` on the if/elif    — that chain is NOT a step()
+#   mise bump       `</dev/null` on the $( ) probe    — a bare command substitution, and
+#                                                       the only one whose stderr is
+#                                                       /dev/null too, so a prompt there is
+#                                                       invisible as well as blocking
 #
 # These extract the REAL definitions out of the runner rather than restating them, so the
 # assertions track the shipped code: delete a redirect and the extracted text changes and
-# the check fails. The extractors match the block boundaries only (`^step() {`..`^}` and
-# `^count=-1`..`^fi`), never the redirect itself — matching on `</dev/null` would make the
-# test vacuously pass by finding nothing once the fix was gone.
+# the check fails. The extractors match the block boundaries only (`^step() {`..`^}`,
+# `^count=-1`..`^fi`, and the `bump="$(_to ` assignment head), never the redirect itself —
+# matching on `</dev/null` would make the test vacuously pass by finding nothing once the
+# fix was gone.
+#
+# step() additionally has a SECOND arm (tty) that none of the above enters, since a command
+# substitution is never a terminal; its own cases follow the package-count ones below.
 hdr "maint runner stdin contract (unpromptable steps, hermetic)"
 _MAINT_SH="$HERE/maint/dotfiles-maint.sh"
 _MRT="$SANDBOX/maint-runner"
@@ -12867,6 +12875,113 @@ if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" &&
   fi
 else
   fail "maint: could not extract the package-count chain from ${_MAINT_SH##*/}"
+fi
+
+# Same contract, a THIRD construct: the `mise outdated --bump` probe is a bare command
+# substitution, not a step() call, so it carries its own `</dev/null`. It is also the one
+# command in the run whose stderr goes to /dev/null, so a mise that prompts here asks a
+# question that is invisible AND blocking — the worse of the two shapes, and the reason this
+# case exists separately from step()'s. Driven with a prompting stub mise (the live case is
+# mise asking whether to trust a config path).
+printf '#!/bin/sh\nprintf "Trust config file? [y/N]: "\nread -r a\nprintf "node lts 24.19.0 [NONE] 26.8.1 config.toml\\n"\n' >"$_MRT/bin/stubmise"
+chmod +x "$_MRT/bin/stubmise"
+# Extracted by the assignment's HEAD (`bump="$(_to `), never by the redirect — matching
+# `</dev/null` would find nothing once the fix was gone and pass vacuously, the same trap
+# the two cases above are written around.
+if sed -n '/^  bump="\$(_to /p' "$_MAINT_SH" >"$_MRT/bump.bash" && [[ -s "$_MRT/bump.bash" ]]; then
+  if out="$(printf 'sentinel\n' | bash -c '
+      _to() { shift; "$@"; }
+      MAINT_MISE_TIMEOUT=30
+      PATH="'"$_MRT/bin"'":$PATH
+      mise() { stubmise "$@"; }
+      . "'"$_MRT/bump.bash"'"
+      read -r survivor || survivor=GONE
+      printf "%s\n" "$survivor"
+    ' 2>/dev/null)" && [[ "$out" == sentinel ]]; then
+    pass "maint: the mise bump probe cannot consume the caller's stdin (unpromptable)"
+  else
+    fail "maint: the mise bump probe cannot consume the caller's stdin (unpromptable) — got '${out:-}'"
+  fi
+else
+  fail "maint: could not extract the mise bump probe from ${_MAINT_SH##*/}"
+fi
+
+# ── step() on a TTY: mirrors to the terminal, and still reports the COMMAND's rc ──────
+# The other arm of the same function. `maint-run` is a foreground run, and a step that
+# prints nothing for the tens of minutes a musl source build takes is indistinguishable
+# from a wedged one — so the operator interrupts it and the build is lost. The tty arm
+# exists to make that visible, and it needs a REAL terminal to enter, hence the pty.
+#
+# Four assertions, because the arm has four ways to be wrong and only the first is obvious:
+# it can fail to mirror; it can lose the command's rc entirely; it can double-write $LOG;
+# and — the subtle one — it can report `tee`'s status instead of the command's.
+#
+# That last one needs its own case, and a specific one. Under `pipefail` a plain `rc=$?`
+# after the pipeline returns 7 for a step that exited 7, so a failing-step fixture cannot
+# tell `${PIPESTATUS[0]}` from `$?` at all — it passes either way and proves nothing. The
+# two diverge only when TEE fails and the COMMAND succeeds, which is the real-world case
+# (a full disk, an unwritable $LOG): PIPESTATUS[0] correctly reports the step's own 0, while
+# `$?` under pipefail reports tee's failure and blames the step for it. So the fourth case
+# points $LOG at a directory to make tee fail, and asserts the successful step still logs ✓.
+if have python3; then
+  cat >"$_MRT/tty-harness.sh" <<HARNESS
+LOG="$_MRT/tty.log"; : >"\$LOG"
+log() { printf '%s\n' "\$*" >>"\$LOG"; }
+. "$_MRT/step.bash"
+step "mirror" sh -c 'echo MIRRORED; exit 7'
+HARNESS
+  python3 - "$_MRT" <<'PYPTY' >/dev/null 2>&1
+import os, pty, sys
+mrt = sys.argv[1]
+buf = []
+def rd(fd):
+    d = os.read(fd, 1024)
+    buf.append(d)
+    return d
+pty.spawn(["bash", mrt + "/tty-harness.sh"], rd)
+open(mrt + "/pty.out", "wb").write(b"".join(buf))
+PYPTY
+  _tty_seen="$(tr -d '\r' <"$_MRT/pty.out" 2>/dev/null | grep -c '^MIRRORED$' || true)"
+  _tty_logged="$(grep -c '^MIRRORED$' "$_MRT/tty.log" 2>/dev/null || true)"
+  _tty_rc="$(grep -c 'rc=7' "$_MRT/tty.log" 2>/dev/null || true)"
+  if [[ "${_tty_seen:-0}" -ge 1 ]]; then
+    pass "maint: step() mirrors to the terminal when stdout is a tty"
+  else
+    fail "maint: step() mirrors to the terminal when stdout is a tty — nothing reached the pty"
+  fi
+  if [[ "${_tty_rc:-0}" -ge 1 ]]; then
+    pass "maint: step() reports the command's rc on a tty (a failing step is logged as failed)"
+  else
+    fail "maint: step() reports the command's rc on a tty — rc=7 never logged"
+  fi
+  if [[ "${_tty_logged:-0}" == 1 ]]; then
+    pass "maint: step()'s tty arm writes \$LOG exactly once (tee, not a second append)"
+  else
+    fail "maint: step()'s tty arm writes \$LOG exactly once — got ${_tty_logged:-0} copies"
+  fi
+
+  # The PIPESTATUS case proper: tee fails (its target is a DIRECTORY), the step succeeds.
+  # `pipefail` is set here deliberately — it is set in the real runner, and it is exactly
+  # what turns a naive `rc=$?` into a wrong answer.
+  mkdir -p "$_MRT/unwritable"
+  cat >"$_MRT/tee-harness.sh" <<HARNESS
+set -o pipefail
+LOG="$_MRT/unwritable"
+OBS="$_MRT/tee.obs"; : >"\$OBS"
+log() { printf '%s\n' "\$*" >>"\$OBS"; }
+. "$_MRT/step.bash"
+step "tee-fails" sh -c 'echo X; exit 0'
+HARNESS
+  python3 -c "
+import os, pty, sys
+pty.spawn(['bash', sys.argv[1]], lambda fd: os.read(fd, 1024))" "$_MRT/tee-harness.sh" >/dev/null 2>&1
+  if grep -q '✓ tee-fails' "$_MRT/tee.obs" 2>/dev/null; then
+    pass "maint: a step that SUCCEEDS is not blamed for a failing tee (PIPESTATUS, not \$?)"
+  else
+    fail "maint: a step that SUCCEEDS is not blamed for a failing tee — got '$(tr '\n' ' ' <"$_MRT/tee.obs" 2>/dev/null)'"
+  fi
+else
+  skip "maint: step() tty arm (python3 not available — no pty to allocate)"
 fi
 
 # A package probe that TIMES OUT must leave the -1 "we don't know" sentinel, not 0.
