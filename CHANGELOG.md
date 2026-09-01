@@ -71,7 +71,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and the two lines are identical but for whitespace, so a presence needle was satisfied by
   either and deleting the re-assertion left the row green while atuin kept `Ctrl+R`. Needles
   may now demand a minimum match count (`count:2:`), which is the only thing that separates
-  those two. And key-anchoring the **Session picker** row had dropped its pwsh *behaviour*
+  those two. And key-anchoring the **Session picker** row had dropped its pwsh _behaviour_
   needle, so `Ctrl+G` bound to anything satisfied it; the chord and the target now get a
   needle each under the shared row-key, rather than one replacing the other.
 
