@@ -190,9 +190,14 @@ API generates none regardless).
 
 - Both secrets **deleted** from every repo (verified 2026-09-01, above).
 - `token-health.yml` **dropped** — a minted token cannot silently expire.
-- The `|| secrets.…` fallbacks **removed** from `sync-fanout.yml` and `notify-web.yml`,
-  and `release.yml` no longer passes `WEBHOOK_SECRET` (#683). They had been dead code
-  resolving to the empty string since the secrets were deleted.
+- The `|| secrets.…` fallbacks **removed — in `dotfiles-core` only** — from
+  `sync-fanout.yml`, `notify-web.yml` and `notify-web-call.yml`, and `release.yml` no
+  longer passes `WEBHOOK_SECRET` (#683). They had been dead code resolving to the empty
+  string since the secrets were deleted.
+  **This list is Core-local and is not the fleet's state.** Copies elsewhere still carry
+  the dead fallbacks — `htpx/sync-fanout.yml`, `dotfiles-Windows`' inline `notify-web.yml`,
+  and `dotfiles-web/fleet-sync.yml`'s three-way expression. They are tracked in #819; do
+  not read the bullet above as covering them.
 - **One item outstanding:** `notify-web-call.yml` still *declares* a `WEBHOOK_SECRET`
   secret input. Nothing reads it. It cannot simply be deleted, because the fleet's nine
   OS-repo callers still pass it and pin the **moving `@v6` alias** — so the removal would
@@ -210,7 +215,13 @@ during an incident is the worst time to discover that, which is why this says so
 1. Mint a fine-grained PAT with the scopes in the table above (`FLEET_SYNC_TOKEN`:
    contents + pull-requests + workflows write on the OS repos and `dotfiles-Offense`;
    `WEBHOOK_SECRET`: contents write on `dotfiles-web`).
-2. Add it as a repo or org secret under that name.
+2. Add it under that name **with visibility covering every repo that needs it** — naming
+   the secret is not sufficient. A *repo* secret exists only in that one repository, and an
+   *org* secret can be scoped to selected repositories; either choice can leave another
+   source repo's workflow reading an empty string even after step 4 restores its `secrets:`
+   mapping. `WEBHOOK_SECRET` is needed by every repo that dispatches (Core plus the nine
+   OS repos, and `dotfiles-Windows`); `FLEET_SYNC_TOKEN` by `dotfiles-core` and `htpx`. An
+   org secret set to *all repositories* is the one option that cannot half-apply.
 3. Restore the `|| secrets.…` expressions — Step 4 above is the exact pattern.
 4. **Restore each caller's `secrets:` mapping.** A reusable workflow does *not* inherit
    its caller's secrets: `notify-web-call.yml` can only see what the caller hands it, and
