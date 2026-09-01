@@ -30,10 +30,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   been dead code resolving to the empty string. Removed the fallbacks from `sync-fanout.yml`
   (3 sites) and `notify-web.yml`, stopped `release.yml` passing `WEBHOOK_SECRET`, and
   rewrote the rollback as what it actually is — a deliberate re-provisioning (mint a PAT,
-  add the secret, restore the expressions, _then_ unset `FLEET_APP_ID`), not a toggle. That
-  last step is not optional: `app_token || secrets.…` prefers the left side whenever it is
+  add the secret, restore the expressions, re-add each caller's `secrets:` mapping, _then_
+  unset `FLEET_APP_ID`), not a toggle. The last two steps are not optional: a reusable
+  workflow does not inherit its caller's secrets, so with `release.yml` now passing only the
+  App key the restored expression in `notify-web-call.yml` would read an empty
+  `WEBHOOK_SECRET`; and `app_token || secrets.…` prefers the left side whenever it is
   non-empty, so a still-minting App keeps winning even when its token is too narrow to push,
-  and an App that fails to mint fails the step before the fallback is ever evaluated. The verification
+  while an App that fails to mint fails the step before the fallback is ever evaluated. The verification
   command is recorded in `GITHUB-APP-AUTH.md` so the next reader re-checks rather than
   re-argues. `sync-fanout.yml` now also states that the App's **Workflows: write** grant is
   load-bearing with no safety net: a permission edit awaiting installation approval still

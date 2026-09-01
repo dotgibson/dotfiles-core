@@ -206,14 +206,23 @@ during an incident is the worst time to discover that, which is why this says so
    `WEBHOOK_SECRET`: contents write on `dotfiles-web`).
 2. Add it as a repo or org secret under that name.
 3. Restore the `|| secrets.…` expressions — Step 4 above is the exact pattern.
-4. **Then unset `FLEET_APP_ID`**, or the restored expression will never choose the PAT.
+4. **Restore each caller's `secrets:` mapping.** A reusable workflow does *not* inherit
+   its caller's secrets: `notify-web-call.yml` can only see what the caller hands it, and
+   `release.yml` now passes `FLEET_APP_PRIVATE_KEY` alone. Restoring the expression inside
+   the reusable workflow without re-adding
+   `WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}` to every caller — Core's `release.yml`
+   and the nine OS-repo `notify-web.yml` files — leaves `secrets.WEBHOOK_SECRET` empty
+   there no matter how the org secret is set. (`secrets: inherit` on the caller does the
+   same job in one line.) `sync-fanout.yml` and Core's own inline `notify-web.yml` are not
+   reusable workflows and need only step 3.
+5. **Then unset `FLEET_APP_ID`**, or the restored expression will never choose the PAT.
    `steps.app.outputs.token || secrets.…` prefers the *left* side whenever it is
    non-empty, so an App that still mints — even an under-scoped one whose token 403s on
    the actual push — keeps winning; and an App that fails to mint fails the *step*, so
    execution never reaches the fallback at all. Unsetting the variable makes the mint
-   step's `if:` false, which skips it, which finally leaves the output empty. Steps 3 and
-   4 are one change: restoring the expression without disabling the mint looks like a
-   rollback and does nothing.
+   step's `if:` false, which skips it, which finally leaves the output empty. Steps 3-5
+   are ONE change: restoring the expression without also rewiring the callers and
+   disabling the mint looks like a rollback and does nothing.
 
 Prefer fixing the App: a failed mint is almost always the installation missing a repo, or
 a **Workflows: write** permission change still awaiting approval (Step 1).
