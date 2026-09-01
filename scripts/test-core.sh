@@ -12795,17 +12795,25 @@ ucheck "maint/refresh: a cron runner carrying % (cron's newline metacharacter) i
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question
 # where nobody can see it and then blocks on the tty forever — the run stops dead after the
-# last ✓ with no error. Two separate redirects prevent that, in two different shapes, and
-# both are easy to drop in a refactor without any other test noticing:
+# last ✓ with no error. THREE separate redirects prevent that, in three different shapes,
+# and each is easy to drop in a refactor without any other test noticing:
 #
 #   step()          `"$@" </dev/null >>"$LOG" 2>&1`   — covers every labelled step
 #   package count   `fi </dev/null` on the if/elif    — that chain is NOT a step()
+#   mise bump       `</dev/null` on the $( ) probe    — a bare command substitution, and
+#                                                       the only one whose stderr is
+#                                                       /dev/null too, so a prompt there is
+#                                                       invisible as well as blocking
 #
 # These extract the REAL definitions out of the runner rather than restating them, so the
 # assertions track the shipped code: delete a redirect and the extracted text changes and
-# the check fails. The extractors match the block boundaries only (`^step() {`..`^}` and
-# `^count=-1`..`^fi`), never the redirect itself — matching on `</dev/null` would make the
-# test vacuously pass by finding nothing once the fix was gone.
+# the check fails. The extractors match the block boundaries only (`^step() {`..`^}`,
+# `^count=-1`..`^fi`, and the `bump="$(_to ` assignment head), never the redirect itself —
+# matching on `</dev/null` would make the test vacuously pass by finding nothing once the
+# fix was gone.
+#
+# step() additionally has a SECOND arm (tty) that none of the above enters, since a command
+# substitution is never a terminal; its own cases follow the package-count ones below.
 hdr "maint runner stdin contract (unpromptable steps, hermetic)"
 _MAINT_SH="$HERE/maint/dotfiles-maint.sh"
 _MRT="$SANDBOX/maint-runner"
