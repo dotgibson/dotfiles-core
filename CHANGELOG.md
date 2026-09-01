@@ -48,6 +48,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The `core` front door reaches every first-party family: `core maint
+  <install|run|log|status|uninstall>`, `core sync` and `core update check` (#684).**
+  Core ships two hyphen-namespaced families — `core-help`/`core-doctor`/`core-version`
+  and `maint-install`/`maint-run`/`maint-log`/`maint-status`/`maint-uninstall` — and
+  only one was wired to the front door, which was the single most visible incoherence
+  in the verb surface. The dispatcher's own header gives the reason the namespace
+  exists (it keeps the generic-sounding verbs reachable under a form that won't be
+  mistaken for some other tool); the same argument covered `maint-*`, `update-check`
+  and `gsync`, which were simply never added. Additive only: every bare name keeps
+  working exactly as before, and `core update -y` still belongs to `up` — only the
+  literal word `check` in first position is intercepted. Retiring the bare names was
+  decided against in #692.
+
+  Each new arm carries the same availability guard as `core update`: `maint-*` is
+  band 55 and `up`/`update-check` band 60, both after this file, and `gsync` is a
+  band-20 function a trimmed `$ZSH_CFG` can drop — so when the twin is not loaded the
+  arm NAMES THE FRAGMENT (`55-maint.zsh`, `60-update.zsh`, `20-aliases.zsh`) instead of
+  reaching a missing function. A bare `core maint` (or `-h`/`--help`) prints the
+  family's usage on stdout and returns 0, the way a bare `core` is the cheat sheet; an
+  unknown sub-verb gets its own did-you-mean (`core maint stauts` → `status`) over
+  the new `$_CORE_MAINT_SUBCMDS`, the second single source beside `$_CORE_SUBCMDS`.
+
+  `_core` completes the new verbs and delegates to each twin's own completion
+  (`_maint-install`'s times, `_maint-log`'s `-f`, `_up`'s flags plus `check`), shifting
+  `words`/`CURRENT` so the twin sees itself at `words[1]` — without that, `core maint
+  install <tab>` offered nothing. And a new gate in `scripts/test-core.sh` asserts
+  `_core`'s describe arrays mirror the two dispatcher lists, because the header comment
+  that asked for it was the only thing keeping them in step. `PARITY.md` records
+  **Update check** and **Maintenance** as `aligned` rows with `parity-check.sh` needles
+  on both shells (dotgibson/dotfiles-Windows#236 adds the pwsh arms and lands first),
+  and **Upstream sync** as `deliberate` — Windows replicates Core rather than vendoring
+  `core/`, so there is no subtree to push.
+
 - **`make audit` gates the reusable workflows' documented caller examples (§8a-bis, #821).**
   §8a proves the `ref:` keys name the right major. It does not read comments — so at
   v5 → v6 every ref moved correctly while 25 `@v5` references survived in the prose
@@ -74,6 +107,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   so this switches on coverage the repo believed it already had.
 
 ### Fixed
+
+- **`maint-install <tab>` (and now `core maint install <tab>`) no longer throws a parse
+  error (#684).** The completion's `_arguments` spec described the operand as
+  `(HH:MM, 24h)` with a bare colon, which `_arguments` reads as the message/action
+  separator — so every tab threw `parse error near ')'` and offered nothing. Found while
+  routing the front door through it; the colon is now escaped.
 
 - **The reusable workflows' caller examples pinned `@v5`, a major behind the tree (#821).**
   Core is v6 and the fleet's callers are on `@v6`, but 25 `@v5` references survived across

@@ -255,8 +255,10 @@ things just get nicer where they can.
 Run `core help` (aliased `cheat`) for the built-in index of every command — it is the
 complete one. The [alias cheat sheet](aliases.md) is the curated companion, covering the
 aliases and the OMZ-compatible git suite (`gst`, `gcb`, `glog`, `gpf`, …); a handful of
-function verbs (`fif`, `fbr`, `up`, `update-check`, `maint-*`, `op*`) live only in
-`core help`, as do the keybindings.
+function verbs (`fif`, `fbr`, `op*`) live only in `core help`, as do the keybindings.
+The updater and maintenance verbs (`up`, `update-check`, `maint-*`) are listed there
+too, and are also reachable through the front door as `core update [check]` and
+`core maint <verb>`.
 
 _For more, see the [Documentation][docs]._
 

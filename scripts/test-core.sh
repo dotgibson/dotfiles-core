@@ -10621,6 +10621,50 @@ check "core rejects an unknown subcommand with a did-you-mean" \
 # 60-update.zsh, which core.manifest also pins: rename that file and this fails, correctly.
 check "core update reports cleanly, naming 60-update.zsh, when up is not loaded" \
   '( unfunction up 2>/dev/null; out=$(core update 2>&1); (( $? != 0 )) && [[ $out == *60-update* ]] )'
+# The second family (#684): `core maint <verb>`, `core sync` and `core update check` reach
+# the front door. The twins are STUBBED per body — 55-maint, 60-update and 20-aliases are
+# not sourced here, which is exactly what makes the "reports cleanly when not loaded"
+# assertions honest rather than staged.
+check "maint and sync are registered in \$_CORE_SUBCMDS (the completion + did-you-mean read it)" \
+  '[[ " ${_CORE_SUBCMDS[*]} " == *" maint "* && " ${_CORE_SUBCMDS[*]} " == *" sync "* ]]'
+check "\$_CORE_MAINT_SUBCMDS carries exactly the five maint verbs" \
+  '[[ "${_CORE_MAINT_SUBCMDS[*]}" == "install run log status uninstall" ]]'
+check "core maint run routes to maint-run" \
+  'maint-run() { print STUB-RUN "$@"; }; out=$(core maint run); (( $? == 0 )) && [[ $out == "STUB-RUN" ]]'
+check "core maint install 09:00 forwards the time to maint-install" \
+  'maint-install() { print STUB-INSTALL "$@"; }; out=$(core maint install 09:00); [[ $out == "STUB-INSTALL 09:00" ]]'
+check "core maint log -f forwards -f to maint-log" \
+  'maint-log() { print STUB-LOG "$@"; }; out=$(core maint log -f); [[ $out == "STUB-LOG -f" ]]'
+check "core maint log 200 forwards a line count to maint-log" \
+  'maint-log() { print STUB-LOG "$@"; }; out=$(core maint log 200); [[ $out == "STUB-LOG 200" ]]'
+check "core maint status routes to maint-status, not core-status" \
+  'maint-status() { print STUB-MS; }; out=$(core maint status 2>&1); (( $? == 0 )) && [[ $out == "STUB-MS" ]]'
+check "core maint uninstall routes to maint-uninstall" \
+  'maint-uninstall() { print STUB-MU; }; out=$(core maint uninstall); [[ $out == "STUB-MU" ]]'
+check "core maint (bare) lists the sub-verbs on stdout and returns 0 (a namespace is help, not an error)" \
+  'out=$(core maint 2>/dev/null); (( $? == 0 )) && [[ $out == *"usage: core maint <install|run|log|status|uninstall>"* && $out == *"uninstall "* ]]'
+check "core maint --help returns 0 (not mis-read as a sub-verb)" \
+  'out=$(core maint --help); (( $? == 0 )) && [[ $out == *"usage: core maint"* ]]'
+check "core maint help is the same usage (the top-level help alias)" \
+  'out=$(core maint help); (( $? == 0 )) && [[ $out == *"usage: core maint <"* ]]'
+check "core maint rejects an unknown sub-verb with a did-you-mean and does not dispatch" \
+  'maint-status() { print STUB-MS; }; out=$(core maint stauts 2>&1); (( $? != 0 )) && [[ $out == *"did you mean core maint status"* && $out == *"usage: core maint <"* && $out != *STUB-MS* ]]'
+check "core maint run reports cleanly, naming 55-maint.zsh, when maint-run is not loaded" \
+  '( unfunction maint-run 2>/dev/null; out=$(core maint run 2>&1); (( $? != 0 )) && [[ $out == *55-maint* ]] )'
+check "core mant suggests core maint" \
+  'out=$(core mant 2>&1); (( $? != 0 )) && [[ $out == *"did you mean core maint"* ]]'
+check "core update check routes to update-check, not up" \
+  'update-check() { print STUB-UC "$@"; }; up() { print STUB-UP "$@"; }; out=$(core update check); (( $? == 0 )) && [[ $out == "STUB-UC" ]]'
+check "core update -y still routes to up (only the word check is intercepted)" \
+  'up() { print STUB-UP "$@"; }; out=$(core update -y); [[ $out == "STUB-UP -y" ]]'
+check "core update check reports cleanly, naming 60-update.zsh, when update-check is not loaded" \
+  '( unfunction update-check 2>/dev/null; out=$(core update check 2>&1); (( $? != 0 )) && [[ $out == *60-update* ]] )'
+check "core sync routes to gsync and forwards args" \
+  'gsync() { print STUB-SYNC "$@"; }; out=$(core sync --dry-run); (( $? == 0 )) && [[ $out == "STUB-SYNC --dry-run" ]]'
+check "core sync reports cleanly, naming 20-aliases.zsh, when gsync is not loaded" \
+  '( unfunction gsync 2>/dev/null; out=$(core sync 2>&1); (( $? != 0 )) && [[ $out == *20-aliases* ]] )'
+check "core-help's front-door footer names maint and sync" \
+  'out=$(COLUMNS=200 NO_COLOR=1 core-help 2>&1); [[ $out == *"front door: core <"*maint*sync*">"* ]]'
 
 # core whatsnew (#680): the digest is CHANGELOG.recent.md — the last 8 RELEASED sections,
 # vendored via core.vendor because CHANGELOG.md is not (~707 KB, 36% of the vendored tree).
@@ -13249,6 +13293,26 @@ _flag_drift serve "$HERE/zsh/completions/_serve" "$HERE/zsh/30-functions.zsh"
 _flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/60-update.zsh"
 _flag_drift core-whatsnew "$HERE/zsh/completions/_core-whatsnew" "$HERE/zsh/30-functions.zsh"
 _flag_drift core-status "$HERE/zsh/completions/_core-status" "$HERE/zsh/30-functions.zsh"
+
+# ── completion ↔ dispatcher subcommand mirror (#684) ─────────────────────────────
+# _core hand-copies $_CORE_SUBCMDS and $_CORE_MAINT_SUBCMDS into `'verb:desc'` describe
+# arrays, and NOTHING checked the copy — a verb added to the dispatcher without its line
+# simply never completed, across nine repos. Extract the keys of each array from the
+# completion file and compare them, sorted, to the dispatcher's own list.
+_subs_mirror() { # _subs_mirror <describe-array-in-_core> <zsh-array-name>
+  local want got
+  want="$(zsh -fc "source '$UI' || exit 1; source '$FN' || exit 1; print -r -- \${(o)$2}")"
+  got="$(sed -n "/local -a $1=(/,/^ *)/p" "$HERE/zsh/completions/_core" |
+    grep -oE "^ *'[a-z-]+:" | tr -d " ':" | LC_ALL=C sort | tr '\n' ' ')"
+  got="${got% }"
+  if [[ -n "$want" && "$want" == "$got" ]]; then
+    pass "_core's $1 mirrors \$$2"
+  else
+    fail "_core's $1 drifted from \$$2 (dispatcher: '$want'; completion: '$got')"
+  fi
+}
+_subs_mirror subs _CORE_SUBCMDS
+_subs_mirror maint_subs _CORE_MAINT_SUBCMDS
 
 # ── git helper unit tests (git.zsh) (B2) ──────────────────────────────────────
 # git.zsh's trunk/branch resolution (git_main_branch's 6-way ref search, git_current_branch's
