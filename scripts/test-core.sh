@@ -6558,6 +6558,11 @@ fi
 # aliases.md holding one marker pair per registered block with hand-authored lines on
 # either side. The block ids are read out of the script's own BLOCKS table so this
 # section cannot silently fall out of step with the registry.
+#
+# THE REPOSITORY SCRIPT IS RUN WITH --root, not a copy from inside the fixture: --root
+# is the documented fixture mechanism, so it is the thing to exercise — a copied script
+# run from its own tree would keep this section green while --root's argument parsing
+# or root switch regressed.
 if have git; then
   hdr "aliases generation (scripts/gen-aliases.sh)"
   GAR="$SANDBOX/aliasrepo"
@@ -6565,10 +6570,7 @@ if have git; then
 
   _ga_fixture() {
     rm -rf "$GAR"
-    mkdir -p "$GAR/scripts/lib" "$GAR/zsh" "$GAR/lib"
-    cp "$HERE/scripts/gen-aliases.sh" "$GAR/scripts/"
-    cp "$HERE/scripts/lib/common.sh" "$GAR/scripts/lib/"
-    cp "$HERE/lib/ux.sh" "$GAR/lib/ux.sh" # common.sh sources it for its palette
+    mkdir -p "$GAR/zsh"
     cp "$HERE/zsh/20-aliases.zsh" "$HERE/zsh/25-git.zsh" "$HERE/zsh/30-functions.zsh" "$GAR/zsh/"
     {
       printf '# fixture cheat sheet\n\nhand-authored above the first block\n\n'
@@ -6578,8 +6580,9 @@ if have git; then
       printf 'hand-authored below the last block\n'
     } >"$GAR/aliases.md"
   }
-  _ga_run() { (cd "$GAR" && env -u CORE_JSON bash ./scripts/gen-aliases.sh "$@" >/dev/null 2>&1; echo $?); }
-  _ga_out() { (cd "$GAR" && env -u CORE_JSON bash ./scripts/gen-aliases.sh "$@" 2>&1); }
+  # Run from $SANDBOX, not from $GAR or the repo: proves --root, not the cwd, picks the tree.
+  _ga_run() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-aliases.sh" --root "$GAR" "$@" >/dev/null 2>&1; echo $?); }
+  _ga_out() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-aliases.sh" --root "$GAR" "$@" 2>&1); }
 
   _ga_fixture
   _ga_gen_rc="$(_ga_run)"
@@ -6630,7 +6633,8 @@ if have git; then
   fi
   # A multi-line _core_help (the `core maint` sub-verb listing, #684) is not a one-liner:
   # --list shows it as fn-multi, and nothing requires it to be claimed or renders it.
-  if (cd "$GAR" && env -u CORE_JSON bash ./scripts/gen-aliases.sh --list 2>/dev/null | grep -q '^fn-multi'"$(printf '\t')"'core'"$(printf '\t')"'') &&
+  _ga_list_out="$(_ga_out --list)"
+  if grep -q '^fn-multi'"$(printf '\t')"'core'"$(printf '\t')" <<<"$_ga_list_out" &&
     ! grep -q 'core maint <' "$GAR/aliases.md"; then
     pass "gen-aliases: a multi-line _core_help is listed as fn-multi and never rendered as a row"
   else
@@ -6736,10 +6740,28 @@ if have git; then
   else
     fail "gen-aliases: deleting a block's marker pair went unreported — coverage loss reading as health"
   fi
+  # A STRAY END MARKER: build_file only pairs an end with the gen above it, so without
+  # the preflight counting both kinds this passed through as prose and --check stayed 0.
+  _ga_fixture && _ga_run >/dev/null
+  printf '<!-- core:aliases:end modern-cli -->\n' >>"$GAR/aliases.md"
+  _ga_stray_out="$(_ga_out --check)"
+  if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'modern-cli has 1 gen marker(s) but 2 end marker(s)' <<<"$_ga_stray_out"; then
+    pass "gen-aliases: a stray duplicate end marker is a structural failure (2), named"
+  else
+    fail "gen-aliases: a duplicated end marker was accepted as prose"
+  fi
+  _ga_fixture && _ga_run >/dev/null
+  printf '<!-- core:aliases:end nope -->\n' >>"$GAR/aliases.md"
+  _ga_stray_out="$(_ga_out --check)"
+  if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'unregistered end marker: nope' <<<"$_ga_stray_out"; then
+    pass "gen-aliases: an unregistered end marker is caught by name"
+  else
+    fail "gen-aliases: an unregistered end marker was accepted as prose"
+  fi
   _ga_fixture && _ga_run >/dev/null
   printf '<!-- core:aliases:gen nope -->\n<!-- core:aliases:end nope -->\n' >>"$GAR/aliases.md"
   _ga_unreg_out="$(_ga_out --check)" # captured, not piped into grep -q (the §5d SIGPIPE hazard)
-  if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'unregistered block: nope' <<<"$_ga_unreg_out"; then
+  if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'unregistered gen marker: nope' <<<"$_ga_unreg_out"; then
     pass "gen-aliases: an unregistered marker in aliases.md is caught by name"
   else
     fail "gen-aliases: an unregistered marker pair was accepted"
@@ -6766,7 +6788,7 @@ if have git; then
   fi
 
   rm -rf "$GAR"
-  unset GAR _ga_ids _ga_gen_rc _ga_drift_rc _ga_drift_out _ga_before _ga_new_rc _ga_new_out _ga_gone_out _ga_miss_out _ga_unreg_out _ga_nosrc_rc
+  unset GAR _ga_ids _ga_gen_rc _ga_drift_rc _ga_drift_out _ga_before _ga_new_rc _ga_new_out _ga_gone_out _ga_miss_out _ga_unreg_out _ga_stray_out _ga_list_out _ga_nosrc_rc
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────

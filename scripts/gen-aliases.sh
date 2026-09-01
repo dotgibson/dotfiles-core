@@ -367,28 +367,37 @@ build_file() { # build_file <file> — emit <file> with every marked block re-re
 
 # ── preflight: sources, registry and doc must agree, all three ways ───────────
 preflight() {
-  local rc=0 id kind names n line f claimed=" " have=" " k
-  # 1. Every registered block appears exactly once in the doc; every marker in the doc
-  #    is registered. (gen-theme.sh's forward + reverse checks, one file.)
+  local rc=0 id kind names n line f claimed=" " have=" " k m
+  # 1. Every registered block's `gen` AND `end` marker appears exactly once in the doc,
+  #    and every marker of either kind in the doc is registered. (gen-theme.sh's forward
+  #    + reverse checks, one file.) BOTH KINDS: build_file only pairs an `end` with the
+  #    `gen` above it, so a stray or duplicated `end` marker would otherwise pass through
+  #    as prose — and the doc's contract is that a malformed marker fails, not hides.
   while IFS="$(printf '\t')" read -r id kind names; do
     [[ -n "$id" ]] || continue
     n="$(grep -c "^[[:space:]]*<!-- core:aliases:gen $id -->" "$TARGET" || true)"
+    m="$(grep -c "^[[:space:]]*<!-- core:aliases:end $id -->" "$TARGET" || true)"
     case "$n" in
     1) ;;
     0) printf 'gen-aliases: %s: registered block is missing: %s (was its region deleted?)\n' "$TARGET" "$id" >&2; rc=2 ;;
     *) printf 'gen-aliases: %s: block appears %s times: %s (ambiguous)\n' "$TARGET" "$n" "$id" >&2; rc=2 ;;
     esac
+    [[ "$m" == "$n" ]] || {
+      printf 'gen-aliases: %s: block %s has %s gen marker(s) but %s end marker(s) — every gen needs exactly one matching end\n' "$TARGET" "$id" "$n" "$m" >&2
+      rc=2
+    }
   done <<EOF
 $BLOCKS
 EOF
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
-    id="${line##* }"
+    kind="${line%% *}"
+    id="${line#* }"
     awk -F'\t' -v id="$id" '$1 == id { found = 1 } END { exit !found }' <<<"$BLOCKS" || {
-      printf 'gen-aliases: %s carries an unregistered block: %s — add it to BLOCKS in scripts/gen-aliases.sh\n' "$TARGET" "$id" >&2
+      printf 'gen-aliases: %s carries an unregistered %s marker: %s — add the block to BLOCKS in scripts/gen-aliases.sh, or remove the marker\n' "$TARGET" "$kind" "$id" >&2
       rc=2
     }
-  done < <(sed -nE 's/^[[:space:]]*<!-- core:aliases:gen ([a-z0-9-]+) -->[[:space:]]*$/\1/p' "$TARGET")
+  done < <(sed -nE 's/^[[:space:]]*<!-- core:aliases:(gen|end) ([a-z0-9-]+) -->[[:space:]]*$/\1 \2/p' "$TARGET")
 
   # 2. Names: every claimed name is defined, no name is claimed twice, and — the
   #    direction that matters — every DEFINED name is claimed. Membership tests against
