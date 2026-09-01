@@ -2208,7 +2208,50 @@ _wfe_count "a path in prose counts, not only a uses: line" 6 1
 _wfe_write a.yml '#  a@v5 b@v5 dotgibson/dotfiles-core/.github/workflows/x.yml@v4 and .../y.yml@v5'
 _wfe_count "only the workflow-path form matches, and every occurrence on the line" 6 1
 
+# BOUNDARY. Without an owner anchor and a left boundary, `dotfiles-core` matches inside
+# ANOTHER repository's name and this always-on gate reds on a file it has no business
+# judging. Both shapes below did exactly that before the boundary was added.
+_wfe_write a.yml '#   uses: someone/not-dotfiles-core/.github/workflows/x.yml@v5
+#   uses: notdotgibson/dotfiles-core/.github/workflows/x.yml@v5'
+_wfe_count "a lookalike repository name is NOT attributed to dotfiles-core" 6 0
+
 _wfe_reset
+# ── the real regression ──
+# #821 is this guard's reason to exist: v6.0.0 and v6.0.1 both SHIPPED with the caller
+# examples still on @v5 while every `ref:` had moved to v6 — which is why the sibling
+# guard stayed green throughout. Rebuild those tags and require a red, for the reason
+# the sibling records: a guard for a historical defect that is never RUN against that
+# defect is the category error it exists to fix.
+if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
+  _wfe_hist() { # _wfe_hist <tag> <min-findings>
+    local tag="$1" want="$2" dir="$SANDBOX/wfehist-$1" f got n major
+    git -C "$HERE" rev-parse -q --verify "$tag^{commit}" >/dev/null 2>&1 || {
+      skip "caller-example major: $tag not present in this clone (shallow?)"
+      return 0
+    }
+    major="$(git -C "$HERE" show "$tag:core.version" 2>/dev/null | tr -d '[:space:]' | cut -d. -f1)"
+    [[ "$major" =~ ^[0-9]+$ ]] || { skip "caller-example major: $tag core.version unreadable"; return 0; }
+    mkdir -p "$dir/.github/workflows"
+    while IFS= read -r f; do
+      [[ "$f" == *.yml || "$f" == *.yaml ]] || continue
+      git -C "$HERE" show "$tag:$f" >"$dir/$f" 2>/dev/null || :
+    done < <(git -C "$HERE" ls-tree --name-only "$tag" .github/workflows/ 2>/dev/null)
+    got="$(_core_workflow_example_hits "$dir" "$major")"
+    n=0
+    [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+    if [[ "$n" -ge "$want" ]]; then
+      pass "caller-example major: catches the real $tag regression ($n example(s))"
+    else
+      fail "caller-example major: $tag regression NOT caught (got $n finding(s), want >= $want)"
+    fi
+  }
+  # Both v6 releases shipped seven documented examples still naming @v5.
+  _wfe_hist v6.0.0 7
+  _wfe_hist v6.0.1 7
+else
+  skip "caller-example major: historical regression cases (git/repo unavailable)"
+fi
+
 # And the tree as it stands must be clean against its own core.version — the gate running
 # on itself, exactly as CI will.
 if [[ -r "$HERE/core.version" ]]; then

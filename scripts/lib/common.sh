@@ -1176,8 +1176,15 @@ _core_workflow_ref_hits() { # _core_workflow_ref_hits <repo-root> <expected-majo
 # lesson both sibling helpers already record: a comment is not a gate.
 #
 # SCOPE IS A WORKFLOW PATH, NOT EVERY `@vN`. It matches only
-# `dotfiles-core/.github/workflows/<file>@vN` — a string that is always a copyable
-# caller reference and never narrative. That distinction is load-bearing, because
+# `dotgibson/dotfiles-core/.github/workflows/<file>@vN` — a string that is always a
+# copyable caller reference and never narrative.
+#
+# THE OWNER IS PART OF THE MATCH, AND SO IS A LEFT BOUNDARY. Without them a bare
+# `dotfiles-core/...` substring matches inside ANOTHER repository's name — a documented
+# `someone/not-dotfiles-core/.github/workflows/x.yml@v5` would be reported as a stale
+# Core example and would fail this always-on gate for a file it has no business judging.
+# The boundary is `(^|[^A-Za-z0-9._-])`: the character before the owner must not itself
+# be a repo-name character, so `notdotgibson/dotfiles-core/...` is excluded too. That distinction is load-bearing, because
 # legitimate historical `vN` prose exists and MUST NOT be judged:
 #
 #   · claude-routines-call.yml narrates the v4→v5 cut ("every caller moved to `@v5`").
@@ -1204,7 +1211,7 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
       # pinning policy; this gate is about the example a human copies.
       /^[[:space:]]*#/ {
         line = $0
-        while (match(line, /dotfiles-core\/\.github\/workflows\/[A-Za-z0-9._-]+@v[0-9]+/)) {
+        while (match(line, /(^|[^A-Za-z0-9._-])dotgibson\/dotfiles-core\/\.github\/workflows\/[A-Za-z0-9._-]+@v[0-9]+/)) {
           ref = substr(line, RSTART, RLENGTH)
           ver = ref
           sub(/^.*@v/, "", ver)

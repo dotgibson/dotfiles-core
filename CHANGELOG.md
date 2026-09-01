@@ -30,8 +30,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   narrating the v4→v5 cut; `lint-call.yml` naming the release the os.capabilities schema
   landed in) and would train the next person to falsify them. Bare prose like "pinned to
   v5" is deliberately not judged: indistinguishable from that history without a marker
-  convention this does not earn. Tested against the real #821 regression, not only
-  fixtures, per the rule the sibling guard records.
+  convention this does not earn. The match carries the owner and a left boundary so a
+  lookalike repository (`someone/not-dotfiles-core/…`) is not attributed to Core and
+  cannot red this always-on gate. Driven against the real regression, not only fixtures:
+  the suite rebuilds `v6.0.0` and `v6.0.1` — both of which SHIPPED with seven documented
+  examples on `@v5` while every `ref:` read v6 — and requires a red on each.
 
 ### Fixed
 
