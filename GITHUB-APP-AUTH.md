@@ -114,10 +114,13 @@ which is what makes the migration backward-compatible (Step 4).
 
 ## Step 4 — the workflow pattern (backward-compatible)
 
-> **Historical.** Steps 4 and 5 are the migration as it was executed. The `|| secrets.…`
-> fallbacks they prescribe have since been removed (#683) — the live workflows read
-> `${{ steps.app.outputs.token }}` alone. Kept as the worked example for adding a *new*
-> consumer, which starts at the end state and needs no fallback.
+> **Historical — do not copy this into a new consumer.** Steps 4 and 5 are the migration
+> as it was executed, and the `|| secrets.…` fallback they prescribe below has since been
+> removed (#683): the live workflows read `${{ steps.app.outputs.token }}` alone, and the
+> secrets the fallback names no longer exist. Copying Step 4 verbatim would reintroduce a
+> dead secret reference. **A new consumer** takes only the mint step and reads the bare
+> `${{ steps.app.outputs.token }}`. The fallback shape is retained here for exactly one
+> reason: it is the pattern the emergency re-provisioning in *Rollback* restores.
 
 Replace each `secrets.FLEET_SYNC_TOKEN` / `secrets.WEBHOOK_SECRET` use with a minted
 token, **falling back to the legacy PAT** so the change is inert until the App is

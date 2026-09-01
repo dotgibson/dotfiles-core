@@ -474,10 +474,11 @@ git checkout main && git fetch origin && git pull --ff-only origin main
    against `dotfiles-Offense` (bumps `companion.lock` only — never `core.lock`).
 4. Review and merge that dotfiles-Offense PR.
 
-Requires the fleet GitHub App to reach **htpx** (the org-level `FLEET_APP_ID` variable +
-`FLEET_APP_PRIVATE_KEY` secret) with `dotfiles-Offense` in its installation. htpx itself is
-read with the built-in token, so the App needs write on dotfiles-Offense, not on htpx.
-There is no PAT fallback — see `GITHUB-APP-AUTH.md`.
+Requires the org-level `FLEET_APP_ID` variable + `FLEET_APP_PRIVATE_KEY` secret to be
+visible to **htpx**, so its workflow can mint a token whose installation includes
+`dotfiles-Offense`. The App needs **no access to htpx itself** — htpx is read with the
+built-in token — so do not add it to the installation on that account. There is no PAT
+fallback: see `GITHUB-APP-AUTH.md`.
 
 ### Backfill an already-released tag
 
