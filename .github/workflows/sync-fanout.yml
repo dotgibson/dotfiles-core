@@ -124,7 +124,8 @@ jobs:
           # the fleet here would be a second copy of scripts/os-repos.txt that could drift
           # and 403 a newly-added repo — the install list is the ONE place scope lives.
           #
-          # The App must hold Workflows: write (GITHUB-APP-AUTH.md Step 1) because a sync
+          # The App must hold Workflows: write (GITHUB-APP-AUTH.md, "The permissions the
+          # App must hold") because a sync
           # branch can carry .github/workflows/* pin moves, and GitHub refuses the WHOLE
           # push without it. With the PAT gone that grant is load-bearing and has no
           # safety net: a permission EDIT awaiting installation approval still mints on
