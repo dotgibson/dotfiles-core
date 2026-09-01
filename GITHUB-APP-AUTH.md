@@ -78,6 +78,24 @@ The App has **no webhook** (it only mints tokens), so there are no "recent deliv
 consult when debugging — and minting a token via the REST API generates none regardless.
 The repo/org **audit log** is where a minted token's actions show up.
 
+## Re-creating or re-keying the App
+
+The App already exists; this is here for the two cases that need it — **rotating the
+private key**, and re-creating the App if it is ever lost.
+
+Registered under **GitHub → Settings → Developer settings → GitHub Apps** as
+`dotgibson-fleet-sync` (any unique name), homepage set to the org URL (unused, but the
+field is required), **Webhook → Active unchecked** (it only mints tokens and receives no
+events), and **Where can this App be installed? → Only on this account.**
+
+**The private key is the credential.** Under the App's **Private keys**, *Generate a
+private key* downloads a `.pem`; its full contents — including the `-----BEGIN/END-----`
+lines — become `FLEET_APP_PRIVATE_KEY`. **Store the `.pem` in a password manager and delete
+the download.** Generating a new key does not revoke the old one: delete the superseded key
+on the App's page, or rotation leaves two valid credentials.
+
+The **App ID** is on the same page and becomes `FLEET_APP_ID`.
+
 ## Where the App is installed
 
 Installed on **`dotgibson`**, on **only the repos that RECEIVE cross-repo writes**:
@@ -164,11 +182,15 @@ above, and no caller should pass it.
 
 It is documented here, in the live reference rather than the historical record, because it
 is a **current constraint on a future change**: it cannot be deleted until the next MAJOR.
-Consumers pin the moving `@v6` alias, so removing it reaches them the moment `make publish`
-advances `v6`, and a caller passing a secret the reusable no longer declares is a workflow
-error. The nine OS-repo callers have stopped passing it (#819), which unblocks the removal;
-anything still pinned to an older `@v6` commit is why it waits. Same hazard
-`RELEASE-RUNBOOK.md` §2 records as *the caller bump MUST precede the fan-out merge*.
+Removing a declared secret is a **breaking change to the `v6` reusable-workflow
+contract**: a caller that passes a secret the reusable no longer declares fails workflow
+validation. The nine OS-repo callers have stopped passing it (#819), which is what unblocks
+the removal — but `@v6` is a single moving tag, so the change reaches every caller tracking
+it the instant `make publish` advances `v6`, with no window to catch a straggler. Any caller
+this repo does not control, or one not yet updated, breaks at that moment. (A caller pinned
+to an older SHA is unaffected — it keeps reading the workflow file at that commit — so
+SHA-pinned repos are not the risk; `@v6` trackers are.) Changing a published contract is
+what a MAJOR is for, which is why it waits for one.
 
 **Do not remove it as tidy-up.** It comes out on a MAJOR, deliberately.
 
@@ -184,7 +206,7 @@ a **Workflows: write** change still awaiting approval. That is a minutes-long fi
 procedure below is an hours-long one.
 
 If you genuinely must run without the App, it is a deliberate **re-provisioning**. All
-five steps are ONE change — doing part of it looks like a rollback and does nothing:
+six steps are ONE change — doing part of it looks like a rollback and does nothing:
 
 1. **Mint fine-grained PATs** with the scopes the App holds — `FLEET_SYNC_TOKEN` needs
    contents, pull-requests and workflows write on the OS repos and `dotfiles-Offense`;
@@ -215,7 +237,13 @@ five steps are ONE change — doing part of it looks like a rollback and does no
    ```
 
    Inline in `env:`, for the masking reason above.
-4. **Restore each caller's `secrets:` mapping.** A reusable workflow does **not** inherit
+4. **If a MAJOR has already removed the declaration, restore that first.** Once
+   `on.workflow_call.secrets.WEBHOOK_SECRET` is gone from `notify-web-call.yml` (see *One
+   live constraint*), the reusable cannot read that secret and a caller passing it fails
+   validation — so re-declare it (`required: false`) before the next step. While the
+   declaration is still present this step is a no-op; it is written down because this
+   procedure must survive the removal.
+5. **Restore each caller's `secrets:` mapping.** A reusable workflow does **not** inherit
    its caller's secrets: `notify-web-call.yml` sees only what the caller hands it, and
    `release.yml` passes `FLEET_APP_PRIVATE_KEY` alone. Restoring the expression inside the
    reusable without re-adding `WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}` to every
@@ -223,7 +251,7 @@ five steps are ONE change — doing part of it looks like a rollback and does no
    empty there however the org secret is set. (`secrets: inherit` does the same job in one
    line.) `sync-fanout.yml` and Core's own inline `notify-web.yml` are not reusable
    workflows and need only step 3.
-5. **Then unset `FLEET_APP_ID`**, or the restored expression will never choose the PAT.
+6. **Then unset `FLEET_APP_ID`**, or the restored expression will never choose the PAT.
    `steps.app.outputs.token || secrets.…` prefers the *left* side whenever it is non-empty,
    so an App that still mints — even an under-scoped one whose token 403s on the actual
    push — keeps winning; and an App that fails to mint fails the *step*, so execution never

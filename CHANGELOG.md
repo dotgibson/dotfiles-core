@@ -37,7 +37,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   at the wrong place. The still-open constraint on `notify-web-call.yml`'s declared
   `WEBHOOK_SECRET` input lives in the **reference**, not the record: it is a current rule
   about a future change, and keeping it in a file marked frozen would be the same drift
-  the split removes.
+  the split removes. The App's registration and private-key handling moved to the reference
+  too rather than the record — key rotation is an operational task, not history.
 
 ### Added
 
