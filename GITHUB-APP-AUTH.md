@@ -176,6 +176,9 @@ Roll it out one consumer at a time, canary first, verifying a real run each time
 3. **`notify-web-call.yml`** (reusable) — mint a `dotfiles-web`-scoped token and use it as
    the `Bearer` for the `dispatches` POST; drop the `WEBHOOK_SECRET` secret input. Fan the
    caller change out to every source repo's `notify-web.yml`.
+   **Status: partly done.** The mint and the `Bearer` landed; dropping the secret input is
+   **still outstanding** (#819) — see the retirement record below. Do not read this line as
+   a completed step.
 
 **Verify** after each: trigger the workflow (a real fan-out / a `refresh` dispatch) and
 confirm the cross-repo write still lands. Because the token is minted per run and scoped to
