@@ -124,9 +124,17 @@ jobs:
     # If this fires again at 30, the job has a real problem and the number is not the fix.
     timeout-minutes: ${{ matrix.os == 'macos-latest' && 30 || 15 }}
     steps:
+      # fetch-depth: 0 for the TAGS, not the history. test-core.sh's two historical
+      # guards rebuild released trees and require a red on them — _wfr_hist at v4.0.0 /
+      # v5.0.2, _wfe_hist at v6.0.0 / v6.0.1. On the default shallow checkout those tags
+      # are absent, so both SKIPPED here and the suite passed on synthetic fixtures alone
+      # while the comments claimed coverage of the real regressions (#821). A guard whose
+      # historical case never runs in CI is the green-because-absent shape the guards
+      # themselves exist to close.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # tags: the historical regression assertions need them
 
       # Single source of truth for the pinned linter versions: load them into the
       # job env so every step below (and the cache keys) see the same numbers as

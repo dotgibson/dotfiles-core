@@ -2156,6 +2156,116 @@ if [[ -r "$HERE/core.version" ]]; then
   unset _wfr_now
 fi
 
+# ── caller-example major guard (common.sh :: _core_workflow_example_hits) ────
+# Sibling of the ref-major guard above, and tested the same way: against the REAL
+# regression, not only fixtures. #821 is the case — 25 `@v5` references survived the
+# v5 → v6 cut while every `ref:` moved correctly, so the guard above stayed green while
+# six copyable caller examples pointed at a retired major.
+#
+# The negative cases matter as much as the positive ones here. Legitimate historical `vN`
+# prose exists in these files and MUST NOT be flagged; a guard that reds on a true
+# sentence would train the next person to falsify it.
+hdr "caller-example major guard (_core_workflow_example_hits)"
+_wfe_="$SANDBOX/wfexample"
+mkdir -p "$_wfe_/.github/workflows"
+_wfe_reset() { rm -f "$_wfe_"/.github/workflows/*.yml "$_wfe_"/.github/workflows/*.yaml 2>/dev/null || :; }
+_wfe_write() { _wfe_reset; printf '%s\n' "$2" >"$_wfe_/.github/workflows/$1"; }
+_wfe_count() {
+  local got n
+  got="$(_core_workflow_example_hits "$_wfe_" "$2")"
+  n=0
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$3" ]]; then
+    pass "caller-example major: $1"
+  else
+    fail "caller-example major: $1 (got $n finding(s), want $3)"
+  fi
+}
+
+_wfe_write a.yml '#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v5'
+_wfe_count "a commented example on a foreign major is a finding" 6 1
+
+_wfe_write a.yml '#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v6'
+_wfe_count "a commented example on the current major is clean" 6 0
+
+# THE CASE THAT DECIDES THE DESIGN. These are the real surviving sentences from
+# claude-routines-call.yml and lint-call.yml. A blanket @vN scan reds on all of them and
+# would push someone to rewrite true history.
+_wfe_write a.yml '          # every caller moved to `@v5`, so the workflow body was v5 and the scripts it
+          # majors of fixes stale; at v4→v5 it was left on `v4` (frozen at v4.19.0) while
+      - name: os.capabilities (schema — Core v5 #663/#667)
+            echo "no vendored $chk — this core/ predates the v5 capability schema"'
+_wfe_count "historical vN prose is NOT judged (no workflow path)" 6 0
+
+# A live `uses:` is check-modern.sh business, not this gate: only comments are read.
+_wfe_write a.yml '    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v5'
+_wfe_count "an uncommented uses: is out of scope (check-modern owns pinning)" 6 0
+
+# Prose that names the path without a `uses:` key is still a copyable instruction.
+_wfe_write a.yml '# call this via `dotgibson/dotfiles-core/.github/workflows/notify-failure-call.yml@v5`'
+_wfe_count "a path in prose counts, not only a uses: line" 6 1
+
+# TWO complete paths, deliberately: with only one, a regression that stopped the `while`
+# loop after its first match would still pass and the case would prove nothing.
+_wfe_write a.yml '#  a@v5 b@v5 dotgibson/dotfiles-core/.github/workflows/x.yml@v4 plus dotgibson/dotfiles-core/.github/workflows/y.yml@v3 and .../z.yml@v5'
+_wfe_count "every occurrence on the line is reported, not just the first" 6 2
+
+# BOUNDARY. Without an owner anchor and a left boundary, `dotfiles-core` matches inside
+# ANOTHER repository's name and this always-on gate reds on a file it has no business
+# judging. Both shapes below did exactly that before the boundary was added.
+_wfe_write a.yml '#   uses: someone/not-dotfiles-core/.github/workflows/x.yml@v5
+#   uses: notdotgibson/dotfiles-core/.github/workflows/x.yml@v5'
+_wfe_count "a lookalike repository name is NOT attributed to dotfiles-core" 6 0
+
+_wfe_reset
+# ── the real regression ──
+# #821 is this guard's reason to exist: v6.0.0 and v6.0.1 both SHIPPED with the caller
+# examples still on @v5 while every `ref:` had moved to v6 — which is why the sibling
+# guard stayed green throughout. Rebuild those tags and require a red, for the reason
+# the sibling records: a guard for a historical defect that is never RUN against that
+# defect is the category error it exists to fix.
+if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
+  _wfe_hist() { # _wfe_hist <tag> <min-findings>
+    local tag="$1" want="$2" dir="$SANDBOX/wfehist-$1" f got n major
+    git -C "$HERE" rev-parse -q --verify "$tag^{commit}" >/dev/null 2>&1 || {
+      skip "caller-example major: $tag not present in this clone (shallow?)"
+      return 0
+    }
+    major="$(git -C "$HERE" show "$tag:core.version" 2>/dev/null | tr -d '[:space:]' | cut -d. -f1)"
+    [[ "$major" =~ ^[0-9]+$ ]] || { skip "caller-example major: $tag core.version unreadable"; return 0; }
+    mkdir -p "$dir/.github/workflows"
+    while IFS= read -r f; do
+      [[ "$f" == *.yml || "$f" == *.yaml ]] || continue
+      git -C "$HERE" show "$tag:$f" >"$dir/$f" 2>/dev/null || :
+    done < <(git -C "$HERE" ls-tree --name-only "$tag" .github/workflows/ 2>/dev/null)
+    got="$(_core_workflow_example_hits "$dir" "$major")"
+    n=0
+    [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+    if [[ "$n" -ge "$want" ]]; then
+      pass "caller-example major: catches the real $tag regression ($n example(s))"
+    else
+      fail "caller-example major: $tag regression NOT caught (got $n finding(s), want >= $want)"
+    fi
+  }
+  # Both v6 releases shipped seven documented examples still naming @v5.
+  _wfe_hist v6.0.0 7
+  _wfe_hist v6.0.1 7
+else
+  skip "caller-example major: historical regression cases (git/repo unavailable)"
+fi
+
+# And the tree as it stands must be clean against its own core.version — the gate running
+# on itself, exactly as CI will.
+if [[ -r "$HERE/core.version" ]]; then
+  _wfe_now="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+  if [[ -z "$(_core_workflow_example_hits "$HERE" "$_wfe_now")" ]]; then
+    pass "caller-example major: this tree documents @v$_wfe_now everywhere (matches core.version)"
+  else
+    fail "caller-example major: this tree documents a foreign major"
+  fi
+  unset _wfe_now
+fi
+
 # ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
 # WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
 # extraction, every verdict here comes from git: is the path tracked, and which .gitignore

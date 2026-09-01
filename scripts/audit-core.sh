@@ -1386,6 +1386,39 @@ else
   fail "core.version missing — cannot check workflow ref majors"
 fi
 
+# ── 8a-bis. reusable-workflow caller-example majors ───────────────────────────
+# 8a proves the `ref:` KEYS point at the right major. It does not read comments, so at
+# v5 → v6 every ref moved and 25 `@v5` references survived in the prose describing them
+# (#821) — including the copyable `uses:` examples six *-call.yml headers hand to OS-repo
+# maintainers. Nothing failed, because nothing was wrong in the code; a maintainer who
+# copied one simply pinned a retired major. Same silent shape 8a exists to end, one level
+# up, so it gets the same treatment: made executable rather than commented about.
+#
+# Scoped to a full `dotfiles-core/.github/workflows/<file>@vN` path, which is always a
+# copyable reference and never narrative — see _core_workflow_example_hits for why a
+# blanket `@vN` scan would be worse than no gate.
+#
+# Always-on, for 8a's reason: no tool to be absent, so it cannot go green-because-absent.
+hdr "reusable-workflow caller-example majors"
+if [[ -r core.version ]]; then
+  wfe_major="$(tr -d '[:space:]' <core.version | cut -d. -f1)"
+  if [[ "$wfe_major" =~ ^[0-9]+$ ]]; then
+    wfe_out="$(_core_workflow_example_hits . "$wfe_major")"
+    if [[ -z "$wfe_out" ]]; then
+      pass "every documented caller example in .github/workflows/ names @v$wfe_major (matches core.version)"
+    else
+      fail "a documented caller example pins a foreign major — copying it would put an OS repo on a retired Core"
+      fail_detail "$wfe_out"
+    fi
+    unset wfe_out
+  else
+    fail "core.version major unreadable ('$wfe_major') — cannot check caller-example majors"
+  fi
+  unset wfe_major
+else
+  fail "core.version missing — cannot check caller-example majors"
+fi
+
 # ── 8b. secrets (gitleaks) ────────────────────────────────────────────────────
 # Core ships 1Password helpers (zsh/50-op.zsh), a git-identity template, and history
 # secret-ignore patterns — and fans out to 9 PUBLIC repos, where a committed token
