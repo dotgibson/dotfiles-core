@@ -18,9 +18,11 @@
 # the caller passing the private key — mints a short-lived dotfiles-web-scoped installation
 # token for the dispatch. That is the ONLY auth: the legacy WEBHOOK_SECRET PAT was deleted
 # when G2 finished (#683), and the input below survives as a deprecated no-op purely so
-# callers still passing it keep working. No token → the job warns and skips (forks, or a
-# repo outside the installation). First-party only (actions/create-github-app-token +
-# curl; no marketplace action).
+# callers still passing it keep working. Two outcomes: a caller passing NO App key (or an
+# unset FLEET_APP_ID) skips the mint and the dispatch warns and no-ops; a mint that IS
+# attempted but cannot reach dotfiles-web fails in create-github-app-token, so the job
+# goes red before the warning branch is reachable. First-party only
+# (actions/create-github-app-token + curl; no marketplace action).
 # ──────────────────────────────────────────────────────────────────────────────
 name: notify-web (reusable)
 

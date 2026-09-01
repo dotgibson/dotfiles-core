@@ -55,8 +55,8 @@ on:
         default: ""
 
 # Only the default token is requested (read access to check out Core). All cross-repo
-# writes go through the minted App token (or the legacy PAT fallback), never the
-# workflow token.
+# writes go through the minted App token — there is no PAT fallback any more (#683) —
+# never the workflow token.
 permissions:
   contents: read
 
@@ -80,8 +80,9 @@ jobs:
       # Presence flag for the App private key (value is 'true'/'false', never the key):
       # secrets can't be tested in a step `if:`, but an env derived from a secret comparison
       # can. Gates the mint on the key ACTUALLY being present, so a partial App setup (the
-      # FLEET_APP_ID variable set org-wide but the key not scoped to this repo) falls back
-      # cleanly to the PAT instead of failing the mint on an empty key.
+      # FLEET_APP_ID variable set org-wide but the key not scoped to this repo) reaches the
+      # preflight's legible error instead of failing the mint on an empty key. It no longer
+      # selects a PAT — there is none (#683) — it only chooses WHICH error you get.
       HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
     steps:
       # ── Resolve the tag to fan out, and bail cleanly on anything that isn't a clean

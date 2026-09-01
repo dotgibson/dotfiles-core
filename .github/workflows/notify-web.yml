@@ -22,8 +22,12 @@
 # AUTH (G2): the fleet GitHub App (the FLEET_APP_ID variable + FLEET_APP_PRIVATE_KEY
 # secret — see dotfiles-core GITHUB-APP-AUTH.md) mints a short-lived dotfiles-web-scoped
 # token for the dispatch. That is the ONLY auth: the legacy WEBHOOK_SECRET PAT was
-# deleted when G2 finished (#683). Where the App isn't reachable — a fork, or a repo
-# outside its installation — this job no-ops with a warning rather than failing.
+# deleted when G2 finished (#683). Two different outcomes, deliberately: with NO App ID
+# or key (a fork, or a repo the org secret doesn't reach) the mint is skipped and the
+# dispatch no-ops with a warning; but if the mint is ATTEMPTED and the App cannot reach
+# dotfiles-web, create-github-app-token fails the step and the job goes red — the warning
+# branch never runs. A configured App that can't reach its target is a misconfiguration,
+# not something to swallow.
 name: Refresh showcase
 
 on:

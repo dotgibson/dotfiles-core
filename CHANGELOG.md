@@ -14,6 +14,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The fleet PAT retirement is finished in Core, and the docs now agree about it (#683).**
+  `GITHUB-APP-AUTH.md` said "both PATs are deleted" on line 9 and "still present until the
+  retire step" on line 166, and three workflows plus two `RELEASE-RUNBOOK.md` sites sided
+  with "still present". Exactly one could be true and both readings were bad: either the
+  documented rollback was a dead path, or long-lived credentials were live in the fleet
+  with the probe that watched their expiry deliberately retired. **Checked against the
+  live state (2026-09-01): the PATs really are gone** — `FLEET_SYNC_TOKEN` and
+  `WEBHOOK_SECRET` are absent from all twelve fleet repos at repo _and_ org scope, leaving
+  `FLEET_APP_PRIVATE_KEY` (org secret) and `FLEET_APP_ID` (org variable) as the only fleet
+  auth. So `token-health`'s retirement was justified after all and no expiry check needs
+  restoring; what was wrong was the rollback, and every `|| secrets.…` fallback, which had
+  been dead code resolving to the empty string. Removed the fallbacks from `sync-fanout.yml`
+  (3 sites) and `notify-web.yml`, stopped `release.yml` passing `WEBHOOK_SECRET`, and
+  rewrote the rollback as what it actually is — a deliberate re-provisioning (mint a PAT,
+  add the secret, restore the expressions, _then_ unset `FLEET_APP_ID`), not a toggle. That
+  last step is not optional: `app_token || secrets.…` prefers the left side whenever it is
+  non-empty, so a still-minting App keeps winning even when its token is too narrow to push,
+  and an App that fails to mint fails the step before the fallback is ever evaluated. The verification
+  command is recorded in `GITHUB-APP-AUTH.md` so the next reader re-checks rather than
+  re-argues. `sync-fanout.yml` now also states that the App's **Workflows: write** grant is
+  load-bearing with no safety net: a permission edit awaiting installation approval still
+  mints on the old set, failing every fan-out until accepted. **Not** removed:
+  `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads but the nine
+  OS-repo callers still pass while pinning the moving `@v6` alias — dropping it is a
+  caller-visible break, so it is marked deprecated-and-ignored and comes out on the next
+  MAJOR once the callers are bumped (#819).
+
 ## [v6.0.1] - 2026-09-01
 
 ### Added
@@ -36,30 +65,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   reporting.
 
 ### Fixed
-
-- **The fleet PAT retirement is finished in Core, and the docs now agree about it (#683).**
-  `GITHUB-APP-AUTH.md` said "both PATs are deleted" on line 9 and "still present until the
-  retire step" on line 166, and three workflows plus two `RELEASE-RUNBOOK.md` sites sided
-  with "still present". Exactly one could be true and both readings were bad: either the
-  documented rollback was a dead path, or long-lived credentials were live in the fleet
-  with the probe that watched their expiry deliberately retired. **Checked against the
-  live state (2026-09-01): the PATs really are gone** — `FLEET_SYNC_TOKEN` and
-  `WEBHOOK_SECRET` are absent from all twelve fleet repos at repo _and_ org scope, leaving
-  `FLEET_APP_PRIVATE_KEY` (org secret) and `FLEET_APP_ID` (org variable) as the only fleet
-  auth. So `token-health`'s retirement was justified after all and no expiry check needs
-  restoring; what was wrong was the rollback, and every `|| secrets.…` fallback, which had
-  been dead code resolving to the empty string. Removed the fallbacks from `sync-fanout.yml`
-  (3 sites) and `notify-web.yml`, stopped `release.yml` passing `WEBHOOK_SECRET`, and
-  rewrote the rollback as what it actually is — a deliberate re-provisioning (mint a PAT,
-  add the secret, restore the expressions), not a `FLEET_APP_ID` toggle. The verification
-  command is recorded in `GITHUB-APP-AUTH.md` so the next reader re-checks rather than
-  re-argues. `sync-fanout.yml` now also states that the App's **Workflows: write** grant is
-  load-bearing with no safety net: a permission edit awaiting installation approval still
-  mints on the old set, failing every fan-out until accepted. **Not** removed:
-  `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads but the nine
-  OS-repo callers still pass while pinning the moving `@v6` alias — dropping it is a
-  caller-visible break, so it is marked deprecated-and-ignored and comes out on the next
-  MAJOR once the callers are bumped (#819).
 
 - **`scripts/parity-check.sh` proves its one-to-one claim instead of asserting it (#682).**
   The script's own comment said it "mirrors PARITY.md's `aligned` rows one-to-one — every
