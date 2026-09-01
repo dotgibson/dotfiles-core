@@ -40,22 +40,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `gaf`. Honest coverage was 15 of 21. Every check now carries the row-key of the table
   row it enforces, and the script parses `PARITY.md` to assert the mapping in both
   directions: an `aligned` row with no needle fails, and so does a needle whose row was
-  renamed, reclassified or deleted. Several checks may share a row-key, which is what
-  lets the five utility functions and the three fuzzy-git verbs each get a needle instead
-  of one standing in for the set. Verified the only way a gate can be — negatively:
-  deleting the `history-search` check, adding an unenforced `aligned` row, and pointing a
-  check at a nonexistent row each go red and name the offender.
+  renamed or deleted. (Reclassifying a row does _not_ orphan its check — every status
+  populates the known set, and `deliberate`/`gap` rows may keep one, as `cheat` now does.)
+  A slug collision fails too, since one row's check would otherwise silently certify
+  another's. Several checks may share a row-key, which is what lets the five utility
+  functions, the three fuzzy-git verbs and the two word-nav directions each get a needle
+  instead of one standing in for the set. Coverage is row-level, not claim-level — a row
+  that grows a second trigger is still not forced to grow a second needle, and
+  `parity-check.sh` says so rather than overclaiming a second time. Verified the only way
+  a gate can be — negatively, in `test-core.sh`: an uncovered row, an orphaned row-key, a
+  slug collision and a reclassified-but-still-checked row each produce the right verdict
+  and exit code.
 
-- **Three `aligned` rows in `PARITY.md` were asserting behaviour neither shell had (#682).**
+- **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
   Found by doing the work above, since a contract nothing checks is a contract nothing
-  corrects. **`Alt+C` never existed on either side** — the issue assumed pwsh had it via
+  corrects. The three fail differently: one capability did not exist, one existed on both
+  shells but did different things, and one exists on pwsh only as a framework default.
+  **`Alt+C` never existed on either side** — the issue assumed pwsh had it via
   PSFzf and zsh had drifted, but zsh never binds `^[c` and never sources fzf's own
   key-bindings (there is no `eval "$(fzf --zsh)"` anywhere in `zsh/` or `lib/`), and
   `dotfiles-Windows` sets only PSFzf's `-PSReadlineChordProvider` and
   `-PSReadlineChordReverseHistory` — `-PSReadlineChordSetLocation` is opt-in and appears
   nowhere in that repo. Not a divergence and not a `gap`; the claim is simply gone, and
   the surviving `Alt+Z` needle is now key-anchored (`'^[z' _fzf_zoxide_jump`) like the
-  Ctrl+T row, because the bare widget name it used before passed even if the key moved.
+  Ctrl+T row, because the bare widget name it used before passed even if the key moved —
+  as does **Session picker**'s, which had the same shape and was missed in the first pass.
   **`cheat` is `deliberate`, not `aligned`** — zsh's is `alias cheat='core-help'`, Core's
   own command index, while pwsh's queries cht.sh; same trigger, different source, and the
   `alias cheat=` needle passed regardless of target. **Word nav** stays `aligned` but is

@@ -108,7 +108,10 @@ CHECKS=(
   # row also claimed `Alt+C`, which neither shell has ever bound; that half is gone. #808
   # tracks whether the capability is wanted for real (it is a two-repo change).
   "dir-jump|zoxide jump on Alt+Z|zsh/40-bindings.zsh|'^[z' _fzf_zoxide_jump|powershell/core/10-tools.ps1|-Chord 'Alt+z'"
-  "session-picker|sessionizer on Ctrl+G|zsh/40-bindings.zsh|_tmux_sessionizer|powershell/core/10-tools.ps1|Invoke-DotfilesSessionizer"
+  # KEY-ANCHORED for the Alt+Z reason, which this row was missed by in the first pass:
+  # needling only the function names left `Ctrl+G` untested on BOTH shells, so moving
+  # either binding to another key kept the row green.
+  "session-picker|sessionizer on Ctrl+G|zsh/40-bindings.zsh|'^G' _tmux_sessionizer|powershell/core/10-tools.ps1|-Chord 'Ctrl+g'"
   "autosuggest-toggle|autosuggest/prediction toggle on Ctrl+\\|zsh/40-bindings.zsh|'^\\' autosuggest-toggle|powershell/core/10-tools.ps1|-Chord 'Ctrl+\\'"
   # Word nav's pwsh half is a PSReadLine DEFAULT, not configuration: nothing in
   # dotfiles-Windows binds Ctrl+Arrow — 10-tools.ps1's "Ctrl+arrow word movement" comment
@@ -116,7 +119,11 @@ CHECKS=(
   # Core's half and SKIPS pwsh's with the reason, rather than inventing a needle that
   # would go green without proving anything. dotgibson/dotfiles-Windows#231 tracks binding
   # it explicitly, which would upgrade this skip into a real assertion.
-  "word-nav|word nav on Ctrl+left/right|zsh/40-bindings.zsh|'^[[1;5C' forward-word|powershell/core/10-tools.ps1|-"
+  # One needle per DIRECTION: the row promises Ctrl+Right and Ctrl+Left, and a single
+  # forward-word needle left `'^[[1;5D' backward-word` free to be deleted with the row
+  # still green — the partial-coverage shape this whole gate exists to end.
+  "word-nav|word nav: forward-word on Ctrl+Right|zsh/40-bindings.zsh|'^[[1;5C' forward-word|powershell/core/10-tools.ps1|-"
+  "word-nav|word nav: backward-word on Ctrl+Left|zsh/40-bindings.zsh|'^[[1;5D' backward-word|powershell/core/10-tools.ps1|-"
   # One needle per function, not one standing in for five: the row named `extract`,
   # `mkbak`, `serve`, `fif`, `fbr` and nothing tested ANY of them until #682.
   "utility-functions|extract|zsh/30-functions.zsh|extract() {|powershell/core/20-functions.ps1|function extract"
@@ -146,6 +153,7 @@ _has() { [[ -r "$1" ]] && grep -qF -- "$2" "$1"; }
 hdr "Cross-shell parity (PARITY.md aligned rows)"
 
 DRIFT=0
+UNASSERTED=0 # pwsh halves that are framework defaults — reported, never asserted (see `-`)
 WIN_PRESENT=1
 if [[ ! -d "$WIN" ]]; then
   WIN_PRESENT=0
@@ -163,9 +171,19 @@ fi
 # the Alt+Z half of that row had a needle and nothing checked that the other half didn't.
 #
 # Two directions, because both go wrong: a row added without a needle is an unenforced
-# promise, and a needle left behind after its row is deleted or reclassified is a check
-# nobody can trace back to a claim. `deliberate` and `gap` rows MAY carry a check (see
-# the `cheat` row); only `aligned` rows are REQUIRED to.
+# promise, and a needle left behind after its row was RENAMED OR DELETED is a check nobody
+# can trace back to a claim. Reclassifying a row does NOT orphan its check — every status
+# populates KNOWN_ROWS, and `deliberate`/`gap` rows may keep one (see the `cheat` row).
+# Only `aligned` rows are REQUIRED to have one.
+#
+# WHAT THIS PROVES, AND WHAT IT DOES NOT. Coverage here is ROW-level: every aligned row has
+# at least one check. It is not CLAIM-level — a row whose cells name two triggers is not
+# forced to carry two needles, so widening a row's claim can still outrun its needles. That
+# is precisely how `Alt+C` hid behind Alt+Z's needle, so the multi-check row-key exists for
+# it and every multi-trigger row uses it (word-nav per direction, the five utility
+# functions, the three fuzzy-git verbs). Adding a trigger to a row means adding its needle;
+# that half is still a discipline, and this comment is the honest statement of the limit
+# rather than a second overclaim.
 #
 # bash 3.2 (macOS ships 2007's bash): no associative arrays, no mapfile — PORTABILITY.md
 # §1, the same discipline gen-theme.sh and check-modern.sh keep. Membership is tested
@@ -193,6 +211,10 @@ _parity_rows() { # $1 = PARITY.md -> "<row-slug>\t<status-word>" per table row
 }
 
 ALIGNED_KEYS=()
+ALIGNED_N=0    # a plain counter, NOT ${#ALIGNED_KEYS[@]}: under `set -u`, touching an EMPTY
+               # array aborts on bash < 4.4 (macOS's stock 3.2, which this must run on) — and
+               # the empty case is exactly the fail-closed branch below, so the guard meant to
+               # catch "parsed nothing" would have died before it could report it.
 KNOWN_ROWS=" " # every table-row slug, whatever its status
 while IFS=$'\t' read -r _slug _status; do
   [[ -n "$_slug" ]] || continue
@@ -205,7 +227,10 @@ while IFS=$'\t' read -r _slug _status; do
     continue
   fi
   KNOWN_ROWS="$KNOWN_ROWS$_slug "
-  [[ "$_status" == "aligned" ]] && ALIGNED_KEYS+=("$_slug")
+  if [[ "$_status" == "aligned" ]]; then
+    ALIGNED_KEYS+=("$_slug")
+    ALIGNED_N=$((ALIGNED_N + 1))
+  fi
 done < <(_parity_rows "$HERE/PARITY.md")
 
 CHECKED_KEYS=()
@@ -218,32 +243,30 @@ for _row in "${CHECKS[@]}"; do
   fi
 done
 
-if ((${#ALIGNED_KEYS[@]} == 0)); then
+if ((ALIGNED_N == 0)); then
   # Not "no drift" — the gate read nothing. Same distinction §9d draws between DRIFT and
   # "the generator could not run": a coverage check that covered nothing must never pass.
   fail "coverage — parsed NO aligned rows out of PARITY.md; the one-to-one gate checked NOTHING this run"
   DRIFT=1
 else
   _uncovered=""
-  for _k in "${ALIGNED_KEYS[@]}"; do
+  for _k in ${ALIGNED_KEYS[@]+"${ALIGNED_KEYS[@]}"}; do
     [[ "$CHECKED_ROWS" == *" $_k "* ]] || _uncovered="$_uncovered $_k"
   done
   _orphan=""
-  if ((${#CHECKED_KEYS[@]})); then
-    for _k in "${CHECKED_KEYS[@]}"; do
-      [[ "$KNOWN_ROWS" == *" $_k "* ]] || _orphan="$_orphan $_k"
-    done
-  fi
+  for _k in ${CHECKED_KEYS[@]+"${CHECKED_KEYS[@]}"}; do
+    [[ "$KNOWN_ROWS" == *" $_k "* ]] || _orphan="$_orphan $_k"
+  done
   if [[ -n "$_uncovered" ]]; then
     fail "coverage — PARITY.md marks these rows \`aligned\` with no check behind them:$_uncovered — add a needle to CHECKS, or change the row's status to \`deliberate\`/\`gap\`"
     DRIFT=1
   fi
   if [[ -n "$_orphan" ]]; then
-    fail "coverage — these CHECKS row-keys match no PARITY.md table row:$_orphan — the row was renamed, reclassified or deleted; retire the check or fix its key"
+    fail "coverage — these CHECKS row-keys match no PARITY.md table row:$_orphan — the row was renamed or deleted (reclassifying one keeps its key valid); retire the check or fix its key"
     DRIFT=1
   fi
   [[ -z "$_uncovered$_orphan" ]] &&
-    pass "coverage — all ${#ALIGNED_KEYS[@]} aligned PARITY.md rows have a check, and no check outlived its row"
+    pass "coverage — all $ALIGNED_N aligned PARITY.md rows have a check, and no check outlived its row"
   unset _uncovered _orphan
 fi
 unset _slug _status _k
@@ -267,6 +290,7 @@ for _row in "${CHECKS[@]}"; do
   # asserted — a needle that cannot fail is worse than an honest skip.
   if [[ "$pneedle" == "-" ]]; then
     skip "$label — pwsh half is a PSReadLine default, not configuration in $pfile; nothing to grep (PARITY.md, Enforcement)"
+    UNASSERTED=$((UNASSERTED + 1))
     continue
   fi
   if _has "$WIN/$pfile" "$pneedle"; then
@@ -371,7 +395,11 @@ if ((DRIFT)); then
   exit 1
 fi
 if ((WIN_PRESENT)); then
-  pass "all aligned rows hold across zsh + pwsh"
+  if ((UNASSERTED)); then
+    pass "every CONFIGURED aligned row holds across zsh + pwsh; $UNASSERTED pwsh half/halves were reported, not asserted (framework defaults — see the skips above)"
+  else
+    pass "all aligned rows hold across zsh + pwsh"
+  fi
 else
   pass "all aligned rows hold on zsh (pwsh side skipped — clone dotfiles-Windows to verify)"
 fi

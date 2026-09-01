@@ -14812,6 +14812,106 @@ fi
 unset _mg_
 unset -f _mg_write _mg_count
 
+# ── F11. the parity coverage gate can actually fail (scripts/parity-check.sh) ──
+# parity-check.sh's whole claim after #682 is that PARITY.md's one-to-one contract is
+# PROVEN rather than promised. A gate nobody has watched fail is exactly the thing that
+# claim rejects, and the negative runs that justified it were done by hand on a branch —
+# which is a discipline, not a gate, and the second time this repo has learned that.
+#
+# HERMETIC FIXTURE, real script, real CHECKS array — the gen-theme F10 pattern. Only
+# PARITY.md varies between rows, so every verdict below is attributable to the coverage
+# logic and nothing else. dotfiles-Windows is deliberately absent from the fixture root,
+# so the pwsh half self-skips and cannot colour the result.
+hdr "parity coverage gate (scripts/parity-check.sh)"
+PCR="$SANDBOX/parityrepo"
+PCOUT="$SANDBOX/parity-run.out"
+
+# _pc_fixture <parity-md-path> — rebuild the fixture around a given PARITY.md, run the
+# real script in it, leave the output in $PCOUT and RETURN the script's exit code. Every
+# needled source is copied verbatim from the real tree, so the zsh half always holds and
+# only coverage can move the verdict.
+#
+# The rc comes back as this function's own exit status, not a variable it sets: callers
+# read the output via $PCOUT rather than command substitution, because a `$(...)` call
+# runs the function in a SUBSHELL and any rc it assigned there would never reach them.
+_pc_fixture() {
+  rm -rf "$PCR"
+  mkdir -p "$PCR/scripts/lib" "$PCR/zsh" "$PCR/theme" "$PCR/lib" "$PCR/fleet"
+  cp "$HERE/scripts/parity-check.sh" "$PCR/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$PCR/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$PCR/lib/" # common.sh sources it from the repo root
+  cp "$HERE/scripts/parity-aliases.txt" "$PCR/scripts/"
+  cp "$HERE/theme/palette.toml" "$PCR/theme/"
+  cp "$HERE"/zsh/{00-tools,20-aliases,25-git,30-functions,35-fzf,40-bindings}.zsh "$PCR/zsh/"
+  cp "$1" "$PCR/PARITY.md"
+  # --root at an EMPTY fleet dir, and $DOTFILES_ROOT stripped: the pwsh half must be
+  # absent by construction, not by accident of the caller's environment. Without this the
+  # rows below flip meaning under `make audit` (which exports DOTFILES_ROOT at the real
+  # fleet) versus a bare `make test` — a test whose verdict depends on who ran it.
+  env -u DOTFILES_ROOT "$PCR/scripts/parity-check.sh" --root "$PCR/fleet" --color never >"$PCOUT" 2>&1
+}
+
+# _pc_row <label> <expected-rc> <needle-in-output> <sed-program-against-PARITY.md>
+# An empty sed program means "the real contract, unmodified".
+_pc_row() {
+  local label="$1" want_rc="$2" want_txt="$3" prog="${4:-}"
+  local fx="$SANDBOX/parity-fixture.md" rc=0
+  if [[ -n "$prog" ]]; then sed "$prog" "$HERE/PARITY.md" >"$fx"; else cp "$HERE/PARITY.md" "$fx"; fi
+  _pc_fixture "$fx" || rc=$?
+  if ((rc == want_rc)) && grep -qF -- "$want_txt" "$PCOUT"; then
+    pass "parity coverage: $label"
+  else
+    fail "parity coverage: $label (rc=$rc, wanted $want_rc; output did not contain '$want_txt')"
+    grep -E "coverage|cross-shell" "$PCOUT" | sed 's/^/    /' >&2
+  fi
+}
+
+# The control. If this row ever goes red the fixture drifted from the real tree, and every
+# negative row below is meaningless — so it runs first.
+_pc_row "the real contract is fully covered" 0 \
+  "aligned PARITY.md rows have a check"
+
+# 1. An aligned row nobody enforces — the defect #682 was filed for. It must NAME the row:
+#    a bare count would send the reader diffing two lists by hand.
+_pc_row "an aligned row with no needle fails, and names it" 1 \
+  "no check behind them: clipboard-sync" \
+  's#^| Word nav |#| Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |\n| Word nav |#'
+
+# 2. The other direction: rename a Capability cell and its check no longer matches a row.
+#    Both halves of the mapping must fire — the old key orphans, the new row is uncovered.
+_pc_row "a renamed row orphans its check, and names the key" 1 \
+  "match no PARITY.md table row: session-picker" \
+  's#^| Session picker |#| Session chooser |#'
+
+# 3. Two rows slugifying alike would let one row's needle certify the other — coverage
+#    would read as complete while a row went untested. That is the #682 failure wearing a
+#    different hat, so it is a hard fail rather than a warning.
+_pc_row "two rows slugifying to one key fail" 1 \
+  "both slugify to \`theme\`" \
+  's#^| Word nav |#| Theme | x | y | `aligned` |\n| Word nav |#'
+
+# 4. The case the PR description got WRONG before review caught it: reclassifying a row
+#    does NOT orphan its check. `deliberate`/`gap` rows may keep one (see `cheat`), and
+#    only `aligned` rows are required to have one. Pinned here because the prose claimed
+#    otherwise in four places, and prose is what this gate exists to stop trusting.
+_pc_row "reclassifying an aligned row keeps its check valid" 0 \
+  "aligned PARITY.md rows have a check" \
+  's#^\(| Session picker |.*|\) `aligned` — jump-to-session both |#\1 `deliberate` — test |#'
+
+# 5. A pwsh half that is a framework default must be REPORTED, never certified. The
+#    summary line is the assertion: it may not say "all aligned rows hold" when a half was
+#    skipped. (Windows is absent from the fixture, so this pins the Core-side wording.)
+_pc_fixture "$HERE/PARITY.md" || true
+if grep -qF "pwsh side skipped" "$PCOUT"; then
+  pass "parity coverage: a run without dotfiles-Windows says so instead of claiming both shells"
+else
+  fail "parity coverage: a pwsh-less run did not qualify its summary — it certified a half it never read"
+fi
+
+rm -rf "$PCR"
+unset PCR PCOUT
+unset -f _pc_fixture _pc_row
+
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
 ((FAIL == 0)) || {

@@ -116,9 +116,18 @@ like `scripts/fleet-drift.sh`. The weekly `.github/workflows/parity-check.yml` c
 the table row it enforces, and the script parses *this file* to assert the mapping both
 ways: every `aligned` row here has at least one check, and every check names a row that
 exists. Adding an `aligned` row without a needle fails the gate; so does leaving a needle
-behind after its row is deleted or reclassified. A row may carry several checks — that is
-how the five utility functions and the three fuzzy-git verbs are each covered
-individually rather than by one needle standing in for the set.
+behind after its row is **renamed or deleted**, or wording two Capability cells so they
+collide, which would let one row's check certify the other. Reclassifying a row does *not*
+fail — a `deliberate` or `gap` row is allowed to keep its check, as `cheat` does; it is
+only `aligned` rows that must have one. A row may carry several checks, which is how the
+five utility functions, the three fuzzy-git verbs and the two word-nav directions are each
+covered individually rather than by one needle standing in for the set.
+
+The coverage this proves is **row-level, not claim-level**: a row whose cells name two
+triggers is not mechanically forced to carry two needles. That is exactly how `Alt+C` hid
+behind `Alt+Z`'s needle for years, so every multi-trigger row here now spends a needle per
+trigger — but adding a trigger to a row still means remembering to add its needle. Saying
+so is the point; a gate that overstated its reach a second time would be the same bug.
 
 This used to be a discipline ("add a check in the same change"), and disciplines do not
 hold. **Theme**, **History search**, **Word nav** and the five-function row were all
@@ -138,5 +147,6 @@ Two rows are deliberately honest about proving less than they look like they pro
 - **Word nav**'s pwsh half is a *PSReadLine default*, not configuration: nothing in
   `dotfiles-Windows` binds Ctrl+Arrow, so there is no string to grep. Its check asserts
   Core's half and reports the pwsh half as a skip carrying that reason, rather than
-  inventing a needle that would go green without proving anything.
+  inventing a needle that would go green without proving anything — and the closing summary
+  says how many halves were reported rather than asserted, instead of certifying them.
   dotgibson/dotfiles-Windows#231 tracks binding it explicitly.

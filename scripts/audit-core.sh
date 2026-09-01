@@ -1841,16 +1841,30 @@ unset _cr_gen _cr_out
 # THE EXIT CODES ARE THE CONTRACT, as in §9d: 1 = a real finding (drift or an uncovered
 # row), 2+ = the gate could not run, which must NOT be rendered as a clean contract.
 hdr "cross-shell parity (parity-check.sh)"
-_pc_out="$("$HERE/scripts/parity-check.sh" --quiet 2>&1)" && _pc_rc=0 || _pc_rc=$?
+# CORE_JSON=0 at the child boundary, deliberately. `audit --json` EXPORTS CORE_JSON=1 (see
+# the --json arm), which tells common.sh's skip() to print nothing — and the notices below
+# are read out of this child's output. Inheriting it would have made a --json run see no
+# skip lines and report a full zsh+pwsh pass on a box with no pwsh file: a gate reporting
+# more coverage than it had, which is the defect this whole section exists to end. The
+# child's stdout is captured either way, so nothing leaks into the JSON object on stdout.
+_pc_out="$(CORE_JSON=0 "$HERE/scripts/parity-check.sh" --quiet 2>&1)" && _pc_rc=0 || _pc_rc=$?
 if ((_pc_rc == 0)); then
-  # Say WHICH half ran. A bare pass here would read as "zsh and pwsh agree" on a box
-  # that never opened a pwsh file — the same overclaim the contract itself was making.
-  # Match the SKIP notice, not the closing summary: --quiet suppresses `pass` lines, so
-  # the summary is not in $_pc_out at all, while `skip` prints regardless (common.sh).
+  # Report the coverage half (Core-only, always runs) SEPARATELY from the cross-repo half,
+  # and re-emit the child's partial results rather than folding them into one green line.
+  # A bare pass here would read as "zsh and pwsh agree" on a box that never opened a pwsh
+  # file — the same overclaim the contract itself was making.
+  pass "parity coverage — every aligned PARITY.md row has a check behind it"
   if [[ "$_pc_out" == *"dotfiles-Windows not checked out"* ]]; then
-    pass "parity contract holds on zsh, and every aligned PARITY.md row has a check (pwsh side skipped — no sibling dotfiles-Windows)"
+    # skip_env, not skip: this is a coverage gap the BOX could not cover (no sibling repo),
+    # so --require-siblings can redden it, exactly like §5f/§9c's fleet-wide gates.
+    skip_env "cross-shell parity: dotfiles-Windows not checked out — the pwsh half was NOT verified"
   else
-    pass "parity contract holds across zsh + pwsh, and every aligned PARITY.md row has a check"
+    pass "parity contract holds across zsh + pwsh"
+  fi
+  # A pwsh half that is a framework default is reported by the child as a skip and must stay
+  # a skip HERE too; swallowing it would re-certify the one thing the child refused to.
+  if [[ "$_pc_out" == *"nothing to grep"* ]]; then
+    skip "cross-shell parity: $(printf '%s\n' "$_pc_out" | grep -c "nothing to grep") pwsh half/halves are framework defaults — reported by parity-check.sh, not asserted"
   fi
 elif ((_pc_rc == 1)); then
   fail "cross-shell parity — an aligned PARITY.md row is unenforced or has drifted; run: make parity-check"
