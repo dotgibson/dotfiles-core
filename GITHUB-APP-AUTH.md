@@ -155,8 +155,9 @@ jobs:
       # empty, the `if:` is false, and the mint is ALWAYS skipped.
       HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
     steps:
-      # Gated on BOTH the variable and the key. Either one missing skips the step — and a
-      # skipped mint has nothing to fall back to, so guard for it below.
+      # Gated on BOTH the variable and the key. Either one missing skips the step, and a
+      # skipped mint has nothing to fall back to — the guard in the next step is what turns
+      # that into a legible outcome instead of an opaque 401 later.
       - name: Mint a scoped installation token
         id: app
         if: vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
@@ -166,6 +167,13 @@ jobs:
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: dotfiles-Offense # scope to the one target this job writes to
+          # SCOPE THE PERMISSIONS TOO. `repositories:` narrows WHICH repos; it does not
+          # narrow WHAT the token may do. Omit these and the token carries the
+          # installation's FULL grant set — Contents + Pull requests + Workflows write —
+          # on that repo, however little this job needs. Request only the verbs used:
+          permission-contents: write
+          # permission-pull-requests: write   # only if the job opens a PR
+          # permission-workflows: write       # only if it pushes .github/workflows/*
 
       # Read the token inline in `env:` — never via $GITHUB_OUTPUT, where it can surface
       # in logs. A secret in `env` is masked. There is NO `|| secrets.…` fallback: the
@@ -173,6 +181,16 @@ jobs:
       - name: Do the cross-repo thing
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          # THE GUARD. Pick ONE of these two and delete the other — an empty token here
+          # otherwise surfaces as an opaque auth failure somewhere downstream.
+          if [ -z "${GH_TOKEN:-}" ]; then
+            # (a) this work can wait for the next run:
+            echo "::warning::fleet App auth not configured here — skipping"; exit 0
+            # (b) or it must not half-run:
+            # echo "::error::no fleet token — refusing to continue"; exit 1
+          fi
 ```
 
 **Handle the two outcomes separately** — they are different failures and want different

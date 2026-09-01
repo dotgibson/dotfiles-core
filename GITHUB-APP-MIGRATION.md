@@ -30,10 +30,16 @@ deleted; this is the record of what the App had to take over:
 
 Both were the same anti-pattern: a **single broad token**, held as a secret in many repos,
 expiring on a date nobody was watching. A GitHub App fixes all three problems at once —
-tokens are **minted per run**, **scoped to the permissions** each job needs (and, where the
-job passes `repositories:`, to just its target), and **expire in ~1 hour**, so a leak or a
-missed rotation is bounded. The fan-out is the deliberate exception — it omits
-`repositories:` and takes an installation-wide token; see the reference for why.
+tokens are **minted per run**, **scoped by repository** where the job passes
+`repositories:`, and **expire in ~1 hour**, so a leak or a missed rotation is bounded. The
+fan-out is the deliberate exception — it omits `repositories:` and takes an
+installation-wide token; see the reference for why.
+
+**What the rollout did NOT narrow, and this record should not imply it did:** none of the
+migrated jobs passes `permission-*` inputs, so every minted token carries the
+**installation's full grant set** (Contents + Pull requests + Workflows write) on whatever
+repositories it covers. The bound achieved was lifetime and repository reach, not verbs.
+Tightening that is #830.
 
 ## The rollout, as planned
 
