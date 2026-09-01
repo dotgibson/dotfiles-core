@@ -6733,7 +6733,9 @@ if have git; then
     fail "gen-aliases: an unterminated block was not reported as 2"
   fi
   _ga_fixture && _ga_run >/dev/null
-  sed -i.bak '/core:aliases:\(gen\|end\) git-stash/d' "$GAR/aliases.md" && rm -f "$GAR/aliases.md.bak"
+  # Two -e expressions, not \(gen\|end\): BSD sed (the macOS leg) has no \| alternation, and
+  # a delete that silently matches nothing turns this row green on the wrong answer.
+  sed -i.bak -e '/core:aliases:gen git-stash/d' -e '/core:aliases:end git-stash/d' "$GAR/aliases.md" && rm -f "$GAR/aliases.md.bak"
   _ga_miss_out="$(_ga_out --check)"
   if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'registered block is missing: git-stash' <<<"$_ga_miss_out"; then
     pass "gen-aliases: a registered block whose region was deleted is caught by name"
