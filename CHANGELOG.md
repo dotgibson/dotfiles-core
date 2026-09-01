@@ -29,7 +29,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   deliberately kept: the sentence narrating the v4→v5 cut, which would be falsified by
   bumping it.
 
-
 - **The "no dispatch token" warning names the missing credential, not the App's behaviour (#823).**
   Both dispatchers warned `the fleet App minted no token here` when `TOKEN` was empty. The
   mint cannot do that: it is gated on `vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'`,
