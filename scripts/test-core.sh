@@ -2156,6 +2156,71 @@ if [[ -r "$HERE/core.version" ]]; then
   unset _wfr_now
 fi
 
+# ── caller-example major guard (common.sh :: _core_workflow_example_hits) ────
+# Sibling of the ref-major guard above, and tested the same way: against the REAL
+# regression, not only fixtures. #821 is the case — 25 `@v5` references survived the
+# v5 → v6 cut while every `ref:` moved correctly, so the guard above stayed green while
+# six copyable caller examples pointed at a retired major.
+#
+# The negative cases matter as much as the positive ones here. Legitimate historical `vN`
+# prose exists in these files and MUST NOT be flagged; a guard that reds on a true
+# sentence would train the next person to falsify it.
+hdr "caller-example major guard (_core_workflow_example_hits)"
+_wfe_="$SANDBOX/wfexample"
+mkdir -p "$_wfe_/.github/workflows"
+_wfe_reset() { rm -f "$_wfe_"/.github/workflows/*.yml "$_wfe_"/.github/workflows/*.yaml 2>/dev/null || :; }
+_wfe_write() { _wfe_reset; printf '%s\n' "$2" >"$_wfe_/.github/workflows/$1"; }
+_wfe_count() {
+  local got n
+  got="$(_core_workflow_example_hits "$_wfe_" "$2")"
+  n=0
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$3" ]]; then
+    pass "caller-example major: $1"
+  else
+    fail "caller-example major: $1 (got $n finding(s), want $3)"
+  fi
+}
+
+_wfe_write a.yml '#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v5'
+_wfe_count "a commented example on a foreign major is a finding" 6 1
+
+_wfe_write a.yml '#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v6'
+_wfe_count "a commented example on the current major is clean" 6 0
+
+# THE CASE THAT DECIDES THE DESIGN. These are the real surviving sentences from
+# claude-routines-call.yml and lint-call.yml. A blanket @vN scan reds on all of them and
+# would push someone to rewrite true history.
+_wfe_write a.yml '          # every caller moved to `@v5`, so the workflow body was v5 and the scripts it
+          # majors of fixes stale; at v4→v5 it was left on `v4` (frozen at v4.19.0) while
+      - name: os.capabilities (schema — Core v5 #663/#667)
+            echo "no vendored $chk — this core/ predates the v5 capability schema"'
+_wfe_count "historical vN prose is NOT judged (no workflow path)" 6 0
+
+# A live `uses:` is check-modern.sh business, not this gate: only comments are read.
+_wfe_write a.yml '    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v5'
+_wfe_count "an uncommented uses: is out of scope (check-modern owns pinning)" 6 0
+
+# Prose that names the path without a `uses:` key is still a copyable instruction.
+_wfe_write a.yml '# call this via `dotgibson/dotfiles-core/.github/workflows/notify-failure-call.yml@v5`'
+_wfe_count "a path in prose counts, not only a uses: line" 6 1
+
+_wfe_write a.yml '#  a@v5 b@v5 dotgibson/dotfiles-core/.github/workflows/x.yml@v4 and .../y.yml@v5'
+_wfe_count "only the workflow-path form matches, and every occurrence on the line" 6 1
+
+_wfe_reset
+# And the tree as it stands must be clean against its own core.version — the gate running
+# on itself, exactly as CI will.
+if [[ -r "$HERE/core.version" ]]; then
+  _wfe_now="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+  if [[ -z "$(_core_workflow_example_hits "$HERE" "$_wfe_now")" ]]; then
+    pass "caller-example major: this tree documents @v$_wfe_now everywhere (matches core.version)"
+  else
+    fail "caller-example major: this tree documents a foreign major"
+  fi
+  unset _wfe_now
+fi
+
 # ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
 # WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
 # extraction, every verdict here comes from git: is the path tracked, and which .gitignore

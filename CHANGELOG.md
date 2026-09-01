@@ -14,6 +14,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`make audit` gates the reusable workflows' documented caller examples (§8a-bis, #821).**
+  §8a proves the `ref:` keys name the right major. It does not read comments — so at
+  v5 → v6 every ref moved correctly while 25 `@v5` references survived in the prose
+  describing them, including the copyable `uses:` examples six `*-call.yml` headers hand
+  to OS-repo maintainers. Nothing failed, because nothing was wrong in the code; anyone
+  standing up a caller from one simply pinned a retired major. Same silent shape §8a
+  exists to end, one level up, so it gets the same answer: `_core_workflow_example_hits`
+  compares every documented example against `core.version` and fails the audit on a
+  mismatch. Scoped to a full `dotfiles-core/.github/workflows/<file>@vN` path, which is
+  always a copyable reference and never narrative — a blanket `@vN` scan would be **worse
+  than no gate**, because it reds on the true historical sentences (`claude-routines-call.yml`
+  narrating the v4→v5 cut; `lint-call.yml` naming the release the os.capabilities schema
+  landed in) and would train the next person to falsify them. Bare prose like "pinned to
+  v5" is deliberately not judged: indistinguishable from that history without a marker
+  convention this does not earn. Tested against the real #821 regression, not only
+  fixtures, per the rule the sibling guard records.
+
 ### Fixed
 
 - **The reusable workflows' caller examples pinned `@v5`, a major behind the tree (#821).**

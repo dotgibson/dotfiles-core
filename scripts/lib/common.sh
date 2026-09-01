@@ -1156,6 +1156,69 @@ _core_workflow_ref_hits() { # _core_workflow_ref_hits <repo-root> <expected-majo
   done
 }
 
+# ── _core_workflow_example_hits: a DOCUMENTED caller example on a foreign major ──
+# _core_workflow_example_hits <repo-root> <expected-major> — print every commented
+# caller example in .github/workflows/ that names a dotfiles-core reusable workflow at
+# `@vN` where N is not the current major. Silence = clean.
+#
+# WHY THIS EXISTS, and why _core_workflow_ref_hits was not enough. That guard reads
+# `ref:` KEYS and proves the workflow checks Core out at the right major. It does not
+# read comments — so at v5 → v6 every `ref:` moved correctly and TWENTY-FIVE `@v5`
+# references survived in the prose describing them (#821), including the copyable
+# `uses:` examples in six `*-call.yml` headers. Nothing failed, because nothing was
+# wrong in the code. An OS repo maintainer standing up a new caller from one of those
+# examples pins a RETIRED major, and the resulting drift is exactly the silent kind
+# _core_workflow_ref_hits was built to end.
+#
+# The sharpest illustration is claude-routines-call.yml, where the comment warning that
+# this line "has now gone stale twice" sat directly above a correct `ref: v6` while
+# itself saying `@v5`. Same defect, one level up, inside its own warning — which is the
+# lesson both sibling helpers already record: a comment is not a gate.
+#
+# SCOPE IS A WORKFLOW PATH, NOT EVERY `@vN`. It matches only
+# `dotfiles-core/.github/workflows/<file>@vN` — a string that is always a copyable
+# caller reference and never narrative. That distinction is load-bearing, because
+# legitimate historical `vN` prose exists and MUST NOT be judged:
+#
+#   · claude-routines-call.yml narrates the v4→v5 cut ("every caller moved to `@v5`").
+#   · lint-call.yml names the release the os.capabilities schema landed in (Core v5),
+#     and the repos whose vendored core/ predates it.
+#
+# Bumping any of those would state something false, so a blanket `@vN` scan would be
+# WORSE than no gate: it would train the next person to "fix" true sentences. The path
+# anchor makes the match unambiguous without an allowlist to drift.
+#
+# WHAT IT DELIBERATELY DOES NOT CATCH. Bare prose ("pinned to v5", "only when v5
+# moves") is not judged — it is indistinguishable from the historical sentences above
+# without a marker, and this gate is not worth a marker convention. That prose is a
+# human review question; the actively harmful case, a copyable example pinning a dead
+# major, is the one made executable here.
+_core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expected-major>
+  local root="${1:-.}" want="${2:-}" f
+  [ -n "$want" ] || return 0
+  [ -d "$root/.github/workflows" ] || return 0
+  for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
+    [ -f "$f" ] || continue
+    awk -v want="$want" -v file="${f#"$root"/}" '
+      # COMMENT LINES ONLY. A live `uses:` belongs to check-modern.sh, which owns
+      # pinning policy; this gate is about the example a human copies.
+      /^[[:space:]]*#/ {
+        line = $0
+        while (match(line, /dotfiles-core\/\.github\/workflows\/[A-Za-z0-9._-]+@v[0-9]+/)) {
+          ref = substr(line, RSTART, RLENGTH)
+          ver = ref
+          sub(/^.*@v/, "", ver)
+          if (ver != want) {
+            printf "%s:%d: caller example pins @v%s, but core.version is major v%s\n", \
+              file, NR, ver, want
+          }
+          line = substr(line, RSTART + RLENGTH)
+        }
+      }
+    ' "$f"
+  done
+}
+
 # ── _core_make_gate_hits: local gates that cannot do what their name says ─────
 # _core_make_gate_hits <repo-root> — print every Makefile gate in <repo-root> that
 # announces a check it does not perform. Silence = clean. Output is `Makefile:LINE: msg`.
