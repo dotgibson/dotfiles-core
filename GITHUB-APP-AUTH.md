@@ -208,7 +208,8 @@ API generates none regardless).
 **Rollback is not a toggle — there is nothing to fall back to.** Unsetting `FLEET_APP_ID`
 does **not** restore service: it disables the mint, and with the PATs gone that means
 `sync-fanout.yml`'s preflight fails the fan-out outright and the `notify-web` dispatch
-degrades to `::warning::the fleet App minted no token here — skipping showcase refresh`.
+degrades to `::warning::fleet App auth not configured here … — skipping showcase refresh`
+(the reusable's wording names the caller's missing key instead — #823).
 Recovering off the App is a deliberate **re-provisioning**, not a switch — and doing it
 during an incident is the worst time to discover that, which is why this says so here:
 

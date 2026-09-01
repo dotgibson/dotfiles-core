@@ -131,8 +131,10 @@ jobs:
           # the OLD set, so every fan-out keeps failing with the same message until it is
           # accepted. Confirm on Install App → ⚙ → Permissions; don't assume it took.
 
-      # ── Fail early and legibly if the App minted no token — otherwise the first
-      # clone/push would fail with an opaque 403. ──
+      # ── Fail early and legibly if the mint above was SKIPPED (no FLEET_APP_ID variable
+      # or no FLEET_APP_PRIVATE_KEY secret) — otherwise the first clone/push would fail with
+      # an opaque 403. An ATTEMPTED mint that fails errors inside create-github-app-token
+      # and never reaches here, so an empty token below has exactly one cause. ──
       - name: Preflight — a fleet write token is available
         if: steps.resolve.outputs.skip != 'true'
         env:

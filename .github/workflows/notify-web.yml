@@ -73,8 +73,14 @@ jobs:
           EVENT_TYPE: ${{ github.event_name == 'release' && 'core-release' || 'refresh' }}
         run: |
           set -euo pipefail
+          # An empty TOKEN can only mean the mint step above was SKIPPED — its `if:` found
+          # no FLEET_APP_ID variable or no FLEET_APP_PRIVATE_KEY secret. A mint that is
+          # ATTEMPTED and fails errors inside create-github-app-token, failing the job
+          # before this step runs, so it never reaches this branch. Name the missing
+          # credentials rather than the App's behaviour: with no PAT fallback left, this
+          # warning is the only signal that this repo has silently stopped refreshing.
           if [ -z "${TOKEN:-}" ]; then
-            echo "::warning::the fleet App minted no token here — skipping showcase refresh"
+            echo "::warning::fleet App auth not configured here (no FLEET_APP_ID variable or FLEET_APP_PRIVATE_KEY secret) — skipping showcase refresh"
             exit 0
           fi
           curl -fsS -X POST \
