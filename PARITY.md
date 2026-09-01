@@ -127,7 +127,8 @@ and `Alt+C` was listed as an aligned dir-jump binding that **neither** shell has
 had — zsh never binds `^[c` and never sources fzf's own key-bindings, and
 `dotfiles-Windows` sets only PSFzf's provider and reverse-history chords. #679 added
 Theme's check; #682 added the rest, removed the `Alt+C` fiction, and made the claim
-mechanical.
+mechanical. Whether an `Alt+C` subdirectory picker is wanted on both shells for real is
+tracked as #808 — a feature, not a contract repair.
 
 Two rows are deliberately honest about proving less than they look like they prove:
 
@@ -138,3 +139,4 @@ Two rows are deliberately honest about proving less than they look like they pro
   `dotfiles-Windows` binds Ctrl+Arrow, so there is no string to grep. Its check asserts
   Core's half and reports the pwsh half as a skip carrying that reason, rather than
   inventing a needle that would go green without proving anything.
+  dotgibson/dotfiles-Windows#231 tracks binding it explicitly.

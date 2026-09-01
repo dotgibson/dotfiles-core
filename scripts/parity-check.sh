@@ -105,7 +105,8 @@ CHECKS=(
   # KEY-ANCHORED, like the Ctrl+T row above. This needled the bare `_fzf_zoxide_jump`
   # until #682 — which a rebind to a different key, or a mere COMMENT naming the widget,
   # passed unchanged. The row's claim is about the key, so the needle is too. The same
-  # row also claimed `Alt+C`, which neither shell has ever bound; that half is gone.
+  # row also claimed `Alt+C`, which neither shell has ever bound; that half is gone. #808
+  # tracks whether the capability is wanted for real (it is a two-repo change).
   "dir-jump|zoxide jump on Alt+Z|zsh/40-bindings.zsh|'^[z' _fzf_zoxide_jump|powershell/core/10-tools.ps1|-Chord 'Alt+z'"
   "session-picker|sessionizer on Ctrl+G|zsh/40-bindings.zsh|_tmux_sessionizer|powershell/core/10-tools.ps1|Invoke-DotfilesSessionizer"
   "autosuggest-toggle|autosuggest/prediction toggle on Ctrl+\\|zsh/40-bindings.zsh|'^\\' autosuggest-toggle|powershell/core/10-tools.ps1|-Chord 'Ctrl+\\'"
@@ -113,7 +114,8 @@ CHECKS=(
   # dotfiles-Windows binds Ctrl+Arrow — 10-tools.ps1's "Ctrl+arrow word movement" comment
   # sits directly above a line that sets Tab. There is no string to grep, so this asserts
   # Core's half and SKIPS pwsh's with the reason, rather than inventing a needle that
-  # would go green without proving anything. Filed against dotfiles-Windows to bind it.
+  # would go green without proving anything. dotgibson/dotfiles-Windows#231 tracks binding
+  # it explicitly, which would upgrade this skip into a real assertion.
   "word-nav|word nav on Ctrl+left/right|zsh/40-bindings.zsh|'^[[1;5C' forward-word|powershell/core/10-tools.ps1|-"
   # One needle per function, not one standing in for five: the row named `extract`,
   # `mkbak`, `serve`, `fif`, `fbr` and nothing tested ANY of them until #682.
