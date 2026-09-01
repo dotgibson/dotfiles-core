@@ -43,7 +43,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   back, which is the state G2 removed, and worse than pre-G2 because `token-health` — the
   probe that watched those PATs for silent expiry — was retired on the grounds that minted
   tokens cannot expire. Nothing watches a re-provisioned PAT, so the procedure now says so
-  and prescribes reversing all six steps, deleting the PATs, and verifying it.
+  and prescribes reversing all seven steps, deleting the PATs, and verifying it.
 
 ### Added
 

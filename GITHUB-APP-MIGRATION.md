@@ -74,13 +74,14 @@ In the order it happened:
 
 ### The one step still outstanding
 
-The migration is complete except for removing `notify-web-call.yml`'s declared
-`WEBHOOK_SECRET` input, which waits for the next MAJOR.
+**As of this record (2026-09-01)**, the migration was complete except for removing
+`notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which was deferred to a MAJOR.
 
-**That is a live constraint, so it is documented in the reference, not here** — see
-*One live constraint* in [`GITHUB-APP-AUTH.md`](GITHUB-APP-AUTH.md). Recording it in a
-frozen file would be the exact drift this split exists to prevent: a current rule kept
-where nothing obliges it to stay true.
+**Whether that has since happened is not recorded here, deliberately.** A frozen file
+stating "waits for the next MAJOR" goes stale the moment that MAJOR ships — the exact
+drift this split exists to prevent. For the current status and the condition on removal,
+see *One live constraint* in [`GITHUB-APP-AUTH.md`](GITHUB-APP-AUTH.md); if that section
+is gone, the removal has landed.
 
 ## What this cost, and what stops a repeat
 

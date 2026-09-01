@@ -275,14 +275,23 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
    procedure must survive the removal.
 5. **Publish the reusable change, or the callers will never see it.** This is the step
    that is easy to miss and silently wastes the whole procedure. Callers do not execute
-   `notify-web-call.yml` from `main` — eight run it at the **moving `@v6` tag** and
-   `dotfiles-MacBook` at a **SHA pin**. Edits to steps 3-4 sit on `main`, invisible to
-   every one of them. Until this lands, step 6 hands the reusable a secret that the
-   version actually running still ignores, and step 7 then removes the App token that was
-   holding the dispatch up — so the dispatch path goes dark fleet-wide with everything
-   *looking* restored. Either:
-   - **cut a Core release**, which advances `@v6` (see `RELEASE-RUNBOOK.md`) — the normal
-     path, and it still leaves `dotfiles-MacBook` needing a pin bump; or
+   `notify-web-call.yml` from `main`. Most track the **moving `@vN` alias**, where `N` is
+   the current major — read it from `core.version`, do not assume the one written here —
+   and at least one (`dotfiles-MacBook` today) uses a **SHA pin** instead. Derive the
+   current shape rather than trusting this paragraph:
+
+   ```sh
+   # who calls it, and at what ref
+   grep -rn 'notify-web-call.yml@' ../dotfiles-*/.github/workflows/ 2>/dev/null
+   ```
+
+   Edits to steps 3-4 sit on `main`, invisible to every one of them. Until this lands,
+   step 6 hands the reusable a secret that the version actually running still ignores, and
+   step 7 then removes the App token that was holding the dispatch up — so the dispatch
+   path goes dark fleet-wide with everything *looking* restored. Either:
+   - **cut a Core release**, which advances the current `@vN` alias (see
+     `RELEASE-RUNBOOK.md`) — the normal path, and it still leaves any SHA-pinned caller
+     needing a pin bump; or
    - **temporarily repoint the callers** at the recovery commit (`@<sha>`), which is
      faster in an incident and is undone by the cleanup below.
 
@@ -305,7 +314,7 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
 
 ### Getting back off the PATs — do not skip this
 
-The state the six steps leave you in **is the state G2 existed to remove**: broad,
+The state the seven steps leave you in **is the state G2 existed to remove**: broad,
 long-lived, hand-rotated credentials in many repos. It is worse than the pre-G2 state in
 one respect — `token-health.yml`, the weekly probe that watched those PATs for silent
 expiry, was retired precisely because minted tokens cannot expire, and it is **not coming
@@ -324,9 +333,10 @@ Treat the workaround as time-boxed:
      again** — otherwise the cleanup silently reinstates the very declaration that MAJOR
      was cut to retire, and the next reader finds a deprecated secret back in the contract
      with no record of why.
-  4. **Re-publish** (step 5): advance `@v6` with a release, or unpin any callers you
-     repointed at a recovery SHA. Skipping this leaves callers running the recovery
-     workflow indefinitely.
+  4. **Re-publish** (step 5): advance the current `@vN` alias with a release, or unpin any
+     callers you repointed at a recovery SHA. Use the same derivation as step 5 — if the
+     recovery spanned a MAJOR, the alias callers now track is not the one you started on.
+     Skipping this leaves callers running the recovery workflow indefinitely.
   5. **Delete the PATs** — from every repo and from the org. Verify with the listing
      command in *What the fleet runs today*; a forgotten PAT is a live credential nothing
      is monitoring.
