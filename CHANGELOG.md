@@ -16,7 +16,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
-- **The reusable workflows' caller examples pinned `@v5`, two majors after the fact (#821).**
+- **The reusable workflows' caller examples pinned `@v5`, a major behind the tree (#821).**
   Core is v6 and the fleet's callers are on `@v6`, but 25 `@v5` references survived across
   six `*-call.yml` files — including the copyable `uses:` examples in their headers, so
   anyone standing up a new caller from one landed on a retired major. Every actual `ref:` was
