@@ -16,6 +16,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The reusable workflows' caller examples pinned `@v5`, a major behind the tree (#821).**
+  Core is v6 and the fleet's callers are on `@v6`, but 25 `@v5` references survived across
+  six `*-call.yml` files — including the copyable `uses:` examples in their headers, so
+  anyone standing up a new caller from one landed on a retired major. Every actual `ref:` was
+  already `v6`; only the prose describing it had drifted, which is why nothing failed.
+  `audit-core.sh` §8a validates `ref:` lines against `core.version` and does not read
+  comments, so the gate that exists for precisely this class of error could not see it.
+  The sharpest illustration is `claude-routines-call.yml`, where the comment warning that
+  this line "has now gone stale twice" sat directly above a correct `ref: v6` while itself
+  saying `@v5` — the same drift, one level up, inside its own warning. One `@v5` is
+  deliberately kept: the sentence narrating the v4→v5 cut, which would be falsified by
+  bumping it.
+
 - **The "no dispatch token" warning names the missing credential, not the App's behaviour (#823).**
   Both dispatchers warned `the fleet App minted no token here` when `TOKEN` was empty. The
   mint cannot do that: it is gated on `vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'`,
