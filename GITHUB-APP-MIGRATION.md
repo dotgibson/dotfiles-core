@@ -71,15 +71,13 @@ In the order it happened:
 
 ### The one step still outstanding
 
-`notify-web-call.yml` still **declares** a `WEBHOOK_SECRET` secret input, under
-`on.workflow_call.secrets`. Nothing reads it.
+The migration is complete except for removing `notify-web-call.yml`'s declared
+`WEBHOOK_SECRET` input, which waits for the next MAJOR.
 
-It cannot simply be deleted. Consumers pin the **moving `@v6` alias**, so the removal
-reaches them the moment `make publish` advances `v6`, and a caller passing a secret the
-reusable no longer declares is a workflow error. The nine OS-repo callers have now stopped
-passing it (#819), which unblocks the removal — but it still waits for the **next MAJOR**,
-because anything pinned to an older `@v6` commit would break in the window. Same hazard
-`RELEASE-RUNBOOK.md` §2 records as *the caller bump MUST precede the fan-out merge*.
+**That is a live constraint, so it is documented in the reference, not here** — see
+*One live constraint* in [`GITHUB-APP-AUTH.md`](GITHUB-APP-AUTH.md). Recording it in a
+frozen file would be the exact drift this split exists to prevent: a current rule kept
+where nothing obliges it to stay true.
 
 ## What this cost, and what stops a repeat
 

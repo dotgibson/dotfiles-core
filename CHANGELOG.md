@@ -34,7 +34,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   coupling is what let a live instruction rot when the history around it changed — and the
   numbered `Step N` headings are gone in favour of named sections, because the one inbound
   cross-reference in `sync-fanout.yml` pointed at "Step 1" and would have silently aimed
-  at the wrong place.
+  at the wrong place. The still-open constraint on `notify-web-call.yml`'s declared
+  `WEBHOOK_SECRET` input lives in the **reference**, not the record: it is a current rule
+  about a future change, and keeping it in a file marked frozen would be the same drift
+  the split removes.
 
 ### Added
 

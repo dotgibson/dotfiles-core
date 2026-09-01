@@ -104,18 +104,28 @@ external action — must be **pinned to a 40-hex commit SHA** (the modernization
 Actions API to look it up:
 
 ```sh
-gh api repos/actions/create-github-app-token/git/refs/tags/v2 --jq .object.sha
+gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha
 # (dereference to the commit if it returns an annotated-tag object)
 ```
+
+Every consumer in this repo is on **v3.2.0**
+(`bcd2ba49218906704ab6c1aa796996da409d3eb1`) — match them unless you are deliberately
+moving the fleet, in which case move them together.
 
 Then, in the job:
 
 ```yaml
+jobs:
+  your-job:
+    env:
+      # A secret cannot be tested in a step `if:`, but an env DERIVED from a secret
+      # comparison can — and it never exposes the key, since the value is just
+      # 'true'/'false'. The mint below gates on this. Omit it and `env.HAS_APP_KEY` is
+      # empty, the `if:` is false, and the mint is ALWAYS skipped.
+      HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
     steps:
-      # Gated on BOTH the variable and the key. A secret cannot be tested in a step `if:`,
-      # so derive a presence flag in the job env (HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }})
-      # and test that. Either one missing skips the step — and a skipped mint has nothing
-      # to fall back to, so guard for it below.
+      # Gated on BOTH the variable and the key. Either one missing skips the step — and a
+      # skipped mint has nothing to fall back to, so guard for it below.
       - name: Mint a scoped installation token
         id: app
         if: vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
@@ -146,6 +156,22 @@ responses:
   later guard, and you should not try to: a configured App that cannot reach its target is
   a misconfiguration, not something to swallow.
 
+## One live constraint: the reusable's declared `WEBHOOK_SECRET`
+
+`notify-web-call.yml` still **declares** a `WEBHOOK_SECRET` secret input, under
+`on.workflow_call.secrets`. **Nothing reads it** — it is not part of the auth described
+above, and no caller should pass it.
+
+It is documented here, in the live reference rather than the historical record, because it
+is a **current constraint on a future change**: it cannot be deleted until the next MAJOR.
+Consumers pin the moving `@v6` alias, so removing it reaches them the moment `make publish`
+advances `v6`, and a caller passing a secret the reusable no longer declares is a workflow
+error. The nine OS-repo callers have stopped passing it (#819), which unblocks the removal;
+anything still pinned to an older `@v6` commit is why it waits. Same hazard
+`RELEASE-RUNBOOK.md` §2 records as *the caller bump MUST precede the fan-out merge*.
+
+**Do not remove it as tidy-up.** It comes out on a MAJOR, deliberately.
+
 ## Recovery — re-provisioning off the App
 
 **This is not a toggle, and unsetting `FLEET_APP_ID` does not restore service.** It
@@ -170,16 +196,25 @@ five steps are ONE change — doing part of it looks like a rollback and does no
    that dispatches (Core, the nine OS repos, and `dotfiles-Windows`); `FLEET_SYNC_TOKEN` by
    `dotfiles-core` and `htpx`. An org secret set to *all repositories* is the one option
    that cannot half-apply.
-3. **Restore the fallback expressions**, replacing each bare read with the two-sided form:
+3. **Restore the fallback expressions**, replacing each bare read with the two-sided
+   form. **The two paths take different secrets — copying one into the other restores the
+   wrong credential:**
 
    ```yaml
+   # sync-fanout.yml (Core and htpx) — the cross-repo write path.
+   # Also the git credential rewrite: GIT_CONFIG_VALUE_0 and friends take the same form.
    env:
      GH_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
+     FLEET_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
    ```
 
-   The same expression goes wherever the token is consumed, including the git credential
-   rewrite (`GIT_CONFIG_VALUE_0` and friends). Inline in `env:`, for the masking reason
-   above.
+   ```yaml
+   # notify-web.yml and notify-web-call.yml — the dispatch path.
+   env:
+     TOKEN: ${{ steps.app.outputs.token || secrets.WEBHOOK_SECRET }}
+   ```
+
+   Inline in `env:`, for the masking reason above.
 4. **Restore each caller's `secrets:` mapping.** A reusable workflow does **not** inherit
    its caller's secrets: `notify-web-call.yml` sees only what the caller hands it, and
    `release.yml` passes `FLEET_APP_PRIVATE_KEY` alone. Restoring the expression inside the
