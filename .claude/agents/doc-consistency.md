@@ -23,11 +23,13 @@ truth and compare:
   `blib_link_core` (`lib/bootstrap-lib.sh`) must agree on what Core ships, where it
   lands, and that something actually links it. The README documents behaviour rather
   than inventory — it has no layout tree, so do not audit against one.
-- **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's
-  `aliases.md` ↔ `zsh/20-aliases.zsh` + `zsh/25-git.zsh`; each role repo's `aliases.md`
-  ↔ its own source (`dotfiles-Offense/aliases.md` ↔ `offensive/offensive.zsh`,
-  `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`). Documented entries must
-  exist; notable source aliases/helpers should be documented.
+- **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's tables are
+  GENERATED (`scripts/gen-aliases.sh`, gated by `make audit` §9g), so there only the
+  hand-written prose around the `<!-- core:aliases:gen … -->` blocks can drift — read
+  that prose against the source; do not re-audit the tables. Each role repo's
+  `aliases.md` is still hand-kept ↔ its own source (`dotfiles-Offense/aliases.md` ↔
+  `offensive/offensive.zsh`, `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`):
+  documented entries must exist; notable source aliases/helpers should be documented.
 - **`PORTING-MATRIX.md` ↔ each OS repo.** Per distro, compare the matrix's commands
   and package names against that repo's `install/packages.txt` and `os/<distro>.zsh`.
 - **Vendored `core/` freshness.** Each OS repo's `core.lock` (`core_sha`,

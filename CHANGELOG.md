@@ -81,6 +81,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and **Upstream sync** as `deliberate` — Windows replicates Core rather than vendoring
   `core/`, so there is no subtree to push.
 
+- **`aliases.md`'s tables are generated from the zsh sources and gated by `make audit`
+  (§9g, #685).** ~200 of the cheat sheet's lines were a hand-copy of data the shell
+  already held — the `alias` lines in `zsh/20-aliases.zsh` and `zsh/25-git.zsh`, the
+  `hash -d` named directories, the `_core_help` one-liners in `zsh/30-functions.zsh` — and
+  the doc said its function descriptions "are the same one-liners those surfaces print".
+  One already wasn't: `mkcd` was described three ways in three places. A sentence is not a
+  gate, so this is `theme/palette.toml` → `gen-theme.sh` applied to the cheat sheet.
+  `scripts/gen-aliases.sh` renders every table between a `<!-- core:aliases:gen … -->`
+  marker pair straight from the sources: _Expands To_ is the alias value **verbatim**
+  (`$BAT_BIN --paging=never`, `git checkout "$(git_main_branch)"` — what the shell holds,
+  not a paraphrase), _Requires_ is the `HAVE_*` flag guarding it, _Note_ is the alias
+  line's trailing comment, and _Does_ is the `_core_help` description — so the
+  `core-status` / `core-whatsnew` rows shrink to the one-liner `--help` prints, which is
+  what makes the doc's claim true. Which alias sits in which table is the one decision
+  left to a human and lives in the script's `BLOCKS` registry; coverage is bidirectional
+  in the `parity-check.sh` manner, so an alias added to a source and listed nowhere fails
+  the audit by name (exit 2, rendered apart from drift's exit 1), as does a listed name
+  nothing defines. `--root` drives it against a hermetic fixture (test-core.sh F10b: clean
+  render, own-output `--check`, drift inside a block, an edit outside the markers that
+  survives regeneration, an unclaimed alias, a deleted end marker, idempotence, and
+  `--check` writing nothing). The prose — the `web`/`$BROWSER` explanation, the cdup-vs-up
+  footgun, the confirmation note — stays hand-written outside the markers. `core help` is
+  deliberately **not** folded into this: it is a curated 40-row index with shorter blurbs,
+  a different product for a different moment, and the README no longer calls it "the
+  complete one" — for git aliases it lists 14 of 62. Its `mkcd` row did regain "(and
+  parents)". A dozen alias lines gained a trailing comment so the rendered Note column
+  keeps the glosses the hand-written doc had (`# previous directory`, `# interactive`, …).
+
 - **`make audit` gates the reusable workflows' documented caller examples (§8a-bis, #821).**
   §8a proves the `ref:` keys name the right major. It does not read comments — so at
   v5 → v6 every ref moved correctly while 25 `@v5` references survived in the prose

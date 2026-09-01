@@ -6546,6 +6546,229 @@ else
   skip "theme generation (git unavailable)"
 fi
 
+# ── F10b. aliases generation (scripts/gen-aliases.sh) ────────────────────────
+# aliases.md's tables are rendered from the zsh sources and audit-core.sh §9g gates the
+# result against the real tree. As with F10, what is worth pinning here is the FAILURE
+# DIRECTIONS the real tree can never exercise without mutating tracked files — and the
+# one that matters most, "an alias was added and no table lists it", is a structural
+# exit (2), not drift (1), so the two must be told apart on purpose.
+#
+# The fixture carries the REAL zsh sources (a synthetic set would have to define every
+# name the registry claims, and the registry is the thing under test) and a stub
+# aliases.md holding one marker pair per registered block with hand-authored lines on
+# either side. The block ids are read out of the script's own BLOCKS table so this
+# section cannot silently fall out of step with the registry.
+if have git; then
+  hdr "aliases generation (scripts/gen-aliases.sh)"
+  GAR="$SANDBOX/aliasrepo"
+  _ga_ids="$(awk '/^BLOCKS="/ { f = 1; sub(/^BLOCKS="/, "") } f { print $1; if (/"$/) f = 0 }' "$HERE/scripts/gen-aliases.sh")"
+
+  _ga_fixture() {
+    rm -rf "$GAR"
+    mkdir -p "$GAR/scripts/lib" "$GAR/zsh" "$GAR/lib"
+    cp "$HERE/scripts/gen-aliases.sh" "$GAR/scripts/"
+    cp "$HERE/scripts/lib/common.sh" "$GAR/scripts/lib/"
+    cp "$HERE/lib/ux.sh" "$GAR/lib/ux.sh" # common.sh sources it for its palette
+    cp "$HERE/zsh/20-aliases.zsh" "$HERE/zsh/25-git.zsh" "$HERE/zsh/30-functions.zsh" "$GAR/zsh/"
+    {
+      printf '# fixture cheat sheet\n\nhand-authored above the first block\n\n'
+      for _id in $_ga_ids; do
+        printf '<!-- core:aliases:gen %s -->\n<!-- core:aliases:end %s -->\n\n' "$_id" "$_id"
+      done
+      printf 'hand-authored below the last block\n'
+    } >"$GAR/aliases.md"
+  }
+  _ga_run() { (cd "$GAR" && env -u CORE_JSON bash ./scripts/gen-aliases.sh "$@" >/dev/null 2>&1; echo $?); }
+  _ga_out() { (cd "$GAR" && env -u CORE_JSON bash ./scripts/gen-aliases.sh "$@" 2>&1); }
+
+  _ga_fixture
+  _ga_gen_rc="$(_ga_run)"
+  if [[ "$_ga_gen_rc" == 0 ]]; then
+    pass "gen-aliases: renders a fixture tree clean"
+  else
+    fail "gen-aliases: bare run failed on a clean fixture (rc=$_ga_gen_rc): $(_ga_out | head -n 3)"
+  fi
+  if [[ "$(_ga_run --check)" == 0 ]]; then
+    pass "gen-aliases: --check is 0 on a freshly generated tree"
+  else
+    fail "gen-aliases: --check reported drift on its own output"
+  fi
+
+  # The RENDERED BYTES, one row per extraction rule: a guarded alias with its Requires
+  # cell, a same-line-guarded one, a `hash -d`, the backslash-continued _core_help call,
+  # a trailing-comment Note, and the `|` escape GFM needs inside a table cell.
+  _ga_row() { grep -qF -- "$1" "$GAR/aliases.md"; }
+  if _ga_row '| `ls` | `eza --group-directories-first --icons=auto` | eza |'; then
+    pass "gen-aliases: renders a HAVE_*-guarded alias with its Requires cell"
+  else
+    fail "gen-aliases: the guarded ls row is missing or its Requires cell is wrong"
+  fi
+  if _ga_row '| `du` | `dust` | dust |'; then
+    pass "gen-aliases: a same-line \`[[ -n \${HAVE_X} ]] && alias\` guard is attributed"
+  else
+    fail "gen-aliases: the same-line-guarded du row lost its Requires cell"
+  fi
+  if _ga_row '| `~dots` | `$HOME/.config` |'; then
+    pass "gen-aliases: renders hash -d named directories"
+  else
+    fail "gen-aliases: the ~dots named-directory row is missing"
+  fi
+  if _ga_row '| `core-whatsnew [--full] [--all]` | release notes since you last looked'; then
+    pass "gen-aliases: joins a backslash-continued _core_help call"
+  else
+    fail "gen-aliases: the two-line core-whatsnew _core_help call did not render as one row"
+  fi
+  if _ga_row '| `-` | `cd -` | previous directory |'; then
+    pass "gen-aliases: the alias line's trailing comment is its Note cell"
+  else
+    fail "gen-aliases: the \`alias -- -\` row lost its name or its Note"
+  fi
+  if _ga_row '| `ports` | `ss -tulpn 2>/dev/null \|\| netstat -tulpn` |'; then
+    pass "gen-aliases: escapes | inside a cell as \\| (and exactly one backslash)"
+  else
+    fail "gen-aliases: the ports row's || is not escaped as \\|\\| — the table would break"
+  fi
+  # A multi-line _core_help (the `core maint` sub-verb listing, #684) is not a one-liner:
+  # --list shows it as fn-multi, and nothing requires it to be claimed or renders it.
+  if (cd "$GAR" && env -u CORE_JSON bash ./scripts/gen-aliases.sh --list 2>/dev/null | grep -q '^fn-multi'"$(printf '\t')"'core'"$(printf '\t')"'') &&
+    ! grep -q 'core maint <' "$GAR/aliases.md"; then
+    pass "gen-aliases: a multi-line _core_help is listed as fn-multi and never rendered as a row"
+  else
+    fail "gen-aliases: the core maint sub-verb help was rendered as a row, or is missing from --list"
+  fi
+  # A fallback definition (the `else` arm) must not displace the guarded row.
+  if _ga_row '| `df` | `duf` | duf |' && ! _ga_row '`df -h`'; then
+    pass "gen-aliases: the guarded definition wins over its else-arm fallback"
+  else
+    fail "gen-aliases: the df row shows the fallback (df -h) instead of the guarded duf"
+  fi
+
+  # NEGATIVE — drift INSIDE a block exits 1 and names the file.
+  _ga_fixture && _ga_run >/dev/null
+  sed -i.bak 's/| `gst` | `git status` |/| `gst` | `git stat` |/' "$GAR/aliases.md" && rm -f "$GAR/aliases.md.bak"
+  _ga_drift_rc="$(_ga_run --check)"
+  if [[ "$_ga_drift_rc" == 1 ]]; then
+    pass "gen-aliases: --check exits 1 on drift inside a block"
+  else
+    fail "gen-aliases: --check did not report drift as 1 (rc=$_ga_drift_rc)"
+  fi
+  _ga_drift_out="$(_ga_out --check)"
+  if grep -q 'aliases.md' <<<"$_ga_drift_out" && grep -q 'make gen-aliases' <<<"$_ga_drift_out"; then
+    pass "gen-aliases: the drift report names the file and the fix"
+  else
+    fail "gen-aliases: drift reported without naming aliases.md / make gen-aliases"
+  fi
+  # ...and --check MUST NOT WRITE.
+  _ga_before="$(git hash-object "$GAR/aliases.md")"
+  _ga_run --check >/dev/null
+  if [[ "$(git hash-object "$GAR/aliases.md")" == "$_ga_before" ]]; then
+    pass "gen-aliases: --check writes nothing, even to a drifted file"
+  else
+    fail "gen-aliases: --check REPAIRED a drifted file — the gate can never be red"
+  fi
+
+  # Source-side drift: the alias VALUE changes, the doc does not → 1, not 2.
+  _ga_fixture && _ga_run >/dev/null
+  sed -i.bak "s/^alias gst='git status'$/alias gst='git status --short'/" "$GAR/zsh/25-git.zsh" && rm -f "$GAR/zsh/25-git.zsh.bak"
+  if [[ "$(_ga_run --check)" == 1 ]]; then
+    pass "gen-aliases: a source edit without regeneration is drift (1)"
+  else
+    fail "gen-aliases: an alias value change in the source was not reported as drift"
+  fi
+
+  # NEGATIVE, INVERSE — an edit OUTSIDE the markers is not drift and survives regeneration.
+  _ga_fixture && _ga_run >/dev/null
+  printf 'a hand-authored line added after generation\n' >>"$GAR/aliases.md"
+  if [[ "$(_ga_run --check)" == 0 ]]; then
+    pass "gen-aliases: an edit OUTSIDE a block is not drift"
+  else
+    fail "gen-aliases: --check fired on a hand-authored line outside the markers"
+  fi
+  _ga_run >/dev/null
+  if grep -q 'a hand-authored line added after generation' "$GAR/aliases.md" &&
+    grep -q 'hand-authored above the first block' "$GAR/aliases.md"; then
+    pass "gen-aliases: regeneration preserves hand-authored content outside blocks"
+  else
+    fail "gen-aliases: regeneration ate a hand-authored line"
+  fi
+
+  # THE ISSUE'S OWN VERIFICATION (#685): add an alias to the source, regenerate nothing.
+  # It must fail — and as 2 (unclaimed name), naming the alias, not as drift.
+  _ga_fixture && _ga_run >/dev/null
+  printf "alias zz='ls'\n" >>"$GAR/zsh/20-aliases.zsh"
+  _ga_new_rc="$(_ga_run --check)"
+  _ga_new_out="$(_ga_out --check)"
+  if [[ "$_ga_new_rc" == 2 ]] && grep -q 'alias zz is defined in the sources but no block' <<<"$_ga_new_out"; then
+    pass "gen-aliases: an alias no table lists fails --check with 2 and is named"
+  else
+    fail "gen-aliases: an unlisted new alias did not fail as an unclaimed name (rc=$_ga_new_rc)"
+  fi
+  # ...and the bare run refuses too: nothing is written until the registry claims it.
+  _ga_before="$(git hash-object "$GAR/aliases.md")"
+  if [[ "$(_ga_run)" == 2 && "$(git hash-object "$GAR/aliases.md")" == "$_ga_before" ]]; then
+    pass "gen-aliases: the bare run refuses (2) and writes nothing while a name is unclaimed"
+  else
+    fail "gen-aliases: the bare run generated past an unclaimed alias"
+  fi
+  # The other direction: a listed name nothing defines.
+  _ga_fixture && _ga_run >/dev/null
+  sed -i.bak "/^alias gap='git add --patch'$/d" "$GAR/zsh/25-git.zsh" && rm -f "$GAR/zsh/25-git.zsh.bak"
+  _ga_gone_out="$(_ga_out --check)"
+  if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'alias gap is listed in BLOCKS but no source defines it' <<<"$_ga_gone_out"; then
+    pass "gen-aliases: a listed name with no definition fails --check with 2 and is named"
+  else
+    fail "gen-aliases: deleting a listed alias from the source was not caught as a registry mismatch"
+  fi
+
+  # Markers are the mechanism: a missing end marker, a missing block, an unregistered one.
+  _ga_fixture && _ga_run >/dev/null
+  sed -i.bak '/^<!-- core:aliases:end git-stash -->$/d' "$GAR/aliases.md" && rm -f "$GAR/aliases.md.bak"
+  if [[ "$(_ga_run --check)" == 2 ]]; then
+    pass "gen-aliases: a deleted end marker is a structural failure (2), not drift"
+  else
+    fail "gen-aliases: an unterminated block was not reported as 2"
+  fi
+  _ga_fixture && _ga_run >/dev/null
+  sed -i.bak '/core:aliases:\(gen\|end\) git-stash/d' "$GAR/aliases.md" && rm -f "$GAR/aliases.md.bak"
+  _ga_miss_out="$(_ga_out --check)"
+  if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'registered block is missing: git-stash' <<<"$_ga_miss_out"; then
+    pass "gen-aliases: a registered block whose region was deleted is caught by name"
+  else
+    fail "gen-aliases: deleting a block's marker pair went unreported — coverage loss reading as health"
+  fi
+  _ga_fixture && _ga_run >/dev/null
+  printf '<!-- core:aliases:gen nope -->\n<!-- core:aliases:end nope -->\n' >>"$GAR/aliases.md"
+  _ga_unreg_out="$(_ga_out --check)" # captured, not piped into grep -q (the §5d SIGPIPE hazard)
+  if [[ "$(_ga_run --check)" == 2 ]] && grep -q 'unregistered block: nope' <<<"$_ga_unreg_out"; then
+    pass "gen-aliases: an unregistered marker in aliases.md is caught by name"
+  else
+    fail "gen-aliases: an unregistered marker pair was accepted"
+  fi
+
+  # IDEMPOTENCE. A generator that reorders rows makes --check permanently red.
+  _ga_fixture && _ga_run >/dev/null
+  cp "$GAR/aliases.md" "$GAR/aliases.first.md"
+  _ga_run >/dev/null
+  if core_files_identical "$GAR/aliases.first.md" "$GAR/aliases.md"; then
+    pass "gen-aliases: generation is idempotent (second run is byte-identical)"
+  else
+    fail "gen-aliases: a second run changed aliases.md — --check can never be stably green"
+  fi
+
+  # FAIL CLOSED: a missing source is "cannot run" (2), never drift (1) and never clean.
+  _ga_fixture && _ga_run >/dev/null
+  rm -f "$GAR/zsh/25-git.zsh"
+  _ga_nosrc_rc="$(_ga_run --check)"
+  if [[ "$_ga_nosrc_rc" == 2 ]]; then
+    pass "gen-aliases: a missing source file fails closed with 2"
+  else
+    fail "gen-aliases: a missing source file exited $_ga_nosrc_rc — the gate did not fail closed"
+  fi
+
+  rm -rf "$GAR"
+  unset GAR _ga_ids _ga_gen_rc _ga_drift_rc _ga_drift_out _ga_before _ga_new_rc _ga_new_out _ga_gone_out _ga_miss_out _ga_unreg_out _ga_nosrc_rc
+fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link
