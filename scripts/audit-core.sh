@@ -1821,6 +1821,46 @@ else
 fi
 unset _cr_gen _cr_out
 
+# ── 9f. the cross-shell parity contract covers itself ────────────────────────
+# PARITY.md is the zsh<->pwsh contract and scripts/parity-check.sh is its gate. Until
+# #682 that gate ran ONLY on `make parity-check` and a weekly cron, so an unenforced or
+# false row merged clean and sat until Monday — which is how PARITY.md promised an
+# `Alt+C` dir-jump binding that NEITHER shell has ever bound, for years, with the gate
+# green the whole time.
+#
+# It belongs on the blocking path because its most valuable assertion is Core-only: the
+# coverage half (every `aligned` row has a check, every check names a real row) reads
+# PARITY.md and the CHECKS array, both in THIS repo, and needs no sibling checkout. The
+# cross-repo half self-skips without dotfiles-Windows, exactly like §9c's fleet coverage,
+# so a Core-only clone still runs green here.
+#
+# NOT SCOPE-GUARDED, for §9d's reason: PARITY.md is a `*.md` file and INERT to
+# ci-classify.sh, so the very push that adds an unenforced row arrives as --scope none.
+# A narrowed run must not be able to skip a contract check.
+#
+# THE EXIT CODES ARE THE CONTRACT, as in §9d: 1 = a real finding (drift or an uncovered
+# row), 2+ = the gate could not run, which must NOT be rendered as a clean contract.
+hdr "cross-shell parity (parity-check.sh)"
+_pc_out="$("$HERE/scripts/parity-check.sh" --quiet 2>&1)" && _pc_rc=0 || _pc_rc=$?
+if ((_pc_rc == 0)); then
+  # Say WHICH half ran. A bare pass here would read as "zsh and pwsh agree" on a box
+  # that never opened a pwsh file — the same overclaim the contract itself was making.
+  # Match the SKIP notice, not the closing summary: --quiet suppresses `pass` lines, so
+  # the summary is not in $_pc_out at all, while `skip` prints regardless (common.sh).
+  if [[ "$_pc_out" == *"dotfiles-Windows not checked out"* ]]; then
+    pass "parity contract holds on zsh, and every aligned PARITY.md row has a check (pwsh side skipped — no sibling dotfiles-Windows)"
+  else
+    pass "parity contract holds across zsh + pwsh, and every aligned PARITY.md row has a check"
+  fi
+elif ((_pc_rc == 1)); then
+  fail "cross-shell parity — an aligned PARITY.md row is unenforced or has drifted; run: make parity-check"
+  fail_detail "$_pc_out"
+else
+  fail "parity-check.sh could not run (exit $_pc_rc) — the parity contract went UNCHECKED this run"
+  fail_detail "$_pc_out"
+fi
+unset _pc_out _pc_rc
+
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
 # Static analysis above proves the modules PARSE; this proves they LOAD TOGETHER
 # in canonical order and that the pure functions behave. Delegated to test-core.sh

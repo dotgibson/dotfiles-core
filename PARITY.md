@@ -16,8 +16,9 @@ one of:
 - **`gap`** — a capability one shell has and the other could, but doesn't yet.
   An open item, not a promise.
 
-> Sources: zsh in `zsh/{00-tools,20-aliases,25-git,35-fzf,40-bindings}.zsh`; pwsh in
-> `dotfiles-Windows/powershell/core/{00-aliases,10-tools,20-functions}.ps1`.
+> Sources: zsh in `zsh/{00-tools,20-aliases,25-git,30-functions,35-fzf,40-bindings}.zsh`;
+> pwsh in `dotfiles-Windows/powershell/core/{00-aliases,10-tools,20-functions}.ps1` and
+> `powershell/os/48-core.ps1` (the `core` front door).
 >
 > **Colour values are not authored in either file.** Core's come from
 > `theme/palette.toml` and are rendered by `scripts/gen-theme.sh` (#679); the pwsh
@@ -73,7 +74,7 @@ manifest row, not a code change.
 | FZF source cmd | `fd` (`FZF_DEFAULT_COMMAND`) | `fd` (`FZF_DEFAULT_COMMAND`) | `aligned` |
 | File picker | `Ctrl+T` (`_fzf_file_no_hidden`) | `Ctrl+T` (PSFzf) | `aligned` |
 | atuin TUI | `Ctrl+E` (`_atuin_search_widget`) | `Ctrl+E` (`Invoke-AtuinSearch`) | `aligned` |
-| Dir jump | `Alt+Z` (zoxide) / `Alt+C` (fzf) | `Alt+Z` (zoxide `zi`) / `Alt+C` (PSFzf) | `aligned` |
+| Dir jump | `Alt+Z` (`_fzf_zoxide_jump`) | `Alt+Z` (zoxide `zi`) | `aligned` |
 | Session picker | `Ctrl+G` (sesh) | `Ctrl+G` (psmux sessionizer) | `aligned` — jump-to-session both |
 | Cheatsheet | `cheat` / `core-help` | `navi` / `cheat` | `deliberate` — command, not a keybind |
 | Autosuggest toggle | `Ctrl+\` (`autosuggest-toggle`) | `Ctrl+\` (flips `PredictionSource`) | `aligned` |
@@ -83,9 +84,9 @@ manifest row, not a code change.
 
 | Capability | zsh | pwsh | Status |
 | --- | --- | --- | --- |
-| `extract`, `mkbak`, `serve`, `fif`, `fbr` | yes | yes | `aligned` |
-| Fuzzy git stage/restore (`gaf`/`grf`/`grsf`) | yes | yes | `aligned` |
-| `cheat` (cht.sh / navi) | `cheat` | `cheat` / `navi` | `aligned` |
+| Utility functions | `extract` `mkbak` `serve` `fif` `fbr` | `extract` `mkbak` `serve` `fif` `fbr` | `aligned` |
+| Fuzzy git stage/restore | `gaf` `grf` `grsf` | `gaf` `grf` `grsf` | `aligned` |
+| `cheat` | `cheat` → `core-help` (Core's own command index) | `cheat` → cht.sh (`Invoke-RestMethod`) | `deliberate` — same trigger, different source |
 
 ## Fleet front door (`core`)
 
@@ -104,22 +105,36 @@ canonical. Enforced by `scripts/parity-check.sh` (the `core *` rows).
 
 ## Enforcement
 
-`scripts/parity-check.sh` (`make parity-check`) mechanises the `aligned` rows: it
-asserts a distinctive needle for each is present in BOTH a zsh source and the pwsh
-source, and exits non-zero when one side drifts. It reads pwsh from a sibling
-`dotfiles-Windows` checkout (skipped with a notice if absent, unless `--strict`),
-exactly like `scripts/fleet-drift.sh`. The weekly `.github/workflows/parity-check.yml`
-clones `dotfiles-Windows` and runs it `--strict`, failing red on drift.
+`scripts/parity-check.sh` (`make parity-check`, and §9f of `make audit`) mechanises the
+`aligned` rows: it asserts a distinctive needle for each is present in BOTH a zsh source
+and the pwsh source, and exits non-zero when one side drifts. It reads pwsh from a sibling
+`dotfiles-Windows` checkout (skipped with a notice if absent, unless `--strict`), exactly
+like `scripts/fleet-drift.sh`. The weekly `.github/workflows/parity-check.yml` clones
+`dotfiles-Windows` and runs it `--strict`, failing red on drift.
 
-When a row here moves to `aligned`, add a matching check to `parity-check.sh` in the
-same change — the check is the enforcement. A new alignment is not done until its
-needle is added.
+**The one-to-one claim is proven, not promised.** Every check in `parity-check.sh` names
+the table row it enforces, and the script parses *this file* to assert the mapping both
+ways: every `aligned` row here has at least one check, and every check names a row that
+exists. Adding an `aligned` row without a needle fails the gate; so does leaving a needle
+behind after its row is deleted or reclassified. A row may carry several checks — that is
+how the five utility functions and the three fuzzy-git verbs are each covered
+individually rather than by one needle standing in for the set.
 
-The **Theme** row went years marked `aligned` with no check behind it, which made the
-stronger form of this claim ("every `aligned` row has a corresponding check") false.
-Issue #679 added one. It is honest but not independent: the fzf `--color` block is the
-only place `dotfiles-Windows` carries tokyonight colours at all, so the Theme and
-**FZF palette** rows share their pwsh evidence. The accent half of the theme — Core's
-`_CORE_ACCENT_SPEC`, which pwsh has no equivalent for — remains a genuine `gap`.
-Three other rows (**History search**, **Word nav**, and the five functions on one row)
-are still unchecked; see dotgibson/dotfiles-core#682.
+This used to be a discipline ("add a check in the same change"), and disciplines do not
+hold. **Theme**, **History search**, **Word nav** and the five-function row were all
+marked `aligned` for years with nothing behind them while this section claimed otherwise,
+and `Alt+C` was listed as an aligned dir-jump binding that **neither** shell has ever
+had — zsh never binds `^[c` and never sources fzf's own key-bindings, and
+`dotfiles-Windows` sets only PSFzf's provider and reverse-history chords. #679 added
+Theme's check; #682 added the rest, removed the `Alt+C` fiction, and made the claim
+mechanical.
+
+Two rows are deliberately honest about proving less than they look like they prove:
+
+- **Theme** shares its pwsh evidence with **FZF palette** — the fzf `--color` block is the
+  only place `dotfiles-Windows` carries tokyonight colours at all, since it has no
+  `_CORE_ACCENT_SPEC` equivalent. That accent half remains a genuine `gap`.
+- **Word nav**'s pwsh half is a *PSReadLine default*, not configuration: nothing in
+  `dotfiles-Windows` binds Ctrl+Arrow, so there is no string to grep. Its check asserts
+  Core's half and reports the pwsh half as a skip carrying that reason, rather than
+  inventing a needle that would go green without proving anything.

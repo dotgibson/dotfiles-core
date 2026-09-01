@@ -14,6 +14,55 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`make audit` runs the cross-shell parity contract (§9f, #682).** `parity-check.sh`
+  ran only on `make parity-check` and a weekly cron, so a false or unenforced `PARITY.md`
+  row merged clean and sat until Monday — which is how the contract promised an `Alt+C`
+  dir-jump binding for years with the gate green the whole time. Its most valuable
+  assertion is Core-only (the coverage half reads `PARITY.md` and the `CHECKS` array,
+  both in this repo), so it belongs on the blocking path; the cross-repo half self-skips
+  without a sibling `dotfiles-Windows`, exactly like §9c, and the pass line says which
+  half actually ran rather than claiming "zsh + pwsh" on a box that opened no pwsh file.
+  Not scope-guarded, for §9d's reason: `PARITY.md` is a `*.md` file and inert to
+  `ci-classify.sh`, so the very push that adds an unenforced row arrives as `--scope none`.
+
+### Fixed
+
+- **`scripts/parity-check.sh` proves its one-to-one claim instead of asserting it (#682).**
+  The script's own comment said it "mirrors PARITY.md's `aligned` rows one-to-one — every
+  aligned row has a check here", and `PARITY.md`'s Enforcement section repeated it. Both
+  were false: **21 aligned rows, 18 checks.** Four rows had no check at all (**Theme**,
+  **History search**, **Word nav**, and one row covering five functions) and two were
+  only half-checked, which is worse than none because the row renders green while half of
+  it is fiction — **Dir jump** claimed `Alt+Z` _and_ `Alt+C` while the needle tested only
+  `Alt+Z`, and **Fuzzy git** claimed `gaf`/`grf`/`grsf` while the needle tested only
+  `gaf`. Honest coverage was 15 of 21. Every check now carries the row-key of the table
+  row it enforces, and the script parses `PARITY.md` to assert the mapping in both
+  directions: an `aligned` row with no needle fails, and so does a needle whose row was
+  renamed, reclassified or deleted. Several checks may share a row-key, which is what
+  lets the five utility functions and the three fuzzy-git verbs each get a needle instead
+  of one standing in for the set. Verified the only way a gate can be — negatively:
+  deleting the `history-search` check, adding an unenforced `aligned` row, and pointing a
+  check at a nonexistent row each go red and name the offender.
+
+- **Three `aligned` rows in `PARITY.md` were asserting behaviour neither shell had (#682).**
+  Found by doing the work above, since a contract nothing checks is a contract nothing
+  corrects. **`Alt+C` never existed on either side** — the issue assumed pwsh had it via
+  PSFzf and zsh had drifted, but zsh never binds `^[c` and never sources fzf's own
+  key-bindings (there is no `eval "$(fzf --zsh)"` anywhere in `zsh/` or `lib/`), and
+  `dotfiles-Windows` sets only PSFzf's `-PSReadlineChordProvider` and
+  `-PSReadlineChordReverseHistory` — `-PSReadlineChordSetLocation` is opt-in and appears
+  nowhere in that repo. Not a divergence and not a `gap`; the claim is simply gone, and
+  the surviving `Alt+Z` needle is now key-anchored (`'^[z' _fzf_zoxide_jump`) like the
+  Ctrl+T row, because the bare widget name it used before passed even if the key moved.
+  **`cheat` is `deliberate`, not `aligned`** — zsh's is `alias cheat='core-help'`, Core's
+  own command index, while pwsh's queries cht.sh; same trigger, different source, and the
+  `alias cheat=` needle passed regardless of target. **Word nav** stays `aligned` but is
+  explicit that its pwsh half is a PSReadLine _default_, not configuration: nothing in
+  `dotfiles-Windows` binds Ctrl+Arrow, so that half reports as a skip carrying the reason
+  rather than a needle that cannot fail.
+
 ## [v6.0.0] - 2026-08-31
 
 ### Changed
