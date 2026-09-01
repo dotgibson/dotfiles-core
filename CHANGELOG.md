@@ -26,6 +26,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   half actually ran rather than claiming "zsh + pwsh" on a box that opened no pwsh file.
   Not scope-guarded, for §9d's reason: `PARITY.md` is a `*.md` file and inert to
   `ci-classify.sh`, so the very push that adds an unenforced row arrives as `--scope none`.
+  The unassertable half is reported through a new `skip_note` class (`scripts/lib/common.sh`):
+  a plain `skip` counts as a missing TOOL, so `--strict` would have failed a
+  fully-provisioned box purely because the contract was being honest about a PSReadLine
+  default — and would have disagreed with `parity-check.sh --strict`, which accepts the same
+  reported default. A gate punished for reporting honestly teaches the next author to stop
+  reporting.
 
 ### Fixed
 

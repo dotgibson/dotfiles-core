@@ -85,6 +85,9 @@ _CORE_ENV_SKIPS=()
 # Indices into _CORE_SKIPS of the entries above — see skip_env() for why the index and not
 # the text is what the classifier keys on.
 _CORE_ENV_SKIP_IDX=()
+# Indices of NOTE skips — see skip_note(). Separate from the environment list because the two
+# answer different questions: --require-siblings reds on environment, nothing reds on a note.
+_CORE_NOTE_SKIP_IDX=()
 
 # _core_set_color <when> — validate WHEN (auto|always|never) and re-evaluate the palette.
 # Non-zero on a bad value so the caller can usage-error. Every gate script's `--color`
@@ -132,6 +135,27 @@ skip_env() {
   _CORE_ENV_SKIPS+=("$*")
   skip "$@"
 }
+# skip_note <label> — a skip that is NOT a coverage gap: the gate ran, reached a conclusion,
+# and is declining to assert one part of it because there is genuinely nothing to assert.
+# Nothing is missing, so nothing should red on it.
+#
+# THE THIRD QUESTION. tool ("install it"), environment ("clone the sibling"), out-of-scope
+# ("you narrowed the run") all say something is ABSENT. This one says the opposite: the run
+# was complete and the honest report includes a half that cannot be asserted. §9f's parity
+# default is the case — pwsh gets Ctrl+Arrow from a PSReadLine default, so there is no string
+# to grep, and parity-check.sh reports it rather than inventing a needle that cannot fail.
+#
+# WHY IT NEEDS ITS OWN CLASS. Without one it falls through to TOOL, and --strict — documented
+# as "a gate SKIPPED because its TOOL is absent" — would fail a fully-provisioned box purely
+# because the contract is being honest about a framework default. That would also disagree
+# with `parity-check.sh --strict`, which accepts the same reported default. A gate punished
+# for reporting honestly teaches the next author to stop reporting.
+#
+# Recorded by INDEX, never by wording, for skip_env's reason.
+skip_note() {
+  _CORE_NOTE_SKIP_IDX+=("$SKIP")
+  skip "$@"
+}
 # _core_tool_skip_count — how many skips are a REAL coverage gap (an absent tool), printed
 # to stdout. The three classes are tool / out-of-scope / environment; this counts the first.
 #
@@ -145,14 +169,21 @@ skip_env() {
 # Same render-vs-judge split as _core_luacheck_verdict (#728) and §1b: the caller renders, the
 # helper decides, and test-core.sh drives the helper directly.
 #
-# Environment skips are identified by the INDEX skip_env recorded, never by their wording —
-# see skip_env() for why. Out-of-scope skips are still matched on text, which is correct: that
-# class IS a statement the caller makes in prose about a run it deliberately narrowed.
+# Environment and NOTE skips are identified by the INDEX skip_env/skip_note recorded, never by
+# their wording — see skip_env() for why. Out-of-scope skips are still matched on text, which
+# is correct: that class IS a statement the caller makes in prose about a run it deliberately
+# narrowed. Four classes now, and only the leftover — a genuinely absent tool — is counted.
 _core_tool_skip_count() {
   local _s _e _i=0 _n=0 _is_env
   for _s in ${_CORE_SKIPS[@]+"${_CORE_SKIPS[@]}"}; do
     _is_env=0
     for _e in ${_CORE_ENV_SKIP_IDX[@]+"${_CORE_ENV_SKIP_IDX[@]}"}; do
+      [[ "$_i" == "$_e" ]] && {
+        _is_env=1
+        break
+      }
+    done
+    for _e in ${_CORE_NOTE_SKIP_IDX[@]+"${_CORE_NOTE_SKIP_IDX[@]}"}; do
       [[ "$_i" == "$_e" ]] && {
         _is_env=1
         break

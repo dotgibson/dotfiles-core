@@ -5291,6 +5291,29 @@ case "$_pw_out" in
 *)       fail "_core_tool_skip_count: got '$_pw_out', want '2 1 1' — a poisoned env message masked an absent tool, so --strict goes green on a real gap" ;;
 esac
 
+# THE NOTE CLASS. A skip that reports an unassertable fact is NOT a coverage gap, so it must
+# not be counted as an absent tool — otherwise `--strict` fails a fully-provisioned box purely
+# because §9f is being honest about a PSReadLine default, and disagrees with
+# `parity-check.sh --strict`, which accepts the same reported default.
+_nt_out="$(_tsc '
+  skip      "luacheck (not installed)"
+  skip_env  "coverage register (no sibling OS repo checked out — nothing to read here)"
+  skip_note "cross-shell parity: 2 pwsh half/halves are framework defaults — not asserted"
+')"
+case "$_nt_out" in
+"3 1 1") pass "_core_tool_skip_count: a note skip is not an absent tool (--strict stays green on a full box)" ;;
+*)       fail "_core_tool_skip_count: got '$_nt_out', want '3 1 1' — a reported framework default is being counted as a missing tool, so --strict fails a fully-provisioned box" ;;
+esac
+unset _nt_out
+
+# And the binding for it: §9f must actually reach for the class, or the assertion above guards
+# a call site that no longer exists.
+if grep -q 'skip_note "cross-shell parity' "$HERE/scripts/audit-core.sh"; then
+  pass "_core_tool_skip_count: §9f reports its framework-default halves as a NOTE, not a tool gap"
+else
+  fail "_core_tool_skip_count: §9f no longer uses skip_note — a Windows-present --strict run will fail on an honest report"
+fi
+
 # BINDING. The two assertions above are only worth anything if audit-core.sh actually uses the
 # helper AND does not adjust the number afterwards. The demonstrated regression was precisely
 # that shape: leave the classification correct, then re-add a subtracting statement after it.
@@ -14844,11 +14867,45 @@ _pc_fixture() {
   cp "$HERE/theme/palette.toml" "$PCR/theme/"
   cp "$HERE"/zsh/{00-tools,20-aliases,25-git,30-functions,35-fzf,40-bindings}.zsh "$PCR/zsh/"
   cp "$1" "$PCR/PARITY.md"
+  [[ "${2:-}" == win ]] && _pc_win
   # --root at an EMPTY fleet dir, and $DOTFILES_ROOT stripped: the pwsh half must be
   # absent by construction, not by accident of the caller's environment. Without this the
   # rows below flip meaning under `make audit` (which exports DOTFILES_ROOT at the real
   # fleet) versus a bare `make test` — a test whose verdict depends on who ran it.
   env -u DOTFILES_ROOT "$PCR/scripts/parity-check.sh" --root "$PCR/fleet" --color never >"$PCOUT" 2>&1
+}
+
+# _pc_win — synthesise a dotfiles-Windows inside the fixture fleet, DERIVED FROM THE CHECKS
+# ARRAY ITSELF so a check added later cannot silently stop being covered here. Without a
+# Windows-present fixture the `-` (framework-default) branch and the qualified closing summary
+# never execute at all: deleting the `-` handling would restore a false full pass and every
+# test would stay green, since the rows below force the pwsh half to be absent.
+#
+# The array is EVAL'd out of the real script rather than read as text: that yields each needle
+# exactly as the gate will grep for it, escapes resolved, so the fixture cannot disagree with
+# the contract about what a needle says.
+_pc_win() {
+  local win="$PCR/fleet/dotfiles-Windows" row k l zf zn pf pn fg
+  local CHECKS=()
+  rm -rf "$win"
+  eval "$(sed -n '/^CHECKS=(/,/^)$/p' "$HERE/scripts/parity-check.sh")"
+  for row in ${CHECKS[@]+"${CHECKS[@]}"}; do
+    # The leading fields are named rather than discarded into `_`, so the split documents
+    # the row format where it is parsed; only the pwsh half is written out here.
+    # shellcheck disable=SC2034
+    IFS='|' read -r k l zf zn pf pn <<<"$row"
+    [[ "$pn" == "-" ]] && continue # the framework defaults: nothing to write, by definition
+    mkdir -p "$win/${pf%/*}"
+    printf '%s\n' "$pn" >>"$win/$pf"
+  done
+  # The palette VALUE comparison wants a real hex, not just the needle's prefix.
+  fg="$(sed -nE 's/^color_fg[[:space:]]*=[[:space:]]*"(#[0-9a-f]{6})".*/\1/p' "$HERE/theme/palette.toml" | head -n1)"
+  printf -- '--color=query:%s:regular\n' "$fg" >>"$win/powershell/core/10-tools.ps1"
+  # ...and the alias loop wants the `provides:` contract line, built from the same manifest
+  # parity-check.sh reads, so the two cannot disagree either.
+  printf '# provides: %s\n' \
+    "$(awk -F'|' '!/^[[:space:]]*#/ && NF >= 3 && $1 != "" { printf "%s,", $3 }' "$HERE/scripts/parity-aliases.txt")" \
+    >"$win/powershell/core/00-aliases.ps1"
 }
 
 # _pc_row <label> <expected-rc> <needle-in-output> <awk-program-against-PARITY.md>
@@ -14922,9 +14979,25 @@ else
   fail "parity coverage: a pwsh-less run did not qualify its summary — it certified a half it never read"
 fi
 
+# 7. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the `-`
+#    branch and the qualified summary never ran. With a synthetic dotfiles-Windows in place
+#    both must: each Word-nav half is reported as a skip, and the closing line must NOT say
+#    "all aligned rows hold across zsh + pwsh" — the overclaim this PR exists to remove.
+_pc_fixture "$HERE/PARITY.md" win && _pc_win_rc=0 || _pc_win_rc=$?
+_pc_win_n="$(grep -c "nothing to grep" "$PCOUT" || true)"
+if ((_pc_win_rc == 0)) && ((_pc_win_n == 2)) &&
+  grep -qF "every CONFIGURED aligned row holds" "$PCOUT" &&
+  ! grep -qF "all aligned rows hold across zsh + pwsh" "$PCOUT"; then
+  pass "parity coverage: a Windows-present run reports both framework-default halves and refuses to certify them"
+else
+  fail "parity coverage: Windows-present run (rc=$_pc_win_rc, $_pc_win_n default skips) did not report both halves and qualify its summary"
+  grep -E "coverage|nothing to grep|aligned rows hold|CONFIGURED" "$PCOUT" | sed 's/^/    /' >&2
+fi
+unset _pc_win_rc _pc_win_n
+
 rm -rf "$PCR"
 unset PCR PCOUT
-unset -f _pc_fixture _pc_row
+unset -f _pc_fixture _pc_row _pc_win
 
 # ── how audit-core.sh §9f CLASSIFIES that run (common.sh :: _core_parity_verdict) ──
 # The rows above drive parity-check.sh directly and never reach the audit integration —
