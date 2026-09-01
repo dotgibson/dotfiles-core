@@ -726,7 +726,8 @@ $TARGETS
 EOF
 
 # ── PARITY.md's style claim ───────────────────────────────────────────────────
-# PARITY.md:27 and :65 name the style in prose ("tokyonight-storm"), as a cross-repo
+# PARITY.md's Theme and FZF-palette rows name the style in prose ("tokyonight-storm"),
+# as a cross-repo
 # contract with dotfiles-Windows. It is deliberately NOT generated: a generator
 # rewriting Core's half of a two-repo claim would let a Core-side flip silently rewrite
 # the assertion ABOUT pwsh. So it is checked instead — a flip fails at author time

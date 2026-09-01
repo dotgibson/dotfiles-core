@@ -1821,6 +1821,69 @@ else
 fi
 unset _cr_gen _cr_out
 
+# ── 9f. the cross-shell parity contract covers itself ────────────────────────
+# PARITY.md is the zsh<->pwsh contract and scripts/parity-check.sh is its gate. Until
+# #682 that gate ran ONLY on `make parity-check` and a weekly cron, so an unenforced or
+# false row merged clean and sat until Monday — which is how PARITY.md promised an
+# `Alt+C` dir-jump binding that NEITHER shell has ever bound, for years, with the gate
+# green the whole time.
+#
+# It belongs on the blocking path because its most valuable assertion is Core-only: the
+# coverage half (every `aligned` row has a check, every check names a real row) reads
+# PARITY.md and the CHECKS array, both in THIS repo, and needs no sibling checkout. The
+# cross-repo half self-skips without dotfiles-Windows, exactly like §9c's fleet coverage,
+# so a Core-only clone still runs green here.
+#
+# NOT SCOPE-GUARDED, for §9d's reason: PARITY.md is a `*.md` file and INERT to
+# ci-classify.sh, so the very push that adds an unenforced row arrives as --scope none.
+# A narrowed run must not be able to skip a contract check.
+#
+# THE EXIT CODES ARE THE CONTRACT, as in §9d: 1 = a real finding (drift or an uncovered
+# row), 2+ = the gate could not run, which must NOT be rendered as a clean contract.
+hdr "cross-shell parity (parity-check.sh)"
+# CORE_JSON=0 at the child boundary, deliberately. `audit --json` EXPORTS CORE_JSON=1 (see
+# the --json arm), which tells common.sh's skip() to print nothing — and the notices below
+# are read out of this child's output. Inheriting it would have made a --json run see no
+# skip lines and report a full zsh+pwsh pass on a box with no pwsh file: a gate reporting
+# more coverage than it had, which is the defect this whole section exists to end. The
+# child's stdout is captured either way, so nothing leaks into the JSON object on stdout.
+_pc_out="$(CORE_JSON=0 "$HERE/scripts/parity-check.sh" --quiet 2>&1)" && _pc_rc=0 || _pc_rc=$?
+# The CLASSIFICATION lives in common.sh (_core_parity_verdict) so test-core.sh can drive it;
+# this block only RENDERS. Both defects review found here — inheriting CORE_JSON and printing
+# an unqualified pass — were in logic that no test could reach from outside the audit.
+case "$(_core_parity_verdict "$_pc_rc" "$_pc_out")" in
+ok-full)
+  pass "parity coverage — every aligned PARITY.md row has a check behind it"
+  pass "parity contract holds across zsh + pwsh"
+  ;;
+ok-defaults)
+  pass "parity coverage — every aligned PARITY.md row has a check behind it"
+  # QUALIFIED HERE, not walked back on the next line: the reader believes the green line.
+  pass "parity contract holds across zsh + pwsh for every CONFIGURED row (framework-default halves are reported below, not asserted)"
+  # A half the child refused to certify must stay uncertified here too.
+  # skip_note, not skip: nothing is ABSENT here. A plain skip counts as a missing TOOL, so
+  # --strict would fail a fully-provisioned box purely because the contract is being honest
+  # about a PSReadLine default — and would disagree with `parity-check.sh --strict`, which
+  # accepts the same reported default.
+  skip_note "cross-shell parity: $(printf '%s\n' "$_pc_out" | grep -c "nothing to grep") pwsh half/halves are framework defaults — reported by parity-check.sh, not asserted"
+  ;;
+ok-no-sibling)
+  pass "parity coverage — every aligned PARITY.md row has a check behind it"
+  # skip_env, not skip: a coverage gap the BOX could not cover (no sibling repo), so
+  # --require-siblings can redden it, exactly like §5f/§9c's fleet-wide gates.
+  skip_env "cross-shell parity: dotfiles-Windows not checked out — the pwsh half was NOT verified"
+  ;;
+drift)
+  fail "cross-shell parity — an aligned PARITY.md row is unenforced or has drifted; run: make parity-check"
+  fail_detail "$_pc_out"
+  ;;
+*)
+  fail "parity-check.sh could not run (exit $_pc_rc) — the parity contract went UNCHECKED this run"
+  fail_detail "$_pc_out"
+  ;;
+esac
+unset _pc_out _pc_rc
+
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
 # Static analysis above proves the modules PARSE; this proves they LOAD TOGETHER
 # in canonical order and that the pure functions behave. Delegated to test-core.sh

@@ -5291,6 +5291,29 @@ case "$_pw_out" in
 *)       fail "_core_tool_skip_count: got '$_pw_out', want '2 1 1' — a poisoned env message masked an absent tool, so --strict goes green on a real gap" ;;
 esac
 
+# THE NOTE CLASS. A skip that reports an unassertable fact is NOT a coverage gap, so it must
+# not be counted as an absent tool — otherwise `--strict` fails a fully-provisioned box purely
+# because §9f is being honest about a PSReadLine default, and disagrees with
+# `parity-check.sh --strict`, which accepts the same reported default.
+_nt_out="$(_tsc '
+  skip      "luacheck (not installed)"
+  skip_env  "coverage register (no sibling OS repo checked out — nothing to read here)"
+  skip_note "cross-shell parity: 2 pwsh half/halves are framework defaults — not asserted"
+')"
+case "$_nt_out" in
+"3 1 1") pass "_core_tool_skip_count: a note skip is not an absent tool (--strict stays green on a full box)" ;;
+*)       fail "_core_tool_skip_count: got '$_nt_out', want '3 1 1' — a reported framework default is being counted as a missing tool, so --strict fails a fully-provisioned box" ;;
+esac
+unset _nt_out
+
+# And the binding for it: §9f must actually reach for the class, or the assertion above guards
+# a call site that no longer exists.
+if grep -q 'skip_note "cross-shell parity' "$HERE/scripts/audit-core.sh"; then
+  pass "_core_tool_skip_count: §9f reports its framework-default halves as a NOTE, not a tool gap"
+else
+  fail "_core_tool_skip_count: §9f no longer uses skip_note — a Windows-present --strict run will fail on an honest report"
+fi
+
 # BINDING. The two assertions above are only worth anything if audit-core.sh actually uses the
 # helper AND does not adjust the number afterwards. The demonstrated regression was precisely
 # that shape: leave the classification correct, then re-add a subtracting statement after it.
@@ -14811,6 +14834,276 @@ else
 fi
 unset _mg_
 unset -f _mg_write _mg_count
+
+# ── F11. the parity coverage gate can actually fail (scripts/parity-check.sh) ──
+# parity-check.sh's whole claim after #682 is that PARITY.md's one-to-one contract is
+# PROVEN rather than promised. A gate nobody has watched fail is exactly the thing that
+# claim rejects, and the negative runs that justified it were done by hand on a branch —
+# which is a discipline, not a gate, and the second time this repo has learned that.
+#
+# HERMETIC FIXTURE, real script, real CHECKS array — the gen-theme F10 pattern. Only
+# PARITY.md varies between rows, so every verdict below is attributable to the coverage
+# logic and nothing else. dotfiles-Windows is deliberately absent from the fixture root,
+# so the pwsh half self-skips and cannot colour the result.
+hdr "parity coverage gate (scripts/parity-check.sh)"
+PCR="$SANDBOX/parityrepo"
+PCOUT="$SANDBOX/parity-run.out"
+
+# _pc_fixture <parity-md-path> — rebuild the fixture around a given PARITY.md, run the
+# real script in it, leave the output in $PCOUT and RETURN the script's exit code. Every
+# needled source is copied verbatim from the real tree, so the zsh half always holds and
+# only coverage can move the verdict.
+#
+# The rc comes back as this function's own exit status, not a variable it sets: callers
+# read the output via $PCOUT rather than command substitution, because a `$(...)` call
+# runs the function in a SUBSHELL and any rc it assigned there would never reach them.
+_pc_fixture() {
+  rm -rf "$PCR"
+  mkdir -p "$PCR/scripts/lib" "$PCR/zsh" "$PCR/theme" "$PCR/lib" "$PCR/fleet"
+  cp "$HERE/scripts/parity-check.sh" "$PCR/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$PCR/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$PCR/lib/" # common.sh sources it from the repo root
+  cp "$HERE/scripts/parity-aliases.txt" "$PCR/scripts/"
+  cp "$HERE/theme/palette.toml" "$PCR/theme/"
+  cp "$HERE"/zsh/{00-tools,20-aliases,25-git,30-functions,35-fzf,40-bindings}.zsh "$PCR/zsh/"
+  cp "$1" "$PCR/PARITY.md"
+  [[ "${2:-}" == win ]] && _pc_win
+  # --root at an EMPTY fleet dir, and $DOTFILES_ROOT stripped: the pwsh half must be
+  # absent by construction, not by accident of the caller's environment. Without this the
+  # rows below flip meaning under `make audit` (which exports DOTFILES_ROOT at the real
+  # fleet) versus a bare `make test` — a test whose verdict depends on who ran it.
+  env -u DOTFILES_ROOT "$PCR/scripts/parity-check.sh" --root "$PCR/fleet" --color never >"$PCOUT" 2>&1
+}
+
+# _pc_win — synthesise a dotfiles-Windows inside the fixture fleet, DERIVED FROM THE CHECKS
+# ARRAY ITSELF so a check added later cannot silently stop being covered here. Without a
+# Windows-present fixture the `-` (framework-default) branch and the qualified closing summary
+# never execute at all: deleting the `-` handling would restore a false full pass and every
+# test would stay green, since the rows below force the pwsh half to be absent.
+#
+# The array is EVAL'd out of the real script rather than read as text: that yields each needle
+# exactly as the gate will grep for it, escapes resolved, so the fixture cannot disagree with
+# the contract about what a needle says.
+_pc_win() {
+  local win="$PCR/fleet/dotfiles-Windows" row k l zf zn pf pn fg want i anchor
+  local CHECKS=()
+  rm -rf "$win"
+  eval "$(sed -n '/^CHECKS=(/,/^)$/p' "$HERE/scripts/parity-check.sh")"
+  for row in ${CHECKS[@]+"${CHECKS[@]}"}; do
+    # The leading fields are named rather than discarded into `_`, so the split documents
+    # the row format where it is parsed; only the pwsh half is written out here.
+    # shellcheck disable=SC2034
+    IFS='|' read -r k l zf zn pf pn <<<"$row"
+    [[ "$pn" == "-" ]] && continue # the framework defaults: nothing to write, by definition
+    # A `count:N:` needle demands N matching LINES (pwsh binds Ctrl+R twice on purpose), so
+    # the fixture has to satisfy the count, not just the string.
+    want=1
+    anchor=""
+    case "$pn" in
+    count:[0-9]*:*)
+      want="${pn#count:}"
+      want="${want%%:*}"
+      pn="${pn#count:*:}"
+      ;;
+    after:*)
+      # position matters for this one: write the anchor first so the needle lands BELOW it,
+      # rather than relying on the order rows happen to appear in CHECKS.
+      anchor="${pn#after:}"
+      anchor="${anchor%%:*}"
+      pn="${pn#after:*:}"
+      ;;
+    esac
+    mkdir -p "$win/${pf%/*}"
+    [[ -n "$anchor" ]] && printf '%s\n' "$anchor" >>"$win/$pf"
+    i=0
+    while ((i < want)); do
+      printf '%s\n' "$pn" >>"$win/$pf"
+      i=$((i + 1))
+    done
+  done
+  # The palette VALUE comparison wants a real hex, not just the needle's prefix.
+  fg="$(sed -nE 's/^color_fg[[:space:]]*=[[:space:]]*"(#[0-9a-f]{6})".*/\1/p' "$HERE/theme/palette.toml" | head -n1)"
+  printf -- '--color=query:%s:regular\n' "$fg" >>"$win/powershell/core/10-tools.ps1"
+  # ...and the alias loop wants the `provides:` contract line, built from the same manifest
+  # parity-check.sh reads, so the two cannot disagree either.
+  printf '# provides: %s\n' \
+    "$(awk -F'|' '!/^[[:space:]]*#/ && NF >= 3 && $1 != "" { printf "%s,", $3 }' "$HERE/scripts/parity-aliases.txt")" \
+    >"$win/powershell/core/00-aliases.ps1"
+}
+
+# _pc_row <label> <expected-rc> <needle-in-output> <awk-program-against-PARITY.md>
+# An empty program means "the real contract, unmodified".
+#
+# AWK, NOT SED, for the mutations. `\n` in a sed REPLACEMENT is a GNU extension: BSD sed
+# (macOS, a supported CI leg) does not expand it, so a row meant to be INSERTED would have
+# merged into the following line and these negative rows would have quietly stopped testing
+# the thing they are named for. A test that cannot fail is the defect this file exists to
+# catch, so the mutations use only portable awk.
+_pc_row() {
+  local label="$1" want_rc="$2" want_txt="$3" prog="${4:-}"
+  local fx="$SANDBOX/parity-fixture.md" rc=0
+  if [[ -n "$prog" ]]; then awk "$prog" "$HERE/PARITY.md" >"$fx"; else cp "$HERE/PARITY.md" "$fx"; fi
+  _pc_fixture "$fx" || rc=$?
+  if ((rc == want_rc)) && grep -qF -- "$want_txt" "$PCOUT"; then
+    pass "parity coverage: $label"
+  else
+    fail "parity coverage: $label (rc=$rc, wanted $want_rc; output did not contain '$want_txt')"
+    grep -E "coverage|cross-shell" "$PCOUT" | sed 's/^/    /' >&2
+  fi
+}
+
+# The control. If this row ever goes red the fixture drifted from the real tree, and every
+# negative row below is meaningless — so it runs first.
+_pc_row "the real contract is fully covered" 0 \
+  "aligned PARITY.md rows have a check"
+
+# 1. An aligned row nobody enforces — the defect #682 was filed for. It must NAME the row:
+#    a bare count would send the reader diffing two lists by hand.
+_pc_row "an aligned row with no needle fails, and names it" 1 \
+  "no check behind them: clipboard-sync" \
+  '/^\| Word nav \|/ { print "| Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |" } { print }'
+
+# 2. The other direction: rename a Capability cell and its check no longer matches a row.
+#    Both halves of the mapping must fire — the old key orphans, the new row is uncovered.
+_pc_row "a renamed row orphans its check, and names the key" 1 \
+  "match no PARITY.md table row: session-picker" \
+  '{ sub(/^\| Session picker \|/, "| Session chooser |"); print }'
+
+# 3. Two rows slugifying alike would let one row's needle certify the other — coverage
+#    would read as complete while a row went untested. That is the #682 failure wearing a
+#    different hat, so it is a hard fail rather than a warning.
+_pc_row "two rows slugifying to one key fail" 1 \
+  "both slugify to \`theme\`" \
+  '/^\| Word nav \|/ { print "| Theme | x | y | `aligned` |" } { print }'
+
+# 4. The case the PR description got WRONG before review caught it: reclassifying a row
+#    does NOT orphan its check. `deliberate`/`gap` rows may keep one (see `cheat`), and
+#    only `aligned` rows are required to have one. Pinned here because the prose claimed
+#    otherwise in four places, and prose is what this gate exists to stop trusting.
+_pc_row "reclassifying an aligned row keeps its check valid" 0 \
+  "aligned PARITY.md rows have a check" \
+  '/^\| Session picker \|/ { sub(/`aligned`/, "`deliberate`") } { print }'
+
+# 5. A misspelled status is the nastiest input this parser takes: the row stays known (so
+#    its check is not orphaned) but stops being REQUIRED, quietly dropping a contract row
+#    out of enforcement with the gate green. Only the three documented statuses are
+#    accepted, and anything else is a hard fail naming the row and what it said.
+_pc_row "an unknown status is rejected, not treated as not-aligned" 1 \
+  "has status \`aligend\`" \
+  '/^\| Word nav \|/ { sub(/`aligned`/, "`aligend`") } { print }'
+
+# 6. A pwsh half that is a framework default must be REPORTED, never certified. The
+#    summary line is the assertion: it may not say "all aligned rows hold" when a half was
+#    skipped. (Windows is absent from the fixture, so this pins the Core-side wording.)
+_pc_fixture "$HERE/PARITY.md" || true
+if grep -qF "pwsh side skipped" "$PCOUT"; then
+  pass "parity coverage: a run without dotfiles-Windows says so instead of claiming both shells"
+else
+  fail "parity coverage: a pwsh-less run did not qualify its summary — it certified a half it never read"
+fi
+
+# 7. AN INDENTED ROW IS STILL A ROW. Anchoring the parser at column 0 meant a Markdown-legal
+#    row with one to three leading spaces parsed as nothing: the gate reported "all 20 aligned
+#    rows have a check" and exited 0 while a new aligned row sat there unenforced. Four or
+#    more spaces IS an indented code block, so that one must still be ignored — both
+#    directions are pinned, because a fix that swallowed code blocks would be its own bug.
+_pc_row "a one-space-indented aligned row is enforced, not ignored" 1 \
+  "no check behind them: clipboard-sync" \
+  '/^\| Word nav \|/ { print " | Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |" } { print }'
+_pc_row "a 4-space-indented row is an indented code block, not a contract row" 0 \
+  "aligned PARITY.md rows have a check" \
+  '/^\| Word nav \|/ { print "     | Clipboard sync | `pbcopy` | `x` | `aligned` |" } { print }'
+
+# 8. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the `-`
+#    branch and the qualified summary never ran. With a synthetic dotfiles-Windows in place
+#    both must: each Word-nav half is reported as a skip, and the closing line must NOT say
+#    "all aligned rows hold across zsh + pwsh" — the overclaim this PR exists to remove.
+_pc_fixture "$HERE/PARITY.md" win && _pc_win_rc=0 || _pc_win_rc=$?
+_pc_win_n="$(grep -c "nothing to grep" "$PCOUT" || true)"
+if ((_pc_win_rc == 0)) && ((_pc_win_n == 2)) &&
+  grep -qF "every CONFIGURED aligned row holds" "$PCOUT" &&
+  ! grep -qF "all aligned rows hold across zsh + pwsh" "$PCOUT"; then
+  pass "parity coverage: a Windows-present run reports both framework-default halves and refuses to certify them"
+else
+  fail "parity coverage: Windows-present run (rc=$_pc_win_rc, $_pc_win_n default skips) did not report both halves and qualify its summary"
+  grep -E "coverage|nothing to grep|aligned rows hold|CONFIGURED" "$PCOUT" | sed 's/^/    /' >&2
+fi
+unset _pc_win_rc _pc_win_n
+
+# 9. `after:` is POSITION, not presence — the one property a count cannot express. pwsh's
+#    Ctrl+R re-assertion only means anything BELOW `atuin init`, because atuin ignores
+#    ATUIN_NOBIND there and seizes the chord on init. Hoisting both bindings above the anchor
+#    keeps the count satisfied and must still fail, or the row certifies a runtime break.
+_pc_fixture "$HERE/PARITY.md" win >/dev/null 2>&1 || true
+_pc_f10="$PCR/fleet/dotfiles-Windows/powershell/core/10-tools.ps1"
+{
+  grep -F -- "-Chord 'Ctrl+r'" "$_pc_f10"
+  grep -vF -- "-Chord 'Ctrl+r'" "$_pc_f10"
+} >"$_pc_f10.hoisted" && mv "$_pc_f10.hoisted" "$_pc_f10"
+env -u DOTFILES_ROOT "$PCR/scripts/parity-check.sh" --root "$PCR/fleet" --color never >"$PCOUT" 2>&1 && _pc_ord_rc=0 || _pc_ord_rc=$?
+if ((_pc_ord_rc == 1)) && grep -qF "BELOW 'atuin init'" "$PCOUT"; then
+  pass "parity coverage: two Ctrl+R bindings both ABOVE atuin still fail — count cannot express position"
+else
+  fail "parity coverage: hoisting both Ctrl+R bindings above atuin was accepted (rc=$_pc_ord_rc) — the row would certify a runtime break"
+  grep -E "survives atuin|history search on" "$PCOUT" | sed 's/^/    /' >&2
+fi
+unset _pc_f10 _pc_ord_rc
+
+rm -rf "$PCR"
+unset PCR PCOUT
+unset -f _pc_fixture _pc_row _pc_win
+
+# ── how audit-core.sh §9f CLASSIFIES that run (common.sh :: _core_parity_verdict) ──
+# The rows above drive parity-check.sh directly and never reach the audit integration —
+# which is where both of the falsely-complete reports review found actually lived. The
+# classification is therefore a helper, and this drives it: caller renders, helper decides,
+# test drives the helper (the _core_luacheck_verdict split).
+_pv_is() { # _pv_is <label> <rc> <output> <expected-verdict>
+  local got
+  got="$(_core_parity_verdict "$2" "$3")"
+  if [[ "$got" == "$4" ]]; then
+    pass "parity verdict: $1"
+  else
+    fail "parity verdict: $1 (got '$got', wanted '$4')"
+  fi
+}
+_pv_is "a clean both-shells run is ok-full" 0 "✓ all aligned rows hold across zsh + pwsh" ok-full
+_pv_is "an absent dotfiles-Windows is ok-no-sibling, not a full pass" \
+  0 "– dotfiles-Windows not checked out at /x — pwsh side not verified" ok-no-sibling
+_pv_is "an unasserted framework default is ok-defaults, not a full pass" \
+  0 "– word nav: forward-word on Ctrl+Right — pwsh half is a PSReadLine default; nothing to grep" ok-defaults
+# Precedence: with no sibling repo the pwsh half never runs, so a default can never ALSO be
+# reported. If both notices somehow appear, the weaker claim must win.
+_pv_is "no-sibling outranks framework-default when both appear" \
+  0 "– dotfiles-Windows not checked out — nothing to grep" ok-no-sibling
+_pv_is "exit 1 is drift, whatever it printed" 1 "" drift
+_pv_is "exit 2 is broken, NOT a clean contract" 2 "" broken
+_pv_is "a non-standard exit is broken, not silently ok" 127 "" broken
+unset -f _pv_is
+
+# The verdict is matched on parity-check.sh's own notice wording, and §9f's whole
+# classification rests on reading them. Pin both ends so a reword on either side is a
+# failure HERE rather than a silently-wrong audit line — the luacheck pin's reason (:2035).
+if grep -qF 'dotfiles-Windows not checked out' "$HERE/scripts/parity-check.sh" &&
+  grep -qF 'nothing to grep' "$HERE/scripts/parity-check.sh"; then
+  pass "parity verdict: parity-check.sh still emits both notices _core_parity_verdict reads"
+else
+  fail "parity verdict: parity-check.sh reworded a notice _core_parity_verdict matches on — §9f will misclassify"
+fi
+if grep -q '_core_parity_verdict' "$HERE/scripts/audit-core.sh"; then
+  pass "parity verdict: audit-core.sh §9f classifies via the helper, not an inline if-chain"
+else
+  fail "parity verdict: audit-core.sh §9f stopped using _core_parity_verdict — the classification is untestable again"
+fi
+# CORE_JSON=1 is EXPORTED by `audit --json` and silences common.sh's skip(), which is where
+# both notices above come from. Without the reset at the child boundary a --json run
+# classifies every box as ok-full — it reported a full zsh+pwsh pass on a box with no pwsh
+# file. That reset is one token with no runtime symptom in a normal run, so it is pinned.
+if grep -q 'CORE_JSON=0 "\$HERE/scripts/parity-check.sh"' "$HERE/scripts/audit-core.sh"; then
+  pass "parity verdict: §9f clears CORE_JSON at the child boundary (a --json run would else read no notices)"
+else
+  fail "parity verdict: §9f no longer clears CORE_JSON for the parity child — --json runs will report a full pass on a box with no pwsh file"
+fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
