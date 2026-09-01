@@ -41,8 +41,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   too rather than the record — key rotation is an operational task, not history. The
   recovery procedure also gained an exit: it used to end with broad PATs live and no way
   back, which is the state G2 removed, and worse than pre-G2 because `token-health` — the
-  probe that watched those PATs for silent expiry — was retired on the grounds that minted
-  tokens cannot expire. Nothing watches a re-provisioned PAT, so the procedure now says so
+  probe that watched those PATs for silent expiry — was retired because nothing depends on
+  a minted token surviving (each run mints a fresh one, so there is no expiry date to miss;
+  they do expire, in about an hour). Nothing watches a re-provisioned PAT, so it now says so
   and prescribes reversing all seven steps, deleting the PATs, and verifying it.
 
 ### Added

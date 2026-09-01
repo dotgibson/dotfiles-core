@@ -115,7 +115,13 @@ exception:
 - **The Core-vendoring OS repos** (`scripts/os-repos.txt`) **and `dotfiles-Offense`** —
   targets of `dotfiles-core`'s fan-out. `htpx`'s companion fan-out targets
   **`dotfiles-Offense` only**, not the rest of that group.
-- **`dotfiles-web`** — target of the `notify-web` dispatch.
+- **`dotfiles-web`** — two dependencies, not one. It is the target of the `notify-web`
+  dispatch, *and* its own `fleet-sync.yml` mints a repo-scoped token to author its refresh
+  PR, so that PR's CI runs (a PR opened by `GITHUB_TOKEN` is held at `action_required`).
+  That second one degrades rather than fails: without the mint it falls back to
+  `GITHUB_TOKEN` and the PR still opens, but needs a human nudge before CI runs. An
+  operator debugging "the refresh PR is stuck awaiting approval" is looking at this
+  install.
 - **`dotfiles-core`** — the exception, and **not** a cross-repo write: it is for Core's own
   **self-PRs**. `freshness.yml` opens a pin-bump PR *in Core*, and a PR opened by
   `GITHUB_TOKEN` has its CI held at `action_required` (GitHub's recursion guard).
@@ -285,22 +291,35 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
    form. **The two paths take different secrets — copying one into the other restores the
    wrong credential:**
 
+   **Each fan-out reads the token in THREE places, and the preflight is the one that bites.**
+   It runs before the work steps and exits non-zero on an empty token, so leaving it
+   unchanged aborts the job before the restored PAT is ever used — the fan-out fails with
+   "No fleet write token available" while the fallback you just added sits untouched below.
+   Fix all three:
+
    ```yaml
-   # dotfiles-core sync-fanout.yml — the cross-repo write path. FLEET_TOKEN also feeds
-   # the `git config --global url."https://x-access-token:${FLEET_TOKEN}@github.com/"`
-   # rewrite, so fixing these two env values covers git auth here as well.
+   # dotfiles-core sync-fanout.yml — 3 reads:
+   #   1. the PREFLIGHT step's FLEET_TOKEN   <- miss this and the job aborts here
+   #   2. "Configure git + fleet auth" FLEET_TOKEN, which feeds the
+   #      `git config --global url."https://x-access-token:${FLEET_TOKEN}@..."` rewrite
+   #   3. "Fan out Core and open PRs" GH_TOKEN
    env:
-     GH_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
      FLEET_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
+     GH_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
    ```
+
+   Verify by count, not by eye — `grep -c 'steps.app.outputs.token' .github/workflows/sync-fanout.yml`
+   should match the number of expressions you edited.
 
    **htpx's fan-out wires git differently — read this before editing it.** It uses
    step-scoped `GIT_CONFIG_*` rather than `git config --global`, and **the token is
    interpolated into the KEY, not the value**:
 
    ```yaml
-   # htpx sync-fanout.yml. GIT_CONFIG_VALUE_0 is the literal match URL — LEAVE IT ALONE.
+   # htpx sync-fanout.yml — also 3 reads: its own PREFLIGHT FLEET_TOKEN, then GH_TOKEN, then
+   # the KEY_0 rewrite. GIT_CONFIG_VALUE_0 is the literal match URL — LEAVE IT ALONE.
    env:
+     FLEET_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
      GH_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
      GIT_CONFIG_KEY_0: "url.https://x-access-token:${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}@github.com/.insteadOf"
      GIT_CONFIG_VALUE_0: "https://github.com/" # unchanged
@@ -367,8 +386,10 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
 The state the seven steps leave you in **is the state G2 existed to remove**: broad,
 long-lived, hand-rotated credentials in many repos. It is worse than the pre-G2 state in
 one respect — `token-health.yml`, the weekly probe that watched those PATs for silent
-expiry, was retired precisely because minted tokens cannot expire, and it is **not coming
-back on its own**. So while the PATs are live, nothing is watching them.
+expiry, was retired because nothing depends on a minted token surviving: each run mints a
+fresh one, so there is no expiry date to miss. That reasoning does not cover a PAT, and the
+probe is **not coming back on its own**. So while the PATs are live, nothing is watching
+them.
 
 Treat the workaround as time-boxed:
 

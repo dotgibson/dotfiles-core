@@ -67,8 +67,11 @@ In the order it happened:
 
 - Both secrets **deleted** from every repo. Verified across all twelve, at repo *and* org
   scope, on 2026-09-01 (#683) — see the reference for the re-check command.
-- `token-health.yml` **dropped**. It existed to catch a PAT silently expiring; a minted
-  token lives ~1 hour and cannot, so there was nothing left for it to watch.
+- `token-health.yml` **dropped**. It existed to catch a long-lived PAT reaching its expiry
+  date unnoticed. A minted token *does* expire — in about an hour — but nothing depends on
+  one surviving: every run mints a fresh one, so there is no expiry date for anyone to miss.
+  What the probe watched no longer exists; the short lifetime is the mechanism, not an
+  absence of expiry.
 - The `|| secrets.…` fallbacks **removed** — from `sync-fanout.yml`, `notify-web.yml` and
   `notify-web-call.yml`, with `release.yml` no longer passing `WEBHOOK_SECRET` (#683).
   They had been dead code resolving to the empty string ever since the secrets were
