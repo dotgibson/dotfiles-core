@@ -219,7 +219,7 @@ a **Workflows: write** change still awaiting approval. That is a minutes-long fi
 procedure below is an hours-long one.
 
 If you genuinely must run without the App, it is a deliberate **re-provisioning**. All
-six steps are ONE change — doing part of it looks like a rollback and does nothing:
+seven steps are ONE change — doing part of it looks like a rollback and does nothing:
 
 1. **Mint fine-grained PATs** with the scopes the App holds — `FLEET_SYNC_TOKEN` needs
    contents, pull-requests and workflows write on the OS repos and `dotfiles-Offense`;
@@ -227,7 +227,7 @@ six steps are ONE change — doing part of it looks like a rollback and does not
 2. **Add each under that name, with visibility covering every repo that needs it.** Naming
    the secret is not sufficient. A *repo* secret exists only in that one repository, and an
    *org* secret can be scoped to selected repositories; either can leave another source
-   repo reading an empty string even after step 5. `WEBHOOK_SECRET` is needed by every repo
+   repo reading an empty string even after step 6. `WEBHOOK_SECRET` is needed by every repo
    that dispatches (Core, the nine OS repos, and `dotfiles-Windows`); `FLEET_SYNC_TOKEN` by
    `dotfiles-core` and `htpx`. An org secret set to *all repositories* is the one option
    that cannot half-apply.
@@ -273,7 +273,22 @@ six steps are ONE change — doing part of it looks like a rollback and does not
    validation — so re-declare it (`required: false`) before the next step. While the
    declaration is still present this step is a no-op; it is written down because this
    procedure must survive the removal.
-5. **Restore each caller's `secrets:` mapping.** A reusable workflow does **not** inherit
+5. **Publish the reusable change, or the callers will never see it.** This is the step
+   that is easy to miss and silently wastes the whole procedure. Callers do not execute
+   `notify-web-call.yml` from `main` — eight run it at the **moving `@v6` tag** and
+   `dotfiles-MacBook` at a **SHA pin**. Edits to steps 3-4 sit on `main`, invisible to
+   every one of them. Until this lands, step 6 hands the reusable a secret that the
+   version actually running still ignores, and step 7 then removes the App token that was
+   holding the dispatch up — so the dispatch path goes dark fleet-wide with everything
+   *looking* restored. Either:
+   - **cut a Core release**, which advances `@v6` (see `RELEASE-RUNBOOK.md`) — the normal
+     path, and it still leaves `dotfiles-MacBook` needing a pin bump; or
+   - **temporarily repoint the callers** at the recovery commit (`@<sha>`), which is
+     faster in an incident and is undone by the cleanup below.
+
+   `sync-fanout.yml` and Core's own inline `notify-web.yml` are not reusable and are
+   unaffected by this step — their step-3 edits take effect immediately.
+6. **Restore each caller's `secrets:` mapping.** A reusable workflow does **not** inherit
    its caller's secrets: `notify-web-call.yml` sees only what the caller hands it, and
    `release.yml` passes `FLEET_APP_PRIVATE_KEY` alone. Restoring the expression inside the
    reusable without re-adding `WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}` to every
@@ -281,7 +296,7 @@ six steps are ONE change — doing part of it looks like a rollback and does not
    empty there however the org secret is set. (`secrets: inherit` does the same job in one
    line.) `sync-fanout.yml` and Core's own inline `notify-web.yml` are not reusable
    workflows and need only step 3.
-6. **Then unset `FLEET_APP_ID`**, or the restored expression will never choose the PAT.
+7. **Then unset `FLEET_APP_ID`**, or the restored expression will never choose the PAT.
    `steps.app.outputs.token || secrets.…` prefers the *left* side whenever it is non-empty,
    so an App that still mints — even an under-scoped one whose token 403s on the actual
    push — keeps winning; and an App that fails to mint fails the *step*, so execution never
@@ -301,8 +316,17 @@ Treat the workaround as time-boxed:
 - **While it is in force**, put the PATs' expiry dates somewhere that will actually reach
   you. Nothing in CI will warn you; the first symptom is a fan-out or dispatch failing on a
   403 for no visible reason, which is exactly the failure mode this whole migration closed.
-- **Once the App is working again**, reverse all six steps: re-set `FLEET_APP_ID`, drop the
-  `|| secrets.…` fallbacks back to the bare `${{ steps.app.outputs.token }}`, remove the
-  caller `secrets:` mappings, and **delete the PATs** — from every repo and from the org.
-  Verify with the listing command in *What the fleet runs today*; a forgotten PAT is a
-  live credential nothing is monitoring.
+- **Once the App is working again**, reverse all seven steps, in this order:
+  1. Re-set `FLEET_APP_ID` (undoes step 7) — the mint resumes and takes precedence again.
+  2. Remove the caller `secrets:` mappings (step 6) and drop the `|| secrets.…` fallbacks
+     back to the bare `${{ steps.app.outputs.token }}` (step 3).
+  3. **If step 4 re-declared `WEBHOOK_SECRET` after a MAJOR had removed it, remove it
+     again** — otherwise the cleanup silently reinstates the very declaration that MAJOR
+     was cut to retire, and the next reader finds a deprecated secret back in the contract
+     with no record of why.
+  4. **Re-publish** (step 5): advance `@v6` with a release, or unpin any callers you
+     repointed at a recovery SHA. Skipping this leaves callers running the recovery
+     workflow indefinitely.
+  5. **Delete the PATs** — from every repo and from the org. Verify with the listing
+     command in *What the fleet runs today*; a forgotten PAT is a live credential nothing
+     is monitoring.
