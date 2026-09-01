@@ -44,7 +44,7 @@ on:
         description: "DEPRECATED AND IGNORED. Was the legacy fallback PAT; that credential was deleted when G2 finished (#683) and nothing reads this any more. It stays DECLARED only so the fleet's callers, which still pass it and pin the moving @v6 alias, do not fail on an undeclared secret — dropping it is a caller-visible break, so it comes out on the next MAJOR once every caller has stopped passing it (#819). Do not pass it in new callers."
         required: false
       FLEET_APP_PRIVATE_KEY:
-        description: "Fleet GitHub App private key (G2). With the FLEET_APP_ID variable set, mints a dotfiles-web-scoped token for the dispatch instead of the PAT."
+        description: "Fleet GitHub App private key (G2). With the FLEET_APP_ID variable set, mints the dotfiles-web-scoped token used for the dispatch. This is the SOLE active dispatch credential — the legacy PAT it once fell back to was deleted when G2 finished (#683)."
         required: false
 
 permissions:

@@ -367,8 +367,9 @@ fi
 # core_sha, and (in any repo that SHA-pins its reusable callers) the `uses:` pins. This
 # script wrote the first two and left the third, so a fan-out into a pinned repo produced
 # a tree that VENDORED one Core and RAN another. Not cosmetic: auto-tag-call holds
-# `contents: write` and notify-web-call is handed two secrets, so the pins decide whose
-# privileged code executes. The existing gate stays green through it — core-integrity
+# `contents: write` and notify-web-call is handed the fleet App's private key (its other
+# declared secret, WEBHOOK_SECRET, is a deprecated no-op since #683), so the pins decide
+# whose privileged code executes. The existing gate stays green through it — core-integrity
 # compares a tree object and never looks at a workflow — so the drift was silent until
 # dotfiles-MacBook's test/check-pins.sh caught it on the v4.12.0 fan-out (#482). (This
 # comment used to credit a second gate, `verify-core`, which has never existed here; #454.)

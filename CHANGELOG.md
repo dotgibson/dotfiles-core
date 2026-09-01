@@ -28,7 +28,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   auth. So `token-health`'s retirement was justified after all and no expiry check needs
   restoring; what was wrong was the rollback, and every `|| secrets.…` fallback, which had
   been dead code resolving to the empty string. Removed the fallbacks from `sync-fanout.yml`
-  (3 sites) and `notify-web.yml`, stopped `release.yml` passing `WEBHOOK_SECRET`, and
+  (3 sites), `notify-web.yml` and `notify-web-call.yml`, stopped `release.yml` passing
+  `WEBHOOK_SECRET`, and
   rewrote the rollback as what it actually is — a deliberate re-provisioning (mint a PAT,
   add the secret, restore the expressions, re-add each caller's `secrets:` mapping, _then_
   unset `FLEET_APP_ID`), not a toggle. The last two steps are not optional: a reusable
