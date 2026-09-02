@@ -6841,7 +6841,9 @@ if have git; then
   GPR="$SANDBOX/matrixrepo"
   GPF="$SANDBOX/matrixfleet"
   _gp_ids="$(awk -F'"' '/^BLOCK_IDS=/ { print $2 }' "$HERE/scripts/gen-porting-matrix.sh")"
-  _gp_rows="$(awk '/^PKG_ROWS="/ { f = 1; sub(/^PKG_ROWS="/, "") } f { sub(/"$/, ""); print; if (/"$/ || $0 == "") f = 0 }' "$HERE/scripts/gen-porting-matrix.sh")"
+  # The closing quote is the terminator: test for it BEFORE stripping it, or the read runs
+  # on into the rest of the generator and any later tab-separated line becomes a row.
+  _gp_rows="$(awk '/^PKG_ROWS="/ { f = 1; sub(/^PKG_ROWS="/, "") } f { if (/"$/) { sub(/"$/, ""); print; f = 0 } else print }' "$HERE/scripts/gen-porting-matrix.sh")"
 
   _gp_caps() { # _gp_caps <file> <prefix> — a minimal declaration whose verbs all start with <prefix>
     printf 'PKG_REFRESH=%s refresh\nPKG_UPGRADE=%s upgrade\nPKG_INSTALL=%s install\nPKG_REMOVE=%s remove\nPKG_SEARCH=%s search\nPKG_OWNS=%s owns\nPKG_COUNT_PENDING=%s pending\nSCHEDULER=none\n' \

@@ -628,6 +628,9 @@ if ! generated="$(build_file "$TARGET" && printf x)"; then
 fi
 generated="${generated%x}"
 if [[ "$MODE" == check ]]; then
+  # core_files_identical compares `git hash-object` outputs: with no git both sides are
+  # empty and EQUAL, so a drifted table would read as clean. Fail closed instead.
+  command -v git >/dev/null 2>&1 || die "git is not installed — the byte comparison and the drift report need it; the gate checked NOTHING"
   _tmp="$(mktemp "${TMPDIR:-/tmp}/gen-porting-matrix.XXXXXX")" || exit 2
   # CHECKED, because there is no `set -e`: an I/O error here must be 2, not drift (1).
   printf '%s' "$generated" >"$_tmp" || {
