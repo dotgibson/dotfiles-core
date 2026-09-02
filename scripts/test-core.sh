@@ -6771,6 +6771,20 @@ if have git; then
   else
     fail "gen-aliases: an unregistered end marker was accepted as prose"
   fi
+  # CROSSED PAIRS: gen A, gen B, end A, end B has exactly one marker of each kind per
+  # block, so the counts pass; only the walker can see that B opens inside A.
+  _ga_fixture && _ga_run >/dev/null
+  sed -i.bak -e '/core:aliases:gen git-stash/d' -e '/core:aliases:end git-stash/d' \
+    -e '/core:aliases:gen git-rebase/d' -e '/core:aliases:end git-rebase/d' "$GAR/aliases.md" && rm -f "$GAR/aliases.md.bak"
+  printf '<!-- core:aliases:gen git-stash -->\n<!-- core:aliases:gen git-rebase -->\n<!-- core:aliases:end git-stash -->\n<!-- core:aliases:end git-rebase -->\n' >>"$GAR/aliases.md"
+  _ga_cross_out="$(_ga_out --check)"
+  _ga_before="$(git hash-object "$GAR/aliases.md")"
+  if [[ "$(_ga_run --check)" == 2 && "$(_ga_run)" == 2 ]] && grep -q "opens inside the 'git-stash' region" <<<"$_ga_cross_out" &&
+    [[ "$(git hash-object "$GAR/aliases.md")" == "$_ga_before" ]]; then
+    pass "gen-aliases: crossed marker pairs are a structural failure (2) in both modes, and nothing is written"
+  else
+    fail "gen-aliases: crossed marker pairs were accepted — a block would be swallowed silently"
+  fi
   _ga_fixture && _ga_run >/dev/null
   printf '<!-- core:aliases:gen nope -->\n<!-- core:aliases:end nope -->\n' >>"$GAR/aliases.md"
   _ga_unreg_out="$(_ga_out --check)" # captured, not piped into grep -q (the §5d SIGPIPE hazard)
@@ -6801,7 +6815,7 @@ if have git; then
   fi
 
   rm -rf "$GAR"
-  unset GAR _ga_ids _ga_gen_rc _ga_drift_rc _ga_drift_out _ga_before _ga_new_rc _ga_new_out _ga_gone_out _ga_miss_out _ga_unreg_out _ga_stray_out _ga_list_out _ga_nosrc_rc
+  unset GAR _ga_ids _ga_gen_rc _ga_drift_rc _ga_drift_out _ga_before _ga_new_rc _ga_new_out _ga_gone_out _ga_miss_out _ga_unreg_out _ga_stray_out _ga_cross_out _ga_list_out _ga_nosrc_rc
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────

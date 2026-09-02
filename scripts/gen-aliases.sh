@@ -290,7 +290,10 @@ _render() {
       for (i = 1; i <= n; i++) {
         k = kind SUBSEP want[i]
         if (!(k in val)) { printf "gen-aliases: no %s definition for %s\n", kind, want[i] > "/dev/stderr"; exit 2 }
-        if (kind != "fn" && index(val[k], "`")) {
+        # EVERY rendered code span — alias values, directory targets AND function
+        # synopses — is wrapped in backticks below, so a backtick in any of them is a
+        # broken table, not a rendering case. (The fn description is prose: allowed.)
+        if (index(val[k], "`")) {
           printf "gen-aliases: %s %s: the value contains a backtick, which cannot sit inside a code span\n", kind, want[i] > "/dev/stderr"; exit 2
         }
         if (grd[k] != "") hasreq = 1
@@ -346,13 +349,20 @@ _markers() {
 }
 
 build_file() { # build_file <file> — emit <file> with every marked block re-rendered
-  local file="$1" line id found l2 endid
+  local file="$1" line id found l2 endid inner
   while IFS= read -r line || [[ -n "$line" ]]; do
     if id="$(marker_id gen "$line")"; then
       printf '%s\n' "$line"
       render_for "$id" || return 2
       found=0
       while IFS= read -r l2; do
+        # A second `gen` before this block's `end` is a CROSSED or NESTED pair. The
+        # preflight counts cannot see it (gen A, gen B, end A, end B has one of each), and
+        # consuming it as stale body would silently drop block B from the document.
+        if inner="$(marker_id gen "$l2")"; then
+          printf "gen-aliases: 'core:aliases:gen %s' opens inside the '%s' region of %s — blocks cannot nest or cross\n" "$inner" "$id" "$file" >&2
+          return 2
+        fi
         if endid="$(marker_id end "$l2")"; then
           [[ "$endid" == "$id" ]] || {
             printf "gen-aliases: marker mismatch in %s: 'gen %s' closed by 'end %s'\n" "$file" "$id" "$endid" >&2
