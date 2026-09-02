@@ -258,7 +258,12 @@ maintenance commands (`up`, `update-check`, `maint-*`, `op*`). The
 [alias cheat sheet](aliases.md) is the complete inventory: every alias in
 `zsh/20-aliases.zsh` and the full OMZ-compatible git suite in `zsh/25-git.zsh` (`gst`,
 `gcb`, `glog`, `gpf`, …), plus the function one-liners. Its tables are generated from
-those files (`make gen-aliases`) and `make audit` fails when they drift. The updater and
+those files (`make gen-aliases`) and `make audit` fails when they drift. The same holds for
+`PORTING-MATRIX.md`'s two data tables, rendered from the sibling OS repos' `os/*.capabilities`
+and `install/packages.txt` by `make gen-porting-matrix` — with one qualification: that gate
+needs the siblings checked out beside this repo, so on a lone clone (CI included) it records an
+environment skip rather than a verdict, and `scripts/audit-core.sh --require-siblings` is what makes the
+absence red. The updater and
 maintenance verbs (`up`, `update-check`, `maint-*`) are also reachable through the front
 door as `core update [check]` and `core maint <verb>`.
 

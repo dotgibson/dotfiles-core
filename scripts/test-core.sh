@@ -6818,6 +6818,385 @@ if have git; then
   unset GAR _ga_ids _ga_gen_rc _ga_drift_rc _ga_drift_out _ga_before _ga_new_rc _ga_new_out _ga_gone_out _ga_miss_out _ga_unreg_out _ga_stray_out _ga_cross_out _ga_list_out _ga_nosrc_rc
 fi
 
+# ── F10c. porting-matrix generation (scripts/gen-porting-matrix.sh) ──────────
+# PORTING-MATRIX.md's two data tables are rendered from the sibling OS repos and
+# audit-core.sh §9h gates the result — as an ENVIRONMENT skip when the siblings are not
+# checked out, which is what CI's lone checkout looks like, so nothing in the real gate
+# ever exercises a red. Everything worth pinning therefore lives here: the drift
+# direction (1), the cannot-answer direction (2), and the uncovered direction (3), told
+# apart on purpose because the audit maps each to a different verdict.
+#
+# The fixture is a stub Core tree (the two marker pairs, hand-authored lines either
+# side) and a fake FLEET: seven sibling directories, each with a .git so it resolves
+# like a checkout, minimal os/*.capabilities, and install/packages.txt files
+# SYNTHESISED FROM THE SCRIPT'S OWN PKG_ROWS — the first candidate of every derived cell,
+# so the registry is the thing under test (F10b's argument for using the real zsh
+# sources). Debian's file carries the tiers and floors the real one does, and the fixture
+# ships a copy of pkg_filter_lines because the generator sources the repo's own filter.
+#
+# The REPOSITORY SCRIPT is run with --root AND --fleet from a third directory, so the
+# documented fixture mechanism is what is exercised (F10b's rule).
+if have git; then
+  hdr "porting-matrix generation (scripts/gen-porting-matrix.sh)"
+  GPR="$SANDBOX/matrixrepo"
+  GPF="$SANDBOX/matrixfleet"
+  _gp_ids="$(awk -F'"' '/^BLOCK_IDS=/ { print $2 }' "$HERE/scripts/gen-porting-matrix.sh")"
+  # The closing quote is the terminator: test for it BEFORE stripping it, or the read runs
+  # on into the rest of the generator and any later tab-separated line becomes a row.
+  _gp_rows="$(awk '/^PKG_ROWS="/ { f = 1; sub(/^PKG_ROWS="/, "") } f { if (/"$/) { sub(/"$/, ""); print; f = 0 } else print }' "$HERE/scripts/gen-porting-matrix.sh")"
+
+  _gp_caps() { # _gp_caps <file> <prefix> — a minimal declaration whose verbs all start with <prefix>
+    printf 'PKG_REFRESH=%s refresh\nPKG_UPGRADE=%s upgrade\nPKG_INSTALL=%s install\nPKG_REMOVE=%s remove\nPKG_SEARCH=%s search\nPKG_OWNS=%s owns\nPKG_COUNT_PENDING=%s pending\nSCHEDULER=none\n' \
+      "$2" "$2" "$2" "$2" "$2" "$2" "$2" >"$1"
+  }
+  _gp_fixture() {
+    local r
+    rm -rf "$GPR" "$GPF"
+    mkdir -p "$GPR"
+    {
+      printf '# fixture matrix\n\nhand-authored above the first block\n\n'
+      for _id in $_gp_ids; do
+        printf '<!-- core:porting-matrix:gen %s -->\n<!-- core:porting-matrix:end %s -->\n\n' "$_id" "$_id"
+      done
+      printf 'hand-authored below the last block\n'
+    } >"$GPR/PORTING-MATRIX.md"
+    for r in MacBook Fedora Arch openSUSE Alpine Gentoo Debian; do
+      mkdir -p "$GPF/dotfiles-$r/.git" "$GPF/dotfiles-$r/os" "$GPF/dotfiles-$r/install" "$GPF/dotfiles-$r/scripts"
+    done
+    _gp_caps "$GPF/dotfiles-MacBook/os/macos.capabilities" brew
+    _gp_caps "$GPF/dotfiles-Fedora/os/fedora.capabilities" dnf
+    _gp_caps "$GPF/dotfiles-Arch/os/arch.capabilities" pacman
+    _gp_caps "$GPF/dotfiles-openSUSE/os/opensuse.capabilities" zypper
+    _gp_caps "$GPF/dotfiles-openSUSE/os/opensuse.leap.capabilities" zypper
+    _gp_caps "$GPF/dotfiles-Alpine/os/alpine.capabilities" apk
+    _gp_caps "$GPF/dotfiles-Gentoo/os/gentoo.capabilities" emerge
+    _gp_caps "$GPF/dotfiles-Debian/os/debian.capabilities" apt
+    _gp_caps "$GPF/dotfiles-Debian/os/debian.kali.capabilities" apt
+    # The Leap/Tumbleweed pair disagrees on exactly one verb; one value carries a pipe.
+    sed -i.bak 's/^PKG_UPGRADE=zypper upgrade$/PKG_UPGRADE=zypper dup/' "$GPF/dotfiles-openSUSE/os/opensuse.capabilities" && rm -f "$GPF/dotfiles-openSUSE/os/opensuse.capabilities.bak"
+    sed -i.bak 's/^PKG_SEARCH=apk search$/PKG_SEARCH=apk search -v|cat/' "$GPF/dotfiles-Alpine/os/alpine.capabilities" && rm -f "$GPF/dotfiles-Alpine/os/alpine.capabilities.bak"
+    # The tier filter the generator sources: the same function dotfiles-Debian ships.
+    cat >"$GPF/dotfiles-Debian/scripts/pkg-filter.sh" <<'PF'
+pkg_filter_lines() {
+  local file="$1" id="$2" line list
+  [[ -f "$file" && -r "$file" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ \#[[:space:]]*only:([A-Za-z0-9_,-]+) ]]; then
+      list=",${BASH_REMATCH[1]},"
+      [[ "$list" == *",$id,"* ]] || continue
+    fi
+    if [[ "$line" =~ \#[[:space:]]*skip:([A-Za-z0-9_,-]+) ]]; then
+      list=",${BASH_REMATCH[1]},"
+      [[ "$list" == *",$id,"* ]] && continue
+    fi
+    printf '%s\n' "$line"
+  done <"$file"
+}
+PF
+    # packages.txt per column, from the registry: header prose, a commented-out entry
+    # and a continuation line first (the parser must skip all three), then one line per
+    # derived cell. Gentoo names are atoms; Debian's one file serves Kali AND Debian.
+    for r in Arch openSUSE Alpine Gentoo Debian; do
+      printf '# fixture list\n# ── section ──\n# rust-analyzer  # commented out on purpose\nfixture-only-pkg  # continuation follows\n                  # …continued\n\n' >"$GPF/dotfiles-$r/install/packages.txt"
+    done
+    # A skip:ubuntu line on a package NO row claims: the Debian/Ubuntu column is read
+    # under both IDs, and a split the table does not render must be harmless.
+    printf 'fixture-debian-only  # skip:ubuntu — not a matrix row\n' >>"$GPF/dotfiles-Debian/install/packages.txt"
+    awk -F'\t' -v fleet="$GPF" '
+      function tool(l) { sub(/[^A-Za-z0-9._+-].*/, "", l); return l }
+      function dname(cell, cand,  n) {
+        if (substr(cell, 1, 1) != "=") return ""
+        n = substr(cell, 2); sub(/[^A-Za-z0-9._+\/-].*/, "", n)
+        return (n != "") ? n : cand
+      }
+      NF == 8 {
+        c = ($2 == "-") ? tool($1) : $2; sub(/ .*/, "", c); t = tool($1)
+        floor = (t == "neovim") ? " min:0.12.0" : ""
+        a = dname($3, c); o = dname($4, c); al = dname($5, c); g = dname($6, c); k = dname($7, c); d = dname($8, c)
+        # Output targets PARENTHESISED: gawk reads `>> fleet "/x"` as one file name, but
+        # BSD awk (the macOS leg) and mawk (the Ubuntu leg) stop at `fleet` — the
+        # fixture lists came out empty there and every derived cell failed as unmatched.
+        if (a != "") print a "  # " t >> (fleet "/dotfiles-Arch/install/packages.txt")
+        if (o != "") print o "  # " t >> (fleet "/dotfiles-openSUSE/install/packages.txt")
+        if (al != "") print al "  # " t >> (fleet "/dotfiles-Alpine/install/packages.txt")
+        if (g != "") print "fx-cat/" g "  # bin:" t floor >> (fleet "/dotfiles-Gentoo/install/packages.txt")
+        deb = fleet "/dotfiles-Debian/install/packages.txt"
+        if (k != "" && k == d) print k "  # " t >> deb
+        else {
+          if (k != "") print k "  # only:kali" floor " " t >> deb
+          if (d != "") print d "  # skip:kali " t >> deb
+        }
+      }' <<EOF
+$_gp_rows
+EOF
+  }
+  # Run from $SANDBOX, not from $GPR or the repo: proves --root/--fleet, not the cwd, pick the trees.
+  _gp_run() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$GPF" "$@" >/dev/null 2>&1; echo $?); }
+  _gp_out() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$GPF" "$@" 2>&1); }
+  _gp_row() { grep -qF -- "$1" "$GPR/PORTING-MATRIX.md"; }
+
+  _gp_fixture
+  _gp_gen_rc="$(_gp_run)"
+  if [[ "$_gp_gen_rc" == 0 ]]; then
+    pass "gen-porting-matrix: renders a fixture tree + fleet clean"
+  else
+    fail "gen-porting-matrix: bare run failed on a clean fixture (rc=$_gp_gen_rc): $(_gp_out | head -n 3)"
+  fi
+  if [[ "$(_gp_run --check)" == 0 ]]; then
+    pass "gen-porting-matrix: --check is 0 on a freshly generated tree"
+  else
+    fail "gen-porting-matrix: --check reported drift on its own output"
+  fi
+
+  # The RENDERED BYTES, one row per rule.
+  if _gp_row '`neovim` ≥ 0.12.0' && _gp_row '`fx-cat/neovim` ≥ 0.12.0'; then
+    pass "gen-porting-matrix: a # min: floor renders as ≥ on the derived cell (Debian and Gentoo grammars)"
+  else
+    fail "gen-porting-matrix: the neovim floor did not render"
+  fi
+  if grep -E '^\| neovim³³ .*\| asset²⁸ +\|$' "$GPR/PORTING-MATRIX.md" >/dev/null; then
+    pass "gen-porting-matrix: an only:kali line reaches the Kali column and not Debian/Ubuntu"
+  else
+    fail "gen-porting-matrix: the neovim row's Debian cell is not the registry's asserted asset²⁸"
+  fi
+  if _gp_row 'Leap: `zypper upgrade` · Tumbleweed: `zypper dup`'; then
+    pass "gen-porting-matrix: a two-declaration column renders both values, labelled"
+  else
+    fail "gen-porting-matrix: the openSUSE upgrade cell did not render both declarations"
+  fi
+  if _gp_row '`zypper refresh`' && ! _gp_row 'Leap: `zypper refresh`'; then
+    pass "gen-porting-matrix: a two-declaration column renders an agreed value once, unlabelled"
+  else
+    fail "gen-porting-matrix: an agreed value was rendered twice or labelled"
+  fi
+  if _gp_row '`emerge install <atom>`' && _gp_row '`apt install <pkg>`' && _gp_row '`brew owns <path>`³⁸'; then
+    pass "gen-porting-matrix: placeholders follow the column's unit and the footnote marks follow the cell"
+  else
+    fail "gen-porting-matrix: a placeholder or a cell mark is missing from the commands table"
+  fi
+  if _gp_row '`apk search -v\|cat <term>`'; then
+    pass "gen-porting-matrix: escapes | inside a cell as \\|"
+  else
+    fail "gen-porting-matrix: a pipe inside a declared value was not escaped — the table would break"
+  fi
+  if grep -E '^\| Tool +\| Arch +\| openSUSE +\| Alpine +\| Gentoo \(atom\) +\| Kali \(apt\)²¹ᵃ +\| Debian/Ubuntu +\|$' "$GPR/PORTING-MATRIX.md" >/dev/null &&
+    grep -E '^\| -+ \| -+ \| -+ \| -+ \| -+ \| -+ \| -+ \|$' "$GPR/PORTING-MATRIX.md" >/dev/null; then
+    pass "gen-porting-matrix: the table is emitted in prettier's aligned form"
+  else
+    fail "gen-porting-matrix: the header or delimiter row is not aligned"
+  fi
+  _gp_list_out="$(_gp_out --list)"
+  if grep -q "^packages	neovim	kali	derived	dotfiles-Debian/install/packages.txt:[0-9]" <<<"$_gp_list_out" &&
+    grep -q '^packages	neovim	debian	asserted	' <<<"$_gp_list_out" && grep -q '^commands	install	gentoo	derived	' <<<"$_gp_list_out" &&
+    grep -q '^commands	upgrade	opensuse	derived	dotfiles-openSUSE/os/opensuse.leap.capabilities dotfiles-openSUSE/os/opensuse.capabilities$' <<<"$_gp_list_out"; then
+    pass "gen-porting-matrix: --list names each cell's provenance, derived cells by file:line, both declarations of a two-file column"
+  else
+    fail "gen-porting-matrix: --list is missing a derived, an asserted or a commands row"
+  fi
+
+  # NEGATIVE — drift INSIDE a block exits 1, names the file and the fix, and writes nothing.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/| `eza`             |/| `exa`             |/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  _gp_drift_rc="$(_gp_run --check)"
+  _gp_drift_out="$(_gp_out --check)"
+  if [[ "$_gp_drift_rc" == 1 ]] && grep -q 'PORTING-MATRIX.md' <<<"$_gp_drift_out" && grep -q 'make gen-porting-matrix' <<<"$_gp_drift_out"; then
+    pass "gen-porting-matrix: --check exits 1 on drift inside a block and names the file and the fix"
+  else
+    fail "gen-porting-matrix: drift inside a block was not reported as 1 with the fix (rc=$_gp_drift_rc)"
+  fi
+  _gp_before="$(git hash-object "$GPR/PORTING-MATRIX.md")"
+  _gp_run --check >/dev/null
+  if [[ "$(git hash-object "$GPR/PORTING-MATRIX.md")" == "$_gp_before" ]]; then
+    pass "gen-porting-matrix: --check writes nothing, even to a drifted file"
+  else
+    fail "gen-porting-matrix: --check REPAIRED a drifted file — the gate can never be red"
+  fi
+
+  # THE ISSUE'S OWN VERIFICATION (#686): a package renamed in one repo, nothing regenerated.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/^yq  # yq$/go-yq  # yq/' "$GPF/dotfiles-Arch/install/packages.txt" && rm -f "$GPF/dotfiles-Arch/install/packages.txt.bak"
+  if [[ "$(_gp_run --check)" == 1 ]]; then
+    pass "gen-porting-matrix: a package renamed to another candidate in one repo is drift (1)"
+  else
+    fail "gen-porting-matrix: renaming yq → go-yq in the Arch fixture was not reported as drift"
+  fi
+  sed -i.bak 's/^go-yq  # yq$/nonsense  # yq/' "$GPF/dotfiles-Arch/install/packages.txt" && rm -f "$GPF/dotfiles-Arch/install/packages.txt.bak"
+  _gp_gone_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'yq / arch: no line in dotfiles-Arch/install/packages.txt installs it' <<<"$_gp_gone_out"; then
+    pass "gen-porting-matrix: a package renamed to an unknown name fails --check with 2 and is named"
+  else
+    fail "gen-porting-matrix: a derived cell with no package behind it was not caught as 2 by name"
+  fi
+  # A bumped floor is drift, not structure.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/min:0.12.0/min:0.13.0/' "$GPF/dotfiles-Debian/install/packages.txt" && rm -f "$GPF/dotfiles-Debian/install/packages.txt.bak"
+  if [[ "$(_gp_run --check)" == 1 ]]; then
+    pass "gen-porting-matrix: a bumped # min: floor without regeneration is drift (1)"
+  else
+    fail "gen-porting-matrix: a floor bump in the Debian fixture was not reported as drift"
+  fi
+  # The OTHER half of the table: a repo starts installing an ASSERTED tool.
+  _gp_fixture && _gp_run >/dev/null
+  printf 'lnav  # now packaged\n' >>"$GPF/dotfiles-Arch/install/packages.txt"
+  _gp_flip_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'lnav / arch is asserted as' <<<"$_gp_flip_out" && grep -q 'change the cell to =' <<<"$_gp_flip_out"; then
+    pass "gen-porting-matrix: a repo installing an asserted tool fails --check with 2 and names the cell to flip"
+  else
+    fail "gen-porting-matrix: an asserted cell the repo now installs went unreported"
+  fi
+  # A tiered line that reaches the WRONG column is a registry mismatch, not silence.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/^neovim  # only:kali/neovim  # /' "$GPF/dotfiles-Debian/install/packages.txt" && rm -f "$GPF/dotfiles-Debian/install/packages.txt.bak"
+  _gp_tier_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'neovim / debian is asserted as' <<<"$_gp_tier_out"; then
+    pass "gen-porting-matrix: dropping only:kali makes the line reach Debian, where the cell is asserted — caught (2)"
+  else
+    fail "gen-porting-matrix: a tier change that contradicts an asserted cell went unreported"
+  fi
+  # The Debian/Ubuntu column is ONE cell for two IDs: a skip:ubuntu on a claimed package
+  # is a split the cell cannot show, so it is a refusal naming the tier — never a cell that
+  # reads as shared because the debian pass saw the line.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/^eza  # eza$/eza  # skip:ubuntu eza/' "$GPF/dotfiles-Debian/install/packages.txt" && rm -f "$GPF/dotfiles-Debian/install/packages.txt.bak"
+  _gp_split_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'eza / debian: the ubuntu tier does not install it but another tier of the same column does' <<<"$_gp_split_out"; then
+    pass "gen-porting-matrix: a skip:ubuntu on a claimed package is a refusal (2) naming the tier, not a shared-looking cell"
+  else
+    fail "gen-porting-matrix: a Debian/Ubuntu tier split rendered or went unnamed (out: $(head -n 1 <<<"$_gp_split_out"))"
+  fi
+  # A declaration missing a required verb cannot render.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak '/^PKG_OWNS=/d' "$GPF/dotfiles-Arch/os/arch.capabilities" && rm -f "$GPF/dotfiles-Arch/os/arch.capabilities.bak"
+  _gp_key_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'arch declares no PKG_OWNS' <<<"$_gp_key_out"; then
+    pass "gen-porting-matrix: a declaration missing a verb is a structural failure (2), named"
+  else
+    fail "gen-porting-matrix: a missing PKG_* key was not caught as 2"
+  fi
+
+  # UNCOVERED — a sibling not checked out is 3, names the repo, and writes nothing.
+  _gp_fixture && _gp_run >/dev/null
+  rm -rf "$GPF/dotfiles-Gentoo"
+  _gp_before="$(git hash-object "$GPR/PORTING-MATRIX.md")"
+  _gp_miss_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 3 && "$(_gp_run)" == 3 ]] && grep -q 'not checked out under .*: dotfiles-Gentoo' <<<"$_gp_miss_out" &&
+    [[ "$(git hash-object "$GPR/PORTING-MATRIX.md")" == "$_gp_before" ]]; then
+    pass "gen-porting-matrix: an absent sibling is 3 (uncovered) in both modes, named, and nothing is written"
+  else
+    fail "gen-porting-matrix: an absent sibling was not reported as 3 — or the doc was touched"
+  fi
+  if [[ "$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check >/dev/null 2>&1; echo $?)" == 3 ]]; then
+    pass "gen-porting-matrix: a fleet root with no siblings at all is 3, not 2 and not clean"
+  else
+    fail "gen-porting-matrix: an empty fleet root did not exit 3"
+  fi
+  # …but a BROKEN DOCUMENT on that same lone checkout is still the structural 2: the
+  # markers are this repo's own, so they are validated before any sibling is looked for,
+  # and audit-core.sh §9h must never file a deleted marker under "not covered".
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak '/^<!-- core:porting-matrix:end packages -->$/d' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  _gp_lone_out="$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check 2>&1)"
+  if [[ "$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check >/dev/null 2>&1; echo $?)" == 2 ]] &&
+    grep -q 'packages has 1 gen marker(s) but 0 end marker(s)' <<<"$_gp_lone_out"; then
+    pass "gen-porting-matrix: a broken marker is 2 even with no siblings — structure is checked before coverage"
+  else
+    fail "gen-porting-matrix: a broken marker on a lone checkout was filed as uncovered (3) instead of structural (2)"
+  fi
+
+  # An edit OUTSIDE the markers is not drift and survives regeneration.
+  _gp_fixture && _gp_run >/dev/null
+  printf 'a hand-authored line added after generation\n' >>"$GPR/PORTING-MATRIX.md"
+  if [[ "$(_gp_run --check)" == 0 ]]; then
+    pass "gen-porting-matrix: an edit OUTSIDE a block is not drift"
+  else
+    fail "gen-porting-matrix: --check fired on a hand-authored line outside the markers"
+  fi
+  _gp_run >/dev/null
+  if grep -q 'a hand-authored line added after generation' "$GPR/PORTING-MATRIX.md" &&
+    grep -q 'hand-authored above the first block' "$GPR/PORTING-MATRIX.md"; then
+    pass "gen-porting-matrix: regeneration preserves hand-authored content outside blocks"
+  else
+    fail "gen-porting-matrix: regeneration ate a hand-authored line"
+  fi
+  # …including a blank line at the very end of the file: `$(…)` strips trailing newlines,
+  # so without the sentinel this read as drift and regeneration deleted it.
+  _gp_fixture && _gp_run >/dev/null
+  printf '\n' >>"$GPR/PORTING-MATRIX.md"
+  _gp_before="$(git hash-object "$GPR/PORTING-MATRIX.md")"
+  _gp_run >/dev/null
+  if [[ "$(_gp_run --check)" == 0 && "$(git hash-object "$GPR/PORTING-MATRIX.md")" == "$_gp_before" ]]; then
+    pass "gen-porting-matrix: a trailing blank line outside the markers is neither drift nor eaten"
+  else
+    fail "gen-porting-matrix: a trailing blank line at EOF was reported as drift or removed by regeneration"
+  fi
+
+  # Markers are the mechanism.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak '/^<!-- core:porting-matrix:end packages -->$/d' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  if [[ "$(_gp_run --check)" == 2 ]]; then
+    pass "gen-porting-matrix: a deleted end marker is a structural failure (2), not drift"
+  else
+    fail "gen-porting-matrix: an unterminated block was not reported as 2"
+  fi
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak -e '/core:porting-matrix:gen packages/d' -e '/core:porting-matrix:end packages/d' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  _gp_gone_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'registered block is missing: packages' <<<"$_gp_gone_out"; then
+    pass "gen-porting-matrix: a registered block whose region was deleted is caught by name"
+  else
+    fail "gen-porting-matrix: deleting a block's marker pair went unreported"
+  fi
+  _gp_fixture && _gp_run >/dev/null
+  printf '<!-- core:porting-matrix:end commands -->\n' >>"$GPR/PORTING-MATRIX.md"
+  _gp_stray_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'commands has 1 gen marker(s) but 2 end marker(s)' <<<"$_gp_stray_out"; then
+    pass "gen-porting-matrix: a stray duplicate end marker is a structural failure (2), named"
+  else
+    fail "gen-porting-matrix: a duplicated end marker was accepted as prose"
+  fi
+  _gp_fixture && _gp_run >/dev/null
+  printf '<!-- core:porting-matrix:gen nope -->\n<!-- core:porting-matrix:end nope -->\n' >>"$GPR/PORTING-MATRIX.md"
+  _gp_unreg_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'unregistered gen marker: nope' <<<"$_gp_unreg_out"; then
+    pass "gen-porting-matrix: an unregistered marker pair is caught by name"
+  else
+    fail "gen-porting-matrix: an unregistered marker pair was accepted"
+  fi
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak -e '/core:porting-matrix:gen /d' -e '/core:porting-matrix:end /d' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  printf '<!-- core:porting-matrix:gen commands -->\n<!-- core:porting-matrix:gen packages -->\n<!-- core:porting-matrix:end commands -->\n<!-- core:porting-matrix:end packages -->\n' >>"$GPR/PORTING-MATRIX.md"
+  _gp_cross_out="$(_gp_out --check)"
+  _gp_before="$(git hash-object "$GPR/PORTING-MATRIX.md")"
+  if [[ "$(_gp_run --check)" == 2 && "$(_gp_run)" == 2 ]] && grep -q "opens inside the 'commands' region" <<<"$_gp_cross_out" &&
+    [[ "$(git hash-object "$GPR/PORTING-MATRIX.md")" == "$_gp_before" ]]; then
+    pass "gen-porting-matrix: crossed marker pairs are a structural failure (2) in both modes, and nothing is written"
+  else
+    fail "gen-porting-matrix: crossed marker pairs were accepted"
+  fi
+  # …and still 2 with NO siblings: the counts pass on a crossed pair, so only a walk before
+  # fleet resolution keeps it out of the environment-skip bucket on a lone checkout.
+  _gp_cross_lone_out="$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check 2>&1)"
+  if [[ "$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check >/dev/null 2>&1; echo $?)" == 2 ]] &&
+    grep -q "opens inside the 'commands' region" <<<"$_gp_cross_lone_out"; then
+    pass "gen-porting-matrix: crossed marker pairs are 2 even with no siblings — order is walked before coverage"
+  else
+    fail "gen-porting-matrix: crossed marker pairs on a lone checkout were filed as uncovered (3) instead of structural (2)"
+  fi
+
+  # IDEMPOTENCE.
+  _gp_fixture && _gp_run >/dev/null
+  cp "$GPR/PORTING-MATRIX.md" "$GPR/PORTING-MATRIX.first.md"
+  _gp_run >/dev/null
+  if core_files_identical "$GPR/PORTING-MATRIX.first.md" "$GPR/PORTING-MATRIX.md"; then
+    pass "gen-porting-matrix: generation is idempotent (second run is byte-identical)"
+  else
+    fail "gen-porting-matrix: a second run changed PORTING-MATRIX.md — --check can never be stably green"
+  fi
+
+  rm -rf "$GPR" "$GPF"
+  unset GPR GPF _gp_ids _gp_rows _gp_gen_rc _gp_drift_rc _gp_drift_out _gp_before _gp_gone_out _gp_flip_out _gp_tier_out _gp_key_out _gp_miss_out _gp_stray_out _gp_unreg_out _gp_cross_out _gp_list_out _gp_lone_out _gp_split_out _gp_cross_lone_out
+fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link

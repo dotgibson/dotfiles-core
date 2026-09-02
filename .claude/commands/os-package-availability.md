@@ -92,6 +92,13 @@ the list still resolve upstream*.
    that isn't (or vice-versa), or a footnote gone stale — e.g. a "cargo³" note for a
    tool now first-class in the repos, or a rename the matrix hasn't recorded.
 
+   **The table is generated** (`scripts/gen-porting-matrix.sh`, #686): a cell naming a
+   package the repo installs is *derived* from that repo's `install/packages.txt` and
+   cannot be wrong on its own — if it is wrong, the repo's list is wrong, and that is the
+   finding. The other cells (footnote ²¹ names, `asset`/`cargo`/`AUR`/`GURU` routes) are
+   *asserted* in the script's `PKG_ROWS` registry; `scripts/gen-porting-matrix.sh
+   --fleet <fleet-root> --list` says which kind each cell is. Footnotes are hand-written.
+
    Two anchors, because both have produced false findings:
 
    - **Count columns from the header row, not from the end of the line.** The six
@@ -175,5 +182,7 @@ anchor no longer matches anything, that is real information — the line has bee
 removed, and the finding needs re-checking rather than applying.
 
 Report-first. Fixes to a package list land in the **OS repo**
-(`install/packages.txt` / `Brewfile`); fixes to the matrix land in **dotfiles-core**
-(`PORTING-MATRIX.md`). Do not edit anything unless I explicitly ask.
+(`install/packages.txt` / `Brewfile`) — and a derived matrix cell follows from there via
+`make gen-porting-matrix` in dotfiles-core. Fixes to an asserted cell land in
+`scripts/gen-porting-matrix.sh`'s `PKG_ROWS`; fixes to a footnote land in
+`PORTING-MATRIX.md` itself. Do not edit anything unless I explicitly ask.

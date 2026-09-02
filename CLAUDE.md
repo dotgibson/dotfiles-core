@@ -52,6 +52,17 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   listing it in the script's `BLOCKS` registry, is a gate failure (`audit-core.sh` §9g).
   Edit the zsh source (a trailing `# comment` on an alias line is its Note column), run
   `make gen-aliases`. The prose around the tables stays hand-written.
+- **`PORTING-MATRIX.md`'s two tables are generated, not typed.** `scripts/gen-porting-matrix.sh`
+  renders the package-manager table from each sibling OS repo's `os/*.capabilities` and the
+  package-name table from its `install/packages.txt` (Debian's through its `pkg-filter.sh`
+  tiers, `# min:` floors shown as `≥`) into `<!-- core:porting-matrix:gen … -->` blocks —
+  hand-editing a table is a gate failure (`audit-core.sh` §9h; an absent sibling clone is
+  an environment SKIP, not red). A cell the repo installs is derived; the ²¹ "available, not
+  installed" names and the `asset`/`cargo`/`AUR` routes are asserted in the script's
+  `PKG_ROWS` registry, and a repo starting to install one fails the gate until the cell is
+  flipped to `=`. Fix the OS repo (or the registry), run `make gen-porting-matrix` — from a
+  worktree, `scripts/gen-porting-matrix.sh --fleet DIR`. The ~1,100 footnote lines stay
+  hand-written; `/os-package-availability` refreshes them.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
 - **A user-visible change lands in `CHANGELOG.md` under `[Unreleased]`** in the
