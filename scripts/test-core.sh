@@ -7171,6 +7171,15 @@ EOF
   else
     fail "gen-porting-matrix: crossed marker pairs were accepted"
   fi
+  # …and still 2 with NO siblings: the counts pass on a crossed pair, so only a walk before
+  # fleet resolution keeps it out of the environment-skip bucket on a lone checkout.
+  _gp_cross_lone_out="$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check 2>&1)"
+  if [[ "$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check >/dev/null 2>&1; echo $?)" == 2 ]] &&
+    grep -q "opens inside the 'commands' region" <<<"$_gp_cross_lone_out"; then
+    pass "gen-porting-matrix: crossed marker pairs are 2 even with no siblings — order is walked before coverage"
+  else
+    fail "gen-porting-matrix: crossed marker pairs on a lone checkout were filed as uncovered (3) instead of structural (2)"
+  fi
 
   # IDEMPOTENCE.
   _gp_fixture && _gp_run >/dev/null
@@ -7183,7 +7192,7 @@ EOF
   fi
 
   rm -rf "$GPR" "$GPF"
-  unset GPR GPF _gp_ids _gp_rows _gp_gen_rc _gp_drift_rc _gp_drift_out _gp_before _gp_gone_out _gp_flip_out _gp_tier_out _gp_key_out _gp_miss_out _gp_stray_out _gp_unreg_out _gp_cross_out _gp_list_out _gp_lone_out _gp_split_out
+  unset GPR GPF _gp_ids _gp_rows _gp_gen_rc _gp_drift_rc _gp_drift_out _gp_before _gp_gone_out _gp_flip_out _gp_tier_out _gp_key_out _gp_miss_out _gp_stray_out _gp_unreg_out _gp_cross_out _gp_list_out _gp_lone_out _gp_split_out _gp_cross_lone_out
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────

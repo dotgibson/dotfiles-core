@@ -545,6 +545,28 @@ build_file() { # build_file <file> — emit <file> with every marked block re-re
 preflight() {
   local rc=0 id n m kind line markers
   markers="$(_markers)"
+  # Counts cannot see ORDER: gen A, gen B, end A, end B has one marker of each kind per
+  # block. Replay the marker SEQUENCE (a handful of lines, not the document) with the
+  # walker's rules so a crossed or nested pair is the structural 2 here — before the
+  # fleet is resolved, where it would otherwise be filed under "no sibling to read" on a
+  # lone checkout. The messages are the walker's, so both paths read the same.
+  local open=""
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    kind="${line%% *}"
+    id="${line#* }"
+    if [[ "$kind" == gen ]]; then
+      [[ -z "$open" ]] || { printf "gen-porting-matrix: 'core:porting-matrix:gen %s' opens inside the '%s' region of %s — blocks cannot nest or cross\n" "$id" "$open" "$TARGET" >&2; rc=2; open=""; break; }
+      open="$id"
+    elif [[ -n "$open" && "$id" != "$open" ]]; then
+      printf "gen-porting-matrix: marker mismatch in %s: 'gen %s' closed by 'end %s'\n" "$TARGET" "$open" "$id" >&2; rc=2; open=""; break
+    else
+      open=""
+    fi
+  done <<EOF
+$markers
+EOF
+  [[ -z "$open" ]] || { printf "gen-porting-matrix: unterminated 'core:porting-matrix:gen %s' region in %s\n" "$open" "$TARGET" >&2; rc=2; }
   for id in $BLOCK_IDS; do
     n="$(grep -c "^gen $id\$" <<<"$markers" || true)"
     m="$(grep -c "^end $id\$" <<<"$markers" || true)"
