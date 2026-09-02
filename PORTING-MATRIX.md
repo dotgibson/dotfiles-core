@@ -34,7 +34,9 @@ table) the declarations became the live files, held to the schema by `audit-core
 while this copy was held to nothing. So the arrow flipped: `scripts/gen-porting-matrix.sh`
 now writes every cell below from the declared `PKG_*` value, verbatim, plus a placeholder,
 and `make audit` (§9h) fails when they differ. **Edit the declaration in the OS repo, then
-run `make gen-porting-matrix`.** Two columns are backed by a **second declaration file**
+run `make gen-porting-matrix`.** The declarations' own headers still say _"Transcribed from
+core/PORTING-MATRIX.md"_ — true of how they were written, no longer of which side is edited;
+#837 updates them. Two columns are backed by a **second declaration file**
 their repo's `bootstrap.sh` relinks, because a declaration is data and cannot probe —
 openSUSE's `dup`-vs-`up` split (rendered as both, labelled) and Debian's Kali lane (its
 own column). The table gained its **macOS and Fedora columns** in #664: they had been
