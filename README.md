@@ -252,13 +252,15 @@ things just get nicer where they can.
 | `du` / `df` | `dust` / `duf` | dust, duf |
 | `vim` | `nvim` | always |
 
-Run `core help` (aliased `cheat`) for the built-in index of every command — it is the
-complete one. The [alias cheat sheet](aliases.md) is the curated companion, covering the
-aliases and the OMZ-compatible git suite (`gst`, `gcb`, `glog`, `gpf`, …); a handful of
-function verbs (`fif`, `fbr`, `op*`) live only in `core help`, as do the keybindings.
-The updater and maintenance verbs (`up`, `update-check`, `maint-*`) are listed there
-too, and are also reachable through the front door as `core update [check]` and
-`core maint <verb>`.
+Run `core help` (aliased `cheat`) for the built-in index — a curated one-screen cheat
+sheet of the function verbs, the most-used git shorthands, the keybindings and the
+maintenance commands (`up`, `update-check`, `maint-*`, `op*`). The
+[alias cheat sheet](aliases.md) is the complete inventory: every alias in
+`zsh/20-aliases.zsh` and the full OMZ-compatible git suite in `zsh/25-git.zsh` (`gst`,
+`gcb`, `glog`, `gpf`, …), plus the function one-liners. Its tables are generated from
+those files (`make gen-aliases`) and `make audit` fails when they drift. The updater and
+maintenance verbs (`up`, `update-check`, `maint-*`) are also reachable through the front
+door as `core update [check]` and `core maint <verb>`.
 
 _For more, see the [Documentation][docs]._
 

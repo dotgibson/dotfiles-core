@@ -2372,7 +2372,7 @@ _core_help_render() {
   # requirement — they always work.
   local -a rows=(
     "§navigation & files"
-    "mkcd <dir>|make a directory and cd into it"
+    "mkcd <dir>|make a directory (and parents) and cd into it"
     "cdup [n]|climb n directories (default 1)"
     "extract <archive>|unpack any archive (tar/zip/7z/rar/…)"
     "mkbak <file>|timestamped .bak copy before you edit"
@@ -2474,7 +2474,7 @@ _core_help_render() {
   print -r -- "${dc}  1Password: opsecret · openv · optoken · opssh    health: core-doctor · version: core-version${de}"
   print -r -- "${dc}  front door: core <help|doctor|version|status|update [check]|maint|sync|whatsnew>  (run \`core\` for this sheet anytime)${de}"
 }
-alias cheat='core-help'
+alias cheat='core-help'  # the built-in command index (core help)
 
 # ── command-not-found handler (U1) ────────────────────────────────────────────
 # A mistyped command otherwise gets zsh's terse default (or, on Debian, the distro's

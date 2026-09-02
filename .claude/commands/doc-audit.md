@@ -27,14 +27,17 @@ Run these cross-checks (skip any out of the requested scope):
    the wrong layer. (The README carries no file tree — it documents behaviour, not
    inventory — so do not look for a "Layout" section; `audit-core.sh` covers the
    manifest↔filesystem halves mechanically, leaving the bootstrap-wiring half here.)
-2. **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's
-   `aliases.md` against `zsh/20-aliases.zsh` + `zsh/25-git.zsh`; **and each role repo's
-   `aliases.md` against its own role source** — `dotfiles-Offense/aliases.md` ↔
+2. **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's tables
+   are GENERATED (`scripts/gen-aliases.sh` from `zsh/20-aliases.zsh`, `zsh/25-git.zsh`
+   and `zsh/30-functions.zsh`, gated by `make audit` §9g), so there only the hand-written
+   prose around the `<!-- core:aliases:gen … -->` blocks can drift — read that against the
+   source and do not re-audit the tables. **Each role repo's `aliases.md` is still
+   hand-kept against its own role source** — `dotfiles-Offense/aliases.md` ↔
    `offensive/offensive.zsh`, `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`.
-   Every documented alias/function should exist in the source, and notable source
-   aliases/helpers (e.g. a new `redup`, `gdft`) should be documented. Flag stale,
-   renamed, or undocumented entries. (This is the fleet-wide alias-cheatsheet upkeep
-   that used to run as a separate daily routine — it lives here now.)
+   There, every documented alias/function should exist in the source, and notable source
+   aliases/helpers (e.g. a new `redup`) should be documented. Flag stale, renamed, or
+   undocumented entries. (This is the fleet-wide alias-cheatsheet upkeep that used to run
+   as a separate daily routine — it lives here now.)
 3. **`PORTING-MATRIX.md` ↔ each OS repo.** For each distro, check the
    package-manager commands and package names against that repo's
    `install/packages.txt` and `os/<distro>.zsh`. Flag a package renamed upstream,

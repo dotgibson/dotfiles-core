@@ -68,8 +68,8 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # by a relative path from elsewhere would resolve the lib against the wrong base.
 # The same note sits on check-modern.sh:23 and audit-core.sh:80.
 
-# For core_files_identical — audit-core.sh §5j forbids the cmp/diff BINARIES (#572);
-# the sanctioned forms are that helper for equality and `git diff --no-index` for a
+# For core_files_identical — the cmp/diff BINARIES are forbidden in this repo (#572;
+# see the helper's note in common.sh): that helper for equality and `git diff --no-index` for a
 # human-readable diff. Both also drop a diffutils dependency the Alpine leg would
 # otherwise need. Sourced via the ALREADY-ABSOLUTE $HERE, per the note above.
 # shellcheck source=scripts/lib/common.sh
@@ -701,8 +701,8 @@ while IFS= read -r t; do
   if [[ "$MODE" == check ]]; then
     # Materialize, then compare with the two sanctioned forms: core_files_identical
     # (git hash-object, byte-exact, no diffutils) for the verdict, and
-    # `git diff --no-index` for the human diff. audit-core.sh §5j fails a script
-    # that reaches for the cmp/diff binaries instead (#572).
+    # `git diff --no-index` for the human diff. Reaching for the cmp/diff binaries
+    # instead is the #572 defect (macOS and Alpine do not agree on what `diff` is).
     _tmp="$(mktemp "${TMPDIR:-/tmp}/gen-theme.XXXXXX")" || { _bump 2; continue; }
     printf '%s\n' "$generated" >"$_tmp"
     if ! core_files_identical "$t" "$_tmp"; then
