@@ -233,14 +233,6 @@ w3m	-	=	=	=	=	=	="
 # ── helpers ───────────────────────────────────────────────────────────────────
 die() { printf 'gen-porting-matrix: %s\n' "$*" >&2; exit 2; }
 
-field() { # field <n> <tab-separated line> — the n-th field
-  awk -F'\t' -v n="$1" '{ print $n }' <<EOF
-$2
-EOF
-}
-
-# Escape a `|` for a GFM cell — honoured inside a code span, as gen-aliases.sh relies on.
-esc() { printf '%s' "$1" | sed 's/|/\\|/g'; }
 
 # _table — stdin: TAB-separated rows, header first; stdout: prettier's aligned table.
 # Widths in CODE POINTS: under LC_ALL=C every byte is one character, and the UTF-8
@@ -302,8 +294,8 @@ EOF
 # start — a `#` inside a value is part of the value.
 CAPS=""
 read_caps() {
-  local col header repo files unit spec label path dir
-  while IFS="$TAB" read -r col header repo files unit; do
+  local col repo files spec label path dir
+  while IFS="$TAB" read -r col _ repo files _; do
     [[ -n "$col" ]] || continue
     dir="$(repo_dir "$repo")"
     for spec in $files; do
@@ -321,75 +313,57 @@ $CMD_COLUMNS
 EOF
 }
 
-cmd_cell() { # cmd_cell <col> <key> <placeholder> — the rendered cell, or return 2
-  local col="$1" key="$2" ph="$3" pairs label value out="" n=0 first="" same=1
-  # value FIRST: a tab is IFS whitespace, so `read` would swallow an empty leading label.
-  pairs="$(awk -F'\t' -v c="$col" -v k="$key" '$1 == c && $3 == k { print $4 "\t" $2 }' <<EOF
-$CAPS
-EOF
-)"
-  [[ -n "$pairs" ]] || { printf 'gen-porting-matrix: %s declares no %s\n' "$col" "$key" >&2; return 2; }
-  while IFS="$TAB" read -r value label; do
-    [[ -n "$value" ]] || { printf 'gen-porting-matrix: %s: %s is empty\n' "$col" "$key" >&2; return 2; }
-    [[ "$value" != *'`'* ]] || { printf 'gen-porting-matrix: %s: %s contains a backtick, which cannot sit inside a code span\n' "$col" "$key" >&2; return 2; }
-    n=$((n + 1))
-    if ((n == 1)); then first="$value"; elif [[ "$value" != "$first" ]]; then same=0; fi
-    [[ -z "$ph" ]] || value="$value $ph"
-    if [[ -n "$label" ]]; then
-      out="$out${out:+ · }$label: \`$(esc "$value")\`"
-    else
-      out="\`$(esc "$value")\`"
-    fi
-  done <<EOF
-$pairs
-EOF
-  if ((n > 1 && same)); then
-    # Every declaration agrees: one cell, no labels.
-    [[ -z "$ph" ]] || first="$first $ph"
-    out="\`$(esc "$first")\`"
-  fi
-  printf '%s' "$out"
-}
-
-render_commands() { # prints the aligned table
-  local rows="" line col header repo files unit action key ph marks cell k spec first
-  line="Action"
-  while IFS="$TAB" read -r col header repo files unit; do
-    [[ -n "$col" ]] || continue
-    line="$line$TAB$(esc "$header")"
-  done <<EOF
-$CMD_COLUMNS
-EOF
-  rows="$line"
-  while IFS="$TAB" read -r action key ph; do
-    [[ -n "$action" ]] || continue
-    line="$action"
-    while IFS="$TAB" read -r col header repo files unit; do
-      [[ -n "$col" ]] || continue
-      k="$ph"
-      [[ "$ph" == unit ]] && k="<$unit>"
-      [[ "$ph" == - ]] && k=""
-      cell="$(cmd_cell "$col" "$key" "$k")" || return 2
-      first=""
-      marks="$(awk -F'\t' -v k="$col/$action" '$1 == k { print $2 }' <<EOF
-$CMD_MARKS
-EOF
-)"
-      line="$line$TAB$cell$marks"
-      # EVERY declaration behind the column, labels stripped: a two-file column's cell is
-      # made of both, and a provenance line naming only the last would hide the other.
-      printf 'commands\t%s\t%s\tderived\t%s\n' "$action" "$col" "$(for spec in $files; do printf '%s%s/%s' "${first:+ }" "$repo" "${spec#*=}"; first=1; done)" >>"$LISTFILE"
-    done <<EOF
-$CMD_COLUMNS
-EOF
-    rows="$rows
-$line"
-  done <<EOF
-$CMD_ROWS
-EOF
-  _table <<EOF
-$rows
-EOF
+# render_commands — ONE awk over CMD_COLUMNS, CMD_ROWS, CMD_MARKS and CAPS, emitting the
+# TAB-separated rows for _table and the provenance lines. One process, not one per
+# cell: the first cut forked awk and sed several times per cell, which put a single run
+# at ~7 s and F10c's fifty-odd runs past the Linux legs' 15-minute audit budget.
+render_commands() {
+  {
+    printf 'C\t%s\n' "$CMD_COLUMNS" | awk -F'\t' 'NR == 1 { print; next } { print "C\t" $0 }'
+    printf 'A\t%s\n' "$CMD_ROWS" | awk 'NR == 1 { print; next } { print "A\t" $0 }'
+    printf 'M\t%s\n' "$CMD_MARKS" | awk 'NR == 1 { print; next } { print "M\t" $0 }'
+    printf '%s' "$CAPS" | awk 'NF { print "K\t" $0 }'
+  } | awk -F'\t' -v listfile="$LISTFILE" '
+    function esc(s,    out, k) { out = ""; while ((k = index(s, "|")) > 0) { out = out substr(s, 1, k - 1) "\\|"; s = substr(s, k + 1) } return out s }
+    function err(msg) { print "gen-porting-matrix: " msg > "/dev/stderr" }
+    $1 == "C" { nc++; cid[nc] = $2; chdr[nc] = $3; crepo[nc] = $4; cfiles[nc] = $5; cunit[nc] = $6; next }
+    $1 == "A" { na++; act[na] = $2; akey[na] = $3; aph[na] = $4; next }
+    $1 == "M" { mark[$2] = $3; next }
+    $1 == "K" { val[$2 SUBSEP $3 SUBSEP $4] = $5; has[$2 SUBSEP $3 SUBSEP $4] = 1; next }
+    END {
+      line = "Action"
+      for (c = 1; c <= nc; c++) line = line "\t" esc(chdr[c])
+      print line
+      for (a = 1; a <= na; a++) {
+        line = act[a]
+        for (c = 1; c <= nc; c++) {
+          ph = aph[a]
+          if (ph == "unit") ph = "<" cunit[c] ">"
+          if (ph == "-") ph = ""
+          nf = split(cfiles[c], specs, " ")
+          cell = ""; first = ""; same = 1; src = ""
+          for (i = 1; i <= nf; i++) {
+            label = ""; path = specs[i]
+            if ((k = index(path, "=")) > 0) { label = substr(path, 1, k - 1); path = substr(path, k + 1) }
+            src = src (i > 1 ? " " : "") crepo[c] "/" path
+            key = cid[c] SUBSEP label SUBSEP akey[a]
+            if (!(key in has)) { err(cid[c] " declares no " akey[a]); exit 2 }
+            v = val[key]
+            if (v == "") { err(cid[c] ": " akey[a] " is empty"); exit 2 }
+            if (index(v, "`")) { err(cid[c] ": " akey[a] " contains a backtick, which cannot sit inside a code span"); exit 2 }
+            if (i == 1) first = v; else if (v != first) same = 0
+            if (ph != "") v = v " " ph
+            cell = cell (i > 1 ? " · " : "") (label != "" ? label ": " : "") "`" esc(v) "`"
+          }
+          # Every declaration agrees: one cell, no labels.
+          if (nf > 1 && same) cell = "`" esc(first (ph != "" ? " " ph : "")) "`"
+          line = line "\t" cell mark[cid[c] "/" act[a]]
+          printf "commands\t%s\t%s\tderived\t%s\n", act[a], cid[c], src >> listfile
+        }
+        print line
+      }
+      close(listfile)
+    }' | _table
 }
 
 # ── the package table ─────────────────────────────────────────────────────────
@@ -401,8 +375,8 @@ EOF
 # knows where it came from.
 PKGS=""
 read_pkgs() {
-  local col header repo tier dir file numbered filtered id
-  while IFS="$TAB" read -r col header repo tier; do
+  local col repo tier dir file numbered filtered id
+  while IFS="$TAB" read -r col _ repo tier; do
     [[ -n "$col" ]] || continue
     dir="$(repo_dir "$repo")"
     file="$dir/install/packages.txt"
@@ -443,98 +417,77 @@ $PKG_COLUMNS
 EOF
 }
 
-# matches <col> <candidates> — the PKGS lines of <col> whose name or basename is a candidate
-matches() {
-  awk -F'\t' -v col="$1" -v cands="$2" '
-    BEGIN { n = split(cands, c, " "); for (i = 1; i <= n; i++) want[c[i]] = 1 }
-    $1 == col && (($3 in want) || ($4 in want))' <<EOF
-$PKGS
-EOF
-}
-
+# render_packages — ONE awk over PKG_COLUMNS, PKG_ROWS and PKGS (see render_commands for
+# why it is one process). Cell grammar is documented at PKG_ROWS.
 render_packages() {
-  local rows="" line header col repo tier label cands want spec cells i cell marks name hit nhit lineno floor file lbl id
-  local cols=""
-  line="Tool"
-  while IFS="$TAB" read -r col header repo tier; do
-    [[ -n "$col" ]] || continue
-    line="$line$TAB$(esc "$header")"
-    cols="$cols $col"
-  done <<EOF
-$PKG_COLUMNS
-EOF
-  rows="$line"
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    [[ "$(awk -F'\t' '{ print NF }' <<<"$line")" == 8 ]] || die "PKG_ROWS: a row does not have 8 fields: ${line%%"$TAB"*}"
-    label="$(field 1 "$line")"
-    cands="$(field 2 "$line")"
-    [[ "$cands" != - ]] || cands="$(printf '%s' "$label" | sed 's/[^A-Za-z0-9._+-].*//')"
-    lbl="$(printf '%s' "$label" | sed 's/[^A-Za-z0-9._+-].*//')"
-    cells="$(esc "$label")"
-    i=2
-    for col in $cols; do
-      i=$((i + 1))
-      spec="$(field "$i" "$line")"
-      repo="$(awk -F'\t' -v c="$col" '$1 == c { print $3 }' <<<"$PKG_COLUMNS")"
-      file="$repo/install/packages.txt"
-      if [[ "$spec" == =* ]]; then
-        spec="${spec#=}"
-        name="$(printf '%s' "$spec" | sed 's/[^A-Za-z0-9._+/-].*//')"
-        marks="${spec#"$name"}"
-        marks="${marks#"${marks%%[![:space:]]*}"}"
-        # The override is THIS cell's: `want` is a copy, so `=go-yq` on Arch does not narrow
-        # what the openSUSE cell to its right searches for.
-        want="$cands"
-        [[ -n "$name" ]] && want="$name"
-        hit="$(matches "$col" "$want")"
-        nhit="$(awk 'NF { n++ } END { print n + 0 }' <<<"$hit")"
-        ((nhit > 0)) || {
-          printf 'gen-porting-matrix: %s / %s: no line in %s installs it (candidates: %s) — change the cell to what the repo does, or restore the package\n' "$lbl" "$col" "$file" "$want" >&2
-          return 2
+  {
+    printf 'C\t%s\n' "$PKG_COLUMNS" | awk -F'\t' 'NR == 1 { print; next } { print "C\t" $0 }'
+    printf 'R\t%s\n' "$PKG_ROWS" | awk 'NR == 1 { print; next } { print "R\t" $0 }'
+    printf '%s' "$PKGS" | awk 'NF { print "P\t" $0 }'
+  } | awk -F'\t' -v listfile="$LISTFILE" '
+    function esc(s,    out, k) { out = ""; while ((k = index(s, "|")) > 0) { out = out substr(s, 1, k - 1) "\\|"; s = substr(s, k + 1) } return out s }
+    function err(msg) { print "gen-porting-matrix: " msg > "/dev/stderr" }
+    function ascii(s) { sub(/[^A-Za-z0-9._+-].*/, "", s); return s }     # the tool name in a label
+    function pkgname(s) { sub(/[^A-Za-z0-9._+\/-].*/, "", s); return s }  # an =name override
+    function ltrim(s) { sub(/^[ \t]+/, "", s); return s }
+    function inlist(x, list,    n, i, a) { n = split(list, a, " "); for (i = 1; i <= n; i++) if (a[i] == x) return 1; return 0 }
+    $1 == "C" { nc++; cid[nc] = $2; chdr[nc] = $3; crepo[nc] = $4; ntier[nc] = split($5, t, ","); for (i = 1; i <= ntier[nc]; i++) tier[nc, i] = t[i]; next }
+    $1 == "R" { nr++; rnf[nr] = NF - 1; for (i = 2; i <= NF; i++) row[nr, i - 1] = $i; next }
+    $1 == "P" { np++; pcol[np] = $2; pline[np] = $3; pname[np] = $4; pbase[np] = $5; pfloor[np] = $6; pid[np] = $7; next }
+    END {
+      line = "Tool"
+      for (c = 1; c <= nc; c++) line = line "\t" esc(chdr[c])
+      print line
+      for (r = 1; r <= nr; r++) {
+        if (rnf[r] != 8) { err("PKG_ROWS: a row does not have 8 fields: " row[r, 1]); exit 2 }
+        label = row[r, 1]; lbl = ascii(label)
+        cands = (row[r, 2] == "-") ? lbl : row[r, 2]
+        line = esc(label)
+        for (c = 1; c <= nc; c++) {
+          spec = row[r, c + 2]; file = crepo[c] "/install/packages.txt"
+          if (substr(spec, 1, 1) == "=") {
+            spec = substr(spec, 2); name = pkgname(spec); marks = ltrim(substr(spec, length(name) + 1))
+            # The override belongs to THIS cell: `want` never touches the row candidates.
+            want = (name != "") ? name : cands
+            nh = 0
+            for (p = 1; p <= np; p++) if (pcol[p] == cid[c] && (inlist(pname[p], want) || inlist(pbase[p], want))) hit[++nh] = p
+            if (nh == 0) { err(lbl " / " cid[c] ": no line in " file " installs it (candidates: " want ") — change the cell to what the repo does, or restore the package"); exit 2 }
+            # EVERY tier ID behind the column must see the same line with the same floor:
+            # one cell cannot say two things, so a skip:ubuntu line under Debian/Ubuntu is
+            # a refusal that names the split, not a shared-looking cell.
+            for (i = 1; i <= ntier[c]; i++) {
+              n = 0; names = ""
+              for (h = 1; h <= nh; h++) if (pid[hit[h]] == tier[c, i]) { n++; names = names (n > 1 ? ", " : "") pname[hit[h]] }
+              if (n == 0) {
+                seen = ""; for (h = 1; h <= nh; h++) seen = seen (h > 1 ? ", " : "") pid[hit[h]] ":" pname[hit[h]]
+                err(lbl " / " cid[c] ": the " tier[c, i] " tier does not install it but another tier of the same column does (" seen ") — one cell cannot render a split; tier it apart or footnote it"); exit 2
+              }
+              if (n > 1) { err(lbl " / " cid[c] ": several lines in " file " match under " tier[c, i] " (" names ") — name one with =<name>"); exit 2 }
+            }
+            key1 = pline[hit[1]] SUBSEP pname[hit[1]] SUBSEP pfloor[hit[1]]
+            for (h = 2; h <= nh; h++) if (pline[hit[h]] SUBSEP pname[hit[h]] SUBSEP pfloor[hit[h]] != key1) {
+              seen = ""; for (k = 1; k <= nh; k++) seen = seen (k > 1 ? ", " : "") pid[hit[k]] ":" pname[hit[k]] (pfloor[hit[k]] == "" ? "" : " min:" pfloor[hit[k]])
+              err(lbl " / " cid[c] ": the tiers disagree on the line or its floor (" seen ") — one cell cannot render a split"); exit 2
+            }
+            p = hit[1]
+            if (index(pname[p], "`")) { err(lbl " / " cid[c] ": the package name contains a backtick"); exit 2 }
+            cell = "`" esc(pname[p]) "`"
+            if (pfloor[p] != "") cell = cell " ≥ " esc(pfloor[p])
+            cell = cell marks
+            printf "packages\t%s\t%s\tderived\t%s:%s\n", lbl, cid[c], file, pline[p] >> listfile
+          } else {
+            for (p = 1; p <= np; p++) if (pcol[p] == cid[c] && (inlist(pname[p], cands) || inlist(pbase[p], cands))) {
+              err(lbl " / " cid[c] " is asserted as \"" spec "\" but " file ":" pline[p] " now installs " pname[p] " — change the cell to = (and re-check its footnote)"); exit 2
+            }
+            cell = esc(spec)
+            printf "packages\t%s\t%s\tasserted\tscripts/gen-porting-matrix.sh PKG_ROWS\n", lbl, cid[c] >> listfile
+          }
+          line = line "\t" cell
         }
-        # EVERY tier ID behind the column must see the same line with the same floor: one
-        # cell cannot say two things, so a `skip:ubuntu` line under Debian/Ubuntu is a
-        # refusal that names the split, not a shared-looking cell.
-        tier="$(awk -F'\t' -v c="$col" '$1 == c { print $4 }' <<<"$PKG_COLUMNS")"
-        for id in ${tier//,/ }; do
-          case "$(awk -F'\t' -v i="$id" '$6 == i { n++ } END { print n + 0 }' <<<"$hit")" in
-          1) ;;
-          0) printf 'gen-porting-matrix: %s / %s: the %s tier does not install it but another tier of the same column does (%s) — one cell cannot render a split; tier it apart or footnote it\n' "$lbl" "$col" "$id" "$(awk -F'\t' '{ printf "%s%s:%s", (NR > 1 ? ", " : ""), $6, $3 }' <<<"$hit")" >&2; return 2 ;;
-          *) printf 'gen-porting-matrix: %s / %s: several lines in %s match under %s (%s) — name one with =<name>\n' "$lbl" "$col" "$file" "$id" "$(awk -F'\t' -v i="$id" '$6 == i { printf "%s%s", (n++ ? ", " : ""), $3 }' <<<"$hit")" >&2; return 2 ;;
-          esac
-        done
-        [[ "$(awk -F'\t' '{ print $2 "\t" $3 "\t" $5 }' <<<"$hit" | sort -u | awk 'END { print NR }')" == 1 ]] || {
-          printf 'gen-porting-matrix: %s / %s: the tiers disagree on the line or its floor (%s) — one cell cannot render a split\n' "$lbl" "$col" "$(awk -F'\t' '{ printf "%s%s:%s%s", (NR > 1 ? ", " : ""), $6, $3, ($5 == "" ? "" : " min:" $5) }' <<<"$hit")" >&2
-          return 2
-        }
-        hit="$(head -n 1 <<<"$hit")"
-        lineno="$(field 2 "$hit")"; name="$(field 3 "$hit")"; floor="$(field 5 "$hit")"
-        [[ "$name" != *'`'* ]] || { printf 'gen-porting-matrix: %s / %s: the package name contains a backtick\n' "$lbl" "$col" >&2; return 2; }
-        cell="\`$(esc "$name")\`"
-        [[ -z "$floor" ]] || cell="$cell ≥ $(esc "$floor")"
-        cell="$cell$marks"
-        printf 'packages\t%s\t%s\tderived\t%s:%s\n' "$lbl" "$col" "$file" "$lineno" >>"$LISTFILE"
-      else
-        hit="$(matches "$col" "$cands")"
-        [[ -z "$hit" ]] || {
-          printf 'gen-porting-matrix: %s / %s is asserted as "%s" but %s:%s now installs %s — change the cell to = (and re-check its footnote)\n' \
-            "$lbl" "$col" "$spec" "$file" "$(field 2 "$(head -n 1 <<<"$hit")")" "$(field 3 "$(head -n 1 <<<"$hit")")" >&2
-          return 2
-        }
-        cell="$(esc "$spec")"
-        printf 'packages\t%s\t%s\tasserted\tscripts/gen-porting-matrix.sh PKG_ROWS\n' "$lbl" "$col" >>"$LISTFILE"
-      fi
-      cells="$cells$TAB$cell"
-    done
-    rows="$rows
-$cells"
-  done <<EOF
-$PKG_ROWS
-EOF
-  _table <<EOF
-$rows
-EOF
+        print line
+      }
+      close(listfile)
+    }' | _table
 }
 
 # ── the block walker (gen-aliases.sh's, HTML-comment markers) ─────────────────
