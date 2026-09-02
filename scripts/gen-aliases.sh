@@ -472,7 +472,14 @@ if ! generated="$(build_file "$TARGET")"; then
 fi
 if [[ "$MODE" == check ]]; then
   _tmp="$(mktemp "${TMPDIR:-/tmp}/gen-aliases.XXXXXX")" || exit 2
-  printf '%s\n' "$generated" >"$_tmp"
+  # CHECKED, because there is no `set -e`: a full disk or an I/O error here would
+  # otherwise fall through to the comparison and be reported as drift (1), when the
+  # contract says "could not render" is 2.
+  printf '%s\n' "$generated" >"$_tmp" || {
+    printf 'gen-aliases: could not write the comparison copy %s\n' "$_tmp" >&2
+    rm -f "$_tmp"
+    exit 2
+  }
   if ! core_files_identical "$TARGET" "$_tmp"; then
     printf 'gen-aliases: DRIFT in %s — a generated table no longer matches the zsh sources:\n' "$TARGET" >&2
     git --no-pager diff --no-index --src-prefix=on-disk/ --dst-prefix=generated/ \
@@ -484,7 +491,13 @@ if [[ "$MODE" == check ]]; then
   fi
   rm -f "$_tmp"
 else
-  printf '%s\n' "$generated" >"$TARGET"
+  # Same reason: an unwritable aliases.md (read-only checkout, permissions) must not
+  # print "regenerated" and exit 0 — `make gen-aliases` would report a success that
+  # never happened.
+  printf '%s\n' "$generated" >"$TARGET" || {
+    printf 'gen-aliases: could not write %s\n' "$TARGET" >&2
+    exit 2
+  }
   printf 'gen-aliases: regenerated %s\n' "$TARGET"
 fi
 exit "$rc"
