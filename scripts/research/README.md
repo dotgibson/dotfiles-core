@@ -27,9 +27,11 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   `zsh/00-tools.zsh`, or `/tool-scout` flagging one, is the cue. Editing an anchor is a
   claim that the premise was re-measured at that version — not a version bump.
 - **Still gated.** `scripts/test-core.sh`'s `atuin` scope drives `verify-atuin-guard.sh`
-  hermetically against stub binaries, so a detector that quietly regressed cannot file a
-  confident issue about upstream. The classifier treats `scripts/research/` as infra, so a
-  change here pays for that self-test on push.
+  hermetically against stub binaries, and the workflow runs that self-test beside every
+  measurement. It does not block the report jobs — a red self-test sits next to the
+  verdict and says which of the two to believe, so a regressed detector is visible rather
+  than trusted. The classifier treats `scripts/research/` as infra, so a change here pays
+  for that self-test on push.
 
 ## Where the answers live
 

@@ -29,13 +29,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   cron and keeps `workflow_dispatch` — the checksum-verified, tokenless live-upstream
   measurement stays one `gh workflow run atuin-guard-verify` away — and its schedule-only
   `notify-failure` job goes with the schedule. The four `make` targets stay as the manual
-  invocations. Nothing an OS repo receives changes: #676 had already left all three out of
-  `core.vendor`, and the one fleet reference (`dotfiles-Alpine/bootstrap.sh` naming
-  `verify-atuin-guard.sh`'s `ver_cmp`) is a comment, not a call. `examples/atuin-daemon.service`
+  invocations. No OS repo gains or loses a file: #676 had already left all three out of
+  `core.vendor`, so what a sync carries from this change is the comment and prose repoints
+  in `zsh/00-tools.zsh`, `atuin/config.toml` and `PORTING-MATRIX.md` — no behaviour — and
+  the one fleet reference (`dotfiles-Alpine/bootstrap.sh` naming `verify-atuin-guard.sh`'s
+  `ver_cmp`) is a comment, not a call. `examples/atuin-daemon.service`
   — counted in the issue's 3,730 lines — is deliberately untouched: it is shipped, and two
   bootstraps install it. The runtime guard in `zsh/00-tools.zsh` is untouched too; that is
-  the part with a job. The hermetic self-test (`test-core.sh` §J2-J4, behind the `atuin`
-  scope) still drives the archived detector, and `audit-core.sh` §2 now asserts
+  the part with a job. The hermetic self-test still drives the archived detector —
+  `test-core.sh` §J3-J4 behind the `atuin` scope, and the cheap §J2 bench-harness checks
+  unconditionally, as before — and `audit-core.sh` §2 now asserts
   `scripts/research/lib/*.sh` as a sourced lib (mode 100644) like `scripts/lib/`.
 
 - **`bootstrap-test.yml`'s resolve job prints the resolver's own error under each

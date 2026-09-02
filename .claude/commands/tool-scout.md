@@ -135,7 +135,7 @@ one a workaround was verified against is a finding in its own right, not a footn
   - **Has atuin gained a client-side buffer or queue for the daemon path?** The guard degrades
     a shell **permanently** on the first failed connect, and that is only correct while atuin
     is *discarding* during the outage. An atuin that spools and replays inverts the reasoning,
-    and one-way becomes the wrong default. The weekly run probes this only indirectly, with a
+    and one-way becomes the wrong default. The dispatched run probes this only indirectly, with a
     closing daemon-off arm that must land exactly one row — an upstream design note would beat
     that probe, so read for one.
 
