@@ -347,7 +347,7 @@ EOF
 }
 
 render_commands() { # prints the aligned table
-  local rows="" line col header repo files unit action key ph marks cell k
+  local rows="" line col header repo files unit action key ph marks cell k spec first
   line="Action"
   while IFS="$TAB" read -r col header repo files unit; do
     [[ -n "$col" ]] || continue
@@ -365,12 +365,15 @@ EOF
       [[ "$ph" == unit ]] && k="<$unit>"
       [[ "$ph" == - ]] && k=""
       cell="$(cmd_cell "$col" "$key" "$k")" || return 2
+      first=""
       marks="$(awk -F'\t' -v k="$col/$action" '$1 == k { print $2 }' <<EOF
 $CMD_MARKS
 EOF
 )"
       line="$line$TAB$cell$marks"
-      printf 'commands\t%s\t%s\tderived\t%s\n' "$action" "$col" "$repo/${files##*=}" >>"$LISTFILE"
+      # EVERY declaration behind the column, labels stripped: a two-file column's cell is
+      # made of both, and a provenance line naming only the last would hide the other.
+      printf 'commands\t%s\t%s\tderived\t%s\n' "$action" "$col" "$(for spec in $files; do printf '%s%s/%s' "${first:+ }" "$repo" "${spec#*=}"; first=1; done)" >>"$LISTFILE"
     done <<EOF
 $CMD_COLUMNS
 EOF
@@ -595,6 +598,12 @@ EOF
 # ── driver ────────────────────────────────────────────────────────────────────
 [[ -r "$TARGET" ]] || die "$TARGET is missing or unreadable"
 
+# STRUCTURE BEFORE COVERAGE. The markers are this repo's own file, so a broken pair is
+# answerable on a lone checkout and must be the structural 2 there — resolving the
+# fleet first would file a deleted marker under "no sibling to read" (3), and
+# audit-core.sh §9h would record a corrupted document as an environment skip.
+preflight || exit 2
+
 if ! resolve_fleet; then
   printf 'gen-porting-matrix: not checked out under %s:%s — nothing compared, nothing written (clone the fleet beside this repo, or pass --fleet DIR)\n' "$FLEET" "$MISSING" >&2
   exit 3
@@ -609,8 +618,6 @@ if [[ "$MODE" == list ]]; then
   cat "$LISTFILE"
   exit 0
 fi
-
-preflight || exit 2
 
 rc=0
 if ! generated="$(build_file "$TARGET")"; then

@@ -6908,10 +6908,13 @@ PF
         c = ($2 == "-") ? tool($1) : $2; sub(/ .*/, "", c); t = tool($1)
         floor = (t == "neovim") ? " min:0.12.0" : ""
         a = dname($3, c); o = dname($4, c); al = dname($5, c); g = dname($6, c); k = dname($7, c); d = dname($8, c)
-        if (a != "") print a "  # " t >> fleet "/dotfiles-Arch/install/packages.txt"
-        if (o != "") print o "  # " t >> fleet "/dotfiles-openSUSE/install/packages.txt"
-        if (al != "") print al "  # " t >> fleet "/dotfiles-Alpine/install/packages.txt"
-        if (g != "") print "fx-cat/" g "  # bin:" t floor >> fleet "/dotfiles-Gentoo/install/packages.txt"
+        # Output targets PARENTHESISED: gawk reads `>> fleet "/x"` as one file name, but
+        # BSD awk (the macOS leg) and mawk (the Ubuntu leg) stop at `fleet` — the
+        # fixture lists came out empty there and every derived cell failed as unmatched.
+        if (a != "") print a "  # " t >> (fleet "/dotfiles-Arch/install/packages.txt")
+        if (o != "") print o "  # " t >> (fleet "/dotfiles-openSUSE/install/packages.txt")
+        if (al != "") print al "  # " t >> (fleet "/dotfiles-Alpine/install/packages.txt")
+        if (g != "") print "fx-cat/" g "  # bin:" t floor >> (fleet "/dotfiles-Gentoo/install/packages.txt")
         deb = fleet "/dotfiles-Debian/install/packages.txt"
         if (k != "" && k == d) print k "  # " t >> deb
         else {
@@ -6979,8 +6982,9 @@ EOF
   fi
   _gp_list_out="$(_gp_out --list)"
   if grep -q "^packages	neovim	kali	derived	dotfiles-Debian/install/packages.txt:[0-9]" <<<"$_gp_list_out" &&
-    grep -q '^packages	neovim	debian	asserted	' <<<"$_gp_list_out" && grep -q '^commands	install	gentoo	derived	' <<<"$_gp_list_out"; then
-    pass "gen-porting-matrix: --list names each cell's provenance, derived cells by file:line"
+    grep -q '^packages	neovim	debian	asserted	' <<<"$_gp_list_out" && grep -q '^commands	install	gentoo	derived	' <<<"$_gp_list_out" &&
+    grep -q '^commands	upgrade	opensuse	derived	dotfiles-openSUSE/os/opensuse.leap.capabilities dotfiles-openSUSE/os/opensuse.capabilities$' <<<"$_gp_list_out"; then
+    pass "gen-porting-matrix: --list names each cell's provenance, derived cells by file:line, both declarations of a two-file column"
   else
     fail "gen-porting-matrix: --list is missing a derived, an asserted or a commands row"
   fi
@@ -7070,6 +7074,18 @@ EOF
   else
     fail "gen-porting-matrix: an empty fleet root did not exit 3"
   fi
+  # …but a BROKEN DOCUMENT on that same lone checkout is still the structural 2: the
+  # markers are this repo's own, so they are validated before any sibling is looked for,
+  # and audit-core.sh §9h must never file a deleted marker under "not covered".
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak '/^<!-- core:porting-matrix:end packages -->$/d' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  _gp_lone_out="$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check 2>&1)"
+  if [[ "$(cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" --check >/dev/null 2>&1; echo $?)" == 2 ]] &&
+    grep -q 'packages has 1 gen marker(s) but 0 end marker(s)' <<<"$_gp_lone_out"; then
+    pass "gen-porting-matrix: a broken marker is 2 even with no siblings — structure is checked before coverage"
+  else
+    fail "gen-porting-matrix: a broken marker on a lone checkout was filed as uncovered (3) instead of structural (2)"
+  fi
 
   # An edit OUTSIDE the markers is not drift and survives regeneration.
   _gp_fixture && _gp_run >/dev/null
@@ -7142,7 +7158,7 @@ EOF
   fi
 
   rm -rf "$GPR" "$GPF"
-  unset GPR GPF _gp_ids _gp_rows _gp_gen_rc _gp_drift_rc _gp_drift_out _gp_before _gp_gone_out _gp_flip_out _gp_tier_out _gp_key_out _gp_miss_out _gp_stray_out _gp_unreg_out _gp_cross_out _gp_list_out
+  unset GPR GPF _gp_ids _gp_rows _gp_gen_rc _gp_drift_rc _gp_drift_out _gp_before _gp_gone_out _gp_flip_out _gp_tier_out _gp_key_out _gp_miss_out _gp_stray_out _gp_unreg_out _gp_cross_out _gp_list_out _gp_lone_out
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────

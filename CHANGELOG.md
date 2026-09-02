@@ -62,8 +62,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   was never a plain transposition, and the generator says so rather than pretending: a
   cell the repo installs is _derived_; the footnote-²¹ "available, not installed" names
   and the `asset`/`cargo`/`AUR`/`GURU` routes only `bootstrap.sh` knows are _asserted_ in
-  the script's `PKG_ROWS` registry, and a repo that starts installing an asserted one is
-  exit 2 naming the cell — so that half cannot rot silently either. The ~1,100 footnote
+  the script's `PKG_ROWS` registry, and a repo that starts installing an asserted one
+  through `packages.txt` is exit 2 naming the cell — the one transition on that half the
+  generator can see; a changed out-of-band route stays the footnotes' job. The ~1,100 footnote
   lines are untouched. `make audit` gains §9h; because the inputs are sibling clones, an
   absent one is exit 3 → an environment SKIP naming the repos (the §9c posture), never a
   gate that only passes on one laptop, and `--require-siblings` reds it. `Makefile` gains

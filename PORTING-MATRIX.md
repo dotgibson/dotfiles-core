@@ -90,9 +90,11 @@ as `≥ X.Y.Z`; the Kali and Debian/Ubuntu columns read `dotfiles-Debian`'s one 
 its own `scripts/pkg-filter.sh` tiers, so `only:kali` and `skip:kali` land exactly where
 `bootstrap.sh` would put them. Every other cell — the ²¹ "available, not installed" names
 and the `asset` / `cargo` / `AUR` / `GURU` routes only `bootstrap.sh` knows — is _asserted_
-in the script's `PKG_ROWS` registry and rendered verbatim, and the gate fails the moment
-a repo starts installing one of those, so an asserted cell cannot go stale silently.
-`make gen-porting-matrix --list` (or the script's `--list`) prints each cell's provenance.
+in the script's `PKG_ROWS` registry and rendered verbatim. The gate catches exactly one
+transition on that half — a repo **starting to install** an asserted tool through
+`packages.txt` fails until the cell is flipped to `=`; a bootstrap route that changes or
+disappears out-of-band is still a judgment the footnotes and `/os-package-availability`
+carry. `scripts/gen-porting-matrix.sh --list` prints each cell's provenance.
 **Fix a derived cell in the OS repo's `packages.txt`, an asserted cell in the registry,
 and a footnote here.** The footnotes below stay hand-written.
 
