@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# scripts/lib/atuin-db.sh — read atuin's history DB the way both atuin gates read it.
+# scripts/research/lib/atuin-db.sh — read atuin's history DB the way both atuin gates read it.
 # ──────────────────────────────────────────────────────────────────────────────
 # ONE definition of the row-count SQL and the WAL checkpoint, shared by
-# scripts/bench-atuin-daemon.sh (which refuses to REPORT an arm whose writes did not land)
-# and scripts/verify-atuin-guard.sh (which refuses to reach a VERDICT whose control arm
+# scripts/research/bench-atuin-daemon.sh (which refuses to REPORT an arm whose writes did not land)
+# and scripts/research/verify-atuin-guard.sh (which refuses to reach a VERDICT whose control arm
 # did not write). Both rest on the same claim about atuin's schema — that a command is one
 # row in `history`, and that `history end` UPDATES that row rather than inserting another
 # — so a forked copy would let one gate keep believing a model the other had already found
@@ -11,10 +11,10 @@
 #
 # A SOURCED library, so — like scripts/lib/common.sh, and like zsh/*.zsh — it carries NO
 # shebang and stays mode 100644. scripts/audit-core.sh's exec-bit section asserts it: the
-# `scripts/lib/*.sh` arm deliberately precedes the generic `*.sh` arm, which would
+# `scripts/research/lib/*.sh` arm deliberately precedes the generic `*.sh` arm, which would
 # otherwise demand 100755. bash 3.2-safe (macOS): no associative arrays, no mapfile.
 #
-# Usage, from any scripts/*.sh:
+# Usage, from any scripts/research/*.sh:
 #   source "${BASH_SOURCE[0]%/*}/lib/atuin-db.sh"
 # ──────────────────────────────────────────────────────────────────────────────
 

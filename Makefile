@@ -35,17 +35,17 @@ bench: ## Benchmark Core's contribution to zsh startup (needs hyperfine; skips i
 profile: ## Per-module zsh startup breakdown (attributes the total cost; slowest first)
 	@./scripts/bench-core.sh --profile
 
-bench-atuin: ## Measure atuin write latency, daemon off vs on, under contention (needs atuin; skips if absent)
-	@./scripts/bench-atuin-daemon.sh
+bench-atuin: ## [research] Measure atuin write latency, daemon off vs on, under contention (needs atuin; skips if absent)
+	@./scripts/research/bench-atuin-daemon.sh
 
-bench-atuin-systemd: ## Same, but through a transient systemd user unit (skips without a user bus)
-	@./scripts/bench-atuin-daemon.sh --systemd
+bench-atuin-systemd: ## [research] Same, but through a transient systemd user unit (skips without a user bus)
+	@./scripts/research/bench-atuin-daemon.sh --systemd
 
-verify-atuin-guard: ## Re-measure the silent-discard premise _core_atuin_daemon_guard rests on (0 holds / 1 moved / 3 unmeasurable)
-	@./scripts/verify-atuin-guard.sh
+verify-atuin-guard: ## [research] Re-measure the silent-discard premise _core_atuin_daemon_guard rests on (0 holds / 1 moved / 3 unmeasurable)
+	@./scripts/research/verify-atuin-guard.sh
 
-verify-atuin-guard-autostart: ## Same three verdicts for the OTHER premise: does atuin self-heal its daemon under ATUIN_DAEMON__AUTOSTART? (SPAWNS a real daemon)
-	@./scripts/verify-atuin-guard.sh --premise autostart
+verify-atuin-guard-autostart: ## [research] Same three verdicts for the OTHER premise: does atuin self-heal its daemon under ATUIN_DAEMON__AUTOSTART? (SPAWNS a real daemon)
+	@./scripts/research/verify-atuin-guard.sh --premise autostart
 
 lint: audit ## Alias for `audit` (the audit IS the lint+test gate)
 

@@ -100,7 +100,7 @@ when zsh/nvim are absent.
   --scope LIST    limit the slow area sections: shell, nvim, atuin, all (default),
                   none. The clipboard + CI-classifier sections always run.
                   `atuin` drives the premise detector's hermetic self-test
-                  (scripts/verify-atuin-guard.sh) — the slowest thing here by far.
+                  (scripts/research/verify-atuin-guard.sh) — the slowest thing here by far.
   --color WHEN    auto (default) | always | never; NO_COLOR still wins. (CORE_COLOR env.)
   --json          machine-readable summary on stdout (implies --quiet):
                   {pass,skip,fail,seconds,skipped[],result}
@@ -2591,6 +2591,7 @@ _classify_is "docs (*.md) change → no gate" 'README.md' false false false
 # pins that so a future classifier tweak cannot quietly make every release a full run.
 _classify_is "generated digest (CHANGELOG.recent.md) → no gate" 'CHANGELOG.recent.md' false false false
 _classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true true
+_classify_is "scripts/research/ change → full run (the archived apparatus is still infra, #687)" 'scripts/research/verify-atuin-guard.sh' true true true
 _classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true true
 _classify_is "__ALL__ sentinel → full run" '__ALL__' true true true
 _classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true true
@@ -7468,7 +7469,7 @@ else
   fi
 fi
 
-# ── J2. the atuin daemon bench harness (scripts/bench-atuin-daemon.sh) ────────
+# ── J2. the atuin daemon bench harness (scripts/research/bench-atuin-daemon.sh) ────────
 # The bench itself needs a real atuin, a real zsh and a background daemon, so `make audit`
 # can never run it — which is exactly why its FAIL-CLOSED surface is worth pinning here.
 # Everything below is pure bash + python3: no atuin, no zsh, no systemd bus.
@@ -7478,10 +7479,10 @@ fi
 # of the very thing under measurement. (run_writers' short-arm refusal has the same status:
 # validated by running the bench on a box that has atuin, not by this suite.) Test 6 pins the
 # piece that IS cheaply hermetic — the SQL the whole rule rests on.
-hdr "atuin daemon bench harness (scripts/bench-atuin-daemon.sh)"
-_BENCH="$HERE/scripts/bench-atuin-daemon.sh"
+hdr "atuin daemon bench harness (scripts/research/bench-atuin-daemon.sh)"
+_BENCH="$HERE/scripts/research/bench-atuin-daemon.sh"
 if [[ ! -x "$_BENCH" ]]; then
-  skip "atuin bench harness (scripts/bench-atuin-daemon.sh absent or not executable)"
+  skip "atuin bench harness (scripts/research/bench-atuin-daemon.sh absent or not executable)"
 else
   _bout=""
   _brc=0
@@ -7579,9 +7580,9 @@ else
   #    empty, exactly as Section J does for ExecStart) and run it against a synthetic history
   #    table. This pins both predicates the rule rests on: the total, and the `duration >= 0`
   #    FINISHED count that catches a silently-discarded `history end`.
-  #    The SQL now lives in scripts/lib/atuin-db.sh, shared with scripts/verify-atuin-guard.sh
+  #    The SQL now lives in scripts/research/lib/atuin-db.sh, shared with scripts/research/verify-atuin-guard.sh
   #    — so this one assertion covers BOTH atuin gates, which is the point of the extraction.
-  _rcpy="$(sed -n "/^ROWCOUNT_PY='/,/^'$/p" "$HERE/scripts/lib/atuin-db.sh" | sed -e "1s/^ROWCOUNT_PY='//" -e '$d')"
+  _rcpy="$(sed -n "/^ROWCOUNT_PY='/,/^'$/p" "$HERE/scripts/research/lib/atuin-db.sh" | sed -e "1s/^ROWCOUNT_PY='//" -e '$d')"
   if [[ -z "$_rcpy" ]]; then
     fail "atuin bench: could not extract ROWCOUNT_PY from the script (format changed?)"
   elif ! have python3; then
@@ -7654,7 +7655,7 @@ con.commit(); con.close()' "$_rcdb"
   fi
 fi
 
-# ── J3. the atuin-guard premise detector (scripts/verify-atuin-guard.sh) ──────
+# ── J3. the atuin-guard premise detector (scripts/research/verify-atuin-guard.sh) ──────
 # The detector answers ONE question — does the upstream fact _core_atuin_daemon_guard is
 # premised on still hold? — and the whole reason it exists in this shape is that the
 # previous answer to that question could LIE. The copy-paste recipe it replaces seeded its
@@ -7668,12 +7669,12 @@ fi
 #
 # Hermetic: a stub `atuin` supplies every shape, so this needs no atuin, no daemon and no
 # network — the same stubbing idiom Section J uses on the example unit's ExecStart.
-_VERIFY="$HERE/scripts/verify-atuin-guard.sh"
+_VERIFY="$HERE/scripts/research/verify-atuin-guard.sh"
 # SCOPE_ATUIN, not SCOPE_SHELL. This section and J4 below are 197s of a 286s suite — 68% of
 # it, and the largest single cost on the CI critical path across all nine repos. What they
 # exercise is the premise DETECTOR against stub binaries; the detector's real job, measuring
-# live upstream atuin, runs weekly in .github/workflows/atuin-guard-verify.yml and never on a
-# push. So the only changes that can move the result here are the detector itself (scripts/,
+# live upstream atuin, runs on manual dispatch of .github/workflows/atuin-guard-verify.yml
+# (#687) and never on a push. So the only changes that can move the result here are the detector itself (scripts/,
 # which ci-classify.sh already treats as infra → full run), the guard it protects in
 # zsh/00-tools.zsh, and atuin/. Every other shell change was paying 197s for a harness it
 # cannot reach. Skipping is FAIL-CLOSED at the classifier, not here: an unrecognised or
@@ -7681,11 +7682,11 @@ _VERIFY="$HERE/scripts/verify-atuin-guard.sh"
 if ! ((SCOPE_ATUIN)); then
   skip "atuin guard detector (out of scope)"
 elif [[ ! -x "$_VERIFY" ]]; then
-  skip "atuin guard detector (scripts/verify-atuin-guard.sh absent or not executable)"
+  skip "atuin guard detector (scripts/research/verify-atuin-guard.sh absent or not executable)"
 elif ! have python3; then
   skip "atuin guard detector (python3 not installed)"
 else
-  hdr "atuin guard premise detector (scripts/verify-atuin-guard.sh, hermetic)"
+  hdr "atuin guard premise detector (scripts/research/verify-atuin-guard.sh, hermetic)"
   _vstub="$(mktemp -d "$SANDBOX/vstub.XXXXXX")"
 
   # _mkstub <name> <writes?> [version] — a fake atuin. `writes=yes` inserts a row on EVERY
@@ -7888,9 +7889,10 @@ assert d["premise"] == "discard", d["premise"]
     # lib/ux.sh too: scripts/lib/common.sh sources it as ../../lib/ux.sh, and without it the
     # script dies under `set -u` before it ever reads the anchor — which would make this
     # assertion pass for the wrong reason (a crash, not a refusal).
-    mkdir -p "$_vrepo/scripts/lib" "$_vrepo/lib" "$_vrepo/zsh" "$_vrepo/atuin"
-    cp "$_VERIFY" "$_vrepo/scripts/"
-    cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/atuin-db.sh" "$_vrepo/scripts/lib/"
+    mkdir -p "$_vrepo/scripts/research/lib" "$_vrepo/scripts/lib" "$_vrepo/lib" "$_vrepo/zsh" "$_vrepo/atuin"
+    cp "$_VERIFY" "$_vrepo/scripts/research/"
+    cp "$HERE/scripts/lib/common.sh" "$_vrepo/scripts/lib/"
+    cp "$HERE/scripts/research/lib/atuin-db.sh" "$_vrepo/scripts/research/lib/"
     cp "$HERE/lib/ux.sh" "$_vrepo/lib/"
     cp "$HERE/atuin/config.toml" "$_vrepo/atuin/"
     for _case in none dupe; do
@@ -7900,7 +7902,7 @@ assert d["premise"] == "discard", d["premise"]
         printf '# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0\n# CORE_ATUIN_GUARD_VERIFIED_AGAINST=19.0.0\n' \
           >"$_vrepo/zsh/00-tools.zsh"
       fi
-      _vout="$(CORE_COLOR=never "$_vrepo/scripts/verify-atuin-guard.sh" --atuin "$_vstub/atuin-discards" --json 2>&1)"
+      _vout="$(CORE_COLOR=never "$_vrepo/scripts/research/verify-atuin-guard.sh" --atuin "$_vstub/atuin-discards" --json 2>&1)"
       _vrc=$?
       if ((_vrc == 3)) && [[ "$_vout" == *"anchor"* ]]; then
         pass "atuin verify: a $_case anchor in zsh/00-tools.zsh is unmeasurable, not a default"
@@ -8090,9 +8092,9 @@ _d_take_lock() {
 # the first, and the first is what removes this run's $SANDBOX.
 _d_drop_lock() { ((_D_LOCK_HELD)) && rm -rf "$_D_LOCK" 2>/dev/null; return 0; }
 
-_DVERIFY="$HERE/scripts/verify-atuin-guard.sh"
+_DVERIFY="$HERE/scripts/research/verify-atuin-guard.sh"
 if [[ ! -x "$_DVERIFY" ]]; then
-  skip "atuin autostart premise (scripts/verify-atuin-guard.sh absent or not executable)"
+  skip "atuin autostart premise (scripts/research/verify-atuin-guard.sh absent or not executable)"
 elif ! ((SCOPE_ATUIN)); then
   skip "atuin autostart premise (out of scope)"
 elif ! have python3; then
@@ -9080,9 +9082,10 @@ J4PROBE
     #     nothing. Cheap to assert: read_anchor runs before the sandbox is built, so no daemon
     #     is spawned on this path.
     _dvrepo="$(mktemp -d "$SANDBOX/dvrepo.XXXXXX")"
-    mkdir -p "$_dvrepo/zsh" "$_dvrepo/scripts/lib" "$_dvrepo/lib" "$_dvrepo/atuin"
-    cp "$_DVERIFY" "$_dvrepo/scripts/"
-    cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/atuin-db.sh" "$_dvrepo/scripts/lib/"
+    mkdir -p "$_dvrepo/zsh" "$_dvrepo/scripts/research/lib" "$_dvrepo/scripts/lib" "$_dvrepo/lib" "$_dvrepo/atuin"
+    cp "$_DVERIFY" "$_dvrepo/scripts/research/"
+    cp "$HERE/scripts/lib/common.sh" "$_dvrepo/scripts/lib/"
+    cp "$HERE/scripts/research/lib/atuin-db.sh" "$_dvrepo/scripts/research/lib/"
     cp "$HERE/lib/ux.sh" "$_dvrepo/lib/" 2>/dev/null || true
     cp "$HERE/atuin/config.toml" "$_dvrepo/atuin/"
     _dbad=0
@@ -9091,13 +9094,13 @@ J4PROBE
         echo "# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0"
         echo "# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=$_dcase"
       } >"$_dvrepo/zsh/00-tools.zsh"
-      _dout="$(cd "$_dvrepo" && CORE_COLOR=never "./scripts/verify-atuin-guard.sh" \
+      _dout="$(cd "$_dvrepo" && CORE_COLOR=never "./scripts/research/verify-atuin-guard.sh" \
         --premise autostart --atuin "$_dstub/atuin-heals" --json 2>/dev/null)"
       [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] || _dbad=1
     done
     # Absence, by contrast, must still be allowed through as unanchored.
     echo "# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0" >"$_dvrepo/zsh/00-tools.zsh"
-    _dout="$(cd "$_dvrepo" && CORE_COLOR=never CORE_ATVERIFY_POLL=3 "./scripts/verify-atuin-guard.sh" \
+    _dout="$(cd "$_dvrepo" && CORE_COLOR=never CORE_ATVERIFY_POLL=3 "./scripts/research/verify-atuin-guard.sh" \
       --premise autostart --atuin "$_dstub/atuin-heals" --json 2>/dev/null)"
     [[ "$(_d_get "$_dout" anchor_relation)" == unanchored ]] || _dbad=1
     _dreap

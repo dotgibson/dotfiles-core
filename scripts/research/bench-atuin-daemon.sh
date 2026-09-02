@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/bench-atuin-daemon.sh
+# scripts/research/bench-atuin-daemon.sh
 # ──────────────────────────────────────────────────────────────────────────────
 # Measure the ONE claim atuin daemon adoption never proved: that letting the daemon
 # own the SQLite writes removes the DB-lock contention every shell and every tmux
@@ -91,24 +91,24 @@
 # missing prerequisite SKIPs and exits 0, so this is safe to call on a bare box.
 #
 # Usage:
-#   ./scripts/bench-atuin-daemon.sh                       # the three-arm comparison
-#   ./scripts/bench-atuin-daemon.sh --systemd             # via a transient user unit
-#   CORE_ATBENCH_WRITERS=16 ./scripts/bench-atuin-daemon.sh   # heavier contention
-#   CORE_ATBENCH_SEED=50000 ./scripts/bench-atuin-daemon.sh   # a busier history DB
-#   CORE_ATBENCH_BASE=/net/home/you ./scripts/bench-atuin-daemon.sh   # network home
+#   ./scripts/research/bench-atuin-daemon.sh                       # the three-arm comparison
+#   ./scripts/research/bench-atuin-daemon.sh --systemd             # via a transient user unit
+#   CORE_ATBENCH_WRITERS=16 ./scripts/research/bench-atuin-daemon.sh   # heavier contention
+#   CORE_ATBENCH_SEED=50000 ./scripts/research/bench-atuin-daemon.sh   # a busier history DB
+#   CORE_ATBENCH_BASE=/net/home/you ./scripts/research/bench-atuin-daemon.sh   # network home
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$HERE" || exit 1
 
 # Shared palette + have()/skip() (this script keeps its own result-table printfs).
 # shellcheck source=scripts/lib/common.sh
-source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+source "${BASH_SOURCE[0]%/*}/../lib/common.sh"
 # ROWCOUNT_PY / atuin_db_rows / atuin_db_checkpoint. Shared with
-# scripts/verify-atuin-guard.sh, which rests on the SAME claim about atuin's schema that
+# scripts/research/verify-atuin-guard.sh, which rests on the SAME claim about atuin's schema that
 # the row rule below does — so the two cannot quietly diverge (see the lib's header).
-# shellcheck source=scripts/lib/atuin-db.sh
+# shellcheck source=scripts/research/lib/atuin-db.sh
 source "${BASH_SOURCE[0]%/*}/lib/atuin-db.sh"
 
 # Tuning is via env (see header). Parse EVERY arg and reject an unknown one (or a stray
@@ -517,7 +517,7 @@ fi
 # Fold a database's WAL back into its main file. Only ever called where no daemon holds the
 # file open — at seed time and inside db_reset — so it cannot contend with the process under
 # measurement. (db_rows deliberately does NOT checkpoint, for exactly that reason.)
-# A thin wrapper over scripts/lib/atuin-db.sh so every call site below reads unchanged.
+# A thin wrapper over scripts/research/lib/atuin-db.sh so every call site below reads unchanged.
 # The rationale for the checkpoint (and for db_rows NOT checkpointing) now lives in the lib.
 db_checkpoint() { atuin_db_checkpoint "$1"; }
 db_checkpoint "$DB"
@@ -554,7 +554,7 @@ for _d in "$DATADIR"/*.db; do db_checkpoint "$_d"; done
 cp -a "$DATADIR" "$SEEDDIR"
 
 # Row count as SQLite sees it RIGHT NOW, optionally filtered — a thin wrapper over
-# scripts/lib/atuin-db.sh, which holds the SQL, the -1 fail-closed contract, and the
+# scripts/research/lib/atuin-db.sh, which holds the SQL, the -1 fail-closed contract, and the
 # reasoning for both. This file's DB path is fixed; the lib takes it as an argument so a
 # second gate can share it.
 db_rows() { atuin_db_rows "$DB" "${1:-1=1}"; }

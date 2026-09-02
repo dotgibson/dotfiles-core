@@ -174,7 +174,7 @@ version/behavioral checks. CI and pre-commit run this exact script.
                   markdown/workflow/version checks always run. CI sets this from
                   scripts/ci-classify.sh; omit it locally to run the full audit.
                   `atuin` is the hermetic self-test of the premise detector
-                  (scripts/verify-atuin-guard.sh) — the suite's most expensive
+                  (scripts/research/verify-atuin-guard.sh) — the suite's most expensive
                   section by a wide margin, and reachable only from that script,
                   zsh/00-tools.zsh and atuin/.
   --color WHEN    auto (default) | always | never. `always` keeps colour when piped
@@ -643,9 +643,10 @@ if have git && git rev-parse --git-dir >/dev/null 2>&1; then
     mode="${line%% *}"
     path="${line#* }"
     case "$path" in
-    scripts/lib/*.sh | lib/*.sh)
+    scripts/lib/*.sh | scripts/research/lib/*.sh | lib/*.sh)
       # Sourced bash libraries — the bash sibling of zsh/*.zsh: no shebang, NOT
-      # executable. scripts/lib/ is dev-tooling; lib/ (core/lib/ux.sh) is the VENDORED
+      # executable. scripts/lib/ is dev-tooling, scripts/research/lib/ is the archived
+      # research apparatus's own lib (#687); lib/ (core/lib/ux.sh) is the VENDORED
       # bash UX lib bootstrap.sh sources. Must precede the generic *.sh arm (first match).
       if [[ "$mode" == 100644 ]]; then
         pass "src  $path"

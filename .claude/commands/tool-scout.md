@@ -68,9 +68,12 @@ one a workaround was verified against is a finding in its own right, not a footn
   that single fact — and it has already changed once, in the direction that makes it
   harder to notice (18.16.1 failed loudly; 18.19.0 fails silently).
 
-  **The measurement is automated, and this command must not re-implement it.**
-  `.github/workflows/atuin-guard-verify.yml` runs `scripts/verify-atuin-guard.sh` every
-  Tuesday at 13:00 UTC against **whatever atuin upstream ships that week** — resolved and
+  **The measurement is scripted, and this command must not re-implement it.**
+  `.github/workflows/atuin-guard-verify.yml` runs `scripts/research/verify-atuin-guard.sh` on
+  manual dispatch (`gh workflow run atuin-guard-verify`; the weekly schedule was retired in
+  #687 after the answer held for months) against **whatever atuin upstream ships that day** —
+  an atuin release past the anchors in `zsh/00-tools.zsh` is the cue to dispatch it, and a
+  finding here should say so rather than guess at the verdict. It is resolved and
   downloaded at run time, checksum- and provenance-verified in a job that executes nothing,
   then measured in a job that holds no token.
 
@@ -119,7 +122,7 @@ one a workaround was verified against is a finding in its own right, not a footn
      interactive shell in the fleet. That is the judgment call the workflow deliberately does
      not make.
 
-  **Two upstream questions the weekly measurement cannot answer**, so they are yours. Each
+  **Two upstream questions the dispatched measurement cannot answer**, so they are yours. Each
   is answerable from upstream's docs, source or release notes — none needs a shell, which is
   why they live here and not in the script:
 
@@ -157,7 +160,7 @@ a claim in the repo that may have gone stale, and a stale one costs history rath
 convenience. State the version it was verified against and the newest upstream release you
 found — those are the two versions you can actually establish; do not assert what is
 installed on this or any other machine, because you cannot see it, and do not paste a
-recipe (the measurement lives in `scripts/verify-atuin-guard.sh`). If nothing is due, say
+recipe (the measurement lives in `scripts/research/verify-atuin-guard.sh`). If nothing is due, say
 so in one line: silence reads the same as forgetting.
 
 Then a ranked shortlist, each with:

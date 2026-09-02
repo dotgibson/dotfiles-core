@@ -555,10 +555,10 @@ not a fault; disabling the daemon there would permanently defeat the only launch
 machines have. atuin's own health-checking is what covers them — and that is now **measured
 rather than assumed** (`dotgibson/dotfiles-core#402`). It is a second premise with its own
 mode, its own anchor line in `zsh/00-tools.zsh` and its own issue title:
-`scripts/verify-atuin-guard.sh --premise autostart` (or `make verify-atuin-guard-autostart`)
+`scripts/research/verify-atuin-guard.sh --premise autostart` (or `make verify-atuin-guard-autostart`)
 spawns a real daemon, checks that one appears and that the entry lands from each unreachable
-shape, and proves the teardown before deleting anything. The weekly workflow runs it as a
-separate job from the silent-discard one.
+shape, and proves the teardown before deleting anything. The `atuin-guard-verify` workflow
+(manual dispatch since #687) runs it as a separate job from the silent-discard one.
 
 Two things that measurement established on 18.19.0, both worth knowing before you touch these
 rows. The **stale-socket shape is the load-bearing one** — every `atuin history start` is a
@@ -576,7 +576,7 @@ unmerged** — and in particular do not edit that anchor, which is a claim the p
 re-measured, not a version bump. Re-run `make verify-atuin-guard-autostart` if it lands.
 
 Still not covered, so the default `--premise discard` caveats are not the only ones: the
-scheduled job runs on glibc Linux, which is neither of the two machines this premise protects,
+dispatched job runs on glibc Linux, which is neither of the two machines this premise protects,
 and a run that is green there is the weakest evidence in the whole arrangement for these rows.
 Running `make verify-atuin-guard-autostart` on the Alpine or macOS box itself is what actually
 speaks for it.
