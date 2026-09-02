@@ -744,8 +744,15 @@ jobs:
             # name per CI round costs a round trip per package.
             unresolved=""
             for p in "${pkgs[@]}"; do
-              if ! $RESOLVE "$p" >/dev/null 2>&1; then
+              # KEEP THE PROBE OUTPUT. A name fails to resolve for reasons only the resolver
+              # can tell apart: renamed or dropped upstream, a dependency missing from a
+              # half-synced mirror, or a container snapshot the repo no longer agrees with.
+              # Discarding it left dotfiles-openSUSE#149 with three names and no reason
+              # across four runs. The last lines go under the name (2>&1: zypper and dnf
+              # put the reason on stderr).
+              if ! out="$($RESOLVE "$p" 2>&1)"; then
                 echo "  UNRESOLVED: $p"
+                printf "%s\n" "$out" | tail -n 8 | sed "s/^/      | /"
                 unresolved="$unresolved $p"
               fi
             done
