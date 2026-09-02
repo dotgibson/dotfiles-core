@@ -7116,6 +7116,17 @@ EOF
   else
     fail "gen-porting-matrix: regeneration ate a hand-authored line"
   fi
+  # …including a blank line at the very end of the file: `$(…)` strips trailing newlines,
+  # so without the sentinel this read as drift and regeneration deleted it.
+  _gp_fixture && _gp_run >/dev/null
+  printf '\n' >>"$GPR/PORTING-MATRIX.md"
+  _gp_before="$(git hash-object "$GPR/PORTING-MATRIX.md")"
+  _gp_run >/dev/null
+  if [[ "$(_gp_run --check)" == 0 && "$(git hash-object "$GPR/PORTING-MATRIX.md")" == "$_gp_before" ]]; then
+    pass "gen-porting-matrix: a trailing blank line outside the markers is neither drift nor eaten"
+  else
+    fail "gen-porting-matrix: a trailing blank line at EOF was reported as drift or removed by regeneration"
+  fi
 
   # Markers are the mechanism.
   _gp_fixture && _gp_run >/dev/null

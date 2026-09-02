@@ -644,13 +644,18 @@ if [[ "$MODE" == list ]]; then
 fi
 
 rc=0
-if ! generated="$(build_file "$TARGET")"; then
+# The sentinel keeps the rendered stream BYTE-EXACT: `$(…)` strips every trailing
+# newline, so a hand-authored blank line at the end of the document — outside both
+# markers — would read as drift and be deleted on regeneration. build_file emits one
+# newline per line, so what remains after `%x` is exactly what the walker printed.
+if ! generated="$(build_file "$TARGET" && printf x)"; then
   exit 2
 fi
+generated="${generated%x}"
 if [[ "$MODE" == check ]]; then
   _tmp="$(mktemp "${TMPDIR:-/tmp}/gen-porting-matrix.XXXXXX")" || exit 2
   # CHECKED, because there is no `set -e`: an I/O error here must be 2, not drift (1).
-  printf '%s\n' "$generated" >"$_tmp" || {
+  printf '%s' "$generated" >"$_tmp" || {
     printf 'gen-porting-matrix: could not write the comparison copy %s\n' "$_tmp" >&2
     rm -f "$_tmp"
     exit 2
@@ -672,7 +677,7 @@ else
     printf 'gen-porting-matrix: could not create a temp file beside %s\n' "$TARGET" >&2
     exit 2
   }
-  if printf '%s\n' "$generated" >"$_out" && chmod 0644 "$_out" && mv "$_out" "$TARGET"; then
+  if printf '%s' "$generated" >"$_out" && chmod 0644 "$_out" && mv "$_out" "$TARGET"; then
     printf 'gen-porting-matrix: regenerated %s\n' "$TARGET"
   else
     rm -f "$_out"
