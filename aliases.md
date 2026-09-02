@@ -193,12 +193,11 @@ file-transfer server); pass `-l` to keep it on loopback.
 
 ## Upstream Sync
 
-A function (not an alias), so it works from inside any OS repo's vendored
-`core/` subtree without needing `.bin` on `PATH`.
-
-| Command | Expands To |
-| ------- | ------------ |
-| `gsync` | `.bin/sync-upstream.sh` — pushes an OS repo's vendored `core/` subtree back upstream to dotfiles-core (also `core sync`) |
+`gsync` runs `.bin/sync-upstream.sh`, which pushes an OS repo's vendored `core/` subtree
+back upstream to dotfiles-core (also reachable as `core sync`). It is a function, not an
+alias, so it works from inside any OS repo's vendored `core/` subtree without needing
+`.bin` on `PATH` — and, having no `--help` one-liner to extract, it is described here in
+prose rather than in a generated table.
 
 ---
 

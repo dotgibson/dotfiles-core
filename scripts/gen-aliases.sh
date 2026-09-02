@@ -501,13 +501,21 @@ if [[ "$MODE" == check ]]; then
   fi
   rm -f "$_tmp"
 else
-  # Same reason: an unwritable aliases.md (read-only checkout, permissions) must not
-  # print "regenerated" and exit 0 — `make gen-aliases` would report a success that
-  # never happened.
-  printf '%s\n' "$generated" >"$TARGET" || {
-    printf 'gen-aliases: could not write %s\n' "$TARGET" >&2
+  # ATOMIC: render to a sibling temp file and rename it over the target only once the
+  # whole write succeeded (gen-changelog-recent.sh's pattern). A bare `>` truncates the
+  # tracked document BEFORE printf runs, so a mid-write failure (full disk) would exit 2
+  # and leave aliases.md empty or partial. mktemp creates 0600; git stores 100644 for a
+  # non-executable blob, so match that on disk.
+  _out="$(mktemp "${TARGET}.XXXXXX")" || {
+    printf 'gen-aliases: could not create a temp file beside %s\n' "$TARGET" >&2
     exit 2
   }
-  printf 'gen-aliases: regenerated %s\n' "$TARGET"
+  if printf '%s\n' "$generated" >"$_out" && chmod 0644 "$_out" && mv "$_out" "$TARGET"; then
+    printf 'gen-aliases: regenerated %s\n' "$TARGET"
+  else
+    rm -f "$_out"
+    printf 'gen-aliases: could not write %s — left untouched\n' "$TARGET" >&2
+    exit 2
+  fi
 fi
 exit "$rc"
