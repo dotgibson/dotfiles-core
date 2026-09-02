@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases changelog-recent release tag publish release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix changelog-recent release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -107,6 +107,12 @@ gen-aliases: ## Regenerate aliases.md's tables from the zsh alias sources (edit 
 
 check-aliases: ## Report whether aliases.md's tables have drifted from the zsh sources — also run inside `make audit`
 	@./scripts/gen-aliases.sh --check
+
+gen-porting-matrix: ## Regenerate PORTING-MATRIX.md's two tables from the sibling OS repos (edit the repo, not the table)
+	@./scripts/gen-porting-matrix.sh
+
+check-porting-matrix: ## Report whether PORTING-MATRIX.md's tables have drifted from the OS repos — also run inside `make audit`
+	@./scripts/gen-porting-matrix.sh --check
 
 changelog-recent: ## Regenerate the vendored 8-release CHANGELOG digest (`make release` runs this too)
 	@./scripts/gen-changelog-recent.sh

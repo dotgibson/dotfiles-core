@@ -30,8 +30,14 @@ truth and compare:
   `aliases.md` is still hand-kept ↔ its own source (`dotfiles-Offense/aliases.md` ↔
   `offensive/offensive.zsh`, `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`):
   documented entries must exist; notable source aliases/helpers should be documented.
-- **`PORTING-MATRIX.md` ↔ each OS repo.** Per distro, compare the matrix's commands
-  and package names against that repo's `install/packages.txt` and `os/<distro>.zsh`.
+- **`PORTING-MATRIX.md` ↔ each OS repo.** The two data tables are GENERATED
+  (`scripts/gen-porting-matrix.sh` from each repo's `os/*.capabilities` and
+  `install/packages.txt`, gated by `make audit` §9h), so do not re-audit them cell by cell;
+  `scripts/gen-porting-matrix.sh --fleet <fleet-root> --list` prints each cell's
+  provenance. What can drift is the hand-written half: the ~35 numbered footnotes and the
+  quirks prose against the repos they describe, and the _asserted_ cells (footnote ²¹
+  names, `asset`/`cargo`/`AUR`/`GURU` routes) against what that repo's `bootstrap.sh`
+  actually does out-of-band.
 - **Vendored `core/` freshness.** Each OS repo's `core.lock` (`core_sha`,
   `core_version`) vs this repo's `core.version` and HEAD.
 - **`CHANGELOG.md` `[Unreleased]` ↔ recent commits** (`git log`).

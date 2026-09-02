@@ -38,10 +38,15 @@ Run these cross-checks (skip any out of the requested scope):
    aliases/helpers (e.g. a new `redup`) should be documented. Flag stale, renamed, or
    undocumented entries. (This is the fleet-wide alias-cheatsheet upkeep that used to run
    as a separate daily routine — it lives here now.)
-3. **`PORTING-MATRIX.md` ↔ each OS repo.** For each distro, check the
-   package-manager commands and package names against that repo's
-   `install/packages.txt` and `os/<distro>.zsh`. Flag a package renamed upstream,
-   a command that drifted, or a distro the matrix and the repo disagree on.
+3. **`PORTING-MATRIX.md` ↔ each OS repo.** The two data tables are GENERATED
+   (`scripts/gen-porting-matrix.sh` from each repo's `os/*.capabilities` and
+   `install/packages.txt`; `make audit` §9h fails on drift), so do not re-audit those
+   cells — a wrong derived cell means the OS repo is wrong, and the fix lands there.
+   Audit the hand-written half instead: each numbered footnote and quirks paragraph
+   against the repo it describes, and the _asserted_ cells (`--list` names them) against
+   what that repo's `bootstrap.sh` installs out-of-band. Flag a footnote gone stale, a
+   route (`asset`, `cargo`, `AUR`, `GURU`) the repo no longer takes, or a distro the
+   matrix and the repo disagree on.
 4. **Vendored `core/` freshness.** Read each sibling OS repo's `core.lock` and
    compare `core_sha` / `core_version` against this repo's `core.version` and HEAD.
    Flag any repo whose vendored Core is behind (needs `make sync`).

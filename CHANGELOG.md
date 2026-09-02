@@ -48,6 +48,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`PORTING-MATRIX.md`'s two data tables are generated from the OS repos (#686).** The
+  package-manager table restated the seven `PKG_*` verbs every `os/<os>.capabilities`
+  already declares (and `check-capabilities.sh` already gates), and the package-name
+  table restated `install/packages.txt` — including the `# min:` floors that
+  `dotfiles-Debian` and `dotfiles-Gentoo` enforce in CI — as a copy nothing checked.
+  `scripts/gen-porting-matrix.sh` now renders both into
+  `<!-- core:porting-matrix:gen … -->` marker pairs, the way `gen-aliases.sh` renders the
+  cheat sheet: verbs verbatim from the declarations (openSUSE's Leap/Tumbleweed pair
+  rendered as both, labelled), package names from the lines the repo's own reader would
+  install — Debian's list read through its `scripts/pkg-filter.sh` tiers so `only:kali`
+  and `skip:kali` land in the right column — with a floor shown as `≥ X.Y.Z`. The table
+  was never a plain transposition, and the generator says so rather than pretending: a
+  cell the repo installs is _derived_; the footnote-²¹ "available, not installed" names
+  and the `asset`/`cargo`/`AUR`/`GURU` routes only `bootstrap.sh` knows are _asserted_ in
+  the script's `PKG_ROWS` registry, and a repo that starts installing an asserted one is
+  exit 2 naming the cell — so that half cannot rot silently either. The ~1,100 footnote
+  lines are untouched. `make audit` gains §9h; because the inputs are sibling clones, an
+  absent one is exit 3 → an environment SKIP naming the repos (the §9c posture), never a
+  gate that only passes on one laptop, and `--require-siblings` reds it. `Makefile` gains
+  `gen-porting-matrix` / `check-porting-matrix`; `--list` prints every cell's provenance;
+  `--fleet DIR` points a worktree at the real fleet. Visible cell changes: the four
+  floored cells, and the commands table now shows the declared verbs exactly (`-y` /
+  `--noconfirm` on install/remove, `sudo dnf check-update`, `gentoo-pkg-pending`).
 - **The `core` front door reaches every first-party family: `core maint
   <install|run|log|status|uninstall>`, `core sync` and `core update check` (#684).**
   Core ships two hyphen-namespaced families — `core-help`/`core-doctor`/`core-version`
