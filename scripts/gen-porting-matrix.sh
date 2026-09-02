@@ -444,7 +444,7 @@ EOF
 }
 
 render_packages() {
-  local rows="" line header col repo tier label cands spec cells i cell marks name hit nhit lineno floor file lbl
+  local rows="" line header col repo tier label cands want spec cells i cell marks name hit nhit lineno floor file lbl
   local cols=""
   line="Tool"
   while IFS="$TAB" read -r col header repo tier; do
@@ -474,12 +474,15 @@ EOF
         name="$(printf '%s' "$spec" | sed 's/[^A-Za-z0-9._+/-].*//')"
         marks="${spec#"$name"}"
         marks="${marks#"${marks%%[![:space:]]*}"}"
-        [[ -n "$name" ]] && cands="$name"
-        hit="$(matches "$col" "$cands")"
+        # The override is THIS cell's: `want` is a copy, so `=go-yq` on Arch does not narrow
+        # what the openSUSE cell to its right searches for.
+        want="$cands"
+        [[ -n "$name" ]] && want="$name"
+        hit="$(matches "$col" "$want")"
         nhit="$(awk 'NF { n++ } END { print n + 0 }' <<<"$hit")"
         ((nhit == 1)) || {
           if ((nhit == 0)); then
-            printf 'gen-porting-matrix: %s / %s: no line in %s installs it (candidates: %s) — change the cell to what the repo does, or restore the package\n' "$lbl" "$col" "$file" "$cands" >&2
+            printf 'gen-porting-matrix: %s / %s: no line in %s installs it (candidates: %s) — change the cell to what the repo does, or restore the package\n' "$lbl" "$col" "$file" "$want" >&2
           else
             printf 'gen-porting-matrix: %s / %s: %s lines in %s match (%s) — name one with =<name>\n' "$lbl" "$col" "$nhit" "$file" "$(awk -F'\t' '{ printf "%s%s", (NR > 1 ? ", " : ""), $3 }' <<<"$hit")" >&2
           fi
