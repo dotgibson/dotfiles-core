@@ -65,7 +65,9 @@
 #           cell the repo now installs, an ambiguous match, a missing declaration
 #           key, a broken marker, a registry error, an I/O failure, or a usage error;
 #       3 = uncovered — a required sibling repo is not checked out (named).
-# Severity is sticky, 3 > 2 > 1 > 0.
+# Structure is checked before coverage: a broken marker in this repo's own file is 2
+# even when no sibling is checked out, so 3 is only ever reported for a well-formed
+# document. Within a run 2 beats 1 (gen-aliases.sh's convention).
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
