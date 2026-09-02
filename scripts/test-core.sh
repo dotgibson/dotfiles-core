@@ -6897,6 +6897,9 @@ PF
     for r in Arch openSUSE Alpine Gentoo Debian; do
       printf '# fixture list\n# ── section ──\n# rust-analyzer  # commented out on purpose\nfixture-only-pkg  # continuation follows\n                  # …continued\n\n' >"$GPF/dotfiles-$r/install/packages.txt"
     done
+    # A skip:ubuntu line on a package NO row claims: the Debian/Ubuntu column is read
+    # under both IDs, and a split the table does not render must be harmless.
+    printf 'fixture-debian-only  # skip:ubuntu — not a matrix row\n' >>"$GPF/dotfiles-Debian/install/packages.txt"
     awk -F'\t' -v fleet="$GPF" '
       function tool(l) { sub(/[^A-Za-z0-9._+-].*/, "", l); return l }
       function dname(cell, cand,  n) {
@@ -7048,6 +7051,17 @@ EOF
   else
     fail "gen-porting-matrix: a tier change that contradicts an asserted cell went unreported"
   fi
+  # The Debian/Ubuntu column is ONE cell for two IDs: a skip:ubuntu on a claimed package
+  # is a split the cell cannot show, so it is a refusal naming the tier — never a cell that
+  # reads as shared because the debian pass saw the line.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/^eza  # eza$/eza  # skip:ubuntu eza/' "$GPF/dotfiles-Debian/install/packages.txt" && rm -f "$GPF/dotfiles-Debian/install/packages.txt.bak"
+  _gp_split_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'eza / debian: the ubuntu tier does not install it but another tier of the same column does' <<<"$_gp_split_out"; then
+    pass "gen-porting-matrix: a skip:ubuntu on a claimed package is a refusal (2) naming the tier, not a shared-looking cell"
+  else
+    fail "gen-porting-matrix: a Debian/Ubuntu tier split rendered or went unnamed (out: $(head -n 1 <<<"$_gp_split_out"))"
+  fi
   # A declaration missing a required verb cannot render.
   _gp_fixture && _gp_run >/dev/null
   sed -i.bak '/^PKG_OWNS=/d' "$GPF/dotfiles-Arch/os/arch.capabilities" && rm -f "$GPF/dotfiles-Arch/os/arch.capabilities.bak"
@@ -7158,7 +7172,7 @@ EOF
   fi
 
   rm -rf "$GPR" "$GPF"
-  unset GPR GPF _gp_ids _gp_rows _gp_gen_rc _gp_drift_rc _gp_drift_out _gp_before _gp_gone_out _gp_flip_out _gp_tier_out _gp_key_out _gp_miss_out _gp_stray_out _gp_unreg_out _gp_cross_out _gp_list_out _gp_lone_out
+  unset GPR GPF _gp_ids _gp_rows _gp_gen_rc _gp_drift_rc _gp_drift_out _gp_before _gp_gone_out _gp_flip_out _gp_tier_out _gp_key_out _gp_miss_out _gp_stray_out _gp_unreg_out _gp_cross_out _gp_list_out _gp_lone_out _gp_split_out
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────

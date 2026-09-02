@@ -88,7 +88,8 @@ of two kinds. A cell naming a package the repo **installs** is _derived_ from th
 `install/packages.txt` — the line's name, verbatim, with a `# min:X.Y.Z` floor shown
 as `≥ X.Y.Z`; the Kali and Debian/Ubuntu columns read `dotfiles-Debian`'s one list through
 its own `scripts/pkg-filter.sh` tiers, so `only:kali` and `skip:kali` land exactly where
-`bootstrap.sh` would put them. Every other cell — the ²¹ "available, not installed" names
+`bootstrap.sh` would put them — and the Debian/Ubuntu cell is read under _both_ IDs and
+refused when they disagree, so a `skip:ubuntu` line can never render as shared. Every other cell — the ²¹ "available, not installed" names
 and the `asset` / `cargo` / `AUR` / `GURU` routes only `bootstrap.sh` knows — is _asserted_
 in the script's `PKG_ROWS` registry and rendered verbatim. The gate catches exactly one
 transition on that half — a repo **starting to install** an asserted tool through

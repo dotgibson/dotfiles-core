@@ -156,13 +156,16 @@ macos/owns-file	³⁸"
 #   tier: `-` reads install/packages.txt whole; an os-release ID reads it THROUGH the
 #   repo's scripts/pkg-filter.sh (pkg_filter_lines <file> <id>), so the grammar stays
 #   the repo's own and dotfiles-Debian's one list feeds two columns exactly as its
-#   bootstrap.sh sees it.
+#   bootstrap.sh sees it. A comma-separated list reads the file once PER ID: a column
+#   that stands for several targets renders a derived cell only when every ID agrees
+#   (same line, same floor) and refuses (exit 2) otherwise — a `skip:ubuntu` line must
+#   not be shown as shared just because the debian pass saw it.
 PKG_COLUMNS="arch	Arch	dotfiles-Arch	-
 opensuse	openSUSE	dotfiles-openSUSE	-
 alpine	Alpine	dotfiles-Alpine	-
 gentoo	Gentoo (atom)	dotfiles-Gentoo	-
 kali	Kali (apt)²¹ᵃ	dotfiles-Debian	kali
-debian	Debian/Ubuntu	dotfiles-Debian	debian"
+debian	Debian/Ubuntu	dotfiles-Debian	debian,ubuntu"
 
 # label<TAB>candidates<TAB>arch<TAB>opensuse<TAB>alpine<TAB>gentoo<TAB>kali<TAB>debian
 #   label       the Tool cell, verbatim (its footnote marks included)
@@ -388,15 +391,15 @@ EOF
 }
 
 # ── the package table ─────────────────────────────────────────────────────────
-# PKGS: column<TAB>line<TAB>name<TAB>basename<TAB>floor, one per data line the column
-# sees. The name is what blib_read_pkgs (lib/bootstrap-lib.sh) makes of the line —
+# PKGS: column<TAB>line<TAB>name<TAB>basename<TAB>floor<TAB>id, one per data line the
+# column sees under each of its tier IDs (`-` for an untiered column). The name is what blib_read_pkgs (lib/bootstrap-lib.sh) makes of the line —
 # everything before the first `#`, whitespace removed — so what is matched here is
 # exactly what the repo's bootstrap installs. Tiered columns see the file through the
 # repo's own pkg_filter_lines; the lines are numbered first so a filtered line still
 # knows where it came from.
 PKGS=""
 read_pkgs() {
-  local col header repo tier dir file numbered filtered
+  local col header repo tier dir file numbered filtered id
   while IFS="$TAB" read -r col header repo tier; do
     [[ -n "$col" ]] || continue
     dir="$(repo_dir "$repo")"
@@ -404,17 +407,19 @@ read_pkgs() {
     [[ -r "$file" ]] || die "$repo has no install/packages.txt — the registry expects one"
     numbered="$(mktemp "${TMPDIR:-/tmp}/gen-porting-matrix.XXXXXX")" || die "could not create a temp file"
     awk '{ print NR "\t" $0 }' "$file" >"$numbered" || { rm -f "$numbered"; die "could not read $file"; }
-    if [[ "$tier" == - ]]; then
-      filtered="$(cat "$numbered")"
-    else
+    [[ "$tier" == - ]] || {
       [[ -r "$dir/scripts/pkg-filter.sh" ]] || { rm -f "$numbered"; die "$repo has no scripts/pkg-filter.sh — the $col column is tiered ($tier) and cannot be read without it"; }
       # shellcheck source=/dev/null
       source "$dir/scripts/pkg-filter.sh"
       command -v pkg_filter_lines >/dev/null || { rm -f "$numbered"; die "$repo/scripts/pkg-filter.sh does not define pkg_filter_lines"; }
-      filtered="$(pkg_filter_lines "$numbered" "$tier")" || { rm -f "$numbered"; die "pkg_filter_lines refused $file"; }
+    }
+    for id in ${tier//,/ }; do
+    if [[ "$id" == - ]]; then
+      filtered="$(cat "$numbered")"
+    else
+      filtered="$(pkg_filter_lines "$numbered" "$id")" || { rm -f "$numbered"; die "pkg_filter_lines refused $file"; }
     fi
-    rm -f "$numbered"
-    PKGS="$PKGS$(awk -F'\t' -v col="$col" '
+    PKGS="$PKGS$(awk -F'\t' -v col="$col" -v id="$id" '
       {
         n = $1; line = $0; sub(/^[^\t]*\t/, "", line)
         cmt = ""; i = index(line, "#"); if (i) { cmt = substr(line, i + 1); line = substr(line, 1, i - 1) }
@@ -423,12 +428,14 @@ read_pkgs() {
         floor = ""
         if (match(cmt, /min:[0-9][^[:space:]]*/)) floor = substr(cmt, RSTART + 4, RLENGTH - 4)
         base = line; k = split(line, parts, "/"); if (k > 1) base = parts[k]
-        printf "%s\t%s\t%s\t%s\t%s\n", col, n, line, base, floor
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n", col, n, line, base, floor, id
       }' <<EOF
 $filtered
 EOF
 )
 "
+    done
+    rm -f "$numbered"
   done <<EOF
 $PKG_COLUMNS
 EOF
@@ -444,7 +451,7 @@ EOF
 }
 
 render_packages() {
-  local rows="" line header col repo tier label cands want spec cells i cell marks name hit nhit lineno floor file lbl
+  local rows="" line header col repo tier label cands want spec cells i cell marks name hit nhit lineno floor file lbl id
   local cols=""
   line="Tool"
   while IFS="$TAB" read -r col header repo tier; do
@@ -480,14 +487,26 @@ EOF
         [[ -n "$name" ]] && want="$name"
         hit="$(matches "$col" "$want")"
         nhit="$(awk 'NF { n++ } END { print n + 0 }' <<<"$hit")"
-        ((nhit == 1)) || {
-          if ((nhit == 0)); then
-            printf 'gen-porting-matrix: %s / %s: no line in %s installs it (candidates: %s) — change the cell to what the repo does, or restore the package\n' "$lbl" "$col" "$file" "$want" >&2
-          else
-            printf 'gen-porting-matrix: %s / %s: %s lines in %s match (%s) — name one with =<name>\n' "$lbl" "$col" "$nhit" "$file" "$(awk -F'\t' '{ printf "%s%s", (NR > 1 ? ", " : ""), $3 }' <<<"$hit")" >&2
-          fi
+        ((nhit > 0)) || {
+          printf 'gen-porting-matrix: %s / %s: no line in %s installs it (candidates: %s) — change the cell to what the repo does, or restore the package\n' "$lbl" "$col" "$file" "$want" >&2
           return 2
         }
+        # EVERY tier ID behind the column must see the same line with the same floor: one
+        # cell cannot say two things, so a `skip:ubuntu` line under Debian/Ubuntu is a
+        # refusal that names the split, not a shared-looking cell.
+        tier="$(awk -F'\t' -v c="$col" '$1 == c { print $4 }' <<<"$PKG_COLUMNS")"
+        for id in ${tier//,/ }; do
+          case "$(awk -F'\t' -v i="$id" '$6 == i { n++ } END { print n + 0 }' <<<"$hit")" in
+          1) ;;
+          0) printf 'gen-porting-matrix: %s / %s: the %s tier does not install it but another tier of the same column does (%s) — one cell cannot render a split; tier it apart or footnote it\n' "$lbl" "$col" "$id" "$(awk -F'\t' '{ printf "%s%s:%s", (NR > 1 ? ", " : ""), $6, $3 }' <<<"$hit")" >&2; return 2 ;;
+          *) printf 'gen-porting-matrix: %s / %s: several lines in %s match under %s (%s) — name one with =<name>\n' "$lbl" "$col" "$file" "$id" "$(awk -F'\t' -v i="$id" '$6 == i { printf "%s%s", (n++ ? ", " : ""), $3 }' <<<"$hit")" >&2; return 2 ;;
+          esac
+        done
+        [[ "$(awk -F'\t' '{ print $2 "\t" $3 "\t" $5 }' <<<"$hit" | sort -u | awk 'END { print NR }')" == 1 ]] || {
+          printf 'gen-porting-matrix: %s / %s: the tiers disagree on the line or its floor (%s) — one cell cannot render a split\n' "$lbl" "$col" "$(awk -F'\t' '{ printf "%s%s:%s%s", (NR > 1 ? ", " : ""), $6, $3, ($5 == "" ? "" : " min:" $5) }' <<<"$hit")" >&2
+          return 2
+        }
+        hit="$(head -n 1 <<<"$hit")"
         lineno="$(field 2 "$hit")"; name="$(field 3 "$hit")"; floor="$(field 5 "$hit")"
         [[ "$name" != *'`'* ]] || { printf 'gen-porting-matrix: %s / %s: the package name contains a backtick\n' "$lbl" "$col" >&2; return 2; }
         cell="\`$(esc "$name")\`"
@@ -498,7 +517,7 @@ EOF
         hit="$(matches "$col" "$cands")"
         [[ -z "$hit" ]] || {
           printf 'gen-porting-matrix: %s / %s is asserted as "%s" but %s:%s now installs %s — change the cell to = (and re-check its footnote)\n' \
-            "$lbl" "$col" "$spec" "$file" "$(field 2 "$hit")" "$(field 3 "$hit")" >&2
+            "$lbl" "$col" "$spec" "$file" "$(field 2 "$(head -n 1 <<<"$hit")")" "$(field 3 "$(head -n 1 <<<"$hit")")" >&2
           return 2
         }
         cell="$(esc "$spec")"
