@@ -16,6 +16,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`bootstrap-test.yml`'s resolve job prints the resolver's own error under each
+  unresolved name.** The probe ran with its output discarded, so a red run said only
+  which names failed — and a name fails to resolve for reasons only the resolver can tell
+  apart: renamed or dropped upstream, a dependency missing from a half-synced mirror, or a
+  container snapshot the repo no longer agrees with. dotfiles-openSUSE#149 sat through
+  four runs with three names and no reason. The last eight lines of the probe's output now
+  follow each `UNRESOLVED:` line; pass/fail is unchanged. Reaches the OS repos at the next
+  `@v6` tag.
 - **`GITHUB-APP-AUTH.md` split into a live reference and a frozen record (#683).** The
   file mixed three concerns — how the auth works now, the G2 migration that produced it,
   and how to recover when the App is not working — and they drifted apart. That is the
