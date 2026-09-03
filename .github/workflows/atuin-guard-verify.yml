@@ -8,7 +8,7 @@ name: atuin-guard-verify
 # by that fact ALONE — and it has already moved once, in the direction that makes it harder
 # to notice (18.16.1 failed loudly). Nothing watched it: atuin is not pinned in
 # mise/config.toml, has no renovate.json entry, and /tool-scout's allowed-tools carry no
-# Bash, so it can compare version NUMBERS and never measure. This measures, weekly.
+# Bash, so it can compare version NUMBERS and never measure. This measures, on demand.
 #
 # ── WHY THIS ONE THING IS NOT PINNED ─────────────────────────────────────────────────
 # Everything else the fleet downloads is pinned to a version AND a SHA-256
@@ -23,8 +23,8 @@ name: atuin-guard-verify
 # The cost of that inversion is real, and it is bounded structurally rather than by trust:
 # this workflow downloads and EXECUTES an unpinned upstream binary, so the job that runs it
 # holds nothing worth stealing (see the split below), and the binary runs under `env -i`
-# inside scripts/verify-atuin-guard.sh, on an ephemeral runner, with no secret and no write
-# scope anywhere in reach.
+# inside scripts/research/verify-atuin-guard.sh, on an ephemeral runner, with no secret and
+# no write scope anywhere in reach.
 #
 # ── TWO PREMISES, TWO MEASURE/REPORT PAIRS ───────────────────────────────────────────
 # The guard rests on two upstream facts, and each gets its own measurement, its own verdict
@@ -76,13 +76,13 @@ name: atuin-guard-verify
 # Report-first, like every routine in .claude/: it never mutates the repo, never opens a
 # PR, and files findings as a DEDUPLICATED issue with a stable, date-free title.
 #
-# TIMING: Tuesday 13:00 UTC. The Claude routine ladder in claude-routines.yml ends at 12:00
-# and Monday 06:00-10:00 is the mechanical fleet-sweep cluster; 13:00 stays clear of both,
-# which is the stagger this repo already documents.
+# ON DEMAND, NOT ON A SCHEDULE (#687). This ran every Tuesday for months and the answer never
+# moved; five checkouts a week were re-asking a settled question. `gh workflow run
+# atuin-guard-verify` re-measures both premises when there is a reason to — an atuin release
+# past the anchors in zsh/00-tools.zsh, or /tool-scout flagging one. The scripts it drives
+# live under scripts/research/ for the same reason: never vendored, never scheduled.
 
 on:
-  schedule:
-    - cron: "0 13 * * 2" # Tue 13:00 UTC — after the Claude ladder (…12:00) closes
   workflow_dispatch: {}
 
 permissions:
@@ -100,9 +100,9 @@ env:
   ASSET: atuin-x86_64-unknown-linux-gnu.tar.gz
 
 jobs:
-  # ── 0. the DETECTOR's own self-test, run unconditionally on this weekly schedule. ────
-  # scripts/test-core.sh's `atuin` scope drives scripts/verify-atuin-guard.sh against stub
-  # binaries: ~44 hermetic scenarios asserting that the detector reports moved/holds/
+  # ── 0. the DETECTOR's own self-test, run unconditionally on every dispatch. ──────────
+  # scripts/test-core.sh's `atuin` scope drives scripts/research/verify-atuin-guard.sh against
+  # stub binaries: ~44 hermetic scenarios asserting that the detector reports moved/holds/
   # unmeasurable correctly. That block is 197s of a 286s behavioral suite — 68% of it, and
   # the largest single cost on the CI critical path — so ci.yml no longer runs it on every
   # push, only when the detector, zsh/00-tools.zsh or atuin/ actually change.
@@ -111,8 +111,8 @@ jobs:
   # merely LESS gated. The measure/measure-autostart jobs below trust the detector to tell a
   # real upstream move from a broken apparatus; a detector whose `unmeasurable` verdict had
   # quietly regressed would file a confident issue saying the premise MOVED when nothing had.
-  # So the self-test runs here every week regardless of what changed, on the same schedule as
-  # the measurement that depends on it.
+  # So the self-test runs here on every dispatch regardless of what changed, alongside the
+  # measurement that depends on it.
   #
   # Hermetic and offline: stubs only, no atuin, no daemon, no network. It deliberately does
   # NOT need `resolve`, and nothing downstream needs it — a red self-test must not suppress
@@ -169,8 +169,8 @@ jobs:
         # NEVER exits non-zero for an upstream problem: an unresolvable release, a renamed
         # asset or a bad checksum is a REPORTABLE finding (`unmeasurable`), not a crashed
         # workflow — the same reasoning freshness.yml applies to its `--check` mode, where
-        # an intended non-zero is "the report, not a crash". A red run here would page
-        # through notify-failure AND file nothing, which is the worst of both.
+        # an intended non-zero is "the report, not a crash". A red run here would be
+        # a crash AND file nothing, which is the worst of both.
         run: |
           set -uo pipefail
           # bail() writes a REASON that can contain upstream-derived text (a tag, an asset
@@ -285,14 +285,14 @@ jobs:
           # Every path reports through the SCRIPT's one renderer, never by composing prose
           # in YAML — so the wording a human reads cannot drift from the code producing it.
           if [ "$RESOLVE_OK" != "true" ]; then
-            ./scripts/verify-atuin-guard.sh --color never \
+            ./scripts/research/verify-atuin-guard.sh --color never \
               --unmeasurable "$RESOLVE_REASON" --report report.md --json >verdict.json
           elif [ -z "$bin" ]; then
-            ./scripts/verify-atuin-guard.sh --color never \
+            ./scripts/research/verify-atuin-guard.sh --color never \
               --unmeasurable "the verified tarball contained no executable named 'atuin' — upstream's archive LAYOUT may have changed" \
               --report report.md --json >verdict.json
           else
-            ./scripts/verify-atuin-guard.sh --color never \
+            ./scripts/research/verify-atuin-guard.sh --color never \
               --atuin "$PWD/$bin" --report report.md --json >verdict.json
           fi
           vrc=$?
@@ -300,8 +300,8 @@ jobs:
           # freshness.yml precedent — so those must not fail the step. But this step
           # deliberately runs WITHOUT `set -e`, and without this guard ANY other outcome (the
           # verifier segfaulting, a syntax error, an OOM kill) also sailed through to a green
-          # job: the summary block at the end returns 0, so notify-failure never fired and a
-          # genuinely crashed sweep looked exactly like a quiet week. Allow ONLY the three
+          # job: the summary block at the end returns 0, so a genuinely crashed run looked
+          # exactly like a quiet one. Allow ONLY the three
           # documented codes; anything else is a crash and must be loud.
           case "$vrc" in
             0 | 1 | 3) ;;
@@ -329,7 +329,7 @@ jobs:
   # ── 3. report. Holds issues: write. Never sees the binary. ───────────────────────────
   report:
     needs: [resolve, measure]
-    # `holds` files nothing, deliberately: a bot that opens an issue every week to say
+    # `holds` files nothing, deliberately: a bot that opens an issue on every run to say
     # nothing changed gets muted, and a muted channel is worse than no channel. The job
     # summary carries the good news.
     if: always() && needs.measure.result == 'success' && needs.measure.outputs.verdict != 'holds'
@@ -424,14 +424,14 @@ jobs:
           # forced-unmeasurable renderer emits this premise's prose and scope, so a download
           # failure reported here cannot arrive worded as if it were about silent discard.
           if [ "$RESOLVE_OK" != "true" ]; then
-            ./scripts/verify-atuin-guard.sh --premise autostart --color never \
+            ./scripts/research/verify-atuin-guard.sh --premise autostart --color never \
               --unmeasurable "$RESOLVE_REASON" --report report.md --json >verdict.json
           elif [ -z "$bin" ]; then
-            ./scripts/verify-atuin-guard.sh --premise autostart --color never \
+            ./scripts/research/verify-atuin-guard.sh --premise autostart --color never \
               --unmeasurable "the verified tarball contained no executable named 'atuin' — upstream's archive LAYOUT may have changed" \
               --report report.md --json >verdict.json
           else
-            ./scripts/verify-atuin-guard.sh --premise autostart --color never \
+            ./scripts/research/verify-atuin-guard.sh --premise autostart --color never \
               --atuin "$PWD/$bin" --report report.md --json >verdict.json
           fi
           vrc=$?
@@ -488,25 +488,3 @@ jobs:
             title="atuin-guard-verify: the autostart premise could not be measured"
           fi
           bash .github/workflows/file-routine-issue.sh "$title" "$RUNNER_TEMP/atuin-autostart.md"
-
-  # ── 6. a genuinely crashed sweep still pages a human. ────────────────────────────────
-  # Scoped to `schedule` for the freshness.yml reason: `moved` and `unmeasurable` are
-  # intended outcomes routed to their own issues, so the only thing that should reach here
-  # is the workflow itself breaking — and a manual dispatch that goes red is a human who is
-  # already watching the tab.
-  notify-failure:
-    # selftest is in this list on purpose. A regressed DETECTOR is not routed to the moved/
-    # unmeasurable issues — those are verdicts the detector itself produces, and a broken one
-    # cannot be trusted to produce them — so its failure is exactly the "the workflow itself
-    # is broken, and the guard's justification is going unchecked" case this job reports.
-    needs: [selftest, resolve, measure, report, measure-autostart, report-autostart]
-    if: failure() && github.event_name == 'schedule'
-    permissions:
-      contents: read
-      issues: write
-    uses: ./.github/workflows/notify-failure-call.yml
-    with:
-      workflow: atuin-guard-verify
-      title: "ci-failure: atuin-guard-verify is red"
-      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "The weekly re-verification of `_core_atuin_daemon_guard`'s upstream premise crashed. `moved` and `unmeasurable` are routed to their own issues and do NOT come here — so this means the workflow itself is broken, and the guard's justification is going unchecked."

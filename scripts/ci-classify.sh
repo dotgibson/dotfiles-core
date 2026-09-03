@@ -31,13 +31,14 @@
 #     a SKIPPED gate (unsafe) — this inverts that, matching ci.yml's "safe default".
 #
 # WHY atuin IS ITS OWN AXIS. The `atuin` gate is the hermetic self-test of
-# scripts/verify-atuin-guard.sh — 197s of a 286s behavioral suite, 68% of it, and the
+# scripts/research/verify-atuin-guard.sh — 197s of a 286s behavioral suite, 68% of it, and the
 # single largest cost on the CI critical path. It exercises the premise DETECTOR against
-# stub binaries; the detector's real job, measuring live upstream atuin, runs weekly in
-# .github/workflows/atuin-guard-verify.yml and not on pushes at all. So the only changes
-# that can move its result are the detector itself (scripts/, already infra → full) and
-# the guard it protects, `_core_atuin_daemon_guard` in zsh/00-tools.zsh, plus the atuin/
-# config tree. A change to zsh/10-ui.zsh paid all 197s for a harness it cannot reach.
+# stub binaries; the detector's real job, measuring live upstream atuin, runs on manual
+# dispatch of .github/workflows/atuin-guard-verify.yml (#687) and not on pushes at all. So
+# the only changes that can move its result are the detector itself (scripts/, already
+# infra → full) and the guard it protects, `_core_atuin_daemon_guard` in zsh/00-tools.zsh,
+# plus the atuin/ config tree. A change to zsh/10-ui.zsh paid all 197s for a harness it
+# cannot reach.
 #
 # Note the ORDER below: zsh/00-tools.zsh must be matched BEFORE the general `zsh/*` arm,
 # because first match per file wins.

@@ -345,8 +345,8 @@ jobs:
           # expensive thing the suite does (197s of 286s). It is reachable only from the
           # detector itself (scripts/, which the classifier already treats as infra → full),
           # zsh/00-tools.zsh, and atuin/. The LIVE measurement against upstream atuin is
-          # unaffected by this: it runs weekly in atuin-guard-verify.yml, which drives the
-          # same self-test unconditionally so the harness is never left ungated.
+          # unaffected by this: it runs on manual dispatch of atuin-guard-verify.yml (#687),
+          # which drives the same self-test unconditionally so the harness is never left ungated.
           [ "$ATUIN_CHANGED" = true ] && scope="${scope:+$scope,}atuin"
           [ -z "$scope" ] && scope="none"
           # --strict on the Linux leg: every IN-SCOPE gate's tool is installed here, so a

@@ -69,7 +69,7 @@ name: real-bootstrap
 on:
   schedule:
     # Wednesdays 06:00 UTC. Staggered OFF the Monday 06:00/06:30/07:00/10:00 cluster and the
-    # Tuesday Claude ladder (07:00-12:00) + atuin-guard-verify (13:00) — G1 de-confliction,
+    # Tuesday Claude ladder (07:00-12:00) — G1 de-confliction,
     # the same reasoning parity-check.yml's cron carries.
     - cron: "0 6 * * 3"
   workflow_dispatch: {}

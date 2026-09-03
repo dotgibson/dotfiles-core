@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/verify-atuin-guard.sh
+# scripts/research/verify-atuin-guard.sh
 # ──────────────────────────────────────────────────────────────────────────────
 # _core_atuin_daemon_guard (zsh/00-tools.zsh) is not a preference. It is a workaround for
 # ONE measured upstream fact: on atuin 18.19.0, with the daemon enabled and its socket
@@ -105,15 +105,15 @@
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$HERE" || exit 1
 
 # Shared palette + pass/skip/fail/have + the CORE_JSON convention.
 # shellcheck source=scripts/lib/common.sh
-source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+source "${BASH_SOURCE[0]%/*}/../lib/common.sh"
 # ROWCOUNT_PY / atuin_db_rows / atuin_db_checkpoint — the same schema model
-# scripts/bench-atuin-daemon.sh's row rule rests on, so the two cannot drift apart.
-# shellcheck source=scripts/lib/atuin-db.sh
+# scripts/research/bench-atuin-daemon.sh's row rule rests on, so the two cannot drift apart.
+# shellcheck source=scripts/research/lib/atuin-db.sh
 source "${BASH_SOURCE[0]%/*}/lib/atuin-db.sh"
 
 ATUIN_BIN=""
@@ -422,7 +422,7 @@ SB="" LOCALDIR=""
 # reads AT_ENV to stop a daemon, and this script runs under `set -u`: an early `return` from
 # measure() (a missing python3, an unreadable anchor — both before line one of the sandbox
 # build) would otherwise leave the name unbound and kill the trap with "unbound variable"
-# exactly when cleanup matters most. scripts/bench-atuin-daemon.sh declares its equivalents
+# exactly when cleanup matters most. scripts/research/bench-atuin-daemon.sh declares its equivalents
 # at file scope for the same reason.
 AT_VARS=() AT_ENV=()
 BOUNDED=true            # false when neither timeout(1) nor gtimeout(1) exists (see measure())
@@ -572,7 +572,7 @@ read_anchor() {
 # `autostart` does NOT, and that asymmetry is the honest one. Until a human runs this mode and
 # writes the number down, there is no prior measurement to compare against — so the run reports
 # `anchor: none`, `anchor_relation: unanchored`, and still measures. Refusing to measure
-# instead would file an `unmeasurable` issue every Tuesday until someone bootstrapped it, which
+# instead would file an `unmeasurable` issue on every dispatch until someone bootstrapped it, which
 # trains the reader to ignore the one title that must never be ignored.
 anchor_key() {
   case "$PREMISE" in
@@ -595,7 +595,7 @@ detect_host() {
   # force at the top of this script, and musl's ldd exits NON-ZERO after printing its banner,
   # so the pipe form fails the whole pipeline even when grep matched. Every musl run would
   # report no libc at all, on the one machine where that marker is the evidence. This repo has
-  # already paid for that exact mistake once: scripts/bench-atuin-daemon.sh carries the same
+  # already paid for that exact mistake once: scripts/research/bench-atuin-daemon.sh carries the same
   # capture-first idiom and the same warning. The `|| true` is load-bearing, not habit.
   if [[ "$s" == Linux ]] && have ldd; then
     ldd_out="$(ldd --version 2>&1 || true)"
@@ -811,7 +811,7 @@ owner_gone() {
 }
 
 # Which spelling drives the daemon on THIS build — the same probe, for the same reason, as
-# scripts/bench-atuin-daemon.sh and examples/atuin-daemon.service. `atuin daemon` is deprecated
+# scripts/research/bench-atuin-daemon.sh and examples/atuin-daemon.service. `atuin daemon` is deprecated
 # in favour of `atuin daemon start` (18.19.0 warns on every start) but the subcommand is absent
 # on older builds. It must be `daemon start --help`, not `daemon --help`: the latter exits 0 on
 # BOTH spellings and proves nothing.
@@ -1119,7 +1119,7 @@ run_one() {
   id="$(tr -d '\n' <"$SB/out.$mode" 2>/dev/null)"
   # PAIRED start+end WHENEVER A DAEMON IS SERVING, because that is when the row actually
   # lands. Measured on 18.19.0, in this sandbox: with the daemon OFF, `history start` INSERTs
-  # the row immediately and `history end` updates it in place — the model scripts/lib/atuin-db.sh
+  # the row immediately and `history end` updates it in place — the model scripts/research/lib/atuin-db.sh
   # encodes. With a daemon answering, `start` merely hands the in-flight command over and
   # NOTHING is written; the count moves only when `end` arrives. A start-only autostart arm
   # would therefore report a delta of 0 against a perfectly healthy daemon, and the verdict
@@ -1394,7 +1394,7 @@ arms_autostart() {
   }
   rm -f "$SOCK"
   # Safe now, and only now. The closing control's delta is a verdict-bearing number read by a
-  # direct client, and scripts/lib/atuin-db.sh's rule is that a checkpoint is only ever safe
+  # direct client, and scripts/research/lib/atuin-db.sh's rule is that a checkpoint is only ever safe
   # where NO daemon holds the file open — asking for one mid-arm would pick a lock fight with
   # the very process under measurement.
   atuin_db_checkpoint "$DB"
@@ -1777,10 +1777,10 @@ emit_report() {
       printf 'Do **not** reach for "make the guard stop standing down" as a reflex. Its degrade path exports `ATUIN_DAEMON__ENABLED=false`, and under `autostart` that removes the spawn itself — permanently defeating the only launcher Alpine and macOS have, which is the very outcome the stand-down exists to avoid. The remedies that do not cost those machines their history are: **probe but warn instead of disabling**; **stand down only after N consecutive failed spawns**; or **unlink a stale socket before deferring to autostart**. Re-measure by hand before deciding; do not act on this report alone.\n\n'
       ;;
     autostart/unmeasurable)
-      printf 'This is **not** good news and must not be read as one. Nothing was established, so the `autostart` stand-down is currently unverified rather than confirmed. Note in particular that a failure of the **manual-spawn control** means *this box could not host a daemon at all* — an apparatus limit, never a finding about upstream. Repair the detector (`scripts/verify-atuin-guard.sh`), then re-run `make verify-atuin-guard-autostart`.\n\n'
+      printf 'This is **not** good news and must not be read as one. Nothing was established, so the `autostart` stand-down is currently unverified rather than confirmed. Note in particular that a failure of the **manual-spawn control** means *this box could not host a daemon at all* — an apparatus limit, never a finding about upstream. Repair the detector (`scripts/research/verify-atuin-guard.sh`), then re-run `make verify-atuin-guard-autostart`.\n\n'
       ;;
     */unmeasurable)
-      printf 'This is **not** good news and must not be read as one. The check could not establish anything, so the guard'"'"'s justification is currently unverified rather than confirmed. Repair the detector (`scripts/verify-atuin-guard.sh`), then re-run.\n\n'
+      printf 'This is **not** good news and must not be read as one. The check could not establish anything, so the guard'"'"'s justification is currently unverified rather than confirmed. Repair the detector (`scripts/research/verify-atuin-guard.sh`), then re-run.\n\n'
       ;;
     autostart/holds)
       printf 'No action needed on this premise. Read the scope note below before treating it as fleet coverage, though: the two machines that depend on this stand-down are the two least like the box that just measured it.\n\n'

@@ -246,12 +246,13 @@ _set_scope() { # _set_scope <comma-list: shell,nvim,atuin | all | none>
     case "$tok" in
     shell) SCOPE_SHELL=1 ;;
     nvim) SCOPE_NVIM=1 ;;
-    # `atuin` is the hermetic self-test of scripts/verify-atuin-guard.sh — the premise
+    # `atuin` is the hermetic self-test of scripts/research/verify-atuin-guard.sh — the premise
     # DETECTOR's own harness, not shipped Core (it is absent from core.manifest and nothing
     # vendors it). Its own axis because it is by far the most expensive thing the suite
     # does — measured at 197s of a 286s run, 68% — while being unreachable from almost
     # every change that pays for it. The real measurement, against live upstream atuin,
-    # runs weekly in .github/workflows/atuin-guard-verify.yml; this axis only decides
+    # runs on manual dispatch of .github/workflows/atuin-guard-verify.yml (#687); this axis
+    # only decides
     # whether the STUB-driven self-test also runs on a given push.
     atuin) SCOPE_ATUIN=1 ;;
     all | full)
