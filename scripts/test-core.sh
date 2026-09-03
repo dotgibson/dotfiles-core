@@ -5486,6 +5486,22 @@ if have git && have zsh; then
       fail "new-os-repo: the in-place rewrite failed for another reason — $(grep FAIL "$SANDBOX/nor-rewrite.out" | head -2 | tr '\n' ' ')"
     fi
     rm -rf "$_nor_brk"
+    # ...and on one that rewrites a file with the SAME bytes, through a redirection: no
+    # wrapped command, and inode, mode, kind and checksum all survive — only the stamp
+    # witness (mtime) can see it. Same placement and guard as the other two cases.
+    _nor_brk="$SANDBOX/newosrepo-samebytes"
+    rm -rf "$_nor_brk"
+    cp -r "$NOR" "$_nor_brk"
+    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && cat \"$REPO/core/mise/config.toml\" >\"$CFG/mise/config.toml\"" }' \
+      "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-samebytes.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites a file with identical bytes on every run — no write witness"
+    elif grep -q 'rewrote files in place' "$SANDBOX/nor-samebytes.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on a same-byte rewrite (the stamp witness, when nothing else can see it)"
+    else
+      fail "new-os-repo: the same-byte rewrite fixture failed for another reason — $(grep FAIL "$SANDBOX/nor-samebytes.out" | head -2 | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_brk"
     # ...and on one that changes a MODE, through an absolute-path chmod so the PATH shims
     # never see it: inode, kind and bytes all survive, and only the snapshot's mode field
     # can. Same placement and guard as the rewrite case, so run one is untouched. It ADDS

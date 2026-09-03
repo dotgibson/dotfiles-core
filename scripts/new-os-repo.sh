@@ -677,7 +677,12 @@ fi
 #     not its checksum, and a mode changed through an absolute-path chmod keeps everything
 #     but its mode string. `ls -ldi`, `readlink` and POSIX `cksum` are what GNU and BSD
 #     share; no `-mindepth` (GNU) — the root row is dropped by name instead.
-# Output prefixes are the third, weakest claim, kept only as a message.
+#   · WRITES. A rewrite with the SAME bytes is invisible to both of the above — no wrapped
+#     command, and inode, mode, kind and checksum all survive — so a stamp file is touched
+#     after the first run and `find -newer` (POSIX) must list nothing under HOME after
+#     the second. One second is slept before that run: on a filesystem with 1-second
+#     mtime resolution a rewrite inside the stamp's own second could otherwise hide.
+# Output prefixes are the fourth, weakest claim, kept only as a message.
 snapshot() { # snapshot <dir> → one line per entry: inode mode kind path [-> target | cksum]
   find "$1" -print | LC_ALL=C sort | while IFS= read -r p; do
     [[ "$p" == "$1" ]] && continue
@@ -707,18 +712,23 @@ SHIM
   chmod +x "$tmp/shim/$cmd"
 done
 before="$(snapshot "$tmp/home")"
+: >"$tmp/stamp"
+sleep 1
 if ! HOME="$tmp/home" MUT_LOG="$tmp/mutations.log" PATH="$tmp/shim:$PATH" ./bootstrap.sh --links-only >"$tmp/run2.out" 2>&1; then
   bad "second bootstrap.sh run exited non-zero: $(cat "$tmp/run2.out")"
 fi
 after="$(snapshot "$tmp/home")"
+written="$(find "$tmp/home" -newer "$tmp/stamp" -print)"
 if [[ -s "$tmp/mutations.log" ]]; then
   bad "second run invoked mutating commands: $(head -4 "$tmp/mutations.log" | tr '\n' ';')"
 elif [[ "$before" != "$after" ]]; then
   bad "second run changed the tree: $(snapshot_delta "$before" "$after" | head -4 | tr '\n' ' ')"
+elif [[ -n "$written" ]]; then
+  bad "second run rewrote files in place (same bytes, newer mtime): $(head -4 <<<"$written" | tr '\n' ' ')"
 elif grep -Eq '^(linked|backed up|seeded) ' "$tmp/run2.out"; then
   bad "second run claims to have changed something: $(grep -E '^(linked|backed up|seeded) ' "$tmp/run2.out" | tr '\n' ' ')"
 else
-  ok "second run changed nothing (no rm/ln/mv/cp/mkdir/chmod invoked; every inode, mode, kind, link target and file checksum identical)"
+  ok "second run changed nothing (no rm/ln/mv/cp/mkdir/chmod invoked; every inode, mode, kind, link target and file checksum identical; nothing written after the stamp)"
 fi
 
 if ((rc == 0)); then
