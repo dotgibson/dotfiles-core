@@ -1,4 +1,6 @@
 # core/zsh/05-ui.zsh
+# THROWAWAY (#688 red-run proof): a 50 ms stall on the interactive path — must fail the bench gate.
+[[ $- == *i* ]] && command sleep 0.05
 # ──────────────────────────────────────────────────────────────────────────────
 # Shared terminal-UX primitives for Core's interactive commands — one consistent
 # voice for errors, hints, confirms, and progress, so 30-functions.zsh / 50-op.zsh /
