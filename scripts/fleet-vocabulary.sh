@@ -329,7 +329,8 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #   * trim — whitespace only.
 # shellcheck disable=SC2016  # awk source: its $ are awk`s, nothing here is meant to expand
 AWK_SHELL='
-  function loadexist(lst,   n, a, i) { split("", EXIST); n = split(lst, a, "\n"); for (i = 1; i <= n; i++) if (a[i] ~ /^[xfd] /) EXIST[substr(a[i], 3)] = substr(a[i], 1, 1) }
+  # A path listed twice keeps "x": being executable is the stronger fact.
+  function loadexist(lst,   n, a, i, k) { split("", EXIST); n = split(lst, a, "\n"); for (i = 1; i <= n; i++) if (a[i] ~ /^[xfd] /) { k = substr(a[i], 3); if (!(k in EXIST) || EXIST[k] != "x") EXIST[k] = substr(a[i], 1, 1) } }
   function globre(g,   r, i, c) {
     r = "^"
     for (i = 1; i <= length(g); i++) {
@@ -1081,13 +1082,16 @@ _exist_list() { # _exist_list <repo-dir> → every entry under the suite dirs, a
   # `<kind>` is x (an executable regular file), f (another regular file) or d (a directory):
   # what a credited command may name depends on how it names it (pathok). Portable: no
   # `-mindepth` (GNU; this runs on the macOS lane too) — the root itself is dropped by
-  # name, and the mode comes from `-perm -u+x`, which is POSIX.
-  local d="$1" r
+  # name — and no `-perm`: BSD find listed an executable under `! -perm -u+x` as well, so
+  # a later "f" line overwrote its "x" and every suite script beside a plain file read as
+  # not executable there. The shell`s own `-x` test decides, one file at a time.
+  local d="$1" r f
   ( cd "$d" && for r in test tests; do
     [[ -d "$r" ]] || continue
     find "$r" -type d -print | grep -vx "$r" | sed 's/^/d /'
-    find "$r" -type f -perm -u+x -print | sed 's/^/x /'
-    find "$r" -type f ! -perm -u+x -print | sed 's/^/f /'
+    find "$r" -type f -print | while IFS= read -r f; do
+      if [[ -x "$f" ]]; then printf 'x %s\n' "$f"; else printf 'f %s\n' "$f"; fi
+    done
   done 2>/dev/null )
 }
 
