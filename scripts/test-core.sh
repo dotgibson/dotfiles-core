@@ -2505,6 +2505,15 @@ _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3
 _vpn_count "a four-component v5.3.0.1 is malformed, not exact — still a finding" 6 1
 _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0-rc1 --squash'
 _vpn_count "a SemVer pre-release pin (v5.3.0-rc1) is an exact release, exempt" 6 0
+# The exact-pin class is core.version's own (audit §: SemVer [-pre] with `.` and `-`
+# allowed inside the label), so a pin the validator would accept is never reported stale.
+_vpn_write README.md 'git checkout v5.3.0-alpha-beta && refs/tags/v5.3.0-alpha.1'
+_vpn_count "a pre-release label with a second hyphen or a dot (as core.version allows) is exempt" 6 0
+# A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
+_vpn_write README.md 'git  checkout v5'
+_vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1
+printf 'git\tcheckout v5\n' >"$_vpn_/README.md"
+_vpn_count "\`git<TAB>checkout vN\` is still judged" 6 1
 _vpn_write README.md 'gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha'
 _vpn_count "another repository's tag behind an API path (git/refs/tags/) is not a finding" 6 0
 _vpn_write CHANGELOG.md 'so it is corrected to a concrete `refs/tags/v5`'

@@ -1286,7 +1286,11 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         #   bare major          → judged against want
         #   exact N.M.P[-pre]   → a deliberate freeze, exempt whatever its major
         #   anything else       → no tag this repo cuts; judged by its leading major
-        while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git checkout v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+        # `git checkout` tolerates any run of shell whitespace between its words, so a
+        # reformatted command cannot slip under the gate; and the exact-pin class is the
+        # SAME one core.version is validated against (audit-core.sh, SemVer [-pre]), so a
+        # pre-release this repo could actually cut is exempt and nothing wider is.
+        while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+checkout[[:space:]]+v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
           sub(/^[^rgv]*/, "", hit)                 # drop the boundary character
@@ -1294,7 +1298,7 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           sub(/\^\{commit\}$/, "", tok)
           match(tok, /v[0-9]/); tok = substr(tok, RSTART + 1)
           major = tok; sub(/[^0-9].*$/, "", major)
-          exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/)
+          exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
           if (!exact && major != want) {
             printf "%s:%d: first-vendor pin names v%s, but core.version is major v%s (%s)\n", \
               file, NR, tok, want, hit
