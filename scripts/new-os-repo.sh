@@ -527,6 +527,7 @@ fi
 if [[ -z "$(ls -A "$tmp/dry")" ]]; then
   ok "--dry-run wrote nothing"
 else
+  # shellcheck disable=SC2012  # a diagnostic listing of our own temp dir; `find -mindepth` is GNU-only
   bad "--dry-run wrote into HOME: $(ls -A "$tmp/dry" | head -5 | tr '\n' ' ')"
 fi
 if grep -q 'would link' "$tmp/dry.out"; then ok "--dry-run printed its plan"; else bad "--dry-run printed no plan"; fi
