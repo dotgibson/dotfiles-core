@@ -577,14 +577,32 @@ if [[ -f "$REPO/core/mise/config.toml" ]]; then
   fi
 fi
 
-# ── 3. the second run is silent ──────────────────────────────────────────────
+# ── 3. the second run changes nothing ────────────────────────────────────────
+# Judged on the FILESYSTEM, not on output: a bootstrap that removed and re-created every
+# link while saying nothing would pass an output check. Every entry under HOME — its
+# inode, kind and link target — must be identical before and after; a re-created
+# symlink has a new inode, a backup is a new entry. `ls -id` and `readlink` are what
+# both GNU and BSD userlands share (no `find -printf`, no `stat -c`).
+snapshot() { # snapshot <dir> → one line per entry: inode kind path [-> target]
+  find "$1" -mindepth 1 -print | LC_ALL=C sort | while IFS= read -r p; do
+    # shellcheck disable=SC2012  # the paths are ours (no odd names), and `find -printf` is GNU-only
+    ino="$(ls -id -- "$p" | awk '{print $1}')"
+    if [[ -L "$p" ]]; then printf '%s L %s -> %s\n' "$ino" "$p" "$(readlink "$p")"
+    elif [[ -d "$p" ]]; then printf '%s D %s\n' "$ino" "$p"
+    else printf '%s F %s\n' "$ino" "$p"; fi
+  done
+}
+before="$(snapshot "$tmp/home")"
 if ! HOME="$tmp/home" ./bootstrap.sh --links-only >"$tmp/run2.out" 2>&1; then
   bad "second bootstrap.sh run exited non-zero: $(cat "$tmp/run2.out")"
 fi
-if grep -Eq '^(linked|backed up|seeded) ' "$tmp/run2.out"; then
-  bad "second run was not idempotent: $(grep -E '^(linked|backed up|seeded) ' "$tmp/run2.out" | tr '\n' ' ')"
+after="$(snapshot "$tmp/home")"
+if [[ "$before" != "$after" ]]; then
+  bad "second run changed the tree: $(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | grep '^[<>]' | head -4 | tr '\n' ' ')"
+elif grep -Eq '^(linked|backed up|seeded) ' "$tmp/run2.out"; then
+  bad "second run claims to have changed something: $(grep -E '^(linked|backed up|seeded) ' "$tmp/run2.out" | tr '\n' ' ')"
 else
-  ok "second run changed nothing"
+  ok "second run changed nothing (every inode, kind and link target identical)"
 fi
 
 if ((rc == 0)); then

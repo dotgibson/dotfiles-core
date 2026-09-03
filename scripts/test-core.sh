@@ -5435,6 +5435,17 @@ if have git && have zsh; then
     else
       pass "new-os-repo: the scaffolded suite goes red on a non-idempotent bootstrap"
     fi
+    # ...and on one that re-links SILENTLY. The idempotency verdict is drawn from the
+    # tree (inode, kind, target per entry), not from the `linked` lines, so a bootstrap
+    # that mutates and says nothing must still go red; a first draft judged output only.
+    sed -i.bak '/echo "linked /d' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-silent.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links silently — idempotency is judged on output, not the tree"
+    elif grep -q 'changed the tree' "$SANDBOX/nor-silent.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on a bootstrap that re-links silently (judged on the tree)"
+    else
+      fail "new-os-repo: the silent re-link failed for another reason — $(grep FAIL "$SANDBOX/nor-silent.out" | head -2 | tr '\n' ' ')"
+    fi
     rm -rf "$_nor_brk"
     if have make; then
       # Every canonical verb RESOLVES (the promise scripts/make-vocabulary.txt makes): -n
