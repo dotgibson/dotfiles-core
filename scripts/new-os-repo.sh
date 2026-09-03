@@ -169,11 +169,14 @@ w() {
 # still removes the mktemp parent this very chain just created (an empty directory of
 # ours, never an inherited path) and stops. The sync runs as an
 # `if` condition — exempt from errexit — so a reader whose shell has `set -e` still
-# reaches the cleanup. And the VERDICT is sync-core.sh's `--strict` exit status: by
-# default the script exits 0 after a per-repo failure (the fan-out relies on that and
-# reads the summary), and a matching core.lock line is no proof either — the lock can be
-# written before a later pin, commit or verification step fails. --strict returns 1
-# whenever the targeted repo failed, which is the one signal this chain can trust.
+# reaches the cleanup. And the VERDICT is the released script's own SUMMARY LINE: the
+# sync runs from the worktree at the PINNED TAG, so the sync-core.sh that executes is
+# the released one — which may predate `--strict` (added after v6.1.0) and exits 0 after
+# a per-repo failure — and a matching core.lock line is no proof either, since the lock
+# can be written before a later pin, commit or verification step fails. Every release
+# prints `repos:  updated N   skipped N   failed N`, so the output is captured
+# (CORE_COLOR=never, honoured by every release) and the verdict is `updated 1  skipped 0
+# failed 0` for the one target; the capture is `|| true` so errexit cannot skip it.
 #
 # Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
 # COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
@@ -196,7 +199,7 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # The Core-side half stands on its own too: when core/ WAS materialized and only the
 # commit after it failed, the subtree add would fail on the existing prefix, so that
 # state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
-_sync_half="(cd $(_q "$HERE") && git fetch $_remote_q $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && { git worktree add --detach \"\$_wt\" FETCH_HEAD || { rmdir \"\$_wtp\"; false; }; } && { if (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$_remote_q REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh --strict $(_q "dotfiles-$OS")); then _rc=0; else _rc=\$?; fi; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\"; })"
+_sync_half="(cd $(_q "$HERE") && git fetch $_remote_q $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && { git worktree add --detach \"\$_wt\" FETCH_HEAD || { rmdir \"\$_wtp\"; false; }; } && { _o=\"\$( (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$_remote_q CORE_COLOR=never REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")) 2>&1)\" || true; printf '%s\\n' \"\$_o\"; if grep -Eq 'repos: +updated 1 +skipped 0 +failed 0 ' <<<\"\$_o\"; then _rc=0; else _rc=1; fi; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\"; })"
 _vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $_remote_q $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a

@@ -59,9 +59,10 @@ sync-core.sh — THE maintain button: vendor Core into every OS repo's core/.
 
   ./scripts/sync-core.sh                       vendor core into every repo found
   ./scripts/sync-core.sh --dry-run, -n         show what would happen, touch nothing
-  ./scripts/sync-core.sh --strict dotfiles-X   exit 1 if any TARGETED repo failed (the
-                                               default exits 0 and reports failures in
-                                               the summary — the fan-out relies on that)
+  ./scripts/sync-core.sh --strict dotfiles-X   exit 1 if any TARGETED repo failed OR was
+                                               skipped (not cloned, no core/ yet); the
+                                               default exits 0 and reports both in the
+                                               summary — the fan-out relies on that
   ./scripts/sync-core.sh dotfiles-Fedora …     only the named repos
   ./scripts/sync-core.sh -h, --help            show this help and exit
 
@@ -760,11 +761,14 @@ elif ((FAIL > 0)); then
 else
   echo "done. push each updated repo when you're satisfied."
 fi
-# --strict: a failed TARGET is the exit status, not only a summary line. Opt-in, because
-# the fan-out runs this script bare inside a `bash -e` step and then does per-repo push
-# and PR work — a default non-zero exit would abort that step for every repo when one
-# fails. A single-target caller (the scaffold's recovery command, the first-vendor
-# recipe) wants exactly the opposite: a verdict it can chain on.
-if ((STRICT && repos_failed > 0)); then
+# --strict: a failed OR SKIPPED target is the exit status, not only a summary line — a
+# wrong REPOS_ROOT or target name is a skip ("not cloned"), and so is a repo with no
+# core/ yet, and neither stamped anything. Opt-in, because the fan-out runs this script
+# bare inside a `bash -e` step and then does per-repo push and PR work — a default
+# non-zero exit would abort that step for every repo when one fails. (The scaffold's
+# recovery command and the first-vendor recipes cannot use it: they run the RELEASED
+# script from a worktree at the pinned tag, which may predate the flag, so they read the
+# summary line instead.)
+if ((STRICT && (repos_failed > 0 || repos_skipped > 0))); then
   exit 1
 fi
