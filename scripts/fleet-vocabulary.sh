@@ -87,6 +87,38 @@ load_os_repos || {
 }
 REPOS=("${CORE_OS_REPOS[@]}")
 
+# MAKE CONDITIONALS, decided where they can be, shared by the four Makefile scanners
+# (shell-level text, spliced in): an `ifeq`/`ifneq` whose operands carry no `$` is
+# evaluated (`(a,b)` and `"a" "b"` forms; `else` flips it); `ifdef`/`ifndef` and a `$(…)`
+# operand are undecidable. mc_line(t) consumes a directive line and returns 1; mc_active()
+# is "1" inside every enclosing active branch, "0" under an inactive one, "?" when any
+# enclosing condition is undecidable. Rules, .PHONY and includes in an active branch
+# count as if unconditional; in an inactive one they do not exist; under "?" a rule stays
+# uncounted (the safe direction for a rule is "missing") and a mandatory include fails
+# closed (the safe direction there is "unloadable"). No fleet Makefile uses a conditional
+# around a rule today.
+AWK_MAKECOND='
+  function trimq(x) { gsub(/^[ \t]+|[ \t]+$/, "", x); gsub(/^["\047]|["\047]$/, "", x); return x }
+  function decide(t,   a, b, neg, body, m) {
+    neg = (t ~ /^ifneq/)
+    if (t !~ /^ifn?eq/) return "?"
+    body = t; sub(/^ifn?eq[ \t]*/, "", body)
+    if (body ~ /\$/) return "?"
+    if (body ~ /^\(.*,.*\)[ \t]*$/) { sub(/^\(/, "", body); sub(/\)[ \t]*$/, "", body); m = index(body, ","); a = trimq(substr(body, 1, m - 1)); b = trimq(substr(body, m + 1)) }
+    else if (body ~ /^["\047][^"\047]*["\047][ \t]+["\047][^"\047]*["\047][ \t]*$/) { m = match(body, /["\047][ \t]+["\047]/); a = trimq(substr(body, 1, m)); b = trimq(substr(body, m + RLENGTH - 1)) }
+    else return "?"
+    return ((a == b) != neg) ? "1" : "0"
+  }
+  function mc_active(   k) { for (k = 1; k <= mcdepth; k++) if (MCACT[k] != "1") return MCACT[k]; return "1" }
+  function mc_line(t) {
+    sub(/#.*/, "", t); sub(/^[ ]+/, "", t)
+    if (t ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) { mcdepth++; MCACT[mcdepth] = decide(t); return 1 }
+    if (t ~ /^else([ \t]|$)/) { if (mcdepth && MCACT[mcdepth] != "?") MCACT[mcdepth] = (MCACT[mcdepth] == "1") ? "0" : "1"; return 1 }
+    if (t ~ /^endif([ \t]|$)/) { if (mcdepth) { delete MCACT[mcdepth]; mcdepth-- } ; return 1 }
+    return 0
+  }
+'
+
 _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the Makefile with its includes inlined
   # The register promises that `make <verb>` RESOLVES, not that the rule sits in the root
   # file, so `include`/`-include`/`sinclude` lines are followed — lexically, relative to the
@@ -116,6 +148,8 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
     ((depth < 4)) || return 1
     kind="${line#@@INCLUDE }"; inc="${kind#* }"; kind="${kind%% *}"
     [[ -n "$inc" ]] || continue
+    # A mandatory include under a condition the scanner could not decide: fail closed.
+    [[ "$inc" == '?' ]] && return 1
     # A path carrying `$(…)` cannot be resolved without evaluating make. Optional forms are
     # skipped (absence is tolerated either way); a MANDATORY one fails closed — it may well
     # name a file that is not there, and make would abort on it.
@@ -137,18 +171,26 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
     elif [[ "$kind" == include ]]; then
       return 1
     fi
-  done < <(awk '
-    # Logical lines; every line is passed through, and an include directive outside a
-    # conditional or define body becomes one `@@INCLUDE <kind> <path>` marker per operand
-    # (comment stripped, leading spaces allowed), for the shell above to splice.
+  done < <(awk "$AWK_MAKECOND"'
+    # Logical lines; every line is passed through, and an include directive becomes one
+    # `@@INCLUDE <kind> <path>` marker per operand (comment stripped, leading spaces
+    # allowed), for the shell above to splice — decided by any enclosing conditional
+    # (AWK_MAKECOND): followed in an active branch, skipped in an inactive one, and a
+    # MANDATORY one under an undecidable condition becomes `@@INCLUDE include ?`, which
+    # the shell fails closed.
     { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
     { t = l; sub(/#.*/, "", t); sub(/^[ ]+/, "", t) }
-    t ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; print l; next }
-    t ~ /^endif([ \t]|$)/ { if (cond) cond--; print l; next }
+    mc_line(l) { print l; next }
     t ~ /^define([ \t]|$)/ { indef = 1; print l; next }
     t ~ /^endef([ \t]|$)/ { indef = 0; print l; next }
-    cond || indef { print l; next }
-    t ~ /^-?s?include[ \t]/ { n = split(t, w, /[ \t]+/); for (i = 2; i <= n; i++) if (w[i] != "") print "@@INCLUDE " w[1] " " w[i]; next }
+    indef { print l; next }
+    t ~ /^-?s?include[ \t]/ {
+      st = mc_active()
+      if (st == "0") next
+      n = split(t, w, /[ \t]+/)
+      for (i = 2; i <= n; i++) if (w[i] != "") print "@@INCLUDE " w[1] " " ((st == "?" && w[1] == "include") ? "?" : w[i])
+      next
+    }
     { print l }
     END { if (buf != "") print buf }
   ' "$d/$f")
@@ -159,15 +201,14 @@ _targets() { # _targets <Makefile> → one defined target name per line
   # A rule line is `targets: prereqs` (or `::`) at column 0 — not a recipe (tab), not a
   # comment, not a variable assignment (`=` before the colon), not `.PHONY:`. Several
   # targets may share one rule (`a b: …`), so the left side is split on whitespace.
-  # A rule inside `ifeq`/`ifdef`…`endif` or a `define`…`endef` body is NOT counted: make
-  # may or may not define it, and this scanner does not evaluate make — so it says
-  # "missing" rather than guess. No fleet Makefile uses either construct around a rule.
-  awk '
-    /^[ ]*(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
-    /^[ ]*endif([ \t]|$)/ { if (cond) cond--; next }
+  # A rule under a make conditional follows AWK_MAKECOND: counted in a statically active
+  # branch, absent in an inactive one, uncounted under an undecidable condition ("missing"
+  # rather than a guess). A `define`…`endef` body defines no rule.
+  awk "$AWK_MAKECOND"'
+    mc_line($0) { next }
     /^[ ]*define([ \t]|$)/ { indef = 1; next }
     /^[ ]*endef([ \t]|$)/ { indef = 0; next }
-    cond || indef { next }
+    mc_active() != "1" || indef { next }
     /^[^\t#. ][^:=]*::?([^=]|$)/ {
       lhs = $0; sub(/::?.*/, "", lhs)
       n = split(lhs, t, /[ \t]+/)
@@ -312,11 +353,20 @@ AWK_SHELL='
   # dropped, recording which function names are invoked by a command that is itself
   # reachable; pass 2 for real, keeping the bodies of exactly those functions. A call made
   # only inside `if false` invokes nothing.
-  function cdnorm(c, n,   i, c2) {
+  function cdnorm(c, n,   i, c2, changed, w, f) {
     fnbodies(c, n)
     split("", INVOKED)
     for (i = 1; i <= n; i++) c2[i] = c[i]
     cdpass(c2, n, 0)
+    # TRANSITIVELY: a function called from the body of an invoked function is invoked
+    # too (`helper() { make test; }; suite() { helper; }; suite`), to a fixpoint.
+    do {
+      changed = 0
+      for (i = 1; i <= n; i++) if ((i in BODY) && (BODY[i] in INVOKED)) {
+        w = trim(c[i]); sub(/[ \t].*$/, "", w)
+        if ((w in FNAME) && !(w in INVOKED)) { INVOKED[w] = 1; changed = 1 }
+      }
+    } while (changed)
     cdpass(c, n, 1)
   }
   # lit(t) — the static status of one command: "true", "false", or "" (unknown).
@@ -344,7 +394,7 @@ AWK_SHELL='
   }
   function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r) {
     d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0
-    split("", TAKEN); split("", SKIPD); split("", COND)
+    split("", TAKEN); split("", SKIPD); split("", DEF); split("", COND)
     for (i = 1; i <= n; i++) {
       # An arm folded into a preceding compound condition: emit what condlist decided.
       if (i in COND) { c[i] = (skip ? "" : COND[i]); continue }
@@ -373,16 +423,17 @@ AWK_SHELL='
       # conditions always does.
       kw = ""
       if (match(t, /^(then|do|else|elif)([ \t]+|$)/)) { kw = substr(t, 1, RLENGTH); sub(/[ \t]+$/, "", kw); t = substr(t, RLENGTH + 1) }
-      if (kw == "else" && nest) SKIPD[nest] = (TAKEN[nest] == "yes")
+      if (kw == "else" && nest) { SKIPD[nest] = (TAKEN[nest] == "yes"); DEF[nest] = (TAKEN[nest] == "no") }
       if (kw == "elif") {
         outer = 0; for (lvl = 1; lvl < nest; lvl++) if (SKIPD[lvl]) outer = 1
         m = ""
         if (nest) {
           m = condlist(c, n, i, t)
           if (outer || TAKEN[nest] == "yes") for (w in COND) COND[w] = ""
+          DEF[nest] = 0
           if (TAKEN[nest] == "yes") SKIPD[nest] = 1
           else if (m == "false") SKIPD[nest] = 1
-          else { SKIPD[nest] = 0; TAKEN[nest] = (m == "true" && TAKEN[nest] == "no") ? "yes" : "" }
+          else { SKIPD[nest] = 0; if (m == "true" && TAKEN[nest] == "no") { TAKEN[nest] = "yes"; DEF[nest] = 1 } else TAKEN[nest] = "" }
         }
         # An elif condition runs when no earlier branch was taken and the if is reachable.
         c[i] = (nest && lit(t) == "" && !outer && TAKEN[nest] != "yes") ? t : ""
@@ -401,11 +452,12 @@ AWK_SHELL='
         nest++
         TAKEN[nest] = (m == "true") ? "yes" : ((m == "false") ? "no" : "")
         SKIPD[nest] = (m == "false")
+        DEF[nest] = (m == "true")
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
         c[i] = (lit(t) == "" && !outer && t != "") ? t : ""
         continue
       }
-      if (t ~ /^fi([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
+      if (t ~ /^fi([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; delete DEF[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
       # Loops, as far as they are static: `while false` and `until true` never run their
       # body; any other loop (a runtime condition, `while true`, `for`) may. A loop is a
       # level like an `if`, closed by `done`.
@@ -425,12 +477,15 @@ AWK_SHELL='
         nest++
         TAKEN[nest] = ""
         SKIPD[nest] = (m == "false")
+        # The body certainly runs at least once for `while true`, `until false`, or a
+        # `for` over a non-empty literal list.
+        DEF[nest] = ((kw == "while" && r == "true") || (kw == "until" && r == "false") || (t ~ /^for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in[ \t]+[^ \t]/ && t !~ /\$/))
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
         c[i] = (t !~ /^for/ && lit(t) == "" && !outer && t != "" && kw != "") ? t : ""
         kw = ""
         continue
       }
-      if (t ~ /^done([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
+      if (t ~ /^done([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; delete DEF[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
       skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
       # A group or subshell runs where it stands: `{ make test; }` and `( make test )` are
       # `make test` in command position once the delimiters go.
@@ -439,7 +494,14 @@ AWK_SHELL='
       if (skip || t == "") { c[i] = ""; continue }
       # An unconditional `exit`/`exec`/`return` ends what can run: at the top level nothing
       # after it is reachable; inside a block, nothing further in that block is.
-      if (t ~ /^(exit|exec|return)([ \t]|$)/) { if (nest == 0) term = 1; else SKIPD[nest] = 1; skip = 1; c[i] = ""; continue }
+      # …and when every enclosing branch is statically CERTAIN to run (DEF), the exit is
+      # certain too and ends the whole shell: `if true; then exit 0; fi; make test` never
+      # reaches make. Under a runtime condition it may run, so only its block ends.
+      if (t ~ /^(exit|exec|return)([ \t]|$)/) {
+        w = 1; for (lvl = 1; lvl <= nest; lvl++) if (!DEF[lvl]) w = 0
+        if (nest == 0 || w) term = 1; else SKIPD[nest] = 1
+        skip = 1; c[i] = ""; continue
+      }
       c[i] = t
       # A call counts only AFTER the definition (FNAME holds its index): `suite; suite() {…}`
       # fails at the call and never reaches the body.
@@ -618,8 +680,8 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   # trailing backslash continues a rule (`test: \` over `suite-run`) or a recipe onto the
   # next physical line, exactly as make reads it. Otherwise the same lexer as _targets:
   # rules at column 0, recipes on tab lines, comments and variable assignments ignored,
-  # and nothing inside a conditional or a define body counted (see _targets).
-  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SHELL"'
+  # conditionals decided as in _targets (AWK_MAKECOND), nothing in a define body counted.
+  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SHELL$AWK_MAKECOND"'
     function runs(line,   n, c, i) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
       n = splitcmds(trim(stripcomment(line)), c); cdnorm(c, n)
@@ -632,11 +694,10 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
     # the recipe; a double-colon rule is additive. `fresh` is set by a rule line and
     # consumed by the first recipe line of that rule.
     function handle(l,   lhs, rhs, inl, n, t, i) {
-      if (l ~ /^[ ]*(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) { cond++; ncur = 0; return }
-      if (l ~ /^[ ]*endif([ \t]|$)/) { if (cond) cond--; ncur = 0; return }
+      if (mc_line(l)) { ncur = 0; return }
       if (l ~ /^[ ]*define([ \t]|$)/) { indef = 1; ncur = 0; return }
       if (l ~ /^[ ]*endef([ \t]|$)/) { indef = 0; ncur = 0; return }
-      if (cond || indef) return
+      if (mc_active() != "1" || indef) return
       if (l ~ /^\t/) {
         if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
         if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
@@ -680,14 +741,13 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   ' "$1"
 }
 
-_phony_targets() { # _phony_targets <Makefile> → every name declared .PHONY, one per line (not inside a conditional/define)
-  awk '
+_phony_targets() { # _phony_targets <Makefile> → every name declared .PHONY, one per line (conditionals decided as in _targets)
+  awk "$AWK_MAKECOND"'
     { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
-    l ~ /^[ ]*(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
-    l ~ /^[ ]*endif([ \t]|$)/ { if (cond) cond--; next }
+    mc_line(l) { next }
     l ~ /^[ ]*define([ \t]|$)/ { indef = 1; next }
     l ~ /^[ ]*endef([ \t]|$)/ { indef = 0; next }
-    cond || indef { next }
+    mc_active() != "1" || indef { next }
     l ~ /^[.]PHONY[ \t]*:/ { sub(/^[.]PHONY[ \t]*:/, "", l); sub(/#.*/, "", l); n = split(l, t, /[ \t]+/); for (i = 1; i <= n; i++) if (t[i] != "") print t[i] }
   ' "$1"
 }

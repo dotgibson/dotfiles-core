@@ -16721,6 +16721,28 @@ else
   fail "vocab: nesting bound failed open: $out"
 fi
 
+# AN INCLUDE INSIDE A CONDITIONAL follows the condition where it can be decided, and a
+# mandatory one under an undecidable condition fails closed.
+_fv_reset; _fv_repo dotfiles-Fedora "ifeq (1,1)\\ninclude missing.mk\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a missing mandatory include in an active ifeq branch voids the Makefile"; else fail "vocab: active-branch missing include failed open: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "ifeq (1,0)\\ninclude missing.mk\\nelse\\ninclude mk/verbs.mk\\nendif\\nlint:\\n\\t@true\\n"
+mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
+_fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: the else of a false ifeq is the active branch — its include is followed, the other skipped"; else fail "vocab: ifeq/else include handling: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "ifdef CI\\ninclude missing.mk\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a mandatory include under an undecidable ifdef fails closed"; else fail "vocab: undecidable conditional include failed open: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "ifdef CI\\n-include missing.mk\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: an optional include under an undecidable ifdef is skipped"; else fail "vocab: undecidable optional include: $out"; fi
+
+# A RULE IN A STATICALLY ACTIVE BRANCH counts; one under an undecidable condition does not.
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb defined inside an active \`ifeq (1,1)\` branch resolves"; else fail "vocab: active-branch rule not counted: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifdef CI\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: a verb defined under an undecidable \`ifdef\` stays missing"; else fail "vocab: undecidable-branch rule counted: $out"; fi
+
 # AN INCLUDE INSIDE A FALSE CONDITIONAL is not followed: its targets are not appended
 # after the endif as if make had read them.
 _fv_reset; _fv_repo dotfiles-Fedora 'ifeq (1,0)\ninclude mk/verbs.mk\nendif\nlint:\n\t@true\n'
@@ -16739,7 +16761,7 @@ _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 row="$(_fv_run | grep -F '`Fedora`')"
 if [[ "$row" == '| `Fedora` | ok | ok | ok | **missing** | ok | ok | ok | ok |' ]]; then
-  pass "vocab: a verb defined only inside a conditional is missing; a define body defines nothing"
+  pass "vocab: a verb defined only inside an inactive \`ifeq (1,0)\` is missing; a define body defines nothing"
 else
   fail "vocab: conditional/define handling wrong: $row"
 fi
@@ -17030,6 +17052,14 @@ _fv_floor "if false && make test; then …: the suite arm is unreachable" '**not
 _fv_floor "if true && make test; then …: the suite arm runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true && make test; then echo yes; fi"'
 _fv_floor "while true && false; do make test; done never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while true && false; do make test; done"'
 _fv_floor "a call before the definition is not an invocation" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite; suite() { make test; }"'
+# AN EXIT IN A STATICALLY TAKEN BRANCH ends the shell; a helper called from a called
+# function is invoked.
+_fv_floor "if true; then exit 0; fi; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true; then exit 0; fi; make test"'
+_fv_floor "if false; then :; else exit 0; fi; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then :; else exit 0; fi; make test"'
+_fv_floor "while true; do exit 0; done; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while true; do exit 0; done; make test"'
+_fv_floor "an exit under a runtime condition ends only its block" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ]; then exit 0; fi; make test"'
+_fv_floor "a helper called from a called function is invoked" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "helper() { make test; }; suite() { helper; }; suite"'
+_fv_floor "a helper called only from an uncalled function is not" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "helper() { make test; }; suite() { helper; }; echo done"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
