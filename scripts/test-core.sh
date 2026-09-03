@@ -16706,6 +16706,16 @@ else
   fail "vocab: continued include mishandled: $out"
 fi
 
+# A test: BESIDE test/ WITHOUT .PHONY is a no-op verb even when CI runs the suite by path.
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "bash test/smoke.sh"
+out="$(_fv_run --check)"; rc=$?
+row="$(_fv_run | grep -F '| `Fedora` |')"
+if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* && "$row" == *'| **no-op** | ok |' ]]; then
+  pass "vocab: an unphony \`test:\` shadowing test/ is **no-op** even when CI runs the suite by path"
+else
+  fail "vocab: unphony shadowing test with direct-path CI (rc=$rc): $out / $row"
+fi
+
 # THE CANONICAL test MUST RUN THE SUITE: a phony no-op `test:` beside CI running the
 # suite by path meets the floor but not the vocabulary — the cell says **no-op**.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/test:\\n\\t@.\/test\/smoke.sh/test:\\n\\t@true}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "bash test/smoke.sh"
@@ -16956,6 +16966,12 @@ _fv_floor "a root @true overridden by a later included real recipe" 'ok' '_fv_su
 _fv_floor "python3 -c test/smoke.py is source text" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 -c test/smoke.py"'
 _fv_floor "node -e test/x.js is source text" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "node -e test/x.js"'
 _fv_floor "bash -c test/smoke.sh executes its string" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash -c test/smoke.sh"'
+# A SKIPPED ARM DOES NOT CHANGE THE LIST STATUS, and `if` state is kept per nesting depth.
+_fv_floor "true || false || make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "true || false || make test"'
+_fv_floor "false && true || make test always reaches make" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false && true || make test"'
+_fv_floor "a false if nested inside a runtime if never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n \"\$CI\" ]; then if false; then make test; fi; fi"'
+_fv_floor "a runtime if nested inside a false if never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then if [ -n \"\$CI\" ]; then make test; fi; fi"'
+_fv_floor "after a nested block closes, the outer body resumes" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true; then if false; then echo no; fi; make test; fi"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

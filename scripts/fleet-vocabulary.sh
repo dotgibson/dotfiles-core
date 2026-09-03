@@ -268,30 +268,39 @@ AWK_SHELL='
     }
     return s
   }
-  function cdnorm(c, n,   i, d, t, m, x, prev, skip, nest, mode, kw) {
-    d = ""; x = 0; prev = ""; skip = 0; nest = 0; mode = ""
+  function cdnorm(c, n,   i, d, t, m, x, st, skip, nest, kw, lvl) {
+    d = ""; x = 0; st = ""; nest = 0; skip = 0
+    split("", MODE); split("", SKIPD)
     for (i = 1; i <= n; i++) {
-      # Reachability, for the statically decidable pairs: behind `||` a command runs only
-      # if the previous one FAILED — reachable after a literal `false`, unreachable after
-      # `true`/`:`, and (conservatively) not credited after anything else; behind `&&` it
-      # runs only on SUCCESS — unreachable after `false`, credited otherwise.
-      if (SPLITOP[i] == "||" && prev != "false") { prev = trim(c[i]); c[i] = ""; continue }
-      if (SPLITOP[i] == "&" && prev == "false") { prev = trim(c[i]); c[i] = ""; continue }
-      prev = trim(c[i])
+      # Reachability, for the statically decidable pairs. `st` is the status of the AND-OR
+      # list EVALUATED so far — "true" after a literal true/`:`, "false" after a literal
+      # false, "" when unknown — and only a command that RUNS updates it: a skipped arm
+      # leaves it alone, so `true || false || make test` never reaches make (the `false`
+      # never ran) while `false && true || make test` does (the `true` never ran, the list
+      # is still false). Behind `||` a command runs only on a failed list — credited after
+      # "false", skipped after "true", and (conservatively) not credited when unknown;
+      # behind `&&` it runs unless the list is "false".
+      if (SPLITOP[i] == "||") { if (st != "false") { if (st == "") st = ""; c[i] = ""; continue } }
+      if (SPLITOP[i] == "&")  { if (st == "false") { c[i] = ""; continue } }
       t = trim(c[i])
-      # Shell control flow, as far as it is static: `if false; then … fi` never runs its
-      # body and `if true` never runs its else; any other condition may run either. The
-      # keywords then/do/else/elif carry no command of their own and are stripped.
+      st = (t == "true" || t == ":") ? "true" : ((t == "false") ? "false" : "")
+      # Shell control flow, as far as it is static, PER NESTING DEPTH: an `if false` body
+      # never runs and an `if true` else never runs, at whatever depth; any other
+      # condition may run either. The keywords then/do/else/elif carry no command of
+      # their own and are stripped; a command is dropped while any enclosing level skips.
       kw = ""
       if (match(t, /^(then|do|else|elif)([ \t]+|$)/)) { kw = substr(t, 1, RLENGTH); sub(/[ \t]+$/, "", kw); t = substr(t, RLENGTH + 1) }
-      if (kw == "else" && nest == 1) skip = (mode == "true")
-      if (kw == "elif") { if (nest == 1) { mode = ""; skip = 0 } ; c[i] = ""; continue }
+      if (kw == "else" && nest) SKIPD[nest] = (MODE[nest] == "true")
+      if (kw == "elif") { if (nest) { MODE[nest] = ""; SKIPD[nest] = 0 } ; c[i] = ""; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; continue }
       if (t ~ /^if([ \t]|$)/) {
         nest++
-        if (nest == 1) { mode = (t ~ /^if[ \t]+false([ \t]|$)/) ? "false" : ((t ~ /^if[ \t]+(true|:)([ \t]|$)/) ? "true" : ""); skip = (mode == "false") }
+        MODE[nest] = (t ~ /^if[ \t]+false([ \t]|$)/) ? "false" : ((t ~ /^if[ \t]+(true|:)([ \t]|$)/) ? "true" : "")
+        SKIPD[nest] = (MODE[nest] == "false")
+        skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
         c[i] = ""; continue
       }
-      if (t ~ /^fi([ \t]|$)/) { if (nest) nest--; if (nest == 0) { skip = 0; mode = "" } ; c[i] = ""; continue }
+      if (t ~ /^fi([ \t]|$)/) { if (nest) { delete MODE[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
+      skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
       if (skip || t == "") { c[i] = ""; continue }
       c[i] = t
       if (match(t, /^cd[ \t]+/)) {
