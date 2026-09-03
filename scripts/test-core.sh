@@ -2556,6 +2556,15 @@ _vpn_count "a comma or colon GLUED to more text (v5.3.0:foo, v5.3.0,foo) is malf
 # This scans root Markdown: a bold delimiter or sentence-final punctuation closes a pin.
 _vpn_write README.md 'Pin **refs/tags/v5.3.0** here. Pin refs/tags/v5.3.0! Or refs/tags/v5.3.0? Or _refs/tags/v5.3.0_'
 _vpn_count "Markdown delimiters and sentence-final ! or ? after an exact pin stay exempt" 6 0
+# An underscore delimiter is scanned only at a word boundary: `_refs/tags/v5_` is the same
+# copyable bare-major pin (judged); `foo_refs/tags/v5` is an intraword identifier (not).
+_vpn_write README.md 'vendor _refs/tags/v5_ first'
+_vpn_count "an underscore-emphasised bare-major pin (_refs/tags/v5_) is a finding" 6 1
+_vpn_write README.md 'foo_refs/tags/v5 is an identifier, and _refs/tags/v5.3.0_ an exact freeze'
+_vpn_count "an intraword underscore is not a delimiter, and an emphasised exact pin stays exempt" 6 0
+# A period inside a PEELED revision is never a sentence period.
+_vpn_write README.md 'git rev-parse v5.3.0.^{commit} and git rev-parse refs/tags/v5.3.0.^{commit}'
+_vpn_count "a trailing period inside a peeled revision (v5.3.0.^{commit}) is malformed — both findings" 6 2
 # A `#` glued to the word is NOT a comment — bash hands `v5.3.0#note` to git as one
 # argument — so it is a non-exact foreign ref and must be judged, not exempted.
 _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0#note --squash'

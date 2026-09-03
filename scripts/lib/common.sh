@@ -1298,11 +1298,14 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         # validated against (audit-core.sh, SemVer [-pre]), so a pre-release this repo
         # could actually cut is exempt and nothing wider is.
         consumed = ""
-        while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout|switch)([[:space:]]+-[-A-Za-z0-9=]+)*[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+        # The left boundary also admits a Markdown `_` delimiter — an underscore that is
+        # itself at a word boundary — so `_refs/tags/v5_` is scanned, while `foo_refs…`
+        # (an intraword identifier) still is not.
+        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout|switch)([[:space:]]+-[-A-Za-z0-9=]+)*[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
-          sub(/^[^rgv]*/, "", hit)                 # drop the boundary character
-          blen = RLENGTH - length(hit)             # how long that boundary was (0 or 1)
+          sub(/^[^rgv]*/, "", hit)                 # drop the boundary character(s)
+          blen = RLENGTH - length(hit)             # how long that boundary was (0, 1 or 2)
           # THIS match is the scaffold default when the text right before it is the
           # assignment (`CORE_BRANCH:-`) or the --help line (`CORE_BRANCH (default: `).
           # Judged per match, not per line: a sentence naming the current default AND a
@@ -1310,6 +1313,10 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           prefix = consumed substr(line, 1, RSTART - 1 + blen)
           isdefault = (hit ~ /^refs\/tags\/v/ && prefix ~ /CORE_BRANCH(:-| \(default: )$/)
           tok = hit
+          # Peeled either way — `v5.3.0.^{commit}` in the hit, or `refs/tags/v5.3.0.^{commit}`
+          # with the peel in rest — is a REVISION, not prose: no period in it is a
+          # sentence period, so the trim below must not turn `5.3.0.` into an exact pin.
+          peeled = (hit ~ /\^\{commit\}$/ || rest ~ /^\^\{commit\}/)
           sub(/\^\{commit\}$/, "", tok)
           match(tok, /v[0-9]/); tok = substr(tok, RSTART + 1)
           # The token class admits `.`, so a sentence-ending period rides in with it:
@@ -1318,8 +1325,7 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # (`v5.3.0..`) leave `5.3.0.`, which is malformed and judged; and a trailing
           # `+` or `-` is kept, because `v5.3.0+` is no tag this repo cuts and must stay
           # judged, not become exempt by trimming.
-          sub(/\.$/, "", tok)
-          sub(/\.$/, "", hit)                     # the message quotes the pin, not the prose
+          if (!peeled) { sub(/\.$/, "", tok); sub(/\.$/, "", hit) }   # hit: the message quotes the pin, not the prose
           major = tok; sub(/[^0-9].*$/, "", major)
           exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
           # The token class stops at a character it does not admit, so `v5.3.0_bad`,
@@ -1345,10 +1351,10 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # Two kinds of terminator. A closer (whitespace, quote, backtick, bracket, a
           # Markdown `*` delimiter), sentence-final `!` or `?`, or a shell operator
           # (; & | < >) ends the token by itself — none of those can continue a ref.
-          # Prose punctuation (, :) ends it only when followed by whitespace, a closer or
-          # end of line — otherwise `v5.3.0:foo` and `v5.3.0,foo` are glued text, i.e.
-          # malformed, and judged.
-          if (rest != "" && rest !~ /^[[:space:]`"\047)\]}*!?;&|<>]/ && rest !~ /^[,:]([[:space:]`"\047)\]}]|$)/) exact = 0
+          # Prose punctuation (, :) and a closing Markdown `_` end it only when followed
+          # by whitespace, a closer or end of line — otherwise `v5.3.0:foo`, `v5.3.0,foo`
+          # and `v5.3.0_bad` are glued text, i.e. malformed, and judged.
+          if (rest != "" && rest !~ /^[[:space:]`"\047)\]}*!?;&|<>]/ && rest !~ /^[,:_]([[:space:]`"\047)\]}]|$)/) exact = 0
           # The scaffold default is never exempt: it is not a freeze someone chose, it is
           # the pin every new repo gets by default.
           if ((!exact || isdefault) && major != want) {

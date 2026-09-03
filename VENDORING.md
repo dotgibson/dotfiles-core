@@ -602,8 +602,8 @@ with no lock yet that is the only thing which can write one:
 # in dotfiles-core — from a THROWAWAY worktree, so your own checkout stays on its branch
 git fetch origin refs/tags/v6
 git worktree add --detach /tmp/core-v6 FETCH_HEAD
-(cd /tmp/core-v6 && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>)
-git worktree remove --force /tmp/core-v6
+(cd /tmp/core-v6 && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); rc=$?
+git worktree remove --force /tmp/core-v6; (exit "$rc")   # cleanup ALWAYS runs; the sync's status is the verdict
 ```
 
 Three things matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
