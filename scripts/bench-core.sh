@@ -242,10 +242,23 @@ printf '\n%s== Core startup benchmark (canonical .zshrc chain, hermetic) ==%s\n'
 # reported mean is steady-state, not first-run cold. --export-json captures the
 # mean for the verdict below (the human table still prints).
 json="$SANDBOX/bench.json"
+hf_rc=0
 HOME="$SANDBOX" ZDOTDIR="$SANDBOX/zdot" \
   XDG_CACHE_HOME="$SANDBOX/cache" XDG_STATE_HOME="$SANDBOX/state" \
   XDG_RUNTIME_DIR="$SANDBOX/run" XDG_DATA_HOME="$SANDBOX/data" CORE_DIR="$CORE_DIR" \
-  hyperfine --warmup 3 --min-runs "$runs" --export-json "$json" 'zsh -i -c exit'
+  hyperfine --warmup 3 --min-runs "$runs" --export-json "$json" 'zsh -i -c exit' || hf_rc=$?
+# No errexit here, so hyperfine's status must be read explicitly: it can write the export
+# file AND exit non-zero (a run that failed its own checks), and parsing that JSON would let
+# a gate pass on a measurement hyperfine itself disowned (a #688 review catch). Under a
+# budget that is a red run; report mode degrades to a loud skip, as for a missing tool.
+if ((hf_rc != 0)); then
+  if [[ -n "$BUDGET" ]]; then
+    printf '%s✗%s hyperfine exited %s — no trustworthy measurement; failing closed\n' "$c_red" "$c_rst" "$hf_rc" >&2
+    exit 1
+  fi
+  skip "hyperfine exited $hf_rc — no measurement to report"
+  exit 0
+fi
 
 # ── verdict: report vs the committed baseline; gate vs the budget ─────────────
 # hyperfine's JSON reports seconds; ONE python3 call converts mean + median to ms, and awk

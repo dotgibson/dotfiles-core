@@ -7784,6 +7784,9 @@ md="${CORE_TEST_HF_MEDIAN:-$m}"
 printf '{"results":[{"command":"zsh -i -c exit","mean":%s,"stddev":0.001,"median":%s,"user":0,"system":0,"min":%s,"max":%s,"times":[%s],"exit_codes":[0]}]}\n' \
   "$m" "$md" "$m" "$m" "$m" >"$out"
 echo "Benchmark 1: zsh -i -c exit (stub hyperfine, mean ${m}s)"
+# CORE_TEST_HF_RC: exit non-zero AFTER writing the file — the shape a real hyperfine has when
+# a run fails its own checks, and the one the gate must not trust.
+exit "${CORE_TEST_HF_RC:-0}"
 EOF
     chmod +x "$_hfstub/hyperfine"
     _bc_stub() { _bc_run "PATH=$_hfstub:$PATH" "$@"; } # _bc_stub [env=val ...] -- [args ...]
@@ -7840,6 +7843,21 @@ EOF
       pass "bench gate: report mode (no --gate, no env) stays exit 0 at 100 ms and prints the baseline delta"
     else
       fail "bench gate: report mode must not fail (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+    fi
+
+    # 11b. hyperfine's OWN exit status is honoured: a 20 ms JSON written by a run that then
+    #     exited 42 is not a measurement. Under --gate that is red (a review catch — the script
+    #     has no errexit, so the first cut parsed the file and passed); report mode degrades to
+    #     a loud skip, never a verdict.
+    _bc_stub "CORE_TEST_HF_MEAN=0.020" "CORE_TEST_HF_RC=42" -- --gate
+    _rc_hf_gate=$_bcrc
+    _out_hf_gate="$_bcout"
+    _bc_stub "CORE_TEST_HF_MEAN=0.020" "CORE_TEST_HF_RC=42" --
+    if ((_rc_hf_gate == 1)) && [[ "$_out_hf_gate" == *"hyperfine exited 42"* && "$_out_hf_gate" != *"within budget"* ]] &&
+      ((_bcrc == 0)) && [[ "$_bcout" == *"hyperfine exited 42"* && "$_bcout" != *"report only"* ]]; then
+      pass "bench gate: a hyperfine that writes JSON but exits 42 is red under --gate and a skip in report mode"
+    else
+      fail "bench gate: hyperfine rc 42 should be exit 1 under --gate (got $_rc_hf_gate) and a skip in report mode (got $_bcrc): ${_out_hf_gate//$'\n'/ | }"
     fi
   else
     skip "startup budget gate: stub-hyperfine verdict legs (zsh or python3 not installed)"
