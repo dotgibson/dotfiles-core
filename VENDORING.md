@@ -454,6 +454,54 @@ Only the exceptions need a line — anything calling the reusable is derived fro
 and `audit-core.sh` §5h asserts every gate × repo cell is filled, so a **new** gate cannot
 ship without each repo declaring a position on it.
 
+### The `make` vocabulary, and the test floor (#691)
+
+Nine repos had nine dialects. "Dry run" was `dry-run` in four repos and `bootstrap-dry` in
+four; "verify core" had five spellings (`core-verify`, `verify-core`, `check-core`,
+`core-check`, `core-advisory`); "check packages" had two; only `help` was common to every
+Makefile. A contributor moving between repos re-learned the verbs each time, and no gate
+noticed. `scripts/make-vocabulary.txt` now declares the canonical verbs **once**:
+
+| verb | meaning |
+| --- | --- |
+| `help` | the discoverable index (already universal) |
+| `lint` | reproduce the CI gate locally |
+| `check` | lint plus a hermetic `--links-only` bootstrap run |
+| `dry-run` | preview a full install, touching nothing |
+| `packages-check` | resolve every package name against the OS package manager |
+| `core-verify` | vendored-Core integrity against `core.lock` |
+| `test` | the repo's own suite |
+
+**The requirement is that the canonical name exists**, not that your historical one dies.
+Keep the old spelling as an alias — two lines, and muscle memory survives:
+
+```make
+bootstrap-dry: dry-run ## (alias) kept for muscle memory
+```
+
+A verb that genuinely does not apply to your repo is declared, not silently absent, in the
+same `.github/core-gates.txt` the gate register reads (a `none` is the only verdict the
+vocabulary accepts — there is no "own" way to have a target by another name):
+
+```text
+make:packages-check none no OS package list to resolve here
+```
+
+**The test floor** rides in the register's last column and has no waiver line: a `test/`
+(or `tests/`) directory with something in it, run from a workflow under `.github/`
+(`make test` or the directory by path). Five of nine repos had no repo-owned tests at all,
+including `dotfiles-Fedora` — the template every Linux repo is stamped from
+(`PORTING-MATRIX.md`'s per-repo recipe starts with `cp -r dotfiles-Fedora`), so the floor
+is worth meeting there before it is copied again. It is deliberately not Windows' 85%
+coverage bar, which is disproportionate for a thin OS shim;
+`dotfiles-Debian/test/check-packages.sh` is the model for the smallest useful suite.
+
+`scripts/fleet-vocabulary.sh` renders the register, `make fleet-vocabulary` prints it, and
+`audit-core.sh` §5h reports it — advisory, like the gate register above, because a cell
+going missing is fleet drift rather than a regression in the Core commit under test.
+`dotfiles-Windows` is outside this register as it is outside the fleet list: its host
+layer is PowerShell with its own Pester floor, not a Makefile.
+
 #### `ssh/config` — the one with a deletion order (#450)
 
 Seven OS repos each shipped `ssh/config` at their **root**, and Core's `blib_link_core`

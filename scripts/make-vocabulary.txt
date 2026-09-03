@@ -1,0 +1,35 @@
+# scripts/make-vocabulary.txt — the canonical Makefile verbs every OS repo must define (#691)
+# ──────────────────────────────────────────────────────────────────────────────
+# ONE list of the `make` targets a contributor may rely on in ANY repo that vendors Core.
+# Read by scripts/fleet-vocabulary.sh, which renders the verb x repo register and is what
+# audit-core.sh §5h asserts against.
+#
+# WHY A DECLARED LIST. Before this file, "dry run" had two spellings across the fleet
+# (`dry-run` / `bootstrap-dry`), "verify core" had five (`core-verify`, `verify-core`,
+# `check-core`, `core-check`, `core-advisory`) and "check packages" had two — only `help`
+# was common to every repo. A contributor moving between repos re-learned the verbs each
+# time, and no gate noticed. This file is the contract; the register is the gate.
+#
+# THE REQUIREMENT IS THAT THE CANONICAL NAME EXISTS, not that the historical one dies. A
+# repo keeps its old spelling as a `.PHONY` alias to the canonical target — two lines, and
+# muscle memory survives:
+#
+#     bootstrap-dry: dry-run   ## (alias) kept for muscle memory
+#
+# A verb that genuinely does not apply to a repo is DECLARED, not silently absent, in that
+# repo's .github/core-gates.txt (the same file the gate x repo register reads):
+#
+#     make:<verb> none <why this repo has nothing to run here>
+#
+# Format: `<verb>  <meaning>`, one per line; blank lines and `#` comments ignored. The
+# verb is the exact target name. Adding a verb here is a fleet-wide ask — every repo's
+# register cell turns **missing** until it defines or declares the new target — which is
+# the property that keeps the vocabulary true rather than aspirational.
+# ──────────────────────────────────────────────────────────────────────────────
+help            the discoverable index of targets (already universal)
+lint            reproduce the CI gate locally
+check           lint plus a hermetic `--links-only` bootstrap run
+dry-run         preview a full install, touching nothing
+packages-check  resolve every package name against the OS package manager
+core-verify     vendored-Core integrity against core.lock
+test            the repo's own suite (test/ or tests/, and CI runs it)

@@ -14,6 +14,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **One Makefile vocabulary for the fleet, and a test floor — declared once in Core,
+  reported by the audit (#691).** Nine repos had nine `make` dialects: "dry run" was
+  `dry-run` in four repos and `bootstrap-dry` in four, "verify core" had five spellings,
+  "check packages" two, and only `help` was common to every Makefile — a contributor
+  re-learned the verbs in each repo and no gate noticed. `scripts/make-vocabulary.txt`
+  declares the seven canonical verbs (`help`, `lint`, `check`, `dry-run`, `packages-check`,
+  `core-verify`, `test`); `scripts/fleet-vocabulary.sh` (`make fleet-vocabulary`) reads
+  each sibling's Makefile and renders a verb × repo register, and `audit-core.sh` §5h
+  reports it beside the gate × repo register with the same advisory posture and the same
+  absent-sibling environment skip. The requirement is that the canonical NAME exists — a
+  repo keeps its historical spelling as a two-line alias, and a verb it genuinely lacks is
+  declared as `make:<verb> none <why>` in the `.github/core-gates.txt` the gate register
+  already reads. The register's last column is the test floor, with no waiver line: a
+  `test/` (or `tests/`) directory with content, run from a workflow. Five of nine repos are
+  under it today, `dotfiles-Fedora` — the template every Linux repo is copied from — among
+  them; the first run reports 31 missing verb cells, which is the migration each OS repo
+  now owes (aliases, not renames, so nothing calling the old targets breaks). The suite
+  drives the script against a fake fleet root and pins that an alias alone does not fill a
+  cell, that `own` is not a declaration the vocabulary accepts, each rung of the floor, and
+  that an unreadable vocabulary is a loud exit 2 rather than an empty register. Dev tooling
+  only — the OS repos receive nothing from this entry until they adopt the verbs.
+
 ### Changed
 
 - **The startup budget is ratcheted from 120 ms to a committed 48 ms — 2× the measured

@@ -16377,6 +16377,144 @@ else
   fail "parity verdict: §9f no longer clears CORE_JSON for the parity child — --json runs will report a full pass on a box with no pwsh file"
 fi
 
+# ── F12. the Makefile vocabulary register + test floor (scripts/fleet-vocabulary.sh) ──
+# Nine repos, nine dialects (#691): the register exists so a target spelled `bootstrap-dry`
+# instead of `dry-run` is a visible cell rather than the next contributor's confusion. These
+# drive the real script against a fake fleet root, one throwaway sibling per case, and pin
+# the two facts that make the register a contract: an ALIAS does not satisfy a verb, and
+# the test floor has no waiver line.
+hdr "Makefile vocabulary register (fleet-vocabulary.sh)"
+_fv_root="$SANDBOX/fleet-vocab"
+_fv_reset() { rm -rf "$_fv_root"; mkdir -p "$_fv_root"; }
+_fv_repo() { # _fv_repo <repo> [Makefile-body] — a fake sibling clone; no body means no Makefile
+  mkdir -p "$_fv_root/$1/.git"
+  [[ $# -ge 2 ]] && printf '%b' "$2" >"$_fv_root/$1/Makefile"
+  return 0
+}
+_fv_run() { REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-vocabulary.sh" "$@" 2>&1; }
+_fv_ci() { # _fv_ci <repo> <workflow-line> — one workflow that carries the given line
+  mkdir -p "$_fv_root/$1/.github/workflows"
+  printf 'on: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n' "$2" >"$_fv_root/$1/.github/workflows/ci.yml"
+}
+_fv_suite() { mkdir -p "$_fv_root/$1/test"; printf '#!/bin/sh\nexit 0\n' >"$_fv_root/$1/test/smoke.sh"; }
+# Every canonical verb, as a rule at column 0. `check` shares a rule with a prerequisite
+# and `bootstrap-dry` is an alias — both shapes the fleet actually uses.
+_fv_all='help:\n\t@true\nlint:\n\t@true\ncheck: lint\n\t@true\ndry-run:\n\t@true\nbootstrap-dry: dry-run\npackages-check:\n\t@true\ncore-verify:\n\t@true\ntest:\n\t@true\n'
+
+_fv_reset
+if out="$(_fv_run --check)"; then
+  [[ "$out" == *"no sibling repo checked out"* ]] && pass "vocab: an empty fleet root is an environment notice, exit 0" ||
+    fail "vocab: empty root exited 0 without the no-sibling notice: $out"
+else
+  fail "vocab: an empty fleet root exited non-zero: $out"
+fi
+
+_fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
+  pass "vocab: a repo defining every verb with a CI-run test/ passes --check"
+else
+  fail "vocab: the complete repo did not pass --check: $out"
+fi
+
+# THE ALIAS DOES NOT COUNT. Keep bootstrap-dry, drop dry-run: the cell must go missing.
+# $_fv_all is ONE line of printf escapes, so the edits are unanchored substring edits.
+_fv_reset; _fv_repo dotfiles-Arch "${_fv_all/dry-run:\\n\\t@true\\n/}"
+sed -i 's/^bootstrap-dry: dry-run$/bootstrap-dry:\n\t@true/' "$_fv_root/dotfiles-Arch/Makefile"
+_fv_suite dotfiles-Arch; _fv_ci dotfiles-Arch "make test"
+out="$(_fv_run --check)"; rc=$?
+if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then
+  pass "vocab: a historical spelling alone (bootstrap-dry, no dry-run) is one missing cell, exit 1"
+else
+  fail "vocab: bootstrap-dry without dry-run was not reported as missing (rc=$rc): $out"
+fi
+row="$(_fv_run | grep -F '`Arch`')"
+if [[ "$row" == '| `Arch` | ok | ok | ok | **missing** | ok | ok | ok | ok |' ]]; then
+  pass "vocab: the table puts the miss in the dry-run column and nowhere else"
+else
+  fail "vocab: unexpected Arch row: $row"
+fi
+
+# A DECLARED `none` FILLS THE CELL; an `own` does not, because "the canonical name exists"
+# is the whole requirement and there is no other way to satisfy it.
+_fv_mk="${_fv_all/packages-check:\\n\\t@true\\n/}"
+_fv_reset; _fv_repo dotfiles-Defense "${_fv_mk/core-verify:\\n\\t@true\\n/}"
+_fv_suite dotfiles-Defense; _fv_ci dotfiles-Defense "make test"
+mkdir -p "$_fv_root/dotfiles-Defense/.github"
+printf 'make:packages-check none no OS package list to resolve # comment\nmake:core-verify own scripts/verify.sh\n' >"$_fv_root/dotfiles-Defense/.github/core-gates.txt"
+out="$(_fv_run --check)"; rc=$?
+if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then
+  pass "vocab: \`make:<verb> none <why>\` declares a cell; \`own\` does not (the name must exist)"
+else
+  fail "vocab: declaration handling wrong (rc=$rc): $out"
+fi
+tbl="$(_fv_run)"
+if [[ "$tbl" == *'| none[^1] | **missing** |'* && "$tbl" == *'[^1]: `Defense` / `make packages-check` — no OS package list to resolve'* ]]; then
+  pass "vocab: the declared cell carries a footnote with the reason, comment stripped"
+else
+  fail "vocab: footnote rendering wrong: $tbl"
+fi
+
+_fv_reset; _fv_repo dotfiles-Gentoo; _fv_suite dotfiles-Gentoo; _fv_ci dotfiles-Gentoo "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"7 verb x repo cell(s) missing"* && "$out" == *'**no Makefile**'* ]]; then
+  pass "vocab: a repo with no Makefile misses every verb, labelled as such"
+else
+  fail "vocab: no-Makefile case: $out"
+fi
+
+# THE TEST FLOOR: a directory with content, run from a workflow. Each rung is its own cell.
+_fv_floor() { # _fv_floor <label> <want-cell> <setup-commands>
+  local label="$1" want="$2" out
+  _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
+  eval "$3"
+  out="$(_fv_run | grep -F '`Alpine`')"
+  if [[ "$out" == *"| $want |" ]]; then pass "vocab floor: $label → $want"; else fail "vocab floor: $label (want '$want'): $out"; fi
+}
+_fv_floor "no test dir" '**no-dir**' true
+_fv_floor "an empty tests/ dir" '**empty**' 'mkdir -p "$_fv_root/dotfiles-Alpine/tests"'
+_fv_floor "a suite nothing in CI runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine'
+_fv_floor "a suite only bootstrap-test/ mentions (boundary)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "./bootstrap-test/run.sh"'
+_fv_floor "a suite CI runs via make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor "a suite CI runs by path" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash test/smoke.sh"'
+out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
+if [[ "$out" == *"1 repo(s) under the test floor"* ]]; then
+  pass "vocab floor: --check counts a repo under the floor and exits 1 with every verb defined"
+else
+  fail "vocab floor: --check did not count the floor miss: $out"
+fi
+
+# An unreadable vocabulary is a loud stop, never an empty register (the fleet-list posture).
+out="$(_fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; CORE_MAKE_VOCABULARY=/nonexistent/vocab.txt _fv_run --check)"; rc=$?
+if ((rc == 2)) && [[ "$out" == *"vocabulary list unreadable"* ]]; then
+  pass "vocab: a missing vocabulary file is exit 2 with a notice §5h reads as an environment skip"
+else
+  fail "vocab: missing vocabulary file (rc=$rc): $out"
+fi
+
+# PINS. The seven verbs #691 settled on, in scripts/make-vocabulary.txt; §5h reading the
+# notices above; a `make` entry point for the register.
+want="help lint check dry-run packages-check core-verify test"
+have="$(sed -e 's/#.*//' "$HERE/scripts/make-vocabulary.txt" | awk 'NF{print $1}' | tr '\n' ' ' | sed 's/ $//')"
+if [[ "$have" == "$want" ]]; then
+  pass "vocab: make-vocabulary.txt declares exactly the #691 verb set, in order"
+else
+  fail "vocab: make-vocabulary.txt drifted from the #691 set: '$have'"
+fi
+if grep -q 'fleet-vocabulary.sh" --check' "$HERE/scripts/audit-core.sh" &&
+  grep -qF '"vocabulary list "' "$HERE/scripts/audit-core.sh"; then
+  pass "vocab: audit-core.sh §5h runs the register and reads its cannot-enumerate notice"
+else
+  fail "vocab: audit-core.sh §5h no longer runs fleet-vocabulary.sh --check or dropped the notice match"
+fi
+if grep -qE '^fleet-vocabulary: ' "$HERE/Makefile"; then
+  pass "vocab: \`make fleet-vocabulary\` prints the register"
+else
+  fail "vocab: Makefile has no fleet-vocabulary target"
+fi
+rm -rf "$_fv_root"
+unset _fv_root _fv_all _fv_mk out rc row tbl want have
+unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_suite _fv_floor
+
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
 ((FAIL == 0)) || {
