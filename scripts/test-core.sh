@@ -5636,7 +5636,7 @@ if have git; then
   _rc_out="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH='refs/tags/v9' bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$_rc_target" 2>&1)"
   _rc_cmd="$(printf '%s\n' "$_rc_out" | grep 'skipping vendor' | sed 's/^.*run later: //; s/; sync-core.sh resolves the NAME.*$//')"
   if [[ -z "$_rc_cmd" ]]; then
-    fail "recovery: the --no-vendor run printed no recovery command"
+    fail "recovery: the --no-vendor run printed no recovery command — the run said: $(tail -3 <<<"$_rc_out" | tr '\n' '|' | cut -c1-400)"
   else
     if bash -n <(printf '%s\n' "$_rc_cmd") 2>/dev/null; then
       pass "recovery: the command parses with a space in the parent and an apostrophe in the name (%q holds)"
@@ -5813,7 +5813,7 @@ if have git; then
   if [[ -n "$_rc_dry" ]] && grep -qF "REPOS_ROOT=$(printf '%q' "$SANDBOX/recovery/not yet") " <<<"$_rc_dry" && grep -qF "git -C $(printf '%q' "$SANDBOX/recovery/not yet/dotfiles-Fixture") add -A" <<<"$_rc_dry" && [[ ! -e "$SANDBOX/recovery/not yet" ]]; then
     pass "recovery: a dry run of a not-yet-existing relative target embeds it ANCHORED to the invocation directory (REPOS_ROOT and git -C)"
   else
-    fail "recovery: a dry-run relative target was embedded unanchored — $(cut -c1-240 <<<"$_rc_dry")"
+    fail "recovery: a dry-run relative target was embedded unanchored — REPOS_ROOT token: [$(grep -o 'REPOS_ROOT=[^ ]*' <<<"$_rc_dry" | head -1)] expected [REPOS_ROOT=$(printf '%q' "$SANDBOX/recovery/not yet")]; 'not yet' exists: $([[ -e "$SANDBOX/recovery/not yet" ]] && echo yes || echo no); hint: $(cut -c1-160 <<<"$_rc_dry")"
   fi
   unset _rc_dry
   # That verdict reads the released script's `repos:` footer, which exists since v4.1.0:
@@ -5853,7 +5853,7 @@ if have git; then
   if [[ -n "$_rc_nocmd" ]] && grep -qF '"${CORE_REMOTE:?' <<<"$_rc_nocmd" && ! grep -qE "subtree add --prefix=core '' |git fetch '' |CORE_REMOTE='' " <<<"$_rc_nocmd" && bash -n <(printf '%s\n' "$_rc_nocmd"); then
     pass "recovery: with no origin and no CORE_REMOTE the command carries a \${CORE_REMOTE:?…} expansion, never an empty remote"
   else
-    fail "recovery: an origin-less Core baked an empty remote into the hint — $(cut -c1-200 <<<"$_rc_nocmd")"
+    fail "recovery: an origin-less Core baked an empty remote into the hint — cmd: [$(cut -c1-200 <<<"$_rc_nocmd")]; the run said: $(tail -3 <<<"$_rc_noout" | tr '\n' '|' | cut -c1-400)"
   fi
   unset _rc_nocore _rc_noout _rc_nocmd
   rm -rf "$SANDBOX/recovery"
