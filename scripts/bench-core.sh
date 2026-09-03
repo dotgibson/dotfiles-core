@@ -12,10 +12,12 @@
 # the first-run clone is a no-op) — so the number reflects Core's own load cost,
 # reproducibly and with no network.
 #
-# Graceful degradation (mirrors audit-core.sh / test-core.sh): with no zsh OR no
-# hyperfine it SKIPs and exits 0, so it is safe to call anywhere. hyperfine is the
-# tool 00-tools.zsh already detects as HAVE_HYPERFINE and the perf note in 00-tools.zsh
-# already points at (`hyperfine 'zsh -i -c exit'`).
+# Graceful degradation (mirrors audit-core.sh / test-core.sh) in the report and --profile
+# modes: a tool the selected mode needs but the box lacks (zsh; hyperfine for the aggregate;
+# python3 for the comparison) is a SKIP with exit 0, so `make bench` is safe to call
+# anywhere. --gate is the exception and fails closed on the same absences — see below.
+# hyperfine is the tool 00-tools.zsh already detects as HAVE_HYPERFINE and the perf note in
+# 00-tools.zsh already points at (`hyperfine 'zsh -i -c exit'`).
 #
 # Three modes (#688):
 #   • report (default)  prints the mean and how it compares to the COMMITTED baseline in
@@ -311,7 +313,10 @@ fi
 printf '%s✗%s startup mean %.1f ms (median %.1f) EXCEEDS budget %s ms%s%s — perf regression\n' \
   "$c_red" "$c_rst" "$mean_ms" "$median_ms" "$BUDGET" "$src_note" "$vs_base" >&2
 if awk -v m="$median_ms" -v b="$BUDGET" 'BEGIN { exit !(m <= b) }'; then
-  printf '  note: the median IS within budget — the mean is outlier-driven (runner hiccup?); re-run before chasing a regression\n' >&2
+  # Label the split, do not diagnose it: a median under budget with the mean over it means
+  # the slowdown is skewed or intermittent (a burst of slow runs, a right tail) rather than
+  # uniform — which can be runner noise, but can equally be a real intermittent regression.
+  printf '  note: the median IS within budget while the mean is not — a skewed or intermittent slowdown, not a uniform one; inspect the run'"'"'s distribution or re-run before treating it as either noise or a uniform regression\n' >&2
 fi
 # Localise it: the red log should name the module, not just the aggregate.
 printf '\n%s== per-module profile (single sample, to localise the regression) ==%s\n' "$c_blu" "$c_rst"

@@ -7823,20 +7823,22 @@ EOF
       [[ "$_bcout" == *" $_bc_m"* ]] || _bc_missing="$_bc_missing $_bc_m"
     done
     if ((_bcrc == 1)) && [[ "$_bcout" == *"EXCEEDS budget $_bc_bud ms"* && "$_bcout" == *"TOTAL"* &&
-      -z "$_bc_missing" && "$_bcout" != *"outlier-driven"* ]]; then
+      -z "$_bc_missing" && "$_bcout" != *"median IS within budget"* ]]; then
       pass "bench gate: a 100 ms mean FAILS (exit 1) and prints the per-module profile naming every numbered fragment"
     else
       fail "bench gate: 100 ms should exit 1 with EXCEEDS + a profile naming every zsh/NN-*.zsh (rc=$_bcrc; unnamed:${_bc_missing:- none}): ${_bcout//$'\n'/ | }"
     fi
 
     # 9. A breach whose median is within budget is still red (the gate is the mean, as every
-    #    recorded measurement is) but carries the outlier hint — so a runner hiccup reads as
-    #    one, not as a regression to chase.
+    #    recorded measurement is) but labels the split — a skewed or intermittent slowdown
+    #    rather than a uniform one — without diagnosing it as noise: a burst of slow runs can
+    #    be a runner hiccup or a real intermittent regression, and the log should say which
+    #    question to ask, not answer it.
     _bc_stub "CORE_TEST_HF_MEAN=0.100" "CORE_TEST_HF_MEDIAN=0.020" -- --gate
-    if ((_bcrc == 1)) && [[ "$_bcout" == *"EXCEEDS"* && "$_bcout" == *"outlier-driven"* ]]; then
-      pass "bench gate: mean over / median under still fails, with the outlier-driven hint"
+    if ((_bcrc == 1)) && [[ "$_bcout" == *"EXCEEDS"* && "$_bcout" == *"median IS within budget"* ]]; then
+      pass "bench gate: mean over / median under still fails, and labels the skewed split"
     else
-      fail "bench gate: mean 100 / median 20 should exit 1 with the outlier hint (rc=$_bcrc)"
+      fail "bench gate: mean 100 / median 20 should exit 1 with the median-within-budget note (rc=$_bcrc)"
     fi
 
     # 10. The env override wins over the file and is labelled as such.
@@ -7888,8 +7890,9 @@ EOF
   fi
 
   # 12. Under --gate an absent hyperfine is RED, not a skip — only assertable on a box that
-  #     lacks it, so elsewhere this is a note, not a coverage gap.
-  if ! have hyperfine; then
+  #     HAS zsh (the zsh probe comes first and would name zsh instead) and LACKS hyperfine,
+  #     so elsewhere this is a note, not a coverage gap.
+  if have zsh && ! have hyperfine; then
     _bc_run -- --gate
     if ((_bcrc == 1)) && [[ "$_bcout" == *"needs hyperfine"* ]]; then
       pass "bench gate: --gate without hyperfine fails closed (exit 1)"
@@ -7897,7 +7900,7 @@ EOF
       fail "bench gate: --gate without hyperfine should exit 1 'needs hyperfine' (rc=$_bcrc)"
     fi
   else
-    skip_note "bench gate: the no-hyperfine fail-closed leg needs a box without hyperfine — not asserted here"
+    skip_note "bench gate: the no-hyperfine fail-closed leg needs a box with zsh and without hyperfine — not asserted here"
   fi
 fi
 

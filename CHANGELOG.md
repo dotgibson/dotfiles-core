@@ -45,8 +45,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   host's 12, and the re-baseline recipe therefore samples ~20 jobs and takes the
   ordinary-host mode, never one run. The
   mean is still the gated statistic (every recorded measurement is a mean); the median
-  prints beside it, and a breach whose median is within budget carries an "outlier-driven,
-  re-run" hint. (3) The report and gate modes — plain `make bench` included — now print the mean against
+  prints beside it, and a breach whose median is within budget is labelled as a skewed or
+  intermittent slowdown, not diagnosed as noise. (3) The report and gate modes — plain `make bench` included — now print the mean against
   the committed baseline (`CI baseline 24 ms, −1%`), so a local run shows the trend —
   though the number that gates is CI's: a laptop or WSL2 box measures 1–3× ubuntu-latest,
   so compare before/after locally rather than reading a local `make bench-gate` red as a
