@@ -5539,8 +5539,19 @@ if have git && have zsh; then
       if ! (cd "$NOR" && make capabilities) >"$SANDBOX/nor-legs-cap2.out" 2>&1 || grep -q 'skipped' "$SANDBOX/nor-legs-cap2.out"; then
         _nor_legs="$_nor_legs capabilities-with-validator($(tail -1 "$SANDBOX/nor-legs-cap2.out"))"
       fi
+      # A vendored Core OLDER than the scanners: an empty common.sh (no
+      # _core_return_trap_hits, no _core_make_gate_hits) and no gitleaks.toml. Each of the
+      # three legs must say it skipped and exit 0 — never scan nothing and pass.
+      command cp "$NOR/core/scripts/lib/common.sh" "$SANDBOX/nor-common.bak"
+      : >"$NOR/core/scripts/lib/common.sh"; command rm -f "$NOR/core/gitleaks.toml" "$_nor_shim/gitleaks.argv"
+      if ! (cd "$NOR" && PATH="$_nor_shim:$PATH" make trap-guard make-gate secrets) >"$SANDBOX/nor-legs-old.out" 2>&1; then
+        _nor_legs="$_nor_legs old-core-red($(tail -1 "$SANDBOX/nor-legs-old.out"))"
+      elif [[ "$(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-old.out")" != 3 ]] || [[ -e "$_nor_shim/gitleaks.argv" ]]; then
+        _nor_legs="$_nor_legs old-core-silent-or-scanned($(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-old.out")/3, gitleaks ran: $([[ -e "$_nor_shim/gitleaks.argv" ]] && echo yes || echo no))"
+      fi
+      command cp "$SANDBOX/nor-common.bak" "$NOR/core/scripts/lib/common.sh"; command cp "$HERE/gitleaks.toml" "$NOR/core/"
       if [[ -z "$_nor_legs" ]]; then
-        pass "new-os-repo: every lint leg runs its tool on the right files (markdown minus core/, workflows, Core's gitleaks policy), fails on a finding, and says so when the tool is absent (shellcheck included); the two scanner legs run against the vendored common.sh; the capability leg skips without the validator and runs with it"
+        pass "new-os-repo: every lint leg runs its tool on the right files (markdown minus core/, workflows, Core's gitleaks policy), fails on a finding, and says so when the tool is absent (shellcheck included); the two scanner legs run against the vendored common.sh; the capability leg skips without the validator and runs with it; a Core older than the scanners or the policy file makes trap-guard, make-gate and secrets skip, saying so"
       else
         fail "new-os-repo: the lint legs —$_nor_legs"
       fi

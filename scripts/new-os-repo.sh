@@ -568,8 +568,15 @@ w "$TARGET/Makefile" <<'EOF'
 # NOT to be confused with dotfiles-core's own Makefile: that one exists in the SOURCE
 # repo only — it is in neither core.manifest nor core.vendor, so no core/Makefile is ever
 # vendored here — and its audit / sync / release targets would be meaningless from a
-# vendored copy anyway. The vendored core/ is excluded from every check here: it is
-# gated upstream.
+# vendored copy anyway. The vendored core/ is excluded from every check here — it is
+# gated upstream — EXCEPT the secret scan, which covers the whole working tree exactly
+# as the reusable gate's secrets leg does: a credential is a leak wherever it sits.
+#
+# A leg whose rule or policy the vendored Core does not carry yet SAYS SO and skips:
+# _core_return_trap_hits arrived in v4.14.0, gitleaks.toml in v4.16.0,
+# _core_make_gate_hits in v5.4.3, check-capabilities.sh in v4.19.0, and a pin as old
+# as the v4.1.0 floor vendors none of them — a scan that ran anyway would pass on
+# nothing, which is the failure mode this whole file is built against.
 #
 # Every guard sits on the same recipe line as the tool it guards (dotfiles-core#775):
 # make runs each line in its own shell, so an `exit 0` on a line of its own skips nothing.
@@ -622,7 +629,7 @@ trap-guard: ## Refuse a RETURN trap that does not disarm itself (shellcheck cann
 	@# library rides in $0 (bash -c's first operand), so "$@" is exactly SH_FILES — no shift.
 	@if test -z "$(SH_FILES)"; then echo "no repo-owned .sh tracked yet (git add first)"; \
 	elif ! test -r "$(CORE_LIB)"; then echo "$(CORE_LIB) missing — vendor Core first"; exit 1; \
-	else bash -c '. "$$0"; rc=0; for f; do while IFS= read -r l; do [ -n "$$l" ] || continue; echo "$$f:$$l: a RETURN trap is armed without disarming itself"; rc=1; done < <(_core_return_trap_hits "$$f"); done; [ "$$rc" -eq 0 ] && echo "RETURN traps disarm themselves ($(words $(SH_FILES)) files)"; exit $$rc' "$(CORE_LIB)" $(SH_FILES); fi
+	else bash -c '. "$$0"; command -v _core_return_trap_hits >/dev/null 2>&1 || { echo "the vendored Core has no _core_return_trap_hits (older than v4.14.0) — skipped; CI runs it"; exit 0; }; rc=0; for f; do while IFS= read -r l; do [ -n "$$l" ] || continue; echo "$$f:$$l: a RETURN trap is armed without disarming itself"; rc=1; done < <(_core_return_trap_hits "$$f"); done; [ "$$rc" -eq 0 ] && echo "RETURN traps disarm themselves ($(words $(SH_FILES)) files)"; exit $$rc' "$(CORE_LIB)" $(SH_FILES); fi
 
 capabilities: ## Validate os/*.capabilities against Core's schema (skips when the vendored validator predates v4.19.0; CI runs it)
 	@# The validator arrived in Core v4.19.0; a pin between the v4.1.0 floor and that
@@ -650,11 +657,13 @@ actionlint: ## Lint .github/workflows (skips without actionlint; CI runs it)
 secrets: ## Scan the working tree for committed secrets against Core's ONE policy file (skips without gitleaks; CI runs it)
 	@# -c core/gitleaks.toml: every repo measured the same way, no repo widening its own
 	@# allowlist — the rule the reusable gate's secrets leg states.
-	@if ! command -v gitleaks >/dev/null 2>&1; then echo "gitleaks not installed — skipped; CI runs it"; else gitleaks dir . -c core/gitleaks.toml --no-banner --redact; fi
+	@if ! command -v gitleaks >/dev/null 2>&1; then echo "gitleaks not installed — skipped; CI runs it"; \
+	elif ! test -r core/gitleaks.toml; then echo "core/gitleaks.toml not vendored (Core older than v4.16.0) — skipped; CI runs it"; \
+	else gitleaks dir . -c core/gitleaks.toml --no-banner --redact; fi
 
 make-gate: ## Every Makefile guard shares a line with its tool, and skips/fails as its help text says (Core's _core_make_gate_hits, dotfiles-core#775)
 	@if ! test -r "$(CORE_LIB)"; then echo "$(CORE_LIB) missing — vendor Core first"; exit 1; \
-	else bash -c '. "$$0"; h="$$(_core_make_gate_hits .)" || { echo "_core_make_gate_hits failed to run"; exit 1; }; [ -z "$$h" ] || { printf "%s\n" "$$h"; exit 1; }; echo "every Makefile gate skips, fails and scopes as its help text claims"' "$(CORE_LIB)"; fi
+	else bash -c '. "$$0"; command -v _core_make_gate_hits >/dev/null 2>&1 || { echo "the vendored Core has no _core_make_gate_hits (older than v5.4.3) — skipped; CI runs it"; exit 0; }; h="$$(_core_make_gate_hits .)" || { echo "_core_make_gate_hits failed to run"; exit 1; }; [ -z "$$h" ] || { printf "%s\n" "$$h"; exit 1; }; echo "every Makefile gate skips, fails and scopes as its help text claims"' "$(CORE_LIB)"; fi
 
 check: lint ## lint + a hermetic links run against a throwaway HOME (test/check-links.sh)
 	@./test/check-links.sh
