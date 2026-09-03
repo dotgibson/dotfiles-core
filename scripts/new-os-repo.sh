@@ -159,7 +159,12 @@ w() {
 _q() { printf '%q' "$1"; }
 _target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$TARGET"
 _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$TARGET")"
-_vendor_hint="git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && (cd $(_q "$HERE") && git checkout $(_q "$CORE_BRANCH") && CORE_BRANCH=\"\$(git rev-parse $(_q "$CORE_BRANCH^{commit}"))\" REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))   # VENDORING.md § One-time setup"
+#
+# The scaffold is UNCOMMITTED when this hint is printed (with --no-vendor there is not
+# even an initial commit), and both halves need a clean, committed target: subtree add
+# wants a HEAD and refuses a dirty tree, and sync-core.sh refuses a dirty target. So the
+# chain commits the scaffold first — a no-op when the reader already has.
+_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && (cd $(_q "$HERE") && git checkout $(_q "$CORE_BRANCH") && CORE_BRANCH=\"\$(git rev-parse $(_q "$CORE_BRANCH^{commit}"))\" REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
 # comment — so the sync resolves the conventional name. A symlink, not a rename: the
@@ -792,9 +797,20 @@ else
   _next_vendor=""
   [[ -d "$TARGET/core" ]] || _next_vendor="
   FIRST — this scaffold has no core/ yet, and bootstrap.sh refuses to run without one,
-  so nothing below passes until it exists. Materialize it:
+  so nothing below passes until it exists. Materialize it (this commits the scaffold,
+  then adds core/ and runs the pinned sync that stamps core.lock):
     $_vendor_hint
 "
+  # The REGISTER step's sync has the same two blind spots the recovery hint had: it
+  # resolves the NAME dotfiles-$OS under REPOS_ROOT, which defaults to the Core
+  # checkout's parent. A scaffold placed elsewhere, or named otherwise, would be skipped
+  # as "not cloned" — so the printed command carries REPOS_ROOT when the parent differs
+  # and is preceded by the canonical-name symlink when the name does.
+  _reg_sync="./scripts/sync-core.sh $(_q "dotfiles-$OS")"
+  [[ "$_target_parent" == "$(cd "$(dirname "$HERE")" && pwd)" ]] || _reg_sync="REPOS_ROOT=$(_q "$_target_parent") $_reg_sync"
+  _reg_link=""
+  [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || _reg_link="
+    ln -s $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS")   # sync-core.sh resolves the NAME dotfiles-$OS; a symlink, not a rename"
   cat <<EOF
   next:$_next_vendor
     cd "$TARGET"
@@ -809,7 +825,7 @@ else
     core/scripts/check-capabilities.sh os/$os_lc.capabilities
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
-    echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted
-    ./scripts/sync-core.sh dotfiles-$OS         # materializes core/ and stamps core.lock
+    echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted$_reg_link
+    $_reg_sync   # materializes core/ and stamps core.lock
 EOF
 fi
