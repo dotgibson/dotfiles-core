@@ -205,7 +205,7 @@ sanctioned writer of that file):
 git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" &&   # one chain: a failed fetch stops here, never reusing a stale FETCH_HEAD
   { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && {   # a failed add removes the parent it just made, and stops
   out="$( (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" CORE_COLOR=never REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) 2>&1)" || true; printf '%s\n' "$out"
-  if grep -Eq '^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$' <<<"$out"; then rc=0; else rc=1; fi   # the summary is the verdict (see below); `|| true` and the `if` keep `set -e` from skipping the cleanup
+  last="$(awk '/^ *repos: /{l=$0} END{print l}' <<<"$out")"; if grep -Eq '^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$' <<<"$last"; then rc=0; else rc=1; fi   # the LAST repos: row is the verdict (see below); `|| true` and the `if` keep `set -e` from skipping the cleanup
   git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc")   # cleanup only once the add succeeded; the sync's status is the verdict
 }
 ```

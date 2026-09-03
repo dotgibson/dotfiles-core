@@ -5632,9 +5632,21 @@ if have git; then
   _rc_parent="$SANDBOX/recovery/parent dir"
   rm -rf "$SANDBOX/recovery"
   mkdir -p "$_rc_parent"
+  # NORMALIZED through pwd, as the scaffold normalizes its own paths: on macOS TMPDIR
+  # ends in a slash, so $SANDBOX carries a `//` that the scaffold's `cd && pwd` folds
+  # away, and a literal comparison against $SANDBOX was one slash off on that lane.
+  _rc_parent="$(cd "$_rc_parent" && pwd)"
+  _rc_recov="$(cd "$SANDBOX/recovery" && pwd)"
   _rc_target="$_rc_parent/O'Brien"
   _rc_out="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH='refs/tags/v9' bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$_rc_target" 2>&1)"
-  _rc_cmd="$(printf '%s\n' "$_rc_out" | grep 'skipping vendor' | sed 's/^.*run later: //; s/; sync-core.sh resolves the NAME.*$//')"
+  # PURE-BASH extraction, no grep/sed: the hint is one ~3 KB line that carries every
+  # %q-quoted path and message of the chain, and BSD sed on macOS returns NOTHING
+  # ("illegal byte sequence") for a line it cannot decode, which read here as "no
+  # recovery command" on a lane where the scaffold had printed it in full.
+  _rc_cmd=""
+  if [[ "$_rc_out" == *"run later: "* ]]; then
+    _rc_cmd="${_rc_out#*run later: }"; _rc_cmd="${_rc_cmd%%$'\n'*}"; _rc_cmd="${_rc_cmd%; sync-core.sh resolves the NAME*}"
+  fi
   if [[ -z "$_rc_cmd" ]]; then
     fail "recovery: the --no-vendor run printed no recovery command — the run said: $(tail -3 <<<"$_rc_out" | tr '\n' '|' | cut -c1-400)"
   else
@@ -5669,7 +5681,7 @@ if have git; then
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
     grep -qF '{ git worktree add --detach "$_wt" FETCH_HEAD || { rmdir "$_wtp"; false; }; } && { _o="$( (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad add-failure-removes-own-parent+cleanup-nested+captured-sync"
     grep -qF 'CORE_COLOR=never REPOS_ROOT=' <<<"$_rc_cmd" || _rc_bad="$_rc_bad color-off-for-the-summary"
-    grep -qF ''"'"'^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$'"'"' <<<"$_o"; then _rc=0; else _rc=1; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad summary-verdict+parent-removed"
+    grep -qF '_l="$(awk '"'"'/^ *repos: /{l=$0} END{print l}'"'"' <<<"$_o")"; if grep -Eq '"'"'^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$'"'"' <<<"$_l"; then _rc=0; else _rc=1; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad last-row-summary-verdict+parent-removed"
     grep -qF ') 2>&1)" || true; printf ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad capture-is-errexit-safe"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
@@ -5728,6 +5740,17 @@ if have git; then
       pass "recovery: the verdict is the anchored footer line — the success text earlier in the log, mid-line, does not outvote a failed footer"
     else
       fail "recovery: an unanchored success substring earlier in the log passed a failed footer (status $_rc_trap_st)"
+    fi
+    # ...and it is the LAST footer that is judged: the target's own output (a git hook)
+    # could print a success-shaped footer before the sync prints its real one.
+    _rc_trap="echo '  repos:  updated 1   skipped 0   failed 0   (of 1 targeted)'; echo '  repos:  updated 0   skipped 0   failed 1   (of 1 targeted)'"
+    _rc_drive "$_rc_trap" rmdir; _rc_trap_st="$?"
+    _rc_trap="echo '  repos:  updated 0   skipped 0   failed 1   (of 1 targeted)'; echo '  repos:  updated 1   skipped 0   failed 0   (of 1 targeted)'"
+    _rc_drive "$_rc_trap" rmdir; _rc_trap_st="$_rc_trap_st/$?"
+    if [[ "$_rc_trap_st" == "1/0" ]]; then
+      pass "recovery: only the LAST repos: row is the verdict (a success footer followed by a failed one → 1; the reverse → 0)"
+    else
+      fail "recovery: the verdict is not the last repos: row (success-then-failed/failed-then-success → $_rc_trap_st, want 1/0)"
     fi
     unset _rc_trap _rc_trap_st
     if [[ -z "$_rc_leftover_fail" ]]; then
@@ -5809,11 +5832,12 @@ if have git; then
   # cd-based resolution above cannot run; a relative target must still come out anchored
   # to the invocation directory, or the chain (which cd's into the Core checkout) hands
   # the sync a REPOS_ROOT under Core and the sync skips the repo the hint was written for.
-  _rc_dry="$(cd "$SANDBOX/recovery" && env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' bash "$HERE/scripts/new-os-repo.sh" --dry-run --no-vendor Fixture 'not yet/dotfiles-Fixture' 2>&1 | grep 'skipping vendor' | sed 's/^.*run later: //')"
-  if [[ -n "$_rc_dry" ]] && grep -qF "REPOS_ROOT=$(printf '%q' "$SANDBOX/recovery/not yet") " <<<"$_rc_dry" && grep -qF "git -C $(printf '%q' "$SANDBOX/recovery/not yet/dotfiles-Fixture") add -A" <<<"$_rc_dry" && [[ ! -e "$SANDBOX/recovery/not yet" ]]; then
+  _rc_dry="$(cd "$_rc_recov" && env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' bash "$HERE/scripts/new-os-repo.sh" --dry-run --no-vendor Fixture 'not yet/dotfiles-Fixture' 2>&1)"
+  if [[ "$_rc_dry" == *"run later: "* ]]; then _rc_dry="${_rc_dry#*run later: }"; _rc_dry="${_rc_dry%%$'\n'*}"; else _rc_dry=""; fi
+  if [[ -n "$_rc_dry" ]] && grep -qF "REPOS_ROOT=$(printf '%q' "$_rc_recov/not yet") " <<<"$_rc_dry" && grep -qF "git -C $(printf '%q' "$_rc_recov/not yet/dotfiles-Fixture") add -A" <<<"$_rc_dry" && [[ ! -e "$_rc_recov/not yet" ]]; then
     pass "recovery: a dry run of a not-yet-existing relative target embeds it ANCHORED to the invocation directory (REPOS_ROOT and git -C)"
   else
-    fail "recovery: a dry-run relative target was embedded unanchored — REPOS_ROOT token: [$(grep -o 'REPOS_ROOT=[^ ]*' <<<"$_rc_dry" | head -1)] expected [REPOS_ROOT=$(printf '%q' "$SANDBOX/recovery/not yet")]; 'not yet' exists: $([[ -e "$SANDBOX/recovery/not yet" ]] && echo yes || echo no); hint: $(cut -c1-160 <<<"$_rc_dry")"
+    fail "recovery: a dry-run relative target was embedded unanchored — expected [REPOS_ROOT=$(printf '%q' "$_rc_recov/not yet") ]; 'not yet' exists: $([[ -e "$_rc_recov/not yet" ]] && echo yes || echo no); hint: $(cut -c1-300 <<<"$_rc_dry")"
   fi
   unset _rc_dry
   # That verdict reads the released script's `repos:` footer, which exists since v4.1.0:
@@ -5849,7 +5873,8 @@ if have git; then
   cp "$HERE/core.version" "$_rc_nocore/"
   git -C "$_rc_nocore" init -q >/dev/null 2>&1
   _rc_noout="$(env -u CORE_JSON -u CORE_REMOTE bash "$_rc_nocore/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/no-origin-target" 2>&1)"
-  _rc_nocmd="$(grep 'skipping vendor' <<<"$_rc_noout" | sed 's/^.*run later: //')"
+  _rc_nocmd=""
+  if [[ "$_rc_noout" == *"run later: "* ]]; then _rc_nocmd="${_rc_noout#*run later: }"; _rc_nocmd="${_rc_nocmd%%$'\n'*}"; fi
   if [[ -n "$_rc_nocmd" ]] && grep -qF '"${CORE_REMOTE:?' <<<"$_rc_nocmd" && ! grep -qE "subtree add --prefix=core '' |git fetch '' |CORE_REMOTE='' " <<<"$_rc_nocmd" && bash -n <(printf '%s\n' "$_rc_nocmd"); then
     pass "recovery: with no origin and no CORE_REMOTE the command carries a \${CORE_REMOTE:?…} expansion, never an empty remote"
   else
@@ -5857,7 +5882,7 @@ if have git; then
   fi
   unset _rc_nocore _rc_noout _rc_nocmd
   rm -rf "$SANDBOX/recovery"
-  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail _rc_left_add _rc_ok _rc_ko _rc_sk
+  unset _rc_parent _rc_recov _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail _rc_left_add _rc_ok _rc_ko _rc_sk
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi
