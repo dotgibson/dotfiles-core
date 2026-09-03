@@ -669,7 +669,7 @@ if [[ -f "$REPO/core/mise/config.toml" ]]; then
 fi
 
 # ── 3. the second run changes nothing ────────────────────────────────────────
-# Two independent witnesses, because neither alone is proof:
+# Three independent witnesses, because none alone is proof:
 #   · The MUTATING COMMANDS the run invokes. The second run happens with a shim directory
 #     first on PATH whose rm/ln/mv/cp/mkdir/chmod log their invocation and then exec the
 #     real tool; an idempotent run invokes none of them. This is the primary witness — a
