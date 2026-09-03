@@ -16727,6 +16727,18 @@ else
   fail "vocab: no-op test target handling (rc=$rc): $out / $row"
 fi
 
+# THE INCLUDE NESTING BOUND FAILS CLOSED: a chain deeper than the scanner follows makes
+# the Makefile unloadable rather than partially read.
+_fv_reset; _fv_repo dotfiles-Fedora "include mk/a.mk\\n${_fv_all}"; mkdir -p "$_fv_root/dotfiles-Fedora/mk"
+for pair in a:b b:c c:d d:e; do printf 'include mk/%s.mk\n' "${pair#*:}" >"$_fv_root/dotfiles-Fedora/mk/${pair%%:*}.mk"; done; printf 'deep:\n\t@true\n' >"$_fv_root/dotfiles-Fedora/mk/e.mk"
+_fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then
+  pass "vocab: an include chain past the nesting bound voids the Makefile (fail closed)"
+else
+  fail "vocab: nesting bound failed open: $out"
+fi
+
 # AN INCLUDE INSIDE A FALSE CONDITIONAL is not followed: its targets are not appended
 # after the endif as if make had read them.
 _fv_reset; _fv_repo dotfiles-Fedora 'ifeq (1,0)\ninclude mk/verbs.mk\nendif\nlint:\n\t@true\n'
@@ -16972,6 +16984,17 @@ _fv_floor "false && true || make test always reaches make" 'ok' '_fv_suite dotfi
 _fv_floor "a false if nested inside a runtime if never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n \"\$CI\" ]; then if false; then make test; fi; fi"'
 _fv_floor "a runtime if nested inside a false if never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then if [ -n \"\$CI\" ]; then make test; fi; fi"'
 _fv_floor "after a nested block closes, the outer body resumes" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true; then if false; then echo no; fi; make test; fi"'
+# BRANCH STATE: an elif/else after a taken branch never runs; `elif false` never runs; an
+# else after only false conditions always runs. A compile-only python module runs nothing.
+# Only defaults.run.working-directory is a default; a matrix key of that name is data.
+_fv_floor "elif after if true never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true; then echo yes; elif false; then make test; fi"'
+_fv_floor "elif [runtime] after if true never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true; then echo yes; elif [ -n \"\$CI\" ]; then make test; fi"'
+_fv_floor "elif false after if false never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then echo a; elif false; then make test; fi"'
+_fv_floor "else after only false conditions runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then echo a; elif false; then echo b; else make test; fi"'
+_fv_floor "else after an elif true never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then echo a; elif true; then echo b; else make test; fi"'
+_fv_floor "python3 -m compileall tests/ compiles only" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m compileall tests/"'
+_fv_floor "a matrix key named working-directory is not a job default" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    strategy:\n      matrix:\n        working-directory: [linux]\n    steps:\n      - run: make test\n"'
+_fv_floor "a job env named working-directory is not a job default" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    env:\n      working-directory: tools\n    steps:\n      - run: make test\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

@@ -104,7 +104,11 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
       printf '%s\n' "$line"
       continue
     fi
-    ((depth < 4)) || continue
+    # The nesting bound FAILS CLOSED: an include this scanner will not follow could be a
+    # missing mandatory one (make aborts) or carry a later override, so the Makefile is
+    # treated as unloadable rather than partially read. Five levels of include nesting is
+    # far beyond any fleet Makefile.
+    ((depth < 4)) || return 1
     kind="${line#@@INCLUDE }"; inc="${kind#* }"; kind="${kind%% *}"
     [[ -n "$inc" && "$inc" != *'$'* ]] || continue
     if [[ "$inc" == *[\*\?\[]* ]]; then
@@ -202,10 +206,12 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternat
 # operand of their own (`bash -o pipefail -n x`) — ONLY the shells, because pwsh options
 # are case-insensitive words (`-noprofile` runs). For node: --check / -c / -v, and the
 # code-string modes -e/-p/--eval/--print; for python: -c (the operand is source text, not
-# a file — a shell's -c, by contrast, executes its string). For every interpreter: its
+# a file — a shell's -c, by contrast, executes its string) and the compile- or lint-only
+# modules (`-m compileall tests/` byte-compiles; pyflakes/pylint/flake8/mypy/black/ruff/
+# isort read the files and run nothing). For every interpreter: its
 # help and version modes (--help/--version, -h/-V, pwsh -Help/-Version/-?), which print
 # and exit without touching the operand.
-NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v|-e|-p|--eval|--print)([[:space:]]|$)|python3?[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*-c([[:space:]]|$)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
+NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v|-e|-p|--eval|--print)([[:space:]]|$)|python3?[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-c([[:space:]]|$)|-m[[:space:]]+(compileall|py_compile|pyflakes|pylint|flake8|mypy|black|ruff|isort)([[:space:]]|$))|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:
@@ -270,7 +276,7 @@ AWK_SHELL='
   }
   function cdnorm(c, n,   i, d, t, m, x, st, skip, nest, kw, lvl) {
     d = ""; x = 0; st = ""; nest = 0; skip = 0
-    split("", MODE); split("", SKIPD)
+    split("", TAKEN); split("", SKIPD)
     for (i = 1; i <= n; i++) {
       # Reachability, for the statically decidable pairs. `st` is the status of the AND-OR
       # list EVALUATED so far — "true" after a literal true/`:`, "false" after a literal
@@ -288,18 +294,32 @@ AWK_SHELL='
       # never runs and an `if true` else never runs, at whatever depth; any other
       # condition may run either. The keywords then/do/else/elif carry no command of
       # their own and are stripped; a command is dropped while any enclosing level skips.
+      # Per level, TAKEN records whether a branch of the conditional has been taken —
+      # "yes" after `if true`/`elif true`, "no" while every condition so far was a literal
+      # false, "" once a runtime condition was seen — so an `elif`/`else` after a taken
+      # branch never runs, an `elif false` never runs, and an `else` after only false
+      # conditions always does.
       kw = ""
       if (match(t, /^(then|do|else|elif)([ \t]+|$)/)) { kw = substr(t, 1, RLENGTH); sub(/[ \t]+$/, "", kw); t = substr(t, RLENGTH + 1) }
-      if (kw == "else" && nest) SKIPD[nest] = (MODE[nest] == "true")
-      if (kw == "elif") { if (nest) { MODE[nest] = ""; SKIPD[nest] = 0 } ; c[i] = ""; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; continue }
+      if (kw == "else" && nest) SKIPD[nest] = (TAKEN[nest] == "yes")
+      if (kw == "elif") {
+        if (nest) {
+          m = (t ~ /^false([ \t]|$)/) ? "false" : ((t ~ /^(true|:)([ \t]|$)/) ? "true" : "")
+          if (TAKEN[nest] == "yes") SKIPD[nest] = 1
+          else if (m == "false") SKIPD[nest] = 1
+          else { SKIPD[nest] = 0; TAKEN[nest] = (m == "true" && TAKEN[nest] == "no") ? "yes" : "" }
+        }
+        c[i] = ""; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; continue
+      }
       if (t ~ /^if([ \t]|$)/) {
         nest++
-        MODE[nest] = (t ~ /^if[ \t]+false([ \t]|$)/) ? "false" : ((t ~ /^if[ \t]+(true|:)([ \t]|$)/) ? "true" : "")
-        SKIPD[nest] = (MODE[nest] == "false")
+        m = (t ~ /^if[ \t]+false([ \t]|$)/) ? "false" : ((t ~ /^if[ \t]+(true|:)([ \t]|$)/) ? "true" : "")
+        TAKEN[nest] = (m == "true") ? "yes" : ((m == "false") ? "no" : "")
+        SKIPD[nest] = (m == "false")
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
         c[i] = ""; continue
       }
-      if (t ~ /^fi([ \t]|$)/) { if (nest) { delete MODE[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
+      if (t ~ /^fi([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
       skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
       if (skip || t == "") { c[i] = ""; continue }
       c[i] = t
@@ -404,20 +424,28 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       }
       if ($0 ~ /^[ \t]*$/ || $0 ~ /^[ \t]*#/) next
       match($0, /^[ \t]*/); ind = RLENGTH
-      if (insteps && ind <= sind) { flushstep(); insteps = 0 }
+      if (insteps && ind <= sind) { flushstep(); insteps = 0; dind = -1; rind = -1 }
       if (!insteps) {
-        if ($0 ~ /^jobs:[ \t]*(#.*)?$/) { injobs = 1; jobind = -1; next }
+        if ($0 ~ /^jobs:[ \t]*(#.*)?$/) { injobs = 1; jobind = -1; dind = -1; rind = -1; next }
         if (injobs) {
-          if (ind == 0) { injobs = 0 }
+          if (ind == 0) { injobs = 0; dind = -1; rind = -1 }
           else {
             if (jobind < 0) jobind = ind
-            if (ind == jobind) { jobidx++; propind = -1; next }
+            if (ind == jobind) { jobidx++; propind = -1; dind = -1; rind = -1; next }
             if (propind < 0) propind = ind
             if (ind == propind && $0 ~ /^[ \t]*if:/ && isfalse(keyval($0))) JOFF[jobidx] = 1
           }
         }
         if ($0 ~ /^[ \t]*steps:[ \t]*(#.*)?$/) { sind = ind; insteps = 1; keycol = -1; next }
-        if ($0 ~ /^[ \t]*working-directory:/) { if (injobs) JWD[jobidx] = keyval($0); else wfwd = keyval($0) }
+        # Only `defaults: → run: → working-directory:` is a default. The path is tracked
+        # by indentation: `defaults:` opens at its column, `run:` beneath it, and the key
+        # beneath that; a line at or above either column closes it. A `working-directory`
+        # under `strategy.matrix` (or anywhere else) is data.
+        if (dind >= 0 && ind <= dind) { dind = -1; rind = -1 }
+        if (rind >= 0 && ind <= rind) rind = -1
+        if ($0 ~ /^[ \t]*defaults:[ \t]*(#.*)?$/) { dind = ind; rind = -1; next }
+        if (dind >= 0 && rind < 0 && $0 ~ /^[ \t]*run:[ \t]*(#.*)?$/) { rind = ind; next }
+        if (dind >= 0 && rind >= 0 && $0 ~ /^[ \t]*working-directory:/) { if (injobs) JWD[jobidx] = keyval($0); else wfwd = keyval($0) }
         next
       }
       # RLENGTH is read into a local BEFORE flushstep(): the helpers it runs call match()
