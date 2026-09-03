@@ -113,7 +113,14 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
     elif [[ "$kind" == include ]]; then
       return 1
     fi
-  done < <(sed -nE 's/^(-?s?include)[[:space:]]+(.*)$/\1 \2/p' "$d/$f" | awk '{ for (i = 2; i <= NF; i++) print $1, $i }')
+  done < <(awk '
+    /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
+    /^endif([ \t]|$)/ { if (cond) cond--; next }
+    /^define([ \t]|$)/ { indef = 1; next }
+    /^endef([ \t]|$)/ { indef = 0; next }
+    cond || indef { next }
+    /^-?s?include[ \t]/ { for (i = 2; i <= NF; i++) print $1, $i }
+  ' "$d/$f")
   return 0
 }
 
@@ -176,7 +183,9 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #   * splitcmds — one simple command at a time, split at `;`/`&&`/`||`/`|` OUTSIDE quotes.
 #     A naive split turned `echo "disabled && make test"` into a synthetic `make test"`.
 #     Inside "…" a backslash escapes the next character, so `\"` does not end the string;
-#     inside '…' nothing does.
+#     inside '…' nothing does. The operator before each command is kept (SPLITOP), and
+#     cdnorm drops a command behind `||` — it runs only if the previous one failed, so
+#     `true || make test` is not CI running the suite.
 #   * stripcomment — a shell comment (`#` at the start, or after whitespace) OUTSIDE
 #     quotes, so `echo "value #"; make test` keeps its make.
 #   * unquote_scalar — a YAML flow scalar: a fully "…"- or '…'-quoted value yields its
@@ -194,14 +203,22 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 AWK_SHELL='
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
   function splitcmds(s, out,   i, c, q, n, cur) {
-    n = 0; cur = ""; q = ""
+    n = 0; cur = ""; q = ""; split("", SPLITOP); SPLITOP[1] = ""
     for (i = 1; i <= length(s); i++) {
       c = substr(s, i, 1)
       if (q == "\"" && c == "\\") { cur = cur c substr(s, i + 1, 1); i++; continue }
       if (q != "") { if (c == q) q = ""; cur = cur c; continue }
       if (c == "\\") { cur = cur c substr(s, i + 1, 1); i++; continue }
       if (c == "\"" || c == SQ) { q = c; cur = cur c; continue }
-      if (c == ";" || c == "&" || c == "|") { if (cur ~ /[^ \t]/) out[++n] = cur; cur = ""; continue }
+      if (c == ";" || c == "&" || c == "|") {
+        if (cur ~ /[^ \t]/) out[++n] = cur
+        cur = ""
+        # The operator BEFORE the next command: `||` runs it only when the previous one
+        # failed, so `true || make test` never reaches make. Recorded in SPLITOP by index.
+        SPLITOP[n + 1] = (c == "|" && substr(s, i + 1, 1) == "|") ? "||" : c
+        if (substr(s, i + 1, 1) == c) i++
+        continue
+      }
       cur = cur c
     }
     if (cur ~ /[^ \t]/) out[++n] = cur
@@ -223,6 +240,7 @@ AWK_SHELL='
   function cdnorm(c, n,   i, d, t, m, x) {
     d = ""; x = 0
     for (i = 1; i <= n; i++) {
+      if (SPLITOP[i] == "||") { c[i] = ""; continue }
       t = trim(c[i])
       if (match(t, /^cd[ \t]+/)) {
         d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
@@ -280,24 +298,27 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     and a "…" string continued across lines stays one string; a folded block (`>`) is
   #     ONE line per paragraph, because YAML joins its lines with a space — `echo` over
   #     `make test` runs `echo make test`.
-  #   * a step with a statically false `if:` never runs; one with any other condition may.
+  #   * a step with a statically false `if:` never runs, nor does any step of a job with
+  #     one; a runtime condition may.
   #   * a step runs in its EFFECTIVE WORKING DIRECTORY: its own `working-directory:`, else
-  #     the job's `defaults.run.working-directory`, else the workflow's. A step is held
-  #     until it ends (its keys may come in any order) and then every logical line is
+  #     the job's `defaults.run.working-directory`, else the workflow's. Every line is
   #     emitted as `cd <dir> && <line>`, so cdnorm judges it like a `cd` in the command
   #     itself: `make test` from `tools/` is another Makefile and does not count.
+  # YAML MAPPING ORDER IS NOT SEMANTIC: a job's `if:` or `defaults:` may follow its
+  # `steps:`, a step's `working-directory:` may precede its `run:`. So NOTHING is emitted
+  # until the file ends — each step's lines are held with the step's own settings and the
+  # job they belong to, and resolved once every job- and workflow-level key has been seen.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
   awk -v SQ="'" "$AWK_SHELL"'
     function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(c[i]) }
     function flushblock() { if (acc != "") { held[++nheld] = acc; acc = "" } }
-    function flushstep(   i, wd) {
+    function flushstep(   i) {
       if (inblock) { flushblock(); inblock = 0 }
-      wd = (stepwd != "" ? stepwd : jobwd)
-      # A step statically disabled (`if: false`, `if: ${{ false }}`) never runs anything.
-      if (!stepoff) for (i = 1; i <= nheld; i++) emit((wd != "" && wd !~ /^[.][\/]?$/) ? "cd " wd " && " held[i] : held[i])
+      for (i = 1; i <= nheld; i++) { nh++; H[nh] = held[i]; HWD[nh] = stepwd; HOFF[nh] = stepoff; HJOB[nh] = jobidx }
       nheld = 0; stepwd = ""; stepoff = 0
     }
     function keyval(s) { sub(/^[^:]*:[ \t]*/, "", s); return unquote_scalar(stripcomment(s)) }
+    function isfalse(v) { return v ~ /^(\$\{\{[ \t]*)?false([ \t]*\}\})?$/ }
     {
       if (inblock) {
         if ($0 ~ /^[ \t]*$/) { flushblock(); next }
@@ -311,23 +332,30 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         flushblock()
         inblock = 0
       }
-      if ($0 ~ /^jobs:[ \t]*(#.*)?$/) { injobs = 1; jobind = -1; next }
-      if ($0 ~ /^[ \t]*steps:[ \t]*(#.*)?$/) { flushstep(); match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; keycol = -1; next }
+      if ($0 ~ /^[ \t]*$/ || $0 ~ /^[ \t]*#/) next
+      match($0, /^[ \t]*/); ind = RLENGTH
+      if (insteps && ind <= sind) { flushstep(); insteps = 0 }
       if (!insteps) {
-        if ($0 ~ /^[ \t]*$/ || $0 ~ /^[ \t]*#/) next
-        match($0, /^[ \t]*/)
-        if (injobs) { if (jobind < 0) jobind = RLENGTH; if (RLENGTH == jobind) jobwd = wfwd }
-        if ($0 ~ /^[ \t]*working-directory:/) { if (injobs) jobwd = keyval($0); else { wfwd = keyval($0); jobwd = wfwd } }
+        if ($0 ~ /^jobs:[ \t]*(#.*)?$/) { injobs = 1; jobind = -1; next }
+        if (injobs) {
+          if (ind == 0) { injobs = 0 }
+          else {
+            if (jobind < 0) jobind = ind
+            if (ind == jobind) { jobidx++; propind = -1; next }
+            if (propind < 0) propind = ind
+            if (ind == propind && $0 ~ /^[ \t]*if:/ && isfalse(keyval($0))) JOFF[jobidx] = 1
+          }
+        }
+        if ($0 ~ /^[ \t]*steps:[ \t]*(#.*)?$/) { sind = ind; insteps = 1; keycol = -1; next }
+        if ($0 ~ /^[ \t]*working-directory:/) { if (injobs) JWD[jobidx] = keyval($0); else wfwd = keyval($0) }
         next
       }
-      if ($0 ~ /^[ \t]*#/) next
       # RLENGTH is read into a local BEFORE flushstep(): the helpers it runs call match()
       # and sub() themselves, and a clobbered RLENGTH mis-set the key column so that every
       # step after the first in a job was silently dropped.
-      if ($0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); ind = RLENGTH; if (ind <= sind) { flushstep(); insteps = 0; if (injobs && ind == jobind) jobwd = wfwd; if ($0 ~ /^[ \t]*working-directory:/) jobwd = keyval($0); next } }
-      if (match($0, /^[ \t]*-[ \t]+/)) { ind = RLENGTH; flushstep(); keycol = ind }
+      if (match($0, /^[ \t]*-[ \t]+/)) { kc = RLENGTH; flushstep(); keycol = kc }
       if ($0 ~ /^[ \t]*(-[ \t]+)?working-directory:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol) stepwd = keyval($0) }
-      if ($0 ~ /^[ \t]*(-[ \t]+)?if:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol && keyval($0) ~ /^(\$\{\{[ \t]*)?false([ \t]*\}\})?$/) stepoff = 1 }
+      if ($0 ~ /^[ \t]*(-[ \t]+)?if:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol && isfalse(keyval($0))) stepoff = 1 }
       if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
         rest = substr($0, RSTART + RLENGTH)
         match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
@@ -336,7 +364,15 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         else held[++nheld] = unquote_scalar(rest)
       }
     }
-    END { flushstep() }
+    END {
+      flushstep()
+      for (k = 1; k <= nh; k++) {
+        j = HJOB[k]
+        if (HOFF[k] || JOFF[j]) continue
+        wd = (HWD[k] != "" ? HWD[k] : (JWD[j] != "" ? JWD[j] : wfwd))
+        emit((wd != "" && wd !~ /^[.][\/]?$/) ? "cd " wd " && " H[k] : H[k])
+      }
+    }
   ' "$1"
 }
 
@@ -400,9 +436,14 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   ' "$1"
 }
 
-_phony_targets() { # _phony_targets <Makefile> → every name declared .PHONY, one per line
+_phony_targets() { # _phony_targets <Makefile> → every name declared .PHONY, one per line (not inside a conditional/define)
   awk '
     { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
+    l ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
+    l ~ /^endif([ \t]|$)/ { if (cond) cond--; next }
+    l ~ /^define([ \t]|$)/ { indef = 1; next }
+    l ~ /^endef([ \t]|$)/ { indef = 0; next }
+    cond || indef { next }
     l ~ /^[.]PHONY[ \t]*:/ { sub(/^[.]PHONY[ \t]*:/, "", l); sub(/#.*/, "", l); n = split(l, t, /[ \t]+/); for (i = 1; i <= n; i++) if (t[i] != "") print t[i] }
   ' "$1"
 }

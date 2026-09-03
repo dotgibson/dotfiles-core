@@ -16683,6 +16683,18 @@ else
   fail "vocab: missing mandatory include not fatal (rc=$rc): $out"
 fi
 
+# AN INCLUDE INSIDE A FALSE CONDITIONAL is not followed: its targets are not appended
+# after the endif as if make had read them.
+_fv_reset; _fv_repo dotfiles-Fedora 'ifeq (1,0)\ninclude mk/verbs.mk\nendif\nlint:\n\t@true\n'
+mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "$_fv_all" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
+_fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"6 verb x repo cell(s) missing"* ]]; then
+  pass "vocab: an include inside a false conditional defines nothing"
+else
+  fail "vocab: conditional include was followed: $out"
+fi
+
 # A RULE THE SCANNER CANNOT PROVE make defines — inside a conditional or a define body —
 # is not counted: the register says "missing" rather than guess.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\ndry-run:\\n\\t@true\\nendif\\ndefine tmpl\\npackages-check:\\n\\t@true\\nendef\\n"
@@ -16862,6 +16874,14 @@ _fv_floor "make -t test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotf
 _fv_floor "make test --touch" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test --touch"'
 _fv_floor "make -kt test (t in a cluster)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -kt test"'
 _fv_floor "make -Wfile.txt test still counts (W takes an attached operand)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -Wfile.txt test"'
+# KEY ORDER IS NOT SEMANTIC, a disabled job runs no step, and `||` is a failure path.
+_fv_floor "a job-level if: false before steps" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    if: false\n    steps:\n      - run: make test\n"'
+_fv_floor "a job-level if: false after steps" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: make test\n    if: \${{ false }}\n"'
+_fv_floor "a job default working-directory declared after steps" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: make test\n    defaults:\n      run:\n        working-directory: tools\n"'
+_fv_floor "a disabled job beside an enabled one that runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  a:\n    if: false\n    steps:\n      - run: make lint\n  b:\n    steps:\n      - run: make test\n"'
+_fv_floor "true || make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "true || make test"'
+_fv_floor "make test || echo failed still runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test || echo failed"'
+_fv_floor "a .PHONY: test inside a false conditional does not rescue test: beside test/" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}ifeq (1,0)\\n.PHONY: test\\nendif\\n"; _fv_ci dotfiles-Alpine "make test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
