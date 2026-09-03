@@ -112,9 +112,10 @@ RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
 # A NO-EXECUTE MODE PARSES OR PRINTS AND RUNS NOTHING: make's dry-run (`-n` in any short
 # cluster, --dry-run/--just-print/--recon) and question (`-q`, --question) modes; a shell's
-# `-n` syntax check; node's --check. Any such flag between the command and its operand
-# disqualifies the command, wherever it appears — a workflow step or a Makefile recipe.
-NORUN_RE='(^|[[:space:]])(sudo[[:space:]]+)?(make[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nq][a-zA-Z]*|--dry-run|--just-print|--recon|--question)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*|--check|--syntax-check))([[:space:]]|$)'
+# `-n` syntax check; node's --check. For make the flag disqualifies ANYWHERE in the argument
+# list (GNU make accepts `make test -n`); for an interpreter, between it and its operand.
+# Applies wherever a command appears — a workflow step or a Makefile recipe.
+NORUN_RE='(^|[[:space:]])(sudo[[:space:]]+)?(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nq][a-zA-Z]*|--dry-run|--just-print|--recon|--question)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*|--check|--syntax-check))([[:space:]]|$)'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:
@@ -320,8 +321,9 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
   # never a nested directory or a stray notes file. _run_lines yields one simple command
   # per line; each is judged alone: the run regex, or `make` as the command (optionally
-  # under sudo/env or after `VAR=value` assignments) with a suite target anywhere among
-  # its operands (`make lint test`) — and in neither case a no-execute mode (NORUN_RE).
+  # under sudo/env or after `VAR=value` assignments) with a suite target as a WHOLE operand
+  # anywhere in its argument list (`make lint test`; not `test/report`, `test.coverage`
+  # or `test=disabled`) — and in neither case a no-execute mode (NORUN_RE).
   # Captured, not piped from the producer: under pipefail a `grep -q` that exits on an
   # early match can SIGPIPE an awk still writing, and 141 would read as "not run".
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
@@ -330,7 +332,7 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
     # long forms) is removed with its argument first, so `make -C test lint` does not read
     # the directory operand as the suite target.
     cmds="$(_run_lines "$wf" | sed -E 's/(^|[[:space:]])(-[CfIoW]|--(directory|file|makefile|include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\1/g')"
-    hits="$(grep -E "($re|^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([^[:alnum:]_-]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE")"
+    hits="$(grep -E "($re|^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([[:space:]]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE")"
     if [[ -n "$hits" ]]; then
       printf 'ok'
       return 0
