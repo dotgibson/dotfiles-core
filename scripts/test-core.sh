@@ -5735,7 +5735,10 @@ if have git && have zsh; then
       # The trap scan must cover EVERY tracked file, the first one included: bash -c puts
       # the library in $0, so a stray `shift` there silently dropped SH_FILES' first entry.
       # Plant a leaked RETURN trap in a file that sorts first and it must be named.
-      printf '#!/usr/bin/env bash\nf() { trap '"'"'echo bye'"'"' RETURN; :; }\nf\n' >"$NOR/aaa-leak.sh"
+      # Assembled from fragments, so THIS file never spells the banned shape: Core's own
+      # RETURN-trap gate scans test-core.sh too, and the literal was a finding against it.
+      _nor_sig="RET"; _nor_sig="${_nor_sig}URN"
+      printf '#!/usr/bin/env bash\nf() { %s '"'"'echo bye'"'"' %s; :; }\nf\n' trap "$_nor_sig" >"$NOR/aaa-leak.sh"
       (cd "$NOR" && git add aaa-leak.sh >/dev/null 2>&1)
       if (cd "$NOR" && make trap-guard) >"$SANDBOX/nor-legs-leak.out" 2>&1 || ! grep -q 'aaa-leak.sh:2: a RETURN trap is armed without disarming itself' "$SANDBOX/nor-legs-leak.out"; then
         _nor_legs="$_nor_legs trap-guard-missed-first-file($(tail -1 "$SANDBOX/nor-legs-leak.out"))"
@@ -5789,7 +5792,7 @@ if have git && have zsh; then
         fail "new-os-repo: the lint legs —$_nor_legs"
       fi
       rm -rf "$_nor_shim" "$_nor_min"
-      unset _nor_shim _nor_min _nor_t _nor_p _nor_legs
+      unset _nor_shim _nor_min _nor_t _nor_p _nor_legs _nor_sig
     else
       skip "new-os-repo: driving the lint legs (make unavailable)"
     fi
