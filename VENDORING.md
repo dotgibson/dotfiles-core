@@ -577,7 +577,9 @@ stamp `core.lock` for. Neither path writes that lock, so until the sync below
 `core-integrity` reports the missing lock rather than a tree verdict. The manual
 fallback, for any repo that has no `core/` (scaffolded some other way, or by the
 scaffold with `--no-vendor`), is the subtree add — it copies the whole upstream tree,
-and the first sync replaces it with the filtered set and stamps the lock:
+and the first sync replaces it with the filtered set and stamps the lock. **Commit the
+repo first**: a `--no-vendor` scaffold is unborn and uncommitted, and `subtree add`
+needs a clean `HEAD` (the recovery command the scaffold prints does this for you):
 
 ```sh
 git subtree add --prefix=core <core-remote> refs/tags/v6 --squash
@@ -597,13 +599,20 @@ hand-vendored repo as TAMPERED before it has done anything wrong.
 with no lock yet that is the only thing which can write one:
 
 ```sh
-git checkout v6                                    # in dotfiles-core
-CORE_BRANCH="$(git rev-parse v6^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>
+# in dotfiles-core — from a THROWAWAY worktree, so your own checkout stays on its branch
+git fetch origin refs/tags/v6
+git worktree add --detach /tmp/core-v6 FETCH_HEAD
+(cd /tmp/core-v6 && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>)
+git worktree remove --force /tmp/core-v6
 ```
 
-Both halves matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
+Three things matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
 and the pin must be the **peeled commit** — the release tags are annotated, so
-`refs/tags/v6` resolves to the tag object, which is never that `HEAD`.
+`refs/tags/v6` resolves to the tag object, which is never that `HEAD` (the worktree is
+detached at the peeled commit, so `HEAD^{commit}` is it); `REPOS_ROOT` is passed because
+the worktree's parent is not where your OS repos live; and it is a worktree rather than
+`git checkout v6`, because the next step below edits **this** repository to register the
+new one, and a detached checkout would strand that commit.
 
 Then register the repo **here**, which is **one line** in `scripts/os-repos.txt`:
 

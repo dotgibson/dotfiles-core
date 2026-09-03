@@ -15,15 +15,19 @@ _Repo status_ at the bottom).
 3. Replace `install/packages.txt` with that distro's names (table below).
 4. In `bootstrap.sh`: swap the `dnf` block for the distro's installer and the
    `/etc/os-release` guard string.
-5. Re-vendor Core and stamp `core.lock`, from a **Core** checkout:
-   `git checkout v6 && CORE_BRANCH="$(git rev-parse v6^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>`
+5. Re-vendor Core and stamp `core.lock`, from a **Core** checkout — in a throwaway
+   worktree, so your own checkout stays on its branch for the registration edit that
+   follows: `git fetch origin refs/tags/v6 && git worktree add --detach /tmp/core-v6 FETCH_HEAD && (cd /tmp/core-v6 && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) && git worktree remove --force /tmp/core-v6`
    — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
-   (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"). Step 1 already copied Fedora's `core/` across, so there is no
+   (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
+   § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no
    `git subtree add` to run here (it would fail: _prefix 'core' already exists_). That
    manual add is only for a repo with no `core/` at all — one scaffolded some other
-   way, or by `scripts/new-os-repo.sh --no-vendor`; a normal scaffold run materializes
-   the filtered vendor set instead (no subtree). Skip this step and `core-integrity`
-   reports the inherited tree against Fedora's lock.
+   way, or by `scripts/new-os-repo.sh --no-vendor`, which must be **committed first**
+   (`subtree add` needs a clean `HEAD`; the recovery command the scaffold prints does
+   that); a normal scaffold run materializes the filtered vendor set instead (no
+   subtree). Skip this step and `core-integrity` reports the inherited tree against
+   Fedora's lock.
 6. Update the README's "specifics" section to that distro's quirks.
 
 ## Package-manager commands

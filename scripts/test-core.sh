@@ -2553,6 +2553,9 @@ _vpn_write README.md 'pin refs/tags/v5.3.0, or refs/tags/v5.3.0: either is a fre
 _vpn_count "an exact pin followed by a comma or colon and then whitespace or end of line stays exempt" 6 0
 _vpn_write README.md 'refs/tags/v5.3.0:foo and refs/tags/v5.3.0,foo'
 _vpn_count "a comma or colon GLUED to more text (v5.3.0:foo, v5.3.0,foo) is malformed — both findings" 6 2
+# This scans root Markdown: a bold delimiter or sentence-final punctuation closes a pin.
+_vpn_write README.md 'Pin **refs/tags/v5.3.0** here. Pin refs/tags/v5.3.0! Or refs/tags/v5.3.0? Or _refs/tags/v5.3.0_'
+_vpn_count "Markdown delimiters and sentence-final ! or ? after an exact pin stay exempt" 6 0
 # A `#` glued to the word is NOT a comment — bash hands `v5.3.0#note` to git as one
 # argument — so it is a non-exact foreign ref and must be judged, not exempted.
 _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0#note --squash'
