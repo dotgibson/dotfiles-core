@@ -157,7 +157,9 @@ w() {
 # and the sync runs from a TEMPORARY DETACHED WORKTREE at FETCH_HEAD, removed afterwards:
 # checking the tag out in the reader's own Core checkout would leave it detached there,
 # and the banner then sends them "back in dotfiles-core" to register the repo — on a
-# stale tag instead of their branch.
+# stale tag instead of their branch. The subshell returns the SYNC's status, not the
+# cleanup's: `sync; cleanup` would report success after a failed sync as long as the
+# worktree removal succeeded, leaving the repo unstamped while the command said ok.
 #
 # Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
 # COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
@@ -174,7 +176,7 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # The Core-side half stands on its own too: when core/ WAS materialized and only the
 # commit after it failed, the subtree add would fail on the existing prefix, so that
 # state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
-_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && _wt=\"\$(mktemp -d)/core\" && git worktree add --detach \"\$_wt\" FETCH_HEAD && (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")); git worktree remove --force \"\$_wt\")"
+_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && _wt=\"\$(mktemp -d)/core\" && git worktree add --detach \"\$_wt\" FETCH_HEAD && (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")); _rc=\$?; git worktree remove --force \"\$_wt\" && exit \"\$_rc\")"
 _vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
@@ -672,7 +674,7 @@ snapshot() { # snapshot <dir> → one line per entry: inode mode kind path [-> t
   find "$1" -print | LC_ALL=C sort | while IFS= read -r p; do
     [[ "$p" == "$1" ]] && continue
     # shellcheck disable=SC2012  # the paths are ours (no odd names), and `find -printf` / `stat -c` are GNU-only
-    ino_mode="$(ls -ldi -- "$p" | awk '{print $1, $2}')"
+    ino_mode="$(ls -ldi "$p" | awk '{print $1, $2}')"   # no `--`: BSD ls; the paths are our own absolute sandbox paths
     if [[ -L "$p" ]]; then printf '%s L %s -> %s\n' "$ino_mode" "$p" "$(readlink "$p")"
     elif [[ -d "$p" ]]; then printf '%s D %s\n' "$ino_mode" "$p"
     else printf '%s F %s %s\n' "$ino_mode" "$p" "$(cksum <"$p" | awk '{print $1, $2}')"; fi
