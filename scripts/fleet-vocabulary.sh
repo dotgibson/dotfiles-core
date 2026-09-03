@@ -115,7 +115,14 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
     # far beyond any fleet Makefile.
     ((depth < 4)) || return 1
     kind="${line#@@INCLUDE }"; inc="${kind#* }"; kind="${kind%% *}"
-    [[ -n "$inc" && "$inc" != *'$'* ]] || continue
+    [[ -n "$inc" ]] || continue
+    # A path carrying `$(…)` cannot be resolved without evaluating make. Optional forms are
+    # skipped (absence is tolerated either way); a MANDATORY one fails closed — it may well
+    # name a file that is not there, and make would abort on it.
+    if [[ "$inc" == *'$'* ]]; then
+      [[ "$kind" == include ]] && return 1
+      continue
+    fi
     if [[ "$inc" == *[\*\?\[]* ]]; then
       found=0
       # shellcheck disable=SC2086  # $inc IS the glob: a make include operand is word-split and expanded, as make does
@@ -205,7 +212,7 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternat
 # code-string modes -e/-p/--eval/--print; for python: -c (the operand is source text, not
 # a file — a shell's -c, by contrast, executes its string) and the compile- or lint-only
 # modules (`-m compileall tests/` byte-compiles; pyflakes/pylint/flake8/mypy/black/ruff/
-# isort read the files and run nothing), and pytest`s own non-executing modes
+# isort read the files and run nothing), and pytest's own non-executing modes
 # (--collect-only/--co, --version, -h/--help) anywhere in its argument list. For every interpreter: its
 # help and version modes (--help/--version, -h/-V, pwsh -Help/-Version/-?), which print
 # and exit without touching the operand.
@@ -220,8 +227,9 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     cdnorm decides reachability for the decidable pairs: `true || make test` and
 #     `false && make test` never reach make; `false || make test` always does. A shell
 #     function's body counts only if the function is invoked (fnbodies).
-#   * stripcomment — a shell comment (`#` at the start, or after whitespace) OUTSIDE
-#     quotes, so `echo "value #"; make test` keeps its make.
+#   * stripcomment — a shell comment (`#` at the start, after whitespace, or right after
+#     a control operator: `:;# …`) OUTSIDE quotes, so `echo "value #"; make test` keeps
+#     its make and `:;# disabled && make test` has none.
 #   * unquote_scalar — a YAML flow scalar: a fully "…"- or '…'-quoted value yields its
 #     contents (with `\"` and `''` unescaped), anything after the closing quote being a
 #     YAML comment; a plain value is returned as is (its ` #` comment is shell text too,
@@ -270,7 +278,7 @@ AWK_SHELL='
       if (q != "") { if (c == q) q = ""; prev = c; continue }
       if (c == "\\") { i++; prev = c; continue }
       if (c == "\"" || c == SQ) { q = c; prev = c; continue }
-      if (c == "#" && prev ~ /[ \t]/) return substr(s, 1, i - 1)
+      if (c == "#" && prev ~ /[ \t;&|(]/) return substr(s, 1, i - 1)
       prev = c
     }
     return s
@@ -288,7 +296,7 @@ AWK_SHELL='
       if (fn == "" && match(t, /^(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*(\(\))?[ \t]*\{/)) {
         if (t ~ /^function[ \t]/ || t ~ /\(\)/) {
           fn = t; sub(/^function[ \t]+/, "", fn); sub(/[ \t]*(\(\))?[ \t]*\{.*$/, "", fn)
-          FNAME[fn] = 1
+          FNAME[fn] = i
           depth = 1; t = substr(t, RLENGTH + 1); c[i] = trim(t)
           if (c[i] == "") { BODY[i] = "@"; continue }
         }
@@ -311,10 +319,35 @@ AWK_SHELL='
     cdpass(c2, n, 0)
     cdpass(c, n, 1)
   }
-  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer) {
+  # lit(t) — the static status of one command: "true", "false", or "" (unknown).
+  function lit(t) { return (t == "true" || t == ":") ? "true" : ((t == "false") ? "false" : "") }
+  # condlist(c, n, i, first) — a COMPOUND condition `if a && b || c; then` was split at its
+  # operators before the `if` was seen. Starting from the condition text `first` at index
+  # i, fold the following `&&`/`||` arms (up to the command that begins with then/do) into
+  # one static status with three-valued logic — `unknown && false` is false, `unknown ||
+  # true` is true, the rest unknown — and mark each folded arm in COND with the command
+  # it contributes (its text when it can run, "" when a literal or unreachable), and
+  # CONDEND with the last index folded. Returns the status.
+  function condlist(c, n, i, first,   j, r, t, op, a) {
+    r = lit(first); CONDEND = i; split("", COND)
+    for (j = i + 1; j <= n; j++) {
+      op = SPLITOP[j]
+      if (op != "&&" && op != "||") break
+      t = trim(c[j])
+      if (t ~ /^(then|do)([ \t]|$)/) break
+      a = lit(t)
+      if (op == "&&") { if (r == "false") { COND[j] = ""; } else { COND[j] = (a == "" ? t : ""); r = (a == "false") ? "false" : ((a == "true") ? r : ((r == "false") ? "false" : "")) } }
+      else            { if (r == "true")  { COND[j] = ""; } else { COND[j] = (a == "" ? t : ""); r = (a == "true") ? "true" : ((a == "false") ? r : ((r == "true") ? "true" : "")) } }
+      CONDEND = j
+    }
+    return r
+  }
+  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r) {
     d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0
-    split("", TAKEN); split("", SKIPD)
+    split("", TAKEN); split("", SKIPD); split("", COND)
     for (i = 1; i <= n; i++) {
+      # An arm folded into a preceding compound condition: emit what condlist decided.
+      if (i in COND) { c[i] = (skip ? "" : COND[i]); continue }
       if ((i in BODY) && (BODY[i] == "@" || !(BODY[i] in INVOKED))) { c[i] = ""; continue }
       # Reachability, for the statically decidable pairs. `st` is the status of the AND-OR
       # list EVALUATED so far — "true" after a literal true/`:`, "false" after a literal
@@ -345,26 +378,31 @@ AWK_SHELL='
         outer = 0; for (lvl = 1; lvl < nest; lvl++) if (SKIPD[lvl]) outer = 1
         m = ""
         if (nest) {
-          m = (t ~ /^false([ \t]|$)/) ? "false" : ((t ~ /^(true|:)([ \t]|$)/) ? "true" : "")
+          m = condlist(c, n, i, t)
+          if (outer || TAKEN[nest] == "yes") for (w in COND) COND[w] = ""
           if (TAKEN[nest] == "yes") SKIPD[nest] = 1
           else if (m == "false") SKIPD[nest] = 1
           else { SKIPD[nest] = 0; TAKEN[nest] = (m == "true" && TAKEN[nest] == "no") ? "yes" : "" }
         }
         # An elif condition runs when no earlier branch was taken and the if is reachable.
-        c[i] = (nest && m == "" && !outer && TAKEN[nest] != "yes") ? t : ""
+        c[i] = (nest && lit(t) == "" && !outer && TAKEN[nest] != "yes") ? t : ""
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; continue
       }
       if (term) { c[i] = ""; continue }
       if (t ~ /^if([ \t]|$)/) {
         # The CONDITION is a command that runs (when the `if` itself is reachable):
         # `if make test; then …` executes the suite. A literal true/false is not a command.
+        # A compound condition is folded by condlist (three-valued), its arms emitted or
+        # dropped as decided there.
         outer = skip
+        sub(/^if[ \t]*/, "", t)
+        m = condlist(c, n, i, t)
+        if (outer) for (w in COND) COND[w] = ""
         nest++
-        m = (t ~ /^if[ \t]+false([ \t]|$)/) ? "false" : ((t ~ /^if[ \t]+(true|:)([ \t]|$)/) ? "true" : "")
         TAKEN[nest] = (m == "true") ? "yes" : ((m == "false") ? "no" : "")
         SKIPD[nest] = (m == "false")
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
-        if (m == "" && !outer) { sub(/^if[ \t]+/, "", t); c[i] = t } else c[i] = ""
+        c[i] = (lit(t) == "" && !outer && t != "") ? t : ""
         continue
       }
       if (t ~ /^fi([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
@@ -373,13 +411,23 @@ AWK_SHELL='
       # level like an `if`, closed by `done`.
       if (t ~ /^(while|until|for)([ \t]|$)/) {
         outer = skip
+        # `while false`, `until true` and `for x in;` (an empty literal list) never run
+        # their body. A while/until condition that is a real command runs at least once;
+        # a compound one is folded like an if condition.
+        if (t ~ /^for([ \t]|$)/) { m = (t ~ /^for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in[ \t]*$/) ? "false" : ""; r = "" }
+        else {
+          kw = (t ~ /^while/) ? "while" : "until"
+          sub(/^(while|until)[ \t]*/, "", t)
+          r = condlist(c, n, i, t)
+          if (outer) for (w in COND) COND[w] = ""
+          m = (kw == "while") ? ((r == "false") ? "false" : "") : ((r == "true") ? "false" : "")
+        }
         nest++
         TAKEN[nest] = ""
-        # `while false`, `until true` and `for x in;` (an empty literal list) never run
-        # their body. A while/until condition that is a real command runs at least once.
-        SKIPD[nest] = (t ~ /^while[ \t]+false([ \t]|$)/ || t ~ /^until[ \t]+(true|:)([ \t]|$)/ || t ~ /^for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in[ \t]*$/)
+        SKIPD[nest] = (m == "false")
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
-        if (t ~ /^(while|until)[ \t]/ && t !~ /^(while|until)[ \t]+(true|false|:)([ \t]|$)/ && !outer) { sub(/^(while|until)[ \t]+/, "", t); c[i] = t } else c[i] = ""
+        c[i] = (t !~ /^for/ && lit(t) == "" && !outer && t != "" && kw != "") ? t : ""
+        kw = ""
         continue
       }
       if (t ~ /^done([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
@@ -393,7 +441,9 @@ AWK_SHELL='
       # after it is reachable; inside a block, nothing further in that block is.
       if (t ~ /^(exit|exec|return)([ \t]|$)/) { if (nest == 0) term = 1; else SKIPD[nest] = 1; skip = 1; c[i] = ""; continue }
       c[i] = t
-      if (!final) { w = t; sub(/[ \t].*$/, "", w); if (w in FNAME) INVOKED[w] = 1 }
+      # A call counts only AFTER the definition (FNAME holds its index): `suite; suite() {…}`
+      # fails at the call and never reaches the body.
+      if (!final) { w = t; sub(/[ \t].*$/, "", w); if ((w in FNAME) && FNAME[w] < i) INVOKED[w] = 1 }
       if (match(t, /^cd[ \t]+/)) {
         d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
         if (d ~ /^tests?$/) { x = 0; continue }

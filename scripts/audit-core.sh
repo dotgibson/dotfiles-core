@@ -1238,8 +1238,8 @@ fi
 # (an alias TO it is fine — the requirement is that the canonical name resolves; a verb a
 # repo genuinely lacks is a stub target that says so, never declared away)
 # and whether the repo meets the test floor: a test/ (or tests/) directory with content,
-# run from a workflow. Same shape as the register above, same declaration file, and the
-# same advisory posture — this is fleet drift, not a regression in the commit under test.
+# run from a workflow. Same shape as the register above and the same advisory posture —
+# this is fleet drift, not a regression in the commit under test.
 hdr "Makefile vocabulary x repo register + test floor (advisory)"
 if [[ ! -x "$HERE/scripts/fleet-vocabulary.sh" ]]; then
   skip "vocabulary register (scripts/fleet-vocabulary.sh missing — out of scope)"

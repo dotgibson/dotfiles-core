@@ -16662,6 +16662,22 @@ else
   fail "vocab: no-Makefile case: $out"
 fi
 
+# A MANDATORY INCLUDE WITH A VARIABLE PATH cannot be resolved and fails closed; an
+# optional one is skipped.
+_fv_reset; _fv_repo dotfiles-Fedora "INC = missing.mk\\ninclude \$(INC)\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then
+  pass "vocab: \`include \$(INC)\` (mandatory, unevaluable) voids the Makefile"
+else
+  fail "vocab: variable mandatory include failed open: $out"
+fi
+_fv_reset; _fv_repo dotfiles-Fedora "INC = missing.mk\\n-include \$(INC)\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then
+  pass "vocab: \`-include \$(INC)\` (optional, unevaluable) is skipped"
+else
+  fail "vocab: variable optional include not skipped: $out"
+fi
+
 # A CONTINUED INCLUDE DIRECTIVE is one directive.
 _fv_reset; _fv_repo dotfiles-Fedora 'include \\\n  mk/verbs.mk\nlint:\n\t@true\n'
 mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
@@ -17004,6 +17020,16 @@ _fv_floor "if make test; then … runs the suite as the condition" 'ok' '_fv_sui
 _fv_floor "while make test; do break; done runs it at least once" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while make test; do break; done"'
 _fv_floor "for t in; do make test; done never iterates" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for t in; do make test; done"'
 _fv_floor "false & make test backgrounds false and runs make" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false & make test"'
+# A COMMENT RIGHT AFTER AN OPERATOR, a compound condition folded before the if is judged,
+# and a call before its definition.
+_fv_floor ":;# disabled && make test is a comment" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine ":;# disabled && make test"'
+_fv_floor "if true && false; then make test; fi never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true && false; then make test; fi"'
+_fv_floor "if false || true; then make test; fi runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false || true; then make test; fi"'
+_fv_floor "if [ -n x ] && false; then make test; fi never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ] && false; then make test; fi"'
+_fv_floor "if false && make test; then …: the suite arm is unreachable" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false && make test; then echo yes; fi"'
+_fv_floor "if true && make test; then …: the suite arm runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true && make test; then echo yes; fi"'
+_fv_floor "while true && false; do make test; done never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while true && false; do make test; done"'
+_fv_floor "a call before the definition is not an invocation" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite; suite() { make test; }"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
