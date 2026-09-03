@@ -205,7 +205,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   run was `unmeasurable` by apparatus limit. `SOCK` now follows the measured version, the
   hermetic stub binds where a real daemon of the version it claims binds, and a new
   `test-core.sh` §J4 case (a healing stub claiming 18.20.0) pins it. The runtime guard in
-  `zsh/00-tools.zsh` already probed the new path first; only the research apparatus was behind.
+  `zsh/00-tools.zsh` already probed the new path first; only the research apparatus was behind —
+  and `PORTING-MATRIX.md`'s socket-path footnote, which still said the move had shipped in no
+  release, now says 18.20.0 and records the `0700` rule.
 - **`maint-install <tab>` (and now `core maint install <tab>`) no longer throws a parse
   error (#684).** The completion's `_arguments` spec described the operand as
   `(HH:MM, 24h)` with a bare colon, which `_arguments` reads as the message/action

@@ -441,29 +441,29 @@ differs per machine is how the daemon gets **launched**, so that half lives in t
 | macOS                                                                | same as Alpine: `autostart` beats hand-writing a launchd plist — the socket path is atuin's own to resolve (see the note below the table)                                                                                        | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
 | Windows                                                              | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell                                                                                                                                | —                                                             |
 
-**Where the daemon socket lives is changing, and has NOT shipped in any release yet.**
-Upstream PR #3910 (merged 2026-08-12) changes the default for `systemd_socket = false` — the
-shape Core recommends — from `$XDG_RUNTIME_DIR/atuin.sock` (falling back to
-`$XDG_DATA_HOME/atuin/atuin.sock` where that is unset) to **`$TMPDIR/atuin-$UID/atuin.sock`**.
-`systemd_socket = true` is unchanged.
+**Where the daemon socket lives moved in 18.20.0.** Upstream PR #3910 (merged 2026-08-12,
+shipped in v18.20.0) changed the default for `systemd_socket = false` — the shape Core
+recommends — from `$XDG_RUNTIME_DIR/atuin.sock` (falling back to `$XDG_DATA_HOME/atuin/atuin.sock`
+where that is unset) to **`$TMPDIR/atuin-$UID/atuin.sock`**. `systemd_socket = true` is
+unchanged. Measured here on 18.21.0, not read off the changelog: the binary's own
+`default-config` documents the new path, a daemon started in a sandbox binds there, and it
+**refuses a socket directory it did not create unless that directory is exactly `0700`**
+(`incorrect permissions (expected 700, got 755)`) — a box that pre-creates `atuin-$UID` with
+an ordinary umask gets a daemon that exits before binding, which from the socket looks like
+one that never started. (An earlier version of this note said the move had landed in no
+release; it dated the change by its merge, after `v18.20.0-beta.3`, and was wrong about the
+stable that followed.)
 
-**This note used to say the move landed in 18.20.0. It has landed in no release, stable or
-beta.** #3910 merged 2026-08-12, _after_ `v18.20.0-beta.3` (2026-08-07); the newest stable is
-**18.19.0** (2026-08-03), which still resolves the old path. Date the change by its merge, not
-by a version, until a release actually carries it — naming an unshipped version is how a
-reader concludes their box is already on the new path.
-
-Two consequences worth recording, both stated against the merged behaviour rather than a
-release. The old macOS reasoning — "`XDG_RUNTIME_DIR` is unset there so the socket lands in
-the data dir" — stops being true, and macOS's per-user `$TMPDIR` actually _unifies_ macOS and
-Linux rather than splitting them. And atuin's own client gained a legacy search list, while
-Core's guard resolved exactly one expression: once this ships it would have probed a path
-nothing binds, exported `ATUIN_DAEMON__ENABLED=false` at every shell's first precmd and
-unhooked the watchdog — permanently, and with **no warning**, because
-`_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path. Fixed pre-emptively in #518: the guard
-now probes the new default and both legacy paths, newest first, so it follows a daemon across
-the version boundary in either direction. Being ahead of upstream here is the right
-direction — only the prose claiming a shipped version was wrong.
+Two consequences worth recording. The old macOS reasoning — "`XDG_RUNTIME_DIR` is unset there
+so the socket lands in the data dir" — stopped being true, and macOS's per-user `$TMPDIR`
+actually _unifies_ macOS and Linux rather than splitting them. And atuin's own client gained a
+legacy search list, while Core's guard resolved exactly one expression: on 18.20+ it would have
+probed a path nothing binds, exported `ATUIN_DAEMON__ENABLED=false` at every shell's first
+precmd and unhooked the watchdog — permanently, and with **no warning**, because
+`_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path. Fixed ahead of the release in #518: the
+guard probes the new default and both legacy paths, newest first, so it follows a daemon
+across the version boundary in either direction. The research apparatus was the part that
+fell behind — its autostart measurement still waited on the old path until #826.
 
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
