@@ -5759,6 +5759,7 @@ if have git; then
     # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
     grep -qF '{ git worktree add --detach "$_wt" FETCH_HEAD || { rmdir "$_wtp"; false; }; } && { _o="$( (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad add-failure-removes-own-parent+cleanup-nested+captured-sync"
+    grep -qF 'mktemp -d "${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX"' <<<"$_rc_cmd" || _rc_bad="$_rc_bad mktemp-without-template(BSD mktemp needs one)"
     grep -qF 'CORE_COLOR=never REPOS_ROOT=' <<<"$_rc_cmd" || _rc_bad="$_rc_bad color-off-for-the-summary"
     grep -qF '_l="$(awk '"'"'/^ *repos: /{l=$0} END{print l}'"'"' <<<"$_o")"; if grep -Eq '"'"'^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$'"'"' <<<"$_l"; then _rc=0; else _rc=1; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad last-row-summary-verdict+parent-removed"
     grep -qF ') 2>&1)" || true; printf ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad capture-is-errexit-safe"
@@ -5780,7 +5781,7 @@ if have git; then
       # mktemp is pointed INSIDE the sandbox so the parent's removal can be asserted.
       d="$(printf '%s' "$_rc_sub" |
         sed -e 's|git fetch [^&]* && |true \&\& |' \
-            -e "s|mktemp -d|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
+            -e "s|mktemp -d \"[^\"]*\"|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
             -e 's|git worktree add --detach "$_wt" FETCH_HEAD|mkdir -p "$_wt"|' \
             -e "s|\./scripts/sync-core\.sh [^)]*)|$1)|" \
             -e "s|git worktree remove --force \"\$_wt\"|$2 \"\$_wt\"|")"
@@ -5843,7 +5844,7 @@ if have git; then
     # leaves a marker; the marker must not appear and the status must be non-zero.
     _rc_dr="$(printf '%s' "$_rc_sub" |
       sed -e 's|git fetch [^&]* && |true \&\& |' \
-          -e "s|mktemp -d|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
+          -e "s|mktemp -d \"[^\"]*\"|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
           -e 's|git worktree add --detach "$_wt" FETCH_HEAD|false|' \
           -e "s|git worktree remove --force \"\$_wt\"|touch '$SANDBOX/recovery/cleanup-ran'|")"
     (cd "$SANDBOX/recovery" && _wt=/should/never/be/touched bash -e -c "$_rc_dr") >/dev/null 2>&1; _rc_addfail=$?
