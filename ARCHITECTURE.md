@@ -202,9 +202,8 @@ sanctioned writer of that file):
 
 ```bash
 # in dotfiles-core — from a THROWAWAY worktree, so your own checkout stays on its branch
-git fetch origin refs/tags/v6
-wt="$(mktemp -d)/core"
-git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; } && {   # a failed add removes the parent it just made, and stops
+git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" &&   # one chain: a failed fetch stops here, never reusing a stale FETCH_HEAD
+  { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && {   # a failed add removes the parent it just made, and stops
   if (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); then rc=0; else rc=$?; fi   # an `if` condition: `set -e` cannot skip the cleanup
   git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc")   # cleanup only once the add succeeded; the sync's status is the verdict
 }
