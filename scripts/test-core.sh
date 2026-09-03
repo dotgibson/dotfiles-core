@@ -5577,6 +5577,15 @@ if have git && have zsh; then
   rm -rf "$NOR"
   # --no-vendor: skip the `git subtree add`, which is the only network call in the
   # script. Everything this asserts is written before/independently of it.
+  # BORN ON main, whatever the author's init.defaultBranch says (here forced to trunk):
+  # the scaffolded workflows filter pushes to [main, master], so any other birth branch
+  # would leave the repo with no push-triggered CI — the floor's "CI runs it" rung gone.
+  if env -u CORE_JSON GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=init.defaultBranch GIT_CONFIG_VALUE_0=trunk bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/nor-trunk" >/dev/null 2>&1 && [[ "$(git -C "$SANDBOX/nor-trunk" symbolic-ref --short HEAD 2>/dev/null)" == main ]]; then
+    pass "new-os-repo: the scaffold is born on main even under init.defaultBranch=trunk (the workflows' push filter cannot miss it)"
+  else
+    fail "new-os-repo: under init.defaultBranch=trunk the scaffold landed on '$(git -C "$SANDBOX/nor-trunk" symbolic-ref --short HEAD 2>/dev/null)', not main"
+  fi
+  rm -rf "$SANDBOX/nor-trunk"
   if env -u CORE_JSON bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
     _nor_bad=""
     for _nor_f in zshenv zprofile zshrc; do
@@ -5611,6 +5620,332 @@ if have git && have zsh; then
     else
       fail "new-os-repo: scaffolded entry file(s) fail zsh -n —$_nor_syn"
     fi
+
+    # ── #691: born meeting the fleet's make vocabulary and the test floor ──────────
+    # The scaffold is the OTHER way a repo enters the fleet (the first is `cp -r
+    # dotfiles-Fedora`), and until this landed it stamped no Makefile and no test/ — so a
+    # greenfield repo was **missing** across its whole row of the vocabulary register the
+    # day it joined scripts/os-repos.txt. These pin that it now is not, and they judge it
+    # with the SAME script that judges the fleet, not a re-implementation of its rules.
+    #
+    # Every generated gate must clear the make-gate rule (#775) the fleet is held to. A
+    # template that ships the broken guard shape would seed it into every future repo.
+    _nor_mg="$(_core_make_gate_hits "$NOR")"
+    if [[ -z "$_nor_mg" ]]; then
+      pass "new-os-repo: the scaffolded Makefile clears the #775 make-gate rule"
+    else
+      fail "new-os-repo: a scaffolded Makefile gate cannot do what it says — $_nor_mg"
+    fi
+    _nor_syn=""
+    for _nor_f in bootstrap.sh test/check-links.sh; do
+      bash -n "$NOR/$_nor_f" 2>/dev/null || _nor_syn="$_nor_syn $_nor_f"
+    done
+    [[ -x "$NOR/test/check-links.sh" ]] || _nor_syn="$_nor_syn test/check-links.sh(not executable)"
+    if [[ -z "$_nor_syn" ]]; then
+      pass "new-os-repo: bootstrap.sh and test/check-links.sh parse, and the suite is executable"
+    else
+      fail "new-os-repo: scaffolded bash is broken —$_nor_syn"
+    fi
+    if have shellcheck; then
+      # The reusable gate's exact opts (lint-call.yml), which the scaffolded Makefile exports too.
+      if (cd "$NOR" && SHELLCHECK_OPTS="-e SC1090 -e SC1091 -e SC2015 -e SC2088" shellcheck -x bootstrap.sh test/check-links.sh) >/dev/null 2>&1; then
+        pass "new-os-repo: the scaffolded bash is shellcheck-clean under the fleet gate's options"
+      else
+        fail "new-os-repo: scaffolded bash fails shellcheck: $(cd "$NOR" && SHELLCHECK_OPTS="-e SC1090 -e SC1091 -e SC2015 -e SC2088" shellcheck -x bootstrap.sh test/check-links.sh 2>&1 | head -5 | tr '\n' ' ')"
+      fi
+    else
+      skip "new-os-repo: shellcheck over the scaffolded bash (shellcheck unavailable)"
+    fi
+    if have actionlint; then
+      if actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" >/dev/null 2>&1; then
+        pass "new-os-repo: the scaffolded test and lint workflows pass actionlint"
+      else
+        fail "new-os-repo: a scaffolded workflow fails actionlint: $(actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" 2>&1 | head -3 | tr '\n' ' ')"
+      fi
+    else
+      skip "new-os-repo: actionlint over the scaffolded workflows (actionlint unavailable)"
+    fi
+    # The lint caller pins the CURRENT major, read from core.version — the Makefile's
+    # claim that the gate's other legs run in CI is only true if this caller exists and
+    # points at a live major.
+    _nor_major="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+    if grep -qF "uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v$_nor_major" "$NOR/.github/workflows/lint.yml" 2>/dev/null; then
+      pass "new-os-repo: the scaffolded lint caller uses lint-call.yml@v$_nor_major (core.version's major, not a typed one)"
+    else
+      fail "new-os-repo: the scaffolded lint caller is missing or pins a foreign major (want @v$_nor_major): $(grep -h 'uses:' "$NOR/.github/workflows/lint.yml" 2>/dev/null)"
+    fi
+    unset _nor_major
+    # The suite is a TEST, not an `exit 0` stub — run it, in both states the scaffold
+    # actually produces. AS GENERATED with --no-vendor there is no core/ at all, and the
+    # starter bootstrap refuses to run without one — correctly: a bootstrap that links
+    # nothing from Core and reports "done" is the quiet failure. So the honest assertion
+    # for that state is that the suite goes RED and names the cause. A first draft
+    # manufactured an empty core/ here and called it the --no-vendor state, which the
+    # scaffold never produces and which masked exactly this refusal.
+    if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-suite.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed on an UNVENDORED scaffold (no core/) — it would sign off a repo that links nothing from Core"
+    elif grep -q 'core/ subtree missing' "$SANDBOX/nor-suite.out"; then
+      pass "new-os-repo: as generated with --no-vendor (no core/), the suite fails loudly and names the missing core/"
+    else
+      fail "new-os-repo: the suite failed on the unvendored scaffold but did not say why — $(head -3 "$SANDBOX/nor-suite.out" | tr '\n' ' ')"
+    fi
+    # A core/ that EXISTS but is empty is the state between a bad vendor and a good one,
+    # and it is the one bootstrap accepts: the suite must still go red, naming the loader
+    # the scaffolded zshrc cannot live without — every other Core link is conditional.
+    mkdir -p "$NOR/core"
+    if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-empty.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed with an EMPTY core/ — it would sign off a repo whose shells start bare"
+    elif grep -q 'core/zsh/loader.zsh is missing' "$SANDBOX/nor-empty.out"; then
+      pass "new-os-repo: with a core/ that lacks zsh/loader.zsh, the suite fails and names the loader"
+    else
+      fail "new-os-repo: the empty-core/ run failed but did not name the loader — $(grep FAIL "$SANDBOX/nor-empty.out" | head -2 | tr '\n' ' ')"
+    fi
+    # Then the VENDORED state: core/ seeded from Core's OWN tree — the same directories
+    # bootstrap.sh links — so the Core-provided branches (every zsh module, both tmux
+    # files, the single configs, mise-as-copy) are exercised rather than skipped.
+    for _nor_d in zsh tmux starship nvim git mise; do
+      [[ -d "$HERE/$_nor_d" ]] && cp -r "$HERE/$_nor_d" "$NOR/core/"
+    done
+    # ...and the three vendored files the lint legs read: the scanners, the pinned tool
+    # versions and the ONE secrets policy (all in core.vendor, so a real vendor has them).
+    mkdir -p "$NOR/core/scripts/lib"
+    cp "$HERE/scripts/lib/common.sh" "$NOR/core/scripts/lib/"
+    cp "$HERE/scripts/tool-versions.env" "$NOR/core/scripts/"
+    cp "$HERE/gitleaks.toml" "$NOR/core/"
+    # THE LINT LEGS, each driven both ways through PATH shims, so the fixture does not
+    # depend on which linters this box happens to have. A shim dir with fake
+    # markdownlint-cli2 / actionlint / gitleaks that RECORD their argv and exit 0 proves
+    # each leg invokes its tool, on the right files, against Core's policy file; the same
+    # shims exiting 1 prove a finding fails the leg; and a PATH holding only what make
+    # and the recipes need (no linters, no npx) proves the absent-tool path SAYS it
+    # skipped and still exits 0 — a silent skip is the failure mode #775 is about. The
+    # two scanner legs need no tool: they run for real against the vendored common.sh.
+    if have make; then
+      _nor_shim="$SANDBOX/nor-shim"; _nor_min="$SANDBOX/nor-minbin"
+      rm -rf "$_nor_shim" "$_nor_min"; mkdir -p "$_nor_shim" "$_nor_min"
+      for _nor_t in markdownlint-cli2 actionlint gitleaks; do
+        printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" >"%s/%s.argv"\nexit "${NOR_SHIM_RC:-0}"\n' "$_nor_shim" "$_nor_t" >"$_nor_shim/$_nor_t"
+        chmod +x "$_nor_shim/$_nor_t"
+      done
+      for _nor_t in sh bash make git sed grep awk cat env; do
+        _nor_p="$(command -v "$_nor_t" 2>/dev/null)" && ln -s "$_nor_p" "$_nor_min/$_nor_t"
+      done
+      (cd "$NOR" && git add -A >/dev/null 2>&1 && git -c user.email=t@example.com -c user.name=tester commit -q -m 'scaffold + seeded core' >/dev/null 2>&1)
+      _nor_legs=""
+      # The trap scan must cover EVERY tracked file, the first one included: bash -c puts
+      # the library in $0, so a stray `shift` there silently dropped SH_FILES' first entry.
+      # Plant a leaked RETURN trap in a file that sorts first and it must be named.
+      # Assembled from fragments, so THIS file never spells the banned shape: Core's own
+      # RETURN-trap gate scans test-core.sh too, and the literal was a finding against it.
+      _nor_sig="RET"; _nor_sig="${_nor_sig}URN"
+      printf '#!/usr/bin/env bash\nf() { %s '"'"'echo bye'"'"' %s; :; }\nf\n' trap "$_nor_sig" >"$NOR/aaa-leak.sh"
+      (cd "$NOR" && git add aaa-leak.sh >/dev/null 2>&1)
+      if (cd "$NOR" && make trap-guard) >"$SANDBOX/nor-legs-leak.out" 2>&1 || ! grep -q 'aaa-leak.sh:2: a RETURN trap is armed without disarming itself' "$SANDBOX/nor-legs-leak.out"; then
+        _nor_legs="$_nor_legs trap-guard-missed-first-file($(tail -1 "$SANDBOX/nor-legs-leak.out"))"
+      fi
+      (cd "$NOR" && git rm -q -f aaa-leak.sh >/dev/null 2>&1); command rm -f "$NOR/aaa-leak.sh"
+      if ! (cd "$NOR" && make trap-guard make-gate) >"$SANDBOX/nor-legs-scan.out" 2>&1; then
+        _nor_legs="$_nor_legs scanners-red($(tail -1 "$SANDBOX/nor-legs-scan.out"))"
+      elif ! grep -q 'RETURN traps disarm themselves' "$SANDBOX/nor-legs-scan.out" || ! grep -q 'every Makefile gate skips' "$SANDBOX/nor-legs-scan.out"; then
+        _nor_legs="$_nor_legs scanners-silent"
+      fi
+      if ! (cd "$NOR" && PATH="$_nor_shim:$PATH" make markdownlint actionlint secrets) >"$SANDBOX/nor-legs-tools.out" 2>&1; then
+        _nor_legs="$_nor_legs tools-red($(tail -1 "$SANDBOX/nor-legs-tools.out"))"
+      else
+        grep -q 'README.md' "$_nor_shim/markdownlint-cli2.argv" 2>/dev/null || _nor_legs="$_nor_legs markdownlint-not-given-README"
+        grep -q 'core/' "$_nor_shim/markdownlint-cli2.argv" 2>/dev/null && _nor_legs="$_nor_legs markdownlint-given-core/"
+        [[ -e "$_nor_shim/actionlint.argv" ]] || _nor_legs="$_nor_legs actionlint-not-run"
+        grep -qx 'core/gitleaks.toml' "$_nor_shim/gitleaks.argv" 2>/dev/null || _nor_legs="$_nor_legs gitleaks-not-on-Core-policy"
+      fi
+      if (cd "$NOR" && NOR_SHIM_RC=1 PATH="$_nor_shim:$PATH" make markdownlint) >/dev/null 2>&1; then _nor_legs="$_nor_legs markdownlint-finding-ignored"; fi
+      if (cd "$NOR" && NOR_SHIM_RC=1 PATH="$_nor_shim:$PATH" make secrets) >/dev/null 2>&1; then _nor_legs="$_nor_legs secrets-finding-ignored"; fi
+      if ! (cd "$NOR" && env -i PATH="$_nor_min" HOME="$HOME" make shellcheck markdownlint actionlint secrets) >"$SANDBOX/nor-legs-absent.out" 2>&1; then
+        _nor_legs="$_nor_legs absent-tool-red($(tail -1 "$SANDBOX/nor-legs-absent.out"))"
+      elif [[ "$(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-absent.out")" != 4 ]]; then
+        _nor_legs="$_nor_legs absent-tool-silent($(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-absent.out")/4)"
+      fi
+      # The capability leg: a vendored Core older than v4.19.0 has no validator, and the
+      # gate's leg skips there — so must this one, saying so; with the validator vendored
+      # it must run and pass on the Fedora-verb stub the scaffold writes.
+      if ! (cd "$NOR" && make capabilities) >"$SANDBOX/nor-legs-cap.out" 2>&1 || ! grep -q 'not vendored (Core older than v4.19.0) — skipped' "$SANDBOX/nor-legs-cap.out"; then
+        _nor_legs="$_nor_legs capabilities-without-validator($(tail -1 "$SANDBOX/nor-legs-cap.out"))"
+      fi
+      cp "$HERE/scripts/check-capabilities.sh" "$NOR/core/scripts/" && chmod +x "$NOR/core/scripts/check-capabilities.sh"
+      mkdir -p "$NOR/core/examples" && cp "$HERE/examples/os.capabilities.example" "$NOR/core/examples/" 2>/dev/null
+      if ! (cd "$NOR" && make capabilities) >"$SANDBOX/nor-legs-cap2.out" 2>&1 || grep -q 'skipped' "$SANDBOX/nor-legs-cap2.out"; then
+        _nor_legs="$_nor_legs capabilities-with-validator($(tail -1 "$SANDBOX/nor-legs-cap2.out"))"
+      fi
+      # A vendored Core OLDER than the scanners: an empty common.sh (no
+      # _core_return_trap_hits, no _core_make_gate_hits) and no gitleaks.toml. Each of the
+      # three legs must say it skipped and exit 0 — never scan nothing and pass.
+      command cp "$NOR/core/scripts/lib/common.sh" "$SANDBOX/nor-common.bak"
+      : >"$NOR/core/scripts/lib/common.sh"; command rm -f "$NOR/core/gitleaks.toml" "$_nor_shim/gitleaks.argv"
+      if ! (cd "$NOR" && PATH="$_nor_shim:$PATH" make trap-guard make-gate secrets) >"$SANDBOX/nor-legs-old.out" 2>&1; then
+        _nor_legs="$_nor_legs old-core-red($(tail -1 "$SANDBOX/nor-legs-old.out"))"
+      elif [[ "$(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-old.out")" != 3 ]] || [[ -e "$_nor_shim/gitleaks.argv" ]]; then
+        _nor_legs="$_nor_legs old-core-silent-or-scanned($(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-old.out")/3, gitleaks ran: $([[ -e "$_nor_shim/gitleaks.argv" ]] && echo yes || echo no))"
+      fi
+      command cp "$SANDBOX/nor-common.bak" "$NOR/core/scripts/lib/common.sh"; command cp "$HERE/gitleaks.toml" "$NOR/core/"
+      if [[ -z "$_nor_legs" ]]; then
+        pass "new-os-repo: every lint leg runs its tool on the right files (markdown minus core/, workflows, Core's gitleaks policy), fails on a finding, and says so when the tool is absent (shellcheck included); the two scanner legs run against the vendored common.sh; the capability leg skips without the validator and runs with it; a Core older than the scanners or the policy file makes trap-guard, make-gate and secrets skip, saying so"
+      else
+        fail "new-os-repo: the lint legs —$_nor_legs"
+      fi
+      rm -rf "$_nor_shim" "$_nor_min"
+      unset _nor_shim _nor_min _nor_t _nor_p _nor_legs _nor_sig
+    else
+      skip "new-os-repo: driving the lint legs (make unavailable)"
+    fi
+    if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-suite-core.out" 2>&1; then
+      # Not "passed" alone: prove the Core-provided branches actually RAN. Each named
+      # link is one bootstrap.sh link line; the count is every Core zsh module + the rest.
+      _nor_core_ok=1
+      for _nor_l in 'zsh/loader.zsh' 'tmux/tmux.conf' 'tmux/tmux.reset.conf' 'starship.toml' '.config/nvim' '.gitconfig' 'mise config is seeded as a COPY'; do
+        grep -q "^  ok .*$_nor_l" "$SANDBOX/nor-suite-core.out" || _nor_core_ok=0
+      done
+      _nor_core_n="$(grep -c '^  ok .* -> core/' "$SANDBOX/nor-suite-core.out")"
+      # A bash glob, not `find -maxdepth` (GNU; this runs on the macOS lane too).
+      _nor_zsh_files=("$HERE"/zsh/*.zsh)
+      _nor_zsh_n=${#_nor_zsh_files[@]}
+      [[ -e "${_nor_zsh_files[0]}" ]] || _nor_zsh_n=0
+      # EXACTLY every module once + tmux ×2 + starship + nvim + git: a spare count would
+      # let one skipped module hide behind a double-counted loader.
+      if ((_nor_core_ok)) && ((_nor_core_n == _nor_zsh_n + 5)); then
+        pass "new-os-repo: against a Core-seeded core/ the suite asserts every Core link exactly once ($_nor_core_n Core links: $_nor_zsh_n zsh modules + tmux ×2 + starship + nvim + git) and mise-as-copy"
+      else
+        fail "new-os-repo: the suite's Core-provided branches did not all run exactly once against a seeded core/ ($_nor_core_n Core links asserted, want $((_nor_zsh_n + 5)); named-link coverage ok=$_nor_core_ok)"
+      fi
+      unset _nor_core_ok _nor_core_n _nor_zsh_n _nor_zsh_files _nor_l
+    else
+      fail "new-os-repo: the scaffolded suite fails against a Core-seeded core/ — $(grep FAIL "$SANDBOX/nor-suite-core.out" | head -3 | tr '\n' ' ')"
+    fi
+    unset _nor_d
+    # ...and it CAN fail. A gate nobody has seen red is not known to work (the bench-gate
+    # lesson, #688). Strip the "already linked" short-circuit from a copy of the bootstrap,
+    # so every run re-links and announces it: the idempotency assertion must go red.
+    _nor_brk="$SANDBOX/newosrepo-broken"
+    rm -rf "$_nor_brk"
+    cp -r "$NOR" "$_nor_brk"
+    sed -i.bak '/readlink "\$dest"/d' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >/dev/null 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links on every run — it cannot fail"
+    else
+      pass "new-os-repo: the scaffolded suite goes red on a non-idempotent bootstrap"
+    fi
+    # ...and on one that re-links SILENTLY. The primary idempotency witness is the
+    # mutating commands the second run invokes (rm/ln/mv/cp/mkdir, logged by PATH shims),
+    # not the `linked` lines and not inode identity — a filesystem may hand a re-created
+    # link the same inode straight back. So a bootstrap that removes and re-creates every
+    # link while saying nothing must go red on THAT witness.
+    sed -i.bak '/echo "linked /d' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-silent.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links silently — the mutating-command witness (the rm/ln shims) did not fire"
+    elif grep -q 'invoked mutating commands' "$SANDBOX/nor-silent.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on a bootstrap that re-links silently (the rm/ln were observed, inode reuse or not)"
+    else
+      fail "new-os-repo: the silent re-link failed for another reason — $(grep FAIL "$SANDBOX/nor-silent.out" | head -2 | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_brk"
+    # ...and on one that REWRITES a regular file in place THROUGH A REDIRECTION — the one
+    # mutation no wrapped command performs and an inode survives. That is what the
+    # snapshot's per-file checksum is for, and this proves it fires on its own: the
+    # rewrite appends one byte to the seeded mise config via `>>`, invoking no rm/ln/mv/
+    # cp/mkdir, so only the checksum can see it. Inserted BEFORE the seed and guarded on
+    # the file existing, so run one still seeds a faithful copy (the suite compares the
+    # copy's bytes with the seed) and only run two mutates. The line is inserted with awk,
+    # not `sed … \n`, and the byte is fixed, not `date +%N`: BSD sed does not expand \n in
+    # a replacement and macOS date has no %N, and this runs on the macOS lane too.
+    _nor_brk="$SANDBOX/newosrepo-rewrite"
+    rm -rf "$_nor_brk"
+    cp -r "$NOR" "$_nor_brk"
+    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && printf x >>\"$CFG/mise/config.toml\"" }' \
+      "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-rewrite.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites the mise seed in place on every run — the checksum witness does not fire"
+    elif grep -q 'changed the tree' "$SANDBOX/nor-rewrite.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on an in-place rewrite through a redirection (checksum witness, with no command to observe)"
+    else
+      fail "new-os-repo: the in-place rewrite failed for another reason — $(grep FAIL "$SANDBOX/nor-rewrite.out" | head -2 | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_brk"
+    # ...and on one that rewrites a file with the SAME bytes, through a redirection: no
+    # wrapped command, and inode, mode, kind and checksum all survive — only the stamp
+    # witness (mtime) can see it. Same placement and guard as the other two cases.
+    _nor_brk="$SANDBOX/newosrepo-samebytes"
+    rm -rf "$_nor_brk"
+    cp -r "$NOR" "$_nor_brk"
+    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && cat \"$REPO/core/mise/config.toml\" >\"$CFG/mise/config.toml\"" }' \
+      "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-samebytes.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites a file with identical bytes on every run — no write witness"
+    elif grep -q 'rewrote files in place' "$SANDBOX/nor-samebytes.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on a same-byte rewrite (the stamp witness, when nothing else can see it)"
+    else
+      fail "new-os-repo: the same-byte rewrite fixture failed for another reason — $(grep FAIL "$SANDBOX/nor-samebytes.out" | head -2 | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_brk"
+    # ...and on one that changes a MODE, through an absolute-path chmod so the PATH shims
+    # never see it: inode, kind and bytes all survive, and only the snapshot's mode field
+    # can. Same placement and guard as the rewrite case, so run one is untouched. It ADDS
+    # an executable bit rather than setting 600: the tracked TOML seed is never executable,
+    # so the delta is guaranteed — under `umask 077` the seeded copy is already 600 and a
+    # `chmod 600` would change nothing, passing the suite for the wrong reason.
+    _nor_brk="$SANDBOX/newosrepo-chmod"
+    rm -rf "$_nor_brk"
+    cp -r "$NOR" "$_nor_brk"
+    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && /bin/chmod u+x \"$CFG/mise/config.toml\"" }' \
+      "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-chmod.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that changes a file's mode on every run — the snapshot does not carry modes"
+    elif grep -q 'changed the tree' "$SANDBOX/nor-chmod.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on a mode change made past the shims (mode field in the snapshot)"
+    else
+      fail "new-os-repo: the mode-change fixture failed for another reason — $(grep FAIL "$SANDBOX/nor-chmod.out" | head -2 | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_brk"
+    if have make; then
+      # Every canonical verb RESOLVES (the promise scripts/make-vocabulary.txt makes): -n
+      # expands all seven without needing shellcheck or a Core checkout; then the four that
+      # need no tool run for real.
+      if make -C "$NOR" -n help lint check dry-run packages-check core-verify test >/dev/null 2>&1; then
+        pass "new-os-repo: all seven canonical make verbs resolve in the scaffold"
+      else
+        fail "new-os-repo: a canonical make verb does not resolve — $(make -C "$NOR" -n help lint check dry-run packages-check core-verify test 2>&1 | grep -i 'no rule' | head -2 | tr '\n' ' ')"
+      fi
+      if make -C "$NOR" help dry-run packages-check test >/dev/null 2>&1; then
+        pass "new-os-repo: make help / dry-run / packages-check / test run green in the scaffold"
+      else
+        fail "new-os-repo: a tool-free canonical verb fails in the scaffold — $(make -C "$NOR" help dry-run packages-check test 2>&1 | tail -3 | tr '\n' ' ')"
+      fi
+      # --help is a usage() heredoc, not a line range of the header: a range drifts the
+      # moment a line is added above it and then prints implementation as help (the
+      # pattern sync-core.sh itself had to drop). Assert the text, and that no code leaks.
+      _nor_help="$(bash "$NOR/bootstrap.sh" --help 2>&1)"; _nor_help_rc=$?
+      if ((_nor_help_rc == 0)) && grep -q '^usage: bootstrap.sh ' <<<"$_nor_help" && grep -q -- '--links-only' <<<"$_nor_help" && ! grep -qE 'set -e|BASH_SOURCE|^#' <<<"$_nor_help" && ! grep -qE "sed -n '[0-9]+,[0-9]+p'" "$NOR/bootstrap.sh"; then
+        pass "new-os-repo: bootstrap.sh --help prints a usage() heredoc (every flag named, no implementation line, no line range to drift)"
+      else
+        fail "new-os-repo: bootstrap.sh --help is not a drift-proof usage (rc=$_nor_help_rc): $(head -3 <<<"$_nor_help" | tr '\n' ' ')"
+      fi
+      unset _nor_help _nor_help_rc
+    else
+      skip "new-os-repo: running the canonical verbs (make unavailable)"
+    fi
+    # THE ASSERTION THAT MATTERS: the register itself. A fake fleet root holding the scaffold
+    # under a name from scripts/os-repos.txt (the scaffold ran `git init`, so .git exists)
+    # must render a row of `ok` and a clean --check — the same verdict the fleet is held to.
+    _nor_fleet="$SANDBOX/scaffold-fleet"
+    rm -rf "$_nor_fleet"
+    mkdir -p "$_nor_fleet"
+    cp -r "$NOR" "$_nor_fleet/dotfiles-Alpine"
+    _nor_fv="$(REPOS_ROOT="$_nor_fleet" "$HERE/scripts/fleet-vocabulary.sh" --check 2>&1)"
+    _nor_rc=$?
+    if ((_nor_rc == 0)) && [[ "$_nor_fv" == *"every verb x repo cell resolves"* ]]; then
+      pass "new-os-repo: fleet-vocabulary.sh --check credits the scaffold on every verb and the test floor"
+    else
+      fail "new-os-repo: the vocabulary register does not credit the scaffold (rc=$_nor_rc): $(printf '%s' "$_nor_fv" | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_fleet"
+    unset _nor_mg _nor_brk _nor_fleet _nor_fv _nor_rc
   else
     fail "new-os-repo: --no-vendor scaffold run failed outright"
   fi

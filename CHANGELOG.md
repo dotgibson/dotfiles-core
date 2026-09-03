@@ -16,6 +16,42 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **A scaffolded OS repo is born meeting the `make` vocabulary and the test floor
+  (#691).** `scripts/new-os-repo.sh` is the other way a repo enters the fleet (the first is
+  `cp -r dotfiles-Fedora`), and it stamped no `Makefile` and no `test/` — so a greenfield
+  repo was **missing** across its whole row of the vocabulary register the day it joined
+  `scripts/os-repos.txt`, and nothing inside it would ever notice. It now writes, beside the
+  entry files and the capability declaration it already stamps for the same reason: a
+  `Makefile` defining all seven canonical verbs (`lint` runs the reusable gate's blocking
+  legs — shellcheck, `bash -n`, `zsh -n`, RETURN-trap discipline, the capability
+  schema, markdownlint, actionlint, gitleaks and the Makefile-gate check — reading the
+  vendored `core/scripts/lib/common.sh` scanners, Core's `gitleaks.toml` and a scaffolded
+  `.markdownlint.jsonc` carrying Core's rule choices, since the gate lints against the
+  caller's own; every tool leg, shellcheck included, says so and skips when its tool is
+  absent, never silently, and the capability leg skips when the vendored validator
+  predates v4.19.0, as the gate's own leg does; the gate — pinned tool versions, plus its
+  advisory legs — stays the verdict; `check` =
+  lint + the hermetic links run; `dry-run`;
+  `core-verify` in Arch's `core-integrity.sh --self` shape; `packages-check` as the
+  contract's stub until the repo has a package list; `test`), with every guard on the same
+  recipe line as its tool so it clears the #775 make-gate rule from birth; a **real**
+  `test/check-links.sh` — `--dry-run` writes nothing, a run links every repo-owned file
+  (and every Core-provided one — each zsh module, both tmux files, starship, nvim, git —
+  when `core/` carries it), a second run changes nothing —
+  rather than an `exit 0` stub, because a floor met by a script that asserts nothing is not
+  a floor; and a `.github/workflows/test.yml` that runs `make test`, the floor's "CI runs
+  it" rung. The scaffolded `bootstrap.sh` grows `--dry-run`, `--links-only` and `--help` so
+  those verbs are honest, and its mise seed is guarded on the source existing. The
+  scaffold is born on `main` whatever the author's `init.defaultBranch` says, so the
+  workflows' fleet-standard `[main, master]` push filter cannot miss the repo's own pushes
+  (a repo born on `trunk` would otherwise have had no push-triggered CI at all).
+  `test-core.sh` F7b pins all of it — as generated
+  with `--no-vendor` (no `core/`) the suite must fail loudly and name the missing
+  `core/`, and against a `core/` seeded from Core's own tree it must assert every Core
+  link — and judges the scaffold with `fleet-vocabulary.sh --check` itself
+  against a fake fleet root — the same verdict the nine repos are held to — plus the proof
+  the suite can fail (a bootstrap that re-links on every run goes red). Dev tooling only —
+  the OS repos receive nothing from this entry.
 - **One Makefile vocabulary for the fleet, and a test floor — declared once in Core,
   reported by the audit (#691).** Nine repos had nine `make` dialects: "dry run" was
   `dry-run` in four repos and `bootstrap-dry` in four, "verify core" had five spellings,
