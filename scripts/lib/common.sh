@@ -1227,6 +1227,75 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
   done
 }
 
+# ── _core_vendor_pin_hits: the first-vendor recipe names the CURRENT major ───
+# _core_vendor_pin_hits <repo-root> <expected-major> — print every first-vendor pin in
+# the root docs and scripts/ that names a major other than <expected-major>. Silence =
+# clean. Output is `file:LINE: msg`.
+#
+# WHAT A "FIRST-VENDOR PIN" IS. Three shapes, all copyable instructions for vendoring a
+# brand-new OS repo at the released major alias rather than `main` (#588):
+#
+#     git subtree add --prefix=core <remote> refs/tags/vN --squash
+#     git checkout vN                                  # in dotfiles-core
+#     CORE_BRANCH="$(git rev-parse vN^{commit})" ./scripts/sync-core.sh dotfiles-X
+#
+# and new-os-repo.sh's `CORE_BRANCH="${CORE_BRANCH:-refs/tags/vN}"` default, which is the
+# same instruction with the pasting done for you.
+#
+# WHY A GATE. This exact rot has now happened at EVERY major cut. At v4 → v5 the scaffold
+# default, its --help, ARCHITECTURE.md, VENDORING.md and PORTING-MATRIX.md were each
+# corrected by hand, in three separate CHANGELOG entries, after someone noticed. At v5 → v6
+# all five went stale again and stayed that way through two releases: a greenfield repo
+# scaffolded in that window vendored a RETIRED major by default, and the docs told a human
+# to do the same. Nothing failed, because nothing was wrong in the code — the same silent
+# shape _core_workflow_ref_hits and _core_workflow_example_hits exist to end for the
+# workflow refs, one recipe over. So it gets the same treatment: the major is read from
+# core.version, and the text is held to it.
+#
+# WHY CONCRETE MAJORS IN THE DOCS AT ALL, rather than "the current major alias". The
+# CHANGELOG records the decision at the last cut: a ref the reader PASTES is not a claim
+# they read, so it stays concrete and copyable — and this function is what makes that
+# safe to promise.
+#
+# SCOPE, and the three exemptions that keep it honest:
+#   · Root-level *.md and scripts/*.sh — where the recipe is written — never core/ or
+#     nested docs.
+#   · CHANGELOG*.md are HISTORY: "corrected to refs/tags/v5" was true when written and
+#     must stay so. A gate that reds on a true sentence teaches people to falsify it.
+#   · scripts/test-core.sh builds fixture repos with tags of its own (`refs/tags/v1`);
+#     those are test data, not instructions.
+#   · An EXACT pin (`refs/tags/v5.3.0`) is a deliberate freeze and is out of scope, as
+#     is another repository's tag reached through an API path (`git/refs/tags/v3`).
+_core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
+  local root="${1:-.}" want="${2:-}" f
+  [ -n "$want" ] || return 0
+  for f in "$root"/*.md "$root"/scripts/*.sh; do
+    [ -f "$f" ] || continue
+    case "${f##*/}" in CHANGELOG*.md | test-core.sh) continue ;; esac
+    awk -v want="$want" -v file="${f#"$root"/}" '
+      {
+        line = $0
+        # Each shape carries its own left boundary so `git/refs/tags/v3` (a slash before
+        # `refs`) and `xv5^{commit}` do not match, while `:-refs/tags/vN` (the scaffold default) does; the trailing check rejects an exact
+        # `vN.M.P` pin and a longer number.
+        while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9]+|git checkout v[0-9]+|v[0-9]+\^\{commit\})/)) {
+          hit = substr(line, RSTART, RLENGTH)
+          rest = substr(line, RSTART + RLENGTH)
+          sub(/^[^rgv]*/, "", hit)                 # drop the boundary character
+          ver = hit
+          if (ver ~ /\^\{commit\}$/) { sub(/^v/, "", ver); sub(/\^.*$/, "", ver) }
+          else sub(/^.*v/, "", ver)
+          if (rest !~ /^[0-9.]/ && ver != want) {
+            printf "%s:%d: first-vendor pin names v%s, but core.version is major v%s (%s)\n", \
+              file, NR, ver, want, hit
+          }
+          line = rest
+        }
+      }
+    ' "$f"
+  done
+}
+
 # ── _core_make_gate_hits: local gates that cannot do what their name says ─────
 # _core_make_gate_hits <repo-root> — print every Makefile gate in <repo-root> that
 # announces a check it does not perform. Silence = clean. Output is `Makefile:LINE: msg`.

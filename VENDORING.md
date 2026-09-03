@@ -573,7 +573,7 @@ Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs the **one-time
 initial vendoring — the only `git subtree` left in the flow, and never the update path:
 
 ```sh
-git subtree add --prefix=core <core-remote> refs/tags/v5 --squash
+git subtree add --prefix=core <core-remote> refs/tags/v6 --squash
 ```
 
 It is one-time because `sync-core.sh` skips a repo that has no `core/` yet: it replaces
@@ -590,13 +590,13 @@ hand-vendored repo as TAMPERED before it has done anything wrong.
 with no lock yet that is the only thing which can write one:
 
 ```sh
-git checkout v5                                    # in dotfiles-core
-CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>
+git checkout v6                                    # in dotfiles-core
+CORE_BRANCH="$(git rev-parse v6^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>
 ```
 
 Both halves matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
 and the pin must be the **peeled commit** — the release tags are annotated, so
-`refs/tags/v5` resolves to the tag object, which is never that `HEAD`.
+`refs/tags/v6` resolves to the tag object, which is never that `HEAD`.
 
 Then register the repo **here**, which is **one line** in `scripts/os-repos.txt`:
 

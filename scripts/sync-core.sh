@@ -10,7 +10,7 @@
 # Assumes:
 #   - all OS repos are cloned as siblings under one parent dir (see REPOS_ROOT)
 #   - each OS repo already did the one-time (from a RELEASED tag, never main — #588):
-#       git subtree add --prefix=core <core-remote> refs/tags/v5 --squash
+#       git subtree add --prefix=core <core-remote> refs/tags/v6 --squash
 #
 # Usage:
 #   ./scripts/sync-core.sh                # vendor core into every repo found
@@ -66,7 +66,7 @@ Env overrides:
   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: core's origin)
   CORE_BRANCH       Core ref to vendor             (default: main; pass a released tag
-                    such as refs/tags/v5 when vendoring a repo for the first time)
+                    such as refs/tags/v6 when vendoring a repo for the first time)
   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (documented escape hatch)
   SYNC_SKIP_STALE   set to 1 to skip the pre-flight check that each target is up to date

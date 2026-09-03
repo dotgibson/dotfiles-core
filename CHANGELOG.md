@@ -86,6 +86,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A greenfield OS repo no longer vendors a retired Core by default, and the
+  first-vendor pin is now held to `core.version`'s major (#691 follow-up).**
+  `scripts/new-os-repo.sh` defaulted `CORE_BRANCH` to `refs/tags/v5` — and its `--help`,
+  `sync-core.sh`'s header and usage, and the copyable first-vendor recipe in
+  `ARCHITECTURE.md`, `VENDORING.md` and `PORTING-MATRIX.md` all still said `v5` — two
+  releases after the fleet moved to v6, so a repo scaffolded in that window carried a
+  retired major and the docs told a human to do the same. This is the same rot the v4 → v5
+  cut fixed by hand in three separate entries, which is the reason it is now a gate rather
+  than a fourth: `scripts/lib/common.sh :: _core_vendor_pin_hits` reads the three recipe
+  shapes (`refs/tags/vN`, `git checkout vN`, `vN^{commit}`) plus the scaffold default out
+  of the root docs and `scripts/`, and **§8a-ter** of `audit-core.sh` holds every one to
+  `core.version`'s major — the treatment §8a gives the `ref:` keys and §8a-bis the caller
+  examples, one recipe over. The docs keep a **concrete, copyable** major rather than
+  "the current alias", the decision the last cut recorded (a ref the reader pastes is not
+  a claim they read); the gate is what makes that safe to promise. Exemptions are the true
+  sentences a blunter scan would red on: CHANGELOG history, `test-core.sh`'s fixture tags,
+  an exact `vN.M.P` freeze, and another repository's tag behind an API path. Fixture-tested
+  both directions in `test-core.sh`, including the inverse on this tree and the proof that
+  at the next major the scaffold default itself is what surfaces. Dev tooling only — the
+  OS repos receive nothing from this entry.
 - **`optoken` no longer leaves a live TOTP in a tmux paste buffer; `clip` grows a
   `--sensitive` mode (`CLIP_SENSITIVE=1`) that it uses (#690).** On a box with no real
   clipboard backend — the headless-over-ssh shelf that is the documented norm for part of

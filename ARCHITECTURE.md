@@ -181,10 +181,10 @@ the initial vendoring and **never** the update path (`sync-core.sh` skips a repo
 `core/`, which is the one thing it cannot create):
 
 ```bash
-git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v5 --squash
+git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v6 --squash
 ```
 
-`refs/tags/v5` is the moving major alias — the latest release in the v5 line. Pin a
+`refs/tags/v6` is the moving major alias — the latest release in the v6 line. Pin a
 specific `vX.Y.Z` instead when you want the tree frozen at a known version.
 `scripts/new-os-repo.sh` runs this step for you and is the sanctioned greenfield path.
 
@@ -193,13 +193,13 @@ Core checkout before treating the repo as vendored (`sync-core.sh` is the only
 sanctioned writer of that file):
 
 ```bash
-git checkout v5                                    # in dotfiles-core
-CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>
+git checkout v6                                    # in dotfiles-core
+CORE_BRANCH="$(git rev-parse v6^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>
 ```
 
 Both halves matter: `sync-core.sh` refuses unless Core's `HEAD` is the commit being
 vendored, and the pin must be the **peeled commit** — the release tags are annotated, so
-`refs/tags/v5` resolves to the tag object, which is never that `HEAD`. See
+`refs/tags/v6` resolves to the tag object, which is never that `HEAD`. See
 `RELEASE-STRATEGY.md` §"Safe deployment".
 
 After a Core change, the same helper fans it out to the whole fleet:

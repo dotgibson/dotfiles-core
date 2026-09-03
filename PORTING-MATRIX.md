@@ -16,8 +16,8 @@ _Repo status_ at the bottom).
 4. In `bootstrap.sh`: swap the `dnf` block for the distro's installer and the
    `/etc/os-release` guard string.
 5. Re-vendor Core and stamp `core.lock`, from a **Core** checkout:
-   `git checkout v5 && CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>`
-   — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v5`
+   `git checkout v6 && CORE_BRANCH="$(git rev-parse v6^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>`
+   — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"). Step 1 already copied Fedora's `core/` across, so there is no
    `git subtree add` to run here (it would fail: _prefix 'core' already exists_). That
    one-time add is only for a repo with no `core/` at all — `scripts/new-os-repo.sh`

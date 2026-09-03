@@ -1471,6 +1471,37 @@ else
   fail "core.version missing — cannot check caller-example majors"
 fi
 
+# ── 8a-ter. first-vendor pin majors ──────────────────────────────────────────
+# 8a holds the `ref:` keys to the current major and 8a-bis the copyable caller examples.
+# The third copyable instruction that names a major is the FIRST-VENDOR recipe — the
+# `refs/tags/vN` a new OS repo subtree-adds, the `git checkout vN` / `vN^{commit}` that
+# stamps its lock, and new-os-repo.sh's default for the same — and it has rotted at every
+# major cut so far (v4 → v5 by hand in three entries; v5 → v6 unnoticed for two releases,
+# so a freshly scaffolded repo vendored a retired Core by default). Same silent shape,
+# same treatment: read the major from core.version, hold the text to it. The rule and its
+# exemptions (history, fixtures, exact pins) live on _core_vendor_pin_hits.
+#
+# Always-on, for 8a's reason: no tool to be absent, so it cannot go green-because-absent.
+hdr "first-vendor pin majors"
+if [[ -r core.version ]]; then
+  vpn_major="$(tr -d '[:space:]' <core.version | cut -d. -f1)"
+  if [[ "$vpn_major" =~ ^[0-9]+$ ]]; then
+    vpn_out="$(_core_vendor_pin_hits . "$vpn_major")"
+    if [[ -z "$vpn_out" ]]; then
+      pass "every first-vendor pin (docs + scripts/, incl. new-os-repo.sh's default) names v$vpn_major (matches core.version)"
+    else
+      fail "a first-vendor pin names a foreign major — a new repo scaffolded from it vendors a retired Core"
+      fail_detail "$vpn_out"
+    fi
+    unset vpn_out
+  else
+    fail "core.version major unreadable ('$vpn_major') — cannot check first-vendor pin majors"
+  fi
+  unset vpn_major
+else
+  fail "core.version missing — cannot check first-vendor pin majors"
+fi
+
 # ── 8b. secrets (gitleaks) ────────────────────────────────────────────────────
 # Core ships 1Password helpers (zsh/50-op.zsh), a git-identity template, and history
 # secret-ignore patterns — and fans out to 9 PUBLIC repos, where a committed token

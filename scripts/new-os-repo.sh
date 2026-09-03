@@ -36,7 +36,7 @@ CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null |
 # exact commit a release tag points at, so a tree vendored from whatever `main` happened
 # to be is not a commit any core.lock would record — and core-integrity reports the fresh
 # subtree as TAMPERED before the repo has done anything wrong (#588).
-CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5}"
+CORE_BRANCH="${CORE_BRANCH:-refs/tags/v6}"
 
 usage() {
   cat <<'EOF'
@@ -51,7 +51,7 @@ Scaffold a new OS repo that vendors Core: subtree-add core/, then write a correc
   --no-vendor    scaffold the files but skip the `git subtree add` (do it yourself later)
 
 Env: CORE_REMOTE (default: this repo's origin)
-     CORE_BRANCH (default: refs/tags/v5 — a RELEASED tag, never main; pin a specific
+     CORE_BRANCH (default: refs/tags/v6 — a RELEASED tag, never main; pin a specific
                   vX.Y.Z to freeze the tree at a known version)
 EOF
 }

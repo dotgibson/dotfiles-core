@@ -2445,6 +2445,83 @@ if [[ -r "$HERE/core.version" ]]; then
   unset _wfe_now
 fi
 
+# ── first-vendor pin major guard (common.sh :: _core_vendor_pin_hits) ─────────
+# Third sibling of the two guards above, for the third copyable instruction that names a
+# major: the first-vendor recipe (`refs/tags/vN`, `git checkout vN`, `vN^{commit}`) and
+# new-os-repo.sh's default for it. It rotted at v4 → v5 (fixed by hand, three CHANGELOG
+# entries) and again at v5 → v6, where it sat for two releases while every `ref:` and
+# every caller example was held to the major — a greenfield repo vendored a retired Core
+# by default and nothing was red. Same treatment as its siblings, tested the same way.
+#
+# The exemptions carry the weight: CHANGELOG history, test fixtures, exact pins and another
+# repo's tag behind an API path are all TRUE text that a blunter scan would red on, and a
+# guard that reds on a true sentence teaches the next person to falsify it.
+hdr "first-vendor pin major guard (_core_vendor_pin_hits)"
+_vpn_="$SANDBOX/vendorpin"
+_vpn_reset() { rm -rf "$_vpn_"; mkdir -p "$_vpn_/scripts"; }
+_vpn_write() { _vpn_reset; printf '%s\n' "$2" >"$_vpn_/$1"; }
+_vpn_count() {
+  local got n
+  got="$(_core_vendor_pin_hits "$_vpn_" "$2")"
+  n=0
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$3" ]]; then
+    pass "first-vendor pin: $1"
+  else
+    fail "first-vendor pin: $1 (got $n finding(s), want $3): $(printf '%s' "$got" | tr '\n' ' ')"
+  fi
+}
+
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5 --squash'
+_vpn_count "a subtree-add on a foreign major is a finding" 6 1
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v6 --squash'
+_vpn_count "a subtree-add on the current major is clean" 6 0
+_vpn_write README.md 'git checkout v5                                    # in dotfiles-core'
+_vpn_count "\`git checkout vN\` is judged" 6 1
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "the peeled-commit form is judged" 6 1
+# THE LINE THAT MATTERS MOST: the scaffold default, where the major is preceded by `:-`.
+# The first draft treated `-` as a word character and skipped exactly this line.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5}"'
+_vpn_count "new-os-repo.sh's :-refs/tags/vN default is judged" 6 1
+# Exemptions — every one of these is a TRUE sentence that must not be flagged.
+_vpn_write RELEASE-STRATEGY.md 'Pin `refs/tags/v5.3.0` while sitting on `main` and the lock records'
+_vpn_count "an exact vN.M.P pin is a deliberate freeze, not a finding" 6 0
+_vpn_write README.md 'gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha'
+_vpn_count "another repository's tag behind an API path (git/refs/tags/) is not a finding" 6 0
+_vpn_write CHANGELOG.md 'so it is corrected to a concrete `refs/tags/v5`'
+_vpn_count "CHANGELOG history is exempt" 6 0
+_vpn_write CHANGELOG.recent.md 'so it is corrected to a concrete `refs/tags/v5`'
+_vpn_count "the generated CHANGELOG digest is exempt too" 6 0
+_vpn_write scripts/test-core.sh 'git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_div"'
+_vpn_count "test-core.sh's fixture tags are data, not instructions" 6 0
+_vpn_write README.md 'the v5 line, `@v5`, Core v5 #663, and "at v4→v5 it was left on v4"'
+_vpn_count "narrative vN prose with none of the three shapes is not judged" 6 0
+_vpn_write README.md 'git checkout v60 && CORE_BRANCH="$(git rev-parse v5^{commit})" x refs/tags/v5 refs/tags/v6'
+_vpn_count "every occurrence on a line is reported and the number is read whole (v60 is not v6)" 6 3
+# Core must satisfy the rule it authors — the inverse assertion, so `make test` catches a
+# stale pin without a full audit, exactly as the two siblings above do.
+if [[ -r "$HERE/core.version" ]]; then
+  _vpn_now="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+  _vpn_real="$(_core_vendor_pin_hits "$HERE" "$_vpn_now")"
+  if [[ -z "$_vpn_real" ]]; then
+    pass "first-vendor pin: this tree's recipe and new-os-repo.sh default name v$_vpn_now everywhere (matches core.version)"
+  else
+    fail "first-vendor pin: this tree names a foreign major: $(printf '%s' "$_vpn_real" | tr '\n' ' ')"
+  fi
+  # And the guard can fail on THIS tree: at any other major every pin must surface,
+  # including the scaffold default. A guard that only ever passes is not known to work.
+  if _core_vendor_pin_hits "$HERE" "$((_vpn_now + 1))" | grep -q 'scripts/new-os-repo.sh:.*CORE_BRANCH\|scripts/new-os-repo.sh:'; then
+    pass "first-vendor pin: at the next major the scaffold default itself is reported"
+  else
+    fail "first-vendor pin: the scaffold default would not be reported at the next major — the gate misses the line it exists for"
+  fi
+  unset _vpn_now _vpn_real
+fi
+rm -rf "$_vpn_"
+unset _vpn_
+unset -f _vpn_reset _vpn_write _vpn_count
+
 # ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
 # WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
 # extraction, every verdict here comes from git: is the path tracked, and which .gitignore
