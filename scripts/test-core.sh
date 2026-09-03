@@ -16501,6 +16501,16 @@ _fv_floor "a run: | block that runs make test (.yaml)" 'ok' '_fv_suite dotfiles-
 _fv_floor "CI runs a differently-named target whose recipe runs test/" 'ok' '_fv_suite dotfiles-Alpine; printf "test-repo: lint\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test-repo"'
 _fv_floor "CI runs a target that inherits the suite through a prerequisite" 'ok' '_fv_suite dotfiles-Alpine; printf "suite-run:\n\t@./test/smoke.sh\nci-all: lint suite-run\n\t@true\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make -j2 ci-all"'
 _fv_floor "CI runs a same-prefix target that never touches test/" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "test-report:\n\t@echo report\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test-report"'
+_fv_floor "CI runs one target of a multi-target rule whose shared recipe runs test/" 'ok' '_fv_suite dotfiles-Alpine; printf "smoke test-repo:\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make smoke"'
+_fv_floor "a suite target whose name is ERE metacharacters (test+coverage)" 'ok' '_fv_suite dotfiles-Alpine; printf "test+coverage:\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test+coverage"'
+# A PATH MENTIONED IS NOT A PATH RUN: only command position or an interpreter counts.
+_fv_floor "a step that only echoes the test path" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo test/smoke.sh"'
+_fv_floor "a step that only lints the test dir" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "shellcheck test/*.sh"'
+_fv_floor "a step that runs the suite in command position" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "set -e; ./test/smoke.sh"'
+_fv_floor "a step that runs it through an interpreter with flags" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash -e test/smoke.sh"'
+_fv_floor "a recipe that only lints test/ does not make its target the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "lint-tests:\n\t@shellcheck test/*.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make lint-tests"'
+# A compact-sequence block ends at the key column, so a sibling env: is not command text.
+_fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
 if [[ "$out" == *"1 repo(s) under the test floor"* ]]; then
   pass "vocab floor: --check counts a repo under the floor and exits 1 with every verb defined"

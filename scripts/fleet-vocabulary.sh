@@ -98,12 +98,21 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
   [[ -n "$decl" ]] && printf '%s' "$decl"
 }
 
+# WHAT COUNTS AS RUNNING THE SUITE, in a shell command line: a test path in COMMAND position
+# (`./test/smoke.sh`, `tests/run`, or after `;`/`&&`/`|`) or handed to an interpreter
+# (`bash -e test/smoke.sh`). `echo test/smoke.sh` and `shellcheck test/*.sh` mention the
+# path and run nothing, so they do not count. No backslashes: this is handed to awk via -v,
+# which would eat them, so `[.]` and `[/]` stand in for the escaped forms.
+RUN_RE='(^|[;&|][[:space:]]*|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)([.][/])?tests?[/]'
+
 _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` step, comments stripped
   # Only what a step RUNS counts as running the suite. A path filter (`paths: ['test/**']`),
   # a job name, or a comment saying `make test` is a mention, not an execution, and an
   # unanchored grep read all three as the floor being met. Inline `run: cmd` prints cmd;
-  # `run: |` / `run: >` prints every line of the block (the lines indented deeper than the
-  # key). Not a YAML parser — it needs no quoting rules, only indentation, which is the one
+  # `run: |` / `run: >` prints every line of the block — the lines indented deeper than
+  # the KEY, where for a compact sequence step (`- run: |`) the key sits after the `- `,
+  # so a sibling `env:` at the key's own column ends the block rather than joining it.
+  # Not a YAML parser — it needs no quoting rules, only indentation, which is the one
   # thing YAML block scalars guarantee.
   awk '
     function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); return s }
@@ -116,7 +125,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` 
       }
       if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
         rest = substr($0, RSTART + RLENGTH)
-        match($0, /^[ \t]*/); bind = RLENGTH
+        match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
         if (rest ~ /^[ \t]*[|>]/) inblock = 1
         else print strip(rest)
       }
@@ -128,21 +137,26 @@ _suite_targets() { # _suite_targets <Makefile> → targets that run the suite, o
   # `make test` is the canonical spelling, but a workflow that runs `make test-repo` whose
   # recipe is `./test/test-repo.sh` IS running the suite — and the verb column already
   # reports the missing alias, so the floor must not report the same gap twice. A target
-  # qualifies if its recipe names test/ or tests/, or if a prerequisite qualifies (to a
-  # fixpoint, so `test: test-repo` inherits). Same lexer as _targets: rules at column 0,
-  # recipes on tab lines, comments and variable assignments ignored.
-  awk '
-    /^\t/ { if (cur != "") body[cur] = body[cur] " " $0; next }
+  # qualifies if a recipe line of its rule runs the suite (RUN_RE, after the `@`/`-`/`+`
+  # recipe prefixes), or if a prerequisite qualifies (to a fixpoint, so `test: test-repo`
+  # inherits). A rule with several targets (`smoke test-repo:`) gives its recipe to each.
+  # Same lexer as _targets: rules at column 0, recipes on tab lines, comments and variable
+  # assignments ignored.
+  awk -v re="$RUN_RE" '
+    /^\t/ {
+      line = $0; sub(/^\t[ \t]*[@+-]*[ \t]*/, "", line)
+      if (line ~ re) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
+      next
+    }
     /^[^\t#. ][^:=]*::?([^=]|$)/ {
       lhs = $0; sub(/::?.*/, "", lhs)
       rhs = $0; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
-      n = split(lhs, t, /[ \t]+/)
-      for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur = t[i]; pre[cur] = pre[cur] " " rhs; seen[cur] = 1 }
+      n = split(lhs, t, /[ \t]+/); ncur = 0
+      for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur[++ncur] = t[i]; pre[t[i]] = pre[t[i]] " " rhs; seen[t[i]] = 1 }
       next
     }
-    { cur = "" }
+    { ncur = 0 }
     END {
-      for (k in seen) if (body[k] ~ /(^|[^[:alnum:]_.-])tests?\//) hit[k] = 1
       do {
         changed = 0
         for (k in seen) if (!(k in hit)) {
@@ -155,8 +169,14 @@ _suite_targets() { # _suite_targets <Makefile> → targets that run the suite, o
   ' "$1"
 }
 
+_ere_escape() { # _ere_escape <string> → the string as a literal inside a POSIX ERE
+  # The COMPLETE ERE metacharacter set, so a legal target such as `test+coverage` or
+  # `t(1)` matches itself instead of rewriting — or breaking — the pattern it lands in.
+  printf '%s' "$1" | sed 's/[][\\.|*?+(){}^$]/\\&/g'
+}
+
 _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
-  local d="$1" t="" cand="" seen=0 wf alt="" tgt
+  local d="$1" t="" cand="" seen=0 wf alt="" tgt lines
   # Either directory name satisfies the floor, so the first POPULATED one is the suite; a
   # stale empty test/ beside a real, CI-run tests/ must not read as `empty`.
   for cand in "$d/test" "$d/tests"; do
@@ -167,21 +187,23 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   done
   ((seen)) || { printf 'no-dir'; return 0; }
   [[ -n "$t" ]] || { printf 'empty'; return 0; }
-  # What counts as running it: a `run:` step that names the directory, or invokes `make`
-  # on a target whose recipe does (`make test`, or `make test-repo` → ./test/test-repo.sh).
+  # What counts as running it: a `run:` step that executes the directory (RUN_RE), or
+  # invokes `make` on a target whose recipe does (`make test`, `make test-repo`).
   alt="test"
   if [[ -f "$d/Makefile" ]]; then
     while IFS= read -r tgt; do
-      [[ -n "$tgt" && "$tgt" != test ]] && alt="$alt|$(printf '%s' "$tgt" | sed 's/[.[\\*^$|]/\\&/g')"
+      [[ -n "$tgt" && "$tgt" != test ]] && alt="$alt|$(_ere_escape "$tgt")"
     done < <(_suite_targets "$d/Makefile")
   fi
   # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
-  # never a nested directory or a stray notes file. The path match wants a boundary on the
-  # left so `bootstrap-test/` or `latest/` cannot satisfy it; the make match wants one on
-  # the right so `make test-report` is not `make test`.
+  # never a nested directory or a stray notes file. The make match wants a boundary on
+  # the right so `make test-report` is not `make test`. The step text is captured, then
+  # searched from a herestring: under pipefail a `grep -q` that exits on an early match
+  # can SIGPIPE a producer still writing, and 141 would read as "not run".
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
     [[ -f "$wf" ]] || continue
-    if _run_lines "$wf" | grep -qE "(make[[:space:]]+([^|&;]*[[:space:]])?($alt)([^[:alnum:]_-]|\$)|(^|[^[:alnum:]_.-])tests?/)"; then
+    lines="$(_run_lines "$wf")"
+    if grep -qE "(make[[:space:]]+([^|&;]*[[:space:]])?($alt)([^[:alnum:]_-]|\$)|$RUN_RE)" <<<"$lines"; then
       printf 'ok'
       return 0
     fi
