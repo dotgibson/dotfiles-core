@@ -5594,6 +5594,16 @@ if have git && have zsh; then
       else
         fail "new-os-repo: a tool-free canonical verb fails in the scaffold — $(make -C "$NOR" help dry-run packages-check test 2>&1 | tail -3 | tr '\n' ' ')"
       fi
+      # --help is a usage() heredoc, not a line range of the header: a range drifts the
+      # moment a line is added above it and then prints implementation as help (the
+      # pattern sync-core.sh itself had to drop). Assert the text, and that no code leaks.
+      _nor_help="$(bash "$NOR/bootstrap.sh" --help 2>&1)"; _nor_help_rc=$?
+      if ((_nor_help_rc == 0)) && grep -q '^usage: bootstrap.sh ' <<<"$_nor_help" && grep -q -- '--links-only' <<<"$_nor_help" && ! grep -qE 'set -e|BASH_SOURCE|^#' <<<"$_nor_help" && ! grep -qE "sed -n '[0-9]+,[0-9]+p'" "$NOR/bootstrap.sh"; then
+        pass "new-os-repo: bootstrap.sh --help prints a usage() heredoc (every flag named, no implementation line, no line range to drift)"
+      else
+        fail "new-os-repo: bootstrap.sh --help is not a drift-proof usage (rc=$_nor_help_rc): $(head -3 <<<"$_nor_help" | tr '\n' ' ')"
+      fi
+      unset _nor_help _nor_help_rc
     else
       skip "new-os-repo: running the canonical verbs (make unavailable)"
     fi
