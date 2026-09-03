@@ -852,10 +852,16 @@ else
   _reg_link=""
   [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || _reg_link="
     $_link_cmd   # sync-core.sh resolves the NAME dotfiles-$OS; a guarded symlink (refuses a foreign occupant), not a rename"
+  # The scaffold commit is IDEMPOTENT: on the no-core/ path the FIRST recovery command
+  # has already committed the scaffold, and a bare `git commit` would then fail with
+  # "nothing to commit" — the one step in the sequence a reader could not follow. And the
+  # OS-layer edits get a commit of their own BEFORE the register step, because the sync
+  # refuses a target with uncommitted changes (its dirty-tree guard) — without it the
+  # advertised registration flow skips the repo it is registering.
   cat <<EOF
   next:$_next_vendor
     cd "$TARGET"
-    git add -A && git commit -m "scaffold dotfiles-$OS"
+    git add -A && { git diff --cached --quiet || git commit -m "scaffold dotfiles-$OS"; }   # a no-op if already committed
     ./bootstrap.sh            # wire the symlinks
     make test                 # the repo's own suite (the fleet's test floor)
     \$EDITOR os/$os_lc.zsh     # add your $OS-native bits
@@ -864,6 +870,7 @@ else
   schema is satisfied from birth, and they are wrong for any other archive:
     \$EDITOR os/$os_lc.capabilities
     core/scripts/check-capabilities.sh os/$os_lc.capabilities
+    git add -A && git commit -m "os: the $OS layer and its capability declaration"   # the sync below refuses a dirty tree
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
     echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted$_reg_link
