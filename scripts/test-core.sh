@@ -7655,6 +7655,195 @@ con.commit(); con.close()' "$_rcdb"
   fi
 fi
 
+# ── J2b. the startup budget gate (scripts/bench-core.sh --gate, #688) ─────────────────
+# 120 ms sat in ci.yml beside a comment guessing "~25 ms"; nothing recorded the real number,
+# nothing kept the two in step, and nobody had ever seen the gate fail. The budget now lives
+# in scripts/bench-baseline.env and --gate reads it FAIL-CLOSED. This pins (1) the ratchet
+# policy itself — BUDGET is exactly 2× BASELINE, so widening the budget to green a red run is
+# a red audit, not a quiet edit; (2) the fail-closed legs, which need no zsh because budget
+# resolution precedes the tool probes; (3) the verdict, driven through a STUB hyperfine on
+# PATH that writes whatever mean the case asks for — so a breach is PROVEN to exit 1 and to
+# print the per-module profile, without running a 50-run benchmark inside the suite. (The
+# real-hyperfine number is CI's `bench` job; a laptop's is 1–3× ubuntu-latest's and gates
+# nothing.)
+hdr "startup budget gate (scripts/bench-core.sh --gate)"
+_BCORE="$HERE/scripts/bench-core.sh"
+_BBASE="$HERE/scripts/bench-baseline.env"
+if [[ ! -x "$_BCORE" || ! -r "$_BBASE" ]]; then
+  skip "startup budget gate (scripts/bench-core.sh or scripts/bench-baseline.env absent)"
+else
+  _bcout=""
+  _bcrc=0
+  _bc_run() { # _bc_run [env=val ...] -- [args ...]   (the J2 _b_run shape, bash-3.2 safe)
+    local envs=()
+    while (($#)) && [[ "$1" != -- ]]; do
+      envs+=("$1")
+      shift
+    done
+    shift || true
+    _bcout="$(env -u CORE_JSON -u CORE_BENCH_BUDGET_MS -u CORE_BENCH_BASELINE_FILE -u CORE_BENCH_RUNS \
+      CORE_COLOR=never ${envs[@]+"${envs[@]}"} "$_BCORE" "$@" 2>&1)"
+    _bcrc=$?
+  }
+
+  # 1. The ratchet policy pin. Whole ms, and the budget is EXACTLY 2× the baseline — the
+  #    relation the file's header promises and the number the calibration justified (worst
+  #    run-mean ever observed clears 2× by 1.5×; a +24 ms regression fails).
+  _bc_base="$(sed -n 's/^CORE_BENCH_BASELINE_MS=//p' "$_BBASE" | head -n1)"
+  _bc_bud="$(sed -n 's/^CORE_BENCH_BUDGET_MS=//p' "$_BBASE" | head -n1)"
+  _bc_whole=1
+  case "$_bc_base" in '' | *[!0-9]*) _bc_whole=0 ;; esac
+  case "$_bc_bud" in '' | *[!0-9]*) _bc_whole=0 ;; esac
+  if ((!_bc_whole)); then
+    fail "bench gate: bench-baseline.env must hold whole-ms CORE_BENCH_BASELINE_MS and CORE_BENCH_BUDGET_MS (got '${_bc_base:-<unset>}' / '${_bc_bud:-<unset>}')"
+  elif ((_bc_bud == 2 * _bc_base)); then
+    pass "bench gate: bench-baseline.env budget $_bc_bud ms is exactly 2× baseline $_bc_base ms (the ratchet policy)"
+  else
+    fail "bench gate: budget $_bc_bud ms is not 2× baseline $_bc_base ms — re-baseline per the file's header; never widen the budget to green a run"
+  fi
+
+  # 2. --help documents the surface, including the test hook — so it cannot become an
+  #    undocumented back door that quietly points CI at a different file.
+  _bc_run -- --help
+  if ((_bcrc == 0)) && [[ "$_bcout" == *"--gate"* && "$_bcout" == *"bench-baseline.env"* &&
+    "$_bcout" == *"CORE_BENCH_BASELINE_FILE"* ]]; then
+    pass "bench gate: --help documents --gate, bench-baseline.env and CORE_BENCH_BASELINE_FILE"
+  else
+    fail "bench gate: --help is missing one of --gate / bench-baseline.env / CORE_BENCH_BASELINE_FILE (rc=$_bcrc)"
+  fi
+
+  # 3. The fail-closed arg contract survives the new flag; and --gate --profile is refused —
+  #    --profile exits 0 after ONE sample, which is a gate that cannot gate.
+  _bc_run -- --gate --profile
+  _rc_gp=$_bcrc
+  _bc_run -- --definitely-not-a-flag
+  if ((_rc_gp == 2)) && ((_bcrc == 2)); then
+    pass "bench gate: --gate --profile and an unknown argument both exit 2"
+  else
+    fail "bench gate: --gate --profile should exit 2 (got $_rc_gp); unknown argument should exit 2 (got $_bcrc)"
+  fi
+
+  # 4. A missing baseline file under --gate is RED, not a skip, and the message names the path.
+  _bc_run "CORE_BENCH_BASELINE_FILE=$SANDBOX/absent-baseline.env" -- --gate
+  if ((_bcrc == 1)) && [[ "$_bcout" == *"absent-baseline.env"* ]]; then
+    pass "bench gate: a missing baseline file fails closed (exit 1) and names the file"
+  else
+    fail "bench gate: missing baseline file should exit 1 naming it (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+  fi
+
+  # 5. Malformed values and a budget with no headroom are refused the same way.
+  printf 'CORE_BENCH_BASELINE_MS=24\nCORE_BENCH_BUDGET_MS=fast\n' >"$SANDBOX/bench-bad.env"
+  _bc_run "CORE_BENCH_BASELINE_FILE=$SANDBOX/bench-bad.env" -- --gate
+  _rc_bad=$_bcrc
+  printf 'CORE_BENCH_BASELINE_MS=24\nCORE_BENCH_BUDGET_MS=20\n' >"$SANDBOX/bench-nohead.env"
+  _bc_run "CORE_BENCH_BASELINE_FILE=$SANDBOX/bench-nohead.env" -- --gate
+  _rc_nohead=$_bcrc
+  _bc_run "CORE_BENCH_BUDGET_MS=fast" -- --gate
+  _rc_envbad=$_bcrc
+  if ((_rc_bad == 1)) && ((_rc_nohead == 1)) && ((_rc_envbad == 2)); then
+    pass "bench gate: a non-numeric budget (1), a budget ≤ baseline (1) and a bad env override (2) are all refused"
+  else
+    fail "bench gate: malformed inputs should be refused (non-numeric rc=$_rc_bad, no-headroom rc=$_rc_nohead, env=fast rc=$_rc_envbad)"
+  fi
+
+  # 6. ci.yml runs --gate and carries NO budget literal — the dual-source drift the file
+  #    exists to kill. A `CORE_BENCH_BUDGET_MS:` key reappearing in the workflow would
+  #    silently override the committed number.
+  _bc_ci="$HERE/.github/workflows/ci.yml"
+  if grep -q 'bench-core.sh --gate' "$_bc_ci" && ! grep -q 'CORE_BENCH_BUDGET_MS:' "$_bc_ci"; then
+    pass "bench gate: ci.yml runs bench-core.sh --gate and sets no CORE_BENCH_BUDGET_MS literal"
+  else
+    fail "bench gate: ci.yml must run 'bench-core.sh --gate' and must NOT set CORE_BENCH_BUDGET_MS (the budget lives in scripts/bench-baseline.env)"
+  fi
+
+  # 7–12. The verdict, through a stub hyperfine. The stub honours only --export-json <file>
+  #    and writes the mean/median the case chooses (seconds, hyperfine's unit); real zsh is
+  #    needed by the script's probe and by the on-breach profile (which sources the real
+  #    modules in the hermetic sandbox), python3 by the JSON read.
+  if have zsh && have python3; then
+    _hfstub="$(mktemp -d "$SANDBOX/hfstub.XXXXXX")"
+    cat >"$_hfstub/hyperfine" <<'EOF'
+#!/bin/sh
+# stub hyperfine for test-core.sh: the "measurement" is CORE_TEST_HF_MEAN / CORE_TEST_HF_MEDIAN
+# (seconds) so the caller picks the verdict; only --export-json <file> is honoured.
+out=""
+while [ $# -gt 0 ]; do
+  [ "$1" = --export-json ] && { out="$2"; shift; }
+  shift
+done
+[ -n "$out" ] || { echo "stub hyperfine: no --export-json" >&2; exit 1; }
+m="${CORE_TEST_HF_MEAN:-0.020}"
+md="${CORE_TEST_HF_MEDIAN:-$m}"
+printf '{"results":[{"command":"zsh -i -c exit","mean":%s,"stddev":0.001,"median":%s,"user":0,"system":0,"min":%s,"max":%s,"times":[%s],"exit_codes":[0]}]}\n' \
+  "$m" "$md" "$m" "$m" "$m" >"$out"
+echo "Benchmark 1: zsh -i -c exit (stub hyperfine, mean ${m}s)"
+EOF
+    chmod +x "$_hfstub/hyperfine"
+    _bc_stub() { _bc_run "PATH=$_hfstub:$PATH" "$@"; } # _bc_stub [env=val ...] -- [args ...]
+
+    # 7. Within budget: green, and the trend line names the committed baseline.
+    _bc_stub "CORE_TEST_HF_MEAN=0.020" -- --gate
+    if ((_bcrc == 0)) && [[ "$_bcout" == *"within budget $_bc_bud ms"* && "$_bcout" == *"CI baseline $_bc_base ms"* ]]; then
+      pass "bench gate: a 20 ms mean passes the committed budget and reports the baseline delta"
+    else
+      fail "bench gate: 20 ms should pass (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+    fi
+
+    # 8. THE ONE THAT MATTERS: a breach exits 1, says so, and the log carries the per-module
+    #    profile (TOTAL + the first module) so the red run names the culprit. A budget nobody
+    #    has seen fail is not known to work — this is where it fails.
+    _bc_stub "CORE_TEST_HF_MEAN=0.100" -- --gate
+    if ((_bcrc == 1)) && [[ "$_bcout" == *"EXCEEDS budget $_bc_bud ms"* && "$_bcout" == *"TOTAL"* &&
+      "$_bcout" == *"00-tools"* && "$_bcout" != *"outlier-driven"* ]]; then
+      pass "bench gate: a 100 ms mean FAILS (exit 1) and prints the per-module profile"
+    else
+      fail "bench gate: 100 ms should exit 1 with EXCEEDS + the profile (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+    fi
+
+    # 9. A breach whose median is within budget is still red (the gate is the mean, as every
+    #    recorded measurement is) but carries the outlier hint — so a runner hiccup reads as
+    #    one, not as a regression to chase.
+    _bc_stub "CORE_TEST_HF_MEAN=0.100" "CORE_TEST_HF_MEDIAN=0.020" -- --gate
+    if ((_bcrc == 1)) && [[ "$_bcout" == *"EXCEEDS"* && "$_bcout" == *"outlier-driven"* ]]; then
+      pass "bench gate: mean over / median under still fails, with the outlier-driven hint"
+    else
+      fail "bench gate: mean 100 / median 20 should exit 1 with the outlier hint (rc=$_bcrc)"
+    fi
+
+    # 10. The env override wins over the file and is labelled as such.
+    _bc_stub "CORE_TEST_HF_MEAN=0.020" "CORE_BENCH_BUDGET_MS=10" -- --gate
+    if ((_bcrc == 1)) && [[ "$_bcout" == *"EXCEEDS budget 10 ms"* && "$_bcout" == *"override"* ]]; then
+      pass "bench gate: CORE_BENCH_BUDGET_MS=10 overrides the file's budget and is labelled an override"
+    else
+      fail "bench gate: env override should win (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+    fi
+
+    # 11. Report mode never fails — not even at 4× the budget — and shows the trend line.
+    _bc_stub "CORE_TEST_HF_MEAN=0.100" --
+    if ((_bcrc == 0)) && [[ "$_bcout" == *"report only"* && "$_bcout" == *"CI baseline"* &&
+      "$_bcout" != *"EXCEEDS"* ]]; then
+      pass "bench gate: report mode (no --gate, no env) stays exit 0 at 100 ms and prints the baseline delta"
+    else
+      fail "bench gate: report mode must not fail (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+    fi
+  else
+    skip "startup budget gate: stub-hyperfine verdict legs (zsh or python3 not installed)"
+  fi
+
+  # 12. Under --gate an absent hyperfine is RED, not a skip — only assertable on a box that
+  #     lacks it, so elsewhere this is a note, not a coverage gap.
+  if ! have hyperfine; then
+    _bc_run -- --gate
+    if ((_bcrc == 1)) && [[ "$_bcout" == *"needs hyperfine"* ]]; then
+      pass "bench gate: --gate without hyperfine fails closed (exit 1)"
+    else
+      fail "bench gate: --gate without hyperfine should exit 1 'needs hyperfine' (rc=$_bcrc)"
+    fi
+  else
+    skip_note "bench gate: the no-hyperfine fail-closed leg needs a box without hyperfine — not asserted here"
+  fi
+fi
+
 # ── J3. the atuin-guard premise detector (scripts/research/verify-atuin-guard.sh) ──────
 # The detector answers ONE question — does the upstream fact _core_atuin_daemon_guard is
 # premised on still hold? — and the whole reason it exists in this shape is that the

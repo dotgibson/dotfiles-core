@@ -91,6 +91,29 @@ the whole directory.
 The same script runs in CI (`.github/workflows/ci.yml`) on every push and PR, so
 local and CI share one definition of "healthy."
 
+### Startup budget
+
+CI's `bench` job fails when the hermetic zsh load chain's mean startup exceeds the budget
+committed in `scripts/bench-baseline.env` — currently 48 ms, 2× the ~24 ms that ubuntu-latest
+measures (#688). The budget lives next to the script it governs, not in workflow YAML; the
+file's header records the calibration and the policy.
+
+```bash
+make bench        # report: the mean, and how it compares to the committed baseline (trend)
+make bench-gate   # enforce: exactly what CI runs — exit 1 past the budget, with a per-module profile
+```
+
+The number that gates is CI's. A laptop or WSL2 box measures 1–3× ubuntu-latest, so a local
+`make bench-gate` red is not a verdict — compare `make bench` before and after your change
+instead, and let the `bench` job decide. A breach prints the per-module breakdown so the red
+log names the module; `make profile` gives the same breakdown on demand.
+
+To re-baseline after a genuine startup win: take the mean from a green `bench` job on `main`,
+round up to a whole ms, set `CORE_BENCH_BASELINE_MS`, set `CORE_BENCH_BUDGET_MS` to exactly
+2× it, and note it under `[Unreleased]` in `CHANGELOG.md`. `scripts/test-core.sh` pins the 2×
+relation and `--gate` refuses a budget with no headroom — ratchet down, never widen a budget
+to green a run.
+
 ### Pre-commit (optional but recommended)
 
 ```bash

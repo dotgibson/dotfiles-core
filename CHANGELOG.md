@@ -16,6 +16,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **The startup budget is ratcheted from 120 ms to a committed 48 ms — 2× the measured
+  baseline — and CI reads it from `scripts/bench-baseline.env` (#688).** The `bench` job's
+  `CORE_BENCH_BUDGET_MS=120` existed only in `ci.yml`, beside a comment guessing "~25 ms";
+  194 runs of that job (2026-08-26 → 09-03, ubuntu-latest, 50 warmed runs each) actually
+  measured 11.8–31.9 ms (bimodal by runner host; ordinary hosts ~24 ms, two runs above
+  30 ms, none above 36), so 120 was 5× the worst run ever seen and a regression the size of
+  the biggest win on record — re-sourcing the gh/uv/ty completions per shell, +35 ms —
+  passed green. Three fixes. (1) `scripts/bench-baseline.env` commits
+  `CORE_BENCH_BASELINE_MS=24` and `CORE_BENCH_BUDGET_MS=48` next to the script they govern,
+  with the calibration, the 2× policy and the re-baseline recipe in its header; `ci.yml`
+  carries no budget literal any more, and `scripts/test-core.sh` pins that, pins
+  `BUDGET == 2 × BASELINE` (so widening the budget to green a run is a red audit), and
+  proves the gate through a stub hyperfine: a 100 ms mean exits 1, a 20 ms mean passes,
+  the env override wins and is labelled, report mode never fails. A budget nobody has seen
+  fail is not known to work; this one fails in the suite on every audit. (2)
+  `bench-core.sh --gate` (`make bench-gate`, what CI runs) reads the file FAIL-CLOSED — a
+  missing or malformed file, a budget that does not exceed the baseline, or a missing
+  zsh/hyperfine/python3 is exit 1, never a skip — and on a breach prints the per-module
+  `--profile` breakdown so the red log names the module, not just the aggregate (single-
+  sample module timings stay informational; a per-module ceiling would gate noise). The
+  mean is still the gated statistic (every recorded measurement is a mean); the median
+  prints beside it, and a breach whose median is within budget carries an "outlier-driven,
+  re-run" hint. (3) Every mode, including plain `make bench`, now prints the mean against
+  the committed baseline (`CI baseline 24 ms, −1%`), so a local run shows the trend —
+  though the number that gates is CI's: a laptop or WSL2 box measures 1–3× ubuntu-latest,
+  so compare before/after locally rather than reading a local `make bench-gate` red as a
+  verdict. The trigger is unchanged: the issue asked to add `starship/` and `nvim/`, but
+  `starship/` and `tmux/` already sit in the classifier's `shell` bucket and bench today,
+  and nothing on the zsh startup chain reads `nvim/`. Dev tooling only — the OS repos
+  receive nothing from this entry.
 - **The atuin daemon-guard research apparatus is archived under `scripts/research/`, and its
   weekly workflow is dispatch-only (#687).** `verify-atuin-guard.sh` (1,845 lines),
   `bench-atuin-daemon.sh` (1,225) and their shared `lib/atuin-db.sh` measured the premises

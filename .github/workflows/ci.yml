@@ -500,17 +500,22 @@ jobs:
   # Startup-perf REGRESSION GATE. Core invests in startup speed (cached tool-init in
   # 00-tools.zsh, deferred plugins in 45-plugins.zsh); a gross regression — re-introducing a
   # per-shell subprocess, un-deferring heavy work, an uncached eval — would fan out to
-  # all nine repos silently. This job now ENFORCES a budget instead of only reporting:
-  # bench-core.sh fails the build when the canonical-chain MEAN exceeds
-  # CORE_BENCH_BUDGET_MS. The budget is deliberately GENEROUS (the hermetic chain runs
-  # ~25 ms; 120 ms is ~5x headroom) and the mean is taken over 50 warmed runs, so
-  # ordinary shared-runner noise can't trip it — only a real regression sustains a 5x
-  # mean. The precise number still prints in the log for trend-watching. No
-  # continue-on-error: a breach is now a red build, not a buried log line. Linux-only.
+  # all nine repos silently. bench-core.sh --gate fails the build when the canonical-chain
+  # MEAN exceeds the budget COMMITTED in scripts/bench-baseline.env (#688) — the number lives
+  # next to the script it governs, not here, so there is nothing in this YAML to drift from
+  # it. Calibration: 194 runs of this job measured 11.8–31.9 ms (bimodal by runner host,
+  # ordinary hosts ~24 ms); the budget is 2× that baseline (48 ms), which the worst run ever
+  # observed clears by 1.5× while a +24 ms regression (re-sourcing the gh/uv/ty completions
+  # cost +35 ms) goes red. The previous 120 ms was 5× the real number and would have passed
+  # that regression. The mean is over 50 warmed runs, so a single outlier moves it by under
+  # 1 ms. On a breach the log carries the per-module profile, so the red run names the
+  # module. No continue-on-error: a breach is a red build, not a buried log line. Linux-only.
+  # Re-baseline recipe: CONTRIBUTING.md "Startup budget".
   bench:
     needs: changes
-    # Startup perf is a property of the zsh load chain; a docs- or nvim-only change
-    # can't move it, so only benchmark when the shell layer actually changed.
+    # Startup perf is a property of the zsh load chain, and every path on that chain is in
+    # the classifier's `shell` bucket (zsh/ starship/ tmux/ theme/ … — scripts/ci-classify.sh);
+    # a docs- or nvim-only change can't move it, so only benchmark when that layer changed.
     if: needs.changes.outputs.shell == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -535,8 +540,8 @@ jobs:
             "${apt_update[@]}" || echo "::warning::apt-get update failed twice — continuing on the image's cached lists; the install below is the real gate"
           fi
           sudo timeout -k 10 180 apt-get install -y --no-install-recommends zsh hyperfine
+      # The budget itself is read from scripts/bench-baseline.env — no literal here.
       - name: Benchmark Core startup (budget gate)
         env:
           CORE_BENCH_RUNS: "50"
-          CORE_BENCH_BUDGET_MS: "120"
-        run: ./scripts/bench-core.sh
+        run: ./scripts/bench-core.sh --gate

@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix changelog-recent release tag publish release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix changelog-recent release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -34,6 +34,9 @@ bench: ## Benchmark Core's contribution to zsh startup (needs hyperfine; skips i
 
 profile: ## Per-module zsh startup breakdown (attributes the total cost; slowest first)
 	@./scripts/bench-core.sh --profile
+
+bench-gate: ## Enforce the committed startup budget (scripts/bench-baseline.env) — exactly what CI's bench job runs
+	@./scripts/bench-core.sh --gate
 
 bench-atuin: ## [research] Measure atuin write latency, daemon off vs on, under contention (needs atuin; skips if absent)
 	@./scripts/research/bench-atuin-daemon.sh
