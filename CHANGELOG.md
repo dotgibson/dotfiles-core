@@ -77,7 +77,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   tmux the flag is a no-op on the wire, the real backends (clip.exe/pbcopy/wl-copy/xclip/xsel)
   ignore it, and the default path — nvim's provider, tmux copy-pipe, `pbcopy` — is
   byte-for-byte what it was; `scripts/test-core.sh` §C asserts each of those on the wire
-  format, including that the default path under tmux never invokes tmux at all. `clip` now
+  format, including that the default pane path under tmux (a writable tty) still never
+  invokes tmux — the copy-pipe shape with no controlling terminal keeps its `load-buffer -w`
+  arm, as before. One limit stays: under nested tmux the outer tmux parses whatever the
+  inner one forwards, so the outer server can still hold a buffer. `clip` now
   refuses an unknown argument (exit 2) rather than hanging on stdin; nothing in Core passes
   one. `clip-paste` and `opsecret` are untouched: the first has no OSC 52 read path by
   design, the second prints via `op read` and never touches `clip`. Not tagged BREAKING:

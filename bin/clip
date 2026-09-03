@@ -170,6 +170,10 @@ _osc52_no_backend() {
 #      bare `delete-buffer` removes the MOST RECENT buffer, which is a race against tmux
 #      reading the pane and against every other client on the socket.
 #
+# Neither arm reaches past ONE tmux: under nested tmux the outer server parses whatever the
+# inner one forwards (a passthrough DCS, or the OSC 52 that `-w` emits), and with its own
+# `set-clipboard on` it keeps a buffer this process cannot see, let alone delete.
+#
 # If the buffer cannot be deleted, this is a FAILURE: the payload is on the clipboard, but
 # the one thing --sensitive promised is untrue, so exit 1 with the exact command to fix it
 # rather than let the caller print "sent".

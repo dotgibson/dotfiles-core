@@ -217,7 +217,10 @@ _stub() {
 _clip_reset() {
   rm -rf "$CBIN"
   mkdir -p "$CBIN"
-  unset WSL_DISTRO_NAME WAYLAND_DISPLAY DISPLAY
+  # TMUX and CLIP_SENSITIVE are inherited from the shell running the audit — from inside a
+  # tmux pane, an "outside tmux" scenario would otherwise land in clip's sensitive tmux arm.
+  # Scenarios that need them pass them explicitly on the command line.
+  unset WSL_DISTRO_NAME WAYLAND_DISPLAY DISPLAY TMUX CLIP_SENSITIVE
   ln -s "$_real_bash" "$CBIN/bash"
   _stub uname 'echo Linux'
   printf 'Linux version 6.1.0-0 (gcc) #1 SMP\n' >"$CBIN/procversion"
@@ -477,8 +480,10 @@ else
   fail "clip --sensitive: outside tmux diverged from the default path"
 fi
 
-# 2. The DEFAULT path under tmux is untouched: the same plain OSC 52 bytes reach the tty
-#    as outside tmux, and tmux is never invoked (no probe, no buffer).
+# 2. The DEFAULT pane path under tmux is untouched: with a writable tty the same plain
+#    OSC 52 bytes reach it as outside tmux, and tmux is never invoked (no probe, no
+#    buffer). The copy-pipe shape — no controlling terminal — still takes `load-buffer -w`,
+#    asserted above; that path is deliberately not sensitive.
 _clip_reset
 ln -s "$_real_tr" "$CBIN/tr"
 ln -s "$(command -v base64)" "$CBIN/base64"
@@ -489,9 +494,9 @@ export CLIP_TTY="$CBIN/tty-default"
 if printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" 2>/dev/null \
   && cmp -s "$CBIN/tty-notmux" "$CBIN/tty-default" \
   && [[ "$(cat "$CBIN/tty-default")" == $'\033']52\;c\;*$'\a' ]] && [[ ! -e "$_tmux_log" ]]; then
-  pass "clip: the default path under tmux still writes a plain OSC 52 to the tty and never calls tmux"
+  pass "clip: the default pane path under tmux (writable tty) still writes a plain OSC 52 and never calls tmux"
 else
-  fail "clip: the default path under tmux changed (tmux calls: $(cat "$_tmux_log" 2>/dev/null | tr '\n' ';'))"
+  fail "clip: the default pane path under tmux changed (tmux calls: $(cat "$_tmux_log" 2>/dev/null | tr '\n' ';'))"
 fi
 
 # 3. --sensitive under tmux, passthrough off: no plain OSC 52 on the tty; a NAMED buffer
