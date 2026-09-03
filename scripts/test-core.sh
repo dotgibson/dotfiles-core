@@ -5581,13 +5581,14 @@ if have git; then
       fail "recovery: ordering wrong at$_rc_order — $_rc_cmd"
     fi
     _rc_bad=""
-    printf '%s\n' "$_rc_cmd" | grep -qF 'git fetch https://example.invalid/fork.git refs/tags/v9' || _rc_bad="$_rc_bad fetch-from-CORE_REMOTE"
-    printf '%s\n' "$_rc_cmd" | grep -qF 'CORE_REMOTE=https://example.invalid/fork.git ' || _rc_bad="$_rc_bad CORE_REMOTE-forwarded"
-    printf '%s\n' "$_rc_cmd" | grep -qF "CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\"" || _rc_bad="$_rc_bad peeled-commit-pin"
-    printf '%s\n' "$_rc_cmd" | grep -qF "REPOS_ROOT=$(printf '%q' "$_rc_parent") " || _rc_bad="$_rc_bad REPOS_ROOT"
-    printf '%s\n' "$_rc_cmd" | grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' || _rc_bad="$_rc_bad subtree-add-source"
-    # The worktree subshell must return the SYNC's status, not the cleanup's.
-    printf '%s\n' "$_rc_cmd" | grep -qF '; _rc=$?; git worktree remove --force "$_wt" && exit "$_rc")' || _rc_bad="$_rc_bad sync-status-propagated"
+    grep -qF 'git fetch https://example.invalid/fork.git refs/tags/v9' <<<"$_rc_cmd" || _rc_bad="$_rc_bad fetch-from-CORE_REMOTE"
+    grep -qF 'CORE_REMOTE=https://example.invalid/fork.git ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad CORE_REMOTE-forwarded"
+    grep -qF "CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\"" <<<"$_rc_cmd" || _rc_bad="$_rc_bad peeled-commit-pin"
+    grep -qF "REPOS_ROOT=$(printf '%q' "$_rc_parent") " <<<"$_rc_cmd" || _rc_bad="$_rc_bad REPOS_ROOT"
+    grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' <<<"$_rc_cmd" || _rc_bad="$_rc_bad subtree-add-source"
+    # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
+    # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
+    grep -qF '; _rc=$?; git worktree remove --force "$_wt" && exit "$_rc")' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
     else
