@@ -16973,6 +16973,14 @@ _fv_floor "make test inside a quoted heredoc payload" '**not-in-ci**' '_fv_suite
 _fv_floor "make test inside an unquoted heredoc payload" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          tee notes.txt <<EOF\n          make test\n          EOF\n"'
 _fv_floor "make test after the heredoc closes" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          cat <<EOF > notes.txt\n          hello\n          EOF\n          make test\n"'
 _fv_floor "a herestring is not a heredoc" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          grep -q x <<<\"y\" || true\n          make test\n"'
+# LOOPS AS FAR AS THEY ARE STATIC; a sequence item at the steps: column is a step; an
+# explicitly empty inline recipe replaces the earlier one.
+_fv_floor "while false; do make test; done never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while false; do make test; done"'
+_fv_floor "until true; do make test; done never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "until true; do make test; done"'
+_fv_floor "for t in a b; do make test; done runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for t in a b; do make test; done"'
+_fv_floor "make test after a while-false loop closes" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while false; do echo never; done; make test"'
+_fv_floor "steps: with its items at the same indent" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n    - run: make lint\n    - run: make test\n"'
+_fv_floor "test: ; (an empty inline recipe) replaces the earlier recipe" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "test: ;\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

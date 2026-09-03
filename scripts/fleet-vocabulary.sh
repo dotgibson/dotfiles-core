@@ -229,8 +229,9 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     then judge root-relative paths as always (a `make` there reads test/Makefile and is
 #     not judged). A `cd` ANYWHERE ELSE (`cd docs`, `cd ..`, `cd tools`) puts the rest of
 #     the list outside the tree this register inspected — a `make test` there is another
-#     Makefile — so those commands are dropped, not judged. Shell `if` blocks are followed
-#     as far as they are static: a `false` body and a `true` else never run.
+#     Makefile — so those commands are dropped, not judged. Shell `if` blocks and loops are
+#     followed as far as they are static: a `false` body, a `true` else, a `while false`
+#     or `until true` body never run.
 #   * trim — whitespace only.
 AWK_SHELL='
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -342,6 +343,17 @@ AWK_SHELL='
         c[i] = ""; continue
       }
       if (t ~ /^fi([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
+      # Loops, as far as they are static: `while false` and `until true` never run their
+      # body; any other loop (a runtime condition, `while true`, `for`) may. A loop is a
+      # level like an `if`, closed by `done`.
+      if (t ~ /^(while|until|for)([ \t]|$)/) {
+        nest++
+        TAKEN[nest] = ""
+        SKIPD[nest] = (t ~ /^while[ \t]+false([ \t]|$)/ || t ~ /^until[ \t]+(true|:)([ \t]|$)/)
+        skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
+        c[i] = ""; continue
+      }
+      if (t ~ /^done([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
       skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
       # A group or subshell runs where it stands: `{ make test; }` and `( make test )` are
       # `make test` in command position once the delimiters go.
@@ -459,7 +471,9 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       }
       if ($0 ~ /^[ \t]*$/ || $0 ~ /^[ \t]*#/) next
       match($0, /^[ \t]*/); ind = RLENGTH
-      if (insteps && ind <= sind) { flushstep(); insteps = 0; dind = -1; rind = -1 }
+      # YAML allows a sequence item at its parent key`s own indent (`steps:` over `- run:`),
+      # so a `- ` at the steps column is a step, not the end of the block.
+      if (insteps && (ind < sind || (ind == sind && $0 !~ /^[ \t]*-[ \t]/))) { flushstep(); insteps = 0; dind = -1; rind = -1 }
       if (!insteps) {
         if ($0 ~ /^jobs:[ \t]*(#.*)?$/) { injobs = 1; jobind = -1; dind = -1; rind = -1; next }
         if (injobs) {
@@ -549,11 +563,12 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
         lhs = l; sub(/::?.*/, "", lhs)
         rhs = l; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
         fresh = (l !~ /^[^:]*::/)
-        inl = ""
-        if (match(rhs, /;/)) { inl = substr(rhs, RSTART + 1); rhs = substr(rhs, 1, RSTART - 1) }
+        inl = ""; hassemi = 0
+        if (match(rhs, /;/)) { inl = substr(rhs, RSTART + 1); rhs = substr(rhs, 1, RSTART - 1); hassemi = 1 }
         n = split(lhs, t, /[ \t]+/); ncur = 0
         for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur[++ncur] = t[i]; pre[t[i]] = pre[t[i]] " " rhs; seen[t[i]] = 1 }
-        if (inl != "") {
+        # `test: ;` is an EMPTY recipe, and it replaces the earlier one all the same.
+        if (hassemi) {
           if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
           if (runs(inl)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
         }
