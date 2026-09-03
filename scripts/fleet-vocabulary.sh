@@ -920,9 +920,10 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
   # A rule with several targets (`smoke test-repo:`) gives its recipe to each; an inline
   # recipe (`test: ; ./test/smoke.sh`) is the text after the rule's `;`. LOGICAL lines: a
   # trailing backslash continues a rule (`test: \` over `suite-run`) or a recipe onto the
-  # next physical line, exactly as make reads it. Otherwise the same lexer as _targets:
-  # rules at column 0, recipes on tab lines, comments and variable assignments ignored,
-  # conditionals decided as in _targets (AWK_MAKECOND), nothing in a define body counted.
+  # next physical line, exactly as make reads it; under .ONESHELL a rule`s recipe lines
+  # are one script (flushrecipe). Otherwise the same lexer as _targets: rules at column 0,
+  # recipes on tab lines, comments and variable assignments ignored, conditionals decided
+  # as in _targets (AWK_MAKECOND), nothing in a define body counted.
   awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v PIPEFAIL=0 -v existl="${3:-}" "$AWK_SHELL$AWK_MAKECOND"'
     BEGIN { loadexist(existl) }
     # submake(line) — the goals a recipe hands to a RECURSIVE make (`$(MAKE) test`, `${MAKE}
@@ -963,18 +964,39 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
     # `test:; @true` runs only true; a rule with no recipe adds prerequisites and keeps
     # the recipe; a double-colon rule is additive. `fresh` is set by a rule line and
     # consumed by the first recipe line of that rule.
+    # .ONESHELL: every recipe line of a rule runs in ONE shell, as one script — an `exit`
+    # or a `cd` on one line governs the lines after it — so the lines are held and judged
+    # together when the rule ends. Without it each line is its own `sh -c`. .SHELLFLAGS
+    # carrying -e makes a bare `false` end that script (ERREXIT), as in a workflow step.
+    function flushrecipe(   i, j, joined, t) {
+      if (nrl == 0) return
+      joined = ""
+      for (j = 1; j <= nrl; j++) { t = RL[j]; sub(/^[ \t]*[@+-]*[ \t]*/, "", t); t = trim(stripcomment(t)); if (t == "") continue; joined = (joined == "" ? t : ((joined ~ /(&&|\|\||\||;)$/ || t ~ /^(&&|\|\||\|)/) ? joined " " t : joined " ; " t)) }
+      if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
+      if (runs(joined)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
+      for (i = 1; i <= ncur; i++) pre[cur[i]] = pre[cur[i]] " " submake(joined)
+      nrl = 0
+    }
     function handle(l,   lhs, rhs, inl, n, t, i) {
       if (indef) { if (l ~ /^[ ]*endef([ \t]|$)/) indef = 0; return }
-      if (l ~ /^[ ]*define([ \t]|$)/) { indef = 1; ncur = 0; return }
-      if (mc_line(l)) { ncur = 0; return }
+      if (l ~ /^[ ]*define([ \t]|$)/) { indef = 1; flushrecipe(); ncur = 0; return }
+      if (mc_line(l)) { flushrecipe(); ncur = 0; return }
       if (mc_active() != "1") return
+      if (l ~ /^[ ]*[.]ONESHELL[ \t]*:/) { oneshell = 1; return }
+      if (l ~ /^[ ]*[.]SHELLFLAGS[ \t]*[:+?]?=/) { t = l; sub(/^[^=]*=[ \t]*/, "", t); ERREXIT = (t ~ /(^|[ \t])-[a-zA-Z]*e/) ? 1 : 0; return }
       if (l ~ /^\t/) {
+        if (oneshell) { RL[++nrl] = l; return }
         if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
         if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
         for (i = 1; i <= ncur; i++) pre[cur[i]] = pre[cur[i]] " " submake(l)
         return
       }
+      # A blank or comment-only line between a rule and its recipe is permitted by make
+      # and changes nothing (nor does it end a held .ONESHELL recipe).
+      if (l ~ /^[ \t]*$/ || l ~ /^[ \t]*#/) return
+      flushrecipe()
       if (l ~ /^[ ]*[^\t#. ][^:=]*::?([^=]|$)/) {
+        # (flushrecipe() above already closed the previous rule`s held recipe)
         lhs = l; sub(/::?.*/, "", lhs); sub(/^[ ]+/, "", lhs)
         rhs = l; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
         fresh = (l !~ /^[^:]*::/)
@@ -990,9 +1012,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
         }
         return
       }
-      # A blank or comment-only line between a rule and its recipe is permitted by make
-      # and changes nothing; anything else (a variable, a directive) ends the rule.
-      if (l ~ /^[ \t]*$/ || l ~ /^[ \t]*#/) return
+      # Anything else (a variable, a directive) ends the rule.
       ncur = 0
     }
     {
@@ -1001,6 +1021,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
     }
     END {
       if (buf != "") handle(buf)
+      flushrecipe()
       do {
         changed = 0
         for (k in seen) if (!hit[k]) {

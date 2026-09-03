@@ -10585,6 +10585,13 @@ _fv_floor "ci: ; true || \$(MAKE) test never recurses" '**not-in-ci**' '_fv_suit
 _fv_floor "ci: ; false || \$(MAKE) test always recurses" 'ok' '_fv_suite dotfiles-Alpine; printf "ci: ; false || \$(MAKE) test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
 _fv_floor "ci: \$(MAKE) -C . test is the same Makefile" 'ok' '_fv_suite dotfiles-Alpine; printf "ci:\n\t\$(MAKE) -C . test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
 _fv_floor "ci: \$(MAKE) -f Makefile test is the same Makefile" 'ok' '_fv_suite dotfiles-Alpine; printf "ci:\n\t\$(MAKE) -f Makefile test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
+# .ONESHELL: a rule`s recipe is one script — an exit or a cd on one line governs the next;
+# without it each line is its own sh -c. .SHELLFLAGS -e makes a bare false end the script.
+_fv_floor ".ONESHELL: exit 0 on one line ends the recipe" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf ".ONESHELL:\nsuite3:\n\texit 0\n\t./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite3"'
+_fv_floor ".ONESHELL: cd test on one line, ./smoke.sh on the next, runs the suite" 'ok' '_fv_suite dotfiles-Alpine; printf ".ONESHELL:\nsuite3:\n\tcd test\n\t./smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite3"'
+_fv_floor "without .ONESHELL each recipe line is its own shell: cd does not carry" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "suite3:\n\tcd test\n\t./smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite3"'
+_fv_floor ".ONESHELL with .SHELLFLAGS -ec: false ends the script" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf ".ONESHELL:\n.SHELLFLAGS = -ec\nsuite3:\n\tfalse\n\t./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite3"'
+_fv_floor ".ONESHELL without -e: false does not end the script" 'ok' '_fv_suite dotfiles-Alpine; printf ".ONESHELL:\nsuite3:\n\tfalse\n\t./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite3"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
