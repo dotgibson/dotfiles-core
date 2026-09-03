@@ -434,6 +434,161 @@ else
   unset _clip_pipe_out _clip_pipe_rc _tmux_log _cp_i
 fi
 
+# ── --sensitive: a TOTP must not be left in a tmux paste buffer (#690) ────────
+# optoken pipes a live TOTP through `clip --sensitive`. Under tmux with Core's own
+# `set-clipboard on`, the plain OSC 52 write leaves the code in a tmux paste buffer that
+# anything on the socket can `show-buffer` — so the sensitive arm must never write a plain
+# OSC 52 to the pane's tty inside tmux. Two ways out, both asserted on the wire: DCS
+# passthrough when the pane allows it (no buffer ever exists), else a NAMED transient buffer
+# that is deleted in the same breath. And the default path — nvim, tmux copy-pipe, pbcopy —
+# must be byte-for-byte what it was, flag or no flag.
+#
+# A tmux stub that answers `show-options … allow-passthrough` with a fixed value, captures
+# what load-buffer was fed, logs every call in order, and exits as told on delete-buffer.
+# Synchronous (no setsid — optoken runs in a pane that HAS a tty), so no race to wait out.
+_tmux_stub() { # _tmux_stub <allow-passthrough value> [delete-buffer exit code]
+  _tmux_log="$CBIN/tmux.calls"
+  rm -f "$_tmux_log" "$_tmux_log.payload"
+  cat >"$CBIN/tmux" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >>"$_tmux_log"
+case "\$1" in
+  show-options) printf '%s\n' '$1' ;;
+  load-buffer) $(command -v cat) >"$_tmux_log.payload" ;;
+  delete-buffer) exit ${2:-0} ;;
+  *) exit 1 ;;
+esac
+EOF
+  chmod +x "$CBIN/tmux"
+}
+_sens_payload='123456'
+
+# 1. Outside tmux the flag is a no-op on the wire: the same bytes reach the tty.
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+export CLIP_TTY="$CBIN/tty-plain"
+printf '%s' "$_sens_payload" | PATH="$CBIN" "$CLIP" 2>/dev/null
+export CLIP_TTY="$CBIN/tty-sens"
+if printf '%s' "$_sens_payload" | PATH="$CBIN" "$CLIP" --sensitive 2>/dev/null \
+  && cmp -s "$CBIN/tty-plain" "$CBIN/tty-sens"; then
+  pass "clip --sensitive: outside tmux, emits exactly the bytes the default path emits"
+else
+  fail "clip --sensitive: outside tmux diverged from the default path"
+fi
+
+# 2. The DEFAULT path under tmux is untouched: the same plain OSC 52 bytes reach the tty
+#    as outside tmux, and tmux is never invoked (no probe, no buffer).
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+_tmux_stub off
+export CLIP_TTY="$CBIN/tty-notmux"
+printf '%s' "$_sens_payload" | PATH="$CBIN" "$CLIP" 2>/dev/null
+export CLIP_TTY="$CBIN/tty-default"
+if printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" 2>/dev/null \
+  && cmp -s "$CBIN/tty-notmux" "$CBIN/tty-default" \
+  && [[ "$(cat "$CBIN/tty-default")" == $'\033']52\;c\;*$'\a' ]] && [[ ! -e "$_tmux_log" ]]; then
+  pass "clip: the default path under tmux still writes a plain OSC 52 to the tty and never calls tmux"
+else
+  fail "clip: the default path under tmux changed (tmux calls: $(cat "$_tmux_log" 2>/dev/null | tr '\n' ';'))"
+fi
+
+# 3. --sensitive under tmux, passthrough off: no plain OSC 52 on the tty; a NAMED buffer
+#    is loaded with -w, then deleted, in that order, with the same name; payload intact;
+#    the transient-buffer fact is on stderr; exit 0.
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+_tmux_stub off
+export CLIP_TTY="$CBIN/tty-sens-off"
+: >"$CLIP_TTY"
+_sens_err="$(printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" --sensitive 2>&1 >/dev/null)"
+_sens_rc=$?
+_sens_load="$(grep '^load-buffer' "$_tmux_log" 2>/dev/null || true)"
+_sens_name="${_sens_load#load-buffer -w -b }"; _sens_name="${_sens_name% -}"
+if [[ "$_sens_rc" -eq 0 && ! -s "$CLIP_TTY" && "$_sens_load" == "load-buffer -w -b clip-sensitive-"*" -" ]] \
+  && [[ "$(grep -n '^load-buffer\|^delete-buffer' "$_tmux_log" | tr '\n' ' ')" == 2:load-buffer*" 3:delete-buffer -b $_sens_name " ]]; then
+  pass "clip --sensitive: under tmux without passthrough, loads a NAMED buffer with -w and deletes that same buffer at once"
+else
+  fail "clip --sensitive: tmux transient-buffer arm wrong (rc=$_sens_rc, tty=$(wc -c <"$CLIP_TTY")B, calls: $(tr '\n' ';' <"$_tmux_log" 2>/dev/null))"
+fi
+if [[ "$(cat "$_tmux_log.payload" 2>/dev/null)" == "$_sens_payload" ]]; then
+  pass "clip --sensitive: the transient buffer received the payload byte-for-byte"
+else
+  fail "clip --sensitive: transient buffer payload wrong (got '$(cat "$_tmux_log.payload" 2>/dev/null)')"
+fi
+if [[ "$_sens_err" == *"tmux buffer"* && "$_sens_err" == *"deleted"* ]]; then
+  pass "clip --sensitive: says on stderr that the copy went through a (deleted) tmux buffer"
+else
+  fail "clip --sensitive: stderr does not disclose the transient buffer (got '$_sens_err')"
+fi
+
+# 4. CLIP_SENSITIVE=1 is the same switch as the flag.
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+_tmux_stub off
+export CLIP_TTY="$CBIN/tty-sens-env"
+: >"$CLIP_TTY"
+if printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 CLIP_SENSITIVE=1 "$CLIP" >/dev/null 2>&1 \
+  && [[ ! -s "$CLIP_TTY" ]] && grep -q '^delete-buffer -b clip-sensitive-' "$_tmux_log"; then
+  pass "clip: CLIP_SENSITIVE=1 selects the sensitive arm exactly like --sensitive"
+else
+  fail "clip: CLIP_SENSITIVE=1 did not select the sensitive arm"
+fi
+
+# 5. --sensitive under tmux, passthrough on: the OSC 52 goes to the tty wrapped in a DCS
+#    passthrough (ESC doubled inside, ST-terminated), so tmux's parser never sees it and no
+#    buffer is ever created — tmux is asked about passthrough and nothing else.
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+_tmux_stub on
+export CLIP_TTY="$CBIN/tty-sens-on"
+_dcs_pre=$'\033Ptmux;\033\033]52;c;'
+_dcs_suf=$'\a\033\\'
+if printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" --sensitive 2>/dev/null; then
+  _dcs_raw="$(cat "$CLIP_TTY"; printf X)"; _dcs_raw="${_dcs_raw%X}"
+  _dcs_b64="${_dcs_raw#"$_dcs_pre"}"; _dcs_b64="${_dcs_b64%"$_dcs_suf"}"
+  if [[ "$_dcs_raw" == "$_dcs_pre"*"$_dcs_suf" && "$(printf '%s' "$_dcs_b64" | base64 -d 2>/dev/null)" == "$_sens_payload" ]]; then
+    pass "clip --sensitive: with allow-passthrough on, wraps the OSC 52 in a DCS passthrough (ESC doubled, ST-terminated)"
+  else
+    fail "clip --sensitive: DCS passthrough framing wrong (got: $(printf '%q' "$_dcs_raw"))"
+  fi
+  if ! grep -q '^load-buffer\|^delete-buffer' "$_tmux_log"; then
+    pass "clip --sensitive: with passthrough, no tmux buffer is ever created"
+  else
+    fail "clip --sensitive: created a tmux buffer despite passthrough (calls: $(tr '\n' ';' <"$_tmux_log"))"
+  fi
+else
+  fail "clip --sensitive: passthrough arm exited non-zero"
+fi
+
+# 6. A buffer that cannot be deleted is a FAILURE with the fix-it command, not a "sent".
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+_tmux_stub off 1
+export CLIP_TTY="$CBIN/tty-sens-stuck"
+_sens_err="$(printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" --sensitive 2>&1 >/dev/null)"
+if [[ $? -ne 0 && "$_sens_err" == *"tmux delete-buffer -b clip-sensitive-"* ]]; then
+  pass "clip --sensitive: a transient buffer that survives delete-buffer is exit 1, naming the buffer to delete"
+else
+  fail "clip --sensitive: an undeletable transient buffer was not reported as a failure (got '$_sens_err')"
+fi
+
+# 7. An unknown argument is refused (exit 2) before anything is read or written.
+_clip_reset
+export CLIP_TTY="$CBIN/tty-badarg"
+if printf 'x' | PATH="$CBIN" "$CLIP" --bogus >/dev/null 2>&1; then
+  fail "clip: an unknown argument was accepted"
+else
+  [[ $? -eq 2 && ! -e "$CLIP_TTY" ]] && pass "clip: an unknown argument is refused with exit 2 and touches nothing" \
+    || fail "clip: unknown-argument exit status or side effect wrong"
+fi
+unset _sens_payload _sens_err _sens_rc _sens_load _sens_name _dcs_pre _dcs_suf _dcs_raw _dcs_b64 _tmux_log
+
 # clip-paste (paste) — mirror ladder; the WSL leg also strips the CR powershell adds.
 _clip_reset
 export WSL_DISTRO_NAME=Ubuntu
