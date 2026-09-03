@@ -2490,6 +2490,13 @@ _vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5.3.0}
 _vpn_count "an exact-but-retired scaffold default (v5.3.0 on a v6 tree) is still a finding" 6 1
 _vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v6.1.0}"'
 _vpn_count "an exact scaffold default on the current major is clean" 6 0
+# The --help text documents the same default in prose form, and is what a reader pastes.
+_vpn_write scripts/new-os-repo.sh '     CORE_BRANCH (default: refs/tags/v5.3.0 — a RELEASED tag, never main; pin a specific'
+_vpn_count "the --help form of an exact-but-retired default is judged too" 6 1
+# Default-ness is decided per MATCH, not per line: the current default and a deliberate
+# freeze in one sentence must leave the freeze exempt.
+_vpn_write README.md 'the default is CORE_BRANCH:-refs/tags/v6, but pin refs/tags/v5.3.0 to freeze'
+_vpn_count "a freeze on the same line as the current default keeps its exemption" 6 0
 # Exemptions — every one of these is a TRUE sentence that must not be flagged.
 _vpn_write RELEASE-STRATEGY.md 'Pin `refs/tags/v5.3.0` while sitting on `main` and the lock records'
 _vpn_count "an exact vN.M.P pin is a deliberate freeze, not a finding" 6 0
@@ -2521,6 +2528,10 @@ _vpn_write README.md 'Pin `refs/tags/v5.3.0`. Or, less carefully, pin refs/tags/
 _vpn_count "an exact pin followed by a sentence-ending period is still exempt" 6 0
 _vpn_write README.md 'so vendor refs/tags/v5.'
 _vpn_count "a bare major followed by a sentence-ending period is still a finding" 6 1
+# Only the period is prose. A trailing `+` or `-` makes the token malformed, and a
+# malformed foreign pin is judged, never trimmed into an exempt exact one.
+_vpn_write README.md 'refs/tags/v5.3.0+ and refs/tags/v5.3.0-'
+_vpn_count "\`v5.3.0+\` and \`v5.3.0-\` are malformed foreign pins, both findings" 6 2
 # A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
 _vpn_write README.md 'git  checkout v5'
 _vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1

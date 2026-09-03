@@ -1293,28 +1293,37 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         # reformatted command cannot slip under the gate; and the exact-pin class is the
         # SAME one core.version is validated against (audit-core.sh, SemVer [-pre]), so a
         # pre-release this repo could actually cut is exempt and nothing wider is.
+        consumed = ""
         while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+checkout[[:space:]]+v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
           sub(/^[^rgv]*/, "", hit)                 # drop the boundary character
+          blen = RLENGTH - length(hit)             # how long that boundary was (0 or 1)
+          # THIS match is the scaffold default when the text right before it is the
+          # assignment (`CORE_BRANCH:-`) or the --help line (`CORE_BRANCH (default: `).
+          # Judged per match, not per line: a sentence naming the current default AND a
+          # deliberate freeze must keep the freeze exempt.
+          prefix = consumed substr(line, 1, RSTART - 1 + blen)
+          isdefault = (hit ~ /^refs\/tags\/v/ && prefix ~ /CORE_BRANCH(:-| \(default: )$/)
           tok = hit
           sub(/\^\{commit\}$/, "", tok)
           match(tok, /v[0-9]/); tok = substr(tok, RSTART + 1)
-          # The token class admits `.`, `-` and `+`, so a sentence-ending period (or a
-          # dash the prose runs into) rides in with it: `refs/tags/v5.3.0.` would read
-          # as `5.3.0.` and an exact freeze would be reported stale. No version ends in
-          # one of those characters, so trailing ones are prose, not pin.
-          sub(/[.+-]+$/, "", tok)
-          sub(/[.+-]+$/, "", hit)                  # the message quotes the pin, not the prose
+          # The token class admits `.`, so a sentence-ending period rides in with it:
+          # `refs/tags/v5.3.0.` would read as `5.3.0.` and an exact freeze would be
+          # reported stale. ONLY the period is prose. A trailing `+` or `-` is kept,
+          # because `v5.3.0+` is no tag this repo cuts and must stay judged, not become
+          # exempt by trimming.
+          sub(/\.+$/, "", tok)
+          sub(/\.+$/, "", hit)                    # the message quotes the pin, not the prose
           major = tok; sub(/[^0-9].*$/, "", major)
           exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
           # The scaffold default is never exempt: it is not a freeze someone chose, it is
           # the pin every new repo gets by default.
-          isdefault = ($0 ~ /CORE_BRANCH:-refs\/tags\/v/)
           if ((!exact || isdefault) && major != want) {
             printf "%s:%d: %s names v%s, but core.version is major v%s (%s)\n", \
               file, NR, (isdefault ? "the scaffold default" : "first-vendor pin"), tok, want, hit
           }
+          consumed = consumed substr(line, 1, RSTART + RLENGTH - 1)
           line = rest
         }
       }
