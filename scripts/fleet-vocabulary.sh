@@ -98,35 +98,44 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
   [[ -n "$decl" ]] && printf '%s' "$decl"
 }
 
-# WHAT COUNTS AS RUNNING THE SUITE, in a shell command line: a test path in COMMAND position
-# (`./test/smoke.sh`, `tests/run`, or after `;`/`&&`/`|`) or handed to an interpreter
-# (`bash -e test/smoke.sh`). `echo test/smoke.sh` and `shellcheck test/*.sh` mention the
-# path and run nothing, so they do not count. `DIRS` is replaced per repo with the
-# directory that is actually populated (_run_re), so a populated test/ is not credited
-# by a step running a nonexistent tests/. No backslashes: this is handed to awk via -v,
-# which would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='(^[[:space:]]*|[;&|][[:space:]]*|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)([.][/])?(DIRS)[/]'
+# WHAT COUNTS AS RUNNING THE SUITE, in one simple shell command: a test path in COMMAND
+# position (`./test/smoke.sh`, `tests/run`, at the start or after `;`/`&&`/`|`), or an
+# interpreter in command position handed one (`bash -e test/smoke.sh`), optionally under
+# sudo. `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
+# the path and run nothing, so they do not count. `DIRS` is replaced per repo with the
+# directory that is actually populated (_run_re), so a populated test/ is not credited by a
+# step running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
+# would eat them, so `[.]` and `[/]` stand in for the escaped forms.
+RUN_RE_TEMPLATE='(^[[:space:]]*|[;&|][[:space:]]*)(sudo[[:space:]]+)?((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
+# A NO-EXECUTE MODE PARSES OR PRINTS AND RUNS NOTHING: make's dry-run (`-n` in any short
+# cluster, --dry-run/--just-print/--recon) and question (`-q`, --question) modes; a shell's
+# `-n` syntax check; node's --check. Any such flag between the command and its operand
+# disqualifies the command, wherever it appears — a workflow step or a Makefile recipe.
+NORUN_RE='(^|[[:space:]])(sudo[[:space:]]+)?(make[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nq][a-zA-Z]*|--dry-run|--just-print|--recon|--question)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*|--check|--syntax-check))([[:space:]]|$)'
 
-_run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` step, comments stripped
-  # Only what a step RUNS counts as running the suite. A path filter (`paths: ['test/**']`),
+_run_lines() { # _run_lines <workflow.yml> → the command text of every step's `run:`, one command per line
+  # Only what a STEP runs counts as running the suite. A path filter (`paths: ['test/**']`),
   # a job name, or a comment saying `make test` is a mention, not an execution, and an
-  # unanchored grep read all three as the floor being met. Inline `run: cmd` prints cmd;
-  # `run: |` / `run: >` prints every line of the block — the lines indented deeper than
-  # the KEY, where for a compact sequence step (`- run: |`) the key sits after the `- `,
-  # so a sibling `env:` at the key's own column ends the block rather than joining it.
-  # Not a YAML parser — it needs no quoting rules, only indentation, which is the one
-  # thing YAML block scalars guarantee.
+  # unanchored grep read all three as the floor being met. Not a YAML parser — it needs no
+  # document model, only the forms a workflow step actually takes:
+  #   * `run:` is a command only inside a `steps:` block (from that key to the next
+  #     non-blank line at or above its column) AND at the step's own key column — the
+  #     column after `- ` — so a job-level `env: { run: … }` or a step-level `env:` entry
+  #     named `run` is data.
+  #   * an inline value is one command; surrounding "…" or '…' quotes are removed.
+  #   * a literal block (`|`) is one command per line; a folded block (`>`) is ONE command
+  #     per paragraph, because YAML joins its lines with a space — `echo` over `make test`
+  #     runs `echo make test`.
+  # Block lines are the lines indented deeper than the key, and are emitted at column 0.
   awk '
-    # Leading indentation goes too: a block line is a command, and the command-position
-    # anchors downstream must see it at column 0, as an inline `run:` value already is.
-    function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); sub(/^[ \t]+/, "", s); return s }
+    function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+    function unquote(s) {
+      if (s ~ /^"([^"]|\\")*"$/ || s ~ /^\047[^\047]*\047$/) s = substr(s, 2, length(s) - 2)
+      return s
+    }
     {
       if (inblock) {
-        # A folded block (`>`) is ONE command per paragraph: YAML joins its lines with a
-        # space, and only a blank line breaks. `echo` over `test/smoke.sh` runs
-        # `echo test/smoke.sh`, so the lines are folded before anything reads them as a
-        # command. A literal block (`|`) is one command per line.
         if ($0 ~ /^[ \t]*$/) { if (fold && acc != "") { print acc; acc = "" } ; next }
         match($0, /^[ \t]*/)
         if (RLENGTH > bind) {
@@ -137,42 +146,48 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` 
         if (fold && acc != "") { print acc; acc = "" }
         inblock = 0
       }
-      # Only the `run` key OF A STEP is a command. `run` is an ordinary key anywhere else
-      # (a job-level `env: { run: … }` is valid YAML), so a `run:` counts only while inside
-      # a `steps:` block — from the key to the next non-blank line at or above its column.
-      if ($0 ~ /^[ \t]*steps:[ \t]*$/) { match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; next }
-      if (insteps && $0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); if (RLENGTH <= sind) insteps = 0 }
-      if (insteps && match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
+      if ($0 ~ /^[ \t]*steps:[ \t]*$/) { match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; keycol = -1; next }
+      if (!insteps) next
+      if ($0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); if (RLENGTH <= sind) { insteps = 0; next } }
+      if (match($0, /^[ \t]*-[ \t]+/)) keycol = RLENGTH
+      if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
         rest = substr($0, RSTART + RLENGTH)
         match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
+        if (bind != keycol) next
         if (rest ~ /^[ \t]*[|>]/) { inblock = 1; fold = (rest ~ /^[ \t]*>/); acc = "" }
-        else print strip(rest)
+        else print unquote(strip(rest))
       }
     }
     END { if (fold && acc != "") print acc }
-  ' "$1"
+  ' "$1" | awk '{ gsub(/[;&|]+/, "\n"); print }'
 }
 
 _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the suite, one per line
   # `make test` is the canonical spelling, but a workflow that runs `make test-repo` whose
   # recipe is `./test/test-repo.sh` IS running the suite — and the verb column already
   # reports the missing alias, so the floor must not report the same gap twice. A target
-  # qualifies if a recipe line of its rule runs the suite (the run regex, after the `@`/`-`/`+`
-  # recipe prefixes), or if a prerequisite qualifies (to a fixpoint, so `test: test-repo`
-  # inherits). A rule with several targets (`smoke test-repo:`) gives its recipe to each.
-  # Same lexer as _targets: rules at column 0, recipes on tab lines, comments and variable
-  # assignments ignored.
-  awk -v re="$2" '
-    /^\t/ {
-      line = $0; sub(/^\t[ \t]*[@+-]*[ \t]*/, "", line)
-      if (line ~ re) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
-      next
+  # qualifies if a recipe line of its rule runs the suite (the run regex, after the
+  # `@`/`-`/`+` prefixes, and not in a no-execute mode), or if a prerequisite qualifies
+  # (to a fixpoint, so `test: test-repo` inherits). A rule with several targets (`smoke
+  # test-repo:`) gives its recipe to each; an inline recipe (`test: ; ./test/smoke.sh`) is
+  # the text after the rule's `;`. Same lexer as _targets: rules at column 0, recipes on
+  # tab lines, comments and variable assignments ignored.
+  awk -v re="$2" -v nore="$NORUN_RE" '
+    function runs(line,   n, c, i) {
+      sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
+      n = split(line, c, /[;&|]+/)
+      for (i = 1; i <= n; i++) if (c[i] ~ re && c[i] !~ nore) return 1
+      return 0
     }
+    /^\t/ { if (runs($0)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1; next }
     /^[^\t#. ][^:=]*::?([^=]|$)/ {
       lhs = $0; sub(/::?.*/, "", lhs)
       rhs = $0; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
+      inline = ""
+      if (match(rhs, /;/)) { inline = substr(rhs, RSTART + 1); rhs = substr(rhs, 1, RSTART - 1) }
       n = split(lhs, t, /[ \t]+/); ncur = 0
       for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur[++ncur] = t[i]; pre[t[i]] = pre[t[i]] " " rhs; seen[t[i]] = 1 }
+      if (inline != "" && runs(inline)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
       next
     }
     { ncur = 0 }
@@ -209,7 +224,7 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   ((seen)) || { printf 'no-dir'; return 0; }
   [[ -n "$dirs" ]] || { printf 'empty'; return 0; }
   re="$(_run_re "$dirs")"
-  # What counts as running it: a `run:` step that executes the directory (the run regex), or
+  # What counts as running it: a step that executes the directory (the run regex), or
   # invokes `make` on a target whose recipe does. `test` earns its place like any other —
   # a `test:` whose recipe is `@true` runs nothing, and the verb column, not the floor,
   # is where "the canonical name exists" is judged.
@@ -221,24 +236,16 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   fi
   # No suite target at all: the make arm must match nothing, not the empty string.
   [[ -n "$alt" ]] || alt='[^[:alnum:]_-]never-a-target'
-
   # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
-  # never a nested directory or a stray notes file. The step text is captured, split into
-  # simple commands at `;`/`&&`/`||`/`|`, and each command is judged on its own: `make`
-  # must be the command (optionally under sudo), the target must be one that runs the
-  # suite, and a dry-run make (`-n` in any short cluster, `--dry-run`, `--just-print`,
-  # `--recon`) prints the recipe without running it, so it does not count. Captured, not
-  # piped from the producer: under pipefail a `grep -q` that exits on an early match can
-  # SIGPIPE an awk still writing, and 141 would read as "not run".
+  # never a nested directory or a stray notes file. _run_lines yields one simple command
+  # per line; each is judged alone: the run regex, or `make` as the command (optionally
+  # under sudo) on a suite target — and in neither case a no-execute mode (NORUN_RE).
+  # Captured, not piped from the producer: under pipefail a `grep -q` that exits on an
+  # early match can SIGPIPE an awk still writing, and 141 would read as "not run".
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
     [[ -f "$wf" ]] || continue
-    cmds="$(_run_lines "$wf" | awk '{ gsub(/[;&|]+/, "\n"); print }')"
-    if grep -qE "$re" <<<"$cmds"; then
-      printf 'ok'
-      return 0
-    fi
-    hits="$(grep -E "^[[:space:]]*(sudo[[:space:]]+)?make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([^[:alnum:]_-]|\$)" <<<"$cmds" |
-      grep -vE "[[:space:]](-[a-zA-Z]*n[a-zA-Z]*|--dry-run|--just-print|--recon)([[:space:]]|\$)")"
+    cmds="$(_run_lines "$wf")"
+    hits="$(grep -E "($re|^[[:space:]]*(sudo[[:space:]]+)?make[[:space:]]+(-[^[:space:]]+[[:space:]]+)*($alt)([^[:alnum:]_-]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE")"
     if [[ -n "$hits" ]]; then
       printf 'ok'
       return 0

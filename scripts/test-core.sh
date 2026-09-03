@@ -16531,6 +16531,20 @@ _fv_floor "make -n test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotf
 _fv_floor "make --dry-run test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --dry-run test"'
 _fv_floor "make -kn test (n inside a short cluster)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -kn test"'
 _fv_floor "make -n test then a real make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -n test && make -j2 test"'
+# COMMAND POSITION FOR INTERPRETERS TOO, and no-execute modes never count: `echo bash
+# test/smoke.sh` is an argument list; `bash -n` and `node --check` only parse; `make -q`
+# only asks. An inline recipe (`test: ; ./test/smoke.sh`) is a recipe like any other.
+_fv_floor "a step that echoes an interpreter and the test path" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo bash test/smoke.sh"'
+_fv_floor "bash -n test/smoke.sh (syntax check only)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash -n test/smoke.sh"'
+_fv_floor "node --check test/x.js (parse only)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "node --check test/x.js"'
+_fv_floor "make --question test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --question test"'
+_fv_floor "a recipe that only syntax-checks test/ is not the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "syntax:\n\t@bash -n test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make syntax"'
+_fv_floor "an inline recipe target (suite: ; ./test/smoke.sh)" 'ok' '_fv_suite dotfiles-Alpine; printf "suite: lint ; ./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite"'
+# STEP SEMANTICS: a step-level env: entry named run is data; a quoted scalar is unquoted;
+# a folded block over echo / make test is `echo make test`.
+_fv_floor "a step-level env: entry named run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: make lint\n        env:\n          run: bash test/smoke.sh\n"'
+_fv_floor "a double-quoted run scalar" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: \"make test\"\n"'
+_fv_floor "a run: > block folding echo over make test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: >\n          echo\n          make test\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
