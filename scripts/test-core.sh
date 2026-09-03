@@ -5815,6 +5815,10 @@ if have git; then
     git -C "$_rc_target" config user.email t@example.com
     git -C "$_rc_target" config user.name tester
     _rc_pre="${_rc_cmd%%   # VENDORING*}"; _rc_pre="${_rc_pre% && (cd *}"
+    # The driven copy points at a LOCAL path that cannot exist, so the subtree add fails
+    # at once instead of entering DNS/proxy handling for example.invalid — hermetic and
+    # deterministic offline; what is proved (the add was reached and failed) is unchanged.
+    _rc_pre="${_rc_pre//https:\/\/example.invalid\/fork.git/$SANDBOX/recovery/no-such-remote.git}"
     (cd "$SANDBOX/recovery" && bash -c "$_rc_pre") >/dev/null 2>&1; _rc_pre1=$?
     _rc_pre1_log="$(git -C "$_rc_target" log --format=%s 2>/dev/null)"
     mkdir -p "$_rc_target/core" && : >"$_rc_target/core/placeholder"
