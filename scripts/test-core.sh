@@ -5651,13 +5651,13 @@ if have git; then
     # The commit marker sits between `add -A` and the subtree add on purpose: subtree add
     # needs a valid HEAD, and a chain that staged but never committed would otherwise
     # pass this ordering check.
-    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'grep -Eq ' 'git worktree remove --force ' '&& rmdir "$_wtp" && exit '; do
+    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' ' cat-file -e HEAD:core 2>/dev/null || ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'grep -Eq ' 'git worktree remove --force ' '&& rmdir "$_wtp" && exit '; do
       _rc_pos="$(awk -v m="$_rc_m" '{ print index($0, m) }' <<<"$_rc_cmd")"
       ((_rc_pos > _rc_prev)) || _rc_order="$_rc_order [$_rc_m]"
       _rc_prev=$_rc_pos
     done
     if [[ -z "$_rc_order" ]]; then
-      pass "recovery: ordering — guarded symlink, stage, commit, subtree add, fetch, throwaway worktree, sync, worktree and parent removed"
+      pass "recovery: ordering — guarded symlink, stage, commit, HEAD:core test, subtree add, fetch, throwaway worktree, sync, worktree and parent removed"
     else
       fail "recovery: ordering wrong at$_rc_order — $_rc_cmd"
     fi
@@ -5684,7 +5684,7 @@ if have git; then
     # script's is the verdict), worktree remove → rmdir — and run it UNDER `bash -e`, since the
     # reader's shell may have errexit on and the cleanup must still be reached. A shape
     # assertion alone could pass a chain whose cleanup still masked the sync.
-    _rc_sub="${_rc_cmd#* --squash && (cd }"   # drop everything up to the Core-side subshell (the FIRST `(cd` after the subtree add)
+    _rc_sub="${_rc_cmd#*"--squash; } && (cd "}"   # drop everything up to the Core-side subshell (the FIRST `(cd` after the subtree add)
     _rc_sub="(cd ${_rc_sub%%   # VENDORING*}"  # and the trailing comment
     _rc_drive() { # _rc_drive <sync-status-cmd> <remove-cmd> → exit status of the driven subshell
       local d
@@ -5772,7 +5772,41 @@ if have git; then
     else
       fail "recovery: the guard did not refuse a foreign occupant of the canonical path"
     fi
+    # RESUMABILITY, behaviourally: the materialize half (everything before the Core-side
+    # subshell) run TWICE against the scaffold. The first run gets past the commit and
+    # fails at the subtree add (the remote is example.invalid; no network is needed to
+    # prove the add was reached — the scaffold commit exists and the status is non-zero).
+    # Then core/ is committed by hand, standing in for an add that succeeded before the
+    # sync failed, and the SAME command must skip the one-time add (the prefix is in
+    # HEAD) and run through to where the sync would start: status 0, and no new commit.
+    rm -rf "$_rc_canon"
+    git -C "$_rc_target" config user.email t@example.com
+    git -C "$_rc_target" config user.name tester
+    _rc_pre="${_rc_cmd%%   # VENDORING*}"; _rc_pre="${_rc_pre% && (cd *}"
+    (cd "$SANDBOX/recovery" && bash -c "$_rc_pre") >/dev/null 2>&1; _rc_pre1=$?
+    _rc_pre1_log="$(git -C "$_rc_target" log --format=%s 2>/dev/null)"
+    mkdir -p "$_rc_target/core" && : >"$_rc_target/core/placeholder"
+    git -C "$_rc_target" add -A && git -C "$_rc_target" commit -q -m 'core/ landed' 2>/dev/null
+    _rc_head="$(git -C "$_rc_target" rev-parse HEAD 2>/dev/null)"
+    (cd "$SANDBOX/recovery" && bash -c "$_rc_pre") >"$SANDBOX/recovery/pre2.out" 2>&1; _rc_pre2=$?
+    if ((_rc_pre1 != 0)) && grep -qF 'scaffold dotfiles-Fixture' <<<"$_rc_pre1_log" && ((_rc_pre2 == 0)) && [[ "$(git -C "$_rc_target" rev-parse HEAD 2>/dev/null)" == "$_rc_head" ]]; then
+      pass "recovery: rerun after core/ is in HEAD skips the one-time subtree add and reaches the sync (resumable)"
+    else
+      fail "recovery: not resumable — first run rc=$_rc_pre1 (committed: $(tr '\n' ',' <<<"$_rc_pre1_log")), second run rc=$_rc_pre2: $(tail -1 "$SANDBOX/recovery/pre2.out" 2>/dev/null)"
+    fi
+    unset _rc_pre _rc_pre1 _rc_pre1_log _rc_pre2 _rc_head
   fi
+  # --dry-run --no-vendor prints the same command BEFORE the target exists, so the
+  # cd-based resolution above cannot run; a relative target must still come out anchored
+  # to the invocation directory, or the chain (which cd's into the Core checkout) hands
+  # the sync a REPOS_ROOT under Core and the sync skips the repo the hint was written for.
+  _rc_dry="$(cd "$SANDBOX/recovery" && env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' bash "$HERE/scripts/new-os-repo.sh" --dry-run --no-vendor Fixture 'not yet/dotfiles-Fixture' 2>&1 | grep 'skipping vendor' | sed 's/^.*run later: //')"
+  if [[ -n "$_rc_dry" ]] && grep -qF "REPOS_ROOT=$(printf '%q' "$SANDBOX/recovery/not yet") " <<<"$_rc_dry" && grep -qF "git -C $(printf '%q' "$SANDBOX/recovery/not yet/dotfiles-Fixture") add -A" <<<"$_rc_dry" && [[ ! -e "$SANDBOX/recovery/not yet" ]]; then
+    pass "recovery: a dry run of a not-yet-existing relative target embeds it ANCHORED to the invocation directory (REPOS_ROOT and git -C)"
+  else
+    fail "recovery: a dry-run relative target was embedded unanchored — $(cut -c1-240 <<<"$_rc_dry")"
+  fi
+  unset _rc_dry
   # A Core checkout with NO origin and no CORE_REMOTE must not bake an empty remote into
   # the command: it renders `"${CORE_REMOTE:?…}"`, which fails loudly at paste time until
   # the reader exports the URL. Reproduced on a copy of the scaffold in an origin-less repo.

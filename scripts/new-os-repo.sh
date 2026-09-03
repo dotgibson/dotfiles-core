@@ -188,8 +188,14 @@ _q() { printf '%q' "$1"; }
 _remote_q="$(_q "$CORE_REMOTE")"
 # shellcheck disable=SC2016  # deliberately literal: the expansion belongs to the PASTED command, not to this script
 [[ -n "$CORE_REMOTE" ]] || _remote_q='"${CORE_REMOTE:?export CORE_REMOTE=<dotfiles-core remote URL> first}"'
-_target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$TARGET"
-_target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$TARGET")"
+# A target that does not exist yet (--dry-run prints this same hint before anything is
+# written) cannot be cd-ed into, and a relative path embedded as-is would be resolved by
+# the chain AFTER it cd's into the Core checkout: REPOS_ROOT=<relative parent> then names
+# a directory under Core and the sync skips the very repo the hint was written for. So
+# the fallback anchors the path to the invocation directory instead of copying it.
+_abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s' "$PWD/${1#./}" ;; esac; }
+_target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$(_abs "$TARGET")"
+_target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$(_abs "$TARGET")")"
 #
 # The scaffold is UNCOMMITTED when this hint is printed (with --no-vendor there is not
 # even an initial commit), and both halves need a clean, committed target: subtree add
@@ -200,7 +206,13 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # commit after it failed, the subtree add would fail on the existing prefix, so that
 # state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
 _sync_half="(cd $(_q "$HERE") && git fetch $_remote_q $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && { git worktree add --detach \"\$_wt\" FETCH_HEAD || { rmdir \"\$_wtp\"; false; }; } && { _o=\"\$( (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$_remote_q CORE_COLOR=never REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")) 2>&1)\" || true; printf '%s\\n' \"\$_o\"; if grep -Eq 'repos: +updated 1 +skipped 0 +failed 0 ' <<<\"\$_o\"; then _rc=0; else _rc=1; fi; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\"; })"
-_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $_remote_q $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
+# RESUMABLE: the subtree add is the one step that cannot run twice ("prefix 'core'
+# already exists"), and the sync after it is the step most likely to fail (network, a
+# refused guard, a dirty tree). Rerunning the exact same command must therefore skip the
+# add once HEAD already carries core/ and go straight back to the sync — `cat-file -e
+# HEAD:core` is that test, and it is why the commit step precedes it: a core/ that was
+# materialized but never committed is committed by the chain, then found in HEAD.
+_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && { git -C $(_q "$_target_abs") cat-file -e HEAD:core 2>/dev/null || git -C $(_q "$_target_abs") subtree add --prefix=core $_remote_q $(_q "$CORE_BRANCH") --squash; } && $_sync_half   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
 # comment — so the sync resolves the conventional name. A symlink, not a rename: the
