@@ -5486,6 +5486,22 @@ if have git && have zsh; then
       fail "new-os-repo: the in-place rewrite failed for another reason — $(grep FAIL "$SANDBOX/nor-rewrite.out" | head -2 | tr '\n' ' ')"
     fi
     rm -rf "$_nor_brk"
+    # ...and on one that changes a MODE, through an absolute-path chmod so the PATH shims
+    # never see it: inode, kind and bytes all survive, and only the snapshot's mode field
+    # can. Same placement and guard as the rewrite case, so run one is untouched.
+    _nor_brk="$SANDBOX/newosrepo-chmod"
+    rm -rf "$_nor_brk"
+    cp -r "$NOR" "$_nor_brk"
+    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && /bin/chmod 600 \"$CFG/mise/config.toml\"" }' \
+      "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-chmod.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that changes a file's mode on every run — the snapshot does not carry modes"
+    elif grep -q 'changed the tree' "$SANDBOX/nor-chmod.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on a mode change made past the shims (mode field in the snapshot)"
+    else
+      fail "new-os-repo: the in-place rewrite failed for another reason — $(grep FAIL "$SANDBOX/nor-rewrite.out" | head -2 | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_brk"
     if have make; then
       # Every canonical verb RESOLVES (the promise scripts/make-vocabulary.txt makes): -n
       # expands all seven without needing shellcheck or a Core checkout; then the four that

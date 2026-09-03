@@ -637,28 +637,35 @@ fi
 # ── 3. the second run changes nothing ────────────────────────────────────────
 # Two independent witnesses, because neither alone is proof:
 #   · The MUTATING COMMANDS the run invokes. The second run happens with a shim directory
-#     first on PATH whose rm/ln/mv/cp/mkdir log their invocation and then exec the real
-#     tool; an idempotent run invokes none of them. This is the primary witness — a
+#     first on PATH whose rm/ln/mv/cp/mkdir/chmod log their invocation and then exec the
+#     real tool; an idempotent run invokes none of them. This is the primary witness — a
 #     remove-and-recreate is seen as it happens, whatever the filesystem does with inodes.
-#   · The TREE. Every entry under HOME — inode, kind, link target, and for a regular file
-#     its bytes — must be identical before and after. This catches what no wrapped command
-#     performs: a file rewritten through a shell redirection keeps its inode but not its
-#     checksum. `ls -id`, `readlink` and POSIX `cksum` are what GNU and BSD share; no
-#     `-mindepth` (GNU) — the root row is dropped by name instead.
+#   · The TREE. Every entry under HOME — inode, mode, kind, link target, and for a regular
+#     file its bytes — must be identical before and after. This catches what no wrapped
+#     command performs: a file rewritten through a shell redirection keeps its inode but
+#     not its checksum, and a mode changed through an absolute-path chmod keeps everything
+#     but its mode string. `ls -ldi`, `readlink` and POSIX `cksum` are what GNU and BSD
+#     share; no `-mindepth` (GNU) — the root row is dropped by name instead.
 # Output prefixes are the third, weakest claim, kept only as a message.
-snapshot() { # snapshot <dir> → one line per entry: inode kind path [-> target | cksum]
+snapshot() { # snapshot <dir> → one line per entry: inode mode kind path [-> target | cksum]
   find "$1" -print | LC_ALL=C sort | while IFS= read -r p; do
     [[ "$p" == "$1" ]] && continue
-    # shellcheck disable=SC2012  # the paths are ours (no odd names), and `find -printf` is GNU-only
-    ino="$(ls -id -- "$p" | awk '{print $1}')"
-    if [[ -L "$p" ]]; then printf '%s L %s -> %s\n' "$ino" "$p" "$(readlink "$p")"
-    elif [[ -d "$p" ]]; then printf '%s D %s\n' "$ino" "$p"
-    else printf '%s F %s %s\n' "$ino" "$p" "$(cksum <"$p" | awk '{print $1, $2}')"; fi
+    # shellcheck disable=SC2012  # the paths are ours (no odd names), and `find -printf` / `stat -c` are GNU-only
+    ino_mode="$(ls -ldi -- "$p" | awk '{print $1, $2}')"
+    if [[ -L "$p" ]]; then printf '%s L %s -> %s\n' "$ino_mode" "$p" "$(readlink "$p")"
+    elif [[ -d "$p" ]]; then printf '%s D %s\n' "$ino_mode" "$p"
+    else printf '%s F %s %s\n' "$ino_mode" "$p" "$(cksum <"$p" | awk '{print $1, $2}')"; fi
   done
+}
+# The rows that differ, without diffutils (a fleet host has been seen without `diff`;
+# core/scripts/lib/common.sh records it): a two-pass awk set difference.
+snapshot_delta() { # snapshot_delta <before> <after> → "> row" for rows gone, "< row" for rows new
+  awk 'NR == FNR { seen[$0]; next } !($0 in seen) { print "> " $0 }' <(printf '%s\n' "$2") <(printf '%s\n' "$1")
+  awk 'NR == FNR { seen[$0]; next } !($0 in seen) { print "< " $0 }' <(printf '%s\n' "$1") <(printf '%s\n' "$2")
 }
 mkdir -p "$tmp/shim"
 : >"$tmp/mutations.log"
-for cmd in rm ln mv cp mkdir; do
+for cmd in rm ln mv cp mkdir chmod; do
   # Log, then hand off to the real tool — found by searching PATH with the shim dir
   # (its first entry) removed, so the wrapper never recurses into itself.
   cat >"$tmp/shim/$cmd" <<'SHIM'
@@ -676,11 +683,11 @@ after="$(snapshot "$tmp/home")"
 if [[ -s "$tmp/mutations.log" ]]; then
   bad "second run invoked mutating commands: $(head -4 "$tmp/mutations.log" | tr '\n' ';')"
 elif [[ "$before" != "$after" ]]; then
-  bad "second run changed the tree: $(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | grep '^[<>]' | head -4 | tr '\n' ' ')"
+  bad "second run changed the tree: $(snapshot_delta "$before" "$after" | head -4 | tr '\n' ' ')"
 elif grep -Eq '^(linked|backed up|seeded) ' "$tmp/run2.out"; then
   bad "second run claims to have changed something: $(grep -E '^(linked|backed up|seeded) ' "$tmp/run2.out" | tr '\n' ' ')"
 else
-  ok "second run changed nothing (no rm/ln/mv/cp/mkdir invoked; every inode, kind, link target and file checksum identical)"
+  ok "second run changed nothing (no rm/ln/mv/cp/mkdir/chmod invoked; every inode, mode, kind, link target and file checksum identical)"
 fi
 
 if ((rc == 0)); then
