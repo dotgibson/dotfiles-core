@@ -75,6 +75,7 @@ PORTING-MATRIX.md      # named by the CORE PAYLOAD in a hint string (zsh/30-func
 # dashboards) with no consumer on a box or in an OS repo, and stays out.
 scripts/tool-versions.env       # pinned tool versions: MacBook ci.yml:115,136,138,315,348,361,363 + Makefile:119, Offense checks.yml:72,127,130 + claude-routines.yml + Makefile:21, Defense Makefile:28 + tests/test-defense.sh:865 + tests/lint-shell.sh:41
 scripts/check-capabilities.sh   # entry — os.capabilities linter run by SEVEN repos: Fedora Makefile:122, Arch:159, Debian:186, openSUSE:162, Alpine:124, Gentoo:117, MacBook:241. Standalone (sources nothing).
+scripts/check-links.sh          # entry — the hermetic `--links-only` gate: the second half of every OS/Role repo's `make check`, run as `core/scripts/check-links.sh`. Sources lib/ux.sh (core.manifest) for colour and degrades to plain prefixes without it. NO CALLER YET, and deliberately so: the six repos that inline this block today (Fedora, Debian, Gentoo, openSUSE Makefiles; Arch and the two Role repos assert a subset) can only switch to it once a release has vendored it, so it ships first and the Makefiles follow on the next sync (#852). That ordering is the reason this is the one entry here whose consumer is named as intent rather than as a line number.
 scripts/lib/common.sh           # entry — sourced directly by MacBook test/check-return-traps.sh:49,68 for _core_return_trap_hits
 scripts/os-repos.txt            # reached from common.sh :: load_os_repos, whose path is computed and so invisible to the §1e walk
 

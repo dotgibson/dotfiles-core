@@ -11573,6 +11573,134 @@ _fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_c
 if _fv_run >/dev/null; then pass "vocab: report mode exits 0 (rendering is not a verdict)"; else fail "vocab: report mode exits non-zero"; fi
 if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; then pass "vocab: fleet-coverage.sh report mode exits 0 with no footnotes too"; else fail "vocab: fleet-coverage.sh report mode still exits 1 with no footnotes"; fi
 rm -rf "$_fv_root"
+
+# ── F13. the hermetic links gate (scripts/check-links.sh) ─────────────────────
+# The second half of every OS/Role repo's `make check`, lifted out of six copied Makefile
+# recipes (#852). It is Core-owned precisely BECAUSE it was copied: the same defect turned
+# up in three repos at once — `HOME=` alone is not hermetic, since bootstrap.sh and
+# lib/bootstrap-lib.sh honour a pre-set XDG_CONFIG_HOME / XDG_STATE_HOME / XDG_CACHE_HOME /
+# XDG_DATA_HOME / ZDOTDIR — while a fourth repo had already fixed it and could not tell the
+# others. These drive the real script against a FAKE repo whose bootstrap is a stub, so the
+# assertions are about the gate rather than about any distro.
+hdr "hermetic links gate (check-links.sh)"
+_cl_root="$SANDBOX/check-links"
+_cl_sh="$HERE/scripts/check-links.sh"
+
+# A stub installer that builds the graph Core's loader expects, in whatever HOME it is
+# handed. `env_seen` records the environment the child ACTUALLY got, which is how the XDG
+# scrub is asserted rather than assumed.
+_cl_repo() { # _cl_repo [extra-lines-for-the-stub]
+  rm -rf "$_cl_root"; mkdir -p "$_cl_root/payload/zsh" "$_cl_root/payload/nvim"
+  : >"$_cl_root/payload/zsh/loader.zsh"; : >"$_cl_root/payload/starship.toml"
+  : >"$_cl_root/payload/config.yml"; : >"$_cl_root/payload/tmux.conf"
+  : >"$_cl_root/payload/vimrc"; : >"$_cl_root/payload/gitconfig"
+  : >"$_cl_root/payload/role.conf"
+  cat >"$_cl_root/bootstrap.sh" <<STUB
+#!/usr/bin/env bash
+# A stand-in for an OS repo's installer: same links, none of the distro.
+set -u
+env | grep -E '^(XDG_[A-Z]+_HOME|ZDOTDIR)=' | sort >"\$HOME/.env_seen" || true
+P="$_cl_root/payload"
+mkdir -p "\$HOME/.config/zsh" "\$HOME/.config/lazygit" "\$HOME/.config/tmux" "\$HOME/.config/sesh"
+ln -sf "\$P/zsh/loader.zsh" "\$HOME/.config/zsh/loader.zsh"
+ln -sf "\$P/starship.toml"  "\$HOME/.config/starship.toml"
+ln -sf "\$P/config.yml"     "\$HOME/.config/lazygit/config.yml"
+ln -sf "\$P/nvim"           "\$HOME/.config/nvim"
+ln -sf "\$P/tmux.conf"      "\$HOME/.config/tmux/tmux.conf"
+ln -sf "\$P/vimrc"          "\$HOME/.vimrc"
+ln -sf "\$P/gitconfig"      "\$HOME/.gitconfig"
+cp "\$P/starship.toml" "\$HOME/.config/sesh/sesh.toml"
+printf '# dotfiles-managed v4\nsource "\$HOME/.config/zsh/loader.zsh"\n' >"\$HOME/.zshrc"
+${1:-}
+STUB
+  chmod +x "$_cl_root/bootstrap.sh"
+}
+
+_cl_repo
+if _cl_out="$(cd "$_cl_root" && "$_cl_sh" 2>&1)"; then
+  pass "links: a correct graph passes"
+else
+  fail "links: the correct graph did not pass: $_cl_out"
+fi
+
+# THE #852 REGRESSION, and the reason this script exists. Export all five; the child must
+# see NONE of them, or a developer's real config tree is what gets wired.
+_cl_repo 'cp "$HOME/.env_seen" '"$_cl_root/env_seen"
+if (cd "$_cl_root" && XDG_CONFIG_HOME=/tmp/decoy-cfg XDG_DATA_HOME=/tmp/decoy-data \
+  XDG_STATE_HOME=/tmp/decoy-state XDG_CACHE_HOME=/tmp/decoy-cache ZDOTDIR=/tmp/decoy-zsh \
+  "$_cl_sh" >/dev/null 2>&1) && [[ ! -s "$_cl_root/env_seen" ]]; then
+  pass "links: XDG_CONFIG_HOME/DATA/STATE/CACHE and ZDOTDIR are scrubbed from bootstrap's environment"
+else
+  fail "links: the XDG scrub leaked: $(cat "$_cl_root/env_seen" 2>/dev/null)"
+fi
+# The unrelated environment must survive the scrub — callers pass BLIB_SU=true through it.
+_cl_repo 'printf "%s" "${BLIB_SU:-unset}" >'"$_cl_root/su_seen"
+(cd "$_cl_root" && BLIB_SU=true "$_cl_sh" >/dev/null 2>&1)
+if [[ "$(cat "$_cl_root/su_seen" 2>/dev/null)" == true ]]; then
+  pass "links: the scrub removes the five and nothing else (BLIB_SU still reaches bootstrap)"
+else
+  fail "links: the scrub ate an unrelated variable"
+fi
+
+# A MISSING LINK IS 2, NOT 1: the caller can tell "the graph is wrong" from "it would not run".
+_cl_repo
+(cd "$_cl_root" && "$_cl_sh" --require .config/nope >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a required path that is not linked exits 2"; else fail "links: missing --require path exited $rc, want 2"; fi
+
+# THE SEED IS A COPY. A symlinked sesh.toml means an edit lands in the vendored tree.
+_cl_repo 'ln -sfn "$P/starship.toml" "$HOME/.config/sesh/sesh.toml"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a SYMLINKED seed file is caught (it must be a copy)"; else fail "links: a symlinked seed exited $rc, want 2"; fi
+
+# THE GREP REGRESSION the old recipes carried: a commented-out source line passed.
+_cl_repo 'printf "# dotfiles-managed v4\n# source \"$HOME/.config/zsh/loader.zsh\"\n" >"$HOME/.zshrc"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a COMMENTED-OUT loader line does not satisfy the .zshrc assertion"; else fail "links: the commented-out loader line passed (rc=$rc)"; fi
+# …and its unescaped dot: loaderXzsh must not match loader.zsh.
+_cl_repo 'printf "# dotfiles-managed v4\nsource \"$HOME/.config/zsh/loaderXzsh\"\n" >"$HOME/.zshrc"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: loaderXzsh does not match loader.zsh (the dot is escaped)"; else fail "links: an unescaped dot still matches (rc=$rc)"; fi
+
+# A DANGLING loader.zsh is the rename-upstream shape: the link exists, the target does not.
+_cl_repo 'rm -f "$P/zsh/loader.zsh"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a dangling loader.zsh symlink is caught"; else fail "links: dangling loader.zsh exited $rc, want 2"; fi
+
+# COULD-NOT-RUN IS 1, and bootstrap's own output is what diagnoses it.
+_cl_repo
+printf '#!/usr/bin/env bash\necho "provisioner exploded" >&2\nexit 7\n' >"$_cl_root/bootstrap.sh"
+chmod +x "$_cl_root/bootstrap.sh"
+_cl_out="$( (cd "$_cl_root" && "$_cl_sh" 2>&1) )"; rc=$?
+if ((rc == 1)) && [[ "$_cl_out" == *"provisioner exploded"* ]]; then
+  pass "links: a failing bootstrap exits 1 and prints its output"
+else
+  fail "links: failing bootstrap (rc=$rc): $_cl_out"
+fi
+_cl_repo
+(cd "$_cl_root" && "$_cl_sh" --require >/dev/null 2>&1); rc=$?
+if ((rc == 1)); then pass "links: --require with no value is a usage error, not an empty requirement"; else fail "links: --require with no value exited $rc, want 1"; fi
+(cd /tmp && "$_cl_sh" --repo /nonexistent-repo-dir >/dev/null 2>&1); rc=$?
+if ((rc == 1)); then pass "links: a --repo that is not a directory exits 1"; else fail "links: bad --repo exited $rc, want 1"; fi
+
+# THE THROWAWAY HOME IS REMOVED — including on the failure paths, via the trap.
+_cl_repo
+_cl_before="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' 2>/dev/null | wc -l)"
+(cd "$_cl_root" && "$_cl_sh" --require .config/nope >/dev/null 2>&1)
+_cl_after="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' 2>/dev/null | wc -l)"
+if ((_cl_after <= _cl_before)); then
+  pass "links: the throwaway HOME is cleaned up even when the assertions fail"
+else
+  fail "links: a failing run leaked its throwaway HOME"
+fi
+
+# IT IS VENDORED, or the six repos that will call it as core/scripts/check-links.sh get
+# nothing on the next sync — the whole point of moving it here.
+if grep -qE '^scripts/check-links\.sh([[:space:]]|$)' "$HERE/core.vendor"; then
+  pass "links: scripts/check-links.sh is in core.vendor"
+else
+  fail "links: scripts/check-links.sh is missing from core.vendor — it would not reach any OS repo"
+fi
+rm -rf "$_cl_root"
 unset _fv_root _fv_all _fv_mk _fv_out rc row tbl want have
 unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_wf _fv_wf_raw _fv_suite _fv_floor
 
