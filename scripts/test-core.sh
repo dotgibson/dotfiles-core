@@ -7799,11 +7799,19 @@ EOF
     #    profile (TOTAL + the first module) so the red run names the culprit. A budget nobody
     #    has seen fail is not known to work — this is where it fails.
     _bc_stub "CORE_TEST_HF_MEAN=0.100" -- --gate
+    #    The profile must name EVERY numbered fragment the loader globs — a module missing
+    #    from CORE_MODULES is one a breach can neither time nor attribute (02-capabilities
+    #    was, until review) — so this walks zsh/ rather than trusting the script's list.
+    _bc_missing=""
+    for _bc_f in "$HERE"/zsh/[0-9][0-9]-*.zsh; do
+      _bc_m="$(basename "$_bc_f" .zsh)"
+      [[ "$_bcout" == *" $_bc_m"* ]] || _bc_missing="$_bc_missing $_bc_m"
+    done
     if ((_bcrc == 1)) && [[ "$_bcout" == *"EXCEEDS budget $_bc_bud ms"* && "$_bcout" == *"TOTAL"* &&
-      "$_bcout" == *"00-tools"* && "$_bcout" != *"outlier-driven"* ]]; then
-      pass "bench gate: a 100 ms mean FAILS (exit 1) and prints the per-module profile"
+      -z "$_bc_missing" && "$_bcout" != *"outlier-driven"* ]]; then
+      pass "bench gate: a 100 ms mean FAILS (exit 1) and prints the per-module profile naming every numbered fragment"
     else
-      fail "bench gate: 100 ms should exit 1 with EXCEEDS + the profile (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+      fail "bench gate: 100 ms should exit 1 with EXCEEDS + a profile naming every zsh/NN-*.zsh (rc=$_bcrc; unnamed:${_bc_missing:- none}): ${_bcout//$'\n'/ | }"
     fi
 
     # 9. A breach whose median is within budget is still red (the gate is the mean, as every

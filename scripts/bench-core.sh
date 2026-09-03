@@ -182,7 +182,9 @@ _seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
 
 # The numbered Core fragments in load order (no os/local — those belong to OS repos). Used
 # by the --profile per-module attribution below (which times each source individually).
-CORE_MODULES=(00-tools 05-ui 10-options 15-history 20-aliases 25-git 30-functions 35-fzf 40-bindings 45-plugins 50-op 55-maint 60-update)
+# Must match what the loader globs from zsh/ — a fragment missing here is one the breach
+# profile can neither time nor name (02-capabilities was absent until a #688 review catch).
+CORE_MODULES=(00-tools 02-capabilities 05-ui 10-options 15-history 20-aliases 25-git 30-functions 35-fzf 40-bindings 45-plugins 50-op 55-maint 60-update)
 export CORE_DIR="$HERE/zsh"
 
 # AGGREGATE benchmark: drive the REAL v4 loader against a symlinked $ZSH_CFG (like the smoke
