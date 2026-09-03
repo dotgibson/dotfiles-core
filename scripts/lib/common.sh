@@ -1265,10 +1265,13 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
 #   · scripts/test-core.sh builds fixture repos with tags of its own (`refs/tags/v1`);
 #     those are test data, not instructions.
 #   · An EXACT pin (`refs/tags/v5.3.0`, optionally `-pre` as core.version allows) is a
-#     deliberate freeze and is out of scope — whatever its major. Anything else dotted
-#     (`v5.3`, `v5.3.0.1`) is no tag this repo cuts, so it is judged by its leading major
-#     like a bare one. Another repository's tag reached through an API path
-#     (`git/refs/tags/v3`) is out of scope too.
+#     deliberate freeze and is out of scope — whatever its major — EXCEPT on the scaffold
+#     default itself: a recipe's freeze is a choice its reader made, but new-os-repo.sh's
+#     `CORE_BRANCH:-` default is what every new repo inherits unasked, so it is always
+#     held to the current major, exact or not. Anything else dotted (`v5.3`, `v5.3.0.1`)
+#     is no tag this repo cuts, so it is judged by its leading major like a bare one.
+#     Another repository's tag reached through an API path (`git/refs/tags/v3`) is out
+#     of scope too.
 _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
   local root="${1:-.}" want="${2:-}" f
   [ -n "$want" ] || return 0
@@ -1305,9 +1308,12 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           sub(/[.+-]+$/, "", hit)                  # the message quotes the pin, not the prose
           major = tok; sub(/[^0-9].*$/, "", major)
           exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
-          if (!exact && major != want) {
-            printf "%s:%d: first-vendor pin names v%s, but core.version is major v%s (%s)\n", \
-              file, NR, tok, want, hit
+          # The scaffold default is never exempt: it is not a freeze someone chose, it is
+          # the pin every new repo gets by default.
+          isdefault = ($0 ~ /CORE_BRANCH:-refs\/tags\/v/)
+          if ((!exact || isdefault) && major != want) {
+            printf "%s:%d: %s names v%s, but core.version is major v%s (%s)\n", \
+              file, NR, (isdefault ? "the scaffold default" : "first-vendor pin"), tok, want, hit
           }
           line = rest
         }

@@ -2484,6 +2484,12 @@ _vpn_count "the peeled-commit form is judged" 6 1
 # The first draft treated `-` as a word character and skipped exactly this line.
 _vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5}"'
 _vpn_count "new-os-repo.sh's :-refs/tags/vN default is judged" 6 1
+# The exact-pin exemption below does NOT reach the scaffold default: a recipe's freeze is
+# a choice its reader made, the default is what every new repo inherits unasked.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5.3.0}"'
+_vpn_count "an exact-but-retired scaffold default (v5.3.0 on a v6 tree) is still a finding" 6 1
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v6.1.0}"'
+_vpn_count "an exact scaffold default on the current major is clean" 6 0
 # Exemptions — every one of these is a TRUE sentence that must not be flagged.
 _vpn_write RELEASE-STRATEGY.md 'Pin `refs/tags/v5.3.0` while sitting on `main` and the lock records'
 _vpn_count "an exact vN.M.P pin is a deliberate freeze, not a finding" 6 0
