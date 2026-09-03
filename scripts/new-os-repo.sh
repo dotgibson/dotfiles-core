@@ -508,7 +508,10 @@ set -uo pipefail
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "$REPO" || exit 1
 
-tmp="$(mktemp -d)"
+# `set -e` is deliberately off (the exit code IS the result), so the sandbox is guarded
+# by hand: an empty $tmp would turn "$tmp/home" into /home, and a hermetic test would
+# write to the host.
+tmp="$(mktemp -d)" && [[ -n "$tmp" && -d "$tmp" ]] || { echo "check-links: could not create a temp dir" >&2; exit 1; }
 trap 'rm -rf "$tmp"' EXIT
 rc=0
 ok() { printf '  ok   %s\n' "$*"; }
