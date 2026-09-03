@@ -10612,6 +10612,12 @@ _fv_floor "for f in test/*.sh; do bash \"\$f\"; done (test: recipe) is the suite
 _fv_floor "for f in docs/*.md; do bash \"\$f\"; done is not the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for f in docs/*.md; do bash \"\$f\"; done"'
 _fv_floor "for f in \$(ls test); do bash \"\$f\"; done binds nothing" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for f in \$(ls test); do bash \"\$f\"; done"'
 _fv_floor "for f in test/*.sh; do bash \${f}; done (braced)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for f in test/*.sh; do bash \${f}; done"'
+# A FUNCTION CALLED AS A CONDITION runs where the condition is evaluated.
+_fv_floor "suite() { make test; }; if suite; then echo passed; fi" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; if suite; then echo passed; fi"'
+_fv_floor "suite() { make test; }; if ! suite; then echo failed; fi" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; if ! suite; then echo failed; fi"'
+_fv_floor "suite() { make test; }; while suite; do break; done" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; while suite; do break; done"'
+_fv_floor "suite() { make test; }; if true && suite; then :; fi" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; if true && suite; then :; fi"'
+_fv_floor "suite() { make test; }; if false; then if suite; then :; fi; fi never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; if false; then if suite; then :; fi; fi"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

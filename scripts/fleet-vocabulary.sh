@@ -450,7 +450,7 @@ AWK_SHELL='
   # judged in the context of the call (a `cd tools` before the call applies to it, a
   # `return` ends only that body) — and pass 2 runs for real on the expanded list. A body
   # at its definition is never a command. Returns the new command count.
-  function cdnorm(c, n,   i, k, m, c2, changed, w, f, t, kw) {
+  function cdnorm(c, n,   i, k, m, c2, changed, w, f, t, kw, ck) {
     fnbodies(c, n)
     split("", INVOKED)
     for (i = 1; i <= n; i++) c2[i] = c[i]
@@ -469,10 +469,16 @@ AWK_SHELL='
       # keyword is emitted on its own and the body follows it.
       t = trim(c[i]); kw = ""
       if (match(t, /^(then|do|else)[ \t]+/)) { kw = substr(t, 1, RLENGTH); t = substr(t, RLENGTH + 1) }
-      w = t; sub(/[ \t].*$/, "", w)
+      # A call as a CONDITION (`if suite; then`, `while suite; do`, `if ! suite`): the body
+      # runs where the condition is evaluated, so it is spliced ahead of the keyword and
+      # the condition itself stays as an unknown one.
+      ck = ""
+      if (match(t, /^(if|elif|while|until)[ \t]+(![ \t]*)?/)) { ck = substr(t, 1, RLENGTH); w = substr(t, RLENGTH + 1); sub(/[ \t].*$/, "", w) }
+      else { w = t; sub(/[ \t].*$/, "", w) }
       if ((w in INVOKED) && FNAME[w] < i) {
         if (kw != "") { E[++m] = kw; EOP[m] = SPLITOP[i]; EINL[m] = 0 }
         m = inline(c, n, m, w, (kw != "" ? ";" : SPLITOP[i]), 1, i)
+        if (ck != "") { E[++m] = t; EOP[m] = ";"; EINL[m] = 0 }
       }
       else { E[++m] = c[i]; EOP[m] = SPLITOP[i]; EINL[m] = 0 }
     }
@@ -536,6 +542,10 @@ AWK_SHELL='
     }
     return r
   }
+  # recinv(t, i) — pass 1 only: a command that calls a function defined before it invokes it.
+  # Used for ordinary commands AND for the commands a condition runs (`if suite; then`,
+  # `while suite; do`, a folded `&&`/`||` arm), which bypass the ordinary path.
+  function recinv(t, i,   w) { w = t; sub(/^![ \t]*/, "", w); sub(/^(then|do|else)[ \t]+/, "", w); sub(/[ \t].*$/, "", w); if ((w in FNAME) && FNAME[w] < i) INVOKED[w] = 1 }
   function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing, ee, pf, pipefalse, execterm, fvar) {
     d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0; sd = 0; subterm = 0; retid = 0; ee = ERREXIT; pf = PIPEFAIL; pipefalse = 0; execterm = 0
     split("", TAKEN); split("", SKIPD); split("", DEF); split("", COND); split("", FORVAR); split("", FORVAL)
@@ -558,7 +568,7 @@ AWK_SHELL='
       if (retid && INL[i] == retid) { c[i] = ""; continue }
       retid = 0
       # An arm folded into a preceding compound condition: emit what condlist decided.
-      if (i in COND) { c[i] = (skip ? "" : COND[i]); continue }
+      if (i in COND) { c[i] = (skip ? "" : COND[i]); if (!final && c[i] != "") recinv(c[i], i); continue }
       if ((i in BODY) && (BODY[i] == "@" || !(BODY[i] in INVOKED))) { c[i] = ""; continue }
       # Reachability, for the statically decidable pairs. `st` is the status of the AND-OR
       # list EVALUATED so far — "true" after a literal true/`:`, "false" after a literal
@@ -598,6 +608,7 @@ AWK_SHELL='
         }
         # An elif condition runs when no earlier branch was taken and the if is reachable.
         c[i] = (nest && lit(t) == "" && !outer && TAKEN[nest] != "yes") ? t : ""
+        if (!final && c[i] != "") recinv(c[i], i)
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; continue
       }
       if (term) { c[i] = ""; continue }
@@ -616,6 +627,7 @@ AWK_SHELL='
         DEF[nest] = (m == "true")
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
         c[i] = (lit(t) == "" && !outer && t != "") ? t : ""
+        if (!final && c[i] != "") recinv(c[i], i)
         continue
       }
       if (t ~ /^fi([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; delete DEF[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
@@ -652,6 +664,7 @@ AWK_SHELL='
         DEF[nest] = ((kw == "while" && r == "true") || (kw == "until" && r == "false") || (t ~ /^for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in[ \t]+[^ \t]/ && t !~ /\$/))
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
         c[i] = (t !~ /^for/ && lit(t) == "" && !outer && t != "" && kw != "") ? t : ""
+        if (!final && c[i] != "") recinv(c[i], i)
         kw = ""
         continue
       }
@@ -690,7 +703,7 @@ AWK_SHELL='
       c[i] = t
       # A call counts only AFTER the definition (FNAME holds its index): `suite; suite() {…}`
       # fails at the call and never reaches the body.
-      if (!final) { w = t; sub(/^(then|do|else)[ \t]+/, "", w); sub(/[ \t].*$/, "", w); if ((w in FNAME) && FNAME[w] < i) INVOKED[w] = 1 }
+      if (!final) recinv(t, i)
       # ERREXIT (ERREXIT is set by the caller): a workflow step runs under `bash -e` unless
       # it says `set +e`, so a bare literal `false` — not an arm of `&&`/`||`/`|`, not
       # backgrounded — ends the shell exactly as an `exit` would, certain where its
