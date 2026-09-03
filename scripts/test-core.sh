@@ -5426,10 +5426,12 @@ if have git && have zsh; then
       _nor_zsh_files=("$HERE"/zsh/*.zsh)
       _nor_zsh_n=${#_nor_zsh_files[@]}
       [[ -e "${_nor_zsh_files[0]}" ]] || _nor_zsh_n=0
-      if ((_nor_core_ok)) && ((_nor_core_n >= _nor_zsh_n + 5)); then
-        pass "new-os-repo: against a Core-seeded core/ the suite asserts every Core link ($_nor_core_n Core links: $_nor_zsh_n zsh modules + tmux ×2 + starship + nvim + git) and mise-as-copy"
+      # EXACTLY every module once + tmux ×2 + starship + nvim + git: a spare count would
+      # let one skipped module hide behind a double-counted loader.
+      if ((_nor_core_ok)) && ((_nor_core_n == _nor_zsh_n + 5)); then
+        pass "new-os-repo: against a Core-seeded core/ the suite asserts every Core link exactly once ($_nor_core_n Core links: $_nor_zsh_n zsh modules + tmux ×2 + starship + nvim + git) and mise-as-copy"
       else
-        fail "new-os-repo: the suite's Core-provided branches did not all run against a seeded core/ ($_nor_core_n Core links asserted, want ≥ $((_nor_zsh_n + 5)); named-link coverage ok=$_nor_core_ok)"
+        fail "new-os-repo: the suite's Core-provided branches did not all run exactly once against a seeded core/ ($_nor_core_n Core links asserted, want $((_nor_zsh_n + 5)); named-link coverage ok=$_nor_core_ok)"
       fi
       unset _nor_core_ok _nor_core_n _nor_zsh_n _nor_zsh_files _nor_l
     else

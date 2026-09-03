@@ -52,7 +52,9 @@ with the fleet's make vocabulary, a test/ suite and the workflow that runs it.
   <OSName>       e.g. Fedora, Arch, Gentoo  (repo defaults to ../dotfiles-<OSName>)
   target-dir     override the destination directory
   --dry-run, -n  print every planned action; create nothing
-  --no-vendor    scaffold the files but skip the `git subtree add` (do it yourself later)
+  --no-vendor    scaffold the files but skip the vendoring. sync-core.sh will NOT fill
+                 the gap later (it skips a repo with no core/); follow the manual
+                 one-time setup in VENDORING.md instead — the script prints it.
 
 Env: CORE_REMOTE (default: this repo's origin)
      CORE_BRANCH (default: refs/tags/v5 — a RELEASED tag, never main; pin a specific
@@ -131,7 +133,35 @@ w() {
 #
 # Nothing downstream loses anything: core.lock is the authoritative provenance since #587,
 # and the fan-out stamps it on this repo's first `make sync`.
-_vendor_hint="git -C '$TARGET' fetch '$CORE_REMOTE' '$CORE_BRANCH' && (cd '$HERE' && ./scripts/sync-core.sh dotfiles-$OS)"
+# The manual path, NOT a bare sync-core.sh: the fan-out skips a repo with no core/ (that is
+# the one thing it will not create), so the hint is VENDORING.md's one-time setup — a
+# subtree add to bring core/ into existence, then the sync from Core to replace it with the
+# filtered set and stamp core.lock.
+#
+# REPOS_ROOT is passed explicitly: sync-core.sh resolves `dotfiles-$OS` under the parent
+# of the CORE checkout by default, and a scaffold placed elsewhere (the target-dir
+# override) would be skipped as "not cloned" while the subtree add had already succeeded.
+# The name is the other half of that resolution — the scaffold sets no origin the
+# fallback could match — so a target not named dotfiles-$OS is told so.
+#
+# ABSOLUTE paths, because the hint's sync half runs after `cd '$HERE'`: a relative
+# target-dir would make REPOS_ROOT resolve under the Core checkout instead. (Under
+# --dry-run the target may not exist yet, so the relative form is the fallback.)
+#
+# And the sync half carries THE PIN, the way VENDORING.md's recipe does: sync-core.sh
+# defaults CORE_BRANCH to main and refuses unless Core's HEAD is the commit being
+# vendored, so it checks the tag out and passes the peeled commit — otherwise copying
+# the hint would replace the just-added release tree with `main` and stamp that.
+#
+# Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
+# COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
+# hand the reader a misparsed command at exactly the moment vendoring must be recovered.
+_q() { printf '%q' "$1"; }
+_target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$TARGET"
+_target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$TARGET")"
+_vendor_hint="git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && (cd $(_q "$HERE") && git checkout $(_q "$CORE_BRANCH") && CORE_BRANCH=\"\$(git rev-parse $(_q "$CORE_BRANCH^{commit}"))\" REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))   # VENDORING.md § One-time setup"
+[[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] ||
+  _vendor_hint="$_vendor_hint — NOTE: sync-core.sh looks for a directory NAMED dotfiles-$OS under REPOS_ROOT, so first give it that name as a SYMLINK (not a rename — the command above embeds the original path): ln -s $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS")"
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then
@@ -569,7 +599,10 @@ fi
 # bootstrap.sh would not have made. EVERY Core zsh
 # module, both tmux files and the single configs — the whole link list bootstrap.sh
 # carries, so dropping or breaking any link line there goes red here.
-for f in "$REPO"/core/zsh/*.zsh; do [[ -e "$f" ]] && check_link "$CFG/zsh/$(basename "$f")" "$f"; done
+# The loader was asserted above; skip it here so each link is counted exactly once.
+for f in "$REPO"/core/zsh/*.zsh; do
+  [[ -e "$f" && "${f##*/}" != loader.zsh ]] && check_link "$CFG/zsh/$(basename "$f")" "$f"
+done
 for pair in "core/starship/starship.toml:$CFG/starship.toml" "core/tmux/tmux.conf:$CFG/tmux/tmux.conf" \
   "core/tmux/tmux.reset.conf:$CFG/tmux/tmux.reset.conf" "core/nvim:$CFG/nvim" \
   "core/git/gitconfig:$tmp/home/.gitconfig"; do
@@ -580,8 +613,12 @@ for pair in "core/starship/starship.toml:$CFG/starship.toml" "core/tmux/tmux.con
 done
 if [[ -f "$REPO/core/mise/config.toml" ]]; then
   # A regular file is not enough — an empty or stale one would pass as "seeded". The
-  # copy must carry the seed's bytes, so `cmp` against the Core source.
-  if [[ -f "$CFG/mise/config.toml" && ! -L "$CFG/mise/config.toml" ]] && cmp -s "$REPO/core/mise/config.toml" "$CFG/mise/config.toml"; then
+  # copy must carry the seed's bytes. Compared by Git blob hash, not `cmp`: cmp ships in
+  # diffutils, which a Tumbleweed box in this fleet did not have, and a missing cmp is
+  # indistinguishable from "the files differ" (core/scripts/lib/common.sh has the story).
+  _seed_hash="$(git hash-object "$REPO/core/mise/config.toml" 2>/dev/null)"
+  _copy_hash="$(git hash-object "$CFG/mise/config.toml" 2>/dev/null)"
+  if [[ -f "$CFG/mise/config.toml" && ! -L "$CFG/mise/config.toml" && -n "$_seed_hash" && "$_seed_hash" == "$_copy_hash" ]]; then
     ok "mise config is seeded as a COPY of core/mise/config.toml (a link would write \`mise use -g\` into core/)"
   else
     bad "mise config is missing, is a symlink into the vendored tree, or does not match the seed's bytes"
