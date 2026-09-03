@@ -205,10 +205,13 @@ sanctioned writer of that file):
 git fetch origin refs/tags/v6
 wt="$(mktemp -d)/core"
 git worktree add --detach "$wt" FETCH_HEAD && {
-  (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); rc=$?
+  if (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); then rc=0; else rc=$?; fi   # an `if` condition: `set -e` cannot skip the cleanup
   git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc")   # cleanup only once the add succeeded; the sync's status is the verdict
 }
 ```
+
+`sync-core.sh` exits 0 after a **per-repo** failure and says so in its summary, so read
+that summary — or confirm that `core.lock` in the OS repo names the commit you vendored.
 
 Three things matter: `sync-core.sh` refuses unless Core's `HEAD` is the commit being
 vendored, and the pin must be the **peeled commit** — the release tags are annotated, so

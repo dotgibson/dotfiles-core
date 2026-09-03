@@ -2606,6 +2606,11 @@ _vpn_write README.md 'git checkout -b vendor-v5 v5 && git switch -c work v5'
 _vpn_count "\`checkout -b <branch> vN\` and \`switch -c <branch> vN\` are judged past the operand" 6 2
 _vpn_write README.md 'git checkout -B vendor v5.3.0 && git switch -C work v6'
 _vpn_count "the same operand forms on an exact pin or the current major are clean" 6 0
+# The branch NAME may look like a pin; the ref is the last token, whatever the name says.
+_vpn_write README.md 'git checkout -b vendor-v6 v5'
+_vpn_count "\`checkout -b vendor-v6 v5\` is judged on v5, not on the branch name" 6 1
+_vpn_write README.md 'git checkout -b vendor-v5 v6'
+_vpn_count "\`checkout -b vendor-v5 v6\` is clean — the branch name is not the pin" 6 0
 _vpn_write README.md 'git checkout v60 && CORE_BRANCH="$(git rev-parse v5^{commit})" x refs/tags/v5 refs/tags/v6'
 _vpn_count "every occurrence on a line is reported and the number is read whole (v60 is not v6)" 6 3
 # Core must satisfy the rule it authors — the inverse assertion, so `make test` catches a

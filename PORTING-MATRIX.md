@@ -17,9 +17,11 @@ _Repo status_ at the bottom).
    `/etc/os-release` guard string.
 5. Re-vendor Core and stamp `core.lock`, from a **Core** checkout — in a throwaway
    worktree, so your own checkout stays on its branch for the registration edit that
-   follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" && git worktree add --detach "$wt" FETCH_HEAD && { (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); rc=$?; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
-   (a unique temp path, so a retry never meets a registered leftover; cleanup runs only
-   once the add succeeded, and the sync's status is the verdict)
+   follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" && git worktree add --detach "$wt" FETCH_HEAD && { if (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); then rc=0; else rc=$?; fi; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
+   (a unique temp path, so a retry never meets a registered leftover; the sync runs as
+   an `if` condition so `set -e` cannot skip the cleanup, which runs only once the add
+   succeeded; the sync's status is the verdict — and since `sync-core.sh` exits 0 after a
+   per-repo failure, confirm `core.lock` in the OS repo names the commit you vendored)
    — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
    § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no

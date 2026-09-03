@@ -1319,7 +1319,11 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # sentence period, so the trim below must not turn `5.3.0.` into an exact pin.
           peeled = (hit ~ /\^\{commit\}$/ || rest ~ /^\^\{commit\}/)
           sub(/\^\{commit\}$/, "", tok)
-          match(tok, /v[0-9]/); tok = substr(tok, RSTART + 1)
+          # The ref is the LAST whitespace-separated token of the hit: in the checkout
+          # shape an operand-taking option puts a branch NAME before it, and a first
+          # `v<digit>` scan would read `vendor-v6` as the pin in `checkout -b vendor-v6 v5`.
+          n = split(tok, parts, /[[:space:]]+/); tok = parts[n]
+          sub(/^["\047]/, "", tok); sub(/^refs\/tags\//, "", tok); sub(/^v/, "", tok)
           # The token class admits `.`, so a sentence-ending period rides in with it:
           # `refs/tags/v5.3.0.` would read as `5.3.0.` and an exact freeze would be
           # reported stale. ONLY that one period is prose — a single trailing `.`. Two
