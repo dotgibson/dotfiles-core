@@ -17120,6 +17120,12 @@ _fv_floor "an uncalled multi-line function (brace on its own line)" '**not-in-ci
 _fv_floor "a called multi-line function (brace on its own line)" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          suite()\n          {\n            make test\n          }\n          suite\n"'
 # A SPACE-INDENTED .PHONY is a .PHONY.
 _fv_floor "a space-indented .PHONY: test still counts" 'ok' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/  .PHONY: test\\n}"; _fv_ci dotfiles-Alpine "make test"'
+# QUOTED WORDS are the same words to the program: a quoted script path or make goal runs.
+_fv_floor "bash \"test/smoke.sh\" runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash \"test/smoke.sh\""'
+_fv_floor "make \"test\" builds test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make \"test\""'
+_fv_floor "./'"'"'test/smoke.sh'"'"' runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "./'"'"'test/smoke.sh'"'"'"'
+_fv_floor "a recipe running a quoted script path is the suite" 'ok' '_fv_suite dotfiles-Alpine; printf "quoted:\n\t@bash \"test/smoke.sh\"\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make quoted"'
+_fv_floor "echo \"make test\" is still an argument" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo \"make test\""'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

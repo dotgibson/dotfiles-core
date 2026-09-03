@@ -305,6 +305,7 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     literal operand must be in it, a glob must match one, the bare directory is fine,
 #     and an operand carrying `$` cannot be checked and is taken on trust. The list is
 #     passed inline (`existl`, newline-separated), never through a temp file.
+#   * dequote — a command with its shell quotes removed, as the program sees its words.
 #   * trim — whitespace only.
 AWK_SHELL='
   function loadexist(lst,   n, a, i) { split("", EXIST); n = split(lst, a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") EXIST[a[i]] = 1 }
@@ -648,6 +649,23 @@ AWK_SHELL='
       }
     }
   }
+  # dequote(s) — a command with its shell quotes REMOVED and their contents kept, the way
+  # the shell hands words to the program: `bash "test/smoke.sh"` runs test/smoke.sh and
+  # `make "test"` builds test. Applied once reachability has been decided (quotes matter
+  # to the splitter and the comment stripper, not to what a word names). Inside "…" a
+  # backslash escapes the next character; inside a single-quoted string nothing does.
+  function dequote(s,   i, c, q, out) {
+    out = ""; q = ""
+    for (i = 1; i <= length(s); i++) {
+      c = substr(s, i, 1)
+      if (q == "\"") { if (c == "\\") { out = out substr(s, i + 1, 1); i++ } else if (c == "\"") q = ""; else out = out c; continue }
+      if (q == SQ) { if (c == SQ) q = ""; else out = out c; continue }
+      if (c == "\"" || c == SQ) { q = c; continue }
+      if (c == "\\") { out = out substr(s, i + 1, 1); i++; continue }
+      out = out c
+    }
+    return out
+  }
   function unquote_scalar(s,   i, c, out) {
     s = trim(s)
     if (substr(s, 1, 1) == "\"") {
@@ -704,7 +722,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   # job they belong to, and resolved once every job- and workflow-level key has been seen.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
   awk -v SQ="'" -v ERREXIT=1 "$AWK_SHELL"'
-    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); n = cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(c[i]) }
+    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); n = cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(dequote(c[i])) }
     function flushblock() { if (acc != "") { held[++nheld] = acc; acc = "" } }
     function flushstep(   i, all) {
       if (inblock) { flushblock(); inblock = 0 }
@@ -818,10 +836,10 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
   # conditionals decided as in _targets (AWK_MAKECOND), nothing in a define body counted.
   awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v existl="${3:-}" "$AWK_SHELL$AWK_MAKECOND"'
     BEGIN { loadexist(existl) }
-    function runs(line,   n, c, i) {
+    function runs(line,   n, c, i, w) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
       n = splitcmds(trim(stripcomment(line)), c); n = cdnorm(c, n)
-      for (i = 1; i <= n; i++) if (trim(c[i]) ~ re && trim(c[i]) !~ nore && pathok(trim(c[i]))) return 1
+      for (i = 1; i <= n; i++) { w = trim(dequote(c[i])); if (w ~ re && w !~ nore && pathok(w)) return 1 }
       return 0
     }
     # A single-colon rule that carries a recipe REPLACES any earlier recipe for its
