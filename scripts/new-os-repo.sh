@@ -160,8 +160,12 @@ _q() { printf '%q' "$1"; }
 _target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$TARGET"
 _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$TARGET")"
 _vendor_hint="git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && (cd $(_q "$HERE") && git checkout $(_q "$CORE_BRANCH") && CORE_BRANCH=\"\$(git rev-parse $(_q "$CORE_BRANCH^{commit}"))\" REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))   # VENDORING.md § One-time setup"
+# A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
+# subtree add and the sync, and never after the trailing `#`, where it would be a
+# comment — so the sync resolves the conventional name. A symlink, not a rename: the
+# chain embeds the original path.
 [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] ||
-  _vendor_hint="$_vendor_hint — NOTE: sync-core.sh looks for a directory NAMED dotfiles-$OS under REPOS_ROOT, so first give it that name as a SYMLINK (not a rename — the command above embeds the original path): ln -s $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS")"
+  _vendor_hint="ln -s $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS") && $_vendor_hint; sync-core.sh resolves the NAME dotfiles-$OS under REPOS_ROOT, hence the symlink (not a rename — the chain embeds the original path)"
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then
