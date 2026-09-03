@@ -5593,6 +5593,31 @@ if have git; then
     else
       fail "recovery: the command is missing —$_rc_bad"
     fi
+    # The worktree subshell's STATUS, behaviourally: take the emitted subshell (from the
+    # Core-side `(cd` to the end), stub the four network/worktree steps — fetch → true,
+    # worktree add → mkdir, the sync → a chosen status, worktree remove → rmdir — and run
+    # it. A shape assertion alone could pass a chain whose cleanup still masked the sync.
+    _rc_sub="${_rc_cmd#* --squash && (cd }"   # drop everything up to the Core-side subshell (the FIRST `(cd` after the subtree add)
+    _rc_sub="(cd ${_rc_sub%%   # VENDORING*}"  # and the trailing comment
+    _rc_drive() { # _rc_drive <sync-status-cmd> <remove-cmd> → exit status of the driven subshell
+      local d
+      d="$(printf '%s' "$_rc_sub" |
+        sed -e 's|git fetch [^&]* && |true \&\& |' \
+            -e 's|git worktree add --detach "$_wt" FETCH_HEAD|mkdir -p "$_wt"|' \
+            -e "s|\./scripts/sync-core\.sh [^)]*)|$1)|" \
+            -e "s|git worktree remove --force \"\$_wt\"|$2 \"\$_wt\"|")"
+      (cd "$SANDBOX/recovery" && bash -c "$d") >/dev/null 2>&1
+    }
+    _rc_st=""
+    _rc_drive false rmdir; _rc_st="$_rc_st sync-fails:$?"
+    _rc_drive true rmdir; _rc_st="$_rc_st sync-ok:$?"
+    _rc_drive true false; _rc_st="$_rc_st cleanup-fails:$?"
+    if [[ "$_rc_st" == " sync-fails:1 sync-ok:0 cleanup-fails:1" ]]; then
+      pass "recovery: the worktree subshell returns the sync's status (failed sync → 1, ok → 0, failed cleanup → 1)"
+    else
+      fail "recovery: the worktree subshell masks a status —$_rc_st — driven: $_rc_sub"
+    fi
+    unset -f _rc_drive
     # The guard is the executable part: everything before the first `&& git -C`.
     _rc_guard="${_rc_cmd%% && git -C*}"
     _rc_canon="$_rc_parent/dotfiles-Fixture"
@@ -5616,7 +5641,7 @@ if have git; then
     fi
   fi
   rm -rf "$SANDBOX/recovery"
-  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos
+  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi
