@@ -214,7 +214,8 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     Inside "…" a backslash escapes the next character, so `\"` does not end the string;
 #     inside '…' nothing does. The operator before each command is kept (SPLITOP) and
 #     cdnorm decides reachability for the decidable pairs: `true || make test` and
-#     `false && make test` never reach make; `false || make test` always does.
+#     `false && make test` never reach make; `false || make test` always does. A shell
+#     function's body counts only if the function is invoked (fnbodies).
 #   * stripcomment — a shell comment (`#` at the start, or after whitespace) OUTSIDE
 #     quotes, so `echo "value #"; make test` keeps its make.
 #   * unquote_scalar — a YAML flow scalar: a fully "…"- or '…'-quoted value yields its
@@ -268,10 +269,37 @@ AWK_SHELL='
     }
     return s
   }
+  function fnbodies(c, n,   i, t, fn, depth, w) {
+    # SHELL FUNCTION BODIES run only when the function is CALLED. A first pass marks every
+    # command inside a `name() {` / `function name {` body with its function name (a bare
+    # `{ … }` is a group and runs where it stands), then records which functions are
+    # invoked as a command outside any body; cdnorm drops the body of a function that is
+    # never invoked, so dead command text cannot meet the floor. The opener and the
+    # closing `}` are not commands; a first body command on the same line as the opener is.
+    split("", BODY); split("", INVOKED); fn = ""; depth = 0
+    for (i = 1; i <= n; i++) {
+      t = trim(c[i])
+      if (fn == "" && match(t, /^(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*(\(\))?[ \t]*\{/)) {
+        if (t ~ /^function[ \t]/ || t ~ /\(\)/) {
+          fn = t; sub(/^function[ \t]+/, "", fn); sub(/[ \t]*(\(\))?[ \t]*\{.*$/, "", fn)
+          depth = 1; t = substr(t, RLENGTH + 1); c[i] = trim(t)
+          if (c[i] == "") { BODY[i] = "@"; continue }
+        }
+      }
+      if (fn != "") {
+        if (t ~ /^\{([ \t]|$)/) depth++
+        if (t ~ /^\}([ \t]|$)/) { depth--; if (depth == 0) { BODY[i] = "@"; fn = ""; continue } }
+        BODY[i] = fn
+      }
+    }
+    for (i = 1; i <= n; i++) if (!(i in BODY)) { w = trim(c[i]); sub(/[ \t].*$/, "", w); if (w != "") INVOKED[w] = 1 }
+  }
   function cdnorm(c, n,   i, d, t, m, x, st, skip, nest, kw, lvl) {
     d = ""; x = 0; st = ""; nest = 0; skip = 0
     split("", TAKEN); split("", SKIPD)
+    fnbodies(c, n)
     for (i = 1; i <= n; i++) {
+      if ((i in BODY) && (BODY[i] == "@" || !(BODY[i] in INVOKED))) { c[i] = ""; continue }
       # Reachability, for the statically decidable pairs. `st` is the status of the AND-OR
       # list EVALUATED so far — "true" after a literal true/`:`, "false" after a literal
       # false, "" when unknown — and only a command that RUNS updates it: a skipped arm
@@ -315,6 +343,10 @@ AWK_SHELL='
       }
       if (t ~ /^fi([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
       skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
+      # A group or subshell runs where it stands: `{ make test; }` and `( make test )` are
+      # `make test` in command position once the delimiters go.
+      sub(/^[{(][ \t]+/, "", t); sub(/[ \t]+[)]$/, "", t)
+      if (t ~ /^[{}()]$/) t = ""
       if (skip || t == "") { c[i] = ""; continue }
       c[i] = t
       if (match(t, /^cd[ \t]+/)) {

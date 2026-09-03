@@ -16961,6 +16961,13 @@ _fv_floor "else after an elif true never runs" '**not-in-ci**' '_fv_suite dotfil
 _fv_floor "python3 -m compileall tests/ compiles only" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m compileall tests/"'
 _fv_floor "a matrix key named working-directory is not a job default" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    strategy:\n      matrix:\n        working-directory: [linux]\n    steps:\n      - run: make test\n"'
 _fv_floor "a job env named working-directory is not a job default" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    env:\n      working-directory: tools\n    steps:\n      - run: make test\n"'
+# A FUNCTION BODY RUNS ONLY WHEN THE FUNCTION IS CALLED; a bare group runs where it stands.
+_fv_floor "an uncalled function whose body runs make test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          unused_suite() {\n            make test\n          }\n          make lint\n"'
+_fv_floor "a called function whose body runs make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "run_suite() { make test; }; run_suite"'
+_fv_floor "a function keyword form, called" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          function suite {\n            make test\n          }\n          suite\n"'
+_fv_floor "a bare { } group runs where it stands" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "{ make test; }"'
+_fv_floor "a subshell runs where it stands" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "( make test )"'
+_fv_floor "a function defined but only mentioned in an echo" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; echo suite"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
