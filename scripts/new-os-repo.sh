@@ -744,8 +744,18 @@ else
   # but is not in scripts/os-repos.txt is invisible to the fan-out, to fleet-drift and to
   # core-integrity, and every one of them stays green while ignoring it. Since #669 that
   # registration is a single line rather than four coordinated edits — see VENDORING.md.
+  # A scaffold with no core/ yet (--no-vendor, or the vendor step failed) cannot follow
+  # the sequence below in order: bootstrap.sh refuses to run without core/, and F7b
+  # asserts that `make test` goes red in exactly that state. So that path is told to
+  # materialize core/ FIRST, with the same recovery hint the vendor step printed.
+  _next_vendor=""
+  [[ -d "$TARGET/core" ]] || _next_vendor="
+  FIRST — this scaffold has no core/ yet, and bootstrap.sh refuses to run without one,
+  so nothing below passes until it exists. Materialize it:
+    $_vendor_hint
+"
   cat <<EOF
-  next:
+  next:$_next_vendor
     cd "$TARGET"
     git add -A && git commit -m "scaffold dotfiles-$OS"
     ./bootstrap.sh            # wire the symlinks
