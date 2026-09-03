@@ -17,9 +17,9 @@ _Repo status_ at the bottom).
    `/etc/os-release` guard string.
 5. Re-vendor Core and stamp `core.lock`, from a **Core** checkout — in a throwaway
    worktree, so your own checkout stays on its branch for the registration edit that
-   follows: `git fetch origin refs/tags/v6 && git worktree add --detach /tmp/core-v6 FETCH_HEAD && (cd /tmp/core-v6 && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); rc=$?; git worktree remove --force /tmp/core-v6; (exit "$rc")`
-   (the removal always runs, and the sync's status is the verdict — a failed sync must
-   not leave `/tmp/core-v6` registered, or the retry dies at `worktree add`)
+   follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" && git worktree add --detach "$wt" FETCH_HEAD && { (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); rc=$?; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
+   (a unique temp path, so a retry never meets a registered leftover; cleanup runs only
+   once the add succeeded, and the sync's status is the verdict)
    — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
    § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no

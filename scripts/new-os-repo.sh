@@ -159,7 +159,10 @@ w() {
 # worktree removal succeeded, leaving the repo unstamped while the command said ok. The
 # mktemp PARENT is tracked and removed too — the worktree lives in a `core` subdirectory
 # so `git worktree add` gets a path that does not exist yet, and removing only that
-# would leave an empty temp directory behind on every successful recovery.
+# would leave an empty temp directory behind on every successful recovery. And the
+# cleanup is ENTERED only once `worktree add` has succeeded: the pasted subshell inherits
+# the reader's shell variables, so a cleanup that ran after a failed fetch or mktemp
+# could force-remove whatever an inherited `_wt` happened to name.
 #
 # Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
 # COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
@@ -176,7 +179,7 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # The Core-side half stands on its own too: when core/ WAS materialized and only the
 # commit after it failed, the subtree add would fail on the existing prefix, so that
 # state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
-_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && git worktree add --detach \"\$_wt\" FETCH_HEAD && (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")); _rc=\$?; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\")"
+_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && git worktree add --detach \"\$_wt\" FETCH_HEAD && { (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")); _rc=\$?; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\"; })"
 _vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
@@ -483,10 +486,39 @@ else
   # but is not in scripts/os-repos.txt is invisible to the fan-out, to fleet-drift and to
   # core-integrity, and every one of them stays green while ignoring it. Since #669 that
   # registration is a single line rather than four coordinated edits — see VENDORING.md.
+  # A scaffold with no core/ yet (--no-vendor, or the vendor step failed) cannot follow
+  # the sequence below in order: bootstrap.sh refuses to run without core/, and F7b
+  # materialize core/ FIRST, with the same recovery hint the vendor step printed.
+  _next_vendor=""
+  [[ -d "$TARGET/core" ]] || _next_vendor="
+  FIRST — this scaffold has no core/ yet, and bootstrap.sh refuses to run without one,
+  so nothing below passes until it exists. Materialize it (this commits the scaffold,
+  then adds core/ and runs the pinned sync that stamps core.lock):
+    $_vendor_hint
+"
+  # The REGISTER step's sync has the same two blind spots the recovery hint had: it
+  # resolves the NAME dotfiles-$OS under REPOS_ROOT, which defaults to the Core
+  # checkout's parent. A scaffold placed elsewhere, or named otherwise, would be skipped
+  # as "not cloned" — so the printed command carries REPOS_ROOT when the parent differs
+  # and is preceded by the canonical-name symlink when the name does. `ln -sfn`: on a
+  # --no-vendor scaffold the FIRST step above has already created that link, and a plain
+  # `ln -s` onto an existing directory symlink would follow it and drop a new link inside
+  # the target repo, which the sync then refuses as dirty.
+  _reg_sync="./scripts/sync-core.sh $(_q "dotfiles-$OS")"
+  [[ "$_target_parent" == "$(cd "$(dirname "$HERE")" && pwd)" ]] || _reg_sync="REPOS_ROOT=$(_q "$_target_parent") $_reg_sync"
+  _reg_link=""
+  [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || _reg_link="
+    $_link_cmd   # sync-core.sh resolves the NAME dotfiles-$OS; a guarded symlink (refuses a foreign occupant), not a rename"
+  # The scaffold commit is IDEMPOTENT: on the no-core/ path the FIRST recovery command
+  # has already committed the scaffold, and a bare `git commit` would then fail with
+  # "nothing to commit" — the one step in the sequence a reader could not follow. And the
+  # OS-layer edits get a commit of their own BEFORE the register step, because the sync
+  # refuses a target with uncommitted changes (its dirty-tree guard) — without it the
+  # advertised registration flow skips the repo it is registering.
   cat <<EOF
-  next:
+  next:$_next_vendor
     cd "$TARGET"
-    git add -A && git commit -m "scaffold dotfiles-$OS"
+    git add -A && { git diff --cached --quiet || git commit -m "scaffold dotfiles-$OS"; }   # a no-op if already committed
     ./bootstrap.sh            # wire the symlinks
     \$EDITOR os/$os_lc.zsh     # add your $OS-native bits
 
@@ -494,9 +526,10 @@ else
   schema is satisfied from birth, and they are wrong for any other archive:
     \$EDITOR os/$os_lc.capabilities
     core/scripts/check-capabilities.sh os/$os_lc.capabilities
+    git add -A && git commit -m "os: the $OS layer and its capability declaration"   # the sync below refuses a dirty tree
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
-    echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted
-    ./scripts/sync-core.sh dotfiles-$OS         # materializes core/ and stamps core.lock
+    echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted$_reg_link
+    $_reg_sync   # materializes core/ and stamps core.lock
 EOF
 fi

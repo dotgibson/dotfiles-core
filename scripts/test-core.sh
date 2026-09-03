@@ -2601,6 +2601,11 @@ _vpn_write README.md 'git checkout --detach v5; git checkout -q --detach v5; git
 _vpn_count "\`checkout --detach vN\`, \`switch --detach vN\` and a quoted ref are all judged" 6 5
 _vpn_write README.md 'git checkout --detach v6 && git checkout "v5.3.0" && git switch --detach '"'"'v6.1.0'"'"''
 _vpn_count "the same forms on the current major or an exact pin are clean" 6 0
+# Options that take an operand put a branch name between the flag and the tag.
+_vpn_write README.md 'git checkout -b vendor-v5 v5 && git switch -c work v5'
+_vpn_count "\`checkout -b <branch> vN\` and \`switch -c <branch> vN\` are judged past the operand" 6 2
+_vpn_write README.md 'git checkout -B vendor v5.3.0 && git switch -C work v6'
+_vpn_count "the same operand forms on an exact pin or the current major are clean" 6 0
 _vpn_write README.md 'git checkout v60 && CORE_BRANCH="$(git rev-parse v5^{commit})" x refs/tags/v5 refs/tags/v6'
 _vpn_count "every occurrence on a line is reported and the number is read whole (v60 is not v6)" 6 3
 # Core must satisfy the rule it authors — the inverse assertion, so `make test` catches a
@@ -5580,7 +5585,8 @@ if have git; then
     grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' <<<"$_rc_cmd" || _rc_bad="$_rc_bad subtree-add-source"
     # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
-    grep -qF '; _rc=$?; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc")' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
+    grep -qF 'FETCH_HEAD && { (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad cleanup-nested-after-worktree-add"
+    grep -qF '; _rc=$?; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
     else
@@ -5618,6 +5624,22 @@ if have git; then
     else
       fail "recovery: the mktemp parent survives a successful recovery — $_rc_leftover"
     fi
+    # When `worktree add` FAILS, the cleanup must never run: the pasted subshell inherits
+    # the reader's variables, and a force-remove of an inherited `_wt` would be the
+    # worst outcome of a failed recovery. Drive with the add failing and a cleanup that
+    # leaves a marker; the marker must not appear and the status must be non-zero.
+    _rc_dr="$(printf '%s' "$_rc_sub" |
+      sed -e 's|git fetch [^&]* && |true \&\& |' \
+          -e "s|mktemp -d|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
+          -e 's|git worktree add --detach "$_wt" FETCH_HEAD|false|' \
+          -e "s|git worktree remove --force \"\$_wt\"|touch '$SANDBOX/recovery/cleanup-ran'|")"
+    (cd "$SANDBOX/recovery" && _wt=/should/never/be/touched bash -c "$_rc_dr") >/dev/null 2>&1; _rc_addfail=$?
+    if ((_rc_addfail != 0)) && [[ ! -e "$SANDBOX/recovery/cleanup-ran" ]]; then
+      pass "recovery: when worktree add fails the cleanup never runs (an inherited \$_wt is never force-removed) and the status is non-zero"
+    else
+      fail "recovery: a failed worktree add still ran the cleanup (marker=$([[ -e "$SANDBOX/recovery/cleanup-ran" ]] && echo yes || echo no), status=$_rc_addfail)"
+    fi
+    find "$SANDBOX/recovery" -name 'wt.*' -type d -exec rm -rf {} + 2>/dev/null
     unset -f _rc_drive
     # The guard is the executable part: everything before the first `&& git -C`.
     _rc_guard="${_rc_cmd%% && git -C*}"
@@ -5642,7 +5664,7 @@ if have git; then
     fi
   fi
   rm -rf "$SANDBOX/recovery"
-  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover
+  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_dr _rc_addfail
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi

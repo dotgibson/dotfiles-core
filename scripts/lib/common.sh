@@ -1291,7 +1291,8 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         #   exact N.M.P[-pre]   → a deliberate freeze, exempt whatever its major
         #   anything else       → no tag this repo cuts; judged by its leading major
         # `git checkout` tolerates any run of shell whitespace between its words, options
-        # before the ref (`--detach`, `-q`), `switch` in place of `checkout`, and a quote
+        # before the ref (`--detach`, `-q`, and the operand-taking `-b`/`-B`/`-c`/`-C`
+        # with their branch name), `switch` in place of `checkout`, and a quote
         # opening the ref (v5 in single or double quotes), so a reformatted or
         # option-bearing command cannot slip
         # under the gate; and the exact-pin class is the SAME one core.version is
@@ -1301,7 +1302,7 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         # The left boundary also admits a Markdown `_` delimiter — an underscore that is
         # itself at a word boundary — so `_refs/tags/v5_` is scanned, while `foo_refs…`
         # (an intraword identifier) still is not.
-        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout|switch)([[:space:]]+-[-A-Za-z0-9=]+)*[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout|switch)([[:space:]]+(-[bBcC][[:space:]]+[^[:space:]]+|-[-A-Za-z0-9=]+))*[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
           sub(/^[^rgv]*/, "", hit)                 # drop the boundary character(s)
