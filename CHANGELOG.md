@@ -54,6 +54,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `starship/` and `tmux/` already sit in the classifier's `shell` bucket and bench today,
   and nothing on the zsh startup chain reads `nvim/`. Dev tooling only — the OS repos
   receive nothing from this entry.
+
+## [v6.1.0] - 2026-09-02
+
+### Changed
+
 - **The atuin daemon-guard research apparatus is archived under `scripts/research/`, and its
   weekly workflow is dispatch-only (#687).** `verify-atuin-guard.sh` (1,845 lines),
   `bench-atuin-daemon.sh` (1,225) and their shared `lib/atuin-db.sh` measured the premises
