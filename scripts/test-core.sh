@@ -17072,6 +17072,14 @@ _fv_floor "( exit 0; make test ) never reaches make" '**not-in-ci**' '_fv_suite 
 _fv_floor "false && over make test on the next block line never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          false &&\n            make test\n"'
 _fv_floor "true || over make test on the next block line never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          true ||\n            make test\n"'
 _fv_floor "false || over make test on the next block line runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          false ||\n            make test\n"'
+# ERREXIT: a step runs under bash -e, so a bare literal false ends it; set +e lifts that;
+# an arm of && or || is not bare; a Makefile recipe line runs under plain sh -c.
+_fv_floor "false; make test never reaches make under bash -e" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false; make test"'
+_fv_floor "set +e; false; make test runs make" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "set +e; false; make test"'
+_fv_floor "set +e; set -e; false; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "set +e; set -e; false; make test"'
+_fv_floor "false || true; make test runs make (false is an arm)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false || true; make test"'
+_fv_floor "a recipe with false; make test still runs make (no -e under make)" 'ok' '_fv_suite dotfiles-Alpine; printf "suite2:\n\t@false; ./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite2"'
+_fv_floor "a false under a runtime if does not end the step" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ]; then false; fi; make test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

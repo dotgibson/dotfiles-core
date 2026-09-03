@@ -425,8 +425,8 @@ AWK_SHELL='
     }
     return r
   }
-  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing) {
-    d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0; sd = 0; subterm = 0; retid = 0
+  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing, ee) {
+    d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0; sd = 0; subterm = 0; retid = 0; ee = ERREXIT
     split("", TAKEN); split("", SKIPD); split("", DEF); split("", COND)
     for (i = 1; i <= n; i++) {
       # A SUBSHELL `( … )` has its own exit: an `exit` inside it ends the subshell only.
@@ -552,6 +552,16 @@ AWK_SHELL='
       # A call counts only AFTER the definition (FNAME holds its index): `suite; suite() {…}`
       # fails at the call and never reaches the body.
       if (!final) { w = t; sub(/^(then|do|else)[ \t]+/, "", w); sub(/[ \t].*$/, "", w); if ((w in FNAME) && FNAME[w] < i) INVOKED[w] = 1 }
+      # ERREXIT (ERREXIT is set by the caller): a workflow step runs under `bash -e` unless
+      # it says `set +e`, so a bare literal `false` — not an arm of `&&`/`||`/`|`, not
+      # backgrounded — ends the shell exactly as an `exit` would, certain where its
+      # branches are certain. A Makefile recipe line runs under plain `sh -c`, so there
+      # the same `false; make test` runs make.
+      if (t ~ /^set[ \t]/) { if (t ~ /[ \t]\+e([ \t]|$)/ || t ~ /\+o[ \t]+errexit/) ee = 0; else if (t ~ /[ \t]-[a-zA-Z]*e/ || t ~ /-o[ \t]+errexit/) ee = 1 }
+      if (ee && t == "false" && SPLITOP[i + 1] !~ /^(&&|\|\||\||&)$/) {
+        w = 1; for (lvl = 1; lvl <= nest; lvl++) if (!DEF[lvl]) w = 0
+        if (nest == 0 || w) term = 1; else SKIPD[nest] = 1
+      }
       if (match(t, /^cd[ \t]+/)) {
         d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
         if (d ~ /^tests?$/) { x = 0; continue }
@@ -614,6 +624,8 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     data and is dropped up to its delimiter line.
   #   * a step with a statically false `if:` never runs, nor does any step of a job with
   #     one; a runtime condition may.
+  #   * a step runs under `bash -e` (the default shell invocation on GitHub): a bare
+  #     literal `false` ends it unless the step said `set +e` first (ERREXIT, in cdnorm).
   #   * a step runs in its EFFECTIVE WORKING DIRECTORY: its own `working-directory:`, else
   #     the job's `defaults.run.working-directory`, else the workflow's. Every line is
   #     emitted as `cd <dir> && <line>`, so cdnorm judges it like a `cd` in the command
@@ -623,7 +635,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   # until the file ends — each step's lines are held with the step's own settings and the
   # job they belong to, and resolved once every job- and workflow-level key has been seen.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
-  awk -v SQ="'" "$AWK_SHELL"'
+  awk -v SQ="'" -v ERREXIT=1 "$AWK_SHELL"'
     function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); n = cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(c[i]) }
     function flushblock() { if (acc != "") { held[++nheld] = acc; acc = "" } }
     function flushstep(   i, all) {
@@ -735,7 +747,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   # next physical line, exactly as make reads it. Otherwise the same lexer as _targets:
   # rules at column 0, recipes on tab lines, comments and variable assignments ignored,
   # conditionals decided as in _targets (AWK_MAKECOND), nothing in a define body counted.
-  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SHELL$AWK_MAKECOND"'
+  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 "$AWK_SHELL$AWK_MAKECOND"'
     function runs(line,   n, c, i) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
       n = splitcmds(trim(stripcomment(line)), c); n = cdnorm(c, n)
