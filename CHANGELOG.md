@@ -21,7 +21,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `CORE_BENCH_BUDGET_MS=120` existed only in `ci.yml`, beside a comment guessing "~25 ms";
   194 runs of that job (2026-08-26 → 09-03, ubuntu-latest, 50 warmed runs each) actually
   measured 11.8–31.9 ms (bimodal by runner host; ordinary hosts ~24 ms, two runs above
-  30 ms, none above 36), so 120 was 5× the worst run ever seen and a regression the size of
+  30 ms, none above 36), so 120 was 5× the baseline and 3.8× the worst run ever seen, and a regression the size of
   the biggest win on record — re-sourcing the gh/uv/ty completions per shell, +35 ms —
   passed green. Three fixes. (1) `scripts/bench-baseline.env` commits
   `CORE_BENCH_BASELINE_MS=24` and `CORE_BENCH_BUDGET_MS=48` next to the script they govern,
