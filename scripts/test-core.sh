@@ -5375,14 +5375,24 @@ if have git && have zsh; then
       skip "new-os-repo: shellcheck over the scaffolded bash (shellcheck unavailable)"
     fi
     if have actionlint; then
-      if actionlint "$NOR/.github/workflows/test.yml" >/dev/null 2>&1; then
-        pass "new-os-repo: the scaffolded test workflow passes actionlint"
+      if actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" >/dev/null 2>&1; then
+        pass "new-os-repo: the scaffolded test and lint workflows pass actionlint"
       else
-        fail "new-os-repo: scaffolded test.yml fails actionlint: $(actionlint "$NOR/.github/workflows/test.yml" 2>&1 | head -3 | tr '\n' ' ')"
+        fail "new-os-repo: a scaffolded workflow fails actionlint: $(actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" 2>&1 | head -3 | tr '\n' ' ')"
       fi
     else
-      skip "new-os-repo: actionlint over the scaffolded workflow (actionlint unavailable)"
+      skip "new-os-repo: actionlint over the scaffolded workflows (actionlint unavailable)"
     fi
+    # The lint caller pins the CURRENT major, read from core.version — the Makefile's
+    # claim that the gate's other legs run in CI is only true if this caller exists and
+    # points at a live major.
+    _nor_major="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+    if grep -qF "uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v$_nor_major" "$NOR/.github/workflows/lint.yml" 2>/dev/null; then
+      pass "new-os-repo: the scaffolded lint caller uses lint-call.yml@v$_nor_major (core.version's major, not a typed one)"
+    else
+      fail "new-os-repo: the scaffolded lint caller is missing or pins a foreign major (want @v$_nor_major): $(grep -h 'uses:' "$NOR/.github/workflows/lint.yml" 2>/dev/null)"
+    fi
+    unset _nor_major
     # The suite is a TEST, not an `exit 0` stub — run it, in both states the scaffold
     # actually produces. AS GENERATED with --no-vendor there is no core/ at all, and the
     # starter bootstrap refuses to run without one — correctly: a bootstrap that links
@@ -5457,7 +5467,7 @@ if have git && have zsh; then
     # link while saying nothing must go red on THAT witness.
     sed -i.bak '/echo "linked /d' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-silent.out" 2>&1; then
-      fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links silently — idempotency is judged on output, not on what the run does"
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links silently — the mutating-command witness (the rm/ln shims) did not fire"
     elif grep -q 'invoked mutating commands' "$SANDBOX/nor-silent.out"; then
       pass "new-os-repo: the scaffolded suite goes red on a bootstrap that re-links silently (the rm/ln were observed, inode reuse or not)"
     else
