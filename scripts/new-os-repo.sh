@@ -140,10 +140,20 @@ w() {
 # override) would be skipped as "not cloned" while the subtree add had already succeeded.
 # The name is the other half of that resolution — the scaffold sets no origin the
 # fallback could match — so a target not named dotfiles-$OS is told so.
-_target_parent="$(dirname "$TARGET")"
-_vendor_hint="git -C '$TARGET' subtree add --prefix=core '$CORE_REMOTE' '$CORE_BRANCH' --squash && (cd '$HERE' && REPOS_ROOT='$_target_parent' ./scripts/sync-core.sh dotfiles-$OS)   # VENDORING.md § One-time setup"
+#
+# ABSOLUTE paths, because the hint's sync half runs after `cd '$HERE'`: a relative
+# target-dir would make REPOS_ROOT resolve under the Core checkout instead. (Under
+# --dry-run the target may not exist yet, so the relative form is the fallback.)
+#
+# And the sync half carries THE PIN, the way VENDORING.md's recipe does: sync-core.sh
+# defaults CORE_BRANCH to main and refuses unless Core's HEAD is the commit being
+# vendored, so it checks the tag out and passes the peeled commit — otherwise copying
+# the hint would replace the just-added release tree with `main` and stamp that.
+_target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$TARGET"
+_target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$TARGET")"
+_vendor_hint="git -C '$_target_abs' subtree add --prefix=core '$CORE_REMOTE' '$CORE_BRANCH' --squash && (cd '$HERE' && git checkout '$CORE_BRANCH' && CORE_BRANCH=\"\$(git rev-parse '$CORE_BRANCH^{commit}')\" REPOS_ROOT='$_target_parent' ./scripts/sync-core.sh dotfiles-$OS)   # VENDORING.md § One-time setup"
 [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] ||
-  _vendor_hint="$_vendor_hint — NOTE: sync-core.sh looks for a directory NAMED dotfiles-$OS under REPOS_ROOT, so rename or symlink '$TARGET' to '$_target_parent/dotfiles-$OS' first"
+  _vendor_hint="$_vendor_hint — NOTE: sync-core.sh looks for a directory NAMED dotfiles-$OS under REPOS_ROOT, so rename or symlink '$_target_abs' to '$_target_parent/dotfiles-$OS' first"
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then

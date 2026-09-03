@@ -1318,9 +1318,10 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           major = tok; sub(/[^0-9].*$/, "", major)
           exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
           # The token class stops at a character it does not admit, so `v5.3.0_bad` would
-          # match as `v5.3.0` and read exact. A word character glued to the token means
-          # the pin is malformed as written, and a malformed pin is judged, not exempt.
-          if (rest ~ /^[A-Za-z0-9_]/) exact = 0
+          # match as `v5.3.0` and read exact, and `v5.3.0/foo` likewise. A word character
+          # or a `/` glued to the token means the ref as written is not the tag, so the
+          # pin is malformed and judged, not exempt.
+          if (rest ~ /^[A-Za-z0-9_\/]/) exact = 0
           # The scaffold default is never exempt: it is not a freeze someone chose, it is
           # the pin every new repo gets by default.
           if ((!exact || isdefault) && major != want) {

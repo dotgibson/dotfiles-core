@@ -2536,6 +2536,8 @@ _vpn_count "\`v5.3.0+\` and \`v5.3.0-\` are malformed foreign pins, both finding
 # `v5.3.0` and exempted on the strength of its well-formed prefix.
 _vpn_write README.md 'refs/tags/v5.3.0_bad and git checkout v5.3.0x'
 _vpn_count "a word character glued to an exact-looking pin makes it malformed — both findings" 6 2
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0/foo --squash'
+_vpn_count "a \`/\` continuing an exact-looking pin (v5.3.0/foo) makes it malformed — a finding" 6 1
 # A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
 _vpn_write README.md 'git  checkout v5'
 _vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1
