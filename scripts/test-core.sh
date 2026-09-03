@@ -2509,6 +2509,12 @@ _vpn_count "a SemVer pre-release pin (v5.3.0-rc1) is an exact release, exempt" 6
 # allowed inside the label), so a pin the validator would accept is never reported stale.
 _vpn_write README.md 'git checkout v5.3.0-alpha-beta && refs/tags/v5.3.0-alpha.1'
 _vpn_count "a pre-release label with a second hyphen or a dot (as core.version allows) is exempt" 6 0
+# Prose runs into pins. A sentence-ending period is not part of the version, so an exact
+# freeze stays exempt and a bare major at the end of a sentence is still judged as vN.
+_vpn_write README.md 'Pin `refs/tags/v5.3.0`. Or, less carefully, pin refs/tags/v5.3.0.'
+_vpn_count "an exact pin followed by a sentence-ending period is still exempt" 6 0
+_vpn_write README.md 'so vendor refs/tags/v5.'
+_vpn_count "a bare major followed by a sentence-ending period is still a finding" 6 1
 # A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
 _vpn_write README.md 'git  checkout v5'
 _vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1

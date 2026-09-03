@@ -1297,6 +1297,12 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           tok = hit
           sub(/\^\{commit\}$/, "", tok)
           match(tok, /v[0-9]/); tok = substr(tok, RSTART + 1)
+          # The token class admits `.`, `-` and `+`, so a sentence-ending period (or a
+          # dash the prose runs into) rides in with it: `refs/tags/v5.3.0.` would read
+          # as `5.3.0.` and an exact freeze would be reported stale. No version ends in
+          # one of those characters, so trailing ones are prose, not pin.
+          sub(/[.+-]+$/, "", tok)
+          sub(/[.+-]+$/, "", hit)                  # the message quotes the pin, not the prose
           major = tok; sub(/[^0-9].*$/, "", major)
           exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
           if (!exact && major != want) {
