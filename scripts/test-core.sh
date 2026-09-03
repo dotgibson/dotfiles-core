@@ -10606,6 +10606,12 @@ _fv_floor ".ONESHELL without -e: false does not end the script" 'ok' '_fv_suite 
 # PYTEST OPTIONS THAT TAKE A VALUE do not end discovery.
 _fv_floor "pytest -q -m smoke discovers a populated tests/" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "pytest -q -m smoke"'
 _fv_floor "a test: recipe of pytest -q -m smoke is the suite" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_repo dotfiles-Alpine "${_fv_all/test:\\n\\t@.\/test\/smoke.sh/test:\\n\\tpytest -q -m smoke}"; _fv_ci dotfiles-Alpine "make test"'
+# A for LOOP OVER A LITERAL LIST binds its variable: bash "$f" over test/*.sh runs the suite.
+_fv_floor "for f in test/*.sh; do bash \"\$f\"; done (step)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for f in test/*.sh; do bash \"\$f\"; done"'
+_fv_floor "for f in test/*.sh; do bash \"\$f\"; done (test: recipe) is the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/test:\\n\\t@.\/test\/smoke.sh/test:\\n\\tfor f in test\/*.sh; do bash \"\$\$f\"; done}"; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor "for f in docs/*.md; do bash \"\$f\"; done is not the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for f in docs/*.md; do bash \"\$f\"; done"'
+_fv_floor "for f in \$(ls test); do bash \"\$f\"; done binds nothing" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for f in \$(ls test); do bash \"\$f\"; done"'
+_fv_floor "for f in test/*.sh; do bash \${f}; done (braced)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for f in test/*.sh; do bash \${f}; done"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

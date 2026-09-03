@@ -536,9 +536,9 @@ AWK_SHELL='
     }
     return r
   }
-  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing, ee, pf, pipefalse, execterm) {
+  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing, ee, pf, pipefalse, execterm, fvar) {
     d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0; sd = 0; subterm = 0; retid = 0; ee = ERREXIT; pf = PIPEFAIL; pipefalse = 0; execterm = 0
-    split("", TAKEN); split("", SKIPD); split("", DEF); split("", COND)
+    split("", TAKEN); split("", SKIPD); split("", DEF); split("", COND); split("", FORVAR); split("", FORVAL)
     split("", PENDCLOSE); split("", SUBD); split("", SUBX)
     for (i = 1; i <= n; i++) {
       # A `)` on the previous command closes its subshell now: depth drops and the
@@ -627,7 +627,16 @@ AWK_SHELL='
         # `while false`, `until true` and `for x in;` (an empty literal list) never run
         # their body. A while/until condition that is a real command runs at least once;
         # a compound one is folded like an if condition.
-        if (t ~ /^for([ \t]|$)/) { m = (t ~ /^for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in[ \t]*$/) ? "false" : ""; r = "" }
+        if (t ~ /^for([ \t]|$)/) {
+          m = (t ~ /^for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in[ \t]*$/) ? "false" : ""; r = ""
+          # A LITERAL iteration list binds the variable for the body: `for f in test/*.sh;
+          # do bash "$f"; done` runs bash on test/*.sh. The first word stands for the
+          # list (pathok globs it); a list carrying `$` or a substitution binds nothing.
+          if (match(t, /^for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in[ \t]+/)) {
+            w = substr(t, RSTART + RLENGTH); fvar = t; sub(/^for[ \t]+/, "", fvar); sub(/[ \t].*$/, "", fvar)
+            if (w !~ /[$`]/) { sub(/[ \t].*$/, "", w); FORVAR[nest + 1] = fvar; FORVAL[nest + 1] = dequote(w) }
+          }
+        }
         else {
           kw = (t ~ /^while/) ? "while" : "until"
           sub(/^(while|until)[ \t]*/, "", t)
@@ -646,13 +655,18 @@ AWK_SHELL='
         kw = ""
         continue
       }
-      if (t ~ /^done([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; delete DEF[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
+      if (t ~ /^done([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; delete DEF[nest]; delete FORVAR[nest]; delete FORVAL[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
       skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
       # A group or subshell runs where it stands: `{ make test; }` and `( make test )` are
       # `make test` in command position once the delimiters go.
       sub(/^[{][ \t]+/, "", t)
       if (t ~ /^[{}]$/ || t == "") t = ""
       if (skip || t == "") { c[i] = ""; continue }
+      # `$f` / `${f}` inside a loop body whose list is literal becomes that list`s word.
+      for (lvl = 1; lvl <= nest; lvl++) if (lvl in FORVAR) {
+        gsub("\\$\\{" FORVAR[lvl] "\\}", FORVAL[lvl], t)
+        while (match(t, "\\$" FORVAR[lvl] "([^A-Za-z0-9_]|$)")) t = substr(t, 1, RSTART - 1) FORVAL[lvl] substr(t, RSTART + 1 + length(FORVAR[lvl]))
+      }
       # An unconditional `exit`/`exec`/`return` ends what can run: at the top level nothing
       # after it is reachable; inside a block, nothing further in that block is.
       # …and when every enclosing branch is statically CERTAIN to run (DEF), the exit is
@@ -953,7 +967,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
     # in a no-run mode (-n, --dry-run, …) or selecting another Makefile (-C, -f) adds none.
     function submake(line,   n, c, i, k, w, m, goals, t) {
       goals = ""
-      sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
+      sub(/^[ \t]*[@+-]*[ \t]*/, "", line); gsub(/\$\$/, "$", line)
       # The same reachability as runs(): `true || $(MAKE) test` recurses into nothing.
       n = splitcmds(trim(stripcomment(line)), c); n = cdnorm(c, n)
       for (i = 1; i <= n; i++) {
@@ -974,8 +988,11 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
       }
       return goals
     }
+    # A recipe reaches the shell after make`s own expansion: `$$` is a single `$`, so the
+    # shell variable in `for f in test/*.sh; do bash "$$f"; done` is `$f` to the loop model.
+    # (A make variable, `$(X)`, stays as it is — unknown — since make is not evaluated.)
     function runs(line,   n, c, i, w) {
-      sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
+      sub(/^[ \t]*[@+-]*[ \t]*/, "", line); gsub(/\$\$/, "$", line)
       n = splitcmds(trim(stripcomment(line)), c); n = cdnorm(c, n)
       for (i = 1; i <= n; i++) { w = trim(dequote(c[i])); if (w ~ re && w !~ nore && pathok(w)) return 1 }
       return 0
