@@ -1266,7 +1266,25 @@ arms_discard() {
 arms_autostart() {
   local shape hook h rc
 
-  SOCK="$SB/.local/share/atuin/atuin.sock"
+  # WHERE THE DAEMON BINDS BY DEFAULT, BY VERSION. This is the path every arm waits on,
+  # makes stale and unlinks, so it must be the one the binary under test actually uses —
+  # and that moved in 18.20.0 (upstream PR #3910): from the data dir to
+  # $TMPDIR/atuin-$UID/atuin.sock, which AT_VARS pins into the sandbox. Left at the old
+  # path, the manual-spawn control waits on a socket a healthy >= 18.20.0 daemon never
+  # creates and the run reports `unmeasurable` ("never answered") — which is exactly what
+  # the first measurement past the anchor did, on 18.21.0 (#826). An `unknown` version
+  # compares as 0.0.0 and takes the old path; that run is unmeasurable for its own reason.
+  if [[ "$(ver_cmp "$AT_VER" 18.20.0)" == -1 ]]; then
+    SOCK="$SB/.local/share/atuin/atuin.sock"
+  else
+    SOCK="$LOCALDIR/tmp/atuin-${UID}/atuin.sock"
+  fi
+  # 0700, and checked: from 18.20.0 the daemon REFUSES a socket directory it did not create
+  # unless it is exactly 0700 ("incorrect permissions (expected 700, got 755)"), and it exits
+  # before binding — indistinguishable, from the socket, from a daemon that never started.
+  # The directory must pre-exist so make_stale can plant an inode in it; so it is made the
+  # way the daemon would have made it.
+  mkdir -p "${SOCK%/*}" 2>/dev/null && chmod 700 "${SOCK%/*}" 2>/dev/null
   # AF_UNIX sun_path caps near 108 bytes, and a bind past it fails with a diagnostic that
   # looks nothing like "your path is too long" — it looks like a daemon that would not start,
   # i.e. like a finding. Nothing in this script bound a socket until this premise existed, so

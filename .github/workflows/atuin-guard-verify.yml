@@ -281,6 +281,13 @@ jobs:
           RESOLVE_REASON: ${{ needs.resolve.outputs.reason }}
         run: |
           set -uo pipefail
+          # NOT -e. GitHub runs `run:` under `bash -e {0}`, and errexit applies inside an
+          # if/else body — so the verifier's rc 1 (moved) / rc 3 (unmeasurable) killed this
+          # step before the `case` below could classify them as REPORTS. That is what the
+          # first measurement past the anchor did (2026-09-01, atuin 18.21.0, #826): exit 3,
+          # no output, and a "the workflow is broken" issue instead of the verdict. The case
+          # statement is the error handling; -e was pre-empting it.
+          set +e
           bin="$(cat atuin.path 2>/dev/null || true)"
           # Every path reports through the SCRIPT's one renderer, never by composing prose
           # in YAML — so the wording a human reads cannot drift from the code producing it.
@@ -419,6 +426,13 @@ jobs:
           RESOLVE_REASON: ${{ needs.resolve.outputs.reason }}
         run: |
           set -uo pipefail
+          # NOT -e. GitHub runs `run:` under `bash -e {0}`, and errexit applies inside an
+          # if/else body — so the verifier's rc 1 (moved) / rc 3 (unmeasurable) killed this
+          # step before the `case` below could classify them as REPORTS. That is what the
+          # first measurement past the anchor did (2026-09-01, atuin 18.21.0, #826): exit 3,
+          # no output, and a "the workflow is broken" issue instead of the verdict. The case
+          # statement is the error handling; -e was pre-empting it.
+          set +e
           bin="$(cat atuin.path 2>/dev/null || true)"
           # --premise autostart on EVERY path, including the two that measure nothing: the
           # forced-unmeasurable renderer emits this premise's prose and scope, so a download

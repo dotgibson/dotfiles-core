@@ -193,6 +193,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`atuin-guard-verify` reports a verdict past the anchor instead of dying (#826).** The
+  first measurement against an atuin newer than the anchored 18.19.0 — the 1 Sep run, on
+  18.21.0 — exited 3 with no output and filed "the workflow itself is broken". Two defects,
+  one per layer. In the workflow, GitHub's default `bash -e {0}` aborted the measure step on
+  the verifier's non-zero exit before the step's own `case` could classify rc 1/3 as
+  reports; both measure steps now `set +e`, since that case statement is the error handling.
+  In the verifier, `--premise autostart` still waited on the pre-18.20 data-dir socket while
+  the sandbox pins `TMPDIR` — so a healthy 18.20+ daemon (which binds under
+  `$TMPDIR/atuin-$UID/atuin.sock` since upstream atuinsh/atuin#3910) never "answered" and the
+  run was `unmeasurable` by apparatus limit. `SOCK` now follows the measured version, the
+  hermetic stub binds where a real daemon of the version it claims binds, and a new
+  `test-core.sh` §J4 case (a healing stub claiming 18.20.0) pins it. The runtime guard in
+  `zsh/00-tools.zsh` already probed the new path first; only the research apparatus was behind.
 - **`maint-install <tab>` (and now `core maint install <tab>`) no longer throws a parse
   error (#684).** The completion's `_arguments` spec described the operand as
   `(HH:MM, 24h)` with a bare colon, which `_arguments` reads as the message/action
