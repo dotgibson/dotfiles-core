@@ -16906,6 +16906,23 @@ _fv_floor "false && make test never runs" '**not-in-ci**' '_fv_suite dotfiles-Al
 _fv_floor "python3 --version tests/smoke.py" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 --version tests/smoke.py"'
 _fv_floor "node -v test/x.js" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "node -v test/x.js"'
 _fv_floor "bash --help test/smoke.sh" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash --help test/smoke.sh"'
+# ATTACHED OPERANDS THAT HAPPEN TO CONTAIN A NO-RUN LETTER run; make inside the suite dir
+# reads another Makefile; a shell `if` is followed as far as it is static, across the
+# lines of one step.
+_fv_floor "make -Otarget test (output sync, runs)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -Otarget test"'
+_fv_floor "make -Wnothing test (attached -W operand, runs)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -Wnothing test"'
+_fv_floor "cd test && make test reads test/Makefile" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd test && make test"'
+_fv_floor "if false; then make test; fi (inline)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then make test; fi"'
+_fv_floor "if false / make test / fi across literal-block lines" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          if false; then\n            make test\n          fi\n"'
+_fv_floor "if true; then make test; fi" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true; then make test; fi"'
+_fv_floor "the else of a false if runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then echo skip; else make test; fi"'
+_fv_floor "the else of a true if never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true; then echo yes; else make test; fi"'
+_fv_floor "a runtime if condition may run its body" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n \"\$CI\" ]; then make test; fi"'
+_fv_floor "an elif after a false if may run" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then echo a; elif [ -n \"\$CI\" ]; then make test; fi"'
+_fv_floor "a cd on one literal-block line governs the next" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          cd tools\n          make test\n"'
+# A COMMENT LINE INSIDE A run: | BLOCK comments out that line only, not the lines after it
+# (the real dotfiles-Debian packages step: `# note` above `bash test/check-packages.sh`).
+_fv_floor "a full-line comment before the run inside a literal block" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          set -uo pipefail\n          # the suite sources core/lib\n          bash test/smoke.sh | tee /tmp/r.txt\n          rc=\${PIPESTATUS[0]}\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

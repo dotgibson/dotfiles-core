@@ -182,13 +182,16 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternat
 # invocation, which builds from a DIFFERENT Makefile than the one whose targets were
 # inspected, so the root target's recipe says nothing about it. `-C`/`-f` are matched
 # with their operand attached too (`-fother.mk`, `-C../tools`); the cluster before them
-# may not contain `I`, `o` or `W`, whose own attached operand could spell an `f`. For a POSIX
+# may not contain `I`, `o` or `W`, whose own attached operand could spell an `f`. Likewise
+# a no-run letter counts only in a cluster that starts with no operand-taking option
+# (`-O`, `-W`, `-o`, `-I`, `-f`, `-C`, `-j`, `-l`): `-Otarget` and `-Wnothing` are
+# operands that happen to contain `t`/`n`/`h`, and make runs. For a POSIX
 # shell: `-n` (syntax check) between it and its operand, looking past options that take an
 # operand of their own (`bash -o pipefail -n x`) — ONLY the shells, because pwsh options
 # are case-insensitive words (`-noprofile` runs). For node: --check / -c / -v. For every
 # interpreter: its help and version modes (--help/--version, -h/-V, pwsh -Help/-Version/-?),
 # which print and exit without touching the operand.
-NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v)([[:space:]]|$)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
+NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v)([[:space:]]|$)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:
@@ -208,9 +211,11 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #   * cdnorm — a `cd test` (or tests) earlier in the same command list puts the commands
 #     after it inside the suite directory, so `cd test && ./smoke.sh` is rewritten to
 #     `./test/smoke.sh` and `cd tests && bash run.sh` to `bash tests/run.sh`; the regexes
-#     then judge root-relative paths as always. A `cd` ANYWHERE ELSE (`cd docs`, `cd ..`,
-#     `cd tools`) puts the rest of the list outside the tree this register inspected — a
-#     `make test` there is another Makefile — so those commands are dropped, not judged.
+#     then judge root-relative paths as always (a `make` there reads test/Makefile and is
+#     not judged). A `cd` ANYWHERE ELSE (`cd docs`, `cd ..`, `cd tools`) puts the rest of
+#     the list outside the tree this register inspected — a `make test` there is another
+#     Makefile — so those commands are dropped, not judged. Shell `if` blocks are followed
+#     as far as they are static: a `false` body and a `true` else never run.
 #   * trim — whitespace only.
 AWK_SHELL='
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -249,8 +254,8 @@ AWK_SHELL='
     }
     return s
   }
-  function cdnorm(c, n,   i, d, t, m, x, prev) {
-    d = ""; x = 0; prev = ""
+  function cdnorm(c, n,   i, d, t, m, x, prev, skip, nest, mode, kw) {
+    d = ""; x = 0; prev = ""; skip = 0; nest = 0; mode = ""
     for (i = 1; i <= n; i++) {
       # Reachability, for the statically decidable pairs: behind `||` a command runs only
       # if the previous one FAILED — reachable after a literal `false`, unreachable after
@@ -260,6 +265,21 @@ AWK_SHELL='
       if (SPLITOP[i] == "&" && prev == "false") { prev = trim(c[i]); c[i] = ""; continue }
       prev = trim(c[i])
       t = trim(c[i])
+      # Shell control flow, as far as it is static: `if false; then … fi` never runs its
+      # body and `if true` never runs its else; any other condition may run either. The
+      # keywords then/do/else/elif carry no command of their own and are stripped.
+      kw = ""
+      if (match(t, /^(then|do|else|elif)([ \t]+|$)/)) { kw = substr(t, 1, RLENGTH); sub(/[ \t]+$/, "", kw); t = substr(t, RLENGTH + 1) }
+      if (kw == "else" && nest == 1) skip = (mode == "true")
+      if (kw == "elif") { if (nest == 1) { mode = ""; skip = 0 } ; c[i] = ""; continue }
+      if (t ~ /^if([ \t]|$)/) {
+        nest++
+        if (nest == 1) { mode = (t ~ /^if[ \t]+false([ \t]|$)/) ? "false" : ((t ~ /^if[ \t]+(true|:)([ \t]|$)/) ? "true" : ""); skip = (mode == "false") }
+        c[i] = ""; continue
+      }
+      if (t ~ /^fi([ \t]|$)/) { if (nest) nest--; if (nest == 0) { skip = 0; mode = "" } ; c[i] = ""; continue }
+      if (skip || t == "") { c[i] = ""; continue }
+      c[i] = t
       if (match(t, /^cd[ \t]+/)) {
         d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
         if (d ~ /^tests?$/) { x = 0; continue }
@@ -268,6 +288,9 @@ AWK_SHELL='
       }
       if (x) { c[i] = ""; continue }
       if (d == "") continue
+      # Inside the suite directory, `make` reads test/Makefile, not the root one whose
+      # targets were inspected — so it is not judged against them.
+      if (t ~ /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*make([ \t]|$)/) { c[i] = ""; continue }
       if (t ~ /^[.][/]/) { sub(/^[.][/]/, "./" d "/", t); c[i] = t; continue }
       if (match(t, /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[ \t]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[ \t]+[^ \t]+[ \t]+|-[^ \t]+[ \t]+)*/)) {
         m = RLENGTH
@@ -330,9 +353,15 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   awk -v SQ="'" "$AWK_SHELL"'
     function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(c[i]) }
     function flushblock() { if (acc != "") { held[++nheld] = acc; acc = "" } }
-    function flushstep(   i) {
+    function flushstep(   i, all) {
       if (inblock) { flushblock(); inblock = 0 }
-      for (i = 1; i <= nheld; i++) { nh++; H[nh] = held[i]; HWD[nh] = stepwd; HOFF[nh] = stepoff; HJOB[nh] = jobidx }
+      # ONE SHELL per step: its lines are joined with `;` so a `cd`, an `if false; then`
+      # or a `fi` on one line governs the lines after it, as it does when the step runs.
+      # Each line loses its shell comment BEFORE the join — a `# note` line would
+      # otherwise comment out every line joined after it.
+      all = ""
+      for (i = 1; i <= nheld; i++) { line = trim(stripcomment(held[i])); if (line != "") all = (all == "" ? line : all " ; " line) }
+      if (nheld) { nh++; H[nh] = all; HWD[nh] = stepwd; HOFF[nh] = stepoff; HJOB[nh] = jobidx }
       nheld = 0; stepwd = ""; stepoff = 0
     }
     function keyval(s) { sub(/^[^:]*:[ \t]*/, "", s); return unquote_scalar(stripcomment(s)) }
