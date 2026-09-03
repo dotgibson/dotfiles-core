@@ -176,9 +176,14 @@ Each machine repo vendors Core under `core/` once — from a **released tag, nev
 points at, so a tree vendored from `main` is not a commit any `core.lock` would
 record, and `core-integrity` reports the fresh tree as TAMPERED.
 
-**One-time only**, to create a `core/` that does not exist yet — `git subtree add` is
-the initial vendoring and **never** the update path (`sync-core.sh` skips a repo with no
-`core/`, which is the one thing it cannot create):
+**One-time only**, to create a `core/` that does not exist yet — initial vendoring is
+**never** the update path (`sync-core.sh` skips a repo with no `core/`, which is the one
+thing it cannot create). `scripts/new-os-repo.sh` is the sanctioned greenfield path: it
+materializes the **filtered** vendor set (`core.manifest` ∪ `core.vendor`) through the
+same producer the fan-out uses, so the new repo agrees with `core-integrity` from birth.
+The manual fallback, for a repo scaffolded some other way, is a subtree add — which
+copies the **whole** upstream tree, so expect `core-integrity` to report it until the
+first `make sync` replaces it with the filtered set:
 
 ```bash
 git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v6 --squash
@@ -186,7 +191,6 @@ git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/ta
 
 `refs/tags/v6` is the moving major alias — the latest release in the v6 line. Pin a
 specific `vX.Y.Z` instead when you want the tree frozen at a known version.
-`scripts/new-os-repo.sh` runs this step for you and is the sanctioned greenfield path.
 
 That leaves the repo with `core/` but **no `core.lock`**, so stamp provenance from a
 Core checkout before treating the repo as vendored (`sync-core.sh` is the only

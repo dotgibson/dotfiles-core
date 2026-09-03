@@ -570,7 +570,12 @@ If `make fleet-drift` shows you `BEHIND`, the fix is to merge that PR — not to
 ## One-time setup for a brand-new OS repo
 
 Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs the **one-time**
-initial vendoring — the only `git subtree` left in the flow, and never the update path:
+initial vendoring — never the update path. It does **not** `git subtree add`: since #676
+it materializes the filtered vendor set (`core.manifest` ∪ `core.vendor`) through the
+same producer `sync-core.sh` uses, so the new repo agrees with `core-integrity` from
+birth. The manual fallback, if you are not using the scaffold, is the subtree add — it
+copies the whole upstream tree, and `core-integrity` reports it until the first
+`make sync` replaces it with the filtered set:
 
 ```sh
 git subtree add --prefix=core <core-remote> refs/tags/v6 --squash

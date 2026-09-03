@@ -104,7 +104,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   sentences a blunter scan would red on: CHANGELOG history, `test-core.sh`'s fixture tags,
   an exact `vN.M.P` freeze, and another repository's tag behind an API path. Fixture-tested
   both directions in `test-core.sh`, including the inverse on this tree and the proof that
-  at the next major the scaffold default itself is what surfaces. Dev tooling only — the
+  at the next major the scaffold default itself is what surfaces. While correcting that
+  recipe, the same four passages (`ARCHITECTURE.md`, `VENDORING.md`, `PORTING-MATRIX.md`,
+  the scaffold's own header and `--help`) stopped claiming the scaffold runs
+  `git subtree add`: it has materialized the filtered vendor set since #676, and the
+  subtree add is the manual fallback that copies the whole tree. Dev tooling only — the
   OS repos receive nothing from this entry.
 - **`optoken` no longer leaves a live TOTP in a tmux paste buffer; `clip` grows a
   `--sensitive` mode (`CLIP_SENSITIVE=1`) that it uses (#690).** On a box with no real

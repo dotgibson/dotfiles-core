@@ -11,10 +11,10 @@
 # Usage:
 #   ./scripts/new-os-repo.sh <OSName> [target-dir]      # e.g. Fedora  (→ ../dotfiles-Fedora)
 #   ./scripts/new-os-repo.sh Fedora --dry-run           # print the plan, write nothing
-#   ./scripts/new-os-repo.sh Fedora --no-vendor         # skeleton only, skip the subtree add
+#   ./scripts/new-os-repo.sh Fedora --no-vendor         # skeleton only, skip the vendoring
 #
-# It vendors Core via `git subtree add --prefix=core` from this repo's origin (override
-# with CORE_REMOTE), then writes the entry .zshrc/.zshenv/.zprofile, an os/<os>.zsh stub,
+# It materializes core/ from this repo's origin (override with CORE_REMOTE) — the FILTERED
+# vendor set, through lib/core-vendor.sh's producer, not `git subtree add` (#676) — then writes the entry .zshrc/.zshenv/.zprofile, an os/<os>.zsh stub,
 # a starter bootstrap, and a .gitignore. The canonical module order lives in ONE place
 # here, so a scaffolded repo can never start out of order.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -42,13 +42,14 @@ usage() {
   cat <<'EOF'
 usage: new-os-repo.sh <OSName> [target-dir] [--dry-run] [--no-vendor]
 
-Scaffold a new OS repo that vendors Core: subtree-add core/, then write a correct
-.zshrc loader (canonical order), os/<os>.zsh, a starter bootstrap, and .gitignore.
+Scaffold a new OS repo that vendors Core: materialize the filtered core/ (no subtree
+add), then write a correct .zshrc loader (canonical order), os/<os>.zsh, a starter
+bootstrap, and .gitignore.
 
   <OSName>       e.g. Fedora, Arch, Gentoo  (repo defaults to ../dotfiles-<OSName>)
   target-dir     override the destination directory
   --dry-run, -n  print every planned action; create nothing
-  --no-vendor    scaffold the files but skip the `git subtree add` (do it yourself later)
+  --no-vendor    scaffold the files but skip the vendoring (run sync-core.sh later)
 
 Env: CORE_REMOTE (default: this repo's origin)
      CORE_BRANCH (default: refs/tags/v6 — a RELEASED tag, never main; pin a specific
