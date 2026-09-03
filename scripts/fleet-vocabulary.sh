@@ -321,10 +321,11 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #   * pathok — the suite path a credited command names must EXIST, and be the right kind
 #     of thing: `bash test/missing.sh` beside a real test/smoke.sh runs nothing, and so
 #     does `./test/helpers` when helpers/ is a directory or smoke.sh is not executable.
-#     The entries under the populated suite directories are handed in through `existl`
+#     The entries under the populated suite directories are handed in through `EXISTL`
 #     (`<kind> <path>` per line, kind x/f/d); a literal operand must be in it, a glob
 #     must match one, a runner may take the bare directory, and an operand carrying `$`
-#     cannot be checked and is taken on trust. Passed inline, never through a temp file.
+#     cannot be checked and is taken on trust. Passed through the environment (EXISTL),
+#     never through a temp file and never through -v, which eats a newline on macOS.
 #   * dequote — a command with its shell quotes removed, as the program sees its words.
 #   * trim — whitespace only.
 # shellcheck disable=SC2016  # awk source: its $ are awk`s, nothing here is meant to expand
@@ -941,8 +942,11 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
   # are one script (flushrecipe). Otherwise the same lexer as _targets: rules at column 0,
   # recipes on tab lines, comments and variable assignments ignored, conditionals decided
   # as in _targets (AWK_MAKECOND), nothing in a define body counted.
-  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v PIPEFAIL=0 -v existl="${3:-}" "$AWK_SHELL$AWK_MAKECOND"'
-    BEGIN { loadexist(existl) }
+  # The exist list goes through the ENVIRONMENT, not -v: it is newline-separated, and the
+  # macOS awk does not take a -v value with an embedded newline (the list came through
+  # empty there whenever a suite held more than one entry). ENVIRON is verbatim everywhere.
+  EXISTL="${3:-}" awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v PIPEFAIL=0 "$AWK_SHELL$AWK_MAKECOND"'
+    BEGIN { loadexist(ENVIRON["EXISTL"]) }
     # submake(line) — the goals a recipe hands to a RECURSIVE make (`$(MAKE) test`, `${MAKE}
     # -j2 lint test`, or a literal `make test`), as extra prerequisites of the rule: `ci: ; $(MAKE) test` runs the
     # suite when the suite target does. Options and VAR=value are skipped; an invocation
@@ -1161,7 +1165,7 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
     # the right kind of thing (pathok); a MAKE hit names a goal, which is not a path — the
     # goal `test` must not be mistaken for the bare suite directory.
     hits="$(grep -E "$re" <<<"$cmds" | grep -vE "$NORUN_RE" |
-      awk -v SQ="'" -v existl="$existl" "$AWK_SHELL"'BEGIN { loadexist(existl) } pathok($0) { print }'
+      EXISTL="$existl" awk -v SQ="'" "$AWK_SHELL"'BEGIN { loadexist(ENVIRON["EXISTL"]) } pathok($0) { print }'
       grep -E "^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([[:space:]]|\$)" <<<"$cmds" | grep -vE "$NORUN_RE")"
     if [[ -n "$hits" ]]; then
       printf 'ok'
