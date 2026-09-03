@@ -2627,6 +2627,9 @@ _vpn_write README.md 'git -C "$HERE" checkout v5 && git --no-pager -c core.pager
 _vpn_count "global options before checkout/switch (-C, -c, --no-pager) are seen through — both findings" 6 2
 _vpn_write README.md 'git -C "$HERE" checkout v6.1.0'
 _vpn_count "the same with an exact pin is clean" 6 0
+# An operand is a shell WORD: a quoted path with a space must not hide the pin behind it.
+_vpn_write README.md 'git -C "/tmp/core checkout" checkout v5 && git -C '"'"'/tmp/my core'"'"' switch --detach v5 && git checkout -b "vendor branch" v5'
+_vpn_count "quoted operands with spaces (-C \"/tmp/core checkout\", -b \"vendor branch\") are consumed whole — three findings" 6 3
 # A branch NAMED vN with no start point pins nothing: the operand is the last token.
 _vpn_write README.md 'git checkout -b v5 && git switch -c v5 && git switch --create v5 && git checkout --orphan v5'
 _vpn_count "operand-only branch creation (checkout -b v5, switch -c v5, --create v5, --orphan v5) is not a pin" 6 0
