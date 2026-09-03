@@ -440,13 +440,15 @@ lint: shellcheck syntax zsh-syntax capabilities ## shellcheck + bash -n + zsh -n
 
 shellcheck: ## ShellCheck the repo-owned bash (excludes the vendored core/)
 	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck not installed — install it with your package manager"; exit 1; }
-	@test -n "$(SH_FILES)" || { echo "no repo-owned .sh"; exit 0; }
-	@echo "shellcheck -x $(SH_FILES)"
-	@shellcheck -x $(SH_FILES)
+	@# The empty-list branch and the run share ONE logical line: SH_FILES is `git ls-files`,
+	@# so it is empty until the scaffold is committed, and a separate `exit 0` would end
+	@# only its own line and let `shellcheck -x` run with no files.
+	@if test -z "$(SH_FILES)"; then echo "no repo-owned .sh tracked yet (git add first)"; \
+	else echo "shellcheck -x $(SH_FILES)"; shellcheck -x $(SH_FILES); fi
 
 syntax: ## bash -n the repo-owned bash, and check --help still works
-	@test -n "$(SH_FILES)" || { echo "no repo-owned .sh"; exit 0; }
-	@for f in $(SH_FILES); do echo "bash -n $$f"; bash -n "$$f" || exit 1; done
+	@if test -z "$(SH_FILES)"; then echo "no repo-owned .sh tracked yet (git add first)"; \
+	else for f in $(SH_FILES); do echo "bash -n $$f"; bash -n "$$f" || exit 1; done; fi
 	@bash bootstrap.sh --help >/dev/null || { echo "bootstrap.sh --help failed"; exit 1; }
 
 zsh-syntax: ## zsh -n the repo-owned zsh (shellcheck has no zsh mode; skips without zsh)
@@ -517,7 +519,9 @@ mkdir -p "$tmp/dry"
 if ! HOME="$tmp/dry" ./bootstrap.sh --dry-run >"$tmp/dry.out" 2>&1; then
   bad "bootstrap.sh --dry-run exited non-zero: $(cat "$tmp/dry.out")"
 fi
-if [[ -z "$(find "$tmp/dry" -mindepth 1 -print -quit)" ]]; then
+# `ls -A`, not `find -quit`: BSD find on macOS lacks -quit, and a failing find would
+# substitute EMPTY and pass this assertion for the wrong reason.
+if [[ -z "$(ls -A "$tmp/dry")" ]]; then
   ok "--dry-run wrote nothing"
 else
   bad "--dry-run wrote into HOME: $(find "$tmp/dry" -mindepth 1 | head -5 | tr '\n' ' ')"
