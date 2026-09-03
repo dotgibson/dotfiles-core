@@ -16661,15 +16661,25 @@ else
   fail "vocab: no-Makefile case: $out"
 fi
 
+# A DECLARATION FILLS A CELL EVEN WITHOUT A MAKEFILE: a repo with nothing to run says so.
+_fv_reset; _fv_repo dotfiles-Gentoo; _fv_suite dotfiles-Gentoo; _fv_ci dotfiles-Gentoo "bash test/smoke.sh"
+mkdir -p "$_fv_root/dotfiles-Gentoo/.github"
+for v in help lint check dry-run packages-check core-verify test; do printf 'make:%s none nothing to run here\n' "$v"; done >"$_fv_root/dotfiles-Gentoo/.github/core-gates.txt"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
+  pass "vocab: \`make:<verb> none\` fills every cell of a repo with no Makefile"
+else
+  fail "vocab: declarations were not honoured without a Makefile: $out"
+fi
+
 # `make <verb>` RESOLVING is the promise, not where the rule sits: a verb defined in an
 # included file counts, and so does a suite target defined there; a missing optional
 # include is simply absent.
-_fv_reset; _fv_repo dotfiles-Fedora 'include mk/verbs.mk\n-include local.mk\nlint:\n\t@true\n'
+_fv_reset; _fv_repo dotfiles-Fedora 'include mk/*.mk\n-include local.mk\nlint:\n\t@true\n'
 mkdir -p "$_fv_root/dotfiles-Fedora/mk"
 printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
-  pass "vocab: verbs and the suite target defined through \`include\` resolve"
+  pass "vocab: verbs and the suite target defined through a globbed \`include mk/*.mk\` resolve"
 else
   fail "vocab: included targets were not seen: $out"
 fi
@@ -16798,6 +16808,20 @@ _fv_floor "make --directory=tools test" '**not-in-ci**' '_fv_suite dotfiles-Alpi
 _fv_floor "make -I test lint (-I takes a dir, not a goal)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -I test lint"'
 _fv_floor "pwsh -noprofile test/smoke.ps1 runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "pwsh -noprofile test/smoke.ps1"'
 _fv_floor "python -I test/smoke.py runs (-I is python isolation, not make)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 -I test/smoke.py"'
+# THE EFFECTIVE WORKING DIRECTORY: a step in `tools/` runs another Makefile; the job's and
+# the workflow's `defaults.run.working-directory` apply unless the step overrides them;
+# a step in the suite directory itself runs the suite. And a `cd` anywhere else drops the
+# rest of the list rather than judging it against the root.
+_fv_floor "run: make test with a step working-directory of tools" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: make test\n        working-directory: tools\n"'
+_fv_floor "working-directory before run: in the same step" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - working-directory: tools\n        run: bash test/smoke.sh\n"'
+_fv_floor "a job-level defaults.run.working-directory of tools" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    defaults:\n      run:\n        working-directory: tools\n    steps:\n      - run: make test\n"'
+_fv_floor "a workflow-level defaults.run.working-directory of tools" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "defaults:\n  run:\n    working-directory: tools\njobs:\n  t:\n    steps:\n      - run: make test\n"'
+_fv_floor "a step overriding a job default of tools with ." 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    defaults:\n      run:\n        working-directory: tools\n    steps:\n      - run: make test\n        working-directory: .\n"'
+_fv_floor "a step whose working-directory is the suite dir" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: ./smoke.sh\n        working-directory: test\n"'
+_fv_floor "a second job does not inherit the first job default" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  a:\n    defaults:\n      run:\n        working-directory: tools\n    steps:\n      - run: make lint\n  b:\n    steps:\n      - run: make test\n"'
+_fv_floor "cd tools && make test is another Makefile" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd tools && make test"'
+# A BLANK OR COMMENT LINE between a rule and its recipe is allowed by make.
+_fv_floor "a comment and a blank line between the rule and its recipe" 'ok' '_fv_suite dotfiles-Alpine; printf "suite:\n# why\n\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

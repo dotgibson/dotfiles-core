@@ -87,14 +87,22 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
   # file, so `include`/`-include`/`sinclude` lines are followed — lexically, relative to the
   # repo root as make itself resolves them, to a bounded depth, and only when the path
   # carries no `$(…)` (a variable would need make's evaluation, which this deliberately
-  # does not run in a sibling checkout). A missing optional include is simply absent.
-  local d="$1" f="${2:-Makefile}" depth="${3:-0}" inc
+  # does not run in a sibling checkout); a wildcard include is globbed from the root as
+  # make globs it. A missing optional include is simply absent.
+  local d="$1" f="${2:-Makefile}" depth="${3:-0}" inc m g
   [[ -f "$d/$f" ]] || return 0
   cat "$d/$f"
   ((depth < 4)) || return 0
   while IFS= read -r inc; do
     [[ -n "$inc" && "$inc" != *'$'* ]] || continue
-    _makefile_text "$d" "$inc" $((depth + 1))
+    # `include mk/*.mk` is expanded by make; expand it here the same way, from the root.
+    if [[ "$inc" == *[\*\?\[]* ]]; then
+      while IFS= read -r m; do
+        [[ -n "$m" ]] && _makefile_text "$d" "$m" $((depth + 1))
+      done < <(cd "$d" && for g in $inc; do [[ -f "$g" ]] && printf '%s\n' "$g"; done)
+    else
+      _makefile_text "$d" "$inc" $((depth + 1))
+    fi
   done < <(sed -nE 's/^-?s?include[[:space:]]+//p' "$d/$f" | tr ' \t' '\n\n')
 }
 
@@ -156,7 +164,9 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #   * cdnorm — a `cd test` (or tests) earlier in the same command list puts the commands
 #     after it inside the suite directory, so `cd test && ./smoke.sh` is rewritten to
 #     `./test/smoke.sh` and `cd tests && bash run.sh` to `bash tests/run.sh`; the regexes
-#     then judge root-relative paths as always. A later `cd` elsewhere ends the effect.
+#     then judge root-relative paths as always. A `cd` ANYWHERE ELSE (`cd docs`, `cd ..`,
+#     `cd tools`) puts the rest of the list outside the tree this register inspected — a
+#     `make test` there is another Makefile — so those commands are dropped, not judged.
 #   * trim — whitespace only.
 AWK_SHELL='
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -187,15 +197,17 @@ AWK_SHELL='
     }
     return s
   }
-  function cdnorm(c, n,   i, d, t, m) {
-    d = ""
+  function cdnorm(c, n,   i, d, t, m, x) {
+    d = ""; x = 0
     for (i = 1; i <= n; i++) {
       t = trim(c[i])
       if (match(t, /^cd[ \t]+/)) {
-        d = substr(t, RLENGTH + 1); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
-        if (d !~ /^tests?$/) d = ""
-        continue
+        d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
+        if (d ~ /^tests?$/) { x = 0; continue }
+        if (d == "" || d == ".") { d = ""; x = 0; continue }
+        x = 1; d = ""; continue
       }
+      if (x) { c[i] = ""; continue }
       if (d == "") continue
       if (t ~ /^[.][/]/) { sub(/^[.][/]/, "./" d "/", t); c[i] = t; continue }
       if (match(t, /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[ \t]+(-[^ \t]+[ \t]+)*/)) {
@@ -245,37 +257,60 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     and a "…" string continued across lines stays one string; a folded block (`>`) is
   #     ONE line per paragraph, because YAML joins its lines with a space — `echo` over
   #     `make test` runs `echo make test`.
+  #   * a step runs in its EFFECTIVE WORKING DIRECTORY: its own `working-directory:`, else
+  #     the job's `defaults.run.working-directory`, else the workflow's. A step is held
+  #     until it ends (its keys may come in any order) and then every logical line is
+  #     emitted as `cd <dir> && <line>`, so cdnorm judges it like a `cd` in the command
+  #     itself: `make test` from `tools/` is another Makefile and does not count.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
   awk -v SQ="'" "$AWK_SHELL"'
-    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); cdnorm(c, n); for (i = 1; i <= n; i++) print trim(c[i]) }
-    function flush() { if (acc != "") { emit(acc); acc = "" } }
+    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(c[i]) }
+    function flushblock() { if (acc != "") { held[++nheld] = acc; acc = "" } }
+    function flushstep(   i, wd) {
+      if (inblock) { flushblock(); inblock = 0 }
+      wd = (stepwd != "" ? stepwd : jobwd)
+      for (i = 1; i <= nheld; i++) emit((wd != "" && wd !~ /^[.][\/]?$/) ? "cd " wd " && " held[i] : held[i])
+      nheld = 0; stepwd = ""
+    }
+    function keyval(s) { sub(/^[^:]*:[ \t]*/, "", s); return unquote_scalar(stripcomment(s)) }
     {
       if (inblock) {
-        if ($0 ~ /^[ \t]*$/) { flush(); next }
+        if ($0 ~ /^[ \t]*$/) { flushblock(); next }
         match($0, /^[ \t]*/)
         if (RLENGTH > bind) {
           line = trim($0)
           if (fold) { acc = (acc == "" ? line : acc " " line); next }
           if (line ~ /\\$/) { acc = acc substr(line, 1, length(line) - 1) " "; next }
-          acc = acc line; flush(); next
+          acc = acc line; flushblock(); next
         }
-        flush()
+        flushblock()
         inblock = 0
       }
-      if ($0 ~ /^[ \t]*steps:[ \t]*(#.*)?$/) { match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; keycol = -1; next }
-      if (!insteps) next
+      if ($0 ~ /^jobs:[ \t]*(#.*)?$/) { injobs = 1; jobind = -1; next }
+      if ($0 ~ /^[ \t]*steps:[ \t]*(#.*)?$/) { flushstep(); match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; keycol = -1; next }
+      if (!insteps) {
+        if ($0 ~ /^[ \t]*$/ || $0 ~ /^[ \t]*#/) next
+        match($0, /^[ \t]*/)
+        if (injobs) { if (jobind < 0) jobind = RLENGTH; if (RLENGTH == jobind) jobwd = wfwd }
+        if ($0 ~ /^[ \t]*working-directory:/) { if (injobs) jobwd = keyval($0); else { wfwd = keyval($0); jobwd = wfwd } }
+        next
+      }
       if ($0 ~ /^[ \t]*#/) next
-      if ($0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); if (RLENGTH <= sind) { insteps = 0; next } }
-      if (match($0, /^[ \t]*-[ \t]+/)) keycol = RLENGTH
+      # RLENGTH is read into a local BEFORE flushstep(): the helpers it runs call match()
+      # and sub() themselves, and a clobbered RLENGTH mis-set the key column so that every
+      # step after the first in a job was silently dropped.
+      if ($0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); ind = RLENGTH; if (ind <= sind) { flushstep(); insteps = 0; if (injobs && ind == jobind) jobwd = wfwd; if ($0 ~ /^[ \t]*working-directory:/) jobwd = keyval($0); next } }
+      if (match($0, /^[ \t]*-[ \t]+/)) { ind = RLENGTH; flushstep(); keycol = ind }
+      if ($0 ~ /^[ \t]*(-[ \t]+)?working-directory:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol) stepwd = keyval($0) }
       if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
         rest = substr($0, RSTART + RLENGTH)
         match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
         if (bind != keycol) next
         if (rest ~ /^[ \t]*[|>]/) { inblock = 1; fold = (rest ~ /^[ \t]*>/); acc = "" }
-        else emit(unquote_scalar(rest))
+        else held[++nheld] = unquote_scalar(rest)
       }
     }
-    END { if (inblock) flush() }
+    END { flushstep() }
   ' "$1"
 }
 
@@ -310,6 +345,9 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
         if (inl != "" && runs(inl)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
         return
       }
+      # A blank or comment-only line between a rule and its recipe is permitted by make
+      # and changes nothing; anything else (a variable, a directive) ends the rule.
+      if (l ~ /^[ \t]*$/ || l ~ /^[ \t]*#/) return
       ncur = 0
     }
     {
@@ -403,22 +441,23 @@ for repo in "${REPOS[@]}"; do
   [[ -f "$dir/Makefile" ]] && have="$(_targets <(_makefile_text "$dir"))"
   for v in "${VERBS[@]}"; do
     # Herestring, not a printf pipe: §5d's pipefail rule, and grep -q exits early anyway.
+    # A declaration fills a cell whether or not a Makefile exists — a repo that genuinely
+    # has nothing to run may say so for every verb. The label only differs for the rest.
+    why=""
+    grep -qxF -- "$v" <<<"$have" || why="$(_declared "$dir" "$v")"
     if grep -qxF -- "$v" <<<"$have"; then
       line="$line ok |"
+    elif [[ -n "$why" ]]; then
+      n=$((n + 1))
+      line="$line none[^$n] |"
+      notes="${notes}[^$n]: \`${repo#dotfiles-}\` / \`make $v\` — $why
+"
     elif [[ ! -f "$dir/Makefile" ]]; then
       line="$line **no Makefile** |"
       missing=$((missing + 1))
     else
-      why="$(_declared "$dir" "$v")"
-      if [[ -n "$why" ]]; then
-        n=$((n + 1))
-        line="$line none[^$n] |"
-        notes="${notes}[^$n]: \`${repo#dotfiles-}\` / \`make $v\` — $why
-"
-      else
-        line="$line **missing** |"
-        missing=$((missing + 1))
-      fi
+      line="$line **missing** |"
+      missing=$((missing + 1))
     fi
   done
   floor="$(_test_floor "$dir")"
