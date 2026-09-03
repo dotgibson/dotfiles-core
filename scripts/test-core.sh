@@ -16988,6 +16988,22 @@ _fv_floor "python3 -m pytest --collect-only tests/ discovers only" '**not-in-ci*
 _fv_floor "python3 -m pytest tests/ --co discovers only" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m pytest tests/ --co"'
 _fv_floor "a function called only inside if false is never invoked" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; if false; then suite; fi"'
 _fv_floor "a function called inside if true is invoked" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; if true; then suite; fi"'
+# A DIRECTORY IS NOT A SCRIPT (a runner may take one), a python module other than a test
+# runner reads and does not run, nothing runs after an unconditional exit, a real `if`
+# condition runs, an empty `for` list never iterates, and a single `&` is not `&&`.
+_fv_floor "./test/ executes a directory, not a suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "./test/"'
+_fv_floor "bash test/ reads a directory, not a suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash test/"'
+_fv_floor "bats test/ runs the directory" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bats test/"'
+_fv_floor "python3 -m unittest discover tests" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m unittest discover tests"'
+_fv_floor "python3 -m tokenize test/smoke.py reads only" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 -m tokenize test/smoke.py"'
+_fv_floor "python3 test/smoke.py runs the file" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 test/smoke.py"'
+_fv_floor "exit 0; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "exit 0; make test"'
+_fv_floor "make lint || exit 1; make test still runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make lint || exit 1; make test"'
+_fv_floor "an exit inside a block ends only that block" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n \"\$SKIP\" ]; then exit 0; fi; make test"'
+_fv_floor "if make test; then … runs the suite as the condition" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if make test; then echo passed; fi"'
+_fv_floor "while make test; do break; done runs it at least once" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while make test; do break; done"'
+_fv_floor "for t in; do make test; done never iterates" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for t in; do make test; done"'
+_fv_floor "false & make test backgrounds false and runs make" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false & make test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

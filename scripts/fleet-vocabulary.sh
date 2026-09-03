@@ -171,18 +171,21 @@ _targets() { # _targets <Makefile> → one defined target name per line
 
 # WHAT COUNTS AS RUNNING THE SUITE, in one simple shell command (the text is split at
 # unquoted `;`/`&&`/`||`/`|` first — AWK_SHELL below — so command position is simply
-# the start): a test path as the command (`./test/smoke.sh`, `tests/run`), or an
-# interpreter in command position handed one (`bash -e test/smoke.sh`, and through the
-# options that take an operand of their own: `bash -o pipefail test/smoke.sh`, `python3
-# -m pytest tests/`, or the bare directory: `python3 -m pytest tests`) — optionally under
-# sudo or env, and after leading variable assignments (`CI=1 make test` is how a great
-# many steps are written). In DIRECT command position the path needs its slash: a bare
-# `test` there is the shell utility, not the suite. `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
-# the path and run nothing, so they do not count. `DIRS` is replaced per repo with the
-# directory that is actually populated (_run_re), so a populated test/ is not credited by a
-# step running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
+# the start): a FILE under the suite directory as the command (`./test/smoke.sh`), or
+# handed to an interpreter in command position (`bash -e test/smoke.sh`, `python3
+# test/x.py`, through the options that take an operand of their own: `bash -o pipefail
+# test/smoke.sh`); or the directory itself, or a file in it, handed to a TEST RUNNER that
+# takes directories (`bats test/`, `prove tests`, `python3 -m pytest tests`, `-m unittest
+# discover tests`). A bare directory given to a shell or executed directly (`bash test/`,
+# `./test/`) only fails; a python module other than a test runner (`-m tokenize
+# test/x.py`) reads the file and runs nothing — neither counts. `echo test/smoke.sh` and
+# `shellcheck test/*.sh` mention the path and run nothing, so they do not count. All of it
+# optionally under sudo or env, and after leading variable assignments (`CI=1 make test`
+# is how a great many steps are written). `DIRS` is replaced per repo with the directory
+# that is actually populated (_run_re), so a populated test/ is not credited by a step
+# running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/])'
+RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|python3?|node|pwsh)[[:space:]]+((-o|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)[/][^[:space:]]+|(bats|prove)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+(pytest|unittest|nose2?)([[:space:]]+[^[:space:]]+)*[[:space:]]+([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/][^[:space:]]+)'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternation: test|tests> — every DIRS, both arms
 # A NO-EXECUTE MODE PARSES, PRINTS OR ASKS AND RUNS NOTHING. For make: dry-run (`-n` in any
 # short cluster, --dry-run/--just-print/--recon), question (`-q`, --question), touch
@@ -231,8 +234,9 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     not judged). A `cd` ANYWHERE ELSE (`cd docs`, `cd ..`, `cd tools`) puts the rest of
 #     the list outside the tree this register inspected — a `make test` there is another
 #     Makefile — so those commands are dropped, not judged. Shell `if` blocks and loops are
-#     followed as far as they are static: a `false` body, a `true` else, a `while false`
-#     or `until true` body never run.
+#     followed as far as they are static: a `false` body, a `true` else, a `while false`,
+#     `until true` or `for x in;` body never run; a real condition (`if make test`) is a
+#     command that runs; nothing after an unconditional `exit`/`exec`/`return` runs.
 #   * trim — whitespace only.
 AWK_SHELL='
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -249,7 +253,7 @@ AWK_SHELL='
         cur = ""
         # The operator BEFORE the next command: `||` runs it only when the previous one
         # failed, so `true || make test` never reaches make. Recorded in SPLITOP by index.
-        SPLITOP[n + 1] = (c == "|" && substr(s, i + 1, 1) == "|") ? "||" : c
+        SPLITOP[n + 1] = (c == "|" && substr(s, i + 1, 1) == "|") ? "||" : ((c == "&" && substr(s, i + 1, 1) == "&") ? "&&" : c)
         if (substr(s, i + 1, 1) == c) i++
         continue
       }
@@ -307,8 +311,8 @@ AWK_SHELL='
     cdpass(c2, n, 0)
     cdpass(c, n, 1)
   }
-  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w) {
-    d = ""; x = 0; st = ""; nest = 0; skip = 0
+  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer) {
+    d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0
     split("", TAKEN); split("", SKIPD)
     for (i = 1; i <= n; i++) {
       if ((i in BODY) && (BODY[i] == "@" || !(BODY[i] in INVOKED))) { c[i] = ""; continue }
@@ -321,7 +325,8 @@ AWK_SHELL='
       # "false", skipped after "true", and (conservatively) not credited when unknown;
       # behind `&&` it runs unless the list is "false".
       if (SPLITOP[i] == "||") { if (st != "false") { if (st == "") st = ""; c[i] = ""; continue } }
-      if (SPLITOP[i] == "&")  { if (st == "false") { c[i] = ""; continue } }
+      if (SPLITOP[i] == "&&") { if (st == "false") { c[i] = ""; continue } }
+      # A single `&` backgrounds the previous command; the next one always runs.
       t = trim(c[i])
       st = (t == "true" || t == ":") ? "true" : ((t == "false") ? "false" : "")
       # Shell control flow, as far as it is static, PER NESTING DEPTH: an `if false` body
@@ -337,32 +342,45 @@ AWK_SHELL='
       if (match(t, /^(then|do|else|elif)([ \t]+|$)/)) { kw = substr(t, 1, RLENGTH); sub(/[ \t]+$/, "", kw); t = substr(t, RLENGTH + 1) }
       if (kw == "else" && nest) SKIPD[nest] = (TAKEN[nest] == "yes")
       if (kw == "elif") {
+        outer = 0; for (lvl = 1; lvl < nest; lvl++) if (SKIPD[lvl]) outer = 1
+        m = ""
         if (nest) {
           m = (t ~ /^false([ \t]|$)/) ? "false" : ((t ~ /^(true|:)([ \t]|$)/) ? "true" : "")
           if (TAKEN[nest] == "yes") SKIPD[nest] = 1
           else if (m == "false") SKIPD[nest] = 1
           else { SKIPD[nest] = 0; TAKEN[nest] = (m == "true" && TAKEN[nest] == "no") ? "yes" : "" }
         }
-        c[i] = ""; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; continue
+        # An elif condition runs when no earlier branch was taken and the if is reachable.
+        c[i] = (nest && m == "" && !outer && TAKEN[nest] != "yes") ? t : ""
+        skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; continue
       }
+      if (term) { c[i] = ""; continue }
       if (t ~ /^if([ \t]|$)/) {
+        # The CONDITION is a command that runs (when the `if` itself is reachable):
+        # `if make test; then …` executes the suite. A literal true/false is not a command.
+        outer = skip
         nest++
         m = (t ~ /^if[ \t]+false([ \t]|$)/) ? "false" : ((t ~ /^if[ \t]+(true|:)([ \t]|$)/) ? "true" : "")
         TAKEN[nest] = (m == "true") ? "yes" : ((m == "false") ? "no" : "")
         SKIPD[nest] = (m == "false")
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
-        c[i] = ""; continue
+        if (m == "" && !outer) { sub(/^if[ \t]+/, "", t); c[i] = t } else c[i] = ""
+        continue
       }
       if (t ~ /^fi([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
       # Loops, as far as they are static: `while false` and `until true` never run their
       # body; any other loop (a runtime condition, `while true`, `for`) may. A loop is a
       # level like an `if`, closed by `done`.
       if (t ~ /^(while|until|for)([ \t]|$)/) {
+        outer = skip
         nest++
         TAKEN[nest] = ""
-        SKIPD[nest] = (t ~ /^while[ \t]+false([ \t]|$)/ || t ~ /^until[ \t]+(true|:)([ \t]|$)/)
+        # `while false`, `until true` and `for x in;` (an empty literal list) never run
+        # their body. A while/until condition that is a real command runs at least once.
+        SKIPD[nest] = (t ~ /^while[ \t]+false([ \t]|$)/ || t ~ /^until[ \t]+(true|:)([ \t]|$)/ || t ~ /^for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in[ \t]*$/)
         skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
-        c[i] = ""; continue
+        if (t ~ /^(while|until)[ \t]/ && t !~ /^(while|until)[ \t]+(true|false|:)([ \t]|$)/ && !outer) { sub(/^(while|until)[ \t]+/, "", t); c[i] = t } else c[i] = ""
+        continue
       }
       if (t ~ /^done([ \t]|$)/) { if (nest) { delete TAKEN[nest]; delete SKIPD[nest]; nest-- } ; skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1; c[i] = ""; continue }
       skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
@@ -371,6 +389,9 @@ AWK_SHELL='
       sub(/^[{(][ \t]+/, "", t); sub(/[ \t]+[)]$/, "", t)
       if (t ~ /^[{}()]$/) t = ""
       if (skip || t == "") { c[i] = ""; continue }
+      # An unconditional `exit`/`exec`/`return` ends what can run: at the top level nothing
+      # after it is reachable; inside a block, nothing further in that block is.
+      if (t ~ /^(exit|exec|return)([ \t]|$)/) { if (nest == 0) term = 1; else SKIPD[nest] = 1; skip = 1; c[i] = ""; continue }
       c[i] = t
       if (!final) { w = t; sub(/[ \t].*$/, "", w); if (w in FNAME) INVOKED[w] = 1 }
       if (match(t, /^cd[ \t]+/)) {
