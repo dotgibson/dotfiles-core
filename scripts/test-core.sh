@@ -2611,6 +2611,12 @@ _vpn_write README.md 'git checkout -b vendor-v6 v5'
 _vpn_count "\`checkout -b vendor-v6 v5\` is judged on v5, not on the branch name" 6 1
 _vpn_write README.md 'git checkout -b vendor-v5 v6'
 _vpn_count "\`checkout -b vendor-v5 v6\` is clean — the branch name is not the pin" 6 0
+# A bare `--` ends checkout's options and makes the next token a PATH, not a ref; for
+# switch the token after `--` is still a branch.
+_vpn_write README.md 'git checkout -- v5 && git checkout -q -- v5'
+_vpn_count "\`git checkout -- v5\` restores a path, not a pin — not a finding" 6 0
+_vpn_write README.md 'git switch -- v5'
+_vpn_count "\`git switch -- v5\` names a branch and is still judged" 6 1
 _vpn_write README.md 'git checkout v60 && CORE_BRANCH="$(git rev-parse v5^{commit})" x refs/tags/v5 refs/tags/v6'
 _vpn_count "every occurrence on a line is reported and the number is read whole (v60 is not v6)" 6 3
 # Core must satisfy the rule it authors — the inverse assertion, so `make test` catches a

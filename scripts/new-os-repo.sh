@@ -508,11 +508,12 @@ else
   # --no-vendor scaffold the FIRST step above has already created that link, and a plain
   # `ln -s` onto an existing directory symlink would follow it and drop a new link inside
   # the target repo, which the sync then refuses as dirty.
+  # The guarded symlink is CHAINED into the sync with `&&`, never printed as a line of
+  # its own: pasted as two lines, a refused guard would not stop the next line, and the
+  # sync's directory fast path would then pick the very occupant the guard refused.
   _reg_sync="./scripts/sync-core.sh $(_q "dotfiles-$OS")"
   [[ "$_target_parent" == "$(cd "$(dirname "$HERE")" && pwd)" ]] || _reg_sync="REPOS_ROOT=$(_q "$_target_parent") $_reg_sync"
-  _reg_link=""
-  [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || _reg_link="
-    $_link_cmd   # sync-core.sh resolves the NAME dotfiles-$OS; a guarded symlink (refuses a foreign occupant), not a rename"
+  [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || _reg_sync="$_link_cmd && $_reg_sync"
   # The scaffold commit is IDEMPOTENT: on the no-core/ path the FIRST recovery command
   # has already committed the scaffold, and a bare `git commit` would then fail with
   # "nothing to commit" — the one step in the sequence a reader could not follow. And the
@@ -533,7 +534,7 @@ else
     git add -A && git commit -m "os: the $OS layer and its capability declaration"   # the sync below refuses a dirty tree
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
-    echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted$_reg_link
-    $_reg_sync   # materializes core/ and stamps core.lock
+    echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted
+    $_reg_sync   # materializes core/ and stamps core.lock (a custom name: the guarded symlink runs first, and a refusal stops the sync)
 EOF
 fi

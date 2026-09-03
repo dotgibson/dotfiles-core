@@ -1294,15 +1294,17 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         # before the ref (`--detach`, `-q`, and the operand-taking `-b`/`-B`/`-c`/`-C`
         # with their branch name), `switch` in place of `checkout`, and a quote
         # opening the ref (v5 in single or double quotes), so a reformatted or
-        # option-bearing command cannot slip
-        # under the gate; and the exact-pin class is the SAME one core.version is
+        # option-bearing command cannot slip under the gate. A bare `--` is NOT an option
+        # for `checkout`: it ends option parsing and makes the next token a PATH, so
+        # `git checkout -- v5` restores a file, not a Core ref (for `switch`, the token
+        # after `--` is still a branch, so it stays judged). The exact-pin class is the SAME one core.version is
         # validated against (audit-core.sh, SemVer [-pre]), so a pre-release this repo
         # could actually cut is exempt and nothing wider is.
         consumed = ""
         # The left boundary also admits a Markdown `_` delimiter — an underscore that is
         # itself at a word boundary — so `_refs/tags/v5_` is scanned, while `foo_refs…`
         # (an intraword identifier) still is not.
-        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout|switch)([[:space:]]+(-[bBcC][[:space:]]+[^[:space:]]+|-[-A-Za-z0-9=]+))*[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout([[:space:]]+(-[bBcC][[:space:]]+[^[:space:]]+|-[A-Za-z][-A-Za-z0-9=]*|--[A-Za-z][-A-Za-z0-9=]*))*|switch([[:space:]]+(-[bBcC][[:space:]]+[^[:space:]]+|-[-A-Za-z0-9=]+))*)[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
           sub(/^[^rgv]*/, "", hit)                 # drop the boundary character(s)
@@ -1359,7 +1361,11 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # Prose punctuation (, :) and a closing Markdown `_` end it only when followed
           # by whitespace, a closer or end of line — otherwise `v5.3.0:foo`, `v5.3.0,foo`
           # and `v5.3.0_bad` are glued text, i.e. malformed, and judged.
-          if (rest != "" && rest !~ /^[[:space:]`"\047)\]}*!?;&|<>]/ && rest !~ /^[,:_]([[:space:]`"\047)\]}]|$)/) exact = 0
+          # `]` is listed FIRST in each class, never as `\]`: a backslash is literal inside
+          # a POSIX bracket expression, so under musl (busybox awk, the Alpine lane) `\]`
+          # closed the class early and every exempt pin read as stale. gawk happened to
+          # accept the escape, which is why this only showed on Alpine.
+          if (rest != "" && rest !~ /^[][:space:]`"\047)}*!?;&|<>]/ && rest !~ /^[,:_]([][:space:]`"\047)}]|$)/) exact = 0
           # The scaffold default is never exempt: it is not a freeze someone chose, it is
           # the pin every new repo gets by default.
           if ((!exact || isdefault) && major != want) {
