@@ -179,11 +179,14 @@ _vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs")
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
 # comment — so the sync resolves the conventional name. A symlink, not a rename: the
-# chain embeds the original path. `ln -sfn`, so a retry REPLACES the canonical link: a
-# plain `ln -s` onto an existing directory symlink follows it and drops a new link
-# inside the target repo, and the sync then refuses the dirty tree.
+# chain embeds the original path. GUARDED: the canonical path must be absent, or
+# already a link to exactly this scaffold. `ln -sfn` alone replaces a stale symlink but
+# onto a REAL directory of that name it nests a link inside it — and the sync would then
+# modify that unrelated repository. Any other occupant is refused, and the chain stops.
+_canon="$_target_parent/dotfiles-$OS"
+_link_cmd="{ { [ ! -e $(_q "$_canon") ] && [ ! -L $(_q "$_canon") ]; } || { [ -L $(_q "$_canon") ] && [ \"\$(readlink $(_q "$_canon"))\" = $(_q "$_target_abs") ]; }; } || { echo $(_q "refusing: $_canon exists and is not a link to this scaffold — remove or rename it first") >&2; false; } && ln -sfn $(_q "$_target_abs") $(_q "$_canon")"
 [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] ||
-  _vendor_hint="ln -sfn $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS") && $_vendor_hint; sync-core.sh resolves the NAME dotfiles-$OS under REPOS_ROOT, hence the symlink (not a rename — the chain embeds the original path)"
+  _vendor_hint="$_link_cmd && $_vendor_hint; sync-core.sh resolves the NAME dotfiles-$OS under REPOS_ROOT, hence the guarded symlink (not a rename — the chain embeds the original path)"
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then
@@ -835,7 +838,7 @@ else
   [[ "$_target_parent" == "$(cd "$(dirname "$HERE")" && pwd)" ]] || _reg_sync="REPOS_ROOT=$(_q "$_target_parent") $_reg_sync"
   _reg_link=""
   [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || _reg_link="
-    ln -sfn $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS")   # sync-core.sh resolves the NAME dotfiles-$OS; a symlink (replaced if present), not a rename"
+    $_link_cmd   # sync-core.sh resolves the NAME dotfiles-$OS; a guarded symlink (refuses a foreign occupant), not a rename"
   cat <<EOF
   next:$_next_vendor
     cd "$TARGET"

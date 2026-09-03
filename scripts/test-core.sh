@@ -5499,7 +5499,7 @@ if have git && have zsh; then
     elif grep -q 'changed the tree' "$SANDBOX/nor-chmod.out"; then
       pass "new-os-repo: the scaffolded suite goes red on a mode change made past the shims (mode field in the snapshot)"
     else
-      fail "new-os-repo: the in-place rewrite failed for another reason — $(grep FAIL "$SANDBOX/nor-rewrite.out" | head -2 | tr '\n' ' ')"
+      fail "new-os-repo: the mode-change fixture failed for another reason — $(grep FAIL "$SANDBOX/nor-chmod.out" | head -2 | tr '\n' ' ')"
     fi
     rm -rf "$_nor_brk"
     if have make; then
@@ -5540,6 +5540,83 @@ if have git && have zsh; then
   fi
 else
   skip "new-os-repo entry files (git or zsh unavailable)"
+fi
+
+# ── F7c. the --no-vendor recovery command new-os-repo.sh advertises ───────────
+# The scaffold prints ONE copyable command for the state it cannot finish itself (no
+# core/ yet), and nothing ran it: the --no-vendor output above goes to /dev/null. Every
+# property it has been reviewed for is pinned here — ordering (guarded canonical-name
+# symlink, commit, subtree add, then the pinned sync in a throwaway worktree), %q
+# escaping (a parent with a space, a name with an apostrophe), CORE_REMOTE propagation,
+# the peeled-commit pin, REPOS_ROOT, and that it parses — plus the guard itself, the one
+# part that runs without network: it must create the link when the path is free, be
+# idempotent, and refuse a foreign occupant of the canonical path.
+if have git; then
+  hdr "new-os-repo.sh recovery command (the advertised --no-vendor path)"
+  _rc_parent="$SANDBOX/recovery/parent dir"
+  rm -rf "$SANDBOX/recovery"
+  mkdir -p "$_rc_parent"
+  _rc_target="$_rc_parent/O'Brien"
+  _rc_out="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH='refs/tags/v9' bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$_rc_target" 2>&1)"
+  _rc_cmd="$(printf '%s\n' "$_rc_out" | grep 'skipping vendor' | sed 's/^.*run later: //; s/; sync-core.sh resolves the NAME.*$//')"
+  if [[ -z "$_rc_cmd" ]]; then
+    fail "recovery: the --no-vendor run printed no recovery command"
+  else
+    if bash -n <(printf '%s\n' "$_rc_cmd") 2>/dev/null; then
+      pass "recovery: the command parses with a space in the parent and an apostrophe in the name (%q holds)"
+    else
+      fail "recovery: the command does not parse — $_rc_cmd"
+    fi
+    # Ordering: each marker must appear, and after the previous one. Positions, not one
+    # regex — a regex over a %q-escaped command is unreadable and was wrong on arrival.
+    _rc_prev=0; _rc_order=""
+    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'git worktree remove --force '; do
+      _rc_pos="$(awk -v m="$_rc_m" '{ print index($0, m) }' <<<"$_rc_cmd")"
+      ((_rc_pos > _rc_prev)) || _rc_order="$_rc_order [$_rc_m]"
+      _rc_prev=$_rc_pos
+    done
+    if [[ -z "$_rc_order" ]]; then
+      pass "recovery: ordering — guarded symlink, commit, subtree add, then the pinned sync in a throwaway worktree"
+    else
+      fail "recovery: ordering wrong at$_rc_order — $_rc_cmd"
+    fi
+    _rc_bad=""
+    printf '%s\n' "$_rc_cmd" | grep -qF 'git fetch https://example.invalid/fork.git refs/tags/v9' || _rc_bad="$_rc_bad fetch-from-CORE_REMOTE"
+    printf '%s\n' "$_rc_cmd" | grep -qF 'CORE_REMOTE=https://example.invalid/fork.git ' || _rc_bad="$_rc_bad CORE_REMOTE-forwarded"
+    printf '%s\n' "$_rc_cmd" | grep -qF "CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\"" || _rc_bad="$_rc_bad peeled-commit-pin"
+    printf '%s\n' "$_rc_cmd" | grep -qF "REPOS_ROOT=$(printf '%q' "$_rc_parent") " || _rc_bad="$_rc_bad REPOS_ROOT"
+    printf '%s\n' "$_rc_cmd" | grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' || _rc_bad="$_rc_bad subtree-add-source"
+    if [[ -z "$_rc_bad" ]]; then
+      pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
+    else
+      fail "recovery: the command is missing —$_rc_bad"
+    fi
+    # The guard is the executable part: everything before the first `&& git -C`.
+    _rc_guard="${_rc_cmd%% && git -C*}"
+    _rc_canon="$_rc_parent/dotfiles-Fixture"
+    if bash -c "$_rc_guard" 2>/dev/null && [[ -L "$_rc_canon" && "$(readlink "$_rc_canon")" == "$_rc_target" ]]; then
+      pass "recovery: the canonical-name guard creates the symlink when the path is free"
+    else
+      fail "recovery: the guard did not create the canonical symlink — $_rc_guard"
+    fi
+    if bash -c "$_rc_guard" 2>/dev/null && [[ -L "$_rc_canon" && "$(readlink "$_rc_canon")" == "$_rc_target" && ! -e "$_rc_target/O'Brien" ]]; then
+      pass "recovery: re-running the guard is idempotent (the link is replaced; nothing nests inside the target)"
+    else
+      fail "recovery: a second run of the guard nested a link or failed"
+    fi
+    rm -f "$_rc_canon"
+    mkdir -p "$_rc_canon"
+    : >"$_rc_canon/unrelated"
+    if ! bash -c "$_rc_guard" >/dev/null 2>"$SANDBOX/recovery/guard.err" && grep -q 'refusing' "$SANDBOX/recovery/guard.err" && [[ -d "$_rc_canon" && ! -L "$_rc_canon" && -e "$_rc_canon/unrelated" && ! -e "$_rc_canon/O'Brien" ]]; then
+      pass "recovery: the guard refuses a foreign directory at the canonical path and leaves it untouched"
+    else
+      fail "recovery: the guard did not refuse a foreign occupant of the canonical path"
+    fi
+  fi
+  rm -rf "$SANDBOX/recovery"
+  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos
+else
+  skip "new-os-repo.sh recovery command (git unavailable)"
 fi
 
 # ── F8. blib_link displacement accounting (lib/bootstrap-lib.sh) ─────────────
