@@ -36,9 +36,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   it" rung. The scaffolded `bootstrap.sh` grows `--dry-run`, `--links-only` and `--help` so
   those verbs are honest, and its mise seed is guarded on the source existing. Its test
   workflow triggers on `main` and `master` both, since the scaffold's `git init` follows
-  the author's `init.defaultBranch`. `test-core.sh` F7b pins all of it — the suite runs
-  against an empty `core/` and against one seeded from Core's own tree, so the Core-link
-  branches are exercised, not skipped — and judges the scaffold with `fleet-vocabulary.sh --check` itself
+  the author's `init.defaultBranch`. `test-core.sh` F7b pins all of it — as generated
+  with `--no-vendor` (no `core/`) the suite must fail loudly and name the missing
+  `core/`, and against a `core/` seeded from Core's own tree it must assert every Core
+  link — and judges the scaffold with `fleet-vocabulary.sh --check` itself
   against a fake fleet root — the same verdict the nine repos are held to — plus the proof
   the suite can fail (a bootstrap that re-links on every run goes red). Dev tooling only —
   the OS repos receive nothing from this entry.

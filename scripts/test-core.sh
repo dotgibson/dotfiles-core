@@ -5383,19 +5383,24 @@ if have git && have zsh; then
     else
       skip "new-os-repo: actionlint over the scaffolded workflow (actionlint unavailable)"
     fi
-    # The suite is a TEST, not an `exit 0` stub — run it, in BOTH states it must pass in.
-    # An empty core/ is the exact --no-vendor state: the suite asserts the Core-provided
-    # links only when their source exists, so here it must pass on the repo-owned links
-    # alone. Then core/ is seeded from Core's OWN tree — the same directories bootstrap.sh
-    # links — so the Core-provided branches (every zsh module, both tmux files, the single
-    # configs, mise-as-copy) are exercised rather than skipped; a first draft ran only the
-    # empty state, and those branches could have regressed green.
-    mkdir -p "$NOR/core"
+    # The suite is a TEST, not an `exit 0` stub — run it, in both states the scaffold
+    # actually produces. AS GENERATED with --no-vendor there is no core/ at all, and the
+    # starter bootstrap refuses to run without one — correctly: a bootstrap that links
+    # nothing from Core and reports "done" is the quiet failure. So the honest assertion
+    # for that state is that the suite goes RED and names the cause. A first draft
+    # manufactured an empty core/ here and called it the --no-vendor state, which the
+    # scaffold never produces and which masked exactly this refusal.
     if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-suite.out" 2>&1; then
-      pass "new-os-repo: the scaffolded suite passes against an empty core/ (the --no-vendor state; $(grep -c '^  ok' "$SANDBOX/nor-suite.out") assertions)"
+      fail "new-os-repo: the scaffolded suite passed on an UNVENDORED scaffold (no core/) — it would sign off a repo that links nothing from Core"
+    elif grep -q 'core/ subtree missing' "$SANDBOX/nor-suite.out"; then
+      pass "new-os-repo: as generated with --no-vendor (no core/), the suite fails loudly and names the missing core/"
     else
-      fail "new-os-repo: the scaffolded suite fails on its own scaffold — $(grep FAIL "$SANDBOX/nor-suite.out" | head -3 | tr '\n' ' ')"
+      fail "new-os-repo: the suite failed on the unvendored scaffold but did not say why — $(head -3 "$SANDBOX/nor-suite.out" | tr '\n' ' ')"
     fi
+    # Then the VENDORED state: core/ seeded from Core's OWN tree — the same directories
+    # bootstrap.sh links — so the Core-provided branches (every zsh module, both tmux
+    # files, the single configs, mise-as-copy) are exercised rather than skipped.
+    mkdir -p "$NOR/core"
     for _nor_d in zsh tmux starship nvim git mise; do
       [[ -d "$HERE/$_nor_d" ]] && cp -r "$HERE/$_nor_d" "$NOR/core/"
     done
