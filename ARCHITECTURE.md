@@ -176,31 +176,59 @@ Each machine repo vendors Core under `core/` once — from a **released tag, nev
 points at, so a tree vendored from `main` is not a commit any `core.lock` would
 record, and `core-integrity` reports the fresh tree as TAMPERED.
 
-**One-time only**, to create a `core/` that does not exist yet — `git subtree add` is
-the initial vendoring and **never** the update path (`sync-core.sh` skips a repo with no
-`core/`, which is the one thing it cannot create):
+**One-time only**, to create a `core/` that does not exist yet — initial vendoring is
+**never** the update path (`sync-core.sh` skips a repo with no `core/`, which is the one
+thing it cannot create). `scripts/new-os-repo.sh` is the sanctioned greenfield path: it
+materializes the **filtered** vendor set (`core.manifest` ∪ `core.vendor`) through the
+same producer the fan-out uses, so the tree is already the shape the first sync will
+stamp `core.lock` for. Neither path writes that lock — until the first `make sync`,
+`core-integrity` reports the **missing lock**, not a tree verdict. The manual fallback,
+for any repo that has no `core/` — scaffolded some other way, or by the scaffold with
+`--no-vendor` — is a subtree add, which copies the **whole** upstream tree; the first
+sync replaces it with the filtered set and stamps the lock. **Commit the repo first**: a
+`--no-vendor` scaffold has an unborn, uncommitted tree, and `subtree add` needs a clean
+`HEAD` (the recovery command the scaffold prints does this for you):
 
 ```bash
-git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v5 --squash
+git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v6 --squash
 ```
 
-`refs/tags/v5` is the moving major alias — the latest release in the v5 line. Pin a
+`refs/tags/v6` is the moving major alias — the latest release in the v6 line. Pin a
 specific `vX.Y.Z` instead when you want the tree frozen at a known version.
-`scripts/new-os-repo.sh` runs this step for you and is the sanctioned greenfield path.
 
 That leaves the repo with `core/` but **no `core.lock`**, so stamp provenance from a
 Core checkout before treating the repo as vendored (`sync-core.sh` is the only
 sanctioned writer of that file):
 
 ```bash
-git checkout v5                                    # in dotfiles-core
-CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>
+# in dotfiles-core — from a THROWAWAY worktree, so your own checkout stays on its branch
+git fetch origin refs/tags/v6 && wt="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX")/core" &&   # one chain: a failed fetch stops here, never reusing a stale FETCH_HEAD
+  { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && {   # a failed add removes the parent it just made, and stops
+  out="$( (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" CORE_COLOR=never REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) 2>&1)" || true; printf '%s\n' "$out"
+  last="$(awk '/^ *repos: /{l=$0} END{print l}' <<<"$out")"; if grep -Eq '^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$' <<<"$last"; then rc=0; else rc=1; fi   # the LAST repos: row is the verdict (see below); `|| true` and the `if` keep `set -e` from skipping the cleanup
+  git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc")   # cleanup only once the add succeeded; the sync's status is the verdict
+}
 ```
 
-Both halves matter: `sync-core.sh` refuses unless Core's `HEAD` is the commit being
+The **summary line is the verdict**, not the exit status: the script that runs here is the
+RELEASED `sync-core.sh` inside the worktree at the tag, which exits 0 after a per-repo
+failure (the fan-out relies on that) and may predate `--strict`; a matching `core.lock`
+line is no proof either, since it can be written before a later pin, commit or
+verification step fails. Every release since **v4.1.0** prints `repos:  updated N   skipped
+N   failed N`, and `updated 1   skipped 0   failed 0` for the one target is the only outcome
+that counts. v4.0.2 and older print a per-check count with no `repos:` prefix, which this
+verdict cannot judge (a successful sync would read as a failure), so an exact freeze older
+than v4.1.0 is out of scope for the recipe — and `new-os-repo.sh` refuses such a
+`CORE_BRANCH` before it writes anything.
+
+Three things matter: `sync-core.sh` refuses unless Core's `HEAD` is the commit being
 vendored, and the pin must be the **peeled commit** — the release tags are annotated, so
-`refs/tags/v5` resolves to the tag object, which is never that `HEAD`. See
-`RELEASE-STRATEGY.md` §"Safe deployment".
+`refs/tags/v6` resolves to the tag object, which is never that `HEAD` (the worktree is
+detached at the peeled commit, so `HEAD^{commit}` is it); `REPOS_ROOT` is passed because
+the worktree's parent is not where your OS repos live; and it is a worktree rather than
+`git checkout v6` because the very next step edits **this** repository to register the
+new one, and a detached checkout would strand that commit. See `RELEASE-STRATEGY.md`
+§"Safe deployment".
 
 After a Core change, the same helper fans it out to the whole fleet:
 

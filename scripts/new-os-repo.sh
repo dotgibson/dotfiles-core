@@ -11,10 +11,10 @@
 # Usage:
 #   ./scripts/new-os-repo.sh <OSName> [target-dir]      # e.g. Fedora  (→ ../dotfiles-Fedora)
 #   ./scripts/new-os-repo.sh Fedora --dry-run           # print the plan, write nothing
-#   ./scripts/new-os-repo.sh Fedora --no-vendor         # skeleton only, skip the subtree add
+#   ./scripts/new-os-repo.sh Fedora --no-vendor         # skeleton only, skip the vendoring
 #
-# It vendors Core via `git subtree add --prefix=core` from this repo's origin (override
-# with CORE_REMOTE), then writes the entry .zshrc/.zshenv/.zprofile, an os/<os>.zsh stub,
+# It materializes core/ from this repo's origin (override with CORE_REMOTE) — the FILTERED
+# vendor set, through lib/core-vendor.sh's producer, not `git subtree add` (#676) — then writes the entry .zshrc/.zshenv/.zprofile, an os/<os>.zsh stub,
 # a starter bootstrap, a .gitignore, a Makefile carrying the fleet's canonical `make`
 # vocabulary, a test/ suite and the workflow that runs it (#691). The canonical module
 # order lives in ONE place here, so a scaffolded repo can never start out of order — and
@@ -39,15 +39,16 @@ CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null |
 # exact commit a release tag points at, so a tree vendored from whatever `main` happened
 # to be is not a commit any core.lock would record — and core-integrity reports the fresh
 # subtree as TAMPERED before the repo has done anything wrong (#588).
-CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5}"
+CORE_BRANCH="${CORE_BRANCH:-refs/tags/v6}"
 
 usage() {
   cat <<'EOF'
 usage: new-os-repo.sh <OSName> [target-dir] [--dry-run] [--no-vendor]
 
-Scaffold a new OS repo that vendors Core: subtree-add core/, then write a correct
-.zshrc loader (canonical order), os/<os>.zsh, a starter bootstrap, .gitignore, a Makefile
-with the fleet's make vocabulary, a test/ suite and the workflow that runs it.
+Scaffold a new OS repo that vendors Core: materialize the filtered core/ (no subtree
+add), then write a correct .zshrc loader (canonical order), os/<os>.zsh, a starter
+bootstrap, .gitignore, a Makefile with the fleet's make vocabulary, a test/ suite and
+the workflow that runs it.
 
   <OSName>       e.g. Fedora, Arch, Gentoo  (repo defaults to ../dotfiles-<OSName>)
   target-dir     override the destination directory
@@ -57,8 +58,10 @@ with the fleet's make vocabulary, a test/ suite and the workflow that runs it.
                  one-time setup in VENDORING.md instead — the script prints it.
 
 Env: CORE_REMOTE (default: this repo's origin)
-     CORE_BRANCH (default: refs/tags/v5 — a RELEASED tag, never main; pin a specific
-                  vX.Y.Z to freeze the tree at a known version)
+     CORE_BRANCH (default: refs/tags/v6 — a RELEASED tag, never main; pin a specific
+                  vX.Y.Z to freeze the tree at a known version — v4.1.0 or newer: the
+                  recovery and register commands judge the released sync by its
+                  per-repo summary, which older releases do not print)
 EOF
 }
 

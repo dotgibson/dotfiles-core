@@ -15,14 +15,27 @@ _Repo status_ at the bottom).
 3. Replace `install/packages.txt` with that distro's names (table below).
 4. In `bootstrap.sh`: swap the `dnf` block for the distro's installer and the
    `/etc/os-release` guard string.
-5. Re-vendor Core and stamp `core.lock`, from a **Core** checkout:
-   `git checkout v5 && CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>`
-   — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v5`
-   (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"). Step 1 already copied Fedora's `core/` across, so there is no
+5. **Commit steps 2–4 first** (`git add -A && git commit -m "os: the <Distro> layer"`):
+   the sync refuses a target with uncommitted changes, so an uncommitted repo is skipped
+   rather than re-vendored. Then re-vendor Core and stamp `core.lock`, from a **Core**
+   checkout — in a throwaway worktree, so your own checkout stays on its branch for the
+   registration edit that follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX")/core" && { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && { out="$( (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" CORE_COLOR=never REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) 2>&1)" || true; printf '%s\n' "$out"; last="$(awk '/^ *repos: /{l=$0} END{print l}' <<<"$out")"; if grep -Eq '^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$' <<<"$last"; then rc=0; else rc=1; fi; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
+   (a unique temp path, so a retry never meets a registered leftover; the sync's output
+   is captured under `|| true` so `set -e` cannot skip the cleanup, which runs only once
+   the add succeeded; the RELEASED script runs in that worktree — it exits 0 after a per-repo
+   failure and may predate `--strict` — so its summary line is the verdict: `updated 1
+   skipped 0   failed 0` for the one target, and nothing else counts; that `repos:` footer
+   exists since v4.1.0, so an older exact freeze cannot be judged this way)
+   — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
+   (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
+   § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no
    `git subtree add` to run here (it would fail: _prefix 'core' already exists_). That
-   one-time add is only for a repo with no `core/` at all — `scripts/new-os-repo.sh`
-   does it for greenfield repos. Skip this step and `core-integrity` reports the
-   inherited tree against Fedora's lock.
+   manual add is only for a repo with no `core/` at all — one scaffolded some other
+   way, or by `scripts/new-os-repo.sh --no-vendor`, which must be **committed first**
+   (`subtree add` needs a clean `HEAD`; the recovery command the scaffold prints does
+   that); a normal scaffold run materializes the filtered vendor set instead (no
+   subtree). Skip this step and `core-integrity` reports the inherited tree against
+   Fedora's lock.
 6. Update the README's "specifics" section to that distro's quirks.
 
 ## Package-manager commands

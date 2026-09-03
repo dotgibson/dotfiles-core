@@ -1227,6 +1227,174 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
   done
 }
 
+# ── _core_vendor_pin_hits: the first-vendor recipe names the CURRENT major ───
+# _core_vendor_pin_hits <repo-root> <expected-major> — print every first-vendor pin in
+# the root docs and scripts/ that names a major other than <expected-major>. Silence =
+# clean. Output is `file:LINE: msg`.
+#
+# WHAT A "FIRST-VENDOR PIN" IS. Three shapes, all copyable instructions for vendoring a
+# brand-new OS repo at the released major alias rather than `main` (#588):
+#
+#     git subtree add --prefix=core <remote> refs/tags/vN --squash
+#     git checkout vN                                  # in dotfiles-core (also `switch`,
+#                                                      # with options, the ref quoted)
+#     CORE_BRANCH="$(git rev-parse vN^{commit})" ./scripts/sync-core.sh dotfiles-X
+#
+# and new-os-repo.sh's `CORE_BRANCH="${CORE_BRANCH:-refs/tags/vN}"` default, which is the
+# same instruction with the pasting done for you.
+#
+# WHY A GATE. This exact rot has now happened at EVERY major cut. At v4 → v5 the scaffold
+# default, its --help, ARCHITECTURE.md, VENDORING.md and PORTING-MATRIX.md were each
+# corrected by hand, in three separate CHANGELOG entries, after someone noticed. At v5 → v6
+# all five went stale again and stayed that way through two releases: a greenfield repo
+# scaffolded in that window vendored a RETIRED major by default, and the docs told a human
+# to do the same. Nothing failed, because nothing was wrong in the code — the same silent
+# shape _core_workflow_ref_hits and _core_workflow_example_hits exist to end for the
+# workflow refs, one recipe over. So it gets the same treatment: the major is read from
+# core.version, and the text is held to it.
+#
+# WHY CONCRETE MAJORS IN THE DOCS AT ALL, rather than "the current major alias". The
+# CHANGELOG records the decision at the last cut: a ref the reader PASTES is not a claim
+# they read, so it stays concrete and copyable — and this function is what makes that
+# safe to promise.
+#
+# SCOPE, and the four exemptions that keep it honest:
+#   · Root-level *.md and scripts/*.sh — where the recipe is written — never core/ or
+#     nested docs.
+#   · CHANGELOG*.md are HISTORY: "corrected to refs/tags/v5" was true when written and
+#     must stay so. A gate that reds on a true sentence teaches people to falsify it.
+#   · scripts/test-core.sh builds fixture repos with tags of its own (`refs/tags/v1`);
+#     those are test data, not instructions.
+#   · An EXACT pin (`refs/tags/v5.3.0`, optionally `-pre` as core.version allows) is a
+#     deliberate freeze and is out of scope — whatever its major — EXCEPT on the scaffold
+#     default itself: a recipe's freeze is a choice its reader made, but new-os-repo.sh's
+#     `CORE_BRANCH:-` default is what every new repo inherits unasked, so it is always
+#     held to the current major, exact or not. Anything else dotted (`v5.3`, `v5.3.0.1`)
+#     is no tag this repo cuts, so it is judged by its leading major like a bare one.
+#     Another repository's tag reached through an API path (`git/refs/tags/v3`) is out
+#     of scope too.
+_core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
+  local root="${1:-.}" want="${2:-}" f
+  [ -n "$want" ] || return 0
+  for f in "$root"/*.md "$root"/scripts/*.sh; do
+    [ -f "$f" ] || continue
+    case "${f##*/}" in CHANGELOG*.md | test-core.sh) continue ;; esac
+    awk -v want="$want" -v file="${f#"$root"/}" '
+      {
+        line = $0
+        # Each shape carries its own left boundary so `git/refs/tags/v3` (a slash before
+        # `refs`) and `xv5^{commit}` do not match, while `:-refs/tags/vN` (the scaffold
+        # default) does. Every shape captures the WHOLE version token after the `v`
+        # (digits, dots, and any pre-release letters) — so `v5.3^{commit}` is seen, not
+        # skipped, and `v50` is read as 50 — and the token is classified once:
+        #   bare major          → judged against want
+        #   exact N.M.P[-pre]   → a deliberate freeze, exempt whatever its major
+        #   anything else       → no tag this repo cuts; judged by its leading major
+        # `git checkout` tolerates the GLOBAL git options before the subcommand (`-C <dir>`,
+        # `-c k=v`, `--git-dir=…`, `--work-tree=…`, `--no-pager`, a lone flag), which the
+        # scripts in this repo use routinely — an operand is a shell WORD, so a quoted path
+        # with a space (`-C "/tmp/core checkout"`) is consumed whole; any run of shell
+        # whitespace between its words, options
+        # before the ref (`--detach`, `-q`, and the operand-taking `-b`/`-B`/`-c`/`-C`/
+        # `--create`/`--force-create`/`--orphan` with their branch name), `switch` in
+        # place of `checkout`, and a quote
+        # opening the ref (v5 in single or double quotes), so a reformatted or
+        # option-bearing command cannot slip under the gate. A bare `--` is NOT an option
+        # for `checkout`: it ends option parsing and makes the next token a PATH, so
+        # `git checkout -- v5` restores a file, not a Core ref (for `switch`, the token
+        # after `--` is still a branch, so it stays judged). The exact-pin class is the SAME one core.version is
+        # validated against (audit-core.sh, SemVer [-pre]), so a pre-release this repo
+        # could actually cut is exempt and nothing wider is.
+        consumed = ""
+        # The left boundary also admits a Markdown `_` delimiter — an underscore that is
+        # itself at a word boundary — so `_refs/tags/v5_` is scanned, while `foo_refs…`
+        # (an intraword identifier) still is not.
+        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git([[:space:]]+(-[Cc][[:space:]]+("[^"]*"|\047[^\047]*\047|[^[:space:]]+)|--(git-dir|work-tree|namespace)=("[^"]*"|\047[^\047]*\047|[^[:space:]]+)|--no-pager|-[a-zA-Z]))*[[:space:]]+(checkout([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+("[^"]*"|\047[^\047]*\047|[^[:space:]]+)|-[A-Za-z][-A-Za-z0-9=]*|--[A-Za-z][-A-Za-z0-9=]*))*|switch([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+("[^"]*"|\047[^\047]*\047|[^[:space:]]+)|-[-A-Za-z0-9=]+))*)[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+          hit = substr(line, RSTART, RLENGTH)
+          rest = substr(line, RSTART + RLENGTH)
+          sub(/^[^rgv]*/, "", hit)                 # drop the boundary character(s)
+          blen = RLENGTH - length(hit)             # how long that boundary was (0, 1 or 2)
+          # THIS match is the scaffold default when the text right before it is the
+          # assignment (`CORE_BRANCH:-`) or the --help line (`CORE_BRANCH (default: `).
+          # Judged per match, not per line: a sentence naming the current default AND a
+          # deliberate freeze must keep the freeze exempt.
+          prefix = consumed substr(line, 1, RSTART - 1 + blen)
+          # An optional quote after `:-` (or after `(default: `): a quoted default,
+          # `CORE_BRANCH="${CORE_BRANCH:-"refs/tags/v5.3.0"}"`, is still the default.
+          isdefault = (hit ~ /^refs\/tags\/v/ && prefix ~ /CORE_BRANCH(:-["\047]?| \(default: ["\047]?)$/)
+          tok = hit
+          # Peeled either way — `v5.3.0.^{commit}` in the hit, or `refs/tags/v5.3.0.^{commit}`
+          # with the peel in rest — is a REVISION, not prose: no period in it is a
+          # sentence period, so the trim below must not turn `5.3.0.` into an exact pin.
+          peeled = (hit ~ /\^\{commit\}$/ || rest ~ /^\^\{commit\}/)
+          sub(/\^\{commit\}$/, "", tok)
+          # The ref is the LAST whitespace-separated token of the hit: in the checkout
+          # shape an operand-taking option puts a branch NAME before it, and a first
+          # `v<digit>` scan would read `vendor-v6` as the pin in `checkout -b vendor-v6 v5`.
+          n = split(tok, parts, /[[:space:]]+/); tok = parts[n]
+          # ...unless that last token is the OPERAND of a branch-creating option with no
+          # start point after it: `git checkout -b v5` / `git switch -c v5` create a
+          # branch NAMED v5 and pin nothing. The generic option branch let those match.
+          if (n >= 2 && parts[n - 1] ~ /^(-[bBcC]|--(create|force-create|orphan))$/) {
+            consumed = consumed substr(line, 1, RSTART + RLENGTH - 1); line = rest; continue
+          }
+          sub(/^["\047]/, "", tok); sub(/^refs\/tags\//, "", tok); sub(/^v/, "", tok)
+          # The token class admits `.`, so a sentence-ending period rides in with it:
+          # `refs/tags/v5.3.0.` would read as `5.3.0.` and an exact freeze would be
+          # reported stale. ONLY that one period is prose — a single trailing `.`, and
+          # only when whitespace or the end of the line follows it: inside a quoted
+          # argument (`"refs/tags/v5.3.0."`) bash hands the period to git, so it is part
+          # of a malformed ref and stays. Two (`v5.3.0..`) leave `5.3.0.`, which is
+          # malformed and judged; and a trailing `+` or `-` is kept, because `v5.3.0+`
+          # is no tag this repo cuts and must stay judged, not become exempt by trimming.
+          if (!peeled && rest ~ /^([[:space:]]|$)/) { sub(/\.$/, "", tok); sub(/\.$/, "", hit) }   # hit: the message quotes the pin, not the prose
+          major = tok; sub(/[^0-9].*$/, "", major)
+          exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
+          # The token class stops at a character it does not admit, so `v5.3.0_bad`,
+          # `v5.3.0/foo` and `v5.3.0@foo` would each match as `v5.3.0` and read exact.
+          # Rather than enumerate what git allows in a ref (`@`, `/`, `_` and more), the
+          # rule is the inverse: an exact pin is exempt ONLY when what follows it is a
+          # terminator — whitespace, end of line, a quote or backtick, closing
+          # punctuation, or a shell operator. Anything else glued on means the ref as
+          # written is not the tag, so it is malformed and judged. `#` is deliberately
+          # NOT a terminator: a comment starts only at the start of a word, so
+          # `v5.3.0#note` is one argument to git (judged), while `v5.3.0 # note` is
+          # exempt through the whitespace before its `#`. Nor is `^`: the literal
+          # `^{commit}` of the peeled form is consumed by the match itself, so a caret
+          # left in rest (`v5.3.0^foo`) is a malformed ref, judged. And in the peeled
+          # form the sentence period sits in rest rather than the token
+          # (`v5.3.0^{commit}.`), so one prose period is trimmed from rest first. And a
+          # full-ref peel — `refs/tags/v5.3.0^{commit}` — matches through the refs/tags
+          # shape and leaves the literal `^{commit}` in rest: that one suffix is consumed
+          # before the tests, so the same deliberate freeze is exempt in that spelling
+          # too, while any other caret suffix stays judged.
+          if (rest ~ /^\^\{commit\}/) rest = substr(rest, 10)
+          if (rest ~ /^\.([[:space:]]|$)/) rest = substr(rest, 2)
+          # Two kinds of terminator. A closer (whitespace, quote, backtick, bracket, a
+          # Markdown `*` delimiter), sentence-final `!` or `?`, or a shell operator
+          # (; & | < >) ends the token by itself — none of those can continue a ref.
+          # Prose punctuation (, :) and a closing Markdown `_` end it only when followed
+          # by whitespace, a closer or end of line — otherwise `v5.3.0:foo`, `v5.3.0,foo`
+          # and `v5.3.0_bad` are glued text, i.e. malformed, and judged.
+          # `]` is listed FIRST in each class, never as `\]`: a backslash is literal inside
+          # a POSIX bracket expression, so under musl (busybox awk, the Alpine lane) `\]`
+          # closed the class early and every exempt pin read as stale. gawk happened to
+          # accept the escape, which is why this only showed on Alpine.
+          if (rest != "" && rest !~ /^[][:space:]`"\047)}*!?;&|<>]/ && rest !~ /^[,:_]([][:space:]`"\047)}]|$)/) exact = 0
+          # The scaffold default is never exempt: it is not a freeze someone chose, it is
+          # the pin every new repo gets by default.
+          if ((!exact || isdefault) && major != want) {
+            printf "%s:%d: %s names v%s, but core.version is major v%s (%s)\n", \
+              file, NR, (isdefault ? "the scaffold default" : "first-vendor pin"), tok, want, hit
+          }
+          consumed = consumed substr(line, 1, RSTART + RLENGTH - 1)
+          line = rest
+        }
+      }
+    ' "$f"
+  done
+}
+
 # ── _core_make_gate_hits: local gates that cannot do what their name says ─────
 # _core_make_gate_hits <repo-root> — print every Makefile gate in <repo-root> that
 # announces a check it does not perform. Silence = clean. Output is `Makefile:LINE: msg`.

@@ -2445,6 +2445,230 @@ if [[ -r "$HERE/core.version" ]]; then
   unset _wfe_now
 fi
 
+# ── first-vendor pin major guard (common.sh :: _core_vendor_pin_hits) ─────────
+# Third sibling of the two guards above, for the third copyable instruction that names a
+# major: the first-vendor recipe (`refs/tags/vN`, `git checkout vN`, `vN^{commit}`) and
+# new-os-repo.sh's default for it. It rotted at v4 → v5 (fixed by hand, three CHANGELOG
+# entries) and again at v5 → v6, where it sat for two releases while every `ref:` and
+# every caller example was held to the major — a greenfield repo vendored a retired Core
+# by default and nothing was red. Same treatment as its siblings, tested the same way.
+#
+# The exemptions carry the weight: CHANGELOG history, test fixtures, exact pins and another
+# repo's tag behind an API path are all TRUE text that a blunter scan would red on, and a
+# guard that reds on a true sentence teaches the next person to falsify it.
+hdr "first-vendor pin major guard (_core_vendor_pin_hits)"
+_vpn_="$SANDBOX/vendorpin"
+_vpn_reset() { rm -rf "$_vpn_"; mkdir -p "$_vpn_/scripts"; }
+_vpn_write() { _vpn_reset; printf '%s\n' "$2" >"$_vpn_/$1"; }
+_vpn_count() {
+  local got n
+  got="$(_core_vendor_pin_hits "$_vpn_" "$2")"
+  n=0
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$3" ]]; then
+    pass "first-vendor pin: $1"
+  else
+    fail "first-vendor pin: $1 (got $n finding(s), want $3): $(printf '%s' "$got" | tr '\n' ' ')"
+  fi
+}
+
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5 --squash'
+_vpn_count "a subtree-add on a foreign major is a finding" 6 1
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v6 --squash'
+_vpn_count "a subtree-add on the current major is clean" 6 0
+_vpn_write README.md 'git checkout v5                                    # in dotfiles-core'
+_vpn_count "\`git checkout vN\` is judged" 6 1
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "the peeled-commit form is judged" 6 1
+# THE LINE THAT MATTERS MOST: the scaffold default, where the major is preceded by `:-`.
+# The first draft treated `-` as a word character and skipped exactly this line.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5}"'
+_vpn_count "new-os-repo.sh's :-refs/tags/vN default is judged" 6 1
+# The exact-pin exemption below does NOT reach the scaffold default: a recipe's freeze is
+# a choice its reader made, the default is what every new repo inherits unasked.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5.3.0}"'
+_vpn_count "an exact-but-retired scaffold default (v5.3.0 on a v6 tree) is still a finding" 6 1
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v6.1.0}"'
+_vpn_count "an exact scaffold default on the current major is clean" 6 0
+# A QUOTED default inside the expansion is still the default — and never exempt.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-"refs/tags/v5.3.0"}"'
+_vpn_count "a quoted exact-but-retired scaffold default (\"refs/tags/v5.3.0\") is still a finding" 6 1
+# The --help text documents the same default in prose form, and is what a reader pastes.
+_vpn_write scripts/new-os-repo.sh '     CORE_BRANCH (default: refs/tags/v5.3.0 — a RELEASED tag, never main; pin a specific'
+_vpn_count "the --help form of an exact-but-retired default is judged too" 6 1
+# Default-ness is decided per MATCH, not per line: the current default and a deliberate
+# freeze in one sentence must leave the freeze exempt.
+_vpn_write README.md 'the default is CORE_BRANCH:-refs/tags/v6, but pin refs/tags/v5.3.0 to freeze'
+_vpn_count "a freeze on the same line as the current default keeps its exemption" 6 0
+# Exemptions — every one of these is a TRUE sentence that must not be flagged.
+_vpn_write RELEASE-STRATEGY.md 'Pin `refs/tags/v5.3.0` while sitting on `main` and the lock records'
+_vpn_count "an exact vN.M.P pin is a deliberate freeze, not a finding" 6 0
+# Only a COMPLETE vN.M.P is exempt. A two-component `v5.3` is not a tag this repo cuts,
+# so it is a stale pin wearing a dot; a first draft exempted every dotted suffix.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3 --squash'
+_vpn_count "a two-component v5.3 is NOT an exact pin — still a finding" 6 1
+_vpn_write README.md 'git checkout v6.1.0 && CORE_BRANCH="$(git rev-parse v6.1.0^{commit})"'
+_vpn_count "an exact pin on the current line in the other two shapes is clean" 6 0
+# The peeled shape must SEE a dotted version, not skip it: a first draft matched only
+# `vN^{commit}`, so a stale `v5.3^{commit}` was invisible rather than judged.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "a dotted-but-incomplete peeled pin (v5.3^{commit}) is a finding" 6 1
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3.0^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "an exact peeled pin (v5.3.0^{commit}) is a deliberate freeze, exempt" 6 0
+# Only EXACTLY vN.M.P (optionally -pre, as core.version allows) is exempt: a fourth
+# component is no tag this repo cuts, so it is judged by its leading major.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0.1 --squash'
+_vpn_count "a four-component v5.3.0.1 is malformed, not exact — still a finding" 6 1
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0-rc1 --squash'
+_vpn_count "a SemVer pre-release pin (v5.3.0-rc1) is an exact release, exempt" 6 0
+# The exact-pin class is core.version's own (audit §: SemVer [-pre] with `.` and `-`
+# allowed inside the label), so a pin the validator would accept is never reported stale.
+_vpn_write README.md 'git checkout v5.3.0-alpha-beta && refs/tags/v5.3.0-alpha.1'
+_vpn_count "a pre-release label with a second hyphen or a dot (as core.version allows) is exempt" 6 0
+# Prose runs into pins. A sentence-ending period is not part of the version, so an exact
+# freeze stays exempt and a bare major at the end of a sentence is still judged as vN.
+_vpn_write README.md 'Pin `refs/tags/v5.3.0`. Or, less carefully, pin refs/tags/v5.3.0.'
+_vpn_count "an exact pin followed by a sentence-ending period is still exempt" 6 0
+_vpn_write README.md 'so vendor refs/tags/v5.'
+_vpn_count "a bare major followed by a sentence-ending period is still a finding" 6 1
+# A period inside a QUOTED argument is handed to git, so it is part of a malformed ref.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> "refs/tags/v5.3.0." --squash'
+_vpn_count "a trailing period inside a quoted ref (\"refs/tags/v5.3.0.\") is malformed — a finding" 6 1
+# Exactly ONE trailing period is prose; a second one is part of a malformed ref.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0.. --squash'
+_vpn_count "\`v5.3.0..\` is not an exact pin with a sentence period — a finding" 6 1
+# Only the period is prose. A trailing `+` or `-` makes the token malformed, and a
+# malformed foreign pin is judged, never trimmed into an exempt exact one.
+_vpn_write README.md 'refs/tags/v5.3.0+ and refs/tags/v5.3.0-'
+_vpn_count "\`v5.3.0+\` and \`v5.3.0-\` are malformed foreign pins, both findings" 6 2
+# ...and so is a suffix the token class does not admit: `v5.3.0_bad` must not be read as
+# `v5.3.0` and exempted on the strength of its well-formed prefix.
+_vpn_write README.md 'refs/tags/v5.3.0_bad and git checkout v5.3.0x'
+_vpn_count "a word character glued to an exact-looking pin makes it malformed — both findings" 6 2
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0/foo --squash'
+_vpn_count "a \`/\` continuing an exact-looking pin (v5.3.0/foo) makes it malformed — a finding" 6 1
+# `@` is legal inside a git ref, and so are others; the rule is the inverse — only a
+# terminator may follow an exempt pin — so nothing glued on can slip through.
+_vpn_write README.md 'refs/tags/v5.3.0@foo and refs/tags/v5.3.0%x'
+_vpn_count "any non-terminator glued to an exact-looking pin (v5.3.0@foo, v5.3.0%x) is a finding" 6 2
+_vpn_write README.md '(`refs/tags/v5.3.0`), "refs/tags/v5.3.0"; refs/tags/v5.3.0) refs/tags/v5.3.0 # note'
+_vpn_count "an exact pin followed by a quote, paren, semicolon or a spaced comment stays exempt" 6 0
+# Prose punctuation ends a pin only when whitespace or the line ends after it: `v5.3.0,`
+# and `v5.3.0:` are exempt, `v5.3.0,foo` and `v5.3.0:foo` are glued text and judged.
+_vpn_write README.md 'pin refs/tags/v5.3.0, or refs/tags/v5.3.0: either is a freeze; also refs/tags/v5.3.0,'
+_vpn_count "an exact pin followed by a comma or colon and then whitespace or end of line stays exempt" 6 0
+_vpn_write README.md 'refs/tags/v5.3.0:foo and refs/tags/v5.3.0,foo'
+_vpn_count "a comma or colon GLUED to more text (v5.3.0:foo, v5.3.0,foo) is malformed — both findings" 6 2
+# This scans root Markdown: a bold delimiter or sentence-final punctuation closes a pin.
+_vpn_write README.md 'Pin **refs/tags/v5.3.0** here. Pin refs/tags/v5.3.0! Or refs/tags/v5.3.0? Or _refs/tags/v5.3.0_'
+_vpn_count "Markdown delimiters and sentence-final ! or ? after an exact pin stay exempt" 6 0
+# An underscore delimiter is scanned only at a word boundary: `_refs/tags/v5_` is the same
+# copyable bare-major pin (judged); `foo_refs/tags/v5` is an intraword identifier (not).
+_vpn_write README.md 'vendor _refs/tags/v5_ first'
+_vpn_count "an underscore-emphasised bare-major pin (_refs/tags/v5_) is a finding" 6 1
+_vpn_write README.md 'foo_refs/tags/v5 is an identifier, and _refs/tags/v5.3.0_ an exact freeze'
+_vpn_count "an intraword underscore is not a delimiter, and an emphasised exact pin stays exempt" 6 0
+# A period inside a PEELED revision is never a sentence period.
+_vpn_write README.md 'git rev-parse v5.3.0.^{commit} and git rev-parse refs/tags/v5.3.0.^{commit}'
+_vpn_count "a trailing period inside a peeled revision (v5.3.0.^{commit}) is malformed — both findings" 6 2
+# A `#` glued to the word is NOT a comment — bash hands `v5.3.0#note` to git as one
+# argument — so it is a non-exact foreign ref and must be judged, not exempted.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0#note --squash'
+_vpn_count "a glued \`#note\` is part of the ref, not a comment — a finding" 6 1
+# The peeled form: its sentence period lands in rest, not the token, and must still be
+# prose; and a caret that is NOT the literal ^{commit} is a malformed ref, judged.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3.0^{commit})" — then run it. Or git rev-parse v5.3.0^{commit}.'
+_vpn_count "an exact peeled pin at sentence end (v5.3.0^{commit}.) stays exempt" 6 0
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0^foo --squash'
+_vpn_count "\`v5.3.0^foo\` — a caret that is not ^{commit} — is malformed, a finding" 6 1
+# The peel written against the FULL ref: `refs/tags/v5.3.0^{commit}` matches through the
+# refs/tags shape and leaves the literal ^{commit} in rest — the same freeze, still exempt.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse refs/tags/v5.3.0^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "an exact peeled pin in full-ref form (refs/tags/v5.3.0^{commit}) stays exempt" 6 0
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse refs/tags/v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "a bare-major peel in full-ref form (refs/tags/v5^{commit}) is still judged" 6 1
+# A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
+_vpn_write README.md 'git  checkout v5'
+_vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1
+printf 'git\tcheckout v5\n' >"$_vpn_/README.md"
+_vpn_count "\`git<TAB>checkout vN\` is still judged" 6 1
+_vpn_write README.md 'gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha'
+_vpn_count "another repository's tag behind an API path (git/refs/tags/) is not a finding" 6 0
+_vpn_write CHANGELOG.md 'so it is corrected to a concrete `refs/tags/v5`'
+_vpn_count "CHANGELOG history is exempt" 6 0
+_vpn_write CHANGELOG.recent.md 'so it is corrected to a concrete `refs/tags/v5`'
+_vpn_count "the generated CHANGELOG digest is exempt too" 6 0
+_vpn_write scripts/test-core.sh 'git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_div"'
+_vpn_count "test-core.sh's fixture tags are data, not instructions" 6 0
+_vpn_write README.md 'the v5 line, `@v5`, Core v5 #663, and "at v4→v5 it was left on v4"'
+_vpn_count "narrative vN prose with none of the three shapes is not judged" 6 0
+# Option-bearing, quoted and `switch` spellings of the checkout are the same recipe.
+_vpn_write README.md 'git checkout --detach v5; git checkout -q --detach v5; git switch --detach v5; git checkout '"'"'v5'"'"'; git checkout "v5"'
+_vpn_count "\`checkout --detach vN\`, \`switch --detach vN\` and a quoted ref are all judged" 6 5
+_vpn_write README.md 'git checkout --detach v6 && git checkout "v5.3.0" && git switch --detach '"'"'v6.1.0'"'"''
+_vpn_count "the same forms on the current major or an exact pin are clean" 6 0
+# Options that take an operand put a branch name between the flag and the tag.
+_vpn_write README.md 'git checkout -b vendor-v5 v5 && git switch -c work v5'
+_vpn_count "\`checkout -b <branch> vN\` and \`switch -c <branch> vN\` are judged past the operand" 6 2
+_vpn_write README.md 'git checkout -B vendor v5.3.0 && git switch -C work v6'
+_vpn_count "the same operand forms on an exact pin or the current major are clean" 6 0
+# The branch NAME may look like a pin; the ref is the last token, whatever the name says.
+_vpn_write README.md 'git checkout -b vendor-v6 v5'
+_vpn_count "\`checkout -b vendor-v6 v5\` is judged on v5, not on the branch name" 6 1
+_vpn_write README.md 'git checkout -b vendor-v5 v6'
+_vpn_count "\`checkout -b vendor-v5 v6\` is clean — the branch name is not the pin" 6 0
+# The long spellings of the operand-taking options consume a branch name too.
+_vpn_write README.md 'git switch --create vendor-v6 v5 && git checkout --orphan vendor-v6 v5 && git switch --force-create work v5'
+_vpn_count "\`--create\`, \`--orphan\` and \`--force-create\` consume their operand; the pin after it is judged" 6 3
+_vpn_write README.md 'git switch --create work v6.1.0 && git checkout --orphan fresh v6'
+_vpn_count "the same long options on an exact pin or the current major are clean" 6 0
+# Git's GLOBAL options come before the subcommand; this repo writes `git -C "$HERE" …` all the time.
+_vpn_write README.md 'git -C "$HERE" checkout v5 && git --no-pager -c core.pager=cat switch --detach v5'
+_vpn_count "global options before checkout/switch (-C, -c, --no-pager) are seen through — both findings" 6 2
+_vpn_write README.md 'git -C "$HERE" checkout v6.1.0'
+_vpn_count "the same with an exact pin is clean" 6 0
+# An operand is a shell WORD: a quoted path with a space must not hide the pin behind it.
+_vpn_write README.md 'git -C "/tmp/core checkout" checkout v5 && git -C '"'"'/tmp/my core'"'"' switch --detach v5 && git checkout -b "vendor branch" v5'
+_vpn_count "quoted operands with spaces (-C \"/tmp/core checkout\", -b \"vendor branch\") are consumed whole — three findings" 6 3
+# A branch NAMED vN with no start point pins nothing: the operand is the last token.
+_vpn_write README.md 'git checkout -b v5 && git switch -c v5 && git switch --create v5 && git checkout --orphan v5'
+_vpn_count "operand-only branch creation (checkout -b v5, switch -c v5, --create v5, --orphan v5) is not a pin" 6 0
+# A bare `--` ends checkout's options and makes the next token a PATH, not a ref; for
+# switch the token after `--` is still a branch.
+_vpn_write README.md 'git checkout -- v5 && git checkout -q -- v5'
+_vpn_count "\`git checkout -- v5\` restores a path, not a pin — not a finding" 6 0
+_vpn_write README.md 'git switch -- v5'
+_vpn_count "\`git switch -- v5\` names a branch and is still judged" 6 1
+_vpn_write README.md 'git checkout v60 && CORE_BRANCH="$(git rev-parse v5^{commit})" x refs/tags/v5 refs/tags/v6'
+_vpn_count "every occurrence on a line is reported and the number is read whole (v60 is not v6)" 6 3
+# Core must satisfy the rule it authors — the inverse assertion, so `make test` catches a
+# stale pin without a full audit, exactly as the two siblings above do.
+if [[ -r "$HERE/core.version" ]]; then
+  _vpn_now="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+  _vpn_real="$(_core_vendor_pin_hits "$HERE" "$_vpn_now")"
+  if [[ -z "$_vpn_real" ]]; then
+    pass "first-vendor pin: this tree's recipe and new-os-repo.sh default name v$_vpn_now everywhere (matches core.version)"
+  else
+    fail "first-vendor pin: this tree names a foreign major: $(printf '%s' "$_vpn_real" | tr '\n' ' ')"
+  fi
+  # And the guard can fail on THIS tree: at any other major every pin must surface,
+  # including the scaffold default — asserted by its exact file:line, resolved from the
+  # assignment itself, so a finding on the --help text two lines down cannot stand in
+  # for it. Captured first, then a here-string: the producer walks the whole tree and
+  # `| grep -q` under pipefail is the SIGPIPE hazard _core_pipefail_hits documents.
+  _vpn_line="$(grep -n '^CORE_BRANCH="\${CORE_BRANCH:-refs/tags/v' "$HERE/scripts/new-os-repo.sh" | head -1 | cut -d: -f1)"
+  _vpn_next="$(_core_vendor_pin_hits "$HERE" "$((_vpn_now + 1))")"
+  if [[ -n "$_vpn_line" ]] && grep -qF "scripts/new-os-repo.sh:$_vpn_line: " <<<"$_vpn_next"; then
+    pass "first-vendor pin: at the next major the scaffold default itself (new-os-repo.sh:$_vpn_line) is reported"
+  else
+    fail "first-vendor pin: the scaffold default (new-os-repo.sh:${_vpn_line:-?}) would not be reported at the next major — the gate misses the line it exists for"
+  fi
+  unset _vpn_now _vpn_real _vpn_line _vpn_next
+fi
+rm -rf "$_vpn_"
+unset _vpn_
+unset -f _vpn_reset _vpn_write _vpn_count
+
 # ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
 # WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
 # extraction, every verdict here comes from git: is the path tracked, and which .gitignore
