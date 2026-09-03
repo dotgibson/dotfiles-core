@@ -612,8 +612,12 @@ The **summary line is the verdict**, not the exit status: the script that runs h
 RELEASED `sync-core.sh` inside the worktree at the tag, which exits 0 after a per-repo
 failure (the fan-out relies on that) and may predate `--strict`; a matching `core.lock`
 line is no proof either, since it can be written before a later pin, commit or
-verification step fails. Every release prints `repos:  updated N   skipped N   failed N`,
-and `updated 1   skipped 0   failed 0` for the one target is the only outcome that counts.
+verification step fails. Every release since **v4.1.0** prints `repos:  updated N   skipped
+N   failed N`, and `updated 1   skipped 0   failed 0` for the one target is the only outcome
+that counts. v4.0.2 and older print a per-check count with no `repos:` prefix, which this
+verdict cannot judge (a successful sync would read as a failure), so an exact freeze older
+than v4.1.0 is out of scope for the recipe — and `new-os-repo.sh` refuses such a
+`CORE_BRANCH` before it writes anything.
 
 Three things matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
 and the pin must be the **peeled commit** — the release tags are annotated, so

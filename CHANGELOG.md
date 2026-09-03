@@ -108,7 +108,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   embedded anchored to the invocation directory, because the chain `cd`s into the Core
   checkout, where a relative `REPOS_ROOT` would make the sync skip the very repo the hint
   was written for. Both are fixture-driven in `test-core.sh` (a second run of the
-  materialize half, and a dry run of a relative, not-yet-existing target).
+  materialize half, and a dry run of a relative, not-yet-existing target). And because
+  that verdict reads the `repos:` footer, which exists since v4.1.0 (v4.0.2 and older
+  print a per-check count a successful single-target sync would fail against), the
+  scaffold now refuses a `CORE_BRANCH` naming an older release before it writes anything,
+  and the three recipes state the same floor.
 - **A greenfield OS repo no longer vendors a retired Core by default, and the
   first-vendor pin is now held to `core.version`'s major (#691 follow-up).**
   `scripts/new-os-repo.sh` defaulted `CORE_BRANCH` to `refs/tags/v5` — and its `--help`,

@@ -5805,6 +5805,26 @@ if have git; then
     fail "recovery: a dry-run relative target was embedded unanchored — $(cut -c1-240 <<<"$_rc_dry")"
   fi
   unset _rc_dry
+  # That verdict reads the released script's `repos:` footer, which exists since v4.1.0:
+  # an older exact freeze prints a per-CHECK count, so a successful sync would be reported
+  # as a failure AFTER vendoring and stamping the target. The scaffold refuses such a pin
+  # before writing anything (exit 2, target absent); the floor itself, a major alias at or
+  # above it, a newer freeze and a ref it cannot judge (a branch) all pass.
+  _rc_floor_bad=""
+  for _rc_pin in v3.9.0 refs/tags/v3 v4.0.2 refs/tags/v4.0.9; do
+    _rc_fo="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH="$_rc_pin" bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/old-pin" 2>&1)"; _rc_frc=$?
+    { ((_rc_frc == 2)) && grep -qF 'older than v4.1.0' <<<"$_rc_fo" && [[ ! -e "$SANDBOX/recovery/old-pin" ]]; } || _rc_floor_bad="$_rc_floor_bad $_rc_pin(rc=$_rc_frc,exists=$([[ -e "$SANDBOX/recovery/old-pin" ]] && echo yes || echo no))"
+    rm -rf "$SANDBOX/recovery/old-pin"
+  done
+  for _rc_pin in v4.1.0 refs/tags/v4 refs/tags/v4.10.0 v6.1.0 main; do
+    env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH="$_rc_pin" bash "$HERE/scripts/new-os-repo.sh" --dry-run --no-vendor Fixture "$SANDBOX/recovery/new-pin" >/dev/null 2>&1 || _rc_floor_bad="$_rc_floor_bad $_rc_pin(refused:$?)"
+  done
+  if [[ -z "$_rc_floor_bad" ]]; then
+    pass "recovery: a pin older than v4.1.0 (no repos: footer to judge) is refused before anything is written; the floor, a v4+ alias, a newer freeze and a branch pass"
+  else
+    fail "recovery: the footer floor is wrong for —$_rc_floor_bad"
+  fi
+  unset _rc_floor_bad _rc_pin _rc_fo _rc_frc
   # A Core checkout with NO origin and no CORE_REMOTE must not bake an empty remote into
   # the command: it renders `"${CORE_REMOTE:?…}"`, which fails loudly at paste time until
   # the reader exports the URL. Reproduced on a copy of the scaffold in an origin-less repo.

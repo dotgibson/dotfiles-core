@@ -24,7 +24,8 @@ _Repo status_ at the bottom).
    is captured under `|| true` so `set -e` cannot skip the cleanup, which runs only once
    the add succeeded; the RELEASED script runs in that worktree — it exits 0 after a per-repo
    failure and may predate `--strict` — so its summary line is the verdict: `updated 1
-   skipped 0   failed 0` for the one target, and nothing else counts)
+   skipped 0   failed 0` for the one target, and nothing else counts; that `repos:` footer
+   exists since v4.1.0, so an older exact freeze cannot be judged this way)
    — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
    § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no

@@ -55,7 +55,9 @@ bootstrap, and .gitignore.
 
 Env: CORE_REMOTE (default: this repo's origin)
      CORE_BRANCH (default: refs/tags/v6 — a RELEASED tag, never main; pin a specific
-                  vX.Y.Z to freeze the tree at a known version)
+                  vX.Y.Z to freeze the tree at a known version — v4.1.0 or newer: the
+                  recovery and register commands judge the released sync by its
+                  per-repo summary, which older releases do not print)
 EOF
 }
 
@@ -90,6 +92,35 @@ done
 }
 TARGET="${TARGET:-$(dirname "$HERE")/dotfiles-$OS}"
 os_lc="$(printf '%s' "$OS" | tr '[:upper:]' '[:lower:]')"
+
+# The recovery command and the register step judge the RELEASED sync-core.sh by its
+# per-repo footer (`repos:  updated 1   skipped 0   failed 0`), which is printed since
+# v4.1.0; v4.0.2 and older print a per-CHECK count with no `repos:` prefix, so under such
+# a pin a SUCCESSFUL sync would be reported as a failure — after it had vendored and
+# stamped the target. A pin that names an older release is refused here, before anything
+# is written, instead of at the one moment the reader is recovering. A ref that is not
+# version-shaped (a branch, a SHA) cannot be judged here and passes.
+_footer_floor="4.1.0"
+_pin="${CORE_BRANCH#refs/tags/}"
+_pin_re='^v([0-9]+)(\.([0-9]+)\.([0-9]+))?$'
+if [[ "$_pin" =~ $_pin_re ]]; then
+  IFS=. read -r _fl_M _fl_m _fl_p <<<"$_footer_floor"
+  _pin_M=$((10#${BASH_REMATCH[1]}))
+  if [[ -z "${BASH_REMATCH[2]}" ]]; then
+    # A major alias (v4) points at the newest release of that major, so only a major
+    # below the floor's can be older than the floor.
+    _pin_old=$((_pin_M < _fl_M))
+  else
+    _pin_m=$((10#${BASH_REMATCH[3]})) _pin_p=$((10#${BASH_REMATCH[4]}))
+    _pin_old=$((_pin_M < _fl_M || (_pin_M == _fl_M && (_pin_m < _fl_m || (_pin_m == _fl_m && _pin_p < _fl_p)))))
+  fi
+  if ((_pin_old)); then
+    fail "CORE_BRANCH=$CORE_BRANCH names a release older than v$_footer_floor, whose sync-core.sh prints no per-repo summary — the recovery and register commands could not judge it. Pin v$_footer_floor or newer."
+    exit 2
+  fi
+  unset _fl_M _fl_m _fl_p _pin_M _pin_m _pin_p _pin_old
+fi
+unset _footer_floor _pin _pin_re
 
 hdr "scaffold dotfiles-$OS"
 echo ":: target   = $TARGET"
