@@ -202,15 +202,26 @@ _osc52_sensitive_tmux() {
   esac
 
   name="clip-sensitive-$$"
+  # A signal in the instant between the two commands (Ctrl-C, a closed ssh session's HUP)
+  # must not strand the buffer: the traps delete it on the way out. $name is expanded NOW,
+  # deliberately — the handler must name this buffer even if the variable is gone.
+  # shellcheck disable=SC2064
+  trap "tmux delete-buffer -b '$name' 2>/dev/null; trap - EXIT; exit 1" INT TERM HUP
+  # shellcheck disable=SC2064
+  trap "tmux delete-buffer -b '$name' 2>/dev/null" EXIT
   if printf '%s' "$b64" | base64 -d 2>/dev/null | tmux load-buffer -w -b "$name" - 2>/dev/null; then
-    if ! tmux delete-buffer -b "$name" 2>/dev/null; then
-      echo "clip: copied, but could NOT delete the transient tmux buffer holding it — run: tmux delete-buffer -b $name" >&2
-      return 1
+    if tmux delete-buffer -b "$name" 2>/dev/null; then
+      trap - EXIT INT TERM HUP
+      echo "clip: could not pass the escape through tmux to the outer terminal (allow-passthrough off, or no tty), so the copy went through a tmux buffer (created and deleted at once; readable on the tmux socket for that instant — \`set -g allow-passthrough on\` avoids the buffer entirely)" >&2
+      return 0
     fi
-    echo "clip: tmux allow-passthrough is off, so the copy went through a tmux buffer (created and deleted at once; readable on the tmux socket for that instant — \`set -g allow-passthrough on\` routes around tmux entirely)" >&2
-    return 0
+    # The EXIT trap stays armed: one more attempt on the way out costs nothing.
+    echo "clip: copied, but could NOT delete the transient tmux buffer holding it — run: tmux delete-buffer -b $name" >&2
+    return 1
   fi
-  _osc52_no_backend "$tty"
+  trap - EXIT INT TERM HUP
+  echo "clip: tmux load-buffer failed — nothing copied" >&2
+  return 1
 }
 
 shopt -s nocasematch

@@ -71,9 +71,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   plain OSC 52 to the pane: when the pane's `allow-passthrough` is `on`/`all` it wraps the
   sequence in a DCS passthrough, which tmux hands to the outer terminal without parsing, so
   no buffer ever exists; otherwise it loads a **named** buffer with `-w` and deletes that
-  buffer in the same breath, and says so on stderr at the moment it matters (with the
-  `allow-passthrough on` line that closes the remaining instant). A transient buffer that
-  survives `delete-buffer` is exit 1 naming the buffer to delete, never a "sent". Outside
+  buffer in the same breath — a signal landing in that instant deletes it too, by trap — and
+  says so on stderr at the moment it matters (with the `allow-passthrough on` line that
+  closes the remaining instant). A transient buffer that survives `delete-buffer` is exit 1
+  naming the buffer to delete, never a "sent". Outside
   tmux the flag is a no-op on the wire, the real backends (clip.exe/pbcopy/wl-copy/xclip/xsel)
   ignore it, and the default path — nvim's provider, tmux copy-pipe, `pbcopy` — is
   byte-for-byte what it was; `scripts/test-core.sh` §C asserts each of those on the wire

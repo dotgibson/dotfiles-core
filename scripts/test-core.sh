@@ -450,7 +450,9 @@ fi
 # that answers `show-options … allow-passthrough` with a fixed value, captures
 # what load-buffer was fed, logs every call in order, and exits as told on delete-buffer.
 # Synchronous (no setsid — optoken runs in a pane that HAS a tty), so no race to wait out.
-_clip_tmux_stub() { # _clip_tmux_stub <allow-passthrough value> [delete-buffer exit code]
+# A third argument makes load-buffer SIGTERM its parent — clip — after taking the payload,
+# which is the "interrupted between the two commands" shape.
+_clip_tmux_stub() { # _clip_tmux_stub <allow-passthrough value> [delete-buffer exit code] [interrupt]
   _tmux_log="$CBIN/tmux.calls"
   rm -f "$_tmux_log" "$_tmux_log.payload"
   cat >"$CBIN/tmux" <<EOF
@@ -458,7 +460,7 @@ _clip_tmux_stub() { # _clip_tmux_stub <allow-passthrough value> [delete-buffer e
 printf '%s\n' "\$*" >>"$_tmux_log"
 case "\$1" in
   show-options) printf '%s\n' '$1' ;;
-  load-buffer) $(command -v cat) >"$_tmux_log.payload" ;;
+  load-buffer) $(command -v cat) >"$_tmux_log.payload"${3:+; kill -TERM \$PPID} ;;
   delete-buffer) exit ${2:-0} ;;
   *) exit 1 ;;
 esac
@@ -582,6 +584,21 @@ if [[ $? -ne 0 && "$_sens_err" == *"tmux delete-buffer -b clip-sensitive-"* ]]; 
   pass "clip --sensitive: a transient buffer that survives delete-buffer is exit 1, naming the buffer to delete"
 else
   fail "clip --sensitive: an undeletable transient buffer was not reported as a failure (got '$_sens_err')"
+fi
+
+# 6b. A signal in the instant between load-buffer and delete-buffer must not strand the
+#     buffer: the trap deletes it on the way out, and clip exits non-zero (no "sent").
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+_clip_tmux_stub off 0 interrupt
+export CLIP_TTY="$CBIN/tty-sens-int"
+printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" --sensitive >/dev/null 2>&1
+_sens_rc=$?
+if [[ "$_sens_rc" -ne 0 ]] && [[ "$(grep -c '^delete-buffer -b clip-sensitive-' "$_tmux_log" 2>/dev/null)" -eq 1 ]]; then
+  pass "clip --sensitive: SIGTERM between load-buffer and delete-buffer still deletes the buffer (trap) and exits non-zero"
+else
+  fail "clip --sensitive: an interrupted transient buffer was stranded or reported as success (rc=$_sens_rc, calls: $(tr '\n' ';' <"$_tmux_log" 2>/dev/null))"
 fi
 
 # 7. An unknown argument is refused (exit 2) before anything is read or written.
