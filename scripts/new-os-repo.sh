@@ -529,8 +529,13 @@ fi
 if grep -q 'would link' "$tmp/dry.out"; then ok "--dry-run printed its plan"; else bad "--dry-run printed no plan"; fi
 
 # ── 2. a real run links what it says ─────────────────────────────────────────
+# --links-only on BOTH real runs, deliberately: `make check` is defined as a hermetic
+# links run (core/VENDORING.md), and this suite is what `make check`, `make test` and CI
+# all reach. The starter bootstrap is links-only today, but the moment this repo adds
+# the provisioning it is expected to, a bare invocation here would install packages on
+# the runner — and would be testing provisioning idempotency, not link idempotency.
 mkdir -p "$tmp/home"
-if ! HOME="$tmp/home" ./bootstrap.sh >"$tmp/run1.out" 2>&1; then
+if ! HOME="$tmp/home" ./bootstrap.sh --links-only >"$tmp/run1.out" 2>&1; then
   bad "bootstrap.sh exited non-zero: $(cat "$tmp/run1.out")"
 fi
 CFG="$tmp/home/.config"
@@ -570,7 +575,7 @@ if [[ -f "$REPO/core/mise/config.toml" ]]; then
 fi
 
 # ── 3. the second run is silent ──────────────────────────────────────────────
-if ! HOME="$tmp/home" ./bootstrap.sh >"$tmp/run2.out" 2>&1; then
+if ! HOME="$tmp/home" ./bootstrap.sh --links-only >"$tmp/run2.out" 2>&1; then
   bad "second bootstrap.sh run exited non-zero: $(cat "$tmp/run2.out")"
 fi
 if grep -Eq '^(linked|backed up|seeded) ' "$tmp/run2.out"; then
