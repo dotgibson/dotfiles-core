@@ -22,12 +22,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   repo was **missing** across its whole row of the vocabulary register the day it joined
   `scripts/os-repos.txt`, and nothing inside it would ever notice. It now writes, beside the
   entry files and the capability declaration it already stamps for the same reason: a
-  `Makefile` defining all seven canonical verbs (`lint` reproduces the reusable gate leg
-  for leg — shellcheck, `bash -n`, `zsh -n`, RETURN-trap discipline, the capability
+  `Makefile` defining all seven canonical verbs (`lint` runs the reusable gate's blocking
+  legs — shellcheck, `bash -n`, `zsh -n`, RETURN-trap discipline, the capability
   schema, markdownlint, actionlint, gitleaks and the Makefile-gate check — reading the
   vendored `core/scripts/lib/common.sh` scanners, Core's `gitleaks.toml` and a scaffolded
   `.markdownlint.jsonc` carrying Core's rule choices, since the gate lints against the
-  caller's own; a leg whose tool is absent says so and skips, never silently; `check` =
+  caller's own; every tool leg, shellcheck included, says so and skips when its tool is
+  absent, never silently, and the capability leg skips when the vendored validator
+  predates v4.19.0, as the gate's own leg does; the gate — pinned tool versions, plus its
+  advisory legs — stays the verdict; `check` =
   lint + the hermetic links run; `dry-run`;
   `core-verify` in Arch's `core-integrity.sh --self` shape; `packages-check` as the
   contract's stub until the repo has a package list; `test`), with every guard on the same

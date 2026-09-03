@@ -5514,13 +5514,24 @@ if have git && have zsh; then
       fi
       if (cd "$NOR" && NOR_SHIM_RC=1 PATH="$_nor_shim:$PATH" make markdownlint) >/dev/null 2>&1; then _nor_legs="$_nor_legs markdownlint-finding-ignored"; fi
       if (cd "$NOR" && NOR_SHIM_RC=1 PATH="$_nor_shim:$PATH" make secrets) >/dev/null 2>&1; then _nor_legs="$_nor_legs secrets-finding-ignored"; fi
-      if ! (cd "$NOR" && env -i PATH="$_nor_min" HOME="$HOME" make markdownlint actionlint secrets) >"$SANDBOX/nor-legs-absent.out" 2>&1; then
+      if ! (cd "$NOR" && env -i PATH="$_nor_min" HOME="$HOME" make shellcheck markdownlint actionlint secrets) >"$SANDBOX/nor-legs-absent.out" 2>&1; then
         _nor_legs="$_nor_legs absent-tool-red($(tail -1 "$SANDBOX/nor-legs-absent.out"))"
-      elif [[ "$(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-absent.out")" != 3 ]]; then
-        _nor_legs="$_nor_legs absent-tool-silent"
+      elif [[ "$(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-absent.out")" != 4 ]]; then
+        _nor_legs="$_nor_legs absent-tool-silent($(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-absent.out")/4)"
+      fi
+      # The capability leg: a vendored Core older than v4.19.0 has no validator, and the
+      # gate's leg skips there — so must this one, saying so; with the validator vendored
+      # it must run and pass on the Fedora-verb stub the scaffold writes.
+      if ! (cd "$NOR" && make capabilities) >"$SANDBOX/nor-legs-cap.out" 2>&1 || ! grep -q 'not vendored (Core older than v4.19.0) — skipped' "$SANDBOX/nor-legs-cap.out"; then
+        _nor_legs="$_nor_legs capabilities-without-validator($(tail -1 "$SANDBOX/nor-legs-cap.out"))"
+      fi
+      cp "$HERE/scripts/check-capabilities.sh" "$NOR/core/scripts/" && chmod +x "$NOR/core/scripts/check-capabilities.sh"
+      mkdir -p "$NOR/core/examples" && cp "$HERE/examples/os.capabilities.example" "$NOR/core/examples/" 2>/dev/null
+      if ! (cd "$NOR" && make capabilities) >"$SANDBOX/nor-legs-cap2.out" 2>&1 || grep -q 'skipped' "$SANDBOX/nor-legs-cap2.out"; then
+        _nor_legs="$_nor_legs capabilities-with-validator($(tail -1 "$SANDBOX/nor-legs-cap2.out"))"
       fi
       if [[ -z "$_nor_legs" ]]; then
-        pass "new-os-repo: every lint leg runs its tool on the right files (markdown minus core/, workflows, Core's gitleaks policy), fails on a finding, and says so when the tool is absent; the two scanner legs run against the vendored common.sh"
+        pass "new-os-repo: every lint leg runs its tool on the right files (markdown minus core/, workflows, Core's gitleaks policy), fails on a finding, and says so when the tool is absent (shellcheck included); the two scanner legs run against the vendored common.sh; the capability leg skips without the validator and runs with it"
       else
         fail "new-os-repo: the lint legs —$_nor_legs"
       fi
