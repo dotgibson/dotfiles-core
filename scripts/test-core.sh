@@ -16968,6 +16968,11 @@ _fv_floor "a function keyword form, called" 'ok' '_fv_suite dotfiles-Alpine; _fv
 _fv_floor "a bare { } group runs where it stands" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "{ make test; }"'
 _fv_floor "a subshell runs where it stands" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "( make test )"'
 _fv_floor "a function defined but only mentioned in an echo" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; echo suite"'
+# A HEREDOC PAYLOAD IS DATA: `cat <<EOF` … `EOF` writes its lines, never runs them.
+_fv_floor "make test inside a quoted heredoc payload" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          cat <<'"'"'EOF'"'"' > notes.txt\n          make test\n          EOF\n          make lint\n"'
+_fv_floor "make test inside an unquoted heredoc payload" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          tee notes.txt <<EOF\n          make test\n          EOF\n"'
+_fv_floor "make test after the heredoc closes" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          cat <<EOF > notes.txt\n          hello\n          EOF\n          make test\n"'
+_fv_floor "a herestring is not a heredoc" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          grep -q x <<<\"y\" || true\n          make test\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

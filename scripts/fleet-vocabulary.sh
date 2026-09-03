@@ -407,7 +407,8 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     trailing backslash continues onto the next — `make \` over `test` is `make test`,
   #     and a "…" string continued across lines stays one string; a folded block (`>`) is
   #     ONE line per paragraph, because YAML joins its lines with a space — `echo` over
-  #     `make test` runs `echo make test`.
+  #     `make test` runs `echo make test`. A heredoc payload inside a literal block is
+  #     data and is dropped up to its delimiter line.
   #   * a step with a statically false `if:` never runs, nor does any step of a job with
   #     one; a runtime condition may.
   #   * a step runs in its EFFECTIVE WORKING DIRECTORY: its own `working-directory:`, else
@@ -441,12 +442,20 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         match($0, /^[ \t]*/)
         if (RLENGTH > bind) {
           line = trim($0)
+          # A HEREDOC PAYLOAD is data, not commands: from a `<<DELIM` / `<<'DELIM'` /
+          # `<<-DELIM` (not `<<<`, a herestring) to the line that is exactly DELIM, the
+          # lines are written somewhere, never run. The command carrying the operator is
+          # kept; the payload is dropped.
+          if (hd != "") { if (line == hd) hd = ""; next }
+          if (!fold && match(line, /(^|[^<])<<-?[ \t]*[\047"]?[A-Za-z_][A-Za-z0-9_]*/)) {
+            hd = substr(line, RSTART, RLENGTH); sub(/^.*<<-?[ \t]*[\047"]?/, "", hd)
+          }
           if (fold) { acc = (acc == "" ? line : acc " " line); next }
           if (line ~ /\\$/) { acc = acc substr(line, 1, length(line) - 1) " "; next }
           acc = acc line; flushblock(); next
         }
         flushblock()
-        inblock = 0
+        inblock = 0; hd = ""
       }
       if ($0 ~ /^[ \t]*$/ || $0 ~ /^[ \t]*#/) next
       match($0, /^[ \t]*/); ind = RLENGTH
