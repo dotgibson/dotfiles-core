@@ -110,7 +110,15 @@ _targets() { # _targets <Makefile> → one defined target name per line
   # A rule line is `targets: prereqs` (or `::`) at column 0 — not a recipe (tab), not a
   # comment, not a variable assignment (`=` before the colon), not `.PHONY:`. Several
   # targets may share one rule (`a b: …`), so the left side is split on whitespace.
+  # A rule inside `ifeq`/`ifdef`…`endif` or a `define`…`endef` body is NOT counted: make
+  # may or may not define it, and this scanner does not evaluate make — so it says
+  # "missing" rather than guess. No fleet Makefile uses either construct around a rule.
   awk '
+    /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
+    /^endif([ \t]|$)/ { if (cond) cond--; next }
+    /^define([ \t]|$)/ { indef = 1; next }
+    /^endef([ \t]|$)/ { indef = 0; next }
+    cond || indef { next }
     /^[^\t#. ][^:=]*::?([^=]|$)/ {
       lhs = $0; sub(/::?.*/, "", lhs)
       n = split(lhs, t, /[ \t]+/)
@@ -129,14 +137,15 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
 # WHAT COUNTS AS RUNNING THE SUITE, in one simple shell command (the text is split at
 # unquoted `;`/`&&`/`||`/`|` first — AWK_SHELL below — so command position is simply
 # the start): a test path as the command (`./test/smoke.sh`, `tests/run`), or an
-# interpreter in command position handed one (`bash -e test/smoke.sh`) — optionally under
-# sudo or env, and after leading variable assignments (`CI=1 make test` is how a great
-# many steps are written). `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
+# interpreter in command position handed one (`bash -e test/smoke.sh`, and through the
+# options that take an operand of their own: `bash -o pipefail test/smoke.sh`, `python3
+# -m pytest tests/`) — optionally under sudo or env, and after leading variable
+# assignments (`CI=1 make test` is how a great many steps are written). `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
 # the path and run nothing, so they do not count. `DIRS` is replaced per repo with the
 # directory that is actually populated (_run_re), so a populated test/ is not credited by a
 # step running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
+RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
 # A NO-EXECUTE MODE PARSES, PRINTS OR ASKS AND RUNS NOTHING. For make: dry-run (`-n` in any
 # short cluster, --dry-run/--just-print/--recon), question (`-q`, --question), and the
@@ -210,7 +219,7 @@ AWK_SHELL='
       if (x) { c[i] = ""; continue }
       if (d == "") continue
       if (t ~ /^[.][/]/) { sub(/^[.][/]/, "./" d "/", t); c[i] = t; continue }
-      if (match(t, /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[ \t]+(-[^ \t]+[ \t]+)*/)) {
+      if (match(t, /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[ \t]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[ \t]+[^ \t]+[ \t]+|-[^ \t]+[ \t]+)*/)) {
         m = RLENGTH
         if (substr(t, m + 1, 1) !~ /[-\/]/ && substr(t, m + 1) != "") c[i] = substr(t, 1, m) d "/" substr(t, m + 1)
       }
@@ -257,6 +266,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     and a "…" string continued across lines stays one string; a folded block (`>`) is
   #     ONE line per paragraph, because YAML joins its lines with a space — `echo` over
   #     `make test` runs `echo make test`.
+  #   * a step with a statically false `if:` never runs; one with any other condition may.
   #   * a step runs in its EFFECTIVE WORKING DIRECTORY: its own `working-directory:`, else
   #     the job's `defaults.run.working-directory`, else the workflow's. A step is held
   #     until it ends (its keys may come in any order) and then every logical line is
@@ -269,8 +279,9 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
     function flushstep(   i, wd) {
       if (inblock) { flushblock(); inblock = 0 }
       wd = (stepwd != "" ? stepwd : jobwd)
-      for (i = 1; i <= nheld; i++) emit((wd != "" && wd !~ /^[.][\/]?$/) ? "cd " wd " && " held[i] : held[i])
-      nheld = 0; stepwd = ""
+      # A step statically disabled (`if: false`, `if: ${{ false }}`) never runs anything.
+      if (!stepoff) for (i = 1; i <= nheld; i++) emit((wd != "" && wd !~ /^[.][\/]?$/) ? "cd " wd " && " held[i] : held[i])
+      nheld = 0; stepwd = ""; stepoff = 0
     }
     function keyval(s) { sub(/^[^:]*:[ \t]*/, "", s); return unquote_scalar(stripcomment(s)) }
     {
@@ -302,6 +313,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       if ($0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); ind = RLENGTH; if (ind <= sind) { flushstep(); insteps = 0; if (injobs && ind == jobind) jobwd = wfwd; if ($0 ~ /^[ \t]*working-directory:/) jobwd = keyval($0); next } }
       if (match($0, /^[ \t]*-[ \t]+/)) { ind = RLENGTH; flushstep(); keycol = ind }
       if ($0 ~ /^[ \t]*(-[ \t]+)?working-directory:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol) stepwd = keyval($0) }
+      if ($0 ~ /^[ \t]*(-[ \t]+)?if:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol && keyval($0) ~ /^(\$\{\{[ \t]*)?false([ \t]*\}\})?$/) stepoff = 1 }
       if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
         rest = substr($0, RSTART + RLENGTH)
         match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
@@ -325,7 +337,8 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   # recipe (`test: ; ./test/smoke.sh`) is the text after the rule's `;`. LOGICAL lines: a
   # trailing backslash continues a rule (`test: \` over `suite-run`) or a recipe onto the
   # next physical line, exactly as make reads it. Otherwise the same lexer as _targets:
-  # rules at column 0, recipes on tab lines, comments and variable assignments ignored.
+  # rules at column 0, recipes on tab lines, comments and variable assignments ignored,
+  # and nothing inside a conditional or a define body counted (see _targets).
   awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SHELL"'
     function runs(line,   n, c, i) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
@@ -334,6 +347,11 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
       return 0
     }
     function handle(l,   lhs, rhs, inl, n, t, i) {
+      if (l ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) { cond++; ncur = 0; return }
+      if (l ~ /^endif([ \t]|$)/) { if (cond) cond--; ncur = 0; return }
+      if (l ~ /^define([ \t]|$)/) { indef = 1; ncur = 0; return }
+      if (l ~ /^endef([ \t]|$)/) { indef = 0; ncur = 0; return }
+      if (cond || indef) return
       if (l ~ /^\t/) { if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1; return }
       if (l ~ /^[^\t#. ][^:=]*::?([^=]|$)/) {
         lhs = l; sub(/::?.*/, "", lhs)
@@ -368,6 +386,13 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   ' "$1"
 }
 
+_phony_targets() { # _phony_targets <Makefile> → every name declared .PHONY, one per line
+  awk '
+    { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
+    l ~ /^[.]PHONY[ \t]*:/ { sub(/^[.]PHONY[ \t]*:/, "", l); sub(/#.*/, "", l); n = split(l, t, /[ \t]+/); for (i = 1; i <= n; i++) if (t[i] != "") print t[i] }
+  ' "$1"
+}
+
 _ere_escape() { # _ere_escape <string> → the string as a literal inside a POSIX ERE
   # The COMPLETE ERE metacharacter set, so a legal target such as `test+coverage` or
   # `t(1)` matches itself instead of rewriting — or breaking — the pattern it lands in.
@@ -375,7 +400,7 @@ _ere_escape() { # _ere_escape <string> → the string as a literal inside a POSI
 }
 
 _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
-  local d="$1" dirs="" cand="" seen=0 wf alt="" tgt cmds hits re
+  local d="$1" dirs="" cand="" seen=0 wf alt="" tgt cmds hits re phony
   # Either directory name satisfies the floor, and only a POPULATED one is the suite: a
   # stale empty test/ beside a real, CI-run tests/ must not read as `empty`, and a step
   # that runs a nonexistent tests/ must not credit a populated test/ it never touches.
@@ -392,10 +417,17 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   # invokes `make` on a target whose recipe does. `test` earns its place like any other —
   # a `test:` whose recipe is `@true` runs nothing, and the verb column, not the floor,
   # is where "the canonical name exists" is judged.
+  # A suite target whose name is ALSO A PATH in the repo — `test:` beside the `test/`
+  # directory it runs — must be declared .PHONY, or `make test` says "is up to date" and
+  # runs nothing. That is the single most likely way a repo adopting this floor gets a
+  # green cell for a suite that never executes, so the target is not credited without it.
   alt=""
   if [[ -f "$d/Makefile" ]]; then
+    phony="$(_phony_targets <(_makefile_text "$d"))"
     while IFS= read -r tgt; do
-      [[ -n "$tgt" ]] && alt="${alt:+$alt|}$(_ere_escape "$tgt")"
+      [[ -n "$tgt" ]] || continue
+      if [[ -e "$d/$tgt" ]] && ! grep -qxF -- "$tgt" <<<"$phony"; then continue; fi
+      alt="${alt:+$alt|}$(_ere_escape "$tgt")"
     done < <(_suite_targets <(_makefile_text "$d") "$re")
   fi
   # No suite target at all: the make arm must match nothing, not the empty string.

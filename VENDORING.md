@@ -491,7 +491,9 @@ make:packages-check none no OS package list to resolve here
 **The test floor** rides in the register's last column and has no waiver line: a `test/`
 (or `tests/`) directory with something in it, run from a `run:` step in a top-level
 `.github/workflows/*.yml` or `*.yaml` — `make test`, the directory by path, or any `make` target whose
-recipe runs it (a mention in a path filter or a comment is not a run). Five of nine repos had no repo-owned tests at all,
+recipe runs it (a mention in a path filter or a comment is not a run). Declare a
+`test` target `.PHONY`: beside the `test/` directory it runs, an undeclared one is "up to
+date" and runs nothing, and the register does not credit it. Five of nine repos had no repo-owned tests at all,
 including `dotfiles-Fedora` — the template every Linux repo is stamped from
 (`PORTING-MATRIX.md`'s per-repo recipe starts with `cp -r dotfiles-Fedora`), so the floor
 is worth meeting there before it is copied again. It is deliberately not Windows' 85%

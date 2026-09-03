@@ -16593,9 +16593,10 @@ _fv_wf() { # _fv_wf <repo> <relative-path-under-.github/workflows> <printf-body>
 _fv_suite() { # _fv_suite <repo> [dir=test]
   mkdir -p "$_fv_root/$1/${2:-test}"; printf '#!/bin/sh\nexit 0\n' >"$_fv_root/$1/${2:-test}/smoke.sh"
 }
-# Every canonical verb, as a rule at column 0. `check` shares a rule with a prerequisite
-# and `bootstrap-dry` is an alias — both shapes the fleet actually uses.
-_fv_all='help:\n\t@true\nlint:\n\t@true\ncheck: lint\n\t@true\ndry-run:\n\t@true\nbootstrap-dry: dry-run\npackages-check:\n\t@true\ncore-verify:\n\t@true\ntest:\n\t@./test/smoke.sh\n'
+# Every canonical verb, as a rule at column 0, declared .PHONY as a real Makefile must
+# (`test:` beside test/ is otherwise "up to date"). `check` shares a rule with a
+# prerequisite and `bootstrap-dry` is an alias — both shapes the fleet actually uses.
+_fv_all='.PHONY: help lint check dry-run packages-check core-verify test\nhelp:\n\t@true\nlint:\n\t@true\ncheck: lint\n\t@true\ndry-run:\n\t@true\nbootstrap-dry: dry-run\npackages-check:\n\t@true\ncore-verify:\n\t@true\ntest:\n\t@./test/smoke.sh\n'
 
 _fv_reset
 if out="$(_fv_run --check)"; then
@@ -16669,6 +16670,17 @@ if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"
   pass "vocab: \`make:<verb> none\` fills every cell of a repo with no Makefile"
 else
   fail "vocab: declarations were not honoured without a Makefile: $out"
+fi
+
+# A RULE THE SCANNER CANNOT PROVE make defines — inside a conditional or a define body —
+# is not counted: the register says "missing" rather than guess.
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\ndry-run:\\n\\t@true\\nendif\\ndefine tmpl\\npackages-check:\\n\\t@true\\nendef\\n"
+_fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+row="$(_fv_run | grep -F '`Fedora`')"
+if [[ "$row" == '| `Fedora` | ok | ok | ok | **missing** | ok | ok | ok | ok |' ]]; then
+  pass "vocab: a verb defined only inside a conditional is missing; a define body defines nothing"
+else
+  fail "vocab: conditional/define handling wrong: $row"
 fi
 
 # `make <verb>` RESOLVING is the promise, not where the rule sits: a verb defined in an
@@ -16822,6 +16834,15 @@ _fv_floor "a second job does not inherit the first job default" 'ok' '_fv_suite 
 _fv_floor "cd tools && make test is another Makefile" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd tools && make test"'
 # A BLANK OR COMMENT LINE between a rule and its recipe is allowed by make.
 _fv_floor "a comment and a blank line between the rule and its recipe" 'ok' '_fv_suite dotfiles-Alpine; printf "suite:\n# why\n\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite"'
+# OPTIONS THAT TAKE AN OPERAND, statically disabled steps, and the .PHONY gotcha.
+_fv_floor "bash -o pipefail test/smoke.sh" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash -o pipefail test/smoke.sh"'
+_fv_floor "python3 -m pytest tests/" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m pytest tests/"'
+_fv_floor "a step with if: false" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - if: false\n        run: make test\n"'
+_fv_floor "a step with if: \${{ false }} after its run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: make test\n        if: \${{ false }}\n"'
+_fv_floor "a step with a runtime if: condition still counts" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - if: github.event_name == '"'"'push'"'"'\n        run: make test\n"'
+_fv_floor "test: beside test/ without .PHONY is up to date, not a run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}"; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor ".PHONY declared after the rule still counts" 'ok' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}.PHONY: test\\n"; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor "a suite target named like no path needs no .PHONY" 'ok' '_fv_suite dotfiles-Alpine; printf "suite-run:\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite-run"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
