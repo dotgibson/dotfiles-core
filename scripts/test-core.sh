@@ -5412,13 +5412,16 @@ if have git && have zsh; then
         grep -q "^  ok .*$_nor_l" "$SANDBOX/nor-suite-core.out" || _nor_core_ok=0
       done
       _nor_core_n="$(grep -c '^  ok .* -> core/' "$SANDBOX/nor-suite-core.out")"
-      _nor_zsh_n="$(find "$HERE/zsh" -maxdepth 1 -name '*.zsh' | wc -l | tr -d ' ')"
+      # A bash glob, not `find -maxdepth` (GNU; this runs on the macOS lane too).
+      _nor_zsh_files=("$HERE"/zsh/*.zsh)
+      _nor_zsh_n=${#_nor_zsh_files[@]}
+      [[ -e "${_nor_zsh_files[0]}" ]] || _nor_zsh_n=0
       if ((_nor_core_ok)) && ((_nor_core_n >= _nor_zsh_n + 5)); then
         pass "new-os-repo: against a Core-seeded core/ the suite asserts every Core link ($_nor_core_n Core links: $_nor_zsh_n zsh modules + tmux ×2 + starship + nvim + git) and mise-as-copy"
       else
         fail "new-os-repo: the suite's Core-provided branches did not all run against a seeded core/ ($_nor_core_n Core links asserted, want ≥ $((_nor_zsh_n + 5)); named-link coverage ok=$_nor_core_ok)"
       fi
-      unset _nor_core_ok _nor_core_n _nor_zsh_n _nor_l
+      unset _nor_core_ok _nor_core_n _nor_zsh_n _nor_zsh_files _nor_l
     else
       fail "new-os-repo: the scaffolded suite fails against a Core-seeded core/ — $(grep FAIL "$SANDBOX/nor-suite-core.out" | head -3 | tr '\n' ' ')"
     fi
@@ -5452,12 +5455,17 @@ if have git && have zsh; then
     # ...and on one that REWRITES a regular file in place THROUGH A REDIRECTION — the one
     # mutation no wrapped command performs and an inode survives. That is what the
     # snapshot's per-file checksum is for, and this proves it fires on its own: the
-    # rewrite appends fresh bytes to the seeded mise config via `>>`, invoking no rm/ln/
-    # mv/cp/mkdir, so only the checksum can see it.
+    # rewrite appends one byte to the seeded mise config via `>>`, invoking no rm/ln/mv/
+    # cp/mkdir, so only the checksum can see it. Inserted BEFORE the seed and guarded on
+    # the file existing, so run one still seeds a faithful copy (the suite compares the
+    # copy's bytes with the seed) and only run two mutates. The line is inserted with awk,
+    # not `sed … \n`, and the byte is fixed, not `date +%N`: BSD sed does not expand \n in
+    # a replacement and macOS date has no %N, and this runs on the macOS lane too.
     _nor_brk="$SANDBOX/newosrepo-rewrite"
     rm -rf "$_nor_brk"
     cp -r "$NOR" "$_nor_brk"
-    sed -i.bak -e 's|^if ((DRY)); then echo "dry run|[[ -f "$CFG/mise/config.toml" ]] \&\& date +%N >>"$CFG/mise/config.toml"\nif ((DRY)); then echo "dry run|' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && printf x >>\"$CFG/mise/config.toml\"" }' \
+      "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-rewrite.out" 2>&1; then
       fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites the mise seed in place on every run — the checksum witness does not fire"
     elif grep -q 'changed the tree' "$SANDBOX/nor-rewrite.out"; then

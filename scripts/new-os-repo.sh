@@ -527,7 +527,7 @@ fi
 if [[ -z "$(ls -A "$tmp/dry")" ]]; then
   ok "--dry-run wrote nothing"
 else
-  bad "--dry-run wrote into HOME: $(find "$tmp/dry" -mindepth 1 | head -5 | tr '\n' ' ')"
+  bad "--dry-run wrote into HOME: $(ls -A "$tmp/dry" | head -5 | tr '\n' ' ')"
 fi
 if grep -q 'would link' "$tmp/dry.out"; then ok "--dry-run printed its plan"; else bad "--dry-run printed no plan"; fi
 
@@ -570,10 +570,12 @@ for pair in "core/starship/starship.toml:$CFG/starship.toml" "core/tmux/tmux.con
   check_link "$dest" "$src"
 done
 if [[ -f "$REPO/core/mise/config.toml" ]]; then
-  if [[ -f "$CFG/mise/config.toml" && ! -L "$CFG/mise/config.toml" ]]; then
-    ok "mise config is seeded as a COPY (a link would write \`mise use -g\` into core/)"
+  # A regular file is not enough — an empty or stale one would pass as "seeded". The
+  # copy must carry the seed's bytes, so `cmp` against the Core source.
+  if [[ -f "$CFG/mise/config.toml" && ! -L "$CFG/mise/config.toml" ]] && cmp -s "$REPO/core/mise/config.toml" "$CFG/mise/config.toml"; then
+    ok "mise config is seeded as a COPY of core/mise/config.toml (a link would write \`mise use -g\` into core/)"
   else
-    bad "mise config is missing or is a symlink into the vendored tree"
+    bad "mise config is missing, is a symlink into the vendored tree, or does not match the seed's bytes"
   fi
 fi
 
@@ -586,10 +588,12 @@ fi
 #   · The TREE. Every entry under HOME — inode, kind, link target, and for a regular file
 #     its bytes — must be identical before and after. This catches what no wrapped command
 #     performs: a file rewritten through a shell redirection keeps its inode but not its
-#     checksum. `ls -id`, `readlink` and POSIX `cksum` are what GNU and BSD share.
+#     checksum. `ls -id`, `readlink` and POSIX `cksum` are what GNU and BSD share; no
+#     `-mindepth` (GNU) — the root row is dropped by name instead.
 # Output prefixes are the third, weakest claim, kept only as a message.
 snapshot() { # snapshot <dir> → one line per entry: inode kind path [-> target | cksum]
-  find "$1" -mindepth 1 -print | LC_ALL=C sort | while IFS= read -r p; do
+  find "$1" -print | LC_ALL=C sort | while IFS= read -r p; do
+    [[ "$p" == "$1" ]] && continue
     # shellcheck disable=SC2012  # the paths are ours (no odd names), and `find -printf` is GNU-only
     ino="$(ls -id -- "$p" | awk '{print $1}')"
     if [[ -L "$p" ]]; then printf '%s L %s -> %s\n' "$ino" "$p" "$(readlink "$p")"
