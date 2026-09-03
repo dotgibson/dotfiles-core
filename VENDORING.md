@@ -494,7 +494,9 @@ make:packages-check none no OS package list to resolve here
 `.github/workflows/*.yml` or `*.yaml` — `make test`, the directory by path, or any `make` target whose
 recipe runs it (a mention in a path filter or a comment is not a run). Declare a
 `test` target `.PHONY`: beside the `test/` directory it runs, an undeclared one is "up to
-date" and runs nothing, and the register does not credit it. Five of nine repos had no repo-owned tests at all,
+date" and runs nothing, and the register does not credit it. And `make test` must actually
+run the suite: a `test:` whose recipe is `@true` renders as **no-op** in the verb column
+even when CI runs the suite by path. Five of nine repos had no repo-owned tests at all,
 including `dotfiles-Fedora` — the template every Linux repo is stamped from
 (`PORTING-MATRIX.md`'s per-repo recipe starts with `cp -r dotfiles-Fedora`), so the floor
 is worth meeting there before it is copied again. It is deliberately not Windows' 85%

@@ -1215,10 +1215,14 @@ else
     skip_env "coverage register (fleet list would not load — cannot enumerate the fleet)"
   elif ((_fc_rc == 0)); then
     pass "coverage register: $_fc_out"
-  else
-    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f.
+  elif ((_fc_rc == 1)); then
+    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f. Exit 1 is the reporter's
+    # verdict; anything else is the reporter itself failing, which is red below (#846).
     ((${CORE_JSON:-0})) || printf '%s\n' "$_fc_out" | sed 's/^/  /'
     pass "coverage register: undeclared gate x repo cell(s) — advisory; each repo declares in .github/core-gates.txt (VENDORING.md has the contract)"
+  else
+    fail "coverage register: scripts/fleet-coverage.sh exited $_fc_rc — the reporter is broken, not the fleet"
+    fail_detail "$_fc_out"
   fi
   unset _fc_out _fc_rc
 fi
@@ -1249,10 +1253,14 @@ else
     skip_env "vocabulary register (fleet or vocabulary list would not load — cannot enumerate)"
   elif ((_fv_rc == 0)); then
     pass "vocabulary register: $_fv_out"
-  else
-    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f.
+  elif ((_fv_rc == 1)); then
+    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f. Exit 1 is the reporter's
+    # verdict; anything else is the reporter itself failing, which is red below.
     ((${CORE_JSON:-0})) || printf '%s\n' "$_fv_out" | sed 's/^/  /'
     pass "vocabulary register: missing verb(s) or repo(s) under the test floor — advisory; scripts/make-vocabulary.txt is the contract (VENDORING.md has the alias recipe)"
+  else
+    fail "vocabulary register: scripts/fleet-vocabulary.sh exited $_fv_rc — the reporter is broken, not the fleet"
+    fail_detail "$_fv_out"
   fi
   unset _fv_out _fv_rc
 fi

@@ -82,31 +82,38 @@ load_os_repos || {
 }
 REPOS=("${CORE_OS_REPOS[@]}")
 
-_makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the Makefile plus its includes
+_makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the Makefile with its includes inlined
   # The register promises that `make <verb>` RESOLVES, not that the rule sits in the root
   # file, so `include`/`-include`/`sinclude` lines are followed — lexically, relative to the
   # repo root as make itself resolves them, to a bounded depth, and only when the path
   # carries no `$(…)` (a variable would need make's evaluation, which this deliberately
   # does not run in a sibling checkout); a wildcard include is globbed from the root as
-  # make globs it. A missing optional include is simply absent.
+  # make globs it; an include inside a conditional or a define body is not followed, by
+  # the same policy that leaves rules there uncounted. The included text is spliced IN
+  # PLACE, where make reads it, so a later rule for the same target overrides an earlier
+  # one in file order, includes and all. Backslash-continued lines are joined first, so
+  # `include \` over `mk/verbs.mk` is one directive.
+  #
   # A MANDATORY include that is missing (`include x.mk`, no such file) aborts make before
   # any rule is read, so `make <verb>` resolves NOTHING: this returns 1 and the caller
-  # discards the text. `-include`/`sinclude` tolerate absence, as make does. A path
-  # carrying `$(…)` is unevaluable and is taken on trust either way.
-  local d="$1" f="${2:-Makefile}" depth="${3:-0}" inc m g kind found
+  # discards the text. `-include`/`sinclude` tolerate absence, as make does.
+  local d="$1" f="${2:-Makefile}" depth="${3:-0}" line kind inc m g found
   [[ -f "$d/$f" ]] || return 0
-  cat "$d/$f"
-  ((depth < 4)) || return 0
-  while read -r kind inc; do   # default IFS: `kind` is the directive, `inc` the path
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" != '@@INCLUDE '* ]]; then
+      printf '%s\n' "$line"
+      continue
+    fi
+    ((depth < 4)) || continue
+    kind="${line#@@INCLUDE }"; inc="${kind#* }"; kind="${kind%% *}"
     [[ -n "$inc" && "$inc" != *'$'* ]] || continue
-    # `include mk/*.mk` is expanded by make; expand it here the same way, from the root.
     if [[ "$inc" == *[\*\?\[]* ]]; then
       found=0
+      # shellcheck disable=SC2086  # $inc IS the glob: a make include operand is word-split and expanded, as make does
       while IFS= read -r m; do
         [[ -n "$m" ]] || continue
         found=1
         _makefile_text "$d" "$m" $((depth + 1)) || return 1
-      # shellcheck disable=SC2086  # $inc IS the glob: a make include operand is word-split and expanded, as make does
       done < <(cd "$d" && for g in $inc; do [[ -f "$g" ]] && printf '%s\n' "$g"; done)
       [[ "$kind" == include && "$found" == 0 ]] && return 1
     elif [[ -f "$d/$inc" ]]; then
@@ -115,14 +122,19 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
       return 1
     fi
   done < <(awk '
-    # A trailing `# reason` is a comment, not a path; a directive may be space-indented.
-    { sub(/#.*/, ""); sub(/^[ ]+/, "") }
-    /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
-    /^endif([ \t]|$)/ { if (cond) cond--; next }
-    /^define([ \t]|$)/ { indef = 1; next }
-    /^endef([ \t]|$)/ { indef = 0; next }
-    cond || indef { next }
-    /^-?s?include[ \t]/ { for (i = 2; i <= NF; i++) print $1, $i }
+    # Logical lines; every line is passed through, and an include directive outside a
+    # conditional or define body becomes one `@@INCLUDE <kind> <path>` marker per operand
+    # (comment stripped, leading spaces allowed), for the shell above to splice.
+    { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
+    { t = l; sub(/#.*/, "", t); sub(/^[ ]+/, "", t) }
+    t ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; print l; next }
+    t ~ /^endif([ \t]|$)/ { if (cond) cond--; print l; next }
+    t ~ /^define([ \t]|$)/ { indef = 1; print l; next }
+    t ~ /^endef([ \t]|$)/ { indef = 0; print l; next }
+    cond || indef { print l; next }
+    t ~ /^-?s?include[ \t]/ { n = split(t, w, /[ \t]+/); for (i = 2; i <= n; i++) if (w[i] != "") print "@@INCLUDE " w[1] " " w[i]; next }
+    { print l }
+    END { if (buf != "") print buf }
   ' "$d/$f")
   return 0
 }
@@ -188,10 +200,12 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternat
 # operands that happen to contain `t`/`n`/`h`, and make runs. For a POSIX
 # shell: `-n` (syntax check) between it and its operand, looking past options that take an
 # operand of their own (`bash -o pipefail -n x`) — ONLY the shells, because pwsh options
-# are case-insensitive words (`-noprofile` runs). For node: --check / -c / -v. For every
-# interpreter: its help and version modes (--help/--version, -h/-V, pwsh -Help/-Version/-?),
-# which print and exit without touching the operand.
-NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v)([[:space:]]|$)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
+# are case-insensitive words (`-noprofile` runs). For node: --check / -c / -v, and the
+# code-string modes -e/-p/--eval/--print; for python: -c (the operand is source text, not
+# a file — a shell's -c, by contrast, executes its string). For every interpreter: its
+# help and version modes (--help/--version, -h/-V, pwsh -Help/-Version/-?), which print
+# and exit without touching the operand.
+NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v|-e|-p|--eval|--print)([[:space:]]|$)|python3?[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*-c([[:space:]]|$)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:
@@ -443,21 +457,34 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
       for (i = 1; i <= n; i++) if (trim(c[i]) ~ re && trim(c[i]) !~ nore) return 1
       return 0
     }
+    # A single-colon rule that carries a recipe REPLACES any earlier recipe for its
+    # targets (make warns and keeps the last), so `test:; ./test/smoke.sh` followed by
+    # `test:; @true` runs only true; a rule with no recipe adds prerequisites and keeps
+    # the recipe; a double-colon rule is additive. `fresh` is set by a rule line and
+    # consumed by the first recipe line of that rule.
     function handle(l,   lhs, rhs, inl, n, t, i) {
       if (l ~ /^[ ]*(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) { cond++; ncur = 0; return }
       if (l ~ /^[ ]*endif([ \t]|$)/) { if (cond) cond--; ncur = 0; return }
       if (l ~ /^[ ]*define([ \t]|$)/) { indef = 1; ncur = 0; return }
       if (l ~ /^[ ]*endef([ \t]|$)/) { indef = 0; ncur = 0; return }
       if (cond || indef) return
-      if (l ~ /^\t/) { if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1; return }
+      if (l ~ /^\t/) {
+        if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
+        if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
+        return
+      }
       if (l ~ /^[^\t#. ][^:=]*::?([^=]|$)/) {
         lhs = l; sub(/::?.*/, "", lhs)
         rhs = l; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
+        fresh = (l !~ /^[^:]*::/)
         inl = ""
         if (match(rhs, /;/)) { inl = substr(rhs, RSTART + 1); rhs = substr(rhs, 1, RSTART - 1) }
         n = split(lhs, t, /[ \t]+/); ncur = 0
         for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur[++ncur] = t[i]; pre[t[i]] = pre[t[i]] " " rhs; seen[t[i]] = 1 }
-        if (inl != "" && runs(inl)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
+        if (inl != "") {
+          if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
+          if (runs(inl)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
+        }
         return
       }
       # A blank or comment-only line between a rule and its recipe is permitted by make
@@ -473,12 +500,12 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
       if (buf != "") handle(buf)
       do {
         changed = 0
-        for (k in seen) if (!(k in hit)) {
+        for (k in seen) if (!hit[k]) {
           m = split(pre[k], p, /[ \t]+/)
-          for (i = 1; i <= m; i++) if (p[i] in hit) { hit[k] = 1; changed = 1; break }
+          for (i = 1; i <= m; i++) if (hit[p[i]]) { hit[k] = 1; changed = 1; break }
         }
       } while (changed)
-      for (k in hit) print k
+      for (k in hit) if (hit[k]) print k
     }
   ' "$1"
 }
@@ -501,38 +528,49 @@ _ere_escape() { # _ere_escape <string> → the string as a literal inside a POSI
   printf '%s' "$1" | sed 's/[][\\.|*?+(){}^$]/\\&/g'
 }
 
-_test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
-  local d="$1" dirs="" cand="" seen=0 wf alt="" tgt cmds hits re phony mktext
-  # Either directory name satisfies the floor, and only a POPULATED one is the suite: a
-  # stale empty test/ beside a real, CI-run tests/ must not read as `empty`, and a step
-  # that runs a nonexistent tests/ must not credit a populated test/ it never touches.
+_suite_dirs() { # _suite_dirs <repo-dir> → "test|tests" (the POPULATED ones), or ""
+  local d="$1" cand dirs=""
   for cand in test tests; do
     [[ -d "$d/$cand" ]] || continue
-    seen=1
     # `ls -A` is portable and empty output means empty dir (`find -mindepth` is GNU).
     [[ -n "$(ls -A "$d/$cand" 2>/dev/null)" ]] && dirs="${dirs:+$dirs|}$cand"
   done
-  ((seen)) || { printf 'no-dir'; return 0; }
-  [[ -n "$dirs" ]] || { printf 'empty'; return 0; }
-  re="$(_run_re "$dirs")"
-  # What counts as running it: a step that executes the directory (the run regex), or
-  # invokes `make` on a target whose recipe does. `test` earns its place like any other —
-  # a `test:` whose recipe is `@true` runs nothing, and the verb column, not the floor,
-  # is where "the canonical name exists" is judged.
+  printf '%s' "$dirs"
+}
+
+_suite_names() { # _suite_names <repo-dir> → the make targets credited with running the suite, one per line
   # A suite target whose name is ALSO A PATH in the repo — `test:` beside the `test/`
   # directory it runs — must be declared .PHONY, or `make test` says "is up to date" and
   # runs nothing. That is the single most likely way a repo adopting this floor gets a
   # green cell for a suite that never executes, so the target is not credited without it.
-  alt=""
-  if [[ -f "$d/Makefile" ]]; then
-    mktext="$(_makefile_text "$d")" || mktext=""   # a missing mandatory include: no targets at all
-    phony="$(_phony_targets <(printf '%s\n' "$mktext"))"
-    while IFS= read -r tgt; do
-      [[ -n "$tgt" ]] || continue
-      if [[ -e "$d/$tgt" ]] && ! grep -qxF -- "$tgt" <<<"$phony"; then continue; fi
-      alt="${alt:+$alt|}$(_ere_escape "$tgt")"
-    done < <(_suite_targets <(printf '%s\n' "$mktext") "$re")
-  fi
+  local d="$1" dirs mktext phony tgt
+  [[ -f "$d/Makefile" ]] || return 0
+  dirs="$(_suite_dirs "$d")"
+  [[ -n "$dirs" ]] || return 0
+  mktext="$(_makefile_text "$d")" || mktext=""   # a missing mandatory include: no targets at all
+  phony="$(_phony_targets <(printf '%s\n' "$mktext"))"
+  while IFS= read -r tgt; do
+    [[ -n "$tgt" ]] || continue
+    if [[ -e "$d/$tgt" ]] && ! grep -qxF -- "$tgt" <<<"$phony"; then continue; fi
+    printf '%s\n' "$tgt"
+  done < <(_suite_targets <(printf '%s\n' "$mktext") "$(_run_re "$dirs")")
+}
+
+_test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
+  local d="$1" dirs wf alt="" tgt cmds hits re
+  # Either directory name satisfies the floor, and only a POPULATED one is the suite: a
+  # stale empty test/ beside a real, CI-run tests/ must not read as `empty`, and a step
+  # that runs a nonexistent tests/ must not credit a populated test/ it never touches.
+  [[ -d "$d/test" || -d "$d/tests" ]] || { printf 'no-dir'; return 0; }
+  dirs="$(_suite_dirs "$d")"
+  [[ -n "$dirs" ]] || { printf 'empty'; return 0; }
+  re="$(_run_re "$dirs")"
+  # What counts as running it: a step that executes the directory (the run regex), or
+  # invokes `make` on a target whose recipe does (_suite_names). `test` earns its place
+  # like any other — a `test:` whose recipe is `@true` runs nothing.
+  while IFS= read -r tgt; do
+    [[ -n "$tgt" ]] && alt="${alt:+$alt|}$(_ere_escape "$tgt")"
+  done < <(_suite_names "$d")
   # No suite target at all: the make arm must match nothing, not the empty string.
   [[ -n "$alt" ]] || alt='[^[:alnum:]_-]never-a-target'
   # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
@@ -573,9 +611,11 @@ for repo in "${REPOS[@]}"; do
   present=$((present + 1))
   line="| \`${repo#dotfiles-}\` |"
   have=""
+  suite=""; sdirs="$(_suite_dirs "$dir")"
   if [[ -f "$dir/Makefile" ]]; then
     mktext="$(_makefile_text "$dir")" || mktext=""   # a missing mandatory include: no targets at all
     have="$(_targets <(printf '%s\n' "$mktext"))"
+    suite="$(_suite_names "$dir")"
   fi
   for v in "${VERBS[@]}"; do
     # Herestring, not a printf pipe: §5d's pipefail rule, and grep -q exits early anyway.
@@ -583,7 +623,15 @@ for repo in "${REPOS[@]}"; do
     # has nothing to run may say so for every verb. The label only differs for the rest.
     why=""
     grep -qxF -- "$v" <<<"$have" || why="$(_declared "$dir" "$v")"
-    if grep -qxF -- "$v" <<<"$have"; then
+    if [[ "$v" == test && -n "$sdirs" ]] && grep -qxF -- test <<<"$have" && ! grep -qxF -- test <<<"$suite"; then
+      # A suite exists and the canonical `test` exists but RUNS NOTHING — `@true`, a
+      # recipe that never touches the suite, or a path-shadowing target without .PHONY.
+      # The contract is that `make test` runs the suite, so this is a missing cell with a
+      # truer label. With no suite at all, the floor column already says `no-dir`; the
+      # verb column does not repeat it.
+      line="$line **no-op** |"
+      missing=$((missing + 1))
+    elif grep -qxF -- "$v" <<<"$have"; then
       line="$line ok |"
     elif [[ -n "$why" ]]; then
       n=$((n + 1))

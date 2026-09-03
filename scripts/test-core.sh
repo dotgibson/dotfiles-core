@@ -16586,6 +16586,7 @@ _fv_ci() { # _fv_ci <repo> <workflow-line> — one workflow that carries the giv
   mkdir -p "$_fv_root/$1/.github/workflows"
   printf 'on: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n' "$2" >"$_fv_root/$1/.github/workflows/ci.yml"
 }
+# shellcheck disable=SC2317  # reached through the eval in _fv_floor, which shellcheck cannot see
 _fv_wf() { # _fv_wf <repo> <relative-path-under-.github/workflows> <printf-body> — an arbitrary workflow-dir file
   mkdir -p "$_fv_root/$1/.github/workflows/$(dirname "$2")"
   printf '%b' "$3" >"$_fv_root/$1/.github/workflows/$2"
@@ -16693,6 +16694,27 @@ if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"
   pass "vocab: \`include x # reason\`, space-indented, follows x and ignores the comment"
 else
   fail "vocab: commented/indented include mishandled: $out"
+fi
+
+# A CONTINUED INCLUDE DIRECTIVE is one directive.
+_fv_reset; _fv_repo dotfiles-Fedora 'include \\\n  mk/verbs.mk\nlint:\n\t@true\n'
+mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
+_fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
+  pass "vocab: \`include \\\` over the path is one directive"
+else
+  fail "vocab: continued include mishandled: $out"
+fi
+
+# THE CANONICAL test MUST RUN THE SUITE: a phony no-op `test:` beside CI running the
+# suite by path meets the floor but not the vocabulary — the cell says **no-op**.
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/test:\\n\\t@.\/test\/smoke.sh/test:\\n\\t@true}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "bash test/smoke.sh"
+out="$(_fv_run --check)"; rc=$?
+row="$(_fv_run | grep -F '| `Fedora` |')"
+if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* && "$out" == *"0 repo(s) under the test floor"* && "$row" == *'| **no-op** | ok |' ]]; then
+  pass "vocab: a no-op \`test:\` is **no-op** in the verb column even when CI runs the suite by path"
+else
+  fail "vocab: no-op test target handling (rc=$rc): $out / $row"
 fi
 
 # AN INCLUDE INSIDE A FALSE CONDITIONAL is not followed: its targets are not appended
@@ -16923,6 +16945,17 @@ _fv_floor "a cd on one literal-block line governs the next" '**not-in-ci**' '_fv
 # A COMMENT LINE INSIDE A run: | BLOCK comments out that line only, not the lines after it
 # (the real dotfiles-Debian packages step: `# note` above `bash test/check-packages.sh`).
 _fv_floor "a full-line comment before the run inside a literal block" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          set -uo pipefail\n          # the suite sources core/lib\n          bash test/smoke.sh | tee /tmp/r.txt\n          rc=\${PIPESTATUS[0]}\n"'
+# THE LAST SINGLE-COLON RECIPE WINS (make keeps it and warns); `::` rules are additive; a
+# rule with no recipe adds prerequisites only. Includes are spliced where they sit.
+_fv_floor "test: redefined later with @true runs only true" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "test:\n\t@true\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor "test:: rules are additive" 'ok' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/test:\\n\\t@.\/test\/smoke.sh\\n/test::\\n\\t@.\/test\/smoke.sh\\ntest::\\n\\t@true\\n}"; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor "a later recipe-less rule keeps the recipe" 'ok' '_fv_suite dotfiles-Alpine; printf "test: lint\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor "an included real recipe overridden by a later root @true" '**not-in-ci**' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/mk"; printf "test:\n\t@./test/smoke.sh\n" >"$_fv_root/dotfiles-Alpine/mk/real.mk"; _fv_repo dotfiles-Alpine ".PHONY: test\ninclude mk/real.mk\ntest:\n\t@true\n"; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor "a root @true overridden by a later included real recipe" 'ok' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/mk"; printf "test:\n\t@./test/smoke.sh\n" >"$_fv_root/dotfiles-Alpine/mk/real.mk"; _fv_repo dotfiles-Alpine ".PHONY: test\ntest:\n\t@true\ninclude mk/real.mk\n"; _fv_ci dotfiles-Alpine "make test"'
+# CODE-STRING MODES take source text, not a file.
+_fv_floor "python3 -c test/smoke.py is source text" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 -c test/smoke.py"'
+_fv_floor "node -e test/x.js is source text" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "node -e test/x.js"'
+_fv_floor "bash -c test/smoke.sh executes its string" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash -c test/smoke.sh"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
