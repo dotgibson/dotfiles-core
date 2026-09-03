@@ -146,4 +146,7 @@ for g in "${GATES[@]}"; do
   sep_row="$sep_row --- |"
 done
 printf '%s\n%s\n%s' "$hdr_row" "$sep_row" "$rows"
-[[ -n "$notes" ]] && printf '\n%s' "$notes"
+# An `if`, not `[[ … ]] &&`: as the last command that test is the exit status, so a fleet
+# with no footnotes made `make fleet-coverage` exit 1 for rendering a full table (#846).
+if [[ -n "$notes" ]]; then printf '\n%s' "$notes"; fi
+exit 0

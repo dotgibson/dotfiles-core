@@ -37,7 +37,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   now owes (aliases, not renames, so nothing calling the old targets breaks). The suite
   drives the script against a fake fleet root and pins that an alias alone does not fill a
   cell, that `own` is not a declaration the vocabulary accepts, each rung of the floor, and
-  that an unreadable vocabulary is a loud exit 2 rather than an empty register. Dev tooling
+  that an unreadable vocabulary is a loud exit 2 rather than an empty register. Review of
+  the same PR found `scripts/fleet-coverage.sh`'s report mode exiting 1 whenever there were
+  no footnotes to print (its last command was a `[[ -n notes ]] && printf`); fixed and
+  pinned alongside. Dev tooling
   only — the OS repos receive nothing from this entry until they adopt the verbs.
 
 ### Changed

@@ -105,7 +105,7 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
 # directory that is actually populated (_run_re), so a populated test/ is not credited
 # by a step running a nonexistent tests/. No backslashes: this is handed to awk via -v,
 # which would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='(^|[;&|][[:space:]]*|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)([.][/])?(DIRS)[/]'
+RUN_RE_TEMPLATE='(^[[:space:]]*|[;&|][[:space:]]*|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)([.][/])?(DIRS)[/]'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
 
 _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` step, comments stripped
@@ -128,7 +128,12 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` 
         if (RLENGTH > bind) { print strip($0); next }
         inblock = 0
       }
-      if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
+      # Only the `run` key OF A STEP is a command. `run` is an ordinary key anywhere else
+      # (a job-level `env: { run: … }` is valid YAML), so a `run:` counts only while inside
+      # a `steps:` block — from the key to the next non-blank line at or above its column.
+      if ($0 ~ /^[ \t]*steps:[ \t]*$/) { match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; next }
+      if (insteps && $0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); if (RLENGTH <= sind) insteps = 0 }
+      if (insteps && match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
         rest = substr($0, RSTART + RLENGTH)
         match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
         if (rest ~ /^[ \t]*[|>]/) inblock = 1
@@ -195,13 +200,18 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   [[ -n "$dirs" ]] || { printf 'empty'; return 0; }
   re="$(_run_re "$dirs")"
   # What counts as running it: a `run:` step that executes the directory (the run regex), or
-  # invokes `make` on a target whose recipe does (`make test`, `make test-repo`).
-  alt="test"
+  # invokes `make` on a target whose recipe does. `test` earns its place like any other —
+  # a `test:` whose recipe is `@true` runs nothing, and the verb column, not the floor,
+  # is where "the canonical name exists" is judged.
+  alt=""
   if [[ -f "$d/Makefile" ]]; then
     while IFS= read -r tgt; do
-      [[ -n "$tgt" && "$tgt" != test ]] && alt="$alt|$(_ere_escape "$tgt")"
+      [[ -n "$tgt" ]] && alt="${alt:+$alt|}$(_ere_escape "$tgt")"
     done < <(_suite_targets "$d/Makefile" "$re")
   fi
+  # No suite target at all: the make arm must match nothing, not the empty string.
+  [[ -n "$alt" ]] || alt='[^[:alnum:]_-]never-a-target'
+
   # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
   # never a nested directory or a stray notes file. `make` must be in COMMAND position too
   # (start, after a control operator, or under sudo): `echo "make test is disabled"` is a
@@ -289,4 +299,7 @@ done
 hdr_row="$hdr_row test floor |"
 sep_row="$sep_row --- |"
 printf '%s\n%s\n%s' "$hdr_row" "$sep_row" "$rows"
-[[ -n "$notes" ]] && printf '\n%s' "$notes"
+# An `if`, not `[[ … ]] &&`: as the script's last command that test IS the exit status,
+# and a fleet with no footnotes would make `make fleet-vocabulary` exit 1 for rendering.
+if [[ -n "$notes" ]]; then printf '\n%s' "$notes"; fi
+exit 0

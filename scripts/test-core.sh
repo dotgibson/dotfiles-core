@@ -16405,7 +16405,7 @@ _fv_suite() { # _fv_suite <repo> [dir=test]
 }
 # Every canonical verb, as a rule at column 0. `check` shares a rule with a prerequisite
 # and `bootstrap-dry` is an alias — both shapes the fleet actually uses.
-_fv_all='help:\n\t@true\nlint:\n\t@true\ncheck: lint\n\t@true\ndry-run:\n\t@true\nbootstrap-dry: dry-run\npackages-check:\n\t@true\ncore-verify:\n\t@true\ntest:\n\t@true\n'
+_fv_all='help:\n\t@true\nlint:\n\t@true\ncheck: lint\n\t@true\ndry-run:\n\t@true\nbootstrap-dry: dry-run\npackages-check:\n\t@true\ncore-verify:\n\t@true\ntest:\n\t@./test/smoke.sh\n'
 
 _fv_reset
 if out="$(_fv_run --check)"; then
@@ -16515,6 +16515,13 @@ _fv_floor "a step that echoes a string mentioning make test" '**not-in-ci**' '_f
 _fv_floor "a step running tests/ when only test/ is populated" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash tests/missing.sh"'
 _fv_floor "a recipe running tests/ when only test/ is populated is not the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "ghost:\n\t@bash tests/missing.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ghost"'
 _fv_floor "make test after cd && and under sudo" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd . && sudo make test"'
+# `test` EARNS ITS PLACE: a test: whose recipe runs nothing is not the suite even under
+# the canonical name; `echo make test` is an argument, not a run; a `run` key outside
+# steps: is data; and a block-scalar path keeps its indentation and still counts.
+_fv_floor "make test whose recipe is @true" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/test:\\n\\t@.\/test\/smoke.sh/test:\\n\\t@true}"; _fv_ci dotfiles-Alpine "make test"'
+_fv_floor "a step that echoes make test as arguments" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo make test"'
+_fv_floor "a job-level env: with a run: key" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    env:\n      run: bash test/smoke.sh\n    steps:\n      - run: make lint\n"'
+_fv_floor "a run: | block whose command is an indented ./test/ path" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          set -e\n          ./test/smoke.sh\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
@@ -16552,6 +16559,11 @@ if grep -qE '^fleet-vocabulary: ' "$HERE/Makefile"; then
 else
   fail "vocab: Makefile has no fleet-vocabulary target"
 fi
+# Rendering is not a verdict: a full table with no footnotes must exit 0 (the trailing
+# `[[ -n notes ]] && printf` shape made `make fleet-vocabulary` exit 1 on exactly that).
+_fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if _fv_run >/dev/null; then pass "vocab: report mode exits 0 with no footnotes to print"; else fail "vocab: report mode exits non-zero when there are no footnotes"; fi
+if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; then pass "vocab: fleet-coverage.sh report mode exits 0 with no footnotes too"; else fail "vocab: fleet-coverage.sh report mode still exits 1 with no footnotes"; fi
 rm -rf "$_fv_root"
 unset _fv_root _fv_all _fv_mk out rc row tbl want have
 unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_wf _fv_suite _fv_floor
