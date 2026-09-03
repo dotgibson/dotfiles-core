@@ -5488,11 +5488,14 @@ if have git && have zsh; then
     rm -rf "$_nor_brk"
     # ...and on one that changes a MODE, through an absolute-path chmod so the PATH shims
     # never see it: inode, kind and bytes all survive, and only the snapshot's mode field
-    # can. Same placement and guard as the rewrite case, so run one is untouched.
+    # can. Same placement and guard as the rewrite case, so run one is untouched. It ADDS
+    # an executable bit rather than setting 600: the tracked TOML seed is never executable,
+    # so the delta is guaranteed — under `umask 077` the seeded copy is already 600 and a
+    # `chmod 600` would change nothing, passing the suite for the wrong reason.
     _nor_brk="$SANDBOX/newosrepo-chmod"
     rm -rf "$_nor_brk"
     cp -r "$NOR" "$_nor_brk"
-    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && /bin/chmod 600 \"$CFG/mise/config.toml\"" }' \
+    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && /bin/chmod u+x \"$CFG/mise/config.toml\"" }' \
       "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-chmod.out" 2>&1; then
       fail "new-os-repo: the scaffolded suite passed a bootstrap that changes a file's mode on every run — the snapshot does not carry modes"
@@ -5588,7 +5591,7 @@ if have git; then
     grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' <<<"$_rc_cmd" || _rc_bad="$_rc_bad subtree-add-source"
     # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
-    grep -qF '; _rc=$?; git worktree remove --force "$_wt" && exit "$_rc")' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated"
+    grep -qF '; _rc=$?; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc")' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
     else
@@ -5602,8 +5605,10 @@ if have git; then
     _rc_sub="(cd ${_rc_sub%%   # VENDORING*}"  # and the trailing comment
     _rc_drive() { # _rc_drive <sync-status-cmd> <remove-cmd> → exit status of the driven subshell
       local d
+      # mktemp is pointed INSIDE the sandbox so the parent's removal can be asserted.
       d="$(printf '%s' "$_rc_sub" |
         sed -e 's|git fetch [^&]* && |true \&\& |' \
+            -e "s|mktemp -d|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
             -e 's|git worktree add --detach "$_wt" FETCH_HEAD|mkdir -p "$_wt"|' \
             -e "s|\./scripts/sync-core\.sh [^)]*)|$1)|" \
             -e "s|git worktree remove --force \"\$_wt\"|$2 \"\$_wt\"|")"
@@ -5612,11 +5617,17 @@ if have git; then
     _rc_st=""
     _rc_drive false rmdir; _rc_st="$_rc_st sync-fails:$?"
     _rc_drive true rmdir; _rc_st="$_rc_st sync-ok:$?"
+    _rc_leftover="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
     _rc_drive true false; _rc_st="$_rc_st cleanup-fails:$?"
     if [[ "$_rc_st" == " sync-fails:1 sync-ok:0 cleanup-fails:1" ]]; then
       pass "recovery: the worktree subshell returns the sync's status (failed sync → 1, ok → 0, failed cleanup → 1)"
     else
       fail "recovery: the worktree subshell masks a status —$_rc_st — driven: $_rc_sub"
+    fi
+    if [[ -z "$_rc_leftover" ]]; then
+      pass "recovery: a successful recovery leaves no temp directory behind (the mktemp parent is removed)"
+    else
+      fail "recovery: the mktemp parent survives a successful recovery — $_rc_leftover"
     fi
     unset -f _rc_drive
     # The guard is the executable part: everything before the first `&& git -C`.
@@ -5642,7 +5653,7 @@ if have git; then
     fi
   fi
   rm -rf "$SANDBOX/recovery"
-  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st
+  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi
