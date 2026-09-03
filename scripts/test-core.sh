@@ -5590,8 +5590,9 @@ if have git; then
     grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' <<<"$_rc_cmd" || _rc_bad="$_rc_bad subtree-add-source"
     # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
-    grep -qF 'FETCH_HEAD && { (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad cleanup-nested-after-worktree-add"
-    grep -qF '; _rc=$?; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
+    grep -qF 'FETCH_HEAD && { if (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad cleanup-nested-after-worktree-add+sync-as-if-condition"
+    grep -qF "&& grep -q \"^core_sha=\$(git -C \"\$_wt\" rev-parse 'HEAD^{commit}')\" " <<<"$_rc_cmd" || _rc_bad="$_rc_bad lock-stamp-verdict"
+    grep -qF '; then _rc=0; else _rc=$?; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
     else
@@ -5599,8 +5600,10 @@ if have git; then
     fi
     # The worktree subshell's STATUS, behaviourally: take the emitted subshell (from the
     # Core-side `(cd` to the end), stub the four network/worktree steps — fetch → true,
-    # worktree add → mkdir, the sync → a chosen status, worktree remove → rmdir — and run
-    # it. A shape assertion alone could pass a chain whose cleanup still masked the sync.
+    # worktree add → mkdir, the sync → a chosen status, worktree remove → rmdir — drop the
+    # core.lock verdict (no lock exists here), and run it UNDER `bash -e`, since the
+    # reader's shell may have errexit on and the cleanup must still be reached. A shape
+    # assertion alone could pass a chain whose cleanup still masked the sync.
     _rc_sub="${_rc_cmd#* --squash && (cd }"   # drop everything up to the Core-side subshell (the FIRST `(cd` after the subtree add)
     _rc_sub="(cd ${_rc_sub%%   # VENDORING*}"  # and the trailing comment
     _rc_drive() { # _rc_drive <sync-status-cmd> <remove-cmd> → exit status of the driven subshell
@@ -5611,11 +5614,13 @@ if have git; then
             -e "s|mktemp -d|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
             -e 's|git worktree add --detach "$_wt" FETCH_HEAD|mkdir -p "$_wt"|' \
             -e "s|\./scripts/sync-core\.sh [^)]*)|$1)|" \
+            -e 's| && grep -q "^core_sha=[^;]*; then|; then|' \
             -e "s|git worktree remove --force \"\$_wt\"|$2 \"\$_wt\"|")"
-      (cd "$SANDBOX/recovery" && bash -c "$d") >/dev/null 2>&1
+      (cd "$SANDBOX/recovery" && bash -e -c "$d") >/dev/null 2>&1
     }
     _rc_st=""
     _rc_drive false rmdir; _rc_st="$_rc_st sync-fails:$?"
+    _rc_leftover_fail="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
     _rc_drive true rmdir; _rc_st="$_rc_st sync-ok:$?"
     _rc_leftover="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
     _rc_drive true false; _rc_st="$_rc_st cleanup-fails:$?"
@@ -5628,6 +5633,11 @@ if have git; then
       pass "recovery: a successful recovery leaves no temp directory behind (the mktemp parent is removed)"
     else
       fail "recovery: the mktemp parent survives a successful recovery — $_rc_leftover"
+    fi
+    if [[ -z "$_rc_leftover_fail" ]]; then
+      pass "recovery: under bash -e a FAILED sync still reaches the cleanup (no temp directory left behind)"
+    else
+      fail "recovery: under bash -e a failed sync skipped the cleanup — $_rc_leftover_fail"
     fi
     # When `worktree add` FAILS, the cleanup must never run: the pasted subshell inherits
     # the reader's variables, and a force-remove of an inherited `_wt` would be the
@@ -5669,7 +5679,7 @@ if have git; then
     fi
   fi
   rm -rf "$SANDBOX/recovery"
-  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_dr _rc_addfail
+  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi
