@@ -98,21 +98,42 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
   [[ -n "$decl" ]] && printf '%s' "$decl"
 }
 
-# WHAT COUNTS AS RUNNING THE SUITE, in one simple shell command: a test path in COMMAND
-# position (`./test/smoke.sh`, `tests/run`, at the start or after `;`/`&&`/`|`), or an
+# WHAT COUNTS AS RUNNING THE SUITE, in one simple shell command (the text is split at
+# unquoted `;`/`&&`/`||`/`|` first — AWK_SPLITCMDS below — so command position is simply
+# the start): a test path as the command (`./test/smoke.sh`, `tests/run`), or an
 # interpreter in command position handed one (`bash -e test/smoke.sh`), optionally under
 # sudo. `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
 # the path and run nothing, so they do not count. `DIRS` is replaced per repo with the
 # directory that is actually populated (_run_re), so a populated test/ is not credited by a
 # step running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='(^[[:space:]]*|[;&|][[:space:]]*)(sudo[[:space:]]+)?((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
+RUN_RE_TEMPLATE='^[[:space:]]*(sudo[[:space:]]+)?((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
 # A NO-EXECUTE MODE PARSES OR PRINTS AND RUNS NOTHING: make's dry-run (`-n` in any short
 # cluster, --dry-run/--just-print/--recon) and question (`-q`, --question) modes; a shell's
 # `-n` syntax check; node's --check. Any such flag between the command and its operand
 # disqualifies the command, wherever it appears — a workflow step or a Makefile recipe.
 NORUN_RE='(^|[[:space:]])(sudo[[:space:]]+)?(make[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nq][a-zA-Z]*|--dry-run|--just-print|--recon|--question)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*|--check|--syntax-check))([[:space:]]|$)'
+
+# ONE SIMPLE COMMAND AT A TIME, split at `;`/`&&`/`||`/`|` OUTSIDE quotes. A naive split
+# turned `echo "disabled && make test"` into a synthetic `make test"` command, and the same
+# in a recipe made `@echo "disabled; ./test/smoke.sh"` a suite target. Shared by both awk
+# programs below (shell-level text, spliced in), so steps and recipes are split alike.
+AWK_SPLITCMDS='
+  function splitcmds(s, out,   i, c, q, n, cur) {
+    n = 0; cur = ""; q = ""
+    for (i = 1; i <= length(s); i++) {
+      c = substr(s, i, 1)
+      if (q != "") { if (c == q) q = ""; cur = cur c; continue }
+      if (c == "\\") { cur = cur c substr(s, i + 1, 1); i++; continue }
+      if (c == "\"" || c == SQ) { q = c; cur = cur c; continue }
+      if (c == ";" || c == "&" || c == "|") { if (cur ~ /[^ \t]/) out[++n] = cur; cur = ""; continue }
+      cur = cur c
+    }
+    if (cur ~ /[^ \t]/) out[++n] = cur
+    return n
+  }
+'
 
 _run_lines() { # _run_lines <workflow.yml> → the command text of every step's `run:`, one command per line
   # Only what a STEP runs counts as running the suite. A path filter (`paths: ['test/**']`),
@@ -128,26 +149,30 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     per paragraph, because YAML joins its lines with a space — `echo` over `make test`
   #     runs `echo make test`.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
-  awk '
+  awk -v SQ="'" "$AWK_SPLITCMDS"'
     function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     function unquote(s) {
-      if (s ~ /^"([^"]|\\")*"$/ || s ~ /^\047[^\047]*\047$/) s = substr(s, 2, length(s) - 2)
+      if (s ~ /^"([^"]|\\")*"$/ || s ~ ("^" SQ "[^" SQ "]*" SQ "$")) s = substr(s, 2, length(s) - 2)
       return s
     }
+    function emit(s,   c, n, i) { n = splitcmds(s, c); for (i = 1; i <= n; i++) print c[i] }
     {
       if (inblock) {
-        if ($0 ~ /^[ \t]*$/) { if (fold && acc != "") { print acc; acc = "" } ; next }
+        if ($0 ~ /^[ \t]*$/) { if (fold && acc != "") { emit(acc); acc = "" } ; next }
         match($0, /^[ \t]*/)
         if (RLENGTH > bind) {
           if (fold) acc = (acc == "" ? strip($0) : acc " " strip($0))
-          else print strip($0)
+          else emit(strip($0))
           next
         }
-        if (fold && acc != "") { print acc; acc = "" }
+        if (fold && acc != "") { emit(acc); acc = "" }
         inblock = 0
       }
       if ($0 ~ /^[ \t]*steps:[ \t]*$/) { match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; keycol = -1; next }
       if (!insteps) next
+      # A full-line comment has no structure in YAML, whatever its indentation: it neither
+      # ends the steps block nor is a step.
+      if ($0 ~ /^[ \t]*#/) next
       if ($0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); if (RLENGTH <= sind) { insteps = 0; next } }
       if (match($0, /^[ \t]*-[ \t]+/)) keycol = RLENGTH
       if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
@@ -155,11 +180,11 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
         if (bind != keycol) next
         if (rest ~ /^[ \t]*[|>]/) { inblock = 1; fold = (rest ~ /^[ \t]*>/); acc = "" }
-        else print unquote(strip(rest))
+        else emit(unquote(strip(rest)))
       }
     }
-    END { if (fold && acc != "") print acc }
-  ' "$1" | awk '{ gsub(/[;&|]+/, "\n"); print }'
+    END { if (fold && acc != "") emit(acc) }
+  ' "$1"
 }
 
 _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the suite, one per line
@@ -171,11 +196,11 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   # (to a fixpoint, so `test: test-repo` inherits). A rule with several targets (`smoke
   # test-repo:`) gives its recipe to each; an inline recipe (`test: ; ./test/smoke.sh`) is
   # the text after the rule's `;`. Same lexer as _targets: rules at column 0, recipes on
-  # tab lines, comments and variable assignments ignored.
-  awk -v re="$2" -v nore="$NORUN_RE" '
+  # tab lines, comments and variable assignments ignored. Commands are split like a step's.
+  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SPLITCMDS"'
     function runs(line,   n, c, i) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
-      n = split(line, c, /[;&|]+/)
+      n = splitcmds(line, c)
       for (i = 1; i <= n; i++) if (c[i] ~ re && c[i] !~ nore) return 1
       return 0
     }

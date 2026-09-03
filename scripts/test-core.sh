@@ -16545,6 +16545,12 @@ _fv_floor "an inline recipe target (suite: ; ./test/smoke.sh)" 'ok' '_fv_suite d
 _fv_floor "a step-level env: entry named run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: make lint\n        env:\n          run: bash test/smoke.sh\n"'
 _fv_floor "a double-quoted run scalar" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: \"make test\"\n"'
 _fv_floor "a run: > block folding echo over make test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: >\n          echo\n          make test\n"'
+# QUOTES HIDE OPERATORS: `echo "disabled && make test"` is one echo, in a step or a recipe.
+# A full-line comment has no indentation semantics, so it does not end the steps block.
+_fv_floor "a step echoing a quoted && make test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo \"disabled && make test\""'
+_fv_floor "a recipe echoing a quoted ; ./test/ path is not the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "notice:\n\t@echo \"disabled; ./test/smoke.sh\"\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make notice"'
+_fv_floor "a full-line comment at the steps: column before the run step" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: make lint\n    # the suite\n      - run: make test\n"'
+_fv_floor "a single-quoted run scalar" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: '"'"'make test'"'"'\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
