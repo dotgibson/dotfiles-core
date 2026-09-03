@@ -99,7 +99,7 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
 }
 
 # WHAT COUNTS AS RUNNING THE SUITE, in one simple shell command (the text is split at
-# unquoted `;`/`&&`/`||`/`|` first — AWK_SPLITCMDS below — so command position is simply
+# unquoted `;`/`&&`/`||`/`|` first — AWK_SHELL below — so command position is simply
 # the start): a test path as the command (`./test/smoke.sh`, `tests/run`), or an
 # interpreter in command position handed one (`bash -e test/smoke.sh`) — optionally under
 # sudo or env, and after leading variable assignments (`CI=1 make test` is how a great
@@ -116,15 +116,27 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternati
 # disqualifies the command, wherever it appears — a workflow step or a Makefile recipe.
 NORUN_RE='(^|[[:space:]])(sudo[[:space:]]+)?(make[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nq][a-zA-Z]*|--dry-run|--just-print|--recon|--question)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*|--check|--syntax-check))([[:space:]]|$)'
 
-# ONE SIMPLE COMMAND AT A TIME, split at `;`/`&&`/`||`/`|` OUTSIDE quotes. A naive split
-# turned `echo "disabled && make test"` into a synthetic `make test"` command, and the same
-# in a recipe made `@echo "disabled; ./test/smoke.sh"` a suite target. Shared by both awk
-# programs below (shell-level text, spliced in), so steps and recipes are split alike.
-AWK_SPLITCMDS='
+# THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
+# so a workflow step and a Makefile recipe are read by the same rules:
+#   * splitcmds — one simple command at a time, split at `;`/`&&`/`||`/`|` OUTSIDE quotes.
+#     A naive split turned `echo "disabled && make test"` into a synthetic `make test"`.
+#     Inside "…" a backslash escapes the next character, so `\"` does not end the string;
+#     inside '…' nothing does.
+#   * stripcomment — a shell comment (`#` at the start, or after whitespace) OUTSIDE
+#     quotes, so `echo "value #"; make test` keeps its make.
+#   * unquote_scalar — a YAML flow scalar: a fully "…"- or '…'-quoted value yields its
+#     contents (with `\"` and `''` unescaped), anything after the closing quote being a
+#     YAML comment; a plain value is returned as is (its ` #` comment is shell text too,
+#     and stripcomment removes it). Unquoting runs BEFORE comment stripping, or
+#     `run: "make test # suite"` loses its closing quote and never unquotes.
+#   * trim — whitespace only.
+AWK_SHELL='
+  function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
   function splitcmds(s, out,   i, c, q, n, cur) {
     n = 0; cur = ""; q = ""
     for (i = 1; i <= length(s); i++) {
       c = substr(s, i, 1)
+      if (q == "\"" && c == "\\") { cur = cur c substr(s, i + 1, 1); i++; continue }
       if (q != "") { if (c == q) q = ""; cur = cur c; continue }
       if (c == "\\") { cur = cur c substr(s, i + 1, 1); i++; continue }
       if (c == "\"" || c == SQ) { q = c; cur = cur c; continue }
@@ -134,6 +146,42 @@ AWK_SPLITCMDS='
     if (cur ~ /[^ \t]/) out[++n] = cur
     return n
   }
+  function stripcomment(s,   i, c, q, prev) {
+    q = ""; prev = " "
+    for (i = 1; i <= length(s); i++) {
+      c = substr(s, i, 1)
+      if (q == "\"" && c == "\\") { i++; prev = c; continue }
+      if (q != "") { if (c == q) q = ""; prev = c; continue }
+      if (c == "\\") { i++; prev = c; continue }
+      if (c == "\"" || c == SQ) { q = c; prev = c; continue }
+      if (c == "#" && prev ~ /[ \t]/) return substr(s, 1, i - 1)
+      prev = c
+    }
+    return s
+  }
+  function unquote_scalar(s,   i, c, out) {
+    s = trim(s)
+    if (substr(s, 1, 1) == "\"") {
+      out = ""
+      for (i = 2; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == "\\") { out = out substr(s, i + 1, 1); i++; continue }
+        if (c == "\"") return out
+        out = out c
+      }
+      return s
+    }
+    if (substr(s, 1, 1) == SQ) {
+      out = ""
+      for (i = 2; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == SQ) { if (substr(s, i + 1, 1) == SQ) { out = out SQ; i++; continue } ; return out }
+        out = out c
+      }
+      return s
+    }
+    return s
+  }
 '
 
 _run_lines() { # _run_lines <workflow.yml> → the command text of every step's `run:`, one command per line
@@ -141,39 +189,36 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   # a job name, or a comment saying `make test` is a mention, not an execution, and an
   # unanchored grep read all three as the floor being met. Not a YAML parser — it needs no
   # document model, only the forms a workflow step actually takes:
-  #   * `run:` is a command only inside a `steps:` block (from that key to the next
-  #     non-blank line at or above its column) AND at the step's own key column — the
-  #     column after `- ` — so a job-level `env: { run: … }` or a step-level `env:` entry
-  #     named `run` is data.
-  #   * an inline value is one command; surrounding "…" or '…' quotes are removed.
-  #   * a literal block (`|`) is one command per line; a folded block (`>`) is ONE command
-  #     per paragraph, because YAML joins its lines with a space — `echo` over `make test`
-  #     runs `echo make test`.
+  #   * `run:` is a command only inside a `steps:` block (from that key — trailing comment
+  #     allowed — to the next non-blank, non-comment line at or above its column) AND at
+  #     the step's own key column, the column after `- `, so a job-level `env: { run: … }`
+  #     or a step-level `env:` entry named `run` is data.
+  #   * an inline value is one logical command line: YAML-unquoted, then shell-comment
+  #     stripped, then split.
+  #   * a literal block (`|`) is one logical line per physical line, except that a
+  #     trailing backslash continues onto the next — `make \` over `test` is `make test`,
+  #     and a "…" string continued across lines stays one string; a folded block (`>`) is
+  #     ONE line per paragraph, because YAML joins its lines with a space — `echo` over
+  #     `make test` runs `echo make test`.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
-  awk -v SQ="'" "$AWK_SPLITCMDS"'
-    function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
-    function unquote(s) {
-      if (s ~ /^"([^"]|\\")*"$/ || s ~ ("^" SQ "[^" SQ "]*" SQ "$")) s = substr(s, 2, length(s) - 2)
-      return s
-    }
-    function emit(s,   c, n, i) { n = splitcmds(s, c); for (i = 1; i <= n; i++) print c[i] }
+  awk -v SQ="'" "$AWK_SHELL"'
+    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); for (i = 1; i <= n; i++) print trim(c[i]) }
+    function flush() { if (acc != "") { emit(acc); acc = "" } }
     {
       if (inblock) {
-        if ($0 ~ /^[ \t]*$/) { if (fold && acc != "") { emit(acc); acc = "" } ; next }
+        if ($0 ~ /^[ \t]*$/) { flush(); next }
         match($0, /^[ \t]*/)
         if (RLENGTH > bind) {
-          if (fold) acc = (acc == "" ? strip($0) : acc " " strip($0))
-          else emit(strip($0))
-          next
+          line = trim($0)
+          if (fold) { acc = (acc == "" ? line : acc " " line); next }
+          if (line ~ /\\$/) { acc = acc substr(line, 1, length(line) - 1) " "; next }
+          acc = acc line; flush(); next
         }
-        if (fold && acc != "") { emit(acc); acc = "" }
+        flush()
         inblock = 0
       }
-      # `steps:` may carry a trailing comment (`steps: # smoke`) — YAML allows it on a key.
       if ($0 ~ /^[ \t]*steps:[ \t]*(#.*)?$/) { match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; keycol = -1; next }
       if (!insteps) next
-      # A full-line comment has no structure in YAML, whatever its indentation: it neither
-      # ends the steps block nor is a step.
       if ($0 ~ /^[ \t]*#/) next
       if ($0 !~ /^[ \t]*$/) { match($0, /^[ \t]*/); if (RLENGTH <= sind) { insteps = 0; next } }
       if (match($0, /^[ \t]*-[ \t]+/)) keycol = RLENGTH
@@ -182,10 +227,10 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
         if (bind != keycol) next
         if (rest ~ /^[ \t]*[|>]/) { inblock = 1; fold = (rest ~ /^[ \t]*>/); acc = "" }
-        else emit(unquote(strip(rest)))
+        else emit(unquote_scalar(rest))
       }
     }
-    END { if (fold && acc != "") emit(acc) }
+    END { if (inblock) flush() }
   ' "$1"
 }
 
@@ -194,31 +239,40 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   # recipe is `./test/test-repo.sh` IS running the suite — and the verb column already
   # reports the missing alias, so the floor must not report the same gap twice. A target
   # qualifies if a recipe line of its rule runs the suite (the run regex, after the
-  # `@`/`-`/`+` prefixes, and not in a no-execute mode), or if a prerequisite qualifies
-  # (to a fixpoint, so `test: test-repo` inherits). A rule with several targets (`smoke
-  # test-repo:`) gives its recipe to each; an inline recipe (`test: ; ./test/smoke.sh`) is
-  # the text after the rule's `;`. Same lexer as _targets: rules at column 0, recipes on
-  # tab lines, comments and variable assignments ignored. Commands are split like a step's.
-  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SPLITCMDS"'
+  # `@`/`-`/`+` prefixes, split and comment-stripped like a step, and not in a no-execute
+  # mode), or if a prerequisite qualifies (to a fixpoint, so `test: test-repo` inherits).
+  # A rule with several targets (`smoke test-repo:`) gives its recipe to each; an inline
+  # recipe (`test: ; ./test/smoke.sh`) is the text after the rule's `;`. LOGICAL lines: a
+  # trailing backslash continues a rule (`test: \` over `suite-run`) or a recipe onto the
+  # next physical line, exactly as make reads it. Otherwise the same lexer as _targets:
+  # rules at column 0, recipes on tab lines, comments and variable assignments ignored.
+  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SHELL"'
     function runs(line,   n, c, i) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
-      n = splitcmds(line, c)
-      for (i = 1; i <= n; i++) if (c[i] ~ re && c[i] !~ nore) return 1
+      n = splitcmds(trim(stripcomment(line)), c)
+      for (i = 1; i <= n; i++) if (trim(c[i]) ~ re && trim(c[i]) !~ nore) return 1
       return 0
     }
-    /^\t/ { if (runs($0)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1; next }
-    /^[^\t#. ][^:=]*::?([^=]|$)/ {
-      lhs = $0; sub(/::?.*/, "", lhs)
-      rhs = $0; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
-      inline = ""
-      if (match(rhs, /;/)) { inline = substr(rhs, RSTART + 1); rhs = substr(rhs, 1, RSTART - 1) }
-      n = split(lhs, t, /[ \t]+/); ncur = 0
-      for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur[++ncur] = t[i]; pre[t[i]] = pre[t[i]] " " rhs; seen[t[i]] = 1 }
-      if (inline != "" && runs(inline)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
-      next
+    function handle(l,   lhs, rhs, inl, n, t, i) {
+      if (l ~ /^\t/) { if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1; return }
+      if (l ~ /^[^\t#. ][^:=]*::?([^=]|$)/) {
+        lhs = l; sub(/::?.*/, "", lhs)
+        rhs = l; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
+        inl = ""
+        if (match(rhs, /;/)) { inl = substr(rhs, RSTART + 1); rhs = substr(rhs, 1, RSTART - 1) }
+        n = split(lhs, t, /[ \t]+/); ncur = 0
+        for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur[++ncur] = t[i]; pre[t[i]] = pre[t[i]] " " rhs; seen[t[i]] = 1 }
+        if (inl != "" && runs(inl)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
+        return
+      }
+      ncur = 0
     }
-    { ncur = 0 }
+    {
+      if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next }
+      handle(buf $0); buf = ""
+    }
     END {
+      if (buf != "") handle(buf)
       do {
         changed = 0
         for (k in seen) if (!(k in hit)) {
@@ -272,7 +326,10 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   # early match can SIGPIPE an awk still writing, and 141 would read as "not run".
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
     [[ -f "$wf" ]] || continue
-    cmds="$(_run_lines "$wf")"
+    # A make option that TAKES AN ARGUMENT (-C dir, -f file, -I dir, -o/-W file, and their
+    # long forms) is removed with its argument first, so `make -C test lint` does not read
+    # the directory operand as the suite target.
+    cmds="$(_run_lines "$wf" | sed -E 's/(^|[[:space:]])(-[CfIoW]|--(directory|file|makefile|include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\1/g')"
     hits="$(grep -E "($re|^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([^[:alnum:]_-]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE")"
     if [[ -n "$hits" ]]; then
       printf 'ok'

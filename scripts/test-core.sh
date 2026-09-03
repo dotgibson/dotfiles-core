@@ -16558,6 +16558,19 @@ _fv_floor "CI=1 make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpi
 _fv_floor "env CI=1 make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "env CI=1 make test"'
 _fv_floor "make lint test (suite target second)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make lint test"'
 _fv_floor "CI=1 make -n test is still a dry run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "CI=1 make -n test"'
+# ESCAPES, CONTINUATIONS, OPTION ARGUMENTS, COMMENTS: `\"` does not close a string; a
+# trailing backslash joins the next line in a literal block and in a Makefile (rule or
+# recipe); `-C test` is a directory, not a goal; a YAML-quoted scalar is unquoted before
+# its shell comment is stripped, and a `#` inside quotes is not a comment.
+_fv_floor "an escaped quote inside a double-quoted echo" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo \"disabled \\\" && make test\""'
+_fv_floor "make \\ continued onto test in a literal block" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make \\\\\n            test\n"'
+_fv_floor "a double-quoted string continued onto a line with && make test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          echo \"disabled \\\\\n          && make test\"\n"'
+_fv_floor "make -C test lint (directory operand, not a goal)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -C test lint"'
+_fv_floor "a quoted scalar carrying a shell comment" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: \"make test # suite\"\n"'
+_fv_floor "a # inside quotes before the real make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo \"value #\"; make test"'
+_fv_floor "a rule whose prerequisite list is backslash-continued" 'ok' '_fv_suite dotfiles-Alpine; printf "alltests: \\\\\n  suite-run\nsuite-run:\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make alltests"'
+_fv_floor "a recipe continued across lines that runs the suite" 'ok' '_fv_suite dotfiles-Alpine; printf "verbose:\n\t@./test/smoke.sh \\\\\n\t  --verbose\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make verbose"'
+_fv_floor "a recipe echoing a continued quoted string is not the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "notice:\n\t@echo \"disabled \\\\\n\t&& ./test/smoke.sh\"\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make notice"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
