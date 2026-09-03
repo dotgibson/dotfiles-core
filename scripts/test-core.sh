@@ -7723,12 +7723,18 @@ else
     fail "bench gate: --gate --profile should exit 2 (got $_rc_gp); unknown argument should exit 2 (got $_bcrc)"
   fi
 
-  # 4. A missing baseline file under --gate is RED, not a skip, and the message names the path.
+  # 4. A missing baseline file under --gate is RED, not a skip, and the message names the path
+  #    — and an env override does not excuse it: the override selects the number, the file is
+  #    still the contract (a review catch — the first cut let `CORE_BENCH_BUDGET_MS=48 --gate`
+  #    green a deleted file).
   _bc_run "CORE_BENCH_BASELINE_FILE=$SANDBOX/absent-baseline.env" -- --gate
-  if ((_bcrc == 1)) && [[ "$_bcout" == *"absent-baseline.env"* ]]; then
-    pass "bench gate: a missing baseline file fails closed (exit 1) and names the file"
+  _rc_absent=$_bcrc
+  _out_absent="$_bcout"
+  _bc_run "CORE_BENCH_BASELINE_FILE=$SANDBOX/absent-baseline.env" "CORE_BENCH_BUDGET_MS=48" -- --gate
+  if ((_rc_absent == 1)) && [[ "$_out_absent" == *"absent-baseline.env"* ]] && ((_bcrc == 1)); then
+    pass "bench gate: a missing baseline file fails closed (exit 1) and names the file, even under an env override"
   else
-    fail "bench gate: missing baseline file should exit 1 naming it (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+    fail "bench gate: missing baseline file should exit 1 naming it (rc=$_rc_absent; with env override rc=$_bcrc): ${_out_absent//$'\n'/ | }"
   fi
 
   # 5. Malformed values and a budget with no headroom are refused the same way.

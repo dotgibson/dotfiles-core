@@ -28,7 +28,8 @@
 #                       missing zsh/hyperfine/python3, is exit 1 here — a gate that cannot
 #                       measure must not be green.
 #   • CORE_BENCH_BUDGET_MS=<ms> in the environment overrides the file's budget (ad-hoc
-#                       gate; the pre-#688 interface). Env wins over the file.
+#                       gate; the pre-#688 interface). Env wins over the file for the
+#                       NUMBER; under --gate the file is still validated.
 # Enforcement needs python3 to read hyperfine's JSON.
 #
 # Usage:
@@ -80,8 +81,10 @@ Tuning via environment:
   CORE_BENCH_BASELINE_FILE=<p> read the baseline/budget from <p> instead of
                                scripts/bench-baseline.env (the test suite's hook)
 
-Every mode prints the mean against CORE_BENCH_BASELINE_MS (the committed ubuntu-latest
-figure) so a local run shows the trend. Re-baseline policy: see scripts/bench-baseline.env.
+The report and gate modes print the mean against CORE_BENCH_BASELINE_MS (the committed
+ubuntu-latest figure) so a local run shows the trend; --profile prints only the breakdown.
+Under --gate the committed file is validated even when the env override selects the budget.
+Re-baseline policy: see scripts/bench-baseline.env.
 EOF
     exit 0
     ;;
@@ -121,8 +124,11 @@ if [[ -n "$BUDGET" ]] && ! _is_ms "$BUDGET"; then
   printf 'bench-core.sh: CORE_BENCH_BUDGET_MS must be a positive number of ms, got: %s\n' "$BUDGET" >&2
   exit 2
 fi
-if ((GATE)) && [[ -z "$BUDGET" ]]; then
-  # Fail CLOSED: a gate that cannot find its budget must not go green.
+if ((GATE)); then
+  # Fail CLOSED: a gate that cannot find its budget must not go green. The committed file is
+  # validated on EVERY --gate run — an env override selects the budget, it does not excuse a
+  # missing or malformed contract (otherwise `CORE_BENCH_BUDGET_MS=48 --gate` would green a
+  # deleted baseline file).
   if [[ ! -r "$BASELINE_FILE" ]]; then
     printf '%s✗%s --gate: baseline file missing or unreadable: %s\n' "$c_red" "$c_rst" "$BASELINE_FILE" >&2
     exit 1
@@ -137,8 +143,10 @@ if ((GATE)) && [[ -z "$BUDGET" ]]; then
       "$c_red" "$c_rst" "$FILE_BUDGET_MS" "$BASELINE_MS" "$BASELINE_FILE" >&2
     exit 1
   fi
-  BUDGET="$FILE_BUDGET_MS"
-  BUDGET_SRC="$BASELINE_FILE"
+  if [[ -z "$BUDGET" ]]; then
+    BUDGET="$FILE_BUDGET_MS"
+    BUDGET_SRC="$BASELINE_FILE"
+  fi
 fi
 
 # ── prerequisites: report mode degrades, --gate fails closed ──────────────────
