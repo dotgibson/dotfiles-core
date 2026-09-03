@@ -280,8 +280,14 @@ import json, sys
 r = json.load(open(sys.argv[1]))["results"][0]
 print(r["mean"] * 1000, r["median"] * 1000)' "$json" 2>/dev/null)
 if [[ -z "$mean_ms" || -z "$median_ms" ]]; then
-  printf '%s✗%s could not parse hyperfine JSON for the verdict\n' "$c_red" "$c_rst" >&2
-  exit 1
+  # Same split as a non-zero hyperfine status: a budget fails closed, report mode degrades
+  # to a loud skip — plain `make bench` never returns 1 for an export it cannot read.
+  if [[ -n "$BUDGET" ]]; then
+    printf '%s✗%s could not parse hyperfine JSON for the verdict — failing closed\n' "$c_red" "$c_rst" >&2
+    exit 1
+  fi
+  skip "could not parse hyperfine JSON — no measurement to compare against the baseline"
+  exit 0
 fi
 
 _pct() { awk -v v="$1" -v b="$2" 'BEGIN { printf "%+.0f", (v - b) / b * 100 }'; } # _pct <value> <base>

@@ -7766,8 +7766,11 @@ else
   # 7–12. The verdict, through a stub hyperfine. The stub honours only --export-json <file>
   #    and writes the mean/median the case chooses (seconds, hyperfine's unit); real zsh is
   #    needed by the script's probe and by the on-breach profile (which sources the real
-  #    modules in the hermetic sandbox), python3 by the JSON read.
-  if have zsh && have python3; then
+  #    modules in the hermetic sandbox), python3 by the JSON read. These legs are the
+  #    shell-area work of this section (they source the zsh modules), so they honour
+  #    --scope like the zsh sections below; the policy pins above are cross-cutting and
+  #    stay unscoped, like the CI-classifier tests.
+  if ((SCOPE_SHELL)) && have zsh && have python3; then
     _hfstub="$(mktemp -d "$SANDBOX/hfstub.XXXXXX")"
     cat >"$_hfstub/hyperfine" <<'EOF'
 #!/bin/sh
@@ -7781,8 +7784,13 @@ done
 [ -n "$out" ] || { echo "stub hyperfine: no --export-json" >&2; exit 1; }
 m="${CORE_TEST_HF_MEAN:-0.020}"
 md="${CORE_TEST_HF_MEDIAN:-$m}"
-printf '{"results":[{"command":"zsh -i -c exit","mean":%s,"stddev":0.001,"median":%s,"user":0,"system":0,"min":%s,"max":%s,"times":[%s],"exit_codes":[0]}]}\n' \
-  "$m" "$md" "$m" "$m" "$m" >"$out"
+if [ -n "${CORE_TEST_HF_BAD_JSON:-}" ]; then
+  # An export the reader cannot use (valid JSON, wrong shape) — a version skew, say.
+  printf '{"results":[]}\n' >"$out"
+else
+  printf '{"results":[{"command":"zsh -i -c exit","mean":%s,"stddev":0.001,"median":%s,"user":0,"system":0,"min":%s,"max":%s,"times":[%s],"exit_codes":[0]}]}\n' \
+    "$m" "$md" "$m" "$m" "$m" >"$out"
+fi
 echo "Benchmark 1: zsh -i -c exit (stub hyperfine, mean ${m}s)"
 # CORE_TEST_HF_RC: exit non-zero AFTER writing the file — the shape a real hyperfine has when
 # a run fails its own checks, and the one the gate must not trust.
@@ -7859,6 +7867,19 @@ EOF
     else
       fail "bench gate: hyperfine rc 42 should be exit 1 under --gate (got $_rc_hf_gate) and a skip in report mode (got $_bcrc): ${_out_hf_gate//$'\n'/ | }"
     fi
+
+    # 11c. The same split for an export the reader cannot use (exit 0, wrong shape): red
+    #     under --gate, a loud skip in report mode — `make bench` never returns 1 for it.
+    _bc_stub "CORE_TEST_HF_BAD_JSON=1" -- --gate
+    _rc_bad_gate=$_bcrc
+    _bc_stub "CORE_TEST_HF_BAD_JSON=1" --
+    if ((_rc_bad_gate == 1)) && ((_bcrc == 0)) && [[ "$_bcout" == *"could not parse"* && "$_bcout" != *"report only"* ]]; then
+      pass "bench gate: an unreadable hyperfine export is red under --gate and a skip in report mode"
+    else
+      fail "bench gate: unreadable export should be exit 1 under --gate (got $_rc_bad_gate) and a skip in report mode (got $_bcrc): ${_bcout//$'\n'/ | }"
+    fi
+  elif ((!SCOPE_SHELL)); then
+    skip "startup budget gate: stub-hyperfine verdict legs (out of scope)"
   else
     skip "startup budget gate: stub-hyperfine verdict legs (zsh or python3 not installed)"
   fi
