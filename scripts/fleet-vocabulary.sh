@@ -101,9 +101,12 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
 # WHAT COUNTS AS RUNNING THE SUITE, in a shell command line: a test path in COMMAND position
 # (`./test/smoke.sh`, `tests/run`, or after `;`/`&&`/`|`) or handed to an interpreter
 # (`bash -e test/smoke.sh`). `echo test/smoke.sh` and `shellcheck test/*.sh` mention the
-# path and run nothing, so they do not count. No backslashes: this is handed to awk via -v,
+# path and run nothing, so they do not count. `DIRS` is replaced per repo with the
+# directory that is actually populated (_run_re), so a populated test/ is not credited
+# by a step running a nonexistent tests/. No backslashes: this is handed to awk via -v,
 # which would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE='(^|[;&|][[:space:]]*|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)([.][/])?tests?[/]'
+RUN_RE_TEMPLATE='(^|[;&|][[:space:]]*|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)([.][/])?(DIRS)[/]'
+_run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
 
 _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` step, comments stripped
   # Only what a step RUNS counts as running the suite. A path filter (`paths: ['test/**']`),
@@ -133,7 +136,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` 
   ' "$1"
 }
 
-_suite_targets() { # _suite_targets <Makefile> → targets that run the suite, one per line
+_suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the suite, one per line
   # `make test` is the canonical spelling, but a workflow that runs `make test-repo` whose
   # recipe is `./test/test-repo.sh` IS running the suite — and the verb column already
   # reports the missing alias, so the floor must not report the same gap twice. A target
@@ -142,7 +145,7 @@ _suite_targets() { # _suite_targets <Makefile> → targets that run the suite, o
   # inherits). A rule with several targets (`smoke test-repo:`) gives its recipe to each.
   # Same lexer as _targets: rules at column 0, recipes on tab lines, comments and variable
   # assignments ignored.
-  awk -v re="$RUN_RE" '
+  awk -v re="$2" '
     /^\t/ {
       line = $0; sub(/^\t[ \t]*[@+-]*[ \t]*/, "", line)
       if (line ~ re) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
@@ -176,34 +179,38 @@ _ere_escape() { # _ere_escape <string> → the string as a literal inside a POSI
 }
 
 _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
-  local d="$1" t="" cand="" seen=0 wf alt="" tgt lines
-  # Either directory name satisfies the floor, so the first POPULATED one is the suite; a
-  # stale empty test/ beside a real, CI-run tests/ must not read as `empty`.
-  for cand in "$d/test" "$d/tests"; do
-    [[ -d "$cand" ]] || continue
+  local d="$1" dirs="" cand="" seen=0 wf alt="" tgt lines re
+  # Either directory name satisfies the floor, and only a POPULATED one is the suite: a
+  # stale empty test/ beside a real, CI-run tests/ must not read as `empty`, and a step
+  # that runs a nonexistent tests/ must not credit a populated test/ it never touches.
+  for cand in test tests; do
+    [[ -d "$d/$cand" ]] || continue
     seen=1
     # `ls -A` is portable and empty output means empty dir (`find -mindepth` is GNU).
-    [[ -n "$(ls -A "$cand" 2>/dev/null)" ]] && { t="$cand"; break; }
+    [[ -n "$(ls -A "$d/$cand" 2>/dev/null)" ]] && dirs="${dirs:+$dirs|}$cand"
   done
   ((seen)) || { printf 'no-dir'; return 0; }
-  [[ -n "$t" ]] || { printf 'empty'; return 0; }
+  [[ -n "$dirs" ]] || { printf 'empty'; return 0; }
+  re="$(_run_re "$dirs")"
   # What counts as running it: a `run:` step that executes the directory (RUN_RE), or
   # invokes `make` on a target whose recipe does (`make test`, `make test-repo`).
   alt="test"
   if [[ -f "$d/Makefile" ]]; then
     while IFS= read -r tgt; do
       [[ -n "$tgt" && "$tgt" != test ]] && alt="$alt|$(_ere_escape "$tgt")"
-    done < <(_suite_targets "$d/Makefile")
+    done < <(_suite_targets "$d/Makefile" "$re")
   fi
   # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
-  # never a nested directory or a stray notes file. The make match wants a boundary on
-  # the right so `make test-report` is not `make test`. The step text is captured, then
-  # searched from a herestring: under pipefail a `grep -q` that exits on an early match
-  # can SIGPIPE a producer still writing, and 141 would read as "not run".
+  # never a nested directory or a stray notes file. `make` must be in COMMAND position too
+  # (start, after a control operator, or under sudo): `echo "make test is disabled"` is a
+  # string, not a run. The right boundary keeps `make test-report` from being `make test`.
+  # The step text is captured, then searched from a herestring: under pipefail a `grep -q`
+  # that exits on an early match can SIGPIPE a producer still writing, and 141 would read
+  # as "not run".
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
     [[ -f "$wf" ]] || continue
     lines="$(_run_lines "$wf")"
-    if grep -qE "(make[[:space:]]+([^|&;]*[[:space:]])?($alt)([^[:alnum:]_-]|\$)|$RUN_RE)" <<<"$lines"; then
+    if grep -qE "((^|[;&|][[:space:]]*)(sudo[[:space:]]+)?make[[:space:]]+([^|&;]*[[:space:]])?($alt)([^[:alnum:]_-]|\$)|$re)" <<<"$lines"; then
       printf 'ok'
       return 0
     fi

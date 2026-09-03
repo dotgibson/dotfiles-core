@@ -476,6 +476,7 @@ noticed. `scripts/make-vocabulary.txt` now declares the canonical verbs **once**
 Keep the old spelling as an alias — two lines, and muscle memory survives:
 
 ```make
+.PHONY: bootstrap-dry
 bootstrap-dry: dry-run ## (alias) kept for muscle memory
 ```
 

@@ -14,6 +14,7 @@
 # repo keeps its old spelling as a `.PHONY` alias to the canonical target — two lines, and
 # muscle memory survives:
 #
+#     .PHONY: bootstrap-dry
 #     bootstrap-dry: dry-run   ## (alias) kept for muscle memory
 #
 # A verb that genuinely does not apply to a repo is DECLARED, not silently absent, in that
