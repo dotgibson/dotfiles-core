@@ -580,16 +580,18 @@ fi
 # ── 3. the second run changes nothing ────────────────────────────────────────
 # Judged on the FILESYSTEM, not on output: a bootstrap that removed and re-created every
 # link while saying nothing would pass an output check. Every entry under HOME — its
-# inode, kind and link target — must be identical before and after; a re-created
-# symlink has a new inode, a backup is a new entry. `ls -id` and `readlink` are what
-# both GNU and BSD userlands share (no `find -printf`, no `stat -c`).
-snapshot() { # snapshot <dir> → one line per entry: inode kind path [-> target]
+# inode, kind, link target, and for a regular file its bytes — must be identical before
+# and after; a re-created symlink has a new inode, a backup is a new entry, and a file
+# rewritten in place (the mise seed, say) keeps its inode but not its checksum. `ls -id`,
+# `readlink` and POSIX `cksum` are what both GNU and BSD userlands share (no
+# `find -printf`, no `stat -c`, no `sha256sum`).
+snapshot() { # snapshot <dir> → one line per entry: inode kind path [-> target | cksum]
   find "$1" -mindepth 1 -print | LC_ALL=C sort | while IFS= read -r p; do
     # shellcheck disable=SC2012  # the paths are ours (no odd names), and `find -printf` is GNU-only
     ino="$(ls -id -- "$p" | awk '{print $1}')"
     if [[ -L "$p" ]]; then printf '%s L %s -> %s\n' "$ino" "$p" "$(readlink "$p")"
     elif [[ -d "$p" ]]; then printf '%s D %s\n' "$ino" "$p"
-    else printf '%s F %s\n' "$ino" "$p"; fi
+    else printf '%s F %s %s\n' "$ino" "$p" "$(cksum <"$p" | awk '{print $1, $2}')"; fi
   done
 }
 before="$(snapshot "$tmp/home")"
@@ -602,7 +604,7 @@ if [[ "$before" != "$after" ]]; then
 elif grep -Eq '^(linked|backed up|seeded) ' "$tmp/run2.out"; then
   bad "second run claims to have changed something: $(grep -E '^(linked|backed up|seeded) ' "$tmp/run2.out" | tr '\n' ' ')"
 else
-  ok "second run changed nothing (every inode, kind and link target identical)"
+  ok "second run changed nothing (every inode, kind, link target and file checksum identical)"
 fi
 
 if ((rc == 0)); then

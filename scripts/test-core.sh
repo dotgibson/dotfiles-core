@@ -5447,6 +5447,22 @@ if have git && have zsh; then
       fail "new-os-repo: the silent re-link failed for another reason — $(grep FAIL "$SANDBOX/nor-silent.out" | head -2 | tr '\n' ' ')"
     fi
     rm -rf "$_nor_brk"
+    # ...and on one that REWRITES a regular file in place. An inode survives that, so the
+    # snapshot carries each file's checksum; the mise seed is the file a regression would
+    # most plausibly re-copy on every run. Drop the "already seeded" guard from a copy of
+    # the bootstrap, and re-copy with fresh bytes so the rewrite is not a no-op.
+    _nor_brk="$SANDBOX/newosrepo-rewrite"
+    rm -rf "$_nor_brk"
+    cp -r "$NOR" "$_nor_brk"
+    sed -i.bak -e 's|^if \[\[ ! -e "\$CFG/mise/config.toml" && -f "\$REPO/core/mise/config.toml" \]\]; then|if [[ -f "$REPO/core/mise/config.toml" ]]; then date +%N >>"$REPO/core/mise/config.toml"|' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-rewrite.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites the mise seed on every run — in-place rewrites are invisible to it"
+    elif grep -q 'changed the tree' "$SANDBOX/nor-rewrite.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on a bootstrap that rewrites a file in place (checksum, not just inode)"
+    else
+      fail "new-os-repo: the in-place rewrite failed for another reason — $(grep FAIL "$SANDBOX/nor-rewrite.out" | head -2 | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_brk"
     if have make; then
       # Every canonical verb RESOLVES (the promise scripts/make-vocabulary.txt makes): -n
       # expands all seven without needing shellcheck or a Core checkout; then the four that
