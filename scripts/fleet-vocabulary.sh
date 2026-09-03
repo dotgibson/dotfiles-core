@@ -202,10 +202,11 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternat
 # code-string modes -e/-p/--eval/--print; for python: -c (the operand is source text, not
 # a file — a shell's -c, by contrast, executes its string) and the compile- or lint-only
 # modules (`-m compileall tests/` byte-compiles; pyflakes/pylint/flake8/mypy/black/ruff/
-# isort read the files and run nothing). For every interpreter: its
+# isort read the files and run nothing), and pytest`s own non-executing modes
+# (--collect-only/--co, --version, -h/--help) anywhere in its argument list. For every interpreter: its
 # help and version modes (--help/--version, -h/-V, pwsh -Help/-Version/-?), which print
 # and exit without touching the operand.
-NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v|-e|-p|--eval|--print)([[:space:]]|$)|python3?[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-c([[:space:]]|$)|-m[[:space:]]+(compileall|py_compile|pyflakes|pylint|flake8|mypy|black|ruff|isort)([[:space:]]|$))|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
+NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v|-e|-p|--eval|--print)([[:space:]]|$)|python3?[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-c([[:space:]]|$)|-m[[:space:]]+(compileall|py_compile|pyflakes|pylint|flake8|mypy|black|ruff|isort)([[:space:]]|$)|-m[[:space:]]+pytest([[:space:]]+[^[:space:]]+)*[[:space:]]+(--collect-only|--co|--version|-h|--help)([[:space:]]|$))|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:
@@ -277,12 +278,13 @@ AWK_SHELL='
     # invoked as a command outside any body; cdnorm drops the body of a function that is
     # never invoked, so dead command text cannot meet the floor. The opener and the
     # closing `}` are not commands; a first body command on the same line as the opener is.
-    split("", BODY); split("", INVOKED); fn = ""; depth = 0
+    split("", BODY); split("", FNAME); fn = ""; depth = 0
     for (i = 1; i <= n; i++) {
       t = trim(c[i])
       if (fn == "" && match(t, /^(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*(\(\))?[ \t]*\{/)) {
         if (t ~ /^function[ \t]/ || t ~ /\(\)/) {
           fn = t; sub(/^function[ \t]+/, "", fn); sub(/[ \t]*(\(\))?[ \t]*\{.*$/, "", fn)
+          FNAME[fn] = 1
           depth = 1; t = substr(t, RLENGTH + 1); c[i] = trim(t)
           if (c[i] == "") { BODY[i] = "@"; continue }
         }
@@ -293,12 +295,21 @@ AWK_SHELL='
         BODY[i] = fn
       }
     }
-    for (i = 1; i <= n; i++) if (!(i in BODY)) { w = trim(c[i]); sub(/[ \t].*$/, "", w); if (w != "") INVOKED[w] = 1 }
   }
-  function cdnorm(c, n,   i, d, t, m, x, st, skip, nest, kw, lvl) {
+  # cdnorm runs the reachability pass TWICE: pass 1 on a copy with every function body
+  # dropped, recording which function names are invoked by a command that is itself
+  # reachable; pass 2 for real, keeping the bodies of exactly those functions. A call made
+  # only inside `if false` invokes nothing.
+  function cdnorm(c, n,   i, c2) {
+    fnbodies(c, n)
+    split("", INVOKED)
+    for (i = 1; i <= n; i++) c2[i] = c[i]
+    cdpass(c2, n, 0)
+    cdpass(c, n, 1)
+  }
+  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w) {
     d = ""; x = 0; st = ""; nest = 0; skip = 0
     split("", TAKEN); split("", SKIPD)
-    fnbodies(c, n)
     for (i = 1; i <= n; i++) {
       if ((i in BODY) && (BODY[i] == "@" || !(BODY[i] in INVOKED))) { c[i] = ""; continue }
       # Reachability, for the statically decidable pairs. `st` is the status of the AND-OR
@@ -361,6 +372,7 @@ AWK_SHELL='
       if (t ~ /^[{}()]$/) t = ""
       if (skip || t == "") { c[i] = ""; continue }
       c[i] = t
+      if (!final) { w = t; sub(/[ \t].*$/, "", w); if (w in FNAME) INVOKED[w] = 1 }
       if (match(t, /^cd[ \t]+/)) {
         d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
         if (d ~ /^tests?$/) { x = 0; continue }
@@ -455,12 +467,12 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         if (RLENGTH > bind) {
           line = trim($0)
           # A HEREDOC PAYLOAD is data, not commands: from a `<<DELIM` / `<<'DELIM'` /
-          # `<<-DELIM` (not `<<<`, a herestring) to the line that is exactly DELIM, the
+          # `<<\DELIM` / `<<-DELIM` (not `<<<`, a herestring) to the line that is exactly DELIM, the
           # lines are written somewhere, never run. The command carrying the operator is
           # kept; the payload is dropped.
           if (hd != "") { if (line == hd) hd = ""; next }
-          if (!fold && match(line, /(^|[^<])<<-?[ \t]*[\047"]?[A-Za-z_][A-Za-z0-9_]*/)) {
-            hd = substr(line, RSTART, RLENGTH); sub(/^.*<<-?[ \t]*[\047"]?/, "", hd)
+          if (!fold && match(line, /(^|[^<])<<-?[ \t]*([\047"]|\\)?[A-Za-z_][A-Za-z0-9_]*/)) {
+            hd = substr(line, RSTART, RLENGTH); sub(/^.*<<-?[ \t]*([\047"]|\\)?/, "", hd)
           }
           if (fold) { acc = (acc == "" ? line : acc " " line); next }
           if (line ~ /\\$/) { acc = acc substr(line, 1, length(line) - 1) " "; next }

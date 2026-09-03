@@ -16981,6 +16981,13 @@ _fv_floor "for t in a b; do make test; done runs" 'ok' '_fv_suite dotfiles-Alpin
 _fv_floor "make test after a while-false loop closes" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while false; do echo never; done; make test"'
 _fv_floor "steps: with its items at the same indent" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n    - run: make lint\n    - run: make test\n"'
 _fv_floor "test: ; (an empty inline recipe) replaces the earlier recipe" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "test: ;\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test"'
+# A BACKSLASH-QUOTED HEREDOC DELIMITER, pytest collection-only, and a function called only
+# from an unreachable branch.
+_fv_floor "make test inside a <<\\EOF heredoc payload" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          cat <<\\\\EOF > notes.txt\n          make test\n          EOF\n"'
+_fv_floor "python3 -m pytest --collect-only tests/ discovers only" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m pytest --collect-only tests/"'
+_fv_floor "python3 -m pytest tests/ --co discovers only" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m pytest tests/ --co"'
+_fv_floor "a function called only inside if false is never invoked" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; if false; then suite; fi"'
+_fv_floor "a function called inside if true is invoked" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; if true; then suite; fi"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
