@@ -8189,6 +8189,25 @@ else
   # backticks may appear in this body and every runtime $ must be escaped.
   _mkdstub() {
     local name="$1" mode="$2" ver="${3:-18.19.0}"
+    # The stub's daemon binds where a REAL daemon of the version it claims binds: under the
+    # data dir before 18.20.0, under $TMPDIR/atuin-$UID from 18.20.0 (upstream #3910). A
+    # version-aware verifier can only be pinned by a stub that moves with the version.
+    # Literal `$`s here: the heredoc below is unquoted, and an expansion's OUTPUT is not
+    # re-scanned for escapes, so these reach the stub as written.
+    local sock_expr='$DH/atuin/atuin.sock' strict_sockdir=0 vmaj vmin vpat vpre=""
+    # Semver, like the verifier: a pre-release of 18.20.0 (18.20.0-beta.3) predates #3910 and
+    # binds at the OLD path; 18.20.0 and anything above bind at the new one.
+    [[ "$ver" == *-* ]] && vpre="${ver#*-}"
+    IFS=. read -r vmaj vmin vpat _ <<<"${ver%%-*}"
+    # ...and from 18.20.0 the daemon REFUSES a socket directory that is not exactly 0700
+    # ("incorrect permissions (expected 700, got 755)") and exits before binding — measured on
+    # 18.21.0. The stub does the same, so a verifier that pre-creates the directory the way
+    # a shell's umask would is caught here rather than on the next real measurement.
+    if ((vmaj > 18 || (vmaj == 18 && vmin > 20) || (vmaj == 18 && vmin == 20 && ${vpat:-0} > 0))) ||
+      { ((vmaj == 18 && vmin == 20)) && [[ -z "$vpre" ]]; }; then
+      sock_expr='${TMPDIR:-/tmp}/atuin-$UID/atuin.sock'
+      strict_sockdir=1
+    fi
     cat >"$_dstub/$name" <<STUB
 #!/usr/bin/env bash
 MODE="$mode"
@@ -8200,7 +8219,8 @@ DH="\${XDG_DATA_HOME:-/nonexistent}"
 LOG="$_dstub/$name.calls"
 SPAWNMARK="$_dstub/$name.spawned"
 FORKMARK="$_dstub/$name.forked"
-SOCK="\$DH/atuin/atuin.sock"
+SOCK="$sock_expr"
+STRICT_SOCKDIR="$strict_sockdir"
 PIDF="$_dstub/$name.pid"
 DB="\$DH/atuin/history.db"
 mkdir -p "\$DH/atuin" 2>/dev/null
@@ -8223,9 +8243,22 @@ PY
 # refuses over an existing inode, which is what 18.19.0 really does:
 #   Error: Address already in use (os error 48)  crates/atuin-daemon/src/server.rs:72
 serve_fg() {
-  exec python3 - "\$SOCK" "\$PIDF" "\$MODE" "\$DB" <<'PY'
-import socket, sys, os, sqlite3
-sock, pidf, mode, db = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+  exec python3 - "\$SOCK" "\$PIDF" "\$MODE" "\$DB" "\$STRICT_SOCKDIR" <<'PY'
+import socket, sys, os, sqlite3, stat
+sock, pidf, mode, db, strict = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+# ONLY a daemon start creates the socket directory — never --version or a daemon-off write —
+# and it creates it 0700, as the real daemon does. A directory that already exists was made by
+# the caller, and from 18.20.0 the real daemon refuses it unless it is exactly 0700; the stub
+# does the same, so a verifier that prepared it with the umask is caught here.
+sockdir = os.path.dirname(sock)
+if not os.path.isdir(sockdir):
+    os.makedirs(sockdir)
+    os.chmod(sockdir, 0o700)
+elif strict == "1":
+    perm = stat.S_IMODE(os.stat(sockdir).st_mode)
+    if perm != 0o700:
+        sys.stderr.write("Error: %s has incorrect permissions (expected 700, got %o)\n" % (sockdir, perm))
+        sys.exit(1)
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
     s.bind(sock)
@@ -8719,6 +8752,53 @@ J4PROBE
       pass "atuin autostart: an atuin that self-heals its daemon → holds (rc 0), every arm spawned"
     else
       fail "atuin autostart: expected holds/rc0 for a healing atuin, got rc$_drc"
+    fi
+
+    # 4b. THE SOCKET MOVED IN 18.20.0 (upstream #3910): the default is $TMPDIR/atuin-$UID/
+    #     atuin.sock now, and a verifier still waiting on the data-dir path reports a healthy
+    #     daemon as `unmeasurable` ("never answered") — which is what the first measurement
+    #     past the anchor did, on 18.21.0 (#826). Same stub, claiming 18.20.0, binding where a
+    #     real 18.20.0 does; same one-retry the known-good stub gets at the low bound.
+    _mkdstub atuin-heals-1820 heals 18.20.0
+    _dpoll="$_DPOLL_GATE"
+    _d_run atuin-heals-1820 --premise autostart --json
+    _dapp="$(_d_get "$_dout" verdict)"
+    _dappwhy="$(_d_get "$_dout" reason)"
+    _dreap
+    if [[ "$_dapp" == unmeasurable ]]; then
+      _d_run atuin-heals-1820 --premise autostart --json
+      _dapp="$(_d_get "$_dout" verdict)"
+      _dappwhy="$(_d_get "$_dout" reason)"
+      _dreap
+    fi
+    _dpoll=""
+    if [[ "$_dapp" == holds ]] && ((_drc == 0)); then
+      pass "atuin autostart: a healing 18.20.0 (socket under \$TMPDIR/atuin-\$UID, upstream #3910) → holds — the verifier waits where that version binds"
+    else
+      fail "atuin autostart: a healing 18.20.0 binding under \$TMPDIR/atuin-\$UID reported ${_dapp:-no verdict} (rc$_drc) — the verifier is waiting on the pre-18.20 data-dir socket, or made the socket directory with a mode the daemon refuses: ${_dappwhy:-no reason parsed}"
+    fi
+
+    # 4c. THE BOUNDARY ITSELF. 18.20.0-beta.3 predates #3910 and binds in the data dir, and its
+    #     numeric triple is 18.20.0 — a verifier that drops the pre-release suffix sends it to
+    #     the new path and reports a healthy binary as unmeasurable. Semver's rule (a
+    #     pre-release sorts below its release) is what both sides apply.
+    _mkdstub atuin-heals-1820b3 heals 18.20.0-beta.3
+    _dpoll="$_DPOLL_GATE"
+    _d_run atuin-heals-1820b3 --premise autostart --json
+    _dapp="$(_d_get "$_dout" verdict)"
+    _dappwhy="$(_d_get "$_dout" reason)"
+    _dreap
+    if [[ "$_dapp" == unmeasurable ]]; then
+      _d_run atuin-heals-1820b3 --premise autostart --json
+      _dapp="$(_d_get "$_dout" verdict)"
+      _dappwhy="$(_d_get "$_dout" reason)"
+      _dreap
+    fi
+    _dpoll=""
+    if [[ "$_dapp" == holds ]] && ((_drc == 0)); then
+      pass "atuin autostart: a healing 18.20.0-beta.3 (pre-#3910, data-dir socket) → holds — the pre-release suffix keeps it on the old path"
+    else
+      fail "atuin autostart: a healing 18.20.0-beta.3 binding in the data dir reported ${_dapp:-no verdict} (rc$_drc) — the verifier dropped the pre-release suffix and waited at the 18.20.0 path: ${_dappwhy:-no reason parsed}"
     fi
 
     # 5. Expected delta is 1 here and 0 under discard, on arms with IDENTICAL names. Without

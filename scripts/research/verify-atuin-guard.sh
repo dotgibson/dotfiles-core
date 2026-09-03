@@ -374,6 +374,7 @@ done
 VERDICT=""
 REASON=""
 AT_VER="unknown"
+AT_VER_PRE=0 # 1 when `--version` carried a pre-release suffix (18.20.0-beta.3)
 ANCHOR="unknown"
 ANCHOR_REL="unknown" # same | newer | older | unanchored | unknown
 # WHERE this ran, because for the autostart premise that is half the verdict's worth. The two
@@ -1266,7 +1267,33 @@ arms_discard() {
 arms_autostart() {
   local shape hook h rc
 
-  SOCK="$SB/.local/share/atuin/atuin.sock"
+  # WHERE THE DAEMON BINDS BY DEFAULT, BY VERSION. This is the path every arm waits on,
+  # makes stale and unlinks, so it must be the one the binary under test actually uses —
+  # and that moved in 18.20.0 (upstream PR #3910): from the data dir to
+  # $TMPDIR/atuin-$UID/atuin.sock, which AT_VARS pins into the sandbox. Left at the old
+  # path, the manual-spawn control waits on a socket a healthy >= 18.20.0 daemon never
+  # creates and the run reports `unmeasurable` ("never answered") — which is exactly what
+  # the first measurement past the anchor did, on 18.21.0 (#826). An `unknown` version
+  # compares as 0.0.0 and takes the old path; that run is unmeasurable for its own reason.
+  # Semver's ordering, exactly: above 18.20.0 → moved; 18.20.0 itself → moved unless it is a
+  # PRE-release of 18.20.0 (18.20.0-beta.3 predates #3910 and still binds in the data dir);
+  # below → not moved.
+  local socket_moved=0
+  case "$(ver_cmp "$AT_VER" 18.20.0)" in
+  1) socket_moved=1 ;;
+  0) ((AT_VER_PRE)) || socket_moved=1 ;;
+  esac
+  if ((socket_moved)); then
+    SOCK="$LOCALDIR/tmp/atuin-${UID}/atuin.sock"
+  else
+    SOCK="$SB/.local/share/atuin/atuin.sock"
+  fi
+  # 0700, and checked: from 18.20.0 the daemon REFUSES a socket directory it did not create
+  # unless it is exactly 0700 ("incorrect permissions (expected 700, got 755)"), and it exits
+  # before binding — indistinguishable, from the socket, from a daemon that never started.
+  # The directory must pre-exist so make_stale can plant an inode in it; so it is made the
+  # way the daemon would have made it.
+  mkdir -p "${SOCK%/*}" 2>/dev/null && chmod 700 "${SOCK%/*}" 2>/dev/null
   # AF_UNIX sun_path caps near 108 bytes, and a bind past it fails with a diagnostic that
   # looks nothing like "your path is too long" — it looks like a daemon that would not start,
   # i.e. like a finding. Nothing in this script bound a socket until this premise existed, so
@@ -1468,9 +1495,15 @@ measure() {
   # timeout killed it, producing no verdict at all rather than the promised `unmeasurable`.
   # A timed-out or empty result falls through to AT_VER=unknown, which the anchor comparison
   # below already handles, so the bound costs nothing when the binary is healthy.
-  AT_VER="$(${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" --version 2>/dev/null |
-    grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
+  local _vraw
+  _vraw="$(${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" --version 2>/dev/null | head -n1)"
+  AT_VER="$(printf '%s' "$_vraw" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
   [[ -n "$AT_VER" ]] || AT_VER="unknown"
+  # The numeric triple drops a pre-release suffix, and that suffix carries one fact the socket
+  # choice needs: 18.20.0-beta.3 predates #3910 and binds at the OLD path, while 18.20.0 does
+  # not. Semver's own rule — a pre-release sorts BELOW its release — is the only version-level
+  # answer that is never wrong about a build we have not run.
+  [[ "$_vraw" =~ [0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.]+ ]] && AT_VER_PRE=1
   # `none` is not a version, so it is not compared: ANCHOR_REL stays `unanchored` and the
   # report leads with "this may be the first measurement of this premise rather than a change
   # in it" — which is a different finding, with a different remedy, from a premise that moved.
