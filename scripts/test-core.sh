@@ -16787,13 +16787,25 @@ _fv_floor "a recipe that cds into test/ and runs the script" 'ok' '_fv_suite dot
 _fv_floor "a step that cds into tests/ and runs bash on the script" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "cd tests/ && bash run.sh"'
 _fv_floor "a step that cds into test/ and only echoes" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd test && echo smoke.sh"'
 _fv_floor "a step that cds elsewhere before running a script" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd docs && ./smoke.sh"'
+# MAKE MODES THAT EXIT BEFORE BUILDING, another Makefile, and options that belong to the
+# interpreter: `--help`/`--version` run nothing; `-C tools`/`-f other.mk` build from a
+# Makefile whose targets were never inspected; `pwsh -noprofile` and `python -I` RUN.
+_fv_floor "make --help test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --help test"'
+_fv_floor "make --version test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --version test"'
+_fv_floor "make -C tools test (another Makefile)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -C tools test"'
+_fv_floor "make -f other.mk test (another Makefile)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -f other.mk test"'
+_fv_floor "make --directory=tools test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --directory=tools test"'
+_fv_floor "make -I test lint (-I takes a dir, not a goal)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -I test lint"'
+_fv_floor "pwsh -noprofile test/smoke.ps1 runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "pwsh -noprofile test/smoke.ps1"'
+_fv_floor "python -I test/smoke.py runs (-I is python isolation, not make)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 -I test/smoke.py"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
-out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
-if [[ "$out" == *"1 repo(s) under the test floor"* ]]; then
+_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
+out="$(_fv_run --check)"; rc=$?
+if ((rc == 1)) && [[ "$out" == *"1 repo(s) under the test floor"* ]]; then
   pass "vocab floor: --check counts a repo under the floor and exits 1 with every verb defined"
 else
-  fail "vocab floor: --check did not count the floor miss: $out"
+  fail "vocab floor: --check did not count the floor miss or exited $rc, not 1: $out"
 fi
 
 # An unreadable vocabulary is a loud stop, never an empty register (the fleet-list posture).

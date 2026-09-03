@@ -58,16 +58,20 @@ done
 # The vocabulary. Same posture as the fleet list (#669): an unreadable or empty declaration
 # is a loud stop, never an empty register — a table with no verb columns reads as "every
 # repo speaks the vocabulary" while asserting nothing.
+# A scalar count beside the array: on bash 3.2 (the macOS lane) `set -u` rejects an empty
+# array's expansion, and the guard below must reach its exit 2, not trip on its own test.
 VERBS=()
+nverbs=0
 if [[ -r "$VOCAB_FILE" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%%#*}"
     line="${line#"${line%%[![:space:]]*}"}"
     [[ -n "$line" ]] || continue
     VERBS+=("${line%%[[:space:]]*}")
+    nverbs=$((nverbs + 1))
   done <"$VOCAB_FILE"
 fi
-((${#VERBS[@]})) || {
+((nverbs)) || {
   fail "vocabulary list unreadable or empty: $VOCAB_FILE — cannot enumerate the verbs to report on"
   exit 2
 }
@@ -126,12 +130,15 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
 RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
-# A NO-EXECUTE MODE PARSES OR PRINTS AND RUNS NOTHING: make's dry-run (`-n` in any short
-# cluster, --dry-run/--just-print/--recon) and question (`-q`, --question) modes; a shell's
-# `-n` syntax check; node's --check. For make the flag disqualifies ANYWHERE in the argument
-# list (GNU make accepts `make test -n`); for an interpreter, between it and its operand.
-# Applies wherever a command appears — a workflow step or a Makefile recipe.
-NORUN_RE='(^|[[:space:]])(sudo[[:space:]]+)?(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nq][a-zA-Z]*|--dry-run|--just-print|--recon|--question)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*|--check|--syntax-check))([[:space:]]|$)'
+# A NO-EXECUTE MODE PARSES, PRINTS OR ASKS AND RUNS NOTHING. For make: dry-run (`-n` in any
+# short cluster, --dry-run/--just-print/--recon), question (`-q`, --question), and the
+# modes that exit before building (`-h`/--help, `-v`/--version) — anywhere in the argument
+# list, since GNU make accepts options after goals; and a `-C`/`-f` (--directory/--file/
+# --makefile) invocation, which builds from a DIFFERENT Makefile than the one whose
+# targets were inspected, so the root target's recipe says nothing about it. For a POSIX
+# shell: `-n` (syntax check) between it and its operand — ONLY the shells, because pwsh
+# options are case-insensitive words (`-noprofile` runs). For node: --check / -c.
+NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nqhvCf][a-zA-Z]*|--dry-run|--just-print|--recon|--question|--help|--version|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(--check|-c)([[:space:]]|$))'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:
@@ -365,10 +372,12 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   # early match can SIGPIPE an awk still writing, and 141 would read as "not run".
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
     [[ -f "$wf" ]] || continue
-    # A make option that TAKES AN ARGUMENT (-C dir, -f file, -I dir, -o/-W file, and their
-    # long forms) is removed with its argument first, so `make -C test lint` does not read
-    # the directory operand as the suite target.
-    cmds="$(_run_lines "$wf" | sed -E 's/(^|[[:space:]])(-[CfIoW]|--(directory|file|makefile|include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\1/g')"
+    # A make option that TAKES AN ARGUMENT and does not change which Makefile runs (-I dir,
+    # -o/-W file and their long forms) is removed with its argument first, so `make -I test
+    # lint` does not read the directory operand as the goal — on make commands ONLY, so
+    # `python -I test/smoke.py` keeps its operand. `-C`/`-f` are not rewritten: they select
+    # another Makefile and NORUN_RE rejects the invocation outright.
+    cmds="$(_run_lines "$wf" | sed -E '/^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make([[:space:]]|$)/ s/(^|[[:space:]])(-[IoW]|--(include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\1/g')"
     hits="$(grep -E "($re|^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([[:space:]]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE")"
     if [[ -n "$hits" ]]; then
       printf 'ok'
@@ -434,7 +443,7 @@ if ((CHECK)); then
     printf '%s' "$rows" | grep -F '**' >&2
     exit 1
   fi
-  echo "fleet-vocabulary: every verb x repo cell is defined or declared and every repo meets the test floor ($present repo(s) x ${#VERBS[@]} verb(s))"
+  echo "fleet-vocabulary: every verb x repo cell is defined or declared and every repo meets the test floor ($present repo(s) x $nverbs verb(s))"
   exit 0
 fi
 
