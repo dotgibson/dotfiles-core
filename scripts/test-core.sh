@@ -10158,6 +10158,17 @@ _fv_reset; _fv_repo dotfiles-Fedora "ifeq (1,1)\\nifdef CI\\ninclude missing.mk\
 _fv_out="$(_fv_run --check)"
 if [[ "$_fv_out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a mandatory include under an undecidable inner branch of an active outer one fails closed"; else fail "vocab: undecidable-under-active folded wrong: $_fv_out"; fi
 
+# A MAKEFILE MAKE REJECTS RESOLVES NOTHING: a stray endif, an unterminated conditional, a
+# recipe before any rule, or a line that is not a Makefile line; an expansion line is fine.
+for _fv_bad in "endif\\n" "ifeq (1,1)\\n" "\\t@true\\n" "this is not make\\n"; do
+  _fv_reset; _fv_repo dotfiles-Fedora "${_fv_bad}${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+  _fv_out="$(_fv_run --check)"
+  if [[ "$_fv_out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a Makefile starting with $(printf '%q' "$_fv_bad") is unloadable — every verb missing"; else fail "vocab: unloadable Makefile ($(printf '%q' "$_fv_bad")) failed open: $_fv_out"; fi
+done
+unset _fv_bad
+_fv_reset; _fv_repo dotfiles-Fedora "\$(info loading)\\nexport CI=1\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: an expansion line and an export are Makefile lines"; else fail "vocab: valid top-level lines read as unloadable: $_fv_out"; fi
+
 # A RULE IN A STATICALLY ACTIVE BRANCH counts; one under an undecidable condition does not.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb defined inside an active \`ifeq (1,1)\` branch resolves"; else fail "vocab: active-branch rule not counted: $_fv_out"; fi
@@ -10592,6 +10603,9 @@ _fv_floor ".ONESHELL: cd test on one line, ./smoke.sh on the next, runs the suit
 _fv_floor "without .ONESHELL each recipe line is its own shell: cd does not carry" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "suite3:\n\tcd test\n\t./smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite3"'
 _fv_floor ".ONESHELL with .SHELLFLAGS -ec: false ends the script" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf ".ONESHELL:\n.SHELLFLAGS = -ec\nsuite3:\n\tfalse\n\t./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite3"'
 _fv_floor ".ONESHELL without -e: false does not end the script" 'ok' '_fv_suite dotfiles-Alpine; printf ".ONESHELL:\nsuite3:\n\tfalse\n\t./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite3"'
+# PYTEST OPTIONS THAT TAKE A VALUE do not end discovery.
+_fv_floor "pytest -q -m smoke discovers a populated tests/" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "pytest -q -m smoke"'
+_fv_floor "a test: recipe of pytest -q -m smoke is the suite" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_repo dotfiles-Alpine "${_fv_all/test:\\n\\t@.\/test\/smoke.sh/test:\\n\\tpytest -q -m smoke}"; _fv_ci dotfiles-Alpine "make test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

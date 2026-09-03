@@ -152,6 +152,7 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
   local d="$1" f="${2:-Makefile}" depth="${3:-0}" line kind inc m g found
   [[ -f "$d/$f" ]] || return 0
   while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" == '@@UNLOADABLE '* ]] && return 1
     if [[ "$line" != '@@INCLUDE '* ]]; then
       printf '%s\n' "$line"
       continue
@@ -193,11 +194,24 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
     # (AWK_MAKECOND): followed in an active branch, skipped in an inactive one, and a
     # MANDATORY one under an undecidable condition becomes `@@INCLUDE include ?`, which
     # the shell fails closed.
+    # LOADABLE AT ALL: make rejects the whole file — no target resolves — on a stray
+    # `else`/`endif`, a conditional or define left open at EOF, a recipe line before the
+    # first rule, or a line that is none of the things a Makefile line can be (a rule, an
+    # assignment, a directive, an expansion, a recipe, a comment). Any of these becomes an
+    # `@@UNLOADABLE` marker the shell fails closed on, like a missing mandatory include.
     { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
     { t = l; sub(/#.*/, "", t); sub(/^[ ]+/, "", t) }
     indef { if (t ~ /^endef([ \t]|$)/) indef = 0; print l; next }
     t ~ /^define([ \t]|$)/ { indef = 1; print l; next }
+    t ~ /^(else|endif)([ \t]|$)/ && mcdepth == 0 { print "@@UNLOADABLE stray " t; next }
     mc_line(l) { print l; next }
+    t ~ /^[ \t]*$/ { print l; next }
+    l ~ /^\t/ { if (!seenrule) { print "@@UNLOADABLE recipe before first target"; next } ; print l; next }
+    t ~ /^(-?s?include|export|unexport|vpath|override|undefine|private|-?load)([ \t]|\(|$)/ { if (t !~ /^-?s?include[ \t]/) { print l; next } }
+    t ~ /^\$[({]/ { print l; next }
+    t ~ /^[^=]*[:?+!]?=/ { print l; next }
+    t ~ /^[^=]*:/ { seenrule = 1; print l; next }
+    t !~ /^-?s?include[ \t]/ { print "@@UNLOADABLE missing separator: " t; next }
     t ~ /^-?s?include[ \t]/ {
       st = mc_active()
       if (st == "0") next
@@ -206,7 +220,7 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
       next
     }
     { print l }
-    END { if (buf != "") print buf }
+    END { if (buf != "") print buf; if (mcdepth > 0 || indef) print "@@UNLOADABLE unterminated conditional or define" }
   ' "$d/$f")
   return 0
 }
@@ -241,8 +255,8 @@ _targets() { # _targets <Makefile> → one defined target name per line
 # test/smoke.sh`); or the directory itself, or a file in it, handed to a TEST RUNNER that
 # takes directories (`bats test/`, `prove tests`, `pytest tests/`, `python3 -m pytest
 # tests`, `-m unittest discover tests`) — or, for pytest alone, no path at all: from the
-# repo root a bare `pytest` (or `python -m pytest`, options only) DISCOVERS the populated
-# suite directory. A bare directory given to a shell or executed directly (`bash test/`,
+# repo root a bare `pytest` (or `python -m pytest`, options only — including the ones
+# that take a value, `-m smoke`, `-k expr`) DISCOVERS the populated suite directory. A bare directory given to a shell or executed directly (`bash test/`,
 # `./test/`) only fails; a python module other than a test runner (`-m tokenize
 # test/x.py`) reads the file and runs nothing — neither counts. `echo test/smoke.sh` and
 # `shellcheck test/*.sh` mention the path and run nothing, so they do not count. All of it
@@ -251,7 +265,7 @@ _targets() { # _targets <Makefile> → one defined target name per line
 # that is actually populated (_run_re), so a populated test/ is not credited by a step
 # running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|python3?|node|pwsh)[[:space:]]+((-o|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)[/][^[:space:]]+|(bats|prove|pytest)[[:space:]]+([^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|pytest([[:space:]]+-[^[:space:]]+)*[[:space:]]*$|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+pytest([[:space:]]+-[^[:space:]]+)*[[:space:]]*$|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+(pytest|unittest|nose2?)([[:space:]]+[^[:space:]]+)*[[:space:]]+([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/][^[:space:]]+)'
+RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|python3?|node|pwsh)[[:space:]]+((-o|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)[/][^[:space:]]+|(bats|prove|pytest)[[:space:]]+([^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|pytest([[:space:]]+((-m|-k|-p|-o|-c|-n|-W|--rootdir|--confcutdir|--basetemp|--tb|--durations|--maxfail)[[:space:]]+[^[:space:]]+|-[^[:space:]]+))*[[:space:]]*$|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+pytest([[:space:]]+((-m|-k|-p|-o|-c|-n|-W|--rootdir|--confcutdir|--basetemp|--tb|--durations|--maxfail)[[:space:]]+[^[:space:]]+|-[^[:space:]]+))*[[:space:]]*$|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+(pytest|unittest|nose2?)([[:space:]]+[^[:space:]]+)*[[:space:]]+([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/][^[:space:]]+)'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternation: test|tests> — every DIRS, both arms
 # A NO-EXECUTE MODE PARSES, PRINTS OR ASKS AND RUNS NOTHING. For make: dry-run (`-n` in any
 # short cluster, --dry-run/--just-print/--recon), question (`-q`, --question), touch
