@@ -10576,6 +10576,9 @@ _fv_floor "ci: \$(MAKE) test reaches the suite" 'ok' '_fv_suite dotfiles-Alpine;
 _fv_floor "ci: ; \${MAKE} -j2 lint test (inline, braces) reaches the suite" 'ok' '_fv_suite dotfiles-Alpine; printf "ci: ; \${MAKE} -j2 lint test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
 _fv_floor "ci: \$(MAKE) -n test is a dry run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "ci:\n\t\$(MAKE) -n test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
 _fv_floor "ci: \$(MAKE) -C tools test is another Makefile" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "ci:\n\t\$(MAKE) -C tools test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
+# A LITERAL make IN A RECIPE recurses like $(MAKE).
+_fv_floor "ci: ; make test (literal make) reaches the suite" 'ok' '_fv_suite dotfiles-Alpine; printf "ci: ; make test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
+_fv_floor "ci: make -n test (literal make, dry run) does not" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "ci:\n\tmake -n test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

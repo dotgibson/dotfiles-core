@@ -926,7 +926,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
   awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v PIPEFAIL=0 -v existl="${3:-}" "$AWK_SHELL$AWK_MAKECOND"'
     BEGIN { loadexist(existl) }
     # submake(line) — the goals a recipe hands to a RECURSIVE make (`$(MAKE) test`, `${MAKE}
-    # -j2 lint test`), as extra prerequisites of the rule: `ci: ; $(MAKE) test` runs the
+    # -j2 lint test`, or a literal `make test`), as extra prerequisites of the rule: `ci: ; $(MAKE) test` runs the
     # suite when the suite target does. Options and VAR=value are skipped; an invocation
     # in a no-run mode (-n, --dry-run, …) or selecting another Makefile (-C, -f) adds none.
     function submake(line,   n, c, i, k, w, m, goals, t) {
@@ -935,8 +935,9 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
       n = splitcmds(trim(stripcomment(line)), c)
       for (i = 1; i <= n; i++) {
         t = trim(c[i])
-        if (t !~ /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*\$[({]MAKE[)}]([ \t]|$)/) continue
-        sub(/^.*\$[({]MAKE[)}][ \t]*/, "", t)
+        # `$(MAKE)`, `${MAKE}` or a literal `make` — the same recursion.
+        if (t !~ /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(\$[({]MAKE[)}]|make)([ \t]|$)/) continue
+        sub(/^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(\$[({]MAKE[)}]|make)[ \t]*/, "", t)
         if (t ~ /(^|[ \t])(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^ \t]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([ \t=]|$)/) continue
         m = split(t, w, /[ \t]+/)
         for (k = 1; k <= m; k++) if (w[k] != "" && w[k] !~ /^-/ && w[k] !~ /^[A-Za-z_][A-Za-z0-9_]*=/) goals = goals " " w[k]
