@@ -1290,7 +1290,9 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         #   bare major          → judged against want
         #   exact N.M.P[-pre]   → a deliberate freeze, exempt whatever its major
         #   anything else       → no tag this repo cuts; judged by its leading major
-        # `git checkout` tolerates any run of shell whitespace between its words, options
+        # `git checkout` tolerates the GLOBAL git options before the subcommand (`-C <dir>`,
+        # `-c k=v`, `--git-dir=…`, `--work-tree=…`, `--no-pager`, a lone flag), which the
+        # scripts in this repo use routinely; any run of shell whitespace between its words, options
         # before the ref (`--detach`, `-q`, and the operand-taking `-b`/`-B`/`-c`/`-C`/
         # `--create`/`--force-create`/`--orphan` with their branch name), `switch` in
         # place of `checkout`, and a quote
@@ -1305,7 +1307,7 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         # The left boundary also admits a Markdown `_` delimiter — an underscore that is
         # itself at a word boundary — so `_refs/tags/v5_` is scanned, while `foo_refs…`
         # (an intraword identifier) still is not.
-        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+[^[:space:]]+|-[A-Za-z][-A-Za-z0-9=]*|--[A-Za-z][-A-Za-z0-9=]*))*|switch([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+[^[:space:]]+|-[-A-Za-z0-9=]+))*)[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace)=[^[:space:]]+|--no-pager|-[a-zA-Z]))*[[:space:]]+(checkout([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+[^[:space:]]+|-[A-Za-z][-A-Za-z0-9=]*|--[A-Za-z][-A-Za-z0-9=]*))*|switch([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+[^[:space:]]+|-[-A-Za-z0-9=]+))*)[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
           sub(/^[^rgv]*/, "", hit)                 # drop the boundary character(s)
