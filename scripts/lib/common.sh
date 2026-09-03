@@ -1291,8 +1291,9 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         #   exact N.M.P[-pre]   → a deliberate freeze, exempt whatever its major
         #   anything else       → no tag this repo cuts; judged by its leading major
         # `git checkout` tolerates any run of shell whitespace between its words, options
-        # before the ref (`--detach`, `-q`, and the operand-taking `-b`/`-B`/`-c`/`-C`
-        # with their branch name), `switch` in place of `checkout`, and a quote
+        # before the ref (`--detach`, `-q`, and the operand-taking `-b`/`-B`/`-c`/`-C`/
+        # `--create`/`--force-create`/`--orphan` with their branch name), `switch` in
+        # place of `checkout`, and a quote
         # opening the ref (v5 in single or double quotes), so a reformatted or
         # option-bearing command cannot slip under the gate. A bare `--` is NOT an option
         # for `checkout`: it ends option parsing and makes the next token a PATH, so
@@ -1304,7 +1305,7 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         # The left boundary also admits a Markdown `_` delimiter — an underscore that is
         # itself at a word boundary — so `_refs/tags/v5_` is scanned, while `foo_refs…`
         # (an intraword identifier) still is not.
-        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout([[:space:]]+(-[bBcC][[:space:]]+[^[:space:]]+|-[A-Za-z][-A-Za-z0-9=]*|--[A-Za-z][-A-Za-z0-9=]*))*|switch([[:space:]]+(-[bBcC][[:space:]]+[^[:space:]]+|-[-A-Za-z0-9=]+))*)[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+[^[:space:]]+|-[A-Za-z][-A-Za-z0-9=]*|--[A-Za-z][-A-Za-z0-9=]*))*|switch([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+[^[:space:]]+|-[-A-Za-z0-9=]+))*)[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
           sub(/^[^rgv]*/, "", hit)                 # drop the boundary character(s)
@@ -1328,11 +1329,13 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           sub(/^["\047]/, "", tok); sub(/^refs\/tags\//, "", tok); sub(/^v/, "", tok)
           # The token class admits `.`, so a sentence-ending period rides in with it:
           # `refs/tags/v5.3.0.` would read as `5.3.0.` and an exact freeze would be
-          # reported stale. ONLY that one period is prose — a single trailing `.`. Two
-          # (`v5.3.0..`) leave `5.3.0.`, which is malformed and judged; and a trailing
-          # `+` or `-` is kept, because `v5.3.0+` is no tag this repo cuts and must stay
-          # judged, not become exempt by trimming.
-          if (!peeled) { sub(/\.$/, "", tok); sub(/\.$/, "", hit) }   # hit: the message quotes the pin, not the prose
+          # reported stale. ONLY that one period is prose — a single trailing `.`, and
+          # only when whitespace or the end of the line follows it: inside a quoted
+          # argument (`"refs/tags/v5.3.0."`) bash hands the period to git, so it is part
+          # of a malformed ref and stays. Two (`v5.3.0..`) leave `5.3.0.`, which is
+          # malformed and judged; and a trailing `+` or `-` is kept, because `v5.3.0+`
+          # is no tag this repo cuts and must stay judged, not become exempt by trimming.
+          if (!peeled && rest ~ /^([[:space:]]|$)/) { sub(/\.$/, "", tok); sub(/\.$/, "", hit) }   # hit: the message quotes the pin, not the prose
           major = tok; sub(/[^0-9].*$/, "", major)
           exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
           # The token class stops at a character it does not admit, so `v5.3.0_bad`,

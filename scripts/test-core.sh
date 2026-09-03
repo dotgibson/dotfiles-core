@@ -2528,6 +2528,9 @@ _vpn_write README.md 'Pin `refs/tags/v5.3.0`. Or, less carefully, pin refs/tags/
 _vpn_count "an exact pin followed by a sentence-ending period is still exempt" 6 0
 _vpn_write README.md 'so vendor refs/tags/v5.'
 _vpn_count "a bare major followed by a sentence-ending period is still a finding" 6 1
+# A period inside a QUOTED argument is handed to git, so it is part of a malformed ref.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> "refs/tags/v5.3.0." --squash'
+_vpn_count "a trailing period inside a quoted ref (\"refs/tags/v5.3.0.\") is malformed — a finding" 6 1
 # Exactly ONE trailing period is prose; a second one is part of a malformed ref.
 _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0.. --squash'
 _vpn_count "\`v5.3.0..\` is not an exact pin with a sentence period — a finding" 6 1
@@ -2611,6 +2614,11 @@ _vpn_write README.md 'git checkout -b vendor-v6 v5'
 _vpn_count "\`checkout -b vendor-v6 v5\` is judged on v5, not on the branch name" 6 1
 _vpn_write README.md 'git checkout -b vendor-v5 v6'
 _vpn_count "\`checkout -b vendor-v5 v6\` is clean — the branch name is not the pin" 6 0
+# The long spellings of the operand-taking options consume a branch name too.
+_vpn_write README.md 'git switch --create vendor-v6 v5 && git checkout --orphan vendor-v6 v5 && git switch --force-create work v5'
+_vpn_count "\`--create\`, \`--orphan\` and \`--force-create\` consume their operand; the pin after it is judged" 6 3
+_vpn_write README.md 'git switch --create work v6.1.0 && git checkout --orphan fresh v6'
+_vpn_count "the same long options on an exact pin or the current major are clean" 6 0
 # A bare `--` ends checkout's options and makes the next token a PATH, not a ref; for
 # switch the token after `--` is still a branch.
 _vpn_write README.md 'git checkout -- v5 && git checkout -q -- v5'
