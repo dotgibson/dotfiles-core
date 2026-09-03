@@ -1110,7 +1110,7 @@ _suite_names() { # _suite_names <repo-dir> → the make targets credited with ru
 }
 
 _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
-  local d="$1" dirs wf alt="" tgt cmds hits re existl
+  local d="$1" dirs wf alt="" tgt cmds hits re existl _mk
   # Either directory name satisfies the floor, and only a POPULATED one is the suite: a
   # stale empty test/ beside a real, CI-run tests/ must not read as `empty`, and a step
   # that runs a nonexistent tests/ must not credit a populated test/ it never touches.
@@ -1144,7 +1144,15 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
     # another Makefile and NORUN_RE rejects the invocation outright.
     # …and `-C .`/`--directory=.`/`-f Makefile`/`--file=Makefile` select the very Makefile
     # inspected here, so they are dropped before NORUN_RE can read them as another one.
-    cmds="$(_run_lines "$wf" | sed -E '/^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make([[:space:]]|$)/ { s/(^|[[:space:]])(-C|--directory)[[:space:]=]+[.][/]?([[:space:]]|$)/\1/g; s/(^|[[:space:]])-C[.][/]?([[:space:]]|$)/\1/g; s/(^|[[:space:]])(-f|--file|--makefile)[[:space:]=]+(GNUmakefile|makefile|Makefile)([[:space:]]|$)/\1/g; s/(^|[[:space:]])-f(GNUmakefile|makefile|Makefile)([[:space:]]|$)/\1/g; s/(^|[[:space:]])(-[IoW]|--(include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\1/g }')"
+    # Separate -e expressions, each carrying the address: BSD sed (the macOS lane) reads
+    # the closing brace of a one-line `{ …; … }` block as a flag on the last substitution.
+    _mk='/^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make([[:space:]]|$)/'
+    cmds="$(_run_lines "$wf" | sed -E \
+      -e "$_mk s/(^|[[:space:]])(-C|--directory)[[:space:]=]+[.][/]?([[:space:]]|\$)/\\1/g" \
+      -e "$_mk s/(^|[[:space:]])-C[.][/]?([[:space:]]|\$)/\\1/g" \
+      -e "$_mk s/(^|[[:space:]])(-f|--file|--makefile)[[:space:]=]+(GNUmakefile|makefile|Makefile)([[:space:]]|\$)/\\1/g" \
+      -e "$_mk s/(^|[[:space:]])-f(GNUmakefile|makefile|Makefile)([[:space:]]|\$)/\\1/g" \
+      -e "$_mk s/(^|[[:space:]])(-[IoW]|--(include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\\1/g")"
     # Two arms, filtered separately: a PATH hit must name something that exists and is
     # the right kind of thing (pathok); a MAKE hit names a goal, which is not a path — the
     # goal `test` must not be mistaken for the bare suite directory.
