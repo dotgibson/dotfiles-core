@@ -5499,6 +5499,15 @@ if have git && have zsh; then
       done
       (cd "$NOR" && git add -A >/dev/null 2>&1 && git -c user.email=t@example.com -c user.name=tester commit -q -m 'scaffold + seeded core' >/dev/null 2>&1)
       _nor_legs=""
+      # The trap scan must cover EVERY tracked file, the first one included: bash -c puts
+      # the library in $0, so a stray `shift` there silently dropped SH_FILES' first entry.
+      # Plant a leaked RETURN trap in a file that sorts first and it must be named.
+      printf '#!/usr/bin/env bash\nf() { trap '"'"'echo bye'"'"' RETURN; :; }\nf\n' >"$NOR/aaa-leak.sh"
+      (cd "$NOR" && git add aaa-leak.sh >/dev/null 2>&1)
+      if (cd "$NOR" && make trap-guard) >"$SANDBOX/nor-legs-leak.out" 2>&1 || ! grep -q 'aaa-leak.sh:2: a RETURN trap is armed without disarming itself' "$SANDBOX/nor-legs-leak.out"; then
+        _nor_legs="$_nor_legs trap-guard-missed-first-file($(tail -1 "$SANDBOX/nor-legs-leak.out"))"
+      fi
+      (cd "$NOR" && git rm -q -f aaa-leak.sh >/dev/null 2>&1); command rm -f "$NOR/aaa-leak.sh"
       if ! (cd "$NOR" && make trap-guard make-gate) >"$SANDBOX/nor-legs-scan.out" 2>&1; then
         _nor_legs="$_nor_legs scanners-red($(tail -1 "$SANDBOX/nor-legs-scan.out"))"
       elif ! grep -q 'RETURN traps disarm themselves' "$SANDBOX/nor-legs-scan.out" || ! grep -q 'every Makefile gate skips' "$SANDBOX/nor-legs-scan.out"; then

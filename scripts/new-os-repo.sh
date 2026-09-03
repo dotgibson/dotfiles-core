@@ -618,10 +618,11 @@ trap-guard: ## Refuse a RETURN trap that does not disarm itself (shellcheck cann
 	@# A bash RETURN trap is a GLOBAL slot, not a function-scoped one: armed inside a
 	@# function it survives into the caller's frame and fires again on ITS return. Valid
 	@# bash, so shellcheck and bash -n pass it — hence the dedicated scan, whose one
-	@# definition is the vendored scanner. One logical line, like every leg here.
+	@# definition is the vendored scanner. One logical line, like every leg here. The
+	@# library rides in $0 (bash -c's first operand), so "$@" is exactly SH_FILES — no shift.
 	@if test -z "$(SH_FILES)"; then echo "no repo-owned .sh tracked yet (git add first)"; \
 	elif ! test -r "$(CORE_LIB)"; then echo "$(CORE_LIB) missing — vendor Core first"; exit 1; \
-	else bash -c '. "$$0"; rc=0; shift; for f; do while IFS= read -r l; do [ -n "$$l" ] || continue; echo "$$f:$$l: a RETURN trap is armed without disarming itself"; rc=1; done < <(_core_return_trap_hits "$$f"); done; [ "$$rc" -eq 0 ] && echo "RETURN traps disarm themselves ($(words $(SH_FILES)) files)"; exit $$rc' "$(CORE_LIB)" $(SH_FILES); fi
+	else bash -c '. "$$0"; rc=0; for f; do while IFS= read -r l; do [ -n "$$l" ] || continue; echo "$$f:$$l: a RETURN trap is armed without disarming itself"; rc=1; done < <(_core_return_trap_hits "$$f"); done; [ "$$rc" -eq 0 ] && echo "RETURN traps disarm themselves ($(words $(SH_FILES)) files)"; exit $$rc' "$(CORE_LIB)" $(SH_FILES); fi
 
 capabilities: ## Validate os/*.capabilities against Core's schema (skips when the vendored validator predates v4.19.0; CI runs it)
 	@# The validator arrived in Core v4.19.0; a pin between the v4.1.0 floor and that
