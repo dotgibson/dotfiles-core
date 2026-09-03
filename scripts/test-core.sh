@@ -5473,6 +5473,62 @@ if have git && have zsh; then
     for _nor_d in zsh tmux starship nvim git mise; do
       [[ -d "$HERE/$_nor_d" ]] && cp -r "$HERE/$_nor_d" "$NOR/core/"
     done
+    # ...and the three vendored files the lint legs read: the scanners, the pinned tool
+    # versions and the ONE secrets policy (all in core.vendor, so a real vendor has them).
+    mkdir -p "$NOR/core/scripts/lib"
+    cp "$HERE/scripts/lib/common.sh" "$NOR/core/scripts/lib/"
+    cp "$HERE/scripts/tool-versions.env" "$NOR/core/scripts/"
+    cp "$HERE/gitleaks.toml" "$NOR/core/"
+    # THE LINT LEGS, each driven both ways through PATH shims, so the fixture does not
+    # depend on which linters this box happens to have. A shim dir with fake
+    # markdownlint-cli2 / actionlint / gitleaks that RECORD their argv and exit 0 proves
+    # each leg invokes its tool, on the right files, against Core's policy file; the same
+    # shims exiting 1 prove a finding fails the leg; and a PATH holding only what make
+    # and the recipes need (no linters, no npx) proves the absent-tool path SAYS it
+    # skipped and still exits 0 — a silent skip is the failure mode #775 is about. The
+    # two scanner legs need no tool: they run for real against the vendored common.sh.
+    if have make; then
+      _nor_shim="$SANDBOX/nor-shim"; _nor_min="$SANDBOX/nor-minbin"
+      rm -rf "$_nor_shim" "$_nor_min"; mkdir -p "$_nor_shim" "$_nor_min"
+      for _nor_t in markdownlint-cli2 actionlint gitleaks; do
+        printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" >"%s/%s.argv"\nexit "${NOR_SHIM_RC:-0}"\n' "$_nor_shim" "$_nor_t" >"$_nor_shim/$_nor_t"
+        chmod +x "$_nor_shim/$_nor_t"
+      done
+      for _nor_t in sh bash make git sed grep awk cat env; do
+        _nor_p="$(command -v "$_nor_t" 2>/dev/null)" && ln -s "$_nor_p" "$_nor_min/$_nor_t"
+      done
+      (cd "$NOR" && git add -A >/dev/null 2>&1 && git -c user.email=t@example.com -c user.name=tester commit -q -m 'scaffold + seeded core' >/dev/null 2>&1)
+      _nor_legs=""
+      if ! (cd "$NOR" && make trap-guard make-gate) >"$SANDBOX/nor-legs-scan.out" 2>&1; then
+        _nor_legs="$_nor_legs scanners-red($(tail -1 "$SANDBOX/nor-legs-scan.out"))"
+      elif ! grep -q 'RETURN traps disarm themselves' "$SANDBOX/nor-legs-scan.out" || ! grep -q 'every Makefile gate skips' "$SANDBOX/nor-legs-scan.out"; then
+        _nor_legs="$_nor_legs scanners-silent"
+      fi
+      if ! (cd "$NOR" && PATH="$_nor_shim:$PATH" make markdownlint actionlint secrets) >"$SANDBOX/nor-legs-tools.out" 2>&1; then
+        _nor_legs="$_nor_legs tools-red($(tail -1 "$SANDBOX/nor-legs-tools.out"))"
+      else
+        grep -q 'README.md' "$_nor_shim/markdownlint-cli2.argv" 2>/dev/null || _nor_legs="$_nor_legs markdownlint-not-given-README"
+        grep -q 'core/' "$_nor_shim/markdownlint-cli2.argv" 2>/dev/null && _nor_legs="$_nor_legs markdownlint-given-core/"
+        [[ -e "$_nor_shim/actionlint.argv" ]] || _nor_legs="$_nor_legs actionlint-not-run"
+        grep -qx 'core/gitleaks.toml' "$_nor_shim/gitleaks.argv" 2>/dev/null || _nor_legs="$_nor_legs gitleaks-not-on-Core-policy"
+      fi
+      if (cd "$NOR" && NOR_SHIM_RC=1 PATH="$_nor_shim:$PATH" make markdownlint) >/dev/null 2>&1; then _nor_legs="$_nor_legs markdownlint-finding-ignored"; fi
+      if (cd "$NOR" && NOR_SHIM_RC=1 PATH="$_nor_shim:$PATH" make secrets) >/dev/null 2>&1; then _nor_legs="$_nor_legs secrets-finding-ignored"; fi
+      if ! (cd "$NOR" && env -i PATH="$_nor_min" HOME="$HOME" make markdownlint actionlint secrets) >"$SANDBOX/nor-legs-absent.out" 2>&1; then
+        _nor_legs="$_nor_legs absent-tool-red($(tail -1 "$SANDBOX/nor-legs-absent.out"))"
+      elif [[ "$(grep -c 'skipped; CI runs it' "$SANDBOX/nor-legs-absent.out")" != 3 ]]; then
+        _nor_legs="$_nor_legs absent-tool-silent"
+      fi
+      if [[ -z "$_nor_legs" ]]; then
+        pass "new-os-repo: every lint leg runs its tool on the right files (markdown minus core/, workflows, Core's gitleaks policy), fails on a finding, and says so when the tool is absent; the two scanner legs run against the vendored common.sh"
+      else
+        fail "new-os-repo: the lint legs —$_nor_legs"
+      fi
+      rm -rf "$_nor_shim" "$_nor_min"
+      unset _nor_shim _nor_min _nor_t _nor_p _nor_legs
+    else
+      skip "new-os-repo: driving the lint legs (make unavailable)"
+    fi
     if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-suite-core.out" 2>&1; then
       # Not "passed" alone: prove the Core-provided branches actually RAN. Each named
       # link is one bootstrap.sh link line; the count is every Core zsh module + the rest.
