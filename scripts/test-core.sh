@@ -5383,15 +5383,41 @@ if have git && have zsh; then
     else
       skip "new-os-repo: actionlint over the scaffolded workflow (actionlint unavailable)"
     fi
-    # The suite is a TEST, not an `exit 0` stub — run it. An empty core/ is the exact
-    # --no-vendor state; the suite asserts the Core-provided links only when their source
-    # exists, so it must pass here AND in a vendored repo.
+    # The suite is a TEST, not an `exit 0` stub — run it, in BOTH states it must pass in.
+    # An empty core/ is the exact --no-vendor state: the suite asserts the Core-provided
+    # links only when their source exists, so here it must pass on the repo-owned links
+    # alone. Then core/ is seeded from Core's OWN tree — the same directories bootstrap.sh
+    # links — so the Core-provided branches (every zsh module, both tmux files, the single
+    # configs, mise-as-copy) are exercised rather than skipped; a first draft ran only the
+    # empty state, and those branches could have regressed green.
     mkdir -p "$NOR/core"
     if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-suite.out" 2>&1; then
-      pass "new-os-repo: the scaffolded suite passes against the scaffolded bootstrap ($(grep -c '^  ok' "$SANDBOX/nor-suite.out") assertions)"
+      pass "new-os-repo: the scaffolded suite passes against an empty core/ (the --no-vendor state; $(grep -c '^  ok' "$SANDBOX/nor-suite.out") assertions)"
     else
       fail "new-os-repo: the scaffolded suite fails on its own scaffold — $(grep FAIL "$SANDBOX/nor-suite.out" | head -3 | tr '\n' ' ')"
     fi
+    for _nor_d in zsh tmux starship nvim git mise; do
+      [[ -d "$HERE/$_nor_d" ]] && cp -r "$HERE/$_nor_d" "$NOR/core/"
+    done
+    if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-suite-core.out" 2>&1; then
+      # Not "passed" alone: prove the Core-provided branches actually RAN. Each named
+      # link is one bootstrap.sh link line; the count is every Core zsh module + the rest.
+      _nor_core_ok=1
+      for _nor_l in 'zsh/loader.zsh' 'tmux/tmux.conf' 'tmux/tmux.reset.conf' 'starship.toml' '.config/nvim' '.gitconfig' 'mise config is seeded as a COPY'; do
+        grep -q "^  ok .*$_nor_l" "$SANDBOX/nor-suite-core.out" || _nor_core_ok=0
+      done
+      _nor_core_n="$(grep -c '^  ok .* -> core/' "$SANDBOX/nor-suite-core.out")"
+      _nor_zsh_n="$(find "$HERE/zsh" -maxdepth 1 -name '*.zsh' | wc -l | tr -d ' ')"
+      if ((_nor_core_ok)) && ((_nor_core_n >= _nor_zsh_n + 5)); then
+        pass "new-os-repo: against a Core-seeded core/ the suite asserts every Core link ($_nor_core_n Core links: $_nor_zsh_n zsh modules + tmux ×2 + starship + nvim + git) and mise-as-copy"
+      else
+        fail "new-os-repo: the suite's Core-provided branches did not all run against a seeded core/ ($_nor_core_n Core links asserted, want ≥ $((_nor_zsh_n + 5)); named-link coverage ok=$_nor_core_ok)"
+      fi
+      unset _nor_core_ok _nor_core_n _nor_zsh_n _nor_l
+    else
+      fail "new-os-repo: the scaffolded suite fails against a Core-seeded core/ — $(grep FAIL "$SANDBOX/nor-suite-core.out" | head -3 | tr '\n' ' ')"
+    fi
+    unset _nor_d
     # ...and it CAN fail. A gate nobody has seen red is not known to work (the bench-gate
     # lesson, #688). Strip the "already linked" short-circuit from a copy of the bootstrap,
     # so every run re-links and announces it: the idempotency assertion must go red.
