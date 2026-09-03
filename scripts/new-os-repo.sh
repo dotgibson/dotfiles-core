@@ -149,11 +149,16 @@ w() {
 # defaults CORE_BRANCH to main and refuses unless Core's HEAD is the commit being
 # vendored, so it checks the tag out and passes the peeled commit — otherwise copying
 # the hint would replace the just-added release tree with `main` and stamp that.
+#
+# Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
+# COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
+# hand the reader a misparsed command at exactly the moment vendoring must be recovered.
+_q() { printf '%q' "$1"; }
 _target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$TARGET"
 _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$TARGET")"
-_vendor_hint="git -C '$_target_abs' subtree add --prefix=core '$CORE_REMOTE' '$CORE_BRANCH' --squash && (cd '$HERE' && git checkout '$CORE_BRANCH' && CORE_BRANCH=\"\$(git rev-parse '$CORE_BRANCH^{commit}')\" REPOS_ROOT='$_target_parent' ./scripts/sync-core.sh dotfiles-$OS)   # VENDORING.md § One-time setup"
+_vendor_hint="git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && (cd $(_q "$HERE") && git checkout $(_q "$CORE_BRANCH") && CORE_BRANCH=\"\$(git rev-parse $(_q "$CORE_BRANCH^{commit}"))\" REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))   # VENDORING.md § One-time setup"
 [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] ||
-  _vendor_hint="$_vendor_hint — NOTE: sync-core.sh looks for a directory NAMED dotfiles-$OS under REPOS_ROOT, so rename or symlink '$_target_abs' to '$_target_parent/dotfiles-$OS' first"
+  _vendor_hint="$_vendor_hint — NOTE: sync-core.sh looks for a directory NAMED dotfiles-$OS under REPOS_ROOT, so rename or symlink $(_q "$_target_abs") to $(_q "$_target_parent/dotfiles-$OS") first"
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then

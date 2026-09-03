@@ -2538,6 +2538,12 @@ _vpn_write README.md 'refs/tags/v5.3.0_bad and git checkout v5.3.0x'
 _vpn_count "a word character glued to an exact-looking pin makes it malformed — both findings" 6 2
 _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0/foo --squash'
 _vpn_count "a \`/\` continuing an exact-looking pin (v5.3.0/foo) makes it malformed — a finding" 6 1
+# `@` is legal inside a git ref, and so are others; the rule is the inverse — only a
+# terminator may follow an exempt pin — so nothing glued on can slip through.
+_vpn_write README.md 'refs/tags/v5.3.0@foo and refs/tags/v5.3.0%x'
+_vpn_count "any non-terminator glued to an exact-looking pin (v5.3.0@foo, v5.3.0%x) is a finding" 6 2
+_vpn_write README.md '(`refs/tags/v5.3.0`), "refs/tags/v5.3.0"; refs/tags/v5.3.0) refs/tags/v5.3.0#note'
+_vpn_count "an exact pin followed by a quote, paren, semicolon or comment stays exempt" 6 0
 # A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
 _vpn_write README.md 'git  checkout v5'
 _vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1

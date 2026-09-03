@@ -9,8 +9,11 @@
 #
 # Assumes:
 #   - all OS repos are cloned as siblings under one parent dir (see REPOS_ROOT)
-#   - each OS repo already did the one-time (from a RELEASED tag, never main — #588):
+#   - each OS repo already HAS a core/ — this script replaces that directory and will
+#     not create it. scripts/new-os-repo.sh materializes it for a greenfield repo; the
+#     manual fallback (from a RELEASED tag, never main — #588) is a one-time
 #       git subtree add --prefix=core <core-remote> refs/tags/v6 --squash
+#     which the next sync replaces with the filtered set (VENDORING.md § One-time setup).
 #
 # Usage:
 #   ./scripts/sync-core.sh                # vendor core into every repo found

@@ -1317,11 +1317,14 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           sub(/\.+$/, "", hit)                    # the message quotes the pin, not the prose
           major = tok; sub(/[^0-9].*$/, "", major)
           exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
-          # The token class stops at a character it does not admit, so `v5.3.0_bad` would
-          # match as `v5.3.0` and read exact, and `v5.3.0/foo` likewise. A word character
-          # or a `/` glued to the token means the ref as written is not the tag, so the
-          # pin is malformed and judged, not exempt.
-          if (rest ~ /^[A-Za-z0-9_\/]/) exact = 0
+          # The token class stops at a character it does not admit, so `v5.3.0_bad`,
+          # `v5.3.0/foo` and `v5.3.0@foo` would each match as `v5.3.0` and read exact.
+          # Rather than enumerate what git allows in a ref (`@`, `/`, `_` and more), the
+          # rule is the inverse: an exact pin is exempt ONLY when what follows it is a
+          # terminator — whitespace, end of line, a quote or backtick, closing
+          # punctuation, or a shell operator. Anything else glued on means the ref as
+          # written is not the tag, so it is malformed and judged.
+          if (rest != "" && rest !~ /^[[:space:]`"\047)\]},;:#&|<>^]/) exact = 0
           # The scaffold default is never exempt: it is not a freeze someone chose, it is
           # the pin every new repo gets by default.
           if ((!exact || isdefault) && major != want) {
