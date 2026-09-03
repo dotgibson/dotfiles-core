@@ -374,6 +374,7 @@ done
 VERDICT=""
 REASON=""
 AT_VER="unknown"
+AT_VER_PRE=0 # 1 when `--version` carried a pre-release suffix (18.20.0-beta.3)
 ANCHOR="unknown"
 ANCHOR_REL="unknown" # same | newer | older | unanchored | unknown
 # WHERE this ran, because for the autostart premise that is half the verdict's worth. The two
@@ -1274,10 +1275,18 @@ arms_autostart() {
   # creates and the run reports `unmeasurable` ("never answered") — which is exactly what
   # the first measurement past the anchor did, on 18.21.0 (#826). An `unknown` version
   # compares as 0.0.0 and takes the old path; that run is unmeasurable for its own reason.
-  if [[ "$(ver_cmp "$AT_VER" 18.20.0)" == -1 ]]; then
-    SOCK="$SB/.local/share/atuin/atuin.sock"
-  else
+  # Semver's ordering, exactly: above 18.20.0 → moved; 18.20.0 itself → moved unless it is a
+  # PRE-release of 18.20.0 (18.20.0-beta.3 predates #3910 and still binds in the data dir);
+  # below → not moved.
+  local socket_moved=0
+  case "$(ver_cmp "$AT_VER" 18.20.0)" in
+  1) socket_moved=1 ;;
+  0) ((AT_VER_PRE)) || socket_moved=1 ;;
+  esac
+  if ((socket_moved)); then
     SOCK="$LOCALDIR/tmp/atuin-${UID}/atuin.sock"
+  else
+    SOCK="$SB/.local/share/atuin/atuin.sock"
   fi
   # 0700, and checked: from 18.20.0 the daemon REFUSES a socket directory it did not create
   # unless it is exactly 0700 ("incorrect permissions (expected 700, got 755)"), and it exits
@@ -1486,9 +1495,15 @@ measure() {
   # timeout killed it, producing no verdict at all rather than the promised `unmeasurable`.
   # A timed-out or empty result falls through to AT_VER=unknown, which the anchor comparison
   # below already handles, so the bound costs nothing when the binary is healthy.
-  AT_VER="$(${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" --version 2>/dev/null |
-    grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
+  local _vraw
+  _vraw="$(${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} "$ATUIN_BIN" --version 2>/dev/null | head -n1)"
+  AT_VER="$(printf '%s' "$_vraw" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
   [[ -n "$AT_VER" ]] || AT_VER="unknown"
+  # The numeric triple drops a pre-release suffix, and that suffix carries one fact the socket
+  # choice needs: 18.20.0-beta.3 predates #3910 and binds at the OLD path, while 18.20.0 does
+  # not. Semver's own rule — a pre-release sorts BELOW its release — is the only version-level
+  # answer that is never wrong about a build we have not run.
+  [[ "$_vraw" =~ [0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.]+ ]] && AT_VER_PRE=1
   # `none` is not a version, so it is not compared: ANCHOR_REL stays `unanchored` and the
   # report leads with "this may be the first measurement of this premise rather than a change
   # in it" — which is a different finding, with a different remedy, from a premise that moved.

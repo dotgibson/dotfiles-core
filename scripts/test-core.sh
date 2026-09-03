@@ -8194,13 +8194,20 @@ else
     # version-aware verifier can only be pinned by a stub that moves with the version.
     # Literal `$`s here: the heredoc below is unquoted, and an expansion's OUTPUT is not
     # re-scanned for escapes, so these reach the stub as written.
-    local sock_expr='$DH/atuin/atuin.sock' strict_sockdir=0 vmaj vmin
-    IFS=. read -r vmaj vmin _ <<<"$ver"
+    local sock_expr='$DH/atuin/atuin.sock' strict_sockdir=0 vmaj vmin vpat vpre=""
+    # Semver, like the verifier: a pre-release of 18.20.0 (18.20.0-beta.3) predates #3910 and
+    # binds at the OLD path; 18.20.0 and anything above bind at the new one.
+    [[ "$ver" == *-* ]] && vpre="${ver#*-}"
+    IFS=. read -r vmaj vmin vpat _ <<<"${ver%%-*}"
     # ...and from 18.20.0 the daemon REFUSES a socket directory that is not exactly 0700
     # ("incorrect permissions (expected 700, got 755)") and exits before binding — measured on
     # 18.21.0. The stub does the same, so a verifier that pre-creates the directory the way
     # a shell's umask would is caught here rather than on the next real measurement.
-    ((vmaj > 18 || (vmaj == 18 && vmin >= 20))) && { sock_expr='${TMPDIR:-/tmp}/atuin-$UID/atuin.sock'; strict_sockdir=1; }
+    if ((vmaj > 18 || (vmaj == 18 && vmin > 20) || (vmaj == 18 && vmin == 20 && ${vpat:-0} > 0))) ||
+      { ((vmaj == 18 && vmin == 20)) && [[ -z "$vpre" ]]; }; then
+      sock_expr='${TMPDIR:-/tmp}/atuin-$UID/atuin.sock'
+      strict_sockdir=1
+    fi
     cat >"$_dstub/$name" <<STUB
 #!/usr/bin/env bash
 MODE="$mode"
@@ -8769,6 +8776,29 @@ J4PROBE
       pass "atuin autostart: a healing 18.20.0 (socket under \$TMPDIR/atuin-\$UID, upstream #3910) → holds — the verifier waits where that version binds"
     else
       fail "atuin autostart: a healing 18.20.0 binding under \$TMPDIR/atuin-\$UID reported ${_dapp:-no verdict} (rc$_drc) — the verifier is waiting on the pre-18.20 data-dir socket, or made the socket directory with a mode the daemon refuses: ${_dappwhy:-no reason parsed}"
+    fi
+
+    # 4c. THE BOUNDARY ITSELF. 18.20.0-beta.3 predates #3910 and binds in the data dir, and its
+    #     numeric triple is 18.20.0 — a verifier that drops the pre-release suffix sends it to
+    #     the new path and reports a healthy binary as unmeasurable. Semver's rule (a
+    #     pre-release sorts below its release) is what both sides apply.
+    _mkdstub atuin-heals-1820b3 heals 18.20.0-beta.3
+    _dpoll="$_DPOLL_GATE"
+    _d_run atuin-heals-1820b3 --premise autostart --json
+    _dapp="$(_d_get "$_dout" verdict)"
+    _dappwhy="$(_d_get "$_dout" reason)"
+    _dreap
+    if [[ "$_dapp" == unmeasurable ]]; then
+      _d_run atuin-heals-1820b3 --premise autostart --json
+      _dapp="$(_d_get "$_dout" verdict)"
+      _dappwhy="$(_d_get "$_dout" reason)"
+      _dreap
+    fi
+    _dpoll=""
+    if [[ "$_dapp" == holds ]] && ((_drc == 0)); then
+      pass "atuin autostart: a healing 18.20.0-beta.3 (pre-#3910, data-dir socket) → holds — the pre-release suffix keeps it on the old path"
+    else
+      fail "atuin autostart: a healing 18.20.0-beta.3 binding in the data dir reported ${_dapp:-no verdict} (rc$_drc) — the verifier dropped the pre-release suffix and waited at the 18.20.0 path: ${_dappwhy:-no reason parsed}"
     fi
 
     # 5. Expected delta is 1 here and 0 under discard, on arms with IDENTICAL names. Without
