@@ -918,8 +918,9 @@ else
   # release pin: a bare `./scripts/sync-core.sh dotfiles-X` defaults CORE_BRANCH to main
   # and would replace the just-materialized release tree with an unreleased tip — the
   # very thing this scaffold exists to prevent. It reuses the pinned worktree sync
-  # (_sync_recover): the throwaway worktree at the pinned ref, --strict, REPOS_ROOT, and
-  # for a custom name the guarded symlink chained in front with `&&`, so a refused guard
+  # (_sync_recover): the throwaway worktree at the pinned ref, the released script's own
+  # summary line as the verdict (that script may predate --strict), REPOS_ROOT, and for
+  # a custom name the guarded symlink chained in front with `&&`, so a refused guard
   # stops the sync instead of letting its directory fast path pick the occupant.
   _reg_sync="$_sync_recover"
   # The scaffold commit is IDEMPOTENT: on the no-core/ path the FIRST recovery command
@@ -944,6 +945,6 @@ else
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
     echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted
-    $_reg_sync   # the PINNED sync (a throwaway worktree at the release ref; --strict): stamps core.lock — a custom name gets the guarded symlink first, and a refusal stops it
+    $_reg_sync   # the PINNED sync (a throwaway worktree at the release ref; its summary line is the verdict): stamps core.lock — a custom name gets the guarded symlink first, and a refusal stops it
 EOF
 fi
