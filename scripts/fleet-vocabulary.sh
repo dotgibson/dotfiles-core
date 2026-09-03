@@ -110,11 +110,23 @@ AWK_MAKECOND='
     return ((a == b) != neg) ? "1" : "0"
   }
   function mc_active(   k) { for (k = 1; k <= mcdepth; k++) if (MCACT[k] != "1") return MCACT[k]; return "1" }
-  function mc_line(t) {
+  # MCTAKEN per level: "1" once an arm evaluated true, "?" once one was undecidable, "0"
+  # while every arm so far was false — so `else ifeq (…)` (a chained arm) is "0" after a
+  # taken arm, evaluated after only-false arms, and a plain `else` is the complement.
+  function mc_line(t,   r) {
     sub(/#.*/, "", t); sub(/^[ ]+/, "", t)
-    if (t ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) { mcdepth++; MCACT[mcdepth] = decide(t); return 1 }
-    if (t ~ /^else([ \t]|$)/) { if (mcdepth && MCACT[mcdepth] != "?") MCACT[mcdepth] = (MCACT[mcdepth] == "1") ? "0" : "1"; return 1 }
-    if (t ~ /^endif([ \t]|$)/) { if (mcdepth) { delete MCACT[mcdepth]; mcdepth-- } ; return 1 }
+    if (t ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) { mcdepth++; MCACT[mcdepth] = decide(t); MCTAKEN[mcdepth] = MCACT[mcdepth]; return 1 }
+    if (t ~ /^else[ \t]+(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) {
+      if (mcdepth) {
+        sub(/^else[ \t]+/, "", t); r = decide(t)
+        if (MCTAKEN[mcdepth] == "1") MCACT[mcdepth] = "0"
+        else if (MCTAKEN[mcdepth] == "?") MCACT[mcdepth] = "?"
+        else { MCACT[mcdepth] = r; MCTAKEN[mcdepth] = r }
+      }
+      return 1
+    }
+    if (t ~ /^else([ \t]|$)/) { if (mcdepth) MCACT[mcdepth] = (MCTAKEN[mcdepth] == "1") ? "0" : ((MCTAKEN[mcdepth] == "?") ? "?" : "1"); return 1 }
+    if (t ~ /^endif([ \t]|$)/) { if (mcdepth) { delete MCACT[mcdepth]; delete MCTAKEN[mcdepth]; mcdepth-- } ; return 1 }
     return 0
   }
 '
@@ -180,10 +192,9 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
     # the shell fails closed.
     { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
     { t = l; sub(/#.*/, "", t); sub(/^[ ]+/, "", t) }
-    mc_line(l) { print l; next }
+    indef { if (t ~ /^endef([ \t]|$)/) indef = 0; print l; next }
     t ~ /^define([ \t]|$)/ { indef = 1; print l; next }
-    t ~ /^endef([ \t]|$)/ { indef = 0; print l; next }
-    indef { print l; next }
+    mc_line(l) { print l; next }
     t ~ /^-?s?include[ \t]/ {
       st = mc_active()
       if (st == "0") next
@@ -205,10 +216,10 @@ _targets() { # _targets <Makefile> → one defined target name per line
   # branch, absent in an inactive one, uncounted under an undecidable condition ("missing"
   # rather than a guess). A `define`…`endef` body defines no rule.
   awk "$AWK_MAKECOND"'
-    mc_line($0) { next }
+    indef { if ($0 ~ /^[ ]*endef([ \t]|$)/) indef = 0; next }
     /^[ ]*define([ \t]|$)/ { indef = 1; next }
-    /^[ ]*endef([ \t]|$)/ { indef = 0; next }
-    mc_active() != "1" || indef { next }
+    mc_line($0) { next }
+    mc_active() != "1" { next }
     /^[^\t#. ][^:=]*::?([^=]|$)/ {
       lhs = $0; sub(/::?.*/, "", lhs)
       n = split(lhs, t, /[ \t]+/)
@@ -354,16 +365,23 @@ AWK_SHELL='
     }
     return s
   }
-  function fnbodies(c, n,   i, t, fn, depth, w) {
+  function fnbodies(c, n,   i, t, fn, depth, w, pend) {
     # SHELL FUNCTION BODIES run only when the function is CALLED. A first pass marks every
     # command inside a `name() {` / `function name {` body with its function name (a bare
     # `{ … }` is a group and runs where it stands), then records which functions are
     # invoked as a command outside any body; cdnorm drops the body of a function that is
     # never invoked, so dead command text cannot meet the floor. The opener and the
     # closing `}` are not commands; a first body command on the same line as the opener is.
-    split("", BODY); split("", FNAME); fn = ""; depth = 0
+    split("", BODY); split("", FNAME); fn = ""; depth = 0; pend = ""
     for (i = 1; i <= n; i++) {
       t = trim(c[i])
+      # `name()` (or `function name`) alone declares a function whose `{` opens on the
+      # next command: the declaration is pending until that brace.
+      if (fn == "" && pend == "" && (t ~ /^[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)$/ || t ~ /^function[ \t]+[A-Za-z_][A-Za-z0-9_]*$/)) {
+        pend = t; sub(/^function[ \t]+/, "", pend); sub(/[ \t]*\(\)$/, "", pend); BODY[i] = "@"; continue
+      }
+      if (pend != "" && t ~ /^\{/) { fn = pend; FNAME[fn] = i; depth = 1; pend = ""; sub(/^\{[ \t]*/, "", t); c[i] = trim(t); if (c[i] == "") { BODY[i] = "@"; continue } ; BODY[i] = fn; continue }
+      pend = ""
       if (fn == "" && match(t, /^(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*(\(\))?[ \t]*\{/)) {
         if (t ~ /^function[ \t]/ || t ~ /\(\)/) {
           fn = t; sub(/^function[ \t]+/, "", fn); sub(/[ \t]*(\(\))?[ \t]*\{.*$/, "", fn)
@@ -433,7 +451,25 @@ AWK_SHELL='
     return m
   }
   # lit(t) — the static status of one command: "true", "false", or "" (unknown).
-  function lit(t) { return (t == "true" || t == ":") ? "true" : ((t == "false") ? "false" : "") }
+  # lit(t) also decides a LITERAL test: `[ -n x ]`, `[ -z "" ]`, `test x = x`, `[ a != b ]`
+  # with `$`-free operands (a quoted empty string counts as empty). Anything else is "".
+  function lit(t,   a, b, op) {
+    if (t == "true" || t == ":") return "true"
+    if (t == "false") return "false"
+    if (t ~ /\$/) return ""
+    if (t ~ /^\[[ \t].*[ \t]\]$/) { sub(/^\[[ \t]+/, "", t); sub(/[ \t]+\]$/, "", t) }
+    else if (t ~ /^test[ \t]/) sub(/^test[ \t]+/, "", t)
+    else return ""
+    if (match(t, /^-n[ \t]+/)) { a = substr(t, RLENGTH + 1); gsub(/^["\047]|["\047]$/, "", a); return (a != "") ? "true" : "false" }
+    if (match(t, /^-z[ \t]+/)) { a = substr(t, RLENGTH + 1); gsub(/^["\047]|["\047]$/, "", a); return (a == "") ? "true" : "false" }
+    if (match(t, /[ \t]+(=|!=|==)[ \t]+/)) {
+      a = substr(t, 1, RSTART - 1); op = substr(t, RSTART, RLENGTH); b = substr(t, RSTART + RLENGTH)
+      gsub(/[ \t]/, "", op); gsub(/^["\047]|["\047]$/, "", a); gsub(/^["\047]|["\047]$/, "", b)
+      if (a ~ /[ \t]/ || b ~ /[ \t]/) return ""
+      return ((a == b) == (op != "!=")) ? "true" : "false"
+    }
+    return ""
+  }
   # condlist(c, n, i, first) — a COMPOUND condition `if a && b || c; then` was split at its
   # operators before the `if` was seen. Starting from the condition text `first` at index
   # i, fold the following `&&`/`||` arms (up to the command that begins with then/do) into
@@ -792,10 +828,10 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
     # the recipe; a double-colon rule is additive. `fresh` is set by a rule line and
     # consumed by the first recipe line of that rule.
     function handle(l,   lhs, rhs, inl, n, t, i) {
-      if (mc_line(l)) { ncur = 0; return }
+      if (indef) { if (l ~ /^[ ]*endef([ \t]|$)/) indef = 0; return }
       if (l ~ /^[ ]*define([ \t]|$)/) { indef = 1; ncur = 0; return }
-      if (l ~ /^[ ]*endef([ \t]|$)/) { indef = 0; ncur = 0; return }
-      if (mc_active() != "1" || indef) return
+      if (mc_line(l)) { ncur = 0; return }
+      if (mc_active() != "1") return
       if (l ~ /^\t/) {
         if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
         if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
@@ -842,10 +878,10 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
 _phony_targets() { # _phony_targets <Makefile> → every name declared .PHONY, one per line (conditionals decided as in _targets)
   awk "$AWK_MAKECOND"'
     { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
-    mc_line(l) { next }
+    indef { if (l ~ /^[ ]*endef([ \t]|$)/) indef = 0; next }
     l ~ /^[ ]*define([ \t]|$)/ { indef = 1; next }
-    l ~ /^[ ]*endef([ \t]|$)/ { indef = 0; next }
-    mc_active() != "1" || indef { next }
+    mc_line(l) { next }
+    mc_active() != "1" { next }
     l ~ /^[.]PHONY[ \t]*:/ { sub(/^[.]PHONY[ \t]*:/, "", l); sub(/#.*/, "", l); n = split(l, t, /[ \t]+/); for (i = 1; i <= n; i++) if (t[i] != "") print t[i] }
   ' "$1"
 }

@@ -16736,6 +16736,22 @@ if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a mandat
 _fv_reset; _fv_repo dotfiles-Fedora "ifdef CI\\n-include missing.mk\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: an optional include under an undecidable ifdef is skipped"; else fail "vocab: undecidable optional include: $out"; fi
 
+# CHAINED `else ifeq` ARMS are evaluated after only-false arms and dead after a taken one;
+# a conditional-looking line inside a define body is text.
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\nx:\\n\\t@true\\nelse ifeq (1,0)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: a verb under a false \`else ifeq\` arm is missing"; else fail "vocab: false else-ifeq arm counted: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\nx:\\n\\t@true\\nelse ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb under a true \`else ifeq\` arm after a false arm resolves"; else fail "vocab: true else-ifeq arm not counted: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,1)\\nx:\\n\\t@true\\nelse ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: an \`else ifeq\` arm after a taken arm is dead"; else fail "vocab: else-ifeq after taken arm counted: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\nx:\\n\\t@true\\nelse ifdef CI\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: an undecidable \`else ifdef\` arm stays missing"; else fail "vocab: undecidable else-ifdef counted: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "define tmpl\\nifeq (1,0)\\nendef\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a conditional-looking line inside a define body is text"; else fail "vocab: define body mutated the conditional stack: $out"; fi
+
 # A RULE IN A STATICALLY ACTIVE BRANCH counts; one under an undecidable condition does not.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb defined inside an active \`ifeq (1,1)\` branch resolves"; else fail "vocab: active-branch rule not counted: $out"; fi
@@ -17057,7 +17073,8 @@ _fv_floor "a call before the definition is not an invocation" '**not-in-ci**' '_
 _fv_floor "if true; then exit 0; fi; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if true; then exit 0; fi; make test"'
 _fv_floor "if false; then :; else exit 0; fi; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if false; then :; else exit 0; fi; make test"'
 _fv_floor "while true; do exit 0; done; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "while true; do exit 0; done; make test"'
-_fv_floor "an exit under a runtime condition ends only its block" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ]; then exit 0; fi; make test"'
+_fv_floor "an exit under a runtime condition ends only its block" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n \"\$CI\" ]; then exit 0; fi; make test"'
+_fv_floor "an exit under a literally true test ends the step" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ]; then exit 0; fi; make test"'
 _fv_floor "a helper called from a called function is invoked" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "helper() { make test; }; suite() { helper; }; suite"'
 _fv_floor "a helper called only from an uncalled function is not" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "helper() { make test; }; suite() { helper; }; echo done"'
 # A BARE pytest RUNNER, a body judged where it is called, a subshell exit, and a list that
@@ -17079,7 +17096,8 @@ _fv_floor "set +e; false; make test runs make" 'ok' '_fv_suite dotfiles-Alpine; 
 _fv_floor "set +e; set -e; false; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "set +e; set -e; false; make test"'
 _fv_floor "false || true; make test runs make (false is an arm)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false || true; make test"'
 _fv_floor "a recipe with false; make test still runs make (no -e under make)" 'ok' '_fv_suite dotfiles-Alpine; printf "suite2:\n\t@false; ./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite2"'
-_fv_floor "a false under a runtime if does not end the step" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ]; then false; fi; make test"'
+_fv_floor "a false under a runtime if does not end the step" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n \"\$CI\" ]; then false; fi; make test"'
+_fv_floor "a false under a literally true test ends the step" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ]; then false; fi; make test"'
 # A CREDITED PATH MUST EXIST, in a step or a recipe; a glob must match; `0`/`null`/`""`
 # are false in a GitHub expression.
 _fv_floor "bash test/missing.sh beside a real test/smoke.sh" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash test/missing.sh"'
@@ -17090,6 +17108,12 @@ _fv_floor "a path built from a variable is taken on trust" 'ok' '_fv_suite dotfi
 _fv_floor "a step with if: \${{ 0 }} never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - if: \${{ 0 }}\n        run: make test\n"'
 _fv_floor "a step with if: null never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - if: null\n        run: make test\n"'
 _fv_floor "a job with if: \"\" never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    if: \"\"\n    steps:\n      - run: make test\n"'
+# LITERAL TESTS decide; a multi-line function definition is a definition, not a group.
+_fv_floor "if [ -z x ]; then make test; fi never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -z x ]; then make test; fi"'
+_fv_floor "if test a = a; then make test; fi runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if test a = a; then make test; fi"'
+_fv_floor "if [ a != a ]; then make test; fi never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ a != a ]; then make test; fi"'
+_fv_floor "an uncalled multi-line function (brace on its own line)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          suite()\n          {\n            make test\n          }\n          make lint\n"'
+_fv_floor "a called multi-line function (brace on its own line)" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          suite()\n          {\n            make test\n          }\n          suite\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
