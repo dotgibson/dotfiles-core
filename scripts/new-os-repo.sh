@@ -154,7 +154,11 @@ w() {
 }
 
 ((DRY)) || mkdir -p "$TARGET"
-((DRY)) || git -C "$TARGET" init -q
+# ON main, whatever the author's init.defaultBranch says: the scaffolded workflows filter
+# pushes to the fleet's [main, master], and a repo born on `trunk` would get no
+# push-triggered CI at all — the floor's "CI runs it" rung silently missing. symbolic-ref
+# rather than `git init -b`: an unborn HEAD can be repointed on any git, -b needs 2.28.
+((DRY)) || { git -C "$TARGET" init -q && git -C "$TARGET" symbolic-ref HEAD refs/heads/main; }
 
 # ── vendor Core ───────────────────────────────────────────────────────────────
 # NOT `git subtree add --squash` any more (#676). A subtree add copies the WHOLE upstream
@@ -937,9 +941,8 @@ name: test
 # "passes locally" and "passes CI" are the same command.
 on:
   push:
-    # Both, like the fleet's callers: the scaffold's `git init` follows the author's
-    # init.defaultBranch, which may still be master, and a push filter that names only
-    # main would then never run.
+    # Both, like the fleet's callers. The scaffold itself is born on main (whatever the
+    # author's init.defaultBranch says), so this filter cannot miss the repo's own pushes.
     branches: [main, master]
   pull_request:
 

@@ -41,9 +41,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   rather than an `exit 0` stub, because a floor met by a script that asserts nothing is not
   a floor; and a `.github/workflows/test.yml` that runs `make test`, the floor's "CI runs
   it" rung. The scaffolded `bootstrap.sh` grows `--dry-run`, `--links-only` and `--help` so
-  those verbs are honest, and its mise seed is guarded on the source existing. Its test
-  workflow triggers on `main` and `master` both, since the scaffold's `git init` follows
-  the author's `init.defaultBranch`. `test-core.sh` F7b pins all of it — as generated
+  those verbs are honest, and its mise seed is guarded on the source existing. The
+  scaffold is born on `main` whatever the author's `init.defaultBranch` says, so the
+  workflows' fleet-standard `[main, master]` push filter cannot miss the repo's own pushes
+  (a repo born on `trunk` would otherwise have had no push-triggered CI at all).
+  `test-core.sh` F7b pins all of it — as generated
   with `--no-vendor` (no `core/`) the suite must fail loudly and name the missing
   `core/`, and against a `core/` seeded from Core's own tree it must assert every Core
   link — and judges the scaffold with `fleet-vocabulary.sh --check` itself

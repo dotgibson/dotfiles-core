@@ -5353,6 +5353,15 @@ if have git && have zsh; then
   rm -rf "$NOR"
   # --no-vendor: skip the `git subtree add`, which is the only network call in the
   # script. Everything this asserts is written before/independently of it.
+  # BORN ON main, whatever the author's init.defaultBranch says (here forced to trunk):
+  # the scaffolded workflows filter pushes to [main, master], so any other birth branch
+  # would leave the repo with no push-triggered CI — the floor's "CI runs it" rung gone.
+  if env -u CORE_JSON GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=init.defaultBranch GIT_CONFIG_VALUE_0=trunk bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/nor-trunk" >/dev/null 2>&1 && [[ "$(git -C "$SANDBOX/nor-trunk" symbolic-ref --short HEAD 2>/dev/null)" == main ]]; then
+    pass "new-os-repo: the scaffold is born on main even under init.defaultBranch=trunk (the workflows' push filter cannot miss it)"
+  else
+    fail "new-os-repo: under init.defaultBranch=trunk the scaffold landed on '$(git -C "$SANDBOX/nor-trunk" symbolic-ref --short HEAD 2>/dev/null)', not main"
+  fi
+  rm -rf "$SANDBOX/nor-trunk"
   if env -u CORE_JSON bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
     _nor_bad=""
     for _nor_f in zshenv zprofile zshrc; do
