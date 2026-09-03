@@ -59,6 +59,9 @@ sync-core.sh — THE maintain button: vendor Core into every OS repo's core/.
 
   ./scripts/sync-core.sh                       vendor core into every repo found
   ./scripts/sync-core.sh --dry-run, -n         show what would happen, touch nothing
+  ./scripts/sync-core.sh --strict dotfiles-X   exit 1 if any TARGETED repo failed (the
+                                               default exits 0 and reports failures in
+                                               the summary — the fan-out relies on that)
   ./scripts/sync-core.sh dotfiles-Fedora …     only the named repos
   ./scripts/sync-core.sh -h, --help            show this help and exit
 
@@ -76,10 +79,12 @@ EOF
 }
 
 DRY=0
+STRICT=0
 SELECT=()
 for arg in "$@"; do
   case "$arg" in
   --dry-run | -n) DRY=1 ;;
+  --strict) STRICT=1 ;;
   -h | --help)
     usage
     exit 0
@@ -754,4 +759,12 @@ elif ((FAIL > 0)); then
   echo "done with failures — see the ✗ lines above, then re-run the affected repos." >&2
 else
   echo "done. push each updated repo when you're satisfied."
+fi
+# --strict: a failed TARGET is the exit status, not only a summary line. Opt-in, because
+# the fan-out runs this script bare inside a `bash -e` step and then does per-repo push
+# and PR work — a default non-zero exit would abort that step for every repo when one
+# fails. A single-target caller (the scaffold's recovery command, the first-vendor
+# recipe) wants exactly the opposite: a verdict it can chain on.
+if ((STRICT && repos_failed > 0)); then
+  exit 1
 fi
