@@ -167,7 +167,12 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # even an initial commit), and both halves need a clean, committed target: subtree add
 # wants a HEAD and refuses a dirty tree, and sync-core.sh refuses a dirty target. So the
 # chain commits the scaffold first — a no-op when the reader already has.
-_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && (cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && git checkout --detach FETCH_HEAD && CORE_BRANCH=\"\$(git rev-parse 'FETCH_HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))   # VENDORING.md § One-time setup"
+#
+# The Core-side half stands on its own too: when core/ WAS materialized and only the
+# commit after it failed, the subtree add would fail on the existing prefix, so that
+# state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
+_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && git checkout --detach FETCH_HEAD && CORE_BRANCH=\"\$(git rev-parse 'FETCH_HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))"
+_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
 # comment — so the sync resolves the conventional name. A symlink, not a rename: the
@@ -193,15 +198,17 @@ else
   elif ! git -C "$TARGET" fetch -q --no-tags "$CORE_REMOTE" "$_core_sha" >/dev/null 2>&1 &&
     ! git -C "$TARGET" fetch -q --no-tags "$CORE_REMOTE" "$CORE_BRANCH" >/dev/null 2>&1; then
     fail "fetch of Core failed (offline/unreachable?) — files scaffolded; vendor later with: $_vendor_hint"
-  elif core_vendor_materialize "$TARGET" "$_core_sha" &&
-    git -C "$TARGET" commit -q -m "chore(core): vendor Core at ${_core_sha:0:12}"; then
-    if core_vendor_is_filtered "$TARGET" "$_core_sha"; then
-      pass "vendored Core into core/ at ${_core_sha:0:12} (filtered: core.manifest + core.vendor)"
-    else
-      pass "vendored Core into core/ at ${_core_sha:0:12} (whole tree — $CORE_BRANCH predates core.vendor)"
-    fi
-  else
+  elif ! core_vendor_materialize "$TARGET" "$_core_sha"; then
     fail "materializing core/ failed — files scaffolded; vendor later with: $_vendor_hint"
+  elif ! git -C "$TARGET" commit -q -m "chore(core): vendor Core at ${_core_sha:0:12}"; then
+    # core/ IS materialized and staged; only the commit failed. The subtree-add hint would
+    # fail here on the existing prefix, so the recovery is: commit what is staged, then
+    # stamp the lock — the Core-side half alone.
+    fail "core/ materialized at ${_core_sha:0:12} but the commit failed — fix that, then: git -C $(_q "$_target_abs") commit -q -m $(_q "chore(core): vendor Core at ${_core_sha:0:12}") && $_sync_half"
+  elif core_vendor_is_filtered "$TARGET" "$_core_sha"; then
+    pass "vendored Core into core/ at ${_core_sha:0:12} (filtered: core.manifest + core.vendor)"
+  else
+    pass "vendored Core into core/ at ${_core_sha:0:12} (whole tree — $CORE_BRANCH predates core.vendor)"
   fi
 fi
 
