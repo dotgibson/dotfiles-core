@@ -55,6 +55,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and nothing on the zsh startup chain reads `nvim/`. Dev tooling only — the OS repos
   receive nothing from this entry.
 
+### Fixed
+
+- **`optoken` no longer leaves a live TOTP in a tmux paste buffer; `clip` grows a
+  `--sensitive` mode (`CLIP_SENSITIVE=1`) that it uses (#690).** On a box with no real
+  clipboard backend — the headless-over-ssh shelf that is the documented norm for part of
+  the fleet — `clip` falls through to OSC 52, and under tmux with Core's own
+  `set-clipboard on` that path left the code in a tmux paste buffer, readable by anything on
+  the socket via `tmux show-buffer`, for as long as the buffer lived; the only warning was a
+  source comment, and the user saw `TOTP sent to the clipboard`. The plain OSC 52 write is
+  the leak, not just the `load-buffer` arm: with `set-clipboard on` tmux does not merely
+  forward a pane's OSC 52, it also `paste_add`s the payload as an unnamed buffer — so the
+  issue's "write the escape straight to the tty" idea would have left the secret exactly
+  where the flag promises it will not be. `--sensitive` under tmux therefore never writes a
+  plain OSC 52 to the pane: when the pane's `allow-passthrough` is `on`/`all` it wraps the
+  sequence in a DCS passthrough, which tmux hands to the outer terminal without parsing, so
+  no buffer ever exists; otherwise it loads a **named** buffer with `-w` and deletes that
+  buffer in the same breath — a signal landing in that instant deletes it too, by trap — and
+  says so on stderr at the moment it matters (with the `allow-passthrough on` line that
+  closes the remaining instant). A transient buffer that survives `delete-buffer` is exit 1
+  naming the buffer to delete, never a "sent". Outside
+  tmux the flag is a no-op on the wire, the real backends (clip.exe/pbcopy/wl-copy/xclip/xsel)
+  ignore it, and the default path — nvim's provider, tmux copy-pipe, `pbcopy` — is
+  byte-for-byte what it was; `scripts/test-core.sh` §C asserts each of those on the wire
+  format, including that the default pane path under tmux (a writable tty) still never
+  invokes tmux — the copy-pipe shape with no controlling terminal keeps its `load-buffer -w`
+  arm, as before. One limit stays: under nested tmux the outer tmux parses whatever the
+  inner one forwards, so the outer server can still hold a buffer. `clip` now
+  refuses an unknown argument (exit 2) rather than hanging on stdin; nothing in Core passes
+  one. `clip-paste` and `opsecret` are untouched: the first has no OSC 52 read path by
+  design, the second prints via `op read` and never touches `clip`. Not tagged BREAKING:
+  #690 assumed the default tmux path would change, and it does not — no host adapts.
+
 ## [v6.1.0] - 2026-09-02
 
 ### Changed
