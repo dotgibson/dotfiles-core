@@ -2547,6 +2547,12 @@ _vpn_write README.md 'refs/tags/v5.3.0@foo and refs/tags/v5.3.0%x'
 _vpn_count "any non-terminator glued to an exact-looking pin (v5.3.0@foo, v5.3.0%x) is a finding" 6 2
 _vpn_write README.md '(`refs/tags/v5.3.0`), "refs/tags/v5.3.0"; refs/tags/v5.3.0) refs/tags/v5.3.0 # note'
 _vpn_count "an exact pin followed by a quote, paren, semicolon or a spaced comment stays exempt" 6 0
+# Prose punctuation ends a pin only when whitespace or the line ends after it: `v5.3.0,`
+# and `v5.3.0:` are exempt, `v5.3.0,foo` and `v5.3.0:foo` are glued text and judged.
+_vpn_write README.md 'pin refs/tags/v5.3.0, or refs/tags/v5.3.0: either is a freeze; also refs/tags/v5.3.0,'
+_vpn_count "an exact pin followed by a comma or colon and then whitespace or end of line stays exempt" 6 0
+_vpn_write README.md 'refs/tags/v5.3.0:foo and refs/tags/v5.3.0,foo'
+_vpn_count "a comma or colon GLUED to more text (v5.3.0:foo, v5.3.0,foo) is malformed — both findings" 6 2
 # A `#` glued to the word is NOT a comment — bash hands `v5.3.0#note` to git as one
 # argument — so it is a non-exact foreign ref and must be judged, not exempted.
 _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0#note --squash'

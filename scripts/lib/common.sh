@@ -1338,7 +1338,11 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # too, while any other caret suffix stays judged.
           if (rest ~ /^\^\{commit\}/) rest = substr(rest, 10)
           if (rest ~ /^\.([[:space:]]|$)/) rest = substr(rest, 2)
-          if (rest != "" && rest !~ /^[[:space:]`"\047)\]},;:&|<>]/) exact = 0
+          # Two kinds of terminator. A closer (whitespace, quote, backtick, bracket) or a
+          # shell operator (; & | < >) ends the token by itself. Prose punctuation (, :)
+          # ends it only when followed by whitespace, a closer or end of line — otherwise
+          # `v5.3.0:foo` and `v5.3.0,foo` are glued text, i.e. malformed, and judged.
+          if (rest != "" && rest !~ /^[[:space:]`"\047)\]};&|<>]/ && rest !~ /^[,:]([[:space:]`"\047)\]}]|$)/) exact = 0
           # The scaffold default is never exempt: it is not a freeze someone chose, it is
           # the pin every new repo gets by default.
           if ((!exact || isdefault) && major != want) {
