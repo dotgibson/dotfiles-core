@@ -16889,7 +16889,7 @@ _fv_floor "make test 2>&1 still counts" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci 
 # `cd test && ./smoke.sh` RUNS THE SUITE: a cd into the suite directory carries over the
 # rest of the command list, in a recipe or a step; a cd elsewhere does not.
 _fv_floor "a recipe that cds into test/ and runs the script" 'ok' '_fv_suite dotfiles-Alpine; printf "insuite:\n\t@cd test && ./smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make insuite"'
-_fv_floor "a step that cds into tests/ and runs bash on the script" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "cd tests/ && bash run.sh"'
+_fv_floor "a step that cds into tests/ and runs bash on the script" 'ok' '_fv_suite dotfiles-Alpine tests; cp "$_fv_root/dotfiles-Alpine/tests/smoke.sh" "$_fv_root/dotfiles-Alpine/tests/run.sh"; _fv_ci dotfiles-Alpine "cd tests/ && bash run.sh"'
 _fv_floor "a step that cds into test/ and only echoes" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd test && echo smoke.sh"'
 _fv_floor "a step that cds elsewhere before running a script" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd docs && ./smoke.sh"'
 # MAKE MODES THAT EXIT BEFORE BUILDING, another Makefile, and options that belong to the
@@ -16901,8 +16901,8 @@ _fv_floor "make -C tools test (another Makefile)" '**not-in-ci**' '_fv_suite dot
 _fv_floor "make -f other.mk test (another Makefile)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -f other.mk test"'
 _fv_floor "make --directory=tools test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --directory=tools test"'
 _fv_floor "make -I test lint (-I takes a dir, not a goal)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -I test lint"'
-_fv_floor "pwsh -noprofile test/smoke.ps1 runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "pwsh -noprofile test/smoke.ps1"'
-_fv_floor "python -I test/smoke.py runs (-I is python isolation, not make)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 -I test/smoke.py"'
+_fv_floor "pwsh -noprofile test/smoke.ps1 runs" 'ok' '_fv_suite dotfiles-Alpine; : >"$_fv_root/dotfiles-Alpine/test/smoke.ps1"; _fv_ci dotfiles-Alpine "pwsh -noprofile test/smoke.ps1"'
+_fv_floor "python -I test/smoke.py runs (-I is python isolation, not make)" 'ok' '_fv_suite dotfiles-Alpine; : >"$_fv_root/dotfiles-Alpine/test/smoke.py"; _fv_ci dotfiles-Alpine "python3 -I test/smoke.py"'
 # THE EFFECTIVE WORKING DIRECTORY: a step in `tools/` runs another Makefile; the job's and
 # the workflow's `defaults.run.working-directory` apply unless the step overrides them;
 # a step in the suite directory itself runs the suite. And a `cd` anywhere else drops the
@@ -17034,7 +17034,7 @@ _fv_floor "bash test/ reads a directory, not a suite" '**not-in-ci**' '_fv_suite
 _fv_floor "bats test/ runs the directory" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bats test/"'
 _fv_floor "python3 -m unittest discover tests" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m unittest discover tests"'
 _fv_floor "python3 -m tokenize test/smoke.py reads only" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 -m tokenize test/smoke.py"'
-_fv_floor "python3 test/smoke.py runs the file" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "python3 test/smoke.py"'
+_fv_floor "python3 test/smoke.py runs the file" 'ok' '_fv_suite dotfiles-Alpine; : >"$_fv_root/dotfiles-Alpine/test/smoke.py"; _fv_ci dotfiles-Alpine "python3 test/smoke.py"'
 _fv_floor "exit 0; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "exit 0; make test"'
 _fv_floor "make lint || exit 1; make test still runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make lint || exit 1; make test"'
 _fv_floor "an exit inside a block ends only that block" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n \"\$SKIP\" ]; then exit 0; fi; make test"'
@@ -17080,6 +17080,16 @@ _fv_floor "set +e; set -e; false; make test never reaches make" '**not-in-ci**' 
 _fv_floor "false || true; make test runs make (false is an arm)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false || true; make test"'
 _fv_floor "a recipe with false; make test still runs make (no -e under make)" 'ok' '_fv_suite dotfiles-Alpine; printf "suite2:\n\t@false; ./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite2"'
 _fv_floor "a false under a runtime if does not end the step" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ]; then false; fi; make test"'
+# A CREDITED PATH MUST EXIST, in a step or a recipe; a glob must match; `0`/`null`/`""`
+# are false in a GitHub expression.
+_fv_floor "bash test/missing.sh beside a real test/smoke.sh" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash test/missing.sh"'
+_fv_floor "a recipe running test/missing.sh is not the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "ghost2:\n\t@bash test/missing.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ghost2"'
+_fv_floor "bats test/*.bats with no .bats files" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bats test/*.bats"'
+_fv_floor "bash test/*.sh matches the real script" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "for f in test/*.sh; do bash test/*.sh; done"'
+_fv_floor "a path built from a variable is taken on trust" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash test/\$NAME.sh"'
+_fv_floor "a step with if: \${{ 0 }} never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - if: \${{ 0 }}\n        run: make test\n"'
+_fv_floor "a step with if: null never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - if: null\n        run: make test\n"'
+_fv_floor "a job with if: \"\" never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    if: \"\"\n    steps:\n      - run: make test\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

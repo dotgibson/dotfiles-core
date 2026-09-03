@@ -286,8 +286,38 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     followed as far as they are static: a `false` body, a `true` else, a `while false`,
 #     `until true` or `for x in;` body never run; a real condition (`if make test`) is a
 #     command that runs; nothing after an unconditional `exit`/`exec`/`return` runs.
+#   * pathok — the suite path a credited command names must EXIST: `bash test/missing.sh`
+#     beside a real test/smoke.sh runs nothing. The set of entries under the populated
+#     suite directories is handed in through `existl` (one relative path per line); a
+#     literal operand must be in it, a glob must match one, the bare directory is fine,
+#     and an operand carrying `$` cannot be checked and is taken on trust. The list is
+#     passed inline (`existl`, newline-separated), never through a temp file.
 #   * trim — whitespace only.
 AWK_SHELL='
+  function loadexist(lst,   n, a, i) { split("", EXIST); n = split(lst, a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") EXIST[a[i]] = 1 }
+  function globre(g,   r, i, c) {
+    r = "^"
+    for (i = 1; i <= length(g); i++) {
+      c = substr(g, i, 1)
+      if (c == "*") r = r "[^/]*"; else if (c == "?") r = r "[^/]"
+      else if (c ~ /[.^$+(){}|\\\[\]]/) r = r "\\" c; else r = r c
+    }
+    return r "$"
+  }
+  function pathok(cmd,   t, k, n, w, i) {
+    n = split(cmd, w, /[ \t]+/)
+    for (i = 1; i <= n; i++) {
+      t = w[i]; sub(/^[.][/]/, "", t)
+      if (t !~ /^tests?([/]|$)/) continue
+      if (t ~ /\$/) return 1
+      sub(/[/]+$/, "", t)
+      if (t ~ /^tests?$/) return 1
+      if (t in EXIST) return 1
+      if (t ~ /[*?[]/) { for (k in EXIST) if (k ~ globre(t)) return 1 }
+      return 0
+    }
+    return 1
+  }
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
   function splitcmds(s, out,   i, c, q, n, cur) {
     n = 0; cur = ""; q = ""; split("", SPLITOP); SPLITOP[1] = ""
@@ -658,7 +688,8 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       nheld = 0; stepwd = ""; stepoff = 0
     }
     function keyval(s) { sub(/^[^:]*:[ \t]*/, "", s); return unquote_scalar(stripcomment(s)) }
-    function isfalse(v) { return v ~ /^(\$\{\{[ \t]*)?false([ \t]*\}\})?$/ }
+    # GitHub coerces `false`, `0`, `null` and the empty string to false in an expression.
+    function isfalse(v) { return v ~ /^(\$\{\{[ \t]*)?(false|0|null|\047\047|"")?([ \t]*\}\})?$/ }
     {
       if (inblock) {
         if ($0 ~ /^[ \t]*$/) { flushblock(); next }
@@ -734,7 +765,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   ' "$1"
 }
 
-_suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the suite, one per line
+_suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets that run the suite, one per line
   # `make test` is the canonical spelling, but a workflow that runs `make test-repo` whose
   # recipe is `./test/test-repo.sh` IS running the suite — and the verb column already
   # reports the missing alias, so the floor must not report the same gap twice. A target
@@ -747,11 +778,12 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   # next physical line, exactly as make reads it. Otherwise the same lexer as _targets:
   # rules at column 0, recipes on tab lines, comments and variable assignments ignored,
   # conditionals decided as in _targets (AWK_MAKECOND), nothing in a define body counted.
-  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 "$AWK_SHELL$AWK_MAKECOND"'
+  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v existl="${3:-}" "$AWK_SHELL$AWK_MAKECOND"'
+    BEGIN { loadexist(existl) }
     function runs(line,   n, c, i) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
       n = splitcmds(trim(stripcomment(line)), c); n = cdnorm(c, n)
-      for (i = 1; i <= n; i++) if (trim(c[i]) ~ re && trim(c[i]) !~ nore) return 1
+      for (i = 1; i <= n; i++) if (trim(c[i]) ~ re && trim(c[i]) !~ nore && pathok(trim(c[i]))) return 1
       return 0
     }
     # A single-colon rule that carries a recipe REPLACES any earlier recipe for its
@@ -834,6 +866,10 @@ _suite_dirs() { # _suite_dirs <repo-dir> → "test|tests" (the POPULATED ones), 
   printf '%s' "$dirs"
 }
 
+_exist_list() { # _exist_list <repo-dir> → every entry under the suite dirs, relative, one per line
+  ( cd "$1" && find test tests -mindepth 1 2>/dev/null )
+}
+
 _suite_names() { # _suite_names <repo-dir> → the make targets credited with running the suite, one per line
   # A suite target whose name is ALSO A PATH in the repo — `test:` beside the `test/`
   # directory it runs — must be declared .PHONY, or `make test` says "is up to date" and
@@ -849,11 +885,11 @@ _suite_names() { # _suite_names <repo-dir> → the make targets credited with ru
     [[ -n "$tgt" ]] || continue
     if [[ -e "$d/$tgt" ]] && ! grep -qxF -- "$tgt" <<<"$phony"; then continue; fi
     printf '%s\n' "$tgt"
-  done < <(_suite_targets <(printf '%s\n' "$mktext") "$(_run_re "$dirs")")
+  done < <(_suite_targets <(printf '%s\n' "$mktext") "$(_run_re "$dirs")" "$(_exist_list "$d")")
 }
 
 _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
-  local d="$1" dirs wf alt="" tgt cmds hits re
+  local d="$1" dirs wf alt="" tgt cmds hits re existl
   # Either directory name satisfies the floor, and only a POPULATED one is the suite: a
   # stale empty test/ beside a real, CI-run tests/ must not read as `empty`, and a step
   # that runs a nonexistent tests/ must not credit a populated test/ it never touches.
@@ -861,6 +897,7 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   dirs="$(_suite_dirs "$d")"
   [[ -n "$dirs" ]] || { printf 'empty'; return 0; }
   re="$(_run_re "$dirs")"
+  existl="$(_exist_list "$d")"
   # What counts as running it: a step that executes the directory (the run regex), or
   # invokes `make` on a target whose recipe does (_suite_names). `test` earns its place
   # like any other — a `test:` whose recipe is `@true` runs nothing.
@@ -885,7 +922,8 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
     # `python -I test/smoke.py` keeps its operand. `-C`/`-f` are not rewritten: they select
     # another Makefile and NORUN_RE rejects the invocation outright.
     cmds="$(_run_lines "$wf" | sed -E '/^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make([[:space:]]|$)/ s/(^|[[:space:]])(-[IoW]|--(include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\1/g')"
-    hits="$(grep -E "($re|^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([[:space:]]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE")"
+    hits="$(grep -E "($re|^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([[:space:]]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE" |
+      awk -v SQ="'" -v existl="$existl" "$AWK_SHELL"'BEGIN { loadexist(existl) } pathok($0) { print }')"
     if [[ -n "$hits" ]]; then
       printf 'ok'
       return 0
