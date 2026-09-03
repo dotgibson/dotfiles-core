@@ -86,6 +86,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`sync-core.sh --strict` — a failed target becomes the exit status.** By default a
+  per-repo failure is a summary line and exit 0, and that default stays: the fan-out
+  runs the script bare inside a `bash -e` step and then does per-repo push and PR work,
+  so a default non-zero exit would abort that step for every repo when one fails. A
+  single-target caller wants the opposite — a status it can chain on — and a matching
+  `core.lock` line is no proof either, since the lock can be written before a later pin,
+  commit or verification step fails. `--strict` returns 1 whenever a targeted repo
+  failed; the scaffold's `--no-vendor` recovery command and the first-vendor recipe in
+  `ARCHITECTURE.md`, `VENDORING.md` and `PORTING-MATRIX.md` use it, and `test-core.sh` F6
+  pins both contracts on the same dirty target. Dev tooling only — the OS repos receive
+  nothing from this entry.
 - **A greenfield OS repo no longer vendors a retired Core by default, and the
   first-vendor pin is now held to `core.version`'s major (#691 follow-up).**
   `scripts/new-os-repo.sh` defaulted `CORE_BRANCH` to `refs/tags/v5` — and its `--help`,
