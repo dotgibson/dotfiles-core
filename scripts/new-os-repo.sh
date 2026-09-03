@@ -207,9 +207,12 @@ else
     fail "materializing core/ failed — files scaffolded; vendor later with: $_vendor_hint"
   elif ! git -C "$TARGET" commit -q -m "chore(core): vendor Core at ${_core_sha:0:12}"; then
     # core/ IS materialized and staged; only the commit failed. The subtree-add hint would
-    # fail here on the existing prefix, so the recovery is: commit what is staged, then
-    # stamp the lock — the Core-side half alone.
-    fail "core/ materialized at ${_core_sha:0:12} but the commit failed — fix that, then: git -C $(_q "$_target_abs") commit -q -m $(_q "chore(core): vendor Core at ${_core_sha:0:12}") && $_sync_half"
+    # fail here on the existing prefix, so the recovery is: commit, then stamp the lock —
+    # the Core-side half alone. It STAGES FIRST: this commit runs before the scaffold
+    # files below are written, so by the time the reader retries, those files exist
+    # untracked, and a commit of core/ alone would leave the tree dirty for the sync's
+    # guard to refuse.
+    fail "core/ materialized at ${_core_sha:0:12} but the commit failed — fix that, then: git -C $(_q "$_target_abs") add -A && git -C $(_q "$_target_abs") commit -q -m $(_q "chore(core): vendor Core at ${_core_sha:0:12}") && $_sync_half"
   elif core_vendor_is_filtered "$TARGET" "$_core_sha"; then
     pass "vendored Core into core/ at ${_core_sha:0:12} (filtered: core.manifest + core.vendor)"
   else
