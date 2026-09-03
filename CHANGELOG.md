@@ -38,7 +38,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   sample module timings stay informational; a per-module ceiling would gate noise). The
   mean is still the gated statistic (every recorded measurement is a mean); the median
   prints beside it, and a breach whose median is within budget carries an "outlier-driven,
-  re-run" hint. (3) Every mode, including plain `make bench`, now prints the mean against
+  re-run" hint. (3) The report and gate modes — plain `make bench` included — now print the mean against
   the committed baseline (`CI baseline 24 ms, −1%`), so a local run shows the trend —
   though the number that gates is CI's: a laptop or WSL2 box measures 1–3× ubuntu-latest,
   so compare before/after locally rather than reading a local `make bench-gate` red as a
