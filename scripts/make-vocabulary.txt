@@ -22,6 +22,9 @@
 #
 #     make:<verb> none <why this repo has nothing to run here>
 #
+# `test` is the one verb that cannot be declared away: the test floor makes a repo-owned
+# suite universal, and `make test` is how it is run.
+#
 # Format: `<verb>  <meaning>`, one per line; blank lines and `#` comments ignored. The
 # verb is the exact target name. Adding a verb here is a fleet-wide ask — every repo's
 # register cell turns **missing** until it defines or declares the new target — which is

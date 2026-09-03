@@ -482,7 +482,8 @@ bootstrap-dry: dry-run ## (alias) kept for muscle memory
 
 A verb that genuinely does not apply to your repo is declared, not silently absent, in the
 same `.github/core-gates.txt` the gate register reads (a `none` is the only verdict the
-vocabulary accepts — there is no "own" way to have a target by another name):
+vocabulary accepts — there is no "own" way to have a target by another name — and `test`
+cannot be declared at all, because the floor below makes a suite universal):
 
 ```text
 make:packages-check none no OS package list to resolve here

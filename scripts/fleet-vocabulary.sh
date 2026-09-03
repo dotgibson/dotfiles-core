@@ -106,6 +106,7 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
         [[ -n "$m" ]] || continue
         found=1
         _makefile_text "$d" "$m" $((depth + 1)) || return 1
+      # shellcheck disable=SC2086  # $inc IS the glob: a make include operand is word-split and expanded, as make does
       done < <(cd "$d" && for g in $inc; do [[ -f "$g" ]] && printf '%s\n' "$g"; done)
       [[ "$kind" == include && "$found" == 0 ]] && return 1
     elif [[ -f "$d/$inc" ]]; then
@@ -149,6 +150,10 @@ _targets() { # _targets <Makefile> → one defined target name per line
 
 _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or ""
   local decl
+  # `test` cannot be declared away: the floor makes a repo-owned suite universal, and the
+  # canonical way to run it is `make test`. A repo that ran test/ from CI while declaring
+  # `make:test none` would go fully green with the promised verb unavailable.
+  [[ "$2" == test ]] && return 0
   decl="$(sed -e 's/#.*//' "$1/.github/core-gates.txt" 2>/dev/null |
     awk -v k="make:$2" '$1==k && $2=="none" { $1=""; $2=""; sub(/^[[:space:]]+/,""); print; exit }')"
   [[ -n "$decl" ]] && printf '%s' "$decl"
@@ -180,8 +185,10 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternat
 # may not contain `I`, `o` or `W`, whose own attached operand could spell an `f`. For a POSIX
 # shell: `-n` (syntax check) between it and its operand, looking past options that take an
 # operand of their own (`bash -o pipefail -n x`) — ONLY the shells, because pwsh options
-# are case-insensitive words (`-noprofile` runs). For node: --check / -c.
-NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c)([[:space:]]|$))'
+# are case-insensitive words (`-noprofile` runs). For node: --check / -c / -v. For every
+# interpreter: its help and version modes (--help/--version, -h/-V, pwsh -Help/-Version/-?),
+# which print and exit without touching the operand.
+NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v)([[:space:]]|$)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:

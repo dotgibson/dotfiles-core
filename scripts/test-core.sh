@@ -16666,10 +16666,12 @@ fi
 _fv_reset; _fv_repo dotfiles-Gentoo; _fv_suite dotfiles-Gentoo; _fv_ci dotfiles-Gentoo "bash test/smoke.sh"
 mkdir -p "$_fv_root/dotfiles-Gentoo/.github"
 for v in help lint check dry-run packages-check core-verify test; do printf 'make:%s none nothing to run here\n' "$v"; done >"$_fv_root/dotfiles-Gentoo/.github/core-gates.txt"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
-  pass "vocab: \`make:<verb> none\` fills every cell of a repo with no Makefile"
+out="$(_fv_run --check)"; rc=$?
+row="$(_fv_run | grep -F '| `Gentoo` |')"   # the row only — the footnotes name the repo too
+if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* && "$row" == *'| none[^6] | **no Makefile** | ok |' ]]; then
+  pass "vocab: \`make:<verb> none\` fills six cells of a repo with no Makefile; \`test\` cannot be declared away"
 else
-  fail "vocab: declarations were not honoured without a Makefile: $out"
+  fail "vocab: declarations without a Makefile (rc=$rc): $out / $row"
 fi
 
 # A MISSING MANDATORY INCLUDE aborts make before any rule is read: every verb is missing
@@ -16900,6 +16902,10 @@ _fv_floor "python3 -m pytest tests (no slash)" 'ok' '_fv_suite dotfiles-Alpine t
 _fv_floor "test -f test/smoke.sh is the shell utility" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "test -f test/smoke.sh"'
 _fv_floor "false || make test always runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false || make test"'
 _fv_floor "false && make test never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false && make test"'
+# AN INTERPRETER'S HELP OR VERSION MODE prints and exits without touching the operand.
+_fv_floor "python3 --version tests/smoke.py" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 --version tests/smoke.py"'
+_fv_floor "node -v test/x.js" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "node -v test/x.js"'
+_fv_floor "bash --help test/smoke.sh" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash --help test/smoke.sh"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
