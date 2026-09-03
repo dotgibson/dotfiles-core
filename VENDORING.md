@@ -488,8 +488,7 @@ issue's own verification step. There is no "own" way to have a target by another
 
 ```make
 .PHONY: packages-check
-packages-check: ## (n/a) no OS package list to resolve here
-	@echo "packages-check: not applicable to this repo (no OS package list)"
+packages-check: ; @echo "packages-check: not applicable to this repo (no OS package list)"
 ```
 
 **The test floor** rides in the register's last column and has no waiver line: a `test/`

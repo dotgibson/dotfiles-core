@@ -16,8 +16,8 @@
 # to a repo is therefore not declared away but STUBBED: a target of the canonical name that
 # says so and exits 0 —
 #
-#     packages-check: ## (n/a) no OS package list to resolve here
-#     	@echo "packages-check: not applicable to this repo (no OS package list)"
+#     .PHONY: packages-check
+#     packages-check: ; @echo "packages-check: not applicable to this repo (no OS package list)"
 #
 # — so `make packages-check` means the same thing everywhere, including "nothing to do".
 #
@@ -842,8 +842,8 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         match($0, /^[ \t]*/)
         if (RLENGTH > bind) {
           line = trim($0)
-          # A HEREDOC PAYLOAD is data, not commands: from a `<<DELIM` / `<<'DELIM'` /
-          # `<<\DELIM` / `<<-DELIM` (not `<<<`, a herestring) to the line that is exactly DELIM, the
+          # A HEREDOC PAYLOAD is data, not commands: from a `<<DELIM`, a quoted `<<"DELIM"`,
+          # `<<\DELIM` or `<<-DELIM` (not `<<<`, a herestring) to the line that is exactly DELIM, the
           # lines are written somewhere, never run. The command carrying the operator is
           # kept; the payload is dropped.
           if (hd != "") { if (line == hd) hd = ""; next }

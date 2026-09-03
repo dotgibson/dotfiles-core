@@ -9966,7 +9966,7 @@ _fv_ci() { # _fv_ci <repo> <workflow-line> — one workflow that carries the giv
   mkdir -p "$_fv_root/$1/.github/workflows"
   printf 'on: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n' "$2" >"$_fv_root/$1/.github/workflows/ci.yml"
 }
-# shellcheck disable=SC2317  # reached through the eval in _fv_floor, which shellcheck cannot see
+# shellcheck disable=SC2317,SC2329  # reached through the eval in _fv_floor, which shellcheck cannot see
 _fv_wf() { # _fv_wf <repo> <relative-path-under-.github/workflows> <printf-body> — a RUNNABLE workflow file
   # A fixture body says only what it is about; the `on:` trigger and each job`s `runs-on:`
   # that make a real workflow runnable are supplied here (a duplicated key is harmless to
@@ -9980,7 +9980,7 @@ _fv_wf() { # _fv_wf <repo> <relative-path-under-.github/workflows> <printf-body>
     injobs && /^  [A-Za-z_][A-Za-z0-9_-]*:[ \t]*$/ { print "    runs-on: ubuntu-latest" }
   ' >"$_fv_root/$1/.github/workflows/$2"
 }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329  # likewise, eval-only
 _fv_wf_raw() { # _fv_wf_raw <repo> <path> <printf-body> — the body exactly as given
   mkdir -p "$_fv_root/$1/.github/workflows/$(dirname "$2")"
   printf '%b' "$3" >"$_fv_root/$1/.github/workflows/$2"

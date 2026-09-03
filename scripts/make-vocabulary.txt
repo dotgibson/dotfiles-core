@@ -22,8 +22,8 @@
 # resolves everywhere — which is the promise this file makes, and the issue's own
 # verification step:
 #
-#     packages-check: ## (n/a) no OS package list to resolve here
-#     	@echo "packages-check: not applicable to this repo (no OS package list)"
+#     .PHONY: packages-check
+#     packages-check: ; @echo "packages-check: not applicable to this repo (no OS package list)"
 #
 # `test` has no stub form: the test floor makes a repo-owned suite universal, and
 # `make test` must run it.
