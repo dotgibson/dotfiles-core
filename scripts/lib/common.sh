@@ -1331,7 +1331,12 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # `^{commit}` of the peeled form is consumed by the match itself, so a caret
           # left in rest (`v5.3.0^foo`) is a malformed ref, judged. And in the peeled
           # form the sentence period sits in rest rather than the token
-          # (`v5.3.0^{commit}.`), so one prose period is trimmed from rest first.
+          # (`v5.3.0^{commit}.`), so one prose period is trimmed from rest first. And a
+          # full-ref peel — `refs/tags/v5.3.0^{commit}` — matches through the refs/tags
+          # shape and leaves the literal `^{commit}` in rest: that one suffix is consumed
+          # before the tests, so the same deliberate freeze is exempt in that spelling
+          # too, while any other caret suffix stays judged.
+          if (rest ~ /^\^\{commit\}/) rest = substr(rest, 10)
           if (rest ~ /^\.([[:space:]]|$)/) rest = substr(rest, 2)
           if (rest != "" && rest !~ /^[[:space:]`"\047)\]},;:&|<>]/) exact = 0
           # The scaffold default is never exempt: it is not a freeze someone chose, it is

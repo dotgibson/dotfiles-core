@@ -2557,6 +2557,12 @@ _vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3.0^{commit})" — then ru
 _vpn_count "an exact peeled pin at sentence end (v5.3.0^{commit}.) stays exempt" 6 0
 _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0^foo --squash'
 _vpn_count "\`v5.3.0^foo\` — a caret that is not ^{commit} — is malformed, a finding" 6 1
+# The peel written against the FULL ref: `refs/tags/v5.3.0^{commit}` matches through the
+# refs/tags shape and leaves the literal ^{commit} in rest — the same freeze, still exempt.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse refs/tags/v5.3.0^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "an exact peeled pin in full-ref form (refs/tags/v5.3.0^{commit}) stays exempt" 6 0
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse refs/tags/v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "a bare-major peel in full-ref form (refs/tags/v5^{commit}) is still judged" 6 1
 # A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
 _vpn_write README.md 'git  checkout v5'
 _vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1
