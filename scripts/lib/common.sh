@@ -1264,8 +1264,11 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
 #     must stay so. A gate that reds on a true sentence teaches people to falsify it.
 #   · scripts/test-core.sh builds fixture repos with tags of its own (`refs/tags/v1`);
 #     those are test data, not instructions.
-#   · An EXACT pin (`refs/tags/v5.3.0`) is a deliberate freeze and is out of scope, as
-#     is another repository's tag reached through an API path (`git/refs/tags/v3`).
+#   · An EXACT pin (`refs/tags/v5.3.0`, optionally `-pre` as core.version allows) is a
+#     deliberate freeze and is out of scope — whatever its major. Anything else dotted
+#     (`v5.3`, `v5.3.0.1`) is no tag this repo cuts, so it is judged by its leading major
+#     like a bare one. Another repository's tag reached through an API path
+#     (`git/refs/tags/v3`) is out of scope too.
 _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
   local root="${1:-.}" want="${2:-}" f
   [ -n "$want" ] || return 0
@@ -1277,20 +1280,24 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         line = $0
         # Each shape carries its own left boundary so `git/refs/tags/v3` (a slash before
         # `refs`) and `xv5^{commit}` do not match, while `:-refs/tags/vN` (the scaffold
-        # default) does. The trailing check exempts ONLY a complete `vN.M.P` pin: a
-        # two-component or otherwise malformed `v5.3` is not a deliberate freeze that any
-        # tag of this repo could satisfy, so it is judged like a bare major. A longer number
-        # cannot leak: `[0-9]+` is greedy, so `v50` is read whole as 50.
-        while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9]+|git checkout v[0-9]+|v[0-9]+\^\{commit\})/)) {
+        # default) does. Every shape captures the WHOLE version token after the `v`
+        # (digits, dots, and any pre-release letters) — so `v5.3^{commit}` is seen, not
+        # skipped, and `v50` is read as 50 — and the token is classified once:
+        #   bare major          → judged against want
+        #   exact N.M.P[-pre]   → a deliberate freeze, exempt whatever its major
+        #   anything else       → no tag this repo cuts; judged by its leading major
+        while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git checkout v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
           sub(/^[^rgv]*/, "", hit)                 # drop the boundary character
-          ver = hit
-          if (ver ~ /\^\{commit\}$/) { sub(/^v/, "", ver); sub(/\^.*$/, "", ver) }
-          else sub(/^.*v/, "", ver)
-          if (rest !~ /^\.[0-9]+\.[0-9]+([^0-9]|$)/ && ver != want) {
+          tok = hit
+          sub(/\^\{commit\}$/, "", tok)
+          match(tok, /v[0-9]/); tok = substr(tok, RSTART + 1)
+          major = tok; sub(/[^0-9].*$/, "", major)
+          exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/)
+          if (!exact && major != want) {
             printf "%s:%d: first-vendor pin names v%s, but core.version is major v%s (%s)\n", \
-              file, NR, ver, want, hit
+              file, NR, tok, want, hit
           }
           line = rest
         }

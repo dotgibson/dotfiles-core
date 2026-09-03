@@ -2493,6 +2493,18 @@ _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3
 _vpn_count "a two-component v5.3 is NOT an exact pin — still a finding" 6 1
 _vpn_write README.md 'git checkout v6.1.0 && CORE_BRANCH="$(git rev-parse v6.1.0^{commit})"'
 _vpn_count "an exact pin on the current line in the other two shapes is clean" 6 0
+# The peeled shape must SEE a dotted version, not skip it: a first draft matched only
+# `vN^{commit}`, so a stale `v5.3^{commit}` was invisible rather than judged.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "a dotted-but-incomplete peeled pin (v5.3^{commit}) is a finding" 6 1
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3.0^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "an exact peeled pin (v5.3.0^{commit}) is a deliberate freeze, exempt" 6 0
+# Only EXACTLY vN.M.P (optionally -pre, as core.version allows) is exempt: a fourth
+# component is no tag this repo cuts, so it is judged by its leading major.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0.1 --squash'
+_vpn_count "a four-component v5.3.0.1 is malformed, not exact — still a finding" 6 1
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0-rc1 --squash'
+_vpn_count "a SemVer pre-release pin (v5.3.0-rc1) is an exact release, exempt" 6 0
 _vpn_write README.md 'gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha'
 _vpn_count "another repository's tag behind an API path (git/refs/tags/) is not a finding" 6 0
 _vpn_write CHANGELOG.md 'so it is corrected to a concrete `refs/tags/v5`'
