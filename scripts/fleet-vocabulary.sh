@@ -118,7 +118,9 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` 
   # Not a YAML parser — it needs no quoting rules, only indentation, which is the one
   # thing YAML block scalars guarantee.
   awk '
-    function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); return s }
+    # Leading indentation goes too: a block line is a command, and the command-position
+    # anchors downstream must see it at column 0, as an inline `run:` value already is.
+    function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); sub(/^[ \t]+/, "", s); return s }
     {
       if (inblock) {
         if ($0 ~ /^[ \t]*$/) next
@@ -140,7 +142,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   # `make test` is the canonical spelling, but a workflow that runs `make test-repo` whose
   # recipe is `./test/test-repo.sh` IS running the suite — and the verb column already
   # reports the missing alias, so the floor must not report the same gap twice. A target
-  # qualifies if a recipe line of its rule runs the suite (RUN_RE, after the `@`/`-`/`+`
+  # qualifies if a recipe line of its rule runs the suite (the run regex, after the `@`/`-`/`+`
   # recipe prefixes), or if a prerequisite qualifies (to a fixpoint, so `test: test-repo`
   # inherits). A rule with several targets (`smoke test-repo:`) gives its recipe to each.
   # Same lexer as _targets: rules at column 0, recipes on tab lines, comments and variable
@@ -192,7 +194,7 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   ((seen)) || { printf 'no-dir'; return 0; }
   [[ -n "$dirs" ]] || { printf 'empty'; return 0; }
   re="$(_run_re "$dirs")"
-  # What counts as running it: a `run:` step that executes the directory (RUN_RE), or
+  # What counts as running it: a `run:` step that executes the directory (the run regex), or
   # invokes `make` on a target whose recipe does (`make test`, `make test-repo`).
   alt="test"
   if [[ -f "$d/Makefile" ]]; then
@@ -210,7 +212,7 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
     [[ -f "$wf" ]] || continue
     lines="$(_run_lines "$wf")"
-    if grep -qE "((^|[;&|][[:space:]]*)(sudo[[:space:]]+)?make[[:space:]]+([^|&;]*[[:space:]])?($alt)([^[:alnum:]_-]|\$)|$re)" <<<"$lines"; then
+    if grep -qE "((^|[;&|])[[:space:]]*(sudo[[:space:]]+)?make[[:space:]]+([^|&;]*[[:space:]])?($alt)([^[:alnum:]_-]|\$)|$re)" <<<"$lines"; then
       printf 'ok'
       return 0
     fi
