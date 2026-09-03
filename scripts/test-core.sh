@@ -7756,8 +7756,11 @@ else
   # 6. ci.yml runs --gate and carries NO budget literal — the dual-source drift the file
   #    exists to kill. A `CORE_BENCH_BUDGET_MS:` key reappearing in the workflow would
   #    silently override the committed number.
+  #    Anchored to the `run:` key: the job's comment block names the same command, so a bare
+  #    substring match would stay green after the actual step dropped --gate (a review catch).
   _bc_ci="$HERE/.github/workflows/ci.yml"
-  if grep -q 'bench-core.sh --gate' "$_bc_ci" && ! grep -q 'CORE_BENCH_BUDGET_MS:' "$_bc_ci"; then
+  if grep -qE '^[[:space:]]*run:[[:space:]]*\./scripts/bench-core\.sh --gate[[:space:]]*$' "$_bc_ci" &&
+    ! grep -q 'CORE_BENCH_BUDGET_MS:' "$_bc_ci"; then
     pass "bench gate: ci.yml runs bench-core.sh --gate and sets no CORE_BENCH_BUDGET_MS literal"
   else
     fail "bench gate: ci.yml must run 'bench-core.sh --gate' and must NOT set CORE_BENCH_BUDGET_MS (the budget lives in scripts/bench-baseline.env)"
