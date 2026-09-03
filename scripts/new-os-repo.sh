@@ -179,6 +179,12 @@ w() {
 # COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
 # hand the reader a misparsed command at exactly the moment vendoring must be recovered.
 _q() { printf '%q' "$1"; }
+# No origin and no CORE_REMOTE: an empty remote baked into the hint would fail at every
+# step. Render a runtime expansion instead, so the pasted command refuses loudly until
+# the reader exports CORE_REMOTE — the one thing the error below tells them to do.
+_remote_q="$(_q "$CORE_REMOTE")"
+# shellcheck disable=SC2016  # deliberately literal: the expansion belongs to the PASTED command, not to this script
+[[ -n "$CORE_REMOTE" ]] || _remote_q='"${CORE_REMOTE:?export CORE_REMOTE=<dotfiles-core remote URL> first}"'
 _target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$TARGET"
 _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$TARGET")"
 #
@@ -190,8 +196,8 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # The Core-side half stands on its own too: when core/ WAS materialized and only the
 # commit after it failed, the subtree add would fail on the existing prefix, so that
 # state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
-_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && { git worktree add --detach \"\$_wt\" FETCH_HEAD || { rmdir \"\$_wtp\"; false; }; } && { if (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh --strict $(_q "dotfiles-$OS")); then _rc=0; else _rc=\$?; fi; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\"; })"
-_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
+_sync_half="(cd $(_q "$HERE") && git fetch $_remote_q $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && { git worktree add --detach \"\$_wt\" FETCH_HEAD || { rmdir \"\$_wtp\"; false; }; } && { if (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$_remote_q REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh --strict $(_q "dotfiles-$OS")); then _rc=0; else _rc=\$?; fi; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\"; })"
+_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $_remote_q $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
 # comment — so the sync resolves the conventional name. A symlink, not a rename: the
@@ -905,12 +911,14 @@ else
   # --no-vendor scaffold the FIRST step above has already created that link, and a plain
   # `ln -s` onto an existing directory symlink would follow it and drop a new link inside
   # the target repo, which the sync then refuses as dirty.
-  # The guarded symlink is CHAINED into the sync with `&&`, never printed as a line of
-  # its own: pasted as two lines, a refused guard would not stop the next line, and the
-  # sync's directory fast path would then pick the very occupant the guard refused.
-  _reg_sync="./scripts/sync-core.sh $(_q "dotfiles-$OS")"
-  [[ "$_target_parent" == "$(cd "$(dirname "$HERE")" && pwd)" ]] || _reg_sync="REPOS_ROOT=$(_q "$_target_parent") $_reg_sync"
-  [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || _reg_sync="$_link_cmd && $_reg_sync"
+  # The register step is the FIRST sync that stamps core.lock, so it must carry the
+  # release pin: a bare `./scripts/sync-core.sh dotfiles-X` defaults CORE_BRANCH to main
+  # and would replace the just-materialized release tree with an unreleased tip — the
+  # very thing this scaffold exists to prevent. It reuses the pinned worktree sync
+  # (_sync_recover): the throwaway worktree at the pinned ref, --strict, REPOS_ROOT, and
+  # for a custom name the guarded symlink chained in front with `&&`, so a refused guard
+  # stops the sync instead of letting its directory fast path pick the occupant.
+  _reg_sync="$_sync_recover"
   # The scaffold commit is IDEMPOTENT: on the no-core/ path the FIRST recovery command
   # has already committed the scaffold, and a bare `git commit` would then fail with
   # "nothing to commit" — the one step in the sequence a reader could not follow. And the
@@ -933,6 +941,6 @@ else
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
     echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted
-    $_reg_sync   # materializes core/ and stamps core.lock (a custom name: the guarded symlink runs first, and a refusal stops the sync)
+    $_reg_sync   # the PINNED sync (a throwaway worktree at the release ref; --strict): stamps core.lock — a custom name gets the guarded symlink first, and a refusal stops it
 EOF
 fi

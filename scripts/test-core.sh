@@ -5749,6 +5749,24 @@ if have git; then
       fail "recovery: the guard did not refuse a foreign occupant of the canonical path"
     fi
   fi
+  # A Core checkout with NO origin and no CORE_REMOTE must not bake an empty remote into
+  # the command: it renders `"${CORE_REMOTE:?…}"`, which fails loudly at paste time until
+  # the reader exports the URL. Reproduced on a copy of the scaffold in an origin-less repo.
+  _rc_nocore="$SANDBOX/recovery/nocore"
+  mkdir -p "$_rc_nocore/scripts/lib" "$_rc_nocore/lib"
+  cp "$HERE/scripts/new-os-repo.sh" "$_rc_nocore/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/core-lock.sh" "$HERE/scripts/lib/core-vendor.sh" "$_rc_nocore/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$_rc_nocore/lib/"
+  cp "$HERE/core.version" "$_rc_nocore/"
+  git -C "$_rc_nocore" init -q >/dev/null 2>&1
+  _rc_noout="$(env -u CORE_JSON -u CORE_REMOTE bash "$_rc_nocore/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/no-origin-target" 2>&1)"
+  _rc_nocmd="$(grep 'skipping vendor' <<<"$_rc_noout" | sed 's/^.*run later: //')"
+  if [[ -n "$_rc_nocmd" ]] && grep -qF '"${CORE_REMOTE:?' <<<"$_rc_nocmd" && ! grep -qE "subtree add --prefix=core '' |git fetch '' |CORE_REMOTE='' " <<<"$_rc_nocmd" && bash -n <(printf '%s\n' "$_rc_nocmd"); then
+    pass "recovery: with no origin and no CORE_REMOTE the command carries a \${CORE_REMOTE:?…} expansion, never an empty remote"
+  else
+    fail "recovery: an origin-less Core baked an empty remote into the hint — $(cut -c1-200 <<<"$_rc_nocmd")"
+  fi
+  unset _rc_nocore _rc_noout _rc_nocmd
   rm -rf "$SANDBOX/recovery"
   unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail _rc_left_add
 else
