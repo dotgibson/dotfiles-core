@@ -15,13 +15,16 @@ _Repo status_ at the bottom).
 3. Replace `install/packages.txt` with that distro's names (table below).
 4. In `bootstrap.sh`: swap the `dnf` block for the distro's installer and the
    `/etc/os-release` guard string.
-5. Re-vendor Core and stamp `core.lock`, from a **Core** checkout — in a throwaway
-   worktree, so your own checkout stays on its branch for the registration edit that
-   follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" && { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && { if (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>); then rc=0; else rc=$?; fi; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
+5. **Commit steps 2–4 first** (`git add -A && git commit -m "os: the <Distro> layer"`):
+   the sync refuses a target with uncommitted changes, so an uncommitted repo is skipped
+   rather than re-vendored. Then re-vendor Core and stamp `core.lock`, from a **Core**
+   checkout — in a throwaway worktree, so your own checkout stays on its branch for the
+   registration edit that follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" && { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && { if (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh --strict dotfiles-<Distro>); then rc=0; else rc=$?; fi; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
    (a unique temp path, so a retry never meets a registered leftover; the sync runs as
    an `if` condition so `set -e` cannot skip the cleanup, which runs only once the add
-   succeeded; the sync's status is the verdict — and since `sync-core.sh` exits 0 after a
-   per-repo failure, confirm `core.lock` in the OS repo names the commit you vendored)
+   succeeded; with `--strict` the sync's status is the verdict — by default it exits 0
+   after a per-repo failure and only says so in its summary, and a matching `core.lock`
+   is no proof either, since it can be written before a later step fails)
    — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
    § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no

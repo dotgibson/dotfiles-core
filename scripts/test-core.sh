@@ -4764,6 +4764,36 @@ if ((_sc_subtree)); then
     skip "sync-core staleness guard (could not build the clone fixture — out of scope)"
   fi
   unset _sc_st
+
+  # --- --strict: a failed TARGET becomes the exit status ------------------------
+  # By default a per-repo failure is a summary line and exit 0 — the fan-out runs this
+  # script bare inside a `bash -e` step and then does per-repo push/PR work, so a default
+  # non-zero exit would abort that for every repo when one fails. A single-target caller
+  # (the scaffold's recovery command, the first-vendor recipe) needs the opposite: a
+  # status it can chain on. Both contracts are pinned here on the same failure — a
+  # dirty target, which the guard refuses — so neither can drift without notice.
+  # Invoked directly rather than through _sc_run, which feeds its arguments to env.
+  : >"$SCF/repos/dotfiles-Test/dirty-by-design"
+  _sc_strict_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
+    REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+    SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" dotfiles-Test 2>&1)"
+  _sc_strict_rc=$?
+  if ((_sc_strict_rc == 0)) && grep -q 'uncommitted changes' <<<"$_sc_strict_out" && grep -q 'failed 1' <<<"$_sc_strict_out"; then
+    pass "sync-core: by default a failed target is a summary line (failed 1) and exit 0 — the fan-out's contract"
+  else
+    fail "sync-core: the default contract moved — rc=$_sc_strict_rc: $(grep -E 'uncommitted|failed' <<<"$_sc_strict_out" | head -2 | tr '\n' ' ')"
+  fi
+  _sc_strict_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
+    REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+    SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" --strict dotfiles-Test 2>&1)"
+  _sc_strict_rc=$?
+  if ((_sc_strict_rc == 1)) && grep -q 'uncommitted changes' <<<"$_sc_strict_out"; then
+    pass "sync-core: --strict turns the same failed target into exit 1 (the recovery command's verdict)"
+  else
+    fail "sync-core: --strict did not return 1 on a failed target — rc=$_sc_strict_rc"
+  fi
+  rm -f "$SCF/repos/dotfiles-Test/dirty-by-design"
+  unset _sc_strict_out _sc_strict_rc
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
@@ -5586,7 +5616,7 @@ if have git; then
     # The commit marker sits between `add -A` and the subtree add on purpose: subtree add
     # needs a valid HEAD, and a chain that staged but never committed would otherwise
     # pass this ordering check.
-    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'git worktree remove --force ' '&& rmdir "$_wtp" && exit '; do
+    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh --strict ' 'git worktree remove --force ' '&& rmdir "$_wtp" && exit '; do
       _rc_pos="$(awk -v m="$_rc_m" '{ print index($0, m) }' <<<"$_rc_cmd")"
       ((_rc_pos > _rc_prev)) || _rc_order="$_rc_order [$_rc_m]"
       _rc_prev=$_rc_pos
@@ -5605,7 +5635,7 @@ if have git; then
     # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
     grep -qF '{ git worktree add --detach "$_wt" FETCH_HEAD || { rmdir "$_wtp"; false; }; } && { if (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad add-failure-removes-own-parent+cleanup-nested+sync-as-if-condition"
-    grep -qF "&& grep -q \"^core_sha=\$(git -C \"\$_wt\" rev-parse 'HEAD^{commit}')\" " <<<"$_rc_cmd" || _rc_bad="$_rc_bad lock-stamp-verdict"
+    grep -qF './scripts/sync-core.sh --strict ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad strict-sync-verdict"
     grep -qF '; then _rc=0; else _rc=$?; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
@@ -5614,8 +5644,8 @@ if have git; then
     fi
     # The worktree subshell's STATUS, behaviourally: take the emitted subshell (from the
     # Core-side `(cd` to the end), stub the four network/worktree steps — fetch → true,
-    # worktree add → mkdir, the sync → a chosen status, worktree remove → rmdir — drop the
-    # core.lock verdict (no lock exists here), and run it UNDER `bash -e`, since the
+    # worktree add → mkdir, the sync → a chosen status, worktree remove → rmdir — and run
+    # it UNDER `bash -e`, since the
     # reader's shell may have errexit on and the cleanup must still be reached. A shape
     # assertion alone could pass a chain whose cleanup still masked the sync.
     _rc_sub="${_rc_cmd#* --squash && (cd }"   # drop everything up to the Core-side subshell (the FIRST `(cd` after the subtree add)
@@ -5628,7 +5658,6 @@ if have git; then
             -e "s|mktemp -d|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
             -e 's|git worktree add --detach "$_wt" FETCH_HEAD|mkdir -p "$_wt"|' \
             -e "s|\./scripts/sync-core\.sh [^)]*)|$1)|" \
-            -e 's| && grep -q "^core_sha=[^;]*; then|; then|' \
             -e "s|git worktree remove --force \"\$_wt\"|$2 \"\$_wt\"|")"
       (cd "$SANDBOX/recovery" && bash -e -c "$d") >/dev/null 2>&1
     }
