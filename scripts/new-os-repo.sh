@@ -184,8 +184,13 @@ _vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs")
 # modify that unrelated repository. Any other occupant is refused, and the chain stops.
 _canon="$_target_parent/dotfiles-$OS"
 _link_cmd="{ { [ ! -e $(_q "$_canon") ] && [ ! -L $(_q "$_canon") ]; } || { [ -L $(_q "$_canon") ] && [ \"\$(readlink $(_q "$_canon"))\" = $(_q "$_target_abs") ]; }; } || { echo $(_q "refusing: $_canon exists and is not a link to this scaffold — remove or rename it first") >&2; false; } && ln -sfn $(_q "$_target_abs") $(_q "$_canon")"
-[[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] ||
+# The sync-only recovery (used when core/ is already materialized) needs that same link
+# for a custom basename, or the sync just skips a directory it cannot resolve.
+_sync_recover="$_sync_half"
+[[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || {
   _vendor_hint="$_link_cmd && $_vendor_hint; sync-core.sh resolves the NAME dotfiles-$OS under REPOS_ROOT, hence the guarded symlink (not a rename — the chain embeds the original path)"
+  _sync_recover="$_link_cmd && $_sync_half"
+}
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then
@@ -214,7 +219,7 @@ else
     # files below are written, so by the time the reader retries, those files exist
     # untracked, and a commit of core/ alone would leave the tree dirty for the sync's
     # guard to refuse.
-    fail "core/ materialized at ${_core_sha:0:12} but the commit failed — fix that, then: git -C $(_q "$_target_abs") add -A && git -C $(_q "$_target_abs") commit -q -m $(_q "chore(core): vendor Core at ${_core_sha:0:12}") && $_sync_half"
+    fail "core/ materialized at ${_core_sha:0:12} but the commit failed — fix that, then: git -C $(_q "$_target_abs") add -A && git -C $(_q "$_target_abs") commit -q -m $(_q "chore(core): vendor Core at ${_core_sha:0:12}") && $_sync_recover"
   elif core_vendor_is_filtered "$TARGET" "$_core_sha"; then
     pass "vendored Core into core/ at ${_core_sha:0:12} (filtered: core.manifest + core.vendor)"
   else
