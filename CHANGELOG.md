@@ -86,6 +86,57 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`sync-core.sh --strict` — a failed target becomes the exit status.** By default a
+  per-repo failure is a summary line and exit 0, and that default stays: the fan-out
+  runs the script bare inside a `bash -e` step and then does per-repo push and PR work,
+  so a default non-zero exit would abort that step for every repo when one fails. A
+  single-target caller wants the opposite — a status it can chain on — and a matching
+  `core.lock` line is no proof either, since the lock can be written before a later pin,
+  commit or verification step fails. `--strict` returns 1 whenever a targeted repo
+  failed **or was skipped** (not cloned, or no `core/` yet — a wrong name or
+  `REPOS_ROOT` must not read as success). The scaffold's `--no-vendor` recovery command
+  and the first-vendor recipe in `ARCHITECTURE.md`, `VENDORING.md` and
+  `PORTING-MATRIX.md` cannot use it: they run the **released** script from a worktree at
+  the pinned tag, which may predate the flag, so they read the released script's own
+  summary line instead and count only `updated 1   skipped 0   failed 0`. `test-core.sh`
+  F6 pins the default and strict contracts on the same dirty, missing and core-less
+  targets. Dev tooling only — the OS repos receive nothing from this entry.
+  The recovery command is also **resumable**: its one-time `git subtree add` is skipped
+  once `HEAD` already carries `core/` (`cat-file -e HEAD:core`), so rerunning the exact
+  command after a failed sync goes straight back to the sync instead of stopping at
+  "prefix 'core' already exists"; and a `--dry-run` target that does not exist yet is
+  embedded anchored to the invocation directory, because the chain `cd`s into the Core
+  checkout, where a relative `REPOS_ROOT` would make the sync skip the very repo the hint
+  was written for. Both are fixture-driven in `test-core.sh` (a second run of the
+  materialize half, and a dry run of a relative, not-yet-existing target). And because
+  that verdict reads the `repos:` footer, which exists since v4.1.0 (v4.0.2 and older
+  print a per-check count a successful single-target sync would fail against), the
+  scaffold now refuses a `CORE_BRANCH` naming an older release before it writes anything,
+  and the three recipes state the same floor.
+- **A greenfield OS repo no longer vendors a retired Core by default, and the
+  first-vendor pin is now held to `core.version`'s major (#691 follow-up).**
+  `scripts/new-os-repo.sh` defaulted `CORE_BRANCH` to `refs/tags/v5` — and its `--help`,
+  `sync-core.sh`'s header and usage, and the copyable first-vendor recipe in
+  `ARCHITECTURE.md`, `VENDORING.md` and `PORTING-MATRIX.md` all still said `v5` — two
+  releases after the fleet moved to v6, so a repo scaffolded in that window carried a
+  retired major and the docs told a human to do the same. This is the same rot the v4 → v5
+  cut fixed by hand in three separate entries, which is the reason it is now a gate rather
+  than a fourth: `scripts/lib/common.sh :: _core_vendor_pin_hits` reads the three recipe
+  shapes (`refs/tags/vN`, `git checkout vN`, `vN^{commit}`) plus the scaffold default out
+  of the root docs and `scripts/`, and **§8a-ter** of `audit-core.sh` holds every one to
+  `core.version`'s major — the treatment §8a gives the `ref:` keys and §8a-bis the caller
+  examples, one recipe over. The docs keep a **concrete, copyable** major rather than
+  "the current alias", the decision the last cut recorded (a ref the reader pastes is not
+  a claim they read); the gate is what makes that safe to promise. Exemptions are the true
+  sentences a blunter scan would red on: CHANGELOG history, `test-core.sh`'s fixture tags,
+  an exact `vN.M.P` freeze, and another repository's tag behind an API path. Fixture-tested
+  both directions in `test-core.sh`, including the inverse on this tree and the proof that
+  at the next major the scaffold default itself is what surfaces. While correcting that
+  recipe, the same four passages (`ARCHITECTURE.md`, `VENDORING.md`, `PORTING-MATRIX.md`,
+  the scaffold's own header and `--help`) stopped claiming the scaffold runs
+  `git subtree add`: it has materialized the filtered vendor set since #676, and the
+  subtree add is the manual fallback that copies the whole tree. Dev tooling only — the
+  OS repos receive nothing from this entry.
 - **`optoken` no longer leaves a live TOTP in a tmux paste buffer; `clip` grows a
   `--sensitive` mode (`CLIP_SENSITIVE=1`) that it uses (#690).** On a box with no real
   clipboard backend — the headless-over-ssh shelf that is the documented norm for part of

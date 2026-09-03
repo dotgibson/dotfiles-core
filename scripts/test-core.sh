@@ -2445,6 +2445,230 @@ if [[ -r "$HERE/core.version" ]]; then
   unset _wfe_now
 fi
 
+# ── first-vendor pin major guard (common.sh :: _core_vendor_pin_hits) ─────────
+# Third sibling of the two guards above, for the third copyable instruction that names a
+# major: the first-vendor recipe (`refs/tags/vN`, `git checkout vN`, `vN^{commit}`) and
+# new-os-repo.sh's default for it. It rotted at v4 → v5 (fixed by hand, three CHANGELOG
+# entries) and again at v5 → v6, where it sat for two releases while every `ref:` and
+# every caller example was held to the major — a greenfield repo vendored a retired Core
+# by default and nothing was red. Same treatment as its siblings, tested the same way.
+#
+# The exemptions carry the weight: CHANGELOG history, test fixtures, exact pins and another
+# repo's tag behind an API path are all TRUE text that a blunter scan would red on, and a
+# guard that reds on a true sentence teaches the next person to falsify it.
+hdr "first-vendor pin major guard (_core_vendor_pin_hits)"
+_vpn_="$SANDBOX/vendorpin"
+_vpn_reset() { rm -rf "$_vpn_"; mkdir -p "$_vpn_/scripts"; }
+_vpn_write() { _vpn_reset; printf '%s\n' "$2" >"$_vpn_/$1"; }
+_vpn_count() {
+  local got n
+  got="$(_core_vendor_pin_hits "$_vpn_" "$2")"
+  n=0
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$3" ]]; then
+    pass "first-vendor pin: $1"
+  else
+    fail "first-vendor pin: $1 (got $n finding(s), want $3): $(printf '%s' "$got" | tr '\n' ' ')"
+  fi
+}
+
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5 --squash'
+_vpn_count "a subtree-add on a foreign major is a finding" 6 1
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v6 --squash'
+_vpn_count "a subtree-add on the current major is clean" 6 0
+_vpn_write README.md 'git checkout v5                                    # in dotfiles-core'
+_vpn_count "\`git checkout vN\` is judged" 6 1
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "the peeled-commit form is judged" 6 1
+# THE LINE THAT MATTERS MOST: the scaffold default, where the major is preceded by `:-`.
+# The first draft treated `-` as a word character and skipped exactly this line.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5}"'
+_vpn_count "new-os-repo.sh's :-refs/tags/vN default is judged" 6 1
+# The exact-pin exemption below does NOT reach the scaffold default: a recipe's freeze is
+# a choice its reader made, the default is what every new repo inherits unasked.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5.3.0}"'
+_vpn_count "an exact-but-retired scaffold default (v5.3.0 on a v6 tree) is still a finding" 6 1
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v6.1.0}"'
+_vpn_count "an exact scaffold default on the current major is clean" 6 0
+# A QUOTED default inside the expansion is still the default — and never exempt.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-"refs/tags/v5.3.0"}"'
+_vpn_count "a quoted exact-but-retired scaffold default (\"refs/tags/v5.3.0\") is still a finding" 6 1
+# The --help text documents the same default in prose form, and is what a reader pastes.
+_vpn_write scripts/new-os-repo.sh '     CORE_BRANCH (default: refs/tags/v5.3.0 — a RELEASED tag, never main; pin a specific'
+_vpn_count "the --help form of an exact-but-retired default is judged too" 6 1
+# Default-ness is decided per MATCH, not per line: the current default and a deliberate
+# freeze in one sentence must leave the freeze exempt.
+_vpn_write README.md 'the default is CORE_BRANCH:-refs/tags/v6, but pin refs/tags/v5.3.0 to freeze'
+_vpn_count "a freeze on the same line as the current default keeps its exemption" 6 0
+# Exemptions — every one of these is a TRUE sentence that must not be flagged.
+_vpn_write RELEASE-STRATEGY.md 'Pin `refs/tags/v5.3.0` while sitting on `main` and the lock records'
+_vpn_count "an exact vN.M.P pin is a deliberate freeze, not a finding" 6 0
+# Only a COMPLETE vN.M.P is exempt. A two-component `v5.3` is not a tag this repo cuts,
+# so it is a stale pin wearing a dot; a first draft exempted every dotted suffix.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3 --squash'
+_vpn_count "a two-component v5.3 is NOT an exact pin — still a finding" 6 1
+_vpn_write README.md 'git checkout v6.1.0 && CORE_BRANCH="$(git rev-parse v6.1.0^{commit})"'
+_vpn_count "an exact pin on the current line in the other two shapes is clean" 6 0
+# The peeled shape must SEE a dotted version, not skip it: a first draft matched only
+# `vN^{commit}`, so a stale `v5.3^{commit}` was invisible rather than judged.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "a dotted-but-incomplete peeled pin (v5.3^{commit}) is a finding" 6 1
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3.0^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "an exact peeled pin (v5.3.0^{commit}) is a deliberate freeze, exempt" 6 0
+# Only EXACTLY vN.M.P (optionally -pre, as core.version allows) is exempt: a fourth
+# component is no tag this repo cuts, so it is judged by its leading major.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0.1 --squash'
+_vpn_count "a four-component v5.3.0.1 is malformed, not exact — still a finding" 6 1
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0-rc1 --squash'
+_vpn_count "a SemVer pre-release pin (v5.3.0-rc1) is an exact release, exempt" 6 0
+# The exact-pin class is core.version's own (audit §: SemVer [-pre] with `.` and `-`
+# allowed inside the label), so a pin the validator would accept is never reported stale.
+_vpn_write README.md 'git checkout v5.3.0-alpha-beta && refs/tags/v5.3.0-alpha.1'
+_vpn_count "a pre-release label with a second hyphen or a dot (as core.version allows) is exempt" 6 0
+# Prose runs into pins. A sentence-ending period is not part of the version, so an exact
+# freeze stays exempt and a bare major at the end of a sentence is still judged as vN.
+_vpn_write README.md 'Pin `refs/tags/v5.3.0`. Or, less carefully, pin refs/tags/v5.3.0.'
+_vpn_count "an exact pin followed by a sentence-ending period is still exempt" 6 0
+_vpn_write README.md 'so vendor refs/tags/v5.'
+_vpn_count "a bare major followed by a sentence-ending period is still a finding" 6 1
+# A period inside a QUOTED argument is handed to git, so it is part of a malformed ref.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> "refs/tags/v5.3.0." --squash'
+_vpn_count "a trailing period inside a quoted ref (\"refs/tags/v5.3.0.\") is malformed — a finding" 6 1
+# Exactly ONE trailing period is prose; a second one is part of a malformed ref.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0.. --squash'
+_vpn_count "\`v5.3.0..\` is not an exact pin with a sentence period — a finding" 6 1
+# Only the period is prose. A trailing `+` or `-` makes the token malformed, and a
+# malformed foreign pin is judged, never trimmed into an exempt exact one.
+_vpn_write README.md 'refs/tags/v5.3.0+ and refs/tags/v5.3.0-'
+_vpn_count "\`v5.3.0+\` and \`v5.3.0-\` are malformed foreign pins, both findings" 6 2
+# ...and so is a suffix the token class does not admit: `v5.3.0_bad` must not be read as
+# `v5.3.0` and exempted on the strength of its well-formed prefix.
+_vpn_write README.md 'refs/tags/v5.3.0_bad and git checkout v5.3.0x'
+_vpn_count "a word character glued to an exact-looking pin makes it malformed — both findings" 6 2
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0/foo --squash'
+_vpn_count "a \`/\` continuing an exact-looking pin (v5.3.0/foo) makes it malformed — a finding" 6 1
+# `@` is legal inside a git ref, and so are others; the rule is the inverse — only a
+# terminator may follow an exempt pin — so nothing glued on can slip through.
+_vpn_write README.md 'refs/tags/v5.3.0@foo and refs/tags/v5.3.0%x'
+_vpn_count "any non-terminator glued to an exact-looking pin (v5.3.0@foo, v5.3.0%x) is a finding" 6 2
+_vpn_write README.md '(`refs/tags/v5.3.0`), "refs/tags/v5.3.0"; refs/tags/v5.3.0) refs/tags/v5.3.0 # note'
+_vpn_count "an exact pin followed by a quote, paren, semicolon or a spaced comment stays exempt" 6 0
+# Prose punctuation ends a pin only when whitespace or the line ends after it: `v5.3.0,`
+# and `v5.3.0:` are exempt, `v5.3.0,foo` and `v5.3.0:foo` are glued text and judged.
+_vpn_write README.md 'pin refs/tags/v5.3.0, or refs/tags/v5.3.0: either is a freeze; also refs/tags/v5.3.0,'
+_vpn_count "an exact pin followed by a comma or colon and then whitespace or end of line stays exempt" 6 0
+_vpn_write README.md 'refs/tags/v5.3.0:foo and refs/tags/v5.3.0,foo'
+_vpn_count "a comma or colon GLUED to more text (v5.3.0:foo, v5.3.0,foo) is malformed — both findings" 6 2
+# This scans root Markdown: a bold delimiter or sentence-final punctuation closes a pin.
+_vpn_write README.md 'Pin **refs/tags/v5.3.0** here. Pin refs/tags/v5.3.0! Or refs/tags/v5.3.0? Or _refs/tags/v5.3.0_'
+_vpn_count "Markdown delimiters and sentence-final ! or ? after an exact pin stay exempt" 6 0
+# An underscore delimiter is scanned only at a word boundary: `_refs/tags/v5_` is the same
+# copyable bare-major pin (judged); `foo_refs/tags/v5` is an intraword identifier (not).
+_vpn_write README.md 'vendor _refs/tags/v5_ first'
+_vpn_count "an underscore-emphasised bare-major pin (_refs/tags/v5_) is a finding" 6 1
+_vpn_write README.md 'foo_refs/tags/v5 is an identifier, and _refs/tags/v5.3.0_ an exact freeze'
+_vpn_count "an intraword underscore is not a delimiter, and an emphasised exact pin stays exempt" 6 0
+# A period inside a PEELED revision is never a sentence period.
+_vpn_write README.md 'git rev-parse v5.3.0.^{commit} and git rev-parse refs/tags/v5.3.0.^{commit}'
+_vpn_count "a trailing period inside a peeled revision (v5.3.0.^{commit}) is malformed — both findings" 6 2
+# A `#` glued to the word is NOT a comment — bash hands `v5.3.0#note` to git as one
+# argument — so it is a non-exact foreign ref and must be judged, not exempted.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0#note --squash'
+_vpn_count "a glued \`#note\` is part of the ref, not a comment — a finding" 6 1
+# The peeled form: its sentence period lands in rest, not the token, and must still be
+# prose; and a caret that is NOT the literal ^{commit} is a malformed ref, judged.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3.0^{commit})" — then run it. Or git rev-parse v5.3.0^{commit}.'
+_vpn_count "an exact peeled pin at sentence end (v5.3.0^{commit}.) stays exempt" 6 0
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0^foo --squash'
+_vpn_count "\`v5.3.0^foo\` — a caret that is not ^{commit} — is malformed, a finding" 6 1
+# The peel written against the FULL ref: `refs/tags/v5.3.0^{commit}` matches through the
+# refs/tags shape and leaves the literal ^{commit} in rest — the same freeze, still exempt.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse refs/tags/v5.3.0^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "an exact peeled pin in full-ref form (refs/tags/v5.3.0^{commit}) stays exempt" 6 0
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse refs/tags/v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>'
+_vpn_count "a bare-major peel in full-ref form (refs/tags/v5^{commit}) is still judged" 6 1
+# A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
+_vpn_write README.md 'git  checkout v5'
+_vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1
+printf 'git\tcheckout v5\n' >"$_vpn_/README.md"
+_vpn_count "\`git<TAB>checkout vN\` is still judged" 6 1
+_vpn_write README.md 'gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha'
+_vpn_count "another repository's tag behind an API path (git/refs/tags/) is not a finding" 6 0
+_vpn_write CHANGELOG.md 'so it is corrected to a concrete `refs/tags/v5`'
+_vpn_count "CHANGELOG history is exempt" 6 0
+_vpn_write CHANGELOG.recent.md 'so it is corrected to a concrete `refs/tags/v5`'
+_vpn_count "the generated CHANGELOG digest is exempt too" 6 0
+_vpn_write scripts/test-core.sh 'git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_div"'
+_vpn_count "test-core.sh's fixture tags are data, not instructions" 6 0
+_vpn_write README.md 'the v5 line, `@v5`, Core v5 #663, and "at v4→v5 it was left on v4"'
+_vpn_count "narrative vN prose with none of the three shapes is not judged" 6 0
+# Option-bearing, quoted and `switch` spellings of the checkout are the same recipe.
+_vpn_write README.md 'git checkout --detach v5; git checkout -q --detach v5; git switch --detach v5; git checkout '"'"'v5'"'"'; git checkout "v5"'
+_vpn_count "\`checkout --detach vN\`, \`switch --detach vN\` and a quoted ref are all judged" 6 5
+_vpn_write README.md 'git checkout --detach v6 && git checkout "v5.3.0" && git switch --detach '"'"'v6.1.0'"'"''
+_vpn_count "the same forms on the current major or an exact pin are clean" 6 0
+# Options that take an operand put a branch name between the flag and the tag.
+_vpn_write README.md 'git checkout -b vendor-v5 v5 && git switch -c work v5'
+_vpn_count "\`checkout -b <branch> vN\` and \`switch -c <branch> vN\` are judged past the operand" 6 2
+_vpn_write README.md 'git checkout -B vendor v5.3.0 && git switch -C work v6'
+_vpn_count "the same operand forms on an exact pin or the current major are clean" 6 0
+# The branch NAME may look like a pin; the ref is the last token, whatever the name says.
+_vpn_write README.md 'git checkout -b vendor-v6 v5'
+_vpn_count "\`checkout -b vendor-v6 v5\` is judged on v5, not on the branch name" 6 1
+_vpn_write README.md 'git checkout -b vendor-v5 v6'
+_vpn_count "\`checkout -b vendor-v5 v6\` is clean — the branch name is not the pin" 6 0
+# The long spellings of the operand-taking options consume a branch name too.
+_vpn_write README.md 'git switch --create vendor-v6 v5 && git checkout --orphan vendor-v6 v5 && git switch --force-create work v5'
+_vpn_count "\`--create\`, \`--orphan\` and \`--force-create\` consume their operand; the pin after it is judged" 6 3
+_vpn_write README.md 'git switch --create work v6.1.0 && git checkout --orphan fresh v6'
+_vpn_count "the same long options on an exact pin or the current major are clean" 6 0
+# Git's GLOBAL options come before the subcommand; this repo writes `git -C "$HERE" …` all the time.
+_vpn_write README.md 'git -C "$HERE" checkout v5 && git --no-pager -c core.pager=cat switch --detach v5'
+_vpn_count "global options before checkout/switch (-C, -c, --no-pager) are seen through — both findings" 6 2
+_vpn_write README.md 'git -C "$HERE" checkout v6.1.0'
+_vpn_count "the same with an exact pin is clean" 6 0
+# An operand is a shell WORD: a quoted path with a space must not hide the pin behind it.
+_vpn_write README.md 'git -C "/tmp/core checkout" checkout v5 && git -C '"'"'/tmp/my core'"'"' switch --detach v5 && git checkout -b "vendor branch" v5'
+_vpn_count "quoted operands with spaces (-C \"/tmp/core checkout\", -b \"vendor branch\") are consumed whole — three findings" 6 3
+# A branch NAMED vN with no start point pins nothing: the operand is the last token.
+_vpn_write README.md 'git checkout -b v5 && git switch -c v5 && git switch --create v5 && git checkout --orphan v5'
+_vpn_count "operand-only branch creation (checkout -b v5, switch -c v5, --create v5, --orphan v5) is not a pin" 6 0
+# A bare `--` ends checkout's options and makes the next token a PATH, not a ref; for
+# switch the token after `--` is still a branch.
+_vpn_write README.md 'git checkout -- v5 && git checkout -q -- v5'
+_vpn_count "\`git checkout -- v5\` restores a path, not a pin — not a finding" 6 0
+_vpn_write README.md 'git switch -- v5'
+_vpn_count "\`git switch -- v5\` names a branch and is still judged" 6 1
+_vpn_write README.md 'git checkout v60 && CORE_BRANCH="$(git rev-parse v5^{commit})" x refs/tags/v5 refs/tags/v6'
+_vpn_count "every occurrence on a line is reported and the number is read whole (v60 is not v6)" 6 3
+# Core must satisfy the rule it authors — the inverse assertion, so `make test` catches a
+# stale pin without a full audit, exactly as the two siblings above do.
+if [[ -r "$HERE/core.version" ]]; then
+  _vpn_now="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+  _vpn_real="$(_core_vendor_pin_hits "$HERE" "$_vpn_now")"
+  if [[ -z "$_vpn_real" ]]; then
+    pass "first-vendor pin: this tree's recipe and new-os-repo.sh default name v$_vpn_now everywhere (matches core.version)"
+  else
+    fail "first-vendor pin: this tree names a foreign major: $(printf '%s' "$_vpn_real" | tr '\n' ' ')"
+  fi
+  # And the guard can fail on THIS tree: at any other major every pin must surface,
+  # including the scaffold default — asserted by its exact file:line, resolved from the
+  # assignment itself, so a finding on the --help text two lines down cannot stand in
+  # for it. Captured first, then a here-string: the producer walks the whole tree and
+  # `| grep -q` under pipefail is the SIGPIPE hazard _core_pipefail_hits documents.
+  _vpn_line="$(grep -n '^CORE_BRANCH="\${CORE_BRANCH:-refs/tags/v' "$HERE/scripts/new-os-repo.sh" | head -1 | cut -d: -f1)"
+  _vpn_next="$(_core_vendor_pin_hits "$HERE" "$((_vpn_now + 1))")"
+  if [[ -n "$_vpn_line" ]] && grep -qF "scripts/new-os-repo.sh:$_vpn_line: " <<<"$_vpn_next"; then
+    pass "first-vendor pin: at the next major the scaffold default itself (new-os-repo.sh:$_vpn_line) is reported"
+  else
+    fail "first-vendor pin: the scaffold default (new-os-repo.sh:${_vpn_line:-?}) would not be reported at the next major — the gate misses the line it exists for"
+  fi
+  unset _vpn_now _vpn_real _vpn_line _vpn_next
+fi
+rm -rf "$_vpn_"
+unset _vpn_
+unset -f _vpn_reset _vpn_write _vpn_count
+
 # ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
 # WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
 # extraction, every verdict here comes from git: is the path tracked, and which .gitignore
@@ -4554,6 +4778,55 @@ if ((_sc_subtree)); then
     skip "sync-core staleness guard (could not build the clone fixture — out of scope)"
   fi
   unset _sc_st
+
+  # --- --strict: a failed TARGET becomes the exit status ------------------------
+  # By default a per-repo failure is a summary line and exit 0 — the fan-out runs this
+  # script bare inside a `bash -e` step and then does per-repo push/PR work, so a default
+  # non-zero exit would abort that for every repo when one fails. A single-target caller
+  # (the scaffold's recovery command, the first-vendor recipe) needs the opposite: a
+  # status it can chain on. Both contracts are pinned here on the same failure — a
+  # dirty target, which the guard refuses — so neither can drift without notice.
+  # Invoked directly rather than through _sc_run, which feeds its arguments to env.
+  : >"$SCF/repos/dotfiles-Test/dirty-by-design"
+  _sc_strict_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
+    REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+    SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" dotfiles-Test 2>&1)"
+  _sc_strict_rc=$?
+  if ((_sc_strict_rc == 0)) && grep -q 'uncommitted changes' <<<"$_sc_strict_out" && grep -q 'failed 1' <<<"$_sc_strict_out"; then
+    pass "sync-core: by default a failed target is a summary line (failed 1) and exit 0 — the fan-out's contract"
+  else
+    fail "sync-core: the default contract moved — rc=$_sc_strict_rc: $(grep -E 'uncommitted|failed' <<<"$_sc_strict_out" | head -2 | tr '\n' ' ')"
+  fi
+  _sc_strict_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
+    REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+    SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" --strict dotfiles-Test 2>&1)"
+  _sc_strict_rc=$?
+  if ((_sc_strict_rc == 1)) && grep -q 'uncommitted changes' <<<"$_sc_strict_out"; then
+    pass "sync-core: --strict turns the same failed target into exit 1 (the recovery command's verdict)"
+  else
+    fail "sync-core: --strict did not return 1 on a failed target — rc=$_sc_strict_rc"
+  fi
+  rm -f "$SCF/repos/dotfiles-Test/dirty-by-design"
+  # A SKIPPED target is a strict failure too: a wrong name or REPOS_ROOT ("not cloned")
+  # and a repo with no core/ yet both stamp nothing, and the default still exits 0.
+  mkdir -p "$SCF/repos/dotfiles-NoCore"
+  _scg "$SCF/repos/dotfiles-NoCore" init -q >/dev/null 2>&1
+  _sc_ident "$SCF/repos/dotfiles-NoCore"
+  : >"$SCF/repos/dotfiles-NoCore/README.md"
+  _scg "$SCF/repos/dotfiles-NoCore" add -A
+  _scg "$SCF/repos/dotfiles-NoCore" commit -q -m "no core yet"
+  _sc_strict_bad=""
+  for _sc_t in dotfiles-NotCloned dotfiles-NoCore; do
+    env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" "$_sc_t" >/dev/null 2>&1 || _sc_strict_bad="$_sc_strict_bad $_sc_t:default-nonzero"
+    env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" --strict "$_sc_t" >/dev/null 2>&1 && _sc_strict_bad="$_sc_strict_bad $_sc_t:strict-zero"
+  done
+  if [[ -z "$_sc_strict_bad" ]]; then
+    pass "sync-core: a targeted SKIP (not cloned, no core/) exits 0 by default and 1 under --strict"
+  else
+    fail "sync-core: the skip contract is wrong —$_sc_strict_bad"
+  fi
+  rm -rf "$SCF/repos/dotfiles-NoCore"
+  unset _sc_strict_out _sc_strict_rc _sc_strict_bad _sc_t
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
@@ -5343,6 +5616,301 @@ if have git && have zsh; then
   fi
 else
   skip "new-os-repo entry files (git or zsh unavailable)"
+fi
+
+# ── F7c. the --no-vendor recovery command new-os-repo.sh advertises ───────────
+# The scaffold prints ONE copyable command for the state it cannot finish itself (no
+# core/ yet), and nothing ran it: the --no-vendor output above goes to /dev/null. Every
+# property it has been reviewed for is pinned here — ordering (guarded canonical-name
+# symlink, commit, subtree add, then the pinned sync in a throwaway worktree), %q
+# escaping (a parent with a space, a name with an apostrophe), CORE_REMOTE propagation,
+# the peeled-commit pin, REPOS_ROOT, and that it parses — plus the guard itself, the one
+# part that runs without network: it must create the link when the path is free, be
+# idempotent, and refuse a foreign occupant of the canonical path.
+if have git; then
+  hdr "new-os-repo.sh recovery command (the advertised --no-vendor path)"
+  _rc_parent="$SANDBOX/recovery/parent dir"
+  rm -rf "$SANDBOX/recovery"
+  mkdir -p "$_rc_parent"
+  # NORMALIZED through pwd, as the scaffold normalizes its own paths: on macOS TMPDIR
+  # ends in a slash, so $SANDBOX carries a `//` that the scaffold's `cd && pwd` folds
+  # away, and a literal comparison against $SANDBOX was one slash off on that lane.
+  _rc_parent="$(cd "$_rc_parent" && pwd)"
+  _rc_recov="$(cd "$SANDBOX/recovery" && pwd)"
+  _rc_target="$_rc_parent/O'Brien"
+  _rc_out="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH='refs/tags/v9' bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$_rc_target" 2>&1)"
+  # PURE-BASH extraction, no grep/sed: the hint is one ~3 KB line that carries every
+  # %q-quoted path and message of the chain, and BSD sed on macOS returns NOTHING
+  # ("illegal byte sequence") for a line it cannot decode, which read here as "no
+  # recovery command" on a lane where the scaffold had printed it in full.
+  _rc_cmd=""
+  if [[ "$_rc_out" == *"run later: "* ]]; then
+    _rc_cmd="${_rc_out#*run later: }"; _rc_cmd="${_rc_cmd%%$'\n'*}"; _rc_cmd="${_rc_cmd%; sync-core.sh resolves the NAME*}"
+  fi
+  if [[ -z "$_rc_cmd" ]]; then
+    fail "recovery: the --no-vendor run printed no recovery command — the run said: $(tail -3 <<<"$_rc_out" | tr '\n' '|' | cut -c1-400)"
+  else
+    if bash -n <(printf '%s\n' "$_rc_cmd") 2>/dev/null; then
+      pass "recovery: the command parses with a space in the parent and an apostrophe in the name (%q holds)"
+    else
+      fail "recovery: the command does not parse — $_rc_cmd"
+    fi
+    # PURE ASCII: every message in the chain goes through %q, and bash 3.2 quotes a
+    # multibyte character byte by byte — invalid UTF-8 that BSD grep refuses to match
+    # (which is how this fixture went red on macOS while awk and bash -n agreed).
+    if LC_ALL=C grep -q '[^ -~]' <<<"$_rc_cmd"; then
+      fail "recovery: the command carries non-ASCII bytes — $(LC_ALL=C grep -o '[^ -~]\{1,\}' <<<"$_rc_cmd" | head -3 | tr '\n' ' ')"
+    else
+      pass "recovery: the command is pure ASCII (safe through bash 3.2's %q and BSD grep)"
+    fi
+    # Ordering: each marker must appear, and after the previous one. Positions, not one
+    # regex — a regex over a %q-escaped command is unreadable and was wrong on arrival.
+    _rc_prev=0; _rc_order=""
+    # The commit marker sits between `add -A` and the subtree add on purpose: subtree add
+    # needs a valid HEAD, and a chain that staged but never committed would otherwise
+    # pass this ordering check.
+    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' ' cat-file -e HEAD:core 2>/dev/null || ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'grep -Eq ' 'git worktree remove --force ' '&& rmdir "$_wtp" && exit '; do
+      _rc_pos="$(awk -v m="$_rc_m" '{ print index($0, m) }' <<<"$_rc_cmd")"
+      ((_rc_pos > _rc_prev)) || _rc_order="$_rc_order [$_rc_m]"
+      _rc_prev=$_rc_pos
+    done
+    if [[ -z "$_rc_order" ]]; then
+      pass "recovery: ordering — guarded symlink, stage, commit, HEAD:core test, subtree add, fetch, throwaway worktree, sync, worktree and parent removed"
+    else
+      fail "recovery: ordering wrong at$_rc_order — $_rc_cmd"
+    fi
+    _rc_bad=""
+    grep -qF 'git fetch https://example.invalid/fork.git refs/tags/v9' <<<"$_rc_cmd" || _rc_bad="$_rc_bad fetch-from-CORE_REMOTE"
+    grep -qF 'CORE_REMOTE=https://example.invalid/fork.git ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad CORE_REMOTE-forwarded"
+    grep -qF "CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\"" <<<"$_rc_cmd" || _rc_bad="$_rc_bad peeled-commit-pin"
+    grep -qF "REPOS_ROOT=$(printf '%q' "$_rc_parent") " <<<"$_rc_cmd" || _rc_bad="$_rc_bad REPOS_ROOT"
+    grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' <<<"$_rc_cmd" || _rc_bad="$_rc_bad subtree-add-source"
+    # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
+    # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
+    grep -qF '{ git worktree add --detach "$_wt" FETCH_HEAD || { rmdir "$_wtp"; false; }; } && { _o="$( (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad add-failure-removes-own-parent+cleanup-nested+captured-sync"
+    grep -qF 'mktemp -d "${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX"' <<<"$_rc_cmd" || _rc_bad="$_rc_bad mktemp-without-template(BSD mktemp needs one)"
+    grep -qF 'CORE_COLOR=never REPOS_ROOT=' <<<"$_rc_cmd" || _rc_bad="$_rc_bad color-off-for-the-summary"
+    grep -qF '_l="$(awk '"'"'/^ *repos: /{l=$0} END{print l}'"'"' <<<"$_o")"; if grep -Eq '"'"'^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$'"'"' <<<"$_l"; then _rc=0; else _rc=1; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad last-row-summary-verdict+parent-removed"
+    grep -qF ') 2>&1)" || true; printf ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad capture-is-errexit-safe"
+    if [[ -z "$_rc_bad" ]]; then
+      pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
+    else
+      fail "recovery: the command is missing —$_rc_bad"
+    fi
+    # The worktree subshell's STATUS, behaviourally: take the emitted subshell (from the
+    # Core-side `(cd` to the end), stub the four network/worktree steps — fetch → true,
+    # worktree add → mkdir, the sync → a printf of a chosen SUMMARY LINE (the released
+    # script's is the verdict), worktree remove → rmdir — and run it UNDER `bash -e`, since the
+    # reader's shell may have errexit on and the cleanup must still be reached. A shape
+    # assertion alone could pass a chain whose cleanup still masked the sync.
+    _rc_sub="${_rc_cmd#*"--squash; } && (cd "}"   # drop everything up to the Core-side subshell (the FIRST `(cd` after the subtree add)
+    _rc_sub="(cd ${_rc_sub%%   # VENDORING*}"  # and the trailing comment
+    _rc_drive() { # _rc_drive <sync-status-cmd> <remove-cmd> → exit status of the driven subshell
+      local d
+      # mktemp is pointed INSIDE the sandbox so the parent's removal can be asserted.
+      d="$(printf '%s' "$_rc_sub" |
+        sed -e 's|git fetch [^&]* && |true \&\& |' \
+            -e "s|mktemp -d \"[^\"]*\"|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
+            -e 's|git worktree add --detach "$_wt" FETCH_HEAD|mkdir -p "$_wt"|' \
+            -e "s|\./scripts/sync-core\.sh [^)]*)|$1)|" \
+            -e "s|git worktree remove --force \"\$_wt\"|$2 \"\$_wt\"|")"
+      (cd "$SANDBOX/recovery" && bash -e -c "$d") >/dev/null 2>&1
+    }
+    _rc_st=""
+    _rc_ok="printf 'repos:  updated 1   skipped 0   failed 0   (of 1 targeted)'"
+    _rc_ko="printf 'repos:  updated 0   skipped 0   failed 1   (of 1 targeted)'"
+    _rc_sk="printf 'repos:  updated 0   skipped 1   failed 0   (of 1 targeted)'"
+    _rc_drive "$_rc_ko" rmdir; _rc_st="$_rc_st sync-fails:$?"
+    _rc_leftover_fail="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
+    _rc_drive "$_rc_sk" rmdir; _rc_st="$_rc_st sync-skipped:$?"
+    _rc_drive "$_rc_ok" rmdir; _rc_st="$_rc_st sync-ok:$?"
+    _rc_leftover="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
+    _rc_drive "$_rc_ok" false; _rc_st="$_rc_st cleanup-fails:$?"
+    # The cleanup-fails drive leaks its parent BY CONSTRUCTION (the stubbed removal fails
+    # before the rmdir); tidy that one here, so the add-fails assertion below measures
+    # only what the add-fails path leaves behind.
+    find "$SANDBOX/recovery" -name 'wt.*' -type d -exec rm -rf {} + 2>/dev/null
+    if [[ "$_rc_st" == " sync-fails:1 sync-skipped:1 sync-ok:0 cleanup-fails:1" ]]; then
+      pass "recovery: the verdict is the released script's summary (failed 1 → 1, skipped 1 → 1, updated 1 → 0, failed cleanup → 1)"
+    else
+      fail "recovery: the worktree subshell masks a status —$_rc_st — driven: $_rc_sub"
+    fi
+    if [[ -z "$_rc_leftover" ]]; then
+      pass "recovery: a successful recovery leaves no temp directory behind (the mktemp parent is removed)"
+    else
+      fail "recovery: the mktemp parent survives a successful recovery — $_rc_leftover"
+    fi
+    # The verdict is the FOOTER LINE, anchored at both ends: the captured log also carries
+    # the target's name and every per-repo line, so an unanchored substring could be met
+    # by earlier output (a name containing it) while the footer itself reports a failure.
+    _rc_trap="echo '  ok  dotfiles-repos:  updated 1   skipped 0   failed 0   (of 1 targeted)'; echo '  repos:  updated 0   skipped 0   failed 1   (of 1 targeted)'"
+    _rc_drive "$_rc_trap" rmdir; _rc_trap_st=$?
+    if ((_rc_trap_st == 1)); then
+      pass "recovery: the verdict is the anchored footer line — the success text earlier in the log, mid-line, does not outvote a failed footer"
+    else
+      fail "recovery: an unanchored success substring earlier in the log passed a failed footer (status $_rc_trap_st)"
+    fi
+    # ...and it is the LAST footer that is judged: the target's own output (a git hook)
+    # could print a success-shaped footer before the sync prints its real one.
+    _rc_trap="echo '  repos:  updated 1   skipped 0   failed 0   (of 1 targeted)'; echo '  repos:  updated 0   skipped 0   failed 1   (of 1 targeted)'"
+    _rc_drive "$_rc_trap" rmdir; _rc_trap_st="$?"
+    _rc_trap="echo '  repos:  updated 0   skipped 0   failed 1   (of 1 targeted)'; echo '  repos:  updated 1   skipped 0   failed 0   (of 1 targeted)'"
+    _rc_drive "$_rc_trap" rmdir; _rc_trap_st="$_rc_trap_st/$?"
+    if [[ "$_rc_trap_st" == "1/0" ]]; then
+      pass "recovery: only the LAST repos: row is the verdict (a success footer followed by a failed one → 1; the reverse → 0)"
+    else
+      fail "recovery: the verdict is not the last repos: row (success-then-failed/failed-then-success → $_rc_trap_st, want 1/0)"
+    fi
+    unset _rc_trap _rc_trap_st
+    if [[ -z "$_rc_leftover_fail" ]]; then
+      pass "recovery: under bash -e a FAILED sync still reaches the cleanup (no temp directory left behind)"
+    else
+      fail "recovery: under bash -e a failed sync skipped the cleanup — $_rc_leftover_fail"
+    fi
+    # When `worktree add` FAILS, the cleanup must never run: the pasted subshell inherits
+    # the reader's variables, and a force-remove of an inherited `_wt` would be the
+    # worst outcome of a failed recovery. Drive with the add failing and a cleanup that
+    # leaves a marker; the marker must not appear and the status must be non-zero.
+    _rc_dr="$(printf '%s' "$_rc_sub" |
+      sed -e 's|git fetch [^&]* && |true \&\& |' \
+          -e "s|mktemp -d \"[^\"]*\"|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
+          -e 's|git worktree add --detach "$_wt" FETCH_HEAD|false|' \
+          -e "s|git worktree remove --force \"\$_wt\"|touch '$SANDBOX/recovery/cleanup-ran'|")"
+    (cd "$SANDBOX/recovery" && _wt=/should/never/be/touched bash -e -c "$_rc_dr") >/dev/null 2>&1; _rc_addfail=$?
+    _rc_left_add="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
+    if ((_rc_addfail != 0)) && [[ ! -e "$SANDBOX/recovery/cleanup-ran" ]]; then
+      pass "recovery: when worktree add fails the cleanup never runs (an inherited \$_wt is never force-removed) and the status is non-zero"
+    else
+      fail "recovery: a failed worktree add still ran the cleanup (marker=$([[ -e "$SANDBOX/recovery/cleanup-ran" ]] && echo yes || echo no), status=$_rc_addfail)"
+    fi
+    # ...and the mktemp parent the chain itself created must not be leaked by that failure.
+    # Asserted, not tidied: a first draft rm -rf'd the leak here and so never saw it.
+    if [[ -z "$_rc_left_add" ]]; then
+      pass "recovery: a failed worktree add removes the mktemp parent it just created (nothing left behind)"
+    else
+      fail "recovery: a failed worktree add leaked its mktemp parent — $_rc_left_add"
+      find "$SANDBOX/recovery" -name 'wt.*' -type d -exec rm -rf {} + 2>/dev/null
+    fi
+    unset -f _rc_drive
+    # The guard is the executable part: everything before the first `&& git -C`.
+    _rc_guard="${_rc_cmd%% && git -C*}"
+    _rc_canon="$_rc_parent/dotfiles-Fixture"
+    if bash -c "$_rc_guard" 2>/dev/null && [[ -L "$_rc_canon" && "$(readlink "$_rc_canon")" == "$_rc_target" ]]; then
+      pass "recovery: the canonical-name guard creates the symlink when the path is free"
+    else
+      fail "recovery: the guard did not create the canonical symlink — $_rc_guard"
+    fi
+    if bash -c "$_rc_guard" 2>/dev/null && [[ -L "$_rc_canon" && "$(readlink "$_rc_canon")" == "$_rc_target" && ! -e "$_rc_target/O'Brien" ]]; then
+      pass "recovery: re-running the guard is idempotent (the link is replaced; nothing nests inside the target)"
+    else
+      fail "recovery: a second run of the guard nested a link or failed"
+    fi
+    rm -f "$_rc_canon"
+    mkdir -p "$_rc_canon"
+    : >"$_rc_canon/unrelated"
+    if ! bash -c "$_rc_guard" >/dev/null 2>"$SANDBOX/recovery/guard.err" && grep -q 'refusing' "$SANDBOX/recovery/guard.err" && [[ -d "$_rc_canon" && ! -L "$_rc_canon" && -e "$_rc_canon/unrelated" && ! -e "$_rc_canon/O'Brien" ]]; then
+      pass "recovery: the guard refuses a foreign directory at the canonical path and leaves it untouched"
+    else
+      fail "recovery: the guard did not refuse a foreign occupant of the canonical path"
+    fi
+    # RESUMABILITY, behaviourally: the materialize half (everything before the Core-side
+    # subshell) run TWICE against the scaffold. The first run gets past the commit and
+    # fails at the subtree add (the remote is example.invalid; no network is needed to
+    # prove the add was reached — the scaffold commit exists and the status is non-zero).
+    # Then core/ is committed by hand, standing in for an add that succeeded before the
+    # sync failed, and the SAME command must skip the one-time add (the prefix is in
+    # HEAD) and run through to where the sync would start: status 0, and no new commit.
+    rm -rf "$_rc_canon"
+    git -C "$_rc_target" config user.email t@example.com
+    git -C "$_rc_target" config user.name tester
+    _rc_pre="${_rc_cmd%%   # VENDORING*}"; _rc_pre="${_rc_pre% && (cd *}"
+    # The driven copy points at a LOCAL path that cannot exist, so the subtree add fails
+    # at once instead of entering DNS/proxy handling for example.invalid — hermetic and
+    # deterministic offline; what is proved (the add was reached and failed) is unchanged.
+    _rc_pre="${_rc_pre//https:\/\/example.invalid\/fork.git/$SANDBOX/recovery/no-such-remote.git}"
+    (cd "$SANDBOX/recovery" && bash -c "$_rc_pre") >/dev/null 2>&1; _rc_pre1=$?
+    _rc_pre1_log="$(git -C "$_rc_target" log --format=%s 2>/dev/null)"
+    mkdir -p "$_rc_target/core" && : >"$_rc_target/core/placeholder"
+    git -C "$_rc_target" add -A && git -C "$_rc_target" commit -q -m 'core/ landed' 2>/dev/null
+    _rc_head="$(git -C "$_rc_target" rev-parse HEAD 2>/dev/null)"
+    (cd "$SANDBOX/recovery" && bash -c "$_rc_pre") >"$SANDBOX/recovery/pre2.out" 2>&1; _rc_pre2=$?
+    if ((_rc_pre1 != 0)) && grep -qF 'scaffold dotfiles-Fixture' <<<"$_rc_pre1_log" && ((_rc_pre2 == 0)) && [[ "$(git -C "$_rc_target" rev-parse HEAD 2>/dev/null)" == "$_rc_head" ]]; then
+      pass "recovery: rerun after core/ is in HEAD skips the one-time subtree add and reaches the sync (resumable)"
+    else
+      fail "recovery: not resumable — first run rc=$_rc_pre1 (committed: $(tr '\n' ',' <<<"$_rc_pre1_log")), second run rc=$_rc_pre2: $(tail -1 "$SANDBOX/recovery/pre2.out" 2>/dev/null)"
+    fi
+    unset _rc_pre _rc_pre1 _rc_pre1_log _rc_pre2 _rc_head
+  fi
+  # --dry-run --no-vendor prints the same command BEFORE the target exists, so the
+  # cd-based resolution above cannot run; a relative target must still come out anchored
+  # to the invocation directory, or the chain (which cd's into the Core checkout) hands
+  # the sync a REPOS_ROOT under Core and the sync skips the repo the hint was written for.
+  _rc_dry="$(cd "$_rc_recov" && env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' bash "$HERE/scripts/new-os-repo.sh" --dry-run --no-vendor Fixture 'not yet/dotfiles-Fixture' 2>&1)"
+  if [[ "$_rc_dry" == *"run later: "* ]]; then _rc_dry="${_rc_dry#*run later: }"; _rc_dry="${_rc_dry%%$'\n'*}"; else _rc_dry=""; fi
+  if [[ -n "$_rc_dry" ]] && grep -qF "REPOS_ROOT=$(printf '%q' "$_rc_recov/not yet") " <<<"$_rc_dry" && grep -qF "git -C $(printf '%q' "$_rc_recov/not yet/dotfiles-Fixture") add -A" <<<"$_rc_dry" && [[ ! -e "$_rc_recov/not yet" ]]; then
+    pass "recovery: a dry run of a not-yet-existing relative target embeds it ANCHORED to the invocation directory (REPOS_ROOT and git -C)"
+  else
+    fail "recovery: a dry-run relative target was embedded unanchored — expected [REPOS_ROOT=$(printf '%q' "$_rc_recov/not yet") ]; 'not yet' exists: $([[ -e "$_rc_recov/not yet" ]] && echo yes || echo no); hint: $(cut -c1-300 <<<"$_rc_dry")"
+  fi
+  unset _rc_dry
+  # That verdict reads the released script's `repos:` footer, which exists since v4.1.0:
+  # an older exact freeze prints a per-CHECK count, so a successful sync would be reported
+  # as a failure AFTER vendoring and stamping the target. The scaffold refuses such a pin
+  # before writing anything (exit 2, target absent); the floor itself, a major alias at or
+  # above it, a newer freeze and a ref it cannot judge (a branch) all pass. A prerelease
+  # sorts below its release: v4.0.2-rc1 and v4.1.0-rc.1 are older than the floor,
+  # v4.1.1-rc1 is not.
+  _rc_floor_bad=""
+  for _rc_pin in v3.9.0 refs/tags/v3 v4.0.2 refs/tags/v4.0.9 refs/tags/v4.0.2-rc1 v4.1.0-rc.1; do
+    _rc_fo="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH="$_rc_pin" bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/old-pin" 2>&1)"; _rc_frc=$?
+    { ((_rc_frc == 2)) && grep -qF 'older than v4.1.0' <<<"$_rc_fo" && [[ ! -e "$SANDBOX/recovery/old-pin" ]]; } || _rc_floor_bad="$_rc_floor_bad $_rc_pin(rc=$_rc_frc,exists=$([[ -e "$SANDBOX/recovery/old-pin" ]] && echo yes || echo no))"
+    rm -rf "$SANDBOX/recovery/old-pin"
+  done
+  for _rc_pin in v4.1.0 refs/tags/v4 refs/tags/v4.10.0 v4.1.1-rc1 v6.1.0 main; do
+    env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH="$_rc_pin" bash "$HERE/scripts/new-os-repo.sh" --dry-run --no-vendor Fixture "$SANDBOX/recovery/new-pin" >/dev/null 2>&1 || _rc_floor_bad="$_rc_floor_bad $_rc_pin(refused:$?)"
+  done
+  if [[ -z "$_rc_floor_bad" ]]; then
+    pass "recovery: a pin older than v4.1.0 (no repos: footer to judge, prereleases included) is refused before anything is written; the floor, a v4+ alias, a newer freeze and a branch pass"
+  else
+    fail "recovery: the footer floor is wrong for —$_rc_floor_bad"
+  fi
+  unset _rc_floor_bad _rc_pin _rc_fo _rc_frc
+  # The canonical path ALREADY resolving to the scaffold — a pre-made link here, standing
+  # in for a basename that differs only by case on a case-insensitive filesystem — gets
+  # NO guarded link in the chain: the guard would read the canonical spelling as a foreign
+  # real directory and refuse the reader's own repo.
+  mkdir -p "$SANDBOX/recovery/pre" && ln -s "$SANDBOX/recovery/pre/Custom" "$SANDBOX/recovery/pre/dotfiles-Fixture"
+  _rc_pre_out="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/pre/Custom" 2>&1)"
+  _rc_pre_cmd=""; [[ "$_rc_pre_out" == *"run later: "* ]] && { _rc_pre_cmd="${_rc_pre_out#*run later: }"; _rc_pre_cmd="${_rc_pre_cmd%%$'\n'*}"; }
+  if [[ -n "$_rc_pre_cmd" && "$_rc_pre_cmd" != *"ln -sfn "* && "$_rc_pre_cmd" == "git -C "* ]]; then
+    pass "recovery: a canonical path that already resolves to the scaffold (case-insensitive FS, or a prior link) gets no guarded link in the chain"
+  else
+    fail "recovery: the chain still prepends the guarded link when the canonical path already IS the scaffold — $(cut -c1-200 <<<"$_rc_pre_cmd")"
+  fi
+  unset _rc_pre_out _rc_pre_cmd
+  # A Core checkout with NO origin and no CORE_REMOTE must not bake an empty remote into
+  # the command: it renders `"${CORE_REMOTE:?…}"`, which fails loudly at paste time until
+  # the reader exports the URL. Reproduced on a copy of the scaffold in an origin-less repo.
+  _rc_nocore="$SANDBOX/recovery/nocore"
+  mkdir -p "$_rc_nocore/scripts/lib" "$_rc_nocore/lib"
+  cp "$HERE/scripts/new-os-repo.sh" "$_rc_nocore/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/core-lock.sh" "$HERE/scripts/lib/core-vendor.sh" "$_rc_nocore/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$_rc_nocore/lib/"
+  cp "$HERE/core.version" "$_rc_nocore/"
+  git -C "$_rc_nocore" init -q >/dev/null 2>&1
+  _rc_noout="$(env -u CORE_JSON -u CORE_REMOTE bash "$_rc_nocore/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/no-origin-target" 2>&1)"
+  _rc_nocmd=""
+  if [[ "$_rc_noout" == *"run later: "* ]]; then _rc_nocmd="${_rc_noout#*run later: }"; _rc_nocmd="${_rc_nocmd%%$'\n'*}"; fi
+  if [[ -n "$_rc_nocmd" ]] && grep -qF '"${CORE_REMOTE:?' <<<"$_rc_nocmd" && ! grep -qE "subtree add --prefix=core '' |git fetch '' |CORE_REMOTE='' " <<<"$_rc_nocmd" && bash -n <(printf '%s\n' "$_rc_nocmd"); then
+    pass "recovery: with no origin and no CORE_REMOTE the command carries a \${CORE_REMOTE:?…} expansion, never an empty remote"
+  else
+    fail "recovery: an origin-less Core baked an empty remote into the hint — cmd: [$(cut -c1-200 <<<"$_rc_nocmd")]; the run said: $(tail -3 <<<"$_rc_noout" | tr '\n' '|' | cut -c1-400)"
+  fi
+  unset _rc_nocore _rc_noout _rc_nocmd
+  rm -rf "$SANDBOX/recovery"
+  unset _rc_parent _rc_recov _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail _rc_left_add _rc_ok _rc_ko _rc_sk
+else
+  skip "new-os-repo.sh recovery command (git unavailable)"
 fi
 
 # ── F8. blib_link displacement accounting (lib/bootstrap-lib.sh) ─────────────

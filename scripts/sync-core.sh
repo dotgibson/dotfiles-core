@@ -9,8 +9,11 @@
 #
 # Assumes:
 #   - all OS repos are cloned as siblings under one parent dir (see REPOS_ROOT)
-#   - each OS repo already did the one-time (from a RELEASED tag, never main — #588):
-#       git subtree add --prefix=core <core-remote> refs/tags/v5 --squash
+#   - each OS repo already HAS a core/ — this script replaces that directory and will
+#     not create it. scripts/new-os-repo.sh materializes it for a greenfield repo; the
+#     manual fallback (from a RELEASED tag, never main — #588) is a one-time
+#       git subtree add --prefix=core <core-remote> refs/tags/v6 --squash
+#     which the next sync replaces with the filtered set (VENDORING.md § One-time setup).
 #
 # Usage:
 #   ./scripts/sync-core.sh                # vendor core into every repo found
@@ -59,6 +62,10 @@ sync-core.sh — THE maintain button: vendor Core into every OS repo's core/.
 
   ./scripts/sync-core.sh                       vendor core into every repo found
   ./scripts/sync-core.sh --dry-run, -n         show what would happen, touch nothing
+  ./scripts/sync-core.sh --strict dotfiles-X   exit 1 if any TARGETED repo failed OR was
+                                               skipped (not cloned, no core/ yet); the
+                                               default exits 0 and reports both in the
+                                               summary — the fan-out relies on that
   ./scripts/sync-core.sh dotfiles-Fedora …     only the named repos
   ./scripts/sync-core.sh -h, --help            show this help and exit
 
@@ -66,7 +73,7 @@ Env overrides:
   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: core's origin)
   CORE_BRANCH       Core ref to vendor             (default: main; pass a released tag
-                    such as refs/tags/v5 when vendoring a repo for the first time)
+                    such as refs/tags/v6 when vendoring a repo for the first time)
   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (documented escape hatch)
   SYNC_SKIP_STALE   set to 1 to skip the pre-flight check that each target is up to date
@@ -76,10 +83,12 @@ EOF
 }
 
 DRY=0
+STRICT=0
 SELECT=()
 for arg in "$@"; do
   case "$arg" in
   --dry-run | -n) DRY=1 ;;
+  --strict) STRICT=1 ;;
   -h | --help)
     usage
     exit 0
@@ -754,4 +763,15 @@ elif ((FAIL > 0)); then
   echo "done with failures — see the ✗ lines above, then re-run the affected repos." >&2
 else
   echo "done. push each updated repo when you're satisfied."
+fi
+# --strict: a failed OR SKIPPED target is the exit status, not only a summary line — a
+# wrong REPOS_ROOT or target name is a skip ("not cloned"), and so is a repo with no
+# core/ yet, and neither stamped anything. Opt-in, because the fan-out runs this script
+# bare inside a `bash -e` step and then does per-repo push and PR work — a default
+# non-zero exit would abort that step for every repo when one fails. (The scaffold's
+# recovery command and the first-vendor recipes cannot use it: they run the RELEASED
+# script from a worktree at the pinned tag, which may predate the flag, so they read the
+# summary line instead.)
+if ((STRICT && (repos_failed > 0 || repos_skipped > 0))); then
+  exit 1
 fi

@@ -11,10 +11,10 @@
 # Usage:
 #   ./scripts/new-os-repo.sh <OSName> [target-dir]      # e.g. Fedora  (→ ../dotfiles-Fedora)
 #   ./scripts/new-os-repo.sh Fedora --dry-run           # print the plan, write nothing
-#   ./scripts/new-os-repo.sh Fedora --no-vendor         # skeleton only, skip the subtree add
+#   ./scripts/new-os-repo.sh Fedora --no-vendor         # skeleton only, skip the vendoring
 #
-# It vendors Core via `git subtree add --prefix=core` from this repo's origin (override
-# with CORE_REMOTE), then writes the entry .zshrc/.zshenv/.zprofile, an os/<os>.zsh stub,
+# It materializes core/ from this repo's origin (override with CORE_REMOTE) — the FILTERED
+# vendor set, through lib/core-vendor.sh's producer, not `git subtree add` (#676) — then writes the entry .zshrc/.zshenv/.zprofile, an os/<os>.zsh stub,
 # a starter bootstrap, and a .gitignore. The canonical module order lives in ONE place
 # here, so a scaffolded repo can never start out of order.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -36,23 +36,28 @@ CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null |
 # exact commit a release tag points at, so a tree vendored from whatever `main` happened
 # to be is not a commit any core.lock would record — and core-integrity reports the fresh
 # subtree as TAMPERED before the repo has done anything wrong (#588).
-CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5}"
+CORE_BRANCH="${CORE_BRANCH:-refs/tags/v6}"
 
 usage() {
   cat <<'EOF'
 usage: new-os-repo.sh <OSName> [target-dir] [--dry-run] [--no-vendor]
 
-Scaffold a new OS repo that vendors Core: subtree-add core/, then write a correct
-.zshrc loader (canonical order), os/<os>.zsh, a starter bootstrap, and .gitignore.
+Scaffold a new OS repo that vendors Core: materialize the filtered core/ (no subtree
+add), then write a correct .zshrc loader (canonical order), os/<os>.zsh, a starter
+bootstrap, and .gitignore.
 
   <OSName>       e.g. Fedora, Arch, Gentoo  (repo defaults to ../dotfiles-<OSName>)
   target-dir     override the destination directory
   --dry-run, -n  print every planned action; create nothing
-  --no-vendor    scaffold the files but skip the `git subtree add` (do it yourself later)
+  --no-vendor    scaffold the files but skip the vendoring. sync-core.sh will NOT fill
+                 the gap later (it skips a repo with no core/); follow the manual
+                 one-time setup in VENDORING.md instead — the script prints it.
 
 Env: CORE_REMOTE (default: this repo's origin)
-     CORE_BRANCH (default: refs/tags/v5 — a RELEASED tag, never main; pin a specific
-                  vX.Y.Z to freeze the tree at a known version)
+     CORE_BRANCH (default: refs/tags/v6 — a RELEASED tag, never main; pin a specific
+                  vX.Y.Z to freeze the tree at a known version — v4.1.0 or newer: the
+                  recovery and register commands judge the released sync by its
+                  per-repo summary, which older releases do not print)
 EOF
 }
 
@@ -87,6 +92,38 @@ done
 }
 TARGET="${TARGET:-$(dirname "$HERE")/dotfiles-$OS}"
 os_lc="$(printf '%s' "$OS" | tr '[:upper:]' '[:lower:]')"
+
+# The recovery command and the register step judge the RELEASED sync-core.sh by its
+# per-repo footer (`repos:  updated 1   skipped 0   failed 0`), which is printed since
+# v4.1.0; v4.0.2 and older print a per-CHECK count with no `repos:` prefix, so under such
+# a pin a SUCCESSFUL sync would be reported as a failure — after it had vendored and
+# stamped the target. A pin that names an older release is refused here, before anything
+# is written, instead of at the one moment the reader is recovering. A ref that is not
+# version-shaped (a branch, a SHA) cannot be judged here and passes. A prerelease
+# (v4.1.0-rc1, the suffix core.version allows) sorts BELOW its release, so a prerelease
+# of the floor itself is older than the floor.
+_footer_floor="4.1.0"
+_pin="${CORE_BRANCH#refs/tags/}"
+_pin_re='^v([0-9]+)(\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?)?$'
+if [[ "$_pin" =~ $_pin_re ]]; then
+  IFS=. read -r _fl_M _fl_m _fl_p <<<"$_footer_floor"
+  _pin_M=$((10#${BASH_REMATCH[1]}))
+  if [[ -z "${BASH_REMATCH[2]}" ]]; then
+    # A major alias (v4) points at the newest release of that major, so only a major
+    # below the floor's can be older than the floor.
+    _pin_old=$((_pin_M < _fl_M))
+  else
+    _pin_m=$((10#${BASH_REMATCH[3]})) _pin_p=$((10#${BASH_REMATCH[4]}))
+    _pin_pre=$(( ${#BASH_REMATCH[5]} > 0 ))
+    _pin_old=$((_pin_M < _fl_M || (_pin_M == _fl_M && (_pin_m < _fl_m || (_pin_m == _fl_m && (_pin_p < _fl_p || (_pin_p == _fl_p && _pin_pre)))))))
+  fi
+  if ((_pin_old)); then
+    fail "CORE_BRANCH=$CORE_BRANCH names a release older than v$_footer_floor, whose sync-core.sh prints no per-repo summary — the recovery and register commands could not judge it. Pin v$_footer_floor or newer."
+    exit 2
+  fi
+  unset _fl_M _fl_m _fl_p _pin_M _pin_m _pin_p _pin_pre _pin_old
+fi
+unset _footer_floor _pin _pin_re
 
 hdr "scaffold dotfiles-$OS"
 echo ":: target   = $TARGET"
@@ -127,7 +164,112 @@ w() {
 #
 # Nothing downstream loses anything: core.lock is the authoritative provenance since #587,
 # and the fan-out stamps it on this repo's first `make sync`.
-_vendor_hint="git -C '$TARGET' fetch '$CORE_REMOTE' '$CORE_BRANCH' && (cd '$HERE' && ./scripts/sync-core.sh dotfiles-$OS)"
+# The manual path, NOT a bare sync-core.sh: the fan-out skips a repo with no core/ (that is
+# the one thing it will not create), so the hint is VENDORING.md's one-time setup — a
+# subtree add to bring core/ into existence, then the sync from Core to replace it with the
+# filtered set and stamp core.lock.
+#
+# REPOS_ROOT is passed explicitly: sync-core.sh resolves `dotfiles-$OS` under the parent
+# of the CORE checkout by default, and a scaffold placed elsewhere (the target-dir
+# override) would be skipped as "not cloned" while the subtree add had already succeeded.
+# The name is the other half of that resolution — the scaffold sets no origin the
+# fallback could match — so a target not named dotfiles-$OS is told so.
+#
+# ABSOLUTE paths, because the hint's sync half runs after `cd '$HERE'`: a relative
+# target-dir would make REPOS_ROOT resolve under the Core checkout instead. (Under
+# --dry-run the target may not exist yet, so the relative form is the fallback.)
+#
+# And the sync half carries THE PIN, the way VENDORING.md's recipe does: sync-core.sh
+# defaults CORE_BRANCH to main and refuses unless Core's HEAD is the commit being
+# vendored, so it passes the peeled commit — otherwise copying the hint would replace
+# the just-added release tree with `main` and stamp that. The ref is FETCHED from
+# CORE_REMOTE first (a release that exists only on a mirror or fork would otherwise
+# subtree-add fine and then fail to resolve here), CORE_REMOTE is forwarded to the sync,
+# and the sync runs from a TEMPORARY DETACHED WORKTREE at FETCH_HEAD, removed afterwards:
+# checking the tag out in the reader's own Core checkout would leave it detached there,
+# and the banner then sends them "back in dotfiles-core" to register the repo — on a
+# stale tag instead of their branch. The subshell returns the SYNC's status, not the
+# cleanup's: `sync; cleanup` would report success after a failed sync as long as the
+# worktree removal succeeded, leaving the repo unstamped while the command said ok. The
+# mktemp PARENT is tracked and removed too — the worktree lives in a `core` subdirectory
+# so `git worktree add` gets a path that does not exist yet, and removing only that
+# would leave an empty temp directory behind on every successful recovery. And the
+# cleanup is ENTERED only once `worktree add` has succeeded: the pasted subshell inherits
+# the reader's shell variables, so a cleanup that ran after a failed fetch or mktemp
+# could force-remove whatever an inherited `_wt` happened to name — while a FAILED add
+# still removes the mktemp parent this very chain just created (an empty directory of
+# ours, never an inherited path) and stops. The sync runs as an
+# `if` condition — exempt from errexit — so a reader whose shell has `set -e` still
+# reaches the cleanup. And the VERDICT is the released script's own SUMMARY LINE: the
+# sync runs from the worktree at the PINNED TAG, so the sync-core.sh that executes is
+# the released one — which may predate `--strict` (added after v6.1.0) and exits 0 after
+# a per-repo failure — and a matching core.lock line is no proof either, since the lock
+# can be written before a later pin, commit or verification step fails. Every release
+# prints `repos:  updated N   skipped N   failed N`, so the output is captured
+# (CORE_COLOR=never, honoured by every release) and the verdict is `updated 1  skipped 0
+# failed 0` for the one target; the capture is `|| true` so errexit cannot skip it. Only
+# the LAST `repos:` row is judged (awk keeps the final match): the log also carries the
+# target's own output — a git hook, say — and a success-shaped line printed there must
+# not outvote a footer that reports a failure.
+#
+# Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
+# COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
+# hand the reader a misparsed command at exactly the moment vendoring must be recovered.
+_q() { printf '%q' "$1"; }
+# No origin and no CORE_REMOTE: an empty remote baked into the hint would fail at every
+# step. Render a runtime expansion instead, so the pasted command refuses loudly until
+# the reader exports CORE_REMOTE — the one thing the error below tells them to do.
+_remote_q="$(_q "$CORE_REMOTE")"
+# shellcheck disable=SC2016  # deliberately literal: the expansion belongs to the PASTED command, not to this script
+[[ -n "$CORE_REMOTE" ]] || _remote_q='"${CORE_REMOTE:?export CORE_REMOTE=<dotfiles-core remote URL> first}"'
+# A target that does not exist yet (--dry-run prints this same hint before anything is
+# written) cannot be cd-ed into, and a relative path embedded as-is would be resolved by
+# the chain AFTER it cd's into the Core checkout: REPOS_ROOT=<relative parent> then names
+# a directory under Core and the sync skips the very repo the hint was written for. So
+# the fallback anchors the path to the invocation directory instead of copying it.
+_abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s' "$PWD/${1#./}" ;; esac; }
+_target_abs="$(cd "$TARGET" 2>/dev/null && pwd)" || _target_abs="$(_abs "$TARGET")"
+_target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_parent="$(dirname "$(_abs "$TARGET")")"
+#
+# The scaffold is UNCOMMITTED when this hint is printed (with --no-vendor there is not
+# even an initial commit), and both halves need a clean, committed target: subtree add
+# wants a HEAD and refuses a dirty tree, and sync-core.sh refuses a dirty target. So the
+# chain commits the scaffold first — a no-op when the reader already has.
+#
+# The Core-side half stands on its own too: when core/ WAS materialized and only the
+# commit after it failed, the subtree add would fail on the existing prefix, so that
+# state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
+_sync_half="(cd $(_q "$HERE") && git fetch $_remote_q $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d \"\${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX\")\" && _wt=\"\$_wtp/core\" && { git worktree add --detach \"\$_wt\" FETCH_HEAD || { rmdir \"\$_wtp\"; false; }; } && { _o=\"\$( (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$_remote_q CORE_COLOR=never REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")) 2>&1)\" || true; printf '%s\\n' \"\$_o\"; _l=\"\$(awk '/^ *repos: /{l=\$0} END{print l}' <<<\"\$_o\")\"; if grep -Eq '^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$' <<<\"\$_l\"; then _rc=0; else _rc=1; fi; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\"; })"
+# RESUMABLE: the subtree add is the one step that cannot run twice ("prefix 'core'
+# already exists"), and the sync after it is the step most likely to fail (network, a
+# refused guard, a dirty tree). Rerunning the exact same command must therefore skip the
+# add once HEAD already carries core/ and go straight back to the sync — `cat-file -e
+# HEAD:core` is that test, and it is why the commit step precedes it: a core/ that was
+# materialized but never committed is committed by the chain, then found in HEAD.
+_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && { git -C $(_q "$_target_abs") cat-file -e HEAD:core 2>/dev/null || git -C $(_q "$_target_abs") subtree add --prefix=core $_remote_q $(_q "$CORE_BRANCH") --squash; } && $_sync_half   # VENDORING.md, One-time setup"
+# A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
+# subtree add and the sync, and never after the trailing `#`, where it would be a
+# comment — so the sync resolves the conventional name. A symlink, not a rename: the
+# chain embeds the original path. GUARDED: the canonical path must be absent, or
+# already a link to exactly this scaffold. `ln -sfn` alone replaces a stale symlink but
+# onto a REAL directory of that name it nests a link inside it — and the sync would then
+# modify that unrelated repository. Any other occupant is refused, and the chain stops.
+# The refusal text is ASCII on purpose: it goes through %q, and bash 3.2 (macOS's) quotes
+# a multibyte character byte by byte, leaving a sequence that is invalid UTF-8 — a pasted
+# command that BSD grep and friends then refuse to read on the very box it was made for.
+_canon="$_target_parent/dotfiles-$OS"
+_link_cmd="{ { [ ! -e $(_q "$_canon") ] && [ ! -L $(_q "$_canon") ]; } || { [ -L $(_q "$_canon") ] && [ \"\$(readlink $(_q "$_canon"))\" = $(_q "$_target_abs") ]; }; } || { echo $(_q "refusing: $_canon exists and is not a link to this scaffold: remove or rename it first") >&2; false; } && ln -sfn $(_q "$_target_abs") $(_q "$_canon")"
+# The sync-only recovery (used when core/ is already materialized) needs that same link
+# for a custom basename, or the sync just skips a directory it cannot resolve.
+_sync_recover="$_sync_half"
+# No link when the canonical path ALREADY resolves to this scaffold — the same physical
+# directory (-ef): a basename differing only by case on a case-insensitive filesystem
+# (macOS's default), or a link the reader made first. The guard would otherwise see the
+# canonical spelling as a foreign real directory and refuse the reader's own repo.
+[[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || [[ -e "$_canon" && "$_canon" -ef "$_target_abs" ]] || {
+  _vendor_hint="$_link_cmd && $_vendor_hint; sync-core.sh resolves the NAME dotfiles-$OS under REPOS_ROOT, hence the guarded symlink (not a rename — the chain embeds the original path)"
+  _sync_recover="$_link_cmd && $_sync_half"
+}
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then
@@ -147,15 +289,20 @@ else
   elif ! git -C "$TARGET" fetch -q --no-tags "$CORE_REMOTE" "$_core_sha" >/dev/null 2>&1 &&
     ! git -C "$TARGET" fetch -q --no-tags "$CORE_REMOTE" "$CORE_BRANCH" >/dev/null 2>&1; then
     fail "fetch of Core failed (offline/unreachable?) — files scaffolded; vendor later with: $_vendor_hint"
-  elif core_vendor_materialize "$TARGET" "$_core_sha" &&
-    git -C "$TARGET" commit -q -m "chore(core): vendor Core at ${_core_sha:0:12}"; then
-    if core_vendor_is_filtered "$TARGET" "$_core_sha"; then
-      pass "vendored Core into core/ at ${_core_sha:0:12} (filtered: core.manifest + core.vendor)"
-    else
-      pass "vendored Core into core/ at ${_core_sha:0:12} (whole tree — $CORE_BRANCH predates core.vendor)"
-    fi
-  else
+  elif ! core_vendor_materialize "$TARGET" "$_core_sha"; then
     fail "materializing core/ failed — files scaffolded; vendor later with: $_vendor_hint"
+  elif ! git -C "$TARGET" commit -q -m "chore(core): vendor Core at ${_core_sha:0:12}"; then
+    # core/ IS materialized and staged; only the commit failed. The subtree-add hint would
+    # fail here on the existing prefix, so the recovery is: commit, then stamp the lock —
+    # the Core-side half alone. It STAGES FIRST: this commit runs before the scaffold
+    # files below are written, so by the time the reader retries, those files exist
+    # untracked, and a commit of core/ alone would leave the tree dirty for the sync's
+    # guard to refuse.
+    fail "core/ materialized at ${_core_sha:0:12} but the commit failed — fix that, then: git -C $(_q "$_target_abs") add -A && git -C $(_q "$_target_abs") commit -q -m $(_q "chore(core): vendor Core at ${_core_sha:0:12}") && $_sync_recover"
+  elif core_vendor_is_filtered "$TARGET" "$_core_sha"; then
+    pass "vendored Core into core/ at ${_core_sha:0:12} (filtered: core.manifest + core.vendor)"
+  else
+    pass "vendored Core into core/ at ${_core_sha:0:12} (whole tree — $CORE_BRANCH predates core.vendor)"
   fi
 fi
 
@@ -412,10 +559,43 @@ else
   # but is not in scripts/os-repos.txt is invisible to the fan-out, to fleet-drift and to
   # core-integrity, and every one of them stays green while ignoring it. Since #669 that
   # registration is a single line rather than four coordinated edits — see VENDORING.md.
+  # A scaffold with no core/ yet (--no-vendor, or the vendor step failed) cannot follow
+  # the sequence below in order: bootstrap.sh refuses to run without core/, and F7b
+  # materialize core/ FIRST, with the same recovery hint the vendor step printed.
+  _next_vendor=""
+  [[ -d "$TARGET/core" ]] || _next_vendor="
+  FIRST — this scaffold has no core/ yet, and bootstrap.sh refuses to run without one,
+  so nothing below passes until it exists. Materialize it (this commits the scaffold,
+  then adds core/ and runs the pinned sync that stamps core.lock):
+    $_vendor_hint
+"
+  # The REGISTER step's sync has the same two blind spots the recovery hint had: it
+  # resolves the NAME dotfiles-$OS under REPOS_ROOT, which defaults to the Core
+  # checkout's parent. A scaffold placed elsewhere, or named otherwise, would be skipped
+  # as "not cloned" — so the printed command carries REPOS_ROOT when the parent differs
+  # and is preceded by the canonical-name symlink when the name does. `ln -sfn`: on a
+  # --no-vendor scaffold the FIRST step above has already created that link, and a plain
+  # `ln -s` onto an existing directory symlink would follow it and drop a new link inside
+  # the target repo, which the sync then refuses as dirty.
+  # The register step is the FIRST sync that stamps core.lock, so it must carry the
+  # release pin: a bare `./scripts/sync-core.sh dotfiles-X` defaults CORE_BRANCH to main
+  # and would replace the just-materialized release tree with an unreleased tip — the
+  # very thing this scaffold exists to prevent. It reuses the pinned worktree sync
+  # (_sync_recover): the throwaway worktree at the pinned ref, the released script's own
+  # summary line as the verdict (that script may predate --strict), REPOS_ROOT, and for
+  # a custom name the guarded symlink chained in front with `&&`, so a refused guard
+  # stops the sync instead of letting its directory fast path pick the occupant.
+  _reg_sync="$_sync_recover"
+  # The scaffold commit is IDEMPOTENT: on the no-core/ path the FIRST recovery command
+  # has already committed the scaffold, and a bare `git commit` would then fail with
+  # "nothing to commit" — the one step in the sequence a reader could not follow. And the
+  # OS-layer edits get a commit of their own BEFORE the register step, because the sync
+  # refuses a target with uncommitted changes (its dirty-tree guard) — without it the
+  # advertised registration flow skips the repo it is registering.
   cat <<EOF
-  next:
+  next:$_next_vendor
     cd "$TARGET"
-    git add -A && git commit -m "scaffold dotfiles-$OS"
+    git add -A && { git diff --cached --quiet || git commit -m "scaffold dotfiles-$OS"; }   # a no-op if already committed
     ./bootstrap.sh            # wire the symlinks
     \$EDITOR os/$os_lc.zsh     # add your $OS-native bits
 
@@ -423,9 +603,10 @@ else
   schema is satisfied from birth, and they are wrong for any other archive:
     \$EDITOR os/$os_lc.capabilities
     core/scripts/check-capabilities.sh os/$os_lc.capabilities
+    git add -A && git commit -m "os: the $OS layer and its capability declaration"   # the sync below refuses a dirty tree
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
     echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted
-    ./scripts/sync-core.sh dotfiles-$OS         # materializes core/ and stamps core.lock
+    $_reg_sync   # the PINNED sync (a throwaway worktree at the release ref; its summary line is the verdict): stamps core.lock — a custom name gets the guarded symlink first, and a refusal stops it
 EOF
 fi
