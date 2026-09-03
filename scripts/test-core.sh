@@ -5573,13 +5573,16 @@ if have git; then
     # Ordering: each marker must appear, and after the previous one. Positions, not one
     # regex — a regex over a %q-escaped command is unreadable and was wrong on arrival.
     _rc_prev=0; _rc_order=""
-    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'git worktree remove --force '; do
+    # The commit marker sits between `add -A` and the subtree add on purpose: subtree add
+    # needs a valid HEAD, and a chain that staged but never committed would otherwise
+    # pass this ordering check.
+    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'git worktree remove --force ' 'rmdir '; do
       _rc_pos="$(awk -v m="$_rc_m" '{ print index($0, m) }' <<<"$_rc_cmd")"
       ((_rc_pos > _rc_prev)) || _rc_order="$_rc_order [$_rc_m]"
       _rc_prev=$_rc_pos
     done
     if [[ -z "$_rc_order" ]]; then
-      pass "recovery: ordering — guarded symlink, commit, subtree add, then the pinned sync in a throwaway worktree"
+      pass "recovery: ordering — guarded symlink, stage, commit, subtree add, fetch, throwaway worktree, sync, worktree and parent removed"
     else
       fail "recovery: ordering wrong at$_rc_order — $_rc_cmd"
     fi
