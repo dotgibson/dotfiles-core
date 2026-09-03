@@ -5681,7 +5681,7 @@ if have git; then
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
     grep -qF '{ git worktree add --detach "$_wt" FETCH_HEAD || { rmdir "$_wtp"; false; }; } && { _o="$( (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad add-failure-removes-own-parent+cleanup-nested+captured-sync"
     grep -qF 'CORE_COLOR=never REPOS_ROOT=' <<<"$_rc_cmd" || _rc_bad="$_rc_bad color-off-for-the-summary"
-    grep -qF ''"'"'repos: +updated 1 +skipped 0 +failed 0 '"'"' <<<"$_o"; then _rc=0; else _rc=1; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad summary-verdict+parent-removed"
+    grep -qF ''"'"'^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$'"'"' <<<"$_o"; then _rc=0; else _rc=1; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad summary-verdict+parent-removed"
     grep -qF ') 2>&1)" || true; printf ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad capture-is-errexit-safe"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
@@ -5731,6 +5731,17 @@ if have git; then
     else
       fail "recovery: the mktemp parent survives a successful recovery — $_rc_leftover"
     fi
+    # The verdict is the FOOTER LINE, anchored at both ends: the captured log also carries
+    # the target's name and every per-repo line, so an unanchored substring could be met
+    # by earlier output (a name containing it) while the footer itself reports a failure.
+    _rc_trap="echo '  ok  dotfiles-repos:  updated 1   skipped 0   failed 0   (of 1 targeted)'; echo '  repos:  updated 0   skipped 0   failed 1   (of 1 targeted)'"
+    _rc_drive "$_rc_trap" rmdir; _rc_trap_st=$?
+    if ((_rc_trap_st == 1)); then
+      pass "recovery: the verdict is the anchored footer line — the success text earlier in the log, mid-line, does not outvote a failed footer"
+    else
+      fail "recovery: an unanchored success substring earlier in the log passed a failed footer (status $_rc_trap_st)"
+    fi
+    unset _rc_trap _rc_trap_st
     if [[ -z "$_rc_leftover_fail" ]]; then
       pass "recovery: under bash -e a FAILED sync still reaches the cleanup (no temp directory left behind)"
     else
