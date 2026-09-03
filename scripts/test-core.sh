@@ -5602,7 +5602,7 @@ if have git; then
     # The commit marker sits between `add -A` and the subtree add on purpose: subtree add
     # needs a valid HEAD, and a chain that staged but never committed would otherwise
     # pass this ordering check.
-    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'git worktree remove --force ' 'rmdir '; do
+    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'git worktree remove --force ' '&& rmdir "$_wtp" && exit '; do
       _rc_pos="$(awk -v m="$_rc_m" '{ print index($0, m) }' <<<"$_rc_cmd")"
       ((_rc_pos > _rc_prev)) || _rc_order="$_rc_order [$_rc_m]"
       _rc_prev=$_rc_pos
@@ -5620,7 +5620,7 @@ if have git; then
     grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' <<<"$_rc_cmd" || _rc_bad="$_rc_bad subtree-add-source"
     # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
-    grep -qF 'FETCH_HEAD && { if (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad cleanup-nested-after-worktree-add+sync-as-if-condition"
+    grep -qF '{ git worktree add --detach "$_wt" FETCH_HEAD || { rmdir "$_wtp"; false; }; } && { if (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad add-failure-removes-own-parent+cleanup-nested+sync-as-if-condition"
     grep -qF "&& grep -q \"^core_sha=\$(git -C \"\$_wt\" rev-parse 'HEAD^{commit}')\" " <<<"$_rc_cmd" || _rc_bad="$_rc_bad lock-stamp-verdict"
     grep -qF '; then _rc=0; else _rc=$?; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
     if [[ -z "$_rc_bad" ]]; then
@@ -5654,6 +5654,10 @@ if have git; then
     _rc_drive true rmdir; _rc_st="$_rc_st sync-ok:$?"
     _rc_leftover="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
     _rc_drive true false; _rc_st="$_rc_st cleanup-fails:$?"
+    # The cleanup-fails drive leaks its parent BY CONSTRUCTION (the stubbed removal fails
+    # before the rmdir); tidy that one here, so the add-fails assertion below measures
+    # only what the add-fails path leaves behind.
+    find "$SANDBOX/recovery" -name 'wt.*' -type d -exec rm -rf {} + 2>/dev/null
     if [[ "$_rc_st" == " sync-fails:1 sync-ok:0 cleanup-fails:1" ]]; then
       pass "recovery: the worktree subshell returns the sync's status (failed sync → 1, ok → 0, failed cleanup → 1)"
     else
@@ -5678,13 +5682,21 @@ if have git; then
           -e "s|mktemp -d|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
           -e 's|git worktree add --detach "$_wt" FETCH_HEAD|false|' \
           -e "s|git worktree remove --force \"\$_wt\"|touch '$SANDBOX/recovery/cleanup-ran'|")"
-    (cd "$SANDBOX/recovery" && _wt=/should/never/be/touched bash -c "$_rc_dr") >/dev/null 2>&1; _rc_addfail=$?
+    (cd "$SANDBOX/recovery" && _wt=/should/never/be/touched bash -e -c "$_rc_dr") >/dev/null 2>&1; _rc_addfail=$?
+    _rc_left_add="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
     if ((_rc_addfail != 0)) && [[ ! -e "$SANDBOX/recovery/cleanup-ran" ]]; then
       pass "recovery: when worktree add fails the cleanup never runs (an inherited \$_wt is never force-removed) and the status is non-zero"
     else
       fail "recovery: a failed worktree add still ran the cleanup (marker=$([[ -e "$SANDBOX/recovery/cleanup-ran" ]] && echo yes || echo no), status=$_rc_addfail)"
     fi
-    find "$SANDBOX/recovery" -name 'wt.*' -type d -exec rm -rf {} + 2>/dev/null
+    # ...and the mktemp parent the chain itself created must not be leaked by that failure.
+    # Asserted, not tidied: a first draft rm -rf'd the leak here and so never saw it.
+    if [[ -z "$_rc_left_add" ]]; then
+      pass "recovery: a failed worktree add removes the mktemp parent it just created (nothing left behind)"
+    else
+      fail "recovery: a failed worktree add leaked its mktemp parent — $_rc_left_add"
+      find "$SANDBOX/recovery" -name 'wt.*' -type d -exec rm -rf {} + 2>/dev/null
+    fi
     unset -f _rc_drive
     # The guard is the executable part: everything before the first `&& git -C`.
     _rc_guard="${_rc_cmd%% && git -C*}"
@@ -5709,7 +5721,7 @@ if have git; then
     fi
   fi
   rm -rf "$SANDBOX/recovery"
-  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail
+  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail _rc_left_add
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi
