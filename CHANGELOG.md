@@ -16,6 +16,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **A scaffolded OS repo is born meeting the `make` vocabulary and the test floor
+  (#691).** `scripts/new-os-repo.sh` is the other way a repo enters the fleet (the first is
+  `cp -r dotfiles-Fedora`), and it stamped no `Makefile` and no `test/` — so a greenfield
+  repo was **missing** across its whole row of the vocabulary register the day it joined
+  `scripts/os-repos.txt`, and nothing inside it would ever notice. It now writes, beside the
+  entry files and the capability declaration it already stamps for the same reason: a
+  `Makefile` defining all seven canonical verbs (`lint` = shellcheck + `bash -n` + `zsh -n`
+  + the capability schema; `check` = lint + the hermetic links run; `dry-run`;
+  `core-verify` in Arch's `core-integrity.sh --self` shape; `packages-check` as the
+  contract's stub until the repo has a package list; `test`), with every guard on the same
+  recipe line as its tool so it clears the #775 make-gate rule from birth; a **real**
+  `test/check-links.sh` — `--dry-run` writes nothing, a run links every repo-owned file
+  (and the Core-provided ones when `core/` carries them), a second run changes nothing —
+  rather than an `exit 0` stub, because a floor met by a script that asserts nothing is not
+  a floor; and a `.github/workflows/test.yml` that runs `make test`, the floor's "CI runs
+  it" rung. The scaffolded `bootstrap.sh` grows `--dry-run`, `--links-only` and `--help` so
+  those verbs are honest, and its mise seed is guarded on the source existing. `test-core.sh`
+  F7b pins all of it, and judges the scaffold with `fleet-vocabulary.sh --check` itself
+  against a fake fleet root — the same verdict the nine repos are held to — plus the proof
+  the suite can fail (a bootstrap that re-links on every run goes red). Dev tooling only —
+  the OS repos receive nothing from this entry.
 - **One Makefile vocabulary for the fleet, and a test floor — declared once in Core,
   reported by the audit (#691).** Nine repos had nine `make` dialects: "dry run" was
   `dry-run` in four repos and `bootstrap-dry` in four, "verify core" had five spellings,

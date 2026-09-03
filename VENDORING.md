@@ -579,6 +579,13 @@ git subtree add --prefix=core <core-remote> refs/tags/v5 --squash
 It is one-time because `sync-core.sh` skips a repo that has no `core/` yet: it replaces
 that directory, and creating it in the first place is the one thing it will not do.
 
+The scaffold also stamps the fleet's `make` vocabulary and the test floor (#691): a
+`Makefile` defining all seven canonical verbs (`packages-check` as the stub above until the
+repo has a package list), a real `test/check-links.sh` — bootstrap wires what it says and is
+idempotent — and a `.github/workflows/test.yml` that runs `make test`. So a new repo's row
+in `make fleet-vocabulary` is `ok` from birth rather than owed; Core's own suite judges the
+scaffold with that same script.
+
 **A released tag, never `main`.** The fan-out pins each repo to the exact commit a
 release tag points at (`sync-fanout.yml` passes `CORE_BRANCH=<sha>`), so `core.lock`
 records that commit and `git describe` stamps the named tag. A tree vendored from

@@ -5338,6 +5338,106 @@ if have git && have zsh; then
     else
       fail "new-os-repo: scaffolded entry file(s) fail zsh -n —$_nor_syn"
     fi
+
+    # ── #691: born meeting the fleet's make vocabulary and the test floor ──────────
+    # The scaffold is the OTHER way a repo enters the fleet (the first is `cp -r
+    # dotfiles-Fedora`), and until this landed it stamped no Makefile and no test/ — so a
+    # greenfield repo was **missing** across its whole row of the vocabulary register the
+    # day it joined scripts/os-repos.txt. These pin that it now is not, and they judge it
+    # with the SAME script that judges the fleet, not a re-implementation of its rules.
+    #
+    # Every generated gate must clear the make-gate rule (#775) the fleet is held to. A
+    # template that ships the broken guard shape would seed it into every future repo.
+    _nor_mg="$(_core_make_gate_hits "$NOR")"
+    if [[ -z "$_nor_mg" ]]; then
+      pass "new-os-repo: the scaffolded Makefile clears the #775 make-gate rule"
+    else
+      fail "new-os-repo: a scaffolded Makefile gate cannot do what it says — $_nor_mg"
+    fi
+    _nor_syn=""
+    for _nor_f in bootstrap.sh test/check-links.sh; do
+      bash -n "$NOR/$_nor_f" 2>/dev/null || _nor_syn="$_nor_syn $_nor_f"
+    done
+    [[ -x "$NOR/test/check-links.sh" ]] || _nor_syn="$_nor_syn test/check-links.sh(not executable)"
+    if [[ -z "$_nor_syn" ]]; then
+      pass "new-os-repo: bootstrap.sh and test/check-links.sh parse, and the suite is executable"
+    else
+      fail "new-os-repo: scaffolded bash is broken —$_nor_syn"
+    fi
+    if have shellcheck; then
+      # The reusable gate's exact opts (lint-call.yml), which the scaffolded Makefile exports too.
+      if (cd "$NOR" && SHELLCHECK_OPTS="-e SC1090 -e SC1091 -e SC2015 -e SC2088" shellcheck -x bootstrap.sh test/check-links.sh) >/dev/null 2>&1; then
+        pass "new-os-repo: the scaffolded bash is shellcheck-clean under the fleet gate's options"
+      else
+        fail "new-os-repo: scaffolded bash fails shellcheck: $(cd "$NOR" && SHELLCHECK_OPTS="-e SC1090 -e SC1091 -e SC2015 -e SC2088" shellcheck -x bootstrap.sh test/check-links.sh 2>&1 | head -5 | tr '\n' ' ')"
+      fi
+    else
+      skip "new-os-repo: shellcheck over the scaffolded bash (shellcheck unavailable)"
+    fi
+    if have actionlint; then
+      if actionlint "$NOR/.github/workflows/test.yml" >/dev/null 2>&1; then
+        pass "new-os-repo: the scaffolded test workflow passes actionlint"
+      else
+        fail "new-os-repo: scaffolded test.yml fails actionlint: $(actionlint "$NOR/.github/workflows/test.yml" 2>&1 | head -3 | tr '\n' ' ')"
+      fi
+    else
+      skip "new-os-repo: actionlint over the scaffolded workflow (actionlint unavailable)"
+    fi
+    # The suite is a TEST, not an `exit 0` stub — run it. An empty core/ is the exact
+    # --no-vendor state; the suite asserts the Core-provided links only when their source
+    # exists, so it must pass here AND in a vendored repo.
+    mkdir -p "$NOR/core"
+    if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-suite.out" 2>&1; then
+      pass "new-os-repo: the scaffolded suite passes against the scaffolded bootstrap ($(grep -c '^  ok' "$SANDBOX/nor-suite.out") assertions)"
+    else
+      fail "new-os-repo: the scaffolded suite fails on its own scaffold — $(grep FAIL "$SANDBOX/nor-suite.out" | head -3 | tr '\n' ' ')"
+    fi
+    # ...and it CAN fail. A gate nobody has seen red is not known to work (the bench-gate
+    # lesson, #688). Strip the "already linked" short-circuit from a copy of the bootstrap,
+    # so every run re-links and announces it: the idempotency assertion must go red.
+    _nor_brk="$SANDBOX/newosrepo-broken"
+    rm -rf "$_nor_brk"
+    cp -r "$NOR" "$_nor_brk"
+    sed -i.bak '/readlink "\$dest"/d' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    if (cd "$_nor_brk" && ./test/check-links.sh) >/dev/null 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links on every run — it cannot fail"
+    else
+      pass "new-os-repo: the scaffolded suite goes red on a non-idempotent bootstrap"
+    fi
+    rm -rf "$_nor_brk"
+    if have make; then
+      # Every canonical verb RESOLVES (the promise scripts/make-vocabulary.txt makes): -n
+      # expands all seven without needing shellcheck or a Core checkout; then the four that
+      # need no tool run for real.
+      if make -C "$NOR" -n help lint check dry-run packages-check core-verify test >/dev/null 2>&1; then
+        pass "new-os-repo: all seven canonical make verbs resolve in the scaffold"
+      else
+        fail "new-os-repo: a canonical make verb does not resolve — $(make -C "$NOR" -n help lint check dry-run packages-check core-verify test 2>&1 | grep -i 'no rule' | head -2 | tr '\n' ' ')"
+      fi
+      if make -C "$NOR" help dry-run packages-check test >/dev/null 2>&1; then
+        pass "new-os-repo: make help / dry-run / packages-check / test run green in the scaffold"
+      else
+        fail "new-os-repo: a tool-free canonical verb fails in the scaffold — $(make -C "$NOR" help dry-run packages-check test 2>&1 | tail -3 | tr '\n' ' ')"
+      fi
+    else
+      skip "new-os-repo: running the canonical verbs (make unavailable)"
+    fi
+    # THE ASSERTION THAT MATTERS: the register itself. A fake fleet root holding the scaffold
+    # under a name from scripts/os-repos.txt (the scaffold ran `git init`, so .git exists)
+    # must render a row of `ok` and a clean --check — the same verdict the fleet is held to.
+    _nor_fleet="$SANDBOX/scaffold-fleet"
+    rm -rf "$_nor_fleet"
+    mkdir -p "$_nor_fleet"
+    cp -r "$NOR" "$_nor_fleet/dotfiles-Alpine"
+    _nor_fv="$(REPOS_ROOT="$_nor_fleet" "$HERE/scripts/fleet-vocabulary.sh" --check 2>&1)"
+    _nor_rc=$?
+    if ((_nor_rc == 0)) && [[ "$_nor_fv" == *"every verb x repo cell resolves"* ]]; then
+      pass "new-os-repo: fleet-vocabulary.sh --check credits the scaffold on every verb and the test floor"
+    else
+      fail "new-os-repo: the vocabulary register does not credit the scaffold (rc=$_nor_rc): $(printf '%s' "$_nor_fv" | tr '\n' ' ')"
+    fi
+    rm -rf "$_nor_fleet"
+    unset _nor_mg _nor_brk _nor_fleet _nor_fv _nor_rc
   else
     fail "new-os-repo: --no-vendor scaffold run failed outright"
   fi
