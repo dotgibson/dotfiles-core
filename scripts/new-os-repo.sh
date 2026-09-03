@@ -99,10 +99,12 @@ os_lc="$(printf '%s' "$OS" | tr '[:upper:]' '[:lower:]')"
 # a pin a SUCCESSFUL sync would be reported as a failure — after it had vendored and
 # stamped the target. A pin that names an older release is refused here, before anything
 # is written, instead of at the one moment the reader is recovering. A ref that is not
-# version-shaped (a branch, a SHA) cannot be judged here and passes.
+# version-shaped (a branch, a SHA) cannot be judged here and passes. A prerelease
+# (v4.1.0-rc1, the suffix core.version allows) sorts BELOW its release, so a prerelease
+# of the floor itself is older than the floor.
 _footer_floor="4.1.0"
 _pin="${CORE_BRANCH#refs/tags/}"
-_pin_re='^v([0-9]+)(\.([0-9]+)\.([0-9]+))?$'
+_pin_re='^v([0-9]+)(\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?)?$'
 if [[ "$_pin" =~ $_pin_re ]]; then
   IFS=. read -r _fl_M _fl_m _fl_p <<<"$_footer_floor"
   _pin_M=$((10#${BASH_REMATCH[1]}))
@@ -112,13 +114,14 @@ if [[ "$_pin" =~ $_pin_re ]]; then
     _pin_old=$((_pin_M < _fl_M))
   else
     _pin_m=$((10#${BASH_REMATCH[3]})) _pin_p=$((10#${BASH_REMATCH[4]}))
-    _pin_old=$((_pin_M < _fl_M || (_pin_M == _fl_M && (_pin_m < _fl_m || (_pin_m == _fl_m && _pin_p < _fl_p)))))
+    _pin_pre=$(( ${#BASH_REMATCH[5]} > 0 ))
+    _pin_old=$((_pin_M < _fl_M || (_pin_M == _fl_M && (_pin_m < _fl_m || (_pin_m == _fl_m && (_pin_p < _fl_p || (_pin_p == _fl_p && _pin_pre)))))))
   fi
   if ((_pin_old)); then
     fail "CORE_BRANCH=$CORE_BRANCH names a release older than v$_footer_floor, whose sync-core.sh prints no per-repo summary — the recovery and register commands could not judge it. Pin v$_footer_floor or newer."
     exit 2
   fi
-  unset _fl_M _fl_m _fl_p _pin_M _pin_m _pin_p _pin_old
+  unset _fl_M _fl_m _fl_p _pin_M _pin_m _pin_p _pin_pre _pin_old
 fi
 unset _footer_floor _pin _pin_re
 

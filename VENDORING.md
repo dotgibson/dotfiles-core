@@ -598,7 +598,7 @@ hand-vendored repo as TAMPERED before it has done anything wrong.
 `subtree add` writes no `core.lock`. Stamp provenance from a Core checkout — for a repo
 with no lock yet that is the only thing which can write one:
 
-```sh
+```bash
 # in dotfiles-core — from a THROWAWAY worktree, so your own checkout stays on its branch
 git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" &&   # one chain: a failed fetch stops here, never reusing a stale FETCH_HEAD
   { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && {   # a failed add removes the parent it just made, and stops
