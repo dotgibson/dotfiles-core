@@ -1248,9 +1248,14 @@ else
   _fv_rc=$?
   if [[ "$_fv_out" == *"no sibling repo checked out"* ]]; then
     skip_env "vocabulary register (no sibling OS repo checked out — nothing to read here)"
-  elif [[ "$_fv_out" == *"fleet list "* || "$_fv_out" == *"vocabulary list "* ]]; then
-    # Could not build the register at all — not the same finding as "cells are missing".
-    skip_env "vocabulary register (fleet or vocabulary list would not load — cannot enumerate)"
+  elif [[ "$_fv_out" == *"vocabulary list "* ]]; then
+    # The CONTRACT itself — scripts/make-vocabulary.txt, in this repo — would not load.
+    # That is Core broken, not an environment short of siblings: red, never a skip.
+    fail "vocabulary register: scripts/make-vocabulary.txt would not load — the contract is unreadable or empty"
+    fail_detail "$_fv_out"
+  elif [[ "$_fv_out" == *"fleet list "* ]]; then
+    # Could not enumerate the fleet at all — not the same finding as "cells are missing".
+    skip_env "vocabulary register (fleet list would not load — cannot enumerate the fleet)"
   elif ((_fv_rc == 0)); then
     pass "vocabulary register: $_fv_out"
   elif ((_fv_rc == 1)); then

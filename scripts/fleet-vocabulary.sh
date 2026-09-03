@@ -445,7 +445,7 @@ AWK_SHELL='
       w = t; sub(/[ \t].*$/, "", w)
       if ((w in INVOKED) && FNAME[w] < i) {
         if (kw != "") { E[++m] = kw; EOP[m] = SPLITOP[i]; EINL[m] = 0 }
-        m = inline(c, n, m, w, (kw != "" ? ";" : SPLITOP[i]), 1)
+        m = inline(c, n, m, w, (kw != "" ? ";" : SPLITOP[i]), 1, i)
       }
       else { E[++m] = c[i]; EOP[m] = SPLITOP[i]; EINL[m] = 0 }
     }
@@ -455,11 +455,14 @@ AWK_SHELL='
     cdpass(c, m, 1)
     return m
   }
-  function inline(c, n, m, f, op, depth,   j, w, first, id) {
+  # inline(…, site) — `site` is the index of the OUTER call: a helper called from the body
+  # counts only if its definition precedes that call (`suite() { helper; }; suite; helper()
+  # {…}` fails at `helper` under bash -e, long before the later definition is read).
+  function inline(c, n, m, f, op, depth, site,   j, w, first, id) {
     id = ++ncall; first = 1
     for (j = 1; j <= n; j++) if ((j in BODY) && BODY[j] == f) {
       w = trim(c[j]); sub(/[ \t].*$/, "", w)
-      if ((w in INVOKED) && w != f && depth < 4) m = inline(c, n, m, w, (first ? op : SPLITOP[j]), depth + 1)
+      if ((w in INVOKED) && w != f && depth < 4 && FNAME[w] < site) m = inline(c, n, m, w, (first ? op : SPLITOP[j]), depth + 1, site)
       else { E[++m] = c[j]; EOP[m] = (first ? op : SPLITOP[j]); EINL[m] = id }
       first = 0
     }
