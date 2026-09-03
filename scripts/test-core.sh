@@ -7688,7 +7688,8 @@ else
 
   # 1. The ratchet policy pin. Whole ms, and the budget is EXACTLY 2× the baseline — the
   #    relation the file's header promises and the number the calibration justified (worst
-  #    run-mean ever observed clears 2× by 1.5×; a +24 ms regression fails).
+  #    run-mean ever observed clears 2× by 1.5×; anything that doubles an ordinary host's
+  #    startup fails — a gross-regression gate, not an additive threshold).
   _bc_base="$(sed -n 's/^CORE_BENCH_BASELINE_MS=//p' "$_BBASE" | head -n1)"
   _bc_bud="$(sed -n 's/^CORE_BENCH_BUDGET_MS=//p' "$_BBASE" | head -n1)"
   _bc_whole=1

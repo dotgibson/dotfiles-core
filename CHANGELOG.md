@@ -35,7 +35,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   missing or malformed file, a budget that does not exceed the baseline, or a missing
   zsh/hyperfine/python3 is exit 1, never a skip — and on a breach prints the per-module
   `--profile` breakdown so the red log names the module, not just the aggregate (single-
-  sample module timings stay informational; a per-module ceiling would gate noise). The
+  sample module timings stay informational; a per-module ceiling would gate noise). That
+  profile now runs its zsh child with `NO_RCS`: since the v4 sandbox, `--profile` had let
+  the child source the sandbox `.zshrc` — and so the whole chain — before timing anything,
+  so it measured a warm re-source and could name the wrong module; it now times a cold
+  first sourcing, and it covers `02-capabilities`, which the loader globs but the module
+  list omitted. It is a gross-regression gate, not an additive threshold: runner hosts are
+  bimodal, so the +35 ms that fails from an ordinary host's 24 ms can pass from a fast
+  host's 12, and the re-baseline recipe therefore samples ~20 jobs and takes the
+  ordinary-host mode, never one run. The
   mean is still the gated statistic (every recorded measurement is a mean); the median
   prints beside it, and a breach whose median is within budget carries an "outlier-driven,
   re-run" hint. (3) The report and gate modes — plain `make bench` included — now print the mean against

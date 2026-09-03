@@ -217,11 +217,16 @@ _profile_modules() {
       (( total += (now-prev)*1000 )); prev=$now
     done
     printf "%8.1f ms  %s\n" $total "TOTAL"'
-  HOME="$SANDBOX" ZDOTDIR="$SANDBOX/zdot" \
+  # `-f` (NO_RCS): the child must NOT run the sandbox .zshrc first — with ZDOTDIR pointing at
+  # it, an interactive zsh would source the loader (and so every module) before prof_body
+  # even starts, and the breakdown would time a warm RE-source, which can point at the wrong
+  # module (a #688 review catch; --profile had always done this). ZSH_CFG is what the loader
+  # would have set, so a fragment that reads it sees the same value as at real startup.
+  HOME="$SANDBOX" ZDOTDIR="$SANDBOX/zdot" ZSH_CFG="$SANDBOX/zdot" \
     XDG_CACHE_HOME="$SANDBOX/cache" XDG_STATE_HOME="$SANDBOX/state" \
     XDG_RUNTIME_DIR="$SANDBOX/run" XDG_DATA_HOME="$SANDBOX/data" CORE_DIR="$CORE_DIR" \
-    zsh -ic "$prof_body" 2>/dev/null | sort -rn | sed "s/^/  /"
-  printf '%s(per-module wall time; TOTAL sorts to the top — run twice, the 2nd is warm)%s\n' "$c_blu" "$c_rst"
+    zsh -f -ic "$prof_body" 2>/dev/null | sort -rn | sed "s/^/  /"
+  printf '%s(per-module wall time of a cold first sourcing; TOTAL sorts to the top — run twice, the 2nd is fs-warm)%s\n' "$c_blu" "$c_rst"
 }
 if ((PROFILE)); then
   printf '\n%s== Core startup profile (per-module, hermetic) ==%s\n' "$c_blu" "$c_rst"
