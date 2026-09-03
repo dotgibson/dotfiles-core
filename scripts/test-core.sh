@@ -446,10 +446,11 @@ fi
 # that is deleted in the same breath. And the default path — nvim, tmux copy-pipe, pbcopy —
 # must be byte-for-byte what it was, flag or no flag.
 #
-# A tmux stub that answers `show-options … allow-passthrough` with a fixed value, captures
+# A tmux stub (named apart from U11's `_tmux_stub`, which stubs the status scripts' tools)
+# that answers `show-options … allow-passthrough` with a fixed value, captures
 # what load-buffer was fed, logs every call in order, and exits as told on delete-buffer.
 # Synchronous (no setsid — optoken runs in a pane that HAS a tty), so no race to wait out.
-_tmux_stub() { # _tmux_stub <allow-passthrough value> [delete-buffer exit code]
+_clip_tmux_stub() { # _clip_tmux_stub <allow-passthrough value> [delete-buffer exit code]
   _tmux_log="$CBIN/tmux.calls"
   rm -f "$_tmux_log" "$_tmux_log.payload"
   cat >"$CBIN/tmux" <<EOF
@@ -474,7 +475,7 @@ export CLIP_TTY="$CBIN/tty-plain"
 printf '%s' "$_sens_payload" | PATH="$CBIN" "$CLIP" 2>/dev/null
 export CLIP_TTY="$CBIN/tty-sens"
 if printf '%s' "$_sens_payload" | PATH="$CBIN" "$CLIP" --sensitive 2>/dev/null \
-  && cmp -s "$CBIN/tty-plain" "$CBIN/tty-sens"; then
+  && core_files_identical "$CBIN/tty-plain" "$CBIN/tty-sens"; then
   pass "clip --sensitive: outside tmux, emits exactly the bytes the default path emits"
 else
   fail "clip --sensitive: outside tmux diverged from the default path"
@@ -487,16 +488,16 @@ fi
 _clip_reset
 ln -s "$_real_tr" "$CBIN/tr"
 ln -s "$(command -v base64)" "$CBIN/base64"
-_tmux_stub off
+_clip_tmux_stub off
 export CLIP_TTY="$CBIN/tty-notmux"
 printf '%s' "$_sens_payload" | PATH="$CBIN" "$CLIP" 2>/dev/null
 export CLIP_TTY="$CBIN/tty-default"
 if printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" 2>/dev/null \
-  && cmp -s "$CBIN/tty-notmux" "$CBIN/tty-default" \
+  && core_files_identical "$CBIN/tty-notmux" "$CBIN/tty-default" \
   && [[ "$(cat "$CBIN/tty-default")" == $'\033']52\;c\;*$'\a' ]] && [[ ! -e "$_tmux_log" ]]; then
   pass "clip: the default pane path under tmux (writable tty) still writes a plain OSC 52 and never calls tmux"
 else
-  fail "clip: the default pane path under tmux changed (tmux calls: $(cat "$_tmux_log" 2>/dev/null | tr '\n' ';'))"
+  fail "clip: the default pane path under tmux changed (tmux calls: $(tr '\n' ';' <"$_tmux_log" 2>/dev/null))"
 fi
 
 # 3. --sensitive under tmux, passthrough off: no plain OSC 52 on the tty; a NAMED buffer
@@ -505,7 +506,7 @@ fi
 _clip_reset
 ln -s "$_real_tr" "$CBIN/tr"
 ln -s "$(command -v base64)" "$CBIN/base64"
-_tmux_stub off
+_clip_tmux_stub off
 export CLIP_TTY="$CBIN/tty-sens-off"
 : >"$CLIP_TTY"
 _sens_err="$(printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" --sensitive 2>&1 >/dev/null)"
@@ -533,7 +534,7 @@ fi
 _clip_reset
 ln -s "$_real_tr" "$CBIN/tr"
 ln -s "$(command -v base64)" "$CBIN/base64"
-_tmux_stub off
+_clip_tmux_stub off
 export CLIP_TTY="$CBIN/tty-sens-env"
 : >"$CLIP_TTY"
 if printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 CLIP_SENSITIVE=1 "$CLIP" >/dev/null 2>&1 \
@@ -549,7 +550,7 @@ fi
 _clip_reset
 ln -s "$_real_tr" "$CBIN/tr"
 ln -s "$(command -v base64)" "$CBIN/base64"
-_tmux_stub on
+_clip_tmux_stub on
 export CLIP_TTY="$CBIN/tty-sens-on"
 _dcs_pre=$'\033Ptmux;\033\033]52;c;'
 _dcs_suf=$'\a\033\\'
@@ -574,7 +575,7 @@ fi
 _clip_reset
 ln -s "$_real_tr" "$CBIN/tr"
 ln -s "$(command -v base64)" "$CBIN/base64"
-_tmux_stub off 1
+_clip_tmux_stub off 1
 export CLIP_TTY="$CBIN/tty-sens-stuck"
 _sens_err="$(printf '%s' "$_sens_payload" | PATH="$CBIN" TMUX=/tmp/fake,1,0 "$CLIP" --sensitive 2>&1 >/dev/null)"
 if [[ $? -ne 0 && "$_sens_err" == *"tmux delete-buffer -b clip-sensitive-"* ]]; then

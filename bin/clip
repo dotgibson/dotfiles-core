@@ -193,7 +193,9 @@ _osc52_sensitive_tmux() {
       # BEL still terminates the inner OSC; inside a DCS, C0 controls are collected as
       # payload, so the outer terminal receives the identical sequence the non-tmux path
       # emits. A tty that cannot be opened (no controlling terminal) falls to arm 2.
-      if { printf '\033Ptmux;\033\033]52;c;%s\a\033\\' "$b64" >"$tty"; } 2>/dev/null; then
+      # \134 is the ST's backslash as an octal escape — a literal `\\` at the end of a
+      # single-quoted format reads as an escaped quote to shellcheck (SC1003).
+      if { printf '\033Ptmux;\033\033]52;c;%s\a\033\134' "$b64" >"$tty"; } 2>/dev/null; then
         return 0
       fi
       ;;
