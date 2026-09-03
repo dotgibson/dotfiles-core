@@ -2542,8 +2542,12 @@ _vpn_count "a \`/\` continuing an exact-looking pin (v5.3.0/foo) makes it malfor
 # terminator may follow an exempt pin — so nothing glued on can slip through.
 _vpn_write README.md 'refs/tags/v5.3.0@foo and refs/tags/v5.3.0%x'
 _vpn_count "any non-terminator glued to an exact-looking pin (v5.3.0@foo, v5.3.0%x) is a finding" 6 2
-_vpn_write README.md '(`refs/tags/v5.3.0`), "refs/tags/v5.3.0"; refs/tags/v5.3.0) refs/tags/v5.3.0#note'
-_vpn_count "an exact pin followed by a quote, paren, semicolon or comment stays exempt" 6 0
+_vpn_write README.md '(`refs/tags/v5.3.0`), "refs/tags/v5.3.0"; refs/tags/v5.3.0) refs/tags/v5.3.0 # note'
+_vpn_count "an exact pin followed by a quote, paren, semicolon or a spaced comment stays exempt" 6 0
+# A `#` glued to the word is NOT a comment — bash hands `v5.3.0#note` to git as one
+# argument — so it is a non-exact foreign ref and must be judged, not exempted.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0#note --squash'
+_vpn_count "a glued \`#note\` is part of the ref, not a comment — a finding" 6 1
 # A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
 _vpn_write README.md 'git  checkout v5'
 _vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1

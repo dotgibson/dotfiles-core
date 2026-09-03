@@ -1323,8 +1323,11 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # rule is the inverse: an exact pin is exempt ONLY when what follows it is a
           # terminator — whitespace, end of line, a quote or backtick, closing
           # punctuation, or a shell operator. Anything else glued on means the ref as
-          # written is not the tag, so it is malformed and judged.
-          if (rest != "" && rest !~ /^[[:space:]`"\047)\]},;:#&|<>^]/) exact = 0
+          # written is not the tag, so it is malformed and judged. `#` is deliberately
+          # NOT a terminator: a comment starts only at the start of a word, so
+          # `v5.3.0#note` is one argument to git (judged), while `v5.3.0 # note` is
+          # exempt through the whitespace before its `#`.
+          if (rest != "" && rest !~ /^[[:space:]`"\047)\]},;:&|<>^]/) exact = 0
           # The scaffold default is never exempt: it is not a freeze someone chose, it is
           # the pin every new repo gets by default.
           if ((!exact || isdefault) && major != want) {
