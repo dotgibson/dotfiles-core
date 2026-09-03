@@ -14801,8 +14801,10 @@ case "$*" in
 esac
 OPSTUB
   chmod +x "$OPBIN/op"
+  # fake clip: records its argv and what it was fed, so a test can prove optoken passed
+  # `--sensitive` (#690) — a stub that discarded both would pass with the flag deleted.
   if [[ "${1:-}" == with-clip ]]; then
-    printf '#!/bin/sh\ncat >/dev/null\n' >"$OPBIN/clip"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >"%s"\ncat >"%s"\n' "$OPBIN/clip.args" "$OPBIN/clip.stdin" >"$OPBIN/clip"
     chmod +x "$OPBIN/clip"
   fi
 }
@@ -14832,6 +14834,15 @@ else
   # WRITTEN, which is not the same as a terminal having accepted it (#525).
   ocheck "optoken fetches the OTP and hands it to clip" \
     'out=$(optoken Personal/GitHub 2>&1); (( $? == 0 )) && [[ $out == *"TOTP sent"* ]]'
+  # The integration #690 hinges on: the OTP must reach clip on stdin, with --sensitive and
+  # nothing else on argv, and with no trailing newline (a bare `\n` pasted into a TOTP
+  # field submits the form early on some sites).
+  if [[ "$(cat "$OPBIN/clip.args" 2>/dev/null)" == "--sensitive" ]] \
+    && [[ "$(od -An -c "$OPBIN/clip.stdin" 2>/dev/null | tr -d ' ')" == "123456" ]]; then
+    pass "optoken invokes clip --sensitive with exactly the OTP on stdin (no newline)"
+  else
+    fail "optoken did not invoke clip --sensitive with the bare OTP (argv='$(cat "$OPBIN/clip.args" 2>/dev/null)', stdin=$(od -An -c "$OPBIN/clip.stdin" 2>/dev/null | tr -s ' '))"
+  fi
   ocheck "opssh lists stored SSH keys (rc 0)" \
     'out=$(opssh 2>&1); (( $? == 0 )) && [[ $out == *mykey* ]]'
   # uniform --help contract: each op verb answers --help on stdout, rc 0.
