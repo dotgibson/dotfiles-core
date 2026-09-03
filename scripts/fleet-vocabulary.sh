@@ -1125,7 +1125,7 @@ for repo in "${REPOS[@]}"; do
   present=$((present + 1))
   line="| \`${repo#dotfiles-}\` |"
   have=""
-  suite=""; sdirs="$(_suite_dirs "$dir")"
+  suite=""
   if [[ -f "$dir/Makefile" ]]; then
     mktext="$(_makefile_text "$dir")" || mktext=""   # a missing mandatory include: no targets at all
     have="$(_targets <(printf '%s\n' "$mktext"))"
@@ -1135,12 +1135,12 @@ for repo in "${REPOS[@]}"; do
     # Herestring, not a printf pipe: §5d's pipefail rule, and grep -q exits early anyway.
     # Every verb must RESOLVE: ok, or one of three reasons it does not — the label is the
     # finding. A verb that does not apply is stubbed (header), never declared away.
-    if [[ "$v" == test && -n "$sdirs" ]] && grep -qxF -- test <<<"$have" && ! grep -qxF -- test <<<"$suite"; then
-      # A suite exists and the canonical `test` exists but RUNS NOTHING — `@true`, a
-      # recipe that never touches the suite, or a path-shadowing target without .PHONY.
-      # The contract is that `make test` runs the suite, so this is a missing cell with a
-      # truer label. With no suite at all, the floor column already says `no-dir`; the
-      # verb column does not repeat it.
+    if [[ "$v" == test ]] && grep -qxF -- test <<<"$have" && ! grep -qxF -- test <<<"$suite"; then
+      # The canonical `test` exists but RUNS NO SUITE — `@true`, a recipe that never
+      # touches one, a path-shadowing target without .PHONY, or no populated suite
+      # directory for it to run at all. The contract is that `make test` runs the suite
+      # and `test` has no stub form, so this is a missing cell with a truer label — even
+      # when the floor column says `no-dir` beside it: both statements are true.
       line="$line **no-op** |"
       missing=$((missing + 1))
     elif grep -qxF -- "$v" <<<"$have"; then

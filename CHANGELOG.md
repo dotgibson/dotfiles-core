@@ -33,7 +33,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   loads — `make test`, the directory by path, or a `make` target whose recipe runs it, so
   `make test-repo` counts and a path filter or comment does not. Five of nine repos are
   under it today, `dotfiles-Fedora` — the template every Linux repo is copied from — among
-  them; the first run reports 31 missing verb cells, which is the migration each OS repo
+  them; the first run reports 32 missing verb cells, which is the migration each OS repo
   now owes (aliases, not renames, so nothing calling the old targets breaks). The suite
   drives the script against a fake fleet root and pins that an alias alone does not fill a
   cell, that a stub target does, each rung of the floor, and

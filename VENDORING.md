@@ -498,8 +498,9 @@ packages-check: ## (n/a) no OS package list to resolve here
 recipe runs it (a mention in a path filter or a comment is not a run). Declare a
 `test` target `.PHONY`: beside the `test/` directory it runs, an undeclared one is "up to
 date" and runs nothing, and the register does not credit it. And `make test` must actually
-run the suite: a `test:` whose recipe is `@true` renders as **no-op** in the verb column
-even when CI runs the suite by path. Five of nine repos had no repo-owned tests at all,
+run the suite: a `test:` whose recipe is `@true`, or that has no populated suite
+directory to run, renders as **no-op** in the verb column even when CI runs a suite by
+path. Five of nine repos had no repo-owned tests at all,
 including `dotfiles-Fedora` — the template every Linux repo is stamped from
 (`PORTING-MATRIX.md`'s per-repo recipe starts with `cp -r dotfiles-Fedora`), so the floor
 is worth meeting there before it is copied again. It is deliberately not Windows' 85%

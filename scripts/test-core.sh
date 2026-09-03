@@ -10583,10 +10583,11 @@ _fv_floor "ci: make -n test (literal make, dry run) does not" '**not-in-ci**' '_
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
 out="$(_fv_run --check)"; rc=$?
-if ((rc == 1)) && [[ "$out" == *"1 repo(s) under the test floor"* ]]; then
-  pass "vocab floor: --check counts a repo under the floor and exits 1 with every verb defined"
+row="$(_fv_run | grep -F '| `Alpine` |')"
+if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing; 1 repo(s) under the test floor"* && "$row" == *'| **no-op** | **no-dir** |' ]]; then
+  pass "vocab floor: with no suite dir, --check exits 1 — the floor is no-dir AND a \`test:\` that can run nothing is **no-op**"
 else
-  fail "vocab floor: --check did not count the floor miss or exited $rc, not 1: $out"
+  fail "vocab floor: no-suite-dir verdicts (rc=$rc): $out / $row"
 fi
 
 # An unreadable vocabulary is a loud stop, never an empty register (the fleet-list posture).
