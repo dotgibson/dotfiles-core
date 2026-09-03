@@ -604,11 +604,12 @@ fi
 # 7. An unknown argument is refused (exit 2) before anything is read or written.
 _clip_reset
 export CLIP_TTY="$CBIN/tty-badarg"
-if printf 'x' | PATH="$CBIN" "$CLIP" --bogus >/dev/null 2>&1; then
-  fail "clip: an unknown argument was accepted"
+printf 'x' | PATH="$CBIN" "$CLIP" --bogus >/dev/null 2>&1
+_sens_rc=$?
+if [[ "$_sens_rc" -eq 2 && ! -e "$CLIP_TTY" ]]; then
+  pass "clip: an unknown argument is refused with exit 2 and touches nothing"
 else
-  [[ $? -eq 2 && ! -e "$CLIP_TTY" ]] && pass "clip: an unknown argument is refused with exit 2 and touches nothing" \
-    || fail "clip: unknown-argument exit status or side effect wrong"
+  fail "clip: unknown-argument exit status or side effect wrong (rc=$_sens_rc)"
 fi
 unset _sens_payload _sens_err _sens_rc _sens_load _sens_name _dcs_pre _dcs_suf _dcs_raw _dcs_b64 _tmux_log
 
