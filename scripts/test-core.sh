@@ -2587,6 +2587,11 @@ _vpn_write scripts/test-core.sh 'git -C "$TR/origin" update-ref refs/tags/v1 "$_
 _vpn_count "test-core.sh's fixture tags are data, not instructions" 6 0
 _vpn_write README.md 'the v5 line, `@v5`, Core v5 #663, and "at v4→v5 it was left on v4"'
 _vpn_count "narrative vN prose with none of the three shapes is not judged" 6 0
+# Option-bearing, quoted and `switch` spellings of the checkout are the same recipe.
+_vpn_write README.md 'git checkout --detach v5; git checkout -q --detach v5; git switch --detach v5; git checkout '"'"'v5'"'"'; git checkout "v5"'
+_vpn_count "\`checkout --detach vN\`, \`switch --detach vN\` and a quoted ref are all judged" 6 5
+_vpn_write README.md 'git checkout --detach v6 && git checkout "v5.3.0" && git switch --detach '"'"'v6.1.0'"'"''
+_vpn_count "the same forms on the current major or an exact pin are clean" 6 0
 _vpn_write README.md 'git checkout v60 && CORE_BRANCH="$(git rev-parse v5^{commit})" x refs/tags/v5 refs/tags/v6'
 _vpn_count "every occurrence on a line is reported and the number is read whole (v60 is not v6)" 6 3
 # Core must satisfy the rule it authors — the inverse assertion, so `make test` catches a

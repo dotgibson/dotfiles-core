@@ -1236,7 +1236,8 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
 # brand-new OS repo at the released major alias rather than `main` (#588):
 #
 #     git subtree add --prefix=core <remote> refs/tags/vN --squash
-#     git checkout vN                                  # in dotfiles-core
+#     git checkout vN                                  # in dotfiles-core (also `switch`,
+#                                                      # with options, the ref quoted)
 #     CORE_BRANCH="$(git rev-parse vN^{commit})" ./scripts/sync-core.sh dotfiles-X
 #
 # and new-os-repo.sh's `CORE_BRANCH="${CORE_BRANCH:-refs/tags/vN}"` default, which is the
@@ -1289,12 +1290,15 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
         #   bare major          → judged against want
         #   exact N.M.P[-pre]   → a deliberate freeze, exempt whatever its major
         #   anything else       → no tag this repo cuts; judged by its leading major
-        # `git checkout` tolerates any run of shell whitespace between its words, so a
-        # reformatted command cannot slip under the gate; and the exact-pin class is the
-        # SAME one core.version is validated against (audit-core.sh, SemVer [-pre]), so a
-        # pre-release this repo could actually cut is exempt and nothing wider is.
+        # `git checkout` tolerates any run of shell whitespace between its words, options
+        # before the ref (`--detach`, `-q`), `switch` in place of `checkout`, and a quote
+        # opening the ref (v5 in single or double quotes), so a reformatted or
+        # option-bearing command cannot slip
+        # under the gate; and the exact-pin class is the SAME one core.version is
+        # validated against (audit-core.sh, SemVer [-pre]), so a pre-release this repo
+        # could actually cut is exempt and nothing wider is.
         consumed = ""
-        while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+checkout[[:space:]]+v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+        while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git[[:space:]]+(checkout|switch)([[:space:]]+-[-A-Za-z0-9=]+)*[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
           sub(/^[^rgv]*/, "", hit)                 # drop the boundary character
