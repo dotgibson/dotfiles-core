@@ -134,7 +134,16 @@ w() {
 # the one thing it will not create), so the hint is VENDORING.md's one-time setup — a
 # subtree add to bring core/ into existence, then the sync from Core to replace it with the
 # filtered set and stamp core.lock.
-_vendor_hint="git -C '$TARGET' subtree add --prefix=core '$CORE_REMOTE' '$CORE_BRANCH' --squash && (cd '$HERE' && ./scripts/sync-core.sh dotfiles-$OS)   # VENDORING.md § One-time setup"
+#
+# REPOS_ROOT is passed explicitly: sync-core.sh resolves `dotfiles-$OS` under the parent
+# of the CORE checkout by default, and a scaffold placed elsewhere (the target-dir
+# override) would be skipped as "not cloned" while the subtree add had already succeeded.
+# The name is the other half of that resolution — the scaffold sets no origin the
+# fallback could match — so a target not named dotfiles-$OS is told so.
+_target_parent="$(dirname "$TARGET")"
+_vendor_hint="git -C '$TARGET' subtree add --prefix=core '$CORE_REMOTE' '$CORE_BRANCH' --squash && (cd '$HERE' && REPOS_ROOT='$_target_parent' ./scripts/sync-core.sh dotfiles-$OS)   # VENDORING.md § One-time setup"
+[[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] ||
+  _vendor_hint="$_vendor_hint — NOTE: sync-core.sh looks for a directory NAMED dotfiles-$OS under REPOS_ROOT, so rename or symlink '$TARGET' to '$_target_parent/dotfiles-$OS' first"
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then

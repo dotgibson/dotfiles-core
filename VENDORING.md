@@ -572,10 +572,11 @@ If `make fleet-drift` shows you `BEHIND`, the fix is to merge that PR — not to
 Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs the **one-time**
 initial vendoring — never the update path. It does **not** `git subtree add`: since #676
 it materializes the filtered vendor set (`core.manifest` ∪ `core.vendor`) through the
-same producer `sync-core.sh` uses, so the new repo agrees with `core-integrity` from
-birth. The manual fallback, if you are not using the scaffold, is the subtree add — it
-copies the whole upstream tree, and `core-integrity` reports it until the first
-`make sync` replaces it with the filtered set:
+same producer `sync-core.sh` uses, so the tree is already the shape the first sync will
+stamp `core.lock` for. Neither path writes that lock, so until the sync below
+`core-integrity` reports the missing lock rather than a tree verdict. The manual
+fallback, if you are not using the scaffold, is the subtree add — it copies the whole
+upstream tree, and the first sync replaces it with the filtered set and stamps the lock:
 
 ```sh
 git subtree add --prefix=core <core-remote> refs/tags/v6 --squash

@@ -180,10 +180,11 @@ record, and `core-integrity` reports the fresh tree as TAMPERED.
 **never** the update path (`sync-core.sh` skips a repo with no `core/`, which is the one
 thing it cannot create). `scripts/new-os-repo.sh` is the sanctioned greenfield path: it
 materializes the **filtered** vendor set (`core.manifest` ∪ `core.vendor`) through the
-same producer the fan-out uses, so the new repo agrees with `core-integrity` from birth.
-The manual fallback, for a repo scaffolded some other way, is a subtree add — which
-copies the **whole** upstream tree, so expect `core-integrity` to report it until the
-first `make sync` replaces it with the filtered set:
+same producer the fan-out uses, so the tree is already the shape the first sync will
+stamp `core.lock` for. Neither path writes that lock — until the first `make sync`,
+`core-integrity` reports the **missing lock**, not a tree verdict. The manual fallback,
+for a repo scaffolded some other way, is a subtree add, which copies the **whole**
+upstream tree; the first sync replaces it with the filtered set and stamps the lock:
 
 ```bash
 git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v6 --squash
