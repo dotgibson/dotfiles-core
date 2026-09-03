@@ -113,6 +113,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`sync-core.sh --strict` — a failed target becomes the exit status.** By default a
+  per-repo failure is a summary line and exit 0, and that default stays: the fan-out
+  runs the script bare inside a `bash -e` step and then does per-repo push and PR work,
+  so a default non-zero exit would abort that step for every repo when one fails. A
+  single-target caller wants the opposite — a status it can chain on — and a matching
+  `core.lock` line is no proof either, since the lock can be written before a later pin,
+  commit or verification step fails. `--strict` returns 1 whenever a targeted repo
+  failed **or was skipped** (not cloned, or no `core/` yet — a wrong name or
+  `REPOS_ROOT` must not read as success). The scaffold's `--no-vendor` recovery command
+  and the first-vendor recipe in `ARCHITECTURE.md`, `VENDORING.md` and
+  `PORTING-MATRIX.md` cannot use it: they run the **released** script from a worktree at
+  the pinned tag, which may predate the flag, so they read the released script's own
+  summary line instead and count only `updated 1   skipped 0   failed 0`. `test-core.sh`
+  F6 pins the default and strict contracts on the same dirty, missing and core-less
+  targets. Dev tooling only — the OS repos receive nothing from this entry.
+  The recovery command is also **resumable**: its one-time `git subtree add` is skipped
+  once `HEAD` already carries `core/` (`cat-file -e HEAD:core`), so rerunning the exact
+  command after a failed sync goes straight back to the sync instead of stopping at
+  "prefix 'core' already exists"; and a `--dry-run` target that does not exist yet is
+  embedded anchored to the invocation directory, because the chain `cd`s into the Core
+  checkout, where a relative `REPOS_ROOT` would make the sync skip the very repo the hint
+  was written for. Both are fixture-driven in `test-core.sh` (a second run of the
+  materialize half, and a dry run of a relative, not-yet-existing target). And because
+  that verdict reads the `repos:` footer, which exists since v4.1.0 (v4.0.2 and older
+  print a per-check count a successful single-target sync would fail against), the
+  scaffold now refuses a `CORE_BRANCH` naming an older release before it writes anything,
+  and the three recipes state the same floor.
 - **`optoken` no longer leaves a live TOTP in a tmux paste buffer; `clip` grows a
   `--sensitive` mode (`CLIP_SENSITIVE=1`) that it uses (#690).** On a box with no real
   clipboard backend — the headless-over-ssh shelf that is the documented norm for part of
