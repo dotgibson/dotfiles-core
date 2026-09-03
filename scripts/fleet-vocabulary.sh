@@ -932,12 +932,20 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
     function submake(line,   n, c, i, k, w, m, goals, t) {
       goals = ""
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
-      n = splitcmds(trim(stripcomment(line)), c)
+      # The same reachability as runs(): `true || $(MAKE) test` recurses into nothing.
+      n = splitcmds(trim(stripcomment(line)), c); n = cdnorm(c, n)
       for (i = 1; i <= n; i++) {
-        t = trim(c[i])
+        t = trim(dequote(c[i]))
         # `$(MAKE)`, `${MAKE}` or a literal `make` — the same recursion.
         if (t !~ /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(\$[({]MAKE[)}]|make)([ \t]|$)/) continue
         sub(/^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(\$[({]MAKE[)}]|make)[ \t]*/, "", t)
+        # `-C .` / `--directory=.` / `-f Makefile` / `--file=Makefile` select the very
+        # Makefile being read — dropped before the other-Makefile rejection, as the
+        # workflow scanner drops them.
+        t = " " t " "
+        gsub(/[ \t](-C|--directory)[ \t=]+[.][\/]?[ \t]/, " ", t); gsub(/[ \t]-C[.][\/]?[ \t]/, " ", t)
+        gsub(/[ \t](-f|--file|--makefile)[ \t=]+(GNUmakefile|makefile|Makefile)[ \t]/, " ", t); gsub(/[ \t]-f(GNUmakefile|makefile|Makefile)[ \t]/, " ", t)
+        t = trim(t)
         if (t ~ /(^|[ \t])(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^ \t]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([ \t=]|$)/) continue
         m = split(t, w, /[ \t]+/)
         for (k = 1; k <= m; k++) if (w[k] != "" && w[k] !~ /^-/ && w[k] !~ /^[A-Za-z_][A-Za-z0-9_]*=/) goals = goals " " w[k]
