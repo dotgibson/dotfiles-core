@@ -16522,6 +16522,15 @@ _fv_floor "make test whose recipe is @true" '**not-in-ci**' '_fv_suite dotfiles-
 _fv_floor "a step that echoes make test as arguments" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo make test"'
 _fv_floor "a job-level env: with a run: key" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    env:\n      run: bash test/smoke.sh\n    steps:\n      - run: make lint\n"'
 _fv_floor "a run: | block whose command is an indented ./test/ path" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          set -e\n          ./test/smoke.sh\n"'
+# A FOLDED BLOCK IS ONE COMMAND PER PARAGRAPH (YAML joins `>` lines with a space): `echo`
+# over `test/smoke.sh` runs `echo test/smoke.sh`, and `make` over `test` runs `make test`.
+_fv_floor "a run: > block folding echo over the test path" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: >\n          echo\n          test/smoke.sh\n"'
+_fv_floor "a run: > block folding make over test" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: >-\n          make\n          test\n"'
+# A DRY-RUN MAKE PRINTS THE RECIPE AND RUNS NOTHING.
+_fv_floor "make -n test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -n test"'
+_fv_floor "make --dry-run test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --dry-run test"'
+_fv_floor "make -kn test (n inside a short cluster)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -kn test"'
+_fv_floor "make -n test then a real make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -n test && make -j2 test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"

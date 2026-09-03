@@ -123,9 +123,18 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` 
     function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); sub(/^[ \t]+/, "", s); return s }
     {
       if (inblock) {
-        if ($0 ~ /^[ \t]*$/) next
+        # A folded block (`>`) is ONE command per paragraph: YAML joins its lines with a
+        # space, and only a blank line breaks. `echo` over `test/smoke.sh` runs
+        # `echo test/smoke.sh`, so the lines are folded before anything reads them as a
+        # command. A literal block (`|`) is one command per line.
+        if ($0 ~ /^[ \t]*$/) { if (fold && acc != "") { print acc; acc = "" } ; next }
         match($0, /^[ \t]*/)
-        if (RLENGTH > bind) { print strip($0); next }
+        if (RLENGTH > bind) {
+          if (fold) acc = (acc == "" ? strip($0) : acc " " strip($0))
+          else print strip($0)
+          next
+        }
+        if (fold && acc != "") { print acc; acc = "" }
         inblock = 0
       }
       # Only the `run` key OF A STEP is a command. `run` is an ordinary key anywhere else
@@ -136,10 +145,11 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` 
       if (insteps && match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
         rest = substr($0, RSTART + RLENGTH)
         match($0, /^[ \t]*(-[ \t]+)?/); bind = RLENGTH
-        if (rest ~ /^[ \t]*[|>]/) inblock = 1
+        if (rest ~ /^[ \t]*[|>]/) { inblock = 1; fold = (rest ~ /^[ \t]*>/); acc = "" }
         else print strip(rest)
       }
     }
+    END { if (fold && acc != "") print acc }
   ' "$1"
 }
 
@@ -186,7 +196,7 @@ _ere_escape() { # _ere_escape <string> → the string as a literal inside a POSI
 }
 
 _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
-  local d="$1" dirs="" cand="" seen=0 wf alt="" tgt lines re
+  local d="$1" dirs="" cand="" seen=0 wf alt="" tgt cmds hits re
   # Either directory name satisfies the floor, and only a POPULATED one is the suite: a
   # stale empty test/ beside a real, CI-run tests/ must not read as `empty`, and a step
   # that runs a nonexistent tests/ must not credit a populated test/ it never touches.
@@ -213,16 +223,23 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   [[ -n "$alt" ]] || alt='[^[:alnum:]_-]never-a-target'
 
   # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
-  # never a nested directory or a stray notes file. `make` must be in COMMAND position too
-  # (start, after a control operator, or under sudo): `echo "make test is disabled"` is a
-  # string, not a run. The right boundary keeps `make test-report` from being `make test`.
-  # The step text is captured, then searched from a herestring: under pipefail a `grep -q`
-  # that exits on an early match can SIGPIPE a producer still writing, and 141 would read
-  # as "not run".
+  # never a nested directory or a stray notes file. The step text is captured, split into
+  # simple commands at `;`/`&&`/`||`/`|`, and each command is judged on its own: `make`
+  # must be the command (optionally under sudo), the target must be one that runs the
+  # suite, and a dry-run make (`-n` in any short cluster, `--dry-run`, `--just-print`,
+  # `--recon`) prints the recipe without running it, so it does not count. Captured, not
+  # piped from the producer: under pipefail a `grep -q` that exits on an early match can
+  # SIGPIPE an awk still writing, and 141 would read as "not run".
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
     [[ -f "$wf" ]] || continue
-    lines="$(_run_lines "$wf")"
-    if grep -qE "((^|[;&|])[[:space:]]*(sudo[[:space:]]+)?make[[:space:]]+([^|&;]*[[:space:]])?($alt)([^[:alnum:]_-]|\$)|$re)" <<<"$lines"; then
+    cmds="$(_run_lines "$wf" | awk '{ gsub(/[;&|]+/, "\n"); print }')"
+    if grep -qE "$re" <<<"$cmds"; then
+      printf 'ok'
+      return 0
+    fi
+    hits="$(grep -E "^[[:space:]]*(sudo[[:space:]]+)?make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([^[:alnum:]_-]|\$)" <<<"$cmds" |
+      grep -vE "[[:space:]](-[a-zA-Z]*n[a-zA-Z]*|--dry-run|--just-print|--recon)([[:space:]]|\$)")"
+    if [[ -n "$hits" ]]; then
       printf 'ok'
       return 0
     fi
