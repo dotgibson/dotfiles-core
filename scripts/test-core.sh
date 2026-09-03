@@ -2551,6 +2551,12 @@ _vpn_count "an exact pin followed by a quote, paren, semicolon or a spaced comme
 # argument — so it is a non-exact foreign ref and must be judged, not exempted.
 _vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0#note --squash'
 _vpn_count "a glued \`#note\` is part of the ref, not a comment — a finding" 6 1
+# The peeled form: its sentence period lands in rest, not the token, and must still be
+# prose; and a caret that is NOT the literal ^{commit} is a malformed ref, judged.
+_vpn_write README.md 'CORE_BRANCH="$(git rev-parse v5.3.0^{commit})" — then run it. Or git rev-parse v5.3.0^{commit}.'
+_vpn_count "an exact peeled pin at sentence end (v5.3.0^{commit}.) stays exempt" 6 0
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0^foo --squash'
+_vpn_count "\`v5.3.0^foo\` — a caret that is not ^{commit} — is malformed, a finding" 6 1
 # A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
 _vpn_write README.md 'git  checkout v5'
 _vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1

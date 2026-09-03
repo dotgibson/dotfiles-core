@@ -1327,8 +1327,13 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # written is not the tag, so it is malformed and judged. `#` is deliberately
           # NOT a terminator: a comment starts only at the start of a word, so
           # `v5.3.0#note` is one argument to git (judged), while `v5.3.0 # note` is
-          # exempt through the whitespace before its `#`.
-          if (rest != "" && rest !~ /^[[:space:]`"\047)\]},;:&|<>^]/) exact = 0
+          # exempt through the whitespace before its `#`. Nor is `^`: the literal
+          # `^{commit}` of the peeled form is consumed by the match itself, so a caret
+          # left in rest (`v5.3.0^foo`) is a malformed ref, judged. And in the peeled
+          # form the sentence period sits in rest rather than the token
+          # (`v5.3.0^{commit}.`), so one prose period is trimmed from rest first.
+          if (rest ~ /^\.([[:space:]]|$)/) rest = substr(rest, 2)
+          if (rest != "" && rest !~ /^[[:space:]`"\047)\]},;:&|<>]/) exact = 0
           # The scaffold default is never exempt: it is not a freeze someone chose, it is
           # the pin every new repo gets by default.
           if ((!exact || isdefault) && major != want) {
