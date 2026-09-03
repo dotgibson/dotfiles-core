@@ -20,10 +20,10 @@ _Repo status_ at the bottom).
    — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"). Step 1 already copied Fedora's `core/` across, so there is no
    `git subtree add` to run here (it would fail: _prefix 'core' already exists_). That
-   manual add is only for a repo with no `core/` at all and no scaffold —
-   `scripts/new-os-repo.sh` materializes the filtered vendor set for greenfield repos
-   instead (no subtree). Skip this step and `core-integrity` reports the inherited tree
-   against Fedora's lock.
+   manual add is only for a repo with no `core/` at all — one scaffolded some other
+   way, or by `scripts/new-os-repo.sh --no-vendor`; a normal scaffold run materializes
+   the filtered vendor set instead (no subtree). Skip this step and `core-integrity`
+   reports the inherited tree against Fedora's lock.
 6. Update the README's "specifics" section to that distro's quirks.
 
 ## Package-manager commands

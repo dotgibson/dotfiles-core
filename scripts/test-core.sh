@@ -2528,6 +2528,9 @@ _vpn_write README.md 'Pin `refs/tags/v5.3.0`. Or, less carefully, pin refs/tags/
 _vpn_count "an exact pin followed by a sentence-ending period is still exempt" 6 0
 _vpn_write README.md 'so vendor refs/tags/v5.'
 _vpn_count "a bare major followed by a sentence-ending period is still a finding" 6 1
+# Exactly ONE trailing period is prose; a second one is part of a malformed ref.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3.0.. --squash'
+_vpn_count "\`v5.3.0..\` is not an exact pin with a sentence period — a finding" 6 1
 # Only the period is prose. A trailing `+` or `-` makes the token malformed, and a
 # malformed foreign pin is judged, never trimmed into an exempt exact one.
 _vpn_write README.md 'refs/tags/v5.3.0+ and refs/tags/v5.3.0-'

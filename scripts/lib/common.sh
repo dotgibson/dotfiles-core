@@ -1257,7 +1257,7 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
 # they read, so it stays concrete and copyable — and this function is what makes that
 # safe to promise.
 #
-# SCOPE, and the three exemptions that keep it honest:
+# SCOPE, and the four exemptions that keep it honest:
 #   · Root-level *.md and scripts/*.sh — where the recipe is written — never core/ or
 #     nested docs.
 #   · CHANGELOG*.md are HISTORY: "corrected to refs/tags/v5" was true when written and
@@ -1310,11 +1310,12 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           match(tok, /v[0-9]/); tok = substr(tok, RSTART + 1)
           # The token class admits `.`, so a sentence-ending period rides in with it:
           # `refs/tags/v5.3.0.` would read as `5.3.0.` and an exact freeze would be
-          # reported stale. ONLY the period is prose. A trailing `+` or `-` is kept,
-          # because `v5.3.0+` is no tag this repo cuts and must stay judged, not become
-          # exempt by trimming.
-          sub(/\.+$/, "", tok)
-          sub(/\.+$/, "", hit)                    # the message quotes the pin, not the prose
+          # reported stale. ONLY that one period is prose — a single trailing `.`. Two
+          # (`v5.3.0..`) leave `5.3.0.`, which is malformed and judged; and a trailing
+          # `+` or `-` is kept, because `v5.3.0+` is no tag this repo cuts and must stay
+          # judged, not become exempt by trimming.
+          sub(/\.$/, "", tok)
+          sub(/\.$/, "", hit)                     # the message quotes the pin, not the prose
           major = tok; sub(/[^0-9].*$/, "", major)
           exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
           # The token class stops at a character it does not admit, so `v5.3.0_bad`,

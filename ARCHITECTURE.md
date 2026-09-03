@@ -183,8 +183,9 @@ materializes the **filtered** vendor set (`core.manifest` ∪ `core.vendor`) thr
 same producer the fan-out uses, so the tree is already the shape the first sync will
 stamp `core.lock` for. Neither path writes that lock — until the first `make sync`,
 `core-integrity` reports the **missing lock**, not a tree verdict. The manual fallback,
-for a repo scaffolded some other way, is a subtree add, which copies the **whole**
-upstream tree; the first sync replaces it with the filtered set and stamps the lock:
+for any repo that has no `core/` — scaffolded some other way, or by the scaffold with
+`--no-vendor` — is a subtree add, which copies the **whole** upstream tree; the first
+sync replaces it with the filtered set and stamps the lock:
 
 ```bash
 git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v6 --squash

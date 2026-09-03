@@ -575,8 +575,9 @@ it materializes the filtered vendor set (`core.manifest` ∪ `core.vendor`) thro
 same producer `sync-core.sh` uses, so the tree is already the shape the first sync will
 stamp `core.lock` for. Neither path writes that lock, so until the sync below
 `core-integrity` reports the missing lock rather than a tree verdict. The manual
-fallback, if you are not using the scaffold, is the subtree add — it copies the whole
-upstream tree, and the first sync replaces it with the filtered set and stamps the lock:
+fallback, for any repo that has no `core/` (scaffolded some other way, or by the
+scaffold with `--no-vendor`), is the subtree add — it copies the whole upstream tree,
+and the first sync replaces it with the filtered set and stamps the lock:
 
 ```sh
 git subtree add --prefix=core <core-remote> refs/tags/v6 --squash
