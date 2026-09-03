@@ -267,7 +267,11 @@ _link_cmd="{ { [ ! -e $(_q "$_canon") ] && [ ! -L $(_q "$_canon") ]; } || { [ -L
 # The sync-only recovery (used when core/ is already materialized) needs that same link
 # for a custom basename, or the sync just skips a directory it cannot resolve.
 _sync_recover="$_sync_half"
-[[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || {
+# No link when the canonical path ALREADY resolves to this scaffold — the same physical
+# directory (-ef): a basename differing only by case on a case-insensitive filesystem
+# (macOS's default), or a link the reader made first. The guard would otherwise see the
+# canonical spelling as a foreign real directory and refuse the reader's own repo.
+[[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || [[ -e "$_canon" && "$_canon" -ef "$_target_abs" ]] || {
   _vendor_hint="$_link_cmd && $_vendor_hint; sync-core.sh resolves the NAME dotfiles-$OS under REPOS_ROOT, hence the guarded symlink (not a rename — the chain embeds the original path)"
   _sync_recover="$_link_cmd && $_sync_half"
 }

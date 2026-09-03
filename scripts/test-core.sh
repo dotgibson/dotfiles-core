@@ -5983,6 +5983,19 @@ if have git; then
     fail "recovery: the footer floor is wrong for —$_rc_floor_bad"
   fi
   unset _rc_floor_bad _rc_pin _rc_fo _rc_frc
+  # The canonical path ALREADY resolving to the scaffold — a pre-made link here, standing
+  # in for a basename that differs only by case on a case-insensitive filesystem — gets
+  # NO guarded link in the chain: the guard would read the canonical spelling as a foreign
+  # real directory and refuse the reader's own repo.
+  mkdir -p "$SANDBOX/recovery/pre" && ln -s "$SANDBOX/recovery/pre/Custom" "$SANDBOX/recovery/pre/dotfiles-Fixture"
+  _rc_pre_out="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/pre/Custom" 2>&1)"
+  _rc_pre_cmd=""; [[ "$_rc_pre_out" == *"run later: "* ]] && { _rc_pre_cmd="${_rc_pre_out#*run later: }"; _rc_pre_cmd="${_rc_pre_cmd%%$'\n'*}"; }
+  if [[ -n "$_rc_pre_cmd" && "$_rc_pre_cmd" != *"ln -sfn "* && "$_rc_pre_cmd" == "git -C "* ]]; then
+    pass "recovery: a canonical path that already resolves to the scaffold (case-insensitive FS, or a prior link) gets no guarded link in the chain"
+  else
+    fail "recovery: the chain still prepends the guarded link when the canonical path already IS the scaffold — $(cut -c1-200 <<<"$_rc_pre_cmd")"
+  fi
+  unset _rc_pre_out _rc_pre_cmd
   # A Core checkout with NO origin and no CORE_REMOTE must not bake an empty remote into
   # the command: it renders `"${CORE_REMOTE:?…}"`, which fails loudly at paste time until
   # the reader exports the URL. Reproduced on a copy of the scaffold in an origin-less repo.
