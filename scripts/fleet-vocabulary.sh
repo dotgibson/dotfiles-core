@@ -299,16 +299,17 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     followed as far as they are static: a `false` body, a `true` else, a `while false`,
 #     `until true` or `for x in;` body never run; a real condition (`if make test`) is a
 #     command that runs; nothing after an unconditional `exit`/`exec`/`return` runs.
-#   * pathok — the suite path a credited command names must EXIST: `bash test/missing.sh`
-#     beside a real test/smoke.sh runs nothing. The set of entries under the populated
-#     suite directories is handed in through `existl` (one relative path per line); a
-#     literal operand must be in it, a glob must match one, the bare directory is fine,
-#     and an operand carrying `$` cannot be checked and is taken on trust. The list is
-#     passed inline (`existl`, newline-separated), never through a temp file.
+#   * pathok — the suite path a credited command names must EXIST, and be the right kind
+#     of thing: `bash test/missing.sh` beside a real test/smoke.sh runs nothing, and so
+#     does `./test/helpers` when helpers/ is a directory or smoke.sh is not executable.
+#     The entries under the populated suite directories are handed in through `existl`
+#     (`<kind> <path>` per line, kind x/f/d); a literal operand must be in it, a glob
+#     must match one, a runner may take the bare directory, and an operand carrying `$`
+#     cannot be checked and is taken on trust. Passed inline, never through a temp file.
 #   * dequote — a command with its shell quotes removed, as the program sees its words.
 #   * trim — whitespace only.
 AWK_SHELL='
-  function loadexist(lst,   n, a, i) { split("", EXIST); n = split(lst, a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") EXIST[a[i]] = 1 }
+  function loadexist(lst,   n, a, i) { split("", EXIST); n = split(lst, a, "\n"); for (i = 1; i <= n; i++) if (a[i] ~ /^[xfd] /) EXIST[substr(a[i], 3)] = substr(a[i], 1, 1) }
   function globre(g,   r, i, c) {
     r = "^"
     for (i = 1; i <= length(g); i++) {
@@ -318,20 +319,31 @@ AWK_SHELL='
     }
     return r "$"
   }
-  function pathok(cmd,   t, k, n, w, i) {
+  # pathok(cmd) — what the named suite path must BE depends on how the command names it:
+  # executed directly (`./test/smoke.sh`, first word after sudo/env/VAR=) it must be an
+  # executable regular file; handed to an interpreter it must be a regular file; handed
+  # to a test runner it may also be a directory. A `$` operand is taken on trust.
+  function pathok(cmd,   t, k, n, w, i, cmdw, need) {
     n = split(cmd, w, /[ \t]+/)
+    cmdw = ""
+    for (i = 1; i <= n; i++) { if (w[i] ~ /^(sudo|env)$/ || w[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue; cmdw = w[i]; break }
+    if (cmdw == "make") return 1
     for (i = 1; i <= n; i++) {
       t = w[i]; sub(/^[.][/]/, "", t)
       if (t !~ /^tests?([/]|$)/) continue
       if (t ~ /\$/) return 1
       sub(/[/]+$/, "", t)
-      if (t ~ /^tests?$/) return 1
-      if (t in EXIST) return 1
-      if (t ~ /[*?[]/) { for (k in EXIST) if (k ~ globre(t)) return 1 }
+      if (w[i] == cmdw) need = "x"
+      else if (cmdw ~ /^(bats|prove|pytest)$/ || cmd ~ /-m[ \t]+(pytest|unittest|nose2?)([ \t]|$)/) need = "any"
+      else need = "file"
+      if (t ~ /^tests?$/) return (need == "any") ? 1 : 0
+      if (t in EXIST) return okkind(EXIST[t], need)
+      if (t ~ /[*?[]/) { for (k in EXIST) if (k ~ globre(t) && okkind(EXIST[k], need)) return 1 }
       return 0
     }
     return 1
   }
+  function okkind(kind, need) { return (need == "any") ? 1 : ((need == "x") ? (kind == "x") : (kind == "x" || kind == "f")) }
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
   function splitcmds(s, out,   i, c, q, n, cur) {
     n = 0; cur = ""; q = ""; split("", SPLITOP); SPLITOP[1] = ""
@@ -497,15 +509,21 @@ AWK_SHELL='
   function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing, ee) {
     d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0; sd = 0; subterm = 0; retid = 0; ee = ERREXIT
     split("", TAKEN); split("", SKIPD); split("", DEF); split("", COND)
+    split("", PENDCLOSE); split("", SUBD); split("", SUBX)
     for (i = 1; i <= n; i++) {
+      # A `)` on the previous command closes its subshell now: depth drops and the
+      # directory saved at the matching `(` is restored.
+      if ((i - 1) in PENDCLOSE) { closing = PENDCLOSE[i - 1]; while (closing-- > 0) { if (sd in SUBD) { d = SUBD[sd]; x = SUBX[sd]; delete SUBD[sd]; delete SUBX[sd] } ; if (sd) sd-- } }
       # A SUBSHELL `( … )` has its own exit: an `exit` inside it ends the subshell only.
       # Its depth is tracked by leading `(` and trailing `)` on the split commands.
       t = trim(c[i]); closing = 0
-      while (t ~ /^\(/) { sd++; sub(/^\([ \t]*/, "", t) }
+      # …and its own working directory: a `cd` inside `( … )` is undone by the `)`.
+      while (t ~ /^\(/) { sd++; SUBD[sd] = d; SUBX[sd] = x; sub(/^\([ \t]*/, "", t) }
       while (t ~ /\)$/) { closing++; sub(/[ \t]*\)$/, "", t) }
       c[i] = t
-      if (subterm && sd >= subterm) { c[i] = ""; sd -= closing; if (sd < subterm) subterm = 0; continue }
-      sd -= closing
+      if (subterm && sd >= subterm) { c[i] = ""; while (closing-- > 0) { if (sd in SUBD) { d = SUBD[sd]; x = SUBX[sd] } ; sd-- } ; if (sd < subterm) subterm = 0; continue }
+      # A closing `)` restores the directory saved at its `(` — once this command has run.
+      PENDCLOSE[i] = closing
       # A `return` inside a body expanded at a call site ends that body only.
       if (retid && INL[i] == retid) { c[i] = ""; continue }
       retid = 0
@@ -922,8 +940,18 @@ _suite_dirs() { # _suite_dirs <repo-dir> → "test|tests" (the POPULATED ones), 
   printf '%s' "$dirs"
 }
 
-_exist_list() { # _exist_list <repo-dir> → every entry under the suite dirs, relative, one per line
-  ( cd "$1" && find test tests -mindepth 1 2>/dev/null )
+_exist_list() { # _exist_list <repo-dir> → every entry under the suite dirs, as `<kind> <path>`, one per line
+  # `<kind>` is x (an executable regular file), f (another regular file) or d (a directory):
+  # what a credited command may name depends on how it names it (pathok). Portable: no
+  # `-mindepth` (GNU; this runs on the macOS lane too) — the root itself is dropped by
+  # name, and the mode comes from `-perm -u+x`, which is POSIX.
+  local d="$1" r
+  ( cd "$d" && for r in test tests; do
+    [[ -d "$r" ]] || continue
+    find "$r" -type d -print | grep -vx "$r" | sed 's/^/d /'
+    find "$r" -type f -perm -u+x -print | sed 's/^/x /'
+    find "$r" -type f ! -perm -u+x -print | sed 's/^/f /'
+  done 2>/dev/null )
 }
 
 _suite_names() { # _suite_names <repo-dir> → the make targets credited with running the suite, one per line
@@ -977,9 +1005,15 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
     # lint` does not read the directory operand as the goal — on make commands ONLY, so
     # `python -I test/smoke.py` keeps its operand. `-C`/`-f` are not rewritten: they select
     # another Makefile and NORUN_RE rejects the invocation outright.
-    cmds="$(_run_lines "$wf" | sed -E '/^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make([[:space:]]|$)/ s/(^|[[:space:]])(-[IoW]|--(include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\1/g')"
-    hits="$(grep -E "($re|^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([[:space:]]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE" |
-      awk -v SQ="'" -v existl="$existl" "$AWK_SHELL"'BEGIN { loadexist(existl) } pathok($0) { print }')"
+    # …and `-C .`/`--directory=.`/`-f Makefile`/`--file=Makefile` select the very Makefile
+    # inspected here, so they are dropped before NORUN_RE can read them as another one.
+    cmds="$(_run_lines "$wf" | sed -E '/^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make([[:space:]]|$)/ { s/(^|[[:space:]])(-C|--directory)[[:space:]=]+[.][/]?([[:space:]]|$)/\1/g; s/(^|[[:space:]])-C[.][/]?([[:space:]]|$)/\1/g; s/(^|[[:space:]])(-f|--file|--makefile)[[:space:]=]+(GNUmakefile|makefile|Makefile)([[:space:]]|$)/\1/g; s/(^|[[:space:]])-f(GNUmakefile|makefile|Makefile)([[:space:]]|$)/\1/g; s/(^|[[:space:]])(-[IoW]|--(include-dir|old-file|assume-old|what-if|new-file|assume-new))[[:space:]]+[^[:space:]]+/\1/g }')"
+    # Two arms, filtered separately: a PATH hit must name something that exists and is
+    # the right kind of thing (pathok); a MAKE hit names a goal, which is not a path — the
+    # goal `test` must not be mistaken for the bare suite directory.
+    hits="$(grep -E "$re" <<<"$cmds" | grep -vE "$NORUN_RE" |
+      awk -v SQ="'" -v existl="$existl" "$AWK_SHELL"'BEGIN { loadexist(existl) } pathok($0) { print }'
+      grep -E "^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([[:space:]]|\$)" <<<"$cmds" | grep -vE "$NORUN_RE")"
     if [[ -n "$hits" ]]; then
       printf 'ok'
       return 0

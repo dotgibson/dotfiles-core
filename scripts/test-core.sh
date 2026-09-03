@@ -16591,8 +16591,8 @@ _fv_wf() { # _fv_wf <repo> <relative-path-under-.github/workflows> <printf-body>
   mkdir -p "$_fv_root/$1/.github/workflows/$(dirname "$2")"
   printf '%b' "$3" >"$_fv_root/$1/.github/workflows/$2"
 }
-_fv_suite() { # _fv_suite <repo> [dir=test]
-  mkdir -p "$_fv_root/$1/${2:-test}"; printf '#!/bin/sh\nexit 0\n' >"$_fv_root/$1/${2:-test}/smoke.sh"
+_fv_suite() { # _fv_suite <repo> [dir=test] — an EXECUTABLE smoke.sh, as a real suite script is
+  mkdir -p "$_fv_root/$1/${2:-test}"; printf '#!/bin/sh\nexit 0\n' >"$_fv_root/$1/${2:-test}/smoke.sh"; chmod +x "$_fv_root/$1/${2:-test}/smoke.sh"
 }
 # Every canonical verb, as a rule at column 0, declared .PHONY as a real Makefile must
 # (`test:` beside test/ is otherwise "up to date"). `check` shares a rule with a
@@ -17126,6 +17126,20 @@ _fv_floor "make \"test\" builds test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci do
 _fv_floor "./'"'"'test/smoke.sh'"'"' runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "./'"'"'test/smoke.sh'"'"'"'
 _fv_floor "a recipe running a quoted script path is the suite" 'ok' '_fv_suite dotfiles-Alpine; printf "quoted:\n\t@bash \"test/smoke.sh\"\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make quoted"'
 _fv_floor "echo \"make test\" is still an argument" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "echo \"make test\""'
+# WHAT THE PATH MUST BE: executed directly it must be an executable regular file; handed to
+# an interpreter, a regular file; a runner may take a directory. A subshell keeps its cd
+# to itself. `-C .` and `-f Makefile` are the root Makefile.
+_fv_floor "./test/plain.sh (not executable) runs nothing" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "exit 0\n" >"$_fv_root/dotfiles-Alpine/test/plain.sh"; _fv_ci dotfiles-Alpine "./test/plain.sh"'
+_fv_floor "bash test/plain.sh (not executable) runs it" 'ok' '_fv_suite dotfiles-Alpine; printf "exit 0\n" >"$_fv_root/dotfiles-Alpine/test/plain.sh"; _fv_ci dotfiles-Alpine "bash test/plain.sh"'
+_fv_floor "./test/helpers (a directory) runs nothing" '**not-in-ci**' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/test/helpers"; _fv_ci dotfiles-Alpine "./test/helpers"'
+_fv_floor "bash test/helpers (a directory) runs nothing" '**not-in-ci**' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/test/helpers"; _fv_ci dotfiles-Alpine "bash test/helpers"'
+_fv_floor "bats test/helpers (a runner takes a directory)" 'ok' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/test/helpers"; _fv_ci dotfiles-Alpine "bats test/helpers"'
+_fv_floor "(cd test); ./smoke.sh runs from the root" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "(cd test); ./smoke.sh"'
+_fv_floor "(cd test && ./smoke.sh) runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "(cd test && ./smoke.sh)"'
+_fv_floor "make -C . test is the root Makefile" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -C . test"'
+_fv_floor "make --directory=. test is the root Makefile" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --directory=. test"'
+_fv_floor "make -f Makefile test is the root Makefile" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -f Makefile test"'
+_fv_floor "make -C tools test is still another Makefile" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -C tools test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
