@@ -8217,9 +8217,6 @@ STRICT_SOCKDIR="$strict_sockdir"
 PIDF="$_dstub/$name.pid"
 DB="\$DH/atuin/history.db"
 mkdir -p "\$DH/atuin" 2>/dev/null
-# The real daemon CREATES its socket directory 0700 when absent and refuses one it did not
-# make unless it is already 0700 — so create only when absent, and the way it would.
-[[ -d "\${SOCK%/*}" ]] || mkdir -m 700 -p "\${SOCK%/*}" 2>/dev/null
 printf '%s\n' "\$*" >>"\$LOG" 2>/dev/null
 
 row() {
@@ -8242,11 +8239,18 @@ serve_fg() {
   exec python3 - "\$SOCK" "\$PIDF" "\$MODE" "\$DB" "\$STRICT_SOCKDIR" <<'PY'
 import socket, sys, os, sqlite3, stat
 sock, pidf, mode, db, strict = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-if strict == "1":
-    # 18.20.0+: a socket directory that is not exactly 0700 is refused before binding.
-    perm = stat.S_IMODE(os.stat(os.path.dirname(sock)).st_mode)
+# ONLY a daemon start creates the socket directory — never --version or a daemon-off write —
+# and it creates it 0700, as the real daemon does. A directory that already exists was made by
+# the caller, and from 18.20.0 the real daemon refuses it unless it is exactly 0700; the stub
+# does the same, so a verifier that prepared it with the umask is caught here.
+sockdir = os.path.dirname(sock)
+if not os.path.isdir(sockdir):
+    os.makedirs(sockdir)
+    os.chmod(sockdir, 0o700)
+elif strict == "1":
+    perm = stat.S_IMODE(os.stat(sockdir).st_mode)
     if perm != 0o700:
-        sys.stderr.write("Error: %s has incorrect permissions (expected 700, got %o)\n" % (os.path.dirname(sock), perm))
+        sys.stderr.write("Error: %s has incorrect permissions (expected 700, got %o)\n" % (sockdir, perm))
         sys.exit(1)
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
@@ -8764,7 +8768,7 @@ J4PROBE
     if [[ "$_dapp" == holds ]] && ((_drc == 0)); then
       pass "atuin autostart: a healing 18.20.0 (socket under \$TMPDIR/atuin-\$UID, upstream #3910) → holds — the verifier waits where that version binds"
     else
-      fail "atuin autostart: a healing 18.20.0 binding under \$TMPDIR/atuin-\$UID reported ${_dapp:-no verdict} (rc$_drc) — the verifier is still waiting on the pre-18.20 data-dir socket: ${_dappwhy:-no reason parsed}"
+      fail "atuin autostart: a healing 18.20.0 binding under \$TMPDIR/atuin-\$UID reported ${_dapp:-no verdict} (rc$_drc) — the verifier is waiting on the pre-18.20 data-dir socket, or made the socket directory with a mode the daemon refuses: ${_dappwhy:-no reason parsed}"
     fi
 
     # 5. Expected delta is 1 here and 0 under discard, on arms with IDENTICAL names. Without

@@ -286,7 +286,8 @@ jobs:
           # step before the `case` below could classify them as REPORTS. That is what the
           # first measurement past the anchor did (2026-09-01, atuin 18.21.0, #826): exit 3,
           # no output, and a "the workflow is broken" issue instead of the verdict. The case
-          # statement is the error handling; -e was pre-empting it.
+          # statement is the error handling; -e was pre-empting it. Re-armed the moment vrc
+          # is captured: everything after the verifier is plumbing that must stay loud.
           set +e
           bin="$(cat atuin.path 2>/dev/null || true)"
           # Every path reports through the SCRIPT's one renderer, never by composing prose
@@ -303,9 +304,10 @@ jobs:
               --atuin "$PWD/$bin" --report report.md --json >verdict.json
           fi
           vrc=$?
+          set -e
           # rc 1 (`moved`) and rc 3 (`unmeasurable`) are THE REPORT, NOT A CRASH — the
-          # freshness.yml precedent — so those must not fail the step. But this step
-          # deliberately runs WITHOUT `set -e`, and without this guard ANY other outcome (the
+          # freshness.yml precedent — so those must not fail the step. But the verifier
+          # call above runs WITHOUT `set -e`, and without this guard ANY other outcome (the
           # verifier segfaulting, a syntax error, an OOM kill) also sailed through to a green
           # job: the summary block at the end returns 0, so a genuinely crashed run looked
           # exactly like a quiet one. Allow ONLY the three
@@ -431,7 +433,8 @@ jobs:
           # step before the `case` below could classify them as REPORTS. That is what the
           # first measurement past the anchor did (2026-09-01, atuin 18.21.0, #826): exit 3,
           # no output, and a "the workflow is broken" issue instead of the verdict. The case
-          # statement is the error handling; -e was pre-empting it.
+          # statement is the error handling; -e was pre-empting it. Re-armed the moment vrc
+          # is captured: everything after the verifier is plumbing that must stay loud.
           set +e
           bin="$(cat atuin.path 2>/dev/null || true)"
           # --premise autostart on EVERY path, including the two that measure nothing: the
@@ -449,6 +452,7 @@ jobs:
               --atuin "$PWD/$bin" --report report.md --json >verdict.json
           fi
           vrc=$?
+          set -e
           case "$vrc" in
             0 | 1 | 3) ;;
             *) echo "::error::verify-atuin-guard.sh --premise autostart exited $vrc — not one of the documented 0/1/3"; exit 1 ;;
