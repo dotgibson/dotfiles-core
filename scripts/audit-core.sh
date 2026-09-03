@@ -1215,12 +1215,59 @@ else
     skip_env "coverage register (fleet list would not load — cannot enumerate the fleet)"
   elif ((_fc_rc == 0)); then
     pass "coverage register: $_fc_out"
-  else
-    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f.
+  elif ((_fc_rc == 1)); then
+    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f. Exit 1 is the reporter's
+    # verdict; anything else is the reporter itself failing, which is red below (#846).
     ((${CORE_JSON:-0})) || printf '%s\n' "$_fc_out" | sed 's/^/  /'
     pass "coverage register: undeclared gate x repo cell(s) — advisory; each repo declares in .github/core-gates.txt (VENDORING.md has the contract)"
+  else
+    fail "coverage register: scripts/fleet-coverage.sh exited $_fc_rc — the reporter is broken, not the fleet"
+    fail_detail "$_fc_out"
   fi
   unset _fc_out _fc_rc
+fi
+
+# ── 5h (cont.) the Makefile vocabulary x repo register, and the test floor ────
+# The surface a contributor actually touches was a convention, and it failed measurably:
+# "dry run" had two spellings across the fleet, "verify core" had five, and only `help`
+# was common to every Makefile (#691). Five of nine repos had no repo-owned tests at all —
+# including dotfiles-Fedora, the template every Linux repo is stamped from.
+#
+# scripts/make-vocabulary.txt declares the canonical verbs ONCE; scripts/fleet-vocabulary.sh
+# reads each sibling's Makefile and reports, per verb, whether the canonical target resolves
+# (an alias TO it is fine — the requirement is that the canonical name resolves; a verb a
+# repo genuinely lacks is a stub target that says so, never declared away)
+# and whether the repo meets the test floor: a test/ (or tests/) directory with content,
+# run from a workflow. Same shape as the register above and the same advisory posture —
+# this is fleet drift, not a regression in the commit under test.
+hdr "Makefile vocabulary x repo register + test floor (advisory)"
+if [[ ! -x "$HERE/scripts/fleet-vocabulary.sh" ]]; then
+  skip "vocabulary register (scripts/fleet-vocabulary.sh missing — out of scope)"
+else
+  _fv_out="$("$HERE/scripts/fleet-vocabulary.sh" --check 2>&1)"
+  _fv_rc=$?
+  if [[ "$_fv_out" == *"no sibling repo checked out"* ]]; then
+    skip_env "vocabulary register (no sibling OS repo checked out — nothing to read here)"
+  elif [[ "$_fv_out" == *"vocabulary list "* ]]; then
+    # The CONTRACT itself — scripts/make-vocabulary.txt, in this repo — would not load.
+    # That is Core broken, not an environment short of siblings: red, never a skip.
+    fail "vocabulary register: scripts/make-vocabulary.txt would not load — the contract is unreadable or empty"
+    fail_detail "$_fv_out"
+  elif [[ "$_fv_out" == *"fleet list "* ]]; then
+    # Could not enumerate the fleet at all — not the same finding as "cells are missing".
+    skip_env "vocabulary register (fleet list would not load — cannot enumerate the fleet)"
+  elif ((_fv_rc == 0)); then
+    pass "vocabulary register: $_fv_out"
+  elif ((_fv_rc == 1)); then
+    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f. Exit 1 is the reporter's
+    # verdict; anything else is the reporter itself failing, which is red below.
+    ((${CORE_JSON:-0})) || printf '%s\n' "$_fv_out" | sed 's/^/  /'
+    pass "vocabulary register: missing verb(s) or repo(s) under the test floor — advisory; scripts/make-vocabulary.txt is the contract (VENDORING.md has the alias recipe)"
+  else
+    fail "vocabulary register: scripts/fleet-vocabulary.sh exited $_fv_rc — the reporter is broken, not the fleet"
+    fail_detail "$_fv_out"
+  fi
+  unset _fv_out _fv_rc
 fi
 
 # ── 5i. leftover conflict markers (tracked files) ────────────────────────────
