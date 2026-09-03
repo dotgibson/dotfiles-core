@@ -97,6 +97,7 @@ REPOS=("${CORE_OS_REPOS[@]}")
 # uncounted (the safe direction for a rule is "missing") and a mandatory include fails
 # closed (the safe direction there is "unloadable"). No fleet Makefile uses a conditional
 # around a rule today.
+# shellcheck disable=SC2016  # awk source: its $ are awk`s, nothing here is meant to expand
 AWK_MAKECOND='
   function trimq(x) { gsub(/^[ \t]+|[ \t]+$/, "", x); gsub(/^["\047]|["\047]$/, "", x); return x }
   function decide(t,   a, b, neg, body, m) {
@@ -312,6 +313,7 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     cannot be checked and is taken on trust. Passed inline, never through a temp file.
 #   * dequote — a command with its shell quotes removed, as the program sees its words.
 #   * trim — whitespace only.
+# shellcheck disable=SC2016  # awk source: its $ are awk`s, nothing here is meant to expand
 AWK_SHELL='
   function loadexist(lst,   n, a, i) { split("", EXIST); n = split(lst, a, "\n"); for (i = 1; i <= n; i++) if (a[i] ~ /^[xfd] /) EXIST[substr(a[i], 3)] = substr(a[i], 1, 1) }
   function globre(g,   r, i, c) {
@@ -333,10 +335,10 @@ AWK_SHELL='
     for (i = 1; i <= n; i++) { if (w[i] ~ /^(sudo|env)$/ || w[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue; cmdw = w[i]; break }
     if (cmdw == "make") return 1
     for (i = 1; i <= n; i++) {
-      t = w[i]; sub(/^[.][/]/, "", t)
-      if (t !~ /^tests?([/]|$)/) continue
+      t = w[i]; sub(/^[.]\//, "", t)
+      if (t !~ /^tests?(\/|$)/) continue
       if (t ~ /\$/) return 1
-      sub(/[/]+$/, "", t)
+      sub(/\/+$/, "", t)
       if (w[i] == cmdw) need = "x"
       else if (cmdw ~ /^(bats|prove|pytest)$/ || cmd ~ /-m[ \t]+(pytest|unittest|nose2?)([ \t]|$)/) need = "any"
       else need = "file"
@@ -682,7 +684,7 @@ AWK_SHELL='
         pipefalse = 0
       }
       if (match(t, /^cd[ \t]+/)) {
-        d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
+        d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.]\//, "", d); sub(/\/+$/, "", d)
         if (d ~ /^tests?$/) { x = 0; continue }
         if (d == "" || d == ".") { d = ""; x = 0; continue }
         x = 1; d = ""; continue
@@ -692,7 +694,7 @@ AWK_SHELL='
       # Inside the suite directory, `make` reads test/Makefile, not the root one whose
       # targets were inspected — so it is not judged against them.
       if (t ~ /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*make([ \t]|$)/) { c[i] = ""; continue }
-      if (t ~ /^[.][/]/) { sub(/^[.][/]/, "./" d "/", t); c[i] = t; continue }
+      if (t ~ /^[.]\//) { sub(/^[.]\//, "./" d "/", t); c[i] = t; continue }
       if (match(t, /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[ \t]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[ \t]+[^ \t]+[ \t]+|-[^ \t]+[ \t]+)*/)) {
         m = RLENGTH
         if (substr(t, m + 1, 1) !~ /[-\/]/ && substr(t, m + 1) != "") c[i] = substr(t, 1, m) d "/" substr(t, m + 1)

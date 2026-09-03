@@ -9994,21 +9994,21 @@ _fv_suite() { # _fv_suite <repo> [dir=test] — an EXECUTABLE smoke.sh, as a rea
 _fv_all='.PHONY: help lint check dry-run packages-check core-verify test\nhelp:\n\t@true\nlint:\n\t@true\ncheck: lint\n\t@true\ndry-run:\n\t@true\nbootstrap-dry: dry-run\npackages-check:\n\t@true\ncore-verify:\n\t@true\ntest:\n\t@./test/smoke.sh\n'
 
 _fv_reset
-if out="$(_fv_run --check)"; then
-  if [[ "$out" == *"no sibling repo checked out"* ]]; then
+if _fv_out="$(_fv_run --check)"; then
+  if [[ "$_fv_out" == *"no sibling repo checked out"* ]]; then
     pass "vocab: an empty fleet root is an environment notice, exit 0"
   else
-    fail "vocab: empty root exited 0 without the no-sibling notice: $out"
+    fail "vocab: empty root exited 0 without the no-sibling notice: $_fv_out"
   fi
 else
-  fail "vocab: an empty fleet root exited non-zero: $out"
+  fail "vocab: an empty fleet root exited non-zero: $_fv_out"
 fi
 
 _fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then
   pass "vocab: a repo defining every verb with a CI-run test/ passes --check"
 else
-  fail "vocab: the complete repo did not pass --check: $out"
+  fail "vocab: the complete repo did not pass --check: $_fv_out"
 fi
 
 # THE ALIAS DOES NOT COUNT. Keep bootstrap-dry, drop dry-run: the cell must go missing.
@@ -10016,11 +10016,11 @@ fi
 _fv_mk="${_fv_all/dry-run:\\n\\t@true\\n/}"
 _fv_reset; _fv_repo dotfiles-Arch "${_fv_mk/bootstrap-dry: dry-run/bootstrap-dry:\\n\\t@true}"
 _fv_suite dotfiles-Arch; _fv_ci dotfiles-Arch "make test"
-out="$(_fv_run --check)"; rc=$?
-if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then
+_fv_out="$(_fv_run --check)"; rc=$?
+if ((rc == 1)) && [[ "$_fv_out" == *"1 verb x repo cell(s) missing"* ]]; then
   pass "vocab: a historical spelling alone (bootstrap-dry, no dry-run) is one missing cell, exit 1"
 else
-  fail "vocab: bootstrap-dry without dry-run was not reported as missing (rc=$rc): $out"
+  fail "vocab: bootstrap-dry without dry-run was not reported as missing (rc=$rc): $_fv_out"
 fi
 row="$(_fv_run | grep -F '`Arch`')"
 if [[ "$row" == '| `Arch` | ok | ok | ok | **missing** | ok | ok | ok | ok |' ]]; then
@@ -10035,12 +10035,12 @@ _fv_reset; _fv_repo dotfiles-Defense "${_fv_mk/core-verify:\\n\\t@true\\n/}"
 _fv_suite dotfiles-Defense; _fv_ci dotfiles-Defense "make test"
 mkdir -p "$_fv_root/dotfiles-Defense/.github"
 printf 'make:core-verify none declarations are not a thing any more\n' >"$_fv_root/dotfiles-Defense/.github/core-gates.txt"
-out="$(_fv_run --check)"; rc=$?
+_fv_out="$(_fv_run --check)"; rc=$?
 row="$(_fv_run | grep -F '| `Defense` |')"
-if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* && "$row" == *'| ok | **missing** | ok | ok |' ]]; then
+if ((rc == 1)) && [[ "$_fv_out" == *"1 verb x repo cell(s) missing"* && "$row" == *'| ok | **missing** | ok | ok |' ]]; then
   pass "vocab: a stub \`packages-check:\` resolves; a \`make:core-verify none\` line in core-gates.txt fills nothing"
 else
-  fail "vocab: stub/declaration handling wrong (rc=$rc): $out / $row"
+  fail "vocab: stub/declaration handling wrong (rc=$rc): $_fv_out / $row"
 fi
 if [[ "$(_fv_run)" != *'[^'* ]]; then
   pass "vocab: the register carries no footnotes — every cell is a verdict"
@@ -10049,58 +10049,58 @@ else
 fi
 
 _fv_reset; _fv_repo dotfiles-Gentoo; _fv_suite dotfiles-Gentoo; _fv_ci dotfiles-Gentoo "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"7 verb x repo cell(s) missing"* && "$out" == *'**no Makefile**'* ]]; then
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"7 verb x repo cell(s) missing"* && "$_fv_out" == *'**no Makefile**'* ]]; then
   pass "vocab: a repo with no Makefile misses every verb, labelled as such"
 else
-  fail "vocab: no-Makefile case: $out"
+  fail "vocab: no-Makefile case: $_fv_out"
 fi
 
 # A MANDATORY INCLUDE WITH A VARIABLE PATH cannot be resolved and fails closed; an
 # optional one is skipped.
 _fv_reset; _fv_repo dotfiles-Fedora "INC = missing.mk\\ninclude \$(INC)\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"7 verb x repo cell(s) missing"* ]]; then
   pass "vocab: \`include \$(INC)\` (mandatory, unevaluable) voids the Makefile"
 else
-  fail "vocab: variable mandatory include failed open: $out"
+  fail "vocab: variable mandatory include failed open: $_fv_out"
 fi
 _fv_reset; _fv_repo dotfiles-Fedora "INC = missing.mk\\n-include \$(INC)\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then
   pass "vocab: \`-include \$(INC)\` (optional, unevaluable) is skipped"
 else
-  fail "vocab: variable optional include not skipped: $out"
+  fail "vocab: variable optional include not skipped: $_fv_out"
 fi
 
 # A CONTINUED INCLUDE DIRECTIVE is one directive.
 _fv_reset; _fv_repo dotfiles-Fedora 'include \\\n  mk/verbs.mk\nlint:\n\t@true\n'
 mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then
   pass "vocab: \`include \\\` over the path is one directive"
 else
-  fail "vocab: continued include mishandled: $out"
+  fail "vocab: continued include mishandled: $_fv_out"
 fi
 
 # A test: BESIDE test/ WITHOUT .PHONY is a no-op verb even when CI runs the suite by path.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "bash test/smoke.sh"
-out="$(_fv_run --check)"; rc=$?
+_fv_out="$(_fv_run --check)"; rc=$?
 row="$(_fv_run | grep -F '| `Fedora` |')"
-if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* && "$row" == *'| **no-op** | ok |' ]]; then
+if ((rc == 1)) && [[ "$_fv_out" == *"1 verb x repo cell(s) missing"* && "$row" == *'| **no-op** | ok |' ]]; then
   pass "vocab: an unphony \`test:\` shadowing test/ is **no-op** even when CI runs the suite by path"
 else
-  fail "vocab: unphony shadowing test with direct-path CI (rc=$rc): $out / $row"
+  fail "vocab: unphony shadowing test with direct-path CI (rc=$rc): $_fv_out / $row"
 fi
 
 # THE CANONICAL test MUST RUN THE SUITE: a phony no-op `test:` beside CI running the
 # suite by path meets the floor but not the vocabulary — the cell says **no-op**.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/test:\\n\\t@.\/test\/smoke.sh/test:\\n\\t@true}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "bash test/smoke.sh"
-out="$(_fv_run --check)"; rc=$?
+_fv_out="$(_fv_run --check)"; rc=$?
 row="$(_fv_run | grep -F '| `Fedora` |')"
-if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* && "$out" == *"0 repo(s) under the test floor"* && "$row" == *'| **no-op** | ok |' ]]; then
+if ((rc == 1)) && [[ "$_fv_out" == *"1 verb x repo cell(s) missing"* && "$_fv_out" == *"0 repo(s) under the test floor"* && "$row" == *'| **no-op** | ok |' ]]; then
   pass "vocab: a no-op \`test:\` is **no-op** in the verb column even when CI runs the suite by path"
 else
-  fail "vocab: no-op test target handling (rc=$rc): $out / $row"
+  fail "vocab: no-op test target handling (rc=$rc): $_fv_out / $row"
 fi
 
 # THE INCLUDE NESTING BOUND FAILS CLOSED: a chain deeper than the scanner follows makes
@@ -10108,73 +10108,73 @@ fi
 _fv_reset; _fv_repo dotfiles-Fedora "include mk/a.mk\\n${_fv_all}"; mkdir -p "$_fv_root/dotfiles-Fedora/mk"
 for pair in a:b b:c c:d d:e; do printf 'include mk/%s.mk\n' "${pair#*:}" >"$_fv_root/dotfiles-Fedora/mk/${pair%%:*}.mk"; done; printf 'deep:\n\t@true\n' >"$_fv_root/dotfiles-Fedora/mk/e.mk"
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"7 verb x repo cell(s) missing"* ]]; then
   pass "vocab: an include chain past the nesting bound voids the Makefile (fail closed)"
 else
-  fail "vocab: nesting bound failed open: $out"
+  fail "vocab: nesting bound failed open: $_fv_out"
 fi
 
 # AN INCLUDE INSIDE A CONDITIONAL follows the condition where it can be decided, and a
 # mandatory one under an undecidable condition fails closed.
 _fv_reset; _fv_repo dotfiles-Fedora "ifeq (1,1)\\ninclude missing.mk\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a missing mandatory include in an active ifeq branch voids the Makefile"; else fail "vocab: active-branch missing include failed open: $out"; fi
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a missing mandatory include in an active ifeq branch voids the Makefile"; else fail "vocab: active-branch missing include failed open: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "ifeq (1,0)\\ninclude missing.mk\\nelse\\ninclude mk/verbs.mk\\nendif\\nlint:\\n\\t@true\\n"
 mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: the else of a false ifeq is the active branch — its include is followed, the other skipped"; else fail "vocab: ifeq/else include handling: $out"; fi
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: the else of a false ifeq is the active branch — its include is followed, the other skipped"; else fail "vocab: ifeq/else include handling: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "ifdef CI\\ninclude missing.mk\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a mandatory include under an undecidable ifdef fails closed"; else fail "vocab: undecidable conditional include failed open: $out"; fi
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a mandatory include under an undecidable ifdef fails closed"; else fail "vocab: undecidable conditional include failed open: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "ifdef CI\\n-include missing.mk\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: an optional include under an undecidable ifdef is skipped"; else fail "vocab: undecidable optional include: $out"; fi
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: an optional include under an undecidable ifdef is skipped"; else fail "vocab: undecidable optional include: $_fv_out"; fi
 
 # CHAINED `else ifeq` ARMS are evaluated after only-false arms and dead after a taken one;
 # a conditional-looking line inside a define body is text.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\nx:\\n\\t@true\\nelse ifeq (1,0)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: a verb under a false \`else ifeq\` arm is missing"; else fail "vocab: false else-ifeq arm counted: $out"; fi
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: a verb under a false \`else ifeq\` arm is missing"; else fail "vocab: false else-ifeq arm counted: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\nx:\\n\\t@true\\nelse ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb under a true \`else ifeq\` arm after a false arm resolves"; else fail "vocab: true else-ifeq arm not counted: $out"; fi
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb under a true \`else ifeq\` arm after a false arm resolves"; else fail "vocab: true else-ifeq arm not counted: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,1)\\nx:\\n\\t@true\\nelse ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: an \`else ifeq\` arm after a taken arm is dead"; else fail "vocab: else-ifeq after taken arm counted: $out"; fi
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: an \`else ifeq\` arm after a taken arm is dead"; else fail "vocab: else-ifeq after taken arm counted: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\nx:\\n\\t@true\\nelse ifdef CI\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: an undecidable \`else ifdef\` arm stays missing"; else fail "vocab: undecidable else-ifdef counted: $out"; fi
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: an undecidable \`else ifdef\` arm stays missing"; else fail "vocab: undecidable else-ifdef counted: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "define tmpl\\nifeq (1,0)\\nendef\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a conditional-looking line inside a define body is text"; else fail "vocab: define body mutated the conditional stack: $out"; fi
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a conditional-looking line inside a define body is text"; else fail "vocab: define body mutated the conditional stack: $_fv_out"; fi
 
 # A SPACE-INDENTED RULE is a rule (only a tab makes a recipe), for targets and .PHONY.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/  dry-run: ; @true\\n}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a space-indented \`  dry-run: ; @true\` resolves"; else fail "vocab: indented rule missed: $out"; fi
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a space-indented \`  dry-run: ; @true\` resolves"; else fail "vocab: indented rule missed: $_fv_out"; fi
 
 # NESTED CONDITIONALS ARE A CONJUNCTION: an inactive level makes its contents dead even
 # under an undecidable outer one, so a missing mandatory include there is never read.
 _fv_reset; _fv_repo dotfiles-Fedora "ifdef CI\\nifeq (1,0)\\ninclude missing.mk\\nendif\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a missing include in a dead inner branch under an undecidable outer one is never read"; else fail "vocab: inactive-under-undecidable folded wrong: $out"; fi
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a missing include in a dead inner branch under an undecidable outer one is never read"; else fail "vocab: inactive-under-undecidable folded wrong: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "ifeq (1,1)\\nifdef CI\\ninclude missing.mk\\nendif\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a mandatory include under an undecidable inner branch of an active outer one fails closed"; else fail "vocab: undecidable-under-active folded wrong: $out"; fi
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a mandatory include under an undecidable inner branch of an active outer one fails closed"; else fail "vocab: undecidable-under-active folded wrong: $_fv_out"; fi
 
 # A RULE IN A STATICALLY ACTIVE BRANCH counts; one under an undecidable condition does not.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb defined inside an active \`ifeq (1,1)\` branch resolves"; else fail "vocab: active-branch rule not counted: $out"; fi
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb defined inside an active \`ifeq (1,1)\` branch resolves"; else fail "vocab: active-branch rule not counted: $_fv_out"; fi
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifdef CI\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: a verb defined under an undecidable \`ifdef\` stays missing"; else fail "vocab: undecidable-branch rule counted: $out"; fi
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: a verb defined under an undecidable \`ifdef\` stays missing"; else fail "vocab: undecidable-branch rule counted: $_fv_out"; fi
 
 # AN INCLUDE INSIDE A FALSE CONDITIONAL is not followed: its targets are not appended
 # after the endif as if make had read them.
 _fv_reset; _fv_repo dotfiles-Fedora 'ifeq (1,0)\ninclude mk/verbs.mk\nendif\nlint:\n\t@true\n'
 mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "$_fv_all" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"
-if [[ "$out" == *"6 verb x repo cell(s) missing"* ]]; then
+_fv_out="$(_fv_run --check)"
+if [[ "$_fv_out" == *"6 verb x repo cell(s) missing"* ]]; then
   pass "vocab: an include inside a false conditional defines nothing"
 else
-  fail "vocab: conditional include was followed: $out"
+  fail "vocab: conditional include was followed: $_fv_out"
 fi
 
 # A RULE THE SCANNER CANNOT PROVE make defines — inside a conditional or a define body —
@@ -10195,19 +10195,19 @@ _fv_reset; _fv_repo dotfiles-Fedora 'include mk/*.mk\n-include local.mk\nlint:\n
 mkdir -p "$_fv_root/dotfiles-Fedora/mk"
 printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then
+if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then
   pass "vocab: verbs and the suite target defined through a globbed \`include mk/*.mk\` resolve"
 else
-  fail "vocab: included targets were not seen: $out"
+  fail "vocab: included targets were not seen: $_fv_out"
 fi
 
 # THE TEST FLOOR: a directory with content, run from a workflow. Each rung is its own cell.
 _fv_floor() { # _fv_floor <label> <want-cell> <setup-commands>
-  local label="$1" want="$2" out
+  local label="$1" want="$2" _fv_out
   _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
   eval "$3"
-  out="$(_fv_run | grep -F '`Alpine`')"
-  if [[ "$out" == *"| $want |" ]]; then pass "vocab floor: $label → $want"; else fail "vocab floor: $label (want '$want'): $out"; fi
+  _fv_out="$(_fv_run | grep -F '`Alpine`')"
+  if [[ "$_fv_out" == *"| $want |" ]]; then pass "vocab floor: $label → $want"; else fail "vocab floor: $label (want '$want'): $_fv_out"; fi
 }
 _fv_floor "no test dir" '**no-dir**' true
 _fv_floor "an empty tests/ dir" '**empty**' 'mkdir -p "$_fv_root/dotfiles-Alpine/tests"'
@@ -10595,20 +10595,20 @@ _fv_floor ".ONESHELL without -e: false does not end the script" 'ok' '_fv_suite 
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
-out="$(_fv_run --check)"; rc=$?
+_fv_out="$(_fv_run --check)"; rc=$?
 row="$(_fv_run | grep -F '| `Alpine` |')"
-if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing; 1 repo(s) under the test floor"* && "$row" == *'| **no-op** | **no-dir** |' ]]; then
+if ((rc == 1)) && [[ "$_fv_out" == *"1 verb x repo cell(s) missing; 1 repo(s) under the test floor"* && "$row" == *'| **no-op** | **no-dir** |' ]]; then
   pass "vocab floor: with no suite dir, --check exits 1 — the floor is no-dir AND a \`test:\` that can run nothing is **no-op**"
 else
-  fail "vocab floor: no-suite-dir verdicts (rc=$rc): $out / $row"
+  fail "vocab floor: no-suite-dir verdicts (rc=$rc): $_fv_out / $row"
 fi
 
 # An unreadable vocabulary is a loud stop, never an empty register (the fleet-list posture).
-out="$(_fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; CORE_MAKE_VOCABULARY=/nonexistent/vocab.txt _fv_run --check)"; rc=$?
-if ((rc == 2)) && [[ "$out" == *"vocabulary list unreadable"* ]]; then
+_fv_out="$(_fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; CORE_MAKE_VOCABULARY=/nonexistent/vocab.txt _fv_run --check)"; rc=$?
+if ((rc == 2)) && [[ "$_fv_out" == *"vocabulary list unreadable"* ]]; then
   pass "vocab: a missing vocabulary file is exit 2 with a notice §5h reads as an environment skip"
 else
-  fail "vocab: missing vocabulary file (rc=$rc): $out"
+  fail "vocab: missing vocabulary file (rc=$rc): $_fv_out"
 fi
 
 # PINS. The seven verbs #691 settled on, in scripts/make-vocabulary.txt; §5h reading the
@@ -10644,7 +10644,7 @@ _fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_c
 if _fv_run >/dev/null; then pass "vocab: report mode exits 0 (rendering is not a verdict)"; else fail "vocab: report mode exits non-zero"; fi
 if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; then pass "vocab: fleet-coverage.sh report mode exits 0 with no footnotes too"; else fail "vocab: fleet-coverage.sh report mode still exits 1 with no footnotes"; fi
 rm -rf "$_fv_root"
-unset _fv_root _fv_all _fv_mk out rc row tbl want have
+unset _fv_root _fv_all _fv_mk _fv_out rc row tbl want have
 unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_wf _fv_wf_raw _fv_suite _fv_floor
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
