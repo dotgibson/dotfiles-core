@@ -98,20 +98,95 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
   [[ -n "$decl" ]] && printf '%s' "$decl"
 }
 
+_run_lines() { # _run_lines <workflow.yml> → the command text of every `run:` step, comments stripped
+  # Only what a step RUNS counts as running the suite. A path filter (`paths: ['test/**']`),
+  # a job name, or a comment saying `make test` is a mention, not an execution, and an
+  # unanchored grep read all three as the floor being met. Inline `run: cmd` prints cmd;
+  # `run: |` / `run: >` prints every line of the block (the lines indented deeper than the
+  # key). Not a YAML parser — it needs no quoting rules, only indentation, which is the one
+  # thing YAML block scalars guarantee.
+  awk '
+    function strip(s) { sub(/^[ \t]*#.*$/, "", s); sub(/[ \t]#.*$/, "", s); return s }
+    {
+      if (inblock) {
+        if ($0 ~ /^[ \t]*$/) next
+        match($0, /^[ \t]*/)
+        if (RLENGTH > bind) { print strip($0); next }
+        inblock = 0
+      }
+      if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
+        rest = substr($0, RSTART + RLENGTH)
+        match($0, /^[ \t]*/); bind = RLENGTH
+        if (rest ~ /^[ \t]*[|>]/) inblock = 1
+        else print strip(rest)
+      }
+    }
+  ' "$1"
+}
+
+_suite_targets() { # _suite_targets <Makefile> → targets that run the suite, one per line
+  # `make test` is the canonical spelling, but a workflow that runs `make test-repo` whose
+  # recipe is `./test/test-repo.sh` IS running the suite — and the verb column already
+  # reports the missing alias, so the floor must not report the same gap twice. A target
+  # qualifies if its recipe names test/ or tests/, or if a prerequisite qualifies (to a
+  # fixpoint, so `test: test-repo` inherits). Same lexer as _targets: rules at column 0,
+  # recipes on tab lines, comments and variable assignments ignored.
+  awk '
+    /^\t/ { if (cur != "") body[cur] = body[cur] " " $0; next }
+    /^[^\t#. ][^:=]*::?([^=]|$)/ {
+      lhs = $0; sub(/::?.*/, "", lhs)
+      rhs = $0; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
+      n = split(lhs, t, /[ \t]+/)
+      for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur = t[i]; pre[cur] = pre[cur] " " rhs; seen[cur] = 1 }
+      next
+    }
+    { cur = "" }
+    END {
+      for (k in seen) if (body[k] ~ /(^|[^[:alnum:]_.-])tests?\//) hit[k] = 1
+      do {
+        changed = 0
+        for (k in seen) if (!(k in hit)) {
+          m = split(pre[k], p, /[ \t]+/)
+          for (i = 1; i <= m; i++) if (p[i] in hit) { hit[k] = 1; changed = 1; break }
+        }
+      } while (changed)
+      for (k in hit) print k
+    }
+  ' "$1"
+}
+
 _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
-  local d="$1" t=""
-  for t in "$d/test" "$d/tests"; do [[ -d "$t" ]] && break; t=""; done
-  [[ -n "$t" ]] || { printf 'no-dir'; return 0; }
-  # `find -mindepth` is GNU; `ls -A` is portable and empty output means empty dir.
-  [[ -n "$(ls -A "$t" 2>/dev/null)" ]] || { printf 'empty'; return 0; }
-  # CI runs it: a workflow that invokes `make test` or names the directory. The path
-  # match wants a boundary on the left so `bootstrap-test/` or `latest/` cannot satisfy it.
-  if [[ -d "$d/.github/workflows" ]] &&
-    grep -rqE '(make[[:space:]]+test([^[:alnum:]_-]|$)|(^|[^[:alnum:]_.-])tests?/)' "$d/.github/workflows" 2>/dev/null; then
-    printf 'ok'
-  else
-    printf 'not-in-ci'
+  local d="$1" t="" cand="" seen=0 wf alt="" tgt
+  # Either directory name satisfies the floor, so the first POPULATED one is the suite; a
+  # stale empty test/ beside a real, CI-run tests/ must not read as `empty`.
+  for cand in "$d/test" "$d/tests"; do
+    [[ -d "$cand" ]] || continue
+    seen=1
+    # `ls -A` is portable and empty output means empty dir (`find -mindepth` is GNU).
+    [[ -n "$(ls -A "$cand" 2>/dev/null)" ]] && { t="$cand"; break; }
+  done
+  ((seen)) || { printf 'no-dir'; return 0; }
+  [[ -n "$t" ]] || { printf 'empty'; return 0; }
+  # What counts as running it: a `run:` step that names the directory, or invokes `make`
+  # on a target whose recipe does (`make test`, or `make test-repo` → ./test/test-repo.sh).
+  alt="test"
+  if [[ -f "$d/Makefile" ]]; then
+    while IFS= read -r tgt; do
+      [[ -n "$tgt" && "$tgt" != test ]] && alt="$alt|$(printf '%s' "$tgt" | sed 's/[.[\\*^$|]/\\&/g')"
+    done < <(_suite_targets "$d/Makefile")
   fi
+  # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
+  # never a nested directory or a stray notes file. The path match wants a boundary on the
+  # left so `bootstrap-test/` or `latest/` cannot satisfy it; the make match wants one on
+  # the right so `make test-report` is not `make test`.
+  for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
+    [[ -f "$wf" ]] || continue
+    if _run_lines "$wf" | grep -qE "(make[[:space:]]+([^|&;]*[[:space:]])?($alt)([^[:alnum:]_-]|\$)|(^|[^[:alnum:]_.-])tests?/)"; then
+      printf 'ok'
+      return 0
+    fi
+  done
+  printf 'not-in-ci'
 }
 
 rows=""

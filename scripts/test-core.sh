@@ -16396,7 +16396,13 @@ _fv_ci() { # _fv_ci <repo> <workflow-line> — one workflow that carries the giv
   mkdir -p "$_fv_root/$1/.github/workflows"
   printf 'on: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n' "$2" >"$_fv_root/$1/.github/workflows/ci.yml"
 }
-_fv_suite() { mkdir -p "$_fv_root/$1/test"; printf '#!/bin/sh\nexit 0\n' >"$_fv_root/$1/test/smoke.sh"; }
+_fv_wf() { # _fv_wf <repo> <relative-path-under-.github/workflows> <printf-body> — an arbitrary workflow-dir file
+  mkdir -p "$_fv_root/$1/.github/workflows/$(dirname "$2")"
+  printf '%b' "$3" >"$_fv_root/$1/.github/workflows/$2"
+}
+_fv_suite() { # _fv_suite <repo> [dir=test]
+  mkdir -p "$_fv_root/$1/${2:-test}"; printf '#!/bin/sh\nexit 0\n' >"$_fv_root/$1/${2:-test}/smoke.sh"
+}
 # Every canonical verb, as a rule at column 0. `check` shares a rule with a prerequisite
 # and `bootstrap-dry` is an alias — both shapes the fleet actually uses.
 _fv_all='help:\n\t@true\nlint:\n\t@true\ncheck: lint\n\t@true\ndry-run:\n\t@true\nbootstrap-dry: dry-run\npackages-check:\n\t@true\ncore-verify:\n\t@true\ntest:\n\t@true\n'
@@ -16418,8 +16424,8 @@ fi
 
 # THE ALIAS DOES NOT COUNT. Keep bootstrap-dry, drop dry-run: the cell must go missing.
 # $_fv_all is ONE line of printf escapes, so the edits are unanchored substring edits.
-_fv_reset; _fv_repo dotfiles-Arch "${_fv_all/dry-run:\\n\\t@true\\n/}"
-sed -i 's/^bootstrap-dry: dry-run$/bootstrap-dry:\n\t@true/' "$_fv_root/dotfiles-Arch/Makefile"
+_fv_mk="${_fv_all/dry-run:\\n\\t@true\\n/}"
+_fv_reset; _fv_repo dotfiles-Arch "${_fv_mk/bootstrap-dry: dry-run/bootstrap-dry:\\n\\t@true}"
 _fv_suite dotfiles-Arch; _fv_ci dotfiles-Arch "make test"
 out="$(_fv_run --check)"; rc=$?
 if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then
@@ -16476,6 +16482,22 @@ _fv_floor "a suite nothing in CI runs" '**not-in-ci**' '_fv_suite dotfiles-Alpin
 _fv_floor "a suite only bootstrap-test/ mentions (boundary)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "./bootstrap-test/run.sh"'
 _fv_floor "a suite CI runs via make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test"'
 _fv_floor "a suite CI runs by path" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash test/smoke.sh"'
+# Either directory name is the suite, so a stale empty test/ beside a real tests/ is not `empty`.
+_fv_floor "an empty test/ beside a populated, CI-run tests/" 'ok' 'mkdir -p "$_fv_root/dotfiles-Alpine/test"; _fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "bash tests/smoke.sh"'
+# A MENTION IS NOT AN EXECUTION. Only a `run:` step counts; a path filter, a comment, a
+# file GitHub never loads as a workflow, or a nested directory must all stay not-in-ci.
+_fv_floor "a workflow that only path-filters on test/**" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "on:\n  push:\n    paths: [\"test/**\"]\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make lint\n"'
+_fv_floor "a run block whose only mention is a comment" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          # make test is run elsewhere\n          make lint  # not test/\n"'
+_fv_floor "a notes.txt in the workflows dir" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine notes.txt "make test\n"'
+_fv_floor "a yaml in a nested workflows subdirectory" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine old/ci.yml "jobs:\n  t:\n    steps:\n      - run: make test\n"'
+_fv_floor "a run: | block that runs make test (.yaml)" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yaml "jobs:\n  t:\n    steps:\n      - name: suite\n        run: |\n          set -e\n          make test\n      - run: echo done\n"'
+# A TARGET THAT RUNS THE SUITE COUNTS, whatever it is called: dotfiles-MacBook runs
+# `make test-repo` → ./test/test-repo.sh from CI, and the verb column already reports the
+# missing `test` alias, so the floor must not report that gap a second time. A same-prefix
+# target that does NOT touch the directory is not the suite.
+_fv_floor "CI runs a differently-named target whose recipe runs test/" 'ok' '_fv_suite dotfiles-Alpine; printf "test-repo: lint\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test-repo"'
+_fv_floor "CI runs a target that inherits the suite through a prerequisite" 'ok' '_fv_suite dotfiles-Alpine; printf "suite-run:\n\t@./test/smoke.sh\nci-all: lint suite-run\n\t@true\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make -j2 ci-all"'
+_fv_floor "CI runs a same-prefix target that never touches test/" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "test-report:\n\t@echo report\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make test-report"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
 if [[ "$out" == *"1 repo(s) under the test floor"* ]]; then
   pass "vocab floor: --check counts a repo under the floor and exits 1 with every verb defined"
@@ -16513,7 +16535,7 @@ else
 fi
 rm -rf "$_fv_root"
 unset _fv_root _fv_all _fv_mk out rc row tbl want have
-unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_suite _fv_floor
+unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_wf _fv_suite _fv_floor
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary

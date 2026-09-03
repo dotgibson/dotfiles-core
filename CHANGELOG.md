@@ -29,7 +29,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   repo keeps its historical spelling as a two-line alias, and a verb it genuinely lacks is
   declared as `make:<verb> none <why>` in the `.github/core-gates.txt` the gate register
   already reads. The register's last column is the test floor, with no waiver line: a
-  `test/` (or `tests/`) directory with content, run from a workflow. Five of nine repos are
+  `test/` (or `tests/`) directory with content, run from a `run:` step in a workflow GitHub
+  loads — `make test`, the directory by path, or a `make` target whose recipe runs it, so
+  `make test-repo` counts and a path filter or comment does not. Five of nine repos are
   under it today, `dotfiles-Fedora` — the template every Linux repo is copied from — among
   them; the first run reports 31 missing verb cells, which is the migration each OS repo
   now owes (aliases, not renames, so nothing calling the old targets breaks). The suite
