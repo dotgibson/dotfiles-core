@@ -19,12 +19,12 @@ _Repo status_ at the bottom).
    the sync refuses a target with uncommitted changes, so an uncommitted repo is skipped
    rather than re-vendored. Then re-vendor Core and stamp `core.lock`, from a **Core**
    checkout — in a throwaway worktree, so your own checkout stays on its branch for the
-   registration edit that follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" && { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && { if (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh --strict dotfiles-<Distro>); then rc=0; else rc=$?; fi; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
+   registration edit that follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" && { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && { out="$( (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" CORE_COLOR=never REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) 2>&1)" || true; printf '%s\n' "$out"; if grep -Eq 'repos: +updated 1 +skipped 0 +failed 0 ' <<<"$out"; then rc=0; else rc=1; fi; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
    (a unique temp path, so a retry never meets a registered leftover; the sync runs as
    an `if` condition so `set -e` cannot skip the cleanup, which runs only once the add
-   succeeded; with `--strict` the sync's status is the verdict — by default it exits 0
-   after a per-repo failure and only says so in its summary, and a matching `core.lock`
-   is no proof either, since it can be written before a later step fails)
+   succeeded; the RELEASED script runs in that worktree — it exits 0 after a per-repo
+   failure and may predate `--strict` — so its summary line is the verdict: `updated 1
+   skipped 0   failed 0` for the one target, and nothing else counts)
    — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
    § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no

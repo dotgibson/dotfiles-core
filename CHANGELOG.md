@@ -93,10 +93,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   single-target caller wants the opposite — a status it can chain on — and a matching
   `core.lock` line is no proof either, since the lock can be written before a later pin,
   commit or verification step fails. `--strict` returns 1 whenever a targeted repo
-  failed; the scaffold's `--no-vendor` recovery command and the first-vendor recipe in
-  `ARCHITECTURE.md`, `VENDORING.md` and `PORTING-MATRIX.md` use it, and `test-core.sh` F6
-  pins both contracts on the same dirty target. Dev tooling only — the OS repos receive
-  nothing from this entry.
+  failed **or was skipped** (not cloned, or no `core/` yet — a wrong name or
+  `REPOS_ROOT` must not read as success). The scaffold's `--no-vendor` recovery command
+  and the first-vendor recipe in `ARCHITECTURE.md`, `VENDORING.md` and
+  `PORTING-MATRIX.md` cannot use it: they run the **released** script from a worktree at
+  the pinned tag, which may predate the flag, so they read the released script's own
+  summary line instead and count only `updated 1   skipped 0   failed 0`. `test-core.sh`
+  F6 pins the default and strict contracts on the same dirty, missing and core-less
+  targets. Dev tooling only — the OS repos receive nothing from this entry.
 - **A greenfield OS repo no longer vendors a retired Core by default, and the
   first-vendor pin is now held to `core.version`'s major (#691 follow-up).**
   `scripts/new-os-repo.sh` defaulted `CORE_BRANCH` to `refs/tags/v5` — and its `--help`,

@@ -1317,7 +1317,9 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # Judged per match, not per line: a sentence naming the current default AND a
           # deliberate freeze must keep the freeze exempt.
           prefix = consumed substr(line, 1, RSTART - 1 + blen)
-          isdefault = (hit ~ /^refs\/tags\/v/ && prefix ~ /CORE_BRANCH(:-| \(default: )$/)
+          # An optional quote after `:-` (or after `(default: `): a quoted default,
+          # `CORE_BRANCH="${CORE_BRANCH:-"refs/tags/v5.3.0"}"`, is still the default.
+          isdefault = (hit ~ /^refs\/tags\/v/ && prefix ~ /CORE_BRANCH(:-["\047]?| \(default: ["\047]?)$/)
           tok = hit
           # Peeled either way — `v5.3.0.^{commit}` in the hit, or `refs/tags/v5.3.0.^{commit}`
           # with the peel in rest — is a REVISION, not prose: no period in it is a
@@ -1328,6 +1330,12 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           # shape an operand-taking option puts a branch NAME before it, and a first
           # `v<digit>` scan would read `vendor-v6` as the pin in `checkout -b vendor-v6 v5`.
           n = split(tok, parts, /[[:space:]]+/); tok = parts[n]
+          # ...unless that last token is the OPERAND of a branch-creating option with no
+          # start point after it: `git checkout -b v5` / `git switch -c v5` create a
+          # branch NAMED v5 and pin nothing. The generic option branch let those match.
+          if (n >= 2 && parts[n - 1] ~ /^(-[bBcC]|--(create|force-create|orphan))$/) {
+            consumed = consumed substr(line, 1, RSTART + RLENGTH - 1); line = rest; continue
+          }
           sub(/^["\047]/, "", tok); sub(/^refs\/tags\//, "", tok); sub(/^v/, "", tok)
           # The token class admits `.`, so a sentence-ending period rides in with it:
           # `refs/tags/v5.3.0.` would read as `5.3.0.` and an exact freeze would be

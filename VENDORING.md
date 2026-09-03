@@ -602,15 +602,18 @@ with no lock yet that is the only thing which can write one:
 # in dotfiles-core — from a THROWAWAY worktree, so your own checkout stays on its branch
 git fetch origin refs/tags/v6 && wt="$(mktemp -d)/core" &&   # one chain: a failed fetch stops here, never reusing a stale FETCH_HEAD
   { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && {   # a failed add removes the parent it just made, and stops
-  if (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh --strict dotfiles-<Distro>); then rc=0; else rc=$?; fi   # an `if` condition: `set -e` cannot skip the cleanup
+  out="$( (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" CORE_COLOR=never REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) 2>&1)" || true; printf '%s\n' "$out"
+  if grep -Eq 'repos: +updated 1 +skipped 0 +failed 0 ' <<<"$out"; then rc=0; else rc=1; fi   # the summary is the verdict (see below); `|| true` and the `if` keep `set -e` from skipping the cleanup
   git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc")   # cleanup only once the add succeeded; the sync's status is the verdict
 }
 ```
 
-`--strict` is what makes the exit status the verdict: by default `sync-core.sh` exits 0
-after a **per-repo** failure and only says so in its summary (the fan-out relies on that),
-and a matching `core.lock` line is no proof either — it can be written before a later pin,
-commit or verification step fails. With `--strict` a failed target exits 1.
+The **summary line is the verdict**, not the exit status: the script that runs here is the
+RELEASED `sync-core.sh` inside the worktree at the tag, which exits 0 after a per-repo
+failure (the fan-out relies on that) and may predate `--strict`; a matching `core.lock`
+line is no proof either, since it can be written before a later pin, commit or
+verification step fails. Every release prints `repos:  updated N   skipped N   failed N`,
+and `updated 1   skipped 0   failed 0` for the one target is the only outcome that counts.
 
 Three things matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
 and the pin must be the **peeled commit** — the release tags are annotated, so

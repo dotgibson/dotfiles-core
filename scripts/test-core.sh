@@ -2490,6 +2490,9 @@ _vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5.3.0}
 _vpn_count "an exact-but-retired scaffold default (v5.3.0 on a v6 tree) is still a finding" 6 1
 _vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-refs/tags/v6.1.0}"'
 _vpn_count "an exact scaffold default on the current major is clean" 6 0
+# A QUOTED default inside the expansion is still the default — and never exempt.
+_vpn_write scripts/new-os-repo.sh 'CORE_BRANCH="${CORE_BRANCH:-"refs/tags/v5.3.0"}"'
+_vpn_count "a quoted exact-but-retired scaffold default (\"refs/tags/v5.3.0\") is still a finding" 6 1
 # The --help text documents the same default in prose form, and is what a reader pastes.
 _vpn_write scripts/new-os-repo.sh '     CORE_BRANCH (default: refs/tags/v5.3.0 — a RELEASED tag, never main; pin a specific'
 _vpn_count "the --help form of an exact-but-retired default is judged too" 6 1
@@ -2624,6 +2627,9 @@ _vpn_write README.md 'git -C "$HERE" checkout v5 && git --no-pager -c core.pager
 _vpn_count "global options before checkout/switch (-C, -c, --no-pager) are seen through — both findings" 6 2
 _vpn_write README.md 'git -C "$HERE" checkout v6.1.0'
 _vpn_count "the same with an exact pin is clean" 6 0
+# A branch NAMED vN with no start point pins nothing: the operand is the last token.
+_vpn_write README.md 'git checkout -b v5 && git switch -c v5 && git switch --create v5 && git checkout --orphan v5'
+_vpn_count "operand-only branch creation (checkout -b v5, switch -c v5, --create v5, --orphan v5) is not a pin" 6 0
 # A bare `--` ends checkout's options and makes the next token a PATH, not a ref; for
 # switch the token after `--` is still a branch.
 _vpn_write README.md 'git checkout -- v5 && git checkout -q -- v5'
@@ -4798,7 +4804,26 @@ if ((_sc_subtree)); then
     fail "sync-core: --strict did not return 1 on a failed target — rc=$_sc_strict_rc"
   fi
   rm -f "$SCF/repos/dotfiles-Test/dirty-by-design"
-  unset _sc_strict_out _sc_strict_rc
+  # A SKIPPED target is a strict failure too: a wrong name or REPOS_ROOT ("not cloned")
+  # and a repo with no core/ yet both stamp nothing, and the default still exits 0.
+  mkdir -p "$SCF/repos/dotfiles-NoCore"
+  _scg "$SCF/repos/dotfiles-NoCore" init -q >/dev/null 2>&1
+  _sc_ident "$SCF/repos/dotfiles-NoCore"
+  : >"$SCF/repos/dotfiles-NoCore/README.md"
+  _scg "$SCF/repos/dotfiles-NoCore" add -A
+  _scg "$SCF/repos/dotfiles-NoCore" commit -q -m "no core yet"
+  _sc_strict_bad=""
+  for _sc_t in dotfiles-NotCloned dotfiles-NoCore; do
+    env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" "$_sc_t" >/dev/null 2>&1 || _sc_strict_bad="$_sc_strict_bad $_sc_t:default-nonzero"
+    env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" --strict "$_sc_t" >/dev/null 2>&1 && _sc_strict_bad="$_sc_strict_bad $_sc_t:strict-zero"
+  done
+  if [[ -z "$_sc_strict_bad" ]]; then
+    pass "sync-core: a targeted SKIP (not cloned, no core/) exits 0 by default and 1 under --strict"
+  else
+    fail "sync-core: the skip contract is wrong —$_sc_strict_bad"
+  fi
+  rm -rf "$SCF/repos/dotfiles-NoCore"
+  unset _sc_strict_out _sc_strict_rc _sc_strict_bad _sc_t
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
@@ -5621,7 +5646,7 @@ if have git; then
     # The commit marker sits between `add -A` and the subtree add on purpose: subtree add
     # needs a valid HEAD, and a chain that staged but never committed would otherwise
     # pass this ordering check.
-    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh --strict ' 'git worktree remove --force ' '&& rmdir "$_wtp" && exit '; do
+    for _rc_m in '{ {' 'ln -sfn ' ' add -A ' ' commit -q -m ' 'subtree add --prefix=core ' 'git fetch ' 'git worktree add --detach ' 'sync-core.sh ' 'grep -Eq ' 'git worktree remove --force ' '&& rmdir "$_wtp" && exit '; do
       _rc_pos="$(awk -v m="$_rc_m" '{ print index($0, m) }' <<<"$_rc_cmd")"
       ((_rc_pos > _rc_prev)) || _rc_order="$_rc_order [$_rc_m]"
       _rc_prev=$_rc_pos
@@ -5639,9 +5664,10 @@ if have git; then
     grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' <<<"$_rc_cmd" || _rc_bad="$_rc_bad subtree-add-source"
     # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
-    grep -qF '{ git worktree add --detach "$_wt" FETCH_HEAD || { rmdir "$_wtp"; false; }; } && { if (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad add-failure-removes-own-parent+cleanup-nested+sync-as-if-condition"
-    grep -qF './scripts/sync-core.sh --strict ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad strict-sync-verdict"
-    grep -qF '; then _rc=0; else _rc=$?; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
+    grep -qF '{ git worktree add --detach "$_wt" FETCH_HEAD || { rmdir "$_wtp"; false; }; } && { _o="$( (cd "$_wt" && ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad add-failure-removes-own-parent+cleanup-nested+captured-sync"
+    grep -qF 'CORE_COLOR=never REPOS_ROOT=' <<<"$_rc_cmd" || _rc_bad="$_rc_bad color-off-for-the-summary"
+    grep -qF ''"'"'repos: +updated 1 +skipped 0 +failed 0 '"'"' <<<"$_o"; then _rc=0; else _rc=1; fi; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc"; })' <<<"$_rc_cmd" || _rc_bad="$_rc_bad summary-verdict+parent-removed"
+    grep -qF ') 2>&1)" || true; printf ' <<<"$_rc_cmd" || _rc_bad="$_rc_bad capture-is-errexit-safe"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
     else
@@ -5649,8 +5675,8 @@ if have git; then
     fi
     # The worktree subshell's STATUS, behaviourally: take the emitted subshell (from the
     # Core-side `(cd` to the end), stub the four network/worktree steps — fetch → true,
-    # worktree add → mkdir, the sync → a chosen status, worktree remove → rmdir — and run
-    # it UNDER `bash -e`, since the
+    # worktree add → mkdir, the sync → a printf of a chosen SUMMARY LINE (the released
+    # script's is the verdict), worktree remove → rmdir — and run it UNDER `bash -e`, since the
     # reader's shell may have errexit on and the cleanup must still be reached. A shape
     # assertion alone could pass a chain whose cleanup still masked the sync.
     _rc_sub="${_rc_cmd#* --squash && (cd }"   # drop everything up to the Core-side subshell (the FIRST `(cd` after the subtree add)
@@ -5667,17 +5693,21 @@ if have git; then
       (cd "$SANDBOX/recovery" && bash -e -c "$d") >/dev/null 2>&1
     }
     _rc_st=""
-    _rc_drive false rmdir; _rc_st="$_rc_st sync-fails:$?"
+    _rc_ok="printf 'repos:  updated 1   skipped 0   failed 0   (of 1 targeted)'"
+    _rc_ko="printf 'repos:  updated 0   skipped 0   failed 1   (of 1 targeted)'"
+    _rc_sk="printf 'repos:  updated 0   skipped 1   failed 0   (of 1 targeted)'"
+    _rc_drive "$_rc_ko" rmdir; _rc_st="$_rc_st sync-fails:$?"
     _rc_leftover_fail="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
-    _rc_drive true rmdir; _rc_st="$_rc_st sync-ok:$?"
+    _rc_drive "$_rc_sk" rmdir; _rc_st="$_rc_st sync-skipped:$?"
+    _rc_drive "$_rc_ok" rmdir; _rc_st="$_rc_st sync-ok:$?"
     _rc_leftover="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
-    _rc_drive true false; _rc_st="$_rc_st cleanup-fails:$?"
+    _rc_drive "$_rc_ok" false; _rc_st="$_rc_st cleanup-fails:$?"
     # The cleanup-fails drive leaks its parent BY CONSTRUCTION (the stubbed removal fails
     # before the rmdir); tidy that one here, so the add-fails assertion below measures
     # only what the add-fails path leaves behind.
     find "$SANDBOX/recovery" -name 'wt.*' -type d -exec rm -rf {} + 2>/dev/null
-    if [[ "$_rc_st" == " sync-fails:1 sync-ok:0 cleanup-fails:1" ]]; then
-      pass "recovery: the worktree subshell returns the sync's status (failed sync → 1, ok → 0, failed cleanup → 1)"
+    if [[ "$_rc_st" == " sync-fails:1 sync-skipped:1 sync-ok:0 cleanup-fails:1" ]]; then
+      pass "recovery: the verdict is the released script's summary (failed 1 → 1, skipped 1 → 1, updated 1 → 0, failed cleanup → 1)"
     else
       fail "recovery: the worktree subshell masks a status —$_rc_st — driven: $_rc_sub"
     fi
@@ -5757,7 +5787,7 @@ if have git; then
   fi
   unset _rc_nocore _rc_noout _rc_nocmd
   rm -rf "$SANDBOX/recovery"
-  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail _rc_left_add
+  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover _rc_leftover_fail _rc_dr _rc_addfail _rc_left_add _rc_ok _rc_ko _rc_sk
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi
