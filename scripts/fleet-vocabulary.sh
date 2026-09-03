@@ -114,6 +114,8 @@ _makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the M
       return 1
     fi
   done < <(awk '
+    # A trailing `# reason` is a comment, not a path; a directive may be space-indented.
+    { sub(/#.*/, ""); sub(/^[ ]+/, "") }
     /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
     /^endif([ \t]|$)/ { if (cond) cond--; next }
     /^define([ \t]|$)/ { indef = 1; next }
@@ -132,10 +134,10 @@ _targets() { # _targets <Makefile> → one defined target name per line
   # may or may not define it, and this scanner does not evaluate make — so it says
   # "missing" rather than guess. No fleet Makefile uses either construct around a rule.
   awk '
-    /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
-    /^endif([ \t]|$)/ { if (cond) cond--; next }
-    /^define([ \t]|$)/ { indef = 1; next }
-    /^endef([ \t]|$)/ { indef = 0; next }
+    /^[ ]*(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
+    /^[ ]*endif([ \t]|$)/ { if (cond) cond--; next }
+    /^[ ]*define([ \t]|$)/ { indef = 1; next }
+    /^[ ]*endef([ \t]|$)/ { indef = 0; next }
     cond || indef { next }
     /^[^\t#. ][^:=]*::?([^=]|$)/ {
       lhs = $0; sub(/::?.*/, "", lhs)
@@ -174,9 +176,10 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternati
 # inspected, so the root target's recipe says nothing about it. `-C`/`-f` are matched
 # with their operand attached too (`-fother.mk`, `-C../tools`); the cluster before them
 # may not contain `I`, `o` or `W`, whose own attached operand could spell an `f`. For a POSIX
-# shell: `-n` (syntax check) between it and its operand — ONLY the shells, because pwsh
-# options are case-insensitive words (`-noprofile` runs). For node: --check / -c.
-NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(--check|-c)([[:space:]]|$))'
+# shell: `-n` (syntax check) between it and its operand, looking past options that take an
+# operand of their own (`bash -o pipefail -n x`) — ONLY the shells, because pwsh options
+# are case-insensitive words (`-noprofile` runs). For node: --check / -c.
+NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c)([[:space:]]|$))'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:
@@ -397,10 +400,10 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
       return 0
     }
     function handle(l,   lhs, rhs, inl, n, t, i) {
-      if (l ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) { cond++; ncur = 0; return }
-      if (l ~ /^endif([ \t]|$)/) { if (cond) cond--; ncur = 0; return }
-      if (l ~ /^define([ \t]|$)/) { indef = 1; ncur = 0; return }
-      if (l ~ /^endef([ \t]|$)/) { indef = 0; ncur = 0; return }
+      if (l ~ /^[ ]*(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/) { cond++; ncur = 0; return }
+      if (l ~ /^[ ]*endif([ \t]|$)/) { if (cond) cond--; ncur = 0; return }
+      if (l ~ /^[ ]*define([ \t]|$)/) { indef = 1; ncur = 0; return }
+      if (l ~ /^[ ]*endef([ \t]|$)/) { indef = 0; ncur = 0; return }
       if (cond || indef) return
       if (l ~ /^\t/) { if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1; return }
       if (l ~ /^[^\t#. ][^:=]*::?([^=]|$)/) {
@@ -439,10 +442,10 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
 _phony_targets() { # _phony_targets <Makefile> → every name declared .PHONY, one per line (not inside a conditional/define)
   awk '
     { if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next } ; l = buf $0; buf = "" }
-    l ~ /^(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
-    l ~ /^endif([ \t]|$)/ { if (cond) cond--; next }
-    l ~ /^define([ \t]|$)/ { indef = 1; next }
-    l ~ /^endef([ \t]|$)/ { indef = 0; next }
+    l ~ /^[ ]*(ifeq|ifneq|ifdef|ifndef)([ \t]|\()/ { cond++; next }
+    l ~ /^[ ]*endif([ \t]|$)/ { if (cond) cond--; next }
+    l ~ /^[ ]*define([ \t]|$)/ { indef = 1; next }
+    l ~ /^[ ]*endef([ \t]|$)/ { indef = 0; next }
     cond || indef { next }
     l ~ /^[.]PHONY[ \t]*:/ { sub(/^[.]PHONY[ \t]*:/, "", l); sub(/#.*/, "", l); n = split(l, t, /[ \t]+/); for (i = 1; i <= n; i++) if (t[i] != "") print t[i] }
   ' "$1"

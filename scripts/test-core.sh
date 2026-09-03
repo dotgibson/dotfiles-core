@@ -16683,6 +16683,16 @@ else
   fail "vocab: missing mandatory include not fatal (rc=$rc): $out"
 fi
 
+# AN INCLUDE WITH A TRAILING COMMENT, space-indented, reads the file and not the comment.
+_fv_reset; _fv_repo dotfiles-Fedora '  include mk/verbs.mk # the verbs\nlint:\n\t@true\n'
+mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
+_fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
+  pass "vocab: \`include x # reason\`, space-indented, follows x and ignores the comment"
+else
+  fail "vocab: commented/indented include mishandled: $out"
+fi
+
 # AN INCLUDE INSIDE A FALSE CONDITIONAL is not followed: its targets are not appended
 # after the endif as if make had read them.
 _fv_reset; _fv_repo dotfiles-Fedora 'ifeq (1,0)\ninclude mk/verbs.mk\nendif\nlint:\n\t@true\n'
@@ -16882,6 +16892,8 @@ _fv_floor "a disabled job beside an enabled one that runs the suite" 'ok' '_fv_s
 _fv_floor "true || make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "true || make test"'
 _fv_floor "make test || echo failed still runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test || echo failed"'
 _fv_floor "a .PHONY: test inside a false conditional does not rescue test: beside test/" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}ifeq (1,0)\\n.PHONY: test\\nendif\\n"; _fv_ci dotfiles-Alpine "make test"'
+# A COMMENT AFTER AN INCLUDE is not a path, and a shell -n hides behind an operand option.
+_fv_floor "bash -o pipefail -n test/smoke.sh is still a syntax check" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash -o pipefail -n test/smoke.sh"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
