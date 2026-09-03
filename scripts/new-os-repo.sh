@@ -556,9 +556,17 @@ check_link "$CFG/zsh/.zprofile" "$REPO/zsh/zprofile.zsh"
 check_link "$CFG/zsh/.zshrc" "$REPO/zsh/zshrc.zsh"
 for f in "$REPO"/os/*.zsh; do [[ -e "$f" ]] && check_link "$CFG/zsh/80-os.zsh" "$f"; done
 for f in "$REPO"/os/*.capabilities; do [[ -e "$f" ]] && check_link "$CFG/zsh/os.capabilities" "$f"; done
-# Core-provided: asserted when the vendored core/ carries the source (a core/ vendored
-# from an older Core may lack one), so the test never asserts a link bootstrap.sh would
-# not have made. EVERY Core zsh
+# The one Core file that is NOT optional: the scaffolded zshrc sources
+# $ZDOTDIR/loader.zsh, so a core/ that exists but lacks zsh/loader.zsh boots a bare shell
+# while bootstrap reports success. Require it before the conditional Core checks below.
+if [[ -e "$REPO/core/zsh/loader.zsh" ]]; then
+  check_link "$CFG/zsh/loader.zsh" "$REPO/core/zsh/loader.zsh"
+else
+  bad "core/zsh/loader.zsh is missing — the scaffolded zshrc sources it, so every shell would start bare"
+fi
+# The rest of Core is asserted when the vendored core/ carries the source (a core/
+# vendored from an older Core may lack one), so the test never asserts a link
+# bootstrap.sh would not have made. EVERY Core zsh
 # module, both tmux files and the single configs — the whole link list bootstrap.sh
 # carries, so dropping or breaking any link line there goes red here.
 for f in "$REPO"/core/zsh/*.zsh; do [[ -e "$f" ]] && check_link "$CFG/zsh/$(basename "$f")" "$f"; done

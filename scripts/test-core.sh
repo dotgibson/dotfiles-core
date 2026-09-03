@@ -5397,10 +5397,20 @@ if have git && have zsh; then
     else
       fail "new-os-repo: the suite failed on the unvendored scaffold but did not say why — $(head -3 "$SANDBOX/nor-suite.out" | tr '\n' ' ')"
     fi
+    # A core/ that EXISTS but is empty is the state between a bad vendor and a good one,
+    # and it is the one bootstrap accepts: the suite must still go red, naming the loader
+    # the scaffolded zshrc cannot live without — every other Core link is conditional.
+    mkdir -p "$NOR/core"
+    if (cd "$NOR" && ./test/check-links.sh) >"$SANDBOX/nor-empty.out" 2>&1; then
+      fail "new-os-repo: the scaffolded suite passed with an EMPTY core/ — it would sign off a repo whose shells start bare"
+    elif grep -q 'core/zsh/loader.zsh is missing' "$SANDBOX/nor-empty.out"; then
+      pass "new-os-repo: with a core/ that lacks zsh/loader.zsh, the suite fails and names the loader"
+    else
+      fail "new-os-repo: the empty-core/ run failed but did not name the loader — $(grep FAIL "$SANDBOX/nor-empty.out" | head -2 | tr '\n' ' ')"
+    fi
     # Then the VENDORED state: core/ seeded from Core's OWN tree — the same directories
     # bootstrap.sh links — so the Core-provided branches (every zsh module, both tmux
     # files, the single configs, mise-as-copy) are exercised rather than skipped.
-    mkdir -p "$NOR/core"
     for _nor_d in zsh tmux starship nvim git mise; do
       [[ -d "$HERE/$_nor_d" ]] && cp -r "$HERE/$_nor_d" "$NOR/core/"
     done
