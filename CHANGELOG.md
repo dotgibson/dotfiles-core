@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v6.1.0] - 2026-09-02
+
 ### Changed
 
 - **The atuin daemon-guard research apparatus is archived under `scripts/research/`, and its
