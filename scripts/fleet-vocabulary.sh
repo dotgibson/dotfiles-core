@@ -109,7 +109,9 @@ AWK_MAKECOND='
     else return "?"
     return ((a == b) != neg) ? "1" : "0"
   }
-  function mc_active(   k) { for (k = 1; k <= mcdepth; k++) if (MCACT[k] != "1") return MCACT[k]; return "1" }
+  # A CONJUNCTION of the enclosing levels: any inactive level makes the line dead whatever
+  # the others are ("0" dominates "?"); otherwise any undecidable level leaves it "?".
+  function mc_active(   k, r) { r = "1"; for (k = 1; k <= mcdepth; k++) { if (MCACT[k] == "0") return "0"; if (MCACT[k] == "?") r = "?" } ; return r }
   # MCTAKEN per level: "1" once an arm evaluated true, "?" once one was undecidable, "0"
   # while every arm so far was false — so `else ifeq (…)` (a chained arm) is "0" after a
   # taken arm, evaluated after only-false arms, and a plain `else` is the complement.
@@ -338,14 +340,19 @@ AWK_SHELL='
       if (w[i] == cmdw) need = "x"
       else if (cmdw ~ /^(bats|prove|pytest)$/ || cmd ~ /-m[ \t]+(pytest|unittest|nose2?)([ \t]|$)/) need = "any"
       else need = "file"
-      if (t ~ /^tests?$/) return (need == "any") ? 1 : 0
-      if (t in EXIST) return okkind(EXIST[t], need)
-      if (t ~ /[*?[]/) { for (k in EXIST) if (k ~ globre(t) && okkind(EXIST[k], need)) return 1 }
+      # A PowerShell script is run by pwsh, which needs no execute bit on it.
+      if (need == "x" && t ~ /[.]ps1$/) need = "file"
+      if (t ~ /^tests?$/) return (need == "any") ? hasfile(t) : 0
+      if (t in EXIST) return (EXIST[t] == "d") ? ((need == "any") ? hasfile(t) : 0) : okkind(EXIST[t], need)
+      if (t ~ /[*?[]/) { for (k in EXIST) if (k ~ globre(t) && (EXIST[k] == "d" ? (need == "any" && hasfile(k)) : okkind(EXIST[k], need))) return 1 }
       return 0
     }
     return 1
   }
   function okkind(kind, need) { return (need == "any") ? 1 : ((need == "x") ? (kind == "x") : (kind == "x" || kind == "f")) }
+  # hasfile(dir) — a directory handed to a runner must hold at least one FILE somewhere
+  # beneath it: a runner over an empty tree runs zero tests.
+  function hasfile(dir,   k) { for (k in EXIST) if (EXIST[k] != "d" && index(k, dir "/") == 1) return 1; return 0 }
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
   function splitcmds(s, out,   i, c, q, n, cur) {
     n = 0; cur = ""; q = ""; split("", SPLITOP); SPLITOP[1] = ""
@@ -757,7 +764,8 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #   * a step runs in its EFFECTIVE SHELL — its own `shell:`, else the job`s or the
   #     workflow`s `defaults.run.shell` — and only bash/sh steps are command text: unset
   #     is `bash -e {0}`, a bare `bash` is `-eo pipefail`, a bare `sh` is `-e`, a custom
-  #     template has exactly the options it spells; python/pwsh/cmd steps are skipped.
+  #     template has exactly the options it spells; pwsh/powershell/cmd are command
+  #     shells without errexit; a python step is source text and is skipped.
   #     Under errexit a bare literal `false` (or, with pipefail, a pipeline containing
   #     one) ends the step unless `set +e` said otherwise (cdnorm).
   #   * a step runs in its EFFECTIVE WORKING DIRECTORY: its own `working-directory:`, else
@@ -783,6 +791,11 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       if (v == "bash") return "e:1 p:1"
       if (v == "sh") return "e:1 p:0"
       if ((w == "bash" || w == "sh") && v ~ /\{0\}/) return "e:" ((v ~ /(^|[ \t])-[a-zA-Z]*e/ || v ~ /-o[ \t]+errexit/) ? 1 : 0) " p:" ((v ~ /pipefail/) ? 1 : 0)
+      # PowerShell (pwsh, powershell) and cmd DO run `make test` and a script path as
+      # commands — they are command shells, read with the same list operators and no
+      # errexit (an external command failing does not stop them). python and the like are
+      # programs, not shells: their step is source text.
+      if (w == "pwsh" || w == "powershell" || w == "cmd") return "e:0 p:0"
       return ""
     }
     function flushstep(   i, all) {

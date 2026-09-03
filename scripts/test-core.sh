@@ -10150,6 +10150,14 @@ if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* 
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/  dry-run: ; @true\\n}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a space-indented \`  dry-run: ; @true\` resolves"; else fail "vocab: indented rule missed: $out"; fi
 
+# NESTED CONDITIONALS ARE A CONJUNCTION: an inactive level makes its contents dead even
+# under an undecidable outer one, so a missing mandatory include there is never read.
+_fv_reset; _fv_repo dotfiles-Fedora "ifdef CI\\nifeq (1,0)\\ninclude missing.mk\\nendif\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a missing include in a dead inner branch under an undecidable outer one is never read"; else fail "vocab: inactive-under-undecidable folded wrong: $out"; fi
+_fv_reset; _fv_repo dotfiles-Fedora "ifeq (1,1)\\nifdef CI\\ninclude missing.mk\\nendif\\nendif\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"
+if [[ "$out" == *"7 verb x repo cell(s) missing"* ]]; then pass "vocab: a mandatory include under an undecidable inner branch of an active outer one fails closed"; else fail "vocab: undecidable-under-active folded wrong: $out"; fi
+
 # A RULE IN A STATICALLY ACTIVE BRANCH counts; one under an undecidable condition does not.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb defined inside an active \`ifeq (1,1)\` branch resolves"; else fail "vocab: active-branch rule not counted: $out"; fi
@@ -10527,7 +10535,8 @@ _fv_floor "./test/plain.sh (not executable) runs nothing" '**not-in-ci**' '_fv_s
 _fv_floor "bash test/plain.sh (not executable) runs it" 'ok' '_fv_suite dotfiles-Alpine; printf "exit 0\n" >"$_fv_root/dotfiles-Alpine/test/plain.sh"; _fv_ci dotfiles-Alpine "bash test/plain.sh"'
 _fv_floor "./test/helpers (a directory) runs nothing" '**not-in-ci**' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/test/helpers"; _fv_ci dotfiles-Alpine "./test/helpers"'
 _fv_floor "bash test/helpers (a directory) runs nothing" '**not-in-ci**' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/test/helpers"; _fv_ci dotfiles-Alpine "bash test/helpers"'
-_fv_floor "bats test/helpers (a runner takes a directory)" 'ok' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/test/helpers"; _fv_ci dotfiles-Alpine "bats test/helpers"'
+_fv_floor "bats test/helpers over an EMPTY directory runs zero tests" '**not-in-ci**' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/test/helpers"; _fv_ci dotfiles-Alpine "bats test/helpers"'
+_fv_floor "bats test/helpers over a directory holding a file" 'ok' '_fv_suite dotfiles-Alpine; mkdir -p "$_fv_root/dotfiles-Alpine/test/helpers"; : >"$_fv_root/dotfiles-Alpine/test/helpers/a.bats"; _fv_ci dotfiles-Alpine "bats test/helpers"'
 _fv_floor "(cd test); ./smoke.sh runs from the root" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "(cd test); ./smoke.sh"'
 _fv_floor "(cd test && ./smoke.sh) runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "(cd test && ./smoke.sh)"'
 _fv_floor "make -C . test is the root Makefile" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -C . test"'
@@ -10545,7 +10554,9 @@ _fv_floor "shell: bash (bare) is -eo pipefail: false | true; make test never rea
 _fv_floor "the default shell has no pipefail: false | true; make test runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false | true; make test"'
 _fv_floor "set -o pipefail; false | true; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "set -o pipefail; false | true; make test"'
 _fv_floor "true | false; make test never reaches make (last command fails)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "true | false; make test"'
-_fv_floor "a job defaults.run.shell of pwsh makes its steps not shell" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    defaults:\n      run:\n        shell: pwsh\n    steps:\n      - run: make test\n"'
+_fv_floor "a job defaults.run.shell of pwsh still runs make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    defaults:\n      run:\n        shell: pwsh\n    steps:\n      - run: make test\n"'
+_fv_floor "shell: pwsh runs a .ps1 suite script (no execute bit needed)" 'ok' '_fv_suite dotfiles-Alpine; : >"$_fv_root/dotfiles-Alpine/test/smoke.ps1"; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - shell: pwsh\n        run: ./test/smoke.ps1\n"'
+_fv_floor "shell: pwsh has no errexit: false; make test runs make" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - shell: pwsh\n        run: false; make test\n"'
 _fv_floor "a step shell: bash overrides a job default of pwsh" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    defaults:\n      run:\n        shell: pwsh\n    steps:\n      - run: make test\n        shell: bash\n"'
 # A HELPER DEFINED AFTER THE OUTER CALL is not there when the body runs.
 _fv_floor "suite() { helper; }; suite; helper() { make test; } fails at helper" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { helper; }; suite; helper() { make test; }"'
