@@ -9967,7 +9967,21 @@ _fv_ci() { # _fv_ci <repo> <workflow-line> — one workflow that carries the giv
   printf 'on: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n' "$2" >"$_fv_root/$1/.github/workflows/ci.yml"
 }
 # shellcheck disable=SC2317  # reached through the eval in _fv_floor, which shellcheck cannot see
-_fv_wf() { # _fv_wf <repo> <relative-path-under-.github/workflows> <printf-body> — an arbitrary workflow-dir file
+_fv_wf() { # _fv_wf <repo> <relative-path-under-.github/workflows> <printf-body> — a RUNNABLE workflow file
+  # A fixture body says only what it is about; the `on:` trigger and each job`s `runs-on:`
+  # that make a real workflow runnable are supplied here (a duplicated key is harmless to
+  # the lexer). _fv_wf_raw writes the body as given, for fixtures ABOUT those keys.
+  mkdir -p "$_fv_root/$1/.github/workflows/$(dirname "$2")"
+  printf '%b' "$3" | awk '
+    NR == 1 && $0 !~ /^(on|"on"|true):/ && !seen_on { print "on: push"; seen_on = 1 }
+    /^on:/ { seen_on = 1 }
+    { print }
+    /^jobs:/ { injobs = 1; next }
+    injobs && /^  [A-Za-z_][A-Za-z0-9_-]*:[ \t]*$/ { print "    runs-on: ubuntu-latest" }
+  ' >"$_fv_root/$1/.github/workflows/$2"
+}
+# shellcheck disable=SC2317
+_fv_wf_raw() { # _fv_wf_raw <repo> <path> <printf-body> — the body exactly as given
   mkdir -p "$_fv_root/$1/.github/workflows/$(dirname "$2")"
   printf '%b' "$3" >"$_fv_root/$1/.github/workflows/$2"
 }
@@ -10536,6 +10550,21 @@ _fv_floor "a step shell: bash overrides a job default of pwsh" 'ok' '_fv_suite d
 # A HELPER DEFINED AFTER THE OUTER CALL is not there when the body runs.
 _fv_floor "suite() { helper; }; suite; helper() { make test; } fails at helper" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { helper; }; suite; helper() { make test; }"'
 _fv_floor "helper defined before the outer call is inlined" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "helper() { make test; }; suite() { helper; }; suite"'
+# RUNNABLE AT ALL: no `on:`, or a job without `runs-on:`, runs nothing. Bare pytest
+# discovers the suite. `False`/`Null` are false. `$(MAKE) test` in a recipe is an edge.
+_fv_floor "a workflow file with no on: trigger is inert" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf_raw dotfiles-Alpine ci.yml "jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make test\n"'
+_fv_floor "a job with no runs-on: is inert" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf_raw dotfiles-Alpine ci.yml "on: push\njobs:\n  t:\n    steps:\n      - run: make test\n"'
+_fv_floor "runs-on: declared after steps still counts" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf_raw dotfiles-Alpine ci.yml "on: push\njobs:\n  t:\n    steps:\n      - run: make test\n    runs-on: ubuntu-latest\n"'
+_fv_floor "the YAML-1.1 true: spelling of on: is a trigger" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf_raw dotfiles-Alpine ci.yml "true:\n  push:\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make test\n"'
+_fv_floor "a bare pytest discovers a populated tests/" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "pytest -q"'
+_fv_floor "a bare python -m pytest discovers a populated tests/" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m pytest"'
+_fv_floor "a bare pytest --collect-only still runs nothing" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "pytest --collect-only"'
+_fv_floor "if: False (capitalised) never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    if: False\n    steps:\n      - run: make test\n"'
+_fv_floor "if: Null never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - if: Null\n        run: make test\n"'
+_fv_floor "ci: \$(MAKE) test reaches the suite" 'ok' '_fv_suite dotfiles-Alpine; printf "ci:\n\t\$(MAKE) test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
+_fv_floor "ci: ; \${MAKE} -j2 lint test (inline, braces) reaches the suite" 'ok' '_fv_suite dotfiles-Alpine; printf "ci: ; \${MAKE} -j2 lint test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
+_fv_floor "ci: \$(MAKE) -n test is a dry run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "ci:\n\t\$(MAKE) -n test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
+_fv_floor "ci: \$(MAKE) -C tools test is another Makefile" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "ci:\n\t\$(MAKE) -C tools test\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make ci"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
@@ -10588,7 +10617,7 @@ if _fv_run >/dev/null; then pass "vocab: report mode exits 0 (rendering is not a
 if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; then pass "vocab: fleet-coverage.sh report mode exits 0 with no footnotes too"; else fail "vocab: fleet-coverage.sh report mode still exits 1 with no footnotes"; fi
 rm -rf "$_fv_root"
 unset _fv_root _fv_all _fv_mk out rc row tbl want have
-unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_wf _fv_suite _fv_floor
+unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_wf _fv_wf_raw _fv_suite _fv_floor
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall

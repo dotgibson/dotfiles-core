@@ -237,7 +237,9 @@ _targets() { # _targets <Makefile> → one defined target name per line
 # test/x.py`, through the options that take an operand of their own: `bash -o pipefail
 # test/smoke.sh`); or the directory itself, or a file in it, handed to a TEST RUNNER that
 # takes directories (`bats test/`, `prove tests`, `pytest tests/`, `python3 -m pytest
-# tests`, `-m unittest discover tests`). A bare directory given to a shell or executed directly (`bash test/`,
+# tests`, `-m unittest discover tests`) — or, for pytest alone, no path at all: from the
+# repo root a bare `pytest` (or `python -m pytest`, options only) DISCOVERS the populated
+# suite directory. A bare directory given to a shell or executed directly (`bash test/`,
 # `./test/`) only fails; a python module other than a test runner (`-m tokenize
 # test/x.py`) reads the file and runs nothing — neither counts. `echo test/smoke.sh` and
 # `shellcheck test/*.sh` mention the path and run nothing, so they do not count. All of it
@@ -246,7 +248,7 @@ _targets() { # _targets <Makefile> → one defined target name per line
 # that is actually populated (_run_re), so a populated test/ is not credited by a step
 # running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|python3?|node|pwsh)[[:space:]]+((-o|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)[/][^[:space:]]+|(bats|prove|pytest)[[:space:]]+([^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+(pytest|unittest|nose2?)([[:space:]]+[^[:space:]]+)*[[:space:]]+([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/][^[:space:]]+)'
+RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|python3?|node|pwsh)[[:space:]]+((-o|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)[/][^[:space:]]+|(bats|prove|pytest)[[:space:]]+([^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|pytest([[:space:]]+-[^[:space:]]+)*[[:space:]]*$|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+pytest([[:space:]]+-[^[:space:]]+)*[[:space:]]*$|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+(pytest|unittest|nose2?)([[:space:]]+[^[:space:]]+)*[[:space:]]+([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/][^[:space:]]+)'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternation: test|tests> — every DIRS, both arms
 # A NO-EXECUTE MODE PARSES, PRINTS OR ASKS AND RUNS NOTHING. For make: dry-run (`-n` in any
 # short cluster, --dry-run/--just-print/--recon), question (`-q`, --question), touch
@@ -750,7 +752,8 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     `make test` runs `echo make test`. A heredoc payload inside a literal block is
   #     data and is dropped up to its delimiter line.
   #   * a step with a statically false `if:` never runs, nor does any step of a job with
-  #     one; a runtime condition may.
+  #     one; a runtime condition may. Nothing runs in a file without a top-level `on:`
+  #     or in a job without `runs-on:`.
   #   * a step runs in its EFFECTIVE SHELL — its own `shell:`, else the job`s or the
   #     workflow`s `defaults.run.shell` — and only bash/sh steps are command text: unset
   #     is `bash -e {0}`, a bare `bash` is `-eo pipefail`, a bare `sh` is `-e`, a custom
@@ -803,7 +806,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
     }
     function keyval(s) { sub(/^[^:]*:[ \t]*/, "", s); return unquote_scalar(stripcomment(s)) }
     # GitHub coerces `false`, `0`, `null` and the empty string to false in an expression.
-    function isfalse(v) { return v ~ /^(\$\{\{[ \t]*)?(false|0|null|\047\047|"")?([ \t]*\}\})?$/ }
+    function isfalse(v) { v = tolower(v); return v ~ /^(\$\{\{[ \t]*)?(false|0|null|\047\047|"")?([ \t]*\}\})?$/ }
     {
       if (inblock) {
         if ($0 ~ /^[ \t]*$/) { flushblock(); next }
@@ -831,7 +834,11 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       # so a `- ` at the steps column is a step, not the end of the block.
       if (insteps && (ind < sind || (ind == sind && $0 !~ /^[ \t]*-[ \t]/))) { flushstep(); insteps = 0; dind = -1; rind = -1 }
       if (!insteps) {
-        if ($0 ~ /^jobs:[ \t]*(#.*)?$/) { injobs = 1; jobind = -1; dind = -1; rind = -1; next }
+        # RUNNABLE AT ALL: a workflow GitHub triggers has a top-level `on:` (`"on":` and the
+      # YAML-1.1 `true:` spelling included), and a job that runs steps has a `runs-on:`.
+      # A file or job without them is inert, whatever its steps say.
+      if ($0 ~ /^("on"|\047on\047|on|true):/) hason = 1
+      if ($0 ~ /^jobs:[ \t]*(#.*)?$/) { injobs = 1; jobind = -1; dind = -1; rind = -1; next }
         if (injobs) {
           if (ind == 0) { injobs = 0; dind = -1; rind = -1 }
           else {
@@ -839,6 +846,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
             if (ind == jobind) { jobidx++; propind = -1; dind = -1; rind = -1; next }
             if (propind < 0) propind = ind
             if (ind == propind && $0 ~ /^[ \t]*if:/ && isfalse(keyval($0))) JOFF[jobidx] = 1
+            if (ind == propind && $0 ~ /^[ \t]*runs-on:/) JRUN[jobidx] = 1
           }
         }
         if ($0 ~ /^[ \t]*steps:[ \t]*(#.*)?$/) { sind = ind; insteps = 1; keycol = -1; next }
@@ -873,6 +881,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       flushstep()
       for (k = 1; k <= nh; k++) {
         j = HJOB[k]
+        if (!hason || !(j in JRUN)) continue
         if (HOFF[k] || JOFF[j]) continue
         wd = (HWD[k] != "" ? HWD[k] : (JWD[j] != "" ? JWD[j] : wfwd))
         # The effective shell: the step`s, else the job`s default, else the workflow`s.
@@ -903,6 +912,24 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
   # conditionals decided as in _targets (AWK_MAKECOND), nothing in a define body counted.
   awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v PIPEFAIL=0 -v existl="${3:-}" "$AWK_SHELL$AWK_MAKECOND"'
     BEGIN { loadexist(existl) }
+    # submake(line) — the goals a recipe hands to a RECURSIVE make (`$(MAKE) test`, `${MAKE}
+    # -j2 lint test`), as extra prerequisites of the rule: `ci: ; $(MAKE) test` runs the
+    # suite when the suite target does. Options and VAR=value are skipped; an invocation
+    # in a no-run mode (-n, --dry-run, …) or selecting another Makefile (-C, -f) adds none.
+    function submake(line,   n, c, i, k, w, m, goals, t) {
+      goals = ""
+      sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
+      n = splitcmds(trim(stripcomment(line)), c)
+      for (i = 1; i <= n; i++) {
+        t = trim(c[i])
+        if (t !~ /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*\$[({]MAKE[)}]([ \t]|$)/) continue
+        sub(/^.*\$[({]MAKE[)}][ \t]*/, "", t)
+        if (t ~ /(^|[ \t])(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^ \t]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([ \t=]|$)/) continue
+        m = split(t, w, /[ \t]+/)
+        for (k = 1; k <= m; k++) if (w[k] != "" && w[k] !~ /^-/ && w[k] !~ /^[A-Za-z_][A-Za-z0-9_]*=/) goals = goals " " w[k]
+      }
+      return goals
+    }
     function runs(line,   n, c, i, w) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
       n = splitcmds(trim(stripcomment(line)), c); n = cdnorm(c, n)
@@ -922,6 +949,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
       if (l ~ /^\t/) {
         if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
         if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
+        for (i = 1; i <= ncur; i++) pre[cur[i]] = pre[cur[i]] " " submake(l)
         return
       }
       if (l ~ /^[ ]*[^\t#. ][^:=]*::?([^=]|$)/) {
@@ -936,6 +964,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
         if (hassemi) {
           if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }
           if (runs(inl)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
+          for (i = 1; i <= ncur; i++) pre[cur[i]] = pre[cur[i]] " " submake(inl)
         }
         return
       }
