@@ -17060,6 +17060,18 @@ _fv_floor "while true; do exit 0; done; make test never reaches make" '**not-in-
 _fv_floor "an exit under a runtime condition ends only its block" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ -n x ]; then exit 0; fi; make test"'
 _fv_floor "a helper called from a called function is invoked" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "helper() { make test; }; suite() { helper; }; suite"'
 _fv_floor "a helper called only from an uncalled function is not" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "helper() { make test; }; suite() { helper; }; echo done"'
+# A BARE pytest RUNNER, a body judged where it is called, a subshell exit, and a list that
+# continues onto the next block line.
+_fv_floor "pytest tests/ runs the directory" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "pytest tests/"'
+_fv_floor "pytest --collect-only tests/ discovers only" '**not-in-ci**' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "pytest --collect-only tests/"'
+_fv_floor "suite() { make test; }; cd tools; suite runs make from tools" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { make test; }; cd tools; suite"'
+_fv_floor "suite() { cd test; }; suite; ./smoke.sh runs inside the suite dir" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "suite() { cd test; }; suite; ./smoke.sh"'
+_fv_floor "a return in a called helper ends only the helper" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "helper() { return 0; echo never; }; helper; make test"'
+_fv_floor "( exit 0 ); make test runs make" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "( exit 0 ); make test"'
+_fv_floor "( exit 0; make test ) never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "( exit 0; make test )"'
+_fv_floor "false && over make test on the next block line never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          false &&\n            make test\n"'
+_fv_floor "true || over make test on the next block line never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          true ||\n            make test\n"'
+_fv_floor "false || over make test on the next block line runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          false ||\n            make test\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

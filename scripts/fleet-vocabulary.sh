@@ -223,8 +223,8 @@ _targets() { # _targets <Makefile> → one defined target name per line
 # handed to an interpreter in command position (`bash -e test/smoke.sh`, `python3
 # test/x.py`, through the options that take an operand of their own: `bash -o pipefail
 # test/smoke.sh`); or the directory itself, or a file in it, handed to a TEST RUNNER that
-# takes directories (`bats test/`, `prove tests`, `python3 -m pytest tests`, `-m unittest
-# discover tests`). A bare directory given to a shell or executed directly (`bash test/`,
+# takes directories (`bats test/`, `prove tests`, `pytest tests/`, `python3 -m pytest
+# tests`, `-m unittest discover tests`). A bare directory given to a shell or executed directly (`bash test/`,
 # `./test/`) only fails; a python module other than a test runner (`-m tokenize
 # test/x.py`) reads the file and runs nothing — neither counts. `echo test/smoke.sh` and
 # `shellcheck test/*.sh` mention the path and run nothing, so they do not count. All of it
@@ -233,7 +233,7 @@ _targets() { # _targets <Makefile> → one defined target name per line
 # that is actually populated (_run_re), so a populated test/ is not credited by a step
 # running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|python3?|node|pwsh)[[:space:]]+((-o|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)[/][^[:space:]]+|(bats|prove)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+(pytest|unittest|nose2?)([[:space:]]+[^[:space:]]+)*[[:space:]]+([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/][^[:space:]]+)'
+RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|python3?|node|pwsh)[[:space:]]+((-o|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)[/][^[:space:]]+|(bats|prove|pytest)[[:space:]]+([^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|python3?[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-m[[:space:]]+(pytest|unittest|nose2?)([[:space:]]+[^[:space:]]+)*[[:space:]]+([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/][^[:space:]]+)'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternation: test|tests> — every DIRS, both arms
 # A NO-EXECUTE MODE PARSES, PRINTS OR ASKS AND RUNS NOTHING. For make: dry-run (`-n` in any
 # short cluster, --dry-run/--just-print/--recon), question (`-q`, --question), touch
@@ -257,7 +257,7 @@ _run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternat
 # (--collect-only/--co, --version, -h/--help) anywhere in its argument list. For every interpreter: its
 # help and version modes (--help/--version, -h/-V, pwsh -Help/-Version/-?), which print
 # and exit without touching the operand.
-NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v|-e|-p|--eval|--print)([[:space:]]|$)|python3?[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-c([[:space:]]|$)|-m[[:space:]]+(compileall|py_compile|pyflakes|pylint|flake8|mypy|black|ruff|isort)([[:space:]]|$)|-m[[:space:]]+pytest([[:space:]]+[^[:space:]]+)*[[:space:]]+(--collect-only|--co|--version|-h|--help)([[:space:]]|$))|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
+NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(make[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[a-eg-ik-np-zA-BD-HJ-NP-VX-Z]*[nqhvt][a-zA-Z]*|-[a-np-zA-HJ-VX-Z]*[Cf][^[:space:]]*|--dry-run|--just-print|--recon|--question|--help|--version|--touch|--directory|--file|--makefile)([[:space:]=]|$)|(bash|sh|zsh|dash|ksh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-[a-zA-Z]*n[a-zA-Z]*)([[:space:]]|$)|node[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--check|-c|-v|-e|-p|--eval|--print)([[:space:]]|$)|python3?[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(-c([[:space:]]|$)|-m[[:space:]]+(compileall|py_compile|pyflakes|pylint|flake8|mypy|black|ruff|isort)([[:space:]]|$)|-m[[:space:]]+pytest([[:space:]]+[^[:space:]]+)*[[:space:]]+(--collect-only|--co|--version|-h|--help)([[:space:]]|$))|pytest([[:space:]]+[^[:space:]]+)*[[:space:]]+(--collect-only|--co|--version|-h|--help)([[:space:]]|$)|(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*(--version|--help|-V|-h|-Version|-Help|-[?])([[:space:]]|$))'
 
 # THE SHELL-TEXT HELPERS, shared by both awk programs below (shell-level text, spliced in),
 # so a workflow step and a Makefile recipe are read by the same rules:
@@ -267,7 +267,7 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #     inside '…' nothing does. The operator before each command is kept (SPLITOP) and
 #     cdnorm decides reachability for the decidable pairs: `true || make test` and
 #     `false && make test` never reach make; `false || make test` always does. A shell
-#     function's body counts only if the function is invoked (fnbodies).
+#     function body is spliced at each reachable call and judged there (cdnorm).
 #   * stripcomment — a shell comment (`#` at the start, after whitespace, or right after
 #     a control operator: `:;# …`) OUTSIDE quotes, so `echo "value #"; make test` keeps
 #     its make and `:;# disabled && make test` has none.
@@ -353,13 +353,18 @@ AWK_SHELL='
   # dropped, recording which function names are invoked by a command that is itself
   # reachable; pass 2 for real, keeping the bodies of exactly those functions. A call made
   # only inside `if false` invokes nothing.
-  function cdnorm(c, n,   i, c2, changed, w, f) {
+  # cdnorm runs the reachability pass TWICE: pass 1 on a copy with every function body
+  # dropped, recording which function names are invoked by a command that is itself
+  # reachable (transitively through invoked bodies); then the reachable calls are
+  # EXPANDED IN PLACE — the body is spliced at each call site, nested calls too, so it is
+  # judged in the context of the call (a `cd tools` before the call applies to it, a
+  # `return` ends only that body) — and pass 2 runs for real on the expanded list. A body
+  # at its definition is never a command. Returns the new command count.
+  function cdnorm(c, n,   i, k, m, c2, changed, w, f, t, kw) {
     fnbodies(c, n)
     split("", INVOKED)
     for (i = 1; i <= n; i++) c2[i] = c[i]
     cdpass(c2, n, 0)
-    # TRANSITIVELY: a function called from the body of an invoked function is invoked
-    # too (`helper() { make test; }; suite() { helper; }; suite`), to a fixpoint.
     do {
       changed = 0
       for (i = 1; i <= n; i++) if ((i in BODY) && (BODY[i] in INVOKED)) {
@@ -367,7 +372,35 @@ AWK_SHELL='
         if ((w in FNAME) && !(w in INVOKED)) { INVOKED[w] = 1; changed = 1 }
       }
     } while (changed)
-    cdpass(c, n, 1)
+    split("", E); split("", EOP); split("", EINL); m = 0; ncall = 0
+    for (i = 1; i <= n; i++) {
+      if (i in BODY) continue
+      # A call may sit behind a then/do/else keyword (`if true; then suite; fi`): the
+      # keyword is emitted on its own and the body follows it.
+      t = trim(c[i]); kw = ""
+      if (match(t, /^(then|do|else)[ \t]+/)) { kw = substr(t, 1, RLENGTH); t = substr(t, RLENGTH + 1) }
+      w = t; sub(/[ \t].*$/, "", w)
+      if ((w in INVOKED) && FNAME[w] < i) {
+        if (kw != "") { E[++m] = kw; EOP[m] = SPLITOP[i]; EINL[m] = 0 }
+        m = inline(c, n, m, w, (kw != "" ? ";" : SPLITOP[i]), 1)
+      }
+      else { E[++m] = c[i]; EOP[m] = SPLITOP[i]; EINL[m] = 0 }
+    }
+    split("", BODY); split("", INL)
+    for (k = 1; k <= m; k++) { c[k] = E[k]; SPLITOP[k] = EOP[k]; INL[k] = EINL[k] }
+    for (k = m + 1; k <= n; k++) { c[k] = ""; delete SPLITOP[k] }
+    cdpass(c, m, 1)
+    return m
+  }
+  function inline(c, n, m, f, op, depth,   j, w, first, id) {
+    id = ++ncall; first = 1
+    for (j = 1; j <= n; j++) if ((j in BODY) && BODY[j] == f) {
+      w = trim(c[j]); sub(/[ \t].*$/, "", w)
+      if ((w in INVOKED) && w != f && depth < 4) m = inline(c, n, m, w, (first ? op : SPLITOP[j]), depth + 1)
+      else { E[++m] = c[j]; EOP[m] = (first ? op : SPLITOP[j]); EINL[m] = id }
+      first = 0
+    }
+    return m
   }
   # lit(t) — the static status of one command: "true", "false", or "" (unknown).
   function lit(t) { return (t == "true" || t == ":") ? "true" : ((t == "false") ? "false" : "") }
@@ -392,10 +425,21 @@ AWK_SHELL='
     }
     return r
   }
-  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r) {
-    d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0
+  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing) {
+    d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0; sd = 0; subterm = 0; retid = 0
     split("", TAKEN); split("", SKIPD); split("", DEF); split("", COND)
     for (i = 1; i <= n; i++) {
+      # A SUBSHELL `( … )` has its own exit: an `exit` inside it ends the subshell only.
+      # Its depth is tracked by leading `(` and trailing `)` on the split commands.
+      t = trim(c[i]); closing = 0
+      while (t ~ /^\(/) { sd++; sub(/^\([ \t]*/, "", t) }
+      while (t ~ /\)$/) { closing++; sub(/[ \t]*\)$/, "", t) }
+      c[i] = t
+      if (subterm && sd >= subterm) { c[i] = ""; sd -= closing; if (sd < subterm) subterm = 0; continue }
+      sd -= closing
+      # A `return` inside a body expanded at a call site ends that body only.
+      if (retid && INL[i] == retid) { c[i] = ""; continue }
+      retid = 0
       # An arm folded into a preceding compound condition: emit what condlist decided.
       if (i in COND) { c[i] = (skip ? "" : COND[i]); continue }
       if ((i in BODY) && (BODY[i] == "@" || !(BODY[i] in INVOKED))) { c[i] = ""; continue }
@@ -489,8 +533,8 @@ AWK_SHELL='
       skip = 0; for (lvl = 1; lvl <= nest; lvl++) if (SKIPD[lvl]) skip = 1
       # A group or subshell runs where it stands: `{ make test; }` and `( make test )` are
       # `make test` in command position once the delimiters go.
-      sub(/^[{(][ \t]+/, "", t); sub(/[ \t]+[)]$/, "", t)
-      if (t ~ /^[{}()]$/) t = ""
+      sub(/^[{][ \t]+/, "", t)
+      if (t ~ /^[{}]$/ || t == "") t = ""
       if (skip || t == "") { c[i] = ""; continue }
       # An unconditional `exit`/`exec`/`return` ends what can run: at the top level nothing
       # after it is reachable; inside a block, nothing further in that block is.
@@ -498,6 +542,8 @@ AWK_SHELL='
       # certain too and ends the whole shell: `if true; then exit 0; fi; make test` never
       # reaches make. Under a runtime condition it may run, so only its block ends.
       if (t ~ /^(exit|exec|return)([ \t]|$)/) {
+        if (t ~ /^return/ && INL[i]) { retid = INL[i]; c[i] = ""; continue }
+        if (sd + closing > 0) { subterm = sd + closing; c[i] = ""; if (sd < subterm) subterm = 0; continue }
         w = 1; for (lvl = 1; lvl <= nest; lvl++) if (!DEF[lvl]) w = 0
         if (nest == 0 || w) term = 1; else SKIPD[nest] = 1
         skip = 1; c[i] = ""; continue
@@ -505,7 +551,7 @@ AWK_SHELL='
       c[i] = t
       # A call counts only AFTER the definition (FNAME holds its index): `suite; suite() {…}`
       # fails at the call and never reaches the body.
-      if (!final) { w = t; sub(/[ \t].*$/, "", w); if ((w in FNAME) && FNAME[w] < i) INVOKED[w] = 1 }
+      if (!final) { w = t; sub(/^(then|do|else)[ \t]+/, "", w); sub(/[ \t].*$/, "", w); if ((w in FNAME) && FNAME[w] < i) INVOKED[w] = 1 }
       if (match(t, /^cd[ \t]+/)) {
         d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
         if (d ~ /^tests?$/) { x = 0; continue }
@@ -578,7 +624,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   # job they belong to, and resolved once every job- and workflow-level key has been seen.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
   awk -v SQ="'" "$AWK_SHELL"'
-    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(c[i]) }
+    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); n = cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(c[i]) }
     function flushblock() { if (acc != "") { held[++nheld] = acc; acc = "" } }
     function flushstep(   i, all) {
       if (inblock) { flushblock(); inblock = 0 }
@@ -586,8 +632,16 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       # or a `fi` on one line governs the lines after it, as it does when the step runs.
       # Each line loses its shell comment BEFORE the join — a `# note` line would
       # otherwise comment out every line joined after it.
+      # A line ending in `&&`/`||`/`|` (or beginning with one) continues its list onto the
+      # next line: joined with a space, not a `;`, or `false &&` over `make test` would
+      # become two reachable commands.
       all = ""
-      for (i = 1; i <= nheld; i++) { line = trim(stripcomment(held[i])); if (line != "") all = (all == "" ? line : all " ; " line) }
+      for (i = 1; i <= nheld; i++) {
+        line = trim(stripcomment(held[i])); if (line == "") continue
+        if (all == "") all = line
+        else if (all ~ /(&&|\|\||\||;)$/ || line ~ /^(&&|\|\||\|)/) all = all " " line
+        else all = all " ; " line
+      }
       if (nheld) { nh++; H[nh] = all; HWD[nh] = stepwd; HOFF[nh] = stepoff; HJOB[nh] = jobidx }
       nheld = 0; stepwd = ""; stepoff = 0
     }
@@ -616,7 +670,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       }
       if ($0 ~ /^[ \t]*$/ || $0 ~ /^[ \t]*#/) next
       match($0, /^[ \t]*/); ind = RLENGTH
-      # YAML allows a sequence item at its parent key`s own indent (`steps:` over `- run:`),
+      # YAML allows a sequence item at the indent of its parent key (`steps:` over `- run:`),
       # so a `- ` at the steps column is a step, not the end of the block.
       if (insteps && (ind < sind || (ind == sind && $0 !~ /^[ \t]*-[ \t]/))) { flushstep(); insteps = 0; dind = -1; rind = -1 }
       if (!insteps) {
@@ -684,7 +738,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SHELL$AWK_MAKECOND"'
     function runs(line,   n, c, i) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
-      n = splitcmds(trim(stripcomment(line)), c); cdnorm(c, n)
+      n = splitcmds(trim(stripcomment(line)), c); n = cdnorm(c, n)
       for (i = 1; i <= n; i++) if (trim(c[i]) ~ re && trim(c[i]) !~ nore) return 1
       return 0
     }
