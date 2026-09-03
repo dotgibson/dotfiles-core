@@ -5763,6 +5763,14 @@ if have git; then
     else
       fail "recovery: the command does not parse — $_rc_cmd"
     fi
+    # PURE ASCII: every message in the chain goes through %q, and bash 3.2 quotes a
+    # multibyte character byte by byte — invalid UTF-8 that BSD grep refuses to match
+    # (which is how this fixture went red on macOS while awk and bash -n agreed).
+    if LC_ALL=C grep -q '[^ -~]' <<<"$_rc_cmd"; then
+      fail "recovery: the command carries non-ASCII bytes — $(LC_ALL=C grep -o '[^ -~]\{1,\}' <<<"$_rc_cmd" | head -3 | tr '\n' ' ')"
+    else
+      pass "recovery: the command is pure ASCII (safe through bash 3.2's %q and BSD grep)"
+    fi
     # Ordering: each marker must appear, and after the previous one. Positions, not one
     # regex — a regex over a %q-escaped command is unreadable and was wrong on arrival.
     _rc_prev=0; _rc_order=""
