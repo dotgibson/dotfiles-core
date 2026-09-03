@@ -16471,6 +16471,19 @@ else
   fail "vocab: no-Makefile case: $out"
 fi
 
+# `make <verb>` RESOLVING is the promise, not where the rule sits: a verb defined in an
+# included file counts, and so does a suite target defined there; a missing optional
+# include is simply absent.
+_fv_reset; _fv_repo dotfiles-Fedora 'include mk/verbs.mk\n-include local.mk\nlint:\n\t@true\n'
+mkdir -p "$_fv_root/dotfiles-Fedora/mk"
+printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
+_fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
+  pass "vocab: verbs and the suite target defined through \`include\` resolve"
+else
+  fail "vocab: included targets were not seen: $out"
+fi
+
 # THE TEST FLOOR: a directory with content, run from a workflow. Each rung is its own cell.
 _fv_floor() { # _fv_floor <label> <want-cell> <setup-commands>
   local label="$1" want="$2" out
@@ -16578,6 +16591,12 @@ _fv_floor "make test=disabled (a variable, not a goal)" '**not-in-ci**' '_fv_sui
 _fv_floor "make test -n (flag after the goal)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test -n"'
 _fv_floor "make test --question" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test --question"'
 _fv_floor "make test 2>&1 still counts" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test 2>&1"'
+# `cd test && ./smoke.sh` RUNS THE SUITE: a cd into the suite directory carries over the
+# rest of the command list, in a recipe or a step; a cd elsewhere does not.
+_fv_floor "a recipe that cds into test/ and runs the script" 'ok' '_fv_suite dotfiles-Alpine; printf "insuite:\n\t@cd test && ./smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make insuite"'
+_fv_floor "a step that cds into tests/ and runs bash on the script" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "cd tests/ && bash run.sh"'
+_fv_floor "a step that cds into test/ and only echoes" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd test && echo smoke.sh"'
+_fv_floor "a step that cds elsewhere before running a script" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "cd docs && ./smoke.sh"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"

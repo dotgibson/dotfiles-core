@@ -78,6 +78,22 @@ load_os_repos || {
 }
 REPOS=("${CORE_OS_REPOS[@]}")
 
+_makefile_text() { # _makefile_text <repo-dir> [file=Makefile] [depth] → the Makefile plus its includes
+  # The register promises that `make <verb>` RESOLVES, not that the rule sits in the root
+  # file, so `include`/`-include`/`sinclude` lines are followed — lexically, relative to the
+  # repo root as make itself resolves them, to a bounded depth, and only when the path
+  # carries no `$(…)` (a variable would need make's evaluation, which this deliberately
+  # does not run in a sibling checkout). A missing optional include is simply absent.
+  local d="$1" f="${2:-Makefile}" depth="${3:-0}" inc
+  [[ -f "$d/$f" ]] || return 0
+  cat "$d/$f"
+  ((depth < 4)) || return 0
+  while IFS= read -r inc; do
+    [[ -n "$inc" && "$inc" != *'$'* ]] || continue
+    _makefile_text "$d" "$inc" $((depth + 1))
+  done < <(sed -nE 's/^-?s?include[[:space:]]+//p' "$d/$f" | tr ' \t' '\n\n')
+}
+
 _targets() { # _targets <Makefile> → one defined target name per line
   # A rule line is `targets: prereqs` (or `::`) at column 0 — not a recipe (tab), not a
   # comment, not a variable assignment (`=` before the colon), not `.PHONY:`. Several
@@ -130,6 +146,10 @@ NORUN_RE='(^|[[:space:]])(sudo[[:space:]]+)?(make[[:space:]]+([^[:space:]]+[[:sp
 #     YAML comment; a plain value is returned as is (its ` #` comment is shell text too,
 #     and stripcomment removes it). Unquoting runs BEFORE comment stripping, or
 #     `run: "make test # suite"` loses its closing quote and never unquotes.
+#   * cdnorm — a `cd test` (or tests) earlier in the same command list puts the commands
+#     after it inside the suite directory, so `cd test && ./smoke.sh` is rewritten to
+#     `./test/smoke.sh` and `cd tests && bash run.sh` to `bash tests/run.sh`; the regexes
+#     then judge root-relative paths as always. A later `cd` elsewhere ends the effect.
 #   * trim — whitespace only.
 AWK_SHELL='
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -159,6 +179,23 @@ AWK_SHELL='
       prev = c
     }
     return s
+  }
+  function cdnorm(c, n,   i, d, t, m) {
+    d = ""
+    for (i = 1; i <= n; i++) {
+      t = trim(c[i])
+      if (match(t, /^cd[ \t]+/)) {
+        d = substr(t, RLENGTH + 1); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
+        if (d !~ /^tests?$/) d = ""
+        continue
+      }
+      if (d == "") continue
+      if (t ~ /^[.][/]/) { sub(/^[.][/]/, "./" d "/", t); c[i] = t; continue }
+      if (match(t, /^((sudo|env)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+)*(bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[ \t]+(-[^ \t]+[ \t]+)*/)) {
+        m = RLENGTH
+        if (substr(t, m + 1, 1) !~ /[-\/]/ && substr(t, m + 1) != "") c[i] = substr(t, 1, m) d "/" substr(t, m + 1)
+      }
+    }
   }
   function unquote_scalar(s,   i, c, out) {
     s = trim(s)
@@ -203,7 +240,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     `make test` runs `echo make test`.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
   awk -v SQ="'" "$AWK_SHELL"'
-    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); for (i = 1; i <= n; i++) print trim(c[i]) }
+    function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); cdnorm(c, n); for (i = 1; i <= n; i++) print trim(c[i]) }
     function flush() { if (acc != "") { emit(acc); acc = "" } }
     {
       if (inblock) {
@@ -250,7 +287,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> → targets that run the
   awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" "$AWK_SHELL"'
     function runs(line,   n, c, i) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
-      n = splitcmds(trim(stripcomment(line)), c)
+      n = splitcmds(trim(stripcomment(line)), c); cdnorm(c, n)
       for (i = 1; i <= n; i++) if (trim(c[i]) ~ re && trim(c[i]) !~ nore) return 1
       return 0
     }
@@ -314,7 +351,7 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   if [[ -f "$d/Makefile" ]]; then
     while IFS= read -r tgt; do
       [[ -n "$tgt" ]] && alt="${alt:+$alt|}$(_ere_escape "$tgt")"
-    done < <(_suite_targets "$d/Makefile" "$re")
+    done < <(_suite_targets <(_makefile_text "$d") "$re")
   fi
   # No suite target at all: the make arm must match nothing, not the empty string.
   [[ -n "$alt" ]] || alt='[^[:alnum:]_-]never-a-target'
@@ -354,7 +391,7 @@ for repo in "${REPOS[@]}"; do
   present=$((present + 1))
   line="| \`${repo#dotfiles-}\` |"
   have=""
-  [[ -f "$dir/Makefile" ]] && have="$(_targets "$dir/Makefile")"
+  [[ -f "$dir/Makefile" ]] && have="$(_targets <(_makefile_text "$dir"))"
   for v in "${VERBS[@]}"; do
     # Herestring, not a printf pipe: §5d's pipefail rule, and grep -q exits early anyway.
     if grep -qxF -- "$v" <<<"$have"; then
