@@ -2532,6 +2532,10 @@ _vpn_count "a bare major followed by a sentence-ending period is still a finding
 # malformed foreign pin is judged, never trimmed into an exempt exact one.
 _vpn_write README.md 'refs/tags/v5.3.0+ and refs/tags/v5.3.0-'
 _vpn_count "\`v5.3.0+\` and \`v5.3.0-\` are malformed foreign pins, both findings" 6 2
+# ...and so is a suffix the token class does not admit: `v5.3.0_bad` must not be read as
+# `v5.3.0` and exempted on the strength of its well-formed prefix.
+_vpn_write README.md 'refs/tags/v5.3.0_bad and git checkout v5.3.0x'
+_vpn_count "a word character glued to an exact-looking pin makes it malformed — both findings" 6 2
 # A reformatted `git checkout` — two spaces, or a tab — is the same copyable command.
 _vpn_write README.md 'git  checkout v5'
 _vpn_count "\`git  checkout vN\` with doubled whitespace is still judged" 6 1

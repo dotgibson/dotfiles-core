@@ -49,7 +49,9 @@ bootstrap, and .gitignore.
   <OSName>       e.g. Fedora, Arch, Gentoo  (repo defaults to ../dotfiles-<OSName>)
   target-dir     override the destination directory
   --dry-run, -n  print every planned action; create nothing
-  --no-vendor    scaffold the files but skip the vendoring (run sync-core.sh later)
+  --no-vendor    scaffold the files but skip the vendoring. sync-core.sh will NOT fill
+                 the gap later (it skips a repo with no core/); follow the manual
+                 one-time setup in VENDORING.md instead — the script prints it.
 
 Env: CORE_REMOTE (default: this repo's origin)
      CORE_BRANCH (default: refs/tags/v6 — a RELEASED tag, never main; pin a specific
@@ -128,7 +130,11 @@ w() {
 #
 # Nothing downstream loses anything: core.lock is the authoritative provenance since #587,
 # and the fan-out stamps it on this repo's first `make sync`.
-_vendor_hint="git -C '$TARGET' fetch '$CORE_REMOTE' '$CORE_BRANCH' && (cd '$HERE' && ./scripts/sync-core.sh dotfiles-$OS)"
+# The manual path, NOT a bare sync-core.sh: the fan-out skips a repo with no core/ (that is
+# the one thing it will not create), so the hint is VENDORING.md's one-time setup — a
+# subtree add to bring core/ into existence, then the sync from Core to replace it with the
+# filtered set and stamp core.lock.
+_vendor_hint="git -C '$TARGET' subtree add --prefix=core '$CORE_REMOTE' '$CORE_BRANCH' --squash && (cd '$HERE' && ./scripts/sync-core.sh dotfiles-$OS)   # VENDORING.md § One-time setup"
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then
