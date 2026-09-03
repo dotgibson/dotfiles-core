@@ -101,13 +101,14 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
 # WHAT COUNTS AS RUNNING THE SUITE, in one simple shell command (the text is split at
 # unquoted `;`/`&&`/`||`/`|` first — AWK_SPLITCMDS below — so command position is simply
 # the start): a test path as the command (`./test/smoke.sh`, `tests/run`), or an
-# interpreter in command position handed one (`bash -e test/smoke.sh`), optionally under
-# sudo. `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
+# interpreter in command position handed one (`bash -e test/smoke.sh`) — optionally under
+# sudo or env, and after leading variable assignments (`CI=1 make test` is how a great
+# many steps are written). `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
 # the path and run nothing, so they do not count. `DIRS` is replaced per repo with the
 # directory that is actually populated (_run_re), so a populated test/ is not credited by a
 # step running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='^[[:space:]]*(sudo[[:space:]]+)?((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
+RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
 _run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
 # A NO-EXECUTE MODE PARSES OR PRINTS AND RUNS NOTHING: make's dry-run (`-n` in any short
 # cluster, --dry-run/--just-print/--recon) and question (`-q`, --question) modes; a shell's
@@ -168,7 +169,8 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         if (fold && acc != "") { emit(acc); acc = "" }
         inblock = 0
       }
-      if ($0 ~ /^[ \t]*steps:[ \t]*$/) { match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; keycol = -1; next }
+      # `steps:` may carry a trailing comment (`steps: # smoke`) — YAML allows it on a key.
+      if ($0 ~ /^[ \t]*steps:[ \t]*(#.*)?$/) { match($0, /^[ \t]*/); sind = RLENGTH; insteps = 1; keycol = -1; next }
       if (!insteps) next
       # A full-line comment has no structure in YAML, whatever its indentation: it neither
       # ends the steps block nor is a step.
@@ -264,13 +266,14 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   # Only a workflow GitHub actually loads — top-level .yml/.yaml under .github/workflows,
   # never a nested directory or a stray notes file. _run_lines yields one simple command
   # per line; each is judged alone: the run regex, or `make` as the command (optionally
-  # under sudo) on a suite target — and in neither case a no-execute mode (NORUN_RE).
+  # under sudo/env or after `VAR=value` assignments) with a suite target anywhere among
+  # its operands (`make lint test`) — and in neither case a no-execute mode (NORUN_RE).
   # Captured, not piped from the producer: under pipefail a `grep -q` that exits on an
   # early match can SIGPIPE an awk still writing, and 141 would read as "not run".
   for wf in "$d"/.github/workflows/*.yml "$d"/.github/workflows/*.yaml; do
     [[ -f "$wf" ]] || continue
     cmds="$(_run_lines "$wf")"
-    hits="$(grep -E "($re|^[[:space:]]*(sudo[[:space:]]+)?make[[:space:]]+(-[^[:space:]]+[[:space:]]+)*($alt)([^[:alnum:]_-]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE")"
+    hits="$(grep -E "($re|^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*make[[:space:]]+([^[:space:]]+[[:space:]]+)*($alt)([^[:alnum:]_-]|\$))" <<<"$cmds" | grep -vE "$NORUN_RE")"
     if [[ -n "$hits" ]]; then
       printf 'ok'
       return 0

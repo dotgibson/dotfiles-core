@@ -16551,6 +16551,13 @@ _fv_floor "a step echoing a quoted && make test" '**not-in-ci**' '_fv_suite dotf
 _fv_floor "a recipe echoing a quoted ; ./test/ path is not the suite" '**not-in-ci**' '_fv_suite dotfiles-Alpine; printf "notice:\n\t@echo \"disabled; ./test/smoke.sh\"\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make notice"'
 _fv_floor "a full-line comment at the steps: column before the run step" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: make lint\n    # the suite\n      - run: make test\n"'
 _fv_floor "a single-quoted run scalar" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: '"'"'make test'"'"'\n"'
+# HOW STEPS ARE ACTUALLY WRITTEN: `steps:` with a trailing comment, `CI=1 make test`,
+# `env CI=1 make test`, and a suite target that is not the first operand.
+_fv_floor "steps: with a trailing comment" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps: # smoke tests\n      - run: make test\n"'
+_fv_floor "CI=1 make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "CI=1 TERM=dumb make test"'
+_fv_floor "env CI=1 make test" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "env CI=1 make test"'
+_fv_floor "make lint test (suite target second)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make lint test"'
+_fv_floor "CI=1 make -n test is still a dry run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "CI=1 make -n test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 out="$(_fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"; _fv_run --check)"
