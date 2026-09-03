@@ -1234,9 +1234,9 @@ fi
 # including dotfiles-Fedora, the template every Linux repo is stamped from.
 #
 # scripts/make-vocabulary.txt declares the canonical verbs ONCE; scripts/fleet-vocabulary.sh
-# reads each sibling's Makefile and reports, per verb, whether the canonical target exists
+# reads each sibling's Makefile and reports, per verb, whether the canonical target resolves
 # (an alias TO it is fine — the requirement is that the canonical name resolves; a verb a
-# repo genuinely lacks is declared as `make:<verb> none <why>` in .github/core-gates.txt)
+# repo genuinely lacks is a stub target that says so, never declared away)
 # and whether the repo meets the test floor: a test/ (or tests/) directory with content,
 # run from a workflow. Same shape as the register above, same declaration file, and the
 # same advisory posture — this is fleet drift, not a regression in the commit under test.

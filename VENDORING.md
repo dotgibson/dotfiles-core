@@ -480,13 +480,16 @@ Keep the old spelling as an alias — two lines, and muscle memory survives:
 bootstrap-dry: dry-run ## (alias) kept for muscle memory
 ```
 
-A verb that genuinely does not apply to your repo is declared, not silently absent, in the
-same `.github/core-gates.txt` the gate register reads (a `none` is the only verdict the
-vocabulary accepts — there is no "own" way to have a target by another name — and `test`
-cannot be declared at all, because the floor below makes a suite universal):
+A verb that genuinely does not apply to your repo is **stubbed**, not silently absent and
+not declared away: a target of the canonical name that says so and exits 0, so `make
+<verb>` resolves in every repo — the promise `scripts/make-vocabulary.txt` makes, and the
+issue's own verification step. There is no "own" way to have a target by another name, and
+`test` has no stub form, because the floor below makes a suite universal:
 
-```text
-make:packages-check none no OS package list to resolve here
+```make
+.PHONY: packages-check
+packages-check: ## (n/a) no OS package list to resolve here
+	@echo "packages-check: not applicable to this repo (no OS package list)"
 ```
 
 **The test floor** rides in the register's last column and has no waiver line: a `test/`

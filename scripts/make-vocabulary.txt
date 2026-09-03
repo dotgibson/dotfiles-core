@@ -17,13 +17,16 @@
 #     .PHONY: bootstrap-dry
 #     bootstrap-dry: dry-run   ## (alias) kept for muscle memory
 #
-# A verb that genuinely does not apply to a repo is DECLARED, not silently absent, in that
-# repo's .github/core-gates.txt (the same file the gate x repo register reads):
+# A verb that genuinely does not apply to a repo is STUBBED, not silently absent and not
+# declared away: a target of the canonical name that says so and exits 0, so the verb
+# resolves everywhere — which is the promise this file makes, and the issue's own
+# verification step:
 #
-#     make:<verb> none <why this repo has nothing to run here>
+#     packages-check: ## (n/a) no OS package list to resolve here
+#     	@echo "packages-check: not applicable to this repo (no OS package list)"
 #
-# `test` is the one verb that cannot be declared away: the test floor makes a repo-owned
-# suite universal, and `make test` is how it is run.
+# `test` has no stub form: the test floor makes a repo-owned suite universal, and
+# `make test` must run it.
 #
 # Format: `<verb>  <meaning>`, one per line; blank lines and `#` comments ignored. The
 # verb is the exact target name. Adding a verb here is a fleet-wide ask — every repo's

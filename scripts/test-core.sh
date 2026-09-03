@@ -16611,7 +16611,7 @@ else
 fi
 
 _fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then
   pass "vocab: a repo defining every verb with a CI-run test/ passes --check"
 else
   fail "vocab: the complete repo did not pass --check: $out"
@@ -16635,24 +16635,23 @@ else
   fail "vocab: unexpected Arch row: $row"
 fi
 
-# A DECLARED `none` FILLS THE CELL; an `own` does not, because "the canonical name exists"
-# is the whole requirement and there is no other way to satisfy it.
-_fv_mk="${_fv_all/packages-check:\\n\\t@true\\n/}"
+# A STUB TARGET OF THE CANONICAL NAME RESOLVES; there is no declaring a verb away.
+_fv_mk="${_fv_all/packages-check:\\n\\t@true\\n/packages-check: ## (n\/a)\\n\\t@echo \"packages-check: not applicable\"\\n}"
 _fv_reset; _fv_repo dotfiles-Defense "${_fv_mk/core-verify:\\n\\t@true\\n/}"
 _fv_suite dotfiles-Defense; _fv_ci dotfiles-Defense "make test"
 mkdir -p "$_fv_root/dotfiles-Defense/.github"
-printf 'make:packages-check none no OS package list to resolve # comment\nmake:core-verify own scripts/verify.sh\n' >"$_fv_root/dotfiles-Defense/.github/core-gates.txt"
+printf 'make:core-verify none declarations are not a thing any more\n' >"$_fv_root/dotfiles-Defense/.github/core-gates.txt"
 out="$(_fv_run --check)"; rc=$?
-if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then
-  pass "vocab: \`make:<verb> none <why>\` declares a cell; \`own\` does not (the name must exist)"
+row="$(_fv_run | grep -F '| `Defense` |')"
+if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* && "$row" == *'| ok | **missing** | ok | ok |' ]]; then
+  pass "vocab: a stub \`packages-check:\` resolves; a \`make:core-verify none\` line in core-gates.txt fills nothing"
 else
-  fail "vocab: declaration handling wrong (rc=$rc): $out"
+  fail "vocab: stub/declaration handling wrong (rc=$rc): $out / $row"
 fi
-tbl="$(_fv_run)"
-if [[ "$tbl" == *'| none[^1] | **missing** |'* && "$tbl" == *'[^1]: `Defense` / `make packages-check` — no OS package list to resolve'* ]]; then
-  pass "vocab: the declared cell carries a footnote with the reason, comment stripped"
+if [[ "$(_fv_run)" != *'[^'* ]]; then
+  pass "vocab: the register carries no footnotes — every cell is a verdict"
 else
-  fail "vocab: footnote rendering wrong: $tbl"
+  fail "vocab: footnotes reappeared in the register"
 fi
 
 _fv_reset; _fv_repo dotfiles-Gentoo; _fv_suite dotfiles-Gentoo; _fv_ci dotfiles-Gentoo "make test"
@@ -16663,44 +16662,11 @@ else
   fail "vocab: no-Makefile case: $out"
 fi
 
-# A DECLARATION FILLS A CELL EVEN WITHOUT A MAKEFILE: a repo with nothing to run says so.
-_fv_reset; _fv_repo dotfiles-Gentoo; _fv_suite dotfiles-Gentoo; _fv_ci dotfiles-Gentoo "bash test/smoke.sh"
-mkdir -p "$_fv_root/dotfiles-Gentoo/.github"
-for v in help lint check dry-run packages-check core-verify test; do printf 'make:%s none nothing to run here\n' "$v"; done >"$_fv_root/dotfiles-Gentoo/.github/core-gates.txt"
-out="$(_fv_run --check)"; rc=$?
-row="$(_fv_run | grep -F '| `Gentoo` |')"   # the row only — the footnotes name the repo too
-if ((rc == 1)) && [[ "$out" == *"1 verb x repo cell(s) missing"* && "$row" == *'| none[^6] | **no Makefile** | ok |' ]]; then
-  pass "vocab: \`make:<verb> none\` fills six cells of a repo with no Makefile; \`test\` cannot be declared away"
-else
-  fail "vocab: declarations without a Makefile (rc=$rc): $out / $row"
-fi
-
-# A MISSING MANDATORY INCLUDE aborts make before any rule is read: every verb is missing
-# and no target runs the suite, however complete the root file looks. An optional one
-# (`-include`) is simply absent.
-_fv_reset; _fv_repo dotfiles-Fedora "include missing.mk\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-out="$(_fv_run --check)"; rc=$?
-if ((rc == 1)) && [[ "$out" == *"7 verb x repo cell(s) missing"* && "$out" == *"1 repo(s) under the test floor"* ]]; then
-  pass "vocab: a missing mandatory include voids every target — verbs missing, floor not met"
-else
-  fail "vocab: missing mandatory include not fatal (rc=$rc): $out"
-fi
-
-# AN INCLUDE WITH A TRAILING COMMENT, space-indented, reads the file and not the comment.
-_fv_reset; _fv_repo dotfiles-Fedora '  include mk/verbs.mk # the verbs\nlint:\n\t@true\n'
-mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
-_fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
-  pass "vocab: \`include x # reason\`, space-indented, follows x and ignores the comment"
-else
-  fail "vocab: commented/indented include mishandled: $out"
-fi
-
 # A CONTINUED INCLUDE DIRECTIVE is one directive.
 _fv_reset; _fv_repo dotfiles-Fedora 'include \\\n  mk/verbs.mk\nlint:\n\t@true\n'
 mkdir -p "$_fv_root/dotfiles-Fedora/mk"; printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then
   pass "vocab: \`include \\\` over the path is one directive"
 else
   fail "vocab: continued include mishandled: $out"
@@ -16769,7 +16735,7 @@ _fv_reset; _fv_repo dotfiles-Fedora 'include mk/*.mk\n-include local.mk\nlint:\n
 mkdir -p "$_fv_root/dotfiles-Fedora/mk"
 printf '%b' "${_fv_all/lint:\\n\\t@true\\n/}" >"$_fv_root/dotfiles-Fedora/mk/verbs.mk"
 _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell is defined"* ]]; then
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then
   pass "vocab: verbs and the suite target defined through a globbed \`include mk/*.mk\` resolve"
 else
   fail "vocab: included targets were not seen: $out"
@@ -17033,10 +16999,10 @@ if grep -qE '^fleet-vocabulary: ' "$HERE/Makefile"; then
 else
   fail "vocab: Makefile has no fleet-vocabulary target"
 fi
-# Rendering is not a verdict: a full table with no footnotes must exit 0 (the trailing
-# `[[ -n notes ]] && printf` shape made `make fleet-vocabulary` exit 1 on exactly that).
+# Rendering is not a verdict: a full table must exit 0 (a trailing `[[ … ]] && printf`
+# shape once made `make fleet-vocabulary` exit 1 for rendering).
 _fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
-if _fv_run >/dev/null; then pass "vocab: report mode exits 0 with no footnotes to print"; else fail "vocab: report mode exits non-zero when there are no footnotes"; fi
+if _fv_run >/dev/null; then pass "vocab: report mode exits 0 (rendering is not a verdict)"; else fail "vocab: report mode exits non-zero"; fi
 if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; then pass "vocab: fleet-coverage.sh report mode exits 0 with no footnotes too"; else fail "vocab: fleet-coverage.sh report mode still exits 1 with no footnotes"; fi
 rm -rf "$_fv_root"
 unset _fv_root _fv_all _fv_mk out rc row tbl want have

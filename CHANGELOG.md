@@ -25,10 +25,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `core-verify`, `test`); `scripts/fleet-vocabulary.sh` (`make fleet-vocabulary`) reads
   each sibling's Makefile and renders a verb × repo register, and `audit-core.sh` §5h
   reports it beside the gate × repo register with the same advisory posture and the same
-  absent-sibling environment skip. The requirement is that the canonical NAME exists — a
-  repo keeps its historical spelling as a two-line alias, and a verb it genuinely lacks is
-  declared as `make:<verb> none <why>` in the `.github/core-gates.txt` the gate register
-  already reads. The register's last column is the test floor, with no waiver line: a
+  absent-sibling environment skip. The requirement is that the canonical NAME resolves in
+  every repo — a repo keeps its historical spelling as a two-line alias, and a verb it
+  genuinely lacks is a two-line stub target that says so and exits 0, never declared
+  away. The register's last column is the test floor, with no waiver line: a
   `test/` (or `tests/`) directory with content, run from a `run:` step in a workflow GitHub
   loads — `make test`, the directory by path, or a `make` target whose recipe runs it, so
   `make test-repo` counts and a path filter or comment does not. Five of nine repos are
@@ -36,7 +36,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   them; the first run reports 31 missing verb cells, which is the migration each OS repo
   now owes (aliases, not renames, so nothing calling the old targets breaks). The suite
   drives the script against a fake fleet root and pins that an alias alone does not fill a
-  cell, that `own` is not a declaration the vocabulary accepts, each rung of the floor, and
+  cell, that a stub target does, each rung of the floor, and
   that an unreadable vocabulary is a loud exit 2 rather than an empty register. Review of
   the same PR found `scripts/fleet-coverage.sh`'s report mode exiting 1 whenever there were
   no footnotes to print (its last command was a `[[ -n notes ]] && printf`); fixed and

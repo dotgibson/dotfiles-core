@@ -11,10 +11,15 @@
 # each sibling repo's Makefile and reports, per verb, whether the canonical target exists.
 # Aliases are the repo's business: keeping `bootstrap-dry` as a `.PHONY` alias of `dry-run`
 # costs two lines and is not this register's concern. THE REQUIREMENT IS THAT THE CANONICAL
-# NAME EXISTS. A verb that genuinely does not apply is declared, not silently absent, in the
-# repo's .github/core-gates.txt — the same file the gate x repo register reads:
+# NAME RESOLVES, in every repo — that is the promise scripts/make-vocabulary.txt makes to a
+# contributor, and the issue's own verification step. A verb that genuinely does not apply
+# to a repo is therefore not declared away but STUBBED: a target of the canonical name that
+# says so and exits 0 —
 #
-#     make:<verb> none <why this repo has nothing to run here>
+#     packages-check: ## (n/a) no OS package list to resolve here
+#     	@echo "packages-check: not applicable to this repo (no OS package list)"
+#
+# — so `make packages-check` means the same thing everywhere, including "nothing to do".
 #
 # THE TEST FLOOR rides in the last column. Five of nine repos had no repo-owned tests at
 # all — including dotfiles-Fedora, the template every Linux repo is stamped from. The floor
@@ -30,7 +35,7 @@
 #
 # Usage:
 #   ./scripts/fleet-vocabulary.sh              # markdown table on stdout
-#   ./scripts/fleet-vocabulary.sh --check      # exit 1 if any verb is missing/undeclared
+#   ./scripts/fleet-vocabulary.sh --check      # exit 1 if any verb does not resolve
 #                                              #   or any repo is under the test floor
 # Env: REPOS_ROOT (default: parent of this repo)
 set -uo pipefail
@@ -162,17 +167,6 @@ _targets() { # _targets <Makefile> → one defined target name per line
       for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) print t[i]
     }
   ' "$1"
-}
-
-_declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or ""
-  local decl
-  # `test` cannot be declared away: the floor makes a repo-owned suite universal, and the
-  # canonical way to run it is `make test`. A repo that ran test/ from CI while declaring
-  # `make:test none` would go fully green with the promised verb unavailable.
-  [[ "$2" == test ]] && return 0
-  decl="$(sed -e 's/#.*//' "$1/.github/core-gates.txt" 2>/dev/null |
-    awk -v k="make:$2" '$1==k && $2=="none" { $1=""; $2=""; sub(/^[[:space:]]+/,""); print; exit }')"
-  [[ -n "$decl" ]] && printf '%s' "$decl"
 }
 
 # WHAT COUNTS AS RUNNING THE SUITE, in one simple shell command (the text is split at
@@ -636,11 +630,9 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
 }
 
 rows=""
-notes=""
 missing=0
 floor_short=0
 present=0
-n=0
 for repo in "${REPOS[@]}"; do
   dir="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || dir="$REPOS_ROOT/$repo"
   # `-e`, not `-d`: .git is a FILE in a worktree checkout.
@@ -656,10 +648,8 @@ for repo in "${REPOS[@]}"; do
   fi
   for v in "${VERBS[@]}"; do
     # Herestring, not a printf pipe: §5d's pipefail rule, and grep -q exits early anyway.
-    # A declaration fills a cell whether or not a Makefile exists — a repo that genuinely
-    # has nothing to run may say so for every verb. The label only differs for the rest.
-    why=""
-    grep -qxF -- "$v" <<<"$have" || why="$(_declared "$dir" "$v")"
+    # Every verb must RESOLVE: ok, or one of three reasons it does not — the label is the
+    # finding. A verb that does not apply is stubbed (header), never declared away.
     if [[ "$v" == test && -n "$sdirs" ]] && grep -qxF -- test <<<"$have" && ! grep -qxF -- test <<<"$suite"; then
       # A suite exists and the canonical `test` exists but RUNS NOTHING — `@true`, a
       # recipe that never touches the suite, or a path-shadowing target without .PHONY.
@@ -670,11 +660,6 @@ for repo in "${REPOS[@]}"; do
       missing=$((missing + 1))
     elif grep -qxF -- "$v" <<<"$have"; then
       line="$line ok |"
-    elif [[ -n "$why" ]]; then
-      n=$((n + 1))
-      line="$line none[^$n] |"
-      notes="${notes}[^$n]: \`${repo#dotfiles-}\` / \`make $v\` — $why
-"
     elif [[ ! -f "$dir/Makefile" ]]; then
       line="$line **no Makefile** |"
       missing=$((missing + 1))
@@ -701,11 +686,11 @@ if ((CHECK)); then
     exit 0
   fi
   if ((missing || floor_short)); then
-    echo "fleet-vocabulary: $missing verb x repo cell(s) missing/undeclared; $floor_short repo(s) under the test floor" >&2
+    echo "fleet-vocabulary: $missing verb x repo cell(s) missing; $floor_short repo(s) under the test floor" >&2
     printf '%s' "$rows" | grep -F '**' >&2
     exit 1
   fi
-  echo "fleet-vocabulary: every verb x repo cell is defined or declared and every repo meets the test floor ($present repo(s) x $nverbs verb(s))"
+  echo "fleet-vocabulary: every verb x repo cell resolves and every repo meets the test floor ($present repo(s) x $nverbs verb(s))"
   exit 0
 fi
 
@@ -718,7 +703,4 @@ done
 hdr_row="$hdr_row test floor |"
 sep_row="$sep_row --- |"
 printf '%s\n%s\n%s' "$hdr_row" "$sep_row" "$rows"
-# An `if`, not `[[ … ]] &&`: as the script's last command that test IS the exit status,
-# and a fleet with no footnotes would make `make fleet-vocabulary` exit 1 for rendering.
-if [[ -n "$notes" ]]; then printf '\n%s' "$notes"; fi
 exit 0
