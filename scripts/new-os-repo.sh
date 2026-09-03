@@ -246,7 +246,7 @@ _sync_half="(cd $(_q "$HERE") && git fetch $_remote_q $(_q "$CORE_BRANCH") && _w
 # add once HEAD already carries core/ and go straight back to the sync — `cat-file -e
 # HEAD:core` is that test, and it is why the commit step precedes it: a core/ that was
 # materialized but never committed is committed by the chain, then found in HEAD.
-_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && { git -C $(_q "$_target_abs") cat-file -e HEAD:core 2>/dev/null || git -C $(_q "$_target_abs") subtree add --prefix=core $_remote_q $(_q "$CORE_BRANCH") --squash; } && $_sync_half   # VENDORING.md § One-time setup"
+_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && { git -C $(_q "$_target_abs") cat-file -e HEAD:core 2>/dev/null || git -C $(_q "$_target_abs") subtree add --prefix=core $_remote_q $(_q "$CORE_BRANCH") --squash; } && $_sync_half   # VENDORING.md, One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
 # comment — so the sync resolves the conventional name. A symlink, not a rename: the
@@ -254,8 +254,11 @@ _vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs")
 # already a link to exactly this scaffold. `ln -sfn` alone replaces a stale symlink but
 # onto a REAL directory of that name it nests a link inside it — and the sync would then
 # modify that unrelated repository. Any other occupant is refused, and the chain stops.
+# The refusal text is ASCII on purpose: it goes through %q, and bash 3.2 (macOS's) quotes
+# a multibyte character byte by byte, leaving a sequence that is invalid UTF-8 — a pasted
+# command that BSD grep and friends then refuse to read on the very box it was made for.
 _canon="$_target_parent/dotfiles-$OS"
-_link_cmd="{ { [ ! -e $(_q "$_canon") ] && [ ! -L $(_q "$_canon") ]; } || { [ -L $(_q "$_canon") ] && [ \"\$(readlink $(_q "$_canon"))\" = $(_q "$_target_abs") ]; }; } || { echo $(_q "refusing: $_canon exists and is not a link to this scaffold — remove or rename it first") >&2; false; } && ln -sfn $(_q "$_target_abs") $(_q "$_canon")"
+_link_cmd="{ { [ ! -e $(_q "$_canon") ] && [ ! -L $(_q "$_canon") ]; } || { [ -L $(_q "$_canon") ] && [ \"\$(readlink $(_q "$_canon"))\" = $(_q "$_target_abs") ]; }; } || { echo $(_q "refusing: $_canon exists and is not a link to this scaffold: remove or rename it first") >&2; false; } && ln -sfn $(_q "$_target_abs") $(_q "$_canon")"
 # The sync-only recovery (used when core/ is already materialized) needs that same link
 # for a custom basename, or the sync just skips a directory it cannot resolve.
 _sync_recover="$_sync_half"
