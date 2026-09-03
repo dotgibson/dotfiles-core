@@ -150,8 +150,11 @@ w() {
 #
 # And the sync half carries THE PIN, the way VENDORING.md's recipe does: sync-core.sh
 # defaults CORE_BRANCH to main and refuses unless Core's HEAD is the commit being
-# vendored, so it checks the tag out and passes the peeled commit — otherwise copying
-# the hint would replace the just-added release tree with `main` and stamp that.
+# vendored, so it checks the ref out and passes the peeled commit — otherwise copying
+# the hint would replace the just-added release tree with `main` and stamp that. The
+# ref is FETCHED from CORE_REMOTE first and checked out as FETCH_HEAD, and CORE_REMOTE
+# is forwarded to the sync: a release that exists only on a mirror or fork would
+# otherwise subtree-add fine and then fail the checkout, or sync from origin instead.
 #
 # Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
 # COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
@@ -164,7 +167,7 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # even an initial commit), and both halves need a clean, committed target: subtree add
 # wants a HEAD and refuses a dirty tree, and sync-core.sh refuses a dirty target. So the
 # chain commits the scaffold first — a no-op when the reader already has.
-_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && (cd $(_q "$HERE") && git checkout $(_q "$CORE_BRANCH") && CORE_BRANCH=\"\$(git rev-parse $(_q "$CORE_BRANCH^{commit}"))\" REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))   # VENDORING.md § One-time setup"
+_vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && (cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && git checkout --detach FETCH_HEAD && CORE_BRANCH=\"\$(git rev-parse 'FETCH_HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
 # comment — so the sync resolves the conventional name. A symlink, not a rename: the
