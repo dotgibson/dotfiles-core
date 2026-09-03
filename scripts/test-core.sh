@@ -16894,6 +16894,12 @@ _fv_floor "make test || echo failed still runs the suite" 'ok' '_fv_suite dotfil
 _fv_floor "a .PHONY: test inside a false conditional does not rescue test: beside test/" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}ifeq (1,0)\\n.PHONY: test\\nendif\\n"; _fv_ci dotfiles-Alpine "make test"'
 # A COMMENT AFTER AN INCLUDE is not a path, and a shell -n hides behind an operand option.
 _fv_floor "bash -o pipefail -n test/smoke.sh is still a syntax check" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "bash -o pipefail -n test/smoke.sh"'
+# A BARE DIRECTORY OPERAND to a runner is the suite; a bare `test` command is the shell
+# utility. And reachability is decided where it can be: after a literal true/false.
+_fv_floor "python3 -m pytest tests (no slash)" 'ok' '_fv_suite dotfiles-Alpine tests; _fv_ci dotfiles-Alpine "python3 -m pytest tests"'
+_fv_floor "test -f test/smoke.sh is the shell utility" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "test -f test/smoke.sh"'
+_fv_floor "false || make test always runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false || make test"'
+_fv_floor "false && make test never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false && make test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

@@ -159,14 +159,16 @@ _declared() { # _declared <repo-dir> <verb> → the `none <why>` declaration, or
 # the start): a test path as the command (`./test/smoke.sh`, `tests/run`), or an
 # interpreter in command position handed one (`bash -e test/smoke.sh`, and through the
 # options that take an operand of their own: `bash -o pipefail test/smoke.sh`, `python3
-# -m pytest tests/`) — optionally under sudo or env, and after leading variable
-# assignments (`CI=1 make test` is how a great many steps are written). `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
+# -m pytest tests/`, or the bare directory: `python3 -m pytest tests`) — optionally under
+# sudo or env, and after leading variable assignments (`CI=1 make test` is how a great
+# many steps are written). In DIRECT command position the path needs its slash: a bare
+# `test` there is the shell utility, not the suite. `echo test/smoke.sh`, `echo bash test/smoke.sh` and `shellcheck test/*.sh` mention
 # the path and run nothing, so they do not count. `DIRS` is replaced per repo with the
 # directory that is actually populated (_run_re), so a populated test/ is not credited by a
 # step running a nonexistent tests/. No backslashes: these are handed to awk via -v, which
 # would eat them, so `[.]` and `[/]` stand in for the escaped forms.
-RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*)?([.][/])?(DIRS)[/]'
-_run_re() { printf '%s' "${RUN_RE_TEMPLATE/DIRS/$1}"; } # _run_re <dir-alternation: test|tests>
+RUN_RE_TEMPLATE='^[[:space:]]*((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((bash|sh|zsh|dash|ksh|bats|prove|python3?|node|pwsh)[[:space:]]+((-o|-m|-W|-X|-r|--require|-ExecutionPolicy|-File)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*([.][/])?(DIRS)([/]|[[:space:]]|$)|([.][/])?(DIRS)[/])'
+_run_re() { printf '%s' "${RUN_RE_TEMPLATE//DIRS/$1}"; } # _run_re <dir-alternation: test|tests> — every DIRS, both arms
 # A NO-EXECUTE MODE PARSES, PRINTS OR ASKS AND RUNS NOTHING. For make: dry-run (`-n` in any
 # short cluster, --dry-run/--just-print/--recon), question (`-q`, --question), touch
 # (`-t`, --touch — marks the target updated, runs no recipe), and the modes that exit
@@ -186,9 +188,9 @@ NORUN_RE='(^|[[:space:]])((sudo|env)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:sp
 #   * splitcmds — one simple command at a time, split at `;`/`&&`/`||`/`|` OUTSIDE quotes.
 #     A naive split turned `echo "disabled && make test"` into a synthetic `make test"`.
 #     Inside "…" a backslash escapes the next character, so `\"` does not end the string;
-#     inside '…' nothing does. The operator before each command is kept (SPLITOP), and
-#     cdnorm drops a command behind `||` — it runs only if the previous one failed, so
-#     `true || make test` is not CI running the suite.
+#     inside '…' nothing does. The operator before each command is kept (SPLITOP) and
+#     cdnorm decides reachability for the decidable pairs: `true || make test` and
+#     `false && make test` never reach make; `false || make test` always does.
 #   * stripcomment — a shell comment (`#` at the start, or after whitespace) OUTSIDE
 #     quotes, so `echo "value #"; make test` keeps its make.
 #   * unquote_scalar — a YAML flow scalar: a fully "…"- or '…'-quoted value yields its
@@ -240,10 +242,16 @@ AWK_SHELL='
     }
     return s
   }
-  function cdnorm(c, n,   i, d, t, m, x) {
-    d = ""; x = 0
+  function cdnorm(c, n,   i, d, t, m, x, prev) {
+    d = ""; x = 0; prev = ""
     for (i = 1; i <= n; i++) {
-      if (SPLITOP[i] == "||") { c[i] = ""; continue }
+      # Reachability, for the statically decidable pairs: behind `||` a command runs only
+      # if the previous one FAILED — reachable after a literal `false`, unreachable after
+      # `true`/`:`, and (conservatively) not credited after anything else; behind `&&` it
+      # runs only on SUCCESS — unreachable after `false`, credited otherwise.
+      if (SPLITOP[i] == "||" && prev != "false") { prev = trim(c[i]); c[i] = ""; continue }
+      if (SPLITOP[i] == "&" && prev == "false") { prev = trim(c[i]); c[i] = ""; continue }
+      prev = trim(c[i])
       t = trim(c[i])
       if (match(t, /^cd[ \t]+/)) {
         d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
