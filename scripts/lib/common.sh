@@ -1276,8 +1276,11 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
       {
         line = $0
         # Each shape carries its own left boundary so `git/refs/tags/v3` (a slash before
-        # `refs`) and `xv5^{commit}` do not match, while `:-refs/tags/vN` (the scaffold default) does; the trailing check rejects an exact
-        # `vN.M.P` pin and a longer number.
+        # `refs`) and `xv5^{commit}` do not match, while `:-refs/tags/vN` (the scaffold
+        # default) does. The trailing check exempts ONLY a complete `vN.M.P` pin: a
+        # two-component or otherwise malformed `v5.3` is not a deliberate freeze that any
+        # tag of this repo could satisfy, so it is judged like a bare major. A longer number
+        # cannot leak: `[0-9]+` is greedy, so `v50` is read whole as 50.
         while (match(line, /(^|[^A-Za-z0-9._\/])(refs\/tags\/v[0-9]+|git checkout v[0-9]+|v[0-9]+\^\{commit\})/)) {
           hit = substr(line, RSTART, RLENGTH)
           rest = substr(line, RSTART + RLENGTH)
@@ -1285,7 +1288,7 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
           ver = hit
           if (ver ~ /\^\{commit\}$/) { sub(/^v/, "", ver); sub(/\^.*$/, "", ver) }
           else sub(/^.*v/, "", ver)
-          if (rest !~ /^[0-9.]/ && ver != want) {
+          if (rest !~ /^\.[0-9]+\.[0-9]+([^0-9]|$)/ && ver != want) {
             printf "%s:%d: first-vendor pin names v%s, but core.version is major v%s (%s)\n", \
               file, NR, ver, want, hit
           }

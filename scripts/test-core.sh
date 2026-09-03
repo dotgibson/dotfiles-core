@@ -2487,6 +2487,12 @@ _vpn_count "new-os-repo.sh's :-refs/tags/vN default is judged" 6 1
 # Exemptions — every one of these is a TRUE sentence that must not be flagged.
 _vpn_write RELEASE-STRATEGY.md 'Pin `refs/tags/v5.3.0` while sitting on `main` and the lock records'
 _vpn_count "an exact vN.M.P pin is a deliberate freeze, not a finding" 6 0
+# Only a COMPLETE vN.M.P is exempt. A two-component `v5.3` is not a tag this repo cuts,
+# so it is a stale pin wearing a dot; a first draft exempted every dotted suffix.
+_vpn_write README.md 'git subtree add --prefix=core <core-remote> refs/tags/v5.3 --squash'
+_vpn_count "a two-component v5.3 is NOT an exact pin — still a finding" 6 1
+_vpn_write README.md 'git checkout v6.1.0 && CORE_BRANCH="$(git rev-parse v6.1.0^{commit})"'
+_vpn_count "an exact pin on the current line in the other two shapes is clean" 6 0
 _vpn_write README.md 'gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha'
 _vpn_count "another repository's tag behind an API path (git/refs/tags/) is not a finding" 6 0
 _vpn_write CHANGELOG.md 'so it is corrected to a concrete `refs/tags/v5`'
@@ -2510,13 +2516,18 @@ if [[ -r "$HERE/core.version" ]]; then
     fail "first-vendor pin: this tree names a foreign major: $(printf '%s' "$_vpn_real" | tr '\n' ' ')"
   fi
   # And the guard can fail on THIS tree: at any other major every pin must surface,
-  # including the scaffold default. A guard that only ever passes is not known to work.
-  if _core_vendor_pin_hits "$HERE" "$((_vpn_now + 1))" | grep -q 'scripts/new-os-repo.sh:.*CORE_BRANCH\|scripts/new-os-repo.sh:'; then
-    pass "first-vendor pin: at the next major the scaffold default itself is reported"
+  # including the scaffold default — asserted by its exact file:line, resolved from the
+  # assignment itself, so a finding on the --help text two lines down cannot stand in
+  # for it. Captured first, then a here-string: the producer walks the whole tree and
+  # `| grep -q` under pipefail is the SIGPIPE hazard _core_pipefail_hits documents.
+  _vpn_line="$(grep -n '^CORE_BRANCH="\${CORE_BRANCH:-refs/tags/v' "$HERE/scripts/new-os-repo.sh" | head -1 | cut -d: -f1)"
+  _vpn_next="$(_core_vendor_pin_hits "$HERE" "$((_vpn_now + 1))")"
+  if [[ -n "$_vpn_line" ]] && grep -qF "scripts/new-os-repo.sh:$_vpn_line: " <<<"$_vpn_next"; then
+    pass "first-vendor pin: at the next major the scaffold default itself (new-os-repo.sh:$_vpn_line) is reported"
   else
-    fail "first-vendor pin: the scaffold default would not be reported at the next major — the gate misses the line it exists for"
+    fail "first-vendor pin: the scaffold default (new-os-repo.sh:${_vpn_line:-?}) would not be reported at the next major — the gate misses the line it exists for"
   fi
-  unset _vpn_now _vpn_real
+  unset _vpn_now _vpn_real _vpn_line _vpn_next
 fi
 rm -rf "$_vpn_"
 unset _vpn_
