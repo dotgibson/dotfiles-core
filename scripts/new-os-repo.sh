@@ -150,11 +150,14 @@ w() {
 #
 # And the sync half carries THE PIN, the way VENDORING.md's recipe does: sync-core.sh
 # defaults CORE_BRANCH to main and refuses unless Core's HEAD is the commit being
-# vendored, so it checks the ref out and passes the peeled commit — otherwise copying
-# the hint would replace the just-added release tree with `main` and stamp that. The
-# ref is FETCHED from CORE_REMOTE first and checked out as FETCH_HEAD, and CORE_REMOTE
-# is forwarded to the sync: a release that exists only on a mirror or fork would
-# otherwise subtree-add fine and then fail the checkout, or sync from origin instead.
+# vendored, so it passes the peeled commit — otherwise copying the hint would replace
+# the just-added release tree with `main` and stamp that. The ref is FETCHED from
+# CORE_REMOTE first (a release that exists only on a mirror or fork would otherwise
+# subtree-add fine and then fail to resolve here), CORE_REMOTE is forwarded to the sync,
+# and the sync runs from a TEMPORARY DETACHED WORKTREE at FETCH_HEAD, removed afterwards:
+# checking the tag out in the reader's own Core checkout would leave it detached there,
+# and the banner then sends them "back in dotfiles-core" to register the repo — on a
+# stale tag instead of their branch.
 #
 # Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
 # COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
@@ -171,14 +174,16 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # The Core-side half stands on its own too: when core/ WAS materialized and only the
 # commit after it failed, the subtree add would fail on the existing prefix, so that
 # state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
-_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && git checkout --detach FETCH_HEAD && CORE_BRANCH=\"\$(git rev-parse 'FETCH_HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS"))"
+_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && _wt=\"\$(mktemp -d)/core\" && git worktree add --detach \"\$_wt\" FETCH_HEAD && (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")); git worktree remove --force \"\$_wt\")"
 _vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
 # comment — so the sync resolves the conventional name. A symlink, not a rename: the
-# chain embeds the original path.
+# chain embeds the original path. `ln -sfn`, so a retry REPLACES the canonical link: a
+# plain `ln -s` onto an existing directory symlink follows it and drops a new link
+# inside the target repo, and the sync then refuses the dirty tree.
 [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] ||
-  _vendor_hint="ln -s $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS") && $_vendor_hint; sync-core.sh resolves the NAME dotfiles-$OS under REPOS_ROOT, hence the symlink (not a rename — the chain embeds the original path)"
+  _vendor_hint="ln -sfn $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS") && $_vendor_hint; sync-core.sh resolves the NAME dotfiles-$OS under REPOS_ROOT, hence the symlink (not a rename — the chain embeds the original path)"
 if ((NO_VENDOR)); then
   skip "skipping vendor (--no-vendor) — run later: $_vendor_hint"
 elif ((DRY)); then
@@ -822,12 +827,15 @@ else
   # resolves the NAME dotfiles-$OS under REPOS_ROOT, which defaults to the Core
   # checkout's parent. A scaffold placed elsewhere, or named otherwise, would be skipped
   # as "not cloned" — so the printed command carries REPOS_ROOT when the parent differs
-  # and is preceded by the canonical-name symlink when the name does.
+  # and is preceded by the canonical-name symlink when the name does. `ln -sfn`: on a
+  # --no-vendor scaffold the FIRST step above has already created that link, and a plain
+  # `ln -s` onto an existing directory symlink would follow it and drop a new link inside
+  # the target repo, which the sync then refuses as dirty.
   _reg_sync="./scripts/sync-core.sh $(_q "dotfiles-$OS")"
   [[ "$_target_parent" == "$(cd "$(dirname "$HERE")" && pwd)" ]] || _reg_sync="REPOS_ROOT=$(_q "$_target_parent") $_reg_sync"
   _reg_link=""
   [[ "$(basename "$TARGET")" == "dotfiles-$OS" ]] || _reg_link="
-    ln -s $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS")   # sync-core.sh resolves the NAME dotfiles-$OS; a symlink, not a rename"
+    ln -sfn $(_q "$_target_abs") $(_q "$_target_parent/dotfiles-$OS")   # sync-core.sh resolves the NAME dotfiles-$OS; a symlink (replaced if present), not a rename"
   cat <<EOF
   next:$_next_vendor
     cd "$TARGET"
