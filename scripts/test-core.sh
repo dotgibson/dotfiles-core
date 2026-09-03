@@ -16409,8 +16409,11 @@ _fv_all='help:\n\t@true\nlint:\n\t@true\ncheck: lint\n\t@true\ndry-run:\n\t@true
 
 _fv_reset
 if out="$(_fv_run --check)"; then
-  [[ "$out" == *"no sibling repo checked out"* ]] && pass "vocab: an empty fleet root is an environment notice, exit 0" ||
+  if [[ "$out" == *"no sibling repo checked out"* ]]; then
+    pass "vocab: an empty fleet root is an environment notice, exit 0"
+  else
     fail "vocab: empty root exited 0 without the no-sibling notice: $out"
+  fi
 else
   fail "vocab: an empty fleet root exited non-zero: $out"
 fi

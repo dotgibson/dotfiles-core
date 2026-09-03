@@ -204,7 +204,8 @@ for repo in "${REPOS[@]}"; do
   have=""
   [[ -f "$dir/Makefile" ]] && have="$(_targets "$dir/Makefile")"
   for v in "${VERBS[@]}"; do
-    if printf '%s\n' "$have" | grep -qxF -- "$v"; then
+    # Herestring, not a printf pipe: §5d's pipefail rule, and grep -q exits early anyway.
+    if grep -qxF -- "$v" <<<"$have"; then
       line="$line ok |"
     elif [[ ! -f "$dir/Makefile" ]]; then
       line="$line **no Makefile** |"
