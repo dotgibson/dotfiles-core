@@ -578,13 +578,16 @@ if [[ -f "$REPO/core/mise/config.toml" ]]; then
 fi
 
 # ── 3. the second run changes nothing ────────────────────────────────────────
-# Judged on the FILESYSTEM, not on output: a bootstrap that removed and re-created every
-# link while saying nothing would pass an output check. Every entry under HOME — its
-# inode, kind, link target, and for a regular file its bytes — must be identical before
-# and after; a re-created symlink has a new inode, a backup is a new entry, and a file
-# rewritten in place (the mise seed, say) keeps its inode but not its checksum. `ls -id`,
-# `readlink` and POSIX `cksum` are what both GNU and BSD userlands share (no
-# `find -printf`, no `stat -c`, no `sha256sum`).
+# Two independent witnesses, because neither alone is proof:
+#   · The MUTATING COMMANDS the run invokes. The second run happens with a shim directory
+#     first on PATH whose rm/ln/mv/cp/mkdir log their invocation and then exec the real
+#     tool; an idempotent run invokes none of them. This is the primary witness — a
+#     remove-and-recreate is seen as it happens, whatever the filesystem does with inodes.
+#   · The TREE. Every entry under HOME — inode, kind, link target, and for a regular file
+#     its bytes — must be identical before and after. This catches what no wrapped command
+#     performs: a file rewritten through a shell redirection keeps its inode but not its
+#     checksum. `ls -id`, `readlink` and POSIX `cksum` are what GNU and BSD share.
+# Output prefixes are the third, weakest claim, kept only as a message.
 snapshot() { # snapshot <dir> → one line per entry: inode kind path [-> target | cksum]
   find "$1" -mindepth 1 -print | LC_ALL=C sort | while IFS= read -r p; do
     # shellcheck disable=SC2012  # the paths are ours (no odd names), and `find -printf` is GNU-only
@@ -594,17 +597,31 @@ snapshot() { # snapshot <dir> → one line per entry: inode kind path [-> target
     else printf '%s F %s %s\n' "$ino" "$p" "$(cksum <"$p" | awk '{print $1, $2}')"; fi
   done
 }
+mkdir -p "$tmp/shim"
+: >"$tmp/mutations.log"
+for cmd in rm ln mv cp mkdir; do
+  # Log, then hand off to the real tool — found by searching PATH with the shim dir
+  # (its first entry) removed, so the wrapper never recurses into itself.
+  cat >"$tmp/shim/$cmd" <<'SHIM'
+#!/usr/bin/env bash
+printf '%s %s\n' "${0##*/}" "$*" >>"$MUT_LOG"
+PATH="${PATH#*:}" exec "${0##*/}" "$@"
+SHIM
+  chmod +x "$tmp/shim/$cmd"
+done
 before="$(snapshot "$tmp/home")"
-if ! HOME="$tmp/home" ./bootstrap.sh --links-only >"$tmp/run2.out" 2>&1; then
+if ! HOME="$tmp/home" MUT_LOG="$tmp/mutations.log" PATH="$tmp/shim:$PATH" ./bootstrap.sh --links-only >"$tmp/run2.out" 2>&1; then
   bad "second bootstrap.sh run exited non-zero: $(cat "$tmp/run2.out")"
 fi
 after="$(snapshot "$tmp/home")"
-if [[ "$before" != "$after" ]]; then
+if [[ -s "$tmp/mutations.log" ]]; then
+  bad "second run invoked mutating commands: $(head -4 "$tmp/mutations.log" | tr '\n' ';')"
+elif [[ "$before" != "$after" ]]; then
   bad "second run changed the tree: $(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | grep '^[<>]' | head -4 | tr '\n' ' ')"
 elif grep -Eq '^(linked|backed up|seeded) ' "$tmp/run2.out"; then
   bad "second run claims to have changed something: $(grep -E '^(linked|backed up|seeded) ' "$tmp/run2.out" | tr '\n' ' ')"
 else
-  ok "second run changed nothing (every inode, kind, link target and file checksum identical)"
+  ok "second run changed nothing (no rm/ln/mv/cp/mkdir invoked; every inode, kind, link target and file checksum identical)"
 fi
 
 if ((rc == 0)); then

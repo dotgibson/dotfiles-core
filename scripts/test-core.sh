@@ -5435,30 +5435,33 @@ if have git && have zsh; then
     else
       pass "new-os-repo: the scaffolded suite goes red on a non-idempotent bootstrap"
     fi
-    # ...and on one that re-links SILENTLY. The idempotency verdict is drawn from the
-    # tree (inode, kind, target per entry), not from the `linked` lines, so a bootstrap
-    # that mutates and says nothing must still go red; a first draft judged output only.
+    # ...and on one that re-links SILENTLY. The primary idempotency witness is the
+    # mutating commands the second run invokes (rm/ln/mv/cp/mkdir, logged by PATH shims),
+    # not the `linked` lines and not inode identity — a filesystem may hand a re-created
+    # link the same inode straight back. So a bootstrap that removes and re-creates every
+    # link while saying nothing must go red on THAT witness.
     sed -i.bak '/echo "linked /d' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-silent.out" 2>&1; then
-      fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links silently — idempotency is judged on output, not the tree"
-    elif grep -q 'changed the tree' "$SANDBOX/nor-silent.out"; then
-      pass "new-os-repo: the scaffolded suite goes red on a bootstrap that re-links silently (judged on the tree)"
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links silently — idempotency is judged on output, not on what the run does"
+    elif grep -q 'invoked mutating commands' "$SANDBOX/nor-silent.out"; then
+      pass "new-os-repo: the scaffolded suite goes red on a bootstrap that re-links silently (the rm/ln were observed, inode reuse or not)"
     else
       fail "new-os-repo: the silent re-link failed for another reason — $(grep FAIL "$SANDBOX/nor-silent.out" | head -2 | tr '\n' ' ')"
     fi
     rm -rf "$_nor_brk"
-    # ...and on one that REWRITES a regular file in place. An inode survives that, so the
-    # snapshot carries each file's checksum; the mise seed is the file a regression would
-    # most plausibly re-copy on every run. Drop the "already seeded" guard from a copy of
-    # the bootstrap, and re-copy with fresh bytes so the rewrite is not a no-op.
+    # ...and on one that REWRITES a regular file in place THROUGH A REDIRECTION — the one
+    # mutation no wrapped command performs and an inode survives. That is what the
+    # snapshot's per-file checksum is for, and this proves it fires on its own: the
+    # rewrite appends fresh bytes to the seeded mise config via `>>`, invoking no rm/ln/
+    # mv/cp/mkdir, so only the checksum can see it.
     _nor_brk="$SANDBOX/newosrepo-rewrite"
     rm -rf "$_nor_brk"
     cp -r "$NOR" "$_nor_brk"
-    sed -i.bak -e 's|^if \[\[ ! -e "\$CFG/mise/config.toml" && -f "\$REPO/core/mise/config.toml" \]\]; then|if [[ -f "$REPO/core/mise/config.toml" ]]; then date +%N >>"$REPO/core/mise/config.toml"|' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    sed -i.bak -e 's|^if ((DRY)); then echo "dry run|[[ -f "$CFG/mise/config.toml" ]] \&\& date +%N >>"$CFG/mise/config.toml"\nif ((DRY)); then echo "dry run|' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-rewrite.out" 2>&1; then
-      fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites the mise seed on every run — in-place rewrites are invisible to it"
+      fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites the mise seed in place on every run — the checksum witness does not fire"
     elif grep -q 'changed the tree' "$SANDBOX/nor-rewrite.out"; then
-      pass "new-os-repo: the scaffolded suite goes red on a bootstrap that rewrites a file in place (checksum, not just inode)"
+      pass "new-os-repo: the scaffolded suite goes red on an in-place rewrite through a redirection (checksum witness, with no command to observe)"
     else
       fail "new-os-repo: the in-place rewrite failed for another reason — $(grep FAIL "$SANDBOX/nor-rewrite.out" | head -2 | tr '\n' ' ')"
     fi
