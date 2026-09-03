@@ -41,8 +41,9 @@ what the code will DO on a real box.
    re-applies a setting a persistent object needs on later runs (the class where a
    fix only helps freshly-created state).
 6. **Startup-cost regressions** in `zsh/*.zsh` — a new per-shell fork/subprocess on
-   the interactive path (the fleet gates `CORE_BENCH_BUDGET_MS`; flag anything that
-   would blow it).
+   the interactive path (CI gates startup at the budget in `scripts/bench-baseline.env`,
+   2× the measured mean; flag anything that would blow it — and a single fork is ~2 ms,
+   so flag those too: the gate only catches gross regressions).
 
 ## How to report
 
