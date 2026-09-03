@@ -138,7 +138,7 @@ if [[ -e "$TARGET" && ! -d "$TARGET" ]]; then
   fail "$TARGET exists and is not a directory"
   exit 1
 fi
-if [[ -d "$TARGET/.git" ]]; then
+if [[ -e "$TARGET/.git" ]]; then   # -e, not -d: a linked worktree or submodule checkout has a .git FILE, and must be refused too
   fail "$TARGET is already a git repo — refusing to overwrite (scaffold a fresh dir)"
   exit 1
 fi
