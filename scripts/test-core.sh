@@ -16672,6 +16672,17 @@ else
   fail "vocab: declarations were not honoured without a Makefile: $out"
 fi
 
+# A MISSING MANDATORY INCLUDE aborts make before any rule is read: every verb is missing
+# and no target runs the suite, however complete the root file looks. An optional one
+# (`-include`) is simply absent.
+_fv_reset; _fv_repo dotfiles-Fedora "include missing.mk\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+out="$(_fv_run --check)"; rc=$?
+if ((rc == 1)) && [[ "$out" == *"7 verb x repo cell(s) missing"* && "$out" == *"1 repo(s) under the test floor"* ]]; then
+  pass "vocab: a missing mandatory include voids every target — verbs missing, floor not met"
+else
+  fail "vocab: missing mandatory include not fatal (rc=$rc): $out"
+fi
+
 # A RULE THE SCANNER CANNOT PROVE make defines — inside a conditional or a define body —
 # is not counted: the register says "missing" rather than guess.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,0)\\ndry-run:\\n\\t@true\\nendif\\ndefine tmpl\\npackages-check:\\n\\t@true\\nendef\\n"
@@ -16843,6 +16854,14 @@ _fv_floor "a step with a runtime if: condition still counts" 'ok' '_fv_suite dot
 _fv_floor "test: beside test/ without .PHONY is up to date, not a run" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}"; _fv_ci dotfiles-Alpine "make test"'
 _fv_floor ".PHONY declared after the rule still counts" 'ok' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/}.PHONY: test\\n"; _fv_ci dotfiles-Alpine "make test"'
 _fv_floor "a suite target named like no path needs no .PHONY" 'ok' '_fv_suite dotfiles-Alpine; printf "suite-run:\n\t@./test/smoke.sh\n" >>"$_fv_root/dotfiles-Alpine/Makefile"; _fv_ci dotfiles-Alpine "make suite-run"'
+# ATTACHED OPERANDS AND TOUCH MODE: `-fother.mk`/`-C../tools` select another Makefile
+# just as the spaced forms do; `-t`/`--touch` marks a target updated and runs nothing.
+_fv_floor "make -fother.mk test (attached operand)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -fother.mk test"'
+_fv_floor "make -C../tools test (attached operand)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -C../tools test"'
+_fv_floor "make -t test" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -t test"'
+_fv_floor "make test --touch" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make test --touch"'
+_fv_floor "make -kt test (t in a cluster)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -kt test"'
+_fv_floor "make -Wfile.txt test still counts (W takes an attached operand)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -Wfile.txt test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"
