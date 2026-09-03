@@ -17140,6 +17140,19 @@ _fv_floor "make -C . test is the root Makefile" 'ok' '_fv_suite dotfiles-Alpine;
 _fv_floor "make --directory=. test is the root Makefile" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make --directory=. test"'
 _fv_floor "make -f Makefile test is the root Makefile" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -f Makefile test"'
 _fv_floor "make -C tools test is still another Makefile" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "make -C tools test"'
+# exec RUNS ITS OPERAND then the shell is gone; a bare exec continues. The effective
+# shell decides whether a step is command text and which of -e / pipefail apply.
+_fv_floor "exec make test runs the suite" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "exec make test"'
+_fv_floor "exec >log; make test (bare exec continues)" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "exec >log; make test"'
+_fv_floor "exec echo hi; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "exec echo hi; make test"'
+_fv_floor "shell: python with run: make test is not shell" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - shell: python\n        run: make test\n"'
+_fv_floor "shell: bash {0} (custom template, no -e): false; make test runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - shell: bash {0}\n        run: false; make test\n"'
+_fv_floor "shell: bash (bare) is -eo pipefail: false | true; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - shell: bash\n        run: false | true; make test\n"'
+_fv_floor "the default shell has no pipefail: false | true; make test runs" 'ok' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "false | true; make test"'
+_fv_floor "set -o pipefail; false | true; make test never reaches make" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "set -o pipefail; false | true; make test"'
+_fv_floor "true | false; make test never reaches make (last command fails)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "true | false; make test"'
+_fv_floor "a job defaults.run.shell of pwsh makes its steps not shell" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    defaults:\n      run:\n        shell: pwsh\n    steps:\n      - run: make test\n"'
+_fv_floor "a step shell: bash overrides a job default of pwsh" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    defaults:\n      run:\n        shell: pwsh\n    steps:\n      - run: make test\n        shell: bash\n"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

@@ -506,8 +506,8 @@ AWK_SHELL='
     }
     return r
   }
-  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing, ee) {
-    d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0; sd = 0; subterm = 0; retid = 0; ee = ERREXIT
+  function cdpass(c, n, final,   i, d, t, m, x, st, skip, nest, kw, lvl, w, term, outer, r, sd, subterm, retid, closing, ee, pf, pipefalse, execterm) {
+    d = ""; x = 0; st = ""; nest = 0; skip = 0; term = 0; sd = 0; subterm = 0; retid = 0; ee = ERREXIT; pf = PIPEFAIL; pipefalse = 0; execterm = 0
     split("", TAKEN); split("", SKIPD); split("", DEF); split("", COND)
     split("", PENDCLOSE); split("", SUBD); split("", SUBX)
     for (i = 1; i <= n; i++) {
@@ -628,12 +628,20 @@ AWK_SHELL='
       # …and when every enclosing branch is statically CERTAIN to run (DEF), the exit is
       # certain too and ends the whole shell: `if true; then exit 0; fi; make test` never
       # reaches make. Under a runtime condition it may run, so only its block ends.
-      if (t ~ /^(exit|exec|return)([ \t]|$)/) {
+      # `exec CMD` RUNS CMD (as the last thing the shell does): the operand is judged as a
+      # command and then reachability ends; a bare `exec` (redirections only) continues.
+      if (t ~ /^exec([ \t]|$)/) {
+        sub(/^exec[ \t]*/, "", t)
+        if (t == "" || t ~ /^[0-9]*[<>]/) { c[i] = ""; continue }
+        execterm = 1
+      }
+      if (t ~ /^(exit|return)([ \t]|$)/ || execterm) {
         if (t ~ /^return/ && INL[i]) { retid = INL[i]; c[i] = ""; continue }
-        if (sd + closing > 0) { subterm = sd + closing; c[i] = ""; if (sd < subterm) subterm = 0; continue }
+        if (sd + closing > 0) { subterm = sd + closing; c[i] = (execterm ? t : ""); execterm = 0; if (sd < subterm) subterm = 0; continue }
         w = 1; for (lvl = 1; lvl <= nest; lvl++) if (!DEF[lvl]) w = 0
         if (nest == 0 || w) term = 1; else SKIPD[nest] = 1
-        skip = 1; c[i] = ""; continue
+        if (!execterm) { skip = 1; c[i] = ""; continue }
+        execterm = 0; c[i] = t
       }
       c[i] = t
       # A call counts only AFTER the definition (FNAME holds its index): `suite; suite() {…}`
@@ -644,10 +652,22 @@ AWK_SHELL='
       # backgrounded — ends the shell exactly as an `exit` would, certain where its
       # branches are certain. A Makefile recipe line runs under plain `sh -c`, so there
       # the same `false; make test` runs make.
-      if (t ~ /^set[ \t]/) { if (t ~ /[ \t]\+e([ \t]|$)/ || t ~ /\+o[ \t]+errexit/) ee = 0; else if (t ~ /[ \t]-[a-zA-Z]*e/ || t ~ /-o[ \t]+errexit/) ee = 1 }
-      if (ee && t == "false" && SPLITOP[i + 1] !~ /^(&&|\|\||\||&)$/) {
-        w = 1; for (lvl = 1; lvl <= nest; lvl++) if (!DEF[lvl]) w = 0
-        if (nest == 0 || w) term = 1; else SKIPD[nest] = 1
+      if (t ~ /^set[ \t]/) {
+        if (t ~ /[ \t]\+e([ \t]|$)/ || t ~ /\+o[ \t]+errexit/) ee = 0; else if (t ~ /[ \t]-[a-zA-Z]*e/ || t ~ /-o[ \t]+errexit/) ee = 1
+        if (t ~ /\+o[ \t]+pipefail/) pf = 0; else if (t ~ /-[a-zA-Z]*o[ \t]+pipefail/) pf = 1
+      }
+      # A PIPELINE is judged at its last command: its status is that command`s — or, under
+      # pipefail, a failure if any command in it failed. Under errexit a failing pipeline
+      # that is not an arm of `&&`/`||` and not backgrounded ends the shell, certain where
+      # its branches are certain.
+      if (SPLITOP[i] != "|") pipefalse = 0
+      if (t == "false") pipefalse = 1
+      if (SPLITOP[i + 1] != "|") {
+        if (ee && (pf ? pipefalse : (t == "false")) && SPLITOP[i + 1] !~ /^(&&|\|\||&)$/) {
+          w = 1; for (lvl = 1; lvl <= nest; lvl++) if (!DEF[lvl]) w = 0
+          if (nest == 0 || w) term = 1; else SKIPD[nest] = 1
+        }
+        pipefalse = 0
       }
       if (match(t, /^cd[ \t]+/)) {
         d = unquote_scalar(substr(t, RLENGTH + 1)); sub(/^[.][/]/, "", d); sub(/[/]+$/, "", d)
@@ -728,8 +748,12 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   #     data and is dropped up to its delimiter line.
   #   * a step with a statically false `if:` never runs, nor does any step of a job with
   #     one; a runtime condition may.
-  #   * a step runs under `bash -e` (the default shell invocation on GitHub): a bare
-  #     literal `false` ends it unless the step said `set +e` first (ERREXIT, in cdnorm).
+  #   * a step runs in its EFFECTIVE SHELL — its own `shell:`, else the job`s or the
+  #     workflow`s `defaults.run.shell` — and only bash/sh steps are command text: unset
+  #     is `bash -e {0}`, a bare `bash` is `-eo pipefail`, a bare `sh` is `-e`, a custom
+  #     template has exactly the options it spells; python/pwsh/cmd steps are skipped.
+  #     Under errexit a bare literal `false` (or, with pipefail, a pipeline containing
+  #     one) ends the step unless `set +e` said otherwise (cdnorm).
   #   * a step runs in its EFFECTIVE WORKING DIRECTORY: its own `working-directory:`, else
   #     the job's `defaults.run.working-directory`, else the workflow's. Every line is
   #     emitted as `cd <dir> && <line>`, so cdnorm judges it like a `cd` in the command
@@ -739,9 +763,22 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
   # until the file ends — each step's lines are held with the step's own settings and the
   # job they belong to, and resolved once every job- and workflow-level key has been seen.
   # Block lines are the lines indented deeper than the key, and are emitted at column 0.
-  awk -v SQ="'" -v ERREXIT=1 "$AWK_SHELL"'
+  awk -v SQ="'" -v ERREXIT=1 -v PIPEFAIL=0 "$AWK_SHELL"'
     function emit(s,   c, n, i) { s = trim(stripcomment(s)); n = splitcmds(s, c); n = cdnorm(c, n); for (i = 1; i <= n; i++) if (trim(c[i]) != "") print trim(dequote(c[i])) }
     function flushblock() { if (acc != "") { held[++nheld] = acc; acc = "" } }
+    # shellopts(v) — what GitHub does with a `shell:` value: unset is `bash -e {0}`; a bare
+    # `bash` is `bash --noprofile --norc -eo pipefail {0}`; a bare `sh` is `sh -e {0}`; a
+    # custom template (`bash {0}`, `bash -o pipefail {0}`) carries exactly the options it
+    # spells; anything else (python, pwsh, powershell, cmd, node…) is NOT a shell and its
+    # step is never command text. Returns "e:<0|1> p:<0|1>" or "" for a non-shell.
+    function shellopts(v,   w) {
+      v = trim(v); w = v; sub(/[ \t].*$/, "", w); w = tolower(w)
+      if (v == "") return "e:1 p:0"
+      if (v == "bash") return "e:1 p:1"
+      if (v == "sh") return "e:1 p:0"
+      if ((w == "bash" || w == "sh") && v ~ /\{0\}/) return "e:" ((v ~ /(^|[ \t])-[a-zA-Z]*e/ || v ~ /-o[ \t]+errexit/) ? 1 : 0) " p:" ((v ~ /pipefail/) ? 1 : 0)
+      return ""
+    }
     function flushstep(   i, all) {
       if (inblock) { flushblock(); inblock = 0 }
       # ONE SHELL per step: its lines are joined with `;` so a `cd`, an `if false; then`
@@ -758,8 +795,8 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         else if (all ~ /(&&|\|\||\||;)$/ || line ~ /^(&&|\|\||\|)/) all = all " " line
         else all = all " ; " line
       }
-      if (nheld) { nh++; H[nh] = all; HWD[nh] = stepwd; HOFF[nh] = stepoff; HJOB[nh] = jobidx }
-      nheld = 0; stepwd = ""; stepoff = 0
+      if (nheld) { nh++; H[nh] = all; HWD[nh] = stepwd; HOFF[nh] = stepoff; HJOB[nh] = jobidx; HSH[nh] = stepsh; HSHSET[nh] = stepshset }
+      nheld = 0; stepwd = ""; stepoff = 0; stepsh = ""; stepshset = 0
     }
     function keyval(s) { sub(/^[^:]*:[ \t]*/, "", s); return unquote_scalar(stripcomment(s)) }
     # GitHub coerces `false`, `0`, `null` and the empty string to false in an expression.
@@ -811,6 +848,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         if ($0 ~ /^[ \t]*defaults:[ \t]*(#.*)?$/) { dind = ind; rind = -1; next }
         if (dind >= 0 && rind < 0 && $0 ~ /^[ \t]*run:[ \t]*(#.*)?$/) { rind = ind; next }
         if (dind >= 0 && rind >= 0 && $0 ~ /^[ \t]*working-directory:/) { if (injobs) JWD[jobidx] = keyval($0); else wfwd = keyval($0) }
+        if (dind >= 0 && rind >= 0 && $0 ~ /^[ \t]*shell:/) { if (injobs) { JSH[jobidx] = keyval($0); JSHSET[jobidx] = 1 } else { wfsh = keyval($0); wfshset = 1 } }
         next
       }
       # RLENGTH is read into a local BEFORE flushstep(): the helpers it runs call match()
@@ -818,6 +856,7 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
       # step after the first in a job was silently dropped.
       if (match($0, /^[ \t]*-[ \t]+/)) { kc = RLENGTH; flushstep(); keycol = kc }
       if ($0 ~ /^[ \t]*(-[ \t]+)?working-directory:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol) stepwd = keyval($0) }
+      if ($0 ~ /^[ \t]*(-[ \t]+)?shell:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol) { stepsh = keyval($0); stepshset = 1 } }
       if ($0 ~ /^[ \t]*(-[ \t]+)?if:/) { match($0, /^[ \t]*(-[ \t]+)?/); if (RLENGTH == keycol && isfalse(keyval($0))) stepoff = 1 }
       if (match($0, /^[ \t]*(-[ \t]+)?run:([ \t]|$)/)) {
         rest = substr($0, RSTART + RLENGTH)
@@ -833,7 +872,14 @@ _run_lines() { # _run_lines <workflow.yml> → the command text of every step's 
         j = HJOB[k]
         if (HOFF[k] || JOFF[j]) continue
         wd = (HWD[k] != "" ? HWD[k] : (JWD[j] != "" ? JWD[j] : wfwd))
-        emit((wd != "" && wd !~ /^[.][\/]?$/) ? "cd " wd " && " H[k] : H[k])
+        # The effective shell: the step`s, else the job`s default, else the workflow`s.
+        # A non-shell step is not command text; a shell step opens with the `set` that
+        # spells its errexit/pipefail options, so cdnorm judges it as GitHub runs it.
+        sh = HSHSET[k] ? HSH[k] : (JSHSET[j] ? JSH[j] : (wfshset ? wfsh : ""))
+        so = shellopts(sh)
+        if (so == "") continue
+        pre = ((so ~ /e:1/) ? "set -e" : "set +e") " ; " ((so ~ /p:1/) ? "set -o pipefail" : "set +o pipefail") " ; "
+        emit(pre ((wd != "" && wd !~ /^[.][\/]?$/) ? "cd " wd " && " H[k] : H[k]))
       }
     }
   ' "$1"
@@ -852,7 +898,7 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
   # next physical line, exactly as make reads it. Otherwise the same lexer as _targets:
   # rules at column 0, recipes on tab lines, comments and variable assignments ignored,
   # conditionals decided as in _targets (AWK_MAKECOND), nothing in a define body counted.
-  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v existl="${3:-}" "$AWK_SHELL$AWK_MAKECOND"'
+  awk -v re="$2" -v nore="$NORUN_RE" -v SQ="'" -v ERREXIT=0 -v PIPEFAIL=0 -v existl="${3:-}" "$AWK_SHELL$AWK_MAKECOND"'
     BEGIN { loadexist(existl) }
     function runs(line,   n, c, i, w) {
       sub(/^[ \t]*[@+-]*[ \t]*/, "", line)
