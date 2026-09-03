@@ -101,6 +101,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   summary line instead and count only `updated 1   skipped 0   failed 0`. `test-core.sh`
   F6 pins the default and strict contracts on the same dirty, missing and core-less
   targets. Dev tooling only — the OS repos receive nothing from this entry.
+  The recovery command is also **resumable**: its one-time `git subtree add` is skipped
+  once `HEAD` already carries `core/` (`cat-file -e HEAD:core`), so rerunning the exact
+  command after a failed sync goes straight back to the sync instead of stopping at
+  "prefix 'core' already exists"; and a `--dry-run` target that does not exist yet is
+  embedded anchored to the invocation directory, because the chain `cd`s into the Core
+  checkout, where a relative `REPOS_ROOT` would make the sync skip the very repo the hint
+  was written for. Both are fixture-driven in `test-core.sh` (a second run of the
+  materialize half, and a dry run of a relative, not-yet-existing target).
 - **A greenfield OS repo no longer vendors a retired Core by default, and the
   first-vendor pin is now held to `core.version`'s major (#691 follow-up).**
   `scripts/new-os-repo.sh` defaulted `CORE_BRANCH` to `refs/tags/v5` — and its `--help`,
