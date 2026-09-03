@@ -5554,7 +5554,7 @@ if have git; then
     grep -qF 'subtree add --prefix=core https://example.invalid/fork.git refs/tags/v9 --squash' <<<"$_rc_cmd" || _rc_bad="$_rc_bad subtree-add-source"
     # The worktree subshell must return the SYNC's status, not the cleanup's. (Here-strings
     # throughout: `printf … | grep -q` under pipefail is the SIGPIPE hazard §5d rejects.)
-    grep -qF '; _rc=$?; git worktree remove --force "$_wt" && exit "$_rc")' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated"
+    grep -qF '; _rc=$?; git worktree remove --force "$_wt" && rmdir "$_wtp" && exit "$_rc")' <<<"$_rc_cmd" || _rc_bad="$_rc_bad sync-status-propagated+parent-removed"
     if [[ -z "$_rc_bad" ]]; then
       pass "recovery: CORE_REMOTE (twice), the ref, the peeled-commit pin and REPOS_ROOT are all carried"
     else
@@ -5568,8 +5568,10 @@ if have git; then
     _rc_sub="(cd ${_rc_sub%%   # VENDORING*}"  # and the trailing comment
     _rc_drive() { # _rc_drive <sync-status-cmd> <remove-cmd> → exit status of the driven subshell
       local d
+      # mktemp is pointed INSIDE the sandbox so the parent's removal can be asserted.
       d="$(printf '%s' "$_rc_sub" |
         sed -e 's|git fetch [^&]* && |true \&\& |' \
+            -e "s|mktemp -d|mktemp -d '$SANDBOX/recovery/wt.XXXXXX'|" \
             -e 's|git worktree add --detach "$_wt" FETCH_HEAD|mkdir -p "$_wt"|' \
             -e "s|\./scripts/sync-core\.sh [^)]*)|$1)|" \
             -e "s|git worktree remove --force \"\$_wt\"|$2 \"\$_wt\"|")"
@@ -5578,11 +5580,17 @@ if have git; then
     _rc_st=""
     _rc_drive false rmdir; _rc_st="$_rc_st sync-fails:$?"
     _rc_drive true rmdir; _rc_st="$_rc_st sync-ok:$?"
+    _rc_leftover="$(find "$SANDBOX/recovery" -name 'wt.*' -print)"
     _rc_drive true false; _rc_st="$_rc_st cleanup-fails:$?"
     if [[ "$_rc_st" == " sync-fails:1 sync-ok:0 cleanup-fails:1" ]]; then
       pass "recovery: the worktree subshell returns the sync's status (failed sync → 1, ok → 0, failed cleanup → 1)"
     else
       fail "recovery: the worktree subshell masks a status —$_rc_st — driven: $_rc_sub"
+    fi
+    if [[ -z "$_rc_leftover" ]]; then
+      pass "recovery: a successful recovery leaves no temp directory behind (the mktemp parent is removed)"
+    else
+      fail "recovery: the mktemp parent survives a successful recovery — $_rc_leftover"
     fi
     unset -f _rc_drive
     # The guard is the executable part: everything before the first `&& git -C`.
@@ -5608,7 +5616,7 @@ if have git; then
     fi
   fi
   rm -rf "$SANDBOX/recovery"
-  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st
+  unset _rc_parent _rc_target _rc_out _rc_cmd _rc_bad _rc_guard _rc_canon _rc_prev _rc_order _rc_m _rc_pos _rc_sub _rc_st _rc_leftover
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi
