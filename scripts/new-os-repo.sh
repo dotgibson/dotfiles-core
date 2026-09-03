@@ -162,7 +162,10 @@ w() {
 # worktree removal succeeded, leaving the repo unstamped while the command said ok. The
 # mktemp PARENT is tracked and removed too — the worktree lives in a `core` subdirectory
 # so `git worktree add` gets a path that does not exist yet, and removing only that
-# would leave an empty temp directory behind on every successful recovery.
+# would leave an empty temp directory behind on every successful recovery. And the
+# cleanup is ENTERED only once `worktree add` has succeeded: the pasted subshell inherits
+# the reader's shell variables, so a cleanup that ran after a failed fetch or mktemp
+# could force-remove whatever an inherited `_wt` happened to name.
 #
 # Every interpolated value is shell-escaped (`printf %q`, bash 3.2-safe): the hint is
 # COPIED, and a target such as dotfiles-O'Brien wrapped in literal single quotes would
@@ -179,7 +182,7 @@ _target_parent="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)" || _target_pare
 # The Core-side half stands on its own too: when core/ WAS materialized and only the
 # commit after it failed, the subtree add would fail on the existing prefix, so that
 # state gets "commit what is staged, then stamp the lock" instead (see the vendor step).
-_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && git worktree add --detach \"\$_wt\" FETCH_HEAD && (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")); _rc=\$?; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\")"
+_sync_half="(cd $(_q "$HERE") && git fetch $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") && _wtp=\"\$(mktemp -d)\" && _wt=\"\$_wtp/core\" && git worktree add --detach \"\$_wt\" FETCH_HEAD && { (cd \"\$_wt\" && CORE_BRANCH=\"\$(git rev-parse 'HEAD^{commit}')\" CORE_REMOTE=$(_q "$CORE_REMOTE") REPOS_ROOT=$(_q "$_target_parent") ./scripts/sync-core.sh $(_q "dotfiles-$OS")); _rc=\$?; git worktree remove --force \"\$_wt\" && rmdir \"\$_wtp\" && exit \"\$_rc\"; })"
 _vendor_hint="git -C $(_q "$_target_abs") add -A && (git -C $(_q "$_target_abs") diff --cached --quiet || git -C $(_q "$_target_abs") commit -q -m $(_q "scaffold dotfiles-$OS")) && git -C $(_q "$_target_abs") subtree add --prefix=core $(_q "$CORE_REMOTE") $(_q "$CORE_BRANCH") --squash && $_sync_half   # VENDORING.md § One-time setup"
 # A target not named dotfiles-$OS gets the symlink FIRST in the chain — before the
 # subtree add and the sync, and never after the trailing `#`, where it would be a
