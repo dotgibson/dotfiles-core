@@ -16752,6 +16752,10 @@ if [[ "$out" == *"1 verb x repo cell(s) missing"* ]]; then pass "vocab: an undec
 _fv_reset; _fv_repo dotfiles-Fedora "define tmpl\\nifeq (1,0)\\nendef\\n${_fv_all}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a conditional-looking line inside a define body is text"; else fail "vocab: define body mutated the conditional stack: $out"; fi
 
+# A SPACE-INDENTED RULE is a rule (only a tab makes a recipe), for targets and .PHONY.
+_fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/  dry-run: ; @true\\n}"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
+if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a space-indented \`  dry-run: ; @true\` resolves"; else fail "vocab: indented rule missed: $out"; fi
+
 # A RULE IN A STATICALLY ACTIVE BRANCH counts; one under an undecidable condition does not.
 _fv_reset; _fv_repo dotfiles-Fedora "${_fv_all/dry-run:\\n\\t@true\\n/}ifeq (1,1)\\ndry-run:\\n\\t@true\\nendif\\n"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if out="$(_fv_run --check)" && [[ "$out" == *"every verb x repo cell resolves"* ]]; then pass "vocab: a verb defined inside an active \`ifeq (1,1)\` branch resolves"; else fail "vocab: active-branch rule not counted: $out"; fi
@@ -17114,6 +17118,8 @@ _fv_floor "if test a = a; then make test; fi runs" 'ok' '_fv_suite dotfiles-Alpi
 _fv_floor "if [ a != a ]; then make test; fi never runs" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_ci dotfiles-Alpine "if [ a != a ]; then make test; fi"'
 _fv_floor "an uncalled multi-line function (brace on its own line)" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          suite()\n          {\n            make test\n          }\n          make lint\n"'
 _fv_floor "a called multi-line function (brace on its own line)" 'ok' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          suite()\n          {\n            make test\n          }\n          suite\n"'
+# A SPACE-INDENTED .PHONY is a .PHONY.
+_fv_floor "a space-indented .PHONY: test still counts" 'ok' '_fv_suite dotfiles-Alpine; _fv_repo dotfiles-Alpine "${_fv_all/.PHONY: help lint check dry-run packages-check core-verify test\\n/  .PHONY: test\\n}"; _fv_ci dotfiles-Alpine "make test"'
 # A compact-sequence block ends at the key column, so a sibling env: is not command text.
 _fv_floor "an env: sibling after a run: block is not part of the block" '**not-in-ci**' '_fv_suite dotfiles-Alpine; _fv_wf dotfiles-Alpine ci.yml "jobs:\n  t:\n    steps:\n      - run: |\n          make lint\n        env:\n          SUITE: make test\n      - run: make lint\n        env: { SUITE_COMMAND: make test }\n"'
 _fv_reset; _fv_repo dotfiles-Alpine "$_fv_all"

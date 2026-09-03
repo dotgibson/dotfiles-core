@@ -220,8 +220,10 @@ _targets() { # _targets <Makefile> → one defined target name per line
     /^[ ]*define([ \t]|$)/ { indef = 1; next }
     mc_line($0) { next }
     mc_active() != "1" { next }
-    /^[^\t#. ][^:=]*::?([^=]|$)/ {
-      lhs = $0; sub(/::?.*/, "", lhs)
+    # A rule may be SPACE-indented (make strips leading blanks from a non-recipe line);
+    # only a TAB makes a recipe. The pattern allows the spaces, the split discards them.
+    /^[ ]*[^\t#. ][^:=]*::?([^=]|$)/ {
+      lhs = $0; sub(/::?.*/, "", lhs); sub(/^[ ]+/, "", lhs)
       n = split(lhs, t, /[ \t]+/)
       for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) print t[i]
     }
@@ -837,8 +839,8 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
         if (runs(l)) for (i = 1; i <= ncur; i++) hit[cur[i]] = 1
         return
       }
-      if (l ~ /^[^\t#. ][^:=]*::?([^=]|$)/) {
-        lhs = l; sub(/::?.*/, "", lhs)
+      if (l ~ /^[ ]*[^\t#. ][^:=]*::?([^=]|$)/) {
+        lhs = l; sub(/::?.*/, "", lhs); sub(/^[ ]+/, "", lhs)
         rhs = l; sub(/^[^:]*::?/, "", rhs); sub(/#.*/, "", rhs)
         fresh = (l !~ /^[^:]*::/)
         inl = ""; hassemi = 0
@@ -882,7 +884,7 @@ _phony_targets() { # _phony_targets <Makefile> → every name declared .PHONY, o
     l ~ /^[ ]*define([ \t]|$)/ { indef = 1; next }
     mc_line(l) { next }
     mc_active() != "1" { next }
-    l ~ /^[.]PHONY[ \t]*:/ { sub(/^[.]PHONY[ \t]*:/, "", l); sub(/#.*/, "", l); n = split(l, t, /[ \t]+/); for (i = 1; i <= n; i++) if (t[i] != "") print t[i] }
+    l ~ /^[ ]*[.]PHONY[ \t]*:/ { sub(/^[ ]*[.]PHONY[ \t]*:/, "", l); sub(/#.*/, "", l); n = split(l, t, /[ \t]+/); for (i = 1; i <= n; i++) if (t[i] != "") print t[i] }
   ' "$1"
 }
 
