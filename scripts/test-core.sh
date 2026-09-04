@@ -11500,6 +11500,33 @@ if [[ "${EUID:-$(id -u)}" != 0 ]]; then
   fi
 fi
 
+# THE BANNER'S FIX COMMAND MUST UPDATE THE FILE IT IS WRITTEN IN. `make gen-hero-tape`
+# rewrites the `.` row and nothing else, so a sibling tape carrying it names a command that
+# leaves the reader's own file untouched — advice that silently does nothing (#862 review).
+_gh_fixture && _gh_run --fleet >/dev/null
+if grep -q 'run `make gen-hero-tape` in dotfiles-core' "$GHR/assets/demo.tape" &&
+  grep -q 'run `make gen-hero-tape-fleet` in dotfiles-core' "$GHF/dotfiles-Fedora/assets/demo.tape"; then
+  pass "gen-hero-tape: each banner names the target that actually regenerates THAT tape"
+else
+  fail "gen-hero-tape: a tape's banner names a command that would not update it"
+fi
+
+# NO MARKDOWN FENCE MAY CARRY TRAILING TEXT. CommonMark allows only whitespace after a
+# closing fence, so ``` followed by prose is not a close — the rest of the document renders
+# inside the code block. markdownlint does not flag it, and it swallowed the tail of
+# assets/README.md once (#862 review), so it is asserted here.
+_gh_fence_bad=""
+for _gh_md in assets/README.md CLAUDE.md CHANGELOG.md; do
+  [[ -f "$HERE/$_gh_md" ]] || continue
+  grep -qE '^```[a-zA-Z]*[[:space:]]+[^[:space:]]' "$HERE/$_gh_md" && _gh_fence_bad="$_gh_fence_bad $_gh_md"
+  (($(grep -c '^```' "$HERE/$_gh_md") % 2)) && _gh_fence_bad="$_gh_fence_bad $_gh_md(odd)"
+done
+if [[ -z "$_gh_fence_bad" ]]; then
+  pass "gen-hero-tape docs: every code fence opens and closes cleanly (no swallowed prose)"
+else
+  fail "gen-hero-tape docs: a fence carries trailing text or is unbalanced:$_gh_fence_bad"
+fi
+
 # THE BANNER MUST NOT TRAVEL THROUGH `awk -v`. macOS ships the one-true-awk, which REJECTS
 # a literal newline in a -v assignment ("awk: newline in string"); gawk and busybox awk both
 # accept it, so passing the eight-line banner that way was green on Linux and Alpine and red
@@ -11522,7 +11549,7 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md
 
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run

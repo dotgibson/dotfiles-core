@@ -107,6 +107,8 @@ on the scale:
 
 ```text
 ✓ README hero size — 1 weighed, under the 2097152-byte ceiling; 9 not rendered yet (not covered by this run)
-``` That is a ceiling, not a target: the budget the tape
-header asks for is ~15 s, and one heavy gif is a preference where ten is a policy.
-Every `Sleep` in `hero.tape.in` is paid for in those bytes.
+```
+
+2 MiB is a **ceiling, not a target**: the budget the tape header asks for is ~15 s, and one
+heavy gif is a preference where ten is a policy. Every `Sleep` in `hero.tape.in` is paid for
+in those bytes.
