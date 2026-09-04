@@ -1034,11 +1034,15 @@ fi
 # nothing has ever checked whether the other eight picked them up. So the file grows a fix
 # and the fleet keeps the defect (#516).
 #
-# Measured adoption, and it is not a hypothetical spread — these are the numbers a real
-# CALL count gives, which is not the same as the numbers the old bare grep gave:
-#   blib_resolve_su 1/9 · blib_sudo_keepalive_start 1/9 · blib_user_bindirs_on_path 8/9 ·
-#   blib_note_fail + blib_failures_report 1/9 · blib_wire_summary 8/9 ·
-#   blib_install_core_guard 7/9 · BLIB_DRY 9/9
+# Measured adoption, and it is not a hypothetical spread. These are CALL counts — repos
+# whose bootstrap.sh really invokes the helper — which is not what the old bare grep gave,
+# and is also not the same question as "how many repos are compliant": an EXEMPT repo calls
+# nothing and is short of nothing. Both numbers are given, because conflating them is how
+# `blib_user_bindirs_on_path` got written up as 8/9 when seven repos call it:
+#   blib_resolve_su 1/9 · blib_sudo_keepalive_start 1/9 (+2 exempt = 3/9 compliant) ·
+#   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) · blib_note_fail 1/9 ·
+#   blib_failures_report 1/9 · blib_wire_summary 8/9 · blib_install_core_guard 7/9 ·
+#   BLIB_DRY 9/9
 #
 # Each gap is a live defect in the repos missing it: no blib_resolve_su means a hand-rolled
 # `[[ "$(id -u)" -eq 0 ]]`, an ARITHMETIC comparison where an empty `id` output evaluates as

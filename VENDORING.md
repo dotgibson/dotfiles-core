@@ -399,6 +399,10 @@ and:
 | **not** in the ledger, and the repo calls it | **fails** — record it; this is the only thing that ever tightens the ratchet |
 | not in the ledger, and the repo does not call it | reported, **not** blocking |
 
+A repo that is **exempt** for a helper calls nothing and is short of nothing, so it belongs
+in neither column. Adoption is therefore quoted as two numbers — callers, and callers plus
+exemptions — because collapsing them overstates the first.
+
 That last row is the original reasoning, kept: most of the fleet is short today, and a gate
 that is red on arrival is a gate someone turns off. Adoption can only go up, and the audit
 prints the exact ledger line to edit. It is the same shape `gen-porting-matrix.sh`'s

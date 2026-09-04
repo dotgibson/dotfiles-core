@@ -860,27 +860,38 @@ _core_helper_verdict() { # _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|
 # Pure awk+grep, busybox-safe, like every other fleet reader here. Returns non-zero when
 # the file is unreadable, which the caller already handles as "not adopted".
 #
-# THREE THINGS ARE NOT CODE, and each was found the same way — by someone asking "what
-# else could satisfy this grep?" rather than by a run going wrong:
+# FOUR THINGS ARE NOT CODE, and every one was found by a reviewer asking "what else could
+# satisfy this?" rather than by a run going wrong:
 #
-#   · comments    — an adoption PR's shape is "add the call, explain why", so a deleted
-#                   call with its paragraph left behind read as adopted.
-#   · strings     — `printf 'run blib_user_bindirs_on_path first'` is prose the user sees.
-#   · heredocs    — and this one is LIVE in the fleet, not hypothetical: dotfiles-Arch's
-#                   usage() heredoc documents `BLIB_DRY    set to 1 …`. Its real references
-#                   at the flag parser and the export keep that row honest today, so
-#                   nothing is wrong right now — but drop those two lines and the help text
-#                   alone would have gone on reporting `ok` forever.
+#   · comments        — an adoption PR's shape is "add the call, explain why", so a deleted
+#                       call with its paragraph left behind read as adopted.
+#   · strings         — `printf "run blib_user_bindirs_on_path first"` is prose the user
+#                       sees, including when the quotes inside it are backslash-escaped.
+#   · MULTI-LINE strings — a quote that opens on one line and closes on another, whose
+#                       interior line happens to be a bare helper name.
+#   · heredoc bodies  — and this one is LIVE in the fleet: dotfiles-Arch's usage() heredoc
+#                       documents `BLIB_DRY    set to 1 …`. Its real references keep that
+#                       row honest today, so nothing is wrong right now — but drop those and
+#                       the help text alone would have gone on reporting `ok` forever.
 #
-# BLUNT ON PURPOSE, in one direction. None of this is a shell parser and it is not trying
-# to be — §5c's comment block explains at length why getting that right needs a parser for
-# every grammar in the tree. Every rule here can only ever DELETE too much, and deleting
-# too much loses a real call, which reports `regressed`: loud, specific, and checkable in
-# one grep. The opposite mistake loses a REGRESSION, silently, which is the entire defect
-# being fixed. When a heuristic must be wrong, make it wrong in the direction that shouts.
+# So this is a scanner, not a stack of substitutions: it walks each line character by
+# character, carries quote and heredoc state ACROSS lines (both constructs span them), and
+# emits only what is left. A `#` inside a string is not a comment and a quote inside a
+# comment is not a quote, which is exactly what a pass-per-construct kept getting wrong.
+# Only `<<-` strips a leading indent from its terminator, and only tabs — a plain `<<EOF`
+# body may legally contain an indented `  EOF` line, and treating that as the terminator
+# ended the heredoc early and handed its remaining prose to the matcher as code.
 #
-# Verified against all nine sibling bootstraps and all eight helpers: it changes no verdict
-# that a hand-read disagrees with, and loses no real call site anywhere in the fleet.
+# WHAT IT IS STILL NOT is a shell parser, and it is not trying to be — §5c's comment block
+# explains at length why getting that right needs a parser for every grammar in the tree.
+# Nested command substitution inside quotes is where it loses its place: Gentoo's
+# `blocker="$(printf '%s\n' "$out" |` … spans two lines with three quoting levels, and the
+# scanner mis-tracks it. That was measured, not assumed — it drops 4 further code lines
+# there and 9 in Fedora, and it changes NO verdict for any of the nine bootstraps against
+# any of the eight helpers. It can only ever delete too much, and deleting too much loses a
+# real call, which reports `regressed`: loud, specific, checkable in one grep. The opposite
+# mistake loses a REGRESSION, silently, which is the entire defect being fixed. When a
+# heuristic must be wrong, make it wrong in the direction that shouts.
 #
 # NB the HERESTRING at the end, not `… | grep -q`. `grep -q` exits the instant it matches,
 # which SIGPIPEs the upstream, which under `set -o pipefail` — which audit-core.sh sets —
@@ -891,40 +902,45 @@ _core_helper_verdict() { # _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|
 _core_helper_called() { # _core_helper_called <file> <helper>
   local f="${1:-}" h="${2:-}" code
   [ -r "$f" ] || return 1
-  # Drop heredoc BODIES first (their content is data, and a `#` in one is not a comment),
-  # then comments, then quoted strings — double-quoted before single-quoted, so an
-  # apostrophe inside a double-quoted string cannot open a phantom single quote.
-  code="$(awk '
-    inhd {
+  code="$(awk 'inhd {
       t = $0
-      sub(/^[ \t]+/, "", t)     # <<- permits an indented terminator
+      if (dash) sub(/^\t+/, "", t)
       if (t == delim) inhd = 0
       next
     }
     {
-      # A heredoc opener: << or <<-, then an optionally-quoted word. Detect on a SCRUBBED
-      # copy, because two things impersonate one:
-      #   · `<<<WORD` — a herestring. A naive match finds `<<WORD` by starting one
-      #     character later, so it must be neutralised, not merely "not matched". This is
-      #     not academic: dotfiles-Offense marks its usage block with `# <<<USAGE`, and the
-      #     first version of this awk read that as a heredoc opening at line 28 and
-      #     swallowed the entire rest of the file — reporting four adopted helpers as
-      #     absent. Caught by diffing every repo x helper before shipping, not by a run.
-      #   · a full-line comment — it opens nothing, whatever it contains.
-      # An arithmetic left-shift (`x << 2`) needs no handling: a digit is not a delimiter.
-      probe = $0
-      if (probe ~ /^[ \t]*#/) probe = ""
-      gsub(/<<</, "<@<", probe)
-      if (match(probe, /<<-?[ \t]*("|'"'"')?[A-Za-z_][A-Za-z0-9_]*("|'"'"')?/)) {
-        d = substr(probe, RSTART, RLENGTH)
-        sub(/^<<-?[ \t]*/, "", d)
-        gsub(/["'"'"']/, "", d)
-        delim = d
-        inhd = 1
+      n = length($0); out = ""; i = 1
+      while (i <= n) {
+        c = substr($0, i, 1)
+        if (ins) { if (c == "'\''") ins = 0; i++; continue }
+        if (ind) {
+          if (c == "\\") { i += 2; continue }
+          if (c == "\"") ind = 0
+          i++; continue
+        }
+        if (c == "#") {
+          p = (i == 1) ? " " : substr($0, i - 1, 1)
+          if (p == " " || p == "\t" || p == ";" || p == "&" || p == "|" || p == "(") break
+          out = out c; i++; continue
+        }
+        if (c == "'\''") { ins = 1; i++; continue }
+        if (c == "\"") { ind = 1; i++; continue }
+        if (c == "\\") { i += 2; continue }
+        if (substr($0, i, 2) == "<<") {
+          if (substr($0, i, 3) == "<<<") { out = out " "; i += 3; continue }
+          rest = substr($0, i + 2)
+          if (match(rest, /^-?[ \t]*("|'\'')?[A-Za-z_][A-Za-z0-9_]*("|'\'')?/)) {
+            tok = substr(rest, RSTART, RLENGTH)
+            dash = (substr(tok, 1, 1) == "-")
+            d = tok; sub(/^-?[ \t]*/, "", d); gsub(/["'\'']/, "", d)
+            delim = d; inhd = 1
+            out = out " "; i += 2 + RLENGTH; continue
+          }
+        }
+        out = out c; i++
       }
-      print
-    }
-  ' "$f" | sed -e 's/#.*//' -e 's/"[^"]*"//g' -e "s/'[^']*'//g")"
+      print out
+    }' "$f")"
   grep -qE "(^|[^A-Za-z0-9_])${h}([^A-Za-z0-9_]|\$)" <<<"$code"
 }
 

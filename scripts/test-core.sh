@@ -6551,25 +6551,28 @@ grep -q '_tool_skips=\$((_tool_skips' "$HERE/scripts/audit-core.sh" && {
 # but ONLY on a box with sibling repos checked out, because otherwise the sections skip
 # before reaching the report. CI checks out just this repo, so CI never saw it. That is the
 # same blind spot --require-siblings exists for, which is why this assertion lives here.
-# ANCHORED to statement position (^[[:space:]]*printf) on purpose: a bare /printf/ also
-# matches a printf inside a $( ) that BUILDS A STRING — §5g composes its report that way —
-# and flagging those would be a false fire that teaches the next reader to widen the guard
-# where no guard belongs. Only a printf that is the statement can reach stdout.
+# ANCHORED to a statement that can REACH stdout, which is not the same as a line starting
+# with `printf` — and that distinction is why the previous two versions of this block were
+# VACUOUS. Every fleet report here is written `((${CORE_JSON:-0})) || printf …`, so it
+# begins with `((`; a `/^[[:space:]]*printf/` scan matched nothing at all, iterated an empty
+# list, and passed. It would have gone on passing with every guard stripped. Deriving the
+# line range (the fix before this one) did not help, because the range was never the bug.
 #
-# The range is DERIVED from the section banners, not typed. It used to be the literal
-# `NR>=860 && NR<=1045`, and by the time anyone looked those numbers had drifted off the
-# thing they were meant to cover: they started inside §5c (not a fleet section at all),
-# stopped partway through §5f, and never reached §5g or §5h — both of which print fleet
-# reports to stdout. A line-number window over a file that grows is a guard with a moving
-# blind spot, and this one had already moved. §5f→§5i is the fleet trio, by name.
+# So: every line in the fleet sections that runs a `printf` which is not redirected to
+# stderr, EXCEPT one inside a `$( )` — §5g and §5f both compose report strings that way,
+# and a string being built reaches stdout only through whatever prints it, which this scan
+# sees separately. Then assert the scan is NON-EMPTY, because "matched nothing" is exactly
+# how this test failed silently twice.
 _jg_from="$(grep -n '^# ── 5f\.' "$HERE/scripts/audit-core.sh" | cut -d: -f1)"
 _jg_to="$(grep -n '^# ── 5i\.' "$HERE/scripts/audit-core.sh" | cut -d: -f1)"
 if [ -z "$_jg_from" ] || [ -z "$_jg_to" ]; then
   fail "--json: cannot locate the §5f→§5i fleet sections in audit-core.sh — the banners were renamed and this guard now covers nothing"
 else
   _jg_bad=0
+  _jg_seen=0
   while IFS= read -r _jg_line; do
     [ -n "$_jg_line" ] || continue
+    _jg_seen=$((_jg_seen + 1))
     case "$_jg_line" in
     *CORE_JSON*) ;;
     *)
@@ -6578,11 +6581,19 @@ else
       ;;
     esac
   done <<EOF
-$(awk -v a="$_jg_from" -v b="$_jg_to" 'NR>=a && NR<=b && /^[[:space:]]*printf/ && !/>&2/ {printf "%d: %s\n", NR, $0}' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+$(awk -v a="$_jg_from" -v b="$_jg_to" '
+    NR>=a && NR<=b && /printf/ && !/>&2/ {
+      if (match($0, /\$\([[:space:]]*printf/)) next
+      printf "%d: %s\n", NR, $0
+    }' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
 EOF
-  ((_jg_bad)) || pass "--json: every fleet-section printf (§5f–§5i) is CORE_JSON-guarded (stdout stays parseable)"
+  if ((_jg_seen == 0)); then
+    fail "--json: the fleet-section scan matched NO printf at all — it is vacuous again, which is how it stayed green through two rewrites while protecting nothing"
+  elif ((_jg_bad == 0)); then
+    pass "--json: all $_jg_seen fleet-section stdout writes (§5f–§5i) are CORE_JSON-guarded"
+  fi
 fi
-unset _jg_from _jg_to
+unset _jg_from _jg_to _jg_seen
 
 # ── the adoption RATCHET: _core_helper_verdict, as a unit ───────────────────────
 # What used to be here was a single assertion on the section's SOURCE TEXT — "audit-core.sh
@@ -6685,6 +6696,17 @@ printf 'set -e\nusage() {\n\tcat <<-\x27EOF\x27\n\t  BLIB_DRY documented here\n\
 # marks its usage block `# <<<USAGE`, and reading that as a heredoc swallowed the rest of
 # the file — four adopted helpers reported absent.
 printf 'set -e\n# <<<USAGE\ngrep -q x <<<"$y"\nblib_wire_summary\n'      >"$_hc_dir/herestring.sh"
+# A PLAIN <<EOF whose body contains an indented delimiter-lookalike. Only <<- strips an
+# indent from the terminator, and only tabs — trimming unconditionally ended the heredoc
+# here and handed the rest of its prose to the matcher as executable code.
+printf 'set -e\ncat <<EOF\n  EOF\nblib_user_bindirs_on_path documented here\nEOF\nblib_wire_summary\n' >"$_hc_dir/hd-indented-body.sh"
+# Escaped quotes inside a double-quoted string: `s/"[^"]*"//g` matched the fragments AROUND
+# the helper and left the token bare between them.
+printf 'set -e\nprintf "run \\"blib_user_bindirs_on_path\\" first"\nblib_wire_summary\n' >"$_hc_dir/escaped-quote.sh"
+# Multi-line strings — a quote that opens on one line and closes on another, whose interior
+# line is a bare helper name. Line-local substitution could never see these.
+printf 'set -e\necho "line one\nblib_user_bindirs_on_path\nline three"\nblib_wire_summary\n' >"$_hc_dir/multiline-dq.sh"
+printf "set -e\necho 'line one\nblib_user_bindirs_on_path\nline three'\nblib_wire_summary\n" >"$_hc_dir/multiline-sq.sh"
 _hc_bad=0
 _hc() { # <fixture> <helper> <want 0|1> <why>
   local got=0
@@ -6704,6 +6726,18 @@ _hc squote.sh           blib_user_bindirs_on_path 0 "a helper named inside a sin
 _hc heredoc.sh          BLIB_DRY                  0 "a usage() heredoc documenting the var is not a reference — the dotfiles-Arch shape"
 _hc heredoc-dash.sh     BLIB_DRY                  0 "<<- with an indented, quoted terminator must be skipped too"
 _hc herestring.sh       blib_wire_summary         1 "a '<<<' herestring and a '# <<<MARKER' comment must not be read as heredoc openers — that swallowed the rest of the file"
+_hc hd-indented-body.sh blib_user_bindirs_on_path 0 "a plain <<EOF body may contain an indented 'EOF' line; only <<- strips an indent, and only tabs"
+_hc escaped-quote.sh    blib_user_bindirs_on_path 0 "a helper between backslash-escaped quotes is still inside the string"
+_hc multiline-dq.sh     blib_user_bindirs_on_path 0 "a multi-line double-quoted string is not code"
+_hc multiline-sq.sh     blib_user_bindirs_on_path 0 "a multi-line single-quoted string is not code"
+# Every construct above must also leave the scanner in sync: if a heredoc or a string
+# swallowed the rest of the file, the call that FOLLOWS it would vanish too — which is the
+# failure mode a fixture asserting only "the bypass is rejected" cannot tell apart from a
+# scanner that stopped reading. Assert the tail survives, for each.
+for _hc_f in hd-indented-body escaped-quote multiline-dq multiline-sq herestring; do
+  _hc "$_hc_f.sh" blib_wire_summary 1 "the call AFTER the construct must still be seen — otherwise the scanner lost sync and swallowed the file"
+done
+unset _hc_f
 # THE PIPEFAIL CASE, and it is not hypothetical: the first version of this predicate was
 # `sed … | grep -q`, and `grep -q` exits on first match, SIGPIPEing sed, which under
 # `set -o pipefail` — which audit-core.sh sets — makes the pipeline non-zero ON SUCCESS.

@@ -16,7 +16,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
-- **Helper adoption is a ratchet now, and `blib_user_bindirs_on_path` went 1/9 → 8/9 (#748).**
+- **Helper adoption is a ratchet now, and `blib_user_bindirs_on_path` went 1/9 → 7/9 callers (#748).**
   `audit-core.sh` §5f has reported which OS repos are short of the `lib/bootstrap-lib.sh`
   contract since #516, as a bare fraction, deliberately advisory. `blib_user_bindirs_on_path
   1/9` sat in that report while the gap it names shipped a **live defect**: openSUSE's
@@ -56,7 +56,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the "role repos install no packages" reasoning was never true of a `--install` that does
   `pipx` and `go install` into `~/.local/bin`, which is exactly why it had hand-rolled the
   prelude. `dotfiles-MacBook` and `dotfiles-Defense` genuinely have no such probe and stay
-  unadopted/exempt.
+  unadopted/exempt — which is why the headline reads **7/9 callers** rather than 8/9: seven
+  repos call it, `dotfiles-Defense` is exempt (so 8/9 compliant), and `dotfiles-MacBook` is
+  the one standing gap. §5f reports both numbers now, because collapsing them is what
+  overstated the count in the first place.
 
 - **The desktop-bar parity pair is generated and gated, not asked nicely (#693).**
   `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` were an
