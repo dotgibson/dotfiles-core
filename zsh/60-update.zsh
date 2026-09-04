@@ -511,6 +511,22 @@ up() {
       "fix: install your distro's package manager, or update by hand"
     return 1
   fi
+  # THE DECLARATION CHECK RUNS BEFORE EVERY MODE BRANCH, and it has to. PKG_UPGRADE is a
+  # REQUIRED key, so its absence means this box has no usable declaration at all — and that
+  # is a fact about the box, not about the mode you asked for. It used to be checked down at
+  # the dispatch, after `-n` and `-i` had already returned, which made `up -n` on an
+  # undeclared box print "nothing to upgrade": _up_pending resolves no PKG_COUNT_PENDING,
+  # reads the empty list as an empty ANSWER, and asserts the box is up to date when nothing
+  # was measured. That is the same 0-vs-unknown confusion the -1 sentinel exists to prevent
+  # in _pkgup_count, arriving through a different door. An undeclared box must say so in
+  # every mode, including the read-only ones.
+  if [[ -z "$(_pkgup_verb PKG_UPGRADE)" ]]; then
+    _core_errbox "up: no upgrade verb declared for ${mgr}" \
+      "why: this box's os.capabilities names no PKG_UPGRADE (or none is linked at all)" \
+      "fix: declare PKG_UPGRADE in os/<os>.capabilities (see core/examples/os.capabilities.example)" \
+      "fix: if your OS repo already ships one, re-run its ./bootstrap.sh --links-only"
+    return 1
+  fi
   # Dry run: show what WOULD upgrade and exit 0, touching nothing — the non-destructive
   # inspect that the count-only nudge and the (interactive-only) pre-confirm preview
   # didn't offer. Uses the same non-root, no-mutation _pkgup_list as the preview below.
@@ -629,17 +645,11 @@ up() {
     _clean=(${=$(_pkgup_verb PKG_CLEANUP)})
     ((${#_clean})) && _clean+=("${y[@]}")
   fi
-  # An archive with a manager on PATH but no upgrade verb is a broken declaration, not a
-  # box to guess on. Say so instead of running the bare flag token as a command. Since #763
-  # Core carries no built-in row behind this, so the OTHER way to reach here is a box whose
-  # declaration exists in its OS repo but was never LINKED — hence the second fix line.
-  if ((! ${#_cmd})); then
-    _core_errbox "up: no upgrade verb declared for ${mgr}" \
-      "why: this box's os.capabilities names no PKG_UPGRADE (or none is linked at all)" \
-      "fix: declare PKG_UPGRADE in os/<os>.capabilities (see core/examples/os.capabilities.example)" \
-      "fix: if your OS repo already ships one, re-run its ./bootstrap.sh --links-only"
-    return 1
-  fi
+  # No second PKG_UPGRADE guard here: the check above already refused an archive with no
+  # upgrade verb, before any mode branch could return. The partial path cannot arrive empty
+  # either — `up -i` refuses outright when PKG_UPGRADE_PARTIAL is absent — so a guard on
+  # $_cmd at this point would be unreachable, and an unreachable guard reads as protection
+  # that is not there.
   # _pkgup_run is a no-op on an empty verb, so the chain is the same shape whether or not
   # this archive has a pre-step or a cleanup step. PKG_UPGRADE_PRE failing ABORTS: an
   # upgrade computed against an index that could not be refreshed is the thing that

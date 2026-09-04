@@ -207,6 +207,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   operator learns to ignore stderr, and that warning can only say a table is empty where
   each consumer can name what actually broke.
 
+  **`up` refuses in every mode, including the read-only ones**, and that is a fix this
+  change needed rather than a consequence of it. The `PKG_UPGRADE` guard used to sit at the
+  dispatch, after `-n` and `-i` had already returned — so on an undeclared box `up -n`
+  resolved no `PKG_COUNT_PENDING`, read the empty list as an empty **answer**, and printed
+  "nothing to upgrade": the box asserted up to date when nothing was measured, which is the
+  0-vs-unknown confusion the `-1` sentinel exists to prevent in `_pkgup_count` arriving
+  through a different door. The guard now runs immediately after manager detection, where it
+  belongs — a missing REQUIRED verb is a fact about the box, not about the mode you asked
+  for. `maint-install`'s two refusals name `--links-only` alongside the declare-it hint for
+  the same reason: the likelier cause is a declaration that exists but was never linked.
+
   `scripts/check-capabilities.sh` is untouched — it is the schema, not a fallback. What
   changes for a consuming repo is that **`./bootstrap.sh --links-only` is now required**
   after adopting or changing a declaration, not merely advisable; `VENDORING.md` says so

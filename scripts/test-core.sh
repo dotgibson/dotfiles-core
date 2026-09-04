@@ -14621,6 +14621,27 @@ ucheck "update: startup hook still refreshes once the throttle window has elapse
 ucheck "update: up --dry-run lists pending packages and exits 0 (applies nothing)" \
   "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up --dry-run); (( \$? == 0 )) && [[ \$out == *foo* && \$out == *bar* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
+# ...and the SAME flag on an UNDECLARED box must refuse, not report a clean bill of health.
+# This is the regression #763 nearly shipped: the PKG_UPGRADE guard used to sit down at the
+# dispatch, after `-n` had already returned, so `up -n` resolved no PKG_COUNT_PENDING, read
+# the empty list as an empty ANSWER, and printed "nothing to upgrade" — asserting the box is
+# up to date when nothing was measured, which is the 0-vs-unknown confusion the -1 sentinel
+# exists to prevent in _pkgup_count arriving through a different door. Assert the refusal AND
+# the absence of the reassuring string, because a guard that fires with the wrong message
+# would still pass a bare rc check.
+ucheck "update: up --dry-run on an undeclared box refuses, never says 'nothing to upgrade'" \
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up --dry-run 2>&1); (( \$? == 1 )) && [[ \$out == *'no upgrade verb declared'* && \$out == *'--links-only'* && \$out != *'nothing to upgrade'* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
+# The read-only modes are the ones that regressed, but the guard is per-BOX and not per-mode,
+# so pin every entry point at once: a fix that only taught `-n` to refuse would leave `up -i`
+# reporting the partial-upgrade refusal instead of the real cause.
+ucheck "update: every up mode refuses on an undeclared box, not just the applying ones" \
+  "source '$UI'; source '$CAPZ'; source '$UPD'; _core_confirm() { return 1 }
+   for _m in --dry-run -i -y ''; do
+     out=\$(up \${_m:+\$_m} 2>&1); (( \$? == 1 )) || exit 1
+     [[ \$out == *'no upgrade verb declared'* ]] || exit 1
+   done" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
 # up strict flag parsing: every arg is parsed (not just $1), so an unknown flag is
 # REJECTED in Core's voice (rc 1 — the verb-layer usage-error convention, same as
 # serve/mkcd/…) instead of silently falling through to a real, privileged update —

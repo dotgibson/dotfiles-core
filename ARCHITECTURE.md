@@ -101,9 +101,20 @@ Three things about the demolition are worth knowing rather than rediscovering:
   release fans out to the OS repos, and each machine re-bootstraps on its own schedule after
   that. Between them `$_CORE_CAP` is empty, so deleting the fallbacks alongside the
   declarations would have broken `up` on every box that had pulled and not yet re-run
-  `./bootstrap.sh --links-only`. #763 was gated on evidence that the fleet had
-  re-bootstrapped, not on the declarations existing — `CORE_CAP_LOUD=1 zsh -i -c 'print -r
-  -- ${#_CORE_CAP}'` on a real host, per repo, is what that evidence looked like.
+  `./bootstrap.sh --links-only`. So the gate on #763 was evidence that the fleet had
+  re-bootstrapped, not the declarations existing. Neither `make fleet-drift` nor
+  `audit-core.sh` §9c can supply it: both report whether a repo **declares**, and what
+  matters is whether a **box has relinked**. The check is per host, and a non-zero count
+  means the symlink is live there:
+
+  ```bash
+  CORE_CAP_LOUD=1 zsh -i -c 'print -r -- ${#_CORE_CAP}'
+  ```
+
+  A host that has not relinked when this lands does not lose data or silently misbehave —
+  it loses `up`, `maint-install` on systemd/launchd, the doctor's install hint and the maint
+  runner's count, each saying so and naming `--links-only`. Running the command above is
+  still the cheapest way to find out before the box tells you.
 - **What an undeclared box does now.** It degrades **visibly**, at each caller's own error
   message, which is what deleting the fallbacks bought: `up` says no upgrade verb is
   declared and names `--links-only` as the fix, `maint-install` refuses on systemd/launchd

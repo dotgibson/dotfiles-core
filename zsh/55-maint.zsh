@@ -460,6 +460,7 @@ maint-install() {
     if [[ -z "$svc" ]]; then
       _core_err "maint-install: SCHEDULER=systemd but no SCHEDULER_UNIT_DIR is declared"
       _core_hint "declare it in os/<os>.capabilities (see core/examples/os.capabilities.example)"
+      _core_hint "if your OS repo already ships one, re-run its ./bootstrap.sh --links-only"
       return 1
     fi
     tmr="${svc%.service}.timer"
@@ -500,6 +501,7 @@ EOF
     if [[ -z "$plist" ]]; then
       _core_err "maint-install: SCHEDULER=launchd but no SCHEDULER_UNIT_DIR is declared"
       _core_hint "declare it in os/<os>.capabilities (see core/examples/os.capabilities.example)"
+      _core_hint "if your OS repo already ships one, re-run its ./bootstrap.sh --links-only"
       return 1
     fi
     mkdir -p "${plist:h}" "${_MAINT_LOG:h}"
