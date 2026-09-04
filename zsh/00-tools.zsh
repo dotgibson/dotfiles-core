@@ -90,7 +90,7 @@ unset _d  # file top level — no function scope to contain it
 #
 # The `if`/`return` form, not `command -v … && …`: the one-liner inverts the exit status on
 # the else branch, which would break every `_have x && HAVE_X=1` line at once. No count is
-# quoted here on purpose — #694 cut thirteen of those lines to bare probes, and a number in
+# quoted here on purpose — #694 cut fourteen of those lines to bare probes, and a number in
 # this sentence would have been the thing that rotted.
 typeset -gA _CORE_PROBED=()
 _have() {
@@ -347,7 +347,7 @@ unset _b
 #                                  it writes the _CORE_PROBED[<tool>] ledger row, which is
 #                                  what core-doctor reads and all these tools ever needed.
 #
-# Every line here used to be the first kind. Thirteen of those flags had no reader anywhere
+# Every line here used to be the first kind. Fourteen of those flags had no reader anywhere
 # in the fleet — set on every interactive shell, consumed by nothing (#694) — so they are
 # now the second kind. core-doctor is unaffected: it keys on _CORE_PROBED, never on a flag
 # (see `_core_doctor_stale`, 30-functions.zsh), so the probe is the part that mattered.
@@ -373,7 +373,6 @@ _have carapace && HAVE_CARAPACE=1 # completion engine — init in 45-plugins.zsh
 _have xh && HAVE_XH=1
 _have glow && HAVE_GLOW=1
 _have doggo && HAVE_DOGGO=1
-_have gron && HAVE_GRON=1
 _have viddy && HAVE_VIDDY=1         # modern watch (20-aliases.zsh: watch → viddy)
 _have gping && HAVE_GPING=1         # graphical ping (20-aliases.zsh: ping → gping)
 _have tldr  && HAVE_TLDR=1          # tealdeer binary (20-aliases.zsh: help → tldr)
@@ -445,6 +444,9 @@ fi
 # global in every interactive shell that can only ever go stale.
 _have delta                         # git's pager, wired in git/gitconfig — a CONFIG file, which
                                     # cannot read a shell parameter, so the flag never had a reader
+_have gron                          # greppable JSON — own command, no alias. Its flag's only
+                                    # reader was ever a TEST fixture, which is not a consumer;
+                                    # that assertion reads the ledger directly now (#694 review)
 _have gum                           # 05-ui.zsh's helpers probe gum LIVE with `command -v`, on
                                     # purpose (they must work before band 00 has run), so they
                                     # never read a flag — see the note at the top of that file

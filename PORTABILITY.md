@@ -190,19 +190,28 @@ Define it locally in a new context too. Do not invent a shared `lib/have.sh`.
 
 ## 5. `HAVE_*` is a declared surface, not a convention
 
-`zsh/00-tools.zsh` probes the modern-CLI stack at band 00 and records the answer twice:
+`zsh/00-tools.zsh` probes the modern-CLI stack at band 00. Every probe records a ledger
+row; only some also set a flag.
 
-- **`_CORE_PROBED`** — the authoritative ledger. A zsh associative array, one row per tool
-  Core probes, `1` seen / `0` looked-and-absent. Keyed on the **canonical** tool name
-  (`fd`, not `fdfind`). `core-doctor` reads this and nothing else; so do
-  `_core_doctor_stale` and `_core_doctor_unwired` (`zsh/30-functions.zsh`). The `0` rows
-  matter: without them "Core probed this and said no" is indistinguishable from "Core does
-  not probe this tool".
-- **`HAVE_<TOOL>`** — a convenience flag, set **only for a tool something actually gates
-  on**. The name is `HAVE_` plus the canonical tool name uppercased with `-` → `_`
-  (`git-absorb` → `HAVE_GIT_ABSORB`). Set, never `export`ed: these are shell parameters
-  visible to the layers sourced after band 00, not environment variables, so they do not
-  reach child processes.
+- **`_CORE_PROBED`** — the authoritative ledger, and the one that is **always** written. A
+  zsh associative array, one row per `_have` call, `1` seen / `0` looked-and-absent.
+  `core-doctor` reads this and nothing else; so do `_core_doctor_stale` and
+  `_core_doctor_unwired` (`zsh/30-functions.zsh`). The `0` rows matter: without them "Core
+  probed this and said no" is indistinguishable from "Core does not probe this tool".
+
+  Rows come in two kinds. The **canonical** rows are the ones the doctor keys on and the
+  ones you should read — `fd`, `bat`, `git-absorb`. Alongside them sit **auxiliary** rows
+  left by the alternate-name ladders: probing `fd` and then `fdfind` writes both, and
+  `00-tools.zsh` afterwards forces `_CORE_PROBED[fd]=1` from `$FD_BIN` so the canonical row
+  carries the real answer rather than the first ladder rung's `0`. Read the canonical name;
+  treat `fdfind`/`batcat` rows as the implementation detail they are.
+- **`HAVE_<TOOL>`** — a convenience flag, and a **conditional** one: it exists only where
+  something actually gates on it. Fourteen probes deliberately set no flag at all (#694),
+  so the presence of a ledger row implies nothing about a flag. The name is `HAVE_` plus
+  the canonical tool name uppercased with `-` → `_` (`git-absorb` → `HAVE_GIT_ABSORB`).
+  Set, never `export`ed: these are shell parameters visible to the layers sourced after
+  band 00, not environment variables, so they never reach a child process — which is why
+  only code **sourced into the same shell** can read one.
 
 **A flag only exists where band-00 detection ran.** An interactive zsh through
 `zsh/loader.zsh` has them; a script, a non-interactive shell, and anything sourced before
@@ -245,8 +254,13 @@ both-ways shape `core.manifest` has in §1:
    removal cannot leave the declaration lying;
 2. every Core-namespace flag an OS or role repo **reads without setting** is declared here
    — so an OS-repo author finds out at the gate, not at a broken prompt six months later;
-3. every flag `00-tools.zsh` sets has a reader — in Core, or in this table. #694 removed
-   thirteen that had neither, and this is what stops them accumulating again.
+3. every flag `00-tools.zsh` sets has a reader — a `zsh/*.zsh` module, or this table. #694
+   removed fourteen that had neither, and this is what stops them accumulating again.
+   "Reader" means a **zsh module**, not any file mentioning the name: a flag is never
+   exported, so `bin/`, `scripts/`, `maint/` and nvim's lua run where it does not exist.
+   A **test** is not a reader either — `HAVE_GRON` survived an earlier draft of this gate
+   on the strength of one negative fixture, which is exactly the dead global the direction
+   exists to find.
 
 A flag with no reader is not free. It is a global in every interactive shell that can only
 go stale, and — because nothing consumes it — nothing ever notices when it does.
@@ -256,8 +270,11 @@ a repo that is not checked out is an **environment skip**, never a red, and the 
 names which repos went uncovered. It matches reads by their **sigil** (`$HAVE_X`,
 `${HAVE_X}`) rather than by the bare name, which is what lets it ignore the many prose
 mentions in comments without needing a parser for five grammars — the trap §3 documents.
-The cost of that choice is one wording rule: **do not write a `$` in front of a flag name
-in prose.** Write `HAVE_ATUIN`, not `$HAVE_ATUIN`.
+Whole-line comments are dropped on top of that, on both the read and the assignment side —
+the second matters more, since a `# HAVE_X=1` read as an assignment would mark the flag
+owned and **suppress** a real undeclared read of it. What survives both filters is an
+inline trailing comment, so one wording rule remains: **do not write a `$` in front of a
+flag name in a trailing comment.** Write `HAVE_ATUIN`, not `$HAVE_ATUIN`.
 
 ## 6. Before you push
 

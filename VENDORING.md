@@ -363,11 +363,19 @@ that exists on **your** OS and nowhere else is still your business and is never 
 flags behind. Band 80 loads after band 00, so your `os/<os>.zsh` **can** read them — but
 only the ones `PORTABILITY.md` §5 declares, which today is `HAVE_ATUIN` and nothing else.
 Everything else is Core's internal wiring and may be renamed or dropped in any release; #694
-removed thirteen flags in one change on exactly that basis.
+removed fourteen flags in one change on exactly that basis.
 
 Reading an undeclared one fails `audit-core.sh` §5j, and the fix is usually a one-line PR to
-Core adding the table row — declaring the flag is the ask, not a workaround for it. If you
-would rather not wait, `command -v <tool>` is always available and always correct.
+Core adding the table row — declaring the flag is the ask, not a workaround for it.
+
+If you would rather not wait, probe the tool yourself — but probe it the way Core does, not
+with a bare `command -v`. That is right for most tools and **wrong for exactly the ones this
+repo has already been bitten by**: `fd` and `bat` ship as `fdfind`/`batcat` on the Debian
+family (Core resolves them into `$FD_BIN`/`$BAT_BIN`), and `git-absorb` installs into git's
+**exec-path**, which is deliberately off `PATH`, so `command -v git-absorb` misses on a box
+where `git absorb` works (#424). For anything in that class, read Core's answer rather than
+re-deriving it: `$FD_BIN`/`$BAT_BIN` for the renamed pair, and `core-doctor --json` for a
+one-shot report that already handles the exec-path case.
 
 Flags **you** set are yours outright: `dotfiles-Offense` and `dotfiles-Defense` each define
 about twenty of their own in the same namespace, and the gate ignores every one of them. It

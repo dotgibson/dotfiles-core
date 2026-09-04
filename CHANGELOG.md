@@ -157,11 +157,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Removed
 
-- **BREAKING: thirteen `HAVE_*` globals no code reads, and the `HAVE_*` contract is declared
+- **BREAKING: fourteen `HAVE_*` globals no code reads, and the `HAVE_*` contract is declared
   and gated (#694).** `zsh/00-tools.zsh` set **42** `HAVE_<TOOL>` flags into every interactive
-  shell. Thirteen of them — `HAVE_ASTGREP` · `HAVE_DELTA` · `HAVE_GUM` · `HAVE_HYPERFINE` ·
-  `HAVE_JNV` · `HAVE_JQ` · `HAVE_LNAV` · `HAVE_SD` · `HAVE_SESH` · `HAVE_SHELLCHECK` ·
-  `HAVE_SHFMT` · `HAVE_WATCHEXEC` · `HAVE_YQ` — were read by **nothing**, in Core or in any
+  shell. Fourteen of them — `HAVE_ASTGREP` · `HAVE_DELTA` · `HAVE_GRON` · `HAVE_GUM` ·
+  `HAVE_HYPERFINE` · `HAVE_JNV` · `HAVE_JQ` · `HAVE_LNAV` · `HAVE_SD` · `HAVE_SESH` ·
+  `HAVE_SHELLCHECK` · `HAVE_SHFMT` · `HAVE_WATCHEXEC` · `HAVE_YQ` — were read by
+  **nothing**, in Core or in any
   of the thirteen repos. **Why this is breaking, and the only reason it is:** a gitignored
   host-local `99-local.zsh` could reference one, and that is unknowable from here. Nothing
   Core ships, and nothing any OS or role repo ships, is affected.
@@ -187,22 +188,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (a doc row Core no longer sets is a stale promise — the exact wreckage a rename leaves);
   **fleet reads ⊆ declared** (an OS or role repo reading a Core flag it does not itself set is
   coupled to Core's internals); and **set ⇒ has a reader** (the direction the issue did not ask
-  for, and the one that keeps thirteen dead flags from quietly reaccumulating). It matches a
+  for, and the one that keeps fourteen dead flags from quietly reaccumulating). It matches a
   read by its **`$` sigil** rather than by the bare name, which is how it tells `${HAVE_ATUIN:-}`
   in code from `HAVE_ASTGREP` in a comment without needing a parser for five grammars — the
   trap `PORTABILITY.md` §3 documents. It subtracts each repo's own assignments first, so the
   ~20 flags `dotfiles-Offense` and `dotfiles-Defense` each define for themselves are ignored;
-  the contract is only ever about reading a name you did not set. No `--exclude-dir` and no
-  `-I` anywhere in it — both are GNU extensions busybox grep rejects, the trap that once made
-  `_core_make_gate_hits` report Core as the repo missing its own rule — so the vendored `core/`
-  subtree (which would otherwise answer for Core in every OS repo and make the fleet direction
-  vacuous) is pruned with `find`. The fleet half takes §5f/§5h's `skip_env` posture: CI checks
-  out this repo alone, and a gate that only passes on a laptop with the fleet beside it is a
-  gate nobody trusts.
+  the contract is only ever about reading a name you did not set. Whole-line comments are
+  dropped on top of the sigil rule, on **both** sides — the assignment side matters more,
+  since a `# HAVE_X=1` read as an assignment would mark the flag owned and silently
+  **suppress** a real undeclared read of it. No `--exclude-dir` and no `-I` anywhere in it —
+  both are GNU extensions busybox grep rejects, the trap that once made
+  `_core_make_gate_hits` report Core as the repo missing its own rule — so the vendored
+  `core/` subtree (which would otherwise answer for Core in every OS repo and make the fleet
+  direction vacuous) is pruned with `find`. The fleet half takes §5f/§5h's `skip_env`
+  posture: CI checks out this repo alone, and a gate that only passes on a laptop with the
+  fleet beside it is a gate nobody trusts.
+
+  **"Reader" means a zsh module, and that precision is what makes direction 3 worth having.**
+  A `HAVE_*` flag is a shell parameter that is never exported, so only code **sourced into
+  the same shell** can read one: `zsh/*.zsh` here, and the OS/role layers downstream.
+  `bin/`, `scripts/`, `maint/` and `tmux/scripts/` run as child processes where the flag does
+  not exist, and nvim's lua cannot see a zsh parameter at all — every `HAVE_*` mention in
+  those trees is prose about Core, not a read of it. The first implementation scanned them
+  anyway, which let `scripts/test-core.sh` count as a consumer and kept `HAVE_GRON` alive on
+  the strength of one negative fixture; review caught it. A test is not a consumer, so the
+  flag is pruned and that fixture asserts `_CORE_PROBED[gron] == 0` — which is what it
+  always meant, and is strictly the stronger claim.
 
   **The issue's own numbers were wrong in three places, and `V5-PROPOSAL.md` §5.1 now records
   why** rather than quietly correcting them, because the shape of the error is the argument for
-  the sigil match. It said 43 globals (42), nine dead (thirteen — its nine included
+  the sigil match. It said 43 globals (42), nine dead (fourteen — its nine included
   `HAVE_DIRENV`, which has never existed, and `HAVE_MISE`, which `00-tools.zsh` reads at its own
   `mise activate` line), and five genuine downstream consumers (**one**: of the other four,
   `HAVE_ASTGREP`/`HAVE_JNV`/`HAVE_SHELLCHECK` appear in a single `dotfiles-Offense` **comment**,
@@ -211,13 +226,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   parameters, so they never reached a child process.
 
   `scripts/test-core.sh` pins the parts a static gate cannot: that **every bare `_have` probe
-  still writes its ledger row** (derived from the source, floored at 13 — the regression here is
+  still writes its ledger row** (derived from the source, floored at 14 — the regression here is
   a _reading_ one, where the next person sees a probe whose result is discarded and deletes the
-  line, silently blinding the doctor on thirteen tools); that the thirteen flag names stay unset;
+  line, silently blinding the doctor on fourteen tools); that the fourteen flag names stay unset;
   and that `HAVE_ATUIN` is set with atuin present and unset — with the ledger reading `0`, not a
-  missing row — when it is absent, hermetically, in both directions. The `#447` doctor-vs-flag
-  agreement check keeps working unchanged; its pair-count floor moves 30 → 24 to match.
-  `PORTING-MATRIX.md`'s footnotes for the ten affected tools are corrected in the same change.
+  missing row — when it is absent, hermetically, in both directions.
+
+  The gate's own matcher is tested too, rather than only hand-verified: the fleet scan is
+  extracted as **`scripts/lib/common.sh :: _core_have_read_hits`** and driven by ten fixture
+  repos — a plain read, the braceless `$HAVE_X` form, a `.sh` outside `os/`, a read inside a
+  vendored `core/` (pruned), a flag the repo sets itself, ownership spread across two files, a
+  bare name in a comment, a **sigil** form in a comment, a commented-out assignment that must
+  not confer ownership, and a repo with no shell files. Every fixture carries a vendored
+  `core/` that both sets and reads the whole flag set, so if the prune ever breaks, all ten go
+  silent at once. The silent directions are the ones worth pinning: an over-reporting scanner
+  reds a clean fleet and gets turned off, but an under-reporting one passes forever while the
+  contract rots.
+
+  Two shape-parsing tests needed teaching, not weakening. `#447`'s doctor-vs-flag agreement
+  check pairs on the assignment by design (a tool with no flag has nothing to compare), so its
+  floor moves 30 → 24. `"every core-doctor row has detection behind it"` parsed two line
+  shapes and this change introduced a third, dropping fourteen tools out of its set and
+  tripping its floor at 29 — it learns the bare `_have` shape instead, because a bare probe
+  **is** detection in the sense that test means: it writes the ledger row the doctor keys on.
+  Lowering that floor would have let fourteen doctor rows read as undetected while detection
+  was untouched.
+
+  `PORTING-MATRIX.md`'s footnotes for the ten affected tools are corrected in the same change,
+  as are the three stale in-code references review turned up — `zsh/05-ui.zsh` advertised
+  `HAVE_GUM` as the flag it deliberately does not use, and `scripts/bench-core.sh` named
+  `HAVE_HYPERFINE` twice, once in a user-facing skip message.
 
 ### Changed
 

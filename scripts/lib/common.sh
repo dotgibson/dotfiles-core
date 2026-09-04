@@ -1436,6 +1436,48 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
 # SCOPE. Only `Makefile` at <repo-root>. Continuation lines are JOINED first, because every
 # rule here is about what one LOGICAL recipe line does — the broken guards spanned two
 # physical lines and the fixed ones span four. Judging physical lines inverts both answers.
+_core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names read but not set
+  # The fleet half of audit-core.sh §5j, extracted so it can be tested against fixtures
+  # rather than only by hand (#694 review). Echoes one flag NAME per line: every HAVE_*
+  # this repo READS and does not itself SET. Empty output means the repo reads only its
+  # own flags, which is always legal — the contract is about reading a name you did not set.
+  #
+  # THREE DECISIONS, each of which was a bug in an earlier draft:
+  #
+  # 1. READS ARE MATCHED BY THEIR `$` SIGIL, not by the bare name. `${HAVE_X…}` and `$HAVE_X`
+  #    are reads; a comment mentioning the flag writes it bare. Measured across the fleet:
+  #    bare-name matching found HAVE_ASTGREP/HAVE_JNV/HAVE_SHELLCHECK in one dotfiles-Offense
+  #    comment and four more flags in five other comments, none of them reads. This is what
+  #    lets the gate skip comment-stripping, which PORTABILITY.md §3 documents as needing a
+  #    parser for five grammars.
+  # 2. WHOLE-LINE COMMENTS ARE DROPPED ANYWAY, on BOTH sides. The sigil rule alone still
+  #    misreads `# gated on $HAVE_X` as a read, and — worse, because it makes the gate too
+  #    LENIENT — `# HAVE_X=1` in a comment as an assignment, which would mark the flag owned
+  #    and suppress a real undeclared read of it. Cheap and imperfect (an inline trailing
+  #    comment survives), but it is the same filter Core applies to its own file, and a
+  #    consistent 80% beats two different 80%s.
+  # 3. VENDORED core/ IS PRUNED WITH find, NOT --exclude-dir. Both --exclude-dir and -I are
+  #    GNU extensions that busybox grep REJECTS, and the Alpine leg runs busybox — the trap
+  #    that once made _core_make_gate_hits report Core as the repo missing its own rule.
+  #    Without the prune every OS repo would appear to both set and read all of Core's flags,
+  #    because it carries a copy of the file being checked against.
+  local dir="${1:-.}" files owns uses f
+  [ -d "$dir" ] || return 0
+  files="$(find "$dir" \( -name .git -o -name core -o -name node_modules \) -prune -o \
+    -type f \( -name '*.zsh' -o -name '*.sh' \) -print 2>/dev/null)"
+  [ -n "$files" ] || return 0
+  owns=" $(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null \
+    | grep -oE 'HAVE_[A-Z0-9_]+=' 2>/dev/null | sed 's/=$//' | sort -u | tr '\n' ' ') "
+  uses="$(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null \
+    | grep -oE '[$][{]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
+  for f in $uses; do
+    case "$owns" in
+    *" $f "*) ;;
+    *) printf '%s\n' "$f" ;;
+    esac
+  done
+}
+
 _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
   local root="${1:-.}" mk="${1:-.}/Makefile" mirror=0
 

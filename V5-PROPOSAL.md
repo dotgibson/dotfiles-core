@@ -62,7 +62,7 @@ block #791 collapsed; the bump table is now `RELEASE-RUNBOOK.md` §1.0 — which
 | §3 `os.capabilities` | a new bootstrap symlink **and** a new load-order slot before `20-aliases` | **shipped `v4.19.0` as a MINOR** (#663) — see below |
 | §4 vendoring allowlist | changes what a consumer repo receives; `core-integrity` must be retaught in lockstep | shipped `v6.0.0` (#676) |
 | §5 delete `CORE_PROFILE` | removes a documented public knob | shipped `v6.0.0` (#677) |
-| §5 declare `HAVE_*` | removes thirteen public globals | **in review** (#694) |
+| §5 declare `HAVE_*` | removes fourteen public globals | **in review** (#694) |
 | §6 `clip --sensitive` | changes observable behaviour of a public binary | **still open** (#690) |
 
 **This section's own argument did not survive contact.** It named §3 as one of the two
@@ -254,7 +254,7 @@ it were Core and *"will silently vanish under `CORE_PROFILE=minimal`"*. The load
 sorts on the `NN` prefix and has no owner metadata, so this is documented
 precisely because it cannot be enforced.
 
-**`HAVE_*`** sets 42 globals into every interactive shell. Thirteen are read by no
+**`HAVE_*`** sets 42 globals into every interactive shell. Fourteen are read by no
 code anywhere in the fleet; exactly one is genuinely consumed downstream; and the
 surface is declared in no contract doc — `PORTABILITY.md`, which documents the
 Core→OS API, does not mention it. So nothing can be safely removed, nothing tells
@@ -263,10 +263,12 @@ silently.
 
 **Three numbers here were wrong when this was written, and the implementation says
 so** — recorded rather than quietly corrected, because the shape of the error is the
-argument for the gate. The count was 42, not 43. The dead set was thirteen, not nine:
+argument for the gate. The count was 42, not 43. The dead set was fourteen, not nine:
 the original nine included `HAVE_DIRENV`, which has never existed, and `HAVE_MISE`,
 which `00-tools.zsh` reads at its own `mise activate` line; it missed `HAVE_ASTGREP`,
-`HAVE_GUM`, `HAVE_HYPERFINE`, `HAVE_JQ` and `HAVE_SHELLCHECK`. And the "five genuine
+`HAVE_GUM`, `HAVE_HYPERFINE`, `HAVE_JQ` and `HAVE_SHELLCHECK` — and `HAVE_GRON`, which
+survived the first implementation too, on the strength of one negative test fixture, until
+review pointed out that a test is not a consumer. And the "five genuine
 downstream consumers" were one: `HAVE_ATUIN`, read by three OS repos. Of the other
 four, `HAVE_ASTGREP`/`HAVE_JNV`/`HAVE_SHELLCHECK` appear in a single
 `dotfiles-Offense` **comment**, and `dotfiles-Defense` **sets** `HAVE_JQ` itself with
@@ -292,7 +294,7 @@ give at least one repo a reason to set it.
 **Declare `HAVE_*`.** Added to `PORTABILITY.md` as §5: the naming rule, that
 `_CORE_PROBED` is the authoritative ledger and `HAVE_*` the convenience alias, that a
 flag exists only where band-00 detection ran, and a table of which flags are supported
-downstream. Dropped the thirteen nothing reads — keeping the `_have` call, which is
+downstream. Dropped the fourteen nothing reads — keeping the `_have` call, which is
 what populates the ledger. (`direnv` needs no mention: it has no flag and never had
 one, and `mise`'s init reads its flag inside `00-tools.zsh`, so `HAVE_MISE` stays.)
 
@@ -311,7 +313,7 @@ for and the one that keeps the prune from undoing itself.
 
 ### 5.3 What breaks
 
-A host-local `99-local.zsh` referencing `CORE_PROFILE` or one of the thirteen
+A host-local `99-local.zsh` referencing `CORE_PROFILE` or one of the fourteen
 dropped flags. Both are gitignored and unknowable from here, which is exactly why this is
 a major and gets a loud CHANGELOG entry rather than a quiet removal.
 

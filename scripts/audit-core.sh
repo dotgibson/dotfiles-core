@@ -1352,7 +1352,7 @@ EOF
 #                           table row) or stop reading it.
 #   3. SET ⇒ HAS A READER.  A flag nothing reads is a global in every interactive shell that
 #                           can only go stale, and nothing notices when it does. #694 dropped
-#                           thirteen of those; this is what stops them coming back.
+#                           fourteen of those; this is what stops them coming back.
 #
 # WHAT "READS" MEANS, and why it is a sigil match rather than a bare name. A read is
 # `$HAVE_X` or `${HAVE_X…}`; a comment mentioning the flag writes the bare name. That
@@ -1399,14 +1399,24 @@ else
   # the idiom as `_have x && HAVE_X=1`, which would otherwise register as a flag named
   # HAVE_X that nothing sets and nothing reads — a finding invented by the gate's own docs.
   hv_set=" $(grep -v '^[[:space:]]*#' "$hv_tools" | grep -oE 'HAVE_[A-Z0-9_]+=1' | sed 's/=1$//' | sort -u | tr '\n' ' ') "
-  # Every sigil read in Core's own code. Directory list rather than a bare -r on $HERE: it
-  # keeps .git and any sibling worktree out without reaching for --exclude-dir.
-  hv_dirs=""
-  for hv_d in zsh scripts lib bin maint tmux nvim git jujutsu tealdeer starship examples; do
-    [ -d "$HERE/$hv_d" ] && hv_dirs="$hv_dirs $HERE/$hv_d"
-  done
-  # shellcheck disable=SC2086  # deliberate word-split: hv_dirs is a built path list
-  hv_read=" $(grep -rhoE '\$\{?HAVE_[A-Z0-9_]+' $hv_dirs 2>/dev/null | sed -E 's/^\$\{?//' | sort -u | tr '\n' ' ') "
+  # Every sigil read in Core's own zsh modules — and ONLY those, which is the whole
+  # precision of direction 3. A HAVE_* flag is a shell parameter that is never exported, so
+  # the only code that can read one is code SOURCED INTO THE SAME SHELL: zsh/*.zsh here, and
+  # the OS/role layers downstream that direction 2 covers. bin/, scripts/, maint/ and
+  # tmux/scripts/ run as CHILD processes where the flag does not exist, and nvim's lua cannot
+  # see a zsh parameter at all — every HAVE_* mention in those trees is prose about Core, not
+  # a read of it.
+  #
+  # SCANNING THEM ANYWAY IS WHAT MADE AN EARLIER DRAFT WRONG (#694 review): including
+  # scripts/ let scripts/test-core.sh count as a reader, and HAVE_GRON — whose only
+  # `${HAVE_GRON:-}` in the tree is one negative fixture — passed direction 3 while being
+  # exactly the dead global this section exists to find. A test is not a consumer. Its flag
+  # is pruned and that fixture now asserts against the ledger, which is what it meant.
+  #
+  # Whole-line comments are dropped for the reason _core_have_read_hits states: the sigil
+  # rule alone still reads `# gated on $HAVE_X` as a read.
+  hv_read=" $(grep -rhv '^[[:space:]]*#' "$HERE/zsh" 2>/dev/null \
+    | grep -oE '[$][{]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
 
   # ── direction 1: every declared flag is one Core sets ──
   for hv_f in $hv_declared; do
@@ -1445,19 +1455,15 @@ else
         hv_absent=$((hv_absent + 1))
         continue
       fi
-      # The repo's own shell/lua, with the vendored core/ and .git pruned by find. Without
-      # the core/ prune every OS repo would appear to both set and read all of Core's flags,
-      # and direction 2 would be checking a copy of the very file it is checking against.
-      hv_files="$(find "$hv_dir" \( -name .git -o -name core -o -name node_modules \) -prune -o \
-        -type f \( -name '*.zsh' -o -name '*.sh' -o -name '*.lua' \) -print 2>/dev/null)"
-      [ -n "$hv_files" ] || continue
+      # The matcher lives in scripts/lib/common.sh so it can be driven by fixtures rather
+      # than only by hand (#694 review): it returns the names this repo READS and does not
+      # itself SET, with vendored core/ pruned and whole-line comments dropped on both sides.
+      # A layer that assigns a name owns it — both role repos legitimately carry ~20 of their
+      # own — so subtracting the repo's own assignments is what keeps those out of here.
+      [ -d "$hv_dir" ] || continue
       hv_checked=$((hv_checked + 1))
-      # What this repo sets for itself, subtracted below: a layer that assigns a name owns it,
-      # and both role repos legitimately carry ~20 of their own.
-      hv_owns=" $(echo "$hv_files" | tr '\n' '\0' | xargs -0 grep -hoE 'HAVE_[A-Z0-9_]+=' 2>/dev/null | sed 's/=$//' | sort -u | tr '\n' ' ') "
-      hv_uses="$(echo "$hv_files" | tr '\n' '\0' | xargs -0 grep -hoE '\$\{?HAVE_[A-Z0-9_]+' 2>/dev/null | sed -E 's/^\$\{?//' | sort -u)"
+      hv_uses="$(_core_have_read_hits "$hv_dir")"
       for hv_f in $hv_uses; do
-        case "$hv_owns" in *" $hv_f "*) continue ;; esac
         case "$hv_declared" in *" $hv_f "*) continue ;; esac
         # Two different defects, and the remedy differs, so they are reported apart: a flag
         # Core no longer sets is already broken on every box, while an undeclared one that
@@ -1484,7 +1490,7 @@ else
     fi
   fi
 fi
-unset hv_tools hv_doc hv_declared hv_set hv_read hv_dirs hv_d hv_f hv_root hv_repo hv_dir hv_files hv_owns hv_uses hv_checked hv_absent hv_fleet hv_fail
+unset hv_tools hv_doc hv_declared hv_set hv_read hv_f hv_root hv_repo hv_dir hv_uses hv_checked hv_absent hv_fleet hv_fail
 
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —
