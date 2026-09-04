@@ -1416,7 +1416,7 @@ else
   # Whole-line comments are dropped for the reason _core_have_read_hits states: the sigil
   # rule alone still reads `# gated on $HAVE_X` as a read.
   hv_read=" $(grep -rhv '^[[:space:]]*#' "$HERE/zsh" 2>/dev/null \
-    | grep -oE '[$][{]?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
+    | grep -oE '[$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
 
   # PARSING NOTHING IS A FAILURE, NOT A PASS. Rename or delete §5's heading and hv_declared
   # comes back empty — at which point direction 1 is vacuous, direction 2 skips on any box

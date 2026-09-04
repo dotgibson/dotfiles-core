@@ -1977,7 +1977,7 @@ d="$(_hv_repo bare)"; printf 'x=$HAVE_ATUIN\n' >"$d/os/x.zsh"
 _hv_is "the braceless \$HAVE_X form is a read too" bare "HAVE_ATUIN"
 
 d="$(_hv_repo insh)"; printf '[[ -n "${HAVE_JQ:-}" ]] && echo hi\n' >"$d/bootstrap.sh"
-_hv_is "a .sh file outside os/ is scanned" insh "HAVE_JQ"
+_hv_is "a .sh outside os/ is scanned too (see the asymmetry note in the helper)" insh "HAVE_JQ"
 
 # The zsh EXISTENCE form. `(( ${+NAME} ))` asks whether a parameter is set without caring
 # what it holds — this tree uses it for exactly that (`(( ${+_CORE_PROBED} ))`,
@@ -1985,6 +1985,12 @@ _hv_is "a .sh file outside os/ is scanned" insh "HAVE_JQ"
 # demanded `HAVE_` immediately after the brace. A silent miss in direction 2, so it is pinned.
 d="$(_hv_repo plusform)"; printf '(( ${+HAVE_RG} )) && :\n' >"$d/os/x.zsh"
 _hv_is "the zsh \${+HAVE_X} existence form is a read" plusform "HAVE_RG"
+
+# ...and the PARENTHESISED flag forms, which the `+` fix alone still missed. `${(t)NAME}` is
+# zsh asking for a parameter type and `${(P)NAME}` for an indirect read; 00-tools.zsh uses
+# the first and 30-functions.zsh the second, so neither is exotic here.
+d="$(_hv_repo flagform)"; printf '[[ ${(t)HAVE_RG} == scalar* ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a parenthesised expansion flag (\${(t)HAVE_X}) is a read" flagform "HAVE_RG"
 
 # ── what it must stay SILENT on ──
 # The vendored core/ prune, asserted on its own: this repo reads HAVE_RG only from core/.
@@ -15095,7 +15101,7 @@ ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
 # the other side.
 #
 # Derived from the source, never restated: the pattern is a `_have` line with NO `&&`, which
-# is precisely the shape #694 created. The floor is 13 because that is how many it created;
+# is precisely the shape #694 created. The floor is 14 because that is how many it created;
 # a future prune raises it, and a regression that re-flags or deletes them drops it below.
 ucheck "detection: every bare \`_have\` probe still writes its _CORE_PROBED row (#694)" \
   "source '$TOOLS_FILE'

@@ -1445,11 +1445,14 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   # THREE DECISIONS, each of which was a bug in an earlier draft:
   #
   # 1. READS ARE MATCHED BY THEIR `$` SIGIL, not by the bare name. `${HAVE_X…}`, `$HAVE_X`
-  #    and zsh's existence form `${+HAVE_X}` are reads; a comment mentioning the flag writes
-  #    it bare. The `+` is not decoration — `(( ${+HAVE_X} ))` is how you ask whether a
-  #    parameter is SET without caring about its value, this tree uses it for exactly that
-  #    (`(( ${+_CORE_PROBED} ))`, 30-functions.zsh), and an OS layer gating on it would have
-  #    walked straight past a matcher that demanded `HAVE_` immediately after the brace.
+  #    and zsh's flag forms `${+HAVE_X}` and `${(t)HAVE_X}` are reads; a comment mentioning
+  #    the flag writes it bare. The two flag forms are not decoration and both were misses in
+  #    an earlier draft: `(( ${+HAVE_X} ))` asks whether a parameter is SET without caring
+  #    about its value, and `${(t)HAVE_X}` asks for its TYPE — this tree uses both idioms
+  #    itself (`(( ${+_CORE_PROBED} ))` in 30-functions.zsh, `${(t)GIT_EXEC_PATH}` in
+  #    00-tools.zsh), so an OS layer gating either way is entirely plausible and would have
+  #    walked past a matcher demanding `HAVE_` immediately after the brace. The pattern
+  #    therefore allows an optional parenthesised flag group and an optional `+`.
   #    Measured across the fleet:
   #    bare-name matching found HAVE_ASTGREP/HAVE_JNV/HAVE_SHELLCHECK in one dotfiles-Offense
   #    comment and four more flags in five other comments, none of them reads. This is what
@@ -1466,6 +1469,15 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   #    that once made _core_make_gate_hits report Core as the repo missing its own rule.
   #    Without the prune every OS repo would appear to both set and read all of Core's flags,
   #    because it carries a copy of the file being checked against.
+  # WHY *.sh IS SCANNED HERE THOUGH audit-core.sh §5j's own reader scan is .zsh-only, which
+  # looks inconsistent and is deliberate: the two directions err in OPPOSITE directions on
+  # purpose. Core's direction 3 asks "does anything read this flag?" — counting a non-reader
+  # there KEEPS A DEAD FLAG ALIVE, so it is strict, and .zsh is the only thing that can read
+  # an unexported parameter. This direction asks "does this repo read a flag it should not?" —
+  # MISSING a reader there lets an undeclared coupling through silently, so it is broad. A
+  # downstream `.sh` may well be sourced from a zsh fragment; and where it is a plain child
+  # process instead, a `$HAVE_X` in it is a read that can only ever be empty, which is its own
+  # defect and worth surfacing rather than ignoring. Each direction is tuned to FIND problems.
   local dir="${1:-.}" files owns uses f
   [ -d "$dir" ] || return 0
   files="$(find "$dir" \( -name .git -o -name core -o -name node_modules \) -prune -o \
@@ -1474,7 +1486,7 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   owns=" $(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null \
     | grep -oE 'HAVE_[A-Z0-9_]+=' 2>/dev/null | sed 's/=$//' | sort -u | tr '\n' ' ') "
   uses="$(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null \
-    | grep -oE '[$][{]?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
+    | grep -oE '[$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
   for f in $uses; do
     case "$owns" in
     *" $f "*) ;;

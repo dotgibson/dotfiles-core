@@ -233,20 +233,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   missing row — when it is absent, hermetically, in both directions.
 
   The gate's own matcher is tested too, rather than only hand-verified: the fleet scan is
-  extracted as **`scripts/lib/common.sh :: _core_have_read_hits`** and driven by ten fixture
-  repos — a plain read, the braceless `$HAVE_X` form, a `.sh` outside `os/`, a read inside a
-  vendored `core/` (pruned), a flag the repo sets itself, ownership spread across two files, a
-  bare name in a comment, a **sigil** form in a comment, a commented-out assignment that must
-  not confer ownership, and a repo with no shell files. Every fixture carries a vendored
-  `core/` that both sets and reads the whole flag set, so if the prune ever breaks, all ten go
-  silent at once. The silent directions are the ones worth pinning: an over-reporting scanner
+  extracted as **`scripts/lib/common.sh :: _core_have_read_hits`** and driven by twelve
+  fixture repos. Five must FIRE: a plain read, the braceless `$HAVE_X` form, a `.sh` outside
+  `os/`, zsh's existence form `${+HAVE_X}`, and a parenthesised expansion flag
+  `${(t)HAVE_X}`. Seven must stay SILENT: a read inside a vendored `core/` (pruned), a flag
+  the repo sets itself, ownership spread across two files, a bare name in a comment, a
+  **sigil** form in a comment, a commented-out assignment that must not confer ownership, and
+  a repo with no shell files. Every fixture carries a vendored `core/` that both sets and
+  reads the whole flag set, so if the prune ever breaks, all twelve go silent at once. The silent directions are the ones worth pinning: an over-reporting scanner
   reds a clean fleet and gets turned off, but an under-reporting one passes forever while the
-  contract rots. Two of those silent misses were review findings against the first
-  implementation, and both are now fixtures: zsh's **existence form** `(( ${+HAVE_X} ))` — a
-  perfectly ordinary way to gate on a flag, which this tree itself uses for `_CORE_PROBED`,
-  and which a matcher demanding `HAVE_` immediately after the brace walked straight past; and
-  a **commented-out assignment** conferring ownership, which would have suppressed a real
-  undeclared read of the same flag.
+  contract rots. Three of those silent misses were review findings against earlier drafts,
+  and all three are now fixtures: zsh's **existence form** `(( ${+HAVE_X} ))` and its
+  **parenthesised expansion flags** `${(t)HAVE_X}` — both perfectly ordinary ways to gate on
+  or inspect a flag, both used by this tree itself (`(( ${+_CORE_PROBED} ))` in
+  `30-functions.zsh`, `${(t)GIT_EXEC_PATH}` in `00-tools.zsh`), and both walked straight past
+  by a matcher demanding `HAVE_` immediately after the brace; and a **commented-out
+  assignment** conferring ownership, which would have suppressed a real undeclared read of
+  the same flag.
+
+  The fleet scan deliberately reads `*.sh` as well as `*.zsh`, even though §5j's scan of
+  Core's own modules is `.zsh`-only. The two directions **err in opposite directions on
+  purpose**: direction 3 asks "does anything read this flag?", where counting a non-reader
+  keeps a dead flag alive, so it is strict; direction 2 asks "does this repo read a flag it
+  should not?", where missing a reader lets an undeclared coupling through silently, so it is
+  broad. A downstream `.sh` may be sourced from a zsh fragment, and where it is a plain child
+  process a `$HAVE_X` in it is a read that can only ever be empty — its own defect, worth
+  surfacing. Each direction is tuned to find problems rather than to be symmetrical.
 
   §5j also **fails closed when it parses no declaration at all.** Rename or delete §5's
   heading and the declared set comes back empty — direction 1 goes vacuous, direction 2 skips
@@ -264,7 +276,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Lowering that floor would have let fourteen doctor rows read as undetected while detection
   was untouched.
 
-  `PORTING-MATRIX.md`'s footnotes for the ten affected tools are corrected in the same change,
+  `PORTING-MATRIX.md`'s footnotes for every affected tool are corrected in the same change,
   as are the three stale in-code references review turned up — `zsh/05-ui.zsh` advertised
   `HAVE_GUM` as the flag it deliberately does not use, and `scripts/bench-core.sh` named
   `HAVE_HYPERFINE` twice, once in a user-facing skip message.
