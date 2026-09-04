@@ -18,23 +18,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 - **The desktop-bar parity pair is generated and gated, not asked nicely (#693).**
   `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` were an
-  admitted verbatim pair whose only mechanism was the sentence _"Edit both together"_. It
-  did not hold — they sat **3.5 KB apart**. The split matters: ~4.4 KB of it was a one-sided
+  admitted verbatim pair whose only mechanism was the sentence _"Edit both together"_. It did
+  not hold — they sat **3.5 KB apart**. The split matters: ~4.4 KB of it was a one-sided
   Markdown reformat with no semantic content, and **947 bytes was a real Windows-only block**
-  (the psmux battery-scale note) that had never been marked as a deliberate divergence.
-  The shared contract is now authored once in **`desktop/PARITY.shared.md`** and rendered
-  between `<!-- desktop-parity:gen -->` markers into both repos by
-  **`scripts/gen-desktop-parity.sh`** (`make gen-desktop-parity`), the `gen-views.sh` idiom:
-  everything outside the markers is hand-authored and untouched, which is where the psmux
-  note now lives — labelled `deliberate` in the `aligned`/`deliberate`/`gap` vocabulary
+  (the psmux battery-scale note) that had never been marked as a deliberate divergence. The
+  shared contract is now authored once in **`desktop/PARITY.shared.md`** and rendered between
+  the `<!-- desktop-parity:gen -->` and `<!-- desktop-parity:end -->` markers into both repos
+  by **`scripts/gen-desktop-parity.sh`** (`make gen-desktop-parity`), the `gen-views.sh`
+  idiom: everything outside the markers is hand-authored and untouched, which is where the
+  psmux note now lives — labelled `deliberate` in the `aligned`/`deliberate`/`gap` vocabulary
   Core's own `PARITY.md` uses. `--check` is the drift gate, wired into **`audit-core.sh` §9i**
   and the weekly **`parity-check.yml`**, which now clones both desktop repos. An absent
-  sibling is an environment SKIP (exit 3), never a green over an un-inspected copy.
-  The source is deliberately a **prettier fixed-point**: Core's nvim maps
-  `markdown = { "prettierd" }`, formatting one copy is the most likely way the pair drifted
-  in the first place, and authoring the block in prettier's own output form makes that
-  keystroke a no-op instead of drift. `desktop/README.md`'s "an identical copy sits in…"
-  claim is corrected in the same change — the two files are deliberately _not_ identical.
+  sibling is an environment SKIP (exit 3), never a green over an un-inspected copy. The source
+  is deliberately a **prettier fixed-point**: Core's nvim maps `markdown = { "prettierd" }`,
+  formatting one copy is the most likely way the pair drifted in the first place, and
+  authoring the block in prettier's own output form makes that keystroke a no-op instead of
+  drift. `desktop/README.md`'s "an identical copy sits in…" claim is corrected in the same
+  change — the two files are deliberately _not_ identical.
 
 - **The hermetic `--links-only` gate is Core-owned now: `scripts/check-links.sh` (#852).**
   Four repos' `make check` ran the same block — make a throwaway HOME, run

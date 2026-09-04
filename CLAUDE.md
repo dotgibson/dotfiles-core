@@ -64,16 +64,17 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   worktree, `scripts/gen-porting-matrix.sh --fleet DIR`. The ~1,100 footnote lines stay
   hand-written; `/os-package-availability` refreshes them.
 - **The desktop-bar `PARITY.md` pair is generated, not typed.** The Zebar ↔ sketchybar
-  contract is authored once in `desktop/PARITY.shared.md` and rendered between
-  `<!-- desktop-parity:gen -->` markers into `dotfiles-Windows/desktop/PARITY.md` and
-  `dotfiles-MacBook/sketchybar/PARITY.md` by `scripts/gen-desktop-parity.sh` — hand-editing
-  either copy inside the markers is a gate failure (`audit-core.sh` §9i, plus the weekly
-  `parity-check.yml`; an absent sibling clone is an environment SKIP, not red). Edit the
-  source, run `make gen-desktop-parity`. Anything a single host adds lives **outside** the
-  markers, marked `deliberate` in the `aligned`/`deliberate`/`gap` vocabulary — that is where
-  Windows' psmux battery-scale note sits. Keep the source a **prettier fixed-point**
-  (`prettier --parser markdown`): Core's nvim formats markdown with prettierd, and a
-  one-sided format is how the pair drifted 3.5 KB apart in the first place (#693).
+  contract is authored once in `desktop/PARITY.shared.md` and rendered between the
+  `<!-- desktop-parity:gen -->` and `<!-- desktop-parity:end -->` markers into
+  `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` by
+  `scripts/gen-desktop-parity.sh` — hand-editing either copy inside the markers is a gate
+  failure (`audit-core.sh` §9i, plus the weekly `parity-check.yml`; an absent sibling clone is
+  an environment SKIP, not red). Edit the source, run `make gen-desktop-parity`. Anything a
+  single host adds lives **outside** the markers, marked `deliberate` in the
+  `aligned`/`deliberate`/`gap` vocabulary — that is where Windows' psmux battery-scale note
+  sits. Keep the source a **prettier fixed-point** (`prettier --parser markdown`): Core's nvim
+  formats markdown with prettierd, and a one-sided format is how the pair drifted 3.5 KB apart
+  in the first place (#693).
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
 - **A user-visible change lands in `CHANGELOG.md` under `[Unreleased]`** in the
