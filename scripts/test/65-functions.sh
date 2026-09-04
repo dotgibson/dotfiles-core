@@ -766,10 +766,20 @@ assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\"
 # _CORE_PROBED ledger under their CANONICAL names, which is what the doctor keys on — so the
 # excuse is gone rather than merely tolerated.
 #
-# Two shapes are parsed, because detection is now recorded in two places: the classic
-# `_have <tool> && HAVE_<X>=1` line, and an explicit `_CORE_PROBED[<tool>]=1`. Note `$` is
-# outside the character class in the second pattern, so the generic `_CORE_PROBED[$1]=1`
-# inside `_have` itself cannot match and be mistaken for a tool named `$1` — load-bearing.
+# THREE shapes are parsed, because detection is recorded in three places: the classic
+# `_have <tool> && HAVE_<X>=1` line, a BARE `_have <tool>` probe, and an explicit
+# `_CORE_PROBED[<tool>]=1`. Note `$` is outside the character class in the third pattern, so
+# the generic `_CORE_PROBED[$1]=1` inside `_have` itself cannot match and be mistaken for a
+# tool named `$1` — load-bearing.
+#
+# The bare shape is #694's, and adding it here rather than lowering the floor is the whole
+# point: that change cut fourteen flagged lines down to bare probes because nothing read
+# their flags, and a bare `_have` is detection in exactly the sense this test means —
+# it writes the _CORE_PROBED row, which is what core-doctor keys on. Reading the flag as
+# the evidence of detection was always the weaker proxy; it is the same reasoning that
+# retired fd and bat from the exemption list two paragraphs up. Had this test kept only the
+# paired shape, fourteen doctor rows would have read as undetected while detection was in
+# fact untouched.
 #
 # A NEW name showing up here is not an exception to add — it means a doctor row has no
 # detection behind it, which is the bug.
@@ -780,6 +790,7 @@ check "every core-doctor row has detection behind it (the exemption list is empt
    for f in '"$HERE"'/zsh/00-tools.zsh '"$HERE"'/zsh/50-op.zsh; do
      for line in ${(f)"$(<$f)"}; do
        [[ $line =~ "^_have +([A-Za-z0-9_.-]+) +&& +HAVE_[A-Z0-9_]+=1" ]] && paired+=($match[1])
+       [[ $line =~ "^_have +([A-Za-z0-9_.-]+) *(#.*)?\$" ]] && paired+=($match[1])
        [[ $line =~ "_CORE_PROBED\[([A-Za-z0-9_.-]+)\]=1" ]] && paired+=($match[1])
      done
    done

@@ -270,8 +270,9 @@ not a decline. The config (`jujutsu/config.toml`) is inert without the binary.
 ⁹ sesh: smart tmux session manager that Core already drives from the `Ctrl-G`
 shell widget (`35-fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); both
 degrade to a `find`+`fzf` sessionizer when it's absent. `core-doctor` already
-reports `sesh` via its own `command -v` probe (it does not read `HAVE_SESH`);
-`00-tools.zsh` now also sets `HAVE_SESH` for parity with the other detected tools.
+reports `sesh` via its own `command -v` probe, and so do both call sites above — none of
+them ever read a flag, which is why #694 dropped `HAVE_SESH` and kept the `_have sesh`
+probe that feeds the `_CORE_PROBED` ledger (`PORTABILITY.md` §5).
 Packaged in the AUR as `sesh-bin` (which
 `provides`/`conflicts` `sesh`, so `paru -S sesh` still resolves — there is no
 AUR package under the bare name), Homebrew
@@ -297,8 +298,8 @@ to `newgrp`, shipped by `login` on the Debian family and by `shadow` elsewhere. 
 that lookup, so a bare `sg` runs the search tool rather than switching group. Prefer the `ast-grep`
 name, and reach the real one as `newgrp` (or `/usr/bin/sg`). This footnote used to say `sg` "can
 collide with `setgroups`" and that ast-grep "shadows nothing" — both were wrong, and #425 turned
-the second into a live shadow rather than a hypothetical one. Core sets `HAVE_ASTGREP` when
-present. Packaged on Arch (`extra`) and Alpine (`community` — a musl build, so the outlier is
+the second into a live shadow rather than a hypothetical one. Core probes it into the `_CORE_PROBED` ledger and sets no flag
+(#694 — nothing read `HAVE_ASTGREP`; `PORTABILITY.md` §5). Packaged on Arch (`extra`) and Alpine (`community` — a musl build, so the outlier is
 covered) and Homebrew; elsewhere via `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert
 without the binary — nothing depends on it.
 ¹² Gentoo **GURU overlay** (`sd`, `glow`, `xh`, `carapace`, `1password-cli`, `tealdeer`,
@@ -373,11 +374,12 @@ auto-installing. Inert without the binary.
 
 ¹⁷ jnv: OPT-IN interactive jq-filter editor + collapsible JSON viewer — the "explore an
 unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep), and `yq`
-(YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), `HAVE_JNV`-guarded in
-`zsh/00-tools.zsh`, inert without the binary. A **Rust** CLI (embeds `jaq`, so no external
+(YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), probed into the
+`_CORE_PROBED` ledger by `zsh/00-tools.zsh` and carrying no flag since #694, inert
+without the binary. A **Rust** CLI (embeds `jaq`, so no external
 `jq` needed). **On Linux this is detect-only on every repo but one — `jnv` is in no
-`install/packages.txt` anywhere, so Core lights up `HAVE_JNV` only once you install it
-yourself. The exceptions, per ²¹: `dotfiles-Alpine`'s `bootstrap.sh` DOES install it
+`install/packages.txt` anywhere, so `core-doctor` reports it present only once you
+install it yourself. The exceptions, per ²¹: `dotfiles-Alpine`'s `bootstrap.sh` DOES install it
 (cargo, best-effort — hence `cargo³` in its cell, since `jnv` is unpackaged on all five
 Alpine branches including `testing` on edge, making cargo its only source there), and
 `dotfiles-Gentoo` cargo-builds it in the opt-in extras block that `--no-extras` skips. On
@@ -693,10 +695,11 @@ that spans a newline (`sd 'foo\nbar' baz`) matches nothing, leaves the input unc
 still **exits 0**, so a script carries on as though it had rewritten the file. Confirmed
 behaviourally here rather than taken from the release notes. Worse, **`sd --version` cannot
 tell you which behaviour you have** — the Homebrew 1.1.0 build self-reports `sd 1.0.0` — so
-version sniffing is useless and a `HAVE_SD` version gate is not an option. Probe the flag
-instead: `sd --help | grep -q -- --across`. Core itself is **unaffected**: `sd` is detect-only
-(`HAVE_SD` in `zsh/00-tools.zsh`) with deliberately no alias (`zsh/20-aliases.zsh` — never
-shadow `sed` in scripts), and nothing in Core shells out to it. This is a warning for muscle
+version sniffing is useless and a version gate on a Core flag was never an option. Probe
+the behaviour instead: `sd --help | grep -q -- --across`. Core itself is **unaffected**: `sd`
+is detect-only (a bare `_have sd` in `zsh/00-tools.zsh`, ledger row only, no flag since #694)
+with deliberately no alias (`zsh/20-aliases.zsh` — never shadow `sed` in scripts), and nothing
+in Core shells out to it. This is a warning for muscle
 memory and for the role layers.
 
 Do **not** blanket-add `-A` to role scripts. The flag does not exist before 1.1.0, and this
@@ -723,8 +726,8 @@ not "helpfully" add one.
 **lines**, `jq`/`gron`/`jnv` read it as **JSON**, `glow` as markdown; `lnav` reads it as a
 **log**: it autodetects common formats, merges several files into one timeline ordered by
 timestamp, follows like `tail -f`, and exposes the parsed records to SQL. Its own command
-(no alias, like `jq`/`gron`/`jnv`), `HAVE_LNAV`-guarded in `zsh/00-tools.zsh`, inert
-without the binary. A **C++** CLI, so it has no `cargo`/`go install` escape hatch like the
+(no alias, like `jq`/`gron`/`jnv`), probed into the `_CORE_PROBED` ledger by
+`zsh/00-tools.zsh` and carrying no flag since #694, inert without the binary. A **C++** CLI, so it has no `cargo`/`go install` escape hatch like the
 Rust/Go tools above — but it does not need one: upstream publishes **static musl binaries**
 per release (`lnav-0.14.0-linux-musl-x86_64.zip`, and an `arm64` twin), so the fallback on
 an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
@@ -732,7 +735,7 @@ the cleanest way to get 0.14.0 onto Gentoo or Debian/Kali without waiting for th
 **No `bootstrap.sh` installs it anywhere**, but it is not detect-only across the board:
 `dotfiles-Alpine` (`lnav`) and `dotfiles-Gentoo` (`app-admin/lnav`) both carry it in
 `install/packages.txt`, and the MacBook `Brewfile` has it too (added 2026-07-15). On the other
-four Linux repos Core lights `HAVE_LNAV` only once you install it yourself. So `lnav` sits in
+four Linux repos `core-doctor` reports it present only once you install it yourself. So `lnav` sits in
 ²¹'s family — probed but never bootstrap-installed — rather than jnv's thinner "two platforms
 package it, cargo everywhere else" one: every distro in the table above ships lnav, and two of
 the repos ask for it.
@@ -767,8 +770,8 @@ On either, the upstream static musl zip above is the way to 0.14.0 without waiti
 ²⁵ watchexec: OPT-IN **event**-driven repetition — the third corner of a triangle Core
 already had two of. `viddy` re-runs on a **timer** (`watch`), `hyperfine` re-runs a fixed
 **count** and measures; `watchexec` re-runs when **files change** (`watchexec -e py --
-pytest`). Its own command, `HAVE_WATCHEXEC`-guarded in `zsh/00-tools.zsh`, inert without
-the binary. Deliberately **not** aliased to `watch` — `zsh/20-aliases.zsh` already points
+pytest`). Its own command, probed into the `_CORE_PROBED` ledger by `zsh/00-tools.zsh` and
+carrying no flag since #694, inert without the binary. Deliberately **not** aliased to `watch` — `zsh/20-aliases.zsh` already points
 `watch` at `viddy`, and collapsing "re-run on a timer" into "re-run on a change" would
 silently hand you the wrong one.
 
@@ -1206,8 +1209,8 @@ only ever shown up on the fleet's two non-rolling lanes.
 1.8.2 (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an
 integer overflow, a use-after-free, and a hash-collision DoS. Every one of them is reachable
 **through parsing input**, which is the entire job of the tool. That matters here because jq
-is pointed at output produced by machines other than yours: Core sets `HAVE_JQ`
-(`zsh/00-tools.zsh`) and this file prescribes `jq -e '.detection.missed == []'` as the
+is pointed at output produced by machines other than yours: Core probes it
+(`zsh/00-tools.zsh`, ledger row only — no flag since #694) and this file prescribes `jq -e '.detection.missed == []'` as the
 provisioning gate a role layer runs against `core-doctor --json` ²⁰.
 
 Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
@@ -1224,8 +1227,8 @@ mandates **capability probing** because `--version` lies. jq's version is neithe
 probeable — nothing in the CLI surface reveals which patches a build carries. So this is a
 floor you _record_ and act on when provisioning, not one you can detect from the shell.
 
-Core itself is unaffected: nothing in Core shells out to jq (`HAVE_JQ` is detect-only, no
-alias — the same shape as `gron`/`sd`). This is a note for the role layers and for anyone
+Core itself is unaffected: nothing in Core shells out to jq (detect-only, no alias — the
+same shape as `sd` and `gron`, both ledger-only probes since #694). This is a note for the role layers and for anyone
 piping untrusted JSON through a distro jq.
 
 ³⁵ Fedora `refresh` is `dnf check-update`, and it is **not really a refresh** — dnf has no

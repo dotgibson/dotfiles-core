@@ -521,6 +521,128 @@ fi
 unset _ob_wf
 
 
+# ── the HAVE_* contract scanner (scripts/lib/common.sh :: _core_have_read_hits) ──
+# Drives the fleet half of audit-core.sh §5j. Extracted from that section and pinned here
+# because the review of #694 made the fair point that a gate verified only by hand regresses
+# unnoticed — the same reason _core_conflict_marker_hits below is fixture-driven.
+#
+# The scanner answers ONE question: which HAVE_* names does this repo READ that it does not
+# itself SET? Every case below is a way an earlier draft got that wrong, and the ones that
+# matter most are the SILENT directions — a scanner that over-reports reds a clean fleet and
+# gets turned off, but one that under-reports passes forever while the contract rots.
+hdr "HAVE_* contract scanner (_core_have_read_hits)"
+_hvs="$SANDBOX/havescan"
+_hv_repo() { # _hv_repo <name> — fresh fixture repo, echoes its path
+  rm -rf "${_hvs:?}/$1"
+  mkdir -p "$_hvs/$1/os" "$_hvs/$1/core/zsh"
+  # Every fixture carries a vendored core/ that both sets AND reads the whole flag set. If
+  # the prune ever stops working, EVERY case below goes silent at once — which is the point:
+  # an OS repo's core/ is a copy of the file being checked against, so counting it would
+  # make the entire direction vacuous rather than merely wrong on one case.
+  printf '_have rg && HAVE_RG=1\n_have atuin && HAVE_ATUIN=1\n[[ -n ${HAVE_RG:-} ]] && :\n' \
+    >"$_hvs/$1/core/zsh/00-tools.zsh"
+  printf '%s\n' "$_hvs/$1"
+}
+_hv_is() { # _hv_is <label> <repo> <expected, space-separated>
+  local got
+  got="$(_core_have_read_hits "$_hvs/$2" | sort | tr '\n' ' ')"
+  got="${got% }"
+  if [[ "$got" == "$3" ]]; then
+    pass "HAVE_* scan: $1"
+  else
+    fail "HAVE_* scan: $1 (got '$got', want '$3')"
+  fi
+}
+
+# ── what it must catch ──
+d="$(_hv_repo reads)"; printf '[[ -n ${HAVE_RG:-} ]] && alias grep=rg\n' >"$d/os/x.zsh"
+_hv_is "a read of a flag the repo does not set is reported" reads "HAVE_RG"
+
+d="$(_hv_repo bare)"; printf 'x=$HAVE_ATUIN\n' >"$d/os/x.zsh"
+_hv_is "the braceless \$HAVE_X form is a read too" bare "HAVE_ATUIN"
+
+d="$(_hv_repo insh)"; printf '[[ -n "${HAVE_JQ:-}" ]] && echo hi\n' >"$d/bootstrap.sh"
+_hv_is "a .sh outside os/ is scanned too (see the asymmetry note in the helper)" insh "HAVE_JQ"
+
+# The zsh EXISTENCE form. `(( ${+NAME} ))` asks whether a parameter is set without caring
+# what it holds — this tree uses it for exactly that (`(( ${+_CORE_PROBED} ))`,
+# 30-functions.zsh) — and an OS layer gating that way slipped past the first matcher, which
+# demanded `HAVE_` immediately after the brace. A silent miss in direction 2, so it is pinned.
+d="$(_hv_repo plusform)"; printf '(( ${+HAVE_RG} )) && :\n' >"$d/os/x.zsh"
+_hv_is "the zsh \${+HAVE_X} existence form is a read" plusform "HAVE_RG"
+
+# ...and the PARENTHESISED flag forms, which the `+` fix alone still missed. `${(t)NAME}` is
+# zsh asking for a parameter type and `${(P)NAME}` for an indirect read; 00-tools.zsh uses
+# the first and 30-functions.zsh the second, so neither is exotic here.
+d="$(_hv_repo flagform)"; printf '[[ ${(t)HAVE_RG} == scalar* ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a parenthesised expansion flag (\${(t)HAVE_X}) is a read" flagform "HAVE_RG"
+
+# ...and the form with NO sigil at all. Inside `(( ))` a shell resolves a bare name as a
+# parameter, so `(( HAVE_RG ))` is an ordinary read that no sigil pattern can see. This is
+# house style for booleans here — `((UPDATE_CHECK_ENABLED))` in 60-update.zsh,
+# `((CORE_CNF_ENABLED))` in 30-functions.zsh — so an OS layer writing it this way is
+# following the local idiom, not being clever, and it passed direction 2 in silence.
+d="$(_hv_repo arith)"; printf '(( HAVE_RG )) && :\n' >"$d/os/x.zsh"
+_hv_is "a bare arithmetic read (( HAVE_X )) is a read" arith "HAVE_RG"
+
+# ── what it must stay SILENT on ──
+# The vendored core/ prune, asserted on its own: this repo reads HAVE_RG only from core/.
+d="$(_hv_repo vendored)"
+_hv_is "a read inside vendored core/ is pruned, not reported" vendored ""
+
+# Ownership: a layer that assigns a name owns it. This is the role-repo case — dotfiles-
+# Offense and -Defense each define ~20 of their own, and reporting those would red a clean
+# fleet on arrival, which is how a gate gets disabled.
+d="$(_hv_repo owns)"; printf '_have zeek && HAVE_ZEEK=1\n[[ -n ${HAVE_ZEEK:-} ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a flag the repo sets itself is not reported" owns ""
+
+# Ownership across FILES, not just within one: Defense sets HAVE_JQ in defense.zsh and reads
+# it from helpers in the same tree.
+d="$(_hv_repo owns2)"; printf '_have jq && HAVE_JQ=1\n' >"$d/os/a.zsh"
+printf '[[ -n ${HAVE_JQ:-} ]] && :\n' >"$d/os/b.zsh"
+_hv_is "ownership is repo-wide, not per-file" owns2 ""
+
+# THE COMMENT CASES. Bare names in prose are why this matches on the sigil at all: the real
+# dotfiles-Offense line that a bare-name scanner mis-flagged mentions three Core flags.
+d="$(_hv_repo comment)"; printf '# Detect-only, like Core HAVE_ASTGREP / HAVE_JNV / HAVE_SHELLCHECK.\n' >"$d/os/x.zsh"
+_hv_is "a bare flag name in a comment is not a read" comment ""
+
+d="$(_hv_repo sigilcomment)"; printf '# gated on ${HAVE_LNAV:-} upstream\n' >"$d/os/x.zsh"
+_hv_is "a SIGIL form inside a whole-line comment is not a read either" sigilcomment ""
+
+# The one that makes the scanner too LENIENT rather than too noisy, and so the one worth
+# pinning hardest: a commented-out assignment must NOT confer ownership, or it would
+# suppress the real read on the next line.
+d="$(_hv_repo commentedset)"
+printf '# HAVE_RG=1   # historical note\n[[ -n ${HAVE_RG:-} ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a commented-out assignment does not confer ownership" commentedset "HAVE_RG"
+
+# Same false-negative shape, different disguise: a bootstrap that GENERATES a zsh fragment
+# writes the assignment as data. Counting it as ownership would silently pass the real read
+# on the next line. The match refuses a name abutting a quote, which is what separates them.
+d="$(_hv_repo printfset)"
+printf '%s\n' "printf 'HAVE_RG=1\\n' > frag.zsh" '[[ -n ${HAVE_RG:-} ]] && :' >"$d/os/x.zsh"
+_hv_is "an assignment inside a quoted string does not confer ownership" printfset "HAVE_RG"
+
+# The INVERSE of that, and the direction whose error reds a clean repo: a bootstrap that
+# generates a fragment containing a READ. Inside single quotes the sigil never expands, so
+# the line is literal text and reporting it would be a false finding.
+d="$(_hv_repo printfread)"
+printf '%s\n' "printf '\${HAVE_RG:-}\\n' > frag.zsh" >"$d/os/gen.sh"
+_hv_is "a read inside a SINGLE-quoted string is literal text, not a read" printfread ""
+
+# ...and the regression guard that makes the rule above safe to have. A DOUBLE quote does
+# not suppress expansion, and `[[ -n "${HAVE_X:-}" ]]` is the commonest real form in the
+# fleet — rejecting on any quote rather than the single one would have made it invisible.
+d="$(_hv_repo dquoteread)"
+printf '[[ -n "${HAVE_RG:-}" ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a DOUBLE-quoted read is still a read" dquoteread "HAVE_RG"
+
+# An absent or empty repo is not a finding — CI checks out this repo alone, and §5j treats a
+# missing sibling as an environment SKIP rather than letting it read as "reads nothing".
+_hv_is "a repo with no shell files at all reports nothing" nosuchrepo ""
+unset d
+
 # ── leftover conflict markers (scripts/lib/common.sh :: _core_conflict_marker_hits) ──
 # Drives audit-core.sh §5h. Two properties have to hold at once and they pull against each
 # other, which is why both directions are pinned rather than just the firing one:
