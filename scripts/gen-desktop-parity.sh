@@ -144,8 +144,18 @@ trap 'exit 143' TERM
 # is exactly what prettier strips from PARITY.shared.md on its own, so the source could not
 # carry it and stay a fixed-point standalone.
 render() {
+  # `getline` returns 1 per line, 0 at EOF and -1 on a READ ERROR, and `> 0` cannot tell the
+  # last two apart. Unguarded, a source that became unreadable after the -f check above (an
+  # I/O error, a concurrent replacement) yields an EMPTY block and awk still exits 0 — write
+  # mode would then install that over a perfectly good PARITY.md and call it a success. Check
+  # the status and exit non-zero so the render-failure branch leaves the target untouched.
   awk -v src="$SRC" -v g="$MARK_GEN" -v e="$MARK_END" '
-    $0 == g { print; while ((getline l < src) > 0) print l; close(src); print ""; skip = 1; next }
+    $0 == g {
+      print
+      while ((_rc = (getline l < src)) > 0) print l
+      if (_rc < 0) { print "gen-desktop-parity: cannot read " src > "/dev/stderr"; exit 1 }
+      close(src); print ""; skip = 1; next
+    }
     $0 == e { skip = 0; print; next }
     !skip   { print }
   ' "$1"

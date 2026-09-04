@@ -8535,6 +8535,33 @@ else
   skip "gen-desktop-parity: no-git guard (could not build a git-free PATH on this box)"
 fi
 
+# AN UNREADABLE SOURCE MUST NOT DESTROY THE TARGETS. awk's `getline` returns -1 on a read
+# error, which `> 0` cannot distinguish from EOF — so an unguarded loop renders an EMPTY
+# block and exits 0, and write mode installs that over a valid PARITY.md while reporting
+# success. Reproduced against a COPY of the script in its own fake repo root (HERE is derived
+# from the script's location), so no tracked file is ever chmod-ed. Skipped as root, where
+# mode 000 does not bite.
+if [[ "${EUID:-$(id -u)}" != 0 ]]; then
+  _dp_fake="$SANDBOX/fakecore"
+  mkdir -p "$_dp_fake/scripts" "$_dp_fake/desktop"
+  cp "$HERE/scripts/gen-desktop-parity.sh" "$_dp_fake/scripts/"
+  ln -sf "$HERE/scripts/lib" "$_dp_fake/scripts/lib"
+  cp "$HERE/desktop/PARITY.shared.md" "$_dp_fake/desktop/PARITY.shared.md"
+  chmod 000 "$_dp_fake/desktop/PARITY.shared.md"
+  _dp_fixture && _dp_run >/dev/null # both copies valid and up to date first
+  _dp_before="$(cat "$DPW")"
+  _dp_unread_rc="$( (cd "$SANDBOX" && env -u CORE_JSON bash "$_dp_fake/scripts/gen-desktop-parity.sh" --root "$DPF" >/dev/null 2>&1; echo $?) )"
+  chmod 644 "$_dp_fake/desktop/PARITY.shared.md"
+  if [[ "$_dp_unread_rc" != 0 ]] && [[ "$(cat "$DPW")" == "$_dp_before" ]]; then
+    pass "gen-desktop-parity: an unreadable source fails and leaves the target untouched"
+  else
+    fail "gen-desktop-parity: an unreadable source returned $_dp_unread_rc and/or rewrote the target with an empty block"
+  fi
+  unset _dp_fake _dp_before _dp_unread_rc
+else
+  skip "gen-desktop-parity: unreadable-source check (running as root)"
+fi
+
 rm -rf "$DPF"
 unset DPF DPW DPM _dp_addendum _dp_drift_out _dp_shim _dp_nodiff_rc _dp_nogit
 
