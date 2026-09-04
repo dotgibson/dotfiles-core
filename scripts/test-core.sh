@@ -11153,9 +11153,9 @@ _gh_fixture() { # _gh_fixture [--no-fedora]
   cp "$HERE/theme/palette.toml" "$GHR/theme/palette.toml"
   {
     printf '# fixture registry\n'
-    printf '.\tassets/demo.tape\t~/code/dotgibson/dotfiles-core\tcore status\tnote:the provenance panel\n'
-    printf 'dotfiles-openSUSE\tassets/demo.tape\t~/code/dotgibson/dotfiles-openSUSE\tup -n\tcaps:os/opensuse.capabilities\n'
-    printf 'dotfiles-Fedora\tassets/demo.tape\t~/code/dotgibson/dotfiles-Fedora\tup -n\tcaps:os/fedora.capabilities\n'
+    printf '.\tassets/demo.tape\t~/code/dotgibson/dotfiles-core\tcore status\tcore-version\tnote:the provenance panel\n'
+    printf 'dotfiles-openSUSE\tassets/demo.tape\t~/code/dotgibson/dotfiles-openSUSE\tup -n\techo up resolves to $(_core_cap PKG_UPGRADE)\tcaps:os/opensuse.capabilities\n'
+    printf 'dotfiles-Fedora\tassets/demo.tape\t~/code/dotgibson/dotfiles-Fedora\tup -n\techo up resolves to $(_core_cap PKG_UPGRADE)\tcaps:os/fedora.capabilities\n'
   } >"$GHR/assets/hero-repos.txt"
 
   # Tumbleweed's declaration says `dup`; Fedora's says dnf. Two repos is enough to prove
@@ -11225,6 +11225,29 @@ if grep -qF 'one verb → sudo dnf upgrade --refresh' "$GHF/dotfiles-Fedora/asse
   pass "gen-hero-tape: a second caps: row derives its own verb (the note is data, not a coincidence)"
 else
   fail "gen-hero-tape: Fedora's signature note did not come from its capability declaration"
+fi
+
+# THE RESOLUTION MUST BE VISIBLE, NOT JUST DERIVED. The signature NOTE is a tape comment —
+# vhs never renders it — and `up -n` prints "via zypper", the MANAGER and not the verb
+# (zsh/60-update.zsh's dry-run branch), so neither shows `dup` rather than `up`, which is
+# #698's stated acceptance criterion. A `Type` line that PRINTS the resolved command does.
+if grep -q '^Type "echo up resolves to \$(_core_cap PKG_UPGRADE)"' "$GHF/dotfiles-openSUSE/assets/demo.tape"; then
+  pass "gen-hero-tape: an OS repo's tour TYPES the resolved upgrade command (visible in the gif)"
+else
+  fail "gen-hero-tape: no visible line resolves PKG_UPGRADE — the hero cannot show \`dup\` over \`up\`"
+fi
+# It must PRINT, never APPLY: a hero that upgrades the box it is filmed on is not a hero.
+if ! grep -qE '^Type "(sudo|doas|brew) ' "$GHF/dotfiles-openSUSE/assets/demo.tape"; then
+  pass "gen-hero-tape: the proof line reads the capability, it never runs the upgrade"
+else
+  fail "gen-hero-tape: the tape types a privileged upgrade command"
+fi
+# The substituted proof must not break the tape's own quoting: it lands inside Type "…",
+# so a double quote in the registry value would close the string early.
+if ! grep -E '^Type "' "$GHF/dotfiles-openSUSE/assets/demo.tape" | grep -qE '^Type "[^"]*"[^ ]'; then
+  pass "gen-hero-tape: no substituted value breaks the Type \"…\" quoting"
+else
+  fail "gen-hero-tape: a substituted value closed its Type string early"
 fi
 
 # THE SIBLING ROWS ARE OUT OF SCOPE WITHOUT --fleet. #698 sequences those renders after
@@ -11329,11 +11352,37 @@ if grep -q 'gifsicle' <<<"$_gh_out_size" && grep -q 'hero.tape.in' <<<"$_gh_out_
 else
   fail "gen-hero-tape: the size failure does not say how to fix it"
 fi
+# A MISSING LOCAL HERO IS A FAILURE, NOT A SKIP. README.md's [product-screenshot] points
+# at it, so an absent gif is a broken front page — and a size gate that weighs nothing and
+# reports green is the shape this section exists to prevent (#862 review). A SIBLING's is
+# the opposite case: those nine are #698's follow-up and are un-rendered on purpose.
 rm -f "$GHR/assets/demo.gif"
-if [[ "$(_gh_run --check-size)" == 0 ]]; then
-  pass "gen-hero-tape: an un-rendered hero is a note skip, not a pass over nothing"
+if [[ "$(_gh_run --check-size)" == 1 ]]; then
+  pass "gen-hero-tape: a missing LOCAL hero fails (README points at it), never skips"
 else
-  fail "gen-hero-tape: a missing gif failed the size gate instead of skipping"
+  fail "gen-hero-tape: a missing assets/demo.gif was reported as green (rc=$(_gh_run --check-size))"
+fi
+_gh_run --fleet >/dev/null   # siblings now have TAPES but no gifs — the follow-up's exact state
+# Herestring, NOT `_gh_out … | grep -q`: grep -q exits on the first match and kills the
+# producer, which under `set -o pipefail` makes the whole pipeline non-zero — the #459
+# SIGPIPE trap this repo has hit three times and scans for in audit-core.sh.
+_gh_sib_out="$(_gh_out --fleet --check-size)"
+if [[ "$(_gh_run --fleet --check-size)" == 1 ]] && grep -q 'not rendered yet' <<<"$_gh_sib_out"; then
+  pass "gen-hero-tape: an un-rendered SIBLING hero is still a note skip (the follow-up's state)"
+else
+  fail "gen-hero-tape: a sibling's absent gif was not treated as a note skip"
+fi
+
+# THE DEFAULT GATE MUST NOT BE ABLE TO CHECK NOTHING. Delete the `.` row and every
+# remaining row is a sibling, every sibling is out of scope without --fleet, the sweep body
+# never runs and both audit legs report success over a tape nobody looked at (#862 review).
+_gh_fixture
+grep -v '^\.	' "$GHR/assets/hero-repos.txt" >"$GHR/assets/hero-repos.new" &&
+  mv "$GHR/assets/hero-repos.new" "$GHR/assets/hero-repos.txt"
+if [[ "$(_gh_run --check)" == 2 ]] && [[ "$(_gh_run --check-size)" == 2 ]]; then
+  pass "gen-hero-tape: a registry with no \`.\` row is 2 on BOTH legs, not a green over nothing"
+else
+  fail "gen-hero-tape: deleting the local row left a gate green (check=$(_gh_run --check) size=$(_gh_run --check-size))"
 fi
 
 # IDEMPOTENCE — a second render must be byte-identical, or --check can never be stably green.
@@ -11376,6 +11425,16 @@ if [[ "${EUID:-$(id -u)}" != 0 ]]; then
   fi
 fi
 
+# THE BANNER MUST NOT TRAVEL THROUGH `awk -v`. macOS ships the one-true-awk, which REJECTS
+# a literal newline in a -v assignment ("awk: newline in string"); gawk and busybox awk both
+# accept it, so passing the eight-line banner that way was green on Linux and Alpine and red
+# only on the macOS leg. Pinned as source shape because the box that catches it is CI's.
+if ! grep -qE 'awk .*-v (hdr|banner|header)=' "$HERE/scripts/gen-hero-tape.sh"; then
+  pass "gen-hero-tape: the multi-line banner is printed by bash, not passed to awk -v (macOS awk)"
+else
+  fail "gen-hero-tape: a multi-line value is passed to awk -v — the macOS leg rejects that"
+fi
+
 # THE GATE MUST ACTUALLY BE WIRED. A generator nothing calls is a script, not a gate — and
 # both legs matter: §9j proves the tape tracks its template, §9k that the render stayed
 # small. Pinned here rather than trusted, exactly as F11 pins parity-check.yml's --check.
@@ -11388,7 +11447,7 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out
 
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run

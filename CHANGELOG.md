@@ -57,7 +57,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   #698 asks — nine heroes of the same Core verbs would be nine near-identical gifs. The
   hidden `cd` carries `|| exit 1`: it runs inside `Hide`, so a checkout path that does not
   exist on the rendering box would otherwise print into unrecorded frames and film `$HOME` —
-  the wrong-tree defect wearing a different hat, and invisible in the committed gif.
+  the wrong-tree defect wearing a different hat, and invisible in the committed gif. Each OS
+  row also types a **`proof`** line that prints the resolved verb, because neither of the two
+  things that look like they show it actually do: the `# one verb → …` note is a _tape_
+  comment VHS never renders, and `up -n` prints `via zypper` — the manager, not the verb —
+  so neither can distinguish `up` from `dup`. The proof line reads `PKG_UPGRADE` and never
+  applies it. Three further holes the review found are closed with it: a registry with no
+  `.` row now exits 2 on both legs (deleting that row would otherwise leave every remaining
+  row a sibling, every sibling out of scope, and both gates green over a tape nobody looked
+  at), a **missing** `assets/demo.gif` now fails rather than skipping (`README.md`'s hero
+  points at it; a sibling's stays a note skip), and the eight-line provenance banner is
+  printed by bash rather than passed through `awk -v`, which the macOS one-true-awk rejects
+  outright ("newline in string") while gawk and busybox awk accept.
   `scripts/test-core.sh` covers the generator hermetically in **F11b**: the wrong-repo `cd`
   and the named-theme preset are both pinned as regressions, drift outranks an absent sibling
   (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2

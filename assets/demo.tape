@@ -36,9 +36,10 @@ Type "clear" Enter
 Show
 Sleep 1500ms
 
-# --- the tour: three shared marquee moments, then the one that is this repo's ---
+# --- the tour: three shared marquee moments, then the two that are this repo's ---
 Type "ll" Sleep 400ms Enter Sleep 1600ms             # eza — icons + git status
 Type "cat README.md" Sleep 400ms Enter Sleep 1600ms  # bat — syntax highlighting
 Type "glog -8" Sleep 400ms Enter Sleep 1600ms        # git log, graphed and decorated
-Type "core status" Sleep 400ms Enter Sleep 2500ms    # the provenance panel — version, live layers, tool health
+Type "core status" Sleep 400ms Enter Sleep 2200ms    # the provenance panel — version, live layers, tool health
+Type "core-version" Sleep 400ms Enter Sleep 2200ms
 Sleep 1s

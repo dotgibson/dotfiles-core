@@ -59,9 +59,26 @@ Type "up -n"    # one verb → sudo zypper dup
 
 — because the point is what it *resolves* to: `dnf` on Fedora, `pacman` on Arch, `apk`
 on Alpine, `emerge` on Gentoo, `zypper dup` (not `up`, the distinction that half-updates
-a box) on Tumbleweed. That is v5's thesis in three seconds, on the page a visitor
-actually lands on. The trailing note is read from each repo's own
-`os/*.capabilities` `PKG_UPGRADE`, so it can never claim a verb the repo does not declare.
+a box) on Tumbleweed.
+
+That resolution has to be **visible**, and two things that look like they show it don't.
+The trailing `# one verb → …` is a *tape* comment — VHS never renders it. And `up -n`
+prints `via zypper`, the **manager**, not the verb (`zsh/60-update.zsh`'s dry-run branch),
+so it cannot distinguish `up` from `dup` either. So each OS row carries a `proof` command
+that prints the resolved verb on screen:
+
+```tape
+Type "up -n" ...                                          # the one verb, every box
+Type "echo up resolves to $(_core_cap PKG_UPGRADE)" ...   # → sudo zypper dup
+```
+
+It reads the capability; it never applies it. The registry's `proof` value is substituted
+*inside* the template's `Type "…"`, so it must contain no double quote (it would close the
+string early) and no `>` (a redirection in the shell VHS is driving).
+
+The `# one verb → …` comment stays as the maintainer-facing half: it is derived from each
+repo's own `os/*.capabilities` `PKG_UPGRADE`, so a tape can never *claim* a verb the repo
+does not declare, even though only the `proof` line reaches the viewer.
 
 Rendering and committing those nine gifs, and adding the hero block to each repo's
 README, is #698's follow-up — sequenced after `os.capabilities` (#667).
@@ -78,6 +95,10 @@ is filming. If the clip ever gets a fifth slot, that is what should fill it.
 ## Keep it short — the ceiling is enforced
 
 `make check-hero-size` (audit-core.sh §9k) weighs the file each tape's `Output` line
-names and fails over **2 MiB**. That is a ceiling, not a target: the budget the tape
+names and fails over **2 MiB**. A **missing** hero fails too where this repo is concerned —
+`README.md`'s `[product-screenshot]` points at `assets/demo.gif`, so an absent file is a
+broken front page, and a size gate that weighs nothing and reports green is the failure the
+section exists to prevent. A *sibling's* absent gif is only a note: those nine are
+deliberately un-rendered until the follow-up. That is a ceiling, not a target: the budget the tape
 header asks for is ~15 s, and one heavy gif is a preference where ten is a policy.
 Every `Sleep` in `hero.tape.in` is paid for in those bytes.

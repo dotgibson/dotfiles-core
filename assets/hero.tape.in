@@ -18,7 +18,10 @@
 #   @@CHECKOUT@@  the repo's checkout path — the `cd` in the hidden setup
 #   @@SIGCMD@@    the ONE command that is this repo's own (Core: `core status`;
 #                 an OS repo: `up -n`, which resolves to that distro's manager)
-#   @@SIGNOTE@@   the trailing comment on that line
+#   @@SIGNOTE@@   the trailing comment on that line — a TAPE comment, never in the gif
+#   @@PROOF@@     the line that makes the resolution VISIBLE: `up -n` prints "via zypper",
+#                 the manager and not the verb, so it alone cannot show `dup` rather than
+#                 `up` — the distinction #698 is about. This prints the resolved command.
 #
 # KEEP IT SHORT — the budget is ~15 s, and it is a real budget: §9k caps the
 # rendered gif's bytes, and every Sleep here is paid for in that file.
@@ -54,9 +57,10 @@ Type "clear" Enter
 Show
 Sleep 1500ms
 
-# --- the tour: three shared marquee moments, then the one that is this repo's ---
+# --- the tour: three shared marquee moments, then the two that are this repo's ---
 Type "ll" Sleep 400ms Enter Sleep 1600ms             # eza — icons + git status
 Type "cat README.md" Sleep 400ms Enter Sleep 1600ms  # bat — syntax highlighting
 Type "glog -8" Sleep 400ms Enter Sleep 1600ms        # git log, graphed and decorated
-Type "@@SIGCMD@@" Sleep 400ms Enter Sleep 2500ms  # @@SIGNOTE@@
+Type "@@SIGCMD@@" Sleep 400ms Enter Sleep 2200ms  # @@SIGNOTE@@
+Type "@@PROOF@@" Sleep 400ms Enter Sleep 2200ms
 Sleep 1s

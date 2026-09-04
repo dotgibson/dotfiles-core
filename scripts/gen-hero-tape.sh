@@ -144,9 +144,11 @@ command -v git >/dev/null 2>&1 || {
 # someone's checkout — litter the audit's untracked-stray gate would then report. EXIT
 # does the cleanup (a second rm -f is a no-op); INT/TERM exit with the conventional
 # 128+signal and let EXIT fire, exactly as gen-desktop-parity.sh does.
-# shellcheck disable=SC2329  # invoked by the EXIT trap below, which shellcheck stops
+# shellcheck disable=SC2317,SC2329  # invoked by the EXIT trap below, which shellcheck stops
 # crediting once the script ends in an explicit `exit "$SEV"` (it does — the exit code IS
-# this script's contract, so the terminal exit stays and the suppression goes here).
+# this script's contract, so the terminal exit stays and the suppression goes here). BOTH
+# ids: 0.11 calls it SC2329, the 0.9 that the Alpine leg installs calls the same body
+# SC2317, and the audit fails on any non-zero shellcheck exit including info level.
 _gh_cleanup() { [[ -n "${tmp:-}" ]] && rm -f "$tmp"; }
 trap _gh_cleanup EXIT
 trap 'exit 130' INT
@@ -239,12 +241,23 @@ rows() {
   awk -F'\t' -v tab="$TAB" '
     /^[[:space:]]*#/ { next }
     /^[[:space:]]*$/ { next }
-    NF != 5 {
-      printf "gen-hero-tape: %s:%d: expected 5 tab-separated fields, found %d\n", FILENAME, FNR, NF > "/dev/stderr"
+    NF != 6 {
+      printf "gen-hero-tape: %s:%d: expected 6 tab-separated fields, found %d\n", FILENAME, FNR, NF > "/dev/stderr"
       bad = 1; next
     }
-    { print }
-    END { if (bad) exit 2 }
+    { print; if ($1 == ".") local_rows++ }
+    # EXACTLY ONE LOCAL ROW. Without this the default gate can pass having checked
+    # NOTHING: delete or rename the `.` row and every remaining row is a sibling, every
+    # sibling is out of scope without --fleet, the sweep body never runs, SEV stays 0 and
+    # both audit legs report success over a tape nobody looked at (#862 review). That is
+    # the exact "green because absent" shape §8a/§8d and #682 exist to close.
+    END {
+      if (bad) exit 2
+      if (local_rows != 1) {
+        printf "gen-hero-tape: %s: expected exactly one `.` (this repo) row, found %d — the default gate would check nothing\n", FILENAME, local_rows > "/dev/stderr"
+        exit 2
+      }
+    }
   ' "$REGISTRY"
 }
 
@@ -297,12 +310,18 @@ banner() {
 # sed would be the obvious tool and is the wrong one: a checkout path or a note is
 # arbitrary text, and a `/` or `&` in it changes the replacement's meaning. awk with
 # the values passed as -v variables treats them as data.
+#
+# THE BANNER IS PRINTED BY BASH, NOT PASSED IN. macOS ships the one-true-awk, which
+# REJECTS a literal newline inside a `-v` assignment — `awk: newline in string` — and
+# the banner is eight lines. gawk and busybox awk both accept it, so this passed on
+# Linux and Alpine and failed only on the macOS leg (#698 review). Every remaining -v
+# value is a single line by construction; keep it that way.
 render() {
-  awk -v hdr="$1" -v checkout="$2" -v sigcmd="$3" -v signote="$4" -v theme="$5" '
-    !started { if ($0 == "@@HEADER@@") started = 1; else next }
+  awk -v checkout="$1" -v sigcmd="$2" -v signote="$3" -v proof="$4" -v theme="$5" '
+    # @@HEADER@@ marks where the body starts; the banner itself is already on stdout.
+    !started { if ($0 == "@@HEADER@@") { started = 1; next } else next }
     {
       line = $0
-      if (line == "@@HEADER@@") { printf "%s\n", hdr; next }
       # The signature line is the one line whose length is DATA, so its trailing
       # comment cannot be aligned in the template — pad it here to the column the
       # three fixed tour lines already use. Cosmetic, but the rendered tape is what
@@ -314,7 +333,11 @@ render() {
         printf "%-53s# %s\n", head, signote
         next
       }
+      # The proof line carries no comment (the note above it already names the verb) and
+      # is long enough that padding it would only add trailing space, so it takes the
+      # ordinary substitution path below.
       gsub(/@@THEME@@/, theme, line)
+      gsub(/@@PROOF@@/, proof, line)
       gsub(/@@CHECKOUT@@/, checkout, line)
       gsub(/@@SIGCMD@@/, sigcmd, line)
       gsub(/@@SIGNOTE@@/, signote, line)
@@ -366,7 +389,7 @@ MISSING=""
 # a TAB-separated file by eye. Nothing is resolved against the fleet, so it works on
 # a Core-only clone.
 if [[ "$MODE" == list ]]; then
-  rows | awk -F'\t' -v OFS='\t' '{ print $1, $2, $4, $5 }' || exit 2
+  rows | awk -F'\t' -v OFS='\t' '{ print $1, $2, $4, $5, $6 }' || exit 2
   exit 0
 fi
 
@@ -376,7 +399,7 @@ hdr "README hero tapes (rendered from assets/hero.tape.in)"
 # Process substitution, NOT a pipeline: a `rows | while` loop runs in a subshell and
 # every _bump is lost with it — the script would exit 0 over a drifted tape. The same
 # trap gen-theme.sh's _pal_load documents.
-while IFS="$TAB" read -r repo out checkout sigcmd signature; do
+while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
   [[ -n "$repo" ]] || continue
 
   # A sibling row is OUT OF SCOPE without --fleet. Not a skip and not a failure: #698
@@ -419,7 +442,17 @@ while IFS="$TAB" read -r repo out checkout sigcmd signature; do
       fail "$label/$out names no Output file — the size gate has nothing to measure"; _bump 2; continue
     fi
     if [[ ! -f "$dir/$gif" ]]; then
-      skip_note "$label/$gif not rendered yet — nothing to weigh"
+      # THE LOCAL ROW IS NOT ALLOWED TO BE MISSING. README.md's [product-screenshot]
+      # points at this file, so an absent gif is a BROKEN HERO on the repo's front page,
+      # and a size gate that weighs nothing and reports green is the failure this section
+      # exists to prevent (#862 review). A sibling's is a different case entirely: those
+      # nine are #698's follow-up and have not been rendered on purpose.
+      if [[ "$repo" == "." ]]; then
+        fail "$label/$gif is missing — README.md's hero points at it; render it: vhs $out"
+        _bump 1
+      else
+        skip_note "$label/$gif not rendered yet — nothing to weigh"
+      fi
       continue
     fi
     # `wc -c <file` and not `wc -c file`: BSD and GNU wc agree on the number but not
@@ -452,7 +485,10 @@ while IFS="$TAB" read -r repo out checkout sigcmd signature; do
   fi
   # NOTHING here runs under `set -e`, so every step that can fail is branched on: an
   # unchecked render prints "rewritten" and exits 0 over a stale or half-written file.
-  if ! render "$(banner "$repo")" "$checkout" "$sigcmd" "$signote" "$THEME_LINE" >"$tmp"; then
+  # `{ banner && render; }` yields render's status when banner succeeds, so a failed
+  # render is still caught — and the banner reaches the file through bash's own printf
+  # rather than an awk -v the macOS awk refuses (see render's note).
+  if ! { banner "$repo" && render "$checkout" "$sigcmd" "$signote" "$proof" "$THEME_LINE"; } >"$tmp"; then
     fail "$label/$out — rendering the tape failed; the file was NOT modified"
     rm -f "$tmp"; _bump 2; continue
   fi
