@@ -17,6 +17,13 @@ Set Height 700
 Set Padding 20
 Set Theme { "name": "Tokyo Night storm (dotfiles-core)", "background": "#24283b", "foreground": "#c0caf5", "selection": "#2e3c64", "cursor": "#c0caf5", "black": "#1d202f", "red": "#f7768e", "green": "#9ece6a", "yellow": "#e0af68", "blue": "#7aa2f7", "magenta": "#bb9af7", "cyan": "#7dcfff", "white": "#a9b1d6", "brightBlack": "#414868", "brightRed": "#db4b4b", "brightGreen": "#9ece6a", "brightYellow": "#e0af68", "brightBlue": "#7aa2f7", "brightMagenta": "#bb9af7", "brightCyan": "#7dcfff", "brightWhite": "#c0caf5" }
 Set TypingSpeed 45ms
+# VHS captures at 50fps by default, which is twice what a terminal recording needs and
+# roughly twice the bytes. THE FRAME COUNT IS THE COST, not the clip length: the first
+# shortened cut ran ~13 s against the old ~25 s and came out BIGGER (2.46 MB vs 1.84 MB),
+# because GIF pays per changed pixel and this tour has four full-screen colour redraws
+# where the old one had pager quits and a `clear`. Sleeps on a static screen are nearly
+# free; frames during a redraw are not.
+Set Framerate 24
 
 # --- silent setup: land on a clean prompt, with nothing that can page ---
 # CORE_NO_PAGER and GIT_PAGER are what let the tour drop the four `q` keystrokes

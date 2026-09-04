@@ -14,11 +14,14 @@ vhs assets/demo.tape    # writes assets/demo.gif
 ```
 
 Requires a Nerd Font installed locally — the icons in `eza` and `starship` render as
-boxes without one. If the GIF is heavy, optimize it:
+boxes without one. Always optimize afterwards — the raw VHS output is not what ships:
 
 ```sh
-gifsicle -O3 --lossy=80 assets/demo.gif -o assets/demo.gif
+gifsicle -O3 --lossy=80 --colors 64 assets/demo.gif -o assets/demo.gif
 ```
+
+`--colors 64` matters more here than it looks. The palette is 20 theme colours plus font
+antialiasing, so quantising to 64 is visually free and removes a large chunk of the file.
 
 The README hero (`[product-screenshot]` in `README.md`) points at `assets/demo.gif`.
 Re-render and re-commit it after any prompt or tooling change to keep the hero current.
@@ -136,6 +139,19 @@ on the scale:
 ✓ README hero size — 1 weighed, under the 2097152-byte ceiling; 9 not rendered yet (not covered by this run)
 ```
 
-2 MiB is a **ceiling, not a target**: the budget the tape header asks for is ~15 s, and one
-heavy gif is a preference where ten is a policy. Every `Sleep` in `hero.tape.in` is paid for
-in those bytes.
+It is a **ceiling, not a target**, and it counts bytes rather than seconds — which are only
+loosely related. The first shortened cut ran ~13 s against the old ~25 s and came out
+**bigger** (2.46 MB vs 1.84 MB): GIF pays per changed pixel, and this tour has four
+full-screen colour redraws where the old one had pager quits and a `clear`. Sleeps on a
+static screen are nearly free.
+
+So the levers, in order of effect per unit of ugliness:
+
+| lever | where | cost to the viewer |
+| ----- | ----- | ------------------ |
+| `Set Framerate 24` | `hero.tape.in` | none — 50fps is twice what a terminal needs |
+| `--colors 64` | the gifsicle pass | none — the palette is 20 colours plus antialiasing |
+| fewer tour steps | `hero.tape.in` | real — each step is a marquee moment |
+| smaller `Width`/`Height` | `hero.tape.in` | real — text gets smaller or wraps |
+
+Reach for the first two before the last two.

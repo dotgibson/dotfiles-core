@@ -11667,6 +11667,16 @@ else
   fail "gen-hero-tape: a tape's banner names a command that would not update it"
 fi
 
+# THE FRAMERATE IS A SIZE LEVER AND MUST NOT BE LOST. VHS captures at 50fps by default;
+# bytes track REDRAWS rather than seconds, so halving the frame count is the cheapest
+# reduction available and the only one with no cost to the viewer. Dropping this line would
+# silently double every rendered hero.
+if grep -qE '^Set Framerate [0-9]+$' "$HERE/assets/demo.tape"; then
+  pass "gen-hero-tape: the tape pins a capture framerate (VHS defaults to 50)"
+else
+  fail "gen-hero-tape: no Set Framerate — every hero would render at 50fps and roughly double"
+fi
+
 # WINDOWS IS OUT OF SCOPE, AND THAT MUST STAY DELIBERATE. #698 counts dotfiles-Windows among
 # the public repos with no hero; this generator covers nine of the ten, because Windows
 # replicates its host layer in PowerShell and vendors no core/ — there is no zsh to

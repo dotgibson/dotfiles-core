@@ -25,8 +25,9 @@
 #                 the manager and not the verb, so it alone cannot show `dup` rather than
 #                 `up` — the distinction #698 is about. This prints the resolved command.
 #
-# KEEP IT SHORT — the budget is ~15 s, and it is a real budget: §9k caps the
-# rendered gif's bytes, and every Sleep here is paid for in that file.
+# KEEP IT SHORT — the budget is ~15 s. But §9k caps BYTES, not seconds, and the two are
+# only loosely related: adding a command that repaints the screen costs far more than
+# adding a second of stillness. Weigh a new tour step by what it redraws.
 # ──────────────────────────────────────────────────────────────────────────────
 @@HEADER@@
 
@@ -40,6 +41,13 @@ Set Height 700
 Set Padding 20
 @@THEME@@
 Set TypingSpeed 45ms
+# VHS captures at 50fps by default, which is twice what a terminal recording needs and
+# roughly twice the bytes. THE FRAME COUNT IS THE COST, not the clip length: the first
+# shortened cut ran ~13 s against the old ~25 s and came out BIGGER (2.46 MB vs 1.84 MB),
+# because GIF pays per changed pixel and this tour has four full-screen colour redraws
+# where the old one had pager quits and a `clear`. Sleeps on a static screen are nearly
+# free; frames during a redraw are not.
+Set Framerate 24
 
 # --- silent setup: land on a clean prompt, with nothing that can page ---
 # CORE_NO_PAGER and GIT_PAGER are what let the tour drop the four `q` keystrokes

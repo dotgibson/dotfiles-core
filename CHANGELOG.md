@@ -44,7 +44,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `CORE_NO_PAGER` and `GIT_PAGER=cat` in the hidden setup drop the four `q` keystrokes the
   old tour needed, which is most of the difference between ~27 s and ~13 s. **The committed
   `demo.gif` still predates the shortened tape** — re-render with `vhs assets/demo.tape` and
-  optimize to bring it well under the ceiling.
+  optimize to bring it under the ceiling.
+  The tape captures at **24fps** rather than VHS's default 50, because the first shortened
+  cut proved bytes track REDRAWS rather than seconds: at ~13 s against the old ~25 s it came
+  out **bigger** (2.46 MB vs 1.84 MB), since GIF pays per changed pixel and this tour has
+  four full-screen colour repaints where the old one had pager quits and a `clear`. The
+  documented optimize pass gains `--colors 64`, which is visually free on a 20-colour
+  palette.
 - **The nine other heroes are registered, not yet rendered (#698).** `assets/hero-repos.txt`
   carries **ten rows** — this repo plus the nine Core-vendoring OS and role repos — and `make gen-hero-tape-fleet` writes the other nine tapes
   into their own checkouts. Their signature command is deliberately the _same three

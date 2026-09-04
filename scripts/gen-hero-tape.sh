@@ -636,7 +636,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
     # on the whitespace around it, and redirecting drops the filename entirely.
     bytes="$(wc -c <"$dir/$gif" | tr -d ' ')"
     if ((bytes > MAX_BYTES)); then
-      fail "$label/$gif is $bytes bytes, over the $MAX_BYTES ceiling — shorten the clip in assets/hero.tape.in, re-render, then: gifsicle -O3 --lossy=80 $gif -o $gif"
+      fail "$label/$gif is $bytes bytes, over the $MAX_BYTES ceiling — optimize first (gifsicle -O3 --lossy=80 --colors 64 $gif -o $gif); if it is still over, lower Set Framerate in assets/hero.tape.in before cutting a tour step. Bytes track REDRAWS, not seconds"
       _bump 1
     else
       pass "$label/$gif is $bytes bytes (ceiling $MAX_BYTES)"
