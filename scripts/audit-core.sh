@@ -167,8 +167,8 @@ version/behavioral checks. CI and pre-commit run this exact script.
                   where every IN-SCOPE tool is installed. The summary names every skip.
   --require-siblings
                   fail if a FLEET-WIDE gate (helper adoption, the gitleaks-policy sweep,
-                  the coverage register, the PORTING-MATRIX.md drift check) had no
-                  sibling OS repo checked out to read.
+                  the coverage register, the PORTING-MATRIX.md drift check, the
+                  desktop-bar parity drift check) had no sibling repo checked out to read.
                   Those gates skip silently-by-default on a lone clone — including in CI,
                   which checks out only this repo — so they have never actually run there.
                   This is the flag that says "I expect full fleet coverage from this run".

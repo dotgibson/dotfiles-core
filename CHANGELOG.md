@@ -198,6 +198,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Two CLI help texts now match the code they describe (#693 follow-up).**
+  `gen-desktop-parity.sh --help` listed `--check`/`--root`/`--strict` but not `--quiet` or
+  `--color WHEN` — flags its own parser accepts and `parity-check.yml` already uses. And
+  `audit-core.sh --require-siblings` enumerates the fleet-wide gates it reds on, but had not
+  been told about the desktop-bar parity gate added in #856, which also reports an absent
+  sibling via `skip_env`. Documentation only; no behaviour change.
+
 - **`sync-core.sh --strict` — a failed target becomes the exit status.** By default a
   per-repo failure is a summary line and exit 0, and that default stays: the fan-out
   runs the script bare inside a `bash -e` step and then does per-repo push and PR work,
