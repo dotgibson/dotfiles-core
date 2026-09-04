@@ -7,12 +7,12 @@ name: claude-routines (reusable)
 #
 #   jobs:
 #     claude-routines:
-#       uses: dotgibson/dotfiles-core/.github/workflows/claude-routines-call.yml@v6
+#       uses: dotgibson/dotfiles-core/.github/workflows/claude-routines-call.yml@v7
 #       permissions: { contents: read, issues: write }
 #       secrets: inherit
 #       with: { distro: fedora }
 #
-# INVERTED CHECKOUT (same design as lint-call.yml): dotfiles-core@v6 is checked out
+# INVERTED CHECKOUT (same design as lint-call.yml): dotfiles-core@v7 is checked out
 # at ROOT — it provides the routine command (.claude/commands/), PORTING-MATRIX.md,
 # scripts/tool-versions.env (the pinned CLI), and file-routine-issue.sh: the SINGLE
 # source, with no dependency on the caller's vendored core/. The CALLER OS repo is
@@ -78,20 +78,20 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       ISSUE_TITLE: "os-package-availability: ${{ inputs.distro }} package-list drift"
     steps:
-      # 1) Core@v6 at ROOT — the routine command + PORTING-MATRIX.md + pinned CLI +
-      #    file-routine-issue.sh. (v6 = the current major, matching the @v6 callers.)
+      # 1) Core@v7 at ROOT — the routine command + PORTING-MATRIX.md + pinned CLI +
+      #    file-routine-issue.sh. (v7 = the current major, matching the @v7 callers.)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          # Must track the same major as the callers (`@v6`), and it is the FIRST thing
+          # Must track the same major as the callers (`@v7`), and it is the FIRST thing
           # to bump on a major — this line has now gone stale twice. At v3→v4 it was left
           # on `v3` (frozen at v3.9.0), silently running every routine from a prompt two
           # majors of fixes stale; at v4→v5 it was left on `v4` (frozen at v4.19.0) while
           # every caller moved to `@v5`, so the workflow body was v5 and the scripts it
           # ran were not. `vN` is a moving alias, advanced on each release — a frozen one
           # is invisible, because nothing here fails when it points at the wrong major.
-          ref: v6
+          ref: v7
       # 2) The caller OS repo into caller/ — its install/packages.txt / Brewfile is
       #    what the routine reads (exposed to the CLI via --add-dir).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

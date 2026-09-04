@@ -12,7 +12,7 @@
 #   - each OS repo already HAS a core/ — this script replaces that directory and will
 #     not create it. scripts/new-os-repo.sh materializes it for a greenfield repo; the
 #     manual fallback (from a RELEASED tag, never main — #588) is a one-time
-#       git subtree add --prefix=core <core-remote> refs/tags/v6 --squash
+#       git subtree add --prefix=core <core-remote> refs/tags/v7 --squash
 #     which the next sync replaces with the filtered set (VENDORING.md § One-time setup).
 #
 # Usage:
@@ -73,7 +73,7 @@ Env overrides:
   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: core's origin)
   CORE_BRANCH       Core ref to vendor             (default: main; pass a released tag
-                    such as refs/tags/v6 when vendoring a repo for the first time)
+                    such as refs/tags/v7 when vendoring a repo for the first time)
   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (documented escape hatch)
   SYNC_SKIP_STALE   set to 1 to skip the pre-flight check that each target is up to date
@@ -376,8 +376,8 @@ fi
 # core_sha, and (in any repo that SHA-pins its reusable callers) the `uses:` pins. This
 # script wrote the first two and left the third, so a fan-out into a pinned repo produced
 # a tree that VENDORED one Core and RAN another. Not cosmetic: auto-tag-call holds
-# `contents: write` and notify-web-call is handed the fleet App's private key (its other
-# declared secret, WEBHOOK_SECRET, is a deprecated no-op since #683), so the pins decide
+# `contents: write` and notify-web-call is handed the fleet App's private key (now its ONLY
+# declared secret — the deprecated WEBHOOK_SECRET came out in v7.0.0), so the pins decide
 # whose privileged code executes. The existing gate stays green through it — core-integrity
 # compares a tree object and never looks at a workflow — so the drift was silent until
 # dotfiles-MacBook's test/check-pins.sh caught it on the v4.12.0 fan-out (#482). (This
