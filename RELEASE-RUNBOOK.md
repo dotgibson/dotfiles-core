@@ -345,13 +345,30 @@ was `X.Y.Z+1` (#696).
 
 **that repo → Actions → `auto-tag` → Run workflow → `bump: minor` (or `major`)**
 
-It is safe to press at any time — `auto-tag.sh` no-ops when `HEAD` already carries a
-`vX.Y.Z` tag — but that idempotency is also the ordering constraint: **dispatch before the
-fan-out PR merges and the merge's own patch run finds HEAD tagged and does nothing;
-dispatch after, and HEAD is already patch-tagged and the dispatch does nothing.** So run
-it on a commit that is not itself tagged — in practice, land the fan-out PR, let the
-automatic patch settle, then dispatch on the next commit, or dispatch first and let the
-merge no-op. Either order works; expecting both to fire does not.
+**It cannot re-label a commit the push run already tagged, and it does not tag the commit
+you have in mind unless that commit is `main`'s HEAD.** `auto-tag.sh` no-ops when `HEAD`
+already carries a `vX.Y.Z` tag, and a `workflow_dispatch` runs against a *ref*, not a PR.
+So neither obvious order does what it looks like:
+
+- **Dispatch before the fan-out PR merges** — and it tags the **pre-merge** HEAD. The
+  merge then creates a new, untagged commit whose own push run cuts a patch on top. You
+  get `v1.4.0` on the commit *before* the change and `v1.4.1` on the change itself.
+- **Dispatch after the merge** — and `HEAD` is already patch-tagged, so it no-ops.
+
+**The procedure that works** uses the denylist this section just introduced. Because
+docs-only commits are excluded from the trigger, they land on `main` **without cutting a
+tag** — which leaves exactly the untagged HEAD a dispatch needs:
+
+1. Merge the fan-out PR. Let its automatic patch settle (`v1.3.86`).
+2. Land the CHANGELOG or release note for the deliberate bump. Docs-only, so no tag fires
+   and `main`'s HEAD is now untagged.
+3. Dispatch `bump: minor` on `main`. It tags that commit `v1.4.0`.
+
+The minor therefore marks the release note rather than the code commit, which is the same
+shape `dotfiles-Windows` §3b already has: a human promotes the CHANGELOG, and the tag goes
+on the promotion. If you want the bump on the code commit itself, the push run would have
+to receive it, and nothing wires that today — say so in the release notes rather than
+pretending the tag landed somewhere it did not.
 
 For a fleet-wide bump, that is nine dispatches. There is no fan-out button for it, on
 purpose: a deliberate release is a judgment per repo, and the repos do not always deserve

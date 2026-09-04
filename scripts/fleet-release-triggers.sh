@@ -67,6 +67,36 @@
 #   ./scripts/fleet-release-triggers.sh --check    # exit 1 if any repo has a finding
 # Env: REPOS_ROOT (default: parent of this repo)
 set -uo pipefail
+
+# A heredoc, NOT `sed -n '2,Np'` over this file's own header. The fixed-range idiom
+# breaks silently the moment the banner grows — it already did here once, during review,
+# when the header gained a paragraph and --help began truncating mid-sentence. Same
+# convention as scripts/check-links.sh and scripts/sync-core.sh.
+usage() {
+  cat <<'EOF'
+usage: fleet-release-triggers.sh [--check]
+
+The release-trigger register: for each repo in scripts/os-repos.txt, does its
+.github/workflows/auto-tag.yml release that repo's OWN work, and can it cut a
+deliberate non-patch bump?
+
+  (no args)   render the register as a markdown table on stdout
+  --check     exit 1 if any repo has a finding
+  -h, --help  show this and exit
+
+trigger  own-layer | unfiltered  no finding
+         core-only               the tag tracks the vendored subtree, not this repo
+         dispatch-only           no push trigger — nothing releases automatically
+         absent                  no auto-tag.yml at all
+         unparsed                the `on:` block could not be read; NOT a verdict
+
+bump     dispatch                a workflow_dispatch input reaches the reusable
+         patch-only              nothing can select a minor/major
+
+Env: REPOS_ROOT (default: the parent of this repo)
+EOF
+}
+
 HERE="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/scripts/lib/common.sh"
@@ -77,7 +107,7 @@ for a in "$@"; do
   case "$a" in
   --check) CHECK=1 ;;
   -h | --help)
-    sed -n '2,70p' "${BASH_SOURCE[0]}"
+    usage
     exit 0
     ;;
   *)
@@ -96,78 +126,125 @@ load_os_repos || {
 }
 REPOS=("${CORE_OS_REPOS[@]}")
 
-# _on_paths <file> — echo one watched path pattern per line, from the `on:` mapping.
+# _push_filter <file> — read ONLY the `on.push` mapping and describe its path filter.
 #
-# A crude YAML reader on purpose, and bounded so it cannot bluff: it prints the patterns
-# it recognizes and NOTHING for a file it does not understand, which the caller reports as
-# `unparsed` rather than as a verdict. The fleet's auto-tag.yml files are all one shape —
-# a top-level `on:` mapping with a `paths:` sequence or flow list — and a real YAML parser
-# is not a dependency this fleet assumes on every host (§ the diffutils rule).
+# Emits one line per pattern, tagged by which key it came from:
+#   P <pattern>   from `paths:`        — a watched path (an allowlist entry)
+#   I <pattern>   from `paths-ignore:` — an IGNORED path (a denylist entry)
+# plus a bare `PUSH` if a push trigger exists at all, and `BOTH` if the file uses both
+# keys (GitHub rejects that combination; we report it rather than guess).
 #
-# Handles both spellings the fleet uses:
-#   paths: ['core/**']                    (flow, dotfiles-Alpine and friends)
-#   paths:\n      - 'core/**'             (block, dotfiles-openSUSE and friends)
-# Comments are stripped first; `paths-ignore:` is read too, since a repo filtering that
-# way is still filtering. Negated (`!`) patterns are emitted with the `!` intact — the
-# caller decides what they mean, because they SUBTRACT from a wider match and must not be
-# mistaken for the thing the repo watches.
-_on_paths() {
+# SCOPED TO push, AND paths-ignore IS NOT paths. The first cut of this read neither.
+# It scanned the whole `on:` mapping, so a `pull_request:` filter could decide a push
+# verdict, and it treated `paths-ignore:` entries as watched paths — which inverts the
+# meaning: `push.paths-ignore: ['core/**']` runs on everything EXCEPT the vendored
+# subtree, i.e. exactly the own-layer shape, and would have been reported `core-only`.
+# A register that reports the opposite of the truth is worse than one that abstains,
+# so shapes this cannot read now say `unparsed` (see _trigger).
+#
+# A crude YAML reader on purpose, and bounded so it cannot bluff. The fleet's auto-tag.yml
+# files are all one shape, and a real YAML parser is not a dependency this fleet assumes
+# on every host (§ the diffutils rule). Handles both spellings in use:
+#   paths: ['core/**']            (flow)
+#   paths:\n      - 'core/**'     (block)
+_push_filter() {
   awk '
     # Strip whole-line and trailing comments. Safe here: no watched glob in the fleet
     # contains a "#", and a "#" inside one would be a directory named "#" anyway.
     { sub(/[[:space:]]+#.*$/, ""); sub(/^[[:space:]]*#.*$/, "") }
     /^[[:space:]]*$/ { next }
-    # Enter the top-level `on:` mapping; leave at the next top-level key.
+    # The top-level `on:` mapping; any other column-0 key ends it.
     /^on:[[:space:]]*$/ { on = 1; next }
     on && /^[^[:space:]]/ { on = 0 }
     !on { next }
-    # A flow list on the key line: paths: [a, b] — split on the brackets and commas.
+    # An event key sits one level in (`  push:`, `  workflow_dispatch:`). Entering a new
+    # one leaves the previous event, which is what scopes everything below to push.
+    /^[[:space:]][[:space:]][a-z_]+:/ {
+      ev = $0; sub(/^[[:space:]]+/, "", ev); sub(/:.*$/, "", ev)
+      inpush = (ev == "push"); inseq = 0
+      if (inpush) print "PUSH"
+      next
+    }
+    !inpush { next }
+    # Flow list on the key line: paths: [a, b]
     /^[[:space:]]*paths(-ignore)?:[[:space:]]*\[/ {
+      tag = ($0 ~ /paths-ignore:/) ? "I" : "P"
+      if (tag == "I") seen_i = 1; else seen_p = 1
       s = $0
       sub(/^[^[]*\[/, "", s); sub(/\].*$/, "", s)
       n = split(s, parts, ",")
       for (i = 1; i <= n; i++) {
         gsub(/^[[:space:]]*["'"'"']?|["'"'"']?[[:space:]]*$/, "", parts[i])
-        if (parts[i] != "") print parts[i]
+        if (parts[i] != "") print tag " " parts[i]
       }
       inseq = 0
       next
     }
-    # A block sequence under the key: the items are the following `- ` lines.
-    /^[[:space:]]*paths(-ignore)?:[[:space:]]*$/ { inseq = 1; next }
+    # Block sequence under the key.
+    /^[[:space:]]*paths(-ignore)?:[[:space:]]*$/ {
+      curtag = ($0 ~ /paths-ignore:/) ? "I" : "P"
+      if (curtag == "I") seen_i = 1; else seen_p = 1
+      inseq = 1
+      next
+    }
     inseq && /^[[:space:]]*-[[:space:]]*/ {
       s = $0
       sub(/^[[:space:]]*-[[:space:]]*/, "", s)
       gsub(/^["'"'"']|["'"'"']$/, "", s)
-      if (s != "") print s
+      if (s != "") print curtag " " s
       next
     }
-    # Any other key ends the sequence (branches:, workflow_dispatch:, …).
     inseq && /^[[:space:]]*[^-[:space:]]/ { inseq = 0 }
+    END { if (seen_p && seen_i) print "BOTH" }
   ' "$1"
 }
 
 # _trigger <file> — the trigger verdict for one auto-tag.yml.
 _trigger() {
-  local f="$1" p positives=0 outside=0
+  local f="$1" line pat positives=0 outside=0 has_push=0 has_paths=0 has_ignore=0 both=0
   # No `on:` block we can find at all — do not guess.
   grep -qE '^on:[[:space:]]*$' "$f" || {
     printf 'unparsed'
     return 0
   }
-  # A filter key is present but yielded no patterns → the reader failed, not the repo.
-  if grep -qE '^[[:space:]]*paths(-ignore)?:' "$f" && [[ -z "$(_on_paths "$f")" ]]; then
+  while IFS= read -r line; do
+    case "$line" in
+    PUSH) has_push=1 ;;
+    BOTH) both=1 ;;
+    "P "*)
+      has_paths=1
+      pat="${line#P }"
+      [[ "$pat" == '!'* ]] && continue # a carve-out subtracts; not a watched path
+      positives=$((positives + 1))
+      # Anything not rooted in the vendored subtree is this repo's own work. `core.lock`
+      # is NOT own-layer: it is the sync's provenance stamp, written by the fan-out.
+      [[ "$pat" =~ ^core(/|\.lock$) ]] || outside=$((outside + 1))
+      ;;
+    "I "*) has_ignore=1 ;;
+    esac
+  done < <(_push_filter "$f")
+  # GitHub rejects paths + paths-ignore together; say so rather than pick one.
+  ((both)) && {
+    printf 'unparsed'
+    return 0
+  }
+  # No push trigger: whatever else this file does, nothing releases automatically.
+  ((has_push)) || {
+    printf 'dispatch-only'
+    return 0
+  }
+  # A filter key was present but yielded no patterns → the reader failed, not the repo.
+  if ((has_paths)) && ((positives == 0)) && ! grep -qE "^P !" < <(_push_filter "$f"); then
     printf 'unparsed'
     return 0
   fi
-  while IFS= read -r p; do
-    [[ "$p" == '!'* ]] && continue # a carve-out subtracts; it is not a watched path
-    positives=$((positives + 1))
-    # Anything not rooted in the vendored subtree is this repo's own work. `core.lock` is
-    # NOT own-layer: it is the sync's provenance stamp, written by the fan-out.
-    [[ "$p" =~ ^core(/|\.lock$) ]] || outside=$((outside + 1))
-  done < <(_on_paths "$f")
-  if ((positives == 0)); then
+  if ((has_ignore)); then
+    # paths-ignore is a DENYLIST: the push runs on everything not listed, so this repo's
+    # own work is watched by construction. (An ignore list that swallowed everything would
+    # be pathological; it is not a shape the fleet has, and `**` there would be a bug the
+    # author wrote deliberately.)
+    printf 'own-layer'
+  elif ((!has_paths)); then
     printf 'unfiltered'
   elif ((outside)); then
     printf 'own-layer'
@@ -177,13 +254,24 @@ _trigger() {
 }
 
 # _bump <file> — is a deliberate non-patch release reachable without editing this file?
-# Both halves are required: a `bump:` with no dispatch cannot be chosen at release time,
-# and a dispatch with no `bump:` reaches the reusable's `patch` default.
+#
+# THREE things must line up, and checking fewer certifies the exact wiring this register
+# claims to detect. The first cut grepped for `workflow_dispatch:` and a bare `bump:`
+# anywhere in the file, which passes on both of the shapes that CANNOT cut a non-patch:
+#
+#   * a `bump` input declared for the dispatch UI that the job never forwards — the
+#     chooser appears in Actions, and the reusable takes its own `patch` default;
+#   * a job forwarding a CONSTANT (`with: { bump: patch }`) — forwarded, and unselectable.
+#
+# So: a workflow_dispatch must exist, and the value handed to the reusable must REFERENCE
+# the dispatch input. That last part is what makes the chooser load-bearing rather than
+# decorative, and it is why this greps for `inputs.bump` on the forwarding line rather
+# than for `bump:` alone.
 _bump() {
   local f="$1" body
   body="$(sed -e 's/[[:space:]]\+#.*$//' -e 's/^[[:space:]]*#.*$//' "$f")"
   if grep -qE '^[[:space:]]*workflow_dispatch:' <<<"$body" &&
-    grep -qE '^[[:space:]]*bump:' <<<"$body"; then
+    grep -qE '^[[:space:]]*bump:[[:space:]]*.*inputs\.bump' <<<"$body"; then
     printf 'dispatch'
   else
     printf 'patch-only'
@@ -195,7 +283,10 @@ present=0
 findings=0
 for repo in "${REPOS[@]}"; do
   dir="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || dir="$REPOS_ROOT/$repo"
-  [[ -d "$dir/.git" ]] || continue
+  # -e, not -d: a linked worktree or a submodule checkout stores .git as a FILE, and -d
+  # skipped those — so a fleet of worktrees reported "no sibling repo checked out", which
+  # is a green. Same convention as scripts/lib/common.sh and scripts/fleet-vocabulary.sh.
+  [[ -e "$dir/.git" ]] || continue
   present=$((present + 1))
   wf="$dir/.github/workflows/auto-tag.yml"
   if [[ -f "$wf" ]]; then
@@ -214,11 +305,17 @@ for repo in "${REPOS[@]}"; do
 "
 done
 
+# BEFORE the --check branch, deliberately. This guard used to live inside it, so the
+# DEFAULT command — and `make fleet-release-triggers` — printed a header, a separator and
+# no rows when no sibling was checked out: a register asserting that no repo has a
+# release-trigger problem, which is indistinguishable from one that could not look. That
+# is the bluff this script's header says it will not make.
+if ((present == 0)); then
+  echo "fleet-release-triggers: no sibling repo checked out — nothing to report on" >&2
+  exit 0
+fi
+
 if ((CHECK)); then
-  if ((present == 0)); then
-    echo "fleet-release-triggers: no sibling repo checked out — nothing to check" >&2
-    exit 0
-  fi
   if ((findings)); then
     echo "fleet-release-triggers: $findings release-trigger finding(s) across $present repo(s)" >&2
     printf '%s' "$rows" | grep -F '**' >&2

@@ -11897,7 +11897,7 @@ _frt_run() { REPOS_ROOT="$_frt_root" "$_frt_sh" "$@" 2>&1; }
 # The shape Core now documents: a `**` denylist, a dispatch, and a bump reaching the
 # reusable. Bodies are literal (printf '%b' expands the \n) rather than templated — a
 # fixture about YAML shape should read as the YAML it is about.
-_frt_good='name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "**"\n      - "!**.md"\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\n        options: [patch, minor, major]\n        default: patch\njobs:\n  tag:\n    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v6\n    with:\n      bump: minor\n'
+_frt_good='name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "**"\n      - "!**.md"\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\n        options: [patch, minor, major]\n        default: patch\njobs:\n  tag:\n    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v6\n    with:\n      bump: ${{ inputs.bump || '"'"'patch'"'"' }}\n'
 
 _frt_reset
 if _frt_out="$(_frt_run --check)"; then
@@ -11975,11 +11975,66 @@ else
 fi
 
 # NO FILTER AT ALL is coarse but never silently misses this repo's work — not a finding.
-_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: patch\n'
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: ${{ inputs.bump || '"'"'patch'"'"' }}\n'
 if _frt_out="$(_frt_run --check)"; then
   pass "triggers: an unfiltered push trigger is not a finding"
 else
   fail "triggers: an unfiltered trigger was reported as a defect: $_frt_out"
+fi
+
+# ── the two shapes that LOOK dispatch-capable and are not ─────────────────────
+# Checking only "is there a workflow_dispatch and a bump: somewhere" certifies both of
+# these, which is the exact broken wiring this column exists to detect.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "os/**"\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\n        options: [patch, minor, major]\n        default: patch\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**patch-only**'* ]]; then
+  pass "triggers: a dispatch input the job never forwards is patch-only (the chooser is decorative)"
+else
+  fail "triggers: a declared-but-unforwarded bump input was certified as dispatch: $_frt_out"
+fi
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "os/**"\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: patch\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**patch-only**'* ]]; then
+  pass "triggers: a CONSTANT forwarded bump is patch-only (forwarded, and unselectable)"
+else
+  fail "triggers: a constant bump: patch was certified as dispatch: $_frt_out"
+fi
+
+# ── paths-ignore is a DENYLIST, and reading it as a watched path INVERTS the verdict ──
+# `push.paths-ignore: [core/**]` runs on everything EXCEPT the vendored subtree — the
+# own-layer shape — and the first cut of the reader reported it core-only.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths-ignore:\n      - "core/**"\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: ${{ inputs.bump }}\n'
+if _frt_out="$(_frt_run --check)"; then
+  pass "triggers: push.paths-ignore [core/**] reads as own-layer, not core-only"
+else
+  fail "triggers: paths-ignore was read as a watched path, inverting the verdict: $_frt_out"
+fi
+# GitHub rejects paths + paths-ignore together; abstain rather than pick one.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "core/**"\n    paths-ignore:\n      - "docs/**"\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**unparsed**'* ]]; then
+  pass "triggers: paths AND paths-ignore together is unparsed, not a guessed verdict"
+else
+  fail "triggers: the both-keys shape produced a verdict anyway: $_frt_out"
+fi
+
+# ── the filter must come from on.push, not from whatever event appears first ──
+# A pull_request filter deciding a push verdict is the same class of false green.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  pull_request:\n    paths:\n      - "os/**"\n  push:\n    branches: [main]\n    paths:\n      - "core/**"\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**core-only**'* ]]; then
+  pass "triggers: a pull_request paths filter does not decide the push verdict"
+else
+  fail "triggers: a non-push event's filter leaked into the verdict: $_frt_out"
+fi
+
+# ── no push trigger at all: nothing releases automatically ────────────────────
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: ${{ inputs.bump }}\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**dispatch-only**'* ]]; then
+  pass "triggers: a dispatch-only workflow is a finding (nothing releases on a push)"
+else
+  fail "triggers: a workflow with no push trigger was not reported dispatch-only: $_frt_out"
 fi
 
 # NO WORKFLOW AT ALL — the state a scaffolded repo used to be born in.
@@ -12000,6 +12055,37 @@ if [[ "$_frt_out" == *'**unparsed**'* ]]; then
   pass "triggers: an on: spelling the reader does not handle is unparsed, not a guessed verdict"
 else
   fail "triggers: an unreadable on: block produced a verdict anyway: $_frt_out"
+fi
+
+# A LINKED WORKTREE stores .git as a FILE. Testing -d skipped those, so a fleet of
+# worktrees reported "no sibling repo checked out" — a green over an un-inspected fleet.
+_frt_reset
+mkdir -p "$_frt_root/dotfiles-Fedora/.github/workflows"
+printf 'gitdir: /elsewhere/.git/worktrees/w\n' >"$_frt_root/dotfiles-Fedora/.git"
+printf '%b' "$_frt_good" >"$_frt_root/dotfiles-Fedora/.github/workflows/auto-tag.yml"
+if _frt_out="$(_frt_run --check)" && [[ "$_frt_out" != *"no sibling repo"* ]]; then
+  pass "triggers: a sibling whose .git is a FILE (worktree/submodule) is still read"
+else
+  fail "triggers: a linked-worktree sibling was skipped, reporting an empty fleet: $_frt_out"
+fi
+
+# The no-sibling notice must guard the DEFAULT render too, not just --check: a header and
+# no rows reads as "no repo has a problem", which is the bluff this register disclaims.
+_frt_reset
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *"no sibling repo"* && "$_frt_out" != *"| repo | trigger |"* ]]; then
+  pass "triggers: report mode says it has no siblings rather than printing an empty table"
+else
+  fail "triggers: default render printed a headers-only table with no siblings: $_frt_out"
+fi
+
+# --help must not depend on source line numbers: the fixed-range idiom truncates the
+# moment the banner grows, which it did here during review.
+if _frt_out="$($_frt_sh --help)" && [[ "$_frt_out" == *"usage: fleet-release-triggers.sh"* &&
+  "$_frt_out" == *"Env: REPOS_ROOT"* ]] && grep -qE '^\s*usage$' "$_frt_sh"; then
+  pass "triggers: --help is a heredoc usage(), complete and not a fixed header range"
+else
+  fail "triggers: --help still reads a fixed range of the file header"
 fi
 
 # Rendering is not a verdict (the trailing-test shape that made `make fleet-vocabulary`

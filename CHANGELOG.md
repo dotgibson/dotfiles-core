@@ -213,13 +213,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `paths: ['core/**']`, the vendored subtree and nothing else, so the repo's own `vX.Y.Z`
   advanced when **Core** moved and at no other time. Measured on `dotfiles-Fedora`: its
   last seven releases were its last seven Core syncs, one for one, while **six native
-  commits cut nothing** — including #122, which wired a package-name gate that had never
-  run on any PR, and #116, which removed a tracked file. Both sat unreleased until an
+  commits cut nothing** — including dotgibson/dotfiles-Fedora#122, which wired a
+  package-name gate that had never run on any PR, and dotgibson/dotfiles-Fedora#116, which
+  removed a tracked file. Both sat unreleased until an
   unrelated fan-out swept them up hours later and attributed them to a tag whose whole
   meaning was "Core moved". So `v1.3.68` meant "68 Core syncs received", which `core.lock`
   already answers precisely and offline. The release **notes** were never wrong —
   `auto-tag.sh --notes-file` groups Conventional Commits over the entire range since the
-  last tag, so #122 and #123 are both in `v1.3.68`'s body — the trigger and the
+  last tag, so those two are both in `v1.3.68`'s body — the trigger and the
   granularity were. Had Core paused releases for a month, every OS repo's releases would
   have paused with it regardless of what those repos did. **Core's own caller example was
   the source**: `auto-tag-call.yml` documented the core-only shape, and two repos had
@@ -272,6 +273,40 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Its one stated blind spot is a **second** vendored subtree — `dotfiles-Offense` also
   carries `offensive/companion/` from htpx, whose paths Core cannot derive — so the
   `core-only` column is a floor that catches the shape Core itself shipped, not a proof.
+
+- **The register's own reader had three false-green shapes, found in review (#696).**
+  A register that certifies the wiring it exists to detect is worse than none, so: (1) the
+  path parser was not scoped to `on.push` and read `paths-ignore` entries as watched
+  paths, which **inverts** the verdict — `push.paths-ignore: ['core/**']` runs on
+  everything _except_ the vendored subtree, the own-layer shape, and was reported
+  `core-only`; a `pull_request` filter could likewise decide a push verdict. It now reads
+  the `push` mapping alone, gives `paths-ignore` its denylist meaning, reports a workflow
+  with no push trigger as `dispatch-only`, and abstains (`unparsed`) on the
+  paths-plus-paths-ignore combination GitHub itself rejects. (2) The `bump` column grepped
+  for a `workflow_dispatch:` and a bare `bump:` anywhere in the file, which passes on both
+  shapes that cannot cut a non-patch — an input declared for the chooser that the job
+  never forwards, and a forwarded **constant** (`with: {bump: patch}`). It now requires
+  the forwarded value to reference the dispatch input. (3) Sibling detection used `-d
+  "$dir/.git"`, so a linked worktree or submodule checkout — where `.git` is a **file** —
+  was skipped, and a fleet of worktrees reported "no sibling repo checked out", which is a
+  green; `-e` now, matching `scripts/lib/common.sh` and `fleet-vocabulary.sh`. Also: the
+  no-sibling guard ran only under `--check`, so the default render and `make
+  fleet-release-triggers` printed a headers-only table indistinguishable from a healthy
+  fleet, and `--help` read a fixed line range of the file header that had already
+  truncated once when the banner grew — a heredoc `usage()` now, per `check-links.sh` and
+  `sync-core.sh`. Every one of these has a regression fixture.
+
+- **`RELEASE-RUNBOOK.md` §2 documented an ordering for the deliberate bump that cannot
+  work (#696).** It claimed either order was fine — dispatch before the fan-out merge and
+  the merge no-ops, or dispatch after. Neither: a `workflow_dispatch` runs against a
+  **ref**, so dispatching pre-merge tags the _pre-merge_ HEAD and the merge then cuts its
+  own patch on top (`v1.4.0` on the commit before the change, `v1.4.1` on the change),
+  while dispatching post-merge finds HEAD already tagged and no-ops. The corrected recipe
+  uses the denylist this same change introduces: a docs-only commit cuts no tag, so
+  landing the release note leaves the untagged HEAD a dispatch needs — merge, let the
+  patch settle, land the note, dispatch there. The minor marks the note rather than the
+  code commit, the same shape `dotfiles-Windows` §3b already has, and the doc now says so
+  instead of implying the tag lands somewhere it does not.
 
 - **A scaffolded OS repo was born with no `auto-tag.yml` at all (#696).**
   `new-os-repo.sh` stamped `lint.yml` and `test.yml` and no release caller, so a new repo
