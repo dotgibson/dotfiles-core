@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/ci-pr-link.sh — does this PR satisfy the "a fix links its issue" rule?
+# scripts/ci-pr-link.sh — does this PR satisfy the "a fix or feat links its issue" rule?
 # ──────────────────────────────────────────────────────────────────────────────
 # WHY THIS EXISTS. #446 fixed two reported bugs (#420 starship, #423 carapace) and
 # merged green — but its body carried no `Closes #…` keyword, so GitHub linked
@@ -158,7 +158,7 @@ fi
 
 # The probe never answered, and the body carries no reason — so this check does not know
 # whether the PR is linked. Say exactly that. Still EXIT NON-ZERO (the recorded decision
-# in #500): blocking is the safe side, since passing here would let an unlinked fix PR
+# in #500): blocking is the safe side, since passing here would let an unlinked gated PR
 # through on any API blip, which is the hole the gate exists to close. The difference
 # from missing-link is not the exit code, it is the claim.
 if ((!probe_ok)); then
@@ -169,7 +169,7 @@ ci-pr-link: could NOT determine whether this PR closes an issue.
 The GitHub GraphQL probe did not return a count -- an API error on our side, not
 a problem with your PR. This check is deliberately failing rather than guessing,
 because guessing "no link" would be wrong exactly when GitHub is having a bad
-day, and guessing "linked" would let an unlinked fix PR through.
+day, and guessing "linked" would let an unlinked fix/feat PR through.
 
 Nothing to change in the PR. Re-run this job:
 
