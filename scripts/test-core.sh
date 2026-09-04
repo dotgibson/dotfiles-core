@@ -6535,28 +6535,104 @@ grep -q '_tool_skips=\$((_tool_skips' "$HERE/scripts/audit-core.sh" && {
 # matches a printf inside a $( ) that BUILDS A STRING — §5g composes its report that way —
 # and flagging those would be a false fire that teaches the next reader to widen the guard
 # where no guard belongs. Only a printf that is the statement can reach stdout.
-_jg_bad=0
-while IFS= read -r _jg_line; do
-  [ -n "$_jg_line" ] || continue
-  case "$_jg_line" in
-  *CORE_JSON*) ;;
-  *)
-    fail "--json: an unguarded fleet-section printf breaks JSON-only stdout — $_jg_line"
-    _jg_bad=1
-    ;;
-  esac
-done <<EOF
-$(awk 'NR>=860 && NR<=1045 && /^[[:space:]]*printf/ && !/>&2/ {printf "%d: %s\n", NR, $0}' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
-EOF
-((_jg_bad)) || pass "--json: every fleet-section report line is CORE_JSON-guarded (stdout stays parseable)"
-# The other half of "advisory": the section must not be able to FAIL. A future edit that
-# swaps the report for a fail() would red every repo's CI on arrival, since 8 of 9 are short.
-if ! grep -q 'fail "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
-  pass "helper adoption: the section reports and never fails (advisory by construction)"
+#
+# The range is DERIVED from the section banners, not typed. It used to be the literal
+# `NR>=860 && NR<=1045`, and by the time anyone looked those numbers had drifted off the
+# thing they were meant to cover: they started inside §5c (not a fleet section at all),
+# stopped partway through §5f, and never reached §5g or §5h — both of which print fleet
+# reports to stdout. A line-number window over a file that grows is a guard with a moving
+# blind spot, and this one had already moved. §5f→§5i is the fleet trio, by name.
+_jg_from="$(grep -n '^# ── 5f\.' "$HERE/scripts/audit-core.sh" | cut -d: -f1)"
+_jg_to="$(grep -n '^# ── 5i\.' "$HERE/scripts/audit-core.sh" | cut -d: -f1)"
+if [ -z "$_jg_from" ] || [ -z "$_jg_to" ]; then
+  fail "--json: cannot locate the §5f→§5i fleet sections in audit-core.sh — the banners were renamed and this guard now covers nothing"
 else
-  fail "helper adoption: the section can now fail — 8 of 9 repos are short, so this reds the fleet"
+  _jg_bad=0
+  while IFS= read -r _jg_line; do
+    [ -n "$_jg_line" ] || continue
+    case "$_jg_line" in
+    *CORE_JSON*) ;;
+    *)
+      fail "--json: an unguarded fleet-section printf breaks JSON-only stdout — $_jg_line"
+      _jg_bad=1
+      ;;
+    esac
+  done <<EOF
+$(awk -v a="$_jg_from" -v b="$_jg_to" 'NR>=a && NR<=b && /^[[:space:]]*printf/ && !/>&2/ {printf "%d: %s\n", NR, $0}' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+EOF
+  ((_jg_bad)) || pass "--json: every fleet-section printf (§5f–§5i) is CORE_JSON-guarded (stdout stays parseable)"
 fi
-unset _ha_bad _ha_line
+unset _jg_from _jg_to
+
+# ── the adoption RATCHET: _core_helper_verdict, as a unit ───────────────────────
+# What used to be here was a single assertion on the section's SOURCE TEXT — "audit-core.sh
+# contains no `fail \"helper adoption`" — pinning the section as advisory by construction.
+# That assertion was green for the whole life of the bug it should have caught. §5f measured
+# `blib_user_bindirs_on_path 1/9` and printed it; the gap that fraction names was shipping a
+# bootstrap that exited 2 on every openSUSE run, and a second repo carried the same probe
+# masked by an apk-installed `go` (#748). "It never fails" was not a property worth pinning.
+# It was the defect.
+#
+# So the section ratchets now, and what is pinned is the JUDGMENT — driven through the same
+# helper audit-core.sh calls, not re-implemented here. That distinction is the lesson of
+# _core_tool_skip_count directly above: a test that owns its own copy of the logic stays
+# green while the shipped logic changes underneath it.
+_hv() { CORE_JSON=1 bash -c '. "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9; _core_helper_verdict "$1" "$2"' _ "$1" "$2" 2>/dev/null; }
+_hv_bad=0
+# ledger=1 present=1 — the settled state.
+[[ "$(_hv 1 1)" == ok ]] || { fail "_core_helper_verdict 1 1 = '$(_hv 1 1)', want 'ok' — a repo in good standing is being reported as something else"; _hv_bad=1; }
+# ledger=1 present=0 — a repo DROPPED a helper it had. The one class the old counter could
+# in principle have caught, and could not: the fraction would simply have read one lower.
+[[ "$(_hv 1 0)" == regressed ]] || { fail "_core_helper_verdict 1 0 = '$(_hv 1 0)', want 'regressed' — a repo can now silently lose a bootstrap-lib helper"; _hv_bad=1; }
+# ledger=0 present=1 — good news that must still fail, because recording it is the ONLY
+# thing that ever tightens the ratchet. Let this pass and the ledger goes stale, every later
+# regression reads as an unremarkable gap, and §5f is a counter again.
+[[ "$(_hv 0 1)" == advanced ]] || { fail "_core_helper_verdict 0 1 = '$(_hv 0 1)', want 'advanced' — an unrecorded adoption leaves the ledger stale and the ratchet cannot tighten"; _hv_bad=1; }
+# ledger=0 present=0 — the on-arrival state, and the one that must NOT fail: most of the
+# fleet is short today and a gate that is red on arrival is a gate someone turns off.
+[[ "$(_hv 0 0)" == gap ]] || { fail "_core_helper_verdict 0 0 = '$(_hv 0 0)', want 'gap' — an unclaimed gap would red the whole fleet on arrival"; _hv_bad=1; }
+[[ "$(_hv 1 1)" == "" ]] && { fail "_core_helper_verdict: could not source scripts/lib/common.sh — the helper is unreachable"; _hv_bad=1; }
+((_hv_bad)) || pass "_core_helper_verdict: ok / regressed / advanced / gap — both movements block, the standing gap does not"
+unset _hv_bad
+
+# BINDING. The unit above is worth nothing if §5f decides for itself. Assert it calls the
+# helper, and that each verdict lands where the ratchet needs it: both movements on fail(),
+# the standing gap on the advisory accumulator.
+_hb=0
+grep -q '_core_helper_verdict' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: audit-core.sh §5f does not call _core_helper_verdict — the tested judgment is not the code that runs"
+  _hb=1
+}
+grep -q 'fail "helper adoption: .* no longer calls' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: §5f has no 'regressed' fail — a repo dropping a helper is back to being a silently smaller number"
+  _hb=1
+}
+grep -q 'fail "helper adoption: .* and the ledger does not say so' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: §5f has no 'advanced' fail — nothing forces the ledger to be ratcheted, so it will go stale"
+  _hb=1
+}
+grep -q 'gap) _ha_gaps=' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: §5f no longer routes a 'gap' to the advisory report — if it now fails, 8 of 9 repos red the fleet on arrival"
+  _hb=1
+}
+((_hb)) || pass "binding: §5f judges through _core_helper_verdict and routes all four verdicts as the ratchet requires"
+unset _hb
+
+# THE LEDGER'S OWN INTEGRITY. Every repo named in it must be a real fleet entry. A typo
+# ('dotfiles-Fedroa') is not a loud failure — it reads as "that repo has not adopted this",
+# which is the quietest possible way for the ratchet to stop watching a repo.
+_hl_bad=0
+while IFS= read -r _hl_repo; do
+  [ -n "$_hl_repo" ] || continue
+  grep -qx "$_hl_repo" "$HERE/scripts/os-repos.txt" || {
+    fail "§5f ledger names '$_hl_repo', which is not in scripts/os-repos.txt — a typo here reads as 'not adopted' and silently drops that repo from the ratchet"
+    _hl_bad=1
+  }
+done <<EOF
+$(sed -n '/^  _ha_ledger=/,/^'"'"'$/p' "$HERE/scripts/audit-core.sh" | grep -o 'dotfiles-[A-Za-z]*' | sort -u)
+EOF
+((_hl_bad)) || pass "§5f ledger: every repo it names is a real entry in scripts/os-repos.txt"
+unset _hl_bad _hl_repo _ha_bad _ha_line
 
 hdr "git identity refuses to guess (useConfigOnly + a commented-out seed)"
 # What a FRESHLY BOOTSTRAPPED box does when the user has not set an identity yet.

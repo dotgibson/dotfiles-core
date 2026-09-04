@@ -16,6 +16,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Helper adoption is a ratchet now, and `blib_user_bindirs_on_path` went 1/9 → 8/9 (#748).**
+  `audit-core.sh` §5f has reported which OS repos are short of the `lib/bootstrap-lib.sh`
+  contract since #516, as a bare fraction, deliberately advisory. `blib_user_bindirs_on_path
+  1/9` sat in that report while the gap it names shipped a **live defect**: openSUSE's
+  `bootstrap.sh` probed `command -v mise` for a mise that `mise.run` had written to
+  `~/.local/bin` moments earlier — a directory only the **shell** layer prefixes, never the
+  bash a bootstrap runs in — so both arms of its Go fallback missed, the `else` branch
+  announced "needs a Go toolchain" on a box that had one, and the run exited 2 on **every**
+  bootstrap. No gate could see it: a stubbed run installs nothing, so a check that a tool is
+  present afterwards can never fail under a stub. `dotfiles-Alpine` carried the identical
+  probe, harmless only because an apk-installed `go` won the first arm and the broken one was
+  never reached. **A number nothing acts on is where a defect hides in plain sight.** So §5f
+  now keeps a **ledger** of the `(repo, helper)` pairs that have adopted, and both movements
+  block: a repo that **drops** a helper fails, and a repo that **adopts** one nobody recorded
+  also fails until the ledger is edited — which is the only thing that ever tightens the
+  ratchet. An unclaimed gap stays advisory, because most of the fleet is short today and a
+  gate red on arrival is a gate someone turns off. Same shape as `gen-porting-matrix.sh`'s
+  `PKG_ROWS`. The judgment is one testable function, `_core_helper_verdict`
+  (`scripts/lib/common.sh`), driven directly by `test-core.sh` — replacing an assertion on
+  the section's source text ("it contains no `fail`") that was green for the whole life of
+  the bug it should have caught. The `--json` fleet-printf guard's hardcoded `NR>=860 &&
+  NR<=1045` window is derived from the §5f→§5i banners now; it had drifted off the sections
+  it was meant to cover and never reached §5g or §5h at all. `VENDORING.md` carries the
+  contract. Six companion PRs adopt the helper — `dotfiles-Alpine` (the live twin),
+  `-openSUSE` (retiring the local `_mise_bin` fork), `-Fedora`, `-Debian` and `-Offense`
+  (retiring three hand-rolled `export PATH=` preludes) and `-Arch` — and the ledger records
+  that state, so **land them before this one**. `dotfiles-Offense` also loses its exemption:
+  the "role repos install no packages" reasoning was never true of a `--install` that does
+  `pipx` and `go install` into `~/.local/bin`, which is exactly why it had hand-rolled the
+  prelude. `dotfiles-MacBook` and `dotfiles-Defense` genuinely have no such probe and stay
+  unadopted/exempt.
+
 - **The desktop-bar parity pair is generated and gated, not asked nicely (#693).**
   `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` were an
   admitted verbatim pair whose only mechanism was the sentence _"Edit both together"_. It did

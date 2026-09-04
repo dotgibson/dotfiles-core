@@ -788,6 +788,46 @@ _core_luacheck_verdict() { # _core_luacheck_verdict <probe-rc> <lint-rc>
   printf 'issues\n'
 }
 
+# ── _core_helper_verdict: the bootstrap-lib adoption RATCHET, as one decision ──
+# _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|1> — print exactly one of:
+#   ok         the ledger says this repo calls the helper, and it does
+#   regressed  the ledger says it calls it, and it no longer does — a repo LOST a helper
+#   advanced   it calls a helper the ledger does not record — the ratchet has to tighten
+#   gap        not adopted, not claimed; the honest, still-advisory state
+#
+# WHY A LEDGER AND NOT A COUNT. audit-core.sh §5f measured adoption as a bare fraction and
+# printed it. `blib_user_bindirs_on_path 1/9` sat in that report for months while the gap it
+# names shipped a live bug to openSUSE (#748) — every bootstrap there exited 2, and the
+# counter had said so the whole time. A number nothing acts on is not a gate; it is a place
+# for a defect to hide in plain sight. The fix is not "make it fail" — 8 of 9 repos are short
+# on arrival and a gate that is red on arrival gets switched off, which is the reason the
+# section was advisory in the first place. The fix is to make the number MONOTONE: name the
+# pairs that have adopted, and fail on any move away from that state.
+#
+# So `gap` stays advisory — that is the on-arrival state and it must not red the fleet — while
+# BOTH kinds of movement are blocking:
+#   · regressed — a repo dropped a helper it had. This is the only class the old counter could
+#     in principle have caught, and it could not: the fraction it printed would simply have
+#     read one lower, in a line already read as noise.
+#   · advanced — a repo adopted one and nobody recorded it. Failing on GOOD news looks odd
+#     until you notice it is the only thing that ever tightens the ratchet: without it the
+#     ledger drifts stale, every real regression after that reads as `gap`, and the section is
+#     a counter again. Same shape as gen-porting-matrix.sh's PKG_ROWS, where a repo that
+#     starts installing a package fails the gate until the cell is flipped (CLAUDE.md).
+#
+# The judgment lives HERE, not inline in the section, for the reason _core_tool_skip_count
+# moved: test-core.sh must be able to drive the code that actually runs. The previous
+# adoption test asserted a property of the section's SOURCE TEXT ("it contains no fail"),
+# which is exactly the kind of assertion that stays green while the logic beneath it changes.
+_core_helper_verdict() { # _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|1>
+  case "${1:-0}${2:-0}" in
+  11) printf 'ok\n' ;;
+  10) printf 'regressed\n' ;;
+  01) printf 'advanced\n' ;;
+  *) printf 'gap\n' ;;
+  esac
+}
+
 # ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
 # _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
 # not ship AND that nothing will ever tell you about. Silence = clean.
