@@ -1450,10 +1450,17 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   # bootstrap that GENERATES a fragment is not read as this repo assigning the flag. That
   # matters because ownership SUPPRESSES a finding: a bogus own is a silent pass on a real
   # undeclared read, the same false-negative shape as the commented-out assignment above.
-  # It is a heuristic, not a parser — `echo "note: HAVE_RG=1"` still slips through, since a
-  # space precedes the name there exactly as it would in real code. Distinguishing those
-  # needs the shell grammar, which is the trap PORTABILITY.md §3 documents; this buys the
-  # common generated-fragment case for one character of lookbehind.
+  # It is a heuristic, not a parser, and here is exactly where its floor is. Still missed:
+  # `echo "note: HAVE_RG=1"` (a space precedes the name, as in real code); a quoted HEREDOC
+  # writing either an assignment or a read (`cat <<'EOF' > frag.zsh`), where no quote abuts
+  # anything; and a quoted ARITHMETIC literal `printf '(( HAVE_RG ))\n'`, since that pass
+  # matches a bare name and cannot use the lookbehind at all. Now over-rejected: a
+  # concatenation like `echo 'v: '$HAVE_RG`, where the quote CLOSES a string rather than
+  # opening one — contrived for a flag gate, and the trade is deliberate. Telling any of
+  # these apart needs the shell grammar, which is the trap PORTABILITY.md §3 documents at
+  # length; one character of lookbehind buys the common generated-fragment case in both
+  # directions and nothing more is claimed. The rest is #866's problem, if direction 2 is
+  # ever to become blocking.
   owns=" $(printf '%s\n' "$text" | grep -oE "(^|[^\"'[:alnum:]_])HAVE_[A-Z0-9_]+=" 2>/dev/null \
     | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
   # TWO read shapes, because a shell has two. The sigil forms are the common ones; inside an
@@ -1462,7 +1469,15 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   # booleans exactly that way (`((UPDATE_CHECK_ENABLED))` in 60-update.zsh, `((CORE_CNF_ENABLED))`
   # in 30-functions.zsh), so an OS layer writing `(( HAVE_X ))` is following the house style,
   # and it would have passed direction 2 in silence.
-  uses="$( { printf '%s\n' "$text" | grep -oE '[$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null
+  # THE SIGIL PASS REFUSES A `$` THAT ABUTS A SINGLE QUOTE, and single only — the mirror of
+  # the ownership rule above, and the asymmetry is the whole point. A single quote suppresses
+  # expansion, so `printf '${HAVE_RG:-}\n' > frag.zsh` in a bootstrap that GENERATES a
+  # fragment is literal text, not a read of this repo's own shell. A DOUBLE quote does not,
+  # and `[[ -n "${HAVE_ATUIN:-}" ]]` is the single most common real form in this fleet — so
+  # rejecting on any quote would have made the commonest legitimate read invisible. This
+  # direction's error is a FALSE FINDING, which reds a clean repo; the ownership rule guards
+  # the opposite one.
+  uses="$( { printf '%s\n' "$text" | grep -oE "(^|[^'])[\$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+" 2>/dev/null
     printf '%s\n' "$text" | grep -F '((' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' 2>/dev/null
   } | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
   for f in $uses; do

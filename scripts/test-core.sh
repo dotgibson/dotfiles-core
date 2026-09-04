@@ -2039,6 +2039,20 @@ d="$(_hv_repo printfset)"
 printf '%s\n' "printf 'HAVE_RG=1\\n' > frag.zsh" '[[ -n ${HAVE_RG:-} ]] && :' >"$d/os/x.zsh"
 _hv_is "an assignment inside a quoted string does not confer ownership" printfset "HAVE_RG"
 
+# The INVERSE of that, and the direction whose error reds a clean repo: a bootstrap that
+# generates a fragment containing a READ. Inside single quotes the sigil never expands, so
+# the line is literal text and reporting it would be a false finding.
+d="$(_hv_repo printfread)"
+printf '%s\n' "printf '\${HAVE_RG:-}\\n' > frag.zsh" >"$d/os/gen.sh"
+_hv_is "a read inside a SINGLE-quoted string is literal text, not a read" printfread ""
+
+# ...and the regression guard that makes the rule above safe to have. A DOUBLE quote does
+# not suppress expansion, and `[[ -n "${HAVE_X:-}" ]]` is the commonest real form in the
+# fleet — rejecting on any quote rather than the single one would have made it invisible.
+d="$(_hv_repo dquoteread)"
+printf '[[ -n "${HAVE_RG:-}" ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a DOUBLE-quoted read is still a read" dquoteread "HAVE_RG"
+
 # An absent or empty repo is not a finding — CI checks out this repo alone, and §5j treats a
 # missing sibling as an environment SKIP rather than letting it read as "reads nothing".
 _hv_is "a repo with no shell files at all reports nothing" nosuchrepo ""
