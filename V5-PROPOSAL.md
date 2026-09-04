@@ -199,7 +199,7 @@ Measured on a synced repo: the `core.manifest` payload is **1.4 MB**; a vendored
 | shipped to all nine repos | size |
 | ------------------------- | ---- |
 | `assets/` — README media | 1.8 MB |
-| `scripts/` — incl. `test-core.sh` at 741 KB | 1.4 MB |
+| `scripts/` — incl. `test-core.sh` at 741 KB (pre-#699; the suite is `scripts/test/` now) | 1.4 MB |
 | `CHANGELOG.md` | 568 KB |
 | `.github/` — inert copies; the real `uses:` are remote `@v4` refs | 344 KB |
 | `.claude/`, `PORTING-MATRIX.md`, `examples/` | 240 KB |
@@ -246,7 +246,9 @@ Two exported surfaces, neither with a contract.
 **`CORE_PROFILE`** was a v4.0.0 headline feature. Nothing writes
 `$ZSH_CFG/profile`, the file it reads. No OS repo mentions it. CI actively
 asserts `~/.zshrc` must **not** set it (`bootstrap-test.yml:310-315`). Its only
-exercise is `test-core.sh:7617-7646`. Every host runs the `full` default.
+exercise was `test-core.sh:7617-7646` as this file measured it; #677 then deleted
+`CORE_PROFILE` outright, and `scripts/test/62-loader-contract.sh` now pins the
+loader contract that replaced its ceiling matrix. Every host runs the `full` default.
 
 It is also what makes the band footgun dangerous. `VENDORING.md:185-192` warns
 that an OS repo dropping `22-foo.zsh` into a Core band gap is profile-gated as if

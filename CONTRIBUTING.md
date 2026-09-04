@@ -202,7 +202,7 @@ same commit.
    `blib_link_core` (`lib/bootstrap-lib.sh`), which every bootstrap sources.
 6. Give the new file's top-level directory a bucket in `scripts/ci-classify.sh`
    (an unrecognised path fails closed to a full CI run), with a matching
-   `_classify_is` line in `scripts/test-core.sh`. The classifier emits three axes —
+   `_classify_is` line in `scripts/test/22-ci-classify.sh`. The classifier emits three axes —
    `shell`, `nvim` and `atuin` — and `atuin` is narrow on purpose: it gates the
    premise detector's hermetic self-test, the single most expensive thing the suite
    does, so only `scripts/`, `zsh/00-tools.zsh` and `atuin/` reach it. Widening it
@@ -215,12 +215,12 @@ same commit.
    wastes the one moment you were most likely to be careful.
 7. For a **symlinked config**, update the three lists that step 5's link does not
    reach on its own. Nothing gates these, which is why they are enumerated here:
-   - `scripts/test-core.sh` — the `_lr_d` fixture directory list for the link run.
+   - `scripts/test/34-link-run.sh` — the `_lr_d` fixture directory list for the link run.
      **This is the one that fails quietly.** Miss it and the source never lands in
      the sandbox, `blib_link` early-returns on a missing src
      (`lib/bootstrap-lib.sh:127-131`), and any assertion you add below passes
      vacuously. Nothing goes red.
-   - `scripts/test-core.sh` — the grouped `_lr_is_link_to` assertions, plus the pass
+   - `scripts/test/34-link-run.sh` — the grouped `_lr_is_link_to` assertions, plus the pass
      message that names them. Assert the destination bootstrap actually promises.
    - `dotfiles-MacBook/bootstrap.sh` — the `--uninstall` `dests` array, the only
      hand-maintained one in the fleet. Miss it and `--uninstall` removes one fewer

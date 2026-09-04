@@ -382,6 +382,41 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **The behavioral suite is 36 named fragments, not one 18,700-line file (#699).**
+  `scripts/test-core.sh` had grown to **18,747 lines**, and ShellCheck's cost is superlinear
+  in file length: that one file was **42.6s of the audit's 65.9s** of ShellCheck — **65% of
+  the lint surface in one file** — re-linted in full on all four CI legs by any PR touching
+  any shell file, with `audit (macos-latest)` setting the wall clock for the whole PR. The
+  suite now lives in **`scripts/test/NN-name.sh`**, one numbered fragment per subject, and
+  `test-core.sh` is a thin dispatcher that globs them in `NN` order and **sources** them into
+  its own shell. The suite's own share of the sweep goes from **42.6s to 9.7s**, taking the
+  whole gate from **65.9s to 31.7s — a 34.2s saving on every leg, 52% of it.** It is a move,
+  not a rewrite: the fragments rejoin to the old file's lines 190–18740 **byte for byte** (bar
+  the trailing blank lines `end-of-file-fixer` trims at each cut), and **all 1,772 assertions
+  the suite already had come back identical in text and order**, verified line-by-line against
+  a pre-split run. Five are added — see `05-suite-shape.sh` below — and three labels are
+  reworded (the two self-reference guards, and one that cited a section ID the split
+  removed); nothing else in the stream differs. `--quiet`, `--json`, `--scope` and the
+  exit-code contract `audit-core.sh` reads are untouched. The second win is
+  organisational: the sections were lettered **A–L**, and the letters had drifted into **two
+  different "E"s** and an `A` that ran after `J`, while the file's own header still described
+  it as _"Two sections"_ — names fix that by construction. Adding a section is adding a file;
+  the glob has no registry to forget, and an empty glob is a **hard exit 2** rather than a
+  green run that asserted nothing. Two guards that scanned only `scripts/test-core.sh` for
+  their own fixtures — the RETURN-trap and conflict-marker self-reference checks — now sweep
+  the dispatcher **and** every fragment, so they cannot go vacuous as fixtures move; and the
+  bare-box ending, which was a verbatim copy of the normal one, is now one
+  `_core_test_finish`. `audit-core.sh`'s exec-bit gate learns that `scripts/test/*.sh` are
+  sourced libraries (`100644`), the same arm as `scripts/lib/`. The glob buys "no registry"
+  at the price of one new way to write assertions that never run — an unnumbered file beside
+  the others is skipped in silence — so **`scripts/test/05-suite-shape.sh`** asserts the
+  layout instead of assuming it: every fragment carries the `NN-` prefix, none is executable,
+  all are tracked, and the empty-glob refusal is **driven** against a staged tree rather than
+  believed. Those five are the only assertions the split adds — **+5 and no pre-existing one
+  changed**, stated as a delta rather than a pair of totals because `main` keeps adding
+  assertions underneath this branch (it was `1772 → 1777` when measured, `1788 → 1793` after
+  merging #863 and #864), and a total pinned here would be wrong by the time it shipped.
+
 - **The startup budget is ratcheted from 120 ms to a committed 48 ms — 2× the measured
   baseline — and CI reads it from `scripts/bench-baseline.env` (#688).** The `bench` job's
   `CORE_BENCH_BUDGET_MS=120` existed only in `ci.yml`, beside a comment guessing "~25 ms";
