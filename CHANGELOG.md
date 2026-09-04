@@ -16,6 +16,51 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The hermetic `--links-only` gate is Core-owned now: `scripts/check-links.sh` (#852).**
+  Four repos' `make check` ran the same block — make a throwaway HOME, run
+  `bootstrap.sh --links-only` into it, assert the symlink graph Core's loader expects —
+  and each of `dotfiles-Fedora`, `-Debian`, `-Gentoo` and `-openSUSE` carried its own copy
+  (Arch, Alpine and the two Role repos run no links-only leg at all). They drifted the way
+  copies do: the same defect turned up in **three of the four at once**. `HOME="$tmp"` alone is not hermetic,
+  because `bootstrap.sh` resolves `CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"` and
+  `lib/bootstrap-lib.sh` defaults `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`,
+  `XDG_DATA_HOME` and then `ZDOTDIR` the same way — and a `:-`/`:=` default applies **only
+  when the variable is unset**. For anyone who exports `XDG_CONFIG_HOME`, the gate wired
+  Core into their **live config tree** and then failed its own assertions, which look
+  under the temp dir bootstrap never touched: it mutated the box it was only supposed to
+  inspect, then blamed the tree. Reproduced on Fedora 44 — `zsh/`, `nvim`,
+  `starship.toml`, `tmux`, `git`, `mise`, `lazygit`, `atuin`, `jj`, `sesh` and `tealdeer`
+  all landed in the exported `XDG_CONFIG_HOME`. `dotfiles-openSUSE` had already found and
+  fixed it locally and nothing could tell the others; the fix was then applied by hand
+  three more times (dotgibson/dotfiles-Fedora#153, dotgibson/dotfiles-Debian#53,
+  dotgibson/dotfiles-Gentoo#159). This is the last time it needs applying anywhere.
+  One script, vendored through `core.vendor`, the same argument
+  `scripts/check-capabilities.sh` makes for the capability schema. It scrubs the five
+  variables the bootstrap path actually consults and passes the rest of the environment
+  through (so `BLIB_SU=true core/scripts/check-links.sh` still works on a container
+  without sudo), guards `mktemp -d` — unguarded, an empty `$tmp` makes the next line write
+  `/.config/…` on the real filesystem — and cleans up through a trap, interrupts included.
+  Core asserts only what `blib_link_core` wires everywhere; a repo's own additions are
+  arguments (`--require .config/zsh/80-os.zsh` for an OS band-80 overlay,
+  `--require .config/defense/templates` for a Role layer), because Core asserting a Role
+  path is how the copies drifted in the first place. Three exit codes a caller can tell
+  apart: 0 the graph is right, 1 it could not run (bootstrap's own output is printed), 2
+  the graph is wrong. The suite drives it against a fake repo whose bootstrap is a stub
+  that records the environment it was handed, and pins the scrub, that the scrub takes the
+  five and nothing else, each failure mode's exit code, the trap, and the two `.zshrc`
+  assertions — including the grep the old recipes shipped, which accepted a
+  **commented-out** `source` line and matched `loaderXzsh` besides. It also asserts two things
+  the copied recipes never did: that EVERY link resolves, not just `loader.zsh` — a
+  renamed Core file behind any other link used to read as a healthy graph — and that each
+  Core-owned link resolves to the **right** file, since a graph with `starship.toml` wired
+  to `tmux.conf` is complete, resolvable and wrong. Caller-supplied `--require` paths keep
+  existence-only semantics: Core has no business asserting what a Role layer's paths point
+  at.
+  **The four repos switch over on the next sync**, not now: they can only call
+  `core/scripts/check-links.sh` once a release has vendored it, so the script ships first
+  and the Makefiles follow. Until then their inlined copies (now all fixed) keep running,
+  and the four repos without a links-only leg may adopt the gate or not.
+
 - **A scaffolded OS repo is born meeting the `make` vocabulary and the test floor
   (#691).** `scripts/new-os-repo.sh` is the other way a repo enters the fleet (the first is
   `cp -r dotfiles-Fedora`), and it stamped no `Makefile` and no `test/` — so a greenfield
