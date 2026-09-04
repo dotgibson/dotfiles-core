@@ -12028,6 +12028,18 @@ else
   fail "triggers: a non-push event's filter leaked into the verdict: $_frt_out"
 fi
 
+# ── an INLINE event mapping hides the filter from the block reader ───────────
+# `push: { branches: [main], paths: ["core/**"] }` is valid YAML the fleet does not use,
+# and the block-form rules never look after the colon. Discarding it made _trigger see no
+# path key and report `unfiltered` — a green for a workflow still releasing only on Core.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push: { branches: [main], paths: ["core/**"] }\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**unparsed**'* ]]; then
+  pass "triggers: an inline push mapping is unparsed, not a false unfiltered"
+else
+  fail "triggers: an inline push mapping's filter was discarded and passed as unfiltered: $_frt_out"
+fi
+
 # ── no push trigger at all: nothing releases automatically ────────────────────
 _frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: ${{ inputs.bump }}\n'
 _frt_out="$(_frt_run)"
@@ -12082,7 +12094,7 @@ fi
 # --help must not depend on source line numbers: the fixed-range idiom truncates the
 # moment the banner grows, which it did here during review.
 if _frt_out="$($_frt_sh --help)" && [[ "$_frt_out" == *"usage: fleet-release-triggers.sh"* &&
-  "$_frt_out" == *"Env: REPOS_ROOT"* ]] && grep -qE '^\s*usage$' "$_frt_sh"; then
+  "$_frt_out" == *"Env: REPOS_ROOT"* ]] && grep -qE '^[[:space:]]*usage$' "$_frt_sh"; then
   pass "triggers: --help is a heredoc usage(), complete and not a fixed header range"
 else
   fail "triggers: --help still reads a fixed range of the file header"

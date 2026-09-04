@@ -161,8 +161,17 @@ _push_filter() {
     # one leaves the previous event, which is what scopes everything below to push.
     /^[[:space:]][[:space:]][a-z_]+:/ {
       ev = $0; sub(/^[[:space:]]+/, "", ev); sub(/:.*$/, "", ev)
+      rest = $0; sub(/^[[:space:]]*[a-z_]+:[[:space:]]*/, "", rest)
       inpush = (ev == "push"); inseq = 0
-      if (inpush) print "PUSH"
+      if (inpush) {
+        print "PUSH"
+        # An INLINE mapping — `push: { branches: [main], paths: [core/**] }` — carries the
+        # whole filter after the colon, where the block-form rules below never look. Taking
+        # `next` here would discard it and _trigger would then see no path key and report
+        # `unfiltered`: a green for a workflow still releasing only on Core. Flag it and let
+        # _trigger abstain rather than parse flow-mapping YAML by hand.
+        if (rest != "") print "INLINE"
+      }
       next
     }
     !inpush { next }
@@ -201,7 +210,7 @@ _push_filter() {
 
 # _trigger <file> — the trigger verdict for one auto-tag.yml.
 _trigger() {
-  local f="$1" line pat positives=0 outside=0 has_push=0 has_paths=0 has_ignore=0 both=0
+  local f="$1" line pat positives=0 outside=0 has_push=0 has_paths=0 has_ignore=0 both=0 inline=0
   # No `on:` block we can find at all — do not guess.
   grep -qE '^on:[[:space:]]*$' "$f" || {
     printf 'unparsed'
@@ -221,8 +230,14 @@ _trigger() {
       [[ "$pat" =~ ^core(/|\.lock$) ]] || outside=$((outside + 1))
       ;;
     "I "*) has_ignore=1 ;;
+    INLINE) inline=1 ;;
     esac
   done < <(_push_filter "$f")
+  # An inline `push:` mapping holds its filter where the block reader cannot see it.
+  ((inline)) && {
+    printf 'unparsed'
+    return 0
+  }
   # GitHub rejects paths + paths-ignore together; say so rather than pick one.
   ((both)) && {
     printf 'unparsed'

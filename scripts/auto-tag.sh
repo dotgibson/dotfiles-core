@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
-# scripts/auto-tag.sh — cut the next OS-repo release tag after a Core fan-out.
+# scripts/auto-tag.sh — cut a consumer repo's next release tag.
 # ──────────────────────────────────────────────────────────────────────────────
 # An OS repo carries TWO version lines: the Core it vendors (core.lock, bumped by
 # sync-core.sh on every fan-out) and its OWN release tag (vX.Y.Z), which tracks that
 # repo's history. The second line used to advance only by hand, so it drifted (most
-# repos froze at an old tag; the newest had none). This closes that gap: when a fan-out
-# lands a new Core on an OS repo's main, the repo's CI calls this to bump its own tag —
-# PATCH by default (a new Core is a maintenance bump of the consumer), minor/major still
-# deliberate. It runs in CI, where pushing a tag is allowed (no operator round-trip, and
-# it sidesteps the env that can't push tags locally).
+# repos froze at an old tag; the newest had none). This closes that gap: the repo's CI
+# calls this to bump its own tag — PATCH by default, minor/major on a deliberate
+# --bump. It runs in CI, where pushing a tag is allowed (no operator round-trip, and it
+# sidesteps the env that can't push tags locally).
+#
+# WHAT TRIGGERS IT IS THE CALLER'S BUSINESS, NOT THIS SCRIPT'S, and the distinction used
+# to be blurred here: this header said "after a Core fan-out", because that was the only
+# shape the documented caller had. It was the wrong shape (#696) — watching only the
+# vendored subtree meant the tag advanced when *Core* moved and at no other time, so a
+# repo's own work released by coincidence. Callers now watch their installable surface,
+# and this script is agnostic: it reads the calling repo's tags and bumps them, whatever
+# put the commit there. See .github/workflows/auto-tag-call.yml for the caller contract.
 #
 # Idempotent + safe by construction:
 #   - a no-op if HEAD already carries a vX.Y.Z tag (re-runs, or a hand-cut release, never
@@ -58,8 +65,8 @@ usage() {
 usage: auto-tag.sh <repo-path> [--bump patch|minor|major] [--push] [--release]
                    [--initial vX.Y.Z] [--color auto|always|never]
 
-Compute (and with --push, cut) the next vX.Y.Z release tag for an OS repo whose
-vendored core/ just advanced. PATCH-bumps the repo's latest tag by default. A no-op
+Compute (and with --push, cut) the next vX.Y.Z release tag for a consumer repo whose
+installable state just changed. PATCH-bumps the repo's latest tag by default. A no-op
 if HEAD is already tagged vX.Y.Z. Without --push it only prints the tag it would cut.
 
   --bump <patch|minor|major>   component to advance              (default: patch)

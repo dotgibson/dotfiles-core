@@ -296,6 +296,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   truncated once when the banner grew — a heredoc `usage()` now, per `check-links.sh` and
   `sync-core.sh`. Every one of these has a regression fixture.
 
+- **Two more false greens in the reader, and `auto-tag.sh`'s own docs (#696).** An
+  **inline** event mapping — `push: { branches: [main], paths: ["core/**"] }`, valid YAML
+  the fleet does not currently use — carries its filter after the colon, where the
+  block-form rules never look. The reader discarded it, `_trigger` saw no path key, and
+  the verdict was `unfiltered`: a green for a workflow still releasing only on Core. It now
+  detects a non-empty `push:` value and abstains. Separately, `scripts/auto-tag.sh`'s
+  header and its public `--help` still said it tags "after a Core fan-out" / "for an OS
+  repo whose vendored `core/` just advanced" — the obsolete contract, shown to anyone
+  running the shared implementation by hand. The script never cared what triggered it; that
+  is the caller's business, and it now says so. Also: a `\s` in one new assertion, which is
+  not portable ERE — this suite runs on macOS, where BSD `grep` would have failed it even
+  with `usage()` present. `[[:space:]]`, per the rest of the suite.
+
 - **`RELEASE-RUNBOOK.md` §2 documented an ordering for the deliberate bump that cannot
   work (#696).** It claimed either order was fine — dispatch before the fan-out merge and
   the merge no-ops, or dispatch after. Neither: a `workflow_dispatch` runs against a
