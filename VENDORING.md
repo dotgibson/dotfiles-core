@@ -410,19 +410,52 @@ usually because one repo hit the bug — and nothing told the other eight.
 | `blib_resolve_su` | `[[ "$(id -u)" -eq 0 ]]` + inline `sudo` | that is an **arithmetic** comparison, and bash evaluates an empty `id` output as `0` — a box where `id` is missing or off `PATH` concludes "we are root" and runs every privileged command unescalated. Also handles doas, and the sudo-less container/first-boot-WSL boxes where hard-coded `sudo` dies at exit 127 |
 | `blib_priv` | inline `sudo` | one escalator token, resolved once, honouring `BLIB_SU=` (already root) and `BLIB_SU=doas` |
 | `blib_sudo_keepalive_start` | nothing | after a long install sudo's timestamp has expired; the re-prompt goes to a discarded stderr and the run hangs with no visible cause |
-| `blib_user_bindirs_on_path` | nothing | without `~/.cargo/bin` and `~/.local/bin` on `PATH`, every `command -v` guard misses and the run rebuilds tools it already installed — minutes per invocation on a source-based distro, discarded |
+| `blib_user_bindirs_on_path` | `export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"` | **bootstrap's `PATH` is not the shell's `PATH`.** Without `~/.local/bin`, `~/.cargo/bin` and `$GOBIN` on it, every `command -v` guard misses and the run rebuilds tools it already installed — minutes per invocation on a source-based distro, discarded. Worse than wasted work when a guard picks a _branch_: openSUSE's bare `command -v mise` was false for the mise `mise.run` had just written to `~/.local/bin`, so both arms of its Go fallback missed and the run exited 2 on **every** bootstrap ([#748](https://github.com/dotgibson/dotfiles-core/issues/748)). The hand-rolled `export` is not equivalent: the helper resolves `CARGO_HOME` and `GOBIN`/`GOPATH` rather than hard-coding them, and adds only directories that _exist_ — so call it again after an installer creates one |
 | `blib_note_fail` + `blib_failures_report` | `echo "skipped: …"` | a bare echo cannot be counted. Recording a failure and never reporting it is worse than not recording it: the script ends `complete` and exits 0 on a box that got none of its tooling |
 | `blib_wire_summary` | nothing | the `N linked · N seeded · N backed up` tally, without which a re-link is unverifiable |
 | `blib_install_core_guard` | nothing | installs the local pre-commit hook that rejects a hand-edit of vendored `core/` — the one rule at the top of this file. Only `sync-core.sh` installs it otherwise, i.e. only on the maintainer's machine, so every other clone has no local guard at all |
 | `blib_install_system_file` | `_blib_priv tee` | backs up whatever was at that `/etc` path first and no-ops when byte-identical. Hand-rolled `tee` clobbered a real `/etc/wsl.conf` (#475) |
 | `BLIB_DRY` | nothing | a `--dry-run` flag is the only way CI can exercise anything past `--links-only` |
 
-`audit-core.sh` reports which repos are short of this list — **advisory, not blocking**: most
-of the fleet is short today, and a gate that is red on arrival is a gate someone turns off.
-It reads `scripts/os-repos.txt` and looks at each sibling's `bootstrap.sh`, so it says nothing
-in CI, where only Core is checked out. Role repos (`dotfiles-Defense`, `dotfiles-Offense`)
-layer on an OS bootstrap and install no packages, so the two keepalive/PATH helpers are
-exempt for them.
+`audit-core.sh` §5f measures this list, reading `scripts/os-repos.txt` and each sibling's
+`bootstrap.sh` — so it says nothing in CI, where only Core is checked out. `dotfiles-Defense`
+layers on an OS bootstrap and installs nothing, so `blib_sudo_keepalive_start` and
+`blib_user_bindirs_on_path` are exempt for it; `dotfiles-Offense` is exempt from the keepalive
+only, because its `--install` really does `pipx` and `go install` into `~/.local/bin`.
+
+**It is a ratchet, not a counter** ([#748](https://github.com/dotgibson/dotfiles-core/issues/748)).
+It used to print a bare fraction per helper, and `blib_user_bindirs_on_path 1/9` sat in that
+report for months while the gap it names shipped a bootstrap that exited 2 on every openSUSE
+run — with a second repo carrying the identical probe, kept harmless only by an
+apk-installed `go` masking the broken arm. A number nothing acts on is where a defect hides in
+plain sight. So §5f now carries a **ledger** of the `(repo, helper)` pairs that have adopted,
+and:
+
+| State | Verdict |
+| --- | --- |
+| in the ledger, and the repo calls it | fine |
+| in the ledger, and the repo **no longer** calls it | **fails** — a repo lost a helper |
+| **not** in the ledger, and the repo calls it | **fails** — record it; this is the only thing that ever tightens the ratchet |
+| not in the ledger, and the repo does not call it | reported, **not** blocking |
+
+A repo that is **exempt** for a helper calls nothing and is short of nothing, so it belongs
+in neither column. Adoption is therefore quoted as two numbers — callers, and callers plus
+exemptions — because collapsing them overstates the first.
+
+That last row is the original reasoning, kept: most of the fleet is short today, and a gate
+that is red on arrival is a gate someone turns off. Adoption can only go up, and the audit
+prints the exact ledger line to edit. It is the same shape `gen-porting-matrix.sh`'s
+`PKG_ROWS` uses, where a repo that starts installing a package fails the gate until the cell
+is flipped.
+
+**Adoption means a call, not a mention.** The check reads your `bootstrap.sh` with comments,
+quoted strings and heredoc bodies stripped, and matches the helper as a whole shell
+identifier — so naming one in a comment, in a message you print, or in your `usage()` text
+does not satisfy its row — and deleting a call while leaving the paragraph that explains it is a
+`regressed` failure, not a pass. That distinction is load-bearing: while the check was a bare
+`grep`, three rows were credited purely from prose (`dotfiles-MacBook` for `blib_note_fail`
+and `blib_failures_report`, `dotfiles-Fedora` for `blib_resolve_su`), and an adoption PR's
+natural shape — add the call, explain why — would have made every future deletion invisible.
 
 ### The gates you run OVER the vendored tree
 
