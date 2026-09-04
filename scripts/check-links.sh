@@ -209,8 +209,14 @@ LINKS=(
 SEEDS=(
   .config/sesh/sesh.toml # seeded as a COPY: yours to edit, not tracked from here
 )
-((${#REQUIRE[@]})) && LINKS+=("${REQUIRE[@]}")
-((${#SEED[@]})) && SEEDS+=("${SEED[@]}")
+# GUARDED EXPANSIONS, appended directly: under `set -u` bash 3.2 — macOS's stock shell, and
+# dotfiles-MacBook is in the fleet — treats an EMPTY array as unset, so `${#REQUIRE[@]}`
+# aborts the script before a single graph check runs. That is the DEFAULT invocation, with
+# neither option passed. PORTABILITY.md states the rule and scripts/parity-check.sh keeps a
+# plain counter for the same reason. CI would not have caught it: the runner's
+# `env bash` is not 3.2.
+LINKS+=("${REQUIRE[@]+"${REQUIRE[@]}"}")
+SEEDS+=("${SEED[@]+"${SEED[@]}"}")
 
 rc=0
 # TWO questions per link, and the second is the one that catches a rename: a symlink can

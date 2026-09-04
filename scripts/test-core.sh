@@ -11599,7 +11599,7 @@ _cl_repo() { # _cl_repo [extra-lines-for-the-stub]
 #!/usr/bin/env bash
 # A stand-in for an OS repo's installer: same links, none of the distro.
 set -u
-env | grep -E '^(XDG_[A-Z]+_HOME|ZDOTDIR)=' | sort >"\$HOME/.env_seen" || true
+env | grep -E '^(XDG_CONFIG_HOME|XDG_DATA_HOME|XDG_STATE_HOME|XDG_CACHE_HOME|ZDOTDIR)=' | sort >"\$HOME/.env_seen" || true
 P="$_cl_root/payload"
 mkdir -p "\$HOME/.config/zsh" "\$HOME/.config/lazygit" "\$HOME/.config/tmux" "\$HOME/.config/sesh"
 ln -sf "\$P/zsh/loader.zsh" "\$HOME/.config/zsh/loader.zsh"
@@ -11709,6 +11709,17 @@ if grep -qE 'mktemp -d "\$\{TMPDIR:-/tmp\}/[^"]*X{6}"' "$_cl_sh"; then
   pass "links: mktemp is called with a template (BSD requires one)"
 else
   fail "links: mktemp lost its template — the macOS lane would exit 1 before bootstrap"
+fi
+# THE DEFAULT INVOCATION ON BASH 3.2. `set -u` there treats an empty array as unset, so
+# `${#REQUIRE[@]}` with neither option passed aborts before any check runs — the macOS
+# lane, and not reproducible here (this box's bash is 5.x, and the runner's `env bash` is
+# not 3.2 either). Pinned at the source, the way the mktemp template above is.
+if grep -q 'LINKS+=("${REQUIRE\[@\]+"${REQUIRE\[@\]}"}")' "$_cl_sh" &&
+  grep -q 'SEEDS+=("${SEED\[@\]+"${SEED\[@\]}"}")' "$_cl_sh" &&
+  ! grep -qE '\(\(\$\{#(REQUIRE|SEED)\[@\]\}\)\)' "$_cl_sh"; then
+  pass "links: the optional arrays use the guarded + expansion (bash 3.2 aborts on an empty one)"
+else
+  fail "links: an empty-array length expansion is back — the default invocation dies on macOS bash 3.2"
 fi
 
 # A DANGLING link that is NOT loader.zsh: the copied recipes only ever resolved that one,
