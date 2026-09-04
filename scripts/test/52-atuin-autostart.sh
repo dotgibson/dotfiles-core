@@ -1300,4 +1300,3 @@ $(printf '%s\n' "$_sj_out" | grep -v '^{' | head -5)"
   fi
   unset _sj_out _sj_lines _sj_result _sj_plain
 fi
-

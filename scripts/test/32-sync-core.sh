@@ -1187,4 +1187,3 @@ if have git; then
 else
   skip "vendoring filter (git unavailable)"
 fi
-

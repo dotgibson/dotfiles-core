@@ -263,4 +263,3 @@ if have git; then
 else
   skip "bootstrap link run (git unavailable)"
 fi
-

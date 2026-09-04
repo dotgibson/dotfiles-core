@@ -674,4 +674,3 @@ fi
 
 rm -rf "$DPF"
 unset DPF DPW DPM _dp_addendum _dp_drift_out _dp_shim _dp_nodiff_rc _dp_nogit
-

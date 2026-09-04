@@ -1143,4 +1143,3 @@ check_dep "extract refuses to clobber an existing entry (no TTY)" tar \
 # clobber and overwrite (the bug this asserts against).
 check_dep "extract guards the gz output at the archive's path, not \$PWD" gzip \
   'd=$(mktemp -d); sub="$d/sub"; mkdir -p "$sub"; print new > "$sub/f.txt"; gzip "$sub/f.txt"; print OLD > "$sub/f.txt"; cd "$d"; extract "$sub/f.txt.gz" </dev/null; rc=$?; [[ "$(cat -- "$sub/f.txt")" == OLD && $rc -ne 0 ]]'
-

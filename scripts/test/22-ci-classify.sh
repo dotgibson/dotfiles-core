@@ -284,4 +284,3 @@ if [[ $? -eq 2 ]]; then
 else
   fail "ci-pr-link.sh exits 2 on usage error"
 fi
-

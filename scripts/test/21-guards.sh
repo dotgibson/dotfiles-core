@@ -689,4 +689,3 @@ if [[ -z "$_fdout" && -z "$_fdout2" ]]; then
 else
   fail "fail digest: expected empty for both no-marker ('$_fdout') and missing file ('$_fdout2')"
 fi
-

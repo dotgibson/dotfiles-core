@@ -510,4 +510,3 @@ if grep -q 'CORE_JSON=0 "\$HERE/scripts/parity-check.sh"' "$HERE/scripts/audit-c
 else
   fail "parity verdict: §9f no longer clears CORE_JSON for the parity child — --json runs will report a full pass on a box with no pwsh file"
 fi
-

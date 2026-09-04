@@ -316,4 +316,3 @@ if have git; then
 else
   skip "tag-release.sh two-phase ordering (git unavailable)"
 fi
-

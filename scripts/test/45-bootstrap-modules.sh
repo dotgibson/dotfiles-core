@@ -282,4 +282,3 @@ else
     skip "atuin unit: systemd-analyze verify (not installed)"
   fi
 fi
-

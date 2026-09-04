@@ -800,4 +800,3 @@ LUA
 else
   skip "nvim LSP registry (nvim not installed — runs in CI)"
 fi
-

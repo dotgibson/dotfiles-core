@@ -757,4 +757,3 @@ if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
 else
   skip "gitignore crash-dump rule (not a git checkout)"
 fi
-

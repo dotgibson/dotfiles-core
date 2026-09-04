@@ -585,4 +585,3 @@ if have git; then
     fail "resolve: scanning a clone with no origin exited $_rrd_orphan_rc (want 1)"
   fi
 fi
-

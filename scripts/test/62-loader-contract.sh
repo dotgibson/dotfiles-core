@@ -237,4 +237,3 @@ CAPS
   _cap_is "an empty declaration yields an empty table, not an error" \
     "$(_cap_probe "$CAPD/empty" 'print -r -- "[${#_CORE_CAP}]"')" "[0]"
 fi
-

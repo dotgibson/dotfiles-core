@@ -572,4 +572,3 @@ ucheck "maint/refresh: a systemd runner carrying a % specifier is refused (not t
 ucheck "maint/refresh: a cron runner carrying % (cron's newline metacharacter) is refused" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-pct"
-

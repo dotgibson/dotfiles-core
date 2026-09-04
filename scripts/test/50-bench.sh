@@ -446,4 +446,3 @@ EOF
     skip_note "bench gate: the no-hyperfine fail-closed leg needs a box with zsh and without hyperfine — not asserted here"
   fi
 fi
-

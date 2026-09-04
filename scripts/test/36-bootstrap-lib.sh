@@ -782,4 +782,3 @@ if [[ "$_rp_out" == *"OK=0"* && "$_rp_out" == *"MISS=1"* ]]; then
 else
   fail "blib_read_pkgs: status contract is wrong in one direction (got: $_rp_out)"
 fi
-

@@ -734,4 +734,3 @@ _fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_c
 if _fv_run >/dev/null; then pass "vocab: report mode exits 0 (rendering is not a verdict)"; else fail "vocab: report mode exits non-zero"; fi
 if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; then pass "vocab: fleet-coverage.sh report mode exits 0 with no footnotes too"; else fail "vocab: fleet-coverage.sh report mode still exits 1 with no footnotes"; fi
 rm -rf "$_fv_root"
-

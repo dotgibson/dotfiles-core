@@ -469,4 +469,3 @@ _clip_reset
 # still fails — loudly — where clip now succeeds. bin/clip-paste's header explains why,
 # and the asymmetry is intentional rather than an oversight.
 _clip_fails "clip-paste exits non-zero with no backend (no OSC 52 read path)" "$CLIPPASTE"
-

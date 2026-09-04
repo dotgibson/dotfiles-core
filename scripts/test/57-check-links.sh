@@ -266,4 +266,3 @@ fi
 rm -rf "$_cl_root"
 unset _fv_root _fv_all _fv_mk _fv_out rc row tbl want have
 unset -f _fv_reset _fv_repo _fv_run _fv_ci _fv_wf _fv_wf_raw _fv_suite _fv_floor
-

@@ -1157,4 +1157,3 @@ ucheck "git exec-path: an UNEXPORTED GIT_EXEC_PATH is ignored, as git ignores it
    source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json)
    [[ -n \${HAVE_GIT_ABSORB:-} && \$j == *'\"git-absorb\":true'* ]]" \
   PATH="$GXBIN" CORE_NO_PAGER=1
-

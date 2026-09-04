@@ -585,4 +585,3 @@ if have git; then
   rm -rf "$GAR"
   unset GAR _ga_ids _ga_gen_rc _ga_drift_rc _ga_drift_out _ga_before _ga_new_rc _ga_new_out _ga_gone_out _ga_miss_out _ga_unreg_out _ga_stray_out _ga_cross_out _ga_list_out _ga_nosrc_rc
 fi
-

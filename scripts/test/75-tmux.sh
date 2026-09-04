@@ -240,4 +240,3 @@ _serve_net 'case "$2" in tun0) echo 10.8.0.2 ;; esac' ':'
 ucheck "serve: a failed default route does not reprint the tunnel addr as (lan)" \
   "source '$UI' || exit 1; source '$FN' || exit 1; out=\$(_serve_advertise 8000); [[ \$out == *'(tun0)'* && \$out != *'(lan)'* ]]" \
   PATH="$SRVBIN"
-

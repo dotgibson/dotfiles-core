@@ -447,4 +447,3 @@ else
   ocheck "optoken fails clearly when clip is absent (no silent TOTP loss)" \
     'path=(/usr/bin /bin); out=$(optoken Personal/GitHub 2>&1); (( $? != 0 )) && [[ $out == *"requires Core"* && $out == *clip* ]]'
 fi
-

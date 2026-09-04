@@ -163,13 +163,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the lint surface in one file** — re-linted in full on all four CI legs by any PR touching
   any shell file, with `audit (macos-latest)` setting the wall clock for the whole PR. The
   suite now lives in **`scripts/test/NN-name.sh`**, one numbered fragment per subject, and
-  `test-core.sh` is a 237-line dispatcher that globs them in `NN` order and **sources** them
-  into its own shell. The suite's own share of the sweep goes from **42.6s to 9.7s**, taking
-  the whole gate from **65.9s to 31.7s — a 34.2s saving on every leg, 52% of it.** Nothing
-  else moved: the fragments rejoin **byte-for-byte** to the old file's lines 190–18740, and
-  the full run reports the identical assertion stream — same text, same order — before and
-  after. `--quiet`, `--json`, `--scope` and
-  the exit-code contract `audit-core.sh` reads are untouched. The second win is
+  `test-core.sh` is a thin dispatcher that globs them in `NN` order and **sources** them into
+  its own shell. The suite's own share of the sweep goes from **42.6s to 9.7s**, taking the
+  whole gate from **65.9s to 31.7s — a 34.2s saving on every leg, 52% of it.** It is a move,
+  not a rewrite: the fragments rejoin to the old file's lines 190–18740 **byte for byte** (bar
+  the trailing blank lines `end-of-file-fixer` trims at each cut), and **all 1,772 assertions
+  the suite already had come back identical in text and order**, verified line-by-line against
+  a pre-split run. Five are added — see `05-suite-shape.sh` below — and two guard labels are
+  reworded; nothing else in the stream differs. `--quiet`, `--json`, `--scope` and the
+  exit-code contract `audit-core.sh` reads are untouched. The second win is
   organisational: the sections were lettered **A–L**, and the letters had drifted into **two
   different "E"s** and an `A` that ran after `J`, while the file's own header still described
   it as _"Two sections"_ — names fix that by construction. Adding a section is adding a file;
@@ -184,8 +186,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the others is skipped in silence — so **`scripts/test/05-suite-shape.sh`** asserts the
   layout instead of assuming it: every fragment carries the `NN-` prefix, none is executable,
   all are tracked, and the empty-glob refusal is **driven** against a staged tree rather than
-  believed. Those five assertions are the only ones the split adds; the suite goes from
-  `pass 1772` to `pass 1777`, and every pre-existing assertion is unchanged.
+  believed. Those five are the only assertions the split adds: the suite goes from
+  `pass 1772 skip 2 fail 0` to `pass 1777 skip 2 fail 0`.
 
 - **The startup budget is ratcheted from 120 ms to a committed 48 ms — 2× the measured
   baseline — and CI reads it from `scripts/bench-baseline.env` (#688).** The `bench` job's

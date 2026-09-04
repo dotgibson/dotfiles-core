@@ -255,4 +255,3 @@ if have git; then
 else
   skip "fleet drift classifier (git unavailable)"
 fi
-

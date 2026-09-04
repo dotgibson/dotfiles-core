@@ -705,4 +705,3 @@ if have git; then
 else
   skip "new-os-repo.sh recovery command (git unavailable)"
 fi
-

@@ -710,4 +710,3 @@ if _diffutils_hits "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh | grep -q .; th
 else
   pass "no script calls cmp (diffutils stays optional)"
 fi
-
