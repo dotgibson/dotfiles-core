@@ -78,12 +78,22 @@ MODE="write"
 FLEET=0
 ROOT=""
 FLEET_ROOT=""
-# The hero ceiling, in bytes. 2 MiB is a CEILING, not a target: the committed clip
-# is ~1.8 MB for ~25 s, which is the size #698 filed against, and the shortened
-# template plus the gifsicle pass assets/README.md documents lands well under half
-# of it. One heavy gif is a preference; ten is a policy, so the number is asserted
-# here rather than described in prose nothing reads.
-MAX_BYTES=2097152
+# The hero ceiling, in bytes: 1.5 MiB. One heavy gif is a preference; ten, once every
+# public repo has a hero, is a policy — so the number is asserted here rather than
+# described in prose nothing reads.
+#
+# WHY 1.5 AND NOT 1. The first ceiling was 2 MiB, sized around the 1.8 MB clip #698 filed
+# against. The re-render lands at 1,370,117 bytes (1.31 MiB), so 1.5 MiB holds the line
+# with ~200 KB of headroom for a tour that gains a step.
+#
+# 1 MiB was the original target and it is NOT worth what it costs. The two free levers are
+# already spent — `Set Framerate 24` (VHS defaults to 50) and gifsicle's `--colors 64` —
+# and they took it from 2.46 MB to 1.31 MB. Everything left is visible to a reader:
+# narrowing Width wraps `glog` subjects, which run past 90 characters in this repo;
+# shortening Height truncates the `bat` and `core status` panels; and dropping a tour step
+# removes a marquee moment. Buying 300 KB with any of those is a bad trade for a file that
+# loads once.
+MAX_BYTES=1572864
 
 while (($#)); do
   case "$1" in

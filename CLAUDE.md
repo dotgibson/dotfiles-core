@@ -80,7 +80,7 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   `assets/hero-repos.txt` (the per-repo `cd` path and signature command) and
   `theme/palette.toml` (the `Set Theme` block) — so hand-editing the tape is a gate failure
   (`audit-core.sh` §9j). Edit the template or the registry, run `make gen-hero-tape`. §9k
-  caps the rendered gif at 2 MiB, weighing whatever the tape's `Output` line names. The
+  caps the rendered gif at 1.5 MiB, weighing whatever the tape's `Output` line names. The
   nine OS/role repos are already registered; `make gen-hero-tape-fleet` writes their tapes,
   but rendering and committing their gifs is #698's follow-up, sequenced after #667.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners

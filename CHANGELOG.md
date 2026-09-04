@@ -16,6 +16,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The README hero ceiling drops to 1.5 MiB, and the hero is re-rendered to meet it (#698).**
+  The gate shipped at 2 MiB, sized around the 1.8 MB clip #698 was filed against rather than
+  around anything the tape could actually produce. With `Set Framerate 24` and gifsicle's
+  `--colors 64` the render lands at **1,370,117 bytes (1.31 MiB)** — down from 2.46 MB — so
+  the ceiling now sits at **1,572,864**, holding the line with ~200 KB of headroom for a tour
+  that gains a step. `assets/demo.gif` is re-rendered from the current tape, which is the
+  first time the committed hero has actually matched it: the shipped file still showed the
+  old MacBook checkout, the old tour and the named `TokyoNight` preset rather than the
+  palette-rendered theme.
+  **Not 1 MiB**, which is what this was originally aiming at. Both free levers are spent, and
+  everything left is visible to a reader: narrowing `Width` wraps `glog` subjects (they run
+  past 90 characters in this repo), shortening `Height` truncates the `bat` and `core status`
+  panels, and dropping a tour step removes a marquee moment. Buying 300 KB with any of those
+  is a bad trade for a file that loads once.
+
 - **Helper adoption is a ratchet now, and `blib_user_bindirs_on_path` went 1/9 → 7/9 callers (#748).**
   `audit-core.sh` §5f has reported which OS repos are short of the `lib/bootstrap-lib.sh`
   contract since #516, as a bare fraction, deliberately advisory. `blib_user_bindirs_on_path

@@ -125,7 +125,7 @@ is filming. If the clip ever gets a fifth slot, that is what should fill it.
 ## Keep it short — the ceiling is enforced
 
 `make check-hero-size` (audit-core.sh §9k) weighs the file each tape's `Output` line
-names and fails over **2 MiB**. A **missing** hero fails too where this repo is concerned —
+names and fails over **1.5 MiB**. A **missing** hero fails too where this repo is concerned —
 `README.md`'s `[product-screenshot]` points at `assets/demo.gif`, so an absent file is a
 broken front page, and a size gate that weighs nothing and reports green is the failure the
 section exists to prevent. A *sibling's* absent gif is only a note: those nine are
@@ -136,10 +136,10 @@ So that a skip is never mistaken for a pass, the summary line counts what it act
 on the scale:
 
 ```text
-✓ README hero size — 1 weighed, under the 2097152-byte ceiling; 9 not rendered yet (not covered by this run)
+✓ README hero size — 1 weighed, under the 1572864-byte ceiling; 9 not rendered yet (not covered by this run)
 ```
 
-It is a **ceiling, not a target**, and it counts bytes rather than seconds — which are only
+1.5 MiB is a **ceiling, not a target**, and it counts bytes rather than seconds — which are only
 loosely related. The first shortened cut ran ~13 s against the old ~25 s and came out
 **bigger** (2.46 MB vs 1.84 MB): GIF pays per changed pixel, and this tour has four
 full-screen colour redraws where the old one had pager quits and a `clear`. Sleeps on a
@@ -154,4 +154,7 @@ So the levers, in order of effect per unit of ugliness:
 | fewer tour steps | `hero.tape.in` | real — each step is a marquee moment |
 | smaller `Width`/`Height` | `hero.tape.in` | real — text gets smaller or wraps |
 
-Reach for the first two before the last two.
+Reach for the first two before the last two. Both free levers are already spent — they took
+the clip from 2.46 MB to 1.31 MB — which is why the ceiling is 1.5 MiB and not the 1 MiB
+originally aimed for: the remaining 300 KB costs a wrapped `glog`, a truncated panel, or a
+lost tour step, and none of those is worth it for a file that loads once.
