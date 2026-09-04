@@ -61,6 +61,105 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the one standing gap. §5f reports both numbers now, because collapsing them is what
   overstated the count in the first place.
 
+- **The README hero is generated from one tape, and its bytes are capped (#698).** Ten public
+  repos open with the same shields template and **no visual at all** — no `assets/`, no hero,
+  no image — while the one repo that _has_ a hero is `dotfiles-core`, which nobody installs
+  directly. Worse, that hero filmed the wrong tree: `assets/demo.tape` typed
+  `cd ~/code/dotfiles/dotfiles-MacBook` from inside `dotfiles-core`. Nothing could catch it,
+  because nothing derived the tape from anything — even though `assets/README.md` already
+  asserted the property that makes the fix cheap ("re-run the command after any prompt or
+  tooling change and the hero updates — no manual re-recording"). The tape is now **rendered**
+  by **`scripts/gen-hero-tape.sh`** (`make gen-hero-tape`) from three sources:
+  **`assets/hero.tape.in`** (the shared body — every command, every `Sleep`),
+  **`assets/hero-repos.txt`** (the per-repo delta: the `cd` path and the one signature
+  command) and **`theme/palette.toml`**. That last one closes a second defect in the same
+  file: `Set Theme "TokyoNight"` was a **fourth place the theme was named by hand**, and the
+  only one naming an upstream preset rather than the resolved table every other consumer is
+  generated from — so the hero could stay "Tokyo Night" while Core's chrome moved. It is now a
+  full `Set Theme { … }` block rendered from the palette, which means a palette edit reds the
+  hero gate as well as §9d. `--check` is wired into **`audit-core.sh` §9j** with no
+  environment SKIP: unlike §9h/§9i, the default scope is this repo's own files, so it can
+  always answer.
+- **A byte ceiling on the hero, because one heavy gif is a preference and ten is a policy
+  (#698).** `assets/demo.gif` is 1.8 MB for a ~25-second clip, and `assets/README.md`
+  documented the `gifsicle -O3 --lossy=80` remedy that nothing applied.
+  **`audit-core.sh` §9k** (`make check-hero-size`) now weighs the file each tape's `Output`
+  line names — following the tape, so a renamed output cannot slip past a hardcoded path —
+  and fails over **2 MiB**. The template is shortened to the ~15 s its own header asks for:
+  `CORE_NO_PAGER` and `GIT_PAGER=cat` in the hidden setup drop the four `q` keystrokes the
+  old tour needed, which is most of the difference between ~27 s and ~13 s. **The committed
+  `demo.gif` still predates the shortened tape** — re-render with `vhs assets/demo.tape` and
+  optimize to bring it under the ceiling.
+  The behavioral coverage moved with #699's split: it is now
+  `scripts/test/42-gen-hero-tape.sh`, numbered beside the other generator suites (40 theme +
+  aliases, 41 porting matrix + desktop parity). The tape captures at **24fps** rather than
+  VHS's default 50, because the first shortened
+  cut proved bytes track REDRAWS rather than seconds: at ~13 s against the old ~25 s it came
+  out **bigger** (2.46 MB vs 1.84 MB), since GIF pays per changed pixel and this tour has
+  four full-screen colour repaints where the old one had pager quits and a `clear`. The
+  documented optimize pass gains `--colors 64`, which is visually free on a 20-colour
+  palette.
+- **The nine other heroes are registered, not yet rendered (#698).** `assets/hero-repos.txt`
+  carries **ten rows** — this repo plus the nine Core-vendoring OS and role repos — and `make gen-hero-tape-fleet` writes the other nine tapes
+  into their own checkouts. Their signature command is deliberately the _same three
+  characters_ everywhere — `up -n` — because the point is what it **resolves** to: `dnf` on
+  Fedora, `pacman` on Arch, `apk` on Alpine, `emerge` on Gentoo, and `zypper dup` (**not**
+  `up`, the distinction that half-updates a box) on Tumbleweed. The trailing note is derived
+  from each repo's own `os/*.capabilities` `PKG_UPGRADE`, so it can never claim a verb the
+  repo does not declare. Rendering and committing those nine gifs, and adding the hero block
+  to each README, is the **follow-up**, sequenced after `os.capabilities` (#667) exactly as
+  #698 asks — nine heroes of the same Core verbs would be nine near-identical gifs.
+  `dotfiles-Windows` is **deliberately not registered**, so those ten rows are not the ten
+  repos #698 counted: its host layer is PowerShell and it vendors no `core/`, so the shared
+  zsh body has nothing to say there. It stays the one public repo this change does nothing
+  for, and a hero for it needs its own tape and recorder. The
+  hidden `cd` carries `|| exit 1`: it runs inside `Hide`, so a checkout path that does not
+  exist on the rendering box would otherwise print into unrecorded frames and film `$HOME` —
+  the wrong-tree defect wearing a different hat, and invisible in the committed gif. Each OS
+  row also types a **`proof`** line that prints the resolved verb, because neither of the two
+  things that look like they show it actually do: the `# one verb → …` note is a _tape_
+  comment VHS never renders, and `up -n` prints `via zypper` — the manager, not the verb —
+  so neither can distinguish `up` from `dup`. The proof line reads `PKG_UPGRADE` and never
+  applies it. Three further holes the review found are closed with it: a registry with no
+  `.` row now exits 2 on both legs (deleting that row would otherwise leave every remaining
+  row a sibling, every sibling out of scope, and both gates green over a tape nobody looked
+  at), a **missing** `assets/demo.gif` now fails rather than skipping (`README.md`'s hero
+  points at it; a sibling's stays a note skip), and the eight-line provenance banner is
+  printed by bash rather than passed through `awk -v`, which the macOS one-true-awk rejects
+  outright ("newline in string") while gawk and busybox awk accept. The registry is
+  validated **whole, before anything is written**: a count-only check passed a row with an
+  empty checkout (awk counts the empty span between two tabs), which rendered `cd  || exit 1`
+  — and a _bare_ `cd` succeeds into `$HOME`, reintroducing the wrong-tree hero through the
+  guard meant to prevent it; and a malformed row late in the file used to leave every tape
+  above it already rewritten. Empty fields, duplicate repos and a bad `note:`/`caps:` prefix
+  are all rejected up front, all findings at once — as are a `"` or a `>`/`<` in any field
+  substituted into the template's `Type "…"` (a quote closes that VHS string; a redirection
+  is real in the shell VHS drives), and a `.` row that films any **other** registered repo,
+  which is #698's original defect restated as a machine check rather than a fixture. And
+  substitution is literal (`index`/`substr`): awk's `gsub` expands `&` in the REPLACEMENT to
+  the matched text, so a value like `check && report` rendered as
+  `check @@SIGCMD@@@@SIGCMD@@ report` — `-v` protects a value on the way in, not on the way out.
+- **Matching-host rendering is a checked precondition, not an assumption (#698).** Core reads
+  the capability declaration **once, at shell startup**, from the _host's_ linked
+  `~/.config/zsh/os.capabilities` (`zsh/02-capabilities.zsh`) — `cd`-ing into a repo does not
+  switch it, and `up -n` probes `$PATH`. So an OS hero filmed on the wrong box records that
+  box's package manager under a comment naming the row's: the Fedora tape rendered on a
+  MacBook says `brew upgrade` while the tape says `dnf`, which is #698's wrong-tree defect
+  moved from the filesystem to the environment. Every OS tape now opens, inside `Hide`, with
+  `[[ $(_core_cap PKG_UPGRADE) == '<declared>' ]] || exit 1`, so a mismatched host **fails the
+  render** rather than publishing a hero that contradicts itself. It costs the clip nothing,
+  the guard and the visible note are derived from one declaration and asserted to agree, and
+  a `note:` row gets a no-op. Both path columns are confined to their checkout too: write
+  mode resolves the output as `$dir/$out` and atomically replaces it, so a row naming
+  `../README.md` overwrote a file **outside** the target repo — an absolute path, a leading
+  `~` and any `..` component are now refused, per path component so a legitimate
+  `my..tape` still passes.
+  `scripts/test-core.sh` covers the generator hermetically in **F11b**: the wrong-repo `cd`
+  and the named-theme preset are both pinned as regressions, drift outranks an absent sibling
+  (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2
+  rather than drift, the verdict survives a host with no working `diff`/`cmp` (#572), and
+  both audit legs are asserted to actually be wired.
+
 - **The desktop-bar parity pair is generated and gated, not asked nicely (#693).**
   `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` were an
   admitted verbatim pair whose only mechanism was the sentence _"Edit both together"_. It did
