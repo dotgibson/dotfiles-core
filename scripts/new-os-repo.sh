@@ -1030,8 +1030,6 @@ concurrency:
 
 jobs:
   tag:
-    # Fork guard: only the canonical owner tags and releases.
-    if: github.repository_owner == 'dotgibson'
     uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v$_core_major
     # \`inputs\` is empty on a push event, so this reads \`patch\` there and the chosen
     # component on a dispatch. One caller, both flows.
