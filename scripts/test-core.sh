@@ -11306,6 +11306,62 @@ else
   fail "gen-hero-tape: a 3-field registry row was not reported as structural (rc=$(_gh_run --check))"
 fi
 
+# AN EMPTY FIELD IS NOT A VALID FIELD, and a field COUNT does not catch one: awk counts the
+# empty span between two tabs, so a row with an empty checkout has NF == 6 and renders
+# `cd  || exit 1` — where a BARE `cd` SUCCEEDS into $HOME. That is the wrong-tree hero this
+# generator exists to prevent, reintroduced through the guard meant to prevent it (#862
+# review). Asserted per column, because only one of the six was ever obviously dangerous.
+for _gh_col in 2 3 4 5 6; do
+  _gh_fixture
+  awk -F'\t' -v OFS='\t' -v c="$_gh_col" 'NF == 6 && $1 == "." { $c = "" } { print }' \
+    "$GHR/assets/hero-repos.txt" >"$GHR/assets/hr.new" && mv "$GHR/assets/hr.new" "$GHR/assets/hero-repos.txt"
+  if [[ "$(_gh_run --check)" == 2 ]]; then
+    pass "gen-hero-tape: an empty field $_gh_col is rejected (a count-only check would pass it)"
+  else
+    fail "gen-hero-tape: an empty field $_gh_col was accepted (rc=$(_gh_run --check))"
+  fi
+done
+
+# The specific one that bites: a bare `cd` must never reach a tape.
+_gh_fixture && _gh_run >/dev/null
+if ! grep -qE '^Type "cd +\|\| exit 1"' "$GHR/assets/demo.tape"; then
+  pass "gen-hero-tape: no tape can carry a bare \`cd\` (which would film \$HOME)"
+else
+  fail "gen-hero-tape: a tape carries a bare cd — it would land in \$HOME"
+fi
+
+# A MALFORMED LATER ROW MUST NOT LEAVE EARLIER TAPES REWRITTEN. Validating while streaming
+# meant the sweep had already installed every row above the bad one before END exited 2.
+_gh_fixture
+rm -f "$GHR/assets/demo.tape"
+printf 'dotfiles-Arch\tassets/demo.tape\tonly-three-fields\n' >>"$GHR/assets/hero-repos.txt"
+_gh_run >/dev/null
+if [[ ! -f "$GHR/assets/demo.tape" ]]; then
+  pass "gen-hero-tape: a bad row aborts BEFORE any tape is written (no partial render)"
+else
+  fail "gen-hero-tape: a later malformed row still left an earlier tape rewritten"
+fi
+
+# A REPO LISTED TWICE would render its tape twice, the second silently winning.
+_gh_fixture
+printf 'dotfiles-Fedora\tassets/demo.tape\t~/dup\tup -n\tcore-version\tcaps:os/fedora.capabilities\n' >>"$GHR/assets/hero-repos.txt"
+if [[ "$(_gh_run --check)" == 2 ]]; then
+  pass "gen-hero-tape: a duplicate repo row is rejected"
+else
+  fail "gen-hero-tape: a repo listed twice was accepted (rc=$(_gh_run --check))"
+fi
+
+# --list's DOCUMENTED shape must match what it PRINTS. The help text said three columns
+# while the implementation grew to five (#862 review); anything parsing this is now wrong.
+_gh_fixture
+_gh_list_cols="$(_gh_out --list | awk -F'\t' 'NR == 1 { print NF }')"
+_gh_help_cols="$(_gh_out --help | awk '/repo output sigcmd proof signature-source/ { print NF; exit }')"
+if [[ "$_gh_list_cols" == 5 ]] && [[ "$_gh_help_cols" == 5 ]]; then
+  pass "gen-hero-tape: --help documents exactly the $_gh_list_cols columns --list prints"
+else
+  fail "gen-hero-tape: --list prints $_gh_list_cols columns, --help documents $_gh_help_cols"
+fi
+
 _gh_fixture
 printf 'PKG_REFRESH=sudo zypper refresh\n' >"$GHF/dotfiles-openSUSE/os/opensuse.capabilities"
 if [[ "$(_gh_run --fleet)" == 2 ]]; then
@@ -11466,7 +11522,7 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols
 
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run

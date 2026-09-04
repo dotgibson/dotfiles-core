@@ -68,7 +68,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   at), a **missing** `assets/demo.gif` now fails rather than skipping (`README.md`'s hero
   points at it; a sibling's stays a note skip), and the eight-line provenance banner is
   printed by bash rather than passed through `awk -v`, which the macOS one-true-awk rejects
-  outright ("newline in string") while gawk and busybox awk accept.
+  outright ("newline in string") while gawk and busybox awk accept. The registry is
+  validated **whole, before anything is written**: a count-only check passed a row with an
+  empty checkout (awk counts the empty span between two tabs), which rendered `cd  || exit 1`
+  — and a *bare* `cd` succeeds into `$HOME`, reintroducing the wrong-tree hero through the
+  guard meant to prevent it; and a malformed row late in the file used to leave every tape
+  above it already rewritten. Empty fields, duplicate repos and a bad `note:`/`caps:` prefix
+  are all rejected up front, all findings at once.
   `scripts/test-core.sh` covers the generator hermetically in **F11b**: the wrong-repo `cd`
   and the named-theme preset are both pinned as regressions, drift outranks an absent sibling
   (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2

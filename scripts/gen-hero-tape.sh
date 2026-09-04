@@ -49,7 +49,8 @@
 #   ./scripts/gen-hero-tape.sh                 # write this repo's assets/demo.tape
 #   ./scripts/gen-hero-tape.sh --check         # exit 1 with a diff if it is stale — THE GATE
 #   ./scripts/gen-hero-tape.sh --check-size    # exit 1 if a rendered hero gif is over the ceiling
-#   ./scripts/gen-hero-tape.sh --list          # repo<TAB>output<TAB>sigcmd for every row
+#   ./scripts/gen-hero-tape.sh --list          # one row per hero, TAB-separated:
+#                                              repo output sigcmd proof signature-source
 #   ./scripts/gen-hero-tape.sh --fleet         # ALSO write the nine sibling tapes
 #   ./scripts/gen-hero-tape.sh --fleet --check # ALSO check them
 #   ./scripts/gen-hero-tape.sh --root DIR      # this repo lives at DIR (test fixtures)
@@ -237,27 +238,78 @@ emit_theme() {
 # five TAB fields asserted. A malformed row is exit 2, never a silently skipped hero —
 # a registry that quietly renders four of ten rows is the "green having covered
 # nothing" shape #682 was filed for.
-rows() {
-  awk -F'\t' -v tab="$TAB" '
+# validate_registry — EVERY structural check, run to completion, BEFORE anything is written.
+#
+# TWO DEFECTS THIS SHAPE CLOSES (#862 review), both of which a streaming validator has by
+# construction:
+#
+#   1. A LATER BAD ROW MUST NOT LEAVE EARLIER TAPES REWRITTEN. The first cut printed each
+#      good row as it went and only exited 2 from END, so the sweep had already consumed —
+#      and in write mode installed — every row above the malformed one. The registry is now
+#      validated whole, and the run aborts before the sweep starts.
+#   2. AN EMPTY FIELD IS NOT A VALID FIELD. `NF != 6` passes a row whose checkout is empty
+#      (awk counts the empty span between two tabs), which renders `cd  || exit 1` — and a
+#      BARE `cd` succeeds, landing in $HOME. That is precisely the wrong-tree hero this
+#      generator exists to prevent, reintroduced through the guard meant to prevent it.
+#
+# It reports EVERY finding before exiting, rather than dying on the first: a registry with
+# three bad rows should take one run to fix, not three.
+validate_registry() {
+  awk -F'\t' '
     /^[[:space:]]*#/ { next }
     /^[[:space:]]*$/ { next }
     NF != 6 {
       printf "gen-hero-tape: %s:%d: expected 6 tab-separated fields, found %d\n", FILENAME, FNR, NF > "/dev/stderr"
       bad = 1; next
     }
-    { print; if ($1 == ".") local_rows++ }
+    {
+      for (i = 1; i <= 6; i++) {
+        if ($i ~ /^[[:space:]]*$/) {
+          printf "gen-hero-tape: %s:%d: field %d is empty — every column is required (an empty checkout renders a bare `cd`, which succeeds into $HOME)\n", FILENAME, FNR, i > "/dev/stderr"
+          bad = 1
+        }
+      }
+      # The signature source decides whether a note is derived or literal; anything else is
+      # a typo that would otherwise surface as a per-row failure mid-sweep.
+      if ($6 !~ /^(note|caps):/) {
+        printf "gen-hero-tape: %s:%d: signature source must start with note: or caps: — got: %s\n", FILENAME, FNR, $6 > "/dev/stderr"
+        bad = 1
+      }
+      # A repo named twice would render its tape twice, the second silently winning.
+      if ($1 in seen) {
+        printf "gen-hero-tape: %s:%d: duplicate row for %s (first seen at line %d)\n", FILENAME, FNR, $1, seen[$1] > "/dev/stderr"
+        bad = 1
+      }
+      seen[$1] = FNR
+      if ($1 == ".") local_rows++
+      n++
+    }
     # EXACTLY ONE LOCAL ROW. Without this the default gate can pass having checked
     # NOTHING: delete or rename the `.` row and every remaining row is a sibling, every
     # sibling is out of scope without --fleet, the sweep body never runs, SEV stays 0 and
     # both audit legs report success over a tape nobody looked at (#862 review). That is
     # the exact "green because absent" shape §8a/§8d and #682 exist to close.
     END {
-      if (bad) exit 2
       if (local_rows != 1) {
         printf "gen-hero-tape: %s: expected exactly one `.` (this repo) row, found %d — the default gate would check nothing\n", FILENAME, local_rows > "/dev/stderr"
-        exit 2
+        bad = 1
       }
+      if (n == 0) {
+        printf "gen-hero-tape: %s: no rows at all — nothing would be rendered or gated\n", FILENAME > "/dev/stderr"
+        bad = 1
+      }
+      if (bad) exit 2
     }
+  ' "$REGISTRY"
+}
+
+# rows — the data lines, emitted ONLY after validate_registry has passed. It re-applies no
+# checks: one validator, run once, up front.
+rows() {
+  awk -F'\t' '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    NF == 6 { print }
   ' "$REGISTRY"
 }
 
@@ -364,6 +416,9 @@ repo_root() {
   printf '%s' "$dir"
 }
 
+# BEFORE the palette and before any mode: a run that cannot trust its registry must not
+# write, check or weigh anything.
+validate_registry || exit 2
 _pal_load || exit 2
 _pal_require || exit 2
 THEME_LINE="$(emit_theme)"
@@ -532,11 +587,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
       rm -f "$tmp"; _bump 1
     fi
   fi
-done < <(rows) || _bump 2
-
-# rows() exits 2 on a malformed registry, but it is the process-substitution child, so
-# its status never reaches the `while`. Re-run the validation cheaply and let it speak.
-rows >/dev/null || _bump 2
+done < <(rows)
 
 if [[ -n "$MISSING" ]]; then
   # The message shape audit-core.sh parses — "not checked out under <root>:<repos> — ".

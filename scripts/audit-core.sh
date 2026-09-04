@@ -2172,14 +2172,20 @@ unset _gh_out _gh_rc
 #
 # A GIF THAT IS NOT RENDERED YET IS A NOTE SKIP, NOT A PASS. #698 sequences the nine sibling
 # heroes after #667; under the default scope only this repo is weighed, and this repo's tape
-# is mandatory. Separate from §9j because the two fail for unrelated reasons and the fix
-# lines differ — regenerate the tape, versus shorten the clip and re-render it.
+# and gif are both mandatory — README.md's [product-screenshot] points at the latter, so an
+# absent file is a broken front page. Separate from §9j because the two fail for unrelated
+# reasons and the fix lines differ — regenerate the tape, versus render or shrink the gif.
+#
+# THE HEADLINE STAYS GENERIC. Exit 1 covers THREE causes here — over the ceiling, a missing
+# gif, a missing local tape — so naming one of them in the ✗ line misreports the other two
+# (#862 review). The script already prints the specific remedy per row; fail_detail carries
+# it through verbatim, which is exactly the division of labour fail_detail exists for.
 hdr "README hero byte ceiling (gen-hero-tape.sh --check-size)"
 _ghs_out="$("$HERE/scripts/gen-hero-tape.sh" --check-size 2>&1)" && _ghs_rc=0 || _ghs_rc=$?
 if ((_ghs_rc == 0)); then
   pass "gen-hero-tape --check-size (every rendered hero is under the ceiling)"
 elif ((_ghs_rc == 1)); then
-  fail "README hero is over the byte ceiling — shorten the clip in assets/hero.tape.in, re-render with vhs, then optimize: gifsicle -O3 --lossy=80"
+  fail "README hero size check failed — see below; the remedy differs by cause (an oversized gif is shortened and re-optimized, a missing one is rendered)"
   fail_detail "$_ghs_out"
 else
   fail "gen-hero-tape.sh --check-size could not run (exit $_ghs_rc) — a tape names no Output, or the registry/template is unreadable; the size gate weighed NOTHING this run"
