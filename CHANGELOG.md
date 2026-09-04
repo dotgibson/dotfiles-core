@@ -218,10 +218,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   for. `maint-install`'s two refusals name `--links-only` alongside the declare-it hint for
   the same reason: the likelier cause is a declaration that exists but was never linked.
 
-  `scripts/check-capabilities.sh` is untouched — it is the schema, not a fallback. What
-  changes for a consuming repo is that **`./bootstrap.sh --links-only` is now required**
-  after adopting or changing a declaration, not merely advisable; `VENDORING.md` says so
-  where it used to say absence is not fatal. `scripts/test-core.sh` moves with the code: the
+  `scripts/check-capabilities.sh` keeps its schema unchanged — it is the validator, not a
+  fallback — though its "absent means Core's built-in default applies" note is corrected:
+  since this change an omitted optional key **is** the statement, and `TOOLS_OPTIN` is the
+  one key that still falls back to a Core-side default. What changes for a consuming repo is
+  that **`./bootstrap.sh --links-only` is required, not merely advisable**, in the three
+  cases where the SYMLINK is what changes: adopting a declaration, a box that has never
+  relinked since one was authored, and switching which file is selected (a Kali or Leap tier,
+  say). _Editing_ an already-linked declaration needs nothing — the symlink points at the
+  file in the repo, so a box reads the edit on its next shell. `VENDORING.md` says so where
+  it used to say absence is not fatal. `scripts/test-core.sh` moves with the code: the
   per-manager count/list cases now seed the declaration each OS repo actually ships instead
   of leaning on Core's copy of it (which is the stronger test — it pins the values a real
   box runs), the maint cases declare `SCHEDULER_UNIT_DIR` alongside the scheduler they stub,

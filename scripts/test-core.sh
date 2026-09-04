@@ -15818,6 +15818,47 @@ _mntcheck "maint: cron resolves to no unit file (its entry lives in the crontab)
   'SCHEDULER=cron' \
   '[[ -z $(_maint_unit_file) ]]'
 
+# maint-uninstall on an UNRELINKED host must not claim success (#763). Both branches used to
+# guard the removal with `[[ -n "$path" ]] &&` and print "removed" unconditionally, which was
+# harmless only while Core carried a built-in unit directory. Once that went, an undeclared
+# launchd box resolved no plist, `launchctl unload` never ran, the agent kept FIRING — and
+# the operator was told it had been removed. A false success on an uninstall is the worst
+# shape available, because nobody checks twice.
+#
+# The two schedulers fail differently and must say so: systemd's `disable --now` runs by unit
+# NAME and needs no path, so the timer really does stop and only the files are stranded;
+# launchd needs the path to unload at all, so nothing has happened. Assert the message
+# distinguishes them, that neither says "removed", and that both return non-zero.
+_MUB="$SANDBOX/maint-uninstall-bin"
+mkdir -p "$_MUB"
+for _c in systemctl launchctl crontab; do
+  printf '#!/bin/sh\n:\n' >"$_MUB/$_c"
+  chmod +x "$_MUB/$_c"
+done
+ucheck "maint-uninstall: an undeclared launchd box refuses and says the agent is still loaded" \
+  "source '$UI'; source '$CAPZ'; source '$MNT'; _maint_scheduler() { echo launchd }
+   out=\$(maint-uninstall 2>&1); (( \$? == 1 )) \
+     && [[ \$out == *'STILL LOADED'* && \$out == *'--links-only'* && \$out != *'removed launchd agent'* ]]" \
+  PATH="$_MUB:$PATH" NO_COLOR=1 CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
+ucheck "maint-uninstall: an undeclared systemd box reports the timer disabled but the files stranded" \
+  "source '$UI'; source '$CAPZ'; source '$MNT'; _maint_scheduler() { echo systemd }
+   out=\$(maint-uninstall 2>&1); (( \$? == 1 )) \
+     && [[ \$out == *'could NOT be removed'* && \$out == *'--links-only'* && \$out != *'removed systemd timer'* ]]" \
+  PATH="$_MUB:$PATH" NO_COLOR=1 CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
+# ...and the DECLARED path still removes the file and reports success, so the refusal above
+# is proving the guard rather than a uniformly broken verb.
+_MUD="$SANDBOX/maint-uninstall-decl"
+rm -rf "$_MUD"
+mkdir -p "$_MUD/agents"
+printf 'SCHEDULER=launchd\nSCHEDULER_UNIT_DIR=%s/agents\n' "$_MUD" >"$_MUD/os.capabilities"
+: >"$_MUD/agents/com.dotfiles.maint.plist"
+ucheck "maint-uninstall: a declared launchd box removes the plist and reports success" \
+  "source '$UI'; source '$CAPZ'; source '$MNT'
+   out=\$(maint-uninstall 2>&1); (( \$? == 0 )) \
+     && [[ \$out == *'removed launchd agent'* ]] \
+     && [[ ! -e '$_MUD/agents/com.dotfiles.maint.plist' ]]" \
+  PATH="$_MUB:$PATH" NO_COLOR=1 CORE_CAPABILITIES_FILE="$_MUD/os.capabilities"
+
 # maint-log defensive input (#6): a non-numeric N must be rejected in Core's voice, not
 # handed to `tail` to fail with a raw "invalid number". -f/--follow and a positive int
 # are the only valid args (mirrors serve/cdup/mkbak's input guards).

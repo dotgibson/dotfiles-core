@@ -304,8 +304,11 @@ and `core-status`'s OS row reports the missing link directly. The reader itself 
 thing it warned about (#715), and it can only say a table is empty where each consumer can
 say what actually broke. Set `CORE_CAP_LOUD=1` to opt into it.
 
-So: after vendoring a Core release into a repo that has just authored or changed its
-declaration, **re-run `./bootstrap.sh --links-only` on each box**.
+So: **re-run `./bootstrap.sh --links-only` on each box** whenever the SYMLINK is what has
+to change — the repo has just authored a declaration, the box has never relinked since one
+was authored, or the file being selected has changed (a Kali or Leap tier, say). _Editing_ an
+already-linked declaration needs nothing: the symlink points at the file in the repo, so the
+box reads the edit on its next shell.
 
 **Eight required keys**, all package-manager verbs plus `SCHEDULER` (`systemd` \| `launchd`
 \| `cron` \| `none` — `cron` is what an OpenRC box gets); the validator is the

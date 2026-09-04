@@ -615,6 +615,19 @@ maint-status() {
   fi
   return 0
 }
+# AN UNRESOLVABLE UNIT PATH MUST NOT REPORT SUCCESS, and this is the sharp edge of #763.
+# Both branches used to guard the removal with `[[ -n "$path" ]] &&` and then print "removed"
+# unconditionally — harmless while Core carried a built-in unit directory, because the path
+# was never empty. It is now: a box whose declaration is not linked resolves nothing, and on
+# launchd that meant `launchctl unload` never ran, the plist stayed on disk, the agent kept
+# FIRING, and the operator was told it had been removed. A false success on an uninstall is
+# worse than a refusal, because nobody checks twice.
+#
+# THE TWO SCHEDULERS FAIL DIFFERENTLY, so they say different things. systemd's disable runs
+# by unit NAME and needs no path, so the timer really does stop — only the files are left
+# behind, and the message says exactly that. launchd needs the plist path to unload at all,
+# so nothing has happened and the message must not pretend otherwise. Both return non-zero,
+# so a script driving this notices; both name --links-only, which is the actual remedy.
 maint-uninstall() {
   _core_wants_help "$1" && { _core_help "maint-uninstall" "remove the scheduled maintenance job"; return 0; }
   case "$(_maint_scheduler)" in
@@ -622,14 +635,28 @@ maint-uninstall() {
     systemctl --user disable --now dotfiles-maint.timer 2>/dev/null
     local svc
     svc="$(_maint_unit_file systemd)"
-    [[ -n "$svc" ]] && rm -f "$svc" "${svc%.service}.timer"
+    if [[ -z "$svc" ]]; then
+      systemctl --user daemon-reload
+      _core_err "maint-uninstall: timer disabled, but its unit files could NOT be removed"
+      _core_hint "no SCHEDULER_UNIT_DIR is declared, so Core cannot name them"
+      _core_hint "if your OS repo already ships a declaration, re-run its ./bootstrap.sh --links-only, then re-run this"
+      return 1
+    fi
+    rm -f "$svc" "${svc%.service}.timer"
     systemctl --user daemon-reload
     _core_ok "removed systemd timer"
     ;;
   launchd)
     local p
     p="$(_maint_unit_file launchd)"
-    [[ -n "$p" ]] && { launchctl unload "$p" 2>/dev/null; rm -f "$p"; }
+    if [[ -z "$p" ]]; then
+      _core_err "maint-uninstall: cannot locate the launchd agent — it is STILL LOADED and will keep running"
+      _core_hint "no SCHEDULER_UNIT_DIR is declared, so Core cannot name the plist to unload"
+      _core_hint "if your OS repo already ships a declaration, re-run its ./bootstrap.sh --links-only, then re-run this"
+      return 1
+    fi
+    launchctl unload "$p" 2>/dev/null
+    rm -f "$p"
     _core_ok "removed launchd agent"
     ;;
   cron)

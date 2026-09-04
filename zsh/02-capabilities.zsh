@@ -113,8 +113,14 @@ elif [[ -n "${CORE_CAP_LOUD:-}" ]]; then
   # 05-ui.zsh defines _core_warn/_core_hint — and it loads AFTER this fragment, so those
   # helpers do not exist yet. Write the plain thing rather than call a function that is
   # not there. stderr, so it never pollutes a `$(...)` capture from a login shell.
+  # BE PRECISE ABOUT WHAT IS LOST, because an overstated warning is its own kind of noise.
+  # `up` and the doctor's install hint have no declaration to read at all. maint-install is
+  # NARROWER: _maint_scheduler still probes, and the cron branch needs no SCHEDULER_UNIT_DIR,
+  # so an undeclared OpenRC/cron box installs its timer exactly as before — it is the
+  # systemd and launchd branches that have no unit directory to write to.
   print -u2 -- "core: no OS capability declaration at ${CORE_CAPABILITIES_FILE}"
-  print -u2 -- "  -> \`up\`, maint-install and core-doctor's install hint have nothing to run."
+  print -u2 -- "  -> \`up\` and core-doctor's install hint have nothing to run, and"
+  print -u2 -- "     maint-install/maint-uninstall refuse on systemd and launchd (cron is unaffected)."
   print -u2 -- "     If your OS repo already ships os/<os>.capabilities, re-run its"
   print -u2 -- "     ./bootstrap.sh --links-only to link it."
   print -u2 -- "     If it does not, author one first (see core/examples/os.capabilities.example)."
