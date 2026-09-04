@@ -1395,47 +1395,7 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
   done
 }
 
-# ── _core_make_gate_hits: local gates that cannot do what their name says ─────
-# _core_make_gate_hits <repo-root> — print every Makefile gate in <repo-root> that
-# announces a check it does not perform. Silence = clean. Output is `Makefile:LINE: msg`.
-#
-# WHY THIS EXISTS. dotgibson/dotfiles-core#775 swept eight OS repos by hand and found
-# ELEVEN instances of three shapes, none of which any gate had ever caught:
-#
-#   · A SKIP THAT CANNOT SKIP (5). `@command -v x || { echo "skipping"; exit 0; }` on one
-#     recipe line, the tool itself on the NEXT. make runs each recipe line in its OWN
-#     shell, so the `exit 0` ends only that line: the target prints "skipping" and then
-#     runs the missing tool anyway, exiting 127. Debian, Fedora (twice), Offense, Defense.
-#   · A CHECK THAT CANNOT FAIL (1). openSUSE's `lint-sh` ended `shellcheck …; echo "ok"`.
-#     With a semicolon the echo runs regardless AND becomes the line's exit status, so
-#     the checker printed a screenful of findings and the target reported ok, exit 0.
-#     Its two siblings used `&&` and `|| exit 1` and were correct, which is precisely why
-#     nobody looked: it resembled working code.
-#   · A BLOCKING CI LEG WITH NO LOCAL MIRROR (3). Arch, Gentoo and openSUSE shipped a
-#     .markdownlint.jsonc that only CI ever read, for a leg blocking since #592 — a
-#     required check nobody could run before pushing.
-#
-# WHY A GATE AND NOT ANOTHER NOTE. dotfiles-Debian's CHANGELOG already recorded the first
-# shape, fixed it in ONE target, and wrote "The same shape is still present in the other
-# OS repos' Makefiles." That note was correct, was never acted on, and the defect was
-# still in five repos when someone finally swept by hand. Same lesson as
-# _core_workflow_ref_hits records for the `ref: vN` majors: a comment is not a gate.
-#
-# PRIOR ART, and why this does not replace it. dotfiles-MacBook/test/check-skip-guards.sh
-# tests the FIRST shape at RUNTIME — it rebuilds a PATH without the guarded tool and runs
-# each target, which is stronger evidence than reading text. But it is one repo's script,
-# it can only judge the repo it sits in, and it needs the tool to be genuinely absent. This
-# is the static, fleet-portable complement: weaker per finding, but it can judge eight
-# repos from outside, which is what the sweep actually needed. Keep both.
-#
-# WHY TEXTUAL AND NOT `make -n`. Running the recipes would need every tool installed and
-# would EXECUTE them; the defect is in the recipe's SHAPE, readable without running
-# anything. That also lets it judge a repo it is not standing in — which it must, because
-# the callers live in eight other repositories and Core's audit can only see Core.
-#
-# SCOPE. Only `Makefile` at <repo-root>. Continuation lines are JOINED first, because every
-# rule here is about what one LOGICAL recipe line does — the broken guards spanned two
-# physical lines and the fixed ones span four. Judging physical lines inverts both answers.
+# ── _core_have_read_hits: HAVE_* flags a repo reads but does not set ──────────
 _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names read but not set
   # The fleet half of audit-core.sh §5j, extracted so it can be tested against fixtures
   # rather than only by hand (#694 review). Echoes one flag NAME per line: every HAVE_*
@@ -1486,7 +1446,16 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   # The non-comment text, read once: three passes run over it below and re-grepping the
   # file list each time triples the I/O for no gain.
   text="$(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null)"
-  owns=" $(printf '%s\n' "$text" | grep -oE 'HAVE_[A-Z0-9_]+=' 2>/dev/null | sed 's/=$//' | sort -u | tr '\n' ' ') "
+  # The ownership match refuses a name that ABUTS A QUOTE, so `printf 'HAVE_RG=1\n'` in a
+  # bootstrap that GENERATES a fragment is not read as this repo assigning the flag. That
+  # matters because ownership SUPPRESSES a finding: a bogus own is a silent pass on a real
+  # undeclared read, the same false-negative shape as the commented-out assignment above.
+  # It is a heuristic, not a parser — `echo "note: HAVE_RG=1"` still slips through, since a
+  # space precedes the name there exactly as it would in real code. Distinguishing those
+  # needs the shell grammar, which is the trap PORTABILITY.md §3 documents; this buys the
+  # common generated-fragment case for one character of lookbehind.
+  owns=" $(printf '%s\n' "$text" | grep -oE "(^|[^\"'[:alnum:]_])HAVE_[A-Z0-9_]+=" 2>/dev/null \
+    | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
   # TWO read shapes, because a shell has two. The sigil forms are the common ones; inside an
   # ARITHMETIC context a parameter needs no `$` at all, so `(( HAVE_RG ))` is a plain read
   # that the sigil pattern cannot see. That is not a hypothetical style — this tree gates on
@@ -1504,6 +1473,47 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   done
 }
 
+# ── _core_make_gate_hits: local gates that cannot do what their name says ─────
+# _core_make_gate_hits <repo-root> — print every Makefile gate in <repo-root> that
+# announces a check it does not perform. Silence = clean. Output is `Makefile:LINE: msg`.
+#
+# WHY THIS EXISTS. dotgibson/dotfiles-core#775 swept eight OS repos by hand and found
+# ELEVEN instances of three shapes, none of which any gate had ever caught:
+#
+#   · A SKIP THAT CANNOT SKIP (5). `@command -v x || { echo "skipping"; exit 0; }` on one
+#     recipe line, the tool itself on the NEXT. make runs each recipe line in its OWN
+#     shell, so the `exit 0` ends only that line: the target prints "skipping" and then
+#     runs the missing tool anyway, exiting 127. Debian, Fedora (twice), Offense, Defense.
+#   · A CHECK THAT CANNOT FAIL (1). openSUSE's `lint-sh` ended `shellcheck …; echo "ok"`.
+#     With a semicolon the echo runs regardless AND becomes the line's exit status, so
+#     the checker printed a screenful of findings and the target reported ok, exit 0.
+#     Its two siblings used `&&` and `|| exit 1` and were correct, which is precisely why
+#     nobody looked: it resembled working code.
+#   · A BLOCKING CI LEG WITH NO LOCAL MIRROR (3). Arch, Gentoo and openSUSE shipped a
+#     .markdownlint.jsonc that only CI ever read, for a leg blocking since #592 — a
+#     required check nobody could run before pushing.
+#
+# WHY A GATE AND NOT ANOTHER NOTE. dotfiles-Debian's CHANGELOG already recorded the first
+# shape, fixed it in ONE target, and wrote "The same shape is still present in the other
+# OS repos' Makefiles." That note was correct, was never acted on, and the defect was
+# still in five repos when someone finally swept by hand. Same lesson as
+# _core_workflow_ref_hits records for the `ref: vN` majors: a comment is not a gate.
+#
+# PRIOR ART, and why this does not replace it. dotfiles-MacBook/test/check-skip-guards.sh
+# tests the FIRST shape at RUNTIME — it rebuilds a PATH without the guarded tool and runs
+# each target, which is stronger evidence than reading text. But it is one repo's script,
+# it can only judge the repo it sits in, and it needs the tool to be genuinely absent. This
+# is the static, fleet-portable complement: weaker per finding, but it can judge eight
+# repos from outside, which is what the sweep actually needed. Keep both.
+#
+# WHY TEXTUAL AND NOT `make -n`. Running the recipes would need every tool installed and
+# would EXECUTE them; the defect is in the recipe's SHAPE, readable without running
+# anything. That also lets it judge a repo it is not standing in — which it must, because
+# the callers live in eight other repositories and Core's audit can only see Core.
+#
+# SCOPE. Only `Makefile` at <repo-root>. Continuation lines are JOINED first, because every
+# rule here is about what one LOGICAL recipe line does — the broken guards spanned two
+# physical lines and the fixed ones span four. Judging physical lines inverts both answers.
 _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
   local root="${1:-.}" mk="${1:-.}/Makefile" mirror=0
 

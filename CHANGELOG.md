@@ -233,17 +233,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   missing row — when it is absent, hermetically, in both directions.
 
   The gate's own matcher is tested too, rather than only hand-verified: the fleet scan is
-  extracted as **`scripts/lib/common.sh :: _core_have_read_hits`** and driven by thirteen
+  extracted as **`scripts/lib/common.sh :: _core_have_read_hits`** and driven by fourteen
   fixture repos. Six must FIRE: a plain read, the braceless `$HAVE_X` form, a `.sh` outside
   `os/`, zsh's existence form `${+HAVE_X}`, a parenthesised expansion flag `${(t)HAVE_X}`,
   and the **no-sigil arithmetic** form `(( HAVE_X ))` — inside `(( ))` a shell resolves a
   bare name as a parameter, and this tree gates on booleans exactly that way
   (`((UPDATE_CHECK_ENABLED))`, `((CORE_CNF_ENABLED))`), so an OS layer writing it is
-  following house style. Seven must stay SILENT: a read inside a vendored `core/` (pruned), a flag
+  following house style. Eight must stay SILENT: a read inside a vendored `core/` (pruned), a flag
   the repo sets itself, ownership spread across two files, a bare name in a comment, a
-  **sigil** form in a comment, a commented-out assignment that must not confer ownership, and
-  a repo with no shell files. Every fixture carries a vendored `core/` that both sets and
-  reads the whole flag set, so if the prune ever breaks, all thirteen go silent at once. The silent directions are the ones worth pinning: an over-reporting scanner
+  **sigil** form in a comment, and two shapes that must not confer **ownership** — a
+  commented-out `# HAVE_X=1`, and one written as data by a fragment generator
+  (`printf 'HAVE_X=1\n'`). Both are the same false-negative: a bogus "this repo owns the
+  flag" silently suppresses a real undeclared read of it. Plus a repo with no shell files. Every fixture carries a vendored `core/` that both sets and
+  reads the whole flag set, so if the prune ever breaks, all fourteen go silent at once. The silent directions are the ones worth pinning: an over-reporting scanner
   reds a clean fleet and gets turned off, but an under-reporting one passes forever while the
   contract rots. Three of those silent misses were review findings against earlier drafts,
   and all three are now fixtures: zsh's **existence form** `(( ${+HAVE_X} ))` and its

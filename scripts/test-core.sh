@@ -2032,6 +2032,13 @@ d="$(_hv_repo commentedset)"
 printf '# HAVE_RG=1   # historical note\n[[ -n ${HAVE_RG:-} ]] && :\n' >"$d/os/x.zsh"
 _hv_is "a commented-out assignment does not confer ownership" commentedset "HAVE_RG"
 
+# Same false-negative shape, different disguise: a bootstrap that GENERATES a zsh fragment
+# writes the assignment as data. Counting it as ownership would silently pass the real read
+# on the next line. The match refuses a name abutting a quote, which is what separates them.
+d="$(_hv_repo printfset)"
+printf '%s\n' "printf 'HAVE_RG=1\\n' > frag.zsh" '[[ -n ${HAVE_RG:-} ]] && :' >"$d/os/x.zsh"
+_hv_is "an assignment inside a quoted string does not confer ownership" printfset "HAVE_RG"
+
 # An absent or empty repo is not a finding — CI checks out this repo alone, and §5j treats a
 # missing sibling as an environment SKIP rather than letting it read as "reads nothing".
 _hv_is "a repo with no shell files at all reports nothing" nosuchrepo ""
