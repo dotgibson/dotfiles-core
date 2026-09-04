@@ -126,10 +126,17 @@ hdr "Desktop-bar parity (Zebar ↔ sketchybar)"
 for entry in "${TARGETS[@]}"; do
   repo="${entry%%	*}"
   rel="${entry##*	}"
-  file="$ROOT/$repo/$rel"
+  # `-e <dir>/.git`, not `-d <dir>` — the fleet convention (scripts/lib/common.sh,
+  # gen-porting-matrix.sh). `.git` is a FILE in a worktree or submodule checkout, so `-e`
+  # accepts those; and a plain directory that merely SHARES the repo's name is not a clone,
+  # so `-d` would treat it as checked out and then red on the PARITY.md it does not have —
+  # a false failure where the honest answer is "not checked out, skipped". resolve_repo_dir
+  # additionally finds a clone whose directory name differs from the repo name.
+  dir="$(resolve_repo_dir "$ROOT" "$repo")" || dir="$ROOT/$repo"
+  file="$dir/$rel"
 
   # Repo ABSENT → skip (Core-only clone), unless --strict.
-  if [[ ! -d "$ROOT/$repo" ]]; then
+  if [[ ! -e "$dir/.git" ]]; then
     if ((STRICT)); then
       fail "$repo is not checked out under $ROOT (--strict)"
     else

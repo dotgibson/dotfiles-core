@@ -33,8 +33,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   is deliberately a **prettier fixed-point**: Core's nvim maps `markdown = { "prettierd" }`,
   formatting one copy is the most likely way the pair drifted in the first place, and
   authoring the block in prettier's own output form makes that keystroke a no-op instead of
-  drift. `desktop/README.md`'s "an identical copy sits in…" claim is corrected in the same
-  change — the two files are deliberately _not_ identical.
+  drift. `desktop/README.md`'s "an identical copy sits in…" claim is corrected in the
+  companion PR (dotgibson/dotfiles-Windows#242) — the two files are deliberately _not_
+  identical. **Land the two companion PRs before this one:** they add the markers this gate
+  reads, and until they do, a weekly run against fleet `main` would red on copies that have
+  none. `scripts/test-core.sh` covers the generator hermetically — clean render,
+  byte-identical blocks, preservation outside the markers, one-sided drift, absent and
+  not-a-repo siblings, sticky severity, malformed markers, idempotence — and pins the
+  workflow's `--check`, without which the gate would rewrite the clones and pass forever.
 
 - **The hermetic `--links-only` gate is Core-owned now: `scripts/check-links.sh` (#852).**
   Four repos' `make check` ran the same block — make a throwaway HOME, run

@@ -72,7 +72,11 @@ jobs:
           # copies together was the sentence "Edit both together", and they drifted 3.5 KB
           # apart. --strict for the same reason as above: both repos ARE cloned, so an
           # absent one is a real failure here rather than the environment skip it is locally.
-          ./scripts/gen-desktop-parity.sh --root "$RUNNER_TEMP/fleet" --strict --color never 2>&1 \
+          # --check is LOAD-BEARING: without it the generator runs in WRITE mode, rewrites
+          # the throwaway clones, and exits 0 — a gate that can never fail, which is the
+          # exact "checked NOTHING and reported green" shape this whole change exists to
+          # remove. scripts/test-core.sh pins this flag so it cannot be dropped again.
+          ./scripts/gen-desktop-parity.sh --root "$RUNNER_TEMP/fleet" --check --strict --color never 2>&1 \
             | tee "$RUNNER_TEMP/desktop-parity.txt"
         continue-on-error: true
         id: desktop
