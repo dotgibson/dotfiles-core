@@ -165,7 +165,8 @@ else
   # "refused builds are never spawned on" assertions are made by CONSTRUCTION rather than by
   # trusting a comment.
   #
-  # NOTE, as in §J3: the delimiter is unquoted so $mode and $ver interpolate, which means no
+  # NOTE, as in scripts/test/51-atuin-guard.sh: the delimiter is unquoted so $mode and $ver
+  # interpolate, which means no
   # backticks may appear in this body and every runtime $ must be escaped.
   _mkdstub() {
     local name="$1" mode="$2" ver="${3:-18.19.0}"
@@ -441,7 +442,8 @@ STUB
   _d_run() { # _d_run <stub> [extra args...] → sets _dout (stdout) / _dstderr / _drc
     local stub="$1"
     shift
-    # STDOUT AND STDERR KEPT SEPARATE, unlike §J3's helper. Every case here passes --json and
+    # STDOUT AND STDERR KEPT SEPARATE, unlike the helper in scripts/test/51-atuin-guard.sh.
+    # Every case here passes --json and
     # the JSON is on stdout, so merging the two means any stray line — a busybox timeout
     # notice, a shell job-control message — lands inside the text being parsed and the
     # assertion fails for a reason that has nothing to do with the behaviour under test. That
@@ -677,14 +679,15 @@ J4PROBE
     rm -f "/tmp/j4probe.$$.sock"
     # The apparatus is established WITHOUT the subject's help, so a known-good stub that does
     # not report `holds` is a regression in the detector — a FAILURE, never a skip. This gate is
-    # deliberately NOT §J3's blanket "skip unless holds": there, no independent probe exists, so
+    # deliberately NOT the blanket "skip unless holds" of scripts/test/51-atuin-guard.sh:
+    # there, no independent probe exists, so
     # declining is all it can honestly do; here one does, and the stricter stance is the point.
     #
     # THE STRICTNESS IS KEPT AND THE DEADLINE IS FIXED INSTEAD, which is the whole correction.
     # This arm used to fail on ANY non-`holds`, including `unmeasurable` — the verifier's
     # fail-closed answer when the manual-spawn control's daemon did not answer inside 300ms. On
     # a loaded runner that is a property of the BOX, and reporting it as a defect in the
-    # detector is a false finding of exactly the kind §J4 exists to prevent.
+    # detector is a false finding of exactly the kind this fragment exists to prevent.
     #
     # The tempting repair — skip on `unmeasurable` — is wrong, and the reason is worth keeping:
     # that verdict covers a family of causes, and most are DETERMINISTIC AND ARE THE DETECTOR
@@ -830,7 +833,8 @@ J4PROBE
       fail "atuin autostart: spawn-but-discard must be moved naming the unlanded entry, got $(_d_get "$_dout" verdict)/rc$_drc"
     fi
 
-    # 9. THE LOAD-BEARING ONE, and §J3 case 5's counterpart. A box that cannot host a daemon
+    # 9. THE LOAD-BEARING ONE, and the counterpart of case 5 in scripts/test/51-atuin-guard.sh.
+    #    A box that cannot host a daemon
     #    AT ALL must be `unmeasurable` — never a finding about upstream. This is the whole
     #    reason the manual-spawn control exists, and the assertion a future simplification
     #    that deletes it would trip.
@@ -1043,7 +1047,7 @@ J4PROBE
       # NO VERDICT AT ALL is its own outcome, and routing it into the `moved` arm would name a
       # cause this run has no evidence for. It is also the one shape with a KNOWN history here:
       # a stray line on stderr merging into stdout leaves json.load with nothing to parse, which
-      # is how §J4 first went red on Alpine (see _d_run's comment). So stderr is carried into the
+      # is how this premise first went red on Alpine (see _d_run's comment). So stderr is carried into the
       # message — it is the only thing that can say what actually happened.
       fail "atuin autostart: the socket-only-stop run produced no parseable verdict (rc$_drc) — this is the apparatus failing to report, not a measurement${_dstderr:+ (stderr: $_dstderr)}"
     fi
@@ -1190,7 +1194,8 @@ J4PROBE
       fail "atuin autostart: a musl host reported host='$(_d_get "$_dout" host)' — the libc marker was lost to pipefail"
     fi
 
-    # 20. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+    # 20. Report coherence — the counterpart of case 7 in scripts/test/51-atuin-guard.sh, with
+    #    this premise's claims. The scope
       #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
       #   true until this mode existed and is exactly the kind of prose that rots — and must
       #   name the machines a green run here does and does not speak for.

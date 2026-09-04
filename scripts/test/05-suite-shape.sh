@@ -58,9 +58,12 @@ else
   fail "suite layout: executable fragment(s): $_ss_exec — they are sourced, never run, and +x invites someone to run one standalone and read the empty result as a pass"
 fi
 
-# Tracked matters for a reason that is not tidiness: audit-core.sh §5 lints `_audit_ls '*.sh'`
-# and sync-core.sh materializes from the index. An untracked fragment runs on the author's box
-# and nowhere else, which is the most expensive kind of green.
+# Tracked matters for a reason that is not tidiness, and not the two you might reach for first:
+# `_audit_ls` deliberately picks up untracked files, so the linters DO see one; and `scripts/`
+# is repo-meta with per-file `core.vendor` granularity, so these fragments ship to no OS repo
+# either way. The failure mode is simpler and worse than both — an untracked fragment never
+# reaches the remote, so CI and every fresh clone run the suite WITHOUT it. Its assertions
+# vanish everywhere except the box that wrote them, and the run still says green.
 if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
   for _ss_f in "$_ss_dir"/[0-9][0-9]-*.sh; do
     [[ -e "$_ss_f" ]] || break
@@ -68,9 +71,9 @@ if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
       _ss_untracked="${_ss_untracked:+$_ss_untracked }${_ss_f##*/}"
   done
   if [[ -z "$_ss_untracked" ]]; then
-    pass "suite layout: every fragment is tracked (so the audit lints it and a sync ships it)"
+    pass "suite layout: every fragment is tracked (so CI and a fresh clone run the same suite this box does)"
   else
-    fail "suite layout: untracked fragment(s): $_ss_untracked — they run here and nowhere else, and no linter sees them"
+    fail "suite layout: untracked fragment(s): $_ss_untracked — they never reach the remote, so CI and every fresh clone run the suite without them and still report green"
   fi
 else
   skip "suite layout: tracked-fragment check (not a git checkout)"
