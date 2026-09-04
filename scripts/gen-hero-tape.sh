@@ -371,6 +371,33 @@ signature_note() {
   printf 'one verb → %s' "$up"
 }
 
+# host_guard <repo> <dir> <spec> — the hidden precondition line.
+#
+# For a `caps:` row it asserts that the RENDERING HOST resolves PKG_UPGRADE to the same
+# value the row declares. It has to, because Core loads the declaration ONCE at shell
+# startup from the host's linked os.capabilities (zsh/02-capabilities.zsh) — `cd` does not
+# switch it, and `up -n` probes $PATH — so a Fedora tape filmed on a MacBook records
+# `brew upgrade` under a comment claiming `dnf` (#862 review). A `note:` row has no
+# declaration to check and gets a no-op.
+#
+# NO DOUBLE QUOTES, by construction: the line is substituted into the template's
+# `Type "…"`. zsh does not word-split a command substitution inside [[ ]], so the left side
+# needs no quoting, and the right side is single-quoted to stay a literal rather than a glob.
+host_guard() {
+  local repo="$1" dir="$2" spec="$3" path up
+  case "$spec" in
+  note:*) printf 'true'; return 0 ;;
+  caps:*) path="${spec#caps:}" ;;
+  esac
+  up="$(awk -F= '/^PKG_UPGRADE=/ { sub(/^PKG_UPGRADE=/, ""); print; exit }' "$dir/$path")"
+  # An apostrophe would close the single-quoted literal below. No declaration in the fleet
+  # has one; refuse rather than emit a tape that cannot parse.
+  case "$up" in
+  *\'*) fail "$repo: PKG_UPGRADE contains an apostrophe, which cannot sit inside the host guard: $up"; return 2 ;;
+  esac
+  printf "[[ \$(_core_cap PKG_UPGRADE) == '%s' ]] || exit 1" "$up"
+}
+
 # banner <repo> — the provenance header the template's @@HEADER@@ becomes. It names
 # BOTH inputs and the command that rewrites the file, because the reader who finds
 # this is the one who just tried to hand-edit it.
@@ -415,7 +442,7 @@ banner() {
 # Linux and Alpine and failed only on the macOS leg (#698 review). Every remaining -v
 # value is a single line by construction; keep it that way.
 render() {
-  awk -v checkout="$1" -v sigcmd="$2" -v signote="$3" -v proof="$4" -v theme="$5" '
+  awk -v checkout="$1" -v sigcmd="$2" -v signote="$3" -v proof="$4" -v guard="$5" -v theme="$6" '
     # lit(s, ph, v) — every occurrence of the LITERAL ph in s replaced by the LITERAL v.
     function lit(s, ph, v,   out, i) {
       out = ""
@@ -445,6 +472,7 @@ render() {
       # ordinary substitution path below.
       line = lit(line, "@@THEME@@", theme)
       line = lit(line, "@@PROOF@@", proof)
+      line = lit(line, "@@HOSTGUARD@@", guard)
       line = lit(line, "@@CHECKOUT@@", checkout)
       line = lit(line, "@@SIGCMD@@", sigcmd)
       line = lit(line, "@@SIGNOTE@@", signote)
@@ -537,6 +565,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
   file="$dir/$out"
 
   if ! signote="$(signature_note "$repo" "$dir" "$signature")"; then _bump 2; continue; fi
+  if ! hostguard="$(host_guard "$repo" "$dir" "$signature")"; then _bump 2; continue; fi
 
   # ── --check-size: the byte ceiling on the RENDERED hero ────────────────────
   # A tape is a script; a gif is bytes, and #698's third finding is that nothing
@@ -607,7 +636,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
   # `{ banner && render; }` yields render's status when banner succeeds, so a failed
   # render is still caught — and the banner reaches the file through bash's own printf
   # rather than an awk -v the macOS awk refuses (see render's note).
-  if ! { banner "$repo" && render "$checkout" "$sigcmd" "$signote" "$proof" "$THEME_LINE"; } >"$tmp"; then
+  if ! { banner "$repo" && render "$checkout" "$sigcmd" "$signote" "$proof" "$hostguard" "$THEME_LINE"; } >"$tmp"; then
     fail "$label/$out — rendering the tape failed; the file was NOT modified"
     rm -f "$tmp"; _bump 2; continue
   fi

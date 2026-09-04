@@ -11500,6 +11500,48 @@ if [[ "${EUID:-$(id -u)}" != 0 ]]; then
   fi
 fi
 
+# MATCHING-HOST RENDERING IS A CHECKED PRECONDITION, NOT AN ASSUMPTION. Core reads the
+# capability declaration ONCE at shell startup, from the HOST's linked os.capabilities
+# (zsh/02-capabilities.zsh) — `cd` does not switch it and `up -n` probes $PATH — so an OS
+# hero filmed on the wrong box records that box's manager under a comment naming the row's:
+# dotfiles-Fedora rendered on a MacBook says `brew upgrade` while the tape says `dnf`
+# (#862 review). The tape now refuses to render there.
+_gh_fixture && _gh_run --fleet >/dev/null
+_gh_guard="$(grep -o 'Type "\[\[ \$(_core_cap PKG_UPGRADE) == .*exit 1"' "$GHF/dotfiles-openSUSE/assets/demo.tape")"
+if grep -qF "== 'sudo zypper dup' ]] || exit 1" <<<"$_gh_guard"; then
+  pass "gen-hero-tape: an OS tape asserts the rendering host declares THAT row's PKG_UPGRADE"
+else
+  fail "gen-hero-tape: no host guard, or it does not name the row's verb: $_gh_guard"
+fi
+# The guard and the visible note must agree — they are derived from one declaration, and a
+# hero whose hidden precondition and printed comment disagree is worse than neither.
+if grep -qF 'one verb → sudo zypper dup' "$GHF/dotfiles-openSUSE/assets/demo.tape"; then
+  pass "gen-hero-tape: the host guard and the signature note name the same verb"
+else
+  fail "gen-hero-tape: the guard and the note disagree about the declared verb"
+fi
+# HIDDEN, so it costs the viewer nothing: it must sit between Hide and Show.
+if awk '/^Hide$/ { h = 1 } /_core_cap PKG_UPGRADE/ && h && !s { found = 1 } /^Show$/ { s = 1 } END { exit !found }' \
+  "$GHF/dotfiles-openSUSE/assets/demo.tape"; then
+  pass "gen-hero-tape: the host guard runs inside the Hide block (no cost to the clip)"
+else
+  fail "gen-hero-tape: the host guard is outside Hide — it would be recorded"
+fi
+# A `note:` row has no declaration to assert and must get a no-op, not a broken guard.
+if grep -qx 'Type "true" Enter' "$GHR/assets/demo.tape"; then
+  pass "gen-hero-tape: a note: row gets a no-op guard (nothing to assert)"
+else
+  fail "gen-hero-tape: the local row's host guard is not the documented no-op"
+fi
+# An apostrophe in the declared verb would close the guard's single-quoted literal.
+_gh_fixture
+printf 'PKG_UPGRADE=sudo zypper dup --with-o'"'"'clock\n' >"$GHF/dotfiles-openSUSE/os/opensuse.capabilities"
+if [[ "$(_gh_run --fleet)" == 2 ]]; then
+  pass "gen-hero-tape: an apostrophe in PKG_UPGRADE is refused, not emitted into the guard"
+else
+  fail "gen-hero-tape: an apostrophe in PKG_UPGRADE was emitted (rc=$(_gh_run --fleet))"
+fi
+
 # THE SHIPPED REGISTRY, NOT THE FIXTURE. Every assertion above writes its own registry, so
 # none of them pins assets/hero-repos.txt — point its `.` row back at dotfiles-MacBook,
 # regenerate, and F11b plus both audit legs stay green while #698's original defect is
@@ -11516,11 +11558,14 @@ if grep -q 'Type "cd .*/dotfiles-core || exit 1" Enter' "$HERE/assets/demo.tape"
 else
   fail "gen-hero-tape: the shipped tape does not cd into a guarded dotfiles-core checkout"
 fi
-# No OTHER fleet repo may appear anywhere in this repo's own tape.
+# No OTHER fleet repo may appear in an EXECUTED line of this repo's own tape. Restricted to
+# `Type` lines on purpose: the shared body carries a comment that names repos to explain the
+# host guard, and a whole-file grep would read that documentation as the defect it warns
+# about — a gate that fails on its own explanation trains people to delete the explanation.
 _gh_ship_alien=""
 while IFS= read -r _gh_r; do
   [[ -n "$_gh_r" ]] || continue
-  grep -q "$_gh_r" "$HERE/assets/demo.tape" && _gh_ship_alien="$_gh_ship_alien $_gh_r"
+  grep '^Type ' "$HERE/assets/demo.tape" | grep -q "$_gh_r" && _gh_ship_alien="$_gh_ship_alien $_gh_r"
 done < <(awk -F'\t' 'NF == 6 && $1 != "." { print $1 }' "$HERE/assets/hero-repos.txt")
 if [[ -z "$_gh_ship_alien" ]]; then
   pass "gen-hero-tape: the shipped tape names no other fleet repo"
@@ -11623,7 +11668,7 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad _gh_guard
 
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run

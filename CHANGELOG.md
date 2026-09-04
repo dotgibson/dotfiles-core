@@ -81,6 +81,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   substitution is literal (`index`/`substr`): awk's `gsub` expands `&` in the REPLACEMENT to
   the matched text, so a value like `check && report` rendered as
   `check @@SIGCMD@@@@SIGCMD@@ report` — `-v` protects a value on the way in, not on the way out.
+- **Matching-host rendering is a checked precondition, not an assumption (#698).** Core reads
+  the capability declaration **once, at shell startup**, from the _host's_ linked
+  `~/.config/zsh/os.capabilities` (`zsh/02-capabilities.zsh`) — `cd`-ing into a repo does not
+  switch it, and `up -n` probes `$PATH`. So an OS hero filmed on the wrong box records that
+  box's package manager under a comment naming the row's: the Fedora tape rendered on a
+  MacBook says `brew upgrade` while the tape says `dnf`, which is #698's wrong-tree defect
+  moved from the filesystem to the environment. Every OS tape now opens, inside `Hide`, with
+  `[[ $(_core_cap PKG_UPGRADE) == '<declared>' ]] || exit 1`, so a mismatched host **fails the
+  render** rather than publishing a hero that contradicts itself. It costs the clip nothing,
+  the guard and the visible note are derived from one declaration and asserted to agree, and
+  a `note:` row gets a no-op.
   `scripts/test-core.sh` covers the generator hermetically in **F11b**: the wrong-repo `cd`
   and the named-theme preset are both pinned as regressions, drift outranks an absent sibling
   (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2

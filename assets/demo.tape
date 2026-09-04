@@ -23,6 +23,15 @@ Set TypingSpeed 45ms
 # the first cut needed: a pager costs a Type, an Enter and two Sleeps per command,
 # which is most of the difference between a ~27 s clip and this one.
 #
+# true IS THE SAME IDEA ONE LEVEL UP. Core reads the capability declaration ONCE,
+# at shell startup, from the HOST's linked ~/.config/zsh/os.capabilities
+# (zsh/02-capabilities.zsh) — `cd`-ing into a repo does not switch it, and neither does
+# `up -n`, which probes $PATH. So an OS repo's hero filmed on the WRONG BOX records that
+# box's package manager under a comment naming the row's: render dotfiles-Fedora on a
+# MacBook and the gif says `brew upgrade` while the tape says `dnf`. Matching-host rendering
+# was an unstated assumption; this makes it a checked precondition, and a mismatched host
+# fails the render instead of publishing a hero that contradicts itself.
+#
 # `|| exit 1` ON THE cd IS LOAD-BEARING. This block is hidden, so a `cd` to a path that
 # does not exist on the rendering box prints its error into frames nobody records and
 # then films $HOME — a hero of the wrong tree, which is #698's original defect wearing a
@@ -32,6 +41,7 @@ Hide
 Type "export CORE_NO_PAGER=1 GIT_PAGER=cat" Enter
 Type "source ~/.config/zsh/.zshrc" Enter
 Type "cd ~/code/dotgibson/dotfiles-core || exit 1" Enter
+Type "true" Enter
 Type "clear" Enter
 Show
 Sleep 1500ms

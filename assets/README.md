@@ -72,7 +72,22 @@ Type "up -n" ...                                          # the one verb, every 
 Type "echo up resolves to $(_core_cap PKG_UPGRADE)" ...   # → sudo zypper dup
 ```
 
-It reads the capability; it never applies it. The registry's `proof` value is substituted
+It reads the capability; it never applies it.
+
+**The rendering host has to be the right one, and that is now checked.** Core loads the
+capability declaration once at shell startup, from the *host's* linked
+`~/.config/zsh/os.capabilities` — `cd`-ing into a repo does not switch it, and `up -n`
+probes `$PATH`. So an OS hero filmed on the wrong box records that box's package manager
+under a comment naming the row's: render the Fedora tape on a MacBook and the gif says
+`brew upgrade` while the tape says `dnf`. Each OS tape therefore opens with a hidden guard:
+
+```tape
+Type "[[ $(_core_cap PKG_UPGRADE) == 'sudo zypper dup' ]] || exit 1" Enter
+```
+
+It sits inside the `Hide` block, so it costs the clip nothing, and a mismatched host fails
+the render instead of publishing a hero that contradicts itself. Rows with no declaration
+(this repo, the two role repos) get `true`. The registry's `proof` value is substituted
 *inside* the template's `Type "…"`, so it must contain no double quote (it would close the
 string early) and no `>` or `<` (a redirection in the shell VHS is driving). Those rules are
 **enforced**, not just written here — `validate_registry` rejects them, along with a `.` row
