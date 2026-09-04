@@ -27,13 +27,14 @@ typeset -g _MAINT_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-maint/main
 # stays: switching on a capability rather than on an OS name is the correct cross-OS shape,
 # and it is what ARCHITECTURE.md always said was right about this file. What changed in
 # #665 is where the answer comes from — the OS layer declares it, and the probe below is
-# the fallback for a box that has not declared yet.
+# what answers for a box that has not declared.
 #
-# THE PROBE IS NOT REDUNDANT AND MUST NOT BE DELETED WITH THE FALLBACK. It is what an
-# undeclared box uses — and #667 authored the declarations but cannot have LINKED them,
-# so that remains every box until each one re-runs its bootstrap. It also survives #763,
-# which deletes the unit-path fallback below: a box whose declaration is not yet linked
-# still has to find its scheduler.
+# THE PROBE SURVIVED #763, WHICH DELETED THE UNIT-DIRECTORY FALLBACK IT SITS BESIDE, and
+# the difference is the point: `/run/systemd/system` and `crontab` are CAPABILITY probes —
+# "what can this box run" — which is the shape PORTABILITY.md blesses everywhere. The
+# directory that scheduler keeps its unit in was an OS-ABSOLUTE PATH, which is the shape
+# Core may not carry at all. One is a probe; the other was OS knowledge. Only the second
+# had to go.
 _maint_scheduler() {
   emulate -L zsh
   # A declaration is authoritative, the same all-or-nothing rule `up` uses: an OS repo that
@@ -52,37 +53,6 @@ _maint_scheduler() {
   else echo none; fi
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# BUILT-IN DEFAULT UNIT PATHS — DELETE THIS BLOCK IN #763.
-# ══════════════════════════════════════════════════════════════════════════════
-# Where each scheduler keeps the maint unit. This is the LAST OS-ABSOLUTE PATH IN CORE,
-# and it is the reason audit-core.sh §5c still carries a per-line exception for this file:
-# `~/Library/LaunchAgents` is a macOS literal, correct on exactly one of the nine boxes.
-#
-# It is here because a declaration cannot be assumed yet. #667 authored SCHEDULER_UNIT_DIR
-# in the seven repos that have an OS band, but a file in a repo is not a symlink on a box:
-# until each one re-runs `./bootstrap.sh --links-only`, $_CORE_CAP is empty there. #763
-# deletes this block once that has happened, and the §5c exception goes with it — the same
-# demolition #664 scheduled for the package-manager defaults in 60-update.zsh. Until then,
-# deleting it would leave an undeclared box unable to install the timer it has always been
-# able to install.
-#
-# (The key is SCHEDULER_UNIT_DIR. This comment said SCHEDULER_UNIT_PATH, which is not a key
-# the schema has ever accepted — a DIRECTORY is the whole point, since Core appends its own
-# unit name.)
-#
-# An OS-absolute path is CORRECT in an OS repo's declaration and wrong here. That is the
-# whole layering rule, and this block is the last place Core still breaks it.
-_maint_unit_dir_default() {
-  emulate -L zsh
-  case "$1" in
-  systemd) print -r -- "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" ;;
-  launchd) print -r -- "$HOME/Library/LaunchAgents" ;;
-  *) print -r -- "" ;;
-  esac
-}
-# ══════════════════════════════════════════════════════════════════════════════
-
 # _maint_unit_file [scheduler] — THE path this box's maint unit lives at: the declared
 # DIRECTORY plus Core's own filename. Empty for cron (whose entry lives in the user's
 # crontab, not a file of its own) and for `none`.
@@ -98,11 +68,15 @@ _maint_unit_dir_default() {
 _maint_unit_file() {
   emulate -L zsh
   local sched="${1:-$(_maint_scheduler)}" d=
-  if ((${+functions[_core_cap]})) && ((${#_CORE_CAP})); then
-    d="$(_core_cap SCHEDULER_UNIT_DIR)"
-  else
-    d="$(_maint_unit_dir_default "$sched")"
-  fi
+  # DECLARED OR NOTHING (#763). Core used to carry a built-in directory per scheduler —
+  # macOS's LaunchAgents directory for launchd, the systemd user dir for systemd — as a
+  # stopgap for a box that had a new Core but had not yet re-run `./bootstrap.sh
+  # --links-only` to link the declaration #667 authored. That launchd literal was the LAST
+  # OS-absolute path in Core and the reason audit-core.sh §5c carried a per-line exception
+  # for this file; both are gone, and §5c now scans this file like any other — which is why
+  # the prefix is NAMED here rather than spelled. An undeclared box resolves no unit file,
+  # and maint-install says so rather than writing a timer to a directory Core guessed at.
+  ((${+functions[_core_cap]})) && d="$(_core_cap SCHEDULER_UNIT_DIR)"
   [[ -n "$d" ]] || { print -r -- ""; return 0 }
   [[ "$d" == '~/'* ]] && d="$HOME/${d#'~/'}"
   case "$sched" in

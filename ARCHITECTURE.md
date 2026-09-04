@@ -59,58 +59,68 @@ sentence is the shape, not the inventory.
 defines what it may assume about the machine it lands on. `VENDORING.md` is the same
 contract read from the consuming OS repo's side.
 
-### The deliberate exception
+### The deliberate exceptions: zero
 
-The test above is absolute, so the one place Core knowingly departs from it is named
-here rather than left to be rediscovered as drift:
+The test above is absolute, and as of #763 Core has **no standing exception to it**. This
+section stays because the two that existed are worth not rediscovering — both as a record
+of what the `os.capabilities` declaration was for, and as the shape any future carve-out
+would have to justify itself against.
 
-- **`zsh/55-maint.zsh`** — the scheduler control surface, and what is left of it is now
-  small and time-boxed. Since #665 the scheduler itself and the directory its unit lives in
-  are **declared** (`SCHEDULER`, `SCHEDULER_UNIT_DIR`), so `~/Library/LaunchAgents` no
-  longer appears at the six call sites it used to — it survives only in the built-in
-  fallback for a box that has not declared yet. `audit-core.sh` §5c's exception now covers
-  that one block, and retires with it in #763.
+**The first was `zsh/60-update.zsh`**, the `up` verb, and it was the larger one. It knew how
+seven package managers count and apply updates, including a `grep -qi tumbleweed
+/etc/os-release` to choose `zypper dup` over `zypper up`. The defence was that `up` is **one
+verb with N backends**, structurally identical to `bin/clip`, and that every machine having
+the same muscle memory was worth the cost. The defence of the *verb* was right and still
+holds; the defence of the *implementation* expired, because one verb with N backends is what
+a dispatch table is for. Since #664 the verb is a dispatcher — it resolves what to run
+through `_pkgup_verb` from the OS layer's `os.capabilities` declaration — and since #763
+there is nothing behind that dispatcher at all.
 
-  The launchd plist and the systemd unit **templates** stay in Core deliberately, and are
-  not the exception. They are portable text parameterised by paths, selected by
-  `_maint_scheduler` — the correct cross-OS shape. Pushing them into the OS repos would put
-  one systemd unit in seven copies with no owner, which is the hand-maintained N-way drift
-  `VENDORING.md` records as the #449 failure. What belongs to the OS layer is *where* the
-  unit goes, not *what it says*.
+**The second was `zsh/55-maint.zsh`**, the scheduler control surface, and #665 had already
+cut it down to one block: the scheduler and the directory its unit lives in became
+**declared** values (`SCHEDULER`, `SCHEDULER_UNIT_DIR`), leaving the macOS LaunchAgents
+literal in a single built-in fallback rather than at six call sites. That block was the last
+OS-absolute path in Core, and `audit-core.sh` §5c carried a per-line exception for it.
+Both are gone; §5c now scans that file like every other manifested file.
 
-**Both exceptions are now scheduled for demolition in the same change (#763)**, which is
-the point of the declaration: what is left in Core is a stopgap for boxes that have not
-declared, not a standing carve-out. Since #667 the declarations themselves all exist —
-seven of them, one per repo with an OS band — so what #763 waits on is each box picking
-its own up, not anyone writing one.
+The launchd plist and the systemd unit **templates** stay in Core deliberately, and were
+never the exception. They are portable text parameterised by paths, selected by
+`_maint_scheduler` — the correct cross-OS shape. Pushing them into the OS repos would put
+one systemd unit in seven copies with no owner, which is the hand-maintained N-way drift
+`VENDORING.md` records as the #449 failure. What belongs to the OS layer is *where* the
+unit goes, not *what it says*. `_maint_scheduler`'s own probe stays too, and the distinction
+is the useful one: `/run/systemd/system` and `crontab` are **capability probes** — what can
+this box run — which is the shape `PORTABILITY.md` blesses everywhere. The directory that
+scheduler keeps its unit in was OS knowledge, and only OS knowledge had to go.
 
-**There used to be a second, larger one**, and retiring it is what `os.capabilities` was for.
-`zsh/60-update.zsh` — the `up` verb — knew how seven package managers count and apply
-updates, including a `grep -qi tumbleweed /etc/os-release` to choose `zypper dup` over
-`zypper up`. The defence was that `up` is **one verb with N backends**, structurally
-identical to `bin/clip`, and that every machine having the same muscle memory was worth
-the cost. The defence of the *verb* was right and still holds; the defence of the
-*implementation* expired, because one verb with N backends is what a dispatch table is
-for. Since #664 the verb is a dispatcher: it resolves what to run through `_pkgup_verb`
-from the OS layer's `os.capabilities` declaration, and the backends belong to the layer
-that changes when the OS does.
+Three things about the demolition are worth knowing rather than rediscovering:
 
-Two things about that are worth knowing rather than rediscovering:
-
-- **Core still carries built-in defaults**, one table at the top of `zsh/60-update.zsh`
-  in the declaration's own `KEY=value` shape. It is a stopgap with a demolition date:
-  #667 authored the declarations that replace it, and #763 deletes it. Each row was the
-  transcription source for the repo that replaced it, which is why it is data in one
-  marked place rather than control flow through five `case` statements.
-
-  **Why the two are separate changes** is the thing worth not rediscovering. Authoring a
-  declaration puts a *file in a repo*; what a box reads is a *symlink*, and only
-  `bootstrap.sh` creates it. Those are separate events — a Core release fans out to the OS
-  repos, and each machine re-bootstraps on its own schedule after that. Between them
-  `$_CORE_CAP` is empty and this table is what the host actually runs, so deleting it
-  alongside the declarations would have broken `up` on every box that pulled and had not
-  yet re-run `./bootstrap.sh --links-only`. #763 is therefore gated on evidence that the
-  fleet has re-bootstrapped, not on the declarations existing.
+- **Why authoring and deleting were two changes.** #667 authored the declarations; #763
+  deleted the fallbacks. Authoring a declaration puts a *file in a repo*; what a box reads
+  is a *symlink*, and only `bootstrap.sh` creates it. Those are separate events — a Core
+  release fans out to the OS repos, and each machine re-bootstraps on its own schedule after
+  that. Between them `$_CORE_CAP` is empty, so deleting the fallbacks alongside the
+  declarations would have broken `up` on every box that had pulled and not yet re-run
+  `./bootstrap.sh --links-only`. #763 was gated on evidence that the fleet had
+  re-bootstrapped, not on the declarations existing — `CORE_CAP_LOUD=1 zsh -i -c 'print -r
+  -- ${#_CORE_CAP}'` on a real host, per repo, is what that evidence looked like.
+- **What an undeclared box does now.** It degrades **visibly**, at each caller's own error
+  message, which is what deleting the fallbacks bought: `up` says no upgrade verb is
+  declared and names `--links-only` as the fix, `maint-install` refuses on systemd/launchd
+  rather than writing a unit to a guessed directory, `core-doctor` prints no install line,
+  and `core-status`'s OS row says the declaration is not linked. What it no longer does is
+  quietly run a row Core kept for whichever package manager happened to be on `PATH`.
+- **The scheduled runner went with them, and it held the last `/etc/os-release` read.**
+  `maint/dotfiles-maint.sh` is not a sourced zsh module, so §5c's OS-absolute-path rule
+  never covered it and neither did the two exceptions above — but it carried the same
+  fallback for the same reason: a seven-arm `have brew / checkupdates / pacman / dnf /
+  zypper / apt-get / apk` count ladder behind its `cap_declared` test, a four-arm `sudo -n`
+  apply ladder, an `/etc/os-release` read for the Kali refusal, and a `have pacman || have
+  emerge` probe standing in for "is this a rolling distro" — a probe for a BINARY asserting
+  a claim about a DISTRO, true on any box with pacman installed for other reasons. All of
+  it is gone. Each of those judgements now belongs to the repo that can actually make it:
+  Kali declines by declaring no `MAINT_UNATTENDED_UPGRADE`, and a box that cannot read its
+  repo's judgement refuses rather than applying a full system upgrade unattended on a guess.
 - **The line between interactive and unattended apply has not moved.** `60-update.zsh`
   never applies unattended — `up` is a verb you run. Scheduled apply lives one file over,
   in `maint/dotfiles-maint.sh`, and is **opt-in and deliberately narrowed**: off unless

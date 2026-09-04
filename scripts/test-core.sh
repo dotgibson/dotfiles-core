@@ -13259,9 +13259,13 @@ check "core-status reports 'none' when no role layer is wired" \
    [[ \$out == *'Role layer'*'none'* ]]"
 check "core-status names the role layer from the 85-94 band" \
   "$_st_env ZSH_CFG='$_st/cfg-role'; out=\$(core-status 2>&1); (( \$? == 0 )) && [[ \$out == *'offensive'* ]]"
-check "core-status says the OS row is built-in defaults when nothing is declared" \
+# Since #763 an undeclared box has no fallback to name, so this row stopped being a note
+# about WHICH source answered and became the reason `up`, the doctor's install hint and
+# maint-install have nothing to work with. It must therefore carry the REMEDY, not just the
+# fact — this panel is where an operator looks when those start failing.
+check "core-status names the missing declaration AND the remedy when nothing is linked" \
   "$_st_env ZSH_CFG='$_st/cfg-bare'; out=\$(core-status 2>&1); (( \$? == 0 )) &&
-   [[ \$out == *'built-in defaults'* ]]"
+   [[ \$out == *'no os.capabilities linked'* && \$out == *'--links-only'* ]]"
 check "core-status --help returns 0 (not mis-read as a flag)" \
   "$_st_env out=\$(core-status --help); (( \$? == 0 )) && [[ \$out == *'usage: core-status'* ]]"
 check "core-status rejects an unknown flag with a did-you-mean" \
@@ -13523,7 +13527,7 @@ check "core-doctor does not reuse the wired block's ○ for opt-in tools" \
 check "core-doctor keeps opt-in tools out of the install-missing list" \
   '_core_have() { return 1; }
    _core_doctor_present() { return 1; }
-   _pkgup_mgr() { print -r -- apt; }
+   _core_cap() { [[ $1 == PKG_INSTALL ]] && print -r -- "sudo apt install"; }
    out=$(NO_COLOR=1 core-doctor 2>&1)
    inst=${out#*"install missing"}; inst=${inst%%"opt-in"*}
    [[ $out == *"install missing"* ]] && [[ $inst == *"eza"* ]] && [[ $inst != *"lnav"* ]]'
@@ -13826,13 +13830,14 @@ assert \"git-absorb\" in tools, sorted(tools)
 assert tools[\"git-absorb\"] is True, tools[\"git-absorb\"]
 assert tools[\"eza\"] is False, tools[\"eza\"]
 "'
-# core-doctor "install missing" hint: the block is gated on _pkgup_mgr (from update.zsh,
-# absent in this ui+functions harness) so the default render never reaches it. Stub the
-# manager + force every tool ✗ (missing), then assert the copy-paste line renders AND the
-# caveat points at PORTING-MATRIX.md rather than promising the package manager (or a single
-# installer) can fetch everything — the regression guard for the unpackaged-tool guidance.
+# core-doctor "install missing" hint: since #763 the block renders from the DECLARED
+# PKG_INSTALL and nothing else, so the seam is _core_cap (band 02, absent in this
+# ui+functions harness) rather than _pkgup_mgr. Stub it + force every tool ✗ (missing),
+# then assert the copy-paste line renders AND the caveat points at PORTING-MATRIX.md rather
+# than promising the package manager (or a single installer) can fetch everything — the
+# regression guard for the unpackaged-tool guidance.
 check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpackaged tools" \
-  '_pkgup_mgr() { print -r -- apt; }
+  '_core_cap() { [[ $1 == PKG_INSTALL ]] && print -r -- "sudo apt install"; }
    _core_have() { return 1; }
    _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
@@ -13844,7 +13849,7 @@ check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpack
 # missing, so the old shape would render `sudo apt install eza bat …` — assert the verb is
 # only ever followed by the <pkg> placeholder, and that the first tool name never trails it.
 check "core-doctor's install hint offers a per-tool template, not a paste-ready batch command" \
-  '_pkgup_mgr() { print -r -- apt; }
+  '_core_cap() { [[ $1 == PKG_INSTALL ]] && print -r -- "sudo apt install"; }
    _core_have() { return 1; }
    _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
@@ -14183,6 +14188,26 @@ hdr "detection + UX unit tests (ui / update / maint)"
 _real_zsh="$(command -v zsh)"
 UPD="$HERE/zsh/60-update.zsh"
 MNT="$HERE/zsh/55-maint.zsh"
+CAPZ="$HERE/zsh/02-capabilities.zsh"
+# Since #763 Core carries NO built-in package-manager row, so every case below that
+# exercises a resolved verb has to seed a declaration — an undeclared box resolves nothing
+# and that is now the correct answer, not a fallback. $CAPDECL is the shared scratch
+# declaration for this section, seeded by _decl_as and read through CORE_CAPABILITIES_FILE;
+# each case names the archive whose behaviour it is pinning.
+CAPDECL="$SANDBOX/section-decl.capabilities"
+_decl_as() { printf '%s\n' "$1" >"$CAPDECL"; } # _decl_as <KEY=value lines>
+# The apt/Debian declaration, which is what most of this section's stubs impersonate. It is
+# a copy of dotfiles-Debian/os/debian.capabilities' package half, kept here rather than read
+# from the sibling clone: this suite must be hermetic and green with no fleet checked out.
+_DECL_APT='PKG_UPGRADE=sudo apt-get full-upgrade
+PKG_UPGRADE_PRE=sudo apt-get update
+PKG_UPGRADE_PARTIAL=sudo apt-get install --only-upgrade
+PKG_CLEANUP=sudo apt-get autoremove
+PKG_ASSUME_YES=-y
+PKG_COUNT_PENDING=apt-get -s upgrade
+PKG_PENDING_MATCH=^Inst[[:space:]]
+PKG_PENDING_FIELD=2'
+_decl_as "$_DECL_APT"
 # A fake bin dir holding ONE stub command, used to pin a detection ladder's answer.
 PMBIN="$SANDBOX/pmbin"
 _pm_only() {
@@ -14458,13 +14483,20 @@ ucheck "update: _pkgup_mgr reports none on a bare PATH" \
 # same verdict — and it would have been paid on every leg of the CI matrix. Redirecting to a
 # file means the parent waits only for the zsh it actually started. The stub's sleep is now
 # just "comfortably longer than the assertion window", not a cost.
+#
+# The macOS declaration is seeded so the sleeping stub is actually REACHED. Since #763 an
+# undeclared box resolves no count verb and _pkgup_count returns -1 without running
+# anything — which would still satisfy the assertion below, but for the wrong reason, and
+# the timing window this case depends on would not exist at all.
 _PKGUPT="$SANDBOX/pkgup-claim"
 rm -rf "$_PKGUPT"
 mkdir -p "$_PKGUPT/bin" "$_PKGUPT/cache/zsh"
 printf '#!/bin/sh\nsleep 10\n' >"$_PKGUPT/bin/brew"
 chmod +x "$_PKGUPT/bin/brew"
+printf 'PKG_COUNT_PENDING=brew outdated --quiet\nPKG_COUNT_REFRESH=brew update\n' >"$_PKGUPT/os.capabilities"
 if HOME="$SANDBOX" env PATH="$_PKGUPT/bin:$PATH" XDG_CACHE_HOME="$_PKGUPT/cache" CORE_WELCOME=0 \
-  "$_real_zsh" -fic "source '$UPD'
+  CORE_CAPABILITIES_FILE="$_PKGUPT/os.capabilities" \
+  "$_real_zsh" -fic "source '$CAPZ'; source '$UPD'
    c=\$XDG_CACHE_HOME/zsh/pkg-updates
    [[ -r \$c ]] || { print -u2 'no cache written'; exit 1 }
    local -a l; l=(\"\${(@f)\$(<\$c)}\")
@@ -14496,8 +14528,8 @@ chmod +x "$PMBIN/apt-get"
 # _pkgup_mgr still resolves to apt — the isolation we want.
 ln -s "$(command -v awk)" "$PMBIN/awk"
 ucheck "update: _pkgup_list surfaces upgradable package names (apt)" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *foo* && \$out == *bar* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$CAPZ'; source '$UPD'; out=\$(_pkgup_list); [[ \$out == *foo* && \$out == *bar* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 
 # REGRESSION (stdin): the probes must be UNPROMPTABLE. They run with stdout captured by
 # $(...) and stderr discarded, so a package manager that stops to ask a question writes it
@@ -14524,11 +14556,11 @@ chmod +x "$PMBIN/apt-get"
 ln -s "$(command -v awk)" "$PMBIN/awk"
 ln -s "$(command -v grep)" "$PMBIN/grep"
 ucheck "update: _pkgup_count cannot consume the caller's stdin (unpromptable)" \
-  "source '$UPD'; printf 'sentinel\\n' | { _pkgup_count >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$CAPZ'; source '$UPD'; printf 'sentinel\\n' | { _pkgup_count >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 ucheck "update: _pkgup_list cannot consume the caller's stdin (unpromptable)" \
-  "source '$UPD'; printf 'sentinel\\n' | { _pkgup_list >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$CAPZ'; source '$UPD'; printf 'sentinel\\n' | { _pkgup_list >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # Put the fixture back the way the checks below expect it. $PMBIN is shared state, and the
 # stub above is the one thing in this file that BLOCKS: leaving it in place hands a prompting
 # apt-get to every later check, including the startup-hook ones that run _pkgup_refresh with
@@ -14577,18 +14609,18 @@ ucheck "update: _pkgup_notice still renders a real cached count" \
 # `last` collapses to empty ⇒ 0, the window looks elapsed, and the claim-slot write fires
 # and rewrites the file. Assert it is untouched.
 ucheck "update: startup hook reads the cache positionally (empty count can't defeat the throttle)" \
-  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- '' \$EPOCHSECONDS >| \$_c; _before=\$(<\$_c); source '$UPD'; sleep 0.3; [[ \$(<\$_c) == \$_before ]]" \
-  XDG_CACHE_HOME="$SANDBOX/hook-emptycount" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0
+  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- '' \$EPOCHSECONDS >| \$_c; _before=\$(<\$_c); source '$CAPZ'; source '$UPD'; sleep 0.3; [[ \$(<\$_c) == \$_before ]]" \
+  XDG_CACHE_HOME="$SANDBOX/hook-emptycount" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # Control: with a STALE epoch the same hook SHOULD claim the slot, so the assertion above
 # is proving the throttle works, not that the hook is inert.
 ucheck "update: startup hook still refreshes once the throttle window has elapsed" \
-  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- 5 1 >| \$_c; _before=\$(<\$_c); source '$UPD'; sleep 0.3; [[ \$(<\$_c) != \$_before ]]" \
-  XDG_CACHE_HOME="$SANDBOX/hook-stale" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0
+  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- 5 1 >| \$_c; _before=\$(<\$_c); source '$CAPZ'; source '$UPD'; sleep 0.3; [[ \$(<\$_c) != \$_before ]]" \
+  XDG_CACHE_HOME="$SANDBOX/hook-stale" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # up --dry-run (#8): the non-destructive inspect — list what WOULD upgrade and exit 0,
 # applying nothing. Same apt stub as above; assert the names print and the rc is 0.
 ucheck "update: up --dry-run lists pending packages and exits 0 (applies nothing)" \
-  "source '$UI'; source '$UPD'; out=\$(up --dry-run); (( \$? == 0 )) && [[ \$out == *foo* && \$out == *bar* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up --dry-run); (( \$? == 0 )) && [[ \$out == *foo* && \$out == *bar* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # up strict flag parsing: every arg is parsed (not just $1), so an unknown flag is
 # REJECTED in Core's voice (rc 1 — the verb-layer usage-error convention, same as
 # serve/mkcd/…) instead of silently falling through to a real, privileged update —
@@ -14608,27 +14640,36 @@ ucheck "update: up refuses -i with -y (three-way mutual exclusion, rc 1)" \
   "source '$UI'; source '$UPD'; out=\$(up -i -y 2>&1); (( \$? == 1 )) && [[ \$out == *'mutually exclusive'* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
 # (b) no fzf AND no gum on the isolated PATH → the picker errbox, not a TTY/cancel message.
+# The apt declaration is seeded because the PARTIAL-UPGRADE safety check runs FIRST: on an
+# archive that declares no PKG_UPGRADE_PARTIAL (or on an undeclared box, which since #763 is
+# the same thing) `up -i` refuses before it ever looks for a picker, and this case would
+# pass on the wrong message.
 ucheck "update: up -i names fzf/gum when no picker is installed" \
-  "source '$UI'; source '$UPD'; out=\$(up -i </dev/null 2>&1); (( \$? == 1 )) && [[ \$out == *'needs fzf or gum'* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up -i </dev/null 2>&1); (( \$? == 1 )) && [[ \$out == *'needs fzf or gum'* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # (c) stub a picker (fzf) onto the isolated PATH so the picker check passes; a non-TTY run
 # must then decline with the TERMINAL message — proving the two failure modes are separate.
 printf '#!/bin/sh\n:\n' >"$PMBIN/fzf"
 chmod +x "$PMBIN/fzf"
 ucheck "update: up -i with a picker present still declines without a TTY" \
-  "source '$UI'; source '$UPD'; out=\$(up -i </dev/null 2>&1); (( \$? == 1 )) && [[ \$out == *'needs an interactive terminal'* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up -i </dev/null 2>&1); (( \$? == 1 )) && [[ \$out == *'needs an interactive terminal'* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 rm -f "$PMBIN/fzf"
 ucheck "update: up --help advertises -i/--interactive" \
   "source '$UI'; source '$UPD'; out=\$(up --help); (( \$? == 0 )) && [[ \$out == *'-i'* && \$out == *interactive* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# up -i must REFUSE on full-sync-only managers (pacman/emerge/apk): a partial upgrade there
-# risks a broken system, so the safety model (documented in update.zsh) forbids it. Stub a
-# pacman-only PATH so _pkgup_mgr resolves to it, then assert the refusal + rc 1.
+# up -i must REFUSE on full-sync-only archives (pacman/emerge/apk): a partial upgrade there
+# risks a broken system, so the safety model (documented in update.zsh) forbids it. It is the
+# ABSENCE of PKG_UPGRADE_PARTIAL that refuses, so seed dotfiles-Arch's declaration — which
+# omits it deliberately — rather than leaving the box undeclared, where every key is absent
+# and the case would pass without proving anything about Arch.
 _pm_only pacman
+_decl_as 'PKG_UPGRADE=sudo pacman -Syu
+PKG_COUNT_PENDING=checkupdates'
 ucheck "update: up -i refuses on pacman (full-sync-only safety, rc 1)" \
-  "source '$UI'; source '$UPD'; out=\$(up -i 2>&1); (( \$? == 1 )) && [[ \$out == *'does not support safe partial upgrades'* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up -i 2>&1); (( \$? == 1 )) && [[ \$out == *'does not support safe partial upgrades'* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
+_decl_as "$_DECL_APT"
 # core-help context-awareness (U7): a row whose tool is ABSENT on this box must be
 # tagged "needs <tool>", while an always-on verb (mkcd) still renders normally. Drive
 # it on a bare PATH so fzf is guaranteed missing, making the assertion deterministic.
@@ -15724,12 +15765,11 @@ ucheck "maint: _maint_scheduler resolves to a valid scheduler" \
 CAPD_MNT="$SANDBOX/capmnt"
 rm -rf "$CAPD_MNT"
 mkdir -p "$CAPD_MNT"
-CAPZ_M="$HERE/zsh/02-capabilities.zsh"
 _mntcheck() { # _mntcheck <label> <decl> <body> [VAR=VAL ...]
   local label="$1" decl="$2" body="$3"
   shift 3
   printf '%s\n' "$decl" >"$CAPD_MNT/os.capabilities"
-  ucheck "$label" "source '$UI'; source '$CAPZ_M'; source '$MNT'; $body" \
+  ucheck "$label" "source '$UI'; source '$CAPZ'; source '$MNT'; $body" \
     PATH="$PMBIN" CORE_CAPABILITIES_FILE="$CAPD_MNT/os.capabilities" "$@"
 }
 _mntcheck "maint: a declared SCHEDULER decides, not the probe" \
@@ -15774,6 +15814,17 @@ ucheck "maint: maint-log rejects a non-numeric N in Core's voice" \
 # HOME/XDG, render at 09:30, then VALIDATE the generated artifact. The runner path resolves
 # to this repo's maint/dotfiles-maint.sh via maint.zsh's %x, so the [[ -f ]] guard passes.
 hdr "maint scheduler artifacts (systemd / launchd / cron, hermetic render)"
+# THE SCHEDULER AND ITS UNIT DIRECTORY ARE ONE STUB NOW (#763). These cases used to override
+# _maint_scheduler alone and let Core's built-in per-scheduler directory supply the rest;
+# that table was the last OS-absolute path in Core and is gone, so _maint_unit_file reads
+# the DECLARED SCHEDULER_UNIT_DIR and nothing else. $_MSD/$_MLD stand in for the OS layer's
+# declaration and name the two together — which is how a real os/<os>.capabilities declares
+# them, and what audit-core.sh's capability schema requires (a SCHEDULER of systemd/launchd
+# without a SCHEDULER_UNIT_DIR is a rejected declaration). Each names the directory the
+# fixtures below actually use, so an undeclared-box regression fails loudly here rather than
+# writing a unit somewhere Core guessed at.
+_MSD='_maint_scheduler() { echo systemd }; _core_cap() { [[ $1 == SCHEDULER_UNIT_DIR ]] && print -r -- "$XDG_CONFIG_HOME/systemd/user" }'
+_MLD='_maint_scheduler() { echo launchd }; _core_cap() { [[ $1 == SCHEDULER_UNIT_DIR ]] && print -r -- "$HOME/Library/LaunchAgents" }'
 SCHEDBIN="$SANDBOX/schedbin"
 mkdir -p "$SCHEDBIN"
 for s in systemctl launchctl; do
@@ -15788,7 +15839,7 @@ chmod +x "$SCHEDBIN/crontab"
 # systemd: the timer's OnCalendar must be the rendered HH:MM, and the service must point
 # ExecStart at the runner. Override the scheduler so the branch runs on any host.
 ucheck "maint: systemd timer+service render with a valid OnCalendar" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; maint-install 09:30 >/dev/null 2>&1; ud=\"\$XDG_CONFIG_HOME/systemd/user\"; [[ -f \"\$ud/dotfiles-maint.timer\" && -f \"\$ud/dotfiles-maint.service\" ]] || exit 1; grep -q 'OnCalendar=\*-\*-\* 09:30:00' \"\$ud/dotfiles-maint.timer\" || exit 1; grep -q 'ExecStart=.*dotfiles-maint.sh' \"\$ud/dotfiles-maint.service\"" \
+  "source '$UI'; source '$MNT'; ${_MSD}; maint-install 09:30 >/dev/null 2>&1; ud=\"\$XDG_CONFIG_HOME/systemd/user\"; [[ -f \"\$ud/dotfiles-maint.timer\" && -f \"\$ud/dotfiles-maint.service\" ]] || exit 1; grep -q 'OnCalendar=\*-\*-\* 09:30:00' \"\$ud/dotfiles-maint.timer\" || exit 1; grep -q 'ExecStart=.*dotfiles-maint.sh' \"\$ud/dotfiles-maint.service\"" \
   PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-systemd"
 # cron: the captured table line must be a well-formed 5-field schedule at MM HH, tagged.
 # The runner is single-quoted, which is part of the contract rather than incidental: cron's
@@ -15803,7 +15854,7 @@ ucheck "maint: cron line renders as a valid 5-field schedule with the runner quo
 # python3 (stdlib plistlib); skip gracefully otherwise, like the linters above.
 if have python3; then
   ucheck "maint: launchd plist is well-formed XML with the rendered Hour/Minute" \
-    "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; maint-install 09:30 >/dev/null 2>&1; p=\"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"; [[ -f \"\$p\" ]] || exit 1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); s=d[\"StartCalendarInterval\"]; sys.exit(0 if s[\"Hour\"]==9 and s[\"Minute\"]==30 else 1)' \"\$p\"" \
+    "source '$UI'; source '$MNT'; ${_MLD}; maint-install 09:30 >/dev/null 2>&1; p=\"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"; [[ -f \"\$p\" ]] || exit 1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); s=d[\"StartCalendarInterval\"]; sys.exit(0 if s[\"Hour\"]==9 and s[\"Minute\"]==30 else 1)' \"\$p\"" \
     PATH="$SCHEDBIN:$PATH" HOME="$SANDBOX/sched-launchd"
 else
   skip "maint launchd plist (python3 absent — cannot parse plist XML)"
@@ -15817,7 +15868,7 @@ fi
 # steps silently. That is why this is asserted per-scheduler rather than trusted.
 # A /sentinel/bin injected into PATH at install time must appear in the rendered unit.
 ucheck "maint: systemd unit bakes in the installing shell's PATH" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH=/sentinel/bin:\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q '^Environment=\"PATH=.*/sentinel/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  "source '$UI'; source '$MNT'; ${_MSD}; PATH=/sentinel/bin:\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q '^Environment=\"PATH=.*/sentinel/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
   PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-path-systemd"
 # cron's command field is sh, so the PATH rides as an env prefix — and `%` is cron's
 # newline metacharacter, which would truncate the line mid-PATH if it were not escaped.
@@ -15844,7 +15895,7 @@ fi
 # together, since either alone would pass while the pair is broken.
 if have python3; then
   ucheck "maint: launchd plist XML-escapes the PATH and still parses" \
-    "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; PATH='/a&b/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); sys.exit(0 if \"/a&b/bin\" in d[\"EnvironmentVariables\"][\"PATH\"] else 1)' \"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"" \
+    "source '$UI'; source '$MNT'; ${_MLD}; PATH='/a&b/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); sys.exit(0 if \"/a&b/bin\" in d[\"EnvironmentVariables\"][\"PATH\"] else 1)' \"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"" \
     PATH="$SCHEDBIN:$PATH" HOME="$SANDBOX/sched-path-launchd"
 else
   skip "maint launchd PATH capture (python3 absent — cannot parse plist XML)"
@@ -15863,7 +15914,7 @@ else
 fi
 # ...and the rendered unit actually carries it, so the helper cannot be wired up wrong.
 ucheck "maint: the systemd unit's PATH survives a % in the installing PATH" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH='/sent%h/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'Environment=\"PATH=/sent%%h/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  "source '$UI'; source '$MNT'; ${_MSD}; PATH='/sent%h/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'Environment=\"PATH=/sent%%h/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
   PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-pct-systemd"
 
 # ── the stale-unit detector (_maint_unit_needs_refresh) ──────────────────────
@@ -15919,28 +15970,28 @@ printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MR
 : >"$_MRF/cron-none"
 
 ucheck "maint/refresh: systemd unit WITH the PATH capture and a resolvable runner is current" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-new"
 ucheck "maint/refresh: systemd unit WITHOUT it is flagged stale (why=path)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  "source '$UI'; source '$MNT'; ${_MSD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
   XDG_CONFIG_HOME="$_MRF/sd-old"
 ucheck "maint/refresh: systemd unit whose runner path is gone is flagged (why=runner)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MSD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   XDG_CONFIG_HOME="$_MRF/sd-dead"
 ucheck "maint/refresh: no systemd unit at all stays quiet (no nag without a schedule)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-none"
 ucheck "maint/refresh: launchd plist WITH a PATH key and a resolvable runner is current" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-new"
 ucheck "maint/refresh: launchd plist with EnvironmentVariables but NO PATH is flagged stale (why=path)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
   HOME="$_MRF/ld-old"
 ucheck "maint/refresh: launchd plist whose ProgramArguments runner is gone is flagged (why=runner)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   HOME="$_MRF/ld-dead"
 ucheck "maint/refresh: no launchd plist at all stays quiet" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-none"
 ucheck "maint/refresh: cron line carrying a PATH and a resolvable runner is current" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
@@ -15958,7 +16009,7 @@ ucheck "maint/refresh: an empty crontab stays quiet" \
 # extraction that mangled it (dropping the PATH prefix's quoting, or half a path with a
 # space) would still "detect" a dead runner while telling the operator the wrong path.
 ucheck "maint/refresh: the recorded runner path is read back verbatim (launchd argv[1])" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
   HOME="$_MRF/ld-dead"
 ucheck "maint/refresh: the recorded runner path is read back verbatim (cron, past the PATH prefix)" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
@@ -16003,17 +16054,21 @@ if mkdir -p "$_MRF_HOSTILE_DIR" 2>/dev/null && printf '#!/bin/bash\n:\n' >"$_MRF
   : >"$_MRF/cron-hostile"
   # The path rides in through the ENVIRONMENT — it holds a single quote, a double quote and
   # a backslash, so interpolating it into the assertion body would rewrite the body itself.
-  _MRF_RT="source '$UI'; source '$MNT'; _MAINT_SH=\"\$SH\"; _maint_scheduler() { echo SCHED }; maint-install 09:30 >/dev/null 2>&1; [[ \"\$(_maint_unit_runner)\" == \"\$SH\" ]] && ! _maint_unit_needs_refresh"
+  # $UNITDIR rides in the same way and for the same reason as $SH, and it is required
+  # since #763: the unit DIRECTORY is declared (SCHEDULER_UNIT_DIR) and Core keeps no
+  # built-in one, so the stub has to name it. cron passes an empty one — its entry lives in
+  # the crontab, not a file of its own.
+  _MRF_RT="source '$UI'; source '$MNT'; _MAINT_SH=\"\$SH\"; _maint_scheduler() { echo SCHED }; _core_cap() { [[ \$1 == SCHEDULER_UNIT_DIR ]] && print -r -- \"\$UNITDIR\" }; maint-install 09:30 >/dev/null 2>&1; [[ \"\$(_maint_unit_runner)\" == \"\$SH\" ]] && ! _maint_unit_needs_refresh"
 
   ucheck "maint/refresh: a runner path holding % \$ \" \\ and a space round-trips through the systemd unit" \
     "${_MRF_RT/SCHED/systemd}" \
-    PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$_MRF/rt-sd" SH="$_MRF_HOSTILE"
+    PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$_MRF/rt-sd" UNITDIR="$_MRF/rt-sd/systemd/user" SH="$_MRF_HOSTILE"
   ucheck "maint/refresh: a runner path holding & < > and a quote round-trips through the launchd plist" \
     "${_MRF_RT/SCHED/launchd}" \
-    PATH="$SCHEDBIN:$PATH" HOME="$_MRF/rt-ld" SH="$_MRF_HOSTILE"
+    PATH="$SCHEDBIN:$PATH" HOME="$_MRF/rt-ld" UNITDIR="$_MRF/rt-ld/Library/LaunchAgents" SH="$_MRF_HOSTILE"
   ucheck "maint/refresh: a runner path holding % and shell metacharacters round-trips through the cron line" \
     "${_MRF_RT/SCHED/cron}" \
-    PATH="$_MRF/rtbin:$SCHEDBIN:$PATH" CRON_TABLE="$_MRF/cron-hostile" SH="$_MRF_HOSTILE"
+    PATH="$_MRF/rtbin:$SCHEDBIN:$PATH" CRON_TABLE="$_MRF/cron-hostile" UNITDIR="" SH="$_MRF_HOSTILE"
 
   # ...and the same three artifacts read by something that is NOT this codebase. A round-trip
   # through our own reader proves only that the two halves AGREE — escape it wrongly and
@@ -16101,13 +16156,13 @@ printf '<plist><dict><key>ProgramArguments</key><string>%s</string><key>WatchPat
   "$_MRF_RUNNER" "$_MRF_GONE" >"$_MRF/ld-displaced/Library/LaunchAgents/com.dotfiles.maint.plist"
 
 ucheck "maint/refresh: a systemd ExecStart with extra argv is refused, not read as one path" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-args"
 ucheck "maint/refresh: a cron command with a redirection is refused, not read as one path" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-args"
 ucheck "maint/refresh: a later key's <array> is not mistaken for ProgramArguments'" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-displaced"
 
 # The same rule against the QUOTED shapes, where "one argument" is a property of where the
@@ -16126,10 +16181,10 @@ printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash '%s' >>/tmp/m.log # dotfiles
   >"$_MRF/cron-qargs"
 
 ucheck "maint/refresh: a quoted systemd runner with argv after the closing quote is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-qargs"
 ucheck "maint/refresh: a QUOTED systemd runner holding an unresolved % specifier is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-spec"
 ucheck "maint/refresh: a quoted cron runner with a redirection after it is refused" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
@@ -16151,7 +16206,7 @@ ucheck "maint/refresh: a QUOTED cron runner carrying a bare % is refused (quotin
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-qpct"
 ucheck "maint/refresh: a QUOTED systemd runner carrying a \$VAR reference is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-qvar"
 
 # A RELATIVE recorded runner is the one value that cannot be tested at all: `[[ -f ]]`
@@ -16169,13 +16224,13 @@ printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string
   "$_MRF_REL" >"$_MRF/ld-rel/Library/LaunchAgents/com.dotfiles.maint.plist"
 
 ucheck "maint/refresh: a relative systemd runner is refused (verdict must not depend on cwd)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-rel"
 ucheck "maint/refresh: a relative cron runner is refused (verdict must not depend on cwd)" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-rel"
 ucheck "maint/refresh: a relative launchd runner is refused (verdict must not depend on cwd)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-rel"
 
 # The last way to name a path the unit does not actually run: read an argument belonging to
@@ -16189,7 +16244,7 @@ printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/echo</string
 printf "30 09 * * * PATH='/x/bin' /bin/echo /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-spliced"
 
 ucheck "maint/refresh: a launchd argv[0] that is not the interpreter is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-argv0"
 ucheck "maint/refresh: a cron command with another program spliced before the interpreter is refused" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
@@ -16229,10 +16284,10 @@ printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string
 # the quoting of the body itself. (The other verbatim checks above interpolate safely only
 # because their paths happen to hold no quote — a hazard of the harness, not of the code.)
 ucheck "maint/refresh: launchd decodes &apos; so the hint names the real filename" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == \"\$WANT\" ]] && _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ \"\$(_maint_unit_runner)\" == \"\$WANT\" ]] && _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   HOME="$_MRF/ld-entity" WANT="$_MRF_QUOTED"
 ucheck "maint/refresh: a launchd path with an undecodable numeric reference is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-numref"
 
 # The two causes are not mutually exclusive, and a unit predating the PATH capture is if
@@ -16250,10 +16305,10 @@ printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string
 printf '30 09 * * * /usr/bin/env bash %s # dotfiles-maint\n' "$_MRF_GONE" >"$_MRF/cron-old-dead"
 
 ucheck "maint/refresh: a pre-capture systemd unit that is ALSO dead reports runner, not path" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MSD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   XDG_CONFIG_HOME="$_MRF/sd-old-dead"
 ucheck "maint/refresh: a pre-capture launchd plist that is ALSO dead reports runner, not path" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   HOME="$_MRF/ld-old-dead"
 ucheck "maint/refresh: a pre-capture cron line that is ALSO dead reports runner, not path" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
@@ -16272,7 +16327,7 @@ printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' 
 printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_RUNNER%m" >"$_MRF/cron-pct"
 
 ucheck "maint/refresh: a systemd runner carrying a % specifier is refused (not the path that runs)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-pct"
 ucheck "maint/refresh: a cron runner carrying % (cron's newline metacharacter) is refused" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
@@ -16335,23 +16390,25 @@ fi
 printf '#!/bin/sh\nprintf "Import key? [y/N]: "\nread -r a\nprintf "pkg-alpha 1.0 updates\\n"\n' >"$_MRT/bin/stubmgr"
 chmod +x "$_MRT/bin/stubmgr"
 #
-# The chain's arms now go through _pkgcount, so that helper is extracted alongside the chain
+# The chain goes through _pkgcount_decl, so that helper is extracted alongside the chain
 # (same block-boundary rule as step()). _to stays STUBBED here — this case is about stdin,
 # and the real timeout is exercised by the separate case below.
-sed -n '/^_pkgcount() {/,/^}/p' "$_MAINT_SH" >"$_MRT/pkgcount.bash"
+#
+# cap_declared/cap ARE THE FIXTURE NOW (#763). The chain used to end in a seven-arm
+# `have brew / checkupdates / pacman / dnf / zypper / apt-get / apk` ladder, and this case
+# shadowed every arm onto the prompting stub to be deterministic on any host. That ladder is
+# gone: an undeclared box runs nothing at all, so the declaration IS the input, and stubbing
+# the two reader functions is both simpler and closer to what a real box does.
+sed -n '/^_pkgcount_decl() {/,/^}/p' "$_MAINT_SH" >"$_MRT/pkgcount.bash"
 if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" &&
   [[ -s "$_MRT/count.bash" && -s "$_MRT/pkgcount.bash" ]]; then
   if out="$(printf 'sentinel\n' | bash -c '
-      have() { [ "$1" = brew ] && return 1; command -v "$1" >/dev/null 2>&1; }
       _to() { shift; "$@"; }
+      cap_declared() { return 0; }
+      cap() { [ "$1" = PKG_COUNT_PENDING ] && printf "stubmgr"; return 0; }
       . "'"$_MRT/pkgcount.bash"'"
       MAINT_PKGCOUNT_TIMEOUT=30
       PATH="'"$_MRT/bin"'":$PATH
-      # Shadow every manager arm onto the prompting stub so the chain is deterministic
-      # regardless of which package managers the host actually has.
-      for m in checkupdates pacman dnf zypper apt-get apk; do
-        eval "$m() { stubmgr \"\$@\"; }"
-      done
       . "'"$_MRT/count.bash"'" >/dev/null 2>&1
       read -r survivor || survivor=GONE
       printf "%s\n" "$survivor"
@@ -16476,8 +16533,9 @@ fi
 # manager there is no output, grep prints 0, and grep's non-zero status — the pipeline's —
 # is discarded by the assignment. So the daily log asserted "0 upgradable" (an up-to-date
 # box) on exactly the failure the timeout was added to survive, and the sentinel two lines
-# above the chain could never fire. This drives the REAL _to and _pkgcount (no stubs — the
-# whole point is the status `timeout` itself reports) against a manager that stalls forever,
+# above the chain could never fire. This drives the REAL _to and _pkgcount_decl (only the
+# declaration reader is stubbed — the point is the status `timeout` itself reports) against a
+# manager that stalls forever,
 # with the bound turned down to 1s so the case costs about a second.
 #
 # That status is NOT one number across the fleet, which is why the observed rc is carried
@@ -16486,12 +16544,11 @@ fi
 # reporting a stalled manager as 0 — so if a future userland picks a third spelling, the
 # failure here names it instead of just saying "want -1".
 #
-# The stall stub is a REAL EXECUTABLE named `brew`, not a shell function like the stdin case
-# above: `timeout` execs its argument, so it cannot run a function (it would fail 127 and the
-# case would pass for the wrong reason). `exec sleep` so the stub process IS the sleep and
-# takes the SIGTERM directly instead of orphaning a 30s child. brew is first in the chain,
-# and the stub dir is prepended, so this arm wins on any host — and it is an arm that goes
-# through _to (the pacman arm deliberately does not).
+# The stall stub is a REAL EXECUTABLE named `brew`, not a shell function: `timeout` execs its
+# argument, so it cannot run a function (it would fail 127 and the case would pass for the
+# wrong reason). `exec sleep` so the stub process IS the sleep and takes the SIGTERM directly
+# instead of orphaning a 30s child. The declaration names it as the count verb, so this is
+# the path a real box takes on any host.
 if have timeout; then
   printf '#!/bin/sh\nexec sleep 30\n' >"$_MRT/bin/brew"
   chmod +x "$_MRT/bin/brew"
@@ -16500,6 +16557,8 @@ if have timeout; then
     if out="$(bash -c '
         PATH="'"$_MRT/bin"'":$PATH
         have() { command -v "$1" >/dev/null 2>&1; }
+        cap_declared() { return 0; }
+        cap() { [ "$1" = PKG_COUNT_PENDING ] && printf "brew outdated --quiet"; return 0; }
         . "'"$_MRT/to.bash"'"
         . "'"$_MRT/pkgcount.bash"'"
         MAINT_PKGCOUNT_TIMEOUT=1
@@ -16514,7 +16573,7 @@ if have timeout; then
       fail "maint: a timed-out package probe reports count='${out%% *}' at timeout rc=${out##* } (want count -1 — 0 would log the box as up to date)"
     fi
   else
-    fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
+    fail "maint: could not extract _to/_pkgcount_decl from ${_MAINT_SH##*/}"
   fi
 else
   skip "maint timed-out package probe (no \`timeout\` — _to runs the command unbounded)"
@@ -16525,7 +16584,7 @@ fi
 # ever proves the 124 arm — which is exactly how a 124-only gate reached CI green here and
 # red on Alpine. A fake `timeout` that exits 143 (128+SIGTERM, busybox's spelling) makes the
 # other arm deterministic and instant: no sleeping, and `brew` succeeds immediately, so the
-# ONLY thing that can produce -1 is _pkgcount reading the wrapper's status.
+# ONLY thing that can produce -1 is _pkgcount_decl reading the wrapper's status.
 printf '#!/bin/sh\nexit 143\n' >"$_MRT/bin/timeout"
 printf '#!/bin/sh\nexit 0\n' >"$_MRT/bin/brew"
 chmod +x "$_MRT/bin/timeout" "$_MRT/bin/brew"
@@ -16534,6 +16593,8 @@ if [[ -s "$_MRT/to.bash" && -s "$_MRT/pkgcount.bash" && -s "$_MRT/count.bash" ]]
   if out="$(bash -c '
       PATH="'"$_MRT/bin"'":$PATH
       have() { command -v "$1" >/dev/null 2>&1; }
+      cap_declared() { return 0; }
+      cap() { [ "$1" = PKG_COUNT_PENDING ] && printf "brew outdated --quiet"; return 0; }
       . "'"$_MRT/to.bash"'"
       . "'"$_MRT/pkgcount.bash"'"
       MAINT_PKGCOUNT_TIMEOUT=1
@@ -16545,7 +16606,7 @@ if [[ -s "$_MRT/to.bash" && -s "$_MRT/pkgcount.bash" && -s "$_MRT/count.bash" ]]
     fail "maint: a busybox-style timeout (143) reports '${out:-}' (want -1 — this is the Alpine regression)"
   fi
 else
-  fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
+  fail "maint: could not extract _to/_pkgcount_decl from ${_MAINT_SH##*/}"
 fi
 rm -f "$_MRT/bin/timeout" "$_MRT/bin/brew"
 
@@ -16685,12 +16746,6 @@ else
     'd=$(mktemp -d); cd "$d"; git -c init.defaultBranch=master init -q .; git commit -q --allow-empty -m x; git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main; [[ $(git_main_branch) == master ]]'
 fi
 
-# ── update.zsh per-manager parse (B5) ─────────────────────────────────────────
-# The detection LADDER is covered above (apt), but _pkgup_count/_pkgup_list use a DISTINCT
-# grep/awk heuristic PER manager — and only apt had a test. A regex that miscounts a header
-# or blank row would ship silently to that one distro's repo. Pin each: isolate PATH to a
-# lone manager stub (+ the coreutils its pipeline forks) so _pkgup_mgr resolves to it, feed
-# canned `outdated` output, and assert the parsed count/names. Mirrors the apt stub above.
 hdr "core whatsnew version-bump nudge (60-update.zsh)"
 # ── the version-bump nudge (zsh/60-update.zsh) ────────────────────────────────
 # Band 60, and it calls band-30 helpers — so these source ui + functions + update, the
@@ -16740,7 +16795,24 @@ else
   chmod 644 "$_wsn/whatsnew"
 fi
 
-hdr "update.zsh per-manager parse (apk / dnf / zypper / pacman)"
+# ── update.zsh per-manager count/list parse ──────────────────────────────────
+# _pkgup_count/_pkgup_list run ONE parse path — the declared count verb, filtered by
+# PKG_PENDING_MATCH, field PKG_PENDING_FIELD, split on PKG_PENDING_FS — and what differs
+# per archive is those three declared values. A regex that miscounts a header or a blank
+# row would ship silently to that one distro's repo, so pin each archive: isolate PATH to
+# a lone manager stub (+ the coreutils the pipeline forks), seed THE DECLARATION THAT REPO
+# ACTUALLY SHIPS, feed canned output, and assert the parsed count/names.
+#
+# THE DECLARATION IS NOW THE ONLY INPUT (#763). These cases used to run with no
+# declaration at all, against Core's built-in `_CORE_CAP_FALLBACK` row for whichever
+# manager the stub PATH resolved to. That table is gone — an undeclared box has no count
+# verb and reports -1 — so each case seeds the KEY=value lines its OS repo declares. That
+# is the stronger test anyway: it pins the values a real box runs, not a copy of them that
+# lived in Core.
+hdr "update.zsh per-manager parse (apk / dnf / zypper / pacman / brew / emerge)"
+CAPD_PARSE="$SANDBOX/capparse"
+rm -rf "$CAPD_PARSE"
+mkdir -p "$CAPD_PARSE"
 _mgr_stub() { # _mgr_stub <mgr> <sh-body>
   rm -rf "$PMBIN"
   mkdir -p "$PMBIN"
@@ -16751,81 +16823,116 @@ _mgr_stub() { # _mgr_stub <mgr> <sh-body>
     [[ -e "$PMBIN/$t" ]] || ln -s "$(command -v "$t")" "$PMBIN/$t" 2>/dev/null
   done
 }
-_mgr_stub apk 'case "$*" in *"list -u"*) printf "a-1.0 ...\nb-2.0 ...\nc-3.0 ...\n" ;; esac'
-ucheck "update: _pkgup_count parses apk (3 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 3 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses apk package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *a-1.0* && \$out == *c-3.0* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-_mgr_stub dnf 'case "$*" in *check-update*) printf "bash.x86_64    5.1-2    baseos\nvim.x86_64    9.0-1    appstream\n" ;; esac'
-ucheck "update: _pkgup_count parses dnf check-update (2 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses dnf package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *bash.x86_64* && \$out == *vim.x86_64* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-_mgr_stub zypper 'case "$*" in *list-updates*) printf "v | repo | bash | 1 | 2 | x86_64\nv | repo | vim | 1 | 2 | x86_64\n" ;; esac'
-ucheck "update: _pkgup_count parses zypper list-updates (2 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses zypper package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *bash* && \$out == *vim* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-_mgr_stub pacman 'case "$*" in *-Qu*) printf "bash 5.1.0\nvim 9.0.0\n" ;; esac'
-ucheck "update: _pkgup_count parses pacman -Qu (2 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses pacman package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *bash* && \$out == *vim* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# brew and emerge had NO parse coverage at all — the header above claimed four managers and
-# the file has seven. brew is the reference implementation's manager and emerge is the one
-# whose count verb can legitimately be absent, so both are exactly the arms a silent
-# regression would sit in longest.
-_mgr_stub brew 'case "$*" in *outdated*) printf "wget\nzsh\n" ;; esac'
-ucheck "update: _pkgup_count parses brew outdated (2 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses brew package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *wget* && \$out == *zsh* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# Gentoo asks Portage, not eix (#756), so the fixture is an `emerge --pretend` resolve —
-# ebuild/binary lines counted, [nomerge] ignored, ::repo and the -rN revision stripped off
-# the atom.
-_mgr_stub emerge 'case "$*" in
-*--pretend*) printf "[ebuild  U  ] app-editors/neovim-0.12.3-r1::gentoo\n[binary   N ] dev-libs/tree-sitter-c-0.24.1\n[nomerge     ] sys-apps/eza-0.20.0\n" ;;
-esac'
-ucheck "update: _pkgup_count counts a Portage resolve, not [nomerge] lines (2)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list strips ::repo and the -rN revision off each atom" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *app-editors/neovim* && \$out != *::gentoo* && \$out != *-r1* && \$out != *eza* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# A RESOLVE THAT FAILS MUST REPORT -1, NOT 0 (#756). The two are different claims — 0 is
-# "I checked, nothing pending" — and a box whose Portage cannot resolve (blocks, conflicts)
-# is not a box with nothing to do. This is what PKG_COUNT_EXIT_TRUSTED buys, and Gentoo is
-# the only archive that declares it: everywhere else a non-zero exit means something else
-# entirely (dnf exits 100 when updates EXIST; pacman -Qu exits non-zero when there are NONE).
-_mgr_stub emerge 'exit 1'
-ucheck "update: a failed Portage resolve reports -1 (unknown), never 0" \
+_parsecheck() { # _parsecheck <label> <decl> <zsh-body>
+  printf '%s\n' "$2" >"$CAPD_PARSE/os.capabilities"
+  ucheck "$1" "source '$CAPZ'; source '$UPD'; $3" \
+    PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 \
+    CORE_CAPABILITIES_FILE="$CAPD_PARSE/os.capabilities"
+}
+# An UNDECLARED box is the new baseline case, and it is the one deleting the fallbacks
+# changed: no count verb resolves, so the count is the -1 SENTINEL ("could not answer")
+# and the shell-start nudge stays silent. Not 0 — that reads as "checked, nothing
+# pending", which is a different and false claim.
+_mgr_stub apt-get 'case "$*" in *"-s upgrade"*) printf "Inst bash [5.1]\n" ;; esac'
+ucheck "update: an undeclared box reports -1 (no count verb), never a guessed row" \
   "source '$UPD'; [[ \$(_pkgup_count) == -1 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 \
+  CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
+# alpine: one name per line, so MATCH/FIELD/FS all default.
+_mgr_stub apk 'case "$*" in *"list -u"*) printf "a-1.0 ...\nb-2.0 ...\nc-3.0 ...\n" ;; esac'
+_parsecheck "update: _pkgup_count parses apk (3 upgradable)" \
+  'PKG_COUNT_PENDING=apk list -u' \
+  '[[ $(_pkgup_count) == 3 ]]'
+_parsecheck "update: _pkgup_list parses apk package names" \
+  'PKG_COUNT_PENDING=apk list -u' \
+  'out=$(_pkgup_list); [[ $out == *a-1.0* && $out == *c-3.0* ]]'
+# fedora: PKG_PENDING_MATCH keeps the leading-alnum rows and drops dnf's blank lines.
+_mgr_stub dnf 'case "$*" in *check-update*) printf "\n\nbash.x86_64    5.1-2    baseos\nvim.x86_64    9.0-1    appstream\n" ;; esac'
+_parsecheck "update: _pkgup_count parses dnf check-update (2 upgradable)" \
+  'PKG_COUNT_PENDING=dnf -q --refresh check-update
+PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list parses dnf package names" \
+  'PKG_COUNT_PENDING=dnf -q --refresh check-update
+PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]' \
+  'out=$(_pkgup_list); [[ $out == *bash.x86_64* && $out == *vim.x86_64* ]]'
+# opensuse: the one archive that needs all three values (a `|`-delimited table).
+_mgr_stub zypper 'case "$*" in *list-updates*) printf "v | repo | bash | 1 | 2 | x86_64\nv | repo | vim | 1 | 2 | x86_64\n" ;; esac'
+_parsecheck "update: _pkgup_count parses zypper list-updates (2 upgradable)" \
+  'PKG_COUNT_PENDING=zypper -q list-updates
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list parses zypper package names" \
+  'PKG_COUNT_PENDING=zypper -q list-updates
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3' \
+  'out=$(_pkgup_list); [[ $out == *bash* && $out == *vim* ]]'
+# arch: checkupdates (pacman-contrib) syncs a copy in USER SPACE, which is what makes
+# counting safe on a rolling distro. Core used to probe for it and fall back to `pacman
+# -Qu`; the Arch repo declares it outright and installs pacman-contrib to guarantee it.
+_mgr_stub checkupdates 'printf "bash 5.1.0 -> 5.2.0\nvim 9.0.0 -> 9.1.0\n"'
+_parsecheck "update: _pkgup_count parses checkupdates (2 upgradable)" \
+  'PKG_COUNT_PENDING=checkupdates' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list parses checkupdates package names" \
+  'PKG_COUNT_PENDING=checkupdates' \
+  'out=$(_pkgup_list); [[ $out == *bash* && $out == *vim* ]]'
+# macos: brew is the only archive with a COUNT-path-only network refresh — the nudge has
+# already paid for it, so the list path deliberately skips PKG_COUNT_REFRESH.
+_mgr_stub brew 'case "$*" in *outdated*) printf "wget\nzsh\n" ;; esac'
+_parsecheck "update: _pkgup_count parses brew outdated (2 upgradable)" \
+  'PKG_COUNT_PENDING=brew outdated --quiet
+PKG_COUNT_REFRESH=brew update' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list parses brew package names" \
+  'PKG_COUNT_PENDING=brew outdated --quiet
+PKG_COUNT_REFRESH=brew update' \
+  'out=$(_pkgup_list); [[ $out == *wget* && $out == *zsh* ]]'
+# gentoo: PKG_COUNT_PENDING names a SCRIPT THE OS REPO SHIPS (gentoo-pkg-pending), not a
+# Core function. Core used to carry the Portage resolve itself as _pkgup_emerge_pending
+# and name it from the built-in row; #763 deleted both, and the declaration reaching into
+# Core's internals was never allowed anyway (#667). The stub stands in for that script and
+# emits the same `emerge --pretend` output it parses — ebuild/binary lines counted,
+# [nomerge] ignored, ::repo and the -rN revision stripped off the atom (#756).
+_mgr_stub gentoo-pkg-pending 'printf "app-editors/neovim\ndev-libs/tree-sitter-c\n"'
+_parsecheck "update: _pkgup_count reads the declared Portage helper (2)" \
+  'PKG_COUNT_PENDING=gentoo-pkg-pending
+PKG_COUNT_EXIT_TRUSTED=1' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list reads the declared Portage helper" \
+  'PKG_COUNT_PENDING=gentoo-pkg-pending
+PKG_COUNT_EXIT_TRUSTED=1' \
+  'out=$(_pkgup_list); [[ $out == *app-editors/neovim* && $out == *tree-sitter-c* ]]'
+# A HELPER THAT FAILS MUST REPORT -1, NOT 0 (#756). The two are different claims — 0 is
+# "I checked, nothing pending" — and a box whose Portage cannot resolve (blocks,
+# conflicts) is not a box with nothing to do. This is what PKG_COUNT_EXIT_TRUSTED buys,
+# and Gentoo is the only archive that declares it: everywhere else a non-zero exit means
+# something else entirely (dnf exits 100 when updates EXIST; pacman -Qu and checkupdates
+# exit non-zero when there are NONE).
+_mgr_stub gentoo-pkg-pending 'exit 1'
+_parsecheck "update: a failed Portage resolve reports -1 (unknown), never 0" \
+  'PKG_COUNT_PENDING=gentoo-pkg-pending
+PKG_COUNT_EXIT_TRUSTED=1' \
+  '[[ $(_pkgup_count) == -1 ]]'
 # ...and the same failure on an archive that does NOT declare the key still counts lines,
 # because there a non-zero exit is not a failure. dnf is the case that proves it: exit 100
-# is how it says updates EXIST, and reading that as "could not answer" would report unknown
-# on every Fedora box that has anything to install.
+# is how it says updates EXIST, and reading that as "could not answer" would report
+# unknown on every Fedora box that has anything to install.
 _mgr_stub dnf 'printf "bash.x86_64    5.1-2    baseos\n"; exit 100'
-ucheck "update: dnf's exit 100 (updates EXIST) is not read as a failure" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 1 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+_parsecheck "update: dnf's exit 100 (updates EXIST) is not read as a failure" \
+  'PKG_COUNT_PENDING=dnf -q --refresh check-update
+PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]' \
+  '[[ $(_pkgup_count) == 1 ]]'
+
 
 # ── update.zsh dispatches through os.capabilities (#664) ──────────────────────
-# The block above proves the built-in defaults still parse every archive identically. This
-# one proves the OTHER half: that a DECLARATION is what actually drives `up`, because until
-# a box re-bootstraps onto the declaration #667 authored it has none, and the built-ins
-# would happily hide a dispatcher
-# that never reads the table at all.
+# The block above proves each archive's DECLARED count/list values parse correctly. This one
+# proves the other half of the dispatch: that the declaration is what actually drives `up`'s
+# apply path — the upgrade verb, the pre-step, the cleanup, the auto-confirm token and the
+# partial-upgrade refusal.
 #
 # Every stub here prints its own argv, so the assertion is on the exact command line `up`
 # builds — the thing a host notices — rather than on an exit status that a no-op also
@@ -16835,7 +16942,6 @@ hdr "update.zsh dispatch through os.capabilities (#664)"
 CAPD_UP="$SANDBOX/capup"
 rm -rf "$CAPD_UP"
 mkdir -p "$CAPD_UP"
-CAPZ="$HERE/zsh/02-capabilities.zsh"
 # _up_stub <name>... — a stub per name that echoes "RUN: <name> <args>".
 _up_stub() {
   rm -rf "$PMBIN"
@@ -16862,12 +16968,13 @@ _upcheck() { # _upcheck <label> <decl> <body>
     CORE_CAPABILITIES_FILE="$CAPD_UP/os.capabilities"
 }
 
-# 1. A declared verb WINS over Core's built-in row. Tumbleweed is the case this whole
-#    refactor exists for: the built-in row still probes /etc/os-release to choose between
-#    `dup` and `up`, and a declaration must make that probe irrelevant — on any host,
+# 1. THE DECLARED VERB IS WHAT RUNS. Tumbleweed is the case this whole refactor existed
+#    for: Core used to probe `/etc/os-release` to choose `zypper dup` over `zypper up`, and
+#    a declaration had to make that probe irrelevant. #763 deleted the probe with the rest
+#    of the built-in table, so this now pins the only remaining path — on any host,
 #    including the one running this suite, which is not openSUSE.
 _up_stub zypper sudo
-_upcheck "up: a declared PKG_UPGRADE overrides Core's built-in row (zypper dup)" \
+_upcheck "up runs the declared PKG_UPGRADE verbatim (zypper dup on any host)" \
   'PKG_UPGRADE=sudo zypper dup' \
   'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper dup"* ]]'
 # 2. PKG_ASSUME_YES is what `up -y` appends — and its ABSENCE means never auto-confirm,
@@ -16876,10 +16983,10 @@ _upcheck "up -y appends the declared PKG_ASSUME_YES token" \
   'PKG_UPGRADE=sudo zypper up
 PKG_ASSUME_YES=-y' \
   'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper up -y"* ]]'
-# OMISSION IS A STATEMENT, and this is the assertion that proves Core honours it. The
-# stubbed PATH resolves to a manager whose BUILT-IN row does declare `-y`, so a per-key
-# fallback would hand one back to a repo that deliberately left it out — auto-confirming a
-# privileged upgrade nobody asked to auto-confirm. A declaration is all-or-nothing.
+# OMISSION IS A STATEMENT, and this is the assertion that proves Core honours it: a repo
+# that deliberately leaves PKG_ASSUME_YES out must not have one supplied for it, which
+# would auto-confirm a privileged upgrade nobody asked to auto-confirm. Core has had no
+# per-manager row to supply since #763; this is the gate that keeps one from coming back.
 _upcheck "up -y appends nothing when the archive declares no PKG_ASSUME_YES" \
   'PKG_UPGRADE=sudo zypper up' \
   'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper up"* && $out != *" -y"* ]]'
@@ -16910,9 +17017,9 @@ PKG_ASSUME_YES=-y' \
 # 5. THE SAFETY DECLARATION. `up -i` refuses on an archive that declares no partial verb —
 #    which is how Arch, Gentoo and Alpine say "this must update as a whole". It is the
 #    ABSENCE that refuses, so an archive Core has never heard of gets the safe answer by
-#    default instead of being waved through.
-# Same shape, and the higher-stakes half: apt's BUILT-IN row names a partial verb, so a
-# per-key fallback would let `up -i` through on a declaration that refused it.
+#    default instead of being waved through — and an undeclared box, since #763, gets that
+#    same safe answer for every key rather than a row Core kept for whichever manager
+#    happened to be on PATH.
 _upcheck "up -i refuses when the declaration names no PKG_UPGRADE_PARTIAL" \
   'PKG_UPGRADE=sudo apt-get full-upgrade' \
   'out=$(up -i 2>&1); (( $? == 1 )) && [[ $out == *"does not support safe partial upgrades"* ]]'

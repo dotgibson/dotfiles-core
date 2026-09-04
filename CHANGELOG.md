@@ -155,6 +155,68 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   pinned alongside. Dev tooling
   only — the OS repos receive nothing from this entry until they adopt the verbs.
 
+### Removed
+
+- **Core's built-in capability fallbacks are deleted; the declaration is the only source
+  (#763).** #667 stamped `os.capabilities` across the fleet but deliberately left three
+  blocks in Core marked _"DELETE THIS BLOCK"_, because a declaration only reaches a box once
+  `bootstrap.sh` has **linked** it — a separate event from the Core fan-out that delivers the
+  file, and deleting the fallbacks in the same change would have broken `up` on every box
+  that had pulled and not yet re-run `./bootstrap.sh --links-only`. This is the second event.
+  Gone — the three marked blocks, and a fourth that carried no marker but existed for the
+  same reason:
+
+  - `zsh/60-update.zsh`'s `_CORE_CAP_FALLBACK` table and `_pkgup_fallback` — seven archives'
+    upgrade/count/cleanup verbs, the `checkupdates` probe, the `_pkgup_emerge_pending`
+    Portage resolve, and the **`grep -qi tumbleweed /etc/os-release`** that chose
+    `zypper dup` over `zypper up`. That probe was the single most-cited example of OS
+    knowledge in Core, and it is what `os.capabilities` existed to retire.
+    `_pkgup_verb` loses its second arm and now reads `_core_cap` only.
+  - `zsh/55-maint.zsh`'s `_maint_unit_dir_default` — **the last OS-absolute path in Core**.
+    `_maint_unit_file` reads the declared `SCHEDULER_UNIT_DIR` and nothing else.
+  - `zsh/30-functions.zsh`'s `_core_install_prefix` `case` — the doctor and the
+    command-not-found handler read `PKG_INSTALL` only. Both call sites drop their
+    `$+functions[_pkgup_mgr]` guard, which existed solely to feed the mapping a manager
+    token.
+  - `maint/dotfiles-maint.sh` — a **fourth** block, which #763 did not enumerate but which
+    exists for the same reason and would have left the demolition half-done. The scheduled
+    runner kept a seven-arm `have brew / checkupdates / pacman / dnf / zypper / apt-get /
+    apk` count ladder behind its `cap_declared` test, a four-arm `sudo -n` apply ladder, and
+    the guards in front of them: an **`/etc/os-release` read** for the Kali refusal — the
+    last one in Core — and `have pacman || have emerge` standing in for "is this a rolling
+    distro", which is a probe for a BINARY asserting a claim about a DISTRO and is true on
+    any box with pacman installed for other reasons. Kali, Arch and Gentoo already decline
+    by declaring no `MAINT_UNATTENDED_UPGRADE`, so the guards were duplicating a claim the
+    repos now make about themselves. `_pkgcount` went with its only callers, leaving
+    `_pkgcount_decl` as the single counter. An undeclared box logs `count UNAVAILABLE (no
+    os.capabilities linked — run ./bootstrap.sh --links-only)` and skips the apply with a
+    log line naming the same fix.
+
+  **`audit-core.sh` §5c's per-file exception retires with them**, so every manifested Core
+  file is now scanned for OS-absolute paths with no carve-out at all — `ARCHITECTURE.md`'s
+  "deliberate exceptions" section reaches **zero**, and `PORTABILITY.md`'s says so too.
+
+  **What an undeclared box does now is degrade visibly, at each caller's own message**,
+  which is the point of removing a silent substitution: `up` says no upgrade verb is
+  declared and names `--links-only` as the fix, `maint-install` refuses on systemd/launchd
+  rather than writing a unit to a directory Core guessed at, `core-doctor` prints no install
+  line, and `core-status`'s OS row says the declaration is not linked (it used to say
+  "built-in defaults", a note about which source answered — now it carries the remedy).
+  `02-capabilities.zsh`'s warning **stays opt-in** (`CORE_CAP_LOUD=1`) for the reason #715
+  established: two lines of stderr on every interactive shell and every tmux split is how an
+  operator learns to ignore stderr, and that warning can only say a table is empty where
+  each consumer can name what actually broke.
+
+  `scripts/check-capabilities.sh` is untouched — it is the schema, not a fallback. What
+  changes for a consuming repo is that **`./bootstrap.sh --links-only` is now required**
+  after adopting or changing a declaration, not merely advisable; `VENDORING.md` says so
+  where it used to say absence is not fatal. `scripts/test-core.sh` moves with the code: the
+  per-manager count/list cases now seed the declaration each OS repo actually ships instead
+  of leaning on Core's copy of it (which is the stronger test — it pins the values a real
+  box runs), the maint cases declare `SCHEDULER_UNIT_DIR` alongside the scheduler they stub,
+  and a new case pins the undeclared box reporting the `-1` sentinel rather than a guessed
+  row.
+
 ### Changed
 
 - **The startup budget is ratcheted from 120 ms to a committed 48 ms — 2× the measured
