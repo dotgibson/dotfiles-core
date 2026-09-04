@@ -32,11 +32,18 @@
 # neither of them carrying a prettier config. Keep it that way: run the block through
 # `prettier --parser markdown` after editing.
 #
-# Cross-repo, like parity-check.sh and fleet-drift.sh: the desktop repos do NOT vendor
-# Core, so they are read from sibling checkouts under --root. Graceful degradation
-# mirrors audit-core.sh — a repo that isn't checked out is SKIPPED with a notice, so this
-# stays green in a Core-only clone; --strict makes it fatal, which is what CI uses after
-# cloning both.
+# Cross-repo, like parity-check.sh and fleet-drift.sh, though not for one single reason:
+# dotfiles-MacBook DOES vendor Core, but sketchybar/PARITY.md is its own OS-layer file and
+# sits outside the vendored core/ subtree; dotfiles-Windows vendors no core/ at all. Either
+# way the target is not reachable from this checkout, so both are read from sibling
+# checkouts under --root.
+#
+# A repo that isn't checked out is an ENVIRONMENT skip — but be precise about what that
+# does and does not mean. This script still EXITS 3, so `make check-desktop-parity` on a
+# Core-only clone fails like any other non-zero command; that is the posture
+# gen-porting-matrix.sh takes for the same input. It is audit-core.sh §9i that translates 3
+# into a skip_env and stays green, not this script. --strict collapses the distinction: an
+# absent repo FAILS outright, which is what CI uses after cloning both.
 #
 # A repo that IS checked out is never skipped: a target file that is missing, or present
 # without its markers, FAILS. gen-views.sh skips an unmarked file — right for its opt-in,
@@ -52,11 +59,12 @@
 # Exit: 0 = every checked-out copy matches the canonical source (or was written);
 #       1 = drift, or a malformed/missing target in a checked-out repo;
 #       2 = usage error;
-#       3 = a desktop repo is NOT CHECKED OUT, so this run could not cover it. That is an
-#           ENVIRONMENT skip, not a failure — the posture §9h and fleet-drift.sh take for
-#           the same input, and what audit-core.sh records via skip_env. Inside a git
-#           worktree $HERE/.. is .claude/worktrees/, so this skips there too; pass
-#           --root DIR to gate from a worktree. Severity is sticky: drift (1) outranks an
+#       3 = a desktop repo is NOT CHECKED OUT, so this run could not cover it. Callers are
+#           meant to read this as an ENVIRONMENT skip — §9h and fleet-drift.sh take the same
+#           posture, and audit-core.sh records it via skip_env — but it is still a NON-ZERO
+#           exit here, so a bare `make check-desktop-parity` on a Core-only clone fails.
+#           Inside a git worktree $HERE/.. is .claude/worktrees/, so this skips there too;
+#           pass --root DIR to gate from a worktree. Severity is sticky: drift (1) outranks an
 #           absent sibling (3), so a half-checked-out fleet still reds on real drift.
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail

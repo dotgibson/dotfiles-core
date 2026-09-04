@@ -123,7 +123,7 @@ check-porting-matrix: ## Report whether PORTING-MATRIX.md's tables have drifted 
 gen-desktop-parity: ## Render desktop/PARITY.shared.md into both desktop repos' PARITY.md (edit the source, not the copies)
 	@./scripts/gen-desktop-parity.sh
 
-check-desktop-parity: ## Report whether either desktop repo's PARITY.md has drifted from desktop/PARITY.shared.md — also run inside `make audit`
+check-desktop-parity: ## Report whether either desktop repo's PARITY.md has drifted from desktop/PARITY.shared.md — also run inside `make audit` (exits 3, non-zero, if a desktop repo is not checked out beside this one)
 	@./scripts/gen-desktop-parity.sh --check
 
 changelog-recent: ## Regenerate the vendored 8-release CHANGELOG digest (`make release` runs this too)

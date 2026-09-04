@@ -324,9 +324,11 @@ META_ALLOWLIST=(
   theme/palette.toml
   # desktop/PARITY.shared.md is theme/palette.toml's shape exactly: a generation-time INPUT
   # to scripts/gen-desktop-parity.sh, not shipped Core. Nothing symlinks it and no OS repo
-  # reads it out of core/ — its OUTPUT lands in two repos that do not vendor Core at all
-  # (dotfiles-Windows/desktop/PARITY.md, dotfiles-MacBook/sketchybar/PARITY.md), which is
-  # why it is neither a manifest row nor a core.vendor row. Listed as an EXACT path, not a
+  # reads it out of core/ — its OUTPUT lands OUTSIDE any vendored core/ tree
+  # (dotfiles-Windows/desktop/PARITY.md, dotfiles-MacBook/sketchybar/PARITY.md), which is why
+  # it is neither a manifest row nor a core.vendor row. Note the two differ: dotfiles-MacBook
+  # DOES vendor Core (scripts/os-repos.txt) and its copy is simply an OS-layer file outside
+  # core/, whereas dotfiles-Windows vendors no core/ at all. Listed as an EXACT path, not a
   # desktop/ prefix, so a second file dropped there has to be accounted for deliberately.
   desktop/PARITY.shared.md
 )
@@ -2111,7 +2113,7 @@ elif ((_dp_rc == 3)); then
   skip_env "desktop-bar parity drift (${_dp_missing%% — *} — not covered by this run)"
   unset _dp_missing
 else
-  fail "gen-desktop-parity.sh --check could not run (exit $_dp_rc) — a target file is missing or its markers are broken; the drift gate checked NOTHING this run"
+  fail "gen-desktop-parity.sh --check could not run (exit $_dp_rc) — a usage error, or desktop/PARITY.shared.md itself is missing; a missing target or broken markers are exit 1, handled above. The drift gate checked NOTHING this run"
   fail_detail "$_dp_out"
 fi
 unset _dp_out _dp_rc
