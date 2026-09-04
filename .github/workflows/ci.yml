@@ -327,11 +327,14 @@ jobs:
       # Scope the audit to the areas the classifier flagged, so a docs- or nvim-only
       # push skips the gates it can't affect. The cheap structural/config/markdown/
       # workflow/version checks always run regardless of scope (see audit-core.sh).
-      # FAIL-CLOSED: the classifier forces ALL THREE flags true for infra/unknown changes,
-      # so this resolves to the full "shell,nvim,atuin" run there — never a narrowed audit.
-      # That explicitly INCLUDES the expensive atuin gate: an infra or unrecognised change is
-      # exactly the case where we cannot reason about what it can reach, so it pays for all
-      # of them.
+      # FAIL-CLOSED: an UNRECOGNISED path still forces all three flags, so it resolves to the
+      # full "shell,nvim,atuin" run — the case where we cannot reason about what a change can
+      # reach is exactly the case that pays for everything.
+      # INFRA is no longer identical to that. `scripts/` and friends still force shell AND
+      # nvim, because they are genuinely cross-cutting for the shipped modules; they force
+      # atuin only from the four paths the detector's self-test can actually reach (see
+      # scripts/ci-classify.sh). That is a property of the test being hermetic, and it is
+      # derived and gated in scripts/test/22-ci-classify.sh rather than asserted here.
       - name: Run Core audit (manifest, exec bits, syntax, lint, behavioral)
         env:
           SHELL_CHANGED: ${{ needs.changes.outputs.shell }}
@@ -343,8 +346,9 @@ jobs:
           [ "$NVIM_CHANGED" = true ] && scope="${scope:+$scope,}nvim"
           # The atuin gate is the premise detector's hermetic self-test — the single most
           # expensive thing the suite does (197s of 286s). It is reachable only from the
-          # detector itself (scripts/, which the classifier already treats as infra → full),
-          # zsh/00-tools.zsh, and atuin/. The LIVE measurement against upstream atuin is
+          # detector and the harness that drives it (scripts/research/, scripts/lib/,
+          # scripts/test/, test-core.sh, ci-classify.sh — the rest of scripts/ no longer
+          # forces it), zsh/00-tools.zsh, and atuin/. The LIVE measurement against upstream atuin is
           # unaffected by this: it runs on manual dispatch of atuin-guard-verify.yml (#687),
           # which drives the same self-test unconditionally so the harness is never left ungated.
           [ "$ATUIN_CHANGED" = true ] && scope="${scope:+$scope,}atuin"
