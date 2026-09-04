@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-release-triggers fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity changelog-recent release tag publish release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-release-triggers fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity gen-hero-tape gen-hero-tape-fleet check-hero-tape check-hero-size changelog-recent release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -128,6 +128,18 @@ gen-desktop-parity: ## Render desktop/PARITY.shared.md into both desktop repos' 
 
 check-desktop-parity: ## Report whether either desktop repo's PARITY.md has drifted from desktop/PARITY.shared.md — also run inside `make audit` (exits 3, non-zero, if a desktop repo is not checked out beside this one)
 	@./scripts/gen-desktop-parity.sh --check
+
+gen-hero-tape: ## Regenerate this repo's README hero tape from assets/hero.tape.in (edit the template, not the tape)
+	@./scripts/gen-hero-tape.sh
+
+gen-hero-tape-fleet: ## Also render the nine OS/role repos' hero tapes into their checkouts (#698's follow-up; needs the fleet beside this repo)
+	@./scripts/gen-hero-tape.sh --fleet
+
+check-hero-tape: ## Report whether assets/demo.tape has drifted from its template — also run inside `make audit`
+	@./scripts/gen-hero-tape.sh --check
+
+check-hero-size: ## Report whether a rendered README hero is over the byte ceiling — also run inside `make audit`
+	@./scripts/gen-hero-tape.sh --check-size
 
 changelog-recent: ## Regenerate the vendored 8-release CHANGELOG digest (`make release` runs this too)
 	@./scripts/gen-changelog-recent.sh
