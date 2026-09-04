@@ -159,7 +159,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2
   rather than drift, the verdict survives a host with no working `diff`/`cmp` (#572), and
   both audit legs are asserted to actually be wired.
-||||||| 99a5bdd
 
 - **The desktop-bar parity pair is generated and gated, not asked nicely (#693).**
   `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` were an
