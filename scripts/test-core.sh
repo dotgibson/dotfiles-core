@@ -11385,6 +11385,25 @@ else
   fail "gen-hero-tape: deleting the local row left a gate green (check=$(_gh_run --check) size=$(_gh_run --check-size))"
 fi
 
+# THE SUMMARY MUST SAY WHAT IT WEIGHED. "every rendered hero is under the ceiling" is true
+# of a run that weighed nothing, and that sentence is the one line a reader takes away
+# (#862 review). The count, and the un-weighed remainder, have to be in it.
+_gh_fixture && _gh_run >/dev/null
+head -c 100 /dev/zero >"$GHR/assets/demo.gif"
+_gh_sum="$(_gh_out --check-size)"
+if grep -qE '1 weighed' <<<"$_gh_sum" && ! grep -q 'not rendered yet' <<<"$_gh_sum"; then
+  pass "gen-hero-tape: --check-size reports how many heroes it actually weighed"
+else
+  fail "gen-hero-tape: the size summary does not say what it weighed: $(head -n 5 <<<"$_gh_sum")"
+fi
+_gh_run --fleet >/dev/null
+_gh_sum="$(_gh_out --fleet --check-size)"
+if grep -q 'not rendered yet (not covered by this run)' <<<"$_gh_sum"; then
+  pass "gen-hero-tape: the summary names the un-weighed remainder, so a skip is never read as a pass"
+else
+  fail "gen-hero-tape: the size summary hides un-weighed heroes: $(tail -n 3 <<<"$_gh_sum")"
+fi
+
 # IDEMPOTENCE — a second render must be byte-identical, or --check can never be stably green.
 _gh_fixture && _gh_run >/dev/null
 cp "$GHR/assets/demo.tape" "$GHR/assets/demo.first.tape"
@@ -11447,7 +11466,7 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum
 
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run

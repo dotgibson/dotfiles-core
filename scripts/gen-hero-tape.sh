@@ -381,6 +381,12 @@ _bump() { # _bump <exit-code>
   return 0
 }
 MISSING=""
+# --check-size accounting. "every rendered hero is under the ceiling" is TRUE of a run that
+# weighed nothing, so the summary says how many it actually put on the scale (#862 review).
+# A skip is already printed and counted by skip_note; this stops the FINAL line from being
+# the one place a reader could mistake "nothing to weigh" for "nothing wrong".
+WEIGHED=0
+UNWEIGHED=0
 
 
 # ── --list ────────────────────────────────────────────────────────────────────
@@ -434,6 +440,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
         fail "$out is missing — this repo's tape must exist"; _bump 1
       else
         skip_note "$label has no $out yet (the nine renders are #698's follow-up)"
+        UNWEIGHED=$((UNWEIGHED + 1))
       fi
       continue
     fi
@@ -452,6 +459,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
         _bump 1
       else
         skip_note "$label/$gif not rendered yet — nothing to weigh"
+        UNWEIGHED=$((UNWEIGHED + 1))
       fi
       continue
     fi
@@ -463,6 +471,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
       _bump 1
     else
       pass "$label/$gif is $bytes bytes (ceiling $MAX_BYTES)"
+      WEIGHED=$((WEIGHED + 1))
     fi
     continue
   fi
@@ -538,7 +547,13 @@ fi
 case "$SEV" in
 0) case "$MODE" in
    check) pass "README hero tapes — every rendered tape tracks assets/hero.tape.in" ;;
-   size) pass "README hero size — every rendered hero is under the ceiling" ;;
+   size)
+     if ((UNWEIGHED)); then
+       pass "README hero size — $WEIGHED weighed, under the ${MAX_BYTES}-byte ceiling; $UNWEIGHED not rendered yet (not covered by this run)"
+     else
+       pass "README hero size — $WEIGHED weighed, all under the ${MAX_BYTES}-byte ceiling"
+     fi
+     ;;
    *) pass "README hero tapes — rendered from assets/hero.tape.in" ;;
    esac ;;
 esac

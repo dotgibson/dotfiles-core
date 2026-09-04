@@ -99,6 +99,14 @@ names and fails over **2 MiB**. A **missing** hero fails too where this repo is 
 `README.md`'s `[product-screenshot]` points at `assets/demo.gif`, so an absent file is a
 broken front page, and a size gate that weighs nothing and reports green is the failure the
 section exists to prevent. A *sibling's* absent gif is only a note: those nine are
-deliberately un-rendered until the follow-up. That is a ceiling, not a target: the budget the tape
+deliberately un-rendered until the follow-up, and making that state red would leave
+`make gen-hero-tape-fleet` permanently failing until nine gifs exist on nine boxes.
+
+So that a skip is never mistaken for a pass, the summary line counts what it actually put
+on the scale:
+
+```text
+✓ README hero size — 1 weighed, under the 2097152-byte ceiling; 9 not rendered yet (not covered by this run)
+``` That is a ceiling, not a target: the budget the tape
 header asks for is ~15 s, and one heavy gif is a preference where ten is a policy.
 Every `Sleep` in `hero.tape.in` is paid for in those bytes.
