@@ -266,8 +266,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   the others is skipped in silence — so **`scripts/test/05-suite-shape.sh`** asserts the
   layout instead of assuming it: every fragment carries the `NN-` prefix, none is executable,
   all are tracked, and the empty-glob refusal is **driven** against a staged tree rather than
-  believed. Those five are the only assertions the split adds: the suite goes from
-  `pass 1772 skip 2 fail 0` to `pass 1777 skip 2 fail 0`.
+  believed. Those five are the only assertions the split adds — **+5 and no pre-existing one
+  changed**, stated as a delta rather than a pair of totals because `main` keeps adding
+  assertions underneath this branch (it was `1772 → 1777` when measured, `1788 → 1793` after
+  merging #863 and #864), and a total pinned here would be wrong by the time it shipped.
 
 - **The startup budget is ratcheted from 120 ms to a committed 48 ms — 2× the measured
   baseline — and CI reads it from `scripts/bench-baseline.env` (#688).** The `bench` job's
