@@ -285,6 +285,29 @@ validate_registry() {
           bad = 1
         }
       }
+      # A PATH FIELD MUST STAY INSIDE ITS CHECKOUT. Write mode resolves the output as
+      # "$dir/$out" and atomically replaces it, so `../README.md` overwrites a file OUTSIDE
+      # the target repo — verified to clobber one (#862 review). The capability path is read
+      # rather than written, but it is the same class and the check costs nothing. Rejected:
+      # an absolute path, a leading ~, and any `..` component (not a substring match, so a
+      # legitimate name like `..foo` or `a..b` is untouched).
+      for (pf = 0; pf < 2; pf++) {
+        pv = (pf == 0) ? $2 : ($6 ~ /^caps:/ ? substr($6, 6) : "")
+        pn = (pf == 0) ? "output" : "capability"
+        if (pv == "") continue
+        if (pv ~ /^[\/~]/) {
+          printf "gen-hero-tape: %s:%d: %s path must be relative to the repo: %s\n", FILENAME, FNR, pn, pv > "/dev/stderr"
+          bad = 1
+        }
+        ns = split(pv, seg, "/")
+        for (si = 1; si <= ns; si++) {
+          if (seg[si] == "..") {
+            printf "gen-hero-tape: %s:%d: %s path escapes the checkout via `..`: %s\n", FILENAME, FNR, pn, pv > "/dev/stderr"
+            bad = 1
+            break
+          }
+        }
+      }
       # WHICH TREE THE TAPE FILMS, checked against the row that names it. #698 opened because
       # the dotfiles-core hero ran `cd ~/…/dotfiles-MacBook`; a fixture cannot catch that
       # coming back, because a fixture writes its own registry (#862 review). So the rule is

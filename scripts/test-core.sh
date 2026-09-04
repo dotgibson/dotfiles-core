@@ -11500,6 +11500,43 @@ if [[ "${EUID:-$(id -u)}" != 0 ]]; then
   fi
 fi
 
+# A PATH FIELD MUST NOT ESCAPE ITS CHECKOUT. Write mode resolves the output as "$dir/$out"
+# and atomically replaces it, so `../README.md` overwrote a file OUTSIDE the target repo —
+# verified against a real victim file before the fix (#862 review).
+_gh_fixture
+printf 'ORIGINAL\n' >"$SANDBOX/gh-victim.md"
+awk -F'\t' -v OFS='\t' '$1 == "." { $2 = "../gh-victim.md" } { print }' \
+  "$GHR/assets/hero-repos.txt" >"$GHR/assets/hr.new" && mv "$GHR/assets/hr.new" "$GHR/assets/hero-repos.txt"
+_gh_run >/dev/null
+if [[ "$(_gh_run)" == 2 ]] && grep -qx 'ORIGINAL' "$SANDBOX/gh-victim.md"; then
+  pass "gen-hero-tape: an output path with \`..\` is refused and writes nothing outside the checkout"
+else
+  fail "gen-hero-tape: a traversing output path was accepted, or clobbered a file outside the repo"
+fi
+# Absolute output, and a traversing capability path, are the same class.
+# shellcheck disable=SC2088  # the LITERAL tilde is the input under test: an unexpanded ~
+# in the registry is a path the generator must refuse, not one the suite should expand.
+for _gh_path in '/etc/x.tape' '~/x.tape'; do
+  _gh_fixture
+  awk -F'\t' -v OFS='\t' -v v="$_gh_path" '$1 == "." { $2 = v } { print }' \
+    "$GHR/assets/hero-repos.txt" >"$GHR/assets/hr.new" && mv "$GHR/assets/hr.new" "$GHR/assets/hero-repos.txt"
+  [[ "$(_gh_run)" == 2 ]] || fail "gen-hero-tape: an absolute output path '$_gh_path' was accepted"
+done
+_gh_fixture
+awk -F'\t' -v OFS='\t' '$1 == "dotfiles-Fedora" { $6 = "caps:../../etc/passwd" } { print }' \
+  "$GHR/assets/hero-repos.txt" >"$GHR/assets/hr.new" && mv "$GHR/assets/hr.new" "$GHR/assets/hero-repos.txt"
+[[ "$(_gh_run --fleet)" == 2 ]] || fail "gen-hero-tape: a traversing capability path was accepted"
+pass "gen-hero-tape: absolute and traversing paths are refused in both path columns"
+# The check is per COMPONENT, not a substring match: a legitimate name with dots survives.
+_gh_fixture
+awk -F'\t' -v OFS='\t' '$1 == "." { $2 = "assets/my..tape" } { print }' \
+  "$GHR/assets/hero-repos.txt" >"$GHR/assets/hr.new" && mv "$GHR/assets/hr.new" "$GHR/assets/hero-repos.txt"
+if [[ "$(_gh_run)" == 0 ]]; then
+  pass "gen-hero-tape: a filename merely CONTAINING .. is not mistaken for traversal"
+else
+  fail "gen-hero-tape: assets/my..tape was rejected — the traversal check is a substring match"
+fi
+
 # MATCHING-HOST RENDERING IS A CHECKED PRECONDITION, NOT AN ASSUMPTION. Core reads the
 # capability declaration ONCE at shell startup, from the HOST's linked os.capabilities
 # (zsh/02-capabilities.zsh) — `cd` does not switch it and `up -n` probes $PATH — so an OS
@@ -11668,7 +11705,7 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad _gh_guard
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad _gh_guard _gh_path
 
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run

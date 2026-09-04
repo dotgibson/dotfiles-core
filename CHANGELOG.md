@@ -91,7 +91,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `[[ $(_core_cap PKG_UPGRADE) == '<declared>' ]] || exit 1`, so a mismatched host **fails the
   render** rather than publishing a hero that contradicts itself. It costs the clip nothing,
   the guard and the visible note are derived from one declaration and asserted to agree, and
-  a `note:` row gets a no-op.
+  a `note:` row gets a no-op. Both path columns are confined to their checkout too: write
+  mode resolves the output as `$dir/$out` and atomically replaces it, so a row naming
+  `../README.md` overwrote a file **outside** the target repo — an absolute path, a leading
+  `~` and any `..` component are now refused, per path component so a legitimate
+  `my..tape` still passes.
   `scripts/test-core.sh` covers the generator hermetically in **F11b**: the wrong-repo `cd`
   and the named-theme preset are both pinned as regressions, drift outranks an absent sibling
   (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2

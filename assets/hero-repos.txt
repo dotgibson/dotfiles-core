@@ -10,7 +10,9 @@
 #   repo      the GitHub repo name. `.` means THIS repo (dotfiles-core), whose tape
 #             is the only one rendered by default — every other row needs a sibling
 #             checkout and is written only under --fleet.
-#   output    the tape's path inside that repo. vhs is run from the repo root, so
+#   output    the tape's path inside that repo. RELATIVE, and inside it: an absolute path
+#             or a `..` component is refused, because write mode resolves this against the
+#             checkout and atomically replaces whatever it names. vhs is run from the repo root, so
 #             the template's `Output assets/demo.gif` is relative to the same place.
 #   checkout  the path the hidden setup `cd`s to. `~` is written literally into the
 #             tape and expanded by the zsh vhs spawns, not by the generator.
