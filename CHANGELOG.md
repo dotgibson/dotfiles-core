@@ -49,9 +49,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   that records the environment it was handed, and pins the scrub, that the scrub takes the
   five and nothing else, each failure mode's exit code, the trap, and the two `.zshrc`
   assertions — including the grep the old recipes shipped, which accepted a
-  **commented-out** `source` line and matched `loaderXzsh` besides. It also asserts what
+  **commented-out** `source` line and matched `loaderXzsh` besides. It also asserts two things
   the copied recipes never did: that EVERY link resolves, not just `loader.zsh` — a
-  renamed Core file behind any other link used to read as a healthy graph.
+  renamed Core file behind any other link used to read as a healthy graph — and that each
+  Core-owned link resolves to the **right** file, since a graph with `starship.toml` wired
+  to `tmux.conf` is complete, resolvable and wrong. Caller-supplied `--require` paths keep
+  existence-only semantics: Core has no business asserting what a Role layer's paths point
+  at.
   **The four repos switch over on the next sync**, not now: they can only call
   `core/scripts/check-links.sh` once a release has vendored it, so the script ships first
   and the Makefiles follow. Until then their inlined copies (now all fixed) keep running,
