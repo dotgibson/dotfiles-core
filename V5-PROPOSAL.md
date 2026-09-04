@@ -246,7 +246,9 @@ Two exported surfaces, neither with a contract.
 **`CORE_PROFILE`** was a v4.0.0 headline feature. Nothing writes
 `$ZSH_CFG/profile`, the file it reads. No OS repo mentions it. CI actively
 asserts `~/.zshrc` must **not** set it (`bootstrap-test.yml:310-315`). Its only
-exercise is `test-core.sh:7617-7646`. Every host runs the `full` default.
+exercise was `test-core.sh:7617-7646` as this file measured it; #677 then deleted
+`CORE_PROFILE` outright, and `scripts/test/62-loader-contract.sh` now pins the
+loader contract that replaced its ceiling matrix. Every host runs the `full` default.
 
 It is also what makes the band footgun dangerous. `VENDORING.md:185-192` warns
 that an OS repo dropping `22-foo.zsh` into a Core band gap is profile-gated as if

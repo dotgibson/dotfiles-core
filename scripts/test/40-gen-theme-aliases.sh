@@ -316,7 +316,8 @@ fi
 
 # ── aliases generation (scripts/gen-aliases.sh) ──────────────────────────────
 # aliases.md's tables are rendered from the zsh sources and audit-core.sh §9g gates the
-# result against the real tree. As with F10, what is worth pinning here is the FAILURE
+# result against the real tree. As with the theme generator above, what is worth pinning
+# here is the FAILURE
 # DIRECTIONS the real tree can never exercise without mutating tracked files — and the
 # one that matters most, "an alias was added and no table lists it", is a structural
 # exit (2), not drift (1), so the two must be told apart on purpose.

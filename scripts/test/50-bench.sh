@@ -217,7 +217,7 @@ if [[ ! -x "$_BCORE" || ! -r "$_BBASE" ]]; then
 else
   _bcout=""
   _bcrc=0
-  _bc_run() { # _bc_run [env=val ...] -- [args ...]   (the J2 _b_run shape, bash-3.2 safe)
+  _bc_run() { # _bc_run [env=val ...] -- [args ...]   (the _b_run shape above, bash-3.2 safe)
     local envs=()
     while (($#)) && [[ "$1" != -- ]]; do
       envs+=("$1")

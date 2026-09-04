@@ -538,7 +538,7 @@ fi
 # ── Neovim `User FilePost` contract (nvim/, headless) ─────────────────────────
 # config/autocmds.lua defers nvim-lspconfig, gitsigns, nvim-lint and todo-comments onto
 # a custom `User FilePost` event so they load AFTER startup instead of in front of the
-# first paint. Four plugins now depend on that event, but D2 above only proves the
+# first paint. Four plugins now depend on that event, but the event-callbacks arm above only proves the
 # autocmds load and don't throw — it would still pass if FilePost never fired at all
 # (every deferred plugin silently dead: no LSP, no linting, no git signs) or fired
 # repeatedly (every later buffer re-emitting it). Neither shows up as an error, which

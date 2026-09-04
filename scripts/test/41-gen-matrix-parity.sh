@@ -23,12 +23,14 @@
 # side) and a fake FLEET: seven sibling directories, each with a .git so it resolves
 # like a checkout, minimal os/*.capabilities, and install/packages.txt files
 # SYNTHESISED FROM THE SCRIPT'S OWN PKG_ROWS — the first candidate of every derived cell,
-# so the registry is the thing under test (F10b's argument for using the real zsh
+# so the registry is the thing under test (the aliases generator's argument, in
+# scripts/test/40-gen-theme-aliases.sh, for using the real zsh
 # sources). Debian's file carries the tiers and floors the real one does, and the fixture
 # ships a copy of pkg_filter_lines because the generator sources the repo's own filter.
 #
 # The REPOSITORY SCRIPT is run with --root AND --fleet from a third directory, so the
-# documented fixture mechanism is what is exercised (F10b's rule).
+# documented fixture mechanism is what is exercised (the same rule the aliases generator
+# in scripts/test/40-gen-theme-aliases.sh follows).
 if have git; then
   hdr "porting-matrix generation (scripts/gen-porting-matrix.sh)"
   GPR="$SANDBOX/matrixrepo"

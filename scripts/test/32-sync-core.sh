@@ -63,14 +63,14 @@ if ((_sc_subtree)); then
   mkdir -p "$SCF/coreremote/scripts/lib" "$SCF/coreremote/lib"
   cp "$HERE/scripts/sync-core.sh" "$SCF/coreremote/scripts/"
   # core-lock.sh too: sync-core.sh sources it for its post-fan-out assertion (#556), so
-  # without this the whole F6 block dies at `source` rather than failing an assertion.
+  # without this this whole fan-out block dies at `source` rather than failing an assertion.
   # core-vendor.sh for the same reason since #676 — sync-core.sh sources it directly for
   # core_vendor_materialize, and core-lock.sh sources it for the version switch.
   #
   # NOTE the fixture deliberately carries NO core.manifest and NO core.vendor. That makes
   # every commit in it take core_vendor_effective_tree's WHOLE-TREE branch — which is exactly
   # the pre-#676 fleet, so this whole block keeps asserting the migration path for free. The
-  # FILTERED branch is asserted separately in F6f below.
+  # FILTERED branch is asserted separately by the vendoring-filter arm below.
   cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/core-lock.sh" \
     "$HERE/scripts/lib/core-vendor.sh" "$SCF/coreremote/scripts/lib/"
   cp "$HERE/lib/ux.sh" "$HERE/lib/bootstrap-lib.sh" "$SCF/coreremote/lib/"

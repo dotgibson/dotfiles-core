@@ -169,8 +169,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   not a rewrite: the fragments rejoin to the old file's lines 190–18740 **byte for byte** (bar
   the trailing blank lines `end-of-file-fixer` trims at each cut), and **all 1,772 assertions
   the suite already had come back identical in text and order**, verified line-by-line against
-  a pre-split run. Five are added — see `05-suite-shape.sh` below — and two guard labels are
-  reworded; nothing else in the stream differs. `--quiet`, `--json`, `--scope` and the
+  a pre-split run. Five are added — see `05-suite-shape.sh` below — and three labels are
+  reworded (the two self-reference guards, and one that cited a section ID the split
+  removed); nothing else in the stream differs. `--quiet`, `--json`, `--scope` and the
   exit-code contract `audit-core.sh` reads are untouched. The second win is
   organisational: the sections were lettered **A–L**, and the letters had drifted into **two
   different "E"s** and an `A` that ran after `J`, while the file's own header still described

@@ -418,7 +418,7 @@ STUB
   # unlinks it SYNCHRONOUSLY before the call returns, so a positive case is satisfied on the
   # first tick and the bound is pure waiting for the cases that are SUPPOSED never to write —
   # of which there are several, four arms each. 3 ticks is therefore not a flakiness risk
-  # here, and it is the difference between J4 costing seconds and costing minutes. Lowering it
+  # here, and it is the difference between this premise costing seconds and costing minutes. Lowering it
   # against a REAL atuin manufactures findings; see the knob's own comment in
   # verify-atuin-guard.sh.
   # …AND THAT ARGUMENT DOES NOT COVER THE APPARATUS GATE, which is the one case here running a

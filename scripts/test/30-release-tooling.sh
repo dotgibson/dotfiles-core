@@ -218,7 +218,7 @@ fi
 
 # ── release-notes drafting (scripts/gen-release-notes.sh) ─────────────────────
 # gen-release-notes.sh turns an OS repo's Conventional Commits in a range into the grouped
-# markdown body auto-tag.sh feeds `gh release create --notes-file` (G5 — a real changelog,
+# markdown body auto-tag.sh feeds `gh release create --notes-file` (a real changelog,
 # not a bare tag). Assert hermetically: the right groups appear in cliff.toml order, the
 # subject is rendered as cliff renders it, a chore(release) commit is skipped and an
 # unconventional subject is dropped, and a range with no conventional commits prints

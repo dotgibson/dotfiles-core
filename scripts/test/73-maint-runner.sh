@@ -333,7 +333,7 @@ for _v in "${COMP_VERBS[@]}"; do
   case "$HELP_ALLOWLIST" in *" $_v "*) continue ;; esac
   HELP_VERBS+=("$_v")
 done
-ucheck "core-help lists every first-party verb (derived B2 coverage gate)" \
+ucheck "core-help lists every first-party verb (derived coverage gate)" \
   "source '$UI'; source '$FN'; sheet=\$(COLUMNS=200 core-help 2>&1); for v in ${HELP_VERBS[*]}; do [[ \" \$sheet \" == *\" \$v \"* || \$sheet == *\"\$v \"* || \$sheet == *\" \$v\"* ]] || { print \"verb missing from core-help: \$v\"; exit 1; }; done" \
   NO_COLOR=1
 

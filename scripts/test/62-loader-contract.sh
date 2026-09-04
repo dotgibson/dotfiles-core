@@ -12,7 +12,8 @@
 # shellcheck disable=SC2016
 
 # ── loader glob + sort contract (what is a fragment, and in what order) ───────
-# A2 proves the real chain loads; this proves the RULES the loader uses to decide what a
+# The consumer-integration arm in scripts/test/60-loader.sh proves the real chain loads;
+# this proves the RULES the loader uses to decide what a
 # fragment IS and what order it runs in — which is now the WHOLE of its filtering logic,
 # because v5 deleted CORE_PROFILE (#677). That deletion did not shrink this section, it
 # promoted it: the glob used to be one of two filters with zero assertions against it while

@@ -247,7 +247,8 @@ unset -f _mg_write _mg_count
 # claim rejects, and the negative runs that justified it were done by hand on a branch —
 # which is a discipline, not a gate, and the second time this repo has learned that.
 #
-# HERMETIC FIXTURE, real script, real CHECKS array — the gen-theme F10 pattern. Only
+# HERMETIC FIXTURE, real script, real CHECKS array — the gen-theme pattern from
+# scripts/test/40-gen-theme-aliases.sh. Only
 # PARITY.md varies between rows, so every verdict below is attributable to the coverage
 # logic and nothing else. dotfiles-Windows is deliberately absent from the fixture root,
 # so the pwsh half self-skips and cannot colour the result.

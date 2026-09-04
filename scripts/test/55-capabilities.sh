@@ -206,6 +206,7 @@ else
   esac
 fi
 
-# F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
+# The vocabulary register (scripts/test/56-fleet-vocabulary.sh) sits ABOVE the zsh gate on
+# purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run
 # it — the gate exits before anything after it.

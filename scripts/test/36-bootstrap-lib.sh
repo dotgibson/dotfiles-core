@@ -161,10 +161,11 @@ fi
 # Two properties, and the second is the one that bites. blib_link honours BLIB_DRY on its
 # own, but the mkdir/chmod this overlay needs do NOT — they are plain commands, so a
 # --dry-run would create and chmod ~/.ssh/config.d on a box the operator was only
-# inspecting. That is the exact asymmetry F8b pins for the role layer (one repo's dry-run
+# inspecting. That is the exact asymmetry the role-layer arm below pins (one repo's dry-run
 # mutated the box, the other's did not), caught here before it can happen again.
 #
-# No `have` guard: this needs only bash and the library, unlike F7 (git), so it runs
+# No `have` guard: this needs only bash and the library, unlike the link run in
+# scripts/test/34-link-run.sh (git), so it runs
 # everywhere — including the minimal containers where the heavier fixtures skip.
 hdr "helper-adoption section is --strict-safe (audit-core.sh §5f)"
 # The adoption section reads SIBLING repos off disk, and CI checks out only Core — so every
@@ -508,7 +509,8 @@ else
 fi
 
 hdr "blib_link_os_layer ssh overlay (config.d drop-in, dry-run safe)"
-# Local rather than F7's _lr_mode: that one is defined inside `if have git`, so it does
+# Local rather than scripts/test/34-link-run.sh's _lr_mode: that one is defined inside
+# `if have git`, so it does
 # not exist on a box without git, where this fixture still runs.
 _ol_mode() { # <path> — octal permission bits, GNU or BSD stat (the macOS CI leg)
   stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
