@@ -1979,6 +1979,13 @@ _hv_is "the braceless \$HAVE_X form is a read too" bare "HAVE_ATUIN"
 d="$(_hv_repo insh)"; printf '[[ -n "${HAVE_JQ:-}" ]] && echo hi\n' >"$d/bootstrap.sh"
 _hv_is "a .sh file outside os/ is scanned" insh "HAVE_JQ"
 
+# The zsh EXISTENCE form. `(( ${+NAME} ))` asks whether a parameter is set without caring
+# what it holds — this tree uses it for exactly that (`(( ${+_CORE_PROBED} ))`,
+# 30-functions.zsh) — and an OS layer gating that way slipped past the first matcher, which
+# demanded `HAVE_` immediately after the brace. A silent miss in direction 2, so it is pinned.
+d="$(_hv_repo plusform)"; printf '(( ${+HAVE_RG} )) && :\n' >"$d/os/x.zsh"
+_hv_is "the zsh \${+HAVE_X} existence form is a read" plusform "HAVE_RG"
+
 # ── what it must stay SILENT on ──
 # The vendored core/ prune, asserted on its own: this repo reads HAVE_RG only from core/.
 d="$(_hv_repo vendored)"
@@ -13872,7 +13879,7 @@ assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\"
 # tool named `$1` — load-bearing.
 #
 # The bare shape is #694's, and adding it here rather than lowering the floor is the whole
-# point: that change cut thirteen flagged lines down to bare probes because nothing read
+# point: that change cut fourteen flagged lines down to bare probes because nothing read
 # their flags, and a bare `_have` is detection in exactly the sense this test means —
 # it writes the _CORE_PROBED row, which is what core-doctor keys on. Reading the flag as
 # the evidence of detection was always the weaker proxy; it is the same reasoning that
@@ -15075,14 +15082,14 @@ ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
    (( \${#bad} == 0 )) || { print -r -- \"doctor and HAVE_* disagree: \${(j:, :)bad}\"; exit 1; }" \
   CORE_NO_PAGER=1
 # ── the HAVE_* contract: the probe outlives the flag (00-tools.zsh, #694) ───────
-# #694 cut thirteen `_have <tool> && HAVE_<X>=1` lines down to a bare `_have <tool>`, because
+# #694 cut fourteen `_have <tool> && HAVE_<X>=1` lines down to a bare `_have <tool>`, because
 # the flags had no reader anywhere in the fleet. What those lines still do is the entire
 # reason they were not deleted outright: `_have` writes _CORE_PROBED[<tool>], and that ledger
 # — not any flag — is what core-doctor, _core_doctor_stale and _core_doctor_unwired read.
 #
 # So the regression this pins is a READING one, not a typo: the next person to open that
 # block sees a probe whose result is discarded and deletes the line. Nothing would fail. The
-# doctor would simply stop knowing about thirteen tools, and a tool it does not probe is
+# doctor would simply stop knowing about fourteen tools, and a tool it does not probe is
 # reported as "Core does not probe this row" — indistinguishable, from the outside, from a
 # tool Core looked for and did not find. That is #545's exact defect class, re-entered from
 # the other side.
@@ -15111,8 +15118,8 @@ ucheck "detection: every bare \`_have\` probe still writes its _CORE_PROBED row 
 ucheck "detection: the fourteen flags #694 removed are not set" \
   "source '$TOOLS_FILE'
    bad=()
-   for f in HAVE_ASTGREP HAVE_DELTA HAVE_GUM HAVE_HYPERFINE HAVE_JNV HAVE_JQ HAVE_LNAV \
-            HAVE_SD HAVE_SESH HAVE_SHELLCHECK HAVE_SHFMT HAVE_WATCHEXEC HAVE_YQ; do
+   for f in HAVE_ASTGREP HAVE_DELTA HAVE_GRON HAVE_GUM HAVE_HYPERFINE HAVE_JNV HAVE_JQ \
+            HAVE_LNAV HAVE_SD HAVE_SESH HAVE_SHELLCHECK HAVE_SHFMT HAVE_WATCHEXEC HAVE_YQ; do
      (( \${+parameters[\$f]} )) && bad+=(\$f)
    done
    (( \${#bad} == 0 )) || { print -r -- \"set again without a declaration: \${(j:, :)bad}\"; exit 1; }" \

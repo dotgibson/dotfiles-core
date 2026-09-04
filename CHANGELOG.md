@@ -241,7 +241,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `core/` that both sets and reads the whole flag set, so if the prune ever breaks, all ten go
   silent at once. The silent directions are the ones worth pinning: an over-reporting scanner
   reds a clean fleet and gets turned off, but an under-reporting one passes forever while the
-  contract rots.
+  contract rots. Two of those silent misses were review findings against the first
+  implementation, and both are now fixtures: zsh's **existence form** `(( ${+HAVE_X} ))` — a
+  perfectly ordinary way to gate on a flag, which this tree itself uses for `_CORE_PROBED`,
+  and which a matcher demanding `HAVE_` immediately after the brace walked straight past; and
+  a **commented-out assignment** conferring ownership, which would have suppressed a real
+  undeclared read of the same flag.
+
+  §5j also **fails closed when it parses no declaration at all.** Rename or delete §5's
+  heading and the declared set comes back empty — direction 1 goes vacuous, direction 2 skips
+  on every CI runner (no fleet beside it), and direction 3 still passes because `HAVE_ATUIN`
+  has an internal reader in `00-tools.zsh` too. The section would have reported green over no
+  declared surface whatsoever, which is exactly the shape #682 named: a drift gate that
+  checked nothing must never report green.
 
   Two shape-parsing tests needed teaching, not weakening. `#447`'s doctor-vs-flag agreement
   check pairs on the assignment by design (a tool with no flag has nothing to compare), so its

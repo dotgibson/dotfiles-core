@@ -1228,7 +1228,7 @@ probeable — nothing in the CLI surface reveals which patches a build carries. 
 floor you _record_ and act on when provisioning, not one you can detect from the shell.
 
 Core itself is unaffected: nothing in Core shells out to jq (detect-only, no alias — the
-same shape as `sd`; `gron` keeps a flag because `20-aliases.zsh` reads it). This is a note for the role layers and for anyone
+same shape as `sd` and `gron`, both ledger-only probes since #694). This is a note for the role layers and for anyone
 piping untrusted JSON through a distro jq.
 
 ³⁵ Fedora `refresh` is `dnf check-update`, and it is **not really a refresh** — dnf has no

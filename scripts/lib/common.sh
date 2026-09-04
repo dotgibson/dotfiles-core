@@ -1444,8 +1444,13 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   #
   # THREE DECISIONS, each of which was a bug in an earlier draft:
   #
-  # 1. READS ARE MATCHED BY THEIR `$` SIGIL, not by the bare name. `${HAVE_X…}` and `$HAVE_X`
-  #    are reads; a comment mentioning the flag writes it bare. Measured across the fleet:
+  # 1. READS ARE MATCHED BY THEIR `$` SIGIL, not by the bare name. `${HAVE_X…}`, `$HAVE_X`
+  #    and zsh's existence form `${+HAVE_X}` are reads; a comment mentioning the flag writes
+  #    it bare. The `+` is not decoration — `(( ${+HAVE_X} ))` is how you ask whether a
+  #    parameter is SET without caring about its value, this tree uses it for exactly that
+  #    (`(( ${+_CORE_PROBED} ))`, 30-functions.zsh), and an OS layer gating on it would have
+  #    walked straight past a matcher that demanded `HAVE_` immediately after the brace.
+  #    Measured across the fleet:
   #    bare-name matching found HAVE_ASTGREP/HAVE_JNV/HAVE_SHELLCHECK in one dotfiles-Offense
   #    comment and four more flags in five other comments, none of them reads. This is what
   #    lets the gate skip comment-stripping, which PORTABILITY.md §3 documents as needing a
@@ -1469,7 +1474,7 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   owns=" $(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null \
     | grep -oE 'HAVE_[A-Z0-9_]+=' 2>/dev/null | sed 's/=$//' | sort -u | tr '\n' ' ') "
   uses="$(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null \
-    | grep -oE '[$][{]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
+    | grep -oE '[$][{]?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
   for f in $uses; do
     case "$owns" in
     *" $f "*) ;;

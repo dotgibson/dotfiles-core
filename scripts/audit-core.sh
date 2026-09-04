@@ -1416,7 +1416,20 @@ else
   # Whole-line comments are dropped for the reason _core_have_read_hits states: the sigil
   # rule alone still reads `# gated on $HAVE_X` as a read.
   hv_read=" $(grep -rhv '^[[:space:]]*#' "$HERE/zsh" 2>/dev/null \
-    | grep -oE '[$][{]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
+    | grep -oE '[$][{]?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
+
+  # PARSING NOTHING IS A FAILURE, NOT A PASS. Rename or delete §5's heading and hv_declared
+  # comes back empty — at which point direction 1 is vacuous, direction 2 skips on any box
+  # without the fleet beside it (which is every CI runner), and direction 3 still passes
+  # because HAVE_ATUIN has an internal reader in 00-tools.zsh too. The whole section would
+  # report green over NO declared surface at all, which is the failure mode #682 named: a
+  # drift gate that checked nothing must never report green.
+  hv_ndecl=0
+  for hv_f in $hv_declared; do hv_ndecl=$((hv_ndecl + 1)); done
+  if ((hv_ndecl == 0)); then
+    fail "HAVE_* contract: parsed NO declared flags out of PORTABILITY.md §5 — its '### What downstream may use' heading or table is missing or renamed. The contract gate checked nothing this run"
+    hv_fail=1
+  fi
 
   # ── direction 1: every declared flag is one Core sets ──
   for hv_f in $hv_declared; do
@@ -1490,7 +1503,7 @@ else
     fi
   fi
 fi
-unset hv_tools hv_doc hv_declared hv_set hv_read hv_f hv_root hv_repo hv_dir hv_uses hv_checked hv_absent hv_fleet hv_fail
+unset hv_tools hv_doc hv_declared hv_ndecl hv_set hv_read hv_f hv_root hv_repo hv_dir hv_uses hv_checked hv_absent hv_fleet hv_fail
 
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —
