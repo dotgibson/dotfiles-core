@@ -11682,15 +11682,56 @@ if ((rc == 1)); then pass "links: --require with no value is a usage error, not 
 (cd /tmp && "$_cl_sh" --repo /nonexistent-repo-dir >/dev/null 2>&1); rc=$?
 if ((rc == 1)); then pass "links: a --repo that is not a directory exits 1"; else fail "links: bad --repo exited $rc, want 1"; fi
 
-# THE THROWAWAY HOME IS REMOVED — including on the failure paths, via the trap.
+# THE THROWAWAY HOME IS REMOVED — including on the failure paths, via the trap. Given its
+# OWN TMPDIR under the sandbox and asserted EMPTY: counting `tmp.*` entries in the shared
+# system temp dir would race with every other process on the box (a false failure or a
+# masked leak, depending on the timing) and would write outside the suite sandbox, which
+# this file's hermetic invariant forbids.
 _cl_repo
-_cl_before="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' 2>/dev/null | wc -l)"
-(cd "$_cl_root" && "$_cl_sh" --require .config/nope >/dev/null 2>&1)
-_cl_after="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' 2>/dev/null | wc -l)"
-if ((_cl_after <= _cl_before)); then
+_cl_tmpdir="$SANDBOX/check-links-tmp"; rm -rf "$_cl_tmpdir"; mkdir -p "$_cl_tmpdir"
+(cd "$_cl_root" && TMPDIR="$_cl_tmpdir" "$_cl_sh" --require .config/nope >/dev/null 2>&1)
+if [[ -z "$(ls -A "$_cl_tmpdir" 2>/dev/null)" ]]; then
   pass "links: the throwaway HOME is cleaned up even when the assertions fail"
 else
-  fail "links: a failing run leaked its throwaway HOME"
+  fail "links: a failing run leaked its throwaway HOME: $(ls -A "$_cl_tmpdir")"
+fi
+# …and the temp dir is made with a TEMPLATE, or the macOS lane never gets past it: BSD
+# mktemp requires one (PORTABILITY.md). A run under a TMPDIR that exists proves the
+# template resolves there rather than asserting the string.
+_cl_repo
+rm -rf "$_cl_tmpdir"; mkdir -p "$_cl_tmpdir"
+if (cd "$_cl_root" && TMPDIR="$_cl_tmpdir" "$_cl_sh" >/dev/null 2>&1); then
+  pass "links: the throwaway HOME honours TMPDIR (portable mktemp template)"
+else
+  fail "links: the run under a custom TMPDIR failed"
+fi
+if grep -qE 'mktemp -d "\$\{TMPDIR:-/tmp\}/[^"]*X{6}"' "$_cl_sh"; then
+  pass "links: mktemp is called with a template (BSD requires one)"
+else
+  fail "links: mktemp lost its template — the macOS lane would exit 1 before bootstrap"
+fi
+
+# A DANGLING link that is NOT loader.zsh: the copied recipes only ever resolved that one,
+# so a renamed Core file behind any other link read as a healthy graph.
+_cl_repo 'rm -f "$P/starship.toml"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a dangling link other than loader.zsh is caught too"; else fail "links: dangling starship.toml exited $rc, want 2"; fi
+
+# --help IS A HEREDOC, not a line range over this file: the range form had already started
+# printing `set -uo pipefail` as documentation, and drifts on any header edit.
+_cl_out="$("$_cl_sh" --help 2>&1)"
+if [[ "$_cl_out" == *"--require PATH"* && "$_cl_out" == *"Exit codes:"* && "$_cl_out" != *"set -uo pipefail"* && "$_cl_out" != *"#!/usr/bin/env"* ]]; then
+  pass "links: --help prints the usage block and no implementation lines"
+else
+  fail "links: --help leaked implementation or lost its options: $_cl_out"
+fi
+
+# THE SIGNAL HANDLERS EXIT, rather than cleaning up and letting the script run on against a
+# directory it just removed (audit-core.sh makes the same distinction).
+if grep -q "trap _cl_cleanup EXIT$" "$_cl_sh" && grep -q "trap 'exit 130' INT" "$_cl_sh" && grep -q "trap 'exit 143' TERM" "$_cl_sh"; then
+  pass "links: INT/TERM exit 130/143 and EXIT does the cleanup"
+else
+  fail "links: the signal handlers are cleanup-only again"
 fi
 
 # IT IS VENDORED, or the six repos that will call it as core/scripts/check-links.sh get

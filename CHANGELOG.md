@@ -48,7 +48,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   that records the environment it was handed, and pins the scrub, that the scrub takes the
   five and nothing else, each failure mode's exit code, the trap, and the two `.zshrc`
   assertions — including the grep the old recipes shipped, which accepted a
-  **commented-out** `source` line and matched `loaderXzsh` besides.
+  **commented-out** `source` line and matched `loaderXzsh` besides. It also asserts what
+  the copied recipes never did: that EVERY link resolves, not just `loader.zsh` — a
+  renamed Core file behind any other link used to read as a healthy graph.
   **The six repos switch over on the next sync**, not now: they can only call
   `core/scripts/check-links.sh` once a release has vendored it, so the script ships first
   and the Makefiles follow. Until then their inlined copies (now all fixed) keep running.

@@ -41,22 +41,8 @@
 #      itself exited non-zero — its output is printed)
 #   2  bootstrap ran and the graph is WRONG — the drift signal
 #
-# Usage:
-#   core/scripts/check-links.sh
-#   core/scripts/check-links.sh --require .config/zsh/80-os.zsh
-#   core/scripts/check-links.sh --require .config/tmux/role.conf --require .config/offensive/templates
-#
-#   --repo DIR        repo root to run in            (default: the current directory)
-#   --bootstrap PATH  installer, relative to --repo  (default: ./bootstrap.sh)
-#   --require PATH    an extra path that must be a SYMLINK, relative to the throwaway
-#                     HOME. Repeatable.
-#   --seed PATH       an extra path that must be a regular FILE and NOT a symlink — a
-#                     seeded config the user is meant to edit. Repeatable.
-#   --keep            do not delete the throwaway HOME; print where it is (debugging)
-#
-# The environment reaches bootstrap unchanged apart from HOME and the five scrubbed
-# variables, so a caller that needs one — `BLIB_SU=true` on a container without sudo, say
-# — simply exports it: `BLIB_SU=true core/scripts/check-links.sh`.
+# The interface lives in usage() below, not in this banner — see `--help`. One copy, so
+# editing the options cannot silently drift from what the script prints.
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -71,6 +57,40 @@ fi
 say() { printf '%s::%s %s\n' "${UX_BLU:-}" "${UX_RST:-}" "$*"; }
 ok() { printf '%s%s%s %s\n' "${UX_GRN:-}" "${UX_OK:-+}" "${UX_RST:-}" "$*"; }
 bad() { printf '%s%s%s %s\n' "${UX_YEL:-}" "${UX_WARN:-!}" "${UX_RST:-}" "$*" >&2; }
+
+# A real heredoc, NOT `sed -n '2,62p' "$0"`: the line-range form was coupled to this file's
+# header and had already started printing `set -uo pipefail` as if it were documentation.
+# Same reason scripts/sync-core.sh rewrote its usage().
+usage() {
+  cat <<'EOF'
+check-links.sh — run an OS/Role repo's bootstrap --links-only into a throwaway HOME and
+assert the symlink graph Core's loader expects. The second half of `make check`.
+
+  core/scripts/check-links.sh
+  core/scripts/check-links.sh --require .config/zsh/80-os.zsh
+  core/scripts/check-links.sh --require .config/tmux/role.conf --require .config/offensive/templates
+
+  --repo DIR        repo root to run in            (default: the current directory)
+  --bootstrap PATH  installer, relative to --repo  (default: ./bootstrap.sh)
+  --require PATH    an extra path that must be a SYMLINK resolving to something, relative
+                    to the throwaway HOME. Repeatable.
+  --seed PATH       an extra path that must be a regular FILE and NOT a symlink — a seeded
+                    config the user is meant to edit. Repeatable.
+  --keep            do not delete the throwaway HOME; print where it is (debugging)
+  -h, --help        this text
+
+Exit codes:
+  0  the graph is what Core expects
+  1  the check could not RUN (usage, no bootstrap script, a temp dir that could not be
+     made, or bootstrap itself exiting non-zero — its output is printed)
+  2  bootstrap ran and the graph is WRONG — the drift signal
+
+The environment reaches bootstrap unchanged apart from HOME and the five scrubbed XDG/zsh
+variables, so a caller that needs one simply exports it:
+
+  BLIB_SU=true core/scripts/check-links.sh
+EOF
+}
 
 REPO="."
 BOOTSTRAP="./bootstrap.sh"
@@ -112,7 +132,7 @@ while (($#)); do
     shift
     ;;
   -h | --help)
-    sed -n '2,62p' "${BASH_SOURCE[0]:-$0}"
+    usage
     exit 0
     ;;
   *)
@@ -134,19 +154,24 @@ cd -- "$REPO" || {
 }
 
 # ── the throwaway HOME ────────────────────────────────────────────────────────
-tmp="$(mktemp -d)" || {
-  bad "mktemp -d failed — refusing to run bootstrap without a throwaway HOME"
-  exit 1
-}
-[[ -n "$tmp" ]] || {
-  bad "mktemp -d printed nothing — same refusal"
+# A TEMPLATE, because BSD mktemp requires one and this runs on the macOS lane too: bare
+# `mktemp -d` exits 1 there, so the gate would refuse before ever reaching bootstrap
+# (PORTABILITY.md, "Banned, with the portable form"). The guard is not ceremony either —
+# an empty $tmp turns the mkdir below into /.config on the real filesystem.
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/core-check-links.XXXXXX")" && [[ -n "$tmp" && -d "$tmp" ]] || {
+  bad "could not create a throwaway HOME — refusing to run bootstrap without one"
   exit 1
 }
 # shellcheck disable=SC2317,SC2329  # invoked by the trap below, which shellcheck cannot see —
 # SC2329 for the function, SC2317 for its body, which newer shellchecks read as unreachable.
 # Both are needed: the Alpine audit leg runs a build that emits the second and the local one did not.
 _cl_cleanup() { ((KEEP)) || rm -rf "$tmp"; }
-trap _cl_cleanup EXIT INT TERM
+trap _cl_cleanup EXIT
+# INT/TERM exit with the conventional 128+signal code and let EXIT do the removing. A
+# cleanup-only signal handler RETURNS, and bash then carries on against a directory it has
+# just deleted — the shape scripts/audit-core.sh calls out in its own trap block.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # blib_link_core clones the tmux plugin manager into this directory on a first run. Creating
 # it up front keeps the check about symlinks rather than about network reachability.
@@ -183,19 +208,20 @@ SEEDS=(
 ((${#SEED[@]})) && SEEDS+=("${SEED[@]}")
 
 rc=0
+# TWO questions per link, and the second is the one that catches a rename: a symlink can
+# exist and point at nothing, which is what a Core file renamed upstream leaves behind when
+# the OS repo's link name stays put. Asking it of ONLY loader.zsh, as the copied recipes
+# did, meant a dangling starship.toml — or a dangling --require path — still read as a
+# healthy graph.
 for l in "${LINKS[@]}"; do
-  [[ -L "$tmp/$l" ]] || {
+  if [[ ! -L "$tmp/$l" ]]; then
     bad "MISSING symlink: $l"
     rc=2
-  }
+  elif [[ ! -e "$tmp/$l" ]]; then
+    bad "DANGLING symlink (points at nothing): $l"
+    rc=2
+  fi
 done
-
-# A symlink can exist and point at nothing — the shape this catches is a Core file renamed
-# upstream while the OS repo's link name stayed put.
-[[ -e "$tmp/.config/zsh/loader.zsh" ]] || {
-  bad "loader.zsh is a dangling symlink"
-  rc=2
-}
 
 for s in "${SEEDS[@]}"; do
   if [[ -L "$tmp/$s" ]]; then
