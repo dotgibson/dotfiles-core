@@ -1478,15 +1478,24 @@ _core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names rea
   # downstream `.sh` may well be sourced from a zsh fragment; and where it is a plain child
   # process instead, a `$HAVE_X` in it is a read that can only ever be empty, which is its own
   # defect and worth surfacing rather than ignoring. Each direction is tuned to FIND problems.
-  local dir="${1:-.}" files owns uses f
+  local dir="${1:-.}" files text owns uses f
   [ -d "$dir" ] || return 0
   files="$(find "$dir" \( -name .git -o -name core -o -name node_modules \) -prune -o \
     -type f \( -name '*.zsh' -o -name '*.sh' \) -print 2>/dev/null)"
   [ -n "$files" ] || return 0
-  owns=" $(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null \
-    | grep -oE 'HAVE_[A-Z0-9_]+=' 2>/dev/null | sed 's/=$//' | sort -u | tr '\n' ' ') "
-  uses="$(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null \
-    | grep -oE '[$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
+  # The non-comment text, read once: three passes run over it below and re-grepping the
+  # file list each time triples the I/O for no gain.
+  text="$(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null)"
+  owns=" $(printf '%s\n' "$text" | grep -oE 'HAVE_[A-Z0-9_]+=' 2>/dev/null | sed 's/=$//' | sort -u | tr '\n' ' ') "
+  # TWO read shapes, because a shell has two. The sigil forms are the common ones; inside an
+  # ARITHMETIC context a parameter needs no `$` at all, so `(( HAVE_RG ))` is a plain read
+  # that the sigil pattern cannot see. That is not a hypothetical style — this tree gates on
+  # booleans exactly that way (`((UPDATE_CHECK_ENABLED))` in 60-update.zsh, `((CORE_CNF_ENABLED))`
+  # in 30-functions.zsh), so an OS layer writing `(( HAVE_X ))` is following the house style,
+  # and it would have passed direction 2 in silence.
+  uses="$( { printf '%s\n' "$text" | grep -oE '[$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null
+    printf '%s\n' "$text" | grep -F '((' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' 2>/dev/null
+  } | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
   for f in $uses; do
     case "$owns" in
     *" $f "*) ;;

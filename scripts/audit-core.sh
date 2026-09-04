@@ -1376,7 +1376,19 @@ EOF
 #
 # Direction 2 reads sibling clones, so it takes the skip_env posture of §5f and §5h: CI checks
 # out this repo alone, and a gate that only passes on a laptop with the fleet beside it is a
-# gate nobody trusts. Directions 1 and 3 read this repo's own files and are unconditional.
+# gate nobody trusts.
+#
+# WHICH MEANS DIRECTION 2 IS ADVISORY IN PRACTICE TODAY, and saying so is better than letting
+# the next reader assume otherwise. It fires where the fleet sits beside Core — a maintainer's
+# `make audit`, the scheduled fleet jobs — and records a skip on every default CI run. The
+# reusable lint workflow the OS repos call does not run it, so an OS-repo PR adding an
+# undeclared read can merge without a red. The fix is a caller-side leg in lint-call.yml
+# beside the _core_return_trap_hits and _core_owned_block_hits legs, which already share
+# rules with this file for exactly this reason — but that leg needs the DECLARED table from a
+# vendored checkout, and PORTABILITY.md is not in core.vendor. Vendoring it is a change to
+# the allowlist with its own nine-repo blast radius, so it is #866 rather than this PR.
+#
+# Directions 1 and 3 read this repo's own files and are unconditional.
 hdr "HAVE_* contract (PORTABILITY.md §5 ↔ 00-tools.zsh ↔ fleet)"
 hv_tools="$HERE/zsh/00-tools.zsh"
 hv_doc="$HERE/PORTABILITY.md"
@@ -1415,8 +1427,15 @@ else
   #
   # Whole-line comments are dropped for the reason _core_have_read_hits states: the sigil
   # rule alone still reads `# gated on $HAVE_X` as a read.
-  hv_read=" $(grep -rhv '^[[:space:]]*#' "$HERE/zsh" 2>/dev/null \
-    | grep -oE '[$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
+  # Both read shapes, kept in step with _core_have_read_hits: the sigil forms, and the
+  # no-sigil ARITHMETIC form `(( HAVE_X ))`, which needs no `$` and which the sigil pattern
+  # cannot see. Out of step, direction 3 would report a flag as unread that a Core module
+  # reads perfectly well, and the fix would be to delete a live flag.
+  hv_read=" $( { grep -rhv '^[[:space:]]*#' "$HERE/zsh" 2>/dev/null \
+      | grep -oE '[$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+' 2>/dev/null
+    grep -rhv '^[[:space:]]*#' "$HERE/zsh" 2>/dev/null | grep -F '((' 2>/dev/null \
+      | grep -oE 'HAVE_[A-Z0-9_]+' 2>/dev/null
+  } | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
 
   # PARSING NOTHING IS A FAILURE, NOT A PASS. Rename or delete §5's heading and hv_declared
   # comes back empty — at which point direction 1 is vacuous, direction 2 skips on any box

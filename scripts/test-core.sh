@@ -1992,6 +1992,14 @@ _hv_is "the zsh \${+HAVE_X} existence form is a read" plusform "HAVE_RG"
 d="$(_hv_repo flagform)"; printf '[[ ${(t)HAVE_RG} == scalar* ]] && :\n' >"$d/os/x.zsh"
 _hv_is "a parenthesised expansion flag (\${(t)HAVE_X}) is a read" flagform "HAVE_RG"
 
+# ...and the form with NO sigil at all. Inside `(( ))` a shell resolves a bare name as a
+# parameter, so `(( HAVE_RG ))` is an ordinary read that no sigil pattern can see. This is
+# house style for booleans here — `((UPDATE_CHECK_ENABLED))` in 60-update.zsh,
+# `((CORE_CNF_ENABLED))` in 30-functions.zsh — so an OS layer writing it this way is
+# following the local idiom, not being clever, and it passed direction 2 in silence.
+d="$(_hv_repo arith)"; printf '(( HAVE_RG )) && :\n' >"$d/os/x.zsh"
+_hv_is "a bare arithmetic read (( HAVE_X )) is a read" arith "HAVE_RG"
+
 # ── what it must stay SILENT on ──
 # The vendored core/ prune, asserted on its own: this repo reads HAVE_RG only from core/.
 d="$(_hv_repo vendored)"

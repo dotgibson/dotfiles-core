@@ -215,8 +215,16 @@ row; only some also set a flag.
 
 **A flag only exists where band-00 detection ran.** An interactive zsh through
 `zsh/loader.zsh` has them; a script, a non-interactive shell, and anything sourced before
-band 00 do not. Read one with `${HAVE_X:-}`, never bare — a layer that assumes the flag is
-merely _false_ when detection never ran will silently take the wrong branch.
+band 00 do not.
+
+Write `${HAVE_X:-}` rather than a bare `$HAVE_X`, but be clear about what that buys: it is
+**`set -u` safety only**. It does not let you tell the two absences apart, because both
+produce the empty string — "Core probed and did not find the tool" and "band 00 never ran
+here" read identically. For an OS or role fragment at band 70–94 that distinction is moot:
+the loader guarantees band 00 ran first, so empty means absent and the guard is exact. Read
+a flag anywhere else and you cannot rely on it. If you genuinely need to distinguish, the
+ledger is the only thing that can: `(( ${+_CORE_PROBED} ))` is false when detection never
+ran, and `$_CORE_PROBED[<tool>]` is `0` when it ran and found nothing.
 
 ### What downstream may use
 
@@ -267,7 +275,16 @@ go stale, and — because nothing consumes it — nothing ever notices when it d
 
 Direction 2 reads the sibling clones, so it takes the `skip_env` posture §5f and §5h take:
 a repo that is not checked out is an **environment skip**, never a red, and the skip line
-names which repos went uncovered. It matches reads by their **sigil** (`$HAVE_X`,
+names which repos went uncovered.
+
+**Know what that costs today.** Core's CI checks out this repo alone, so direction 2 records
+a skip on every CI run and fires only where the fleet sits beside Core — a maintainer's
+`make audit`, or the scheduled fleet jobs. The reusable `lint` workflow the OS repos call
+does not yet run it, so an OS-repo PR adding an undeclared read can merge without a red.
+Closing that needs a caller-side leg in `lint-call.yml`, which in turn needs the declared
+table reachable from a vendored checkout — and this file is **not** in `core.vendor`. That
+is [#866](https://github.com/dotgibson/dotfiles-core/issues/866), deliberately separate:
+changing the vendoring allowlist is its own blast radius across nine repos. It matches reads by their **sigil** (`$HAVE_X`,
 `${HAVE_X}`) rather than by the bare name, which is what lets it ignore the many prose
 mentions in comments without needing a parser for five grammars — the trap §3 documents.
 Whole-line comments are dropped on top of that, on both the read and the assignment side —
