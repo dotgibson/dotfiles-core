@@ -8280,6 +8280,291 @@ EOF
   unset GPR GPF _gp_ids _gp_rows _gp_gen_rc _gp_drift_rc _gp_drift_out _gp_before _gp_gone_out _gp_flip_out _gp_tier_out _gp_key_out _gp_miss_out _gp_stray_out _gp_unreg_out _gp_cross_out _gp_list_out _gp_lone_out _gp_split_out _gp_cross_lone_out
 fi
 
+# ── F11. desktop-bar parity generation (scripts/gen-desktop-parity.sh) ────────
+# The Zebar ↔ sketchybar contract is authored once in desktop/PARITY.shared.md and rendered
+# between markers into two targets that sit OUTSIDE any vendored core/ — dotfiles-MacBook does
+# vendor Core, but sketchybar/PARITY.md is its own OS-layer file; dotfiles-Windows vendors no
+# core/ at all. Either way this repo cannot reach them, so the only place the behaviour can be
+# pinned hermetically is here: the weekly cross-repo job is the wrong feedback loop for
+# "does exit 3 still mean an absent sibling".
+#
+# The fixture fleet gives dotfiles-Windows a `.git` DIRECTORY and dotfiles-MacBook a `.git`
+# FILE on purpose — the presence test is `-e`, so a worktree/submodule checkout (where .git
+# is a file) must be accepted exactly like a normal clone.
+#
+# SRC is always the repository's real desktop/PARITY.shared.md (the script resolves it from
+# its own location, and there is no --src override), so these tests exercise the shipped
+# source against fixture TARGETS rather than a synthetic pair.
+hdr "desktop-bar parity generation (scripts/gen-desktop-parity.sh)"
+DPF="$SANDBOX/desktopfleet"
+DPW="$DPF/dotfiles-Windows/desktop/PARITY.md"
+DPM="$DPF/dotfiles-MacBook/sketchybar/PARITY.md"
+_dp_addendum="hand-authored below the block, never generated"
+
+_dp_fixture() { # _dp_fixture [--no-macbook|--macbook-not-a-repo]
+  rm -rf "$DPF"
+  mkdir -p "$DPF/dotfiles-Windows/desktop" "$DPF/dotfiles-Windows/.git"
+  {
+    printf '<!-- desktop-parity:gen -->\n<!-- desktop-parity:end -->\n'
+    printf '\n## Host-specific addenda (Windows) — `deliberate`\n\n%s\n' "$_dp_addendum"
+  } >"$DPW"
+  case "${1:-}" in
+  --no-macbook) return 0 ;;
+  --macbook-not-a-repo) # a plain directory that merely SHARES the repo name
+    mkdir -p "$DPF/dotfiles-MacBook/sketchybar"
+    return 0
+    ;;
+  esac
+  mkdir -p "$DPF/dotfiles-MacBook/sketchybar"
+  printf 'gitdir: /nowhere\n' >"$DPF/dotfiles-MacBook/.git" # a worktree's .git is a FILE
+  printf '<!-- desktop-parity:gen -->\n<!-- desktop-parity:end -->\n' >"$DPM"
+}
+_dp_run() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" "$@" >/dev/null 2>&1; echo $?); }
+_dp_run_root() { local r="$1"; shift; (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$r" "$@" >/dev/null 2>&1; echo $?); }
+_dp_out() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" "$@" 2>&1); }
+
+# POSITIVE — a clean render, and --check green on its own output.
+_dp_fixture
+if [[ "$(_dp_run)" == 0 ]] && grep -q 'Bar parity contract' "$DPW" && grep -q 'Bar parity contract' "$DPM"; then
+  pass "gen-desktop-parity: renders the shared block into both fixture repos"
+else
+  fail "gen-desktop-parity: bare run did not render both copies: $(_dp_out | head -n 3)"
+fi
+if [[ "$(_dp_run --check)" == 0 ]]; then
+  pass "gen-desktop-parity: --check is 0 on a freshly generated tree"
+else
+  fail "gen-desktop-parity: --check reported drift on its own output"
+fi
+
+# The two rendered blocks must be BYTE-IDENTICAL — that is the entire contract.
+_dp_blk() { sed -n '/^<!-- desktop-parity:gen -->$/,/^<!-- desktop-parity:end -->$/p' "$1"; }
+if [[ "$(_dp_blk "$DPW")" == "$(_dp_blk "$DPM")" ]]; then
+  pass "gen-desktop-parity: the block is byte-identical in both repos"
+else
+  fail "gen-desktop-parity: the two rendered blocks differ — the pair is not actually in sync"
+fi
+
+# Hand-authored text OUTSIDE the markers is never touched: it is where a host puts an
+# addendum with no counterpart on the other bar (Windows' psmux note).
+if grep -qF "$_dp_addendum" "$DPW"; then
+  pass "gen-desktop-parity: content outside the markers survives a render"
+else
+  fail "gen-desktop-parity: the hand-authored addendum was clobbered — deliberate divergences cannot live outside the block"
+fi
+
+# NEGATIVE — drift INSIDE a block exits 1, names the file and the fix.
+_dp_fixture && _dp_run >/dev/null
+sed -i.bak 's/| cpu  *| 0–49/| cpu | 0–99/' "$DPM" && rm -f "$DPM.bak"
+_dp_drift_out="$(_dp_out --check)"
+if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'sketchybar/PARITY.md' <<<"$_dp_drift_out" && grep -q 'make gen-desktop-parity' <<<"$_dp_drift_out"; then
+  pass "gen-desktop-parity: --check exits 1 on a one-sided edit and names the file and the fix"
+else
+  fail "gen-desktop-parity: a one-sided edit did not red — this is the #693 failure mode"
+fi
+
+# Editing OUTSIDE the markers is not drift.
+_dp_fixture && _dp_run >/dev/null
+printf '\n- another hand-authored Windows-only line.\n' >>"$DPW"
+if [[ "$(_dp_run --check)" == 0 ]]; then
+  pass "gen-desktop-parity: --check ignores edits outside the markers"
+else
+  fail "gen-desktop-parity: an edit to the hand-authored region was reported as drift"
+fi
+
+# An ABSENT sibling is an environment skip (3), never a green 0 over an un-inspected copy.
+# Render FIRST, so the copy that IS present is clean: otherwise its empty markers drift and
+# the sticky severity correctly returns 1, which would test the wrong thing.
+_dp_fixture --no-macbook && _dp_run >/dev/null
+if [[ "$(_dp_run --check)" == 3 ]] && grep -q 'not checked out under' <<<"$(_dp_out --check)"; then
+  pass "gen-desktop-parity: an absent sibling exits 3 (environment skip), not 0"
+else
+  fail "gen-desktop-parity: an absent sibling did not report the uncovered-copy exit 3"
+fi
+# ...and --strict turns that skip into a real failure, which is what CI relies on.
+if [[ "$(_dp_run --check --strict)" == 1 ]]; then
+  pass "gen-desktop-parity: --strict makes an absent sibling a failure"
+else
+  fail "gen-desktop-parity: --strict did not red on an absent sibling — CI would pass over a repo it never read"
+fi
+
+# A plain directory that merely SHARES the repo name is NOT a checkout: skip it, do not red
+# on the PARITY.md it does not have. This is why the presence test is `-e <dir>/.git`.
+_dp_fixture --macbook-not-a-repo && _dp_run >/dev/null
+if [[ "$(_dp_run --check)" == 3 ]]; then
+  pass "gen-desktop-parity: a same-named directory with no .git is skipped, not a false red"
+else
+  fail "gen-desktop-parity: a directory without .git was treated as a checkout (rc=$(_dp_run --check))"
+fi
+
+# Severity is STICKY: real drift outranks an absent sibling, so a half-checked-out fleet
+# still reds instead of reporting the softer environment skip.
+_dp_fixture --no-macbook && _dp_run >/dev/null
+sed -i.bak 's/Bar parity contract/Bar parity CONTRACT/' "$DPW" && rm -f "$DPW.bak"
+if [[ "$(_dp_run --check)" == 1 ]]; then
+  pass "gen-desktop-parity: drift (1) outranks an absent sibling (3)"
+else
+  fail "gen-desktop-parity: drift was masked by the absent-sibling exit code"
+fi
+
+# MALFORMED MARKERS in a checked-out repo FAIL rather than skip — an unmarked copy is the
+# drift being gated, not an absence. (gen-views.sh skips one; its target list is opt-in.)
+_dp_fixture && grep -v 'desktop-parity:end' "$DPM" >"$DPM.tmp" && mv "$DPM.tmp" "$DPM"
+if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'exactly one' <<<"$(_dp_out --check)"; then
+  pass "gen-desktop-parity: a missing end marker fails and says so"
+else
+  fail "gen-desktop-parity: a copy with no end marker was skipped instead of failing"
+fi
+_dp_fixture && printf '<!-- desktop-parity:end -->\n<!-- desktop-parity:gen -->\n' >"$DPM"
+if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'before' <<<"$(_dp_out --check)"; then
+  pass "gen-desktop-parity: markers in the wrong order fail"
+else
+  fail "gen-desktop-parity: an end-before-gen marker pair was accepted"
+fi
+
+# IDEMPOTENCE — a second render must be byte-identical, or --check can never be stably green.
+_dp_fixture && _dp_run >/dev/null
+cp "$DPW" "$DPF/win.first.md"
+_dp_run >/dev/null
+if core_files_identical "$DPF/win.first.md" "$DPW"; then
+  pass "gen-desktop-parity: generation is idempotent (second run is byte-identical)"
+else
+  fail "gen-desktop-parity: a second run changed the file — --check can never be stably green"
+fi
+
+# THE CI STEP MUST RUN THE READ-ONLY MODE. Without --check the generator writes into the
+# throwaway clones and exits 0 — a gate that can never fail, which is precisely the
+# "reported green having checked nothing" shape this change exists to remove. The flag was
+# in fact missing on first review, so it is pinned here rather than trusted.
+if grep -qE '^[[:space:]]*\./scripts/gen-desktop-parity\.sh .*--check' "$HERE/.github/workflows/parity-check.yml"; then
+  pass "gen-desktop-parity: parity-check.yml invokes the generator with --check"
+else
+  fail "gen-desktop-parity: parity-check.yml runs the generator WITHOUT --check — the weekly gate would rewrite the clones and always pass"
+fi
+
+# THE VERDICT MUST NOT DEPEND ON DIFFUTILS. `cmp`/`diff` ship in diffutils, which is not
+# guaranteed present — a Tumbleweed box in this fleet had neither — and a missing binary
+# exits non-zero, which is indistinguishable from "the files differ". That is how a
+# lockfile that never moved was reported as drift (#572). Shadow both with always-failing
+# stubs: identical files must still verify as identical.
+_dp_shim="$SANDBOX/nodiffutils"
+mkdir -p "$_dp_shim"
+for _b in diff cmp; do printf '#!/bin/sh\nexit 127\n' >"$_dp_shim/$_b"; chmod +x "$_dp_shim/$_b"; done
+_dp_fixture && _dp_run >/dev/null
+_dp_nodiff_rc="$( (cd "$SANDBOX" && PATH="$_dp_shim:$PATH" env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" --check >/dev/null 2>&1; echo $?) )"
+if [[ "$_dp_nodiff_rc" == 0 ]]; then
+  pass "gen-desktop-parity: --check verdict survives a host with no working diff/cmp"
+else
+  fail "gen-desktop-parity: a broken diff/cmp turned matching files into drift (rc=$_dp_nodiff_rc) — the verdict must use core_files_identical"
+fi
+
+# A WRITE THAT CANNOT HAPPEN MUST NOT REPORT SUCCESS. Nothing here runs under `set -e`, so
+# an unchecked render or install prints "rewritten" and exits 0 over a stale file.
+# Skipped as root, where the mode bits below do not bite.
+if [[ "${EUID:-$(id -u)}" != 0 ]]; then
+  _dp_fixture
+  chmod a-w "$DPF/dotfiles-Windows/desktop"
+  _dp_ro_rc="$(_dp_run)"
+  _dp_ro_out="$(_dp_out)"
+  chmod u+w "$DPF/dotfiles-Windows/desktop"
+  if [[ "$_dp_ro_rc" == 1 ]] && ! grep -q 'rewritten' <<<"$_dp_ro_out"; then
+    pass "gen-desktop-parity: an unwritable target fails instead of claiming it was rewritten"
+  else
+    fail "gen-desktop-parity: a write that could not happen was reported as success (rc=$_dp_ro_rc)"
+  fi
+  unset _dp_ro_rc _dp_ro_out
+else
+  skip "gen-desktop-parity: unwritable-target check (running as root)"
+fi
+
+# The render temp is a sibling of the target, so it must never be left behind — a stray
+# PARITY.md.gen.XXXXXX in someone's clone is litter the gate itself would then read.
+# TMPDIR is pointed INTO the fixture and BOTH names are searched, because the two modes put
+# their temp in different places: --check under ${TMPDIR:-/tmp}/gen-desktop-parity.XXXXXX,
+# write mode beside the target as PARITY.md.gen.XXXXXX. The first version of this assertion
+# scanned only $DPF for the write-mode name while exercising --check, so it could not see the
+# file it claimed to guard — deleting every `rm -f "$tmp"` in the generator left it green.
+# A cleanup test that cannot fail is the same defect as the gate this PR was filed to fix.
+_dp_fixture && _dp_run >/dev/null
+sed -i.bak 's/Bar parity contract/Bar parity CONTRACT/' "$DPM" && rm -f "$DPM.bak"
+(cd "$SANDBOX" && TMPDIR="$DPF" env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" --check >/dev/null 2>&1)
+_dp_litter="$(find "$DPF" \( -name '*.gen.??????' -o -name 'gen-desktop-parity.??????' \) 2>/dev/null)"
+if [[ -z "$_dp_litter" ]]; then
+  pass "gen-desktop-parity: leaves no temp file behind, on the drift path or in TMPDIR"
+else
+  fail "gen-desktop-parity: left a temp file behind: $_dp_litter"
+fi
+unset _dp_litter
+
+# A REGENERATION MUST NOT CHANGE THE FILE MODE. mktemp creates 0600 and `mv` preserves it,
+# so the atomic install would quietly turn a tracked, world-readable PARITY.md into an
+# owner-only file on every run. git stores 100644; match it.
+_dp_fixture && chmod 0644 "$DPW" "$DPM" && _dp_run >/dev/null
+_dp_mode="$(( $(stat -c '%a' "$DPW" 2>/dev/null || stat -f '%Lp' "$DPW" 2>/dev/null) ))"
+if [[ "$_dp_mode" == 644 ]]; then
+  pass "gen-desktop-parity: a regenerated copy keeps mode 0644"
+else
+  fail "gen-desktop-parity: regeneration left the target as $_dp_mode — mktemp's 0600 survived the rename"
+fi
+unset _dp_mode
+
+# An explicitly EMPTY --root is a usage error, not a silent resolve under /dotfiles-*.
+if [[ "$(_dp_run_root '' --check)" == 2 ]]; then
+  pass "gen-desktop-parity: --root '' is a usage error, not a silent gate over /dotfiles-*"
+else
+  fail "gen-desktop-parity: --root '' was accepted and resolved targets outside the fleet"
+fi
+
+# NO GIT MUST FAIL CLOSED. core_files_identical compares `git hash-object` outputs, so with
+# git absent BOTH sides are empty and compare EQUAL — a drifted copy would read as clean and
+# --check would pass having compared nothing. The guard must exit 2 instead.
+_dp_nogit="$SANDBOX/nogitbin"
+mkdir -p "$_dp_nogit"
+for _b in bash sh env sed awk grep mktemp mv rm cat cut tr printf chmod stat find sort comm diff dirname basename head tail wc uname id; do
+  _p="$(command -v "$_b" 2>/dev/null)" && ln -sf "$_p" "$_dp_nogit/$_b"
+done
+if [[ -x "$_dp_nogit/bash" ]] && ! PATH="$_dp_nogit" command -v git >/dev/null 2>&1; then
+  _dp_fixture && _dp_run >/dev/null
+  _dp_nogit_rc="$( (cd "$SANDBOX" && PATH="$_dp_nogit" env -u CORE_JSON "$_dp_nogit/bash" "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" --check >/dev/null 2>&1; echo $?) )"
+  if [[ "$_dp_nogit_rc" == 2 ]]; then
+    pass "gen-desktop-parity: with no git the gate fails closed (2) instead of comparing nothing"
+  else
+    fail "gen-desktop-parity: with no git the gate returned $_dp_nogit_rc — core_files_identical compares two empty hashes and FAILS OPEN"
+  fi
+  unset _dp_nogit_rc
+else
+  skip "gen-desktop-parity: no-git guard (could not build a git-free PATH on this box)"
+fi
+
+# AN UNREADABLE SOURCE MUST NOT DESTROY THE TARGETS. awk's `getline` returns -1 on a read
+# error, which `> 0` cannot distinguish from EOF — so an unguarded loop renders an EMPTY
+# block and exits 0, and write mode installs that over a valid PARITY.md while reporting
+# success. Reproduced against a COPY of the script in its own fake repo root (HERE is derived
+# from the script's location), so no tracked file is ever chmod-ed. Skipped as root, where
+# mode 000 does not bite.
+if [[ "${EUID:-$(id -u)}" != 0 ]]; then
+  _dp_fake="$SANDBOX/fakecore"
+  mkdir -p "$_dp_fake/scripts" "$_dp_fake/desktop"
+  cp "$HERE/scripts/gen-desktop-parity.sh" "$_dp_fake/scripts/"
+  ln -sf "$HERE/scripts/lib" "$_dp_fake/scripts/lib"
+  cp "$HERE/desktop/PARITY.shared.md" "$_dp_fake/desktop/PARITY.shared.md"
+  chmod 000 "$_dp_fake/desktop/PARITY.shared.md"
+  _dp_fixture && _dp_run >/dev/null # both copies valid and up to date first
+  _dp_before="$(cat "$DPW")"
+  _dp_unread_rc="$( (cd "$SANDBOX" && env -u CORE_JSON bash "$_dp_fake/scripts/gen-desktop-parity.sh" --root "$DPF" >/dev/null 2>&1; echo $?) )"
+  chmod 644 "$_dp_fake/desktop/PARITY.shared.md"
+  if [[ "$_dp_unread_rc" != 0 ]] && [[ "$(cat "$DPW")" == "$_dp_before" ]]; then
+    pass "gen-desktop-parity: an unreadable source fails and leaves the target untouched"
+  else
+    fail "gen-desktop-parity: an unreadable source returned $_dp_unread_rc and/or rewrote the target with an empty block"
+  fi
+  unset _dp_fake _dp_before _dp_unread_rc
+else
+  skip "gen-desktop-parity: unreadable-source check (running as root)"
+fi
+
+rm -rf "$DPF"
+unset DPF DPW DPM _dp_addendum _dp_drift_out _dp_shim _dp_nodiff_rc _dp_nogit
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link

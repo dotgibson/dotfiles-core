@@ -16,6 +16,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The desktop-bar parity pair is generated and gated, not asked nicely (#693).**
+  `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` were an
+  admitted verbatim pair whose only mechanism was the sentence _"Edit both together"_. It did
+  not hold — they sat **3.5 KB apart**. The split matters: ~4.4 KB of it was a one-sided
+  Markdown reformat with no semantic content, and **947 bytes was a real Windows-only block**
+  (the psmux battery-scale note) that had never been marked as a deliberate divergence. The
+  shared contract is now authored once in **`desktop/PARITY.shared.md`** and rendered between
+  the `<!-- desktop-parity:gen -->` and `<!-- desktop-parity:end -->` markers into both repos
+  by **`scripts/gen-desktop-parity.sh`** (`make gen-desktop-parity`), the `gen-views.sh`
+  idiom: everything outside the markers is hand-authored and untouched, which is where the
+  psmux note now lives — labelled `deliberate` in the `aligned`/`deliberate`/`gap` vocabulary
+  Core's own `PARITY.md` uses. `--check` is the drift gate, wired into **`audit-core.sh` §9i**
+  and the weekly **`parity-check.yml`**, which now clones both desktop repos. An absent
+  sibling is an environment SKIP (exit 3), never a green over an un-inspected copy. The source
+  is deliberately a **prettier fixed-point**: Core's nvim maps `markdown = { "prettierd" }`,
+  formatting one copy is the most likely way the pair drifted in the first place, and
+  authoring the block in prettier's own output form makes that keystroke a no-op instead of
+  drift. `desktop/README.md`'s "an identical copy sits in…" claim is corrected in the
+  companion PR (dotgibson/dotfiles-Windows#242) — the two files are deliberately _not_
+  identical. **Land the two companion PRs before this one:** they add the markers this gate
+  reads, and until they do, a weekly run against fleet `main` would red on copies that have
+  none. `scripts/test-core.sh` covers the generator hermetically — clean render,
+  byte-identical blocks, preservation outside the markers, one-sided drift, absent and
+  not-a-repo siblings, sticky severity, malformed markers, idempotence, a host with no working
+  `diff`/`cmp`, an unwritable target, temp-file hygiene, the 0644 file mode an atomic rename
+  would otherwise drop to 0600, an empty `--root`, and a box with no git — and pins the
+  workflow's `--check`, without which the gate would rewrite the clones and pass forever. The
+  verdict is `core_files_identical` (git-hash based), never `cmp`/`diff`: those ship in
+  diffutils, which this fleet does not assume, and a missing binary exits non-zero exactly
+  like "the files differ" (#572).
+
 - **The hermetic `--links-only` gate is Core-owned now: `scripts/check-links.sh` (#852).**
   Four repos' `make check` ran the same block — make a throwaway HOME, run
   `bootstrap.sh --links-only` into it, assert the symlink graph Core's loader expects —

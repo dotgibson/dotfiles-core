@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix changelog-recent release tag publish release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity changelog-recent release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -119,6 +119,12 @@ gen-porting-matrix: ## Regenerate PORTING-MATRIX.md's two tables from the siblin
 
 check-porting-matrix: ## Report whether PORTING-MATRIX.md's tables have drifted from the OS repos — also run inside `make audit`
 	@./scripts/gen-porting-matrix.sh --check
+
+gen-desktop-parity: ## Render desktop/PARITY.shared.md into both desktop repos' PARITY.md (edit the source, not the copies)
+	@./scripts/gen-desktop-parity.sh
+
+check-desktop-parity: ## Report whether either desktop repo's PARITY.md has drifted from desktop/PARITY.shared.md — also run inside `make audit` (exits 3, non-zero, if a desktop repo is not checked out beside this one)
+	@./scripts/gen-desktop-parity.sh --check
 
 changelog-recent: ## Regenerate the vendored 8-release CHANGELOG digest (`make release` runs this too)
 	@./scripts/gen-changelog-recent.sh
