@@ -199,8 +199,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 ### Fixed
 
 - **Two CLI help texts now match the code they describe (#693 follow-up).**
-  `gen-desktop-parity.sh --help` listed `--check`/`--root`/`--strict` but not `--quiet` or
-  `--color WHEN` — flags its own parser accepts and `parity-check.yml` already uses. And
+  `gen-desktop-parity.sh --help` listed `--check`/`--root`/`--strict` but not `--quiet`,
+  `--color WHEN` or `-h`/`--help` — all of which its own parser accepts, and `parity-check.yml`
+  already passes `--color never`. `--quiet` is also described accurately now: it silences the
+  header and every success line, the final summary included, not just the per-target ones. And
   `audit-core.sh --require-siblings` enumerated the fleet-wide gates it reds on, and the list
   had drifted — it named four of the eight that declare an absent sibling through `skip_env`.
   Rather than extend a list that must be hand-updated whenever a gate is added, the flag now
