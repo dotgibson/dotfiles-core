@@ -245,6 +245,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   tag the same commit, so run the dispatch on one the automatic patch has not already
   claimed.
 
+- **The reusable normalises an empty `bump` to its documented default (#696).** The
+  fleet's callers pass the dispatch input falling back to the literal `patch`, so one caller
+  serves both a push (where the `inputs` context is empty) and a `workflow_dispatch`. Had
+  that fallback ever resolved to `""` rather than `patch`, the runtime allowlist would have
+  failed **every push-triggered tag run in every consumer repo at once** — loudly, but
+  fleet-wide, and only after merge. An unsupplied optional input means its documented
+  default, so `auto-tag-call.yml` says so before the allowlist rather than resting the whole
+  fan-out on an expression detail. Not a hole in it: `""` is not a misspelling of a
+  component, and a hostile value still fails. The suite also pins that **no `${{ }}` appears
+  inside that step's `run:` body** — a block scalar is interpolated before the shell sees
+  it, so an expression written there, even in a comment, is the caller-input splice the
+  step's own `env:` indirection exists to prevent.
+
 - **`scripts/fleet-release-triggers.sh` — the release-trigger register (#696).**
   `fleet-coverage.sh` already tracked `auto-tag-call` and reported `reusable` for all nine
   repos: green, while six of them released only on Core syncs. Right answer, wrong

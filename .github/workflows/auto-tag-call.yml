@@ -137,6 +137,18 @@ jobs:
         # loudly with the valid set rather than reaching auto-tag.sh's own arg parser, and
         # env-indirection means even a hostile value is inert data, not code.
         run: |
+          # EMPTY IS THE DEFAULT, NOT A TYPO. A consumer's caller passes the dispatch input
+          # falling back to the literal patch (the header's caller example shows the exact
+          # expression — it cannot be repeated HERE, because this run: body is interpolated
+          # before the shell sees it and that is the splice this step exists to avoid), so
+          # ONE caller serves both a push, where the inputs context is empty, and a
+          # workflow_dispatch, where it carries the chosen component. If that fallback ever
+          # resolved to "" rather than patch, the strict allowlist below would fail EVERY
+          # push-triggered tag run in EVERY consumer repo — loudly, but fleet-wide. An
+          # unsupplied optional input means its documented default, so say so here rather
+          # than rest the whole fan-out on an expression detail. Not a hole in the allowlist:
+          # "" is not a misspelling of a component, and a hostile value still fails below.
+          [ -n "$BUMP" ] || BUMP="patch"
           case "$BUMP" in
           patch | minor | major) ;;
           *)

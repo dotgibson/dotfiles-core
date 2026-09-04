@@ -12029,6 +12029,22 @@ if grep -qF "workflow_dispatch:" "$_frt_ex" && grep -qF "bump: \${{ inputs.bump 
 else
   fail "triggers: auto-tag-call.yml's caller example still documents paths: ['core/**'] or omits the bump dispatch"
 fi
+# The caller idiom's ONE failure mode: if the dispatch fallback ever resolved to "" rather
+# than "patch", the reusable's strict allowlist would fail every push-triggered tag run in
+# every consumer repo at once. An unsupplied optional input means its documented default,
+# so the reusable normalises empty BEFORE the allowlist — and the expression itself must
+# NOT appear inside the `run:` body, which the runner interpolates before the shell sees
+# it (the exact caller-input splice that step's own comments exist to prevent).
+if grep -qF '[ -n "$BUMP" ] || BUMP="patch"' "$_frt_ex"; then
+  pass "triggers: auto-tag-call.yml normalises an empty bump to its documented default"
+else
+  fail "triggers: auto-tag-call.yml would fail the allowlist on an empty bump — every push-triggered tag run in the fleet"
+fi
+if awk '/^        run: \|/ { inrun = 1; next } inrun && /^        [^ ]/ { inrun = 0 } inrun' "$_frt_ex" | grep -qF '${{'; then
+  fail "triggers: auto-tag-call.yml interpolates an expression inside a run: body — caller input would be spliced into the script"
+else
+  pass "triggers: no \${{ }} inside auto-tag-call.yml's run: bodies (caller input cannot be spliced)"
+fi
 # new-os-repo.sh must stamp that same shape, or a fresh repo is born with the old defect
 # (or, as it was, with no auto-tag.yml at all and no release line of its own).
 if grep -qF '.github/workflows/auto-tag.yml' "$HERE/scripts/new-os-repo.sh" &&
