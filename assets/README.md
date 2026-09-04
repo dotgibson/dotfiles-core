@@ -49,8 +49,9 @@ than the palette every other consumer is generated from.
 ### The nine other heroes
 
 Ten public repos open with the same shields template and no visual, and the repo that
-*has* a hero is the one nobody installs directly. `hero-repos.txt` already registers all
-ten; `make gen-hero-tape-fleet` renders the other nine into their own checkouts. Their
+*has* a hero is the one nobody installs directly. `hero-repos.txt` registers **ten rows** —
+this repo plus the nine Core-vendoring OS and role repos — and `make gen-hero-tape-fleet`
+renders those nine into their own checkouts. Their
 signature command is deliberately the same three characters everywhere —
 
 ```tape
@@ -99,6 +100,15 @@ does not declare, even though only the `proof` line reaches the viewer.
 
 Rendering and committing those nine gifs, and adding the hero block to each repo's
 README, is #698's follow-up — sequenced after `os.capabilities` (#667).
+
+**`dotfiles-Windows` is deliberately not registered**, which means those ten rows are not
+the ten repos #698 counted: that list included Windows, and this covers nine of it. The
+reason is the same one that keeps Windows out of `scripts/os-repos.txt` — its host layer is
+replicated from scratch in PowerShell and it vendors no `core/`, so there is no `zsh` to
+`Set Shell`, no `~/.config/zsh/.zshrc` to source, and no `up`, `ll` or `_core_cap` for the
+shared body to type. A Windows hero needs its own tape and its own recorder, and that is
+that repo's call, not this generator's. It remains the one public repo this change does
+nothing for.
 
 ### What the tour dropped, and why
 

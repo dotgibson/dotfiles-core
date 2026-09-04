@@ -46,7 +46,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `demo.gif` still predates the shortened tape** — re-render with `vhs assets/demo.tape` and
   optimize to bring it well under the ceiling.
 - **The nine other heroes are registered, not yet rendered (#698).** `assets/hero-repos.txt`
-  already carries all ten repos, and `make gen-hero-tape-fleet` writes the other nine tapes
+  carries **ten rows** — this repo plus the nine Core-vendoring OS and role repos — and `make gen-hero-tape-fleet` writes the other nine tapes
   into their own checkouts. Their signature command is deliberately the _same three
   characters_ everywhere — `up -n` — because the point is what it **resolves** to: `dnf` on
   Fedora, `pacman` on Arch, `apk` on Alpine, `emerge` on Gentoo, and `zypper dup` (**not**
@@ -54,7 +54,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   from each repo's own `os/*.capabilities` `PKG_UPGRADE`, so it can never claim a verb the
   repo does not declare. Rendering and committing those nine gifs, and adding the hero block
   to each README, is the **follow-up**, sequenced after `os.capabilities` (#667) exactly as
-  #698 asks — nine heroes of the same Core verbs would be nine near-identical gifs. The
+  #698 asks — nine heroes of the same Core verbs would be nine near-identical gifs.
+  `dotfiles-Windows` is **deliberately not registered**, so those ten rows are not the ten
+  repos #698 counted: its host layer is PowerShell and it vendors no `core/`, so the shared
+  zsh body has nothing to say there. It stays the one public repo this change does nothing
+  for, and a hero for it needs its own tape and recorder. The
   hidden `cd` carries `|| exit 1`: it runs inside `Hide`, so a checkout path that does not
   exist on the rendering box would otherwise print into unrecorded frames and film `$HOME` —
   the wrong-tree defect wearing a different hat, and invisible in the committed gif. Each OS

@@ -42,6 +42,14 @@
 #             maintainer-facing proof that the derivation ran. `proof` is the
 #             viewer-facing half. Both exist because they answer different readers.
 #
+# DELIBERATELY ABSENT — not a target for this generator (do not re-add):
+#   dotfiles-Windows — #698 counts it among the public repos with no hero, and it still has
+#     none. But its host layer is replicated from scratch in PowerShell and it vendors no
+#     core/ (the same reason scripts/os-repos.txt excludes it), so the shared body has
+#     nothing to say there: no zsh to `Set Shell`, no ~/.config/zsh/.zshrc to source, and
+#     no `up`, `ll` or `_core_cap` to type. A Windows hero needs its own tape and its own
+#     recorder. Adding a row here would render a tape that cannot run.
+#
 # NOT YET RENDERED. Only the `.` row is written and gated today. The nine sibling
 # rows are the tooling's target, sequenced after dotfiles-core#667 per #698: they
 # are rendered by `make gen-hero-tape-fleet`, and committing their gifs plus the

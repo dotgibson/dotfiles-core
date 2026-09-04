@@ -11667,6 +11667,24 @@ else
   fail "gen-hero-tape: a tape's banner names a command that would not update it"
 fi
 
+# WINDOWS IS OUT OF SCOPE, AND THAT MUST STAY DELIBERATE. #698 counts dotfiles-Windows among
+# the public repos with no hero; this generator covers nine of the ten, because Windows
+# replicates its host layer in PowerShell and vendors no core/ — there is no zsh to
+# `Set Shell` and no `up`/`ll`/`_core_cap` for the shared body to type, so a row here would
+# render a tape that cannot run (#862 review). Asserted BOTH ways: absent from the registry,
+# and the absence explained where someone about to add it would look.
+if ! awk -F'\t' 'NF == 6 { print $1 }' "$HERE/assets/hero-repos.txt" | grep -qx 'dotfiles-Windows'; then
+  pass "gen-hero-tape: dotfiles-Windows is not registered (its host layer is PowerShell)"
+else
+  fail "gen-hero-tape: dotfiles-Windows has a registry row — the zsh tape body cannot run there"
+fi
+if grep -q 'DELIBERATELY ABSENT' "$HERE/assets/hero-repos.txt" &&
+  grep -q 'dotfiles-Windows' "$HERE/assets/hero-repos.txt"; then
+  pass "gen-hero-tape: the registry says WHY Windows is absent, where someone would re-add it"
+else
+  fail "gen-hero-tape: Windows is absent from the registry with no note — it reads as an oversight"
+fi
+
 # EVERY REMEDY MUST NAME THE TARGET THAT REPAIRS THE FILE IT IS ABOUT. This was fixed in the
 # banner and survived in two diagnostics — the missing-tape failure and the drift `fix:` line
 # — each of which told a sibling to run `make gen-hero-tape`, which rewrites the `.` row and
