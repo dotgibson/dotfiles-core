@@ -208,6 +208,78 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Rather than extend a list that must be hand-updated whenever a gate is added, the flag now
   describes the class and points at the run summary, which names every environment skip the
   run actually recorded. Documentation only; no behaviour change.
+- **OS-repo tags fired only on Core syncs — native work was released by coincidence, and
+  nothing had ever bumped past patch (#696).** Every consumer's `auto-tag.yml` triggered on
+  `paths: ['core/**']`, the vendored subtree and nothing else, so the repo's own `vX.Y.Z`
+  advanced when **Core** moved and at no other time. Measured on `dotfiles-Fedora`: its
+  last seven releases were its last seven Core syncs, one for one, while **six native
+  commits cut nothing** — including #122, which wired a package-name gate that had never
+  run on any PR, and #116, which removed a tracked file. Both sat unreleased until an
+  unrelated fan-out swept them up hours later and attributed them to a tag whose whole
+  meaning was "Core moved". So `v1.3.68` meant "68 Core syncs received", which `core.lock`
+  already answers precisely and offline. The release **notes** were never wrong —
+  `auto-tag.sh --notes-file` groups Conventional Commits over the entire range since the
+  last tag, so #122 and #123 are both in `v1.3.68`'s body — the trigger and the
+  granularity were. Had Core paused releases for a month, every OS repo's releases would
+  have paused with it regardless of what those repos did. **Core's own caller example was
+  the source**: `auto-tag-call.yml` documented the core-only shape, and two repos had
+  already diverged from it and written down why (`dotfiles-MacBook`, where eight merged
+  PRs of install-path work produced zero tags; `dotfiles-openSUSE`, where a 971-line
+  `bootstrap.sh` rewrite produced zero) — one of them carrying a standing
+  _"please don't restore the upstream shape on a future sync"_ note. That correction is now
+  the documented shape: a **denylist** over the installable surface (`**` minus docs, CI,
+  and author-time config), because an allowlist fails the same way — add a new installable
+  directory, forget to list it, releases silently stop — while a denylist's failure mode is
+  a spurious patch tag, noisy rather than wrong.
+
+- **The `bump` input existed from day one and no caller had ever passed it (#696).**
+  `auto-tag-call.yml` has always accepted `bump: patch|minor|major`; every `bump` string in
+  all nine repos was a **comment describing the default**. A tag that can only ever patch
+  is a build counter in a SemVer costume, and it showed: the v5 rollout gave every OS repo
+  a new file, a new symlink and a mandatory re-bootstrap, and produced nothing but
+  `1.3.x`. The documented caller now carries a `workflow_dispatch` with a `bump` choice
+  and passes `bump: ${{ inputs.bump || 'patch' }}` — empty on a push, chosen on a
+  dispatch, one caller for both flows — so a deliberate minor/major is Actions → Run
+  workflow rather than a workflow edit. `RELEASE-RUNBOOK.md` §2 has the flow, including
+  the ordering constraint that idempotency implies: dispatch and fan-out merge cannot both
+  tag the same commit, so run the dispatch on one the automatic patch has not already
+  claimed.
+
+- **`scripts/fleet-release-triggers.sh` — the release-trigger register (#696).**
+  `fleet-coverage.sh` already tracked `auto-tag-call` and reported `reusable` for all nine
+  repos: green, while six of them released only on Core syncs. Right answer, wrong
+  question — calling a gate is not the same as the gate releasing anything the repo owns.
+  The new register asks the second question, reading each sibling's `auto-tag.yml` for two
+  columns: whether its filter watches anything outside `core/`, and whether a non-patch
+  bump is reachable without editing the file. Wired into `audit-core.sh` §5h and
+  `make fleet-release-triggers`, **advisory** like the coverage and vocabulary registers
+  (this is fleet drift, not a regression in the commit under test) and an environment SKIP
+  when no sibling is checked out. It refuses to bluff: a file whose `on:` block its
+  deliberately crude reader cannot parse is reported `unparsed`, never given a verdict.
+  Its one stated blind spot is a **second** vendored subtree — `dotfiles-Offense` also
+  carries `offensive/companion/` from htpx, whose paths Core cannot derive — so the
+  `core-only` column is a floor that catches the shape Core itself shipped, not a proof.
+
+- **A scaffolded OS repo was born with no `auto-tag.yml` at all (#696).**
+  `new-os-repo.sh` stamped `lint.yml` and `test.yml` and no release caller, so a new repo
+  never cut a single tag of its own — the collapsed version line in its most complete
+  form. It now stamps the corrected caller, pinned to `core.version`'s major the same way
+  the lint caller is (audit §8a-ter), with the denylist and the `bump` dispatch. The suite
+  asserts the scaffold passes the register itself rather than grepping for the paths — a
+  grep would go green on a file the register still calls `core-only`.
+
+- **`RELEASE-STRATEGY.md` claimed the OS repos are "not independently versioned" while
+  §3 documented the tags they cut (#696).** §1 also defended the design on the grounds
+  that "the OS layer is a thin shim over package manager, clipboard, and paths". That was
+  true when written and stopped being true at #663/#667, when the OS repo took ownership
+  of `os.capabilities` — the dispatch table deciding how `up`, `clip`, `maint-*` and
+  `core-doctor` behave on that box. A wrong entry there is a host-visible defect Core
+  cannot cause and Core's version cannot describe. §1 now says what each of the two
+  version lines actually answers, and keeps the part of the old rationale that survives:
+  Core is still the only thing released on a **planned cadence**, and `core.lock` still
+  beats any repo tag at "what Core am I on?". This is not a move to full independent
+  SemVer across nine repos. `RELEASE-RUNBOOK.md`'s header table carried the same stale
+  "not versioned" claim and is corrected with it.
 
 - **`sync-core.sh --strict` — a failed target becomes the exit status.** By default a
   per-repo failure is a summary line and exit 0, and that default stays: the fan-out

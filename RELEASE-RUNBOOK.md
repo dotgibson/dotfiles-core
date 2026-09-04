@@ -5,18 +5,19 @@ hands-on companion to `RELEASE-STRATEGY.md` — that doc is the *policy* (what i
 versioned, when, why); this is the *recipe* (what to type). When they disagree,
 `RELEASE-STRATEGY.md` wins; fix this.
 
-Four flows live here — three are independently versioned (Core, dotfiles-Windows, htpx);
-the OS-repo rollout is the consumer side of the Core line, not its own version:
+Four flows live here. Three are versioned on a **planned cadence** (Core,
+dotfiles-Windows, htpx); the OS-repo rollout is the consumer side of the Core line —
+each repo tags itself for it, and for its own work, without a cadence of its own:
 
 | Flow | Versioned thing | Trigger | Fans out to | Section |
 | --- | --- | --- | --- | --- |
 | **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 9 OS repos' `core/` | [1](#1-cut-a-core-release) |
-| **OS-repo rollout** | not versioned (stamped `core.lock`) | merging the fan-out PRs | the live hosts (on bootstrap) | [2](#2-roll-a-core-release-out-to-the-os-repos) |
+| **OS-repo rollout** | each repo's own `vX.Y.Z` (Core stamped in `core.lock`) | merging the fan-out PRs — or any push touching that repo's installable surface; `bump` by dispatch | the live hosts (on bootstrap) | [2](#2-roll-a-core-release-out-to-the-os-repos) |
 | **dotfiles-Windows** | `dotfiles-Windows` (own `vX.Y.Z`) | mirror-sync `nvim/`+`starship/` (auto-patch) **or** a manual CHANGELOG promotion + tag (minor/major) | the Windows host (on bootstrap) | [3](#3-cut-a-dotfiles-windows-release) |
 | **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Offense` (`companion.lock`) | [4](#4-cut-an-htpx-release) |
 
 These lines are independent and update different files, so they never collide: a Core
-release bumps each OS repo's `core.lock`; an htpx release bumps Offense's `companion.lock`;
+release bumps each OS repo's `core.lock` (and earns each of them a patch tag of its own); an htpx release bumps Offense's `companion.lock`;
 and `dotfiles-Windows` carries its own version, advanced **two ways** — an automatic patch when
 the `nvim/`/`starship/` assets it mirrors from Core move, and a deliberate minor/major a human
 cuts for host work (both flows in §3). It vendors no `core/` subtree.
@@ -323,6 +324,44 @@ CDN), just re-run the job — the prep step retries automatically. A genuinely b
 prep still fails loud. `dotfiles-Windows` is **not** in the subtree fan-out — it has its
 own release line (section 3).
 
+### Cut a deliberate OS-repo minor or major
+
+Merging the fan-out PR cuts each repo a **patch** automatically, and that is right for
+most Core releases: from the consumer's side, a new Core is a maintenance bump. Two
+situations are not patches, and neither one used to be reachable — every `auto-tag.yml`
+in the fleet was push-triggered with no `bump`, so the *only* tag any repo could ever cut
+was `X.Y.Z+1` (#696).
+
+**Bump deliberately when the consumer's own contract moves:**
+
+- **MINOR** — the repo gains something a host must re-bootstrap to get: a new file, a new
+  symlink, a new `os.capabilities` key, a new installed package. **A Core MAJOR is
+  normally a consumer MINOR** for exactly this reason — v5 gave every OS repo a new file
+  and a new symlink and still produced nothing but `1.3.x`.
+- **MAJOR** — a host that does nothing breaks, or the repo's own layout changes in a way
+  a downstream (a role repo, a provisioning script) must adapt to.
+
+**How.** Each repo's `auto-tag.yml` carries a `workflow_dispatch` with a `bump` choice:
+
+**that repo → Actions → `auto-tag` → Run workflow → `bump: minor` (or `major`)**
+
+It is safe to press at any time — `auto-tag.sh` no-ops when `HEAD` already carries a
+`vX.Y.Z` tag — but that idempotency is also the ordering constraint: **dispatch before the
+fan-out PR merges and the merge's own patch run finds HEAD tagged and does nothing;
+dispatch after, and HEAD is already patch-tagged and the dispatch does nothing.** So run
+it on a commit that is not itself tagged — in practice, land the fan-out PR, let the
+automatic patch settle, then dispatch on the next commit, or dispatch first and let the
+merge no-op. Either order works; expecting both to fire does not.
+
+For a fleet-wide bump, that is nine dispatches. There is no fan-out button for it, on
+purpose: a deliberate release is a judgment per repo, and the repos do not always deserve
+the same one.
+
+**`make fleet-release-triggers`** reports, per repo, whether its `auto-tag.yml` watches
+anything beyond the vendored `core/` and whether that dispatch exists — the register that
+keeps this reachable. `make fleet-drift` answers the different question of which repos lag
+the latest released Core.
+
 ---
 
 ## 3. Cut a dotfiles-Windows release
@@ -369,10 +408,13 @@ manually only to pull a specific Core release immediately (e.g. right after cutt
 
 ### 3b. Deliberate minor/major (host work)
 
-`auto-tag.yml` **only ever produces a patch**, and it fires on pushes to `main` that touch
-`nvim/`/`starship/` — **not** on a CHANGELOG commit or a tag push. There is no `release.yml`
-on this repo, so a minor/major is a **fully manual** flow that nothing auto-publishes. Run in
-a clean checkout (PowerShell):
+`auto-tag.yml` here **only ever produces a patch**, and it fires on pushes to `main` that
+touch `nvim/`/`starship/` — **not** on a CHANGELOG commit or a tag push. Windows keeps the
+push-only caller deliberately: unlike an OS repo, which now carries a `bump` dispatch (§2,
+"Cut a deliberate OS-repo minor or major"), this repo's minor/major also has to promote a
+curated `CHANGELOG.md` section that nothing but a human can write, and there is no
+`release.yml` on this repo to publish it. So a minor/major is a **fully manual** flow that
+nothing auto-publishes. Run in a clean checkout (PowerShell):
 
 ```powershell
 # 1. Decide the version. The repo's own routines REPORT (they never tag):

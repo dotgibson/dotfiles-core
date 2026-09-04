@@ -564,6 +564,14 @@ the `core.lock` bump.
 also what triggers your own repo's `auto-tag` workflow to cut your next `vX.Y.Z`, because
 an OS repo carries two independent version lines: the Core it vendors, and its own.
 
+Your own line is **not only** for Core syncs, and used to be: until #696 every repo's
+`auto-tag.yml` watched `paths: ['core/**']` and nothing else, so your native work shipped
+only when a fan-out happened to sweep it up. It should watch your **installable
+surface** — `.github/workflows/auto-tag-call.yml` documents the denylist shape, and Core's
+`make fleet-release-triggers` reports which repos still don't. A deliberate minor or major
+is that workflow's `workflow_dispatch` (**Actions → `auto-tag` → Run workflow →
+`bump: minor`**), not a hand-cut tag.
+
 If `make fleet-drift` shows you `BEHIND`, the fix is to merge that PR — not to touch
 `core/`.
 

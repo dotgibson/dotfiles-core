@@ -15,38 +15,61 @@ or `CONTRIBUTING.md`, those win; fix this.
 > rather than submoduled? See **`ARCHITECTURE.md`** — this doc assumes that shape and
 > describes only how it is released.
 
-The short version: **Core is the only thing that is versioned and released. The
-OS and Role repos are consumers that pull a named Core version when they choose
-to.** Releases are cut on a predictable monthly rhythm (plus out-of-band for
-security), tagged `vX.Y.Z`, proven green by the audit before they fan out, and
-rolled out canary-first so a bad Core can never reach all nine operating
-systems at once.
+The short version: **Core is the only thing released on a planned cadence. The OS
+and Role repos are consumers that pull a named Core version when they choose to —
+and that tag their own installable work as it lands.** Core releases are cut on a
+predictable monthly rhythm (plus out-of-band for security), tagged `vX.Y.Z`, proven
+green by the audit before they fan out, and rolled out canary-first so a bad Core can
+never reach all nine operating systems at once. A consumer's own tag needs no cadence:
+CI cuts it when that repo's installable state moves.
 
 ## 1. The unit of release
 
-The fleet is not nine things that each version themselves. It is **one
-versioned thing (Core) vendored into thin per-OS consumers**:
+**Core is the fleet's unit of change.** Every repo also carries a `vX.Y.Z` of
+its own, but only Core's is a coordinated release with a curated changelog:
 
 - **Core** (`dotfiles-core`) carries the SemVer in `core.version` (read it there
   rather than trusting a number copied into prose). It is the single source of truth,
   vendored into each OS repo's `core/`. A defect here fans out N-way, so Core is the
   thing that earns a version number, a tag, and a changelog.
 - **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}`)
-  and **Role repos** (`dotfiles-Offense`, `dotfiles-Defense`) are **not**
-  independently versioned. They are stamped with the Core they carry — the
-  generated `core.lock` records `core_version`, `core_sha`, and `core_ref` —
-  so "what Core does Alpine run?" is answerable offline without a release
-  number of its own.
-- **`dotfiles-Windows`** is the exception: it vendors **no** `core/` subtree (so no
-  `core.lock`) and **carries its own `vX.Y.Z`** — advanced by an automatic patch when
-  the `nvim/`/`starship/` assets it mirrors from Core move, or by a deliberate
-  minor/major a human cuts for host work (see the runbook §3).
+  and **Role repos** (`dotfiles-Offense`, `dotfiles-Defense`) carry **two version
+  lines, and they answer different questions.** `core.lock` — generated, recording
+  `core_version`, `core_sha` and `core_ref` — answers *"what Core does Alpine run?"*
+  offline and exactly. Their own `vX.Y.Z` tag, cut in CI by `auto-tag.sh`, answers
+  *"what does this repo's own installable state look like?"* Neither substitutes for
+  the other, and asking the second question of `core.lock` is how the tag line went
+  wrong (below).
+- **`dotfiles-Windows`** vendors **no** `core/` subtree (so no `core.lock`) and carries
+  only the second line — advanced by an automatic patch when the `nvim/`/`starship/`
+  assets it mirrors from Core move, or by a deliberate minor/major a human cuts for
+  host work (see the runbook §3).
 - **`dotfiles-web`** documents the system; it ships when its content is true,
   not on this cadence.
 
-This is deliberate. Versioning nine repos independently would multiply the
-release surface ninefold for no benefit: the OS layer is a thin shim over
-package manager, clipboard, and paths, and most of what changes a host is Core.
+**What an OS repo's own tag does *not* mean, and used to.** Until #696 every
+consumer's `auto-tag.yml` fired on `paths: ['core/**']` — the vendored subtree and
+nothing else. So the tag advanced when *Core* moved and at no other time: measured on
+`dotfiles-Fedora`, seven Core syncs produced seven releases and six native commits
+produced none, including a package-name gate that had never run on any PR. `v1.3.68`
+meant "68 Core syncs received", which `core.lock` already says precisely and offline.
+The release *notes* were always right — `auto-tag.sh --notes-file` groups Conventional
+Commits over the whole range — so it was the trigger and the granularity that were
+wrong, never the content. Consumers now watch their **installable surface** (a denylist;
+`.github/workflows/auto-tag-call.yml` documents the shape and
+`scripts/fleet-release-triggers.sh` is the register that keeps the fleet to it), and
+`bump: minor|major` is reachable from each repo's `workflow_dispatch` rather than
+existing only as an input nobody passed.
+
+**Core is still the only thing released as a coordinated event**, and that is
+deliberate: nine independently *planned* release cycles would multiply the review
+surface ninefold, and `core.lock` beats any repo tag at "what Core am I on?". But the
+old justification for it — that the OS layer is a thin shim over package manager,
+clipboard, and paths — stopped being true when the OS repo took ownership of
+`os.capabilities` (#663/#667), the dispatch table deciding how `up`, `clip`, `maint-*`
+and `core-doctor` behave on that box. A wrong entry there is a host-visible defect Core
+cannot cause and Core's version cannot describe. That layer earns a version line that
+moves when *it* moves.
 
 ## 2. Release cadence
 
@@ -300,9 +323,9 @@ so a CI-cut tag can't rely on a separate `on: push: tags` workflow:
 | Repo | Tag cut by | Release created by | Notes source |
 | ---- | ---------- | ------------------ | ------------ |
 | **dotfiles-core** | you (`make publish`, after the PR merges) | `release.yml` (`on: push: tags`) — fires because *you* pushed the tag | curated `CHANGELOG.md` section |
-| **OS repos** (×8) | `auto-tag.sh` in CI on a `core/**` fan-out | `auto-tag.sh --release`, **in the same job** (the token-pushed tag can't trigger `release.yml`) | grouped Conventional-Commit notes (`auto-tag.sh` → `--notes-file`; `--generate-notes` only as the empty-range fallback) |
+| **OS repos** (×8) | `auto-tag.sh` in CI when the repo's **installable surface** moves — a Core fan-out or its own work (#696) — or on a `workflow_dispatch` naming `bump` | `auto-tag.sh --release`, **in the same job** (the token-pushed tag can't trigger `release.yml`) | grouped Conventional-Commit notes (`auto-tag.sh` → `--notes-file`; `--generate-notes` only as the empty-range fallback) |
 | **dotfiles-Windows** — auto patch | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos, but SHA-pinned (calls `auto-tag-call.yml` at a commit, not the moving `@vN` alias) | grouped Conventional-Commit notes (same `auto-tag.sh` `--notes-file` path) |
-| **dotfiles-Windows** — deliberate minor/major | **you**, by hand for host work (`git tag` → push) | **you** (`gh release create --notes-file`) — auto-tag only ever patches and never fires on a CHANGELOG commit or a tag push | curated `CHANGELOG.md` section |
+| **dotfiles-Windows** — deliberate minor/major | **you**, by hand for host work (`git tag` → push) | **you** (`gh release create --notes-file`) — Windows' caller is push-only, so its auto-tag never fires on a CHANGELOG commit or a tag push, and only ever patches | curated `CHANGELOG.md` section |
 
 So: Core releases read like the changelog; OS-repo and Windows **auto-patch** releases get
 grouped Conventional-Commit notes generated by `auto-tag.sh` (they carry no curated per-tag

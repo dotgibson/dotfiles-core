@@ -1,28 +1,76 @@
 name: auto-tag (reusable)
 
-# Cut an OS repo's OWN next release tag after a Core fan-out lands new core/ on its main.
+# Cut a consumer repo's OWN next release tag when its INSTALLABLE STATE changes on main.
 # An OS repo carries two version lines — the Core it vendors (core.lock) and its own
 # vX.Y.Z tag. core.lock advances automatically on every sync; this closes the gap for the
-# second line so it stops drifting. PATCH-bumps by default (a new Core is a maintenance
-# bump of the consumer); a caller can pass bump: minor/major for a deliberate release.
+# second line so it stops drifting. PATCH-bumps by default; a caller passes bump:
+# minor/major for a deliberate release.
 # Idempotent: a no-op when HEAD already carries a vX.Y.Z tag (see scripts/auto-tag.sh).
 #
-# Each OS repo adds a tiny caller, triggered only when a fan-out actually touched core/:
+# THE CALLER SHAPE THIS FILE USED TO DOCUMENT WAS `paths: ['core/**']`, AND IT WAS WRONG
+# (#696). Watching only the vendored subtree means the tag advances when *Core* moves and
+# at no other time — so a repo's own work ships only when an unrelated fan-out happens to
+# sweep it up, and the version number describes the dependency rather than the repo.
+# Measured on dotfiles-Fedora: seven Core syncs, seven releases; six native commits (a
+# package-name gate that had never run on any PR, a tracked file removed), zero releases.
+# "v1.3.68" meant "68 Core syncs received" — which core.lock already answers, precisely.
+# Two repos had independently diverged from the shape below and written down why
+# (dotfiles-MacBook, dotfiles-openSUSE); this is that correction, made canonical.
+#
+# Each consumer repo adds a tiny caller:
 #
 #   # .github/workflows/auto-tag.yml in an OS repo
 #   name: auto-tag
 #   on:
 #     push:
 #       branches: [main]
-#       paths: ['core/**']
+#       # A DENYLIST, NOT AN ALLOWLIST, on purpose. The default answer is "this changed
+#       # what gets installed, so cut a tag", and only what demonstrably does NOT ship is
+#       # carved out. An allowlist fails the way the old core/** filter failed: add a new
+#       # installable directory, forget to list it, and releases silently stop. The
+#       # denylist's failure mode is a spurious patch tag — noisy, not wrong. `!` patterns
+#       # are evaluated in order, so these override the `**` above.
+#       paths:
+#         - '**'
+#         - '!**.md'          # docs are never installed. Both markdown forms: `**` spanning
+#         - '!**/*.md'        #   separators is not pinned down citably, and repos nest .md
+#         - '!LICENSE'
+#         - '!.github/**'     # CI plumbing — not wired into $HOME by bootstrap.sh
+#         - '!test/**'
+#         - '!.editorconfig'  # author-time tooling config
+#         - '!.markdownlint.jsonc'
+#         - '!.pre-commit-config.yaml'
+#         - '!renovate.json'
+#     # The third SemVer component, reachable. Without this a repo can ONLY ever patch,
+#     # which is what the whole fleet did: `bump` existed here from the start and no caller
+#     # had ever passed it. A deliberate minor/major is now Actions → Run workflow → pick.
+#     # Safe to press at any time — the reusable no-ops when HEAD is already tagged.
+#     workflow_dispatch:
+#       inputs:
+#         bump:
+#           description: 'Which SemVer component to advance'
+#           type: choice
+#           options: [patch, minor, major]
+#           default: patch
 #   permissions: { contents: write }      # the tag push needs write
 #   concurrency: { group: auto-tag-${{ github.ref }}, cancel-in-progress: false }
 #   jobs:
 #     tag:
 #       uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v6
+#       # `inputs` is empty on a push event, so this reads `patch` there and the chosen
+#       # component on a dispatch. One caller, both flows.
+#       with:
+#         bump: ${{ inputs.bump || 'patch' }}
+#
+# A repo whose releasable surface is genuinely narrower than "everything installable"
+# states so in its own caller and says why — dotfiles-Offense watches its second vendored
+# subtree (offensive/companion/) alongside its own layer. Narrowing is a decision to write
+# down, not a default to inherit.
 #
 # Runs the SAME scripts/auto-tag.sh the audit shellchecks/tests, so there is one
 # definition of the version math. First-party only; tags in CI (no operator round-trip).
+# scripts/fleet-release-triggers.sh is the register that keeps the fleet honest about
+# which shape each repo actually carries.
 
 on:
   workflow_call:

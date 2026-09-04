@@ -5657,10 +5657,10 @@ if have git && have zsh; then
       skip "new-os-repo: shellcheck over the scaffolded bash (shellcheck unavailable)"
     fi
     if have actionlint; then
-      if actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" >/dev/null 2>&1; then
-        pass "new-os-repo: the scaffolded test and lint workflows pass actionlint"
+      if actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" "$NOR/.github/workflows/auto-tag.yml" >/dev/null 2>&1; then
+        pass "new-os-repo: the scaffolded test, lint and auto-tag workflows pass actionlint"
       else
-        fail "new-os-repo: a scaffolded workflow fails actionlint: $(actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" 2>&1 | head -3 | tr '\n' ' ')"
+        fail "new-os-repo: a scaffolded workflow fails actionlint: $(actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" "$NOR/.github/workflows/auto-tag.yml" 2>&1 | head -3 | tr '\n' ' ')"
       fi
     else
       skip "new-os-repo: actionlint over the scaffolded workflows (actionlint unavailable)"
@@ -5675,6 +5675,20 @@ if have git && have zsh; then
       fail "new-os-repo: the scaffolded lint caller is missing or pins a foreign major (want @v$_nor_major): $(grep -h 'uses:' "$NOR/.github/workflows/lint.yml" 2>/dev/null)"
     fi
     unset _nor_major
+    # A scaffolded repo used to be born with NO auto-tag.yml, so it never cut a release of
+    # its own — the collapsed version line #696 is about, in its most complete form. Assert
+    # the caller exists AND carries the corrected shape, by asking the register itself: a
+    # grep for the paths would pass on a file the register still calls core-only.
+    _nor_frt="$SANDBOX/nor-frt"
+    rm -rf "$_nor_frt"; mkdir -p "$_nor_frt"
+    if cp -r "$NOR" "$_nor_frt/dotfiles-Fedora" 2>/dev/null && mkdir -p "$_nor_frt/dotfiles-Fedora/.git" &&
+      _nor_frt_out="$(REPOS_ROOT="$_nor_frt" "$HERE/scripts/fleet-release-triggers.sh" --check 2>&1)"; then
+      pass "new-os-repo: the scaffolded auto-tag caller passes the release-trigger register"
+    else
+      fail "new-os-repo: the scaffold is born releasing only on Core syncs, or unable to cut a non-patch: ${_nor_frt_out:-<no output>}"
+    fi
+    rm -rf "$_nor_frt"
+    unset _nor_frt _nor_frt_out
     # The suite is a TEST, not an `exit 0` stub — run it, in both states the scaffold
     # actually produces. AS GENERATED with --no-vendor there is no core/ at all, and the
     # starter bootstrap refuses to run without one — correctly: a bootstrap that links
@@ -11858,6 +11872,172 @@ _fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_c
 if _fv_run >/dev/null; then pass "vocab: report mode exits 0 (rendering is not a verdict)"; else fail "vocab: report mode exits non-zero"; fi
 if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; then pass "vocab: fleet-coverage.sh report mode exits 0 with no footnotes too"; else fail "vocab: fleet-coverage.sh report mode still exits 1 with no footnotes"; fi
 rm -rf "$_fv_root"
+
+# ── F12-bis. the release-trigger register (scripts/fleet-release-triggers.sh) ──
+# What an OS repo's own version number MEANS (#696). Every caller fired on
+# `paths: ['core/**']`, so the tag advanced when Core moved and at no other time — native
+# work was released only when an unrelated fan-out swept it up. The register reads each
+# sibling's auto-tag.yml and says so. These drive the real script against a fake fleet
+# root, and pin the two properties that make it worth having: it does not call a shape it
+# could not read (`unparsed`, never a guessed verdict), and BOTH halves of a deliberate
+# release — the dispatch and the `bump` value — are required before it says `dispatch`.
+hdr "release-trigger register (fleet-release-triggers.sh)"
+_frt_root="$SANDBOX/fleet-triggers"
+_frt_sh="$HERE/scripts/fleet-release-triggers.sh"
+_frt_reset() { rm -rf "$_frt_root"; mkdir -p "$_frt_root"; }
+_frt_repo() { # _frt_repo <repo> [auto-tag.yml body] — a fake sibling; no body means no workflow
+  mkdir -p "$_frt_root/$1/.git"
+  if [[ $# -ge 2 ]]; then
+    mkdir -p "$_frt_root/$1/.github/workflows"
+    printf '%b' "$2" >"$_frt_root/$1/.github/workflows/auto-tag.yml"
+  fi
+  return 0
+}
+_frt_run() { REPOS_ROOT="$_frt_root" "$_frt_sh" "$@" 2>&1; }
+# The shape Core now documents: a `**` denylist, a dispatch, and a bump reaching the
+# reusable. Bodies are literal (printf '%b' expands the \n) rather than templated — a
+# fixture about YAML shape should read as the YAML it is about.
+_frt_good='name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "**"\n      - "!**.md"\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\n        options: [patch, minor, major]\n        default: patch\njobs:\n  tag:\n    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v6\n    with:\n      bump: minor\n'
+
+_frt_reset
+if _frt_out="$(_frt_run --check)"; then
+  if [[ "$_frt_out" == *"no sibling repo checked out"* ]]; then
+    pass "triggers: an empty fleet root is an environment notice, exit 0"
+  else
+    fail "triggers: empty root exited 0 without the no-sibling notice: $_frt_out"
+  fi
+else
+  fail "triggers: an empty fleet root exited non-zero: $_frt_out"
+fi
+
+# THE DEFECT, in both YAML spellings the fleet uses — a flow list and a block sequence.
+# Both must read as core-only, or the register would have called half the fleet clean.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths: ["core/**"]\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**core-only**'* ]]; then
+  pass "triggers: a flow-list core/** filter reads as core-only"
+else
+  fail "triggers: flow-list core/** was not reported core-only: $_frt_out"
+fi
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "core/**"\n      - core.lock\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**core-only**'* ]]; then
+  pass "triggers: a block-sequence core/** + core.lock filter reads as core-only (the sync's own stamp is not own-layer)"
+else
+  fail "triggers: block-sequence core-only was misread: $_frt_out"
+fi
+
+# The fixed shape: one own-layer path, a dispatch, and a bump reaching the reusable.
+_frt_reset; _frt_repo dotfiles-Fedora "$_frt_good"
+if _frt_out="$(_frt_run --check)" && [[ "$_frt_out" == *"releases its own layer and can cut a non-patch"* ]]; then
+  pass "triggers: an own-layer denylist with a bump dispatch passes --check"
+else
+  fail "triggers: the corrected shape did not pass --check: $_frt_out"
+fi
+
+# BOTH HALVES ARE REQUIRED. A dispatch with no `bump:` reaches the reusable's `patch`
+# default, and a `bump:` with no dispatch cannot be chosen at release time. Either alone
+# is still patch-only — the fleet's actual state was the second kind of nothing.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "os/**"\n  workflow_dispatch:\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**patch-only**'* && "$_frt_out" == *'| own-layer |'* ]]; then
+  pass "triggers: a dispatch with no bump: is still patch-only"
+else
+  fail "triggers: dispatch-without-bump was not reported patch-only: $_frt_out"
+fi
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "os/**"\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: minor\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**patch-only**'* ]]; then
+  pass "triggers: a bump: with no dispatch is still patch-only (nothing can choose it)"
+else
+  fail "triggers: bump-without-dispatch was not reported patch-only: $_frt_out"
+fi
+
+# A COMMENT DESCRIBING THE DEFAULT IS NOT A CALLER PASSING IT. Every `bump` string in the
+# fleet was exactly this, which is why the input had never once been exercised.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\n# PATCH-bumps by default; a caller can pass bump: minor for a deliberate release.\non:\n  push:\n    branches: [main]\n    paths:\n      - "os/**"\n  workflow_dispatch:\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**patch-only**'* ]]; then
+  pass "triggers: a commented-out bump: does not count as reachable"
+else
+  fail "triggers: a comment mentioning bump: was read as a passed input: $_frt_out"
+fi
+
+# A `!` CARVE-OUT SUBTRACTS; it is not a watched path. dotfiles-MacBook's denylist is
+# `**` plus ten exclusions, and counting those as own-layer paths would be accidentally
+# right for the wrong reason — so assert the positive `**` is what carries the verdict.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "core/**"\n      - "!core/vendor/**"\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**core-only**'* ]]; then
+  pass "triggers: a ! carve-out does not turn a core-only filter into own-layer"
+else
+  fail "triggers: a negated pattern was counted as a watched path: $_frt_out"
+fi
+
+# NO FILTER AT ALL is coarse but never silently misses this repo's work — not a finding.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: patch\n'
+if _frt_out="$(_frt_run --check)"; then
+  pass "triggers: an unfiltered push trigger is not a finding"
+else
+  fail "triggers: an unfiltered trigger was reported as a defect: $_frt_out"
+fi
+
+# NO WORKFLOW AT ALL — the state a scaffolded repo used to be born in.
+_frt_reset; _frt_repo dotfiles-Fedora
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**absent**'* ]]; then
+  pass "triggers: a repo with no auto-tag.yml reads as absent, not as green"
+else
+  fail "triggers: a repo with no auto-tag.yml was not reported absent: $_frt_out"
+fi
+
+# DOES NOT BLUFF. A file whose `on:` block this reader cannot parse must say `unparsed`
+# rather than fall through to a verdict — a register reporting a shape it never read is
+# the exact failure mode this family of scripts exists to avoid.
+_frt_reset; _frt_repo dotfiles-Fedora '"on":\n  push:\n    paths: ["core/**"]\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**unparsed**'* ]]; then
+  pass "triggers: an on: spelling the reader does not handle is unparsed, not a guessed verdict"
+else
+  fail "triggers: an unreadable on: block produced a verdict anyway: $_frt_out"
+fi
+
+# Rendering is not a verdict (the trailing-test shape that made `make fleet-vocabulary`
+# exit 1 for printing a full table — #846).
+_frt_reset; _frt_repo dotfiles-Fedora "$_frt_good"
+if _frt_run >/dev/null; then pass "triggers: report mode exits 0 (rendering is not a verdict)"; else fail "triggers: report mode exits non-zero"; fi
+
+# The wiring, so the register cannot become a script nothing runs.
+if grep -q 'fleet-release-triggers.sh" --check' "$HERE/scripts/audit-core.sh" &&
+  grep -qF '"fleet list "' "$HERE/scripts/audit-core.sh"; then
+  pass "triggers: audit-core.sh §5h runs the register and reads its fleet-list notice as an environment skip"
+else
+  fail "triggers: audit-core.sh §5h no longer runs fleet-release-triggers.sh --check"
+fi
+if grep -qE '^fleet-release-triggers: ' "$HERE/Makefile"; then
+  pass "triggers: \`make fleet-release-triggers\` prints the register"
+else
+  fail "triggers: Makefile has no fleet-release-triggers target"
+fi
+# Core's DOCUMENTED caller example is the thing that fanned the defect out in the first
+# place, so hold it to the shape this register checks for: a non-core path, a dispatch,
+# and a bump actually passed.
+_frt_ex="$HERE/.github/workflows/auto-tag-call.yml"
+if grep -qF "workflow_dispatch:" "$_frt_ex" && grep -qF "bump: \${{ inputs.bump || 'patch' }}" "$_frt_ex" &&
+  ! grep -qE "^#   *paths: \['core/\*\*'\]" "$_frt_ex"; then
+  pass "triggers: auto-tag-call.yml's caller example no longer documents the core-only shape"
+else
+  fail "triggers: auto-tag-call.yml's caller example still documents paths: ['core/**'] or omits the bump dispatch"
+fi
+# new-os-repo.sh must stamp that same shape, or a fresh repo is born with the old defect
+# (or, as it was, with no auto-tag.yml at all and no release line of its own).
+if grep -qF '.github/workflows/auto-tag.yml' "$HERE/scripts/new-os-repo.sh" &&
+  grep -qF "bump: \\\${{ inputs.bump || 'patch' }}" "$HERE/scripts/new-os-repo.sh"; then
+  pass "triggers: new-os-repo.sh scaffolds an auto-tag caller with a reachable bump"
+else
+  fail "triggers: new-os-repo.sh does not scaffold an auto-tag.yml carrying the bump dispatch"
+fi
+rm -rf "$_frt_root"
 
 # ── F13. the hermetic links gate (scripts/check-links.sh) ─────────────────────
 # The second half of `make check` in the four repos that run a links-only leg — Fedora,
