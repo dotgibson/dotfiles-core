@@ -1,0 +1,47 @@
+# assets/hero-repos.txt — which repos get a README hero, and what varies per repo.
+# ──────────────────────────────────────────────────────────────────────────────
+# ONE row per hero. scripts/gen-hero-tape.sh renders assets/hero.tape.in through
+# these rows; audit-core.sh §9j gates the result. Adding a repo to the hero set is
+# one line, here — the same "the registry is the edit" shape scripts/os-repos.txt
+# has for the fan-out fleet and gen-porting-matrix.sh has for the matrix columns.
+#
+# Format: repo<TAB>output<TAB>checkout<TAB>sigcmd<TAB>signature-source
+#
+#   repo      the GitHub repo name. `.` means THIS repo (dotfiles-core), whose tape
+#             is the only one rendered by default — every other row needs a sibling
+#             checkout and is written only under --fleet.
+#   output    the tape's path inside that repo. vhs is run from the repo root, so
+#             the template's `Output assets/demo.gif` is relative to the same place.
+#   checkout  the path the hidden setup `cd`s to. `~` is written literally into the
+#             tape and expanded by the zsh vhs spawns, not by the generator.
+#   sigcmd    THE ONE COMMAND THAT IS THIS REPO'S. On an OS repo it is deliberately
+#             the same three characters everywhere — `up -n` — because the whole
+#             point is what it RESOLVES to: dnf on Fedora, pacman on Arch, apk on
+#             Alpine, emerge on Gentoo, `zypper dup` (not `up`) on Tumbleweed. That
+#             is v5's thesis in three seconds, on the page a visitor actually lands
+#             on. `-n` is the dry run (zsh/60-update.zsh): it lists, so the clip
+#             needs no sudo, no network write and no confirmation keystroke.
+#   signature-source  how the trailing comment on that line is produced:
+#             `caps:<path>`  DERIVED — read PKG_UPGRADE from that capability
+#                            declaration in the sibling checkout, so the note can
+#                            never claim a verb the repo does not declare. Needs the
+#                            sibling, hence --fleet only.
+#             `note:<text>`  LITERAL — for a repo with no os/*.capabilities of its
+#                            own (this repo; the two role repos, which layer on top
+#                            of whichever OS repo is underneath).
+#
+# NOT YET RENDERED. Only the `.` row is written and gated today. The nine sibling
+# rows are the tooling's target, sequenced after dotfiles-core#667 per #698: they
+# are rendered by `make gen-hero-tape-fleet`, and committing their gifs plus the
+# README hero block in each repo is the follow-up, not this change.
+# ──────────────────────────────────────────────────────────────────────────────
+.	assets/demo.tape	~/code/dotfiles/dotfiles-core	core status	note:the provenance panel — version, live layers, tool health
+dotfiles-MacBook	assets/demo.tape	~/code/dotfiles/dotfiles-MacBook	up -n	caps:os/macos.capabilities
+dotfiles-Alpine	assets/demo.tape	~/code/dotfiles/dotfiles-Alpine	up -n	caps:os/alpine.capabilities
+dotfiles-Arch	assets/demo.tape	~/code/dotfiles/dotfiles-Arch	up -n	caps:os/arch.capabilities
+dotfiles-Debian	assets/demo.tape	~/code/dotfiles/dotfiles-Debian	up -n	caps:os/debian.capabilities
+dotfiles-Fedora	assets/demo.tape	~/code/dotfiles/dotfiles-Fedora	up -n	caps:os/fedora.capabilities
+dotfiles-Gentoo	assets/demo.tape	~/code/dotfiles/dotfiles-Gentoo	up -n	caps:os/gentoo.capabilities
+dotfiles-openSUSE	assets/demo.tape	~/code/dotfiles/dotfiles-openSUSE	up -n	caps:os/opensuse.capabilities
+dotfiles-Offense	assets/demo.tape	~/code/dotfiles/dotfiles-Offense	core status	note:the provenance panel — the role layer, live over the OS layer
+dotfiles-Defense	assets/demo.tape	~/code/dotfiles/dotfiles-Defense	core status	note:the provenance panel — the role layer, live over the OS layer

@@ -1,0 +1,56 @@
+# assets/hero.tape.in — the ONE hand-authored body behind every repo's README hero.
+# ──────────────────────────────────────────────────────────────────────────────
+# THIS FILE IS THE SOURCE. The tapes are GENERATED from it by
+# scripts/gen-hero-tape.sh, one per row of assets/hero-repos.txt, and
+# audit-core.sh §9j reds if a rendered tape drifts from this template.
+# Edit HERE, then run `make gen-hero-tape`.
+#
+# WHY A TEMPLATE. assets/README.md already claimed the property that makes this
+# possible — "re-run the command after any prompt or tooling change and the hero
+# updates, no manual re-recording" — and then the fleet had exactly one hero, shot
+# inside the wrong repo (#698). Nine hand-recorded gifs would drift the way the
+# theme (#679), the alias tables (#685) and the porting matrix (#686) drifted; the
+# per-repo delta here is two lines, so it is a substitution, not nine files.
+#
+# PLACEHOLDERS, substituted by the generator. Everything else is verbatim:
+#   @@HEADER@@    the generated-file provenance banner
+#   @@THEME@@     `Set Theme { … }`, rendered from theme/palette.toml
+#   @@CHECKOUT@@  the repo's checkout path — the `cd` in the hidden setup
+#   @@SIGCMD@@    the ONE command that is this repo's own (Core: `core status`;
+#                 an OS repo: `up -n`, which resolves to that distro's manager)
+#   @@SIGNOTE@@   the trailing comment on that line
+#
+# KEEP IT SHORT — the budget is ~15 s, and it is a real budget: §9k caps the
+# rendered gif's bytes, and every Sleep here is paid for in that file.
+# ──────────────────────────────────────────────────────────────────────────────
+@@HEADER@@
+
+Output assets/demo.gif
+
+Set Shell "zsh"
+Set FontFamily "JetBrainsMono Nerd Font"   # must be a Nerd Font, or icons break
+Set FontSize 20
+Set Width 1200
+Set Height 700
+Set Padding 20
+@@THEME@@
+Set TypingSpeed 45ms
+
+# --- silent setup: land on a clean prompt, with nothing that can page ---
+# CORE_NO_PAGER and GIT_PAGER are what let the tour drop the four `q` keystrokes
+# the first cut needed: a pager costs a Type, an Enter and two Sleeps per command,
+# which is most of the difference between a ~27 s clip and this one.
+Hide
+Type "export CORE_NO_PAGER=1 GIT_PAGER=cat" Enter
+Type "source ~/.config/zsh/.zshrc" Enter
+Type "cd @@CHECKOUT@@" Enter
+Type "clear" Enter
+Show
+Sleep 1500ms
+
+# --- the tour: three shared marquee moments, then the one that is this repo's ---
+Type "ll" Sleep 400ms Enter Sleep 1600ms             # eza — icons + git status
+Type "cat README.md" Sleep 400ms Enter Sleep 1600ms  # bat — syntax highlighting
+Type "glog -8" Sleep 400ms Enter Sleep 1600ms        # git log, graphed and decorated
+Type "@@SIGCMD@@" Sleep 400ms Enter Sleep 2500ms  # @@SIGNOTE@@
+Sleep 1s

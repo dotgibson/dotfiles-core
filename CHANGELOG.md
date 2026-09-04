@@ -16,6 +16,50 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The README hero is generated from one tape, and its bytes are capped (#698).** Ten public
+  repos open with the same shields template and **no visual at all** — no `assets/`, no hero,
+  no image — while the one repo that _has_ a hero is `dotfiles-core`, which nobody installs
+  directly. Worse, that hero filmed the wrong tree: `assets/demo.tape` typed
+  `cd ~/code/dotfiles/dotfiles-MacBook` from inside `dotfiles-core`. Nothing could catch it,
+  because nothing derived the tape from anything — even though `assets/README.md` already
+  asserted the property that makes the fix cheap ("re-run the command after any prompt or
+  tooling change and the hero updates — no manual re-recording"). The tape is now **rendered**
+  by **`scripts/gen-hero-tape.sh`** (`make gen-hero-tape`) from three sources:
+  **`assets/hero.tape.in`** (the shared body — every command, every `Sleep`),
+  **`assets/hero-repos.txt`** (the per-repo delta: the `cd` path and the one signature
+  command) and **`theme/palette.toml`**. That last one closes a second defect in the same
+  file: `Set Theme "TokyoNight"` was a **fourth place the theme was named by hand**, and the
+  only one naming an upstream preset rather than the resolved table every other consumer is
+  generated from — so the hero could stay "Tokyo Night" while Core's chrome moved. It is now a
+  full `Set Theme { … }` block rendered from the palette, which means a palette edit reds the
+  hero gate as well as §9d. `--check` is wired into **`audit-core.sh` §9j** with no
+  environment SKIP: unlike §9h/§9i, the default scope is this repo's own files, so it can
+  always answer.
+- **A byte ceiling on the hero, because one heavy gif is a preference and ten is a policy
+  (#698).** `assets/demo.gif` is 1.8 MB for a ~25-second clip, and `assets/README.md`
+  documented the `gifsicle -O3 --lossy=80` remedy that nothing applied.
+  **`audit-core.sh` §9k** (`make check-hero-size`) now weighs the file each tape's `Output`
+  line names — following the tape, so a renamed output cannot slip past a hardcoded path —
+  and fails over **2 MiB**. The template is shortened to the ~15 s its own header asks for:
+  `CORE_NO_PAGER` and `GIT_PAGER=cat` in the hidden setup drop the four `q` keystrokes the
+  old tour needed, which is most of the difference between ~27 s and ~13 s. **The committed
+  `demo.gif` still predates the shortened tape** — re-render with `vhs assets/demo.tape` and
+  optimize to bring it well under the ceiling.
+- **The nine other heroes are registered, not yet rendered (#698).** `assets/hero-repos.txt`
+  already carries all ten repos, and `make gen-hero-tape-fleet` writes the other nine tapes
+  into their own checkouts. Their signature command is deliberately the _same three
+  characters_ everywhere — `up -n` — because the point is what it **resolves** to: `dnf` on
+  Fedora, `pacman` on Arch, `apk` on Alpine, `emerge` on Gentoo, and `zypper dup` (**not**
+  `up`, the distinction that half-updates a box) on Tumbleweed. The trailing note is derived
+  from each repo's own `os/*.capabilities` `PKG_UPGRADE`, so it can never claim a verb the
+  repo does not declare. Rendering and committing those nine gifs, and adding the hero block
+  to each README, is the **follow-up**, sequenced after `os.capabilities` (#667) exactly as
+  #698 asks — nine heroes of the same Core verbs would be nine near-identical gifs.
+  `scripts/test-core.sh` covers the generator hermetically in **F11b**: the wrong-repo `cd`
+  and the named-theme preset are both pinned as regressions, drift outranks an absent sibling
+  (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2
+  rather than drift, the verdict survives a host with no working `diff`/`cmp` (#572), and
+  both audit legs are asserted to actually be wired.
 - **The desktop-bar parity pair is generated and gated, not asked nicely (#693).**
   `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` were an
   admitted verbatim pair whose only mechanism was the sentence _"Edit both together"_. It did

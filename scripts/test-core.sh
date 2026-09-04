@@ -11132,6 +11132,255 @@ else
   esac
 fi
 
+# ── F11b. README hero tape generation (scripts/gen-hero-tape.sh) ──────────────
+# assets/demo.tape is rendered from assets/hero.tape.in, assets/hero-repos.txt and
+# theme/palette.toml (#698). The defect it closes was invisible for exactly as long as
+# nothing derived the tape: dotfiles-core's hero filmed `cd ~/…/dotfiles-MacBook`, and
+# `Set Theme "TokyoNight"` named an upstream preset rather than the palette every other
+# consumer is generated from. Both are pinned below — a gate that only proves "the file
+# did not change" would have been green through the whole of that.
+#
+# The fixture copies the REAL template and the REAL palette (as F11 uses the shipped
+# PARITY.shared.md) and swaps only the registry, so these tests exercise what ships.
+hdr "README hero tape generation (scripts/gen-hero-tape.sh)"
+GHR="$SANDBOX/herocore"      # the fixture "dotfiles-core"
+GHF="$SANDBOX/herofleet"     # the fixture sibling fleet
+
+_gh_fixture() { # _gh_fixture [--no-fedora]
+  rm -rf "$GHR" "$GHF"
+  mkdir -p "$GHR/assets" "$GHR/theme"
+  cp "$HERE/assets/hero.tape.in" "$GHR/assets/hero.tape.in"
+  cp "$HERE/theme/palette.toml" "$GHR/theme/palette.toml"
+  {
+    printf '# fixture registry\n'
+    printf '.\tassets/demo.tape\t~/code/dotfiles/dotfiles-core\tcore status\tnote:the provenance panel\n'
+    printf 'dotfiles-openSUSE\tassets/demo.tape\t~/code/dotfiles/dotfiles-openSUSE\tup -n\tcaps:os/opensuse.capabilities\n'
+    printf 'dotfiles-Fedora\tassets/demo.tape\t~/code/dotfiles/dotfiles-Fedora\tup -n\tcaps:os/fedora.capabilities\n'
+  } >"$GHR/assets/hero-repos.txt"
+
+  # Tumbleweed's declaration says `dup`; Fedora's says dnf. Two repos is enough to prove
+  # the note is DERIVED rather than typed — one could be a coincidence.
+  mkdir -p "$GHF/dotfiles-openSUSE/os" "$GHF/dotfiles-openSUSE/.git" "$GHF/dotfiles-openSUSE/assets"
+  printf 'PKG_UPGRADE=sudo zypper dup\n' >"$GHF/dotfiles-openSUSE/os/opensuse.capabilities"
+  [[ "${1:-}" == --no-fedora ]] && return 0
+  mkdir -p "$GHF/dotfiles-Fedora/os" "$GHF/dotfiles-Fedora/assets"
+  printf 'gitdir: /nowhere\n' >"$GHF/dotfiles-Fedora/.git"   # a worktree's .git is a FILE
+  printf 'PKG_UPGRADE=sudo dnf upgrade --refresh\n' >"$GHF/dotfiles-Fedora/os/fedora.capabilities"
+}
+_gh_run() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-hero-tape.sh" --root "$GHR" --fleet-root "$GHF" "$@" >/dev/null 2>&1; echo $?); }
+_gh_out() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-hero-tape.sh" --root "$GHR" --fleet-root "$GHF" "$@" 2>&1); }
+
+# POSITIVE — a clean render, and --check green on its own output.
+_gh_fixture
+if [[ "$(_gh_run)" == 0 ]] && [[ -f "$GHR/assets/demo.tape" ]]; then
+  pass "gen-hero-tape: renders this repo's tape on a clean fixture"
+else
+  fail "gen-hero-tape: bare run did not write assets/demo.tape: $(_gh_out | head -n 3)"
+fi
+if [[ "$(_gh_run --check)" == 0 ]]; then
+  pass "gen-hero-tape: --check is 0 on a freshly generated tree"
+else
+  fail "gen-hero-tape: --check reported drift on its own output"
+fi
+
+# THE DEFECT #698 WAS FILED FOR. The keystone repo's hero filmed a machine repo. A
+# generated tape can only say what its registry row says, and this asserts it does.
+if grep -qF 'Type "cd ~/code/dotfiles/dotfiles-core" Enter' "$GHR/assets/demo.tape" &&
+  ! grep -q 'cd ~/code/dotfiles/dotfiles-MacBook' "$GHR/assets/demo.tape"; then
+  pass "gen-hero-tape: this repo's tape films THIS repo (#698's first finding)"
+else
+  fail "gen-hero-tape: the rendered tape does not cd to the row's own checkout"
+fi
+
+# `Set Theme` IS RENDERED FROM THE PALETTE, not typed. The string "TokyoNight" naming an
+# upstream preset is the drift this closes: it can stay right while the palette moves.
+_gh_bg="$(awk -F'"' '/^color_bg  */ { print $2; exit }' "$HERE/theme/palette.toml")"
+if grep -q '^Set Theme {' "$GHR/assets/demo.tape" &&
+  grep -qF "$_gh_bg" "$GHR/assets/demo.tape" &&
+  ! grep -q 'Set Theme "' "$GHR/assets/demo.tape"; then
+  pass "gen-hero-tape: Set Theme is rendered from theme/palette.toml, not a named preset"
+else
+  fail "gen-hero-tape: the tape's theme is not the palette's ($_gh_bg absent, or a quoted preset survived)"
+fi
+
+# A `caps:` ROW READS THE REPO'S OWN DECLARATION. openSUSE's must say `dup`, not `up` —
+# #698's stated acceptance criterion, and the distinction that half-updates a box.
+_gh_run --fleet >/dev/null
+if grep -qF 'one verb → sudo zypper dup' "$GHF/dotfiles-openSUSE/assets/demo.tape" &&
+  ! grep -qF 'one verb → sudo zypper up' "$GHF/dotfiles-openSUSE/assets/demo.tape"; then
+  pass "gen-hero-tape: Tumbleweed's note derives \`zypper dup\`, not \`zypper up\`"
+else
+  fail "gen-hero-tape: openSUSE's signature note is not its declared PKG_UPGRADE"
+fi
+if grep -qF 'one verb → sudo dnf upgrade --refresh' "$GHF/dotfiles-Fedora/assets/demo.tape"; then
+  pass "gen-hero-tape: a second caps: row derives its own verb (the note is data, not a coincidence)"
+else
+  fail "gen-hero-tape: Fedora's signature note did not come from its capability declaration"
+fi
+
+# THE SIBLING ROWS ARE OUT OF SCOPE WITHOUT --fleet. #698 sequences those renders after
+# #667; a default run reaching into another checkout would render nine near-identical
+# heroes nobody asked for yet.
+_gh_fixture
+_gh_run >/dev/null
+if [[ ! -f "$GHF/dotfiles-Fedora/assets/demo.tape" ]]; then
+  pass "gen-hero-tape: a default run writes no sibling tape (--fleet is the opt-in)"
+else
+  fail "gen-hero-tape: a bare run wrote into a sibling repo"
+fi
+
+# DRIFT. A hand-edited tape must be 1, and the message must name the fix.
+_gh_fixture && _gh_run >/dev/null
+printf 'Type "rm -rf /"\n' >>"$GHR/assets/demo.tape"
+_gh_drift_rc="$(_gh_run --check)"
+_gh_drift_out="$(_gh_out --check)"
+if [[ "$_gh_drift_rc" == 1 ]]; then
+  pass "gen-hero-tape: --check exits 1 on a hand-edited tape"
+else
+  fail "gen-hero-tape: a hand-edited tape did not report as drift (rc=$_gh_drift_rc)"
+fi
+if grep -q 'demo.tape' <<<"$_gh_drift_out" && grep -q 'make gen-hero-tape' <<<"$_gh_drift_out"; then
+  pass "gen-hero-tape: the drift report names the tape and the fix"
+else
+  fail "gen-hero-tape: drift reported without naming the tape / make gen-hero-tape"
+fi
+
+# A TEMPLATE EDIT MUST REACH THE TAPE. The whole point is that the body is authored once.
+_gh_fixture && _gh_run >/dev/null
+printf 'Sleep 250ms\n' >>"$GHR/assets/hero.tape.in"
+if [[ "$(_gh_run --check)" == 1 ]]; then
+  pass "gen-hero-tape: editing the template without regenerating is drift"
+else
+  fail "gen-hero-tape: a template edit left --check green — the tape is not derived from it"
+fi
+
+# A REGISTRY EDIT MUST TOO — the other half of the source, and the half that varies.
+_gh_fixture && _gh_run >/dev/null
+sed -i.bak 's|~/code/dotfiles/dotfiles-core|~/elsewhere|' "$GHR/assets/hero-repos.txt"
+if [[ "$(_gh_run --check)" == 1 ]]; then
+  pass "gen-hero-tape: editing the registry without regenerating is drift"
+else
+  fail "gen-hero-tape: a registry edit left --check green"
+fi
+
+# CANNOT-RUN IS 2, NOT DRIFT. A malformed row, and a caps: row whose declaration carries no
+# PKG_UPGRADE, must be a different failure from a stale tape — a broken gate reported as a
+# stale doc is the shape §9g's exit-2 leg exists to keep apart.
+_gh_fixture
+printf 'dotfiles-Arch\tassets/demo.tape\tonly-three-fields\n' >>"$GHR/assets/hero-repos.txt"
+if [[ "$(_gh_run --check)" == 2 ]]; then
+  pass "gen-hero-tape: a malformed registry row is 2 (cannot run), not 1 (drift)"
+else
+  fail "gen-hero-tape: a 3-field registry row was not reported as structural (rc=$(_gh_run --check))"
+fi
+
+_gh_fixture
+printf 'PKG_REFRESH=sudo zypper refresh\n' >"$GHF/dotfiles-openSUSE/os/opensuse.capabilities"
+if [[ "$(_gh_run --fleet)" == 2 ]]; then
+  pass "gen-hero-tape: a caps: row with no PKG_UPGRADE is 2, not a blank note"
+else
+  fail "gen-hero-tape: a declaration missing PKG_UPGRADE rendered anyway (rc=$(_gh_run --fleet))"
+fi
+
+# AN ABSENT SIBLING IS 3 (an environment skip), and DRIFT OUTRANKS IT. The severity order
+# is 2 > 1 > 3 > 0, which is NOT numeric order — a naive `max` would report a drifted tape
+# as "the fleet is not checked out" and stay green in audit-core.sh.
+_gh_fixture --no-fedora
+_gh_run --fleet >/dev/null
+if [[ "$(_gh_run --fleet --check)" == 3 ]]; then
+  pass "gen-hero-tape: an absent sibling is 3 (environment), not a failure"
+else
+  fail "gen-hero-tape: an un-cloned sibling was not reported as 3 (rc=$(_gh_run --fleet --check))"
+fi
+printf 'Type "rm -rf /"\n' >>"$GHR/assets/demo.tape"
+if [[ "$(_gh_run --fleet --check)" == 1 ]]; then
+  pass "gen-hero-tape: drift outranks an absent sibling (sticky severity 1 > 3)"
+else
+  fail "gen-hero-tape: real drift was masked by an absent sibling (rc=$(_gh_run --fleet --check))"
+fi
+
+# THE BYTE CEILING. #698's third finding: assets/README.md documented the gifsicle remedy
+# and nothing applied it. The gate weighs the file the tape's `Output` line names, so a
+# renamed output cannot slip past a hardcoded path.
+_gh_fixture && _gh_run >/dev/null
+head -c 100 /dev/zero >"$GHR/assets/demo.gif"
+if [[ "$(_gh_run --check-size)" == 0 ]]; then
+  pass "gen-hero-tape: --check-size passes a hero under the ceiling"
+else
+  fail "gen-hero-tape: a 100-byte gif was reported as over the ceiling"
+fi
+if [[ "$(_gh_run --check-size --max-bytes 50)" == 1 ]]; then
+  pass "gen-hero-tape: --check-size exits 1 on a hero over the ceiling"
+else
+  fail "gen-hero-tape: an oversized hero did not fail the size gate"
+fi
+_gh_out_size="$(_gh_out --check-size --max-bytes 50)"
+if grep -q 'gifsicle' <<<"$_gh_out_size" && grep -q 'hero.tape.in' <<<"$_gh_out_size"; then
+  pass "gen-hero-tape: the size failure names both remedies (shorten the tape, optimize the gif)"
+else
+  fail "gen-hero-tape: the size failure does not say how to fix it"
+fi
+rm -f "$GHR/assets/demo.gif"
+if [[ "$(_gh_run --check-size)" == 0 ]]; then
+  pass "gen-hero-tape: an un-rendered hero is a note skip, not a pass over nothing"
+else
+  fail "gen-hero-tape: a missing gif failed the size gate instead of skipping"
+fi
+
+# IDEMPOTENCE — a second render must be byte-identical, or --check can never be stably green.
+_gh_fixture && _gh_run >/dev/null
+cp "$GHR/assets/demo.tape" "$GHR/assets/demo.first.tape"
+_gh_run >/dev/null
+if core_files_identical "$GHR/assets/demo.first.tape" "$GHR/assets/demo.tape"; then
+  pass "gen-hero-tape: generation is idempotent (second run is byte-identical)"
+else
+  fail "gen-hero-tape: a second run changed the tape — --check can never be stably green"
+fi
+rm -f "$GHR/assets/demo.first.tape"
+
+# THE VERDICT MUST NOT DEPEND ON DIFFUTILS. `cmp`/`diff` ship in diffutils, which is not
+# guaranteed present in this fleet, and a missing binary exits non-zero — indistinguishable
+# from "the files differ" (#572). Shadow both: identical files must still verify as identical.
+_gh_shim="$SANDBOX/nodiffutils-hero"
+mkdir -p "$_gh_shim"
+for _b in diff cmp; do printf '#!/bin/sh\nexit 127\n' >"$_gh_shim/$_b"; chmod +x "$_gh_shim/$_b"; done
+_gh_fixture && _gh_run >/dev/null
+_gh_nodiff_rc="$( (cd "$SANDBOX" && PATH="$_gh_shim:$PATH" env -u CORE_JSON bash "$HERE/scripts/gen-hero-tape.sh" --root "$GHR" --fleet-root "$GHF" --check >/dev/null 2>&1; echo $?) )"
+if [[ "$_gh_nodiff_rc" == 0 ]]; then
+  pass "gen-hero-tape: --check survives a host with no working diff/cmp"
+else
+  fail "gen-hero-tape: a broken diff/cmp turned a matching tape into drift (rc=$_gh_nodiff_rc)"
+fi
+
+# A WRITE THAT CANNOT HAPPEN MUST NOT REPORT SUCCESS. Nothing runs under `set -e`, so an
+# unchecked mktemp or mv prints "rewritten" and exits 0 over a stale file. Skipped as root.
+if [[ "${EUID:-$(id -u)}" != 0 ]]; then
+  _gh_fixture
+  chmod a-w "$GHR/assets"
+  _gh_ro_rc="$(_gh_run)"
+  _gh_ro_out="$(_gh_out)"
+  chmod u+w "$GHR/assets"
+  if [[ "$_gh_ro_rc" == 1 ]] && ! grep -q 'rewritten' <<<"$_gh_ro_out"; then
+    pass "gen-hero-tape: an unwritable assets/ fails instead of claiming it was rewritten"
+  else
+    fail "gen-hero-tape: an unwritable target reported success (rc=$_gh_ro_rc)"
+  fi
+fi
+
+# THE GATE MUST ACTUALLY BE WIRED. A generator nothing calls is a script, not a gate — and
+# both legs matter: §9j proves the tape tracks its template, §9k that the render stayed
+# small. Pinned here rather than trusted, exactly as F11 pins parity-check.yml's --check.
+for _gh_leg in '--check' '--check-size'; do
+  if grep -qE "scripts/gen-hero-tape\.sh\" $_gh_leg" "$HERE/scripts/audit-core.sh"; then
+    pass "gen-hero-tape: audit-core.sh runs the generator with $_gh_leg"
+  else
+    fail "gen-hero-tape: audit-core.sh never calls gen-hero-tape.sh $_gh_leg — that leg gates nothing"
+  fi
+done
+
+rm -rf "$GHR" "$GHF" "$_gh_shim"
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size
+
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run
 # it — the gate exits before anything after it.

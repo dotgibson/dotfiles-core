@@ -75,6 +75,14 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   sits. Keep the source a **prettier fixed-point** (`prettier --parser markdown`): Core's nvim
   formats markdown with prettierd, and a one-sided format is how the pair drifted 3.5 KB apart
   in the first place (#693).
+- **The README hero tape is generated, not typed.** `assets/demo.tape` is rendered by
+  `scripts/gen-hero-tape.sh` from three sources — `assets/hero.tape.in` (the shared body),
+  `assets/hero-repos.txt` (the per-repo `cd` path and signature command) and
+  `theme/palette.toml` (the `Set Theme` block) — so hand-editing the tape is a gate failure
+  (`audit-core.sh` §9j). Edit the template or the registry, run `make gen-hero-tape`. §9k
+  caps the rendered gif at 2 MiB, weighing whatever the tape's `Output` line names. The
+  nine OS/role repos are already registered; `make gen-hero-tape-fleet` writes their tapes,
+  but rendering and committing their gifs is #698's follow-up, sequenced after #667.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
 - **A user-visible change lands in `CHANGELOG.md` under `[Unreleased]`** in the
