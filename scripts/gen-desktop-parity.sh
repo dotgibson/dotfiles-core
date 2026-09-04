@@ -196,12 +196,12 @@ for entry in "${TARGETS[@]}"; do
     fi
   elif [[ "$MODE" == check ]]; then
     fail "$repo/$rel has drifted from desktop/PARITY.shared.md:"
-    if have diff; then
-      diff -u "$file" "$tmp" | sed 's/^/    /' >&2 || true
-    else
-      printf '    (diff not installed — install diffutils to see the drifting lines)
-' >&2
-    fi
+    # `git diff`, never diff(1). diffutils is absent on minimal hosts in this fleet, and
+    # scripts/test-core.sh BANS a bare `diff -`/`cmp -` for exactly that reason — the #572
+    # hole one step over. git is the one tool these scripts already cannot run without
+    # (core_files_identical is built on git hash-object), so it is the portable diagnostic,
+    # and the gate's exemption is structural: `diff` preceded by `git` in the same stage.
+    git --no-pager diff --no-index --no-color -- "$file" "$tmp" | sed 's/^/    /' >&2 || true
     printf '    fix: edit desktop/PARITY.shared.md, then run: make gen-desktop-parity\n' >&2
     rm -f "$tmp"
   else

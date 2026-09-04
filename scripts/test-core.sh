@@ -8432,7 +8432,7 @@ fi
 # throwaway clones and exits 0 — a gate that can never fail, which is precisely the
 # "reported green having checked nothing" shape this change exists to remove. The flag was
 # in fact missing on first review, so it is pinned here rather than trusted.
-if grep -qE '^\s*\./scripts/gen-desktop-parity\.sh .*--check' "$HERE/.github/workflows/parity-check.yml"; then
+if grep -qE '^[[:space:]]*\./scripts/gen-desktop-parity\.sh .*--check' "$HERE/.github/workflows/parity-check.yml"; then
   pass "gen-desktop-parity: parity-check.yml invokes the generator with --check"
 else
   fail "gen-desktop-parity: parity-check.yml runs the generator WITHOUT --check — the weekly gate would rewrite the clones and always pass"

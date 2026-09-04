@@ -126,4 +126,4 @@ jobs:
       workflow: parity-check
       title: "ci-failure: parity-check sweep is red"
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "The weekly cross-shell parity sweep failed. An aligned PARITY.md row may be missing from zsh or PowerShell, or may have no check behind it at all — reconcile the two shells or add the needle, or the sweep itself may be broken."
+      details: "The weekly parity sweep failed. This job runs TWO independent gates and the run summary names which one is red. CROSS-SHELL: an aligned PARITY.md row is missing from zsh or PowerShell, or has no check behind it at all — reconcile the two shells or add the needle. DESKTOP-BAR: dotfiles-Windows/desktop/PARITY.md or dotfiles-MacBook/sketchybar/PARITY.md no longer matches desktop/PARITY.shared.md, or has lost its markers — fix the canonical source and run `make gen-desktop-parity`. Either sweep may also be broken in itself."
