@@ -1355,6 +1355,44 @@ else
   unset _fv_out _fv_rc
 fi
 
+# ── 5h (cont.) the release-trigger register ──────────────────────────────────
+# The register above answers "who calls auto-tag-call?" and reported `reusable` for all
+# nine repos — green, while six of them cut a tag ONLY when a Core fan-out landed. Right
+# answer, wrong question (#696): calling the gate is not the same as the gate releasing
+# anything this repo owns. On dotfiles-Fedora that meant seven Core syncs → seven
+# releases and six native commits → zero, with the tag attributed to "Core moved".
+#
+# scripts/fleet-release-triggers.sh reads each sibling's .github/workflows/auto-tag.yml
+# and reports two things: whether its path filter watches anything outside core/, and
+# whether a deliberate non-patch bump is reachable without editing the file (the `bump`
+# input existed from the start and no caller had ever passed one). Same shape as the two
+# registers above, same advisory posture — this is fleet drift, not a regression in the
+# commit under test, and Core's own fix is the caller shape it documents.
+hdr "release-trigger register (advisory)"
+if [[ ! -x "$HERE/scripts/fleet-release-triggers.sh" ]]; then
+  skip "release-trigger register (scripts/fleet-release-triggers.sh missing — out of scope)"
+else
+  _fr_out="$("$HERE/scripts/fleet-release-triggers.sh" --check 2>&1)"
+  _fr_rc=$?
+  if [[ "$_fr_out" == *"no sibling repo checked out"* ]]; then
+    skip_env "release-trigger register (no sibling OS repo checked out — nothing to read here)"
+  elif [[ "$_fr_out" == *"fleet list "* ]]; then
+    # Could not enumerate the fleet at all — not the same finding as "repos have findings".
+    skip_env "release-trigger register (fleet list would not load — cannot enumerate the fleet)"
+  elif ((_fr_rc == 0)); then
+    pass "release-trigger register: $_fr_out"
+  elif ((_fr_rc == 1)); then
+    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f. Exit 1 is the reporter's
+    # verdict; anything else is the reporter itself failing, which is red below.
+    ((${CORE_JSON:-0})) || printf '%s\n' "$_fr_out" | sed 's/^/  /'
+    pass "release-trigger register: repo(s) releasing only on Core syncs, or unable to cut a non-patch — advisory; .github/workflows/auto-tag-call.yml documents the caller shape"
+  else
+    fail "release-trigger register: scripts/fleet-release-triggers.sh exited $_fr_rc — the reporter is broken, not the fleet"
+    fail_detail "$_fr_out"
+  fi
+  unset _fr_out _fr_rc
+fi
+
 # ── 5i. leftover conflict markers (tracked files) ────────────────────────────
 # A conflict resolved by hand can leave a marker behind, and bcdd7dd (#650) did exactly
 # that: a literal base marker landed in CHANGELOG.md at the end of [Unreleased]'s Fixed

@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity gen-hero-tape gen-hero-tape-fleet check-hero-tape check-hero-size changelog-recent release tag publish release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-release-triggers fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity gen-hero-tape gen-hero-tape-fleet check-hero-tape check-hero-size changelog-recent release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -63,6 +63,9 @@ fleet-coverage: ## Which repo satisfies which reusable gate, and how (the covera
 
 fleet-vocabulary: ## Does every OS repo define the canonical `make` verbs and meet the test floor? (the vocabulary register)
 	@./scripts/fleet-vocabulary.sh
+
+fleet-release-triggers: ## Does every OS repo release its OWN work, and can it cut a non-patch? (the release-trigger register)
+	@./scripts/fleet-release-triggers.sh
 
 fleet-drift: ## Report which OS repos (+ Windows) lag the latest RELEASED Core tag — the vendoring-drift dashboard
 	@./scripts/fleet-drift.sh

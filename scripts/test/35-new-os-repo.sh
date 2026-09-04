@@ -115,10 +115,10 @@ if have git && have zsh; then
       skip "new-os-repo: shellcheck over the scaffolded bash (shellcheck unavailable)"
     fi
     if have actionlint; then
-      if actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" >/dev/null 2>&1; then
-        pass "new-os-repo: the scaffolded test and lint workflows pass actionlint"
+      if actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" "$NOR/.github/workflows/auto-tag.yml" >/dev/null 2>&1; then
+        pass "new-os-repo: the scaffolded test, lint and auto-tag workflows pass actionlint"
       else
-        fail "new-os-repo: a scaffolded workflow fails actionlint: $(actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" 2>&1 | head -3 | tr '\n' ' ')"
+        fail "new-os-repo: a scaffolded workflow fails actionlint: $(actionlint "$NOR/.github/workflows/test.yml" "$NOR/.github/workflows/lint.yml" "$NOR/.github/workflows/auto-tag.yml" 2>&1 | head -3 | tr '\n' ' ')"
       fi
     else
       skip "new-os-repo: actionlint over the scaffolded workflows (actionlint unavailable)"
@@ -133,6 +133,20 @@ if have git && have zsh; then
       fail "new-os-repo: the scaffolded lint caller is missing or pins a foreign major (want @v$_nor_major): $(grep -h 'uses:' "$NOR/.github/workflows/lint.yml" 2>/dev/null)"
     fi
     unset _nor_major
+    # A scaffolded repo used to be born with NO auto-tag.yml, so it never cut a release of
+    # its own — the collapsed version line #696 is about, in its most complete form. Assert
+    # the caller exists AND carries the corrected shape, by asking the register itself: a
+    # grep for the paths would pass on a file the register still calls core-only.
+    _nor_frt="$SANDBOX/nor-frt"
+    rm -rf "$_nor_frt"; mkdir -p "$_nor_frt"
+    if cp -r "$NOR" "$_nor_frt/dotfiles-Fedora" 2>/dev/null && mkdir -p "$_nor_frt/dotfiles-Fedora/.git" &&
+      _nor_frt_out="$(REPOS_ROOT="$_nor_frt" "$HERE/scripts/fleet-release-triggers.sh" --check 2>&1)"; then
+      pass "new-os-repo: the scaffolded auto-tag caller passes the release-trigger register"
+    else
+      fail "new-os-repo: the scaffold is born releasing only on Core syncs, or unable to cut a non-patch: ${_nor_frt_out:-<no output>}"
+    fi
+    rm -rf "$_nor_frt"
+    unset _nor_frt _nor_frt_out
     # The suite is a TEST, not an `exit 0` stub — run it, in both states the scaffold
     # actually produces. AS GENERATED with --no-vendor there is no core/ at all, and the
     # starter bootstrap refuses to run without one — correctly: a bootstrap that links
