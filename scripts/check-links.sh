@@ -148,6 +148,11 @@ cd -- "$REPO" || {
   bad "not a directory: $REPO"
   exit 1
 }
+# `--bootstrap` is documented as relative to --repo, so make that true: a bare name like
+# `bootstrap.sh` passes the -f test below (it IS in the repo we just cd'd into) and would
+# then EXECUTE through PATH — "command not found" on a good day, somebody else's
+# bootstrap.sh on a bad one.
+[[ "$BOOTSTRAP" == */* ]] || BOOTSTRAP="./$BOOTSTRAP"
 [[ -f "$BOOTSTRAP" ]] || {
   bad "no installer at $BOOTSTRAP (run this from an OS or Role repo, or pass --repo)"
   exit 1
@@ -233,15 +238,18 @@ for s in "${SEEDS[@]}"; do
   fi
 done
 
-# THE MANAGED ENTRY FILE, in the throwaway HOME — never the caller's own. `source
-# .*loader\.zsh` with the dot escaped and anchored past any comment: the unescaped,
-# unanchored form this replaces matched a COMMENTED-OUT source line and `loaderXzsh`
-# besides, so an entry file that sources nothing passed the gate.
+# THE MANAGED ENTRY FILE, in the throwaway HOME — never the caller's own. Three things the
+# form this replaces got wrong, each of which passed an entry file that sources nothing:
+# an unescaped `.` matched `loaderXzsh`; no comment anchor matched a COMMENTED-OUT line;
+# and `^[^#]*source` matched `source` anywhere on the line, so `echo source …/loader.zsh`
+# satisfied it. `source` (or its `.` synonym) has to be the COMMAND — first token, after
+# leading whitespace only, which is how blib_write_zshrc_loader indents it inside its
+# `if [[ -r … ]]` guard.
 if ! grep -q "dotfiles-managed v4" "$tmp/.zshrc" 2>/dev/null; then
   bad "the throwaway .zshrc is not the managed file"
   rc=2
 fi
-if ! grep -qE '^[^#]*source .*loader\.zsh' "$tmp/.zshrc" 2>/dev/null; then
+if ! grep -qE '^[[:space:]]*(source|\.)[[:space:]]+.*loader\.zsh' "$tmp/.zshrc" 2>/dev/null; then
   bad "the throwaway .zshrc does not source the loader"
   rc=2
 fi

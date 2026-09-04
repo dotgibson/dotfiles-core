@@ -11726,6 +11726,34 @@ else
   fail "links: --help leaked implementation or lost its options: $_cl_out"
 fi
 
+# `--bootstrap` IS RELATIVE TO THE REPO, as documented: a bare name must not be looked up
+# on PATH. Proven by shadowing it — a `bootstrap.sh` earlier in PATH that writes a marker
+# and builds nothing. If PATH won, the run would fail AND drop the marker.
+_cl_repo
+mkdir -p "$_cl_root/pathbin"
+printf '#!/usr/bin/env bash\ntouch "%s/PATH_WON"\nexit 0\n' "$_cl_root" >"$_cl_root/pathbin/bootstrap.sh"
+chmod +x "$_cl_root/pathbin/bootstrap.sh"
+if (cd "$_cl_root" && PATH="$_cl_root/pathbin:$PATH" "$_cl_sh" --bootstrap bootstrap.sh >/dev/null 2>&1) &&
+  [[ ! -e "$_cl_root/PATH_WON" ]]; then
+  pass "links: a slash-free --bootstrap resolves in the repo, not through PATH"
+else
+  fail "links: --bootstrap bootstrap.sh was resolved through PATH"
+fi
+
+# `source` MUST BE THE COMMAND. `echo source …/loader.zsh` mentions it and sources nothing;
+# the earlier `^[^#]*source` form accepted exactly that.
+_cl_repo 'printf "# dotfiles-managed v4\necho source \"$HOME/.config/zsh/loader.zsh\"\n" >"$HOME/.zshrc"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: \`echo source …loader.zsh\` does not satisfy the assertion"; else fail "links: a mentioned-but-not-run source passed (rc=$rc)"; fi
+# …and the real managed file, whose source line is INDENTED inside blib_write_zshrc_loader's
+# `if [[ -r … ]]` guard, must still pass.
+_cl_repo 'printf "# dotfiles-managed v4\nif [[ -r \"$HOME/.config/zsh/loader.zsh\" ]]; then\n  source \"$HOME/.config/zsh/loader.zsh\"\nfi\n" >"$HOME/.zshrc"'
+if (cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); then
+  pass "links: the real managed .zshrc shape (indented source inside an if) still passes"
+else
+  fail "links: the indented source line in the managed .zshrc was rejected"
+fi
+
 # THE SIGNAL HANDLERS EXIT, rather than cleaning up and letting the script run on against a
 # directory it just removed (audit-core.sh makes the same distinction).
 if grep -q "trap _cl_cleanup EXIT$" "$_cl_sh" && grep -q "trap 'exit 130' INT" "$_cl_sh" && grep -q "trap 'exit 143' TERM" "$_cl_sh"; then
