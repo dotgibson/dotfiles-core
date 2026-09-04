@@ -28,6 +28,26 @@ UPD="$HERE/zsh/60-update.zsh"
 # here with the other module paths so the whole zsh-fixture preamble stays in one place.
 # shellcheck disable=SC2034  # cross-fragment: consumed by scripts/test/72-maint.sh
 MNT="$HERE/zsh/55-maint.zsh"
+CAPZ="$HERE/zsh/02-capabilities.zsh"
+# Since #763 Core carries NO built-in package-manager row, so every case below that
+# exercises a resolved verb has to seed a declaration — an undeclared box resolves nothing
+# and that is now the correct answer, not a fallback. $CAPDECL is the shared scratch
+# declaration for this section, seeded by _decl_as and read through CORE_CAPABILITIES_FILE;
+# each case names the archive whose behaviour it is pinning.
+CAPDECL="$SANDBOX/section-decl.capabilities"
+_decl_as() { printf '%s\n' "$1" >"$CAPDECL"; } # _decl_as <KEY=value lines>
+# The apt/Debian declaration, which is what most of this section's stubs impersonate. It is
+# a copy of dotfiles-Debian/os/debian.capabilities' package half, kept here rather than read
+# from the sibling clone: this suite must be hermetic and green with no fleet checked out.
+_DECL_APT='PKG_UPGRADE=sudo apt-get full-upgrade
+PKG_UPGRADE_PRE=sudo apt-get update
+PKG_UPGRADE_PARTIAL=sudo apt-get install --only-upgrade
+PKG_CLEANUP=sudo apt-get autoremove
+PKG_ASSUME_YES=-y
+PKG_COUNT_PENDING=apt-get -s upgrade
+PKG_PENDING_MATCH=^Inst[[:space:]]
+PKG_PENDING_FIELD=2'
+_decl_as "$_DECL_APT"
 # A fake bin dir holding ONE stub command, used to pin a detection ladder's answer.
 PMBIN="$SANDBOX/pmbin"
 _pm_only() {
@@ -303,13 +323,20 @@ ucheck "update: _pkgup_mgr reports none on a bare PATH" \
 # same verdict — and it would have been paid on every leg of the CI matrix. Redirecting to a
 # file means the parent waits only for the zsh it actually started. The stub's sleep is now
 # just "comfortably longer than the assertion window", not a cost.
+#
+# The macOS declaration is seeded so the sleeping stub is actually REACHED. Since #763 an
+# undeclared box resolves no count verb and _pkgup_count returns -1 without running
+# anything — which would still satisfy the assertion below, but for the wrong reason, and
+# the timing window this case depends on would not exist at all.
 _PKGUPT="$SANDBOX/pkgup-claim"
 rm -rf "$_PKGUPT"
 mkdir -p "$_PKGUPT/bin" "$_PKGUPT/cache/zsh"
 printf '#!/bin/sh\nsleep 10\n' >"$_PKGUPT/bin/brew"
 chmod +x "$_PKGUPT/bin/brew"
+printf 'PKG_COUNT_PENDING=brew outdated --quiet\nPKG_COUNT_REFRESH=brew update\n' >"$_PKGUPT/os.capabilities"
 if HOME="$SANDBOX" env PATH="$_PKGUPT/bin:$PATH" XDG_CACHE_HOME="$_PKGUPT/cache" CORE_WELCOME=0 \
-  "$_real_zsh" -fic "source '$UPD'
+  CORE_CAPABILITIES_FILE="$_PKGUPT/os.capabilities" \
+  "$_real_zsh" -fic "source '$CAPZ'; source '$UPD'
    c=\$XDG_CACHE_HOME/zsh/pkg-updates
    [[ -r \$c ]] || { print -u2 'no cache written'; exit 1 }
    local -a l; l=(\"\${(@f)\$(<\$c)}\")
@@ -341,8 +368,8 @@ chmod +x "$PMBIN/apt-get"
 # _pkgup_mgr still resolves to apt — the isolation we want.
 ln -s "$(command -v awk)" "$PMBIN/awk"
 ucheck "update: _pkgup_list surfaces upgradable package names (apt)" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *foo* && \$out == *bar* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$CAPZ'; source '$UPD'; out=\$(_pkgup_list); [[ \$out == *foo* && \$out == *bar* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 
 # REGRESSION (stdin): the probes must be UNPROMPTABLE. They run with stdout captured by
 # $(...) and stderr discarded, so a package manager that stops to ask a question writes it
@@ -369,11 +396,11 @@ chmod +x "$PMBIN/apt-get"
 ln -s "$(command -v awk)" "$PMBIN/awk"
 ln -s "$(command -v grep)" "$PMBIN/grep"
 ucheck "update: _pkgup_count cannot consume the caller's stdin (unpromptable)" \
-  "source '$UPD'; printf 'sentinel\\n' | { _pkgup_count >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$CAPZ'; source '$UPD'; printf 'sentinel\\n' | { _pkgup_count >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 ucheck "update: _pkgup_list cannot consume the caller's stdin (unpromptable)" \
-  "source '$UPD'; printf 'sentinel\\n' | { _pkgup_list >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$CAPZ'; source '$UPD'; printf 'sentinel\\n' | { _pkgup_list >/dev/null; read -r l; [[ \$l == sentinel ]] }" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # Put the fixture back the way the checks below expect it. $PMBIN is shared state, and the
 # stub above is the one thing in this file that BLOCKS: leaving it in place hands a prompting
 # apt-get to every later check, including the startup-hook ones that run _pkgup_refresh with
@@ -422,18 +449,39 @@ ucheck "update: _pkgup_notice still renders a real cached count" \
 # `last` collapses to empty ⇒ 0, the window looks elapsed, and the claim-slot write fires
 # and rewrites the file. Assert it is untouched.
 ucheck "update: startup hook reads the cache positionally (empty count can't defeat the throttle)" \
-  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- '' \$EPOCHSECONDS >| \$_c; _before=\$(<\$_c); source '$UPD'; sleep 0.3; [[ \$(<\$_c) == \$_before ]]" \
-  XDG_CACHE_HOME="$SANDBOX/hook-emptycount" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0
+  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- '' \$EPOCHSECONDS >| \$_c; _before=\$(<\$_c); source '$CAPZ'; source '$UPD'; sleep 0.3; [[ \$(<\$_c) == \$_before ]]" \
+  XDG_CACHE_HOME="$SANDBOX/hook-emptycount" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # Control: with a STALE epoch the same hook SHOULD claim the slot, so the assertion above
 # is proving the throttle works, not that the hook is inert.
 ucheck "update: startup hook still refreshes once the throttle window has elapsed" \
-  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- 5 1 >| \$_c; _before=\$(<\$_c); source '$UPD'; sleep 0.3; [[ \$(<\$_c) != \$_before ]]" \
-  XDG_CACHE_HOME="$SANDBOX/hook-stale" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0
+  "zmodload zsh/datetime; mkdir -p \$XDG_CACHE_HOME/zsh; _c=\$XDG_CACHE_HOME/zsh/pkg-updates; print -rl -- 5 1 >| \$_c; _before=\$(<\$_c); source '$CAPZ'; source '$UPD'; sleep 0.3; [[ \$(<\$_c) != \$_before ]]" \
+  XDG_CACHE_HOME="$SANDBOX/hook-stale" UPDATE_CHECK_ENABLED=1 PATH="$PMBIN:$PATH" CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # up --dry-run (#8): the non-destructive inspect — list what WOULD upgrade and exit 0,
 # applying nothing. Same apt stub as above; assert the names print and the rc is 0.
 ucheck "update: up --dry-run lists pending packages and exits 0 (applies nothing)" \
-  "source '$UI'; source '$UPD'; out=\$(up --dry-run); (( \$? == 0 )) && [[ \$out == *foo* && \$out == *bar* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up --dry-run); (( \$? == 0 )) && [[ \$out == *foo* && \$out == *bar* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
+# ...and the SAME flag on an UNDECLARED box must refuse, not report a clean bill of health.
+# This is the regression #763 nearly shipped: the PKG_UPGRADE guard used to sit down at the
+# dispatch, after `-n` had already returned, so `up -n` resolved no PKG_COUNT_PENDING, read
+# the empty list as an empty ANSWER, and printed "nothing to upgrade" — asserting the box is
+# up to date when nothing was measured, which is the 0-vs-unknown confusion the -1 sentinel
+# exists to prevent in _pkgup_count arriving through a different door. Assert the refusal AND
+# the absence of the reassuring string, because a guard that fires with the wrong message
+# would still pass a bare rc check.
+ucheck "update: up --dry-run on an undeclared box refuses, never says 'nothing to upgrade'" \
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up --dry-run 2>&1); (( \$? == 1 )) && [[ \$out == *'no upgrade verb declared'* && \$out == *'--links-only'* && \$out != *'nothing to upgrade'* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
+# The read-only modes are the ones that regressed, but the guard is per-BOX and not per-mode,
+# so pin every entry point at once: a fix that only taught `-n` to refuse would leave `up -i`
+# reporting the partial-upgrade refusal instead of the real cause.
+ucheck "update: every up mode refuses on an undeclared box, not just the applying ones" \
+  "source '$UI'; source '$CAPZ'; source '$UPD'; _core_confirm() { return 1 }
+   for _m in --dry-run -i -y ''; do
+     out=\$(up \${_m:+\$_m} 2>&1); (( \$? == 1 )) || exit 1
+     [[ \$out == *'no upgrade verb declared'* ]] || exit 1
+   done" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
 # up strict flag parsing: every arg is parsed (not just $1), so an unknown flag is
 # REJECTED in Core's voice (rc 1 — the verb-layer usage-error convention, same as
 # serve/mkcd/…) instead of silently falling through to a real, privileged update —
@@ -453,27 +501,36 @@ ucheck "update: up refuses -i with -y (three-way mutual exclusion, rc 1)" \
   "source '$UI'; source '$UPD'; out=\$(up -i -y 2>&1); (( \$? == 1 )) && [[ \$out == *'mutually exclusive'* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
 # (b) no fzf AND no gum on the isolated PATH → the picker errbox, not a TTY/cancel message.
+# The apt declaration is seeded because the PARTIAL-UPGRADE safety check runs FIRST: on an
+# archive that declares no PKG_UPGRADE_PARTIAL (or on an undeclared box, which since #763 is
+# the same thing) `up -i` refuses before it ever looks for a picker, and this case would
+# pass on the wrong message.
 ucheck "update: up -i names fzf/gum when no picker is installed" \
-  "source '$UI'; source '$UPD'; out=\$(up -i </dev/null 2>&1); (( \$? == 1 )) && [[ \$out == *'needs fzf or gum'* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up -i </dev/null 2>&1); (( \$? == 1 )) && [[ \$out == *'needs fzf or gum'* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 # (c) stub a picker (fzf) onto the isolated PATH so the picker check passes; a non-TTY run
 # must then decline with the TERMINAL message — proving the two failure modes are separate.
 printf '#!/bin/sh\n:\n' >"$PMBIN/fzf"
 chmod +x "$PMBIN/fzf"
 ucheck "update: up -i with a picker present still declines without a TTY" \
-  "source '$UI'; source '$UPD'; out=\$(up -i </dev/null 2>&1); (( \$? == 1 )) && [[ \$out == *'needs an interactive terminal'* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up -i </dev/null 2>&1); (( \$? == 1 )) && [[ \$out == *'needs an interactive terminal'* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
 rm -f "$PMBIN/fzf"
 ucheck "update: up --help advertises -i/--interactive" \
   "source '$UI'; source '$UPD'; out=\$(up --help); (( \$? == 0 )) && [[ \$out == *'-i'* && \$out == *interactive* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# up -i must REFUSE on full-sync-only managers (pacman/emerge/apk): a partial upgrade there
-# risks a broken system, so the safety model (documented in update.zsh) forbids it. Stub a
-# pacman-only PATH so _pkgup_mgr resolves to it, then assert the refusal + rc 1.
+# up -i must REFUSE on full-sync-only archives (pacman/emerge/apk): a partial upgrade there
+# risks a broken system, so the safety model (documented in update.zsh) forbids it. It is the
+# ABSENCE of PKG_UPGRADE_PARTIAL that refuses, so seed dotfiles-Arch's declaration — which
+# omits it deliberately — rather than leaving the box undeclared, where every key is absent
+# and the case would pass without proving anything about Arch.
 _pm_only pacman
+_decl_as 'PKG_UPGRADE=sudo pacman -Syu
+PKG_COUNT_PENDING=checkupdates'
 ucheck "update: up -i refuses on pacman (full-sync-only safety, rc 1)" \
-  "source '$UI'; source '$UPD'; out=\$(up -i 2>&1); (( \$? == 1 )) && [[ \$out == *'does not support safe partial upgrades'* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up -i 2>&1); (( \$? == 1 )) && [[ \$out == *'does not support safe partial upgrades'* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
+_decl_as "$_DECL_APT"
 # core-help context-awareness (U7): a row whose tool is ABSENT on this box must be
 # tagged "needs <tool>", while an always-on verb (mkcd) still renders normally. Drive
 # it on a bare PATH so fzf is guaranteed missing, making the assertion deterministic.

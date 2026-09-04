@@ -19,12 +19,11 @@
 CAPD_MNT="$SANDBOX/capmnt"
 rm -rf "$CAPD_MNT"
 mkdir -p "$CAPD_MNT"
-CAPZ_M="$HERE/zsh/02-capabilities.zsh"
 _mntcheck() { # _mntcheck <label> <decl> <body> [VAR=VAL ...]
   local label="$1" decl="$2" body="$3"
   shift 3
   printf '%s\n' "$decl" >"$CAPD_MNT/os.capabilities"
-  ucheck "$label" "source '$UI'; source '$CAPZ_M'; source '$MNT'; $body" \
+  ucheck "$label" "source '$UI'; source '$CAPZ'; source '$MNT'; $body" \
     PATH="$PMBIN" CORE_CAPABILITIES_FILE="$CAPD_MNT/os.capabilities" "$@"
 }
 _mntcheck "maint: a declared SCHEDULER decides, not the probe" \
@@ -52,6 +51,47 @@ _mntcheck "maint: cron resolves to no unit file (its entry lives in the crontab)
   'SCHEDULER=cron' \
   '[[ -z $(_maint_unit_file) ]]'
 
+# maint-uninstall on an UNRELINKED host must not claim success (#763). Both branches used to
+# guard the removal with `[[ -n "$path" ]] &&` and print "removed" unconditionally, which was
+# harmless only while Core carried a built-in unit directory. Once that went, an undeclared
+# launchd box resolved no plist, `launchctl unload` never ran, the agent kept FIRING — and
+# the operator was told it had been removed. A false success on an uninstall is the worst
+# shape available, because nobody checks twice.
+#
+# The two schedulers fail differently and must say so: systemd's `disable --now` runs by unit
+# NAME and needs no path, so the timer really does stop and only the files are stranded;
+# launchd needs the path to unload at all, so nothing has happened. Assert the message
+# distinguishes them, that neither says "removed", and that both return non-zero.
+_MUB="$SANDBOX/maint-uninstall-bin"
+mkdir -p "$_MUB"
+for _c in systemctl launchctl crontab; do
+  printf '#!/bin/sh\n:\n' >"$_MUB/$_c"
+  chmod +x "$_MUB/$_c"
+done
+ucheck "maint-uninstall: an undeclared launchd box refuses and says the agent is still loaded" \
+  "source '$UI'; source '$CAPZ'; source '$MNT'; _maint_scheduler() { echo launchd }
+   out=\$(maint-uninstall 2>&1); (( \$? == 1 )) \
+     && [[ \$out == *'STILL LOADED'* && \$out == *'--links-only'* && \$out != *'removed launchd agent'* ]]" \
+  PATH="$_MUB:$PATH" NO_COLOR=1 CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
+ucheck "maint-uninstall: an undeclared systemd box reports the timer disabled but the files stranded" \
+  "source '$UI'; source '$CAPZ'; source '$MNT'; _maint_scheduler() { echo systemd }
+   out=\$(maint-uninstall 2>&1); (( \$? == 1 )) \
+     && [[ \$out == *'could NOT be removed'* && \$out == *'--links-only'* && \$out != *'removed systemd timer'* ]]" \
+  PATH="$_MUB:$PATH" NO_COLOR=1 CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
+# ...and the DECLARED path still removes the file and reports success, so the refusal above
+# is proving the guard rather than a uniformly broken verb.
+_MUD="$SANDBOX/maint-uninstall-decl"
+rm -rf "$_MUD"
+mkdir -p "$_MUD/agents"
+printf 'SCHEDULER=launchd\nSCHEDULER_UNIT_DIR=%s/agents\n' "$_MUD" >"$_MUD/os.capabilities"
+: >"$_MUD/agents/com.dotfiles.maint.plist"
+ucheck "maint-uninstall: a declared launchd box removes the plist and reports success" \
+  "source '$UI'; source '$CAPZ'; source '$MNT'
+   out=\$(maint-uninstall 2>&1); (( \$? == 0 )) \
+     && [[ \$out == *'removed launchd agent'* ]] \
+     && [[ ! -e '$_MUD/agents/com.dotfiles.maint.plist' ]]" \
+  PATH="$_MUB:$PATH" NO_COLOR=1 CORE_CAPABILITIES_FILE="$_MUD/os.capabilities"
+
 # maint-log defensive input (#6): a non-numeric N must be rejected in Core's voice, not
 # handed to `tail` to fail with a raw "invalid number". -f/--follow and a positive int
 # are the only valid args (mirrors serve/cdup/mkbak's input guards).
@@ -69,6 +109,17 @@ ucheck "maint: maint-log rejects a non-numeric N in Core's voice" \
 # HOME/XDG, render at 09:30, then VALIDATE the generated artifact. The runner path resolves
 # to this repo's maint/dotfiles-maint.sh via maint.zsh's %x, so the [[ -f ]] guard passes.
 hdr "maint scheduler artifacts (systemd / launchd / cron, hermetic render)"
+# THE SCHEDULER AND ITS UNIT DIRECTORY ARE ONE STUB NOW (#763). These cases used to override
+# _maint_scheduler alone and let Core's built-in per-scheduler directory supply the rest;
+# that table was the last OS-absolute path in Core and is gone, so _maint_unit_file reads
+# the DECLARED SCHEDULER_UNIT_DIR and nothing else. $_MSD/$_MLD stand in for the OS layer's
+# declaration and name the two together — which is how a real os/<os>.capabilities declares
+# them, and what audit-core.sh's capability schema requires (a SCHEDULER of systemd/launchd
+# without a SCHEDULER_UNIT_DIR is a rejected declaration). Each names the directory the
+# fixtures below actually use, so an undeclared-box regression fails loudly here rather than
+# writing a unit somewhere Core guessed at.
+_MSD='_maint_scheduler() { echo systemd }; _core_cap() { [[ $1 == SCHEDULER_UNIT_DIR ]] && print -r -- "$XDG_CONFIG_HOME/systemd/user" }'
+_MLD='_maint_scheduler() { echo launchd }; _core_cap() { [[ $1 == SCHEDULER_UNIT_DIR ]] && print -r -- "$HOME/Library/LaunchAgents" }'
 SCHEDBIN="$SANDBOX/schedbin"
 mkdir -p "$SCHEDBIN"
 for s in systemctl launchctl; do
@@ -83,7 +134,7 @@ chmod +x "$SCHEDBIN/crontab"
 # systemd: the timer's OnCalendar must be the rendered HH:MM, and the service must point
 # ExecStart at the runner. Override the scheduler so the branch runs on any host.
 ucheck "maint: systemd timer+service render with a valid OnCalendar" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; maint-install 09:30 >/dev/null 2>&1; ud=\"\$XDG_CONFIG_HOME/systemd/user\"; [[ -f \"\$ud/dotfiles-maint.timer\" && -f \"\$ud/dotfiles-maint.service\" ]] || exit 1; grep -q 'OnCalendar=\*-\*-\* 09:30:00' \"\$ud/dotfiles-maint.timer\" || exit 1; grep -q 'ExecStart=.*dotfiles-maint.sh' \"\$ud/dotfiles-maint.service\"" \
+  "source '$UI'; source '$MNT'; ${_MSD}; maint-install 09:30 >/dev/null 2>&1; ud=\"\$XDG_CONFIG_HOME/systemd/user\"; [[ -f \"\$ud/dotfiles-maint.timer\" && -f \"\$ud/dotfiles-maint.service\" ]] || exit 1; grep -q 'OnCalendar=\*-\*-\* 09:30:00' \"\$ud/dotfiles-maint.timer\" || exit 1; grep -q 'ExecStart=.*dotfiles-maint.sh' \"\$ud/dotfiles-maint.service\"" \
   PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-systemd"
 # cron: the captured table line must be a well-formed 5-field schedule at MM HH, tagged.
 # The runner is single-quoted, which is part of the contract rather than incidental: cron's
@@ -98,7 +149,7 @@ ucheck "maint: cron line renders as a valid 5-field schedule with the runner quo
 # python3 (stdlib plistlib); skip gracefully otherwise, like the linters above.
 if have python3; then
   ucheck "maint: launchd plist is well-formed XML with the rendered Hour/Minute" \
-    "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; maint-install 09:30 >/dev/null 2>&1; p=\"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"; [[ -f \"\$p\" ]] || exit 1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); s=d[\"StartCalendarInterval\"]; sys.exit(0 if s[\"Hour\"]==9 and s[\"Minute\"]==30 else 1)' \"\$p\"" \
+    "source '$UI'; source '$MNT'; ${_MLD}; maint-install 09:30 >/dev/null 2>&1; p=\"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"; [[ -f \"\$p\" ]] || exit 1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); s=d[\"StartCalendarInterval\"]; sys.exit(0 if s[\"Hour\"]==9 and s[\"Minute\"]==30 else 1)' \"\$p\"" \
     PATH="$SCHEDBIN:$PATH" HOME="$SANDBOX/sched-launchd"
 else
   skip "maint launchd plist (python3 absent — cannot parse plist XML)"
@@ -112,7 +163,7 @@ fi
 # steps silently. That is why this is asserted per-scheduler rather than trusted.
 # A /sentinel/bin injected into PATH at install time must appear in the rendered unit.
 ucheck "maint: systemd unit bakes in the installing shell's PATH" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH=/sentinel/bin:\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q '^Environment=\"PATH=.*/sentinel/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  "source '$UI'; source '$MNT'; ${_MSD}; PATH=/sentinel/bin:\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q '^Environment=\"PATH=.*/sentinel/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
   PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-path-systemd"
 # cron's command field is sh, so the PATH rides as an env prefix — and `%` is cron's
 # newline metacharacter, which would truncate the line mid-PATH if it were not escaped.
@@ -139,7 +190,7 @@ fi
 # together, since either alone would pass while the pair is broken.
 if have python3; then
   ucheck "maint: launchd plist XML-escapes the PATH and still parses" \
-    "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; PATH='/a&b/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); sys.exit(0 if \"/a&b/bin\" in d[\"EnvironmentVariables\"][\"PATH\"] else 1)' \"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"" \
+    "source '$UI'; source '$MNT'; ${_MLD}; PATH='/a&b/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); sys.exit(0 if \"/a&b/bin\" in d[\"EnvironmentVariables\"][\"PATH\"] else 1)' \"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"" \
     PATH="$SCHEDBIN:$PATH" HOME="$SANDBOX/sched-path-launchd"
 else
   skip "maint launchd PATH capture (python3 absent — cannot parse plist XML)"
@@ -158,7 +209,7 @@ else
 fi
 # ...and the rendered unit actually carries it, so the helper cannot be wired up wrong.
 ucheck "maint: the systemd unit's PATH survives a % in the installing PATH" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH='/sent%h/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'Environment=\"PATH=/sent%%h/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  "source '$UI'; source '$MNT'; ${_MSD}; PATH='/sent%h/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'Environment=\"PATH=/sent%%h/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
   PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-pct-systemd"
 
 # ── the stale-unit detector (_maint_unit_needs_refresh) ──────────────────────
@@ -214,28 +265,28 @@ printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MR
 : >"$_MRF/cron-none"
 
 ucheck "maint/refresh: systemd unit WITH the PATH capture and a resolvable runner is current" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-new"
 ucheck "maint/refresh: systemd unit WITHOUT it is flagged stale (why=path)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  "source '$UI'; source '$MNT'; ${_MSD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
   XDG_CONFIG_HOME="$_MRF/sd-old"
 ucheck "maint/refresh: systemd unit whose runner path is gone is flagged (why=runner)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MSD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   XDG_CONFIG_HOME="$_MRF/sd-dead"
 ucheck "maint/refresh: no systemd unit at all stays quiet (no nag without a schedule)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-none"
 ucheck "maint/refresh: launchd plist WITH a PATH key and a resolvable runner is current" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-new"
 ucheck "maint/refresh: launchd plist with EnvironmentVariables but NO PATH is flagged stale (why=path)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
   HOME="$_MRF/ld-old"
 ucheck "maint/refresh: launchd plist whose ProgramArguments runner is gone is flagged (why=runner)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   HOME="$_MRF/ld-dead"
 ucheck "maint/refresh: no launchd plist at all stays quiet" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-none"
 ucheck "maint/refresh: cron line carrying a PATH and a resolvable runner is current" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
@@ -253,7 +304,7 @@ ucheck "maint/refresh: an empty crontab stays quiet" \
 # extraction that mangled it (dropping the PATH prefix's quoting, or half a path with a
 # space) would still "detect" a dead runner while telling the operator the wrong path.
 ucheck "maint/refresh: the recorded runner path is read back verbatim (launchd argv[1])" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
   HOME="$_MRF/ld-dead"
 ucheck "maint/refresh: the recorded runner path is read back verbatim (cron, past the PATH prefix)" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
@@ -298,17 +349,21 @@ if mkdir -p "$_MRF_HOSTILE_DIR" 2>/dev/null && printf '#!/bin/bash\n:\n' >"$_MRF
   : >"$_MRF/cron-hostile"
   # The path rides in through the ENVIRONMENT — it holds a single quote, a double quote and
   # a backslash, so interpolating it into the assertion body would rewrite the body itself.
-  _MRF_RT="source '$UI'; source '$MNT'; _MAINT_SH=\"\$SH\"; _maint_scheduler() { echo SCHED }; maint-install 09:30 >/dev/null 2>&1; [[ \"\$(_maint_unit_runner)\" == \"\$SH\" ]] && ! _maint_unit_needs_refresh"
+  # $UNITDIR rides in the same way and for the same reason as $SH, and it is required
+  # since #763: the unit DIRECTORY is declared (SCHEDULER_UNIT_DIR) and Core keeps no
+  # built-in one, so the stub has to name it. cron passes an empty one — its entry lives in
+  # the crontab, not a file of its own.
+  _MRF_RT="source '$UI'; source '$MNT'; _MAINT_SH=\"\$SH\"; _maint_scheduler() { echo SCHED }; _core_cap() { [[ \$1 == SCHEDULER_UNIT_DIR ]] && print -r -- \"\$UNITDIR\" }; maint-install 09:30 >/dev/null 2>&1; [[ \"\$(_maint_unit_runner)\" == \"\$SH\" ]] && ! _maint_unit_needs_refresh"
 
   ucheck "maint/refresh: a runner path holding % \$ \" \\ and a space round-trips through the systemd unit" \
     "${_MRF_RT/SCHED/systemd}" \
-    PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$_MRF/rt-sd" SH="$_MRF_HOSTILE"
+    PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$_MRF/rt-sd" UNITDIR="$_MRF/rt-sd/systemd/user" SH="$_MRF_HOSTILE"
   ucheck "maint/refresh: a runner path holding & < > and a quote round-trips through the launchd plist" \
     "${_MRF_RT/SCHED/launchd}" \
-    PATH="$SCHEDBIN:$PATH" HOME="$_MRF/rt-ld" SH="$_MRF_HOSTILE"
+    PATH="$SCHEDBIN:$PATH" HOME="$_MRF/rt-ld" UNITDIR="$_MRF/rt-ld/Library/LaunchAgents" SH="$_MRF_HOSTILE"
   ucheck "maint/refresh: a runner path holding % and shell metacharacters round-trips through the cron line" \
     "${_MRF_RT/SCHED/cron}" \
-    PATH="$_MRF/rtbin:$SCHEDBIN:$PATH" CRON_TABLE="$_MRF/cron-hostile" SH="$_MRF_HOSTILE"
+    PATH="$_MRF/rtbin:$SCHEDBIN:$PATH" CRON_TABLE="$_MRF/cron-hostile" UNITDIR="" SH="$_MRF_HOSTILE"
 
   # ...and the same three artifacts read by something that is NOT this codebase. A round-trip
   # through our own reader proves only that the two halves AGREE — escape it wrongly and
@@ -396,13 +451,13 @@ printf '<plist><dict><key>ProgramArguments</key><string>%s</string><key>WatchPat
   "$_MRF_RUNNER" "$_MRF_GONE" >"$_MRF/ld-displaced/Library/LaunchAgents/com.dotfiles.maint.plist"
 
 ucheck "maint/refresh: a systemd ExecStart with extra argv is refused, not read as one path" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-args"
 ucheck "maint/refresh: a cron command with a redirection is refused, not read as one path" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-args"
 ucheck "maint/refresh: a later key's <array> is not mistaken for ProgramArguments'" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-displaced"
 
 # The same rule against the QUOTED shapes, where "one argument" is a property of where the
@@ -421,10 +476,10 @@ printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash '%s' >>/tmp/m.log # dotfiles
   >"$_MRF/cron-qargs"
 
 ucheck "maint/refresh: a quoted systemd runner with argv after the closing quote is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-qargs"
 ucheck "maint/refresh: a QUOTED systemd runner holding an unresolved % specifier is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-spec"
 ucheck "maint/refresh: a quoted cron runner with a redirection after it is refused" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
@@ -446,7 +501,7 @@ ucheck "maint/refresh: a QUOTED cron runner carrying a bare % is refused (quotin
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-qpct"
 ucheck "maint/refresh: a QUOTED systemd runner carrying a \$VAR reference is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-qvar"
 
 # A RELATIVE recorded runner is the one value that cannot be tested at all: `[[ -f ]]`
@@ -464,13 +519,13 @@ printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string
   "$_MRF_REL" >"$_MRF/ld-rel/Library/LaunchAgents/com.dotfiles.maint.plist"
 
 ucheck "maint/refresh: a relative systemd runner is refused (verdict must not depend on cwd)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-rel"
 ucheck "maint/refresh: a relative cron runner is refused (verdict must not depend on cwd)" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-rel"
 ucheck "maint/refresh: a relative launchd runner is refused (verdict must not depend on cwd)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-rel"
 
 # The last way to name a path the unit does not actually run: read an argument belonging to
@@ -484,7 +539,7 @@ printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/echo</string
 printf "30 09 * * * PATH='/x/bin' /bin/echo /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-spliced"
 
 ucheck "maint/refresh: a launchd argv[0] that is not the interpreter is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-argv0"
 ucheck "maint/refresh: a cron command with another program spliced before the interpreter is refused" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
@@ -524,10 +579,10 @@ printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string
 # the quoting of the body itself. (The other verbatim checks above interpolate safely only
 # because their paths happen to hold no quote — a hazard of the harness, not of the code.)
 ucheck "maint/refresh: launchd decodes &apos; so the hint names the real filename" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == \"\$WANT\" ]] && _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ \"\$(_maint_unit_runner)\" == \"\$WANT\" ]] && _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   HOME="$_MRF/ld-entity" WANT="$_MRF_QUOTED"
 ucheck "maint/refresh: a launchd path with an undecodable numeric reference is refused" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MLD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   HOME="$_MRF/ld-numref"
 
 # The two causes are not mutually exclusive, and a unit predating the PATH capture is if
@@ -545,10 +600,10 @@ printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string
 printf '30 09 * * * /usr/bin/env bash %s # dotfiles-maint\n' "$_MRF_GONE" >"$_MRF/cron-old-dead"
 
 ucheck "maint/refresh: a pre-capture systemd unit that is ALSO dead reports runner, not path" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MSD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   XDG_CONFIG_HOME="$_MRF/sd-old-dead"
 ucheck "maint/refresh: a pre-capture launchd plist that is ALSO dead reports runner, not path" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  "source '$UI'; source '$MNT'; ${_MLD}; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
   HOME="$_MRF/ld-old-dead"
 ucheck "maint/refresh: a pre-capture cron line that is ALSO dead reports runner, not path" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
@@ -567,7 +622,7 @@ printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' 
 printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_RUNNER%m" >"$_MRF/cron-pct"
 
 ucheck "maint/refresh: a systemd runner carrying a % specifier is refused (not the path that runs)" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  "source '$UI'; source '$MNT'; ${_MSD}; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
   XDG_CONFIG_HOME="$_MRF/sd-pct"
 ucheck "maint/refresh: a cron runner carrying % (cron's newline metacharacter) is refused" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \

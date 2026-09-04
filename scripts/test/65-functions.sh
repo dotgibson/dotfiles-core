@@ -236,9 +236,13 @@ check "core-status reports 'none' when no role layer is wired" \
    [[ \$out == *'Role layer'*'none'* ]]"
 check "core-status names the role layer from the 85-94 band" \
   "$_st_env ZSH_CFG='$_st/cfg-role'; out=\$(core-status 2>&1); (( \$? == 0 )) && [[ \$out == *'offensive'* ]]"
-check "core-status says the OS row is built-in defaults when nothing is declared" \
+# Since #763 an undeclared box has no fallback to name, so this row stopped being a note
+# about WHICH source answered and became the reason `up`, the doctor's install hint and
+# maint-install have nothing to work with. It must therefore carry the REMEDY, not just the
+# fact — this panel is where an operator looks when those start failing.
+check "core-status names the missing declaration AND the remedy when nothing is linked" \
   "$_st_env ZSH_CFG='$_st/cfg-bare'; out=\$(core-status 2>&1); (( \$? == 0 )) &&
-   [[ \$out == *'built-in defaults'* ]]"
+   [[ \$out == *'no os.capabilities linked'* && \$out == *'--links-only'* ]]"
 check "core-status --help returns 0 (not mis-read as a flag)" \
   "$_st_env out=\$(core-status --help); (( \$? == 0 )) && [[ \$out == *'usage: core-status'* ]]"
 check "core-status rejects an unknown flag with a did-you-mean" \
@@ -500,7 +504,7 @@ check "core-doctor does not reuse the wired block's ○ for opt-in tools" \
 check "core-doctor keeps opt-in tools out of the install-missing list" \
   '_core_have() { return 1; }
    _core_doctor_present() { return 1; }
-   _pkgup_mgr() { print -r -- apt; }
+   _core_cap() { [[ $1 == PKG_INSTALL ]] && print -r -- "sudo apt install"; }
    out=$(NO_COLOR=1 core-doctor 2>&1)
    inst=${out#*"install missing"}; inst=${inst%%"opt-in"*}
    [[ $out == *"install missing"* ]] && [[ $inst == *"eza"* ]] && [[ $inst != *"lnav"* ]]'
@@ -803,13 +807,14 @@ assert \"git-absorb\" in tools, sorted(tools)
 assert tools[\"git-absorb\"] is True, tools[\"git-absorb\"]
 assert tools[\"eza\"] is False, tools[\"eza\"]
 "'
-# core-doctor "install missing" hint: the block is gated on _pkgup_mgr (from update.zsh,
-# absent in this ui+functions harness) so the default render never reaches it. Stub the
-# manager + force every tool ✗ (missing), then assert the copy-paste line renders AND the
-# caveat points at PORTING-MATRIX.md rather than promising the package manager (or a single
-# installer) can fetch everything — the regression guard for the unpackaged-tool guidance.
+# core-doctor "install missing" hint: since #763 the block renders from the DECLARED
+# PKG_INSTALL and nothing else, so the seam is _core_cap (band 02, absent in this
+# ui+functions harness) rather than _pkgup_mgr. Stub it + force every tool ✗ (missing),
+# then assert the copy-paste line renders AND the caveat points at PORTING-MATRIX.md rather
+# than promising the package manager (or a single installer) can fetch everything — the
+# regression guard for the unpackaged-tool guidance.
 check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpackaged tools" \
-  '_pkgup_mgr() { print -r -- apt; }
+  '_core_cap() { [[ $1 == PKG_INSTALL ]] && print -r -- "sudo apt install"; }
    _core_have() { return 1; }
    _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
@@ -821,7 +826,7 @@ check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpack
 # missing, so the old shape would render `sudo apt install eza bat …` — assert the verb is
 # only ever followed by the <pkg> placeholder, and that the first tool name never trails it.
 check "core-doctor's install hint offers a per-tool template, not a paste-ready batch command" \
-  '_pkgup_mgr() { print -r -- apt; }
+  '_core_cap() { [[ $1 == PKG_INSTALL ]] && print -r -- "sudo apt install"; }
    _core_have() { return 1; }
    _core_doctor_present() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \

@@ -68,23 +68,25 @@ fi
 printf '#!/bin/sh\nprintf "Import key? [y/N]: "\nread -r a\nprintf "pkg-alpha 1.0 updates\\n"\n' >"$_MRT/bin/stubmgr"
 chmod +x "$_MRT/bin/stubmgr"
 #
-# The chain's arms now go through _pkgcount, so that helper is extracted alongside the chain
+# The chain goes through _pkgcount_decl, so that helper is extracted alongside the chain
 # (same block-boundary rule as step()). _to stays STUBBED here — this case is about stdin,
 # and the real timeout is exercised by the separate case below.
-sed -n '/^_pkgcount() {/,/^}/p' "$_MAINT_SH" >"$_MRT/pkgcount.bash"
+#
+# cap_declared/cap ARE THE FIXTURE NOW (#763). The chain used to end in a seven-arm
+# `have brew / checkupdates / pacman / dnf / zypper / apt-get / apk` ladder, and this case
+# shadowed every arm onto the prompting stub to be deterministic on any host. That ladder is
+# gone: an undeclared box runs nothing at all, so the declaration IS the input, and stubbing
+# the two reader functions is both simpler and closer to what a real box does.
+sed -n '/^_pkgcount_decl() {/,/^}/p' "$_MAINT_SH" >"$_MRT/pkgcount.bash"
 if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" &&
   [[ -s "$_MRT/count.bash" && -s "$_MRT/pkgcount.bash" ]]; then
   if out="$(printf 'sentinel\n' | bash -c '
-      have() { [ "$1" = brew ] && return 1; command -v "$1" >/dev/null 2>&1; }
       _to() { shift; "$@"; }
+      cap_declared() { return 0; }
+      cap() { [ "$1" = PKG_COUNT_PENDING ] && printf "stubmgr"; return 0; }
       . "'"$_MRT/pkgcount.bash"'"
       MAINT_PKGCOUNT_TIMEOUT=30
       PATH="'"$_MRT/bin"'":$PATH
-      # Shadow every manager arm onto the prompting stub so the chain is deterministic
-      # regardless of which package managers the host actually has.
-      for m in checkupdates pacman dnf zypper apt-get apk; do
-        eval "$m() { stubmgr \"\$@\"; }"
-      done
       . "'"$_MRT/count.bash"'" >/dev/null 2>&1
       read -r survivor || survivor=GONE
       printf "%s\n" "$survivor"
@@ -209,8 +211,9 @@ fi
 # manager there is no output, grep prints 0, and grep's non-zero status — the pipeline's —
 # is discarded by the assignment. So the daily log asserted "0 upgradable" (an up-to-date
 # box) on exactly the failure the timeout was added to survive, and the sentinel two lines
-# above the chain could never fire. This drives the REAL _to and _pkgcount (no stubs — the
-# whole point is the status `timeout` itself reports) against a manager that stalls forever,
+# above the chain could never fire. This drives the REAL _to and _pkgcount_decl (only the
+# declaration reader is stubbed — the point is the status `timeout` itself reports) against a
+# manager that stalls forever,
 # with the bound turned down to 1s so the case costs about a second.
 #
 # That status is NOT one number across the fleet, which is why the observed rc is carried
@@ -219,12 +222,11 @@ fi
 # reporting a stalled manager as 0 — so if a future userland picks a third spelling, the
 # failure here names it instead of just saying "want -1".
 #
-# The stall stub is a REAL EXECUTABLE named `brew`, not a shell function like the stdin case
-# above: `timeout` execs its argument, so it cannot run a function (it would fail 127 and the
-# case would pass for the wrong reason). `exec sleep` so the stub process IS the sleep and
-# takes the SIGTERM directly instead of orphaning a 30s child. brew is first in the chain,
-# and the stub dir is prepended, so this arm wins on any host — and it is an arm that goes
-# through _to (the pacman arm deliberately does not).
+# The stall stub is a REAL EXECUTABLE named `brew`, not a shell function: `timeout` execs its
+# argument, so it cannot run a function (it would fail 127 and the case would pass for the
+# wrong reason). `exec sleep` so the stub process IS the sleep and takes the SIGTERM directly
+# instead of orphaning a 30s child. The declaration names it as the count verb, so this is
+# the path a real box takes on any host.
 if have timeout; then
   printf '#!/bin/sh\nexec sleep 30\n' >"$_MRT/bin/brew"
   chmod +x "$_MRT/bin/brew"
@@ -233,6 +235,8 @@ if have timeout; then
     if out="$(bash -c '
         PATH="'"$_MRT/bin"'":$PATH
         have() { command -v "$1" >/dev/null 2>&1; }
+        cap_declared() { return 0; }
+        cap() { [ "$1" = PKG_COUNT_PENDING ] && printf "brew outdated --quiet"; return 0; }
         . "'"$_MRT/to.bash"'"
         . "'"$_MRT/pkgcount.bash"'"
         MAINT_PKGCOUNT_TIMEOUT=1
@@ -247,7 +251,7 @@ if have timeout; then
       fail "maint: a timed-out package probe reports count='${out%% *}' at timeout rc=${out##* } (want count -1 — 0 would log the box as up to date)"
     fi
   else
-    fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
+    fail "maint: could not extract _to/_pkgcount_decl from ${_MAINT_SH##*/}"
   fi
 else
   skip "maint timed-out package probe (no \`timeout\` — _to runs the command unbounded)"
@@ -258,7 +262,7 @@ fi
 # ever proves the 124 arm — which is exactly how a 124-only gate reached CI green here and
 # red on Alpine. A fake `timeout` that exits 143 (128+SIGTERM, busybox's spelling) makes the
 # other arm deterministic and instant: no sleeping, and `brew` succeeds immediately, so the
-# ONLY thing that can produce -1 is _pkgcount reading the wrapper's status.
+# ONLY thing that can produce -1 is _pkgcount_decl reading the wrapper's status.
 printf '#!/bin/sh\nexit 143\n' >"$_MRT/bin/timeout"
 printf '#!/bin/sh\nexit 0\n' >"$_MRT/bin/brew"
 chmod +x "$_MRT/bin/timeout" "$_MRT/bin/brew"
@@ -267,6 +271,8 @@ if [[ -s "$_MRT/to.bash" && -s "$_MRT/pkgcount.bash" && -s "$_MRT/count.bash" ]]
   if out="$(bash -c '
       PATH="'"$_MRT/bin"'":$PATH
       have() { command -v "$1" >/dev/null 2>&1; }
+      cap_declared() { return 0; }
+      cap() { [ "$1" = PKG_COUNT_PENDING ] && printf "brew outdated --quiet"; return 0; }
       . "'"$_MRT/to.bash"'"
       . "'"$_MRT/pkgcount.bash"'"
       MAINT_PKGCOUNT_TIMEOUT=1
@@ -278,7 +284,7 @@ if [[ -s "$_MRT/to.bash" && -s "$_MRT/pkgcount.bash" && -s "$_MRT/count.bash" ]]
     fail "maint: a busybox-style timeout (143) reports '${out:-}' (want -1 — this is the Alpine regression)"
   fi
 else
-  fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
+  fail "maint: could not extract _to/_pkgcount_decl from ${_MAINT_SH##*/}"
 fi
 rm -f "$_MRT/bin/timeout" "$_MRT/bin/brew"
 

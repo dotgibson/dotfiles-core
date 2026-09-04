@@ -86,12 +86,6 @@ else
     'd=$(mktemp -d); cd "$d"; git -c init.defaultBranch=master init -q .; git commit -q --allow-empty -m x; git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main; [[ $(git_main_branch) == master ]]'
 fi
 
-# ── update.zsh per-manager parse ──────────────────────────────────────────────
-# The detection LADDER is covered above (apt), but _pkgup_count/_pkgup_list use a DISTINCT
-# grep/awk heuristic PER manager — and only apt had a test. A regex that miscounts a header
-# or blank row would ship silently to that one distro's repo. Pin each: isolate PATH to a
-# lone manager stub (+ the coreutils its pipeline forks) so _pkgup_mgr resolves to it, feed
-# canned `outdated` output, and assert the parsed count/names. Mirrors the apt stub above.
 hdr "core whatsnew version-bump nudge (60-update.zsh)"
 # ── the version-bump nudge (zsh/60-update.zsh) ────────────────────────────────
 # Band 60, and it calls band-30 helpers — so these source ui + functions + update, the
@@ -141,7 +135,24 @@ else
   chmod 644 "$_wsn/whatsnew"
 fi
 
-hdr "update.zsh per-manager parse (apk / dnf / zypper / pacman)"
+# ── update.zsh per-manager count/list parse ──────────────────────────────────
+# _pkgup_count/_pkgup_list run ONE parse path — the declared count verb, filtered by
+# PKG_PENDING_MATCH, field PKG_PENDING_FIELD, split on PKG_PENDING_FS — and what differs
+# per archive is those three declared values. A regex that miscounts a header or a blank
+# row would ship silently to that one distro's repo, so pin each archive: isolate PATH to
+# a lone manager stub (+ the coreutils the pipeline forks), seed THE DECLARATION THAT REPO
+# ACTUALLY SHIPS, feed canned output, and assert the parsed count/names.
+#
+# THE DECLARATION IS NOW THE ONLY INPUT (#763). These cases used to run with no
+# declaration at all, against Core's built-in `_CORE_CAP_FALLBACK` row for whichever
+# manager the stub PATH resolved to. That table is gone — an undeclared box has no count
+# verb and reports -1 — so each case seeds the KEY=value lines its OS repo declares. That
+# is the stronger test anyway: it pins the values a real box runs, not a copy of them that
+# lived in Core.
+hdr "update.zsh per-manager parse (apk / dnf / zypper / pacman / brew / emerge)"
+CAPD_PARSE="$SANDBOX/capparse"
+rm -rf "$CAPD_PARSE"
+mkdir -p "$CAPD_PARSE"
 _mgr_stub() { # _mgr_stub <mgr> <sh-body>
   rm -rf "$PMBIN"
   mkdir -p "$PMBIN"
@@ -152,81 +163,116 @@ _mgr_stub() { # _mgr_stub <mgr> <sh-body>
     [[ -e "$PMBIN/$t" ]] || ln -s "$(command -v "$t")" "$PMBIN/$t" 2>/dev/null
   done
 }
-_mgr_stub apk 'case "$*" in *"list -u"*) printf "a-1.0 ...\nb-2.0 ...\nc-3.0 ...\n" ;; esac'
-ucheck "update: _pkgup_count parses apk (3 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 3 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses apk package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *a-1.0* && \$out == *c-3.0* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-_mgr_stub dnf 'case "$*" in *check-update*) printf "bash.x86_64    5.1-2    baseos\nvim.x86_64    9.0-1    appstream\n" ;; esac'
-ucheck "update: _pkgup_count parses dnf check-update (2 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses dnf package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *bash.x86_64* && \$out == *vim.x86_64* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-_mgr_stub zypper 'case "$*" in *list-updates*) printf "v | repo | bash | 1 | 2 | x86_64\nv | repo | vim | 1 | 2 | x86_64\n" ;; esac'
-ucheck "update: _pkgup_count parses zypper list-updates (2 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses zypper package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *bash* && \$out == *vim* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-_mgr_stub pacman 'case "$*" in *-Qu*) printf "bash 5.1.0\nvim 9.0.0\n" ;; esac'
-ucheck "update: _pkgup_count parses pacman -Qu (2 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses pacman package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *bash* && \$out == *vim* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# brew and emerge had NO parse coverage at all — the header above claimed four managers and
-# the file has seven. brew is the reference implementation's manager and emerge is the one
-# whose count verb can legitimately be absent, so both are exactly the arms a silent
-# regression would sit in longest.
-_mgr_stub brew 'case "$*" in *outdated*) printf "wget\nzsh\n" ;; esac'
-ucheck "update: _pkgup_count parses brew outdated (2 upgradable)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list parses brew package names" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *wget* && \$out == *zsh* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# Gentoo asks Portage, not eix (#756), so the fixture is an `emerge --pretend` resolve —
-# ebuild/binary lines counted, [nomerge] ignored, ::repo and the -rN revision stripped off
-# the atom.
-_mgr_stub emerge 'case "$*" in
-*--pretend*) printf "[ebuild  U  ] app-editors/neovim-0.12.3-r1::gentoo\n[binary   N ] dev-libs/tree-sitter-c-0.24.1\n[nomerge     ] sys-apps/eza-0.20.0\n" ;;
-esac'
-ucheck "update: _pkgup_count counts a Portage resolve, not [nomerge] lines (2)" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-ucheck "update: _pkgup_list strips ::repo and the -rN revision off each atom" \
-  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *app-editors/neovim* && \$out != *::gentoo* && \$out != *-r1* && \$out != *eza* ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# A RESOLVE THAT FAILS MUST REPORT -1, NOT 0 (#756). The two are different claims — 0 is
-# "I checked, nothing pending" — and a box whose Portage cannot resolve (blocks, conflicts)
-# is not a box with nothing to do. This is what PKG_COUNT_EXIT_TRUSTED buys, and Gentoo is
-# the only archive that declares it: everywhere else a non-zero exit means something else
-# entirely (dnf exits 100 when updates EXIST; pacman -Qu exits non-zero when there are NONE).
-_mgr_stub emerge 'exit 1'
-ucheck "update: a failed Portage resolve reports -1 (unknown), never 0" \
+_parsecheck() { # _parsecheck <label> <decl> <zsh-body>
+  printf '%s\n' "$2" >"$CAPD_PARSE/os.capabilities"
+  ucheck "$1" "source '$CAPZ'; source '$UPD'; $3" \
+    PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 \
+    CORE_CAPABILITIES_FILE="$CAPD_PARSE/os.capabilities"
+}
+# An UNDECLARED box is the new baseline case, and it is the one deleting the fallbacks
+# changed: no count verb resolves, so the count is the -1 SENTINEL ("could not answer")
+# and the shell-start nudge stays silent. Not 0 — that reads as "checked, nothing
+# pending", which is a different and false claim.
+_mgr_stub apt-get 'case "$*" in *"-s upgrade"*) printf "Inst bash [5.1]\n" ;; esac'
+ucheck "update: an undeclared box reports -1 (no count verb), never a guessed row" \
   "source '$UPD'; [[ \$(_pkgup_count) == -1 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 \
+  CORE_CAPABILITIES_FILE="$SANDBOX/does-not-exist.capabilities"
+# alpine: one name per line, so MATCH/FIELD/FS all default.
+_mgr_stub apk 'case "$*" in *"list -u"*) printf "a-1.0 ...\nb-2.0 ...\nc-3.0 ...\n" ;; esac'
+_parsecheck "update: _pkgup_count parses apk (3 upgradable)" \
+  'PKG_COUNT_PENDING=apk list -u' \
+  '[[ $(_pkgup_count) == 3 ]]'
+_parsecheck "update: _pkgup_list parses apk package names" \
+  'PKG_COUNT_PENDING=apk list -u' \
+  'out=$(_pkgup_list); [[ $out == *a-1.0* && $out == *c-3.0* ]]'
+# fedora: PKG_PENDING_MATCH keeps the leading-alnum rows and drops dnf's blank lines.
+_mgr_stub dnf 'case "$*" in *check-update*) printf "\n\nbash.x86_64    5.1-2    baseos\nvim.x86_64    9.0-1    appstream\n" ;; esac'
+_parsecheck "update: _pkgup_count parses dnf check-update (2 upgradable)" \
+  'PKG_COUNT_PENDING=dnf -q --refresh check-update
+PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list parses dnf package names" \
+  'PKG_COUNT_PENDING=dnf -q --refresh check-update
+PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]' \
+  'out=$(_pkgup_list); [[ $out == *bash.x86_64* && $out == *vim.x86_64* ]]'
+# opensuse: the one archive that needs all three values (a `|`-delimited table).
+_mgr_stub zypper 'case "$*" in *list-updates*) printf "v | repo | bash | 1 | 2 | x86_64\nv | repo | vim | 1 | 2 | x86_64\n" ;; esac'
+_parsecheck "update: _pkgup_count parses zypper list-updates (2 upgradable)" \
+  'PKG_COUNT_PENDING=zypper -q list-updates
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list parses zypper package names" \
+  'PKG_COUNT_PENDING=zypper -q list-updates
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3' \
+  'out=$(_pkgup_list); [[ $out == *bash* && $out == *vim* ]]'
+# arch: checkupdates (pacman-contrib) syncs a copy in USER SPACE, which is what makes
+# counting safe on a rolling distro. Core used to probe for it and fall back to `pacman
+# -Qu`; the Arch repo declares it outright and installs pacman-contrib to guarantee it.
+_mgr_stub checkupdates 'printf "bash 5.1.0 -> 5.2.0\nvim 9.0.0 -> 9.1.0\n"'
+_parsecheck "update: _pkgup_count parses checkupdates (2 upgradable)" \
+  'PKG_COUNT_PENDING=checkupdates' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list parses checkupdates package names" \
+  'PKG_COUNT_PENDING=checkupdates' \
+  'out=$(_pkgup_list); [[ $out == *bash* && $out == *vim* ]]'
+# macos: brew is the only archive with a COUNT-path-only network refresh — the nudge has
+# already paid for it, so the list path deliberately skips PKG_COUNT_REFRESH.
+_mgr_stub brew 'case "$*" in *outdated*) printf "wget\nzsh\n" ;; esac'
+_parsecheck "update: _pkgup_count parses brew outdated (2 upgradable)" \
+  'PKG_COUNT_PENDING=brew outdated --quiet
+PKG_COUNT_REFRESH=brew update' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list parses brew package names" \
+  'PKG_COUNT_PENDING=brew outdated --quiet
+PKG_COUNT_REFRESH=brew update' \
+  'out=$(_pkgup_list); [[ $out == *wget* && $out == *zsh* ]]'
+# gentoo: PKG_COUNT_PENDING names a SCRIPT THE OS REPO SHIPS (gentoo-pkg-pending), not a
+# Core function. Core used to carry the Portage resolve itself as _pkgup_emerge_pending
+# and name it from the built-in row; #763 deleted both, and the declaration reaching into
+# Core's internals was never allowed anyway (#667). The stub stands in for that script and
+# emits the same `emerge --pretend` output it parses — ebuild/binary lines counted,
+# [nomerge] ignored, ::repo and the -rN revision stripped off the atom (#756).
+_mgr_stub gentoo-pkg-pending 'printf "app-editors/neovim\ndev-libs/tree-sitter-c\n"'
+_parsecheck "update: _pkgup_count reads the declared Portage helper (2)" \
+  'PKG_COUNT_PENDING=gentoo-pkg-pending
+PKG_COUNT_EXIT_TRUSTED=1' \
+  '[[ $(_pkgup_count) == 2 ]]'
+_parsecheck "update: _pkgup_list reads the declared Portage helper" \
+  'PKG_COUNT_PENDING=gentoo-pkg-pending
+PKG_COUNT_EXIT_TRUSTED=1' \
+  'out=$(_pkgup_list); [[ $out == *app-editors/neovim* && $out == *tree-sitter-c* ]]'
+# A HELPER THAT FAILS MUST REPORT -1, NOT 0 (#756). The two are different claims — 0 is
+# "I checked, nothing pending" — and a box whose Portage cannot resolve (blocks,
+# conflicts) is not a box with nothing to do. This is what PKG_COUNT_EXIT_TRUSTED buys,
+# and Gentoo is the only archive that declares it: everywhere else a non-zero exit means
+# something else entirely (dnf exits 100 when updates EXIST; pacman -Qu and checkupdates
+# exit non-zero when there are NONE).
+_mgr_stub gentoo-pkg-pending 'exit 1'
+_parsecheck "update: a failed Portage resolve reports -1 (unknown), never 0" \
+  'PKG_COUNT_PENDING=gentoo-pkg-pending
+PKG_COUNT_EXIT_TRUSTED=1' \
+  '[[ $(_pkgup_count) == -1 ]]'
 # ...and the same failure on an archive that does NOT declare the key still counts lines,
 # because there a non-zero exit is not a failure. dnf is the case that proves it: exit 100
-# is how it says updates EXIST, and reading that as "could not answer" would report unknown
-# on every Fedora box that has anything to install.
+# is how it says updates EXIST, and reading that as "could not answer" would report
+# unknown on every Fedora box that has anything to install.
 _mgr_stub dnf 'printf "bash.x86_64    5.1-2    baseos\n"; exit 100'
-ucheck "update: dnf's exit 100 (updates EXIST) is not read as a failure" \
-  "source '$UPD'; [[ \$(_pkgup_count) == 1 ]]" \
-  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+_parsecheck "update: dnf's exit 100 (updates EXIST) is not read as a failure" \
+  'PKG_COUNT_PENDING=dnf -q --refresh check-update
+PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]' \
+  '[[ $(_pkgup_count) == 1 ]]'
+
 
 # ── update.zsh dispatches through os.capabilities (#664) ──────────────────────
-# The block above proves the built-in defaults still parse every archive identically. This
-# one proves the OTHER half: that a DECLARATION is what actually drives `up`, because until
-# a box re-bootstraps onto the declaration #667 authored it has none, and the built-ins
-# would happily hide a dispatcher
-# that never reads the table at all.
+# The block above proves each archive's DECLARED count/list values parse correctly. This one
+# proves the other half of the dispatch: that the declaration is what actually drives `up`'s
+# apply path — the upgrade verb, the pre-step, the cleanup, the auto-confirm token and the
+# partial-upgrade refusal.
 #
 # Every stub here prints its own argv, so the assertion is on the exact command line `up`
 # builds — the thing a host notices — rather than on an exit status that a no-op also
@@ -236,7 +282,6 @@ hdr "update.zsh dispatch through os.capabilities (#664)"
 CAPD_UP="$SANDBOX/capup"
 rm -rf "$CAPD_UP"
 mkdir -p "$CAPD_UP"
-CAPZ="$HERE/zsh/02-capabilities.zsh"
 # _up_stub <name>... — a stub per name that echoes "RUN: <name> <args>".
 _up_stub() {
   rm -rf "$PMBIN"
@@ -263,12 +308,13 @@ _upcheck() { # _upcheck <label> <decl> <body>
     CORE_CAPABILITIES_FILE="$CAPD_UP/os.capabilities"
 }
 
-# 1. A declared verb WINS over Core's built-in row. Tumbleweed is the case this whole
-#    refactor exists for: the built-in row still probes /etc/os-release to choose between
-#    `dup` and `up`, and a declaration must make that probe irrelevant — on any host,
+# 1. THE DECLARED VERB IS WHAT RUNS. Tumbleweed is the case this whole refactor existed
+#    for: Core used to probe `/etc/os-release` to choose `zypper dup` over `zypper up`, and
+#    a declaration had to make that probe irrelevant. #763 deleted the probe with the rest
+#    of the built-in table, so this now pins the only remaining path — on any host,
 #    including the one running this suite, which is not openSUSE.
 _up_stub zypper sudo
-_upcheck "up: a declared PKG_UPGRADE overrides Core's built-in row (zypper dup)" \
+_upcheck "up runs the declared PKG_UPGRADE verbatim (zypper dup on any host)" \
   'PKG_UPGRADE=sudo zypper dup' \
   'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper dup"* ]]'
 # 2. PKG_ASSUME_YES is what `up -y` appends — and its ABSENCE means never auto-confirm,
@@ -277,10 +323,10 @@ _upcheck "up -y appends the declared PKG_ASSUME_YES token" \
   'PKG_UPGRADE=sudo zypper up
 PKG_ASSUME_YES=-y' \
   'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper up -y"* ]]'
-# OMISSION IS A STATEMENT, and this is the assertion that proves Core honours it. The
-# stubbed PATH resolves to a manager whose BUILT-IN row does declare `-y`, so a per-key
-# fallback would hand one back to a repo that deliberately left it out — auto-confirming a
-# privileged upgrade nobody asked to auto-confirm. A declaration is all-or-nothing.
+# OMISSION IS A STATEMENT, and this is the assertion that proves Core honours it: a repo
+# that deliberately leaves PKG_ASSUME_YES out must not have one supplied for it, which
+# would auto-confirm a privileged upgrade nobody asked to auto-confirm. Core has had no
+# per-manager row to supply since #763; this is the gate that keeps one from coming back.
 _upcheck "up -y appends nothing when the archive declares no PKG_ASSUME_YES" \
   'PKG_UPGRADE=sudo zypper up' \
   'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper up"* && $out != *" -y"* ]]'
@@ -311,9 +357,9 @@ PKG_ASSUME_YES=-y' \
 # 5. THE SAFETY DECLARATION. `up -i` refuses on an archive that declares no partial verb —
 #    which is how Arch, Gentoo and Alpine say "this must update as a whole". It is the
 #    ABSENCE that refuses, so an archive Core has never heard of gets the safe answer by
-#    default instead of being waved through.
-# Same shape, and the higher-stakes half: apt's BUILT-IN row names a partial verb, so a
-# per-key fallback would let `up -i` through on a declaration that refused it.
+#    default instead of being waved through — and an undeclared box, since #763, gets that
+#    same safe answer for every key rather than a row Core kept for whichever manager
+#    happened to be on PATH.
 _upcheck "up -i refuses when the declaration names no PKG_UPGRADE_PARTIAL" \
   'PKG_UPGRADE=sudo apt-get full-upgrade' \
   'out=$(up -i 2>&1); (( $? == 1 )) && [[ $out == *"does not support safe partial upgrades"* ]]'
