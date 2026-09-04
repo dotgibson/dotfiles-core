@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v7.0.0] - 2026-09-04
+
 ### Added
 
 - **Helper adoption is a ratchet now, and `blib_user_bindirs_on_path` went 1/9 → 7/9 callers (#748).**
@@ -300,6 +302,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   only — the OS repos receive nothing from this entry until they adopt the verbs.
 
 ### Removed
+
+- **BREAKING: `notify-web-call.yml` stops declaring `WEBHOOK_SECRET`, the removal this
+  major was the window for.** The credential itself was deleted when G2 finished (#683) and
+  nothing has read the input since; what kept it **declared** was the published
+  `workflow_call` contract — removing an accepted secret fails workflow validation for any
+  caller still passing it, before that caller's own code runs. `GITHUB-APP-AUTH.md` recorded
+  it as a live constraint waiting on a MAJOR, and this is that MAJOR.
+
+  **Two conditions had to hold, and both were checked rather than assumed.** No caller was
+  still passing it — the nine OS-repo callers stopped at #819, re-verified here across all
+  eleven fleet repos plus `htpx`. And a MAJOR does not push the change onto existing
+  callers: per `RELEASE-RUNBOOK.md` §1.1 it mints `vN+1` and leaves the outgoing alias
+  **frozen**, so `@v6` callers keep the contract they were published against and meet the
+  removal only when they explicitly adopt `@v7`. On a PATCH or MINOR the alias advances in
+  place and every tracker would have taken it with no adoption step — the case this waited
+  to avoid. `GITHUB-APP-AUTH.md`'s section is rewritten from a standing constraint to a
+  discharged one, keeping the reasoning because the re-provisioning recovery depends on it
+  (its step 4 is now the live branch, not a no-op). `GITHUB-APP-MIGRATION.md` is unchanged
+  by design — it is a dated record that deliberately does not track whether this happened.
 
 - **Core's built-in capability fallbacks are deleted; the declaration is the only source
   (#763).** #667 stamped `os.capabilities` across the fleet but deliberately left three
