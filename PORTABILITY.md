@@ -96,8 +96,9 @@ branching on an OS name.**
 | --- | --- | --- |
 | clipboard | `bin/clip`, `bin/clip-paste` | `$WSL_DISTRO_NAME` → `pbcopy` → `wl-copy` → `xclip` → `xsel` |
 | scheduler | `_maint_scheduler` (`zsh/55-maint.zsh`) | the OS layer's declared `SCHEDULER`, else launchd / `/run/systemd/system` / `crontab` |
+| scheduler **unit dir** | `_maint_unit_file` (`zsh/55-maint.zsh`) | the OS layer's declared `SCHEDULER_UNIT_DIR`, and nothing else |
 | package manager | `_pkgup_mgr` (`zsh/60-update.zsh`) | `command -v` over seven managers |
-| package-manager **verbs** | `_pkgup_verb` (`zsh/60-update.zsh`) | the OS layer's `os.capabilities` declaration, then Core's built-in row |
+| package-manager **verbs** | `_pkgup_verb` (`zsh/60-update.zsh`) | the OS layer's `os.capabilities` declaration, and nothing else |
 | privilege | `_pkgup_priv`, `_blib_priv` | `sudo` → `doas` → bare |
 | timeout | `_to` (`maint/dotfiles-maint.sh`) | `timeout` → `gtimeout` → unbounded |
 | binary-name drift | `$FD_BIN`, `$BAT_BIN` (`zsh/00-tools.zsh`) | `fd`/`fdfind`, `bat`/`batcat` |
@@ -146,17 +147,19 @@ If none of those work, degrade **visibly**: add nothing and let the feature fall
 `tmux-cheat.sh` does to its pager. A wrong absolute path is a silent lie on seven
 machines; a missing optional tool is a visible, local degradation.
 
-### The one documented exception
+### The exceptions, and why there are none left
 
-**`zsh/55-maint.zsh`** is excepted **at the gate**, and since #665 that exception is one
-block wide and has a retirement date. The scheduler and its unit directory are declared
-(`SCHEDULER`, `SCHEDULER_UNIT_DIR`), so `~/Library/LaunchAgents` survives only in the
-built-in fallback for a box that has not declared yet; #763 deletes it and the §5c
-exception together. The plist and unit **templates** stay — they are portable text
-parameterised by paths, selected by `_maint_scheduler`, and duplicating a systemd unit
-across seven repos is the #449 drift this document exists to prevent. §5c drops only the
-`LaunchAgents` lines — the rest of the file is scanned like any other, so unrelated drift
-inside it still fails.
+**§5c has no per-file exception.** It had one, for `zsh/55-maint.zsh`: the scheduler's
+built-in unit directory named macOS's LaunchAgents path, the last OS-absolute path in Core,
+and only those lines were exempt. #665 cut that from six call sites down to one block by
+making the scheduler and its directory **declared** values (`SCHEDULER`,
+`SCHEDULER_UNIT_DIR`); #763 deleted the block once the fleet had re-bootstrapped onto those
+declarations, and the exemption went with it. Do not add another — an exception at this gate
+is a standing invitation for a second literal to ride along beside the sanctioned one.
+
+The plist and unit **templates** stay in that file and were never the exception: they are
+portable text parameterised by paths, selected by `_maint_scheduler`, and duplicating a
+systemd unit across seven repos is the #449 drift this document exists to prevent.
 
 **`zsh/60-update.zsh` used to be listed here as a second exception**, and the distinction
 mattered: it was excepted _architecturally, not at the gate_. It never needed a §5c
@@ -166,12 +169,13 @@ concern, kept in Core so `up` is one verb everywhere.
 
 Since #664 it is a **dispatcher**: the verb stays, and what it runs is resolved through
 `_pkgup_verb` from the OS layer's `os.capabilities` declaration. That is the pattern this
-document already asks for — one verb, N backends — with the backends pushed outward
-rather than branched on inline. Core still carries a built-in defaults table as a stopgap
-until every box has re-bootstrapped onto the declarations #667 authored; see
-`ARCHITECTURE.md` for why, and #763 for when it goes.
+document already asks for — one verb, N backends — with the backends pushed outward rather
+than branched on inline. Since #763 there is nothing behind the dispatcher: an undeclared
+box resolves no verb and every caller says so in its own voice, rather than running a row
+Core kept for whichever manager happened to be on `PATH`. See `ARCHITECTURE.md` for why the
+authoring and the deletion had to be two separate changes.
 
-`*.example` files are also skipped: they are user-edited illustrations, not live config.
+`*.example` files are skipped: they are user-edited illustrations, not live config.
 
 ## 4. The `have()` probe is redefined per context, deliberately
 

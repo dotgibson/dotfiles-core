@@ -867,12 +867,15 @@ fi
 # README's contract: "if it changes when the OS changes, it does NOT belong in Core."
 # That rule is documented but was ungated — a hard-coded /opt/homebrew, /home/linuxbrew,
 # or macOS ~/Library path could slip into a portable shell module and fan out to nine repos
-# where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
-# zsh/55-maint.zsh — whose built-in FALLBACK unit directory is still a macOS literal for a
-# box that has not declared SCHEDULER_UNIT_DIR yet (#665); only THOSE lines are exempt, not
-# the whole file, and the exemption retires with the fallback in #763 (see the note below).
-# Comment-stripped first, so an explanatory comment naming an OS path can't trip it.
-# Pure sed+grep (busybox-safe), and CROSS-CUTTING rather than shell-scoped — the scope is
+# where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic.
+#
+# THERE ARE NO PER-FILE EXCEPTIONS ANY MORE (#763). zsh/55-maint.zsh used to have one, for
+# the `~/Library/LaunchAgents` literal in its built-in unit-directory fallback; deleting
+# that fallback deleted the last OS-absolute path in Core, so the exemption guards nothing
+# and is gone with it. Do not add another: an exception here is a standing invitation for
+# a second literal to ride along beside the sanctioned one.
+#
+# Pure grep (busybox-safe), and CROSS-CUTTING rather than shell-scoped — the scope is
 # the manifest, so it covers configs and the nvim tree too, and no --scope may skip it.
 hdr "Core⇄OS boundary (no OS paths in portable Core files)"
 # The scope is DERIVED FROM core.manifest, not from a hand-kept list. That list had
@@ -890,17 +893,7 @@ hdr "Core⇄OS boundary (no OS paths in portable Core files)"
 # ~150 small files — cheap and cross-cutting, like the manifest/exec-bit/markdown gates.
 # A narrowed --scope run must not be able to skip a fan-out-correctness check.
 #
-# EXCLUDED, both deliberately and visibly — and note the exemption is per-LINE, not
-# per-file, for the one module that needs it:
-#   · zsh/55-maint.zsh — and this exception is now on a CLOCK. Since #665 the scheduler's
-#     unit directory is a DECLARED value (SCHEDULER_UNIT_DIR), so the ~/Library/LaunchAgents
-#     literal no longer appears at the six call sites it used to: it survives in exactly one
-#     place, _maint_unit_dir_default, the built-in fallback for a box that has not declared
-#     yet. #667 authored that key across the fleet; #763 deletes the block, and THIS EXCEPTION
-#     GOES WITH IT — together with the sibling package-manager fallback #664 left in
-#     zsh/60-update.zsh. Only the LaunchAgents lines are dropped. Skipping the whole file
-#     would re-open the blind spot inside it: an accidental /opt/homebrew or /mnt/c
-#     added to maint-install, or to any other function there, would sail through.
+# EXCLUDED, deliberately and visibly — one class, and it is not a file of Core's:
 #   · *.example — user-edited illustrations, not the live config.
 bnd_fail=0
 while IFS= read -r f; do
@@ -918,15 +911,7 @@ while IFS= read -r f; do
   # ANYWHERE, prose included. Name the prefix instead of spelling it — "the Homebrew
   # prefix", not the literal. That costs one wording choice in a comment and buys a gate
   # with no hiding places at all.
-  bnd_src="$(cat "$f")"
-  # Then drop ONLY the sanctioned lines of the one exempt file — everything else in it
-  # is still scanned.
-  # REDACT the sanctioned segment; do not drop the line. Dropping it would exempt
-  # everything else on that line too, so a second literal riding along on a legitimate
-  # LaunchAgents assignment would evade the gate. Replacing just the segment leaves the
-  # rest of the line to be scanned normally.
-  [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="${bnd_src//Library\/LaunchAgents/<sanctioned-launchd-path>}"
-  if grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/' <<<"$bnd_src"; then
+  if grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/' "$f"; then
     bnd_fail=1
     fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
   fi
