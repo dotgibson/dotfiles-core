@@ -292,17 +292,31 @@ three are ordered against something, a declaration is read on demand. Copy
 core/scripts/check-capabilities.sh os/<os>.capabilities --packages install/packages.txt
 ```
 
-Absence is not fatal: Core falls back to its built-in defaults, so a repo adopts this by
-adding a file, not by re-bootstrapping in lockstep. The reader is **silent** about a
-missing declaration — absence is the normal state during the rollout, and a warning on
-every interactive shell and every tmux split was worse than the thing it warned about
-(#715). Set `CORE_CAP_LOUD=1` to opt into it.
+**Absence is no longer survivable, and this changed in #763.** Core used to carry built-in
+per-manager and per-scheduler tables behind the declaration, so a repo could adopt this by
+adding a file and re-bootstrap whenever it liked. Those tables are gone. A box whose
+`os.capabilities` is not **linked** — the file existing in the repo is not enough; only
+`./bootstrap.sh` (or `--links-only`) creates the symlink — has no upgrade verb for `up`, no
+unit directory for `maint-install` on systemd/launchd, and no install hint from
+`core-doctor`. Each of those says so in its own voice and names `--links-only` as the fix,
+and `core-status`'s OS row reports the missing link directly. The reader itself stays
+**silent**: a warning on every interactive shell and every tmux split was worse than the
+thing it warned about (#715), and it can only say a table is empty where each consumer can
+say what actually broke. Set `CORE_CAP_LOUD=1` to opt into it.
+
+So: **re-run `./bootstrap.sh --links-only` on each box** whenever the SYMLINK is what has
+to change — the repo has just authored a declaration, the box has never relinked since one
+was authored, or the file being selected has changed (a Kali or Leap tier, say). _Editing_ an
+already-linked declaration needs nothing: the symlink points at the file in the repo, so the
+box reads the edit on its next shell.
 
 **Eight required keys**, all package-manager verbs plus `SCHEDULER` (`systemd` \| `launchd`
 \| `cron` \| `none` — `cron` is what an OpenRC box gets); the validator is the
 schema, so read `check-capabilities.sh` rather than trusting this list to stay current.
-Everything else is optional, and optional means _Core's default reproduces what your box
-does today_ — declare only what your archive actually needs:
+Everything else is optional, and optional means the key's **absence is a statement** — no
+`PKG_ASSUME_YES` means never auto-confirm, no `PKG_UPGRADE_PARTIAL` means `up -i` refuses.
+`TOOLS_OPTIN` is the single exception, and the table says so. Declare only what your archive
+actually needs:
 
 | Optional key | What it is for |
 | --- | --- |
