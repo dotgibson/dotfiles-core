@@ -54,7 +54,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   from each repo's own `os/*.capabilities` `PKG_UPGRADE`, so it can never claim a verb the
   repo does not declare. Rendering and committing those nine gifs, and adding the hero block
   to each README, is the **follow-up**, sequenced after `os.capabilities` (#667) exactly as
-  #698 asks — nine heroes of the same Core verbs would be nine near-identical gifs.
+  #698 asks — nine heroes of the same Core verbs would be nine near-identical gifs. The
+  hidden `cd` carries `|| exit 1`: it runs inside `Hide`, so a checkout path that does not
+  exist on the rendering box would otherwise print into unrecorded frames and film `$HOME` —
+  the wrong-tree defect wearing a different hat, and invisible in the committed gif.
   `scripts/test-core.sh` covers the generator hermetically in **F11b**: the wrong-repo `cd`
   and the named-theme preset are both pinned as regressions, drift outranks an absent sibling
   (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2

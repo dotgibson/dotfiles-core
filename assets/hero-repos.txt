@@ -35,13 +35,13 @@
 # are rendered by `make gen-hero-tape-fleet`, and committing their gifs plus the
 # README hero block in each repo is the follow-up, not this change.
 # ──────────────────────────────────────────────────────────────────────────────
-.	assets/demo.tape	~/code/dotfiles/dotfiles-core	core status	note:the provenance panel — version, live layers, tool health
-dotfiles-MacBook	assets/demo.tape	~/code/dotfiles/dotfiles-MacBook	up -n	caps:os/macos.capabilities
-dotfiles-Alpine	assets/demo.tape	~/code/dotfiles/dotfiles-Alpine	up -n	caps:os/alpine.capabilities
-dotfiles-Arch	assets/demo.tape	~/code/dotfiles/dotfiles-Arch	up -n	caps:os/arch.capabilities
-dotfiles-Debian	assets/demo.tape	~/code/dotfiles/dotfiles-Debian	up -n	caps:os/debian.capabilities
-dotfiles-Fedora	assets/demo.tape	~/code/dotfiles/dotfiles-Fedora	up -n	caps:os/fedora.capabilities
-dotfiles-Gentoo	assets/demo.tape	~/code/dotfiles/dotfiles-Gentoo	up -n	caps:os/gentoo.capabilities
-dotfiles-openSUSE	assets/demo.tape	~/code/dotfiles/dotfiles-openSUSE	up -n	caps:os/opensuse.capabilities
-dotfiles-Offense	assets/demo.tape	~/code/dotfiles/dotfiles-Offense	core status	note:the provenance panel — the role layer, live over the OS layer
-dotfiles-Defense	assets/demo.tape	~/code/dotfiles/dotfiles-Defense	core status	note:the provenance panel — the role layer, live over the OS layer
+.	assets/demo.tape	~/code/dotgibson/dotfiles-core	core status	note:the provenance panel — version, live layers, tool health
+dotfiles-MacBook	assets/demo.tape	~/code/dotgibson/dotfiles-MacBook	up -n	caps:os/macos.capabilities
+dotfiles-Alpine	assets/demo.tape	~/code/dotgibson/dotfiles-Alpine	up -n	caps:os/alpine.capabilities
+dotfiles-Arch	assets/demo.tape	~/code/dotgibson/dotfiles-Arch	up -n	caps:os/arch.capabilities
+dotfiles-Debian	assets/demo.tape	~/code/dotgibson/dotfiles-Debian	up -n	caps:os/debian.capabilities
+dotfiles-Fedora	assets/demo.tape	~/code/dotgibson/dotfiles-Fedora	up -n	caps:os/fedora.capabilities
+dotfiles-Gentoo	assets/demo.tape	~/code/dotgibson/dotfiles-Gentoo	up -n	caps:os/gentoo.capabilities
+dotfiles-openSUSE	assets/demo.tape	~/code/dotgibson/dotfiles-openSUSE	up -n	caps:os/opensuse.capabilities
+dotfiles-Offense	assets/demo.tape	~/code/dotgibson/dotfiles-Offense	core status	note:the provenance panel — the role layer, live over the OS layer
+dotfiles-Defense	assets/demo.tape	~/code/dotgibson/dotfiles-Defense	core status	note:the provenance panel — the role layer, live over the OS layer

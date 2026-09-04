@@ -40,10 +40,16 @@ Set TypingSpeed 45ms
 # CORE_NO_PAGER and GIT_PAGER are what let the tour drop the four `q` keystrokes
 # the first cut needed: a pager costs a Type, an Enter and two Sleeps per command,
 # which is most of the difference between a ~27 s clip and this one.
+#
+# `|| exit 1` ON THE cd IS LOAD-BEARING. This block is hidden, so a `cd` to a path that
+# does not exist on the rendering box prints its error into frames nobody records and
+# then films $HOME — a hero of the wrong tree, which is #698's original defect wearing a
+# different hat. Exiting kills the session instead, so vhs fails visibly rather than
+# producing a plausible-looking gif of the wrong directory.
 Hide
 Type "export CORE_NO_PAGER=1 GIT_PAGER=cat" Enter
 Type "source ~/.config/zsh/.zshrc" Enter
-Type "cd @@CHECKOUT@@" Enter
+Type "cd @@CHECKOUT@@ || exit 1" Enter
 Type "clear" Enter
 Show
 Sleep 1500ms

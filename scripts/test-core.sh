@@ -11153,9 +11153,9 @@ _gh_fixture() { # _gh_fixture [--no-fedora]
   cp "$HERE/theme/palette.toml" "$GHR/theme/palette.toml"
   {
     printf '# fixture registry\n'
-    printf '.\tassets/demo.tape\t~/code/dotfiles/dotfiles-core\tcore status\tnote:the provenance panel\n'
-    printf 'dotfiles-openSUSE\tassets/demo.tape\t~/code/dotfiles/dotfiles-openSUSE\tup -n\tcaps:os/opensuse.capabilities\n'
-    printf 'dotfiles-Fedora\tassets/demo.tape\t~/code/dotfiles/dotfiles-Fedora\tup -n\tcaps:os/fedora.capabilities\n'
+    printf '.\tassets/demo.tape\t~/code/dotgibson/dotfiles-core\tcore status\tnote:the provenance panel\n'
+    printf 'dotfiles-openSUSE\tassets/demo.tape\t~/code/dotgibson/dotfiles-openSUSE\tup -n\tcaps:os/opensuse.capabilities\n'
+    printf 'dotfiles-Fedora\tassets/demo.tape\t~/code/dotgibson/dotfiles-Fedora\tup -n\tcaps:os/fedora.capabilities\n'
   } >"$GHR/assets/hero-repos.txt"
 
   # Tumbleweed's declaration says `dup`; Fedora's says dnf. Two repos is enough to prove
@@ -11185,11 +11185,20 @@ fi
 
 # THE DEFECT #698 WAS FILED FOR. The keystone repo's hero filmed a machine repo. A
 # generated tape can only say what its registry row says, and this asserts it does.
-if grep -qF 'Type "cd ~/code/dotfiles/dotfiles-core" Enter' "$GHR/assets/demo.tape" &&
-  ! grep -q 'cd ~/code/dotfiles/dotfiles-MacBook' "$GHR/assets/demo.tape"; then
+if grep -qF 'Type "cd ~/code/dotgibson/dotfiles-core || exit 1" Enter' "$GHR/assets/demo.tape" &&
+  ! grep -q 'dotfiles-MacBook' "$GHR/assets/demo.tape"; then
   pass "gen-hero-tape: this repo's tape films THIS repo (#698's first finding)"
 else
   fail "gen-hero-tape: the rendered tape does not cd to the row's own checkout"
+fi
+
+# THE cd MUST FAIL LOUDLY. It runs inside Hide, so a path that does not exist on the
+# rendering box would otherwise print into unrecorded frames and film $HOME — #698's
+# wrong-tree defect wearing a different hat, and undetectable in the committed gif.
+if grep -q 'Type "cd .* || exit 1" Enter' "$GHR/assets/demo.tape"; then
+  pass "gen-hero-tape: the hidden cd exits on failure instead of filming \$HOME"
+else
+  fail "gen-hero-tape: the hidden cd has no failure guard — a bad checkout path would render the wrong tree"
 fi
 
 # `Set Theme` IS RENDERED FROM THE PALETTE, not typed. The string "TokyoNight" naming an
@@ -11256,7 +11265,7 @@ fi
 
 # A REGISTRY EDIT MUST TOO — the other half of the source, and the half that varies.
 _gh_fixture && _gh_run >/dev/null
-sed -i.bak 's|~/code/dotfiles/dotfiles-core|~/elsewhere|' "$GHR/assets/hero-repos.txt"
+sed -i.bak 's|~/code/dotgibson/dotfiles-core|~/elsewhere|' "$GHR/assets/hero-repos.txt"
 if [[ "$(_gh_run --check)" == 1 ]]; then
   pass "gen-hero-tape: editing the registry without regenerating is drift"
 else
