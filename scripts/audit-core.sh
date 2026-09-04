@@ -2095,7 +2095,9 @@ unset _gp_out _gp_rc
 #
 # Exit shape is §9h's, for §9h's reason: 1 = drift or a malformed target in a repo that IS
 # checked out; 3 = a repo is not checked out, an environment SKIP rather than a red, because
-# CI checks out this repo alone and neither desktop repo vendors Core. Anything else means
+# the default CI job checks out this repo ALONE and both targets are OS-layer files
+# outside any vendored core/ (dotfiles-MacBook DOES vendor Core; dotfiles-Windows vendors
+# none). Anything else means
 # the gate could not answer, which is a failure — a drift gate that checked nothing must
 # never report green (#682).
 #

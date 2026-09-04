@@ -40,11 +40,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   none. `scripts/test-core.sh` covers the generator hermetically — clean render,
   byte-identical blocks, preservation outside the markers, one-sided drift, absent and
   not-a-repo siblings, sticky severity, malformed markers, idempotence, a host with no working
-  `diff`/`cmp`, an unwritable target, and temp-file hygiene — and pins the workflow's
-  `--check`, without which the gate would rewrite the clones and pass forever. The verdict is
-  `core_files_identical` (git-hash based), never `cmp`/`diff`: those ship in diffutils, which
-  this fleet does not assume, and a missing binary exits non-zero exactly like "the files
-  differ" (#572).
+  `diff`/`cmp`, an unwritable target, temp-file hygiene, the 0644 file mode an atomic rename
+  would otherwise drop to 0600, an empty `--root`, and a box with no git — and pins the
+  workflow's `--check`, without which the gate would rewrite the clones and pass forever. The
+  verdict is `core_files_identical` (git-hash based), never `cmp`/`diff`: those ship in
+  diffutils, which this fleet does not assume, and a missing binary exits non-zero exactly
+  like "the files differ" (#572).
 
 - **The hermetic `--links-only` gate is Core-owned now: `scripts/check-links.sh` (#852).**
   Four repos' `make check` ran the same block — make a throwaway HOME, run

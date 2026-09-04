@@ -8282,8 +8282,10 @@ fi
 
 # ── F11. desktop-bar parity generation (scripts/gen-desktop-parity.sh) ────────
 # The Zebar ↔ sketchybar contract is authored once in desktop/PARITY.shared.md and rendered
-# between markers into two repos that do NOT vendor Core, so the only place its behaviour can
-# be pinned hermetically is here: the weekly cross-repo job is the wrong feedback loop for
+# between markers into two targets that sit OUTSIDE any vendored core/ — dotfiles-MacBook does
+# vendor Core, but sketchybar/PARITY.md is its own OS-layer file; dotfiles-Windows vendors no
+# core/ at all. Either way this repo cannot reach them, so the only place the behaviour can be
+# pinned hermetically is here: the weekly cross-repo job is the wrong feedback loop for
 # "does exit 3 still mean an absent sibling".
 #
 # The fixture fleet gives dotfiles-Windows a `.git` DIRECTORY and dotfiles-MacBook a `.git`
@@ -8318,6 +8320,7 @@ _dp_fixture() { # _dp_fixture [--no-macbook|--macbook-not-a-repo]
   printf '<!-- desktop-parity:gen -->\n<!-- desktop-parity:end -->\n' >"$DPM"
 }
 _dp_run() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" "$@" >/dev/null 2>&1; echo $?); }
+_dp_run_root() { local r="$1"; shift; (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$r" "$@" >/dev/null 2>&1; echo $?); }
 _dp_out() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" "$@" 2>&1); }
 
 # POSITIVE — a clean render, and --check green on its own output.
@@ -8484,8 +8487,48 @@ else
   fail "gen-desktop-parity: left a *.gen.?????? temp file in a target repo"
 fi
 
+# A REGENERATION MUST NOT CHANGE THE FILE MODE. mktemp creates 0600 and `mv` preserves it,
+# so the atomic install would quietly turn a tracked, world-readable PARITY.md into an
+# owner-only file on every run. git stores 100644; match it.
+_dp_fixture && chmod 0644 "$DPW" "$DPM" && _dp_run >/dev/null
+_dp_mode="$(( $(stat -c '%a' "$DPW" 2>/dev/null || stat -f '%Lp' "$DPW" 2>/dev/null) ))"
+if [[ "$_dp_mode" == 644 ]]; then
+  pass "gen-desktop-parity: a regenerated copy keeps mode 0644"
+else
+  fail "gen-desktop-parity: regeneration left the target as $_dp_mode — mktemp's 0600 survived the rename"
+fi
+unset _dp_mode
+
+# An explicitly EMPTY --root is a usage error, not a silent resolve under /dotfiles-*.
+if [[ "$(_dp_run_root '' --check)" == 2 ]]; then
+  pass "gen-desktop-parity: --root '' is a usage error, not a silent gate over /dotfiles-*"
+else
+  fail "gen-desktop-parity: --root '' was accepted and resolved targets outside the fleet"
+fi
+
+# NO GIT MUST FAIL CLOSED. core_files_identical compares `git hash-object` outputs, so with
+# git absent BOTH sides are empty and compare EQUAL — a drifted copy would read as clean and
+# --check would pass having compared nothing. The guard must exit 2 instead.
+_dp_nogit="$SANDBOX/nogitbin"
+mkdir -p "$_dp_nogit"
+for _b in bash sh env sed awk grep mktemp mv rm cat cut tr printf chmod stat find sort comm diff dirname basename head tail wc uname id; do
+  _p="$(command -v "$_b" 2>/dev/null)" && ln -sf "$_p" "$_dp_nogit/$_b"
+done
+if [[ -x "$_dp_nogit/bash" ]] && ! PATH="$_dp_nogit" command -v git >/dev/null 2>&1; then
+  _dp_fixture && _dp_run >/dev/null
+  _dp_nogit_rc="$( (cd "$SANDBOX" && PATH="$_dp_nogit" env -u CORE_JSON "$_dp_nogit/bash" "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" --check >/dev/null 2>&1; echo $?) )"
+  if [[ "$_dp_nogit_rc" == 2 ]]; then
+    pass "gen-desktop-parity: with no git the gate fails closed (2) instead of comparing nothing"
+  else
+    fail "gen-desktop-parity: with no git the gate returned $_dp_nogit_rc — core_files_identical compares two empty hashes and FAILS OPEN"
+  fi
+  unset _dp_nogit_rc
+else
+  skip "gen-desktop-parity: no-git guard (could not build a git-free PATH on this box)"
+fi
+
 rm -rf "$DPF"
-unset DPF DPW DPM _dp_addendum _dp_drift_out _dp_shim _dp_nodiff_rc
+unset DPF DPW DPM _dp_addendum _dp_drift_out _dp_shim _dp_nodiff_rc _dp_nogit
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and

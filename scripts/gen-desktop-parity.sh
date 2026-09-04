@@ -94,8 +94,11 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
   --check) MODE="check"; shift ;;
   --root)
-    ROOT="${2:-}"
-    shift 2 || { fail "--root needs a directory"; exit 2; }
+    # Validate BEFORE assigning: an explicitly empty --root '' passed the old shift-based
+    # check and then resolved every target under /dotfiles-*, silently gating nothing.
+    [[ -n "${2:-}" ]] || { fail "--root needs a directory"; exit 2; }
+    ROOT="$2"
+    shift 2
     ;;
   --strict) STRICT=1; shift ;;
   --quiet) QUIET=1; shift ;;
@@ -112,6 +115,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -f "$SRC" ]] || { fail "canonical source missing: desktop/PARITY.shared.md"; exit 2; }
+
+# core_files_identical compares `git hash-object` outputs: with no git BOTH substitutions are
+# empty and therefore EQUAL, so a drifted copy would read as clean and --check would report
+# success having compared nothing. Fail closed, exactly as gen-porting-matrix.sh does. This
+# guards write mode too, where the same false "identical" would skip a needed regeneration.
+command -v git >/dev/null 2>&1 || {
+  fail "git is not installed — the byte comparison needs it; the gate would compare NOTHING and pass"
+  exit 2
+}
 
 # render <target-file> — the file with everything between the markers replaced by $SRC.
 #
@@ -213,8 +225,11 @@ for entry in "${TARGETS[@]}"; do
     printf '    fix: edit desktop/PARITY.shared.md, then run: make gen-desktop-parity\n' >&2
     rm -f "$tmp"
   else
-    # Install the COMPLETE render atomically; only claim success if the rename worked.
-    if mv -f "$tmp" "$file"; then
+    # Install the COMPLETE render atomically; only claim success if the whole thing worked.
+    # chmod BEFORE the rename: mktemp creates 0600, and mv preserves it, so without this
+    # every regeneration would turn a tracked, world-readable PARITY.md into an owner-only
+    # file. git stores 100644, so match that (gen-porting-matrix.sh and gen-aliases.sh both do).
+    if chmod 0644 "$tmp" && mv -f "$tmp" "$file"; then
       pass "$repo/$rel rewritten from desktop/PARITY.shared.md"
     else
       fail "$repo/$rel — could not install the rendered block; the file is unchanged"
