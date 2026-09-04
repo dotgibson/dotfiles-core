@@ -8478,14 +8478,22 @@ fi
 
 # The render temp is a sibling of the target, so it must never be left behind — a stray
 # PARITY.md.gen.XXXXXX in someone's clone is litter the gate itself would then read.
+# TMPDIR is pointed INTO the fixture and BOTH names are searched, because the two modes put
+# their temp in different places: --check under ${TMPDIR:-/tmp}/gen-desktop-parity.XXXXXX,
+# write mode beside the target as PARITY.md.gen.XXXXXX. The first version of this assertion
+# scanned only $DPF for the write-mode name while exercising --check, so it could not see the
+# file it claimed to guard — deleting every `rm -f "$tmp"` in the generator left it green.
+# A cleanup test that cannot fail is the same defect as the gate this PR was filed to fix.
 _dp_fixture && _dp_run >/dev/null
 sed -i.bak 's/Bar parity contract/Bar parity CONTRACT/' "$DPM" && rm -f "$DPM.bak"
-_dp_run --check >/dev/null
-if [[ -z "$(find "$DPF" -name '*.gen.??????' 2>/dev/null)" ]]; then
-  pass "gen-desktop-parity: leaves no temp file behind, even on the drift path"
+(cd "$SANDBOX" && TMPDIR="$DPF" env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" --check >/dev/null 2>&1)
+_dp_litter="$(find "$DPF" \( -name '*.gen.??????' -o -name 'gen-desktop-parity.??????' \) 2>/dev/null)"
+if [[ -z "$_dp_litter" ]]; then
+  pass "gen-desktop-parity: leaves no temp file behind, on the drift path or in TMPDIR"
 else
-  fail "gen-desktop-parity: left a *.gen.?????? temp file in a target repo"
+  fail "gen-desktop-parity: left a temp file behind: $_dp_litter"
 fi
+unset _dp_litter
 
 # A REGENERATION MUST NOT CHANGE THE FILE MODE. mktemp creates 0600 and `mv` preserves it,
 # so the atomic install would quietly turn a tracked, world-readable PARITY.md into an

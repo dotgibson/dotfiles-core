@@ -125,6 +125,16 @@ command -v git >/dev/null 2>&1 || {
   exit 2
 }
 
+# Remove the in-flight temp on ANY exit. The normal paths already rm it, but a Ctrl-C
+# between mktemp and the install otherwise leaves a PARITY.md.gen.XXXXXX sitting in
+# someone's checkout — litter this gate would then read as an untracked stray. EXIT does the
+# cleanup (a second rm -f is a no-op); INT/TERM exit with the conventional 128+signal and let
+# EXIT fire, exactly as audit-core.sh does.
+_gdp_cleanup() { [[ -n "${tmp:-}" ]] && rm -f "$tmp"; }
+trap _gdp_cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # render <target-file> — the file with everything between the markers replaced by $SRC.
 #
 # The trailing `print ""` is FRAMING, not content: Markdown wants a blank line between the
