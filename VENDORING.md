@@ -405,9 +405,10 @@ prints the exact ledger line to edit. It is the same shape `gen-porting-matrix.s
 `PKG_ROWS` uses, where a repo that starts installing a package fails the gate until the cell
 is flipped.
 
-**Adoption means a call, not a mention.** The check reads your `bootstrap.sh` with comments
-stripped and matches the helper as a whole shell identifier, so naming one in a comment does
-not satisfy its row — and deleting a call while leaving the paragraph that explains it is a
+**Adoption means a call, not a mention.** The check reads your `bootstrap.sh` with comments,
+quoted strings and heredoc bodies stripped, and matches the helper as a whole shell
+identifier — so naming one in a comment, in a message you print, or in your `usage()` text
+does not satisfy its row — and deleting a call while leaving the paragraph that explains it is a
 `regressed` failure, not a pass. That distinction is load-bearing: while the check was a bare
 `grep`, three rows were credited purely from prose (`dotfiles-MacBook` for `blib_note_fail`
 and `blib_failures_report`, `dotfiles-Fedora` for `blib_resolve_su`), and an adoption PR's

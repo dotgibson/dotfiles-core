@@ -6643,13 +6643,28 @@ unset _hl_bad _hl_repo _ha_bad _ha_line
 # before the ledger existed: dotfiles-MacBook credited with blib_note_fail and
 # blib_failures_report from four comment lines, dotfiles-Fedora with blib_resolve_su from
 # one. Fixtures, not a re-implementation — this drives the shipped predicate.
-_hc_dir="$(mktemp -d)"
+# Under $SANDBOX with an XXXXXX template — PORTABILITY.md bans a template-less `mktemp`
+# (BSD requires one, and this suite runs on the macOS leg), and $SANDBOX is what the
+# harness reaps, so a fixture that fails mid-block cannot leak a temp tree.
+_hc_dir="$(mktemp -d "$SANDBOX/helpercall.XXXXXX")"
 printf 'set -e\nblib_user_bindirs_on_path\n'                              >"$_hc_dir/call.sh"
 printf 'set -e\n# blib_user_bindirs_on_path\n'                            >"$_hc_dir/commented.sh"
 printf 'set -e\n  #   blib_user_bindirs_on_path — why we call it\n'       >"$_hc_dir/indented-comment.sh"
 printf 'set -e\n# see blib_user_bindirs_on_path\nblib_wire_summary\n'     >"$_hc_dir/mention-only.sh"
 printf 'set -e\nblib_note_fail_once "x"\n'                                >"$_hc_dir/longer-name.sh"
 printf 'set -e\n((DRY)) && export BLIB_DRY=1\n'                           >"$_hc_dir/var.sh"
+# Prose the USER sees, in both quote styles — not a call.
+printf 'set -e\necho "run blib_user_bindirs_on_path first"\n'            >"$_hc_dir/dquote.sh"
+printf "set -e\necho 'run blib_user_bindirs_on_path first'\n"              >"$_hc_dir/squote.sh"
+# A usage() heredoc documenting the env var, with no code reference left. This shape is
+# LIVE in dotfiles-Arch (`BLIB_DRY    set to 1 …`), which is why it earns a fixture.
+printf 'set -e\nusage() {\n  cat <<EOF\nEnv overrides:\n  BLIB_DRY    set to 1 for a dry run\nEOF\n}\n' >"$_hc_dir/heredoc.sh"
+# The same, with an indented terminator (<<-) and a quoted delimiter.
+printf 'set -e\nusage() {\n\tcat <<-\x27EOF\x27\n\t  BLIB_DRY documented here\n\tEOF\n}\n' >"$_hc_dir/heredoc-dash.sh"
+# A herestring and a comment marker that both LOOK like heredoc openers. dotfiles-Offense
+# marks its usage block `# <<<USAGE`, and reading that as a heredoc swallowed the rest of
+# the file — four adopted helpers reported absent.
+printf 'set -e\n# <<<USAGE\ngrep -q x <<<"$y"\nblib_wire_summary\n'      >"$_hc_dir/herestring.sh"
 _hc_bad=0
 _hc() { # <fixture> <helper> <want 0|1> <why>
   local got=0
@@ -6664,6 +6679,11 @@ _hc longer-name.sh      blib_note_fail            0 "blib_note_fail_once must no
 _hc longer-name.sh      blib_note_fail_once       1 "the longer name must satisfy its own row"
 _hc var.sh              BLIB_DRY                  1 "BLIB_DRY is a variable, not a function — a reference is adoption"
 _hc missing.sh          BLIB_DRY                  0 "an unreadable file is not adoption"
+_hc dquote.sh           blib_user_bindirs_on_path 0 "a helper named inside a double-quoted string is prose, not a call"
+_hc squote.sh           blib_user_bindirs_on_path 0 "a helper named inside a single-quoted string is prose, not a call"
+_hc heredoc.sh          BLIB_DRY                  0 "a usage() heredoc documenting the var is not a reference — the dotfiles-Arch shape"
+_hc heredoc-dash.sh     BLIB_DRY                  0 "<<- with an indented, quoted terminator must be skipped too"
+_hc herestring.sh       blib_wire_summary         1 "a '<<<' herestring and a '# <<<MARKER' comment must not be read as heredoc openers — that swallowed the rest of the file"
 # THE PIPEFAIL CASE, and it is not hypothetical: the first version of this predicate was
 # `sed … | grep -q`, and `grep -q` exits on first match, SIGPIPEing sed, which under
 # `set -o pipefail` — which audit-core.sh sets — makes the pipeline non-zero ON SUCCESS.

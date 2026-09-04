@@ -43,7 +43,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   corrected to honest gaps), and since an adoption PR's shape is "add the call, explain why",
   deleting a call while leaving its paragraph would have kept the ledger green forever — the
   exact regression it exists to catch, invisible in the files it had just been taught to
-  watch. The `--json` fleet-printf guard's hardcoded `NR>=860 &&
+  watch. Strings and **heredoc bodies** are excluded for the same reason, and the heredoc
+  case is live rather than theoretical: `dotfiles-Arch`'s `usage()` heredoc documents
+  `BLIB_DRY`, so its row would have gone on reading `ok` off help text alone if the two real
+  references were ever dropped. The `--json` fleet-printf guard's hardcoded `NR>=860 &&
   NR<=1045` window is derived from the §5f→§5i banners now; it had drifted off the sections
   it was meant to cover and never reached §5g or §5h at all. `VENDORING.md` carries the
   contract. Six companion PRs adopt the helper — `dotfiles-Alpine` (the live twin),

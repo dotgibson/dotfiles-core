@@ -857,19 +857,75 @@ _core_helper_verdict() { # _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|
 #      is a variable rather than a function — `export BLIB_DRY=1` is a reference and reads
 #      the same way.
 #
-# Pure sed+grep, busybox-safe, like every other fleet reader here. Returns non-zero when
+# Pure awk+grep, busybox-safe, like every other fleet reader here. Returns non-zero when
 # the file is unreadable, which the caller already handles as "not adopted".
 #
-# NB the HERESTRING, not `sed … | grep -q`. `grep -q` exits the instant it matches, which
-# SIGPIPEs the sed upstream, which under `set -o pipefail` — which audit-core.sh sets —
+# THREE THINGS ARE NOT CODE, and each was found the same way — by someone asking "what
+# else could satisfy this grep?" rather than by a run going wrong:
+#
+#   · comments    — an adoption PR's shape is "add the call, explain why", so a deleted
+#                   call with its paragraph left behind read as adopted.
+#   · strings     — `printf 'run blib_user_bindirs_on_path first'` is prose the user sees.
+#   · heredocs    — and this one is LIVE in the fleet, not hypothetical: dotfiles-Arch's
+#                   usage() heredoc documents `BLIB_DRY    set to 1 …`. Its real references
+#                   at the flag parser and the export keep that row honest today, so
+#                   nothing is wrong right now — but drop those two lines and the help text
+#                   alone would have gone on reporting `ok` forever.
+#
+# BLUNT ON PURPOSE, in one direction. None of this is a shell parser and it is not trying
+# to be — §5c's comment block explains at length why getting that right needs a parser for
+# every grammar in the tree. Every rule here can only ever DELETE too much, and deleting
+# too much loses a real call, which reports `regressed`: loud, specific, and checkable in
+# one grep. The opposite mistake loses a REGRESSION, silently, which is the entire defect
+# being fixed. When a heuristic must be wrong, make it wrong in the direction that shouts.
+#
+# Verified against all nine sibling bootstraps and all eight helpers: it changes no verdict
+# that a hand-read disagrees with, and loses no real call site anywhere in the fleet.
+#
+# NB the HERESTRING at the end, not `… | grep -q`. `grep -q` exits the instant it matches,
+# which SIGPIPEs the upstream, which under `set -o pipefail` — which audit-core.sh sets —
 # makes the whole pipeline non-zero ON SUCCESS. That reads as "not adopted" for every repo
 # that HAS adopted, i.e. the ratchet fails everything it should pass. This is the SIGPIPE
 # trap #459 named and fail_detail() above already documents; a herestring has no upstream
 # process to kill, so there is nothing to signal.
 _core_helper_called() { # _core_helper_called <file> <helper>
-  local f="${1:-}" h="${2:-}"
+  local f="${1:-}" h="${2:-}" code
   [ -r "$f" ] || return 1
-  grep -qE "(^|[^A-Za-z0-9_])${h}([^A-Za-z0-9_]|\$)" <<<"$(sed 's/#.*//' "$f")"
+  # Drop heredoc BODIES first (their content is data, and a `#` in one is not a comment),
+  # then comments, then quoted strings — double-quoted before single-quoted, so an
+  # apostrophe inside a double-quoted string cannot open a phantom single quote.
+  code="$(awk '
+    inhd {
+      t = $0
+      sub(/^[ \t]+/, "", t)     # <<- permits an indented terminator
+      if (t == delim) inhd = 0
+      next
+    }
+    {
+      # A heredoc opener: << or <<-, then an optionally-quoted word. Detect on a SCRUBBED
+      # copy, because two things impersonate one:
+      #   · `<<<WORD` — a herestring. A naive match finds `<<WORD` by starting one
+      #     character later, so it must be neutralised, not merely "not matched". This is
+      #     not academic: dotfiles-Offense marks its usage block with `# <<<USAGE`, and the
+      #     first version of this awk read that as a heredoc opening at line 28 and
+      #     swallowed the entire rest of the file — reporting four adopted helpers as
+      #     absent. Caught by diffing every repo x helper before shipping, not by a run.
+      #   · a full-line comment — it opens nothing, whatever it contains.
+      # An arithmetic left-shift (`x << 2`) needs no handling: a digit is not a delimiter.
+      probe = $0
+      if (probe ~ /^[ \t]*#/) probe = ""
+      gsub(/<<</, "<@<", probe)
+      if (match(probe, /<<-?[ \t]*("|'"'"')?[A-Za-z_][A-Za-z0-9_]*("|'"'"')?/)) {
+        d = substr(probe, RSTART, RLENGTH)
+        sub(/^<<-?[ \t]*/, "", d)
+        gsub(/["'"'"']/, "", d)
+        delim = d
+        inhd = 1
+      }
+      print
+    }
+  ' "$f" | sed -e 's/#.*//' -e 's/"[^"]*"//g' -e "s/'[^']*'//g")"
+  grep -qE "(^|[^A-Za-z0-9_])${h}([^A-Za-z0-9_]|\$)" <<<"$code"
 }
 
 # ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
