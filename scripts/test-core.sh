@@ -14938,9 +14938,14 @@ ucheck "bindirs: core-doctor and HAVE_PROCS now agree about a cargo-installed to
 # and doctor=0/flag=1 is the mirror (Core wired something the report calls absent).
 #
 # The tool -> flag mapping is READ OUT OF THE SOURCE, never restated here, so it cannot rot
-# and needs no hand-maintained table for the two irregular names (ast-grep -> HAVE_ASTGREP,
-# git-absorb -> HAVE_GIT_ABSORB). The `+` quantifiers matter: 00-tools.zsh aligns some
+# and needs no hand-maintained table for the one irregular name (git-absorb ->
+# HAVE_GIT_ABSORB, dash to underscore). The `+` quantifiers matter: 00-tools.zsh aligns some
 # comments with two spaces, and a single-space regex silently drops those rows.
+#
+# The regex ALSO skips the bare `_have <tool>` probes #694 left behind — deliberately, and
+# it is why this pairs on the assignment rather than on the probe. Those tools set no flag,
+# so "the doctor and the flag agree" has nothing to compare; the ledger row they DO write is
+# what core-doctor reads, and _core_doctor_stale/_core_doctor_unwired are tested directly.
 #
 # Excluded BY CONSTRUCTION rather than by a skip list, which is why the pattern is anchored
 # to `^_have`: op has no _have line (the doctor probes it live), and fd/bat are set from
@@ -14975,9 +14980,73 @@ ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
      [[ -n \${(P)f:-} ]] && h=1 || h=0
      (( d == h )) || bad+=(\"\$t (doctor=\$d \$f=\$h)\")
    done
-   (( n >= 30 )) || { print -r -- \"parsed only \$n tool->flag pairs out of 00-tools.zsh\"; exit 1; }
+   (( n >= 24 )) || { print -r -- \"parsed only \$n tool->flag pairs out of 00-tools.zsh\"; exit 1; }
    (( \${#bad} == 0 )) || { print -r -- \"doctor and HAVE_* disagree: \${(j:, :)bad}\"; exit 1; }" \
   CORE_NO_PAGER=1
+# ── the HAVE_* contract: the probe outlives the flag (00-tools.zsh, #694) ───────
+# #694 cut thirteen `_have <tool> && HAVE_<X>=1` lines down to a bare `_have <tool>`, because
+# the flags had no reader anywhere in the fleet. What those lines still do is the entire
+# reason they were not deleted outright: `_have` writes _CORE_PROBED[<tool>], and that ledger
+# — not any flag — is what core-doctor, _core_doctor_stale and _core_doctor_unwired read.
+#
+# So the regression this pins is a READING one, not a typo: the next person to open that
+# block sees a probe whose result is discarded and deletes the line. Nothing would fail. The
+# doctor would simply stop knowing about thirteen tools, and a tool it does not probe is
+# reported as "Core does not probe this row" — indistinguishable, from the outside, from a
+# tool Core looked for and did not find. That is #545's exact defect class, re-entered from
+# the other side.
+#
+# Derived from the source, never restated: the pattern is a `_have` line with NO `&&`, which
+# is precisely the shape #694 created. The floor is 13 because that is how many it created;
+# a future prune raises it, and a regression that re-flags or deletes them drops it below.
+ucheck "detection: every bare \`_have\` probe still writes its _CORE_PROBED row (#694)" \
+  "source '$TOOLS_FILE'
+   bad=(); n=0
+   for line in \${(f)\"\$(<'$TOOLS_FILE')\"}; do
+     [[ \$line =~ '^_have +([A-Za-z0-9_.-]+) *(#.*)?\$' ]] || continue
+     t=\$match[1]; (( n++ ))
+     (( \${+_CORE_PROBED[\$t]} )) || bad+=(\$t)
+   done
+   (( n >= 13 )) || { print -r -- \"parsed only \$n bare _have probes out of 00-tools.zsh — #694 left 13\"; exit 1; }
+   (( \${#bad} == 0 )) || { print -r -- \"probed but absent from the ledger: \${(j:, :)bad}\"; exit 1; }" \
+  CORE_NO_PAGER=1
+
+# …and the flags those lines used to set must stay gone. Named explicitly rather than derived,
+# because a deleted line leaves nothing behind to derive FROM — the list IS the assertion, and
+# re-adding any of these is a deliberate act that should have to edit this test and declare the
+# flag in PORTABILITY.md §5 (audit-core.sh §5j fails an undeclared flag with no reader anyway).
+# ast-grep is why this is not computed from the tool names: its flag was HAVE_ASTGREP, not the
+# HAVE_AST_GREP a mechanical uppercase would produce.
+ucheck "detection: the thirteen flags #694 removed are not set" \
+  "source '$TOOLS_FILE'
+   bad=()
+   for f in HAVE_ASTGREP HAVE_DELTA HAVE_GUM HAVE_HYPERFINE HAVE_JNV HAVE_JQ HAVE_LNAV \
+            HAVE_SD HAVE_SESH HAVE_SHELLCHECK HAVE_SHFMT HAVE_WATCHEXEC HAVE_YQ; do
+     (( \${+parameters[\$f]} )) && bad+=(\$f)
+   done
+   (( \${#bad} == 0 )) || { print -r -- \"set again without a declaration: \${(j:, :)bad}\"; exit 1; }" \
+  CORE_NO_PAGER=1
+
+# ── the declared surface itself: HAVE_ATUIN, both directions (#694) ─────────────
+# PORTABILITY.md §5 declares exactly one flag for downstream use, and three OS repos gate
+# their atuin daemon exports on it (dotfiles-Alpine/Debian/Fedora, os/*.zsh). A declared flag
+# is a promise about BOTH answers, so both are asserted — and hermetically, against a stub in
+# a fixture $HOME, because "atuin happens to be installed on this runner" proves only the
+# direction that box can show. The #447 agreement check above covers the real box; this covers
+# the contract.
+_ub_fixture .local/bin:atuin
+ucheck "contract: HAVE_ATUIN is set when atuin is on PATH (PORTABILITY.md §5, #694)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_ATUIN:-} && \$_CORE_PROBED[atuin] == 1 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# The absent direction pins the ledger's 0 alongside the unset flag. A missing ROW and a row
+# reading 0 are different facts — "Core does not probe this" versus "Core looked and it is not
+# here" — and only the second is what an OS layer reading the flag is entitled to assume.
+_ub_fixture .local/bin:eza
+ucheck "contract: HAVE_ATUIN is unset, and the ledger says 0, when atuin is absent (#694)" \
+  "source '$TOOLS_FILE'; [[ -z \${HAVE_ATUIN:-} && \$_CORE_PROBED[atuin] == 0 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
 # ── _core_is_wsl: one WSL predicate for the fleet (00-tools.zsh, #449) ───────────
 # Six OS layers each carried a byte-identical copy of this probe, and Core had the same fact
 # twice more (bash's blib_is_wsl, and a private copy inside bin/clip) with neither reachable

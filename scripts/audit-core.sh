@@ -28,6 +28,11 @@
 #                                         that exits early (grep -q / awk exit / head)
 #  5e. leaked RETURN trap             — no `trap … RETURN` that fails to disarm the
 #                                         slot (it fires again in the CALLER's frame)
+#  5j. HAVE_* contract                — PORTABILITY.md §5's declared flags ⊆ what
+#                                         00-tools.zsh sets, every flag it sets has a
+#                                         reader, and no OS/role repo reads an undeclared
+#                                         one (the fleet half is an environment SKIP when
+#                                         a sibling is not checked out)
 #   6. config files                     — toml/yaml parse-check (if python3 present)
 #   7. markdown                          — markdownlint (if markdownlint-cli2 present)
 #   8. workflows                         — actionlint on .github/workflows (if present)
@@ -1326,6 +1331,160 @@ done <<EOF
 $(_audit_ls '*')
 EOF
 ((cm_fail)) || pass "conflict markers (no tracked file carries a leftover marker)"
+
+# ── 5j. the HAVE_* contract (PORTABILITY.md §5 ↔ 00-tools.zsh ↔ the fleet) ────
+# zsh/00-tools.zsh sets HAVE_<TOOL> flags into every interactive shell, three OS repos read
+# one of them from their os/*.zsh, and until #694 nothing declared any of that: PORTABILITY.md
+# — the file that documents the Core→OS API, with a shim table naming _cache_eval and
+# _core_is_wsl — did not contain the string HAVE_. So there was no basis for saying which
+# flags were safe downstream, and none for saying which were removable; a rename here would
+# have surfaced downstream as a shell function quietly not firing.
+#
+# PORTABILITY.md §5 is the declaration. This is the gate, and it runs in three directions —
+# the both-ways shape §1 already gives core.manifest, plus a third that keeps the pruning
+# from undoing itself:
+#
+#   1. DECLARED ⊆ SET.      A flag the doc offers downstream that 00-tools.zsh does not set
+#                           is a lie in the contract — exactly what a Core rename leaves
+#                           behind, and the failure mode the doc exists to prevent.
+#   2. FLEET READS ⊆ DECLARED. An OS or role repo reading a Core-namespace flag it does not
+#                           itself set is coupled to Core's internals. Declare it (a one-line
+#                           table row) or stop reading it.
+#   3. SET ⇒ HAS A READER.  A flag nothing reads is a global in every interactive shell that
+#                           can only go stale, and nothing notices when it does. #694 dropped
+#                           thirteen of those; this is what stops them coming back.
+#
+# WHAT "READS" MEANS, and why it is a sigil match rather than a bare name. A read is
+# `$HAVE_X` or `${HAVE_X…}`; a comment mentioning the flag writes the bare name. That
+# distinction is the whole reason this needs no comment-stripping — the trap PORTABILITY.md
+# §3 documents at length, where five grammars each hide a `#` somewhere. Measured across the
+# fleet when this was written: bare-name matching found HAVE_ASTGREP/HAVE_JNV/HAVE_SHELLCHECK
+# in one dotfiles-Offense COMMENT and HAVE_DIFFT/HAVE_UV/HAVE_VIDDY in five more, none of them
+# reads; sigil matching found exactly the three real ones. The cost is one wording rule, in
+# the doc: do not put a `$` in front of a flag name in prose.
+#
+# A repo that SETS a flag owns it — dotfiles-Offense and dotfiles-Defense define ~20 apiece in
+# the same namespace, legitimately, and dotfiles-Defense re-probes jq into HAVE_JQ. Subtracting
+# each repo's own assignments before comparing is what keeps those out of direction 2; the
+# contract is only ever about reading a name you did not set.
+#
+# NO --exclude-dir AND NO -I anywhere below. Both are GNU extensions that busybox grep
+# REJECTS, and the Alpine leg runs busybox — the same trap that made _core_make_gate_hits
+# report Core as the repo missing its own rule. The vendored core/ subtree (which would
+# otherwise answer for Core in every OS repo and make direction 2 vacuous) is pruned with
+# `find` instead, which is portable.
+#
+# Direction 2 reads sibling clones, so it takes the skip_env posture of §5f and §5h: CI checks
+# out this repo alone, and a gate that only passes on a laptop with the fleet beside it is a
+# gate nobody trusts. Directions 1 and 3 read this repo's own files and are unconditional.
+hdr "HAVE_* contract (PORTABILITY.md §5 ↔ 00-tools.zsh ↔ fleet)"
+hv_tools="$HERE/zsh/00-tools.zsh"
+hv_doc="$HERE/PORTABILITY.md"
+hv_fail=0
+if [ ! -f "$hv_tools" ] || [ ! -f "$hv_doc" ]; then
+  fail "HAVE_* contract: zsh/00-tools.zsh or PORTABILITY.md is missing — the contract gate checked NOTHING this run"
+  hv_fail=1
+else
+  # The declared surface: the table under PORTABILITY.md §5's "What downstream may use".
+  # Range-anchored to that heading so an unrelated table elsewhere in the doc can never
+  # widen the surface by accident.
+  hv_declared=" $(awk '
+    /^### What downstream may use/ { inb = 1; next }
+    inb && /^### / { inb = 0 }
+    inb && /^\|[ \t]*`HAVE_[A-Z0-9_]+`/ {
+      if (match($0, /HAVE_[A-Z0-9_]+/)) print substr($0, RSTART, RLENGTH)
+    }
+  ' "$hv_doc" | sort -u | tr '\n' ' ') "
+  # What Core actually sets. Comment lines are dropped first: this file's own prose spells
+  # the idiom as `_have x && HAVE_X=1`, which would otherwise register as a flag named
+  # HAVE_X that nothing sets and nothing reads — a finding invented by the gate's own docs.
+  hv_set=" $(grep -v '^[[:space:]]*#' "$hv_tools" | grep -oE 'HAVE_[A-Z0-9_]+=1' | sed 's/=1$//' | sort -u | tr '\n' ' ') "
+  # Every sigil read in Core's own code. Directory list rather than a bare -r on $HERE: it
+  # keeps .git and any sibling worktree out without reaching for --exclude-dir.
+  hv_dirs=""
+  for hv_d in zsh scripts lib bin maint tmux nvim git jujutsu tealdeer starship examples; do
+    [ -d "$HERE/$hv_d" ] && hv_dirs="$hv_dirs $HERE/$hv_d"
+  done
+  # shellcheck disable=SC2086  # deliberate word-split: hv_dirs is a built path list
+  hv_read=" $(grep -rhoE '\$\{?HAVE_[A-Z0-9_]+' $hv_dirs 2>/dev/null | sed -E 's/^\$\{?//' | sort -u | tr '\n' ' ') "
+
+  # ── direction 1: every declared flag is one Core sets ──
+  for hv_f in $hv_declared; do
+    case "$hv_set" in
+    *" $hv_f "*) ;;
+    *)
+      fail "HAVE_* contract: PORTABILITY.md §5 declares $hv_f for downstream use, but zsh/00-tools.zsh does not set it — the declaration is stale. Restore the assignment, or drop the table row (and migrate whoever reads it)"
+      hv_fail=1
+      ;;
+    esac
+  done
+
+  # ── direction 3: every flag Core sets has a reader ──
+  for hv_f in $hv_set; do
+    case "$hv_read$hv_declared" in
+    *" $hv_f "*) ;;
+    *)
+      fail "HAVE_* contract: zsh/00-tools.zsh sets $hv_f and nothing reads it — not a Core module, not PORTABILITY.md §5's table. Drop the \`&& $hv_f=1\` and keep the bare \`_have\` probe (the _CORE_PROBED ledger is what core-doctor reads), or declare it"
+      hv_fail=1
+      ;;
+    esac
+  done
+
+  # ── direction 2: no OS or role repo reads an undeclared Core-namespace flag ──
+  hv_root="$(cd "$HERE/.." && pwd)"
+  hv_checked=0
+  hv_absent=0
+  hv_fleet=1
+  if ! load_os_repos; then
+    hv_fleet=0
+    skip_env "HAVE_* contract: fleet half ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+  else
+    for hv_repo in "${CORE_OS_REPOS[@]}"; do
+      hv_dir="$(resolve_repo_dir "$hv_root" "$hv_repo")" || hv_dir="$hv_root/$hv_repo"
+      if [ ! -d "$hv_dir" ]; then
+        hv_absent=$((hv_absent + 1))
+        continue
+      fi
+      # The repo's own shell/lua, with the vendored core/ and .git pruned by find. Without
+      # the core/ prune every OS repo would appear to both set and read all of Core's flags,
+      # and direction 2 would be checking a copy of the very file it is checking against.
+      hv_files="$(find "$hv_dir" \( -name .git -o -name core -o -name node_modules \) -prune -o \
+        -type f \( -name '*.zsh' -o -name '*.sh' -o -name '*.lua' \) -print 2>/dev/null)"
+      [ -n "$hv_files" ] || continue
+      hv_checked=$((hv_checked + 1))
+      # What this repo sets for itself, subtracted below: a layer that assigns a name owns it,
+      # and both role repos legitimately carry ~20 of their own.
+      hv_owns=" $(echo "$hv_files" | tr '\n' '\0' | xargs -0 grep -hoE 'HAVE_[A-Z0-9_]+=' 2>/dev/null | sed 's/=$//' | sort -u | tr '\n' ' ') "
+      hv_uses="$(echo "$hv_files" | tr '\n' '\0' | xargs -0 grep -hoE '\$\{?HAVE_[A-Z0-9_]+' 2>/dev/null | sed -E 's/^\$\{?//' | sort -u)"
+      for hv_f in $hv_uses; do
+        case "$hv_owns" in *" $hv_f "*) continue ;; esac
+        case "$hv_declared" in *" $hv_f "*) continue ;; esac
+        # Two different defects, and the remedy differs, so they are reported apart: a flag
+        # Core no longer sets is already broken on every box, while an undeclared one that
+        # Core does set works today and is merely uncontracted.
+        case "$hv_set" in
+        *" $hv_f "*)
+          fail "HAVE_* contract: $hv_repo reads Core's $hv_f, which PORTABILITY.md §5 does not declare for downstream use. Add the table row in the same change (declaring is the ask, not a workaround), or probe the tool with \`command -v\` instead"
+          ;;
+        *)
+          fail "HAVE_* contract: $hv_repo reads $hv_f, which it does not set and Core does not set either — a flag Core has removed or renamed, so the read is already dead on every box. Fix the read, or restore the flag in zsh/00-tools.zsh and declare it in PORTABILITY.md §5"
+          ;;
+        esac
+        hv_fail=1
+      done
+    done
+    [ "$hv_checked" = 0 ] && skip_env "HAVE_* contract: fleet half (no sibling OS repo checked out — nothing to read here)"
+    ((hv_absent)) && skip_env "HAVE_* contract: $hv_absent repo(s) not checked out — fleet half not covered by this run"
+  fi
+  if ((hv_fail == 0)); then
+    if ((hv_fleet)) && [ "$hv_checked" != 0 ]; then
+      pass "HAVE_* contract (declared ⊆ set, set ⇒ read, and $hv_checked checked-out repo(s) read only declared flags)"
+    else
+      pass "HAVE_* contract (declared ⊆ set, set ⇒ read; the fleet half did not run — see the skip above)"
+    fi
+  fi
+fi
+unset hv_tools hv_doc hv_declared hv_set hv_read hv_dirs hv_d hv_f hv_root hv_repo hv_dir hv_files hv_owns hv_uses hv_checked hv_absent hv_fleet hv_fail
 
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —

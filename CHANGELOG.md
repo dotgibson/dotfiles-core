@@ -155,6 +155,70 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   pinned alongside. Dev tooling
   only — the OS repos receive nothing from this entry until they adopt the verbs.
 
+### Removed
+
+- **BREAKING: thirteen `HAVE_*` globals no code reads, and the `HAVE_*` contract is declared
+  and gated (#694).** `zsh/00-tools.zsh` set **42** `HAVE_<TOOL>` flags into every interactive
+  shell. Thirteen of them — `HAVE_ASTGREP` · `HAVE_DELTA` · `HAVE_GUM` · `HAVE_HYPERFINE` ·
+  `HAVE_JNV` · `HAVE_JQ` · `HAVE_LNAV` · `HAVE_SD` · `HAVE_SESH` · `HAVE_SHELLCHECK` ·
+  `HAVE_SHFMT` · `HAVE_WATCHEXEC` · `HAVE_YQ` — were read by **nothing**, in Core or in any
+  of the thirteen repos. **Why this is breaking, and the only reason it is:** a gitignored
+  host-local `99-local.zsh` could reference one, and that is unknowable from here. Nothing
+  Core ships, and nothing any OS or role repo ships, is affected.
+  **`core-doctor` is not affected either, which is the part worth reading before you worry:**
+  the `_have <tool>` **call stays on every one of those lines**. It is what writes
+  `_CORE_PROBED[<tool>]`, and the ledger — never a flag — is what `core-doctor`,
+  `_core_doctor_stale` and `_core_doctor_unwired` read. Only the `&& HAVE_X=1` half is gone.
+  Detection coverage is byte-for-byte what it was.
+
+  **The flags are now a declared surface.** `PORTABILITY.md` gains **§5**: the naming rule
+  (`HAVE_` + canonical tool name, `-` → `_`), that `_CORE_PROBED` is the authoritative ledger
+  and `HAVE_*` the convenience alias, that a flag exists **only where band-00 detection ran**
+  (so read `${HAVE_X:-}`, never bare), and a table of what downstream may use. The answer to
+  the open question `V5-PROPOSAL.md` §5.2 posed is **supported, but enumerated**: the table
+  holds `HAVE_ATUIN` and nothing else, because that is what the fleet actually reads
+  (`dotfiles-Alpine`, `-Debian`, `-Fedora`, in `os/*.zsh`, to gate the atuin daemon exports).
+  Starting there rather than at "all of them" is deliberate — widening a declared surface is a
+  one-line PR and narrowing one is a breaking change. `VENDORING.md` carries the same fact
+  from the OS-repo author's side; `core.manifest`'s charter line for `00-tools.zsh` now names
+  it alongside `_cache_eval` and `_core_is_wsl`.
+
+  **`audit-core.sh` §5j** is what stops this recurring, in three directions: **declared ⊆ set**
+  (a doc row Core no longer sets is a stale promise — the exact wreckage a rename leaves);
+  **fleet reads ⊆ declared** (an OS or role repo reading a Core flag it does not itself set is
+  coupled to Core's internals); and **set ⇒ has a reader** (the direction the issue did not ask
+  for, and the one that keeps thirteen dead flags from quietly reaccumulating). It matches a
+  read by its **`$` sigil** rather than by the bare name, which is how it tells `${HAVE_ATUIN:-}`
+  in code from `HAVE_ASTGREP` in a comment without needing a parser for five grammars — the
+  trap `PORTABILITY.md` §3 documents. It subtracts each repo's own assignments first, so the
+  ~20 flags `dotfiles-Offense` and `dotfiles-Defense` each define for themselves are ignored;
+  the contract is only ever about reading a name you did not set. No `--exclude-dir` and no
+  `-I` anywhere in it — both are GNU extensions busybox grep rejects, the trap that once made
+  `_core_make_gate_hits` report Core as the repo missing its own rule — so the vendored `core/`
+  subtree (which would otherwise answer for Core in every OS repo and make the fleet direction
+  vacuous) is pruned with `find`. The fleet half takes §5f/§5h's `skip_env` posture: CI checks
+  out this repo alone, and a gate that only passes on a laptop with the fleet beside it is a
+  gate nobody trusts.
+
+  **The issue's own numbers were wrong in three places, and `V5-PROPOSAL.md` §5.1 now records
+  why** rather than quietly correcting them, because the shape of the error is the argument for
+  the sigil match. It said 43 globals (42), nine dead (thirteen — its nine included
+  `HAVE_DIRENV`, which has never existed, and `HAVE_MISE`, which `00-tools.zsh` reads at its own
+  `mise activate` line), and five genuine downstream consumers (**one**: of the other four,
+  `HAVE_ASTGREP`/`HAVE_JNV`/`HAVE_SHELLCHECK` appear in a single `dotfiles-Offense` **comment**,
+  and `dotfiles-Defense` **sets** `HAVE_JQ` itself). Every one of those came from grepping bare
+  names and reading prose as code. The flags were also never `export`ed — they are shell
+  parameters, so they never reached a child process.
+
+  `scripts/test-core.sh` pins the parts a static gate cannot: that **every bare `_have` probe
+  still writes its ledger row** (derived from the source, floored at 13 — the regression here is
+  a _reading_ one, where the next person sees a probe whose result is discarded and deletes the
+  line, silently blinding the doctor on thirteen tools); that the thirteen flag names stay unset;
+  and that `HAVE_ATUIN` is set with atuin present and unset — with the ledger reading `0`, not a
+  missing row — when it is absent, hermetically, in both directions. The `#447` doctor-vs-flag
+  agreement check keeps working unchanged; its pair-count floor moves 30 → 24 to match.
+  `PORTING-MATRIX.md`'s footnotes for the ten affected tools are corrected in the same change.
+
 ### Changed
 
 - **The startup budget is ratcheted from 120 ms to a committed 48 ms — 2× the measured
