@@ -55,6 +55,11 @@
 #   ./scripts/gen-desktop-parity.sh --check      # exit 1 with a diff if either is stale
 #   ./scripts/gen-desktop-parity.sh --root ~/src # the fleet lives elsewhere
 #   ./scripts/gen-desktop-parity.sh --strict     # a not-checked-out repo FAILS
+#   ./scripts/gen-desktop-parity.sh --quiet      # silence the section header and EVERY
+#                                                #   success line, the final summary
+#                                                #   included; failures and skips still print
+#   ./scripts/gen-desktop-parity.sh --color WHEN # auto (default) | always | never
+#   ./scripts/gen-desktop-parity.sh -h, --help   # print this block and exit
 #
 # Exit: 0 = every checked-out copy matches the canonical source (or was written);
 #       1 = drift, or a malformed/missing target in a checked-out repo;
