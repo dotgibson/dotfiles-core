@@ -71,7 +71,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   outright ("newline in string") while gawk and busybox awk accept. The registry is
   validated **whole, before anything is written**: a count-only check passed a row with an
   empty checkout (awk counts the empty span between two tabs), which rendered `cd  || exit 1`
-  — and a *bare* `cd` succeeds into `$HOME`, reintroducing the wrong-tree hero through the
+  — and a _bare_ `cd` succeeds into `$HOME`, reintroducing the wrong-tree hero through the
   guard meant to prevent it; and a malformed row late in the file used to leave every tape
   above it already rewritten. Empty fields, duplicate repos and a bad `note:`/`caps:` prefix
   are all rejected up front, all findings at once.
