@@ -43,6 +43,9 @@
 #  9h. porting-matrix drift             — PORTING-MATRIX.md's two tables match the sibling
 #                                         OS repos (gen-porting-matrix.sh --check; an
 #                                         absent sibling is an environment SKIP)
+#  9i. desktop-parity drift             — both desktop repos' PARITY.md match
+#                                         desktop/PARITY.shared.md (gen-desktop-parity.sh
+#                                         --check; an absent sibling is an environment SKIP)
 #  10. behavioral                       — load-order smoke + function units (test-core.sh)
 #
 # We deliberately do NOT enforce shfmt: the hand-tuned scripts here use an
@@ -319,6 +322,13 @@ META_ALLOWLIST=(
   # distinction those two files draw. Listed as an EXACT path, not a theme/ prefix, so a
   # second file dropped into that directory has to be accounted for deliberately.
   theme/palette.toml
+  # desktop/PARITY.shared.md is theme/palette.toml's shape exactly: a generation-time INPUT
+  # to scripts/gen-desktop-parity.sh, not shipped Core. Nothing symlinks it and no OS repo
+  # reads it out of core/ — its OUTPUT lands in two repos that do not vendor Core at all
+  # (dotfiles-Windows/desktop/PARITY.md, dotfiles-MacBook/sketchybar/PARITY.md), which is
+  # why it is neither a manifest row nor a core.vendor row. Listed as an EXACT path, not a
+  # desktop/ prefix, so a second file dropped there has to be accounted for deliberately.
+  desktop/PARITY.shared.md
 )
 # Directory prefixes whose tracked contents are allowlisted wholesale. scripts/ is
 # this repo's DEV TOOLING (audit/test/bench/sync/update-plugins) — the gate scripts
@@ -2069,6 +2079,42 @@ else
   fail_detail "$_gp_out"
 fi
 unset _gp_out _gp_rc
+
+# ── 9i. desktop-bar parity drift (PARITY.shared.md ↔ both desktop repos) ──────
+# The Zebar ↔ sketchybar contract is authored once in desktop/PARITY.shared.md and
+# rendered between markers into dotfiles-Windows/desktop/PARITY.md and
+# dotfiles-MacBook/sketchybar/PARITY.md — the same generated-block answer §9d gives colour,
+# §9g the alias tables and §9h the porting matrix.
+#
+# It replaces a SENTENCE. The two files were an admitted verbatim pair whose only mechanism
+# was "Edit both together", and it did not hold: they drifted 3.5 KB apart — ~4.4 KB of it a
+# one-sided Markdown reformat, 947 bytes a real Windows-only block never marked deliberate
+# (#693). That block now lives OUTSIDE the markers, where the generator does not touch it.
+#
+# Exit shape is §9h's, for §9h's reason: 1 = drift or a malformed target in a repo that IS
+# checked out; 3 = a repo is not checked out, an environment SKIP rather than a red, because
+# CI checks out this repo alone and neither desktop repo vendors Core. Anything else means
+# the gate could not answer, which is a failure — a drift gate that checked nothing must
+# never report green (#682).
+#
+# NOT SCOPE-GUARDED, for §9d's reason: the targets are `*.md`, INERT to ci-classify.sh, so a
+# push that hand-edits a copy arrives as --scope none.
+hdr "desktop-bar parity drift (gen-desktop-parity.sh --check)"
+_dp_out="$("$HERE/scripts/gen-desktop-parity.sh" --check 2>&1)" && _dp_rc=0 || _dp_rc=$?
+if ((_dp_rc == 0)); then
+  pass "gen-desktop-parity (both desktop repos' PARITY.md match desktop/PARITY.shared.md)"
+elif ((_dp_rc == 1)); then
+  fail "desktop-bar parity drift — a copy no longer matches desktop/PARITY.shared.md; run: make gen-desktop-parity"
+  fail_detail "$_dp_out"
+elif ((_dp_rc == 3)); then
+  _dp_missing="${_dp_out#*not checked out under }"
+  skip_env "desktop-bar parity drift (${_dp_missing%% — *} — not covered by this run)"
+  unset _dp_missing
+else
+  fail "gen-desktop-parity.sh --check could not run (exit $_dp_rc) — a target file is missing or its markers are broken; the drift gate checked NOTHING this run"
+  fail_detail "$_dp_out"
+fi
+unset _dp_out _dp_rc
 
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
 # Static analysis above proves the modules PARSE; this proves they LOAD TOGETHER

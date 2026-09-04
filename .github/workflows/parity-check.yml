@@ -1,10 +1,18 @@
 name: parity-check
 
-# Cross-shell parity gate. PARITY.md is the human contract for what "the same on zsh
-# and PowerShell" means; scripts/parity-check.sh is the machine gate that fails when an
-# `aligned` capability drifts out of one shell (e.g. the fzf tokyonight palette gets
-# dropped from pwsh). pwsh lives in the separate dotfiles-Windows repo, so — like
-# fleet-drift — this clones it (public, anonymous, shallow) and runs the check.
+# The fleet's two parity gates, both of which need a repo this one does not vendor.
+#
+#   1. CROSS-SHELL — PARITY.md is the human contract for what "the same on zsh and
+#      PowerShell" means; scripts/parity-check.sh fails when an `aligned` capability drifts
+#      out of one shell (e.g. the fzf tokyonight palette gets dropped from pwsh).
+#   2. DESKTOP-BAR — desktop/PARITY.shared.md is the Zebar ↔ sketchybar contract, rendered
+#      between markers into dotfiles-Windows/desktop/PARITY.md and
+#      dotfiles-MacBook/sketchybar/PARITY.md; scripts/gen-desktop-parity.sh --check fails
+#      when either copy is edited alone. Until #693 those two files were held together by
+#      nothing but the sentence "Edit both together", and they drifted 3.5 KB apart.
+#
+# pwsh and both bars live in separate repos, so — like fleet-drift — this clones them
+# (public, anonymous, shallow) and runs the checks.
 #
 # Read-only: it never pushes. Weekly + on demand; PR-triggered CI can't see the other
 # repo's changes, so a scheduled sweep is the right cadence (same as fleet-drift).
@@ -33,13 +41,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Clone dotfiles-Windows (public, anonymous, shallow)
+      - name: Clone the desktop repos (public, anonymous, shallow)
         run: |
           set -euo pipefail
-          # parity-check.sh reads the pwsh sources from a sibling checkout under --root.
-          git clone --depth 1 \
-            "https://github.com/${GITHUB_REPOSITORY_OWNER}/dotfiles-Windows.git" \
-            "$RUNNER_TEMP/fleet/dotfiles-Windows"
+          # Both gates below read sibling checkouts under --root. dotfiles-Windows serves
+          # BOTH: parity-check.sh reads its pwsh sources, gen-desktop-parity.sh its
+          # desktop/PARITY.md. dotfiles-MacBook is only the desktop gate's second copy.
+          for repo in dotfiles-Windows dotfiles-MacBook; do
+            git clone --depth 1 \
+              "https://github.com/${GITHUB_REPOSITORY_OWNER}/$repo.git" \
+              "$RUNNER_TEMP/fleet/$repo"
+          done
 
       - name: Check cross-shell parity
         run: |
@@ -52,6 +64,19 @@ jobs:
         continue-on-error: true
         id: check
 
+      - name: Check desktop-bar parity
+        run: |
+          set -o pipefail
+          # The Zebar ↔ sketchybar contract is authored once in desktop/PARITY.shared.md and
+          # rendered into both desktop repos. Before #693 the only thing holding those two
+          # copies together was the sentence "Edit both together", and they drifted 3.5 KB
+          # apart. --strict for the same reason as above: both repos ARE cloned, so an
+          # absent one is a real failure here rather than the environment skip it is locally.
+          ./scripts/gen-desktop-parity.sh --root "$RUNNER_TEMP/fleet" --strict --color never 2>&1 \
+            | tee "$RUNNER_TEMP/desktop-parity.txt"
+        continue-on-error: true
+        id: desktop
+
       - name: Job summary
         if: always()
         run: |
@@ -61,13 +86,29 @@ jobs:
             echo '```'
             cat "$RUNNER_TEMP/parity.txt" 2>/dev/null || echo "(no output captured)"
             echo '```'
+            echo ""
+            echo "### Desktop-bar parity (Zebar ↔ sketchybar)"
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/desktop-parity.txt" 2>/dev/null || echo "(no output captured)"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail on drift
-        if: steps.check.outcome != 'success'
+        if: steps.check.outcome != 'success' || steps.desktop.outcome != 'success'
         run: |
-          echo "Cross-shell parity — an aligned PARITY.md row is unenforced, or has drifted out of a shell." >&2
-          exit 1
+          # Report EVERY failing gate, not just the first: the two are independent
+          # contracts, and a red cross-shell row must not hide a drifted desktop copy.
+          rc=0
+          if [ "${{ steps.check.outcome }}" != "success" ]; then
+            echo "Cross-shell parity — an aligned PARITY.md row is unenforced, or has drifted out of a shell." >&2
+            rc=1
+          fi
+          if [ "${{ steps.desktop.outcome }}" != "success" ]; then
+            echo "Desktop-bar parity — a PARITY.md copy no longer matches desktop/PARITY.shared.md; run: make gen-desktop-parity" >&2
+            rc=1
+          fi
+          exit "$rc"
 
   # Turn a red run into a deduplicated issue (G1).
   notify-failure:

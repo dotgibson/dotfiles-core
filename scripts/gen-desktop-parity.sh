@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# scripts/gen-desktop-parity.sh
+# ──────────────────────────────────────────────────────────────────────────────
+# Render the canonical desktop-bar parity contract into BOTH desktop repos.
+#
+# `desktop/PARITY.shared.md` (this repo) is the ONE place the Zebar ↔ sketchybar
+# contract is authored. It is rendered verbatim between a marker pair in:
+#
+#     dotfiles-Windows/desktop/PARITY.md
+#     dotfiles-MacBook/sketchybar/PARITY.md
+#
+#     <!-- desktop-parity:gen -->
+#     …rendered from dotfiles-core/desktop/PARITY.shared.md…
+#     <!-- desktop-parity:end -->
+#
+# Anything OUTSIDE the markers is hand-authored and never touched — that is where a
+# host puts an addendum with no counterpart on the other bar (the Windows psmux
+# battery-scale note), marked `deliberate` in the doc's own vocabulary.
+#
+# WHY THIS EXISTS. The two files were an admitted verbatim pair whose only mechanism
+# was the sentence "Edit both together". It did not hold: they drifted 3.5 KB apart —
+# ~4.4 KB of that a one-sided Markdown reformat, 947 bytes a real Windows-only block
+# that had never been marked deliberate (#693). A sentence is not a gate; this is.
+#
+# THE SOURCE IS A PRETTIER FIXED-POINT, on purpose. Core's nvim maps
+# `markdown = { "prettierd" }` (nvim/lua/gerrrt/plugins/conform.lua), and formatting one
+# copy in the fleet's own editor is the most likely way the pair drifted: prettier on the
+# Windows copy reproduces the MacBook copy to within its `*em*`→`_em_` rewrite. Authoring
+# the block in prettier's own output form makes that keystroke a no-op instead of drift,
+# so this gate never fights the editor. Core's .prettierrc.json only touches JSON, so the
+# form is stable under prettier defaults too — which is what the desktop repos resolve,
+# neither of them carrying a prettier config. Keep it that way: run the block through
+# `prettier --parser markdown` after editing.
+#
+# Cross-repo, like parity-check.sh and fleet-drift.sh: the desktop repos do NOT vendor
+# Core, so they are read from sibling checkouts under --root. Graceful degradation
+# mirrors audit-core.sh — a repo that isn't checked out is SKIPPED with a notice, so this
+# stays green in a Core-only clone; --strict makes it fatal, which is what CI uses after
+# cloning both.
+#
+# A repo that IS checked out is never skipped: a target file that is missing, or present
+# without its markers, FAILS. gen-views.sh skips an unmarked file — right for its opt-in,
+# host-agnostic target list — but here the two targets are named and mandatory, so "no
+# markers" is the drift being gated, not an absence.
+#
+# Usage:
+#   ./scripts/gen-desktop-parity.sh              # write the block into both repos
+#   ./scripts/gen-desktop-parity.sh --check      # exit 1 with a diff if either is stale
+#   ./scripts/gen-desktop-parity.sh --root ~/src # the fleet lives elsewhere
+#   ./scripts/gen-desktop-parity.sh --strict     # a not-checked-out repo FAILS
+#
+# Exit: 0 = every checked-out copy matches the canonical source (or was written);
+#       1 = drift, or a malformed/missing target in a checked-out repo;
+#       2 = usage error;
+#       3 = a desktop repo is NOT CHECKED OUT, so this run could not cover it. That is an
+#           ENVIRONMENT skip, not a failure — the posture §9h and fleet-drift.sh take for
+#           the same input, and what audit-core.sh records via skip_env. Inside a git
+#           worktree $HERE/.. is .claude/worktrees/, so this skips there too; pass
+#           --root DIR to gate from a worktree. Severity is sticky: drift (1) outranks an
+#           absent sibling (3), so a half-checked-out fleet still reds on real drift.
+# ──────────────────────────────────────────────────────────────────────────────
+set -uo pipefail
+
+HERE="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
+# shellcheck source=scripts/lib/common.sh
+source "$HERE/scripts/lib/common.sh"
+
+SRC="$HERE/desktop/PARITY.shared.md"
+MARK_GEN='<!-- desktop-parity:gen -->'
+MARK_END='<!-- desktop-parity:end -->'
+
+ROOT="$(cd "$HERE/.." && pwd)" # siblings of dotfiles-core by default
+[[ -n "${DOTFILES_ROOT:-}" ]] && ROOT="$DOTFILES_ROOT"
+MODE="write"
+STRICT=0
+CHECKED=0
+MISSING=""
+
+# repo<TAB>path-within-repo. Both are mandatory when the repo is checked out.
+TARGETS=(
+  "dotfiles-Windows	desktop/PARITY.md"
+  "dotfiles-MacBook	sketchybar/PARITY.md"
+)
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --check) MODE="check"; shift ;;
+  --root)
+    ROOT="${2:-}"
+    shift 2 || { fail "--root needs a directory"; exit 2; }
+    ;;
+  --strict) STRICT=1; shift ;;
+  --quiet) QUIET=1; shift ;;
+  --color)
+    _core_set_color "${2:-}" || { fail "--color wants auto|always|never"; exit 2; }
+    shift 2
+    ;;
+  -h | --help)
+    sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d;s/^# \{0,1\}//'
+    exit 0
+    ;;
+  *) fail "unknown argument: $1"; exit 2 ;;
+  esac
+done
+
+[[ -f "$SRC" ]] || { fail "canonical source missing: desktop/PARITY.shared.md"; exit 2; }
+
+# render <target-file> — the file with everything between the markers replaced by $SRC.
+#
+# The trailing `print ""` is FRAMING, not content: Markdown wants a blank line between the
+# last list item and the closing HTML comment, and without it prettier inserts one — which
+# would make the rendered file differ from its own formatter and re-open the drift this
+# gate closes. It lives here rather than in the source file because a trailing blank line
+# is exactly what prettier strips from PARITY.shared.md on its own, so the source could not
+# carry it and stay a fixed-point standalone.
+render() {
+  awk -v src="$SRC" -v g="$MARK_GEN" -v e="$MARK_END" '
+    $0 == g { print; while ((getline l < src) > 0) print l; close(src); print ""; skip = 1; next }
+    $0 == e { skip = 0; print; next }
+    !skip   { print }
+  ' "$1"
+}
+
+hdr "Desktop-bar parity (Zebar ↔ sketchybar)"
+
+for entry in "${TARGETS[@]}"; do
+  repo="${entry%%	*}"
+  rel="${entry##*	}"
+  file="$ROOT/$repo/$rel"
+
+  # Repo ABSENT → skip (Core-only clone), unless --strict.
+  if [[ ! -d "$ROOT/$repo" ]]; then
+    if ((STRICT)); then
+      fail "$repo is not checked out under $ROOT (--strict)"
+    else
+      MISSING="$MISSING $repo"
+      skip_env "$repo not checked out — skipping $rel (clone it, or pass --root)"
+    fi
+    continue
+  fi
+
+  # Repo PRESENT → the file and its markers are mandatory. Missing markers is the
+  # drift this gate exists for, so it fails rather than skipping.
+  if [[ ! -f "$file" ]]; then
+    fail "$repo/$rel is missing — the repo is checked out, so this file must exist"
+    continue
+  fi
+  n_gen=$(grep -cFx "$MARK_GEN" "$file")
+  n_end=$(grep -cFx "$MARK_END" "$file")
+  if ((n_gen != 1 || n_end != 1)); then
+    fail "$repo/$rel — expected exactly one '$MARK_GEN' and one '$MARK_END' (found $n_gen/$n_end); the generated block must be delimited exactly once"
+    continue
+  fi
+  if [[ "$(grep -nFx "$MARK_GEN" "$file" | cut -d: -f1)" -gt "$(grep -nFx "$MARK_END" "$file" | cut -d: -f1)" ]]; then
+    fail "$repo/$rel — '$MARK_END' appears before '$MARK_GEN'"
+    continue
+  fi
+
+  if [[ "$MODE" == check ]]; then
+    CHECKED=$((CHECKED + 1))
+    if diff -u "$file" <(render "$file") >/dev/null; then
+      pass "$repo/$rel matches desktop/PARITY.shared.md"
+    else
+      fail "$repo/$rel has drifted from desktop/PARITY.shared.md:"
+      diff -u "$file" <(render "$file") | sed 's/^/    /' >&2 || true
+      printf '    fix: edit desktop/PARITY.shared.md, then run: make gen-desktop-parity\n' >&2
+    fi
+  else
+    CHECKED=$((CHECKED + 1))
+    tmp="$(mktemp)"
+    render "$file" > "$tmp"
+    if cmp -s "$file" "$tmp"; then
+      pass "$repo/$rel already up to date"
+      rm -f "$tmp"
+    else
+      command cp -f "$tmp" "$file" && rm -f "$tmp"
+      pass "$repo/$rel rewritten from desktop/PARITY.shared.md"
+    fi
+  fi
+done
+
+if ((FAIL)); then
+  if [[ "$MODE" == check ]]; then
+    fail "desktop-bar parity — a copy no longer matches the canonical source"
+  fi
+  exit 1
+fi
+
+# A repo we could not read is an environment skip (3), never a green 0: reporting success
+# over an un-inspected copy is the "checked NOTHING and exited 0" shape #682 was filed for.
+# The message shape is the one audit-core.sh §9h parses — "not checked out under <root>:<repos> — ".
+if [[ -n "$MISSING" ]]; then
+  printf 'gen-desktop-parity: not checked out under %s:%s — %d of %d copies compared (clone the fleet beside this repo, or pass --root DIR)\n' \
+    "$ROOT" "$MISSING" "$CHECKED" "${#TARGETS[@]}" >&2
+  exit 3
+fi
+pass "desktop-bar parity — both copies track desktop/PARITY.shared.md"
