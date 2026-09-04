@@ -290,37 +290,211 @@ grep -q '_tool_skips=\$((_tool_skips' "$HERE/scripts/audit-core.sh" && {
 }
 ((_tb)) || pass "binding: audit-core.sh takes _tool_skips solely from _core_tool_skip_count, with no post-processing"
 
-# --json must stay JSON-ONLY, and the FLEET sections are where that broke. Their advisory
-# reports printed to stdout unguarded, so `audit-core.sh --json` emitted invalid JSON —
-# but ONLY on a box with sibling repos checked out, because otherwise the sections skip
-# before reaching the report. CI checks out just this repo, so CI never saw it. That is the
-# same blind spot --require-siblings exists for, which is why this assertion lives here.
-# ANCHORED to statement position (^[[:space:]]*printf) on purpose: a bare /printf/ also
-# matches a printf inside a $( ) that BUILDS A STRING — §5g composes its report that way —
-# and flagging those would be a false fire that teaches the next reader to widen the guard
-# where no guard belongs. Only a printf that is the statement can reach stdout.
-_jg_bad=0
-while IFS= read -r _jg_line; do
-  [ -n "$_jg_line" ] || continue
-  case "$_jg_line" in
-  *CORE_JSON*) ;;
-  *)
-    fail "--json: an unguarded fleet-section printf breaks JSON-only stdout — $_jg_line"
-    _jg_bad=1
-    ;;
-  esac
-done <<EOF
-$(awk 'NR>=860 && NR<=1045 && /^[[:space:]]*printf/ && !/>&2/ {printf "%d: %s\n", NR, $0}' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
-EOF
-((_jg_bad)) || pass "--json: every fleet-section report line is CORE_JSON-guarded (stdout stays parseable)"
-# The other half of "advisory": the section must not be able to FAIL. A future edit that
-# swaps the report for a fail() would red every repo's CI on arrival, since 8 of 9 are short.
-if ! grep -q 'fail "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
-  pass "helper adoption: the section reports and never fails (advisory by construction)"
+# ANCHORED to a statement that can REACH stdout, which is not the same as a line starting
+# with `printf` — and that distinction is why the previous two versions of this block were
+# VACUOUS. Every fleet report here is written `((${CORE_JSON:-0})) || printf …`, so it
+# begins with `((`; a `/^[[:space:]]*printf/` scan matched nothing at all, iterated an empty
+# list, and passed. It would have gone on passing with every guard stripped. Deriving the
+# line range (the fix before this one) did not help, because the range was never the bug.
+#
+# So: every line in the fleet sections that runs a `printf` which is not redirected to
+# stderr, EXCEPT one inside a `$( )` — §5g and §5f both compose report strings that way,
+# and a string being built reaches stdout only through whatever prints it, which this scan
+# sees separately. Then assert the scan is NON-EMPTY, because "matched nothing" is exactly
+# how this test failed silently twice.
+_jg_from="$(grep -n '^# ── 5f\.' "$HERE/scripts/audit-core.sh" | cut -d: -f1)"
+_jg_to="$(grep -n '^# ── 5i\.' "$HERE/scripts/audit-core.sh" | cut -d: -f1)"
+if [ -z "$_jg_from" ] || [ -z "$_jg_to" ]; then
+  fail "--json: cannot locate the §5f→§5i fleet sections in audit-core.sh — the banners were renamed and this guard now covers nothing"
 else
-  fail "helper adoption: the section can now fail — 8 of 9 repos are short, so this reds the fleet"
+  _jg_bad=0
+  _jg_seen=0
+  while IFS= read -r _jg_line; do
+    [ -n "$_jg_line" ] || continue
+    _jg_seen=$((_jg_seen + 1))
+    case "$_jg_line" in
+    *CORE_JSON*) ;;
+    *)
+      fail "--json: an unguarded fleet-section printf breaks JSON-only stdout — $_jg_line"
+      _jg_bad=1
+      ;;
+    esac
+  done <<EOF
+$(awk -v a="$_jg_from" -v b="$_jg_to" '
+    NR>=a && NR<=b && /printf/ && !/>&2/ {
+      if (match($0, /\$\([[:space:]]*printf/)) next
+      printf "%d: %s\n", NR, $0
+    }' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+EOF
+  if ((_jg_seen == 0)); then
+    fail "--json: the fleet-section scan matched NO printf at all — it is vacuous again, which is how it stayed green through two rewrites while protecting nothing"
+  elif ((_jg_bad == 0)); then
+    pass "--json: all $_jg_seen fleet-section stdout writes (§5f–§5i) are CORE_JSON-guarded"
+  fi
 fi
-unset _ha_bad _ha_line
+unset _jg_from _jg_to _jg_seen
+
+# ── the adoption RATCHET: _core_helper_verdict, as a unit ───────────────────────
+# What used to be here was a single assertion on the section's SOURCE TEXT — "audit-core.sh
+# contains no `fail \"helper adoption`" — pinning the section as advisory by construction.
+# That assertion was green for the whole life of the bug it should have caught. §5f measured
+# `blib_user_bindirs_on_path 1/9` and printed it; the gap that fraction names was shipping a
+# bootstrap that exited 2 on every openSUSE run, and a second repo carried the same probe
+# masked by an apk-installed `go` (#748). "It never fails" was not a property worth pinning.
+# It was the defect.
+#
+# So the section ratchets now, and what is pinned is the JUDGMENT — driven through the same
+# helper audit-core.sh calls, not re-implemented here. That distinction is the lesson of
+# _core_tool_skip_count directly above: a test that owns its own copy of the logic stays
+# green while the shipped logic changes underneath it.
+_hv() { CORE_JSON=1 bash -c '. "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9; _core_helper_verdict "$1" "$2"' _ "$1" "$2" 2>/dev/null; }
+_hv_bad=0
+# ledger=1 present=1 — the settled state.
+[[ "$(_hv 1 1)" == ok ]] || { fail "_core_helper_verdict 1 1 = '$(_hv 1 1)', want 'ok' — a repo in good standing is being reported as something else"; _hv_bad=1; }
+# ledger=1 present=0 — a repo DROPPED a helper it had. The one class the old counter could
+# in principle have caught, and could not: the fraction would simply have read one lower.
+[[ "$(_hv 1 0)" == regressed ]] || { fail "_core_helper_verdict 1 0 = '$(_hv 1 0)', want 'regressed' — a repo can now silently lose a bootstrap-lib helper"; _hv_bad=1; }
+# ledger=0 present=1 — good news that must still fail, because recording it is the ONLY
+# thing that ever tightens the ratchet. Let this pass and the ledger goes stale, every later
+# regression reads as an unremarkable gap, and §5f is a counter again.
+[[ "$(_hv 0 1)" == advanced ]] || { fail "_core_helper_verdict 0 1 = '$(_hv 0 1)', want 'advanced' — an unrecorded adoption leaves the ledger stale and the ratchet cannot tighten"; _hv_bad=1; }
+# ledger=0 present=0 — the on-arrival state, and the one that must NOT fail: most of the
+# fleet is short today and a gate that is red on arrival is a gate someone turns off.
+[[ "$(_hv 0 0)" == gap ]] || { fail "_core_helper_verdict 0 0 = '$(_hv 0 0)', want 'gap' — an unclaimed gap would red the whole fleet on arrival"; _hv_bad=1; }
+[[ "$(_hv 1 1)" == "" ]] && { fail "_core_helper_verdict: could not source scripts/lib/common.sh — the helper is unreachable"; _hv_bad=1; }
+((_hv_bad)) || pass "_core_helper_verdict: ok / regressed / advanced / gap — both movements block, the standing gap does not"
+unset _hv_bad
+
+# BINDING. The unit above is worth nothing if §5f decides for itself. Assert it calls the
+# helper, and that each verdict lands where the ratchet needs it: both movements on fail(),
+# the standing gap on the advisory accumulator.
+_hb=0
+grep -q '_core_helper_verdict' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: audit-core.sh §5f does not call _core_helper_verdict — the tested judgment is not the code that runs"
+  _hb=1
+}
+grep -q 'fail "helper adoption: .* no longer calls' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: §5f has no 'regressed' fail — a repo dropping a helper is back to being a silently smaller number"
+  _hb=1
+}
+grep -q 'fail "helper adoption: .* and the ledger does not say so' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: §5f has no 'advanced' fail — nothing forces the ledger to be ratcheted, so it will go stale"
+  _hb=1
+}
+grep -q 'gap) _ha_gaps=' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: §5f no longer routes a 'gap' to the advisory report — if it now fails, 8 of 9 repos red the fleet on arrival"
+  _hb=1
+}
+((_hb)) || pass "binding: §5f judges through _core_helper_verdict and routes all four verdicts as the ratchet requires"
+unset _hb
+
+# THE LEDGER'S OWN INTEGRITY. Every repo named in it must be a real fleet entry. A typo
+# ('dotfiles-Fedroa') is not a loud failure — it reads as "that repo has not adopted this",
+# which is the quietest possible way for the ratchet to stop watching a repo.
+_hl_bad=0
+while IFS= read -r _hl_repo; do
+  [ -n "$_hl_repo" ] || continue
+  grep -qx "$_hl_repo" "$HERE/scripts/os-repos.txt" || {
+    fail "§5f ledger names '$_hl_repo', which is not in scripts/os-repos.txt — a typo here reads as 'not adopted' and silently drops that repo from the ratchet"
+    _hl_bad=1
+  }
+done <<EOF
+$(sed -n '/^  _ha_ledger=/,/^'"'"'$/p' "$HERE/scripts/audit-core.sh" | grep -o 'dotfiles-[A-Za-z]*' | sort -u)
+EOF
+((_hl_bad)) || pass "§5f ledger: every repo it names is a real entry in scripts/os-repos.txt"
+unset _hl_bad _hl_repo _ha_bad _ha_line
+
+# ── _core_helper_called: a CALL, not a mention ──────────────────────────────────
+# The ledger above is only as good as this predicate, and its first version was a bare
+# `grep -q "$helper" bootstrap.sh`. An adoption PR's whole shape is "add the call, explain
+# why in a comment" — so deleting the call and leaving the paragraph kept that grep green
+# and reported `ok`, and the one regression the ledger exists to catch was invisible in
+# exactly the files it had just been taught to watch. It was ALREADY inflating three rows
+# before the ledger existed: dotfiles-MacBook credited with blib_note_fail and
+# blib_failures_report from four comment lines, dotfiles-Fedora with blib_resolve_su from
+# one. Fixtures, not a re-implementation — this drives the shipped predicate.
+# Under $SANDBOX with an XXXXXX template — PORTABILITY.md bans a template-less `mktemp`
+# (BSD requires one, and this suite runs on the macOS leg), and $SANDBOX is what the
+# harness reaps, so a fixture that fails mid-block cannot leak a temp tree.
+_hc_dir="$(mktemp -d "$SANDBOX/helpercall.XXXXXX")"
+printf 'set -e\nblib_user_bindirs_on_path\n'                              >"$_hc_dir/call.sh"
+printf 'set -e\n# blib_user_bindirs_on_path\n'                            >"$_hc_dir/commented.sh"
+printf 'set -e\n  #   blib_user_bindirs_on_path — why we call it\n'       >"$_hc_dir/indented-comment.sh"
+printf 'set -e\n# see blib_user_bindirs_on_path\nblib_wire_summary\n'     >"$_hc_dir/mention-only.sh"
+printf 'set -e\nblib_note_fail_once "x"\n'                                >"$_hc_dir/longer-name.sh"
+printf 'set -e\n((DRY)) && export BLIB_DRY=1\n'                           >"$_hc_dir/var.sh"
+# Prose the USER sees, in both quote styles — not a call.
+printf 'set -e\necho "run blib_user_bindirs_on_path first"\n'            >"$_hc_dir/dquote.sh"
+printf "set -e\necho 'run blib_user_bindirs_on_path first'\n"              >"$_hc_dir/squote.sh"
+# A usage() heredoc documenting the env var, with no code reference left. This shape is
+# LIVE in dotfiles-Arch (`BLIB_DRY    set to 1 …`), which is why it earns a fixture.
+printf 'set -e\nusage() {\n  cat <<EOF\nEnv overrides:\n  BLIB_DRY    set to 1 for a dry run\nEOF\n}\n' >"$_hc_dir/heredoc.sh"
+# The same, with an indented terminator (<<-) and a quoted delimiter.
+printf 'set -e\nusage() {\n\tcat <<-\x27EOF\x27\n\t  BLIB_DRY documented here\n\tEOF\n}\n' >"$_hc_dir/heredoc-dash.sh"
+# A herestring and a comment marker that both LOOK like heredoc openers. dotfiles-Offense
+# marks its usage block `# <<<USAGE`, and reading that as a heredoc swallowed the rest of
+# the file — four adopted helpers reported absent.
+printf 'set -e\n# <<<USAGE\ngrep -q x <<<"$y"\nblib_wire_summary\n'      >"$_hc_dir/herestring.sh"
+# A PLAIN <<EOF whose body contains an indented delimiter-lookalike. Only <<- strips an
+# indent from the terminator, and only tabs — trimming unconditionally ended the heredoc
+# here and handed the rest of its prose to the matcher as executable code.
+printf 'set -e\ncat <<EOF\n  EOF\nblib_user_bindirs_on_path documented here\nEOF\nblib_wire_summary\n' >"$_hc_dir/hd-indented-body.sh"
+# Escaped quotes inside a double-quoted string: `s/"[^"]*"//g` matched the fragments AROUND
+# the helper and left the token bare between them.
+printf 'set -e\nprintf "run \\"blib_user_bindirs_on_path\\" first"\nblib_wire_summary\n' >"$_hc_dir/escaped-quote.sh"
+# Multi-line strings — a quote that opens on one line and closes on another, whose interior
+# line is a bare helper name. Line-local substitution could never see these.
+printf 'set -e\necho "line one\nblib_user_bindirs_on_path\nline three"\nblib_wire_summary\n' >"$_hc_dir/multiline-dq.sh"
+printf "set -e\necho 'line one\nblib_user_bindirs_on_path\nline three'\nblib_wire_summary\n" >"$_hc_dir/multiline-sq.sh"
+_hc_bad=0
+_hc() { # <fixture> <helper> <want 0|1> <why>
+  local got=0
+  _core_helper_called "$_hc_dir/$1" "$2" && got=1
+  [[ "$got" == "$3" ]] || { fail "_core_helper_called $1 $2 = $got, want $3 — $4"; _hc_bad=1; }
+}
+_hc call.sh             blib_user_bindirs_on_path 1 "a bare call must count"
+_hc commented.sh        blib_user_bindirs_on_path 0 "a commented-out call must NOT count — this is the regression the ledger exists to catch"
+_hc indented-comment.sh blib_user_bindirs_on_path 0 "an indented prose comment must NOT count"
+_hc mention-only.sh     blib_user_bindirs_on_path 0 "naming the helper in a comment while calling a DIFFERENT one must NOT count"
+_hc longer-name.sh      blib_note_fail            0 "blib_note_fail_once must not satisfy the blib_note_fail row (whole-identifier match)"
+_hc longer-name.sh      blib_note_fail_once       1 "the longer name must satisfy its own row"
+_hc var.sh              BLIB_DRY                  1 "BLIB_DRY is a variable, not a function — a reference is adoption"
+_hc missing.sh          BLIB_DRY                  0 "an unreadable file is not adoption"
+_hc dquote.sh           blib_user_bindirs_on_path 0 "a helper named inside a double-quoted string is prose, not a call"
+_hc squote.sh           blib_user_bindirs_on_path 0 "a helper named inside a single-quoted string is prose, not a call"
+_hc heredoc.sh          BLIB_DRY                  0 "a usage() heredoc documenting the var is not a reference — the dotfiles-Arch shape"
+_hc heredoc-dash.sh     BLIB_DRY                  0 "<<- with an indented, quoted terminator must be skipped too"
+_hc herestring.sh       blib_wire_summary         1 "a '<<<' herestring and a '# <<<MARKER' comment must not be read as heredoc openers — that swallowed the rest of the file"
+_hc hd-indented-body.sh blib_user_bindirs_on_path 0 "a plain <<EOF body may contain an indented 'EOF' line; only <<- strips an indent, and only tabs"
+_hc escaped-quote.sh    blib_user_bindirs_on_path 0 "a helper between backslash-escaped quotes is still inside the string"
+_hc multiline-dq.sh     blib_user_bindirs_on_path 0 "a multi-line double-quoted string is not code"
+_hc multiline-sq.sh     blib_user_bindirs_on_path 0 "a multi-line single-quoted string is not code"
+# Every construct above must also leave the scanner in sync: if a heredoc or a string
+# swallowed the rest of the file, the call that FOLLOWS it would vanish too — which is the
+# failure mode a fixture asserting only "the bypass is rejected" cannot tell apart from a
+# scanner that stopped reading. Assert the tail survives, for each.
+for _hc_f in hd-indented-body escaped-quote multiline-dq multiline-sq herestring; do
+  _hc "$_hc_f.sh" blib_wire_summary 1 "the call AFTER the construct must still be seen — otherwise the scanner lost sync and swallowed the file"
+done
+unset _hc_f
+# THE PIPEFAIL CASE, and it is not hypothetical: the first version of this predicate was
+# `sed … | grep -q`, and `grep -q` exits on first match, SIGPIPEing sed, which under
+# `set -o pipefail` — which audit-core.sh sets — makes the pipeline non-zero ON SUCCESS.
+# Every adopted helper then read as "not called" and the ratchet failed the whole fleet.
+# Run the predicate in a shell with pipefail on, the way the audit actually runs it.
+_hc_pf="$(bash -c 'set -euo pipefail; . "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9
+  _core_helper_called "'"$_hc_dir"'/call.sh" blib_user_bindirs_on_path && echo yes || echo no' 2>/dev/null)"
+[[ "$_hc_pf" == yes ]] || { fail "_core_helper_called under 'set -o pipefail' says '$_hc_pf', want 'yes' — the SIGPIPE trap (#459) is back and the ratchet fails every repo that HAS adopted"; _hc_bad=1; }
+((_hc_bad)) || pass "_core_helper_called: a call counts, a comment does not, a longer identifier does not, and it survives pipefail"
+rm -rf "$_hc_dir"
+unset _hc_dir _hc_bad _hc_pf
+
+# BINDING: §5f must ask the predicate, not grep the file itself.
+if grep -q '_core_helper_called "\$_ha_dir/bootstrap.sh" "\$_ha_h"' "$HERE/scripts/audit-core.sh"; then
+  pass "binding: §5f tests adoption through _core_helper_called (comments cannot satisfy the ledger)"
+else
+  fail "binding: §5f no longer calls _core_helper_called — a bare grep counts a comment as a call, which is how a deleted helper stays invisible"
+fi
 
 hdr "git identity refuses to guess (useConfigOnly + a commented-out seed)"
 # What a FRESHLY BOOTSTRAPPED box does when the user has not set an identity yet.

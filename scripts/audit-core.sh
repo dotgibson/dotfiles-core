@@ -1021,16 +1021,22 @@ EOF
   ((rt_fail)) || pass "RETURN traps (every one disarms the slot before the caller's frame sees it)"
 fi
 
-# ── 5f. bootstrap-lib helper adoption across the fleet ───────────────────────
+# ── 5f. bootstrap-lib helper adoption across the fleet (a ratchet) ────────────
 # Core ships lib/bootstrap-lib.sh so the shared half of a bootstrap stops being hand-forked
 # nine ways. Helpers get ADDED to it over time — usually because one repo hit a bug — and
 # nothing has ever checked whether the other eight picked them up. So the file grows a fix
 # and the fleet keeps the defect (#516).
 #
-# Measured when this section was written, and it is not a hypothetical spread:
-#   blib_resolve_su 2/9 · blib_sudo_keepalive_start 1/9 · blib_user_bindirs_on_path 1/9 ·
-#   blib_note_fail + blib_failures_report 2/9 · blib_wire_summary 7/9 ·
-#   blib_install_core_guard 7/9 · BLIB_DRY 9/9
+# Measured adoption, and it is not a hypothetical spread. These are CALL counts — repos
+# whose bootstrap.sh really invokes the helper — which is not what the old bare grep gave,
+# and is also not the same question as "how many repos are compliant": an EXEMPT repo calls
+# nothing and is short of nothing. Both numbers are given, because conflating them is how
+# `blib_user_bindirs_on_path` got written up as 8/9 when seven repos call it:
+#   blib_resolve_su 1/9 · blib_sudo_keepalive_start 1/9 (+2 exempt = 3/9 compliant) ·
+#   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) · blib_note_fail 1/9 ·
+#   blib_failures_report 1/9 · blib_wire_summary 8/9 · blib_install_core_guard 7/9 ·
+#   BLIB_DRY 9/9
+#
 # Each gap is a live defect in the repos missing it: no blib_resolve_su means a hand-rolled
 # `[[ "$(id -u)" -eq 0 ]]`, an ARITHMETIC comparison where an empty `id` output evaluates as
 # 0 and the whole run proceeds unescalated; no blib_sudo_keepalive_start means sudo's
@@ -1038,33 +1044,67 @@ fi
 # a silent hang; no blib_failures_report means the script can record failures via
 # blib_note_fail and then exit 0 announcing "complete".
 #
-# REPORT, DO NOT BLOCK — deliberately, and this is the load-bearing design decision.
-# Seven of nine repos are short on arrival, so a failing gate would be red from its first
-# run, and a gate that is red on arrival is a gate someone turns off. It states the gap and
-# leaves remediation to per-repo work. Turn it into a fail only once the fleet is clean.
+# WHY THIS IS NO LONGER A BARE COUNTER (#748). The section used to print a fraction per
+# repo and stop there. `blib_user_bindirs_on_path 1/9` was in that report from the day it was
+# written, and in the meantime the gap it names shipped a live bug: openSUSE's bootstrap
+# probed `command -v mise` for a mise its own mise.run install had just written to
+# ~/.local/bin — a directory only the SHELL layer prefixes — so the probe was false, the Go
+# fallback's every arm failed, and the run exited 2 on EVERY bootstrap. No gate could see it,
+# because a stubbed run installs nothing and a real one had never been looked at. Alpine
+# carried the identical probe, kept harmless only by an apk-installed `go` masking the broken
+# arm. The counter had been reporting the cause the entire time; a number nothing acts on is
+# where a defect hides in plain sight.
+#
+# SO: the measurement is a LEDGER, and the ledger RATCHETS. _core_helper_verdict (lib/
+# common.sh) holds the whole judgment and carries the argument for it. In one line: `gap`
+# stays advisory, because 8 of 9 repos are short on arrival and a gate that is red on
+# arrival is a gate someone turns off — that reasoning was right and is kept. But both
+# MOVEMENTS are blocking. A repo that DROPS a helper it had (`regressed`) fails; a repo that
+# ADOPTS one nobody recorded (`advanced`) also fails, until the pair below is added. Failing
+# on good news is what tightens the ratchet: without it the ledger goes stale, every later
+# regression reads as an unremarkable `gap`, and this is a counter again. It is the shape
+# gen-porting-matrix.sh's PKG_ROWS already uses for the same reason (CLAUDE.md).
+#
+# THE LEDGER IS THE ONLY EDIT. Adopt a helper in an OS repo, then add `<repo>` to that
+# helper's line here in the same sweep. The audit prints the exact pair to add.
 #
 # --STRICT SAFETY: the "sibling not checked out" skip goes through skip_env, which records
-# it as an ENVIRONMENT skip. --strict counts only TOOL-absent skips, so this section stays
-# inert there — CI checks out only this repo. It used to achieve that by WORDING the skip
-# "out of scope" so the substring classifier would let it through, which made the message
-# text the gate and conflated "you narrowed this" with "this box cannot run it". The class
-# is structural now, so the wording is free to say what is actually true, and
-# --require-siblings can red on precisely this case without touching --strict.
+# it as an ENVIRONMENT skip. --strict counts only TOOL-absent skips, so the SKIPS stay inert
+# there — CI checks out only this repo, so the ratchet's fails cannot fire in CI either. It
+# used to achieve that by WORDING the skip "out of scope" so the substring classifier would
+# let it through, which made the message text the gate and conflated "you narrowed this" with
+# "this box cannot run it". The class is structural now, so the wording is free to say what is
+# actually true, and --require-siblings can red on precisely this case without touching
+# --strict.
 #
 # Enumerates the fleet through load_os_repos (lib/common.sh) — the ONE reader, since #669
 # removed the three hardcoded fallback arrays. This check keeps the skip_env posture rather
 # than the fan-out gates' hard exit: an unreadable fleet list should not red an advisory
 # section of an otherwise-fine audit, it should say it could not cover the fleet.
-hdr "bootstrap-lib helper adoption (advisory)"
+hdr "bootstrap-lib helper adoption (ratcheted)"
 _ha_root="$(cd "$HERE/.." && pwd)"
 if ! load_os_repos; then
   skip_env "helper adoption ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
 else
-  # <helper> <what its absence costs>. Kept here rather than in bootstrap-lib.sh so the
-  # rationale lives with the check that reports it; VENDORING.md carries the human contract.
+  # ── the ledger ──────────────────────────────────────────────────────────────
+  # `<helper> <repo>[ <repo>…]` — the repos whose bootstrap.sh is KNOWN to call that helper.
+  # A repo absent from a line is an unclaimed gap: reported, not failed. Kept here rather
+  # than in bootstrap-lib.sh so the rationale lives with the check that reports it;
+  # VENDORING.md carries the human contract.
+  _ha_ledger='
+blib_resolve_su          dotfiles-Gentoo
+blib_sudo_keepalive_start dotfiles-Gentoo
+blib_user_bindirs_on_path dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
+blib_note_fail           dotfiles-Gentoo
+blib_failures_report     dotfiles-Gentoo
+blib_wire_summary        dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
+blib_install_core_guard  dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense
+BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
+'
   _ha_checked=0
   _ha_missing=0
   _ha_absent=0
+  _ha_fail=0
   for _ha_repo in "${CORE_OS_REPOS[@]}"; do
     _ha_dir="$(resolve_repo_dir "$_ha_root" "$_ha_repo")" || _ha_dir="$_ha_root/$_ha_repo"
     if [[ ! -f "$_ha_dir/bootstrap.sh" ]]; then
@@ -1076,16 +1116,51 @@ else
     for _ha_h in blib_resolve_su blib_sudo_keepalive_start blib_user_bindirs_on_path \
       blib_note_fail blib_failures_report blib_wire_summary blib_install_core_guard BLIB_DRY; do
       # A ROLE repo layers on top of an OS repo's bootstrap and does no package installation
-      # of its own, so the two helpers that exist for long privileged installs do not apply.
-      # Exempting them is what keeps the report actionable rather than noisy — the same shape
+      # of its own, so the helper that exists for long privileged installs does not apply.
+      # Exempting it is what keeps the report actionable rather than noisy — the same shape
       # as the doctor's own exemption list.
+      #
+      # blib_user_bindirs_on_path used to be exempt here too, for both role repos, on the
+      # same "installs no packages" reasoning. That was wrong for dotfiles-Offense and #748
+      # is why: `--install` there does `go install` into ~/.local/bin and pipx shims beside
+      # it, so it needs the bindirs on PATH exactly as much as an OS repo does — and it had
+      # hand-rolled its own `export PATH=` prelude to say so, which the exemption hid.
+      # dotfiles-Defense installs nothing and probes nothing, so it stays exempt.
       case "$_ha_repo:$_ha_h" in
       dotfiles-Defense:blib_sudo_keepalive_start | dotfiles-Offense:blib_sudo_keepalive_start | \
-        dotfiles-Defense:blib_user_bindirs_on_path | dotfiles-Offense:blib_user_bindirs_on_path)
+        dotfiles-Defense:blib_user_bindirs_on_path)
         continue
         ;;
       esac
-      grep -q "$_ha_h" "$_ha_dir/bootstrap.sh" 2>/dev/null || _ha_gaps="$_ha_gaps $_ha_h"
+      _ha_in_led=0
+      # One ledger line per helper, matched whole-word at both ends so `blib_note_fail`
+      # cannot be answered by a line for some future `blib_note_fail_once`.
+      case "$(printf '%s\n' "$_ha_ledger" | grep -E "^${_ha_h}[[:space:]]" || true)" in
+      *" $_ha_repo "* | *" $_ha_repo") _ha_in_led=1 ;;
+      esac
+      # A CALL, not a mention — _core_helper_called strips comments and matches the
+      # helper as a whole shell identifier. A bare grep counted a COMMENT, and since an
+      # adoption PR's whole shape is "add the call, explain why", deleting the call and
+      # leaving the paragraph behind kept that grep green. It was already inflating three
+      # rows before this section grew a ledger at all: dotfiles-MacBook was credited with
+      # blib_note_fail + blib_failures_report on the strength of four comment lines (it
+      # has its own fail_note/print_ledger), and dotfiles-Fedora with blib_resolve_su on
+      # one comment reading "same fix landed upstream in blib_resolve_su". The measured
+      # figures in this section's header were wrong by three, in the flattering direction.
+      _ha_present=0
+      _core_helper_called "$_ha_dir/bootstrap.sh" "$_ha_h" && _ha_present=1
+      case "$(_core_helper_verdict "$_ha_in_led" "$_ha_present")" in
+      ok) ;;
+      gap) _ha_gaps="$_ha_gaps $_ha_h" ;;
+      regressed)
+        _ha_fail=1
+        fail "helper adoption: $_ha_repo no longer calls $_ha_h — the ledger records it as adopted (a repo lost a helper, or audit-core.sh §5f's ledger landed ahead of that repo's adoption PR)"
+        ;;
+      advanced)
+        _ha_fail=1
+        fail "helper adoption: $_ha_repo now calls $_ha_h and the ledger does not say so — ratchet it: add \`$_ha_repo\` to the \`$_ha_h\` line in audit-core.sh §5f"
+        ;;
+      esac
     done
     if [[ -n "$_ha_gaps" ]]; then
       _ha_missing=$((_ha_missing + 1))
@@ -1095,10 +1170,12 @@ else
 
   if ((_ha_checked == 0)); then
     skip_env "helper adoption (no sibling OS repo checked out — nothing to read here)"
+  elif ((_ha_fail)); then
+    : # the fail() lines above are the report; a pass() here would contradict them
   elif ((_ha_missing)); then
-    # pass(), not fail(): see REPORT, DO NOT BLOCK above. The count is the signal; the
-    # per-repo lines printed just above are the detail.
-    pass "helper adoption: $_ha_missing of $_ha_checked checked-out repo(s) have not adopted every helper (advisory — see the lines above, VENDORING.md has the contract)"
+    # pass(), not fail(): an unclaimed gap is the on-arrival state — see the ratchet note
+    # above. The per-repo lines printed just above are the detail.
+    pass "helper adoption: ledger holds; $_ha_missing of $_ha_checked checked-out repo(s) still short of the full contract (advisory — VENDORING.md has it)"
   else
     pass "helper adoption: every checked-out OS repo calls the whole bootstrap-lib contract ($_ha_checked repo(s))"
   fi
