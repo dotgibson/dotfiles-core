@@ -176,10 +176,11 @@ REPO_ROOT="$PWD" # after the cd, so the expected link targets resolve absolutely
 # `mktemp -d` exits 1 there, so the gate would refuse before ever reaching bootstrap
 # (PORTABILITY.md, "Banned, with the portable form"). The guard is not ceremony either —
 # an empty $tmp turns the mkdir below into /.config on the real filesystem.
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/core-check-links.XXXXXX")" && [[ -n "$tmp" && -d "$tmp" ]] || {
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/core-check-links.XXXXXX")"
+if [[ -z "$tmp" || ! -d "$tmp" ]]; then
   bad "could not create a throwaway HOME — refusing to run bootstrap without one"
   exit 1
-}
+fi
 # shellcheck disable=SC2317,SC2329  # invoked by the trap below, which shellcheck cannot see —
 # SC2329 for the function, SC2317 for its body, which newer shellchecks read as unreachable.
 # Both are needed: the Alpine audit leg runs a build that emits the second and the local one did not.
