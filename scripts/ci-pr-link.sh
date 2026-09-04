@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/ci-pr-link.sh — does this PR satisfy the "a fix links its issue" rule?
+# scripts/ci-pr-link.sh — does this PR satisfy the "a fix or feat links its issue" rule?
 # ──────────────────────────────────────────────────────────────────────────────
 # WHY THIS EXISTS. #446 fixed two reported bugs (#420 starship, #423 carapace) and
 # merged green — but its body carried no `Closes #…` keyword, so GitHub linked
@@ -8,7 +8,7 @@
 # a bug that had already shipped in v4.12.0. Nothing was broken; the LINK was
 # missing, and nothing in CI objected.
 #
-# So: a `fix(…)` PR must either close an issue or say in writing why it doesn't.
+# So: a `fix(…)` or `feat(…)` PR must close an issue, or say in writing why not.
 #
 # Decision logic lives HERE rather than inline in the workflow YAML, matching
 # scripts/ci-classify.sh — shellcheck-clean, unit-tested (scripts/test-core.sh),
@@ -19,7 +19,7 @@
 #
 # Prints ONE `verdict=…` line to stdout (a stable token for the workflow and the
 # tests), a human explanation to stderr, and exits:
-#   0  verdict=not-gated    not a `fix(…)` PR — this rule has no opinion
+#   0  verdict=not-gated    not a `fix(…)`/`feat(…)` PR — this rule has no opinion
 #   0  verdict=ok           gated, and it closes >= 1 issue
 #   0  verdict=exempt       gated, no link, but the body records `No-Issue: <reason>`
 #   1  verdict=missing-link gated, no link, no reason  ← the #446 shape
@@ -31,17 +31,34 @@
 # exit code is the POLICY (block either way); the verdict is the CLAIM, and only one
 # of them asserts anything about the author's PR.
 #
-# GATED SET: `fix` only, deliberately. The regex is the delimiter-aware
-# Conventional-Commit shape from scripts/gen-release-notes.sh:50 — optional
-# `(scope)`, optional breaking `!`, then `:`. Prose that merely starts with the
-# word ("fixing a flaky test") is NOT gated, and neither is `fixup:`.
+# GATED SET: `fix` and `feat`. The regex is the delimiter-aware Conventional-Commit
+# shape from scripts/gen-release-notes.sh:50 — optional `(scope)`, optional breaking
+# `!`, then `:`. Prose that merely starts with the word ("fixing a flaky test") is NOT
+# gated, and neither is `fixup:`.
 #
-# NOT cliff.toml:56, which groups on a bare `^fix` and so also matches `fixup:`.
-# The two differ, and this gate deliberately takes the STRICTER of them: a false
-# `not-gated` merely declines to ask for a link, while a false gate would demand
-# one from a PR that is not a fix at all, and authors would learn to route around
-# the check. Widening this to match cliff would be a behaviour change, not a
-# tidy-up.
+# NOT cliff.toml:56, which groups on a bare `^fix` and so also matches `fixup:`. The
+# two differ, and this gate deliberately takes the STRICTER of them on that axis: a
+# false `not-gated` merely declines to ask for a link, while a false gate would demand
+# one from a PR that is not a fix at all, and authors would learn to route around the
+# check.
+#
+# WHY `feat` JOINED IT (#852). The set was `fix` only, and the argument for that — just
+# above — is entirely about `fixup:` versus `fix:`. It says nothing about `feat:`, and
+# the omission had a cost. #852 (`fix(fleet): make check is not hermetic…`) was resolved
+# by #853, titled `feat(check): one Core-owned hermetic links gate`, plus three consumer
+# PRs. Every part merged; nothing closed the issue; it sat OPEN looking like a live
+# defect until a reader noticed — the exact #446 shape the gate exists to prevent,
+# reached through the PR's title rather than its body. An issue does not know how the PR
+# that resolves it will be typed.
+#
+# Measured over the 100 PRs merged after the gate landed (2026-08-17): 29 gated, 71 not,
+# and 41 of those 71 cited an issue in the body and closed none.
+#
+# AND IT STOPS AT `feat`, on the same reasoning that keeps `fixup:` out. `chore(core):
+# sync Core → vX.Y.Z` and `docs(changelog): release vX.Y.Z` are mechanical and close
+# nothing by design; gating them would teach `No-Issue:` as a reflex, and an escape
+# hatch taken by habit is a gate that has stopped working. `fix` and `feat` are the two
+# types that mean someone reported this or someone asked for it.
 #
 # The PR TITLE is what this repo squash-merges into the subject line, so the
 # title is the honest thing to test.
@@ -73,11 +90,11 @@ probe_ok=1
   linked=0
 }
 
-if [[ ! "$title" =~ ^fix(\([^\)]*\))?!?: ]]; then
+if [[ ! "$title" =~ ^(fix|feat)(\([^\)]*\))?!?: ]]; then
   echo "verdict=not-gated"
   # No backticks in these single-quoted strings: shellcheck reads them as an intended
   # command substitution and raises SC2016, which this repo's audit treats as a failure.
-  printf 'ci-pr-link: title is not a fix(…) PR — rule does not apply.\n' >&2
+  printf 'ci-pr-link: title is not a fix(…) or feat(…) PR — rule does not apply.\n' >&2
   exit 0
 fi
 
@@ -141,7 +158,7 @@ fi
 
 # The probe never answered, and the body carries no reason — so this check does not know
 # whether the PR is linked. Say exactly that. Still EXIT NON-ZERO (the recorded decision
-# in #500): blocking is the safe side, since passing here would let an unlinked fix PR
+# in #500): blocking is the safe side, since passing here would let an unlinked gated PR
 # through on any API blip, which is the hole the gate exists to close. The difference
 # from missing-link is not the exit code, it is the claim.
 if ((!probe_ok)); then
@@ -152,7 +169,7 @@ ci-pr-link: could NOT determine whether this PR closes an issue.
 The GitHub GraphQL probe did not return a count -- an API error on our side, not
 a problem with your PR. This check is deliberately failing rather than guessing,
 because guessing "no link" would be wrong exactly when GitHub is having a bad
-day, and guessing "linked" would let an unlinked fix PR through.
+day, and guessing "linked" would let an unlinked fix/feat PR through.
 
 Nothing to change in the PR. Re-run this job:
 
@@ -165,11 +182,12 @@ fi
 
 echo "verdict=missing-link"
 cat >&2 <<'EOF'
-ci-pr-link: this `fix(…)` PR closes no issue and gives no reason.
+ci-pr-link: this `fix(…)`/`feat(…)` PR closes no issue and gives no reason.
 
-A fix that merges without a link leaves the issue it fixed OPEN — the next
-reader re-investigates a bug that already shipped. That is exactly what
-happened with #446, which fixed #420 and #423 and closed neither.
+Merging without a link leaves the issue OPEN — the next reader re-investigates
+something that already shipped. That is exactly what happened with #446, which
+fixed #420 and #423 and closed neither, and again with #852, which #853 resolved
+in full and left open because the PR was typed `feat(…)` rather than `fix(…)`.
 
 Do ONE of these:
 

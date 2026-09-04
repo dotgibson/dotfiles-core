@@ -1,12 +1,17 @@
 name: pr-link-check
 
-# A `fix(…)` PR must close an issue, or say in writing why it doesn't.
+# A `fix(…)` or `feat(…)` PR must close an issue, or say in writing why it doesn't.
 #
 # #446 fixed #420 (starship) and #423 (carapace) and merged green with no closing
 # keyword in its body. GitHub linked nothing, both issues stayed OPEN, and days
 # later a reader re-derived a 2021 upstream rename to re-confirm a bug that had
 # already shipped in v4.12.0. The code was right; the LINK was missing, and no
 # check objected. This is that check.
+#
+# The gated set was `fix` only until #852, which this same shape reached by another
+# route: #853 resolved it in full, was titled `feat(check)`, closed nothing, and left the
+# issue open. An issue does not know how the PR resolving it will be typed. The set stops
+# at `fix|feat` — see scripts/ci-pr-link.sh for why `chore`/`docs` stay out.
 #
 # Deliberately its OWN workflow rather than a job in ci.yml, for one reason: it has
 # to re-run when the PR BODY changes (`types: edited`), and putting that trigger on
