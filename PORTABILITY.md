@@ -192,7 +192,112 @@ whose whole load story is ordering.
 
 Define it locally in a new context too. Do not invent a shared `lib/have.sh`.
 
-## 5. Before you push
+## 5. `HAVE_*` is a declared surface, not a convention
+
+`zsh/00-tools.zsh` probes the modern-CLI stack at band 00. Every probe records a ledger
+row; only some also set a flag.
+
+- **`_CORE_PROBED`** — the authoritative ledger, and the one that is **always** written. A
+  zsh associative array, one row per `_have` call, `1` seen / `0` looked-and-absent.
+  `core-doctor` reads this and nothing else; so do `_core_doctor_stale` and
+  `_core_doctor_unwired` (`zsh/30-functions.zsh`). The `0` rows matter: without them "Core
+  probed this and said no" is indistinguishable from "Core does not probe this tool".
+
+  Rows come in two kinds. The **canonical** rows are the ones the doctor keys on and the
+  ones you should read — `fd`, `bat`, `git-absorb`. Alongside them sit **auxiliary** rows
+  left by the alternate-name ladders: probing `fd` and then `fdfind` writes both, and
+  `00-tools.zsh` afterwards forces `_CORE_PROBED[fd]=1` from `$FD_BIN` so the canonical row
+  carries the real answer rather than the first ladder rung's `0`. Read the canonical name;
+  treat `fdfind`/`batcat` rows as the implementation detail they are.
+- **`HAVE_<TOOL>`** — a convenience flag, and a **conditional** one: it exists only where
+  something actually gates on it. Fourteen probes deliberately set no flag at all (#694),
+  so the presence of a ledger row implies nothing about a flag. The name is `HAVE_` plus
+  the canonical tool name uppercased with `-` → `_` (`git-absorb` → `HAVE_GIT_ABSORB`).
+  Set, never `export`ed: these are shell parameters visible to the layers sourced after
+  band 00, not environment variables, so they never reach a child process — which is why
+  only code **sourced into the same shell** can read one.
+
+**A flag only exists where band-00 detection ran.** An interactive zsh through
+`zsh/loader.zsh` has them; a script, a non-interactive shell, and anything sourced before
+band 00 do not.
+
+Write `${HAVE_X:-}` rather than a bare `$HAVE_X`, but be clear about what that buys: it is
+**`set -u` safety only**. It does not let you tell the two absences apart, because both
+produce the empty string — "Core probed and did not find the tool" and "band 00 never ran
+here" read identically. For an OS or role fragment at band 70–94 that distinction is moot:
+the loader guarantees band 00 ran first, so empty means absent and the guard is exact. Read
+a flag anywhere else and you cannot rely on it. If you genuinely need to distinguish, the
+ledger is the only thing that can: `(( ${+_CORE_PROBED} ))` is false when detection never
+ran, and `$_CORE_PROBED[<tool>]` is `0` when it ran and found nothing.
+
+### What downstream may use
+
+| Flag | Tool | Read by |
+| --- | --- | --- |
+| `HAVE_ATUIN` | atuin | `dotfiles-Alpine`, `dotfiles-Debian`, `dotfiles-Fedora` — `os/*.zsh`, to enable the daemon only where Core wired atuin |
+
+**That is the whole supported surface, and the short list is the point.** It starts at
+exactly what the fleet reads today rather than at "all of them", because widening a
+declared surface is a one-line PR and narrowing one is a breaking change. An OS or role
+layer that needs another flag adds its row here in the same change that reads it — that is
+the ask, not a workaround for it.
+
+Every other flag `00-tools.zsh` sets is **internal to Core**: it gates an alias, a
+function, or an init in bands 00–69, and Core may rename or drop it in any release.
+
+### Role and OS layers own their own `HAVE_*` names
+
+`dotfiles-Offense` and `dotfiles-Defense` each define ~20 flags of their own
+(`HAVE_NXC`, `HAVE_ZEEK`, …) in the same namespace, and that is fine: a layer that
+**sets** a flag before reading it owns it outright. The contract is only about **reading a
+flag you did not set** — that is the one case where a Core rename breaks you silently, and
+the only case the gate looks at.
+
+Keep re-probing to a minimum, though. `dotfiles-Defense` sets `HAVE_JQ` with its own
+`_have jq`, which is legal and self-contained, but it means two layers assign one name;
+prefer a distinct name when the tool is not genuinely yours.
+
+### The gate
+
+`scripts/audit-core.sh` **§5j** enforces the table above in three directions, the same
+both-ways shape `core.manifest` has in §1:
+
+1. every flag declared here is one `zsh/00-tools.zsh` actually sets — so a Core rename or
+   removal cannot leave the declaration lying;
+2. every Core-namespace flag an OS or role repo **reads without setting** is declared here
+   — so an OS-repo author finds out at the gate, not at a broken prompt six months later;
+3. every flag `00-tools.zsh` sets has a reader — a `zsh/*.zsh` module, or this table. #694
+   removed fourteen that had neither, and this is what stops them accumulating again.
+   "Reader" means a **zsh module**, not any file mentioning the name: a flag is never
+   exported, so `bin/`, `scripts/`, `maint/` and nvim's lua run where it does not exist.
+   A **test** is not a reader either — `HAVE_GRON` survived an earlier draft of this gate
+   on the strength of one negative fixture, which is exactly the dead global the direction
+   exists to find.
+
+A flag with no reader is not free. It is a global in every interactive shell that can only
+go stale, and — because nothing consumes it — nothing ever notices when it does.
+
+Direction 2 reads the sibling clones, so it takes the `skip_env` posture §5f and §5h take:
+a repo that is not checked out is an **environment skip**, never a red, and the skip line
+names which repos went uncovered.
+
+**Know what that costs today.** Core's CI checks out this repo alone, so direction 2 records
+a skip on every CI run and fires only where the fleet sits beside Core — a maintainer's
+`make audit`, or the scheduled fleet jobs. The reusable `lint` workflow the OS repos call
+does not yet run it, so an OS-repo PR adding an undeclared read can merge without a red.
+Closing that needs a caller-side leg in `lint-call.yml`, which in turn needs the declared
+table reachable from a vendored checkout — and this file is **not** in `core.vendor`. That
+is [#866](https://github.com/dotgibson/dotfiles-core/issues/866), deliberately separate:
+changing the vendoring allowlist is its own blast radius across nine repos. It matches reads by their **sigil** (`$HAVE_X`,
+`${HAVE_X}`) rather than by the bare name, which is what lets it ignore the many prose
+mentions in comments without needing a parser for five grammars — the trap §3 documents.
+Whole-line comments are dropped on top of that, on both the read and the assignment side —
+the second matters more, since a `# HAVE_X=1` read as an assignment would mark the flag
+owned and **suppress** a real undeclared read of it. What survives both filters is an
+inline trailing comment, so one wording rule remains: **do not write a `$` in front of a
+flag name in a trailing comment.** Write `HAVE_ATUIN`, not `$HAVE_ATUIN`.
+
+## 6. Before you push
 
 ```bash
 make audit

@@ -1395,6 +1395,99 @@ _core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
   done
 }
 
+# ── _core_have_read_hits: HAVE_* flags a repo reads but does not set ──────────
+_core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names read but not set
+  # The fleet half of audit-core.sh §5j, extracted so it can be tested against fixtures
+  # rather than only by hand (#694 review). Echoes one flag NAME per line: every HAVE_*
+  # this repo READS and does not itself SET. Empty output means the repo reads only its
+  # own flags, which is always legal — the contract is about reading a name you did not set.
+  #
+  # THREE DECISIONS, each of which was a bug in an earlier draft:
+  #
+  # 1. READS ARE MATCHED BY THEIR `$` SIGIL, not by the bare name. `${HAVE_X…}`, `$HAVE_X`
+  #    and zsh's flag forms `${+HAVE_X}` and `${(t)HAVE_X}` are reads; a comment mentioning
+  #    the flag writes it bare. The two flag forms are not decoration and both were misses in
+  #    an earlier draft: `(( ${+HAVE_X} ))` asks whether a parameter is SET without caring
+  #    about its value, and `${(t)HAVE_X}` asks for its TYPE — this tree uses both idioms
+  #    itself (`(( ${+_CORE_PROBED} ))` in 30-functions.zsh, `${(t)GIT_EXEC_PATH}` in
+  #    00-tools.zsh), so an OS layer gating either way is entirely plausible and would have
+  #    walked past a matcher demanding `HAVE_` immediately after the brace. The pattern
+  #    therefore allows an optional parenthesised flag group and an optional `+`.
+  #    Measured across the fleet:
+  #    bare-name matching found HAVE_ASTGREP/HAVE_JNV/HAVE_SHELLCHECK in one dotfiles-Offense
+  #    comment and four more flags in five other comments, none of them reads. This is what
+  #    lets the gate skip comment-stripping, which PORTABILITY.md §3 documents as needing a
+  #    parser for five grammars.
+  # 2. WHOLE-LINE COMMENTS ARE DROPPED ANYWAY, on BOTH sides. The sigil rule alone still
+  #    misreads `# gated on $HAVE_X` as a read, and — worse, because it makes the gate too
+  #    LENIENT — `# HAVE_X=1` in a comment as an assignment, which would mark the flag owned
+  #    and suppress a real undeclared read of it. Cheap and imperfect (an inline trailing
+  #    comment survives), but it is the same filter Core applies to its own file, and a
+  #    consistent 80% beats two different 80%s.
+  # 3. VENDORED core/ IS PRUNED WITH find, NOT --exclude-dir. Both --exclude-dir and -I are
+  #    GNU extensions that busybox grep REJECTS, and the Alpine leg runs busybox — the trap
+  #    that once made _core_make_gate_hits report Core as the repo missing its own rule.
+  #    Without the prune every OS repo would appear to both set and read all of Core's flags,
+  #    because it carries a copy of the file being checked against.
+  # WHY *.sh IS SCANNED HERE THOUGH audit-core.sh §5j's own reader scan is .zsh-only, which
+  # looks inconsistent and is deliberate: the two directions err in OPPOSITE directions on
+  # purpose. Core's direction 3 asks "does anything read this flag?" — counting a non-reader
+  # there KEEPS A DEAD FLAG ALIVE, so it is strict, and .zsh is the only thing that can read
+  # an unexported parameter. This direction asks "does this repo read a flag it should not?" —
+  # MISSING a reader there lets an undeclared coupling through silently, so it is broad. A
+  # downstream `.sh` may well be sourced from a zsh fragment; and where it is a plain child
+  # process instead, a `$HAVE_X` in it is a read that can only ever be empty, which is its own
+  # defect and worth surfacing rather than ignoring. Each direction is tuned to FIND problems.
+  local dir="${1:-.}" files text owns uses f
+  [ -d "$dir" ] || return 0
+  files="$(find "$dir" \( -name .git -o -name core -o -name node_modules \) -prune -o \
+    -type f \( -name '*.zsh' -o -name '*.sh' \) -print 2>/dev/null)"
+  [ -n "$files" ] || return 0
+  # The non-comment text, read once: three passes run over it below and re-grepping the
+  # file list each time triples the I/O for no gain.
+  text="$(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null)"
+  # The ownership match refuses a name that ABUTS A QUOTE, so `printf 'HAVE_RG=1\n'` in a
+  # bootstrap that GENERATES a fragment is not read as this repo assigning the flag. That
+  # matters because ownership SUPPRESSES a finding: a bogus own is a silent pass on a real
+  # undeclared read, the same false-negative shape as the commented-out assignment above.
+  # It is a heuristic, not a parser, and here is exactly where its floor is. Still missed:
+  # `echo "note: HAVE_RG=1"` (a space precedes the name, as in real code); a quoted HEREDOC
+  # writing either an assignment or a read (`cat <<'EOF' > frag.zsh`), where no quote abuts
+  # anything; and a quoted ARITHMETIC literal `printf '(( HAVE_RG ))\n'`, since that pass
+  # matches a bare name and cannot use the lookbehind at all. Now over-rejected: a
+  # concatenation like `echo 'v: '$HAVE_RG`, where the quote CLOSES a string rather than
+  # opening one — contrived for a flag gate, and the trade is deliberate. Telling any of
+  # these apart needs the shell grammar, which is the trap PORTABILITY.md §3 documents at
+  # length; one character of lookbehind buys the common generated-fragment case in both
+  # directions and nothing more is claimed. The rest is #866's problem, if direction 2 is
+  # ever to become blocking.
+  owns=" $(printf '%s\n' "$text" | grep -oE "(^|[^\"'[:alnum:]_])HAVE_[A-Z0-9_]+=" 2>/dev/null \
+    | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
+  # TWO read shapes, because a shell has two. The sigil forms are the common ones; inside an
+  # ARITHMETIC context a parameter needs no `$` at all, so `(( HAVE_RG ))` is a plain read
+  # that the sigil pattern cannot see. That is not a hypothetical style — this tree gates on
+  # booleans exactly that way (`((UPDATE_CHECK_ENABLED))` in 60-update.zsh, `((CORE_CNF_ENABLED))`
+  # in 30-functions.zsh), so an OS layer writing `(( HAVE_X ))` is following the house style,
+  # and it would have passed direction 2 in silence.
+  # THE SIGIL PASS REFUSES A `$` THAT ABUTS A SINGLE QUOTE, and single only — the mirror of
+  # the ownership rule above, and the asymmetry is the whole point. A single quote suppresses
+  # expansion, so `printf '${HAVE_RG:-}\n' > frag.zsh` in a bootstrap that GENERATES a
+  # fragment is literal text, not a read of this repo's own shell. A DOUBLE quote does not,
+  # and `[[ -n "${HAVE_ATUIN:-}" ]]` is the single most common real form in this fleet — so
+  # rejecting on any quote would have made the commonest legitimate read invisible. This
+  # direction's error is a FALSE FINDING, which reds a clean repo; the ownership rule guards
+  # the opposite one.
+  uses="$( { printf '%s\n' "$text" | grep -oE "(^|[^'])[\$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+" 2>/dev/null
+    printf '%s\n' "$text" | grep -F '((' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' 2>/dev/null
+  } | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
+  for f in $uses; do
+    case "$owns" in
+    *" $f "*) ;;
+    *) printf '%s\n' "$f" ;;
+    esac
+  done
+}
+
 # ── _core_make_gate_hits: local gates that cannot do what their name says ─────
 # _core_make_gate_hits <repo-root> — print every Makefile gate in <repo-root> that
 # announces a check it does not perform. Silence = clean. Output is `Makefile:LINE: msg`.

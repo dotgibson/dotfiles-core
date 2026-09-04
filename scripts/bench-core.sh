@@ -16,7 +16,8 @@
 # modes: a tool the selected mode needs but the box lacks (zsh; hyperfine for the aggregate;
 # python3 for the comparison) is a SKIP with exit 0, so `make bench` is safe to call
 # anywhere. --gate is the exception and fails closed on the same absences — see below.
-# hyperfine is the tool 00-tools.zsh already detects as HAVE_HYPERFINE and the perf note in
+# hyperfine is the tool 00-tools.zsh already probes into its _CORE_PROBED ledger (it set a
+# HAVE_HYPERFINE flag until #694, which found nothing read it) and the perf note in
 # 00-tools.zsh already points at (`hyperfine 'zsh -i -c exit'`).
 #
 # Three modes (#688):
@@ -165,7 +166,7 @@ fi
 # each module in-process via zsh/datetime) — so don't skip the profile run for its absence.
 if ((!PROFILE)) && ! have hyperfine; then
   ((GATE)) && _gate_needs hyperfine
-  skip "bench skipped (hyperfine not installed — 00-tools.zsh detects it as HAVE_HYPERFINE)"
+  skip "bench skipped (hyperfine not installed — core-doctor lists it; 00-tools.zsh probes it)"
   exit 0
 fi
 if ((GATE)) && ! have python3; then

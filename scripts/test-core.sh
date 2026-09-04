@@ -1936,6 +1936,128 @@ fi
 unset _ob_wf
 
 
+# ── the HAVE_* contract scanner (scripts/lib/common.sh :: _core_have_read_hits) ──
+# Drives the fleet half of audit-core.sh §5j. Extracted from that section and pinned here
+# because the review of #694 made the fair point that a gate verified only by hand regresses
+# unnoticed — the same reason _core_conflict_marker_hits below is fixture-driven.
+#
+# The scanner answers ONE question: which HAVE_* names does this repo READ that it does not
+# itself SET? Every case below is a way an earlier draft got that wrong, and the ones that
+# matter most are the SILENT directions — a scanner that over-reports reds a clean fleet and
+# gets turned off, but one that under-reports passes forever while the contract rots.
+hdr "HAVE_* contract scanner (_core_have_read_hits)"
+_hvs="$SANDBOX/havescan"
+_hv_repo() { # _hv_repo <name> — fresh fixture repo, echoes its path
+  rm -rf "${_hvs:?}/$1"
+  mkdir -p "$_hvs/$1/os" "$_hvs/$1/core/zsh"
+  # Every fixture carries a vendored core/ that both sets AND reads the whole flag set. If
+  # the prune ever stops working, EVERY case below goes silent at once — which is the point:
+  # an OS repo's core/ is a copy of the file being checked against, so counting it would
+  # make the entire direction vacuous rather than merely wrong on one case.
+  printf '_have rg && HAVE_RG=1\n_have atuin && HAVE_ATUIN=1\n[[ -n ${HAVE_RG:-} ]] && :\n' \
+    >"$_hvs/$1/core/zsh/00-tools.zsh"
+  printf '%s\n' "$_hvs/$1"
+}
+_hv_is() { # _hv_is <label> <repo> <expected, space-separated>
+  local got
+  got="$(_core_have_read_hits "$_hvs/$2" | sort | tr '\n' ' ')"
+  got="${got% }"
+  if [[ "$got" == "$3" ]]; then
+    pass "HAVE_* scan: $1"
+  else
+    fail "HAVE_* scan: $1 (got '$got', want '$3')"
+  fi
+}
+
+# ── what it must catch ──
+d="$(_hv_repo reads)"; printf '[[ -n ${HAVE_RG:-} ]] && alias grep=rg\n' >"$d/os/x.zsh"
+_hv_is "a read of a flag the repo does not set is reported" reads "HAVE_RG"
+
+d="$(_hv_repo bare)"; printf 'x=$HAVE_ATUIN\n' >"$d/os/x.zsh"
+_hv_is "the braceless \$HAVE_X form is a read too" bare "HAVE_ATUIN"
+
+d="$(_hv_repo insh)"; printf '[[ -n "${HAVE_JQ:-}" ]] && echo hi\n' >"$d/bootstrap.sh"
+_hv_is "a .sh outside os/ is scanned too (see the asymmetry note in the helper)" insh "HAVE_JQ"
+
+# The zsh EXISTENCE form. `(( ${+NAME} ))` asks whether a parameter is set without caring
+# what it holds — this tree uses it for exactly that (`(( ${+_CORE_PROBED} ))`,
+# 30-functions.zsh) — and an OS layer gating that way slipped past the first matcher, which
+# demanded `HAVE_` immediately after the brace. A silent miss in direction 2, so it is pinned.
+d="$(_hv_repo plusform)"; printf '(( ${+HAVE_RG} )) && :\n' >"$d/os/x.zsh"
+_hv_is "the zsh \${+HAVE_X} existence form is a read" plusform "HAVE_RG"
+
+# ...and the PARENTHESISED flag forms, which the `+` fix alone still missed. `${(t)NAME}` is
+# zsh asking for a parameter type and `${(P)NAME}` for an indirect read; 00-tools.zsh uses
+# the first and 30-functions.zsh the second, so neither is exotic here.
+d="$(_hv_repo flagform)"; printf '[[ ${(t)HAVE_RG} == scalar* ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a parenthesised expansion flag (\${(t)HAVE_X}) is a read" flagform "HAVE_RG"
+
+# ...and the form with NO sigil at all. Inside `(( ))` a shell resolves a bare name as a
+# parameter, so `(( HAVE_RG ))` is an ordinary read that no sigil pattern can see. This is
+# house style for booleans here — `((UPDATE_CHECK_ENABLED))` in 60-update.zsh,
+# `((CORE_CNF_ENABLED))` in 30-functions.zsh — so an OS layer writing it this way is
+# following the local idiom, not being clever, and it passed direction 2 in silence.
+d="$(_hv_repo arith)"; printf '(( HAVE_RG )) && :\n' >"$d/os/x.zsh"
+_hv_is "a bare arithmetic read (( HAVE_X )) is a read" arith "HAVE_RG"
+
+# ── what it must stay SILENT on ──
+# The vendored core/ prune, asserted on its own: this repo reads HAVE_RG only from core/.
+d="$(_hv_repo vendored)"
+_hv_is "a read inside vendored core/ is pruned, not reported" vendored ""
+
+# Ownership: a layer that assigns a name owns it. This is the role-repo case — dotfiles-
+# Offense and -Defense each define ~20 of their own, and reporting those would red a clean
+# fleet on arrival, which is how a gate gets disabled.
+d="$(_hv_repo owns)"; printf '_have zeek && HAVE_ZEEK=1\n[[ -n ${HAVE_ZEEK:-} ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a flag the repo sets itself is not reported" owns ""
+
+# Ownership across FILES, not just within one: Defense sets HAVE_JQ in defense.zsh and reads
+# it from helpers in the same tree.
+d="$(_hv_repo owns2)"; printf '_have jq && HAVE_JQ=1\n' >"$d/os/a.zsh"
+printf '[[ -n ${HAVE_JQ:-} ]] && :\n' >"$d/os/b.zsh"
+_hv_is "ownership is repo-wide, not per-file" owns2 ""
+
+# THE COMMENT CASES. Bare names in prose are why this matches on the sigil at all: the real
+# dotfiles-Offense line that a bare-name scanner mis-flagged mentions three Core flags.
+d="$(_hv_repo comment)"; printf '# Detect-only, like Core HAVE_ASTGREP / HAVE_JNV / HAVE_SHELLCHECK.\n' >"$d/os/x.zsh"
+_hv_is "a bare flag name in a comment is not a read" comment ""
+
+d="$(_hv_repo sigilcomment)"; printf '# gated on ${HAVE_LNAV:-} upstream\n' >"$d/os/x.zsh"
+_hv_is "a SIGIL form inside a whole-line comment is not a read either" sigilcomment ""
+
+# The one that makes the scanner too LENIENT rather than too noisy, and so the one worth
+# pinning hardest: a commented-out assignment must NOT confer ownership, or it would
+# suppress the real read on the next line.
+d="$(_hv_repo commentedset)"
+printf '# HAVE_RG=1   # historical note\n[[ -n ${HAVE_RG:-} ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a commented-out assignment does not confer ownership" commentedset "HAVE_RG"
+
+# Same false-negative shape, different disguise: a bootstrap that GENERATES a zsh fragment
+# writes the assignment as data. Counting it as ownership would silently pass the real read
+# on the next line. The match refuses a name abutting a quote, which is what separates them.
+d="$(_hv_repo printfset)"
+printf '%s\n' "printf 'HAVE_RG=1\\n' > frag.zsh" '[[ -n ${HAVE_RG:-} ]] && :' >"$d/os/x.zsh"
+_hv_is "an assignment inside a quoted string does not confer ownership" printfset "HAVE_RG"
+
+# The INVERSE of that, and the direction whose error reds a clean repo: a bootstrap that
+# generates a fragment containing a READ. Inside single quotes the sigil never expands, so
+# the line is literal text and reporting it would be a false finding.
+d="$(_hv_repo printfread)"
+printf '%s\n' "printf '\${HAVE_RG:-}\\n' > frag.zsh" >"$d/os/gen.sh"
+_hv_is "a read inside a SINGLE-quoted string is literal text, not a read" printfread ""
+
+# ...and the regression guard that makes the rule above safe to have. A DOUBLE quote does
+# not suppress expansion, and `[[ -n "${HAVE_X:-}" ]]` is the commonest real form in the
+# fleet — rejecting on any quote rather than the single one would have made it invisible.
+d="$(_hv_repo dquoteread)"
+printf '[[ -n "${HAVE_RG:-}" ]] && :\n' >"$d/os/x.zsh"
+_hv_is "a DOUBLE-quoted read is still a read" dquoteread "HAVE_RG"
+
+# An absent or empty repo is not a finding — CI checks out this repo alone, and §5j treats a
+# missing sibling as an environment SKIP rather than letting it read as "reads nothing".
+_hv_is "a repo with no shell files at all reports nothing" nosuchrepo ""
+unset d
+
 # ── leftover conflict markers (scripts/lib/common.sh :: _core_conflict_marker_hits) ──
 # Drives audit-core.sh §5h. Two properties have to hold at once and they pull against each
 # other, which is why both directions are pinned rather than just the firing one:
@@ -13809,10 +13931,20 @@ assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\"
 # _CORE_PROBED ledger under their CANONICAL names, which is what the doctor keys on — so the
 # excuse is gone rather than merely tolerated.
 #
-# Two shapes are parsed, because detection is now recorded in two places: the classic
-# `_have <tool> && HAVE_<X>=1` line, and an explicit `_CORE_PROBED[<tool>]=1`. Note `$` is
-# outside the character class in the second pattern, so the generic `_CORE_PROBED[$1]=1`
-# inside `_have` itself cannot match and be mistaken for a tool named `$1` — load-bearing.
+# THREE shapes are parsed, because detection is recorded in three places: the classic
+# `_have <tool> && HAVE_<X>=1` line, a BARE `_have <tool>` probe, and an explicit
+# `_CORE_PROBED[<tool>]=1`. Note `$` is outside the character class in the third pattern, so
+# the generic `_CORE_PROBED[$1]=1` inside `_have` itself cannot match and be mistaken for a
+# tool named `$1` — load-bearing.
+#
+# The bare shape is #694's, and adding it here rather than lowering the floor is the whole
+# point: that change cut fourteen flagged lines down to bare probes because nothing read
+# their flags, and a bare `_have` is detection in exactly the sense this test means —
+# it writes the _CORE_PROBED row, which is what core-doctor keys on. Reading the flag as
+# the evidence of detection was always the weaker proxy; it is the same reasoning that
+# retired fd and bat from the exemption list two paragraphs up. Had this test kept only the
+# paired shape, fourteen doctor rows would have read as undetected while detection was in
+# fact untouched.
 #
 # A NEW name showing up here is not an exception to add — it means a doctor row has no
 # detection behind it, which is the bug.
@@ -13823,6 +13955,7 @@ check "every core-doctor row has detection behind it (the exemption list is empt
    for f in '"$HERE"'/zsh/00-tools.zsh '"$HERE"'/zsh/50-op.zsh; do
      for line in ${(f)"$(<$f)"}; do
        [[ $line =~ "^_have +([A-Za-z0-9_.-]+) +&& +HAVE_[A-Z0-9_]+=1" ]] && paired+=($match[1])
+       [[ $line =~ "^_have +([A-Za-z0-9_.-]+) *(#.*)?\$" ]] && paired+=($match[1])
        [[ $line =~ "_CORE_PROBED\[([A-Za-z0-9_.-]+)\]=1" ]] && paired+=($match[1])
      done
    done
@@ -14973,7 +15106,7 @@ ucheck "bindirs: GOBIN is honoured" \
 # asserts BOTH that the first entry is used and that no such bogus entry is built.
 _ub_fixture gopath/bin:xh second/bin:gron
 ucheck "bindirs: GOPATH's FIRST entry is used, and no bogus /a:/b/bin entry is built" \
-  "source '$TOOLS_FILE'; [[ -n \${HAVE_XH:-} && -z \${HAVE_GRON:-} && \$PATH != *'gopath:'* ]]" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_XH:-} && \$_CORE_PROBED[gron] == 0 && \$PATH != *'gopath:'* ]]" \
   HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH="$UBHOME/gopath:$UBHOME/second"
 
 # (f) IDEMPOTENT: the guard is a containment test, so a second source must not duplicate.
@@ -15020,9 +15153,14 @@ ucheck "bindirs: core-doctor and HAVE_PROCS now agree about a cargo-installed to
 # and doctor=0/flag=1 is the mirror (Core wired something the report calls absent).
 #
 # The tool -> flag mapping is READ OUT OF THE SOURCE, never restated here, so it cannot rot
-# and needs no hand-maintained table for the two irregular names (ast-grep -> HAVE_ASTGREP,
-# git-absorb -> HAVE_GIT_ABSORB). The `+` quantifiers matter: 00-tools.zsh aligns some
+# and needs no hand-maintained table for the one irregular name (git-absorb ->
+# HAVE_GIT_ABSORB, dash to underscore). The `+` quantifiers matter: 00-tools.zsh aligns some
 # comments with two spaces, and a single-space regex silently drops those rows.
+#
+# The regex ALSO skips the bare `_have <tool>` probes #694 left behind — deliberately, and
+# it is why this pairs on the assignment rather than on the probe. Those tools set no flag,
+# so "the doctor and the flag agree" has nothing to compare; the ledger row they DO write is
+# what core-doctor reads, and _core_doctor_stale/_core_doctor_unwired are tested directly.
 #
 # Excluded BY CONSTRUCTION rather than by a skip list, which is why the pattern is anchored
 # to `^_have`: op has no _have line (the doctor probes it live), and fd/bat are set from
@@ -15057,9 +15195,73 @@ ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
      [[ -n \${(P)f:-} ]] && h=1 || h=0
      (( d == h )) || bad+=(\"\$t (doctor=\$d \$f=\$h)\")
    done
-   (( n >= 30 )) || { print -r -- \"parsed only \$n tool->flag pairs out of 00-tools.zsh\"; exit 1; }
+   (( n >= 24 )) || { print -r -- \"parsed only \$n tool->flag pairs out of 00-tools.zsh\"; exit 1; }
    (( \${#bad} == 0 )) || { print -r -- \"doctor and HAVE_* disagree: \${(j:, :)bad}\"; exit 1; }" \
   CORE_NO_PAGER=1
+# ── the HAVE_* contract: the probe outlives the flag (00-tools.zsh, #694) ───────
+# #694 cut fourteen `_have <tool> && HAVE_<X>=1` lines down to a bare `_have <tool>`, because
+# the flags had no reader anywhere in the fleet. What those lines still do is the entire
+# reason they were not deleted outright: `_have` writes _CORE_PROBED[<tool>], and that ledger
+# — not any flag — is what core-doctor, _core_doctor_stale and _core_doctor_unwired read.
+#
+# So the regression this pins is a READING one, not a typo: the next person to open that
+# block sees a probe whose result is discarded and deletes the line. Nothing would fail. The
+# doctor would simply stop knowing about fourteen tools, and a tool it does not probe is
+# reported as "Core does not probe this row" — indistinguishable, from the outside, from a
+# tool Core looked for and did not find. That is #545's exact defect class, re-entered from
+# the other side.
+#
+# Derived from the source, never restated: the pattern is a `_have` line with NO `&&`, which
+# is precisely the shape #694 created. The floor is 14 because that is how many it created;
+# a future prune raises it, and a regression that re-flags or deletes them drops it below.
+ucheck "detection: every bare \`_have\` probe still writes its _CORE_PROBED row (#694)" \
+  "source '$TOOLS_FILE'
+   bad=(); n=0
+   for line in \${(f)\"\$(<'$TOOLS_FILE')\"}; do
+     [[ \$line =~ '^_have +([A-Za-z0-9_.-]+) *(#.*)?\$' ]] || continue
+     t=\$match[1]; (( n++ ))
+     (( \${+_CORE_PROBED[\$t]} )) || bad+=(\$t)
+   done
+   (( n >= 14 )) || { print -r -- \"parsed only \$n bare _have probes out of 00-tools.zsh — #694 left 14\"; exit 1; }
+   (( \${#bad} == 0 )) || { print -r -- \"probed but absent from the ledger: \${(j:, :)bad}\"; exit 1; }" \
+  CORE_NO_PAGER=1
+
+# …and the flags those lines used to set must stay gone. Named explicitly rather than derived,
+# because a deleted line leaves nothing behind to derive FROM — the list IS the assertion, and
+# re-adding any of these is a deliberate act that should have to edit this test and declare the
+# flag in PORTABILITY.md §5 (audit-core.sh §5j fails an undeclared flag with no reader anyway).
+# ast-grep is why this is not computed from the tool names: its flag was HAVE_ASTGREP, not the
+# HAVE_AST_GREP a mechanical uppercase would produce.
+ucheck "detection: the fourteen flags #694 removed are not set" \
+  "source '$TOOLS_FILE'
+   bad=()
+   for f in HAVE_ASTGREP HAVE_DELTA HAVE_GRON HAVE_GUM HAVE_HYPERFINE HAVE_JNV HAVE_JQ \
+            HAVE_LNAV HAVE_SD HAVE_SESH HAVE_SHELLCHECK HAVE_SHFMT HAVE_WATCHEXEC HAVE_YQ; do
+     (( \${+parameters[\$f]} )) && bad+=(\$f)
+   done
+   (( \${#bad} == 0 )) || { print -r -- \"set again without a declaration: \${(j:, :)bad}\"; exit 1; }" \
+  CORE_NO_PAGER=1
+
+# ── the declared surface itself: HAVE_ATUIN, both directions (#694) ─────────────
+# PORTABILITY.md §5 declares exactly one flag for downstream use, and three OS repos gate
+# their atuin daemon exports on it (dotfiles-Alpine/Debian/Fedora, os/*.zsh). A declared flag
+# is a promise about BOTH answers, so both are asserted — and hermetically, against a stub in
+# a fixture $HOME, because "atuin happens to be installed on this runner" proves only the
+# direction that box can show. The #447 agreement check above covers the real box; this covers
+# the contract.
+_ub_fixture .local/bin:atuin
+ucheck "contract: HAVE_ATUIN is set when atuin is on PATH (PORTABILITY.md §5, #694)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_ATUIN:-} && \$_CORE_PROBED[atuin] == 1 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# The absent direction pins the ledger's 0 alongside the unset flag. A missing ROW and a row
+# reading 0 are different facts — "Core does not probe this" versus "Core looked and it is not
+# here" — and only the second is what an OS layer reading the flag is entitled to assume.
+_ub_fixture .local/bin:eza
+ucheck "contract: HAVE_ATUIN is unset, and the ledger says 0, when atuin is absent (#694)" \
+  "source '$TOOLS_FILE'; [[ -z \${HAVE_ATUIN:-} && \$_CORE_PROBED[atuin] == 0 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
 # ── _core_is_wsl: one WSL predicate for the fleet (00-tools.zsh, #449) ───────────
 # Six OS layers each carried a byte-identical copy of this probe, and Core had the same fact
 # twice more (bash's blib_is_wsl, and a private copy inside bin/clip) with neither reachable
