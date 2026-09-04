@@ -166,12 +166,15 @@ version/behavioral checks. CI and pre-commit run this exact script.
                   does NOT trip --strict, so this is safe on a fully-provisioned CI leg
                   where every IN-SCOPE tool is installed. The summary names every skip.
   --require-siblings
-                  fail if a FLEET-WIDE gate (helper adoption, the gitleaks-policy sweep,
-                  the coverage register, the PORTING-MATRIX.md drift check) had no
-                  sibling OS repo checked out to read.
+                  fail if ANY fleet-wide gate had no sibling repo checked out to read.
                   Those gates skip silently-by-default on a lone clone — including in CI,
                   which checks out only this repo — so they have never actually run there.
                   This is the flag that says "I expect full fleet coverage from this run".
+                  Deliberately NOT enumerated here: the gates declare this case through
+                  skip_env and the verdict counts every one of them, so a list in help
+                  text is one more thing to keep in sync by hand — and it had already
+                  drifted, naming four of the eight. The run summary lists every
+                  environment skip the run actually recorded; that is the real answer.
   --scope LIST    limit the slow area-specific sections to a comma list:
                   shell, nvim, atuin, all (default), none. Cheap structural/config/
                   markdown/workflow/version checks always run. CI sets this from
