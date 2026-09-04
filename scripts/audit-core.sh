@@ -1031,6 +1031,12 @@ fi
 # nothing has ever checked whether the other eight picked them up. So the file grows a fix
 # and the fleet keeps the defect (#516).
 #
+# Measured adoption, and it is not a hypothetical spread — these are the numbers a real
+# CALL count gives, which is not the same as the numbers the old bare grep gave:
+#   blib_resolve_su 1/9 · blib_sudo_keepalive_start 1/9 · blib_user_bindirs_on_path 8/9 ·
+#   blib_note_fail + blib_failures_report 1/9 · blib_wire_summary 8/9 ·
+#   blib_install_core_guard 7/9 · BLIB_DRY 9/9
+#
 # Each gap is a live defect in the repos missing it: no blib_resolve_su means a hand-rolled
 # `[[ "$(id -u)" -eq 0 ]]`, an ARITHMETIC comparison where an empty `id` output evaluates as
 # 0 and the whole run proceeds unescalated; no blib_sudo_keepalive_start means sudo's
@@ -1086,11 +1092,11 @@ else
   # than in bootstrap-lib.sh so the rationale lives with the check that reports it;
   # VENDORING.md carries the human contract.
   _ha_ledger='
-blib_resolve_su          dotfiles-Fedora dotfiles-Gentoo
+blib_resolve_su          dotfiles-Gentoo
 blib_sudo_keepalive_start dotfiles-Gentoo
 blib_user_bindirs_on_path dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
-blib_note_fail           dotfiles-Gentoo dotfiles-MacBook
-blib_failures_report     dotfiles-Gentoo dotfiles-MacBook
+blib_note_fail           dotfiles-Gentoo
+blib_failures_report     dotfiles-Gentoo
 blib_wire_summary        dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 blib_install_core_guard  dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense
 BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
@@ -1132,8 +1138,17 @@ BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
       case "$(printf '%s\n' "$_ha_ledger" | grep -E "^${_ha_h}[[:space:]]" || true)" in
       *" $_ha_repo "* | *" $_ha_repo") _ha_in_led=1 ;;
       esac
+      # A CALL, not a mention — _core_helper_called strips comments and matches the
+      # helper as a whole shell identifier. A bare grep counted a COMMENT, and since an
+      # adoption PR's whole shape is "add the call, explain why", deleting the call and
+      # leaving the paragraph behind kept that grep green. It was already inflating three
+      # rows before this section grew a ledger at all: dotfiles-MacBook was credited with
+      # blib_note_fail + blib_failures_report on the strength of four comment lines (it
+      # has its own fail_note/print_ledger), and dotfiles-Fedora with blib_resolve_su on
+      # one comment reading "same fix landed upstream in blib_resolve_su". The measured
+      # figures in this section's header were wrong by three, in the flattering direction.
       _ha_present=0
-      grep -q "$_ha_h" "$_ha_dir/bootstrap.sh" 2>/dev/null && _ha_present=1
+      _core_helper_called "$_ha_dir/bootstrap.sh" "$_ha_h" && _ha_present=1
       case "$(_core_helper_verdict "$_ha_in_led" "$_ha_present")" in
       ok) ;;
       gap) _ha_gaps="$_ha_gaps $_ha_h" ;;

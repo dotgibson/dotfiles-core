@@ -828,6 +828,50 @@ _core_helper_verdict() { # _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|
   esac
 }
 
+# ── _core_helper_called: a CALL, not a mention ────────────────────────────────
+# _core_helper_called <bootstrap.sh> <helper> — succeed when that file really references
+# the helper in code. Comments do not count.
+#
+# The ledger above is only as good as this test, and the first version of it was a bare
+# `grep -q "$helper" bootstrap.sh`. That matches a COMMENT — and the adoption PRs that
+# satisfy the ledger are exactly the ones that add a paragraph of comment explaining why
+# the helper is called. So deleting the call and leaving its explanation behind kept the
+# grep green and reported `ok`: the one regression this ledger exists to catch was
+# invisible in precisely the files it had just been taught to watch. Caught in review on
+# dotgibson/dotfiles-core#861 before it ever ran in anger.
+#
+# TWO RULES, and the asymmetry between them is deliberate:
+#
+#   1. Strip comments — everything from the first `#`. That is blunter than a shell parser
+#      and it can truncate a line early (a `${var#pattern}`, a `#` inside a string). Blunt
+#      in THIS direction is safe: over-stripping can only lose a real call, and losing one
+#      reports `regressed` — a loud, specific, immediately-checkable failure. Under-stripping
+#      loses a REGRESSION, silently, which is the defect being fixed. When a heuristic has to
+#      be wrong, make it wrong in the direction that shouts. (Verified against all nine
+#      sibling bootstraps and all eight helpers: it changes no verdict except the intended
+#      comment-only one.)
+#
+#   2. Match the helper as a WHOLE shell identifier, not a substring. `blib_note_fail` must
+#      not be answered by a `blib_note_fail_once`, and a future `blib_resolve_su_strict`
+#      must not silently satisfy the `blib_resolve_su` row. This also covers BLIB_DRY, which
+#      is a variable rather than a function — `export BLIB_DRY=1` is a reference and reads
+#      the same way.
+#
+# Pure sed+grep, busybox-safe, like every other fleet reader here. Returns non-zero when
+# the file is unreadable, which the caller already handles as "not adopted".
+#
+# NB the HERESTRING, not `sed … | grep -q`. `grep -q` exits the instant it matches, which
+# SIGPIPEs the sed upstream, which under `set -o pipefail` — which audit-core.sh sets —
+# makes the whole pipeline non-zero ON SUCCESS. That reads as "not adopted" for every repo
+# that HAS adopted, i.e. the ratchet fails everything it should pass. This is the SIGPIPE
+# trap #459 named and fail_detail() above already documents; a herestring has no upstream
+# process to kill, so there is nothing to signal.
+_core_helper_called() { # _core_helper_called <file> <helper>
+  local f="${1:-}" h="${2:-}"
+  [ -r "$f" ] || return 1
+  grep -qE "(^|[^A-Za-z0-9_])${h}([^A-Za-z0-9_]|\$)" <<<"$(sed 's/#.*//' "$f")"
+}
+
 # ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
 # _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
 # not ship AND that nothing will ever tell you about. Silence = clean.

@@ -36,7 +36,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `PKG_ROWS`. The judgment is one testable function, `_core_helper_verdict`
   (`scripts/lib/common.sh`), driven directly by `test-core.sh` — replacing an assertion on
   the section's source text ("it contains no `fail`") that was green for the whole life of
-  the bug it should have caught. The `--json` fleet-printf guard's hardcoded `NR>=860 &&
+  the bug it should have caught. **Adoption now means a call, not a mention**
+  (`_core_helper_called`): the section read the fleet with a bare `grep`, which counted a
+  _comment_ — so three rows were credited purely from prose (`dotfiles-MacBook` for
+  `blib_note_fail` + `blib_failures_report`, `dotfiles-Fedora` for `blib_resolve_su`, now
+  corrected to honest gaps), and since an adoption PR's shape is "add the call, explain why",
+  deleting a call while leaving its paragraph would have kept the ledger green forever — the
+  exact regression it exists to catch, invisible in the files it had just been taught to
+  watch. The `--json` fleet-printf guard's hardcoded `NR>=860 &&
   NR<=1045` window is derived from the §5f→§5i banners now; it had drifted off the sections
   it was meant to cover and never reached §5g or §5h at all. `VENDORING.md` carries the
   contract. Six companion PRs adopt the helper — `dotfiles-Alpine` (the live twin),

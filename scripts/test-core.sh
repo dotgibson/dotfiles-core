@@ -6634,6 +6634,55 @@ EOF
 ((_hl_bad)) || pass "§5f ledger: every repo it names is a real entry in scripts/os-repos.txt"
 unset _hl_bad _hl_repo _ha_bad _ha_line
 
+# ── _core_helper_called: a CALL, not a mention ──────────────────────────────────
+# The ledger above is only as good as this predicate, and its first version was a bare
+# `grep -q "$helper" bootstrap.sh`. An adoption PR's whole shape is "add the call, explain
+# why in a comment" — so deleting the call and leaving the paragraph kept that grep green
+# and reported `ok`, and the one regression the ledger exists to catch was invisible in
+# exactly the files it had just been taught to watch. It was ALREADY inflating three rows
+# before the ledger existed: dotfiles-MacBook credited with blib_note_fail and
+# blib_failures_report from four comment lines, dotfiles-Fedora with blib_resolve_su from
+# one. Fixtures, not a re-implementation — this drives the shipped predicate.
+_hc_dir="$(mktemp -d)"
+printf 'set -e\nblib_user_bindirs_on_path\n'                              >"$_hc_dir/call.sh"
+printf 'set -e\n# blib_user_bindirs_on_path\n'                            >"$_hc_dir/commented.sh"
+printf 'set -e\n  #   blib_user_bindirs_on_path — why we call it\n'       >"$_hc_dir/indented-comment.sh"
+printf 'set -e\n# see blib_user_bindirs_on_path\nblib_wire_summary\n'     >"$_hc_dir/mention-only.sh"
+printf 'set -e\nblib_note_fail_once "x"\n'                                >"$_hc_dir/longer-name.sh"
+printf 'set -e\n((DRY)) && export BLIB_DRY=1\n'                           >"$_hc_dir/var.sh"
+_hc_bad=0
+_hc() { # <fixture> <helper> <want 0|1> <why>
+  local got=0
+  _core_helper_called "$_hc_dir/$1" "$2" && got=1
+  [[ "$got" == "$3" ]] || { fail "_core_helper_called $1 $2 = $got, want $3 — $4"; _hc_bad=1; }
+}
+_hc call.sh             blib_user_bindirs_on_path 1 "a bare call must count"
+_hc commented.sh        blib_user_bindirs_on_path 0 "a commented-out call must NOT count — this is the regression the ledger exists to catch"
+_hc indented-comment.sh blib_user_bindirs_on_path 0 "an indented prose comment must NOT count"
+_hc mention-only.sh     blib_user_bindirs_on_path 0 "naming the helper in a comment while calling a DIFFERENT one must NOT count"
+_hc longer-name.sh      blib_note_fail            0 "blib_note_fail_once must not satisfy the blib_note_fail row (whole-identifier match)"
+_hc longer-name.sh      blib_note_fail_once       1 "the longer name must satisfy its own row"
+_hc var.sh              BLIB_DRY                  1 "BLIB_DRY is a variable, not a function — a reference is adoption"
+_hc missing.sh          BLIB_DRY                  0 "an unreadable file is not adoption"
+# THE PIPEFAIL CASE, and it is not hypothetical: the first version of this predicate was
+# `sed … | grep -q`, and `grep -q` exits on first match, SIGPIPEing sed, which under
+# `set -o pipefail` — which audit-core.sh sets — makes the pipeline non-zero ON SUCCESS.
+# Every adopted helper then read as "not called" and the ratchet failed the whole fleet.
+# Run the predicate in a shell with pipefail on, the way the audit actually runs it.
+_hc_pf="$(bash -c 'set -euo pipefail; . "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9
+  _core_helper_called "'"$_hc_dir"'/call.sh" blib_user_bindirs_on_path && echo yes || echo no' 2>/dev/null)"
+[[ "$_hc_pf" == yes ]] || { fail "_core_helper_called under 'set -o pipefail' says '$_hc_pf', want 'yes' — the SIGPIPE trap (#459) is back and the ratchet fails every repo that HAS adopted"; _hc_bad=1; }
+((_hc_bad)) || pass "_core_helper_called: a call counts, a comment does not, a longer identifier does not, and it survives pipefail"
+rm -rf "$_hc_dir"
+unset _hc_dir _hc_bad _hc_pf
+
+# BINDING: §5f must ask the predicate, not grep the file itself.
+if grep -q '_core_helper_called "\$_ha_dir/bootstrap.sh" "\$_ha_h"' "$HERE/scripts/audit-core.sh"; then
+  pass "binding: §5f tests adoption through _core_helper_called (comments cannot satisfy the ledger)"
+else
+  fail "binding: §5f no longer calls _core_helper_called — a bare grep counts a comment as a call, which is how a deleted helper stays invisible"
+fi
+
 hdr "git identity refuses to guess (useConfigOnly + a commented-out seed)"
 # What a FRESHLY BOOTSTRAPPED box does when the user has not set an identity yet.
 #
