@@ -547,6 +547,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **A `scripts/` change no longer drags the atuin harness onto every CI leg (#699 leftover).**
+  `scripts/ci-classify.sh` forced the **full** run — shell, nvim _and_ atuin — for anything
+  under `scripts/`, on the reasoning that the premise detector lives there and infra is
+  cross-cutting. True of the detector; false of the forty-odd scripts beside it. The atuin
+  gate is the hermetic self-test of `scripts/research/verify-atuin-guard.sh`, **197s of a
+  286s behavioral suite — 68% of it, and the largest single cost on the CI critical path**,
+  and **every one of the last seven merges to `main` touched `scripts/`**, so every one paid
+  it on all four legs for a gate the change could not reach. #687 archived that apparatus as
+  on-demand research; its _test_ stayed on the push path of unrelated work.
+  What can move the self-test is checkable rather than a judgement call, **because the test
+  is hermetic**: it stubs `atuin` and doctors a _sandbox_ copy of `zsh/00-tools.zsh`, so the
+  real tree is not an input. Its reachable set is exactly `scripts/research/` (the script
+  under test and its lib), `scripts/lib/` (`common.sh`), `scripts/test/` + `test-core.sh`
+  (the harness), and `ci-classify.sh` itself, which decides the scope — those still force the
+  full run. Everything else under `scripts/`, plus `.github/`, `.claude/` and the repo-meta
+  config, now forces **shell and nvim but not atuin**; they remain genuinely cross-cutting for
+  the shipped modules. `zsh/00-tools.zsh` and `atuin/` are untouched and still gate it.
+  **`scripts/gen-theme.sh` is the case that makes this real rather than pedantic:** it writes
+  a generated block _into_ `zsh/00-tools.zsh` (`gen-theme.sh:210`), the module carrying
+  `_core_atuin_daemon_guard` — so it reaches the guard, and still cannot reach the guard's
+  test. It forces shell and nvim, not atuin.
+  The new arm is **derived, not hand-kept**: `scripts/test/22-ci-classify.sh` reads the two
+  atuin fragments, extracts every `$HERE/scripts/…` path they actually reach for, and fails
+  naming any that no longer classifies as `atuin=true` — so adding a dependency reds the gate
+  at the moment the arm needed widening. A hand-kept exception list inside a fail-closed gate
+  is what `CONTRIBUTING.md` records being deleted from audit §5c, for exactly this reason.
+
 - **The behavioral suite is 36 named fragments, not one 18,700-line file (#699).**
   `scripts/test-core.sh` had grown to **18,747 lines**, and ShellCheck's cost is superlinear
   in file length: that one file was **42.6s of the audit's 65.9s** of ShellCheck — **65% of

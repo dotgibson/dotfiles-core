@@ -167,9 +167,24 @@ _classify_is "docs (*.md) change → no gate" 'README.md' false false false
 # not drag a full CI run along with it — it already matches the *.md inert arm, and this
 # pins that so a future classifier tweak cannot quietly make every release a full run.
 _classify_is "generated digest (CHANGELOG.recent.md) → no gate" 'CHANGELOG.recent.md' false false false
-_classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true true
-_classify_is "scripts/research/ change → full run (the archived apparatus is still infra, #687)" 'scripts/research/verify-atuin-guard.sh' true true true
-_classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true true
+# Infra still forces shell AND nvim — it is genuinely cross-cutting, and a generator or the
+# audit itself can rewrite or re-gate any shipped module. It no longer forces ATUIN: the
+# detector's self-test is hermetic (stub `atuin`, a doctored SANDBOX copy of
+# zsh/00-tools.zsh), so nothing outside the four paths in the arm above can move it. Every
+# one of the last seven merges to main touched scripts/ and paid ~197s of atuin harness on
+# all four legs for a gate it could not reach — the #699 leftover.
+_classify_is "infra (scripts/) change → shell + nvim, NOT atuin" 'scripts/audit-core.sh' true true false
+_classify_is "infra (.shellcheckrc) change → shell + nvim, NOT atuin" '.shellcheckrc' true true false
+# ...and the four paths that CAN move it still force the full run. scripts/research/ is the
+# script under test plus its lib; scripts/lib/ is the common.sh the fragments source;
+# scripts/test/ and test-core.sh are the harness; ci-classify.sh is this file's own subject,
+# which decides the scope and so must re-run everything.
+_classify_is "scripts/research/ change → full run (the script under test, #687)" 'scripts/research/verify-atuin-guard.sh' true true true
+_classify_is "scripts/research/lib/ change → full run (atuin-db.sh, the detector's own lib)" 'scripts/research/lib/atuin-db.sh' true true true
+_classify_is "scripts/lib/ change → full run (common.sh, sourced by every fragment)" 'scripts/lib/common.sh' true true true
+_classify_is "scripts/test/ change → full run (the harness that drives the detector)" 'scripts/test/51-atuin-guard.sh' true true true
+_classify_is "scripts/test-core.sh change → full run (the dispatcher the fragments re-run)" 'scripts/test-core.sh' true true true
+_classify_is "scripts/ci-classify.sh change → full run (it decides the scope)" 'scripts/ci-classify.sh' true true true
 _classify_is "__ALL__ sentinel → full run" '__ALL__' true true true
 _classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true true
 _classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true false
@@ -190,13 +205,47 @@ _classify_is "tealdeer/ config change → shell gate only" 'tealdeer/config.toml
 # gen-theme.sh --refresh's SOURCE, not one of its outputs — a palette edit cannot change
 # what nvim renders. NOT atuin, for the reason the tealdeer row above records.
 _classify_is "theme/ palette change → shell gate only (consumers are zsh+tmux+starship+lazygit)" 'theme/palette.toml' true false false
-# The negative half, and the one that matters: the GENERATOR is infra by the scripts/ arm
-# and must stay that way. It can rewrite every consumer in one run, so narrowing it to
-# `shell` would let a regression in the generator itself ship with the nvim and atuin gates
-# unrun. This pins that it never narrows.
-_classify_is "scripts/gen-theme.sh change → full run (it can rewrite every consumer)" 'scripts/gen-theme.sh' true true true
+# The sharp case, and the reason the narrowing above needed checking rather than assuming.
+# gen-theme.sh writes a generated block INTO zsh/00-tools.zsh (scripts/gen-theme.sh:210) —
+# the module carrying _core_atuin_daemon_guard — so on paper it reaches the guard. It does
+# not reach the guard's TEST: the atuin fragments stub `atuin` and doctor their own sandbox
+# copy of that file, so the real tree is not an input to anything they assert. shell and
+# nvim stay forced, because rewriting every consumer in one run is exactly what it does.
+_classify_is "scripts/gen-theme.sh change → shell + nvim (it rewrites consumers), NOT atuin" 'scripts/gen-theme.sh' true true false
 _classify_is "a plain zsh/ change does NOT pay the atuin gate" 'zsh/45-plugins.zsh' true false false
 _classify_is "mixed atuin+nvim set → union across all three axes" $'atuin/config.toml\nnvim/init.lua' true true true
+
+# ── the atuin arm is DERIVED, not hand-kept ──────────────────────────────────
+# Narrowing scripts/* away from the atuin axis (#699 leftover) leaves one arm listing the
+# paths that CAN still move the detector's self-test. A hand-kept list of exceptions inside
+# a fail-closed gate is precisely what CONTRIBUTING says was deleted from audit §5c, and for
+# the same reason: the day someone adds a dependency is the day nobody re-reads the arm.
+#
+# So the claim is checked instead of asserted. Read the atuin-scoped fragments, extract every
+# repo path they actually reach for, and require ci-classify.sh to force atuin=true for each.
+# A new `$HERE/scripts/…` dependency in either fragment reds THIS assertion, naming the path,
+# until the arm covers it — which is the moment the arm needed editing.
+_ac_frags=("$HERE/scripts/test/51-atuin-guard.sh" "$HERE/scripts/test/52-atuin-autostart.sh")
+_ac_missing="" _ac_seen=0
+for _ac_f in "${_ac_frags[@]}"; do
+  [[ -r "$_ac_f" ]] || continue
+  # `$HERE/scripts/...` in code, not in prose: require the sigil, and strip a trailing quote.
+  while IFS= read -r _ac_dep; do
+    [[ -n "$_ac_dep" ]] || continue
+    _ac_seen=$((_ac_seen + 1))
+    if [[ "$(printf '%s\n' "$_ac_dep" | "$CLASSIFY" 2>/dev/null | sed -n 's/^atuin=//p')" != true ]]; then
+      _ac_missing="${_ac_missing:+$_ac_missing }$_ac_dep"
+    fi
+  done < <(grep -hoE '\$HERE/scripts/[A-Za-z0-9_./-]+' "$_ac_f" | sed 's|^\$HERE/||' | sort -u)
+done
+if ((_ac_seen == 0)); then
+  fail "atuin arm: found no \$HERE/scripts/ dependency in either atuin fragment — the derivation stopped deriving, so this gate is now vacuous"
+elif [[ -z "$_ac_missing" ]]; then
+  pass "atuin arm: every scripts/ path the atuin fragments depend on ($_ac_seen) still forces atuin=true"
+else
+  fail "atuin arm: the atuin fragments depend on $_ac_missing, which ci-classify.sh no longer sends to the atuin gate — a change to it would skip the detector's self-test; widen the arm in scripts/ci-classify.sh"
+fi
+unset _ac_frags _ac_missing _ac_seen _ac_f _ac_dep
 
 # ── PR link gate (scripts/ci-pr-link.sh) ──────────────────────────────────────
 # #446 fixed #420 and #423 and merged green with NO closing keyword, so GitHub linked
