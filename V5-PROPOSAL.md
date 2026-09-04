@@ -199,7 +199,7 @@ Measured on a synced repo: the `core.manifest` payload is **1.4 MB**; a vendored
 | shipped to all nine repos | size |
 | ------------------------- | ---- |
 | `assets/` — README media | 1.8 MB |
-| `scripts/` — incl. `test-core.sh` at 741 KB | 1.4 MB |
+| `scripts/` — incl. the behavioral suite at 741 KB | 1.4 MB |
 | `CHANGELOG.md` | 568 KB |
 | `.github/` — inert copies; the real `uses:` are remote `@v4` refs | 344 KB |
 | `.claude/`, `PORTING-MATRIX.md`, `examples/` | 240 KB |
