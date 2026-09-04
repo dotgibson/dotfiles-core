@@ -142,7 +142,9 @@ tmp="$(mktemp -d)" || {
   bad "mktemp -d printed nothing — same refusal"
   exit 1
 }
-# shellcheck disable=SC2329  # invoked by the trap below, which shellcheck cannot see
+# shellcheck disable=SC2317,SC2329  # invoked by the trap below, which shellcheck cannot see —
+# SC2329 for the function, SC2317 for its body, which newer shellchecks read as unreachable.
+# Both are needed: the Alpine audit leg runs a build that emits the second and the local one did not.
 _cl_cleanup() { ((KEEP)) || rm -rf "$tmp"; }
 trap _cl_cleanup EXIT INT TERM
 
