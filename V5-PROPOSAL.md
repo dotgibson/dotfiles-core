@@ -62,7 +62,7 @@ block #791 collapsed; the bump table is now `RELEASE-RUNBOOK.md` §1.0 — which
 | §3 `os.capabilities` | a new bootstrap symlink **and** a new load-order slot before `20-aliases` | **shipped `v4.19.0` as a MINOR** (#663) — see below |
 | §4 vendoring allowlist | changes what a consumer repo receives; `core-integrity` must be retaught in lockstep | shipped `v6.0.0` (#676) |
 | §5 delete `CORE_PROFILE` | removes a documented public knob | shipped `v6.0.0` (#677) |
-| §5 declare `HAVE_*` | removes nine public globals | **still open** (#694) |
+| §5 declare `HAVE_*` | removes fourteen public globals | **in review** (#694) |
 | §6 `clip --sensitive` | changes observable behaviour of a public binary | **still open** (#690) |
 
 **This section's own argument did not survive contact.** It named §3 as one of the two
@@ -199,7 +199,7 @@ Measured on a synced repo: the `core.manifest` payload is **1.4 MB**; a vendored
 | shipped to all nine repos | size |
 | ------------------------- | ---- |
 | `assets/` — README media | 1.8 MB |
-| `scripts/` — incl. `test-core.sh` at 741 KB | 1.4 MB |
+| `scripts/` — incl. `test-core.sh` at 741 KB (pre-#699; the suite is `scripts/test/` now) | 1.4 MB |
 | `CHANGELOG.md` | 568 KB |
 | `.github/` — inert copies; the real `uses:` are remote `@v4` refs | 344 KB |
 | `.claude/`, `PORTING-MATRIX.md`, `examples/` | 240 KB |
@@ -246,7 +246,9 @@ Two exported surfaces, neither with a contract.
 **`CORE_PROFILE`** was a v4.0.0 headline feature. Nothing writes
 `$ZSH_CFG/profile`, the file it reads. No OS repo mentions it. CI actively
 asserts `~/.zshrc` must **not** set it (`bootstrap-test.yml:310-315`). Its only
-exercise is `test-core.sh:7617-7646`. Every host runs the `full` default.
+exercise was `test-core.sh:7617-7646` as this file measured it; #677 then deleted
+`CORE_PROFILE` outright, and `scripts/test/62-loader-contract.sh` now pins the
+loader contract that replaced its ceiling matrix. Every host runs the `full` default.
 
 It is also what makes the band footgun dangerous. `VENDORING.md:185-192` warns
 that an OS repo dropping `22-foo.zsh` into a Core band gap is profile-gated as if
@@ -254,12 +256,29 @@ it were Core and *"will silently vanish under `CORE_PROFILE=minimal`"*. The load
 sorts on the `NN` prefix and has no owner metadata, so this is documented
 precisely because it cannot be enforced.
 
-**`HAVE_*`** exports 43 globals into every interactive shell. Nine are read by no
-code anywhere in the fleet; five are genuinely consumed by OS and role layers; and
-the surface is declared in no contract doc — `PORTABILITY.md`, which documents the
+**`HAVE_*`** sets 42 globals into every interactive shell. Fourteen are read by no
+code anywhere in the fleet; exactly one is genuinely consumed downstream; and the
+surface is declared in no contract doc — `PORTABILITY.md`, which documents the
 Core→OS API, does not mention it. So nothing can be safely removed, nothing tells
 an OS-repo author what is safe to use, and nothing stops Core breaking a consumer
 silently.
+
+**Three numbers here were wrong when this was written, and the implementation says
+so** — recorded rather than quietly corrected, because the shape of the error is the
+argument for the gate. The count was 42, not 43. The dead set was fourteen, not nine:
+the original nine included `HAVE_DIRENV`, which has never existed, and `HAVE_MISE`,
+which `00-tools.zsh` reads at its own `mise activate` line; it missed `HAVE_ASTGREP`,
+`HAVE_GUM`, `HAVE_HYPERFINE`, `HAVE_JQ` and `HAVE_SHELLCHECK` — and `HAVE_GRON`, which
+survived the first implementation too, on the strength of one negative test fixture, until
+review pointed out that a test is not a consumer. And the "five genuine
+downstream consumers" were one: `HAVE_ATUIN`, read by three OS repos. Of the other
+four, `HAVE_ASTGREP`/`HAVE_JNV`/`HAVE_SHELLCHECK` appear in a single
+`dotfiles-Offense` **comment**, and `dotfiles-Defense` **sets** `HAVE_JQ` itself with
+its own `_have jq`. Every one of those errors came from grepping bare flag names
+across the fleet and reading prose as code — which is precisely why §5j matches a
+read by its `$` sigil, and why it subtracts each repo's own assignments before
+comparing. The flags are also never `export`ed: they are shell parameters, so they
+never reached a child process.
 
 ### 5.2 Proposed
 
@@ -274,22 +293,30 @@ and band-60 verbs that neither reduced profile loads. If the profile is genuinel
 wanted, reject this half of the change and file the work to make it real *and*
 give at least one repo a reason to set it.
 
-**Declare `HAVE_*`.** Add it to `PORTABILITY.md`'s Core→OS API section: the naming
-rule, that `_CORE_PROBED` is the authoritative ledger and `HAVE_*` the convenience
-alias, and which flags are supported downstream. Drop the nine nothing reads —
-keeping the `_have` call, which populates the ledger *and* gates the init for
-direnv, mise and sesh. Add an `audit-core.sh` section asserting that every flag an
-OS or role repo consumes is one Core declares.
+**Declare `HAVE_*`.** Added to `PORTABILITY.md` as §5: the naming rule, that
+`_CORE_PROBED` is the authoritative ledger and `HAVE_*` the convenience alias, that a
+flag exists only where band-00 detection ran, and a table of which flags are supported
+downstream. Dropped the fourteen nothing reads — keeping the `_have` call, which is
+what populates the ledger. (`direnv` needs no mention: it has no flag and never had
+one, and `mise`'s init reads its flag inside `00-tools.zsh`, so `HAVE_MISE` stays.)
 
-The open question is whether `HAVE_*` should be a supported downstream API at all,
-or an internal detail with `_CORE_PROBED` as the interface. Five existing
-consumers argue for supporting it; 43 globals per shell argue for narrowing it.
-Either answer is fine — but it must be chosen and written down.
+**The answer chosen: supported, but enumerated.** `HAVE_*` is a real downstream API
+and `PORTABILITY.md` §5 names what it covers — today exactly `HAVE_ATUIN`. The list
+starts at what the fleet reads rather than at "all of them" because widening a
+declared surface is a one-line PR and narrowing one is breaking. The alternative —
+`_CORE_PROBED` as the sanctioned interface behind an accessor — was rejected on the
+evidence: the ledger is keyed on probe names with three special-cased rows
+(`fd`/`bat`/`git-absorb`), which makes it the worse public surface, and both role
+repos already treat `HAVE_*` as a namespace they extend with ~20 flags apiece.
+
+`audit-core.sh` §5j enforces it in three directions: declared ⊆ set, set ⇒ has a
+reader, and fleet-reads ⊆ declared. The third is the one the proposal did not ask
+for and the one that keeps the prune from undoing itself.
 
 ### 5.3 What breaks
 
-A host-local `99-local.zsh` referencing `CORE_PROFILE` or one of the nine dropped
-flags. Both are gitignored and unknowable from here, which is exactly why this is
+A host-local `99-local.zsh` referencing `CORE_PROFILE` or one of the fourteen
+dropped flags. Both are gitignored and unknowable from here, which is exactly why this is
 a major and gets a loud CHANGELOG entry rather than a quiet removal.
 
 Covers issues #677 and #694.
@@ -449,8 +476,9 @@ major.
    earlier `v4.19.0` milestone, it is additive, and it lets §4 inherit a file with
    a stated consumer instead of guessing. If §4 lands first, decide #680's fate in
    that PR rather than after it.
-2. **Is `HAVE_*` a supported downstream API, or internal?** See §5.2. If
-   "internal", the five existing consumers migrate in this release.
+2. ~~**Is `HAVE_*` a supported downstream API, or internal?**~~ **Answered:
+   supported, enumerated** — see §5.2. The "five existing consumers" were one, so no
+   migration was needed either way.
 3. **What does `os.capabilities` do on a box that has none?** Hard failure at
    bootstrap, or a one-release fallback to today's hardcoded ladder. The fleet
    re-bootstraps as part of this major anyway, which argues for the hard failure.

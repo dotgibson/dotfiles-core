@@ -45,7 +45,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   old tour needed, which is most of the difference between ~27 s and ~13 s. **The committed
   `demo.gif` still predates the shortened tape** — re-render with `vhs assets/demo.tape` and
   optimize to bring it under the ceiling.
-  The tape captures at **24fps** rather than VHS's default 50, because the first shortened
+  The behavioral coverage moved with #699's split: it is now
+  `scripts/test/42-gen-hero-tape.sh`, numbered beside the other generator suites (40 theme +
+  aliases, 41 porting matrix + desktop parity). The tape captures at **24fps** rather than
+  VHS's default 50, because the first shortened
   cut proved bytes track REDRAWS rather than seconds: at ~13 s against the old ~25 s it came
   out **bigger** (2.46 MB vs 1.84 MB), since GIF pays per changed pixel and this tour has
   four full-screen colour repaints where the old one had pager quits and a `clear`. The
@@ -250,7 +253,267 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   pinned alongside. Dev tooling
   only — the OS repos receive nothing from this entry until they adopt the verbs.
 
+### Removed
+
+- **Core's built-in capability fallbacks are deleted; the declaration is the only source
+  (#763).** #667 stamped `os.capabilities` across the fleet but deliberately left three
+  blocks in Core marked _"DELETE THIS BLOCK"_, because a declaration only reaches a box once
+  `bootstrap.sh` has **linked** it — a separate event from the Core fan-out that delivers the
+  file, and deleting the fallbacks in the same change would have broken `up` on every box
+  that had pulled and not yet re-run `./bootstrap.sh --links-only`. This is the second event.
+  Gone — the three marked blocks, and a fourth that carried no marker but existed for the
+  same reason:
+
+  - `zsh/60-update.zsh`'s `_CORE_CAP_FALLBACK` table and `_pkgup_fallback` — seven archives'
+    upgrade/count/cleanup verbs, the `checkupdates` probe, the `_pkgup_emerge_pending`
+    Portage resolve, and the **`grep -qi tumbleweed /etc/os-release`** that chose
+    `zypper dup` over `zypper up`. That probe was the single most-cited example of OS
+    knowledge in Core, and it is what `os.capabilities` existed to retire.
+    `_pkgup_verb` loses its second arm and now reads `_core_cap` only.
+  - `zsh/55-maint.zsh`'s `_maint_unit_dir_default` — **the last OS-absolute path in Core**.
+    `_maint_unit_file` reads the declared `SCHEDULER_UNIT_DIR` and nothing else.
+  - `zsh/30-functions.zsh`'s `_core_install_prefix` `case` — the doctor and the
+    command-not-found handler read `PKG_INSTALL` only. Both call sites drop their
+    `$+functions[_pkgup_mgr]` guard, which existed solely to feed the mapping a manager
+    token.
+  - `maint/dotfiles-maint.sh` — a **fourth** block, which #763 did not enumerate but which
+    exists for the same reason and would have left the demolition half-done. The scheduled
+    runner kept a seven-arm `have brew / checkupdates / pacman / dnf / zypper / apt-get /
+    apk` count ladder behind its `cap_declared` test, a four-arm `sudo -n` apply ladder, and
+    the guards in front of them: an **`/etc/os-release` read** for the Kali refusal — the
+    last one in Core — and `have pacman || have emerge` standing in for "is this a rolling
+    distro", which is a probe for a BINARY asserting a claim about a DISTRO and is true on
+    any box with pacman installed for other reasons. Kali, Arch and Gentoo already decline
+    by declaring no `MAINT_UNATTENDED_UPGRADE`, so the guards were duplicating a claim the
+    repos now make about themselves. `_pkgcount` went with its only callers, leaving
+    `_pkgcount_decl` as the single counter. An undeclared box logs `count UNAVAILABLE (no
+    os.capabilities linked — run ./bootstrap.sh --links-only)` and skips the apply with a
+    log line naming the same fix.
+
+  **`audit-core.sh` §5c's per-file exception retires with them**, so every manifested Core
+  file is now scanned for OS-absolute paths with no carve-out at all — `ARCHITECTURE.md`'s
+  "deliberate exceptions" section reaches **zero**, and `PORTABILITY.md`'s says so too.
+
+  **What an undeclared box does now is degrade visibly, at each caller's own message**,
+  which is the point of removing a silent substitution: `up` says no upgrade verb is
+  declared and names `--links-only` as the fix, `maint-install` refuses on systemd/launchd
+  rather than writing a unit to a directory Core guessed at, `core-doctor` prints no install
+  line, and `core-status`'s OS row says the declaration is not linked (it used to say
+  "built-in defaults", a note about which source answered — now it carries the remedy).
+  `02-capabilities.zsh`'s warning **stays opt-in** (`CORE_CAP_LOUD=1`) for the reason #715
+  established: two lines of stderr on every interactive shell and every tmux split is how an
+  operator learns to ignore stderr, and that warning can only say a table is empty where
+  each consumer can name what actually broke.
+
+  **`up` refuses in every mode, including the read-only ones**, and that is a fix this
+  change needed rather than a consequence of it. The `PKG_UPGRADE` guard used to sit at the
+  dispatch, after `-n` and `-i` had already returned — so on an undeclared box `up -n`
+  resolved no `PKG_COUNT_PENDING`, read the empty list as an empty **answer**, and printed
+  "nothing to upgrade": the box asserted up to date when nothing was measured, which is the
+  0-vs-unknown confusion the `-1` sentinel exists to prevent in `_pkgup_count` arriving
+  through a different door. The guard now runs immediately after manager detection, where it
+  belongs — a missing REQUIRED verb is a fact about the box, not about the mode you asked
+  for. `maint-install`'s two refusals name `--links-only` alongside the declare-it hint for
+  the same reason: the likelier cause is a declaration that exists but was never linked.
+
+  `scripts/check-capabilities.sh` keeps its schema unchanged — it is the validator, not a
+  fallback — though its "absent means Core's built-in default applies" note is corrected:
+  since this change an omitted optional key **is** the statement, and `TOOLS_OPTIN` is the
+  one key that still falls back to a Core-side default. What changes for a consuming repo is
+  that **`./bootstrap.sh --links-only` is required, not merely advisable**, in the three
+  cases where the SYMLINK is what changes: adopting a declaration, a box that has never
+  relinked since one was authored, and switching which file is selected (a Kali or Leap tier,
+  say). _Editing_ an already-linked declaration needs nothing — the symlink points at the
+  file in the repo, so a box reads the edit on its next shell. `VENDORING.md` says so where
+  it used to say absence is not fatal. `scripts/test-core.sh` moves with the code: the
+  per-manager count/list cases now seed the declaration each OS repo actually ships instead
+  of leaning on Core's copy of it (which is the stronger test — it pins the values a real
+  box runs), the maint cases declare `SCHEDULER_UNIT_DIR` alongside the scheduler they stub,
+  and a new case pins the undeclared box reporting the `-1` sentinel rather than a guessed
+  row.
+
+- **BREAKING: fourteen `HAVE_*` globals no code reads, and the `HAVE_*` contract is declared
+  and gated (#694).** `zsh/00-tools.zsh` set **42** `HAVE_<TOOL>` flags into every interactive
+  shell. Fourteen of them — `HAVE_ASTGREP` · `HAVE_DELTA` · `HAVE_GRON` · `HAVE_GUM` ·
+  `HAVE_HYPERFINE` · `HAVE_JNV` · `HAVE_JQ` · `HAVE_LNAV` · `HAVE_SD` · `HAVE_SESH` ·
+  `HAVE_SHELLCHECK` · `HAVE_SHFMT` · `HAVE_WATCHEXEC` · `HAVE_YQ` — were read by
+  **nothing**, in Core or in any
+  of the thirteen repos. **Why this is breaking, and the only reason it is:** a gitignored
+  host-local `99-local.zsh` could reference one, and that is unknowable from here. Nothing
+  Core ships, and nothing any OS or role repo ships, is affected.
+  **`core-doctor` is not affected either, which is the part worth reading before you worry:**
+  the `_have <tool>` **call stays on every one of those lines**. It is what writes
+  `_CORE_PROBED[<tool>]`, and the ledger — never a flag — is what `core-doctor`,
+  `_core_doctor_stale` and `_core_doctor_unwired` read. Only the `&& HAVE_X=1` half is gone.
+  Detection coverage is byte-for-byte what it was.
+
+  **The flags are now a declared surface.** `PORTABILITY.md` gains **§5**: the naming rule
+  (`HAVE_` + canonical tool name, `-` → `_`), that `_CORE_PROBED` is the authoritative ledger
+  and `HAVE_*` the convenience alias, that a flag exists **only where band-00 detection ran**
+  (so read `${HAVE_X:-}`, never bare), and a table of what downstream may use. The answer to
+  the open question `V5-PROPOSAL.md` §5.2 posed is **supported, but enumerated**: the table
+  holds `HAVE_ATUIN` and nothing else, because that is what the fleet actually reads
+  (`dotfiles-Alpine`, `-Debian`, `-Fedora`, in `os/*.zsh`, to gate the atuin daemon exports).
+  Starting there rather than at "all of them" is deliberate — widening a declared surface is a
+  one-line PR and narrowing one is a breaking change. `VENDORING.md` carries the same fact
+  from the OS-repo author's side; `core.manifest`'s charter line for `00-tools.zsh` now names
+  it alongside `_cache_eval` and `_core_is_wsl`.
+
+  **`audit-core.sh` §5j** is what stops this recurring, in three directions: **declared ⊆ set**
+  (a doc row Core no longer sets is a stale promise — the exact wreckage a rename leaves);
+  **fleet reads ⊆ declared** (an OS or role repo reading a Core flag it does not itself set is
+  coupled to Core's internals); and **set ⇒ has a reader** (the direction the issue did not ask
+  for, and the one that keeps fourteen dead flags from quietly reaccumulating). It matches a
+  read by its **`$` sigil** rather than by the bare name, which is how it tells `${HAVE_ATUIN:-}`
+  in code from `HAVE_ASTGREP` in a comment without needing a parser for five grammars — the
+  trap `PORTABILITY.md` §3 documents. It subtracts each repo's own assignments first, so the
+  ~20 flags `dotfiles-Offense` and `dotfiles-Defense` each define for themselves are ignored;
+  the contract is only ever about reading a name you did not set. Whole-line comments are
+  dropped on top of the sigil rule, on **both** sides — the assignment side matters more,
+  since a `# HAVE_X=1` read as an assignment would mark the flag owned and silently
+  **suppress** a real undeclared read of it. No `--exclude-dir` and no `-I` anywhere in it —
+  both are GNU extensions busybox grep rejects, the trap that once made
+  `_core_make_gate_hits` report Core as the repo missing its own rule — so the vendored
+  `core/` subtree (which would otherwise answer for Core in every OS repo and make the fleet
+  direction vacuous) is pruned with `find`. The fleet half takes §5f/§5h's `skip_env`
+  posture: CI checks out this repo alone, and a gate that only passes on a laptop with the
+  fleet beside it is a gate nobody trusts.
+
+  **"Reader" means a zsh module, and that precision is what makes direction 3 worth having.**
+  A `HAVE_*` flag is a shell parameter that is never exported, so only code **sourced into
+  the same shell** can read one: `zsh/*.zsh` here, and the OS/role layers downstream.
+  `bin/`, `scripts/`, `maint/` and `tmux/scripts/` run as child processes where the flag does
+  not exist, and nvim's lua cannot see a zsh parameter at all — every `HAVE_*` mention in
+  those trees is prose about Core, not a read of it. The first implementation scanned them
+  anyway, which let `scripts/test-core.sh` count as a consumer and kept `HAVE_GRON` alive on
+  the strength of one negative fixture; review caught it. A test is not a consumer, so the
+  flag is pruned and that fixture asserts `_CORE_PROBED[gron] == 0` — which is what it
+  always meant, and is strictly the stronger claim.
+
+  **The issue's own numbers were wrong in three places, and `V5-PROPOSAL.md` §5.1 now records
+  why** rather than quietly correcting them, because the shape of the error is the argument for
+  the sigil match. It said 43 globals (42), nine dead (fourteen — its nine included
+  `HAVE_DIRENV`, which has never existed, and `HAVE_MISE`, which `00-tools.zsh` reads at its own
+  `mise activate` line), and five genuine downstream consumers (**one**: of the other four,
+  `HAVE_ASTGREP`/`HAVE_JNV`/`HAVE_SHELLCHECK` appear in a single `dotfiles-Offense` **comment**,
+  and `dotfiles-Defense` **sets** `HAVE_JQ` itself). Every one of those came from grepping bare
+  names and reading prose as code. The flags were also never `export`ed — they are shell
+  parameters, so they never reached a child process.
+
+  `scripts/test-core.sh` pins the parts a static gate cannot: that **every bare `_have` probe
+  still writes its ledger row** (derived from the source, floored at 14 — the regression here is
+  a _reading_ one, where the next person sees a probe whose result is discarded and deletes the
+  line, silently blinding the doctor on fourteen tools); that the fourteen flag names stay unset;
+  and that `HAVE_ATUIN` is set with atuin present and unset — with the ledger reading `0`, not a
+  missing row — when it is absent, hermetically, in both directions.
+
+  The gate's own matcher is tested too, rather than only hand-verified: the fleet scan is
+  extracted as **`scripts/lib/common.sh :: _core_have_read_hits`** and driven by sixteen
+  fixture repos. Seven must FIRE: a plain read, the braceless `$HAVE_X` form, a `.sh` outside
+  `os/`, zsh's existence form `${+HAVE_X}`, a parenthesised expansion flag `${(t)HAVE_X}`,
+  and the **no-sigil arithmetic** form `(( HAVE_X ))` — inside `(( ))` a shell resolves a
+  bare name as a parameter, and this tree gates on booleans exactly that way
+  (`((UPDATE_CHECK_ENABLED))`, `((CORE_CNF_ENABLED))`), so an OS layer writing it is
+  following house style — plus a **double-quoted** read, the commonest real form in the
+  fleet, which guards the rule below. Nine must stay SILENT: a read inside a vendored `core/` (pruned), a flag
+  the repo sets itself, ownership spread across two files, a bare name in a comment, a
+  **sigil** form in a comment, and two shapes that must not confer **ownership** — a
+  commented-out `# HAVE_X=1`, and one written as data by a fragment generator
+  (`printf 'HAVE_X=1\n'`). Both are the same false-negative: a bogus "this repo owns the
+  flag" silently suppresses a real undeclared read of it. Its mirror is there too — a **read**
+  written as data by a generator (`printf '${HAVE_X:-}\n'`), which would be a false _finding_
+  and red a clean repo. Plus a repo with no shell files.
+
+  Those last two are one character of lookbehind each, and the asymmetry between them is the
+  interesting part: an assignment is rejected next to **any** quote, a read only next to a
+  **single** one. A single quote suppresses expansion so the text is literal; a double quote
+  does not, and `[[ -n "${HAVE_ATUIN:-}" ]]` is the commonest real read in the fleet —
+  rejecting on any quote would have made it invisible. The helper states where this floor
+  sits rather than implying there is none: a quoted heredoc, `echo "note: HAVE_X=1"`, and a
+  quoted arithmetic literal all still fool it, and separating those needs the shell grammar —
+  the trap §3 of `PORTABILITY.md` documents at length. Every fixture carries a vendored `core/` that both sets and
+  reads the whole flag set, so if the prune ever breaks, all sixteen go silent at once. The silent directions are the ones worth pinning: an over-reporting scanner
+  reds a clean fleet and gets turned off, but an under-reporting one passes forever while the
+  contract rots. Three of those silent misses were review findings against earlier drafts,
+  and all three are now fixtures: zsh's **existence form** `(( ${+HAVE_X} ))` and its
+  **parenthesised expansion flags** `${(t)HAVE_X}` — both perfectly ordinary ways to gate on
+  or inspect a flag, both used by this tree itself (`(( ${+_CORE_PROBED} ))` in
+  `30-functions.zsh`, `${(t)GIT_EXEC_PATH}` in `00-tools.zsh`), and both walked straight past
+  by a matcher demanding `HAVE_` immediately after the brace; and a **commented-out
+  assignment** conferring ownership, which would have suppressed a real undeclared read of
+  the same flag.
+
+  The fleet scan deliberately reads `*.sh` as well as `*.zsh`, even though §5j's scan of
+  Core's own modules is `.zsh`-only. The two directions **err in opposite directions on
+  purpose**: direction 3 asks "does anything read this flag?", where counting a non-reader
+  keeps a dead flag alive, so it is strict; direction 2 asks "does this repo read a flag it
+  should not?", where missing a reader lets an undeclared coupling through silently, so it is
+  broad. **Direction 2 is, today, advisory** — Core's CI checks out this repo alone so it
+  records a skip on every run, and the reusable `lint` workflow the OS repos call does not
+  run it, so an OS-repo PR adding an undeclared read can still merge green. Closing that
+  needs a caller-side leg in `lint-call.yml` and the declared table reachable from a vendored
+  checkout, which `PORTABILITY.md` is not — an allowlist change with its own nine-repo blast
+  radius, filed as #866 rather than smuggled in here. Directions 1 and 3 block on every run. A downstream `.sh` may be sourced from a zsh fragment, and where it is a plain child
+  process a `$HAVE_X` in it is a read that can only ever be empty — its own defect, worth
+  surfacing. Each direction is tuned to find problems rather than to be symmetrical.
+
+  §5j also **fails closed when it parses no declaration at all.** Rename or delete §5's
+  heading and the declared set comes back empty — direction 1 goes vacuous, direction 2 skips
+  on every CI runner (no fleet beside it), and direction 3 still passes because `HAVE_ATUIN`
+  has an internal reader in `00-tools.zsh` too. The section would have reported green over no
+  declared surface whatsoever, which is exactly the shape #682 named: a drift gate that
+  checked nothing must never report green.
+
+  Two shape-parsing tests needed teaching, not weakening. `#447`'s doctor-vs-flag agreement
+  check pairs on the assignment by design (a tool with no flag has nothing to compare), so its
+  floor moves 30 → 24. `"every core-doctor row has detection behind it"` parsed two line
+  shapes and this change introduced a third, dropping fourteen tools out of its set and
+  tripping its floor at 29 — it learns the bare `_have` shape instead, because a bare probe
+  **is** detection in the sense that test means: it writes the ledger row the doctor keys on.
+  Lowering that floor would have let fourteen doctor rows read as undetected while detection
+  was untouched.
+
+  `PORTING-MATRIX.md`'s footnotes for every affected tool are corrected in the same change,
+  as are the three stale in-code references review turned up — `zsh/05-ui.zsh` advertised
+  `HAVE_GUM` as the flag it deliberately does not use, and `scripts/bench-core.sh` named
+  `HAVE_HYPERFINE` twice, once in a user-facing skip message.
+
 ### Changed
+
+- **The behavioral suite is 36 named fragments, not one 18,700-line file (#699).**
+  `scripts/test-core.sh` had grown to **18,747 lines**, and ShellCheck's cost is superlinear
+  in file length: that one file was **42.6s of the audit's 65.9s** of ShellCheck — **65% of
+  the lint surface in one file** — re-linted in full on all four CI legs by any PR touching
+  any shell file, with `audit (macos-latest)` setting the wall clock for the whole PR. The
+  suite now lives in **`scripts/test/NN-name.sh`**, one numbered fragment per subject, and
+  `test-core.sh` is a thin dispatcher that globs them in `NN` order and **sources** them into
+  its own shell. The suite's own share of the sweep goes from **42.6s to 9.7s**, taking the
+  whole gate from **65.9s to 31.7s — a 34.2s saving on every leg, 52% of it.** It is a move,
+  not a rewrite: the fragments rejoin to the old file's lines 190–18740 **byte for byte** (bar
+  the trailing blank lines `end-of-file-fixer` trims at each cut), and **all 1,772 assertions
+  the suite already had come back identical in text and order**, verified line-by-line against
+  a pre-split run. Five are added — see `05-suite-shape.sh` below — and three labels are
+  reworded (the two self-reference guards, and one that cited a section ID the split
+  removed); nothing else in the stream differs. `--quiet`, `--json`, `--scope` and the
+  exit-code contract `audit-core.sh` reads are untouched. The second win is
+  organisational: the sections were lettered **A–L**, and the letters had drifted into **two
+  different "E"s** and an `A` that ran after `J`, while the file's own header still described
+  it as _"Two sections"_ — names fix that by construction. Adding a section is adding a file;
+  the glob has no registry to forget, and an empty glob is a **hard exit 2** rather than a
+  green run that asserted nothing. Two guards that scanned only `scripts/test-core.sh` for
+  their own fixtures — the RETURN-trap and conflict-marker self-reference checks — now sweep
+  the dispatcher **and** every fragment, so they cannot go vacuous as fixtures move; and the
+  bare-box ending, which was a verbatim copy of the normal one, is now one
+  `_core_test_finish`. `audit-core.sh`'s exec-bit gate learns that `scripts/test/*.sh` are
+  sourced libraries (`100644`), the same arm as `scripts/lib/`. The glob buys "no registry"
+  at the price of one new way to write assertions that never run — an unnumbered file beside
+  the others is skipped in silence — so **`scripts/test/05-suite-shape.sh`** asserts the
+  layout instead of assuming it: every fragment carries the `NN-` prefix, none is executable,
+  all are tracked, and the empty-glob refusal is **driven** against a staged tree rather than
+  believed. Those five are the only assertions the split adds — **+5 and no pre-existing one
+  changed**, stated as a delta rather than a pair of totals because `main` keeps adding
+  assertions underneath this branch (it was `1772 → 1777` when measured, `1788 → 1793` after
+  merging #863 and #864), and a total pinned here would be wrong by the time it shipped.
 
 - **The startup budget is ratcheted from 120 ms to a committed 48 ms — 2× the measured
   baseline — and CI reads it from `scripts/bench-baseline.env` (#688).** The `bench` job's

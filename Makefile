@@ -26,7 +26,7 @@ audit: ## Run the full Core audit (manifest, exec-bits, syntax, lint, behavioral
 audit-changed: ## Audit only what your git diff touches (fast dev loop; same classifier as CI)
 	@./scripts/audit-core.sh --changed
 
-test: ## Run only the behavioral tests (load-order smoke + function units)
+test: ## Run only the behavioral tests (scripts/test-core.sh, suite in scripts/test/)
 	@./scripts/test-core.sh
 
 bench: ## Benchmark Core's contribution to zsh startup (needs hyperfine; skips if absent)

@@ -102,6 +102,15 @@ make audit-changed  # only what your diff touches (fast loop)
 make sync           # fan Core out to every OS repo (after a green audit)
 ```
 
+The **behavioral suite** the gate delegates to is `scripts/test/NN-name.sh` — one numbered
+fragment per subject — and `scripts/test-core.sh` is the dispatcher that globs them in `NN`
+order and **sources** them into its own shell (one `$SANDBOX`, one set of counters, one
+summary). Adding a section is adding a file; there is no registry to update. The `NN-` prefix
+is load-bearing (the glob skips anything without it, and `scripts/test/05-suite-shape.sh`
+fails the run if you leave one off), and the fragments are sourced libraries, so they are
+`100644`, not `+x`. They were one 18,747-line file until #699, where its ShellCheck cost was
+65% of the whole lint gate on every CI leg.
+
 Run `make` with no target for the discoverable list of entry points.
 
 To cut a release, follow `RELEASE-RUNBOOK.md` (exact commands for Core, the OS-repo
