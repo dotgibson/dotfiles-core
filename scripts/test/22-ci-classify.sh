@@ -236,8 +236,26 @@ _prlink_is "fix( PR with no link and no reason → missing-link" 'fix(doctor): p
 _prlink_is "unscoped fix: is gated too" 'fix: probe both names' 0 '' missing-link
 _prlink_is "breaking fix!: is gated too" 'fix!: probe both names' 0 '' missing-link
 _prlink_is "breaking scoped fix(x)!: is gated too" 'fix(doctor)!: probe both names' 0 '' missing-link
-_prlink_is "feat( is not gated (fix-only rule)" 'feat(doctor): new panel' 0 '' not-gated
+# feat( JOINED the gated set in #852: #853 resolved that issue in full, was titled
+# feat(check), closed nothing, and left it open looking like a live defect. An issue does
+# not know how the PR resolving it will be typed. All four shapes, like fix( above.
+_prlink_is "feat( PR with a linked issue -> ok" 'feat(doctor): new panel' 1 '' ok
+_prlink_is "feat( PR with no link and no reason -> missing-link" 'feat(doctor): new panel' 0 '' missing-link
+_prlink_is "unscoped feat: is gated too" 'feat: new panel' 0 '' missing-link
+_prlink_is "breaking feat!: is gated too" 'feat!: new panel' 0 '' missing-link
+_prlink_is "breaking scoped feat(x)!: is gated too" 'feat(doctor)!: new panel' 0 '' missing-link
+_prlink_is "No-Issue: exempts a feat( too" 'feat(x): y' 0 'No-Issue: scratch-built, never filed' exempt
+# ...and the set STOPS there. These are mechanical PRs that close nothing by design;
+# gating them would teach No-Issue: as a reflex, and a habitual escape hatch is a gate
+# that has stopped working.
 _prlink_is "chore( is not gated" 'chore(deps): bump actions' 0 '' not-gated
+_prlink_is "a Core sync chore( is not gated" 'chore(core): sync Core -> v6.1.0' 0 '' not-gated
+_prlink_is "a release docs( is not gated" 'docs(changelog): release v6.1.0' 0 '' not-gated
+_prlink_is "refactor( is not gated" 'refactor(zsh): split the loader' 0 '' not-gated
+# The delimiter rule holds for the new type as well: prose beginning with the word is not
+# a Conventional-Commit type, and "feature:" is not "feat:".
+_prlink_is "prose starting with feat is not gated" 'featuring a new panel' 0 '' not-gated
+_prlink_is "feature: is not the feat type (delimiter, not prefix)" 'feature: new panel' 0 '' not-gated
 # The delimiter is what separates a type from prose — without it, `fixup:` and an
 # ordinary sentence would both be swept in, and authors would learn to distrust the gate.
 _prlink_is "fixup: is not the fix type (delimiter, not prefix)" 'fixup: squash me' 0 '' not-gated
@@ -272,9 +290,11 @@ _prlink_is "an empty count (partial API response) is probe-failed too" \
 # gratuitous, and the check has everything it needs to say yes.
 _prlink_is "No-Issue: still exempts while the probe is down" \
   'fix(x): y' 'unknown' 'No-Issue: found in one pass' exempt
-# A non-fix PR is out of scope whatever the probe did.
-_prlink_is "a non-fix PR stays not-gated while the probe is down" \
-  'feat(x): y' 'unknown' '' not-gated
+# An UNGATED PR is out of scope whatever the probe did. The example used to be
+# 'feat(x): y', which #852 moved into the gated set — so it is now a chore(, and the
+# assertion is unchanged: scope is decided before the probe's result is consulted.
+_prlink_is "an ungated PR stays not-gated while the probe is down" \
+  'chore(deps): bump actions' 'unknown' '' not-gated
 # Usage error is its own exit code (2), distinct from a policy violation (1), so a
 # workflow that miscalls the script reads as broken rather than as a failing PR.
 # Asserted inline rather than via check(), which is zsh-only and defined further down.
