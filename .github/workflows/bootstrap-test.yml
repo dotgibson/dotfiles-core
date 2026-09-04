@@ -89,10 +89,10 @@
 # a Core release, and a MAJOR bump is the one intentional, reviewed caller edit — so a repo
 # pinned @vN keeps that major's assertions until it deliberately moves to @vN+1 as part of the
 # fan-out (re-vendoring the new major's Core + updating its bootstrap together). The fleet is
-# on @v6 today:
+# on @v7 today:
 #   jobs:
 #     test:
-#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v6
+#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v7
 #       with:
 #         image: alpine:3.20
 #         prep:  apk add --no-cache bash zsh

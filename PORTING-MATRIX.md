@@ -19,14 +19,14 @@ _Repo status_ at the bottom).
    the sync refuses a target with uncommitted changes, so an uncommitted repo is skipped
    rather than re-vendored. Then re-vendor Core and stamp `core.lock`, from a **Core**
    checkout — in a throwaway worktree, so your own checkout stays on its branch for the
-   registration edit that follows: `git fetch origin refs/tags/v6 && wt="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX")/core" && { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && { out="$( (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" CORE_COLOR=never REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) 2>&1)" || true; printf '%s\n' "$out"; last="$(awk '/^ *repos: /{l=$0} END{print l}' <<<"$out")"; if grep -Eq '^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$' <<<"$last"; then rc=0; else rc=1; fi; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
+   registration edit that follows: `git fetch origin refs/tags/v7 && wt="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX")/core" && { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && { out="$( (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" CORE_COLOR=never REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) 2>&1)" || true; printf '%s\n' "$out"; last="$(awk '/^ *repos: /{l=$0} END{print l}' <<<"$out")"; if grep -Eq '^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$' <<<"$last"; then rc=0; else rc=1; fi; git worktree remove --force "$wt" && rmdir "$(dirname "$wt")" && (exit "$rc"); }`
    (a unique temp path, so a retry never meets a registered leftover; the sync's output
    is captured under `|| true` so `set -e` cannot skip the cleanup, which runs only once
    the add succeeded; the RELEASED script runs in that worktree — it exits 0 after a per-repo
    failure and may predate `--strict` — so its summary line is the verdict: `updated 1
    skipped 0   failed 0` for the one target, and nothing else counts; that `repos:` footer
    exists since v4.1.0, so an older exact freeze cannot be judged this way)
-   — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v6`
+   — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v7`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
    § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no
    `git subtree add` to run here (it would fail: _prefix 'core' already exists_). That

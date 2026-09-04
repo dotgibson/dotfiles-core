@@ -662,7 +662,7 @@ repo first**: a `--no-vendor` scaffold is unborn and uncommitted, and `subtree a
 needs a clean `HEAD` (the recovery command the scaffold prints does this for you):
 
 ```sh
-git subtree add --prefix=core <core-remote> refs/tags/v6 --squash
+git subtree add --prefix=core <core-remote> refs/tags/v7 --squash
 ```
 
 It is one-time because `sync-core.sh` skips a repo that has no `core/` yet: it replaces
@@ -687,7 +687,7 @@ with no lock yet that is the only thing which can write one:
 
 ```bash
 # in dotfiles-core — from a THROWAWAY worktree, so your own checkout stays on its branch
-git fetch origin refs/tags/v6 && wt="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX")/core" &&   # one chain: a failed fetch stops here, never reusing a stale FETCH_HEAD
+git fetch origin refs/tags/v7 && wt="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-core-sync.XXXXXX")/core" &&   # one chain: a failed fetch stops here, never reusing a stale FETCH_HEAD
   { git worktree add --detach "$wt" FETCH_HEAD || { rmdir "$(dirname "$wt")"; false; }; } && {   # a failed add removes the parent it just made, and stops
   out="$( (cd "$wt" && CORE_BRANCH="$(git rev-parse 'HEAD^{commit}')" CORE_COLOR=never REPOS_ROOT="$OLDPWD/.." ./scripts/sync-core.sh dotfiles-<Distro>) 2>&1)" || true; printf '%s\n' "$out"
   last="$(awk '/^ *repos: /{l=$0} END{print l}' <<<"$out")"; if grep -Eq '^ *repos: +updated 1 +skipped 0 +failed 0 +\(of 1 targeted\)$' <<<"$last"; then rc=0; else rc=1; fi   # the LAST repos: row is the verdict (see below); `|| true` and the `if` keep `set -e` from skipping the cleanup
@@ -708,10 +708,10 @@ than v4.1.0 is out of scope for the recipe — and `new-os-repo.sh` refuses such
 
 Three things matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
 and the pin must be the **peeled commit** — the release tags are annotated, so
-`refs/tags/v6` resolves to the tag object, which is never that `HEAD` (the worktree is
+`refs/tags/v7` resolves to the tag object, which is never that `HEAD` (the worktree is
 detached at the peeled commit, so `HEAD^{commit}` is it); `REPOS_ROOT` is passed because
 the worktree's parent is not where your OS repos live; and it is a worktree rather than
-`git checkout v6`, because the next step below edits **this** repository to register the
+`git checkout v7`, because the next step below edits **this** repository to register the
 new one, and a detached checkout would strand that commit.
 
 Then register the repo **here**, which is **one line** in `scripts/os-repos.txt`:

@@ -226,29 +226,31 @@ responses:
   later guard, and you should not try to: a configured App that cannot reach its target is
   a misconfiguration, not something to swallow.
 
-## One live constraint: the reusable's declared `WEBHOOK_SECRET`
+## One live constraint: the reusable's declared `WEBHOOK_SECRET` — discharged in v7
 
-`notify-web-call.yml` still **declares** a `WEBHOOK_SECRET` secret input, under
-`on.workflow_call.secrets`. **Nothing reads it** — it is not part of the auth described
-above, and no caller should pass it.
+`notify-web-call.yml` **no longer declares** a `WEBHOOK_SECRET` secret input. The
+declaration was removed in **v7.0.0**, which is the MAJOR this section had been waiting
+for since #683 deleted the credential itself. Nothing read it before the removal and
+nothing does now.
 
-It is documented here, in the live reference rather than the historical record, because it
-is a **current constraint on a future change**: it cannot be deleted until the next MAJOR.
-Removing a declared secret is a **breaking change to the published `v6` reusable-workflow
-contract**: a caller that passes a secret the reusable no longer declares fails workflow
-validation. The nine OS-repo callers have stopped passing it (#819), which is what makes
-the removal safe to schedule — but scheduling it is the whole point.
+**The reasoning is kept, not deleted, because the recovery procedure below depends on
+it.** Removing a declared secret is a breaking change to a published reusable-workflow
+contract: a caller that passes a secret the reusable no longer declares fails workflow
+validation before its own code runs. Two things made v7 the safe moment, and both had to
+hold:
 
-**A MAJOR does not push this onto existing callers, and that is exactly why it waits for
-one.** Per `RELEASE-RUNBOOK.md` §1.1, a MAJOR mints `vN+1` and **leaves the outgoing `vN`
-alias frozen** — precisely so a breaking change is not forced on callers still tracking it.
-So `@v6` callers keep the contract they were published against, including this declaration,
-and encounter the removal only when they **explicitly adopt `@v7`** — the deliberate,
-reviewed caller sweep in §2 step 1. Deleting the declaration on a PATCH or MINOR would be
-the harmful case, because there the alias *does* advance in place and every tracker would
-take the change with no adoption step.
+- **No caller was still passing it.** The nine OS-repo callers stopped at #819; verified
+  again across all eleven fleet repos plus `htpx` immediately before the removal.
+- **A MAJOR does not push the change onto existing callers.** Per `RELEASE-RUNBOOK.md`
+  §1.1 a MAJOR mints `vN+1` and **leaves the outgoing alias frozen**, so `@v6` callers keep
+  the contract they were published against — declaration included — and meet the removal
+  only when they **explicitly adopt `@v7`**, the reviewed caller sweep in §2 step 1. On a
+  PATCH or MINOR the alias advances in place and every tracker would have taken the change
+  with no adoption step; that is the case this waited to avoid.
 
-**Do not remove it as tidy-up.** It comes out on a MAJOR, paired with that caller bump.
+**If you are re-provisioning off the App**, the recovery procedure's step 4 is now the live
+branch rather than a no-op: the declaration has to be restored before a caller can pass the
+secret again, and the reversal's step 3 removes it once more afterwards.
 
 ## Recovery — re-provisioning off the App
 
