@@ -163,25 +163,54 @@ for entry in "${TARGETS[@]}"; do
     continue
   fi
 
-  if [[ "$MODE" == check ]]; then
-    CHECKED=$((CHECKED + 1))
-    if diff -u "$file" <(render "$file") >/dev/null; then
+  # ONE render, to a TEMPLATED temp file — bare `mktemp` is a BSD failure (PORTABILITY.md).
+  # In write mode the temp is a SIBLING of the target so the install below is an atomic
+  # same-filesystem rename: a full disk or a kill leaves the old file intact rather than a
+  # half-written one. In check mode nothing is installed, so it goes to TMPDIR and the
+  # target's directory need not be writable at all.
+  if [[ "$MODE" == check ]]; then _tmpl="${TMPDIR:-/tmp}/gen-desktop-parity.XXXXXX"; else _tmpl="$file.gen.XXXXXX"; fi
+  if ! tmp="$(mktemp "$_tmpl" 2>/dev/null)"; then
+    fail "$repo/$rel — could not create a temp file next to it (is the directory writable?)"
+    continue
+  fi
+  # NOTHING here runs under `set -e`, so every step that can fail is branched on: an
+  # unchecked render or copy prints "rewritten" and exits 0 over a stale or partial file.
+  if ! render "$file" >"$tmp"; then
+    fail "$repo/$rel — rendering the block failed; the file was NOT modified"
+    rm -f "$tmp"
+    continue
+  fi
+  CHECKED=$((CHECKED + 1))
+
+  # core_files_identical, NOT cmp/diff, decides the verdict. Both ship in diffutils, which
+  # is not guaranteed present — a Tumbleweed box in this fleet had neither — and a missing
+  # binary exits non-zero, which is indistinguishable from "the files differ". That exact
+  # shape red-flagged a lockfile that had never moved (#572); the helper hashes instead, so
+  # it cannot be fooled. diff stays for DIAGNOSTICS only, guarded by have(), never the verdict.
+  if core_files_identical "$file" "$tmp"; then
+    rm -f "$tmp"
+    if [[ "$MODE" == check ]]; then
       pass "$repo/$rel matches desktop/PARITY.shared.md"
     else
-      fail "$repo/$rel has drifted from desktop/PARITY.shared.md:"
-      diff -u "$file" <(render "$file") | sed 's/^/    /' >&2 || true
-      printf '    fix: edit desktop/PARITY.shared.md, then run: make gen-desktop-parity\n' >&2
-    fi
-  else
-    CHECKED=$((CHECKED + 1))
-    tmp="$(mktemp)"
-    render "$file" > "$tmp"
-    if cmp -s "$file" "$tmp"; then
       pass "$repo/$rel already up to date"
-      rm -f "$tmp"
+    fi
+  elif [[ "$MODE" == check ]]; then
+    fail "$repo/$rel has drifted from desktop/PARITY.shared.md:"
+    if have diff; then
+      diff -u "$file" "$tmp" | sed 's/^/    /' >&2 || true
     else
-      command cp -f "$tmp" "$file" && rm -f "$tmp"
+      printf '    (diff not installed — install diffutils to see the drifting lines)
+' >&2
+    fi
+    printf '    fix: edit desktop/PARITY.shared.md, then run: make gen-desktop-parity\n' >&2
+    rm -f "$tmp"
+  else
+    # Install the COMPLETE render atomically; only claim success if the rename worked.
+    if mv -f "$tmp" "$file"; then
       pass "$repo/$rel rewritten from desktop/PARITY.shared.md"
+    else
+      fail "$repo/$rel — could not install the rendered block; the file is unchanged"
+      rm -f "$tmp"
     fi
   fi
 done

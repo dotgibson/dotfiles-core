@@ -8438,8 +8438,54 @@ else
   fail "gen-desktop-parity: parity-check.yml runs the generator WITHOUT --check — the weekly gate would rewrite the clones and always pass"
 fi
 
+# THE VERDICT MUST NOT DEPEND ON DIFFUTILS. `cmp`/`diff` ship in diffutils, which is not
+# guaranteed present — a Tumbleweed box in this fleet had neither — and a missing binary
+# exits non-zero, which is indistinguishable from "the files differ". That is how a
+# lockfile that never moved was reported as drift (#572). Shadow both with always-failing
+# stubs: identical files must still verify as identical.
+_dp_shim="$SANDBOX/nodiffutils"
+mkdir -p "$_dp_shim"
+for _b in diff cmp; do printf '#!/bin/sh\nexit 127\n' >"$_dp_shim/$_b"; chmod +x "$_dp_shim/$_b"; done
+_dp_fixture && _dp_run >/dev/null
+_dp_nodiff_rc="$( (cd "$SANDBOX" && PATH="$_dp_shim:$PATH" env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" --check >/dev/null 2>&1; echo $?) )"
+if [[ "$_dp_nodiff_rc" == 0 ]]; then
+  pass "gen-desktop-parity: --check verdict survives a host with no working diff/cmp"
+else
+  fail "gen-desktop-parity: a broken diff/cmp turned matching files into drift (rc=$_dp_nodiff_rc) — the verdict must use core_files_identical"
+fi
+
+# A WRITE THAT CANNOT HAPPEN MUST NOT REPORT SUCCESS. Nothing here runs under `set -e`, so
+# an unchecked render or install prints "rewritten" and exits 0 over a stale file.
+# Skipped as root, where the mode bits below do not bite.
+if [[ "${EUID:-$(id -u)}" != 0 ]]; then
+  _dp_fixture
+  chmod a-w "$DPF/dotfiles-Windows/desktop"
+  _dp_ro_rc="$(_dp_run)"
+  _dp_ro_out="$(_dp_out)"
+  chmod u+w "$DPF/dotfiles-Windows/desktop"
+  if [[ "$_dp_ro_rc" == 1 ]] && ! grep -q 'rewritten' <<<"$_dp_ro_out"; then
+    pass "gen-desktop-parity: an unwritable target fails instead of claiming it was rewritten"
+  else
+    fail "gen-desktop-parity: a write that could not happen was reported as success (rc=$_dp_ro_rc)"
+  fi
+  unset _dp_ro_rc _dp_ro_out
+else
+  skip "gen-desktop-parity: unwritable-target check (running as root)"
+fi
+
+# The render temp is a sibling of the target, so it must never be left behind — a stray
+# PARITY.md.gen.XXXXXX in someone's clone is litter the gate itself would then read.
+_dp_fixture && _dp_run >/dev/null
+sed -i.bak 's/Bar parity contract/Bar parity CONTRACT/' "$DPM" && rm -f "$DPM.bak"
+_dp_run --check >/dev/null
+if [[ -z "$(find "$DPF" -name '*.gen.??????' 2>/dev/null)" ]]; then
+  pass "gen-desktop-parity: leaves no temp file behind, even on the drift path"
+else
+  fail "gen-desktop-parity: left a *.gen.?????? temp file in a target repo"
+fi
+
 rm -rf "$DPF"
-unset DPF DPW DPM _dp_addendum _dp_drift_out
+unset DPF DPW DPM _dp_addendum _dp_drift_out _dp_shim _dp_nodiff_rc
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
