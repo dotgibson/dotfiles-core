@@ -210,7 +210,15 @@ SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-test.XXXXXX")"
 # `declare -F` guard is for the early exits above (--help, a bad argument): those leave before
 # the fragments are sourced, and an EXIT handler that calls a not-yet-defined function turns a
 # clean `exit 0` into a command-not-found on stderr.
-# shellcheck disable=SC2329  # invoked indirectly, by the EXIT trap installed below
+# BOTH codes, deliberately: shellcheck renamed this diagnostic between the versions the fleet
+# runs. 0.11.0 (the pin in scripts/tool-versions.env, and what CI's ubuntu and macOS legs use)
+# reports a trap-only function as SC2329 "never invoked"; 0.10.0 — what `apk add shellcheck`
+# gives the Alpine leg — reports the same thing as SC2317 "unreachable" on the BODY instead.
+# Naming only the pinned version's code passes locally and on ubuntu and still reds Alpine,
+# which is how this went red the first time here too. An unknown code in a disable directive
+# is ignored, so naming both is safe in either direction. Same reasoning as check-links.sh:184
+# and scripts/research/verify-atuin-guard.sh:444.
+# shellcheck disable=SC2317,SC2329  # invoked indirectly, by the EXIT trap installed below
 _core_test_cleanup() {
   rm -rf "$SANDBOX"
   declare -F _d_drop_lock >/dev/null && _d_drop_lock
