@@ -11667,6 +11667,28 @@ else
   fail "gen-hero-tape: a tape's banner names a command that would not update it"
 fi
 
+# EVERY REMEDY MUST NAME THE TARGET THAT REPAIRS THE FILE IT IS ABOUT. This was fixed in the
+# banner and survived in two diagnostics — the missing-tape failure and the drift `fix:` line
+# — each of which told a sibling to run `make gen-hero-tape`, which rewrites the `.` row and
+# nothing else (#862 review). One helper now, asserted in both directions.
+_gh_fixture
+_gh_miss_out="$(_gh_out --fleet --check)"
+if grep -q 'assets/demo.tape is missing — run: make gen-hero-tape-fleet' <<<"$_gh_miss_out"; then
+  pass "gen-hero-tape: a missing SIBLING tape is reported with the fleet target"
+else
+  fail "gen-hero-tape: a missing sibling tape names a command that would not create it"
+fi
+_gh_fixture && _gh_run --fleet >/dev/null
+printf 'Type "x"\n' >>"$GHF/dotfiles-Fedora/assets/demo.tape"
+printf 'Type "x"\n' >>"$GHR/assets/demo.tape"
+_gh_fix_out="$(_gh_out --fleet --check)"
+if grep -q 'then run: make gen-hero-tape-fleet' <<<"$_gh_fix_out" &&
+  grep -q 'then run: make gen-hero-tape$' <<<"$_gh_fix_out"; then
+  pass "gen-hero-tape: drift on a sibling and on the local row each name their own target"
+else
+  fail "gen-hero-tape: a drift remedy names the wrong make target: $(grep 'fix:' <<<"$_gh_fix_out")"
+fi
+
 # NO MARKDOWN FENCE MAY CARRY TRAILING TEXT. CommonMark allows only whitespace after a
 # closing fence, so ``` followed by prose is not a close — the rest of the document renders
 # inside the code block. markdownlint does not flag it, and it swallowed the tail of
@@ -11705,7 +11727,7 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad _gh_guard _gh_path
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad _gh_guard _gh_path _gh_miss_out _gh_fix_out
 
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run
