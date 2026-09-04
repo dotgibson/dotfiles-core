@@ -7,8 +7,9 @@
 
 ## Linked issue
 
-<!-- A `fix(…)` PR must close an issue or say why it doesn't — pr-link-check enforces
-     this. Use a CLOSING KEYWORD below (closes/fixes/resolves); "Refs #420" reads like
+<!-- A `fix(…)` or `feat(…)` PR must close an issue or say why it doesn't — pr-link-check
+     enforces
+     it. Use a CLOSING KEYWORD below (closes/fixes/resolves); "Refs #420" reads like
      a link but closes nothing, so the issue would stay open after merge.
 
        Closes #420

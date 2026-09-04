@@ -198,6 +198,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`pr-link-check` gates `feat(…)` too — the scope that let #852 sit open (#852).**
+  The rule "a fix closes an issue or says why not" was `fix`-titled PRs only, and
+  `scripts/ci-pr-link.sh` argues for that strictness at length — but the argument is
+  entirely about `fixup:` versus `fix:` and says nothing about `feat:`. The omission had
+  a cost, in the exact shape the gate exists to prevent. **#852**
+  (`fix(fleet): make check is not hermetic…`) was resolved by **#853**, titled
+  `feat(check): one Core-owned hermetic links gate`, plus three consumer PRs in Fedora,
+  Gentoo and openSUSE. Every part merged on 2026-09-03/04. Nothing closed the issue, and
+  it sat OPEN looking like a live defect — reached through the resolving PR's _title_
+  rather than its body, which no amount of care about `Closes #N` would have caught. An
+  issue does not know how the PR that resolves it will be typed. Measured over the 100
+  PRs merged since the gate landed on 2026-08-17: **29 gated, 71 not, and 41 of those 71
+  cited an issue in the body and closed none.** The set now stops at `fix|feat`, on the
+  same reasoning that keeps `fixup:` out: `chore(core): sync Core → vX.Y.Z` and
+  `docs(changelog): release vX.Y.Z` are mechanical and close nothing by design, so gating
+  them would teach `No-Issue:` as a reflex — and an escape hatch taken by habit is a gate
+  that has stopped working. The suite covers all four `feat` shapes (scoped, unscoped,
+  breaking, breaking-scoped), the `No-Issue:` exemption on a `feat`, `feature:` and
+  `featuring` staying out on the delimiter rule, and the four mechanical types staying
+  ungated. One existing case flipped rather than broke: the "out of scope whatever the
+  probe did" assertion used `feat(x): y` as its example and now uses `chore(deps):`.
+
 - **Two CLI help texts now match the code they describe (#693 follow-up).**
   `gen-desktop-parity.sh --help` listed `--check`/`--root`/`--strict` but not `--quiet`,
   `--color WHEN` or `-h`/`--help` — all of which its own parser accepts, and `parity-check.yml`
