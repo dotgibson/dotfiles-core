@@ -74,7 +74,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   — and a _bare_ `cd` succeeds into `$HOME`, reintroducing the wrong-tree hero through the
   guard meant to prevent it; and a malformed row late in the file used to leave every tape
   above it already rewritten. Empty fields, duplicate repos and a bad `note:`/`caps:` prefix
-  are all rejected up front, all findings at once.
+  are all rejected up front, all findings at once — as are a `"` or a `>`/`<` in any field
+  substituted into the template's `Type "…"` (a quote closes that VHS string; a redirection
+  is real in the shell VHS drives), and a `.` row that films any **other** registered repo,
+  which is #698's original defect restated as a machine check rather than a fixture. And
+  substitution is literal (`index`/`substr`): awk's `gsub` expands `&` in the REPLACEMENT to
+  the matched text, so a value like `check && report` rendered as
+  `check @@SIGCMD@@@@SIGCMD@@ report` — `-v` protects a value on the way in, not on the way out.
   `scripts/test-core.sh` covers the generator hermetically in **F11b**: the wrong-repo `cd`
   and the named-theme preset are both pinned as regressions, drift outranks an absent sibling
   (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2

@@ -74,7 +74,9 @@ Type "echo up resolves to $(_core_cap PKG_UPGRADE)" ...   # → sudo zypper dup
 
 It reads the capability; it never applies it. The registry's `proof` value is substituted
 *inside* the template's `Type "…"`, so it must contain no double quote (it would close the
-string early) and no `>` (a redirection in the shell VHS is driving).
+string early) and no `>` or `<` (a redirection in the shell VHS is driving). Those rules are
+**enforced**, not just written here — `validate_registry` rejects them, along with a `.` row
+that films any other registered repo, which is #698's original defect stated as a check.
 
 The `# one verb → …` comment stays as the maintainer-facing half: it is derived from each
 repo's own `os/*.capabilities` `PKG_UPGRADE`, so a tape can never *claim* a verb the repo

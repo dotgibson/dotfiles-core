@@ -11500,6 +11500,80 @@ if [[ "${EUID:-$(id -u)}" != 0 ]]; then
   fi
 fi
 
+# THE SHIPPED REGISTRY, NOT THE FIXTURE. Every assertion above writes its own registry, so
+# none of them pins assets/hero-repos.txt — point its `.` row back at dotfiles-MacBook,
+# regenerate, and F11b plus both audit legs stay green while #698's original defect is
+# fully reinstated (#862 review). These read the tracked files.
+_gh_ship_row="$(awk -F'\t' '$1 == "." { print $3; exit }' "$HERE/assets/hero-repos.txt")"
+case "$_gh_ship_row" in
+*/dotfiles-core)
+  pass "gen-hero-tape: the SHIPPED registry's \`.\` row films dotfiles-core ($_gh_ship_row)" ;;
+*)
+  fail "gen-hero-tape: the shipped \`.\` row films '$_gh_ship_row', not a dotfiles-core checkout — #698's defect" ;;
+esac
+if grep -q 'Type "cd .*/dotfiles-core || exit 1" Enter' "$HERE/assets/demo.tape"; then
+  pass "gen-hero-tape: the SHIPPED assets/demo.tape cds into dotfiles-core, guarded"
+else
+  fail "gen-hero-tape: the shipped tape does not cd into a guarded dotfiles-core checkout"
+fi
+# No OTHER fleet repo may appear anywhere in this repo's own tape.
+_gh_ship_alien=""
+while IFS= read -r _gh_r; do
+  [[ -n "$_gh_r" ]] || continue
+  grep -q "$_gh_r" "$HERE/assets/demo.tape" && _gh_ship_alien="$_gh_ship_alien $_gh_r"
+done < <(awk -F'\t' 'NF == 6 && $1 != "." { print $1 }' "$HERE/assets/hero-repos.txt")
+if [[ -z "$_gh_ship_alien" ]]; then
+  pass "gen-hero-tape: the shipped tape names no other fleet repo"
+else
+  fail "gen-hero-tape: the shipped tape mentions$_gh_ship_alien — it is filming, or naming, another repo"
+fi
+# And the generator itself must REFUSE that registry, so the gate catches it even if these
+# two assertions are ever deleted.
+_gh_fixture
+{ printf '.\tassets/demo.tape\t~/code/dotgibson/dotfiles-MacBook\tcore status\tcore-version\tnote:p\n'
+  printf 'dotfiles-MacBook\tassets/demo.tape\t~/code/dotgibson/dotfiles-MacBook\tup -n\tcore-version\tnote:q\n'
+} >"$GHR/assets/hero-repos.txt"
+if [[ "$(_gh_run --check)" == 2 ]] && grep -q '#698 defect' <<<"$(_gh_out --check)"; then
+  pass "gen-hero-tape: a \`.\` row pointed at a sibling repo is refused by name (#698 by construction)"
+else
+  fail "gen-hero-tape: the generator accepted a \`.\` row filming another registered repo"
+fi
+# A sibling that films the wrong tree is the same defect one row over.
+_gh_fixture
+awk -F'\t' -v OFS='\t' '$1 == "dotfiles-Fedora" { $3 = "~/code/dotgibson/dotfiles-Arch" } { print }' \
+  "$GHR/assets/hero-repos.txt" >"$GHR/assets/hr.new" && mv "$GHR/assets/hr.new" "$GHR/assets/hero-repos.txt"
+if [[ "$(_gh_run --check)" == 2 ]]; then
+  pass "gen-hero-tape: a sibling row filming another repo's checkout is refused"
+else
+  fail "gen-hero-tape: dotfiles-Fedora was allowed to film dotfiles-Arch"
+fi
+
+# SUBSTITUTION MUST BE LITERAL. `&` in an awk gsub REPLACEMENT expands to the matched text,
+# so `check && report` rendered as `check @@SIGCMD@@@@SIGCMD@@ report` — the -v that protects
+# the value on the way in does nothing on the way out (#862 review).
+_gh_fixture
+awk -F'\t' -v OFS='\t' '$1 == "." { $4 = "check && report" } { print }' \
+  "$GHR/assets/hero-repos.txt" >"$GHR/assets/hr.new" && mv "$GHR/assets/hr.new" "$GHR/assets/hero-repos.txt"
+_gh_run >/dev/null
+if grep -qF 'Type "check && report"' "$GHR/assets/demo.tape"; then
+  pass "gen-hero-tape: an \`&\` in a registry value substitutes literally (not as the match)"
+else
+  fail "gen-hero-tape: \`&\` was expanded by the replacement: $(grep -o 'Type "check.*' "$GHR/assets/demo.tape")"
+fi
+
+# THE DOCUMENTED SYNTAX CONTRACT MUST BE ENFORCED, not merely written down. A `"` closes the
+# template's Type string; a `>` redirects in the shell vhs drives. Both were documented in
+# assets/hero-repos.txt and assets/README.md and neither was checked.
+for _gh_bad in 'echo "hi"' 'up -n > out' 'up -n < in'; do
+  for _gh_col in 3 4 5; do
+    _gh_fixture
+    awk -F'\t' -v OFS='\t' -v c="$_gh_col" -v v="$_gh_bad" '$1 == "." { $c = v } { print }' \
+      "$GHR/assets/hero-repos.txt" >"$GHR/assets/hr.new" && mv "$GHR/assets/hr.new" "$GHR/assets/hero-repos.txt"
+    [[ "$(_gh_run --check)" == 2 ]] || fail "gen-hero-tape: field $_gh_col accepted '$_gh_bad'"
+  done
+done
+pass "gen-hero-tape: a quote or redirection in any Type-substituted field is refused (3 values x 3 fields)"
+
 # THE BANNER'S FIX COMMAND MUST UPDATE THE FILE IT IS WRITTEN IN. `make gen-hero-tape`
 # rewrites the `.` row and nothing else, so a sibling tape carrying it names a command that
 # leaves the reader's own file untouched — advice that silently does nothing (#862 review).
@@ -11549,7 +11623,7 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad
 
 # F12 sits ABOVE the zsh gate below on purpose: it is pure bash and drives the register
 # scripts against a fake fleet root, so `--scope none` and a box without zsh must still run

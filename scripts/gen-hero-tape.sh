@@ -269,6 +269,36 @@ validate_registry() {
           bad = 1
         }
       }
+      # THE DOCUMENTED SYNTAX CONTRACT, ENFORCED. checkout, sigcmd and proof are substituted
+      # INSIDE the `Type "…"` line of the template, so a double quote closes that VHS string
+      # early, and a `>` is a REDIRECTION in the shell vhs is driving: `up -n > file` writes a
+      # file instead of showing one. assets/hero-repos.txt and assets/README.md both stated these
+      # constraints and nothing checked them (#862 review); a contract only prose enforces is
+      # the thing this whole generator exists to replace.
+      for (i = 3; i <= 5; i++) {
+        if (index($i, "\"")) {
+          printf "gen-hero-tape: %s:%d: field %d contains a double quote — it is substituted inside Type \"…\" and would close the string early: %s\n", FILENAME, FNR, i, $i > "/dev/stderr"
+          bad = 1
+        }
+        if (index($i, ">") || index($i, "<")) {
+          printf "gen-hero-tape: %s:%d: field %d contains a redirection character — it is TYPED into a live shell: %s\n", FILENAME, FNR, i, $i > "/dev/stderr"
+          bad = 1
+        }
+      }
+      # WHICH TREE THE TAPE FILMS, checked against the row that names it. #698 opened because
+      # the dotfiles-core hero ran `cd ~/…/dotfiles-MacBook`; a fixture cannot catch that
+      # coming back, because a fixture writes its own registry (#862 review). So the rule is
+      # self-referential and needs no hardcoded repo name: a sibling row must cd into a path
+      # ending in ITS OWN repo name, and the `.` row must not cd into any OTHER registered
+      # repo.
+      base = $3; sub(/\/+$/, "", base); sub(/^.*\//, "", base)
+      if ($1 == ".") { local_base = base } else {
+        if (base != $1) {
+          printf "gen-hero-tape: %s:%d: %s films %s — a repo\047s hero must film its own checkout\n", FILENAME, FNR, $1, $3 > "/dev/stderr"
+          bad = 1
+        }
+      }
+      repo_named[$1] = 1
       # The signature source decides whether a note is derived or literal; anything else is
       # a typo that would otherwise surface as a per-row failure mid-sweep.
       if ($6 !~ /^(note|caps):/) {
@@ -296,6 +326,11 @@ validate_registry() {
       }
       if (n == 0) {
         printf "gen-hero-tape: %s: no rows at all — nothing would be rendered or gated\n", FILENAME > "/dev/stderr"
+        bad = 1
+      }
+      # THE #698 REGRESSION ITSELF. Deferred to END because it needs every repo name.
+      if (local_base != "" && (local_base in repo_named)) {
+        printf "gen-hero-tape: %s: the `.` row films %s, which is another registered repo — that IS the #698 defect (this repo\047s hero shot inside a machine repo)\n", FILENAME, local_base > "/dev/stderr"
         bad = 1
       }
       if (bad) exit 2
@@ -365,9 +400,14 @@ banner() {
 # generator" into ten rendered tapes would describe a file that has none. Everything
 # from @@HEADER@@ onward is the tape.
 #
-# sed would be the obvious tool and is the wrong one: a checkout path or a note is
-# arbitrary text, and a `/` or `&` in it changes the replacement's meaning. awk with
-# the values passed as -v variables treats them as data.
+# SUBSTITUTION IS LITERAL, VIA index/substr — NOT gsub. sed would be the obvious tool and
+# is the wrong one, because a `/` or `&` in a replacement changes its meaning. awk's gsub
+# fixes the `/` half and NOT the `&` half: `&` in a gsub REPLACEMENT expands to the matched
+# text, so a signature command like `check && report` rendered as
+# `check @@SIGCMD@@@@SIGCMD@@ report` and then tripped the unsubstituted-placeholder check.
+# This comment used to claim -v made that safe; -v protects the value on the way IN, not on
+# the way out (#862 review). `lit()` below is the same index/substr walk gen-porting-matrix.sh
+# uses for its `esc()`, and it has no metacharacters at all.
 #
 # THE BANNER IS PRINTED BY BASH, NOT PASSED IN. macOS ships the one-true-awk, which
 # REJECTS a literal newline inside a `-v` assignment — `awk: newline in string` — and
@@ -376,6 +416,15 @@ banner() {
 # value is a single line by construction; keep it that way.
 render() {
   awk -v checkout="$1" -v sigcmd="$2" -v signote="$3" -v proof="$4" -v theme="$5" '
+    # lit(s, ph, v) — every occurrence of the LITERAL ph in s replaced by the LITERAL v.
+    function lit(s, ph, v,   out, i) {
+      out = ""
+      while ((i = index(s, ph)) > 0) {
+        out = out substr(s, 1, i - 1) v
+        s = substr(s, i + length(ph))
+      }
+      return out s
+    }
     # @@HEADER@@ marks where the body starts; the banner itself is already on stdout.
     !started { if ($0 == "@@HEADER@@") { started = 1; next } else next }
     {
@@ -387,18 +436,18 @@ render() {
       # someone edited by hand, which is exactly what it must not look like.
       if (line ~ /@@SIGCMD@@/) {
         head = line; sub(/[ \t]*#.*/, "", head)
-        gsub(/@@SIGCMD@@/, sigcmd, head)
+        head = lit(head, "@@SIGCMD@@", sigcmd)
         printf "%-53s# %s\n", head, signote
         next
       }
       # The proof line carries no comment (the note above it already names the verb) and
       # is long enough that padding it would only add trailing space, so it takes the
       # ordinary substitution path below.
-      gsub(/@@THEME@@/, theme, line)
-      gsub(/@@PROOF@@/, proof, line)
-      gsub(/@@CHECKOUT@@/, checkout, line)
-      gsub(/@@SIGCMD@@/, sigcmd, line)
-      gsub(/@@SIGNOTE@@/, signote, line)
+      line = lit(line, "@@THEME@@", theme)
+      line = lit(line, "@@PROOF@@", proof)
+      line = lit(line, "@@CHECKOUT@@", checkout)
+      line = lit(line, "@@SIGCMD@@", sigcmd)
+      line = lit(line, "@@SIGNOTE@@", signote)
       if (line ~ /@@[A-Z]+@@/) {
         printf "gen-hero-tape: %s: unsubstituted placeholder: %s\n", FILENAME, line > "/dev/stderr"
         exit 2
