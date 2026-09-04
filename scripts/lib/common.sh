@@ -788,6 +788,162 @@ _core_luacheck_verdict() { # _core_luacheck_verdict <probe-rc> <lint-rc>
   printf 'issues\n'
 }
 
+# ── _core_helper_verdict: the bootstrap-lib adoption RATCHET, as one decision ──
+# _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|1> — print exactly one of:
+#   ok         the ledger says this repo calls the helper, and it does
+#   regressed  the ledger says it calls it, and it no longer does — a repo LOST a helper
+#   advanced   it calls a helper the ledger does not record — the ratchet has to tighten
+#   gap        not adopted, not claimed; the honest, still-advisory state
+#
+# WHY A LEDGER AND NOT A COUNT. audit-core.sh §5f measured adoption as a bare fraction and
+# printed it. `blib_user_bindirs_on_path 1/9` sat in that report for months while the gap it
+# names shipped a live bug to openSUSE (#748) — every bootstrap there exited 2, and the
+# counter had said so the whole time. A number nothing acts on is not a gate; it is a place
+# for a defect to hide in plain sight. The fix is not "make it fail" — 8 of 9 repos are short
+# on arrival and a gate that is red on arrival gets switched off, which is the reason the
+# section was advisory in the first place. The fix is to make the number MONOTONE: name the
+# pairs that have adopted, and fail on any move away from that state.
+#
+# So `gap` stays advisory — that is the on-arrival state and it must not red the fleet — while
+# BOTH kinds of movement are blocking:
+#   · regressed — a repo dropped a helper it had. This is the only class the old counter could
+#     in principle have caught, and it could not: the fraction it printed would simply have
+#     read one lower, in a line already read as noise.
+#   · advanced — a repo adopted one and nobody recorded it. Failing on GOOD news looks odd
+#     until you notice it is the only thing that ever tightens the ratchet: without it the
+#     ledger drifts stale, every real regression after that reads as `gap`, and the section is
+#     a counter again. Same shape as gen-porting-matrix.sh's PKG_ROWS, where a repo that
+#     starts installing a package fails the gate until the cell is flipped (CLAUDE.md).
+#
+# The judgment lives HERE, not inline in the section, for the reason _core_tool_skip_count
+# moved: test-core.sh must be able to drive the code that actually runs. The previous
+# adoption test asserted a property of the section's SOURCE TEXT ("it contains no fail"),
+# which is exactly the kind of assertion that stays green while the logic beneath it changes.
+_core_helper_verdict() { # _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|1>
+  case "${1:-0}${2:-0}" in
+  11) printf 'ok\n' ;;
+  10) printf 'regressed\n' ;;
+  01) printf 'advanced\n' ;;
+  *) printf 'gap\n' ;;
+  esac
+}
+
+# ── _core_helper_called: a CALL, not a mention ────────────────────────────────
+# _core_helper_called <bootstrap.sh> <helper> — succeed when that file really references
+# the helper in code. Comments do not count.
+#
+# The ledger above is only as good as this test, and the first version of it was a bare
+# `grep -q "$helper" bootstrap.sh`. That matches a COMMENT — and the adoption PRs that
+# satisfy the ledger are exactly the ones that add a paragraph of comment explaining why
+# the helper is called. So deleting the call and leaving its explanation behind kept the
+# grep green and reported `ok`: the one regression this ledger exists to catch was
+# invisible in precisely the files it had just been taught to watch. Caught in review on
+# dotgibson/dotfiles-core#861 before it ever ran in anger.
+#
+# TWO RULES, and the asymmetry between them is deliberate:
+#
+#   1. Strip comments — everything from the first `#`. That is blunter than a shell parser
+#      and it can truncate a line early (a `${var#pattern}`, a `#` inside a string). Blunt
+#      in THIS direction is safe: over-stripping can only lose a real call, and losing one
+#      reports `regressed` — a loud, specific, immediately-checkable failure. Under-stripping
+#      loses a REGRESSION, silently, which is the defect being fixed. When a heuristic has to
+#      be wrong, make it wrong in the direction that shouts. (Verified against all nine
+#      sibling bootstraps and all eight helpers: it changes no verdict except the intended
+#      comment-only one.)
+#
+#   2. Match the helper as a WHOLE shell identifier, not a substring. `blib_note_fail` must
+#      not be answered by a `blib_note_fail_once`, and a future `blib_resolve_su_strict`
+#      must not silently satisfy the `blib_resolve_su` row. This also covers BLIB_DRY, which
+#      is a variable rather than a function — `export BLIB_DRY=1` is a reference and reads
+#      the same way.
+#
+# Pure awk+grep, busybox-safe, like every other fleet reader here. Returns non-zero when
+# the file is unreadable, which the caller already handles as "not adopted".
+#
+# FOUR THINGS ARE NOT CODE, and every one was found by a reviewer asking "what else could
+# satisfy this?" rather than by a run going wrong:
+#
+#   · comments        — an adoption PR's shape is "add the call, explain why", so a deleted
+#                       call with its paragraph left behind read as adopted.
+#   · strings         — `printf "run blib_user_bindirs_on_path first"` is prose the user
+#                       sees, including when the quotes inside it are backslash-escaped.
+#   · MULTI-LINE strings — a quote that opens on one line and closes on another, whose
+#                       interior line happens to be a bare helper name.
+#   · heredoc bodies  — and this one is LIVE in the fleet: dotfiles-Arch's usage() heredoc
+#                       documents `BLIB_DRY    set to 1 …`. Its real references keep that
+#                       row honest today, so nothing is wrong right now — but drop those and
+#                       the help text alone would have gone on reporting `ok` forever.
+#
+# So this is a scanner, not a stack of substitutions: it walks each line character by
+# character, carries quote and heredoc state ACROSS lines (both constructs span them), and
+# emits only what is left. A `#` inside a string is not a comment and a quote inside a
+# comment is not a quote, which is exactly what a pass-per-construct kept getting wrong.
+# Only `<<-` strips a leading indent from its terminator, and only tabs — a plain `<<EOF`
+# body may legally contain an indented `  EOF` line, and treating that as the terminator
+# ended the heredoc early and handed its remaining prose to the matcher as code.
+#
+# WHAT IT IS STILL NOT is a shell parser, and it is not trying to be — §5c's comment block
+# explains at length why getting that right needs a parser for every grammar in the tree.
+# Nested command substitution inside quotes is where it loses its place: Gentoo's
+# `blocker="$(printf '%s\n' "$out" |` … spans two lines with three quoting levels, and the
+# scanner mis-tracks it. That was measured, not assumed — it drops 4 further code lines
+# there and 9 in Fedora, and it changes NO verdict for any of the nine bootstraps against
+# any of the eight helpers. It can only ever delete too much, and deleting too much loses a
+# real call, which reports `regressed`: loud, specific, checkable in one grep. The opposite
+# mistake loses a REGRESSION, silently, which is the entire defect being fixed. When a
+# heuristic must be wrong, make it wrong in the direction that shouts.
+#
+# NB the HERESTRING at the end, not `… | grep -q`. `grep -q` exits the instant it matches,
+# which SIGPIPEs the upstream, which under `set -o pipefail` — which audit-core.sh sets —
+# makes the whole pipeline non-zero ON SUCCESS. That reads as "not adopted" for every repo
+# that HAS adopted, i.e. the ratchet fails everything it should pass. This is the SIGPIPE
+# trap #459 named and fail_detail() above already documents; a herestring has no upstream
+# process to kill, so there is nothing to signal.
+_core_helper_called() { # _core_helper_called <file> <helper>
+  local f="${1:-}" h="${2:-}" code
+  [ -r "$f" ] || return 1
+  code="$(awk 'inhd {
+      t = $0
+      if (dash) sub(/^\t+/, "", t)
+      if (t == delim) inhd = 0
+      next
+    }
+    {
+      n = length($0); out = ""; i = 1
+      while (i <= n) {
+        c = substr($0, i, 1)
+        if (ins) { if (c == "'\''") ins = 0; i++; continue }
+        if (ind) {
+          if (c == "\\") { i += 2; continue }
+          if (c == "\"") ind = 0
+          i++; continue
+        }
+        if (c == "#") {
+          p = (i == 1) ? " " : substr($0, i - 1, 1)
+          if (p == " " || p == "\t" || p == ";" || p == "&" || p == "|" || p == "(") break
+          out = out c; i++; continue
+        }
+        if (c == "'\''") { ins = 1; i++; continue }
+        if (c == "\"") { ind = 1; i++; continue }
+        if (c == "\\") { i += 2; continue }
+        if (substr($0, i, 2) == "<<") {
+          if (substr($0, i, 3) == "<<<") { out = out " "; i += 3; continue }
+          rest = substr($0, i + 2)
+          if (match(rest, /^-?[ \t]*("|'\'')?[A-Za-z_][A-Za-z0-9_]*("|'\'')?/)) {
+            tok = substr(rest, RSTART, RLENGTH)
+            dash = (substr(tok, 1, 1) == "-")
+            d = tok; sub(/^-?[ \t]*/, "", d); gsub(/["'\'']/, "", d)
+            delim = d; inhd = 1
+            out = out " "; i += 2 + RLENGTH; continue
+          }
+        }
+        out = out c; i++
+      }
+      print out
+    }' "$f")"
+  grep -qE "(^|[^A-Za-z0-9_])${h}([^A-Za-z0-9_]|\$)" <<<"$code"
+}
+
 # ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
 # _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
 # not ship AND that nothing will ever tell you about. Silence = clean.

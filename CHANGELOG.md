@@ -16,6 +16,51 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Helper adoption is a ratchet now, and `blib_user_bindirs_on_path` went 1/9 → 7/9 callers (#748).**
+  `audit-core.sh` §5f has reported which OS repos are short of the `lib/bootstrap-lib.sh`
+  contract since #516, as a bare fraction, deliberately advisory. `blib_user_bindirs_on_path
+  1/9` sat in that report while the gap it names shipped a **live defect**: openSUSE's
+  `bootstrap.sh` probed `command -v mise` for a mise that `mise.run` had written to
+  `~/.local/bin` moments earlier — a directory only the **shell** layer prefixes, never the
+  bash a bootstrap runs in — so both arms of its Go fallback missed, the `else` branch
+  announced "needs a Go toolchain" on a box that had one, and the run exited 2 on **every**
+  bootstrap. No gate could see it: a stubbed run installs nothing, so a check that a tool is
+  present afterwards can never fail under a stub. `dotfiles-Alpine` carried the identical
+  probe, harmless only because an apk-installed `go` won the first arm and the broken one was
+  never reached. **A number nothing acts on is where a defect hides in plain sight.** So §5f
+  now keeps a **ledger** of the `(repo, helper)` pairs that have adopted, and both movements
+  block: a repo that **drops** a helper fails, and a repo that **adopts** one nobody recorded
+  also fails until the ledger is edited — which is the only thing that ever tightens the
+  ratchet. An unclaimed gap stays advisory, because most of the fleet is short today and a
+  gate red on arrival is a gate someone turns off. Same shape as `gen-porting-matrix.sh`'s
+  `PKG_ROWS`. The judgment is one testable function, `_core_helper_verdict`
+  (`scripts/lib/common.sh`), driven directly by `test-core.sh` — replacing an assertion on
+  the section's source text ("it contains no `fail`") that was green for the whole life of
+  the bug it should have caught. **Adoption now means a call, not a mention**
+  (`_core_helper_called`): the section read the fleet with a bare `grep`, which counted a
+  _comment_ — so three rows were credited purely from prose (`dotfiles-MacBook` for
+  `blib_note_fail` + `blib_failures_report`, `dotfiles-Fedora` for `blib_resolve_su`, now
+  corrected to honest gaps), and since an adoption PR's shape is "add the call, explain why",
+  deleting a call while leaving its paragraph would have kept the ledger green forever — the
+  exact regression it exists to catch, invisible in the files it had just been taught to
+  watch. Strings and **heredoc bodies** are excluded for the same reason, and the heredoc
+  case is live rather than theoretical: `dotfiles-Arch`'s `usage()` heredoc documents
+  `BLIB_DRY`, so its row would have gone on reading `ok` off help text alone if the two real
+  references were ever dropped. The `--json` fleet-printf guard's hardcoded `NR>=860 &&
+  NR<=1045` window is derived from the §5f→§5i banners now; it had drifted off the sections
+  it was meant to cover and never reached §5g or §5h at all. `VENDORING.md` carries the
+  contract. Six companion PRs adopt the helper — `dotfiles-Alpine` (the live twin),
+  `-openSUSE` (retiring the local `_mise_bin` fork), `-Fedora`, `-Debian` and `-Offense`
+  (retiring three hand-rolled `export PATH=` preludes) and `-Arch` — and the ledger records
+  that state, so **land them before this one**. `dotfiles-Offense` also loses its exemption:
+  the "role repos install no packages" reasoning was never true of a `--install` that does
+  `pipx` and `go install` into `~/.local/bin`, which is exactly why it had hand-rolled the
+  prelude. `dotfiles-MacBook` and `dotfiles-Defense` genuinely have no such probe and stay
+  unadopted/exempt — which is why the headline reads **7/9 callers** rather than 8/9: seven
+  repos call it, `dotfiles-Defense` is exempt (so 8/9 compliant), and `dotfiles-MacBook` is
+  the one standing gap. §5f reports both numbers now, because collapsing them is what
+  overstated the count in the first place.
+
 - **The README hero is generated from one tape, and its bytes are capped (#698).** Ten public
   repos open with the same shields template and **no visual at all** — no `assets/`, no hero,
   no image — while the one repo that _has_ a hero is `dotfiles-core`, which nobody installs
@@ -114,6 +159,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (severity 2 > 1 > 3 > 0, which is not numeric order), a malformed registry row is exit 2
   rather than drift, the verdict survives a host with no working `diff`/`cmp` (#572), and
   both audit legs are asserted to actually be wired.
+||||||| 99a5bdd
+
 - **The desktop-bar parity pair is generated and gated, not asked nicely (#693).**
   `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` were an
   admitted verbatim pair whose only mechanism was the sentence _"Edit both together"_. It did
