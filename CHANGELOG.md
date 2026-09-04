@@ -17,10 +17,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 ### Added
 
 - **The hermetic `--links-only` gate is Core-owned now: `scripts/check-links.sh` (#852).**
-  Every OS and Role repo's `make check` ran the same block — make a throwaway HOME, run
+  Four repos' `make check` ran the same block — make a throwaway HOME, run
   `bootstrap.sh --links-only` into it, assert the symlink graph Core's loader expects —
-  and every one of them carried its own copy. They drifted the way copies do: the same
-  defect turned up in **three repos at once**. `HOME="$tmp"` alone is not hermetic,
+  and each of `dotfiles-Fedora`, `-Debian`, `-Gentoo` and `-openSUSE` carried its own copy
+  (Arch, Alpine and the two Role repos run no links-only leg at all). They drifted the way
+  copies do: the same defect turned up in **three of the four at once**. `HOME="$tmp"` alone is not hermetic,
   because `bootstrap.sh` resolves `CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"` and
   `lib/bootstrap-lib.sh` defaults `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`,
   `XDG_DATA_HOME` and then `ZDOTDIR` the same way — and a `:-`/`:=` default applies **only
@@ -51,9 +52,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   **commented-out** `source` line and matched `loaderXzsh` besides. It also asserts what
   the copied recipes never did: that EVERY link resolves, not just `loader.zsh` — a
   renamed Core file behind any other link used to read as a healthy graph.
-  **The six repos switch over on the next sync**, not now: they can only call
+  **The four repos switch over on the next sync**, not now: they can only call
   `core/scripts/check-links.sh` once a release has vendored it, so the script ships first
-  and the Makefiles follow. Until then their inlined copies (now all fixed) keep running.
+  and the Makefiles follow. Until then their inlined copies (now all fixed) keep running,
+  and the four repos without a links-only leg may adopt the gate or not.
 
 - **A scaffolded OS repo is born meeting the `make` vocabulary and the test floor
   (#691).** `scripts/new-os-repo.sh` is the other way a repo enters the fleet (the first is

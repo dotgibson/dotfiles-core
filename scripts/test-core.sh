@@ -11575,9 +11575,10 @@ if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; the
 rm -rf "$_fv_root"
 
 # ── F13. the hermetic links gate (scripts/check-links.sh) ─────────────────────
-# The second half of every OS/Role repo's `make check`, lifted out of six copied Makefile
-# recipes (#852). It is Core-owned precisely BECAUSE it was copied: the same defect turned
-# up in three repos at once — `HOME=` alone is not hermetic, since bootstrap.sh and
+# The second half of `make check` in the four repos that run a links-only leg — Fedora,
+# Debian, Gentoo, openSUSE — lifted out of their four copied Makefile recipes (#852). It is
+# Core-owned precisely BECAUSE it was copied: the same defect turned up in three of the four
+# at once — `HOME=` alone is not hermetic, since bootstrap.sh and
 # lib/bootstrap-lib.sh honour a pre-set XDG_CONFIG_HOME / XDG_STATE_HOME / XDG_CACHE_HOME /
 # XDG_DATA_HOME / ZDOTDIR — while a fourth repo had already fixed it and could not tell the
 # others. These drive the real script against a FAKE repo whose bootstrap is a stub, so the
@@ -11660,6 +11661,22 @@ if ((rc == 2)); then pass "links: a COMMENTED-OUT loader line does not satisfy t
 _cl_repo 'printf "# dotfiles-managed v4\nsource \"$HOME/.config/zsh/loaderXzsh\"\n" >"$HOME/.zshrc"'
 (cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
 if ((rc == 2)); then pass "links: loaderXzsh does not match loader.zsh (the dot is escaped)"; else fail "links: an unescaped dot still matches (rc=$rc)"; fi
+
+# THE OPERAND MUST BE THE LOADER, not merely end in its name. An undelimited
+# `.*loader\.zsh` accepted both of these while the real loader was never sourced.
+_cl_repo 'printf "# dotfiles-managed v4\nsource \"$HOME/.config/zsh/notloader.zsh\"\n" >"$HOME/.zshrc"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: sourcing notloader.zsh does not satisfy the loader assertion"; else fail "links: notloader.zsh passed (rc=$rc)"; fi
+_cl_repo 'printf "# dotfiles-managed v4\nsource \"$HOME/.config/zsh/loader.zsh.bak\"\n" >"$HOME/.zshrc"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: sourcing loader.zsh.bak does not satisfy it either"; else fail "links: loader.zsh.bak passed (rc=$rc)"; fi
+# The `.` synonym and a trailing comment are both legitimate, and must still pass.
+_cl_repo 'printf "# dotfiles-managed v4\n. \"$HOME/.config/zsh/loader.zsh\"  # the Core chain\n" >"$HOME/.zshrc"'
+if (cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); then
+  pass "links: the \`.\` synonym with a trailing comment is accepted"
+else
+  fail "links: a legitimate \`.\` source line was rejected"
+fi
 
 # A DANGLING loader.zsh is the rename-upstream shape: the link exists, the target does not.
 _cl_repo 'rm -f "$P/zsh/loader.zsh"'

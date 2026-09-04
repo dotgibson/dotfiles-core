@@ -4,12 +4,13 @@
 # Does an OS/Role repo's bootstrap still wire the symlink graph Core's loader expects?
 #
 # Runs the caller's `bootstrap.sh --links-only` against a THROWAWAY HOME and asserts the
-# result. This is the second half of every repo's `make check`; the first half is `lint`.
+# result. This is the second half of the `make check` in every repo that has one; the
+# first half is `lint`.
 #
-# WHY THIS IS A CORE SCRIPT AND NOT SIX MAKEFILE RECIPES, which is what it was. The block
-# was copy-pasted into dotfiles-Fedora, -Debian, -Gentoo, -openSUSE, -Arch and the two Role
-# repos, and it drifted exactly the way copies do: dotgibson/dotfiles-core#852 found the
-# same defect in three of them at once — `HOME="$tmp"` alone is not hermetic, because
+# WHY THIS IS A CORE SCRIPT AND NOT FOUR MAKEFILE RECIPES, which is what it was. The block
+# was copy-pasted into dotfiles-Fedora, -Debian, -Gentoo and -openSUSE — the four repos
+# whose `make check` runs a links-only leg at all — and it drifted exactly the way copies
+# do: dotgibson/dotfiles-core#852 found the same defect in three of the four at once — `HOME="$tmp"` alone is not hermetic, because
 # bootstrap resolves `CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"` and lib/bootstrap-lib.sh
 # defaults XDG_CONFIG_HOME / XDG_STATE_HOME / XDG_CACHE_HOME / XDG_DATA_HOME and ZDOTDIR
 # the same way. Those defaults apply ONLY when the variable is unset, so a developer who
@@ -247,15 +248,18 @@ done
 # THE MANAGED ENTRY FILE, in the throwaway HOME — never the caller's own. Three things the
 # form this replaces got wrong, each of which passed an entry file that sources nothing:
 # an unescaped `.` matched `loaderXzsh`; no comment anchor matched a COMMENTED-OUT line;
-# and `^[^#]*source` matched `source` anywhere on the line, so `echo source …/loader.zsh`
-# satisfied it. `source` (or its `.` synonym) has to be the COMMAND — first token, after
-# leading whitespace only, which is how blib_write_zshrc_loader indents it inside its
-# `if [[ -r … ]]` guard.
+# `^[^#]*source` matched `source` anywhere on the line, so `echo source …/loader.zsh`
+# satisfied it; and an undelimited `.*loader\.zsh` accepted `…/notloader.zsh` and
+# `…/loader.zsh.bak`, neither of which is the loader. So: `source` (or its `.` synonym) as
+# the COMMAND — first token after leading whitespace only, which is how
+# blib_write_zshrc_loader indents it inside its `if [[ -r … ]]` guard — and the operand
+# must END at a path component that IS `loader.zsh`, closing quote and trailing comment
+# allowed. The canonical writer emits `source "$ZSH_CFG/loader.zsh"`.
 if ! grep -q "dotfiles-managed v4" "$tmp/.zshrc" 2>/dev/null; then
   bad "the throwaway .zshrc is not the managed file"
   rc=2
 fi
-if ! grep -qE '^[[:space:]]*(source|\.)[[:space:]]+.*loader\.zsh' "$tmp/.zshrc" 2>/dev/null; then
+if ! grep -qE '^[[:space:]]*(source|\.)[[:space:]]+["'"'"']?[^[:space:]"'"'"']*/loader\.zsh["'"'"']?[[:space:]]*(#.*)?$' "$tmp/.zshrc" 2>/dev/null; then
   bad "the throwaway .zshrc does not source the loader"
   rc=2
 fi
