@@ -296,6 +296,23 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   truncated once when the banner grew — a heredoc `usage()` now, per `check-links.sh` and
   `sync-core.sh`. Every one of these has a regression fixture.
 
+- **Three more, one of them reachable only on macOS (#696).** (1) The comment stripper
+  used `[[:space:]]\+` — a **GNU BRE extension** that BSD `sed` reads as a literal plus, so
+  on the macOS audit leg trailing comments survived and a constant
+  `bump: patch  # dispatches pass inputs.bump` read as dispatch-capable. A false green on
+  one platform only, which is the kind that survives review; `PORTABILITY.md` names the
+  class. POSIX `[[:space:]][[:space:]]*` now. (2) A **multi-line flow sequence** —
+  `paths: [` with its values on following lines — matched the flow branch, found no
+  closing bracket, emitted no path records, and left `has_paths` false, so a core-only
+  workflow reported `unfiltered`. The guard keys on the path **key** now, not on whether
+  values came back. (3) A **bare `workflow_dispatch:`** with no inputs, plus a job
+  forwarding `inputs.bump`, satisfied the two-fact check while rendering no chooser at
+  all — every dispatch resolved to the empty input and patched silently. The `bump` input
+  must now be _declared_ under `workflow_dispatch.inputs`, read with event scope rather
+  than grepped for globally (`bump:` also appears on the forwarding line). Each has a
+  fixture, and one asserts no `sed` invocation carries a GNU-only BRE — the defect is
+  invisible on a Linux runner, so a Linux-only test would not have caught it.
+
 - **Two more false greens in the reader, and `auto-tag.sh`'s own docs (#696).** An
   **inline** event mapping — `push: { branches: [main], paths: ["core/**"] }`, valid YAML
   the fleet does not currently use — carries its filter after the colon, where the

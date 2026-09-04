@@ -12028,6 +12028,50 @@ else
   fail "triggers: a non-push event's filter leaked into the verdict: $_frt_out"
 fi
 
+# ── a MULTI-LINE flow sequence: the key is there, the values are on later lines ──
+# `paths: [` matched, no `]` was found on that line, no P record was emitted, has_paths
+# stayed false — and a core-only workflow reported `unfiltered`. The guard keys on the
+# path KEY now, not on whether values came back.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths: [\n      "core/**"\n    ]\njobs:\n  tag:\n    uses: x@v6\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**unparsed**'* ]]; then
+  pass "triggers: a multi-line flow paths sequence is unparsed, not a false unfiltered"
+else
+  fail "triggers: an unterminated flow sequence fell through to a clean verdict: $_frt_out"
+fi
+
+# ── a bare workflow_dispatch renders NO chooser ──────────────────────────────
+# `workflow_dispatch:` with no inputs, plus a job forwarding inputs.bump, satisfied the
+# earlier two-fact check — and every dispatch resolves to the empty input and patches.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "os/**"\n  workflow_dispatch:\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: ${{ inputs.bump }}\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**patch-only**'* ]]; then
+  pass "triggers: forwarding inputs.bump with no DECLARED input is patch-only (no chooser exists)"
+else
+  fail "triggers: a bare workflow_dispatch was certified as dispatch: $_frt_out"
+fi
+
+# ── a trailing comment mentioning inputs.bump must not read as a forward ──────
+# This one is PLATFORM-SPECIFIC: the comment stripper used `[[:space:]]\+`, a GNU BRE
+# extension that BSD sed reads as a literal plus. On the macOS audit leg the comment
+# survived and this shape passed. POSIX `[[:space:]][[:space:]]*` now.
+_frt_reset; _frt_repo dotfiles-Fedora 'name: auto-tag\non:\n  push:\n    branches: [main]\n    paths:\n      - "os/**"\n  workflow_dispatch:\n    inputs:\n      bump:\n        type: choice\njobs:\n  tag:\n    uses: x@v6\n    with:\n      bump: patch  # dispatches pass inputs.bump\n'
+_frt_out="$(_frt_run)"
+if [[ "$_frt_out" == *'**patch-only**'* ]]; then
+  pass "triggers: a trailing comment naming inputs.bump does not make a constant a forward"
+else
+  fail "triggers: a comment was read as the forwarded value (BSD-sed shape): $_frt_out"
+fi
+# And no `sed` INVOCATION carries a GNU-only BRE, which is invisible on a Linux runner.
+# Scoped to sed lines, not the whole file: the prose above explains the rule and names the
+# forbidden form, and a file-wide grep matches that explanation (the same over-broad shape
+# the --help assertion had).
+if ! grep -n 'sed' "$_frt_sh" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -qF '[[:space:]]\+'; then
+  pass "triggers: no sed invocation uses the GNU-only one-or-more BSD sed reads as a literal +"
+else
+  fail "triggers: a sed invocation in fleet-release-triggers.sh still uses a GNU-only BRE"
+fi
+
 # ── an INLINE event mapping hides the filter from the block reader ───────────
 # `push: { branches: [main], paths: ["core/**"] }` is valid YAML the fleet does not use,
 # and the block-form rules never look after the colon. Discarding it made _trigger see no

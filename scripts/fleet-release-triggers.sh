@@ -162,7 +162,8 @@ _push_filter() {
     /^[[:space:]][[:space:]][a-z_]+:/ {
       ev = $0; sub(/^[[:space:]]+/, "", ev); sub(/:.*$/, "", ev)
       rest = $0; sub(/^[[:space:]]*[a-z_]+:[[:space:]]*/, "", rest)
-      inpush = (ev == "push"); inseq = 0
+      inpush = (ev == "push"); indispatch = (ev == "workflow_dispatch"); inseq = 0
+      if (indispatch) print "DISPATCH"
       if (inpush) {
         print "PUSH"
         # An INLINE mapping — `push: { branches: [main], paths: [core/**] }` — carries the
@@ -174,11 +175,18 @@ _push_filter() {
       }
       next
     }
+    # A `bump` input DECLARED under workflow_dispatch.inputs — the chooser the UI renders.
+    # Forwarding `inputs.bump` without this yields an empty input and a silent `patch`.
+    indispatch && /^[[:space:]]*bump:[[:space:]]*$/ { print "DBUMP" }
     !inpush { next }
     # Flow list on the key line: paths: [a, b]
     /^[[:space:]]*paths(-ignore)?:[[:space:]]*\[/ {
       tag = ($0 ~ /paths-ignore:/) ? "I" : "P"
-      if (tag == "I") seen_i = 1; else seen_p = 1
+      if (tag == "I") { seen_i = 1; print "IKEY" } else { seen_p = 1; print "PKEY" }
+      # A flow sequence may run over several lines. If the closing bracket is not on this
+      # line the values are elsewhere, and reading only this line yields nothing — which
+      # used to leave has_paths false and report a core-only workflow as `unfiltered`.
+      if ($0 !~ /\]/) print "TRUNC"
       s = $0
       sub(/^[^[]*\[/, "", s); sub(/\].*$/, "", s)
       n = split(s, parts, ",")
@@ -192,7 +200,7 @@ _push_filter() {
     # Block sequence under the key.
     /^[[:space:]]*paths(-ignore)?:[[:space:]]*$/ {
       curtag = ($0 ~ /paths-ignore:/) ? "I" : "P"
-      if (curtag == "I") seen_i = 1; else seen_p = 1
+      if (curtag == "I") { seen_i = 1; print "IKEY" } else { seen_p = 1; print "PKEY" }
       inseq = 1
       next
     }
@@ -210,7 +218,7 @@ _push_filter() {
 
 # _trigger <file> — the trigger verdict for one auto-tag.yml.
 _trigger() {
-  local f="$1" line pat positives=0 outside=0 has_push=0 has_paths=0 has_ignore=0 both=0 inline=0
+  local f="$1" line pat positives=0 outside=0 has_push=0 has_paths=0 has_ignore=0 both=0 inline=0 pkey=0 ikey=0 trunc=0
   # No `on:` block we can find at all — do not guess.
   grep -qE '^on:[[:space:]]*$' "$f" || {
     printf 'unparsed'
@@ -230,6 +238,9 @@ _trigger() {
       [[ "$pat" =~ ^core(/|\.lock$) ]] || outside=$((outside + 1))
       ;;
     "I "*) has_ignore=1 ;;
+    PKEY) pkey=1 ;;
+    IKEY) ikey=1 ;;
+    TRUNC) trunc=1 ;;
     INLINE) inline=1 ;;
     esac
   done < <(_push_filter "$f")
@@ -248,8 +259,11 @@ _trigger() {
     printf 'dispatch-only'
     return 0
   }
-  # A filter key was present but yielded no patterns → the reader failed, not the repo.
-  if ((has_paths)) && ((positives == 0)) && ! grep -qE "^P !" < <(_push_filter "$f"); then
+  # A filter KEY was present but yielded no values — a multi-line flow sequence, or a
+  # shape this reader does not know. Keyed on the KEY, not on the values: keying on the
+  # values is what let `paths: [` continued on the next line fall through to `unfiltered`,
+  # which is a clean bill of health for a core-only workflow.
+  if ((trunc)) || { ((pkey)) && ((!has_paths)); } || { ((ikey)) && ((!has_ignore)); }; then
     printf 'unparsed'
     return 0
   fi
@@ -284,8 +298,18 @@ _trigger() {
 # than for `bump:` alone.
 _bump() {
   local f="$1" body
-  body="$(sed -e 's/[[:space:]]\+#.*$//' -e 's/^[[:space:]]*#.*$//' "$f")"
-  if grep -qE '^[[:space:]]*workflow_dispatch:' <<<"$body" &&
+  # `[[:space:]][[:space:]]*`, NOT `[[:space:]]\+`: the `\+` one-or-more is a GNU BRE
+  # extension and a LITERAL plus to BSD sed, so on the macOS audit leg trailing comments
+  # survived and `bump: patch  # dispatches pass inputs.bump` read as dispatch-capable —
+  # a false green reachable only on one platform. PORTABILITY.md names this class.
+  body="$(sed -e 's/[[:space:]][[:space:]]*#.*$//' -e 's/^[[:space:]]*#.*$//' "$f")"
+  # THREE facts, not two. A bare `workflow_dispatch:` with no inputs, plus a job
+  # forwarding `inputs.bump`, passed the earlier check — and renders NO chooser, so every
+  # dispatch resolves to the empty input and silently patches. So the `bump` input must be
+  # DECLARED under workflow_dispatch.inputs (read with event scope by _push_filter, not
+  # grepped for globally, since `bump:` also appears on the forwarding line), and the value
+  # handed to the reusable must reference it.
+  if grep -qx 'DBUMP' < <(_push_filter "$f") &&
     grep -qE '^[[:space:]]*bump:[[:space:]]*.*inputs\.bump' <<<"$body"; then
     printf 'dispatch'
   else
