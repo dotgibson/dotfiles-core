@@ -11591,26 +11591,30 @@ _cl_sh="$HERE/scripts/check-links.sh"
 # handed. `env_seen` records the environment the child ACTUALLY got, which is how the XDG
 # scrub is asserted rather than assumed.
 _cl_repo() { # _cl_repo [extra-lines-for-the-stub]
-  rm -rf "$_cl_root"; mkdir -p "$_cl_root/payload/zsh" "$_cl_root/payload/nvim"
-  : >"$_cl_root/payload/zsh/loader.zsh"; : >"$_cl_root/payload/starship.toml"
-  : >"$_cl_root/payload/config.yml"; : >"$_cl_root/payload/tmux.conf"
-  : >"$_cl_root/payload/vimrc"; : >"$_cl_root/payload/gitconfig"
-  : >"$_cl_root/payload/role.conf"
+  # The payload lives under core/ at the paths the gate now VERIFIES each link resolves to,
+  # so the fake repo is shaped like a real vendored one rather than merely link-complete.
+  rm -rf "$_cl_root"
+  mkdir -p "$_cl_root/core/zsh" "$_cl_root/core/nvim" "$_cl_root/core/starship" \
+    "$_cl_root/core/lazygit" "$_cl_root/core/tmux" "$_cl_root/core/vim" "$_cl_root/core/git"
+  : >"$_cl_root/core/zsh/loader.zsh"; : >"$_cl_root/core/starship/starship.toml"
+  : >"$_cl_root/core/lazygit/config.yml"; : >"$_cl_root/core/tmux/tmux.conf"
+  : >"$_cl_root/core/vim/vimrc"; : >"$_cl_root/core/git/gitconfig"
+  : >"$_cl_root/core/tmux/role.conf"
   cat >"$_cl_root/bootstrap.sh" <<STUB
 #!/usr/bin/env bash
 # A stand-in for an OS repo's installer: same links, none of the distro.
 set -u
 env | grep -E '^(XDG_CONFIG_HOME|XDG_DATA_HOME|XDG_STATE_HOME|XDG_CACHE_HOME|ZDOTDIR)=' | sort >"\$HOME/.env_seen" || true
-P="$_cl_root/payload"
+P="$_cl_root/core"
 mkdir -p "\$HOME/.config/zsh" "\$HOME/.config/lazygit" "\$HOME/.config/tmux" "\$HOME/.config/sesh"
-ln -sf "\$P/zsh/loader.zsh" "\$HOME/.config/zsh/loader.zsh"
-ln -sf "\$P/starship.toml"  "\$HOME/.config/starship.toml"
-ln -sf "\$P/config.yml"     "\$HOME/.config/lazygit/config.yml"
-ln -sf "\$P/nvim"           "\$HOME/.config/nvim"
-ln -sf "\$P/tmux.conf"      "\$HOME/.config/tmux/tmux.conf"
-ln -sf "\$P/vimrc"          "\$HOME/.vimrc"
-ln -sf "\$P/gitconfig"      "\$HOME/.gitconfig"
-cp "\$P/starship.toml" "\$HOME/.config/sesh/sesh.toml"
+ln -sf "\$P/zsh/loader.zsh"        "\$HOME/.config/zsh/loader.zsh"
+ln -sf "\$P/starship/starship.toml" "\$HOME/.config/starship.toml"
+ln -sf "\$P/lazygit/config.yml"    "\$HOME/.config/lazygit/config.yml"
+ln -sf "\$P/nvim"                  "\$HOME/.config/nvim"
+ln -sf "\$P/tmux/tmux.conf"        "\$HOME/.config/tmux/tmux.conf"
+ln -sf "\$P/vim/vimrc"             "\$HOME/.vimrc"
+ln -sf "\$P/git/gitconfig"         "\$HOME/.gitconfig"
+cp "\$P/starship/starship.toml" "\$HOME/.config/sesh/sesh.toml"
 printf '# dotfiles-managed v4\nsource "\$HOME/.config/zsh/loader.zsh"\n' >"\$HOME/.zshrc"
 ${1:-}
 STUB
@@ -11648,8 +11652,30 @@ _cl_repo
 (cd "$_cl_root" && "$_cl_sh" --require .config/nope >/dev/null 2>&1); rc=$?
 if ((rc == 2)); then pass "links: a required path that is not linked exits 2"; else fail "links: missing --require path exited $rc, want 2"; fi
 
+# THE TARGET IS THE POINT. Every link present and resolvable, one of them wired to the
+# WRONG Core file — the shape `-L` plus `-e` cannot see, and a shell configured wrongly.
+_cl_repo 'ln -sfn "$P/tmux/tmux.conf" "$HOME/.config/starship.toml"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a link resolving to the WRONG Core file is caught"; else fail "links: starship.toml wired to tmux.conf passed (rc=$rc)"; fi
+# …while a caller's --require path keeps existence-only semantics: Core does not know what
+# a Role layer's paths should point at, and must not invent an expectation for them.
+_cl_repo 'ln -sfn "$P/tmux/role.conf" "$HOME/.config/role.conf"'
+if (cd "$_cl_root" && "$_cl_sh" --require .config/role.conf >/dev/null 2>&1); then
+  pass "links: a --require path is checked for existence, not against a Core target"
+else
+  fail "links: a caller-supplied --require path was held to a Core target"
+fi
+
+# AN OPTION MUST NOT EAT THE NEXT OPTION. `--require --keep` used to take `--keep` as a
+# required path and report graph drift (exit 2) for what is a typo.
+_cl_repo
+(cd "$_cl_root" && "$_cl_sh" --require --keep >/dev/null 2>&1); rc=$?
+if ((rc == 1)); then pass "links: --require --keep is a usage error, not a graph failure"; else fail "links: --require swallowed --keep (rc=$rc)"; fi
+(cd "$_cl_root" && "$_cl_sh" --repo --help >/dev/null 2>&1); rc=$?
+if ((rc == 1)); then pass "links: --repo --help is a usage error, not a cd into '--help'"; else fail "links: --repo swallowed --help (rc=$rc)"; fi
+
 # THE SEED IS A COPY. A symlinked sesh.toml means an edit lands in the vendored tree.
-_cl_repo 'ln -sfn "$P/starship.toml" "$HOME/.config/sesh/sesh.toml"'
+_cl_repo 'ln -sfn "$P/starship/starship.toml" "$HOME/.config/sesh/sesh.toml"'
 (cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
 if ((rc == 2)); then pass "links: a SYMLINKED seed file is caught (it must be a copy)"; else fail "links: a symlinked seed exited $rc, want 2"; fi
 
@@ -11731,8 +11757,11 @@ fi
 # `${#REQUIRE[@]}` with neither option passed aborts before any check runs — the macOS
 # lane, and not reproducible here (this box's bash is 5.x, and the runner's `env bash` is
 # not 3.2 either). Pinned at the source, the way the mktemp template above is.
-if grep -q 'LINKS+=("${REQUIRE\[@\]+"${REQUIRE\[@\]}"}")' "$_cl_sh" &&
-  grep -q 'SEEDS+=("${SEED\[@\]+"${SEED\[@\]}"}")' "$_cl_sh" &&
+# Matched on the GUARDED IDIOM rather than one exact line: the first version of this pin
+# spelled the whole assignment and went red the moment the append was restructured, which
+# is a test asserting its own phrasing instead of the property.
+if grep -q '${REQUIRE\[@\]+"${REQUIRE\[@\]}"}' "$_cl_sh" &&
+  grep -q '${SEED\[@\]+"${SEED\[@\]}"}' "$_cl_sh" &&
   ! grep -qE '\(\(\$\{#(REQUIRE|SEED)\[@\]\}\)\)' "$_cl_sh"; then
   pass "links: the optional arrays use the guarded + expansion (bash 3.2 aborts on an empty one)"
 else
@@ -11741,7 +11770,7 @@ fi
 
 # A DANGLING link that is NOT loader.zsh: the copied recipes only ever resolved that one,
 # so a renamed Core file behind any other link read as a healthy graph.
-_cl_repo 'rm -f "$P/starship.toml"'
+_cl_repo 'rm -f "$P/starship/starship.toml"'
 (cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
 if ((rc == 2)); then pass "links: a dangling link other than loader.zsh is caught too"; else fail "links: dangling starship.toml exited $rc, want 2"; fi
 
