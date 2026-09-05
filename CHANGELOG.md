@@ -14,6 +14,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **The README hero gif is dated against the tape that renders it (`--check-render`, #698).**
+  #862 rewrote `assets/demo.tape` to film a `dotfiles-core` checkout — #698's first finding,
+  that the keystone repo's hero was shot inside a `dotfiles-MacBook` tree — and the tape has
+  been right ever since. **The gif was never re-rendered.** `assets/demo.gif` at HEAD is
+  byte-for-byte the blob committed on 2026-07-06, two months before that rewrite: it still
+  walks `~/code/dotfiles/dotfiles-MacBook` through `z dotfiles` and `core help`, commands the
+  current tape does not contain. `README.md`'s `[product-screenshot]` points at that file, so
+  the defect #698 was filed about is still on the front page.
+
+  Both gates were green over it, and correctly so — §9j compares the tape to
+  `assets/hero.tape.in`, §9k weighs the gif's bytes and checks it exists, and **nothing tied
+  the gif to the tape**. A generated script whose OUTPUT nobody dates is generated in name
+  only: the property `assets/README.md` advertises — "re-run the command after any prompt or
+  tooling change and the hero updates" — was the one thing neither gate checked.
+  `gen-hero-tape.sh --check-render` (`make check-hero-render`) now checks it, and names both
+  ends: `assets/demo.gif is STALE — rendered 51b691b (2026-07-06), but assets/demo.tape was
+  rewritten later 202d632 (2026-09-04)`.
+
+  **Git history is the clock, not mtime** — mtime does not survive a clone, so on a fresh CI
+  checkout every hero would date to the second it was written. The audit job already takes
+  `fetch-depth: 0`, and a tree without usable history SKIPS LOUDLY (exit 3) instead of passing
+  green because the evidence was absent, which is #821's standing lesson. The working tree
+  outranks history in both directions: an uncommitted gif was just rendered here and passes,
+  while a modified tape beside a clean gif is exactly the defect and fails.
+
+  **Deliberately not wired into `audit-core.sh` yet.** The check is correct and red today, and
+  greening it needs `vhs` on a host matching the row — so landing it as §9l is a one-block
+  follow-up once `assets/demo.gif` is re-rendered, rather than blocking every unrelated
+  `make sync` in the meantime.
+
 ## [v7.0.0] - 2026-09-04
 
 ### Added
