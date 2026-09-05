@@ -49,6 +49,7 @@
 #   ./scripts/gen-hero-tape.sh                 # write this repo's assets/demo.tape
 #   ./scripts/gen-hero-tape.sh --check         # exit 1 with a diff if it is stale — THE GATE
 #   ./scripts/gen-hero-tape.sh --check-size    # exit 1 if a rendered hero gif is over the ceiling
+#   ./scripts/gen-hero-tape.sh --check-render  # exit 1 if a gif is OLDER than the tape that made it
 #   ./scripts/gen-hero-tape.sh --list          # one row per hero, TAB-separated:
 #                                              repo output sigcmd proof signature-source
 #   ./scripts/gen-hero-tape.sh --fleet         # ALSO write the nine sibling tapes
@@ -89,6 +90,7 @@ while (($#)); do
   case "$1" in
   --check) MODE="check" ;;
   --check-size) MODE="size" ;;
+  --check-render) MODE="render" ;;
   --list) MODE="list" ;;
   --fleet) FLEET=1 ;;
   --root)
@@ -431,6 +433,17 @@ host_guard() {
 # silently does nothing, which is worse than none (#862 review). It was fixed in the banner
 # first and the same defect survived in two diagnostics, which is exactly why it is now one
 # function with one caller each rather than three literals.
+# The gif a tape names. `Output <path>` is what the tape DECLARES, so both the byte
+# ceiling and the render-provenance check follow the tape rather than assuming
+# assets/demo.gif — one reader, so the two gates can never disagree about which file a
+# repo's hero even is.
+output_gif() { awk '/^[[:space:]]*Output[[:space:]]/ { print $2; exit }' "$1"; }
+
+# `<short-sha> (<date>)` for a commit — the provenance a stale-hero message has to carry,
+# because "the gif is old" is unactionable and "rendered 2026-07-06, tape rewritten
+# 2026-09-04" is not.
+hero_stamp() { git -C "$1" log -1 --format='%h (%ad)' --date=short "$2" 2>/dev/null; }
+
 fix_cmd() {
   if [[ "$1" == "." ]]; then printf 'make gen-hero-tape'; else printf 'make gen-hero-tape-fleet'; fi
 }
@@ -556,6 +569,11 @@ MISSING=""
 WEIGHED=0
 UNWEIGHED=0
 
+# --check-render accounting, for the same reason: "every hero was rendered from its current
+# tape" is vacuously TRUE of a run that could not date a single one.
+DATED=0
+UNDATED=0
+
 
 # ── --list ────────────────────────────────────────────────────────────────────
 # Coverage without grep: what would be rendered where, and with which signature —
@@ -613,7 +631,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
       fi
       continue
     fi
-    gif="$(awk '/^[[:space:]]*Output[[:space:]]/ { print $2; exit }' "$file")"
+    gif="$(output_gif "$file")"
     if [[ -z "$gif" ]]; then
       fail "$label/$out names no Output file — the size gate has nothing to measure"; _bump 2; continue
     fi
@@ -641,6 +659,93 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
     else
       pass "$label/$gif is $bytes bytes (ceiling $MAX_BYTES)"
       WEIGHED=$((WEIGHED + 1))
+    fi
+    continue
+  fi
+
+  # ── --check-render: is the gif OLDER than the tape that supposedly made it? ─
+  # §9j proves the tape tracks the template; §9k weighs the gif's bytes and checks it
+  # exists. Both were GREEN across #862 while this repo's front page showed a hero of
+  # the WRONG REPO: the tape was rewritten to film a dotfiles-core checkout, the gif was
+  # left as the 2026-07-06 render of `~/code/dotfiles/dotfiles-MacBook`, and nothing
+  # compared the two. A generated script whose OUTPUT nobody dates is generated in name
+  # only — the property assets/README.md claims ("re-run the command and the hero
+  # updates") is the one thing neither gate was checking.
+  #
+  # GIT HISTORY IS THE CLOCK, not mtime. mtime does not survive a clone, so on a fresh CI
+  # checkout every hero would date to the second it was written and this check would be
+  # noise. The audit job already takes `fetch-depth: 0` (.github/workflows/ci.yml) because
+  # the historical regression assertions need it, so the history is present — and #821 is
+  # the standing lesson that a history-dependent check on a tree without history must SKIP
+  # LOUDLY, never pass green because the evidence was absent.
+  if [[ "$MODE" == render ]]; then
+    if [[ ! -f "$file" ]]; then
+      if [[ "$repo" == "." ]]; then
+        fail "$out is missing — this repo's tape must exist"; _bump 1
+      else
+        skip_note "$label has no $out yet (the nine renders are #698's follow-up)"
+        UNDATED=$((UNDATED + 1))
+      fi
+      continue
+    fi
+    gif="$(output_gif "$file")"
+    if [[ -z "$gif" ]]; then
+      fail "$label/$out names no Output file — there is no hero to date"; _bump 2; continue
+    fi
+    if [[ ! -f "$dir/$gif" ]]; then
+      # Same asymmetry §9k draws: README.md's [product-screenshot] points at THIS repo's
+      # gif, so an absent one is a broken front page; a sibling's is deliberately unrendered.
+      if [[ "$repo" == "." ]]; then
+        fail "$label/$gif is missing — README.md's hero points at it; render it: vhs $out"
+        _bump 1
+      else
+        skip_note "$label/$gif not rendered yet — nothing to date"
+        UNDATED=$((UNDATED + 1))
+      fi
+      continue
+    fi
+    if ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+      skip_env "$label is not a git checkout — history is the render clock, so $gif was NOT dated"
+      UNDATED=$((UNDATED + 1)); _bump 3; continue
+    fi
+    if [[ "$(git -C "$dir" rev-parse --is-shallow-repository 2>/dev/null)" == true ]]; then
+      skip_env "$label is a SHALLOW clone — $gif was NOT dated against $out (deepen it: fetch-depth: 0)"
+      UNDATED=$((UNDATED + 1)); _bump 3; continue
+    fi
+    # THE WORKING TREE OUTRANKS HISTORY. A gif that is modified or untracked right now was
+    # just rendered here, and dating it against its last commit would call a fresh render
+    # stale. The inverse — a modified tape beside a clean gif — is precisely the defect.
+    _gif_dirty=0
+    git -C "$dir" ls-files --error-unmatch -- "$gif" >/dev/null 2>&1 || _gif_dirty=1
+    git -C "$dir" diff --quiet HEAD -- "$gif" 2>/dev/null || _gif_dirty=1
+    if ((_gif_dirty)); then
+      pass "$label/$gif is uncommitted — rendered in this working tree, newer than $out"
+      DATED=$((DATED + 1)); continue
+    fi
+    if ! git -C "$dir" diff --quiet HEAD -- "$out" 2>/dev/null; then
+      fail "$label/$out is modified but $gif is not — the tape changed and the hero was never re-rendered; run: vhs $out"
+      _bump 1; continue
+    fi
+    _c_tape="$(git -C "$dir" log -1 --format=%H -- "$out" 2>/dev/null)"
+    _c_gif="$(git -C "$dir" log -1 --format=%H -- "$gif" 2>/dev/null)"
+    if [[ -z "$_c_tape" || -z "$_c_gif" ]]; then
+      skip_env "$label — no commit touches $out or $gif, so there is nothing to date against"
+      UNDATED=$((UNDATED + 1)); _bump 3; continue
+    fi
+    if [[ "$_c_tape" == "$_c_gif" ]]; then
+      pass "$label/$gif was rendered in the same commit that last changed $out"
+      DATED=$((DATED + 1))
+    elif git -C "$dir" merge-base --is-ancestor "$_c_tape" "$_c_gif" 2>/dev/null; then
+      pass "$label/$gif $(hero_stamp "$dir" "$_c_gif") is newer than $out $(hero_stamp "$dir" "$_c_tape")"
+      DATED=$((DATED + 1))
+    elif git -C "$dir" merge-base --is-ancestor "$_c_gif" "$_c_tape" 2>/dev/null; then
+      fail "$label/$gif is STALE — rendered $(hero_stamp "$dir" "$_c_gif"), but $out was rewritten later $(hero_stamp "$dir" "$_c_tape"); the committed hero is not what the tape films. Re-render on a host matching the row: vhs $out"
+      _bump 1
+    else
+      # Neither commit reaches the other: a graft, an unrelated history, or a tree mid-rebase.
+      # Not drift and not a pass — say so rather than pick a verdict the history cannot support.
+      skip_env "$label — $out and $gif sit on unrelated histories; $gif was NOT dated"
+      UNDATED=$((UNDATED + 1)); _bump 3
     fi
     continue
   fi
@@ -717,6 +822,13 @@ case "$SEV" in
        pass "README hero size — $WEIGHED weighed, under the ${MAX_BYTES}-byte ceiling; $UNWEIGHED not rendered yet (not covered by this run)"
      else
        pass "README hero size — $WEIGHED weighed, all under the ${MAX_BYTES}-byte ceiling"
+     fi
+     ;;
+   render)
+     if ((UNDATED)); then
+       pass "README hero renders — $DATED dated against their tapes; $UNDATED not dated (not covered by this run)"
+     else
+       pass "README hero renders — $DATED dated, each newer than the tape that made it"
      fi
      ;;
    *) pass "README hero tapes — rendered from assets/hero.tape.in" ;;

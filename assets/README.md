@@ -26,6 +26,20 @@ antialiasing, so quantising to 64 is visually free and removes a large chunk of 
 The README hero (`[product-screenshot]` in `README.md`) points at `assets/demo.gif`.
 Re-render and re-commit it after any prompt or tooling change to keep the hero current.
 
+That last sentence is an instruction, and instructions get missed — #862 rewrote the tape
+to film a `dotfiles-core` checkout and left the gif as the 2026-07-06 render of a
+`dotfiles-MacBook` tree, so the front page kept showing the very thing #698 was filed
+about. Nothing noticed, because §9j checks the tape against its template and §9k weighs
+the gif's bytes, and neither ties one to the other:
+
+```sh
+make check-hero-render  # exit 1 if a committed gif predates the tape that renders it
+```
+
+It dates the gif by **git history**, not mtime — mtime does not survive a clone — so a
+tree without usable history skips loudly rather than passing green. An uncommitted gif
+counts as freshly rendered; a modified tape beside an untouched gif is the defect.
+
 ## `demo.tape` is generated — edit `hero.tape.in`
 
 `demo.tape` carries a DO-NOT-EDIT banner and means it. The tape is rendered by
