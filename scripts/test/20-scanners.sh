@@ -662,6 +662,111 @@ unset d
 # a literal fixture here would make the gate report its own test suite. They are written into
 # $SANDBOX, which is untracked, so the scanner never sees them at all — that is also why §5h
 # needs no allowlist.
+# ── the vendored HAVE_* surface (scripts/gen-have-api.sh) ────────────────────
+# #866's transport: PORTABILITY.md §5 stays the contract a human reads, and its
+# machine-readable half is rendered into zsh/have-api.txt and vendored, so lint-call.yml's
+# contract leg can enforce §5j direction 2 from inside a repo that has never seen the doc.
+#
+# THE FIRST CASE IS THE ONE THAT MATTERS. Two parsers now read one table — this generator
+# and audit-core.sh §5j — and two parsers for one table is exactly how the table and its
+# gate drift, which is the defect one level up from the one the file closes. So the awk is
+# asserted IDENTICAL rather than merely equivalent: an equivalence test passes right up
+# until someone "clarifies" one copy.
+hdr "vendored HAVE_* surface (gen-have-api.sh)"
+_gha="$HERE/scripts/gen-have-api.sh"
+if [[ ! -x "$_gha" ]]; then
+  fail "gen-have-api: $_gha missing or not executable"
+else
+  # Both bodies are pulled by CONTENT — the four awk lines that make up the parse — and
+  # compared with leading whitespace stripped, since the two live at different indents. A
+  # range-based extraction would break on an unrelated edit nearby and report a divergence
+  # that is not one, which is its own way of teaching people to ignore the check.
+  _gha_awk() { # _gha_awk <file> — the §5 parse body, one line per rule, de-indented
+    grep -E '^[[:space:]]*(/\^### What downstream may use/|inb &&|if \(match\(\$0,)' "$1" |
+      sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+  }
+  _gha_gen="$(_gha_awk "$_gha")"
+  _gha_aud="$(_gha_awk "$HERE/scripts/audit-core.sh")"
+  if [[ -n "$_gha_gen" && "$_gha_gen" == "$_gha_aud" ]]; then
+    pass "gen-have-api: parses §5's table with the SAME awk as audit-core.sh §5j (one table, one parser)"
+  else
+    fail "gen-have-api: its §5 parser has diverged from audit-core.sh §5j's — two parsers for one table is how the table and its gate drift apart"
+  fi
+  unset _gha_gen _gha_aud
+  unset -f _gha_awk
+
+  # THE RENDERED FILE TRACKS THE TABLE. Driven through --root against a fixture tree, so the
+  # drift direction is testable without mutating tracked files — the reason gen-theme.sh and
+  # parity-check.sh take one.
+  _gha_fx="$SANDBOX/haveapi"
+  _gha_doc() { # _gha_doc <rows...> — a fixture PORTABILITY.md carrying §5's table
+    rm -rf "$_gha_fx"; mkdir -p "$_gha_fx/zsh"
+    {
+      printf '## 5. HAVE_* is a declared surface\n\n### What downstream may use\n\n'
+      printf '| Flag | Tool | Read by |\n| --- | --- | --- |\n'
+      for _r in "$@"; do printf '| `%s` | x | y |\n' "$_r"; done
+      printf '\n### Role and OS layers own their own names\n\n'
+      # A table AFTER the section, which the range anchor must not sweep in: without it a
+      # later doc table could silently widen the declared surface.
+      printf '| `HAVE_NEVER` | not declared | a different table entirely |\n'
+    } >"$_gha_fx/PORTABILITY.md"
+  }
+  _gha_doc HAVE_ATUIN HAVE_RG
+  if "$_gha" --root "$_gha_fx" >/dev/null 2>&1 &&
+    [[ "$(grep -vE '^[[:space:]]*(#|$)' "$_gha_fx/zsh/have-api.txt" | tr '\n' ' ')" == "HAVE_ATUIN HAVE_RG " ]]; then
+    pass "gen-have-api: renders exactly §5's rows, and a table in a LATER section does not widen the surface"
+  else
+    fail "gen-have-api: rendered [$(grep -vE '^[[:space:]]*(#|$)' "$_gha_fx/zsh/have-api.txt" 2>/dev/null | tr '\n' ' ')], want [HAVE_ATUIN HAVE_RG ]"
+  fi
+
+  # --check IS THE GATE, so it must fail on a hand-edit rather than quietly rewriting it.
+  printf 'HAVE_TAMPERED\n' >>"$_gha_fx/zsh/have-api.txt"
+  if "$_gha" --root "$_gha_fx" --check >/dev/null 2>&1; then
+    fail "gen-have-api --check: a hand-edited have-api.txt passed the gate"
+  else
+    pass "gen-have-api --check: a hand-edited have-api.txt is a finding"
+  fi
+
+  # A ROW ADDED TO §5 MAKES THE FILE STALE — the direction that actually happens, since
+  # declaring a flag is a doc edit and forgetting to regenerate is the omission.
+  _gha_doc HAVE_ATUIN
+  "$_gha" --root "$_gha_fx" >/dev/null 2>&1
+  _gha_doc HAVE_ATUIN HAVE_JQ
+  if "$_gha" --root "$_gha_fx" --check >/dev/null 2>&1; then
+    fail "gen-have-api --check: a newly declared flag did not make the vendored file stale"
+  else
+    pass "gen-have-api --check: declaring a flag without regenerating is a finding"
+  fi
+
+  # PARSING NOTHING IS A REFUSAL, NOT AN EMPTY CONTRACT. An empty twin would mark every
+  # downstream read undeclared and red nine repos at once, for a defect in THIS repo — the
+  # inverse of audit-core.sh's guard on the same table, and just as load-bearing.
+  printf '## 5. HAVE_*\n\n### Renamed heading\n\n| `HAVE_ATUIN` | x | y |\n' >"$_gha_fx/PORTABILITY.md"
+  "$_gha" --root "$_gha_fx" >/dev/null 2>&1
+  if (($? == 2)); then
+    pass "gen-have-api: a renamed §5 heading REFUSES to render, rather than shipping an empty contract"
+  else
+    fail "gen-have-api: a renamed §5 heading did not exit 2 — an empty contract would red the whole fleet"
+  fi
+
+  # AND THE REAL TREE agrees with the real table: the gate running on itself, as CI will.
+  if "$_gha" --check >/dev/null 2>&1; then
+    pass "gen-have-api: this tree's zsh/have-api.txt matches PORTABILITY.md §5"
+  else
+    fail "gen-have-api: this tree's zsh/have-api.txt is stale — run: make gen-have-api"
+  fi
+
+  # THE LEG READS THE TWIN, so the twin must be VENDORED or the leg is dead on arrival.
+  if grep -q '^zsh/have-api\.txt' "$HERE/core.vendor"; then
+    pass "gen-have-api: zsh/have-api.txt is in core.vendor (the lint leg reads it from core/)"
+  else
+    fail "gen-have-api: zsh/have-api.txt is not vendored — lint-call.yml's contract leg would skip in every OS repo forever"
+  fi
+  unset _gha_fx
+  unset -f _gha_doc
+fi
+unset _gha
+
 hdr "conflict-marker scanner (_core_conflict_marker_hits)"
 _cmd_="$SANDBOX/conflictmarker"
 mkdir -p "$_cmd_"

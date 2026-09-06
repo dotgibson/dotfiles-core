@@ -1692,6 +1692,38 @@ else
 fi
 unset hv_tools hv_doc hv_declared hv_ndecl hv_set hv_read hv_f hv_root hv_repo hv_dir hv_uses hv_checked hv_absent hv_fleet hv_fail
 
+# ── 5m. the vendored HAVE_* surface (PORTABILITY.md §5 ↔ zsh/have-api.txt) ───
+# §5l is free; this is 5m so the letter matches the file's own reference in core.vendor.
+#
+# WHY THE DECLARED TABLE NEEDED A MACHINE-READABLE TWIN (#866). §5j direction 2 — no OS
+# or role repo reads a Core HAVE_* flag §5 does not declare — never fires in any CI.
+# Core's own CI checks out this repo alone, so direction 2 records an environment skip on
+# every run (right posture, same as §5f and §5h), and the reusable lint workflow the nine
+# OS repos call cannot run it either: it needs the declared table, and PORTABILITY.md is
+# not vendored. So an OS-repo PR can add `${HAVE_LNAV:-}` — a flag Core no longer sets —
+# and merge green, the break surfacing later as a shell function quietly not firing.
+#
+# zsh/have-api.txt is that twin: the machine-readable half, vendored, so lint-call.yml's
+# contract leg can enforce direction 2 from inside a repo that has never seen the doc.
+# This section is what stops the twin from drifting away from the table it is derived
+# from — the defect one level up from the one it closes.
+#
+# ALWAYS ON and NOT SCOPE-GUARDED, for §9g's reasons: pure bash + awk, so it can never
+# SKIP; and both inputs are files ci-classify.sh treats as inert, so the very push that
+# edits §5's table arrives here as --scope none and must still be gated.
+hdr "HAVE_* vendored surface (gen-have-api.sh --check)"
+_hva_out="$("$HERE/scripts/gen-have-api.sh" --check 2>&1)" && _hva_rc=0 || _hva_rc=$?
+if ((_hva_rc == 0)); then
+  pass "gen-have-api (zsh/have-api.txt matches PORTABILITY.md §5's declared table)"
+elif ((_hva_rc == 1)); then
+  fail "zsh/have-api.txt drift — the vendored HAVE_* surface no longer matches PORTABILITY.md §5; run: make gen-have-api"
+  fail_detail "$_hva_out"
+else
+  fail "gen-have-api.sh --check could not run (exit $_hva_rc) — §5's heading or table is missing, renamed, or parsed empty; the vendored contract went UNCHECKED this run"
+  fail_detail "$_hva_out"
+fi
+unset _hva_out _hva_rc
+
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —
 # so zsh -n and shellcheck never look at it — yet it breaks every one of the 9

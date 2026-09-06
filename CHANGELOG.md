@@ -16,6 +16,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The `HAVE_*` contract is enforced caller-side now, so direction 2 is not advisory
+  (#866).** `audit-core.sh` §5j direction 2 — _no OS or role repo reads a Core `HAVE_*` flag
+  `PORTABILITY.md` §5 does not declare_ — **never fired in any CI**. Core's own CI checks out
+  this repo alone, so it recorded an environment skip on every run (the right posture, the
+  same one §5f and §5h take), which left it exercised only by a maintainer's local
+  `make audit`. So an OS-repo PR could add `${HAVE_LNAV:-}` — a flag Core no longer sets —
+  and merge green, with the break surfacing later as a shell function quietly not firing:
+  exactly the failure #694 existed to prevent, one repo over.
+  The blocker was transport. The rule has lived in `_core_have_read_hits` for a while, with
+  thirteen fixtures; what a caller could not have was the **declared table**, since
+  `PORTABILITY.md` is not vendored. Of the three routes #866 weighed, this takes the one it
+  called the house idiom: **`scripts/gen-have-api.sh` renders §5's machine-readable half into
+  `zsh/have-api.txt`**, which _is_ vendored. Vendoring the doc itself would have been a
+  `core.vendor` allowlist change — which `V5-PROPOSAL.md` §4 treats as a major-version
+  concern of its own — to ship 270 lines of prose the OS repos have never needed; declaring
+  it in `common.sh` needed no generator but inverts _"the doc is the contract"_, which #860
+  deliberately chose. So the doc stays authoritative and only the part a gate reads travels.
+  **The new gate guards the twin, not the rule**: §5m fails when `have-api.txt` and §5's
+  table drift, because two parsers for one table is the defect one level up from the one
+  this closes — and a test asserts the generator's awk is **character-identical** to §5j's
+  rather than merely equivalent, since equivalence holds right up until someone "clarifies"
+  one copy. The refusal to render an **empty** contract is load-bearing in the opposite
+  direction from §5j's: an empty twin would mark every downstream read undeclared and red
+  nine repos at once, for a defect in Core.
+  **The leg lands warning-first**, as #866's adoption note asks and as the block-duplication
+  leg did: callers pin a moving major, so every OS repo sees it the moment auto-tag moves,
+  including a repo with a branch in flight that predates the rule. Verified clean across all
+  nine repos first — the only cross-repo read is `HAVE_ATUIN`, which §5 declares — and
+  verified to fire on an injected `${HAVE_LNAV:-}`. A caller whose `core/` predates the file
+  is told to sync rather than judged against an allowlist it never received.
+
 - **`audit-core.sh` §9n — the fleet's caller pins are checked now, not remembered (#804).** The
   v5 → v6 caller sweep was **45 pins across 8 repos, done entirely by hand**, and nothing
   would have reported a repo that was missed. Two gates looked adjacent and neither covered

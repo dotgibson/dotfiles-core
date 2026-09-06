@@ -249,6 +249,13 @@ ran, and `$_CORE_PROBED[<tool>]` is `0` when it ran and found nothing.
 | --- | --- | --- |
 | `HAVE_ATUIN` | atuin | `dotfiles-Alpine`, `dotfiles-Debian`, `dotfiles-Fedora` — `os/*.zsh`, to enable the daemon only where Core wired atuin |
 
+> **This table is the source, and it is rendered.** `scripts/gen-have-api.sh` writes its
+> flag names into `zsh/have-api.txt`, which **is** vendored — so the contract can be checked
+> in a repo that has no copy of this file. That is every repo with a vendored `core/`, and
+> it is what lets `lint-call.yml` enforce the rule below caller-side instead of only in a
+> maintainer's local `make audit` (#866). Add a row and run `make gen-have-api`;
+> `audit-core.sh` §5m fails if the two drift.
+
 **That is the whole supported surface, and the short list is the point.** It starts at
 exactly what the fleet reads today rather than at "all of them", because widening a
 declared surface is a one-line PR and narrowing one is a breaking change. An OS or role
