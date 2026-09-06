@@ -1535,6 +1535,67 @@ _core_caller_pin_hits() { # _core_caller_pin_hits <repo-root> <expected-major>
   done
 }
 
+# ── _core_vendoring_claim_hits: `core/` described as a git subtree ───────────
+# _core_vendoring_claim_hits <repo-root> — print every tracked markdown line in <repo-root>
+# that asserts `core/` IS a git subtree. Silence = clean. Output is `file:LINE: msg`.
+#
+# WHY THIS EXISTS (#891, after #774). #587 replaced the fan-out's `git subtree pull --squash`
+# with a pinned fetch plus `git read-tree --prefix=core/`, and #668 retired `git subtree` from
+# Core's own docs. The eight OS repos' CLAUDE.md files were not in that sweep and kept the old
+# framing for a full major cycle — in the file AUTO-LOADED INTO EVERY SESSION in those repos,
+# which is the worst place for it. It is not pedantry about a word: the framing is what leads
+# a reader to reach for `git subtree pull`, which moves `core/` but not `core.lock` and leaves
+# core-integrity reporting TAMPERED — precisely what VENDORING.md:154 forbids.
+#
+# KEYED ON THE CLAIM, NOT THE TOKEN, and this one has to be, because two `git subtree`
+# mentions in dotfiles-Offense are CORRECT and must survive:
+#
+#   · "a vendored `core/` is a filtered subset of upstream, which `git subtree pull` CANNOT
+#     produce" — a sentence arguing this gate's own position.
+#   · `offensive/companion` genuinely IS a git subtree of htpx, and sync-companion.sh really
+#     runs `git subtree pull --squash` on it.
+#
+# A blanket scan for the token reds on both, and a gate that reds on true sentences teaches
+# the next person to falsify them. Same lesson #770's §9m records for repo counts: key on the
+# claim. So this matches an IDENTITY assertion — `core/` … is … subtree — on ONE line, with
+# no sentence boundary between the parts. Order matters and is what excludes the companion
+# line, where `subtree` precedes `core/` rather than following it.
+#
+# WHAT IT DELIBERATELY DOES NOT CATCH, stated because a gate that overstates its reach is the
+# defect it exists to prevent. The PROHIBITION shape — dotfiles-MacBook's old
+# "a **manual** `git subtree pull` is not supported: it moves `core/` but not `core.lock`" —
+# is invisible here: `core/` follows `subtree` rather than being its subject. #774 called that
+# line the strongest evidence the FRAMING had to go, since it was right about the consequence
+# and wrong about the mechanism — but separating it from a legitimately negative sentence
+# ("cannot produce", "is not the mechanism") needs semantics a line matcher does not have.
+# Identity claims were seven of #774's eight sites; this catches those and says so.
+_core_vendoring_claim_hits() { # _core_vendoring_claim_hits <repo-root>
+  local root="${1:-.}" f
+  command -v git >/dev/null 2>&1 || return 0
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  # Tracked markdown only, and never the VENDORED copy: core/ is a copy of the repo being
+  # checked against, so counting it would report every OS repo for Core's own prose — the
+  # trap _core_have_read_hits prunes for and _core_make_gate_hits once fell into.
+  while IFS= read -r -d '' f; do
+    case "$f" in
+    core/*) continue ;;
+    *.md) ;;
+    *) continue ;;
+    esac
+    [ -f "$root/$f" ] || continue
+    awk -v file="$f" '
+      # `core/` … is … subtree, in that order, on one line, no sentence boundary between.
+      # The backticks are optional so both `\x60core/\x60 is a` and a bare `core/ is a` match.
+      {
+        line = tolower($0)
+        if (match(line, /`?core\/`?[^.!?]{0,60}[^a-z]is[^a-z][^.!?]{0,60}subtree/)) {
+          printf "%s:%d: describes `core/` as a git subtree — the fan-out has used a pinned fetch plus `git read-tree --prefix=core/` since dotgibson/dotfiles-core#587, and a `git subtree pull` moves core/ WITHOUT core.lock, leaving core-integrity reporting TAMPERED\n", file, FNR
+        }
+      }
+    ' "$root/$f"
+  done < <(git -C "$root" ls-files -z)
+}
+
 # ── _core_vendor_pin_hits: the first-vendor recipe names the CURRENT major ───
 # _core_vendor_pin_hits <repo-root> <expected-major> — print every first-vendor pin in
 # the root docs and scripts/ that names a major other than <expected-major>. Silence =

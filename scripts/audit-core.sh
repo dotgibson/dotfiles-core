@@ -2623,6 +2623,61 @@ $(printf '%s\n' "$_cp_hits" | sed 's/^/  /')"
   unset _cp_major
 fi
 
+# ── 9o. `core/` described as a git subtree (the fleet's markdown) ────────────
+# #891, the gate #774 asked for. #587 replaced the fan-out's `git subtree pull --squash`
+# with a pinned fetch plus `git read-tree --prefix=core/`; #668 retired the framing from
+# Core's docs; #774 swept the eight OS repos' CLAUDE.md by hand. This is what makes the
+# next recurrence a checked fact rather than a remembered one.
+#
+# ADVISORY, NOT BLOCKING, and the reason is a finding rather than caution: running it for
+# the first time surfaced TWENTY-ONE more sites in files #774 never looked at — README.md,
+# CONTRIBUTING.md, SECURITY.md and the PR templates, across all nine repos. A hand sweep
+# scoped to one filename missed them precisely because it was scoped to one filename, which
+# is the argument for the gate. It cannot block until that backlog is cleared, so it reports
+# and says how many, exactly as §9c does for undeclared capabilities while the fleet closes
+# its own gap. Flipping it is a three-line follow-up once the sweep lands.
+#
+# KEYED ON THE CLAIM, NOT THE TOKEN — see _core_vendoring_claim_hits for why that is
+# forced: two `git subtree` mentions in dotfiles-Offense are CORRECT, one of them a sentence
+# arguing this gate's own position, and a blanket scan would red both.
+hdr 'vendoring claims (core/ is not a git subtree)'
+if ! load_os_repos; then
+  skip_env "vendoring claims ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+else
+  _vc_root="$(cd "$HERE/.." && pwd)"
+  _vc_checked=0 _vc_absent=0 _vc_repos=0 _vc_lines=0 _vc_out=""
+  for _vc_repo in "${CORE_OS_REPOS[@]}"; do
+    _vc_dir="$(resolve_repo_dir "$_vc_root" "$_vc_repo")" || _vc_dir="$_vc_root/$_vc_repo"
+    # `-e`: a linked worktree's .git is a FILE (#850).
+    if [[ ! -e "$_vc_dir/.git" ]]; then
+      _vc_absent=$((_vc_absent + 1))
+      continue
+    fi
+    _vc_checked=$((_vc_checked + 1))
+    _vc_hits="$(_core_vendoring_claim_hits "$_vc_dir")"
+    if [[ -n "$_vc_hits" ]]; then
+      _vc_repos=$((_vc_repos + 1))
+      _vc_lines=$((_vc_lines + $(printf '%s\n' "$_vc_hits" | grep -c .)))
+      _vc_out="$_vc_out
+$_vc_repo:
+$(printf '%s\n' "$_vc_hits" | sed 's/^/  /')"
+    fi
+  done
+  if ((_vc_checked == 0)); then
+    skip_env "vendoring claims (no sibling OS repo checked out — nothing to read here)"
+  elif ((_vc_repos)); then
+    # ADVISORY: `pass`, not `fail`. The sweep RAN and answered; what it found is a backlog
+    # the fleet is mid-way through closing, and a fail here would deadlock every unrelated
+    # `make sync` on prose in a repo this one cannot edit. §9c's posture, same reason.
+    pass "vendoring claims: $_vc_lines line(s) in $_vc_repos of $_vc_checked repo(s) still describe core/ as a git subtree — advisory until the sweep lands (#891), then this blocks"
+    ((${CORE_JSON:-0})) || printf '%s\n' "$_vc_out"
+  else
+    pass "vendoring claims: no checked-out repo describes core/ as a git subtree ($_vc_checked repo(s))"
+  fi
+  ((_vc_absent)) && skip_env "vendoring claims: $_vc_absent repo(s) not checked out — not covered by this run"
+  unset _vc_root _vc_checked _vc_absent _vc_repos _vc_lines _vc_out _vc_hits _vc_dir _vc_repo
+fi
+
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
 # Static analysis above proves the modules PARSE; this proves they LOAD TOGETHER
 # in canonical order and that the pure functions behave. Delegated to test-core.sh

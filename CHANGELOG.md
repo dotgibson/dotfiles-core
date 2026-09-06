@@ -16,6 +16,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`audit-core.sh` §9o — `core/` described as a `git subtree` is a checked fact now (#891,
+  the gate #774 asked for).** #587 replaced the fan-out's `git subtree pull --squash` with a
+  pinned fetch plus `git read-tree --prefix=core/`; #668 retired the framing from Core's docs;
+  #774 swept the eight OS repos' `CLAUDE.md` by hand. This is what makes the next recurrence
+  visible. The framing matters because it is what leads a reader to reach for
+  `git subtree pull`, which moves `core/` but **not** `core.lock` and leaves `core-integrity`
+  reporting `TAMPERED` — precisely what `VENDORING.md:154` forbids.
+  **Running it once found twenty-one more sites.** #774 scoped itself to `CLAUDE.md`; the
+  same stale claim is live in `README.md`, `CONTRIBUTING.md`, `SECURITY.md` and the PR
+  templates across **all nine repos** — including one line in `dotfiles-Defense` that manages
+  to say both, calling `core/` _"a vendored subtree, materialized by dotfiles-core's own"_.
+  A hand sweep scoped to one filename missed them precisely because it was scoped to one
+  filename, which is the whole argument for the gate.
+  So it lands **advisory**, reporting the count rather than failing, exactly as §9c does while
+  the fleet closes its capability gap; flipping it is a three-line follow-up once the sweep
+  lands. **Keyed on the claim, not the token**, and that is forced rather than fastidious: two
+  `git subtree` mentions in `dotfiles-Offense` are correct — one of them a sentence arguing
+  this gate's own position, the other the `offensive/companion` subtree, which genuinely is
+  one — and a blanket scan would red both. Nine cases, every fixture **real text**: the
+  positives lifted from the repos #774 corrected, the negatives from what replaced them.
+  Stated limit, because a gate that overstates its reach is the defect it exists to prevent:
+  the **prohibition** shape (`dotfiles-MacBook`'s old _"a manual `git subtree pull` is not
+  supported"_) is invisible to it, since `core/` follows `subtree` there rather than being its
+  subject — and separating that from a legitimately negative sentence needs semantics a line
+  matcher does not have.
+
 - **`audit-core.sh` §9n — the fleet's caller pins are checked now, not remembered (#804).** The
   v5 → v6 caller sweep was **45 pins across 8 repos, done entirely by hand**, and nothing
   would have reported a repo that was missed. Two gates looked adjacent and neither covered
