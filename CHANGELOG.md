@@ -16,6 +16,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`audit-core.sh` §5k — the bash 3.2 floor is a gate now, not ten comments (#874).**
+  `PORTABILITY.md` §1 has put the shell floor at bash 3.2 since it was written, because macOS
+  ships 2007's bash and the audit matrix runs a `macos-latest` leg. **Ten** scripts here carry
+  a comment saying so — `audit-core.sh`, `gen-theme.sh`, `gen-aliases.sh`, `parity-check.sh`,
+  `check-modern.sh`, `nvim-reachability.sh`, `update-plugins.sh`, `lib/common.sh`,
+  `lib/core-lock.sh`, `research/lib/atuin-db.sh`. Ten comments and zero checks, so the
+  convention was enforced only by a CI leg that answers in seventeen minutes, on one platform
+  of four, after the fact. #871 is what that costs: it added one `mapfile` call and **every**
+  local gate stayed green — the line is valid syntax so §3's `bash -n` passes, ShellCheck does
+  not model bash versions so §5 passes, the suite runs on bash 5 here so §10 passes — and the
+  ubuntu, alpine and arch legs passed too. macOS alone failed, and took the whole behavioural
+  section down with it (`pass 388 skip 17 fail 1`). §5k is four seconds and runs everywhere.
+  It enforces `PORTABILITY.md` §1's banned table **entry for entry**, so the doc and the gate
+  cannot disagree — the array-reading builtins, associative arrays, case-conversion expansion,
+  `&>>`, `|&` and `wait -n` — and the finding names the construct, because they fail
+  differently and two of them (`&>>`, which bash 3.2 parses as a control operator and so
+  **backgrounds** the command, and `wait -n`, which silently waits for _all_ jobs) fail with
+  no error at all. The judgment is one testable function, `_core_bash4_hits`
+  (`scripts/lib/common.sh`), driven by `test/20-scanners.sh` in both directions across
+  thirteen cases — the same split as the `_core_pipefail_hits` and `_core_return_trap_hits`
+  scanners beside it. **Green on arrival**: 92 tracked shell files, zero findings, which is
+  the property #748's ledger insists on. Three narrowings are deliberate and documented rather
+  than quietly absent, because a gate that fires on working code is one someone turns off:
+  comments are stripped (nine of those ten references are prose _about_ the rule, and a gate
+  that reds its own documentation would not survive the week); `typeset -A` is out of scope
+  because it is the **zsh** spelling and `test/65-functions.sh` alone embeds ten legitimate
+  `typeset -gA` lines for a zsh child; and `|&` requires a following space, because the bare
+  two-character sequence occurs five times in this tree inside awk regexes and bracket
+  expressions. `PORTABILITY.md` §1 now says the table is a gate and names what it
+  under-checks.
+
 - **The README hero gif is dated against the tape that renders it (`--check-render`, #698).**
   #862 rewrote `assets/demo.tape` to film a `dotfiles-core` checkout — #698's first finding,
   that the keystone repo's hero was shot inside a `dotfiles-MacBook` tree — and the tape has

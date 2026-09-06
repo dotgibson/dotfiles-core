@@ -35,6 +35,19 @@ both state the constraint at the top.
 `set -u` on bash 3.2 also treats an **empty array expansion as unset**, which is why you
 will see `"${arr[@]+"${arr[@]}"}"` rather than a bare `"${arr[@]}"`.
 
+**This table is a gate, not advice.** `audit-core.sh` §5k
+(`scripts/lib/common.sh :: _core_bash4_hits`) scans every repo-owned bash file for each row
+above and fails the audit on a hit, so the rule reds on your machine in seconds instead of on
+the `macos-latest` leg a quarter of an hour later. It was added after exactly that happened:
+a `mapfile` reached CI green through `bash -n`, ShellCheck and the whole behavioural suite,
+because none of them models a bash version, and only macOS could see it.
+
+Two rows the gate deliberately under-checks, both because the alternative is a false positive
+on working code — the empty-array rule just above (the same expansion is correct wherever the
+array is known non-empty), and `typeset -A`, which is the **zsh** spelling and appears
+legitimately in the zsh snippets the test fragments embed. Write `declare`/`local` in bash and
+the gate has you covered.
+
 ## 2. Coreutils are not GNU coreutils
 
 macOS ships BSD tools; Alpine ships busybox. A flag that works on your machine is not

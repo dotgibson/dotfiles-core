@@ -468,6 +468,88 @@ _core_return_trap_hits() { # _core_return_trap_hits <file>
                              if (l !~ /^[[:space:]]*#/ && l !~ dis) print $1 }'
 }
 
+# ── bash-4-ism scanner (audit-core.sh §5k) ────────────────────────────────────
+# _core_bash4_hits <file> — print "<line>:<what>" for every bash 4+ construct <file> uses.
+# Silence = clean.
+#
+# PORTABILITY.md §1 sets the shell floor at bash 3.2, because macOS ships 2007's bash and the
+# audit matrix runs a macos-latest leg. TEN scripts here carry a comment saying so — this
+# file, audit-core.sh, gen-theme.sh, gen-aliases.sh, parity-check.sh, check-modern.sh,
+# nvim-reachability.sh, update-plugins.sh, core-lock.sh, research/lib/atuin-db.sh. Ten
+# comments and, until #874, zero checks: a convention enforced only by a CI leg that takes
+# seventeen minutes to answer, on one platform of four, after the fact.
+#
+# That is how #871 shipped one such call into test/73-maint-runner.sh. Every local gate was
+# green — the line is valid syntax so `bash -n` passes, shellcheck does not model bash
+# versions so §5 passes, and the suite passes on bash 5 — and the ubuntu, alpine and arch
+# legs passed too. Only macOS failed, with `command not found`, seventeen minutes in.
+#
+# WHAT IT COVERS is PORTABILITY.md §1's banned table, entry for entry — the gate and the doc
+# must not be able to disagree, or the doc becomes the thing people read and the gate becomes
+# the thing they satisfy. Each is a builtin or a syntax bash 3.2 does not HAVE, so a textual
+# match is a real defect rather than a style opinion, and each fails DIFFERENTLY, which is why
+# the finding names the construct rather than just the line:
+#   the array-reading builtins  4.0   command not found
+#   associative arrays          4.0   invalid option
+#   case-conversion expansion   4.0   bad substitution
+#   append-both-streams         4.0   parsed as a control operator — BACKGROUNDS the command
+#   pipe-both-streams           4.0   syntax error
+#   case fallthrough            4.0   syntax error
+#   wait -n                     4.3   waits for ALL jobs, not the next one — so a bounded
+#                                     parallel loop silently becomes a serial barrier, which
+#                                     with `&>>` is one of the two that fail SILENTLY
+#
+# WHAT IT DELIBERATELY DOES NOT COVER, both for the same reason — a gate that fires on
+# working code is a gate someone turns off (§5d says this too, about its own narrowing):
+#
+#   * `"${arr[@]}"` on an EMPTY array, an unbound-variable error under `set -u` before bash
+#     4.4. Not greppable: the identical expansion is correct wherever the array is known
+#     non-empty. PORTABILITY.md states the rule and test/85-escalation.sh pins a live case.
+#   * `typeset -A`, matched only in its `declare`/`local` spellings. `typeset` is the ZSH
+#     spelling, and zsh has had associative arrays forever — scripts/test/65-functions.sh
+#     alone carries ten legitimate `typeset -gA` lines, zsh snippets embedded as
+#     single-quoted literals for a zsh CHILD to run, which no textual scan can tell from
+#     bash. This repo's bash uses `declare`/`local`, so the needle follows that; a bash
+#     script spelling it `typeset -A` is the one shape §5k will miss.
+#   * pipe-both-streams written WITHOUT a following space. The needle requires whitespace or
+#     end-of-line after it, and a preceding character that is not a backslash, pipe or open
+#     bracket, because the bare two-character sequence occurs five times in this tree inside
+#     awk regexes and bracket expressions — `/^(&&|\|\||&)\$/` and `[^ \t;|&)}]` in
+#     fleet-vocabulary.sh, gen-aliases.sh and this file. Those are not shell operators and
+#     flagging them would have made the gate red on arrival, which is the one thing it must
+#     not be. `cmd |&other` is therefore missed; `cmd |& other`, how it is actually written,
+#     is caught.
+#
+# Named here so a green §5k is not read as promising more than it checks.
+#
+# COMMENTS ARE STRIPPED FIRST, and that is load-bearing rather than politeness: nine of the
+# ten references above are prose ABOUT the rule, and a gate that fires on its own
+# documentation is one that gets reverted the day it lands.
+_core_bash4_hits() { # _core_bash4_hits <file>
+  local f="${1:-}"
+  [ -f "$f" ] || return 0
+  # THE NEEDLES ARE ASSEMBLED FROM FRAGMENTS, like _core_pipefail_hits and
+  # _core_return_trap_hits above, so these very lines cannot match the patterns they define —
+  # the scanner reads every tracked shell script, and common.sh is one of them. The awk
+  # program therefore never spells a needle out: it concatenates, and the finding text is
+  # built at run time from the same pieces.
+  awk -v mf="map""file" -v ra="read""array" '
+    function said(w) { print NR ":" w }
+    {
+      l = $0
+      sub(/[[:space:]]*#.*$/, "", l)   # comment-stripped; only ever loses findings, never invents
+      if (l ~ /^[[:space:]]*$/) next
+      if      (l ~ ("(^|[^A-Za-z0-9_])(" mf "|" ra ")([[:space:]]|$)")) said(mf "/" ra " is bash 4.0")
+      else if (l ~ /(^|[[:space:]])(declare|local)[[:space:]]+-[A-Za-z]*A([[:space:]]|$)/) said("associative arrays are bash 4.0")
+      else if (l ~ /\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(,,|\^\^)/) said("case-conversion expansion is bash 4.0")
+      else if (l ~ ("&" ">" ">")) said("append-both-streams is bash 4.0 — bash 3.2 BACKGROUNDS the command")
+      else if (l ~ ("(^|[^\\\\|[])[|]" "&([[:space:]]|$)")) said("pipe-both-streams is bash 4.0")
+      else if (l ~ (";;" "&")) said("case fallthrough is bash 4.0")
+      else if (l ~ ("(^|[[:space:]])wait[[:space:]]+-n([[:space:]]|$)")) said("wait -n is bash 4.3 — bash 3.2 waits for ALL jobs, turning a bounded parallel loop into a serial barrier")
+    }
+  ' "$f" 2>/dev/null
+}
+
 # ── _core_owned_block_hits: portable logic that Core owns, re-implemented locally ──
 # _core_owned_block_hits <file> — print `<line>:<rule-id>` for every place <file>
 # re-implements a block Core now owns. Silence = clean. Consumed by the reusable

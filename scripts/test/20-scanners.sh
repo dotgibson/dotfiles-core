@@ -879,3 +879,115 @@ if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
 else
   skip "gitignore crash-dump rule (not a git checkout)"
 fi
+
+# ── the bash 3.2 floor scanner (scripts/lib/common.sh :: _core_bash4_hits) ────
+# WHY THIS IS TESTED. audit-core.sh §5k is the only gate that can see a bash 4+ construct
+# before the macos-latest leg does, and everything else looks green: the constructs are valid
+# SYNTAX, so §3's `bash -n` passes; shellcheck does not model bash versions, so §5 passes;
+# and the whole suite runs on bash 5 here, so §10 passes. #871 shipped exactly that way and
+# cost a seventeen-minute matrix leg to find out.
+#
+# BOTH DIRECTIONS, and the second half is the important one. A gate that fires on prose ABOUT
+# the rule would be reverted the day it landed — and this repo has TEN scripts whose comments
+# name these constructs, plus one fragment (65-functions.sh) carrying ten legitimate zsh
+# `typeset -gA` lines embedded as single-quoted literals for a zsh child. Both were live
+# false positives during development; both are pinned below.
+#
+# THE NEEDLES ARE ASSEMBLED, NOT WRITTEN LITERALLY — the same move as _rt_s above, for the
+# same reason: §5k scans this file, and a file whose job is to test the banned shapes
+# necessarily contains them. The fixtures written to disk are byte-identical to the real
+# constructs, so the assertions exercise the true patterns; only this source stays clean.
+if have git; then
+  hdr "bash 3.2 floor scanner (_core_bash4_hits)"
+  _b4d="$SANDBOX/bash4"
+  mkdir -p "$_b4d"
+  _b4_write() { printf '%s\n' "$2" >"$_b4d/$1"; }   # _b4_write <name> <body>
+  _b4_mf='map''file'                                 # the array-reading builtin
+  _b4_ra='read''array'                               # ...and its second spelling
+  _b4_at='-A'                                        # the associative-array flag
+  _b4_amp='&>''>'                                    # append-both-streams
+  _b4_ff=';;''&'                                     # case fallthrough
+  _b4_lc='${v'',,}'                                  # case-conversion expansion
+  _b4_pipe='|''&'                                    # pipe-both-streams
+  _b4_wn='wait ''-n'                                 # wait -n (bash 4.3, not 4.0)
+  # _core_bash4_hits prints "<line>:<what>"; the arms below assert the LINE, so a scanner
+  # that fires on the wrong line (an off-by-one in the comment strip) is still a failure.
+  _b4_line() { _core_bash4_hits "$1" | cut -d: -f1 | tr '\n' ' ' | sed 's/ $//'; }
+
+  # ── the five shapes it must catch ──
+  # The array-reading builtin first: it is the one #871 actually shipped.
+  _b4_write mapf.sh "#!/usr/bin/env bash
+$_b4_mf -t arr <input"
+  if [[ "$(_b4_line "$_b4d/mapf.sh")" == 2 ]]; then pass "bash 3.2 scan: catches the array-reading builtin (the #871 shape)"; else fail "bash 3.2 scan: missed the array-reading builtin"; fi
+
+  _b4_write reada.sh "#!/usr/bin/env bash
+$_b4_ra -t arr <input"
+  if [[ "$(_b4_line "$_b4d/reada.sh")" == 2 ]]; then pass "bash 3.2 scan: catches its second spelling"; else fail "bash 3.2 scan: missed the second spelling of the array-reading builtin"; fi
+
+  _b4_write assoc.sh "#!/usr/bin/env bash
+declare $_b4_at seen
+f() { local $_b4_at inner; }"
+  if [[ "$(_b4_line "$_b4d/assoc.sh")" == "2 3" ]]; then pass "bash 3.2 scan: catches associative arrays in both declare and local"; else fail "bash 3.2 scan: missed an associative array — got '$(_b4_line "$_b4d/assoc.sh")'"; fi
+
+  _b4_write conv.sh "#!/usr/bin/env bash
+x=\"$_b4_lc\""
+  if [[ "$(_b4_line "$_b4d/conv.sh")" == 2 ]]; then pass "bash 3.2 scan: catches the case-conversion expansion"; else fail "bash 3.2 scan: missed the case-conversion expansion"; fi
+
+  # This one fails SILENTLY on 3.2 — it parses as a control operator and BACKGROUNDS the
+  # command — so it is the shape least likely to be noticed without a gate.
+  _b4_write redir.sh "#!/usr/bin/env bash
+run_it $_b4_amp log"
+  if [[ "$(_b4_line "$_b4d/redir.sh")" == 2 ]]; then pass "bash 3.2 scan: catches append-both-streams (the one that fails silently)"; else fail "bash 3.2 scan: missed append-both-streams"; fi
+
+  _b4_write fall.sh "#!/usr/bin/env bash
+case \$x in a) : $_b4_ff b) : ;; esac"
+  if [[ "$(_b4_line "$_b4d/fall.sh")" == 2 ]]; then pass "bash 3.2 scan: catches case fallthrough"; else fail "bash 3.2 scan: missed case fallthrough"; fi
+
+  _b4_write pipeboth.sh "#!/usr/bin/env bash
+make build $_b4_pipe tee log"
+  if [[ "$(_b4_line "$_b4d/pipeboth.sh")" == 2 ]]; then pass "bash 3.2 scan: catches pipe-both-streams"; else fail "bash 3.2 scan: missed pipe-both-streams"; fi
+
+  # bash 4.3, not 4.0, and the OTHER silent one: 3.2's `wait` ignores the flag and waits for
+  # ALL jobs, so a bounded parallel loop quietly becomes a serial barrier. sync-core.sh's
+  # prefetch uses batched waits precisely to avoid it (PORTABILITY.md §1).
+  _b4_write waitn.sh "#!/usr/bin/env bash
+$_b4_wn"
+  if [[ "$(_b4_line "$_b4d/waitn.sh")" == 2 ]]; then pass "bash 3.2 scan: catches the bounded-wait flag (bash 4.3)"; else fail "bash 3.2 scan: missed the bounded-wait flag"; fi
+
+  # ── what it must NOT flag ──
+  # Prose about the rule. Ten scripts in this repo do exactly this, so a scanner without the
+  # comment strip reds its own documentation.
+  _b4_write prose.sh "#!/usr/bin/env bash
+# Read loop, NOT mapfile — mapfile is bash 4+, and declare $_b4_at, $_b4_lc and $_b4_amp too.
+while IFS= read -r l; do arr=(\"\${arr[@]}\" \"\$l\"); done <input"
+  if [[ -z "$(_core_bash4_hits "$_b4d/prose.sh")" ]]; then pass "bash 3.2 scan: prose ABOUT the rule is not a finding"; else fail "bash 3.2 scan: flagged a comment documenting the rule — it would red ten scripts here"; fi
+
+  # The zsh spelling. scripts/test/65-functions.sh carries ten of these as single-quoted zsh
+  # literals for a zsh CHILD, and zsh has had associative arrays forever. No textual scan can
+  # tell that from bash, so `typeset` is deliberately out of the needle (common.sh says so).
+  _b4_write zshspell.sh "#!/usr/bin/env bash
+ucheck 'zsh child' 'typeset -gA _CORE_PROBED=(jq 1)'"
+  if [[ -z "$(_core_bash4_hits "$_b4d/zshspell.sh")" ]]; then pass "bash 3.2 scan: the zsh typeset spelling stays out of scope (embedded zsh is not bash)"; else fail "bash 3.2 scan: flagged embedded zsh — 65-functions.sh has ten such lines"; fi
+
+  # Characters that merely resemble the constructs. Without word/adjacency anchoring these
+  # read as hits, and a gate that fires on an echo is one nobody keeps.
+  _b4_write lookalike.sh "#!/usr/bin/env bash
+echo \"a & b >> c\"
+run_it >>log 2>&1
+case \$x in a) : ;; b) : ;; esac
+grep -A2 pattern file
+echo \"\${v}\" | tr 'A-Z' 'a-z'
+awk '/^(&&|\\|\\||&)\$/ { print }' file
+gsub(/command[ \\t]+-v[ \\t]+[^ \\t;|&)}]+/, \" \", s)
+wait \"\$pid\""
+  if [[ -z "$(_core_bash4_hits "$_b4d/lookalike.sh")" ]]; then pass "bash 3.2 scan: near-miss spellings are not findings"; else fail "bash 3.2 scan: flagged a look-alike — $(_core_bash4_hits "$_b4d/lookalike.sh" | tr '\n' ' ')"; fi
+
+  # And the two files that define and run the rule. Both necessarily discuss it.
+  if [[ -z "$(_core_bash4_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "bash 3.2 scan: does not flag its own definition"; else fail "bash 3.2 scan: flagged common.sh itself"; fi
+  if [[ -z "$(_core_bash4_hits "$HERE/scripts/audit-core.sh")" ]]; then pass "bash 3.2 scan: does not flag the gate that calls it"; else fail "bash 3.2 scan: flagged audit-core.sh itself"; fi
+
+  unset -f _b4_write _b4_line
+  unset _b4d _b4_mf _b4_ra _b4_at _b4_amp _b4_ff _b4_lc _b4_pipe _b4_wn
+else
+  skip "bash 3.2 floor scanner (not a git checkout)"
+fi
