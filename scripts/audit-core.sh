@@ -1235,7 +1235,8 @@ else
   _gp_absent=0
   for _gp_repo in "${CORE_OS_REPOS[@]}"; do
     _gp_dir="$(resolve_repo_dir "$_gp_root" "$_gp_repo")" || _gp_dir="$_gp_root/$_gp_repo"
-    if [[ ! -d "$_gp_dir/.git" ]]; then
+    # `-e`: a linked worktree's .git is a FILE (#850).
+    if [[ ! -e "$_gp_dir/.git" ]]; then
       _gp_absent=$((_gp_absent + 1))
       continue
     fi
@@ -2022,7 +2023,8 @@ else
   _cf_undeclared=0
   for _cf_repo in "${CORE_OS_REPOS[@]}"; do
     _cf_dir="$(resolve_repo_dir "$_cf_root" "$_cf_repo")" || _cf_dir="$_cf_root/$_cf_repo"
-    if [[ ! -d "$_cf_dir/.git" ]]; then
+    # `-e`: a linked worktree's .git is a FILE (#850).
+    if [[ ! -e "$_cf_dir/.git" ]]; then
       _cf_absent=$((_cf_absent + 1))
       continue
     fi
