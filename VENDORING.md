@@ -702,9 +702,13 @@ line is no proof either, since it can be written before a later pin, commit or
 verification step fails. Every release since **v4.1.0** prints `repos:  updated N   skipped
 N   failed N`, and `updated 1   skipped 0   failed 0` for the one target is the only outcome
 that counts. v4.0.2 and older print a per-check count with no `repos:` prefix, which this
-verdict cannot judge (a successful sync would read as a failure), so an exact freeze older
-than v4.1.0 is out of scope for the recipe — and `new-os-repo.sh` refuses such a
-`CORE_BRANCH` before it writes anything.
+verdict cannot judge (a successful sync would read as a failure). **The binding floor is
+higher than that, though: v4.15.1.** This recipe materializes `core/`, and releases v4.1.0
+through v4.15.0 sync with `git subtree pull --squash`, which on a tree with no subtree
+metadata dies with _"can't squash-merge: 'core' was never added"_ — so on those pins the
+registration command below cannot stamp `core.lock` at all. v4.15.1 is the first release
+whose sync materializes. An exact freeze older than that is out of scope for the recipe —
+and `new-os-repo.sh` refuses such a `CORE_BRANCH` before it writes anything.
 
 Three things matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
 and the pin must be the **peeled commit** — the release tags are annotated, so

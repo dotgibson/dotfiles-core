@@ -59,9 +59,10 @@ the workflow that runs it.
 
 Env: CORE_REMOTE (default: this repo's origin)
      CORE_BRANCH (default: refs/tags/v7 — a RELEASED tag, never main; pin a specific
-                  vX.Y.Z to freeze the tree at a known version — v4.1.0 or newer: the
-                  recovery and register commands judge the released sync by its
-                  per-repo summary, which older releases do not print)
+                  vX.Y.Z to freeze the tree at a known version — v4.15.1 or newer:
+                  older releases sync with `git subtree pull`, which cannot update the
+                  core/ this script materializes, and pre-v4.1.0 ones print no per-repo
+                  summary for the recovery and register commands to judge)
 EOF
 }
 
@@ -97,20 +98,37 @@ done
 TARGET="${TARGET:-$(dirname "$HERE")/dotfiles-$OS}"
 os_lc="$(printf '%s' "$OS" | tr '[:upper:]' '[:lower:]')"
 
-# The recovery command and the register step judge the RELEASED sync-core.sh by its
-# per-repo footer (`repos:  updated 1   skipped 0   failed 0`), which is printed since
-# v4.1.0; v4.0.2 and older print a per-CHECK count with no `repos:` prefix, so under such
-# a pin a SUCCESSFUL sync would be reported as a failure — after it had vendored and
-# stamped the target. A pin that names an older release is refused here, before anything
-# is written, instead of at the one moment the reader is recovering. A ref that is not
-# version-shaped (a branch, a SHA) cannot be judged here and passes. A prerelease
-# (v4.1.0-rc1, the suffix core.version allows) sorts BELOW its release, so a prerelease
-# of the floor itself is older than the floor.
-_footer_floor="4.1.0"
+# TWO constraints, and the SECOND is the binding one. A pin that names a release below the
+# floor is refused here, before anything is written, instead of at the one moment the reader
+# is recovering.
+#
+# 1. THE FOOTER (v4.1.0). The recovery command and the register step judge the RELEASED
+#    sync-core.sh by its per-repo footer (`repos:  updated 1   skipped 0   failed 0`).
+#    v4.0.2 and older print a per-CHECK count with no `repos:` prefix, so under such a pin a
+#    SUCCESSFUL sync would be reported as a failure — after it had vendored and stamped the
+#    target.
+# 2. THE VENDORING MECHANISM (v4.15.1) — #851, and why the floor is not 4.1.0. This script
+#    MATERIALIZES core/ (core_vendor_materialize, below): a plain tree with no subtree
+#    metadata in the history. Releases v4.1.0 through v4.15.0 sync with `git subtree pull
+#    --squash`, which on such a tree dies with
+#
+#        fatal: can't squash-merge: 'core' was never added.
+#
+#    So on those pins the registration command this script ADVERTISES cannot stamp
+#    core.lock at all — the scaffold and its own recipe disagree. v4.15.1 is the first
+#    release whose sync materializes (`_sync_materialize_core`, "replaces `git subtree pull
+#    --squash`"); v4.15.0 still pulls. Verified by reading both tags, not inferred.
+#
+# A ref that is not version-shaped (a branch, a SHA) cannot be judged here and passes. A
+# prerelease (v4.15.1-rc1, the suffix core.version allows) sorts BELOW its release, so a
+# prerelease of the floor itself is older than the floor. A bare major alias (`v4`) points
+# at the newest release of that major, so only a lower MAJOR can be older than the floor —
+# which is why the branch below compares majors alone for that shape.
+_pin_floor="4.15.1"
 _pin="${CORE_BRANCH#refs/tags/}"
 _pin_re='^v([0-9]+)(\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?)?$'
 if [[ "$_pin" =~ $_pin_re ]]; then
-  IFS=. read -r _fl_M _fl_m _fl_p <<<"$_footer_floor"
+  IFS=. read -r _fl_M _fl_m _fl_p <<<"$_pin_floor"
   _pin_M=$((10#${BASH_REMATCH[1]}))
   if [[ -z "${BASH_REMATCH[2]}" ]]; then
     # A major alias (v4) points at the newest release of that major, so only a major
@@ -122,12 +140,12 @@ if [[ "$_pin" =~ $_pin_re ]]; then
     _pin_old=$((_pin_M < _fl_M || (_pin_M == _fl_M && (_pin_m < _fl_m || (_pin_m == _fl_m && (_pin_p < _fl_p || (_pin_p == _fl_p && _pin_pre)))))))
   fi
   if ((_pin_old)); then
-    fail "CORE_BRANCH=$CORE_BRANCH names a release older than v$_footer_floor, whose sync-core.sh prints no per-repo summary — the recovery and register commands could not judge it. Pin v$_footer_floor or newer."
+    fail "CORE_BRANCH=$CORE_BRANCH names a release older than v$_pin_floor, whose sync-core.sh still uses \`git subtree pull --squash\` — it cannot sync the core/ this script materializes (\"can't squash-merge: 'core' was never added\"), so the registration command below could not stamp core.lock. Pin v$_pin_floor or newer."
     exit 2
   fi
   unset _fl_M _fl_m _fl_p _pin_M _pin_m _pin_p _pin_pre _pin_old
 fi
-unset _footer_floor _pin _pin_re
+unset _pin_floor _pin _pin_re
 
 hdr "scaffold dotfiles-$OS"
 echo ":: target   = $TARGET"
@@ -589,7 +607,7 @@ w "$TARGET/Makefile" <<'EOF'
 # A leg whose rule or policy the vendored Core does not carry yet SAYS SO and skips:
 # _core_return_trap_hits arrived in v4.14.0, gitleaks.toml in v4.16.0,
 # _core_make_gate_hits in v5.4.3, check-capabilities.sh in v4.19.0, and a pin as old
-# as the v4.1.0 floor vendors none of them — a scan that ran anyway would pass on
+# as the v4.15.1 floor vendors none of them — a scan that ran anyway would pass on
 # nothing, which is the failure mode this whole file is built against.
 #
 # Every guard sits on the same recipe line as the tool it guards (dotfiles-core#775):
@@ -646,7 +664,7 @@ trap-guard: ## Refuse a RETURN trap that does not disarm itself (shellcheck cann
 	else bash -c '. "$$0"; command -v _core_return_trap_hits >/dev/null 2>&1 || { echo "the vendored Core has no _core_return_trap_hits (older than v4.14.0) — skipped; CI runs it"; exit 0; }; rc=0; for f; do while IFS= read -r l; do [ -n "$$l" ] || continue; echo "$$f:$$l: a RETURN trap is armed without disarming itself"; rc=1; done < <(_core_return_trap_hits "$$f"); done; [ "$$rc" -eq 0 ] && echo "RETURN traps disarm themselves ($(words $(SH_FILES)) files)"; exit $$rc' "$(CORE_LIB)" $(SH_FILES); fi
 
 capabilities: ## Validate os/*.capabilities against Core's schema (skips when the vendored validator predates v4.19.0; CI runs it)
-	@# The validator arrived in Core v4.19.0; a pin between the v4.1.0 floor and that
+	@# The validator arrived in Core v4.19.0; a pin between the v4.15.1 floor and that
 	@# release vendors none, and the reusable gate's leg skips in that state — so does this.
 	@# The glob is guarded: an unmatched glob stays LITERAL in sh, and a gate must never
 	@# pass on nothing. --packages is passed only once install/packages.txt exists.
@@ -729,7 +747,8 @@ EOF
 # A REAL test, not an `exit 0` stub: the floor is worth nothing if the template meets it
 # with a script that asserts nothing. What it pins is the one property every later
 # `make check` relies on — that bootstrap.sh wires what it says and is quiet the second
-# time — and it needs only bash, so it runs on any runner and in Core's own fixture.
+# time — with no dependency beyond git and the usual Unix utilities, so it runs on any
+# runner and in Core's own fixture.
 w "$TARGET/test/check-links.sh" <<'EOF'
 #!/usr/bin/env bash
 # test/check-links.sh — does bootstrap.sh wire this repo the way it says, and stay quiet
@@ -742,7 +761,10 @@ w "$TARGET/test/check-links.sh" <<'EOF'
 #      ones too, when the vendored core/ carries them;
 #   3. a second run changes nothing. Idempotency is the property every later `make check`
 #      relies on, and the one a hand-edited bootstrap loses first.
-# Needs only bash. Exit 0 clean, 1 on any failure.
+# Needs bash, git (the mise seed assertion compares `git hash-object`) and the usual Unix
+# utilities — find, ls, readlink, cksum, awk, sort, stat. No language runtime, no package
+# install: every one of those is present on any runner that could have cloned this repo.
+# Exit 0 clean, 1 on any failure.
 set -uo pipefail
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "$REPO" || exit 1
@@ -1076,7 +1098,9 @@ here. Leave a key out to mean those things; do not add one to be helpful.
 the fleet's Makefile vocabulary (dotfiles-core's \`VENDORING.md\` — the source repo, it is
 not vendored into \`core/\` — § "The \`make\` vocabulary, and the
 test floor"); keep those names and add your own beside them. \`make test\` runs \`test/\`,
-which \`.github/workflows/test.yml\` also runs on every push; \`make lint\` runs the
+which \`.github/workflows/test.yml\` also runs on **default-branch pushes and pull
+requests** (its filter is \`branches: [main, master]\` — a feature-branch push with no PR
+open runs nothing); \`make lint\` runs the
 blocking legs of Core's reusable lint gate with whatever tools are on PATH — a leg whose
 tool is not installed says so and skips — while \`.github/workflows/lint.yml\` calls the
 gate itself, with pinned tool versions and its advisory legs, and is the verdict.
