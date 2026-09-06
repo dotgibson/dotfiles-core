@@ -78,6 +78,59 @@ else
   skip "blib_resolve_su NON-root no-escalator cases (suite is running as root)"
 fi
 
+# ── --prefer: the order is not a universal fact (#867) ────────────────────────
+# sudo-first is right for eight repos and WRONG for dotfiles-Alpine, whose
+# os/alpine.capabilities declares "DOAS, NOT SUDO — the Alpine fact this file exists to
+# declare" and says so explicitly for "the rare Alpine box that installs sudo as well".
+# Without --prefer, adopting blib_resolve_su there would silently invert a declared OS fact,
+# so the repo kept its hand-rolled probe instead — which is how `[[ "$(id -u)" -eq 0 ]]`, the
+# arithmetic comparison an empty `id` output satisfies, survived there. A helper the fleet
+# cannot adopt without a behaviour change is a helper the fleet does not adopt.
+#
+# THE DEFAULT IS PINNED ALONGSIDE, and it carries as much weight as the new flag: eight repos
+# depend on sudo-first, so a change that made doas win by default would be a silent
+# escalator swap across the fleet with nothing to catch it.
+_su_pref_d="$(mktemp -d "$SANDBOX/supref.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_su_pref_d/sudo"
+printf '#!/bin/sh\nexit 0\n' >"$_su_pref_d/doas"
+chmod +x "$_su_pref_d/sudo" "$_su_pref_d/doas"
+# _su_pref <keep> <args...> — resolve with only <keep> on PATH, print the basename recorded.
+_su_pref() {
+  local keep="$1" bin
+  shift
+  bin="$(mktemp -d "$SANDBOX/suprefbin.XXXXXX")"
+  case "$keep" in *sudo*) cp "$_su_pref_d/sudo" "$bin/sudo" ;; esac
+  case "$keep" in *doas*) cp "$_su_pref_d/doas" "$bin/doas" ;; esac
+  ( unset BLIB_SU; PATH="$bin"
+    blib_resolve_su "$@" >/dev/null 2>&1
+    printf '%s' "${BLIB_SU##*/}" )
+}
+if [[ "$(id -u)" -ne 0 ]]; then
+  if [[ "$(_su_pref 'sudo doas')" == sudo ]]; then pass "blib_resolve_su: the DEFAULT order still prefers sudo (eight repos rely on it)"; else fail "blib_resolve_su default order changed — got [$(_su_pref 'sudo doas')], want sudo"; fi
+  if [[ "$(_su_pref 'sudo doas' --prefer doas)" == doas ]]; then pass "blib_resolve_su --prefer doas wins over an installed sudo (the Alpine contract)"; else fail "blib_resolve_su --prefer doas did not win — got [$(_su_pref 'sudo doas' --prefer doas)]"; fi
+  # A preference is a preference, not a requirement: a box missing the preferred tool must
+  # still resolve rather than behave as if nothing were installed.
+  if [[ "$(_su_pref 'sudo' --prefer doas)" == sudo ]]; then pass "blib_resolve_su --prefer falls back when the preferred tool is absent"; else fail "blib_resolve_su --prefer did not fall back — got [$(_su_pref 'sudo' --prefer doas)]"; fi
+  if [[ "$(_su_pref 'sudo doas' --prefer=doas)" == doas ]]; then pass "blib_resolve_su accepts the --prefer=VALUE spelling"; else fail "blib_resolve_su --prefer=doas not honoured"; fi
+  # --prefer must COMPOSE with --require rather than replace the argument parse. The old
+  # parser read only $1, so `--prefer doas --require` would have dropped the requirement —
+  # turning a hard error into a warning, which is the direction that hurts.
+  # shellcheck disable=SC2123  # emptying PATH is the POINT: it hides sudo/doas, as above
+  if ( unset BLIB_SU; PATH="$SANDBOX/emptybin"; blib_resolve_su --prefer doas --require >/dev/null 2>&1 ); then
+    fail "blib_resolve_su --prefer doas --require succeeded with no escalator — --require was dropped"
+  else
+    pass "blib_resolve_su --prefer composes with --require (the requirement is not dropped)"
+  fi
+else
+  skip "blib_resolve_su --prefer cases (suite is running as root — nothing to escalate with)"
+fi
+# A TYPO must be loud. Silently ignoring an unknown flag is how `--requrie` becomes a
+# warning instead of a hard error on a box that cannot install packages.
+( unset BLIB_SU; blib_resolve_su --requrie >/dev/null 2>&1 )
+if [[ $? -eq 2 ]]; then pass "blib_resolve_su rejects an unknown flag (rc 2) rather than ignoring it"; else fail "blib_resolve_su accepted an unknown flag — a mistyped --require would silently downgrade to a warning"; fi
+unset -f _su_pref
+unset _su_pref_d
+
 # "Resolve once" must mean ONCE: the recorded escalator has to survive a later PATH change,
 # because blib_user_bindirs_on_path (same file) prepends user-writable dirs by design. A
 # bare `sudo` would be re-resolved against the new PATH and could pick up a different

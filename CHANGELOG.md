@@ -16,6 +16,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`blib_resolve_su --prefer TOOL` — the escalator order is not a universal fact (#867).**
+  `blib_resolve_su` has resolved sudo-then-doas since it was written, which is right for eight
+  repos and **wrong for `dotfiles-Alpine`**: its `os/alpine.capabilities` declares _"DOAS, NOT
+  SUDO — the Alpine fact this file exists to declare"_, and says so explicitly for "the rare
+  Alpine box that installs sudo as well". So adopting the helper there would have silently
+  inverted a declared OS fact — and the repo kept its hand-rolled probe instead. That probe is
+  `[[ "$(id -u)" -eq 0 ]]`, the arithmetic comparison an **empty** `id` output satisfies:
+  demonstrated here concluding "we are root" while running as an unprivileged user, which on
+  Alpine means every `apk add` runs unescalated. **A helper the fleet cannot adopt without a
+  behaviour change is a helper the fleet does not adopt**, so this is the prerequisite for
+  closing that gap rather than a convenience. `--prefer` puts a named tool at the front of the
+  same `_blib_su_path` discipline as the defaults — absolute path, real executable, never a
+  shell function — so `--prefer pkexec` works too, and a preference that is absent falls back
+  rather than failing. The argument parse became a real loop in the process: it read only
+  `$1`, so `--prefer doas --require` would have dropped the requirement, and an unknown flag
+  now returns 2 instead of being ignored — a mistyped `--require` silently downgrading to a
+  warning is the direction that hurts. Six cases in `test/85-escalation.sh`, including the
+  default order itself, since eight repos depend on sudo-first and nothing else pinned it.
+  `VENDORING.md`'s helper table records when to reach for it.
+
 - **`audit-core.sh` §5k — the bash 3.2 floor is a gate now, not ten comments (#874).**
   `PORTABILITY.md` §1 has put the shell floor at bash 3.2 since it was written, because macOS
   ships 2007's bash and the audit matrix runs a `macos-latest` leg. **Ten** scripts here carry
