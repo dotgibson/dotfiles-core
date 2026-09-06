@@ -28,6 +28,9 @@
 #                                         that exits early (grep -q / awk exit / head)
 #  5e. leaked RETURN trap             — no `trap … RETURN` that fails to disarm the
 #                                         slot (it fires again in the CALLER's frame)
+#  5k. bash 3.2 floor                 — no bash 4+ construct in repo-owned bash
+#                                         (PORTABILITY.md §1; macOS ships 2007's bash and
+#                                          the matrix runs a macos-latest leg)
 #  5j. HAVE_* contract                — PORTABILITY.md §5's declared flags ⊆ what
 #                                         00-tools.zsh sets, every flag it sets has a
 #                                         reader, and no OS/role repo reads an undeclared
@@ -1019,6 +1022,49 @@ EOF
 $(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 EOF
   ((rt_fail)) || pass "RETURN traps (every one disarms the slot before the caller's frame sees it)"
+fi
+
+# ── 5k. the bash 3.2 floor (PORTABILITY.md §1) ───────────────────────────────
+# PORTABILITY.md §1 puts the shell floor at bash 3.2, because macOS ships 2007's bash and
+# this matrix runs a macos-latest leg. TEN scripts here carry a comment saying so. Ten
+# comments and, until #874, zero checks — a convention enforced only by a CI leg that takes
+# seventeen minutes to answer, on one platform of four, after the fact.
+#
+# #871 is the case. It added one array-reading-builtin call to test/73-maint-runner.sh and
+# every gate that could have caught it locally did not: the line is valid syntax so §3's
+# `bash -n` passes, shellcheck does not model bash versions so §5 passes, and §10's suite
+# passes on bash 5. ubuntu, alpine and arch passed too. macOS alone failed, seventeen minutes
+# in, and it took the whole behavioral section down with it — `pass 388 skip 17 fail 1`.
+#
+# THIS SECTION IS FOUR SECONDS AND RUNS EVERYWHERE, which is the entire argument for it: the
+# same defect now reds on the author's machine, on the first leg, on every platform.
+#
+# It is also GREEN ON ARRIVAL — 92 tracked shell files, zero findings — which is the property
+# #748's ledger insists on: a gate red the day it lands is a gate someone turns off.
+#
+# scripts/lib/common.sh :: _core_bash4_hits is the canonical expression of the rule, and
+# carries the two deliberate gaps (the empty-array `set -u` rule, and `typeset -A`, which is
+# the zsh spelling that the embedded-zsh test fragments legitimately use). Scope matches §5d
+# and §5e: repo-owned bash, including the extensionless bin/clip helpers. The zsh modules are
+# excluded because the floor is a BASH floor — zsh has all five constructs.
+hdr "bash 3.2 floor (PORTABILITY.md §1)"
+if ! ((SCOPE_SHELL)); then
+  skip "bash 3.2 floor (out of scope)"
+else
+  b4_fail=0
+  while IFS= read -r b4_f; do
+    [ -n "$b4_f" ] || continue
+    while IFS= read -r b4_hit; do
+      [ -n "$b4_hit" ] || continue
+      fail "bash 3.2 floor: $b4_f:${b4_hit%%:*} — ${b4_hit#*:}; macOS ships bash 3.2 and the audit matrix runs it (PORTABILITY.md §1)"
+      b4_fail=1
+    done <<EOF
+$(_core_bash4_hits "$b4_f")
+EOF
+  done <<EOF
+$(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
+EOF
+  ((b4_fail)) || pass "bash 3.2 floor (no bash 4+ construct in repo-owned bash)"
 fi
 
 # ── 5f. bootstrap-lib helper adoption across the fleet (a ratchet) ────────────
