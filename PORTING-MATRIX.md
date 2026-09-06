@@ -1246,7 +1246,7 @@ Core itself is unaffected: nothing in Core shells out to jq (detect-only, no ali
 same shape as `sd` and `gron`, both ledger-only probes since #694). This is a note for the role layers and for anyone
 piping untrusted JSON through a distro jq.
 
-³⁵ Fedora `refresh` is `dnf check-update`, and it is **not really a refresh** — dnf has no
+³⁵ Fedora `refresh` is `sudo dnf check-update`, and it is **not really a refresh** — dnf has no
 standalone index-refresh verb. Refreshing is a _flag_ on the verb that needs it
 (`dnf upgrade --refresh`), which is why the Fedora `upgrade` and `count-pending` cells both
 carry it and why `os/fedora.capabilities` declares no `PKG_UPGRADE_PRE`. The schema calls
@@ -1260,7 +1260,10 @@ pending. That is what the optional `PKG_COUNT_REFRESH` key exists for. Core runs
 because the once-a-day nudge that produced the count already paid for the network.
 
 ³⁷ Gentoo `count-pending` **is** the real dependency calculation, and it is the one cell
-here that cost a measurement to get right (#753 → #756). The obvious answer is `eix -u`,
+here that cost a measurement to get right (#753 → #756). **The cell renders
+`gentoo-pkg-pending`, a wrapper `dotfiles-Gentoo` ships**, not a bare Portage command — the
+one row whose declared value is a script rather than an invocation, because the `-1` sentinel
+below cannot be expressed as a pipeline. The obvious answer is `eix -u`,
 which is what Core shipped: it is fast and it reads its own cache. It also answers the
 wrong question. `eix -u` asks "is a higher version present in the tree?"; `up` runs
 `emerge -uDN @world`, which asks "what will actually change?" — and on a healthy box those
@@ -1344,7 +1347,8 @@ where the learning is. Tool _names_ are full atoms (`category/name`). Treat this
 repo as your "understand the system from the ground up" build; it's the most
 educational and the most time-expensive.
 
-**Offense (Kali / WSL2)** — The one repo that isn't stamped from Fedora: it's Debian-family
+**Offense (Kali / WSL2)** — One of the two repos that are not stamped from Fedora (macOS
+is the other, see _Repo status_): it's Debian-family
 (apt) and carries a unique **offensive role layer** on top of the usual OS layer,
 adding an `offensive` stage to the zsh loader (`… os offensive local`). Two things
 actually bite. (1) Debian renames binaries — `bat`→`batcat`, and the `fd-find`

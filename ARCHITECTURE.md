@@ -22,7 +22,7 @@ Two designs it deliberately rejects, because both break at fleet scale:
 
 - **One `.zshrc` full of `case "$OS"` branches.** Every host parses every other host's
   logic; BSD-vs-GNU coreutils, systemd-vs-OpenRC and Windows paths do not reduce to clean
-  conditionals; and a single typo in the shared file breaks *all* hosts at once. The blast
+  conditionals; and a single typo in the shared file breaks _all_ hosts at once. The blast
   radius is the whole fleet for every edit.
 - **`common/` plus `os/<name>/` in one monorepo.** Better — but every host still clones
   every other OS's files, there is no per-OS release isolation (you cannot pin Alpine to an
@@ -32,7 +32,7 @@ Two designs it deliberately rejects, because both break at fleet scale:
 ## The three-layer model
 
 Every file in the fleet has exactly one home, decided by a single question: what
-does this change *with*?
+does this change _with_?
 
 | Layer         | Lives in                                              | Changes with         | Examples                                                        |
 | ------------- | ----------------------------------------------------- | -------------------- | --------------------------------------------------------------- |
@@ -55,7 +55,7 @@ starship, and mise, plus the smaller configs that are equally identical everywhe
 shared bash libs), taken together. `core.manifest` is the exhaustive list; this
 sentence is the shape, not the inventory.
 
-`PORTABILITY.md` is the companion rule set: once something *is* Core, that document
+`PORTABILITY.md` is the companion rule set: once something _is_ Core, that document
 defines what it may assume about the machine it lands on. `VENDORING.md` is the same
 contract read from the consuming OS repo's side.
 
@@ -70,8 +70,8 @@ would have to justify itself against.
 seven package managers count and apply updates, including a `grep -qi tumbleweed
 /etc/os-release` to choose `zypper dup` over `zypper up`. The defence was that `up` is **one
 verb with N backends**, structurally identical to `bin/clip`, and that every machine having
-the same muscle memory was worth the cost. The defence of the *verb* was right and still
-holds; the defence of the *implementation* expired, because one verb with N backends is what
+the same muscle memory was worth the cost. The defence of the _verb_ was right and still
+holds; the defence of the _implementation_ expired, because one verb with N backends is what
 a dispatch table is for. Since #664 the verb is a dispatcher — it resolves what to run
 through `_pkgup_verb` from the OS layer's `os.capabilities` declaration — and since #763
 there is nothing behind that dispatcher at all.
@@ -87,8 +87,8 @@ The launchd plist and the systemd unit **templates** stay in Core deliberately, 
 never the exception. They are portable text parameterised by paths, selected by
 `_maint_scheduler` — the correct cross-OS shape. Pushing them into the OS repos would put
 one systemd unit in seven copies with no owner, which is the hand-maintained N-way drift
-`VENDORING.md` records as the #449 failure. What belongs to the OS layer is *where* the
-unit goes, not *what it says*. `_maint_scheduler`'s own probe stays too, and the distinction
+`VENDORING.md` records as the #449 failure. What belongs to the OS layer is _where_ the
+unit goes, not _what it says_. `_maint_scheduler`'s own probe stays too, and the distinction
 is the useful one: `/run/systemd/system` and `crontab` are **capability probes** — what can
 this box run — which is the shape `PORTABILITY.md` blesses everywhere. The directory that
 scheduler keeps its unit in was OS knowledge, and only OS knowledge had to go.
@@ -96,8 +96,8 @@ scheduler keeps its unit in was OS knowledge, and only OS knowledge had to go.
 Three things about the demolition are worth knowing rather than rediscovering:
 
 - **Why authoring and deleting were two changes.** #667 authored the declarations; #763
-  deleted the fallbacks. Authoring a declaration puts a *file in a repo*; what a box reads
-  is a *symlink*, and only `bootstrap.sh` creates it. Those are separate events — a Core
+  deleted the fallbacks. Authoring a declaration puts a _file in a repo_; what a box reads
+  is a _symlink_, and only `bootstrap.sh` creates it. Those are separate events — a Core
   release fans out to the OS repos, and each machine re-bootstraps on its own schedule after
   that. Between them `$_CORE_CAP` is empty, so deleting the fallbacks alongside the
   declarations would have broken `up` on every box that had pulled and not yet re-run
@@ -115,6 +115,7 @@ Three things about the demolition are worth knowing rather than rediscovering:
   it loses `up`, `maint-install` on systemd/launchd, the doctor's install hint and the maint
   runner's count, each saying so and naming `--links-only`. Running the command above is
   still the cheapest way to find out before the box tells you.
+
 - **What an undeclared box does now.** It degrades **visibly**, at each caller's own error
   message, which is what deleting the fallbacks bought: `up` says no upgrade verb is
   declared and names `--links-only` as the fix, `maint-install` refuses on systemd/launchd
@@ -125,9 +126,9 @@ Three things about the demolition are worth knowing rather than rediscovering:
   `maint/dotfiles-maint.sh` is not a sourced zsh module, so §5c's OS-absolute-path rule
   never covered it and neither did the two exceptions above — but it carried the same
   fallback for the same reason: a seven-arm `have brew / checkupdates / pacman / dnf /
-  zypper / apt-get / apk` count ladder behind its `cap_declared` test, a four-arm `sudo -n`
+zypper / apt-get / apk` count ladder behind its `cap_declared` test, a four-arm `sudo -n`
   apply ladder, an `/etc/os-release` read for the Kali refusal, and a `have pacman || have
-  emerge` probe standing in for "is this a rolling distro" — a probe for a BINARY asserting
+emerge` probe standing in for "is this a rolling distro" — a probe for a BINARY asserting
   a claim about a DISTRO, true on any box with pacman installed for other reasons. All of
   it is gone. Each of those judgements now belongs to the repo that can actually make it:
   Kali declines by declaring no `MAINT_UNATTENDED_UPGRADE`, and a box that cannot read its
@@ -138,7 +139,7 @@ Three things about the demolition are worth knowing rather than rediscovering:
   `MAINT_SYSTEM_UPGRADE=1`, and even then refused on Kali (engagement boxes) and on
   Arch/Gentoo (rolling distros that must not upgrade unattended). That file dispatches
   through the same declaration in #665; what Core will not do, either way, is apply
-  *by default*.
+  _by default_.
 
 ## The fleet
 
@@ -146,20 +147,20 @@ Eleven repositories make up the configuration system (one Core plus ten machine
 repos), with `dotfiles-web` as a twelfth public repo that documents the system
 rather than configuring a machine.
 
-| Repository          | Layer            | Vendors `core/`? | Notes                                                      |
-| ------------------- | ---------------- | ---------------- | ---------------------------------------------------------- |
-| `dotfiles-core`     | Core             | n/a (source)     | Single source of truth; fanned out to the rest.            |
-| `dotfiles-MacBook`  | OS-native        | yes              | Homebrew; reference implementation, synced first.          |
-| `dotfiles-Fedora`   | OS-native        | yes              | dnf; the template the other Linux repos stamp from.        |
-| `dotfiles-Arch`     | OS-native        | yes              | pacman + AUR, rolling release.                             |
-| `dotfiles-Debian`   | OS-native        | yes              | apt; Ubuntu 24.04 LTS — the only frozen target.            |
-| `dotfiles-openSUSE` | OS-native        | yes              | zypper; Tumbleweed (`dup`) + Leap (`up`) aware.            |
-| `dotfiles-Alpine`   | OS-native        | yes              | musl + busybox + doas; the lean outlier.                   |
-| `dotfiles-Gentoo`   | OS-native        | yes              | emerge from source; USE flags, full atoms.                 |
-| `dotfiles-Offense`  | Role / offensive | yes              | Core + apt OS layer + the offensive role layer.            |
-| `dotfiles-Defense`  | Role / defensive | yes              | Core + OS layer + the defensive detection/hunt role layer. |
-| `dotfiles-Windows`  | Native host      | no               | pwsh / scoop / winget; Core is reimplemented, not ported.  |
-| `dotfiles-web`      | Showcase (none)  | no               | Astro docs site; the system's public face.                 |
+| Repository          | Layer            | Vendors `core/`? | Notes                                                             |
+| ------------------- | ---------------- | ---------------- | ----------------------------------------------------------------- |
+| `dotfiles-core`     | Core             | n/a (source)     | Single source of truth; fanned out to the rest.                   |
+| `dotfiles-MacBook`  | OS-native        | yes              | Homebrew; reference implementation, synced first.                 |
+| `dotfiles-Fedora`   | OS-native        | yes              | dnf; the template the other Linux repos stamp from.               |
+| `dotfiles-Arch`     | OS-native        | yes              | pacman + AUR, rolling release.                                    |
+| `dotfiles-Debian`   | OS-native        | yes              | apt; Ubuntu 24.04 LTS — the only frozen target.                   |
+| `dotfiles-openSUSE` | OS-native        | yes              | zypper; Tumbleweed (`dup`) + Leap (`up`) aware.                   |
+| `dotfiles-Alpine`   | OS-native        | yes              | musl + busybox + doas; the lean outlier.                          |
+| `dotfiles-Gentoo`   | OS-native        | yes              | emerge from source; USE flags, full atoms.                        |
+| `dotfiles-Offense`  | Role / offensive | yes              | Core + the offensive role layer (OS band from `dotfiles-Debian`). |
+| `dotfiles-Defense`  | Role / defensive | yes              | Core + OS layer + the defensive detection/hunt role layer.        |
+| `dotfiles-Windows`  | Native host      | no               | pwsh / scoop / winget; Core is reimplemented, not ported.         |
+| `dotfiles-web`      | Showcase (none)  | no               | Astro docs site; the system's public face.                        |
 
 The canonical Core-vendoring fleet is `scripts/os-repos.txt` — nine repos.
 `dotfiles-Windows` is deliberately absent from it: its host layer is replicated
@@ -168,9 +169,9 @@ it carries no vendored `core/` subtree and `sync-core.sh` must never fan out int
 it.
 
 `dotfiles-Debian` and `dotfiles-Offense` are both Debian-family and both use apt, which
-is not duplication: `dotfiles-Offense` targets Kali, a *rolling* sid derivative, and
+is not duplication: `dotfiles-Offense` targets Kali, a _rolling_ sid derivative, and
 exists for the offensive role layer stacked on top, while `dotfiles-Debian` is a plain
-OS-native layer for a *frozen* Ubuntu LTS. The freeze is the whole difference — it is why that
+OS-native layer for a _frozen_ Ubuntu LTS. The freeze is the whole difference — it is why that
 repo carries version floors and a large pinned-asset set that no rolling repo needs.
 
 ## Vendoring topology
@@ -241,7 +242,7 @@ that counts. v4.0.2 and older print a per-check count with no `repos:` prefix, w
 verdict cannot judge (a successful sync would read as a failure). **The binding floor is
 higher than that, though: v4.15.1.** This recipe materializes `core/`, and releases v4.1.0
 through v4.15.0 sync with `git subtree pull --squash`, which on a tree with no subtree
-metadata dies with *"can't squash-merge: 'core' was never added"* — so on those pins the
+metadata dies with _"can't squash-merge: 'core' was never added"_ — so on those pins the
 registration command below cannot stamp `core.lock` at all. v4.15.1 is the first release
 whose sync materializes. An exact freeze older than that is out of scope for the recipe —
 and `new-os-repo.sh` refuses such a `CORE_BRANCH` before it writes anything.
@@ -307,7 +308,7 @@ ceiling. This is why the bands were never renumbered to "fit" — there is nothi
 **Byte-compiled `.zwc` wordcode is the one piece of generated state that stays in the
 config tree.** Everything else mutable lives under XDG — history in `$XDG_STATE_HOME`, the
 compdump in `$XDG_CACHE_HOME`, plugins in `$XDG_DATA_HOME` — but zsh's automatic wordcode
-pickup fires only when `file.zwc` sits *beside* the sourced `file`. Relocating it to
+pickup fires only when `file.zwc` sits _beside_ the sourced `file`. Relocating it to
 `$XDG_CACHE_HOME` would either break the fast path or force sourcing a digest, which
 `source` cannot use as wordcode. `$ZSH_CFG` is a real, writable directory of symlinks
 rather than an immutable tree, so wordcode-beside-source is safe and stays there.
