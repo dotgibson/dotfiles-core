@@ -259,6 +259,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Two openSUSE claims in `PORTING-MATRIX.md`'s footnotes, from the
+  `/os-package-availability` routine (dotfiles-openSUSE#164).** Both are footnote prose, not
+  matrix cells, so nothing generated moved and no `make gen-porting-matrix` run is implied.
+  Both were re-verified against OBS's anonymous API before editing — it answers on **binary**
+  package names, which is what `zypper in` matches, so it is the index that decides these:
+  `.../_repository?binary=<name>`, returning a `<binary filename="…rpm" size="…"/>` on a hit
+  and a zero-size stub on a miss.
+  **Footnote ⁵ — the tree-sitter shared library is `libtree-sitter0_26`, not
+  `tree-sitter0_26`.** `binary=tree-sitter0_26` resolves on **none** of the three openSUSE
+  targets (Factory, and the Backports ∪ SLFO unions behind Leap 16.0 and 16.1);
+  `binary=libtree-sitter0_26` resolves on all three, at 0.26.8. Nothing installs the library,
+  so nothing was broken — but that footnote exists **precisely** to stop the next reader
+  reaching for a wrong name, with the dotfiles-openSUSE#113 autopsy (`tree-sitter-cli`, the
+  Arch/Alpine split name, cargo-built on every box for want of the right one) two sentences
+  above it. A signpost that hands the reader the same class of wrong name it is warning about
+  is worse than no signpost. The same word was wrong in `dotfiles-openSUSE`'s own
+  `install/packages.txt` comment, fixed there in the same pass.
+  **Footnote ¹⁰ — difftastic's `openSUSE` is Tumbleweed-only.** `binary=difftastic` resolves
+  on `openSUSE:Factory` and on **none** of the four Leap 16 sources (Backports SLE-16.0 and
+  SLE-16.1, SLFO 1.2 and 1.3), so on Leap the documented route is the footnote's own
+  `cargo install difftastic`, not `zypper`. The **cell** is right as it stands — the column is
+  Tumbleweed-named by the convention footnote ¹⁸ states — and the footnote is where the
+  qualification belongs; its neighbour ²⁴ already does exactly this for lnav, which is
+  Tumbleweed-only for the same reason and correctly labelled.
+
 - **Two silent-failure shapes in the gate scripts, from #820's shell review (F2, F3).** Both
   reproduced before fixing, because a report is a claim until it is run.
   **F2 — `gen-theme.sh`'s PARITY.md style guard anchored at column 0.** CommonMark allows one
