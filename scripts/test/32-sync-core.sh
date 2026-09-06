@@ -906,6 +906,36 @@ if ((_sc_subtree)); then
     fail "sync-core: the skip contract is wrong —$_sc_strict_bad"
   fi
   rm -rf "$SCF/repos/dotfiles-NoCore"
+
+  # A LINKED WORKTREE target is a clone, and must not be skipped (#850). `.git` is a FILE
+  # there, not a directory, so the `-d "$path/.git"` this script used at three sites called a
+  # perfectly good target "not cloned" — and once --strict (above) turned a skip into exit 1,
+  # a fan-out over a worktree checkout failed outright instead of syncing it. Both the default
+  # summary and --strict are asserted, because the two contracts diverge exactly here: the
+  # default hides the misclassification in a `skipped 1` nobody reads, and only --strict makes
+  # it loud. Submodule checkouts have the same `.git`-is-a-file shape and are covered by the
+  # same predicate.
+  if _scg "$SCF/repos/dotfiles-Test" worktree add -q -b sync-wt-probe \
+    "$SCF/repos/dotfiles-Worktree" >/dev/null 2>&1 &&
+    [[ -f "$SCF/repos/dotfiles-Worktree/.git" ]]; then
+    _sc_wt_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
+      REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+      SYNC_JOBS=1 SYNC_SKIP_AUDIT=1 bash "$_SCS" --strict dotfiles-Worktree 2>&1)"
+    _sc_wt_rc=$?
+    if ((_sc_wt_rc == 0)) && ! grep -q 'not cloned' <<<"$_sc_wt_out"; then
+      pass "sync-core: a linked-worktree target (.git is a FILE) is a clone, not a skip (#850)"
+    else
+      fail "sync-core: a linked-worktree target was misclassified — rc=$_sc_wt_rc: $(grep -E 'not cloned|skipped|failed' <<<"$_sc_wt_out" | head -2 | tr '\n' ' ')"
+    fi
+    unset _sc_wt_out _sc_wt_rc
+    _scg "$SCF/repos/dotfiles-Test" worktree remove --force "$SCF/repos/dotfiles-Worktree" >/dev/null 2>&1
+    _scg "$SCF/repos/dotfiles-Test" branch -q -D sync-wt-probe >/dev/null 2>&1
+    rm -rf "$SCF/repos/dotfiles-Worktree"
+  else
+    skip "sync-core: linked-worktree target (could not create the worktree fixture — out of scope)"
+    rm -rf "$SCF/repos/dotfiles-Worktree"
+  fi
+
   unset _sc_strict_out _sc_strict_rc _sc_strict_bad _sc_t
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"

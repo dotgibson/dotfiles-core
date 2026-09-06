@@ -99,7 +99,8 @@ present=0
 n=0
 for repo in "${REPOS[@]}"; do
   dir="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || dir="$REPOS_ROOT/$repo"
-  [[ -d "$dir/.git" ]] || continue
+  # `-e`: a linked worktree's .git is a FILE (#850).
+  [[ -e "$dir/.git" ]] || continue
   present=$((present + 1))
   line="| \`${repo#dotfiles-}\` |"
   for g in "${GATES[@]}"; do

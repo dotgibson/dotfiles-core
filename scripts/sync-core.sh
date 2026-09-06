@@ -265,7 +265,10 @@ if [[ "${SYNC_SKIP_STALE:-0}" != 1 ]]; then
     path="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || path="$REPOS_ROOT/$repo"
     # Not cloned / no subtree yet: the fan-out loop already reports those as skips. Saying
     # it twice, before it has even been attempted, is noise.
-    [[ -d "$path/.git" ]] || continue
+    # `-e`, not `-d`: .git is a FILE in a linked worktree or a submodule checkout, and a `-d`
+    # here classified such a target as not cloned (#850). resolve_repo_dir already tests it
+    # this way (scripts/lib/common.sh), which is the form the rest of the fleet tooling uses.
+    [[ -e "$path/.git" ]] || continue
     # No upstream (detached HEAD, or a branch that tracks nothing) means there is no remote
     # counterpart to be behind — nothing to assert, so stay quiet rather than guess.
     _ups="$(git -C "$path" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
@@ -352,7 +355,8 @@ if ((!DRY)) && ((SYNC_JOBS > 1)); then
     # old directory name (scripts/lib/common.sh :: resolve_repo_dir). Falling back to the
     # conventional path keeps the "nothing there" case looking exactly as it did.
     path="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || path="$REPOS_ROOT/$repo"
-    [[ -d "$path/.git" && -d "$path/core" ]] || continue
+    # `-e` on .git, `-d` on core/ — see the note at the staleness pre-flight (#850).
+    [[ -e "$path/.git" && -d "$path/core" ]] || continue
     # Pinned, and through the same helper the serial loop uses — so a repo whose prefetch
     # succeeded needs NO network below at all (_sync_fetch_pinned short-circuits on
     # cat-file), which makes a re-run of the same sync fully offline. It also picks up
@@ -575,7 +579,10 @@ fi
 repos_updated=0 repos_skipped=0 repos_failed=0
 for repo in "${TARGETS[@]}"; do
   path="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || path="$REPOS_ROOT/$repo"
-  if [[ ! -d "$path/.git" ]]; then
+  # `-e`, not `-d` (#850): a linked worktree's .git is a FILE, so `-d` reported a perfectly
+  # good target as not cloned — and under --strict (#848) that skip is exit 1, so a fan-out
+  # over a worktree checkout failed outright instead of syncing it.
+  if [[ ! -e "$path/.git" ]]; then
     skip "$repo (not cloned at $path)"
     repos_skipped=$((repos_skipped + 1))
     continue
