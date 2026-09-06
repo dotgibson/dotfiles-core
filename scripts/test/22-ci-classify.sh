@@ -114,6 +114,12 @@ if have git; then
   # `_audit_ls` covers and bare `git ls-files` does not. Its pathspec is `*` rather than a
   # glob list because the defect that motivated it (#650) was in markdown, not in shell.
   #
+  # 10→11: §5k (the bash 3.2 floor), same side again. It asks whether a file's TEXT uses a
+  # construct the floor forbids, and the window that matters is before the commit: a new
+  # helper written with `mapfile` should red on the author's machine, not survive until it is
+  # `git add`ed and then cost a macos-latest leg seventeen minutes to report (#871, #874).
+  # An untracked-but-not-ignored script is exactly the case, so `_audit_ls` is the side.
+  #
   # DIRECT 3→5: §1b (routine reference integrity) takes bare `git ls-files` twice, and this
   # is the one gate where the choice is not a preference. It asks whether a file the
   # routines claim to read is SHIPPED — a pure "what does git record?" question — and the
@@ -123,7 +129,7 @@ if have git; then
   # on the machine where the bug is invisible. Both call sites are the same question — one
   # builds the tracked set to test membership against, the other picks the routine docs to
   # scan — so both take the git-state side.
-  _als_expect="audit-core.sh:10:5 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  _als_expect="audit-core.sh:11:5 check-modern.sh:2:0 nvim-reachability.sh:2:0"
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"
