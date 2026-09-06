@@ -206,6 +206,81 @@ else
   skip "maint: step() tty arm (python3 not available — no pty to allocate)"
 fi
 
+# ── the neovim step reports the SESSION's outcome, not nvim's exit status (#829) ──────
+# `nvim --headless` exits 0 when a `-c` command FAILS: the error goes to stderr and the
+# process still succeeds. step() is not at fault — PIPESTATUS[0] is the right status to read
+# — but the status it reads carried no information about whether anything ran. A box whose
+# config aborts at load logged a green ✓ over a session that did nothing, indefinitely, and
+# under the systemd timer nothing would ever surface it. So the arms record their failures and
+# a final -c turns a non-empty record into a real rc via `:cq`.
+#
+# The argv under test is the SHIPPED one — extracted by sourcing the real step invocation with
+# step/_to/nvim stubbed, so the stub captures exactly the arguments the runner passes. Building
+# a hand-written copy here would let the two drift and prove nothing about what actually runs.
+#
+# The session itself is hermetic: `--clean` plus --cmd-injected stand-ins for the three arms
+# (a Lazy command, a preloaded nvim-treesitter, a mason module + its command). No config, no
+# network, no plugin manager. The negative case removes ONE stand-in — the Lazy command — which
+# is precisely the live failure from the report, where lazy.nvim never loaded and `:Lazy! sync`
+# did not exist.
+hdr "maint neovim step: a session in which nothing ran is not a ✓ (#829)"
+if have nvim; then
+  if sed -n '/^  step "neovim: Lazy sync/,/^    "+qa!"$/p' "$_MAINT_SH" >"$_MRT/nvimstep.bash" &&
+    [[ -s "$_MRT/nvimstep.bash" ]]; then
+    # Capture the shipped argv. NUL-delimited so an argument containing whitespace (every
+    # -c lua arm does) survives the round trip intact.
+    bash -c '
+      step() { shift; "$@"; }
+      _to()  { shift; "$@"; }
+      MAINT_NVIM_TIMEOUT=1
+      nvim() { printf "%s\0" "$@" >"'"$_MRT/nvim.argv"'"; }
+      . "'"$_MRT/nvimstep.bash"'"
+    ' >/dev/null 2>&1
+    _nvargv=()
+    if [[ -s "$_MRT/nvim.argv" ]]; then mapfile -t -d '' _nvargv <"$_MRT/nvim.argv"; fi
+    # Drop the leading --headless; this harness supplies its own flags.
+    _nvarms=()
+    for _a in "${_nvargv[@]}"; do [[ "$_a" == "--headless" ]] && continue; _nvarms+=("$_a"); done
+
+    # The three stand-ins, as --cmd (they must exist BEFORE the -c arms run).
+    _ts_stub='lua package.preload["nvim-treesitter"] = function() return { update = function() return { wait = function() end } end } end; package.preload["nvim-treesitter.config"] = function() return { get_installed = function() return {} end } end; package.preload["mason"] = function() return {} end'
+    _lazy_stub='command! -bang -nargs=* Lazy echo ""'
+    _mason_stub='command! MasonUpdate echo ""'
+
+    if ((${#_nvarms[@]} == 0)); then
+      fail "maint: could not capture the neovim step's argv from ${_MAINT_SH##*/}"
+    else
+      # Positive: every arm can run → the step must succeed, or the fix would red every
+      # healthy box and get reverted.
+      nvim --clean --headless \
+        --cmd "$_ts_stub" --cmd "$_lazy_stub" --cmd "$_mason_stub" \
+        "${_nvarms[@]}" >/dev/null 2>&1
+      _nv_ok=$?
+      # Negative: no :Lazy command — the reported failure exactly. nvim still exits 0 on its
+      # own; only the sentinel makes this visible.
+      nvim --clean --headless \
+        --cmd "$_ts_stub" --cmd "$_mason_stub" \
+        "${_nvarms[@]}" >/dev/null 2>&1
+      _nv_bad=$?
+
+      if ((_nv_ok == 0)); then
+        pass "maint: the neovim step still exits 0 when every arm runs"
+      else
+        fail "maint: the neovim step must exit 0 when every arm runs — got rc=$_nv_ok"
+      fi
+      if ((_nv_bad != 0)); then
+        pass "maint: a neovim arm that FAILED exits non-zero (no ✓ over a session that did nothing)"
+      else
+        fail "maint: a failing neovim arm still exits 0 — the false ✓ of #829 is back"
+      fi
+    fi
+  else
+    fail "maint: could not extract the neovim step from ${_MAINT_SH##*/}"
+  fi
+else
+  skip "maint: neovim step outcome (nvim not available)"
+fi
+
 # A package probe that TIMES OUT must leave the -1 "we don't know" sentinel, not 0.
 # The old chain was `count=$(_to … <mgr> | grep -c …)`: when timeout SIGTERMs a stalled
 # manager there is no output, grep prints 0, and grep's non-zero status — the pipeline's —

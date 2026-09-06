@@ -457,17 +457,41 @@ if have nvim; then
   # One headless session: Lazy! sync (bang = synchronous), then update treesitter parsers,
   # then refresh the Mason registry, then quit.
   #
+  # WHY EVERY ARM IS A pcall THAT RECORDS, AND WHY THE LAST -c CAN :cq (#829)
+  # `nvim --headless` exits 0 when a `-c` command FAILS — the error goes to stderr and the
+  # process still succeeds. step() reads that 0 and logs a green ✓ over a session in which
+  # nothing ran, so a box whose config aborts at load (an option its nvim is too old for, a
+  # plugin that never loaded, a renamed command) reports a healthy maintenance run forever
+  # while plugins, parsers and the Mason registry silently go un-updated. Nothing else in the
+  # run has this shape: every other step is a real process whose exit status means something.
+  # `:cq` is the documented way to make nvim exit NON-zero, so the arms record their failures
+  # in one table and the final -c turns a non-empty table into an rc step() can see.
+  # The sentinel is FAIL-CLOSED: __maint_fail unset means the setup -c itself never ran, which
+  # is also a failure — a check that can only fire when the run got far enough to set it up is
+  # the same false green in a smaller box.
+  #
   # TREESITTER (main branch): there is NO :TSUpdateSync — that was a master-branch command, and
   # `+silent! ...` would have swallowed the "not an editor command" error, so parsers never
   # updated. On main, update is the async Lua API require('nvim-treesitter').update(); it returns
   # a task we must :wait() on, or a bare +qa! quits before parsers finish compiling. We update
   # only the INSTALLED parsers (a no-arg update resolves to 'all' and would try to pull every
-  # parser); require() is pcall-guarded and auto-loads the plugin via lazy's require shim.
+  # parser). A require() that FAILS is now recorded rather than shrugged off: the plugin is in
+  # Core's lazy-lock, so a headless session that cannot require it is a broken install, not a
+  # box that opted out.
+  #
+  # MASON needs the require() too, and that is a FIX, not ceremony. mason.nvim is a dependency
+  # of nvim-lspconfig/conform/nvim-lint, all of which load on buffer events that never fire in a
+  # headless session — so :MasonUpdate did not exist here and `+silent! MasonUpdate` swallowed
+  # the E492 every single run. The registry has never actually been refreshed by this step.
+  # require("mason") pulls it in through lazy's require shim first, so the command exists.
   step "neovim: Lazy sync / TSUpdate / MasonUpdate" \
     _to "$MAINT_NVIM_TIMEOUT" nvim --headless \
-    "+Lazy! sync" \
-    -c 'lua local ok,ts=pcall(require,"nvim-treesitter"); if ok then local p=require("nvim-treesitter.config").get_installed("parsers"); if #p>0 then ts.update(p):wait((tonumber(vim.env.MAINT_TS_TIMEOUT) or 300)*1000) end end' \
-    "+silent! MasonUpdate" "+qa!"
+    -c 'lua _G.__maint_fail = {}; _G.__maint_try = function(n, f) local ok, e = pcall(f); if not ok then table.insert(_G.__maint_fail, n .. ": " .. tostring(e)) end end' \
+    -c 'lua __maint_try("Lazy sync", function() vim.cmd("Lazy! sync") end)' \
+    -c 'lua __maint_try("TSUpdate", function() local ts = require("nvim-treesitter"); local p = require("nvim-treesitter.config").get_installed("parsers"); if #p > 0 then ts.update(p):wait((tonumber(vim.env.MAINT_TS_TIMEOUT) or 300) * 1000) end end)' \
+    -c 'lua __maint_try("MasonUpdate", function() require("mason"); vim.cmd("MasonUpdate") end)' \
+    -c 'lua local f = _G.__maint_fail; if f == nil or #f > 0 then io.stderr:write("maint: neovim: " .. (f and table.concat(f, " | ") or "the setup -c never ran") .. "\n"); vim.cmd("cq") end' \
+    "+qa!"
 fi
 
 # ── System packages: refresh the shell-nudge cache (NON-ROOT count) ───────────
