@@ -47,6 +47,10 @@
 set -uo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+# core_files_identical (#572) — the cmp/diff BINARIES are forbidden in this repo, so
+# equality goes through git hash-object. Sourced before the arg loop, like every sibling.
+# shellcheck source=scripts/lib/common.sh
+CORE_JSON=1 . "$HERE/scripts/lib/common.sh"
 MODE="write"
 ROOT=""
 
@@ -124,12 +128,22 @@ if [[ "$MODE" == check ]]; then
     printf 'gen-have-api: %s is missing — run `make gen-have-api`\n' "$OUT" >&2
     exit 1
   fi
-  if diff -u "$OUT" <(render) >/dev/null 2>&1; then
+  # core_files_identical + `git diff --no-index`, never cmp/diff: those BINARIES are
+  # forbidden in this repo (#572, and scripts/lib/common.sh's note on the helper) — the
+  # helper compares by `git hash-object`, and the diff is what a reader needs on a failure.
+  # It also spares the Alpine leg busybox's diff. Same shape as gen-aliases.sh:493.
+  _tmp="$(mktemp "${TMPDIR:-/tmp}/have-api.XXXXXX")" || exit 2
+  # shellcheck disable=SC2064  # $_tmp is expanded NOW, on purpose: the trap must name the
+  # file that exists at this moment, not whatever the variable holds when it fires.
+  trap "rm -f '$_tmp'" EXIT
+  render >"$_tmp" || exit 2
+  if core_files_identical "$OUT" "$_tmp"; then
     printf 'gen-have-api: %s matches PORTABILITY.md §5\n' "$OUT"
     exit 0
   fi
   printf 'gen-have-api: %s is STALE — regenerate with `make gen-have-api`\n' "$OUT" >&2
-  diff -u "$OUT" <(render) >&2 || true
+  git --no-pager diff --no-index --src-prefix=on-disk/ --dst-prefix=generated/ \
+    -- "$OUT" "$_tmp" 2>/dev/null | sed 's/^/  /' >&2 || true
   exit 1
 fi
 
