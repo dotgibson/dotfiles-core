@@ -614,6 +614,17 @@ else
   fail "parity coverage: a pwsh-less run did not qualify its summary — it certified a half it never read"
 fi
 
+# 6b. A TABLE THAT IS NOT A CAPABILITY TABLE IS NOT ROWS (#820). The parser read EVERY pipe
+#     table in the file and skipped only separators — so tabulating the status vocabulary
+#     itself, which is prose today, would parse `aligned` as a capability whose status is
+#     the prose meaning cell. This gate is BLOCKING and deliberately not scope-guarded, so a
+#     pure docs edit — valid Markdown, passes markdownlint — would red `make audit` on every
+#     run with a message pointing nowhere near the cause. Reproduced before fixing: the old
+#     parser reported ``row `aligned` has status `the` ``.
+_pc_row "a | Status | Meaning | docs table is not parsed as capability rows" 0 \
+  "aligned PARITY.md rows have a check" \
+  '/^## Functions/ { print ""; print "| Status | Meaning |"; print "| --- | --- |"; print "| `aligned` | the same capability, reachable the same way |"; print "| `deliberate` | intentionally different |"; print "" } { print }'
+
 # 7. AN INDENTED ROW IS STILL A ROW. Anchoring the parser at column 0 meant a Markdown-legal
 #    row with one to three leading spaces parsed as nothing: the gate reported "all 20 aligned
 #    rows have a check" and exited 0 while a new aligned row sat there unenforced. Four or

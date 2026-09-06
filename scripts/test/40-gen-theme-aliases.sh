@@ -307,6 +307,36 @@ GTTOOLS
     fail "gen-theme: --refresh returned 0 with no nvim — it cannot have resolved anything"
   fi
 
+  # ── PARITY.md's style claim: the guard must see an INDENTED row (#820) ──────
+  # The trigger is a grep, and it anchored at column 0. CommonMark allows one to three
+  # leading spaces on a table row, so indenting PARITY.md's Theme row made the match go
+  # false — and because the whole block only fires "when PARITY.md exists AND names a
+  # style", the cross-repo style contract stopped being checked with `--check` still GREEN.
+  # SILENT-DISABLE, not a false alarm, which is the worse direction. Exactly the bug #682
+  # fixed in parity-check.sh's own row parser, in a sibling that did not get the memo.
+  #
+  # Both directions are asserted: indented rows are rows, and four or more spaces is an
+  # indented code block that must still be ignored — a fix that swallowed code blocks would
+  # be its own bug, which is the pairing parity-check.sh's case 7 already uses.
+  _gt_style_sees() { # _gt_style_sees <label> <indent> <want-fires>
+    local ind="$2" out
+    _gt_fixture
+    printf '%s| Theme | tokyonight-elsewhere | x | `aligned` |\n' "$ind" >"$GTR/PARITY.md"
+    out="$(_gt_out --check)"
+    if [[ "$3" == 1 ]] && grep -qF 'PARITY.md still names a different style' <<<"$out"; then
+      pass "gen-theme: $1"
+    elif [[ "$3" == 0 ]] && ! grep -qF 'PARITY.md still names a different style' <<<"$out"; then
+      pass "gen-theme: $1"
+    else
+      fail "gen-theme: $1 (wanted fires=$3)"
+    fi
+  }
+  _gt_style_sees "the style guard sees an unindented Theme row" "" 1
+  _gt_style_sees "...and a 2-space-indented one, which CommonMark allows" "  " 1
+  _gt_style_sees "...and a 3-space-indented one" "   " 1
+  _gt_style_sees "...but NOT a 4-space one, which is an indented code block" "    " 0
+  unset -f _gt_style_sees
+
   rm -rf "$GTR"
   unset _gt_gen_rc _gt_drift_rc _gt_before _gt_after _gt_nopal_rc _gt_fg _gt_refresh_rc
   unset _gt_drift_out _gt_bad_out

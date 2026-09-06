@@ -259,6 +259,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Two silent-failure shapes in the gate scripts, from #820's shell review (F2, F3).** Both
+  reproduced before fixing, because a report is a claim until it is run.
+  **F2 — `gen-theme.sh`'s PARITY.md style guard anchored at column 0.** CommonMark allows one
+  to three leading spaces on a table row, so indenting PARITY.md's Theme row made
+  `grep -qE '^\| (Theme|FZF palette) '` go false — and because the block only fires _"when
+  PARITY.md exists AND names a style"_, the cross-repo style contract **stopped being checked
+  with `gen-theme --check` still green**. Silent-disable, not a false alarm, which is the
+  worse direction. It is exactly the bug #682 fixed in `parity-check.sh`'s own row parser, in
+  a sibling that did not get the memo. Four cases now pin both directions: 0–3 spaces is a
+  row, four is an indented code block and still ignored.
+  **F3 — `parity-check.sh` parsed every pipe table in the file.** It took `cap = $2` and
+  `status = $(NF - 1)` from any row and skipped only separators, so tabulating PARITY.md's
+  status vocabulary — prose today, valid Markdown, passes markdownlint — would parse
+  `aligned` as a capability. Reproduced: the old parser reported ``row `aligned` has status
+  `the` ``, on a **blocking, deliberately un-scope-guarded** gate, with a message pointing
+  nowhere near the cause. The header now **arms** the table rather than being skipped: a
+  table whose first column is not `Capability` is not a contract table.
+  Worth recording that the first fix for F3 **introduced a second bug of the same class** —
+  making a 4-space line clear the table state dropped every row after it, silently reducing
+  coverage. The existing case 7 caught it, which is the argument for pinning both directions
+  of a bound rather than only the one you are fixing.
+
 - **Five doc-consistency findings from #811's sweep, verified live before fixing.** The
   routine reported nine; four had already been closed by work since (#885 took the
   `tree-sitter-cli` hedge, the Gentoo `ouch` prose is past-tense and correct, and the

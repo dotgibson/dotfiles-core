@@ -286,7 +286,18 @@ _parity_rows() { # $1 = PARITY.md -> "<row-slug>\t<status-word>" per table row
       # depend on the awk on the box.
       line = $0
       sub(/^[ ]*/, "", line)
-      if (line !~ /^\|/) next
+      # A NON-ROW LINE ENDS THE TABLE, which is what scopes the parse below to the
+      # capability tables and nothing else (#820). Without it this read EVERY pipe table in
+      # the file and only skipped separators — so tabulating the status vocabulary itself
+      # (`| Status | Meaning |`, valid Markdown, passes markdownlint) would parse `aligned`
+      # as a capability whose status is the prose meaning cell, and red this BLOCKING,
+      # NOT-scope-guarded gate on every run with a message pointing nowhere near the cause.
+      # A pure docs edit must not be able to do that.
+      if (line !~ /^\|/) { intab = 0; next }
+      # SKIPPED, NOT table-ending: an indented code block sitting between two rows must not
+      # drop every row after it out of the parse. Clearing state here silently reduced
+      # coverage — the same shape as the bug above, one line further on. Only a genuine
+      # non-row line ends the table.
       if (length($0) - length(line) > 3) next
       cap = $2; status = $(NF - 1)
       if (cap ~ /^[[:space:]]*:?-+:?[[:space:]]*$/) next # the | --- | separator row
@@ -295,7 +306,11 @@ _parity_rows() { # $1 = PARITY.md -> "<row-slug>\t<status-word>" per table row
       cap = tolower(cap)
       gsub(/[^a-z0-9]+/, "-", cap)
       gsub(/^-+|-+$/, "", cap)
-      if (cap == "" || cap == "capability") next         # the header row
+      # The header ARMS the table rather than merely being skipped: a table whose first
+      # column is not `Capability` is not a contract table, and its rows are not rows.
+      if (cap == "capability") { intab = 1; next }
+      if (cap == "") next
+      if (!intab) next
       status = tolower(status)                           # `aligned` (engine) -> aligned
       gsub(/[^a-z]+/, " ", status)
       sub(/^ +/, "", status)
