@@ -1535,6 +1535,143 @@ _core_caller_pin_hits() { # _core_caller_pin_hits <repo-root> <expected-major>
   done
 }
 
+# ── _core_tools_optin_hits: a repo's TOOLS_OPTIN vs its matrix column ────────
+# _core_tools_optin_hits <core-root> <fleet-root> — print every repo whose
+# os/*.capabilities TOOLS_OPTIN disagrees with PORTING-MATRIX.md's ²¹ marks for its column.
+# Silence = clean. Output is `repo: msg`.
+#
+# WHY THIS EXISTS (#890, out of #836). Three copies of one set, and only two were gated:
+#
+#   · PORTABILITY.md / the matrix ²¹ marks — the human contract.
+#   · Core's _CORE_DOCTOR_OPTIN — the ROW-level ²¹ set, already re-derived and asserted by
+#     test/65-functions.sh ("core-doctor's opt-in list is derivable from footnote 21").
+#   · each OS repo's TOOLS_OPTIN — the CELL-level marks, gated by nothing at all.
+#
+# The miss it would have caught already happened, by eye rather than by check: `uv` is in
+# _CORE_DOCTOR_WIRED, dotfiles-openSUSE installs none and declared no TOOLS_OPTIN, so it fell
+# back to Core's default — which does not list uv — and core-doctor rendered a false `✗ uv` on
+# every openSUSE box. That is the alarm-fatigue failure the opt-in state exists to prevent.
+#
+# THE RULE, and it is exact because the current fleet already satisfies it:
+#
+#   a repo whose matrix column carries CELL-level ²¹ must declare TOOLS_OPTIN as Core's
+#   ROW-level ²¹ set PLUS those tools; a repo with no cell-level mark may omit it entirely.
+#
+# A declared list REPLACES Core's default rather than adding to it — which is why "plus" is
+# the whole set repeated, and why declaring only the delta would trade one false ✗ for nine.
+#
+# THE COLUMN→REPO MAP IS EXPLICIT, because it is not derivable: `Kali (apt)` and
+# `Debian/Ubuntu` are two columns of ONE repo, and a header-to-directory guess would either
+# invent a dotfiles-Kali or drop Kali's marks on the floor. dotfiles-MacBook, -Fedora,
+# -Offense and -Defense have no column at all, so this says nothing about them — the matrix
+# is the authority for the repos it covers and silent about the rest.
+#
+# THE ALIAS MAP IS EXPLICIT FOR THE SAME REASON. A parenthetical in the Tool cell is NOT
+# reliably a binary name: `jujutsu (jj)` is an alias, `op (1Password)` is a description, and
+# a blanket rule would look for a tool called `1Password`. So one entry, by hand — and any
+# cell-level tool whose Tool cell carries a parenthetical it does not know about is reported
+# rather than guessed at, so a new aliased row cannot slip through as a bare name.
+_core_tools_optin_hits() { # _core_tools_optin_hits <core-root> <fleet-root>
+  local core="${1:-.}" fleet="${2:-}" matrix
+  [ -n "$fleet" ] || return 0
+  matrix="$core/PORTING-MATRIX.md"
+  [ -f "$matrix" ] || return 0
+  command -v awk >/dev/null 2>&1 || return 0
+
+  # column-header<TAB>repo. Two columns legitimately map to one repo.
+  local map='Arch	dotfiles-Arch
+openSUSE	dotfiles-openSUSE
+Alpine	dotfiles-Alpine
+Gentoo (atom)	dotfiles-Gentoo
+Kali (apt)²¹ᵃ	dotfiles-Debian
+Debian/Ubuntu	dotfiles-Debian'
+
+  # The ROW-level set — Core's default, and what a declaring repo must repeat. Derived from
+  # the same table, so this cannot drift from test/65-functions.sh's assertion of it.
+  local rowlevel
+  rowlevel="$(awk -F'|' '
+    /^## Package names \(modern CLI stack\)/ { insec = 1 }
+    # DONE AFTER THE FIRST TABLE. Footnote 21 carries a coverage table of its OWN, later in
+    # the file, whose first column is backticked tool names — so a scan that stays armed
+    # sweeps `gping` in twice and invents a flag. test/65-functions.sh documents the same
+    # trap for the sibling derivation; this is the same bound.
+    done { next }
+    insec && !intab && /^\| Tool/ { intab = 1; next }
+    intab && !/^\|/ { intab = 0; done = 1; next }
+    intab && /^\|/ {
+      cell = $2; gsub(/^[ \t]+|[ \t]+$/, "", cell)
+      if (cell ~ /(²¹|¹⁷|¹⁹)/) {
+        name = cell
+        sub(/[ ⁰¹²³⁴⁵⁶⁷⁸⁹(].*/, "", name)
+        if (name != "") print name
+      }
+    }
+  ' "$matrix" | sort -u | tr '\n' ' ')"
+  [ -n "$rowlevel" ] || return 0
+
+  local col repo want got extra
+  while IFS='	' read -r col repo; do
+    [ -n "$col" ] || continue
+    [ -d "$fleet/$repo" ] || continue
+    # CELL-level ²¹ in this column: the tools this repo must add to the default.
+    extra="$(awk -F'|' -v want="$col" '
+      /^## Package names \(modern CLI stack\)/ { insec = 1 }
+      done { next }
+      insec && !intab && /^\| Tool/ {
+        intab = 1
+        for (i = 2; i <= NF; i++) { h = $i; gsub(/^[ \t]+|[ \t]+$/, "", h); if (h == want) ci = i }
+        next
+      }
+      intab && !/^\|/ { intab = 0; done = 1; next }
+      intab && ci && /^\|/ {
+        cell = $2; gsub(/^[ \t]+|[ \t]+$/, "", cell)
+        if (cell ~ /(²¹|¹⁷|¹⁹)/) next            # row-level: already in the default
+        val = $ci; gsub(/^[ \t]+|[ \t]+$/, "", val)
+        if (val ~ /²¹/) {
+          name = cell
+          # A parenthetical is reported, never guessed — see the header.
+          if (name ~ /\(/) { sub(/[⁰¹²³⁴⁵⁶⁷⁸⁹ ]+$/, "", name); print "?" name; next }
+          sub(/[ ⁰¹²³⁴⁵⁶⁷⁸⁹].*/, "", name)
+          if (name != "") print name
+        }
+      }
+    ' "$matrix" | sort -u | tr '\n' ' ')"
+
+    # Resolve the one known alias, and refuse to guess at any other.
+    case "$extra" in
+    *"?jujutsu (jj)"*) extra="$(printf '%s' "$extra" | sed 's/?jujutsu (jj)/jj/')" ;;
+    esac
+    case "$extra" in
+    *"?"*)
+      printf '%s: PORTING-MATRIX.md marks a cell-level ²¹ tool whose name carries a parenthetical this gate has no mapping for (%s) — add it to _core_tools_optin_hits rather than letting the bare name through\n' \
+        "$repo" "$(printf '%s' "$extra" | tr ' ' '\n' | grep '^?' | tr '\n' ' ')"
+      continue
+      ;;
+    esac
+
+    got="$(grep -h '^TOOLS_OPTIN=' "$fleet/$repo"/os/*.capabilities 2>/dev/null | head -n1 | sed 's/^TOOLS_OPTIN=//')"
+    if [ -z "$extra" ]; then
+      # No cell-level mark: declaring nothing is correct. A declaration is allowed (it may
+      # encode something this table cannot see), so this direction is deliberately silent.
+      continue
+    fi
+    want="$rowlevel$extra"
+    # Order-insensitive: the contract is the SET, and the fleet writes it in table order.
+    local w g
+    w="$(printf '%s' "$want" | tr ' ' '\n' | grep . | sort -u | tr '\n' ' ')"
+    g="$(printf '%s' "$got" | tr ' ' '\n' | grep . | sort -u | tr '\n' ' ')"
+    if [ -z "$got" ]; then
+      printf '%s: declares no TOOLS_OPTIN, but its PORTING-MATRIX.md column marks %s²¹ (available, not installed) — core-doctor will count it EXPECTED and render a false ✗ on every box. Declare: TOOLS_OPTIN=%s\n' \
+        "$repo" "$extra" "${want% }"
+    elif [ "$w" != "$g" ]; then
+      printf '%s: TOOLS_OPTIN disagrees with its PORTING-MATRIX.md column — declared [%s], expected [%s] (Core'"'"'s row-level ²¹ set plus this column'"'"'s cell-level marks; a declared list REPLACES the default rather than adding to it)\n' \
+        "$repo" "${g% }" "${w% }"
+    fi
+  done <<EOF
+$map
+EOF
+}
+
 # ── _core_vendor_pin_hits: the first-vendor recipe names the CURRENT major ───
 # _core_vendor_pin_hits <repo-root> <expected-major> — print every first-vendor pin in
 # the root docs and scripts/ that names a major other than <expected-major>. Silence =

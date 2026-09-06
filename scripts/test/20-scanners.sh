@@ -657,6 +657,83 @@ unset d
 # checked nothing. A firing-only test would have gone green on the broken version too,
 # because the broken version was silent on the clean fixtures as well.
 #
+# ── TOOLS_OPTIN vs the matrix (common.sh :: _core_tools_optin_hits) ──────────
+# #890. The rule is exact and the fleet already satisfies it, so these fixtures drive the
+# DIRECTIONS a real repo can drift in — an undeclared column, a stale declaration, and the
+# two shapes the parser must not get wrong.
+hdr "TOOLS_OPTIN vs matrix (_core_tools_optin_hits)"
+_to_="$SANDBOX/toolsoptin"
+_to_setup() { # _to_setup <optin-line-or-empty> — a fleet with one openSUSE repo in it
+  rm -rf "$_to_"; mkdir -p "$_to_/dotfiles-openSUSE/os"
+  git -C "$_to_/dotfiles-openSUSE" init -q >/dev/null 2>&1
+  : >"$_to_/dotfiles-openSUSE/os/opensuse.capabilities"
+  [[ -n "${1:-}" ]] && printf '%s\n' "$1" >"$_to_/dotfiles-openSUSE/os/opensuse.capabilities"
+}
+_to_is() { # _to_is <label> <want-hits>
+  local got n=0
+  got="$(_core_tools_optin_hits "$HERE" "$_to_")"
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | grep -c .)"
+  if [[ "$n" == "$2" ]]; then pass "TOOLS_OPTIN: $1"; else fail "TOOLS_OPTIN: $1 (got $n, want $2) — $got"; fi
+}
+
+# THE REAL DEFECT, as it existed: openSUSE's column marks uv²¹ and the repo declared nothing,
+# so core-doctor counted uv EXPECTED and rendered a false ✗ on every box.
+_to_setup ""
+_to_is "a column with a cell-level mark and NO declaration is a finding" 1
+
+# ...and the message must name the fix, not just the fault.
+_to_setup ""
+if _core_tools_optin_hits "$HERE" "$_to_" | grep -q 'Declare: TOOLS_OPTIN='; then
+  pass "TOOLS_OPTIN: the finding spells out the declaration to add"
+else
+  fail "TOOLS_OPTIN: the finding did not name the fix"
+fi
+
+# THE CORRECT DECLARATION: Core's row-level nine PLUS this column's cell-level uv. A declared
+# list REPLACES the default, which is why the nine are repeated rather than just the delta.
+_to_setup 'TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv'
+_to_is "the correct declaration is clean" 0
+
+# ORDER IS NOT THE CONTRACT — the set is. The fleet writes these in table order; a repo that
+# sorts them differently is not drifting, and a gate that said so would be noise.
+_to_setup 'TOOLS_OPTIN=uv gping jnv git-absorb ouch shfmt shellcheck watchexec hyperfine lnav'
+_to_is "a reordered but identical set is clean" 0
+
+# DECLARING ONLY THE DELTA is the trap the rule exists to state: it would trade one false ✗
+# for nine, because a declared list replaces the default rather than adding to it.
+_to_setup 'TOOLS_OPTIN=uv'
+_to_is "declaring only the delta is a finding, not a shortcut" 1
+
+# A STALE DECLARATION — the shape a repo drifts into after the matrix gains a mark.
+_to_setup 'TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping'
+_to_is "a declaration missing the column's new mark is a finding" 1
+
+# THE PARSER TRAPS, both real. Footnote 21 carries a coverage table of its OWN whose first
+# column is backticked tool names (`gping`¹⁹ at PORTING-MATRIX.md:653); a scan that stays
+# armed past the package table sweeps it in and invents a flag. And `jujutsu (jj)` is an
+# alias while `op (1Password)` is a description, so a blanket parenthetical rule would look
+# for a tool called 1Password. Both are asserted through the EXPECTED SET the helper builds.
+_to_setup ""
+if _core_tools_optin_hits "$HERE" "$_to_" | grep -q '`gping`'; then
+  fail "TOOLS_OPTIN: footnote 21's own table leaked into the derived set (the :653 trap)"
+else
+  pass "TOOLS_OPTIN: footnote 21's own coverage table does not widen the derived set"
+fi
+_to_setup ""
+if _core_tools_optin_hits "$HERE" "$_to_" | grep -qE '1Password|jujutsu'; then
+  fail "TOOLS_OPTIN: a parenthesised Tool cell was read as a binary name"
+else
+  pass 'TOOLS_OPTIN: op (1Password) is not mistaken for a tool called 1Password'
+fi
+
+# AN ABSENT REPO IS SILENCE, NEVER AGREEMENT — the audit turns that into an environment skip.
+rm -rf "$_to_"; mkdir -p "$_to_"
+_to_is "a fleet with no covered repo checked out yields no verdict" 0
+
+rm -rf "$_to_"
+unset _to_
+unset -f _to_setup _to_is
+
 # Fixtures are BUILT, never typed: every marker below is assembled with printf, so this file
 # does not itself contain the thing it tests. It is tracked, §5h scans every tracked file, and
 # a literal fixture here would make the gate report its own test suite. They are written into

@@ -2657,6 +2657,55 @@ $(printf '%s\n' "$_cp_hits" | sed 's/^/  /')"
   unset _cp_major
 fi
 
+# ── 9p. TOOLS_OPTIN ↔ PORTING-MATRIX.md's cell-level ²¹ marks ────────────────
+# #890, out of #836. Three copies of one set, and only two were gated: the matrix's ²¹
+# marks (the human contract), Core's _CORE_DOCTOR_OPTIN (the ROW-level set, re-derived and
+# asserted by test/65-functions.sh), and each OS repo's TOOLS_OPTIN (the CELL-level marks,
+# gated by nothing).
+#
+# THE MISS ALREADY HAPPENED, and was found by eye rather than by check: `uv` is in
+# _CORE_DOCTOR_WIRED, dotfiles-openSUSE installs none and declared no TOOLS_OPTIN, so it fell
+# back to Core's default — which does not list uv — and core-doctor rendered a false ✗ on
+# every openSUSE box. That is the alarm-fatigue failure the opt-in state exists to prevent,
+# and nothing would have caught the next one.
+#
+# BLOCKING, unlike §9o, and the difference is the state of the fleet rather than a change of
+# heart: every covered repo satisfies the rule today (verified against origin/main), so this
+# can red on a regression without reddening anything that exists. §9o reports because its
+# backlog is real; this fails because its backlog is empty.
+#
+# FIVE REPOS, NOT NINE. The matrix's package table has columns for Arch, openSUSE, Alpine,
+# Gentoo, Kali and Debian/Ubuntu — the last two being one repo. dotfiles-MacBook, -Fedora,
+# -Offense and -Defense have no column, so this says nothing about them: the matrix is the
+# authority for what it covers and silent about the rest, which is better than inventing a
+# verdict for a repo it cannot see.
+hdr "TOOLS_OPTIN ↔ matrix ²¹ marks"
+if ! load_os_repos; then
+  skip_env "TOOLS_OPTIN ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+else
+  _to_root="$(cd "$HERE/.." && pwd)"
+  # A COVERED repo absent from the box is an environment skip, not a pass: the helper is
+  # silent on a directory it cannot read, and silence must never be reported as agreement.
+  _to_seen=0
+  for _to_repo in dotfiles-Arch dotfiles-openSUSE dotfiles-Alpine dotfiles-Gentoo dotfiles-Debian; do
+    [[ -e "$_to_root/$_to_repo/.git" ]] && _to_seen=$((_to_seen + 1))
+  done
+  if ((_to_seen == 0)); then
+    skip_env "TOOLS_OPTIN (none of the five matrix-covered repos checked out — nothing to read here)"
+  else
+    _to_out="$(_core_tools_optin_hits "$HERE" "$_to_root")"
+    if [[ -z "$_to_out" ]]; then
+      pass "TOOLS_OPTIN — every checked-out matrix-covered repo declares what its column marks ($_to_seen of 5)"
+    else
+      fail "a repo's TOOLS_OPTIN disagrees with its PORTING-MATRIX.md column — core-doctor will misreport a tool's absence on every box of that OS"
+      fail_detail "$_to_out"
+    fi
+    unset _to_out
+    ((_to_seen < 5)) && skip_env "TOOLS_OPTIN: $((5 - _to_seen)) of the 5 matrix-covered repos not checked out — not covered by this run"
+  fi
+  unset _to_root _to_seen _to_repo
+fi
+
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
 # Static analysis above proves the modules PARSE; this proves they LOAD TOGETHER
 # in canonical order and that the pure functions behave. Delegated to test-core.sh
