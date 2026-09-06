@@ -47,7 +47,20 @@ if have git; then
   _gp_fixture() {
     local r
     rm -rf "$GPR" "$GPF"
-    mkdir -p "$GPR"
+    mkdir -p "$GPR" "$GPR/scripts"
+    # The fleet-versions block reads this the way the packages block reads the OS repos,
+    # so the fixture has to supply it. Deliberately spans the floor — one row above, one
+    # equal to it, one below — because the status column is DERIVED, and a fixture where
+    # every row lands on the same side could not tell a working comparison from a stuck one.
+    # The dates are far-future on purpose: the staleness reporter writes to stderr, and a
+    # fixture that started emitting "not re-verified in 90 days" the moment the calendar
+    # rolled past it would make this suite noisier every year for no signal.
+    printf '%b\n' \
+      'floor\tjq\t1.8.2' \
+      'ver\tjq\tFixture Above\t1.10.0\t2099-01-01\tfixture' \
+      'ver\tjq\tFixture Equal\t1.8.2\t2099-01-01\tfixture' \
+      'ver\tjq\tFixture Below\t1.7.1\t2099-01-01\tfixture' \
+      >"$GPR/scripts/fleet-package-versions.tsv"
     {
       printf '# fixture matrix\n\nhand-authored above the first block\n\n'
       for _id in $_gp_ids; do
@@ -141,6 +154,18 @@ EOF
     pass "gen-porting-matrix: --check is 0 on a freshly generated tree"
   else
     fail "gen-porting-matrix: --check reported drift on its own output"
+  fi
+
+  # fleet-versions: the status column is DERIVED from the version, never recorded, which is
+  # the whole point of the block — footnote 34 was corrected twice because a version and the
+  # verdict filed beside it disagreed. 1.10.0 is the row that matters: a string compare ranks
+  # it BELOW 1.8.2 and would mark it below the floor.
+  if _gp_row '| Fixture Above | 1.10.0 | at or above |' &&
+    _gp_row '| Fixture Equal | 1.8.2 | at or above |' &&
+    _gp_row '| Fixture Below | 1.7.1 | **below** |'; then
+    pass "gen-porting-matrix: fleet-versions derives at/below from the version, field-wise (1.10.0 outranks 1.8.2)"
+  else
+    fail "gen-porting-matrix: the fleet-versions block did not derive the floor comparison correctly"
   fi
 
   # The RENDERED BYTES, one row per rule.
