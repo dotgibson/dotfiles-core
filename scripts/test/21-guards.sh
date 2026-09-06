@@ -291,6 +291,117 @@ if [[ -r "$HERE/core.version" ]]; then
   unset _wfe_now
 fi
 
+# ── fleet caller-pin guard (common.sh :: _core_caller_pin_hits) ──────────────
+# The THIRD half of a check that only had two (#804). The two guards above read Core's own
+# tree — `ref:` keys, and comment examples. Neither reads what an OS repo actually EXECUTES:
+# its live `uses: …/<file>@vN`. So the v5 -> v6 caller sweep, 45 pins across 8 repos, was
+# done by hand and nothing would have reported a repo that was missed.
+#
+# THE SHARPEST CASE HERE IS THE THIRD ONE, which drives all three helpers over the SAME
+# fixture: the stale live caller is invisible to both siblings and visible only to this one.
+# That is the gap stated as an assertion rather than as prose, and if a future refactor
+# folded these into one matcher, that case is what would notice.
+hdr "fleet caller-pin guard (_core_caller_pin_hits)"
+_cph_="$SANDBOX/callerpin"
+mkdir -p "$_cph_/.github/workflows"
+_cph_reset() { rm -f "$_cph_"/.github/workflows/*.yml "$_cph_"/.github/workflows/*.yaml 2>/dev/null || :; }
+_cph_write() { _cph_reset; printf '%s\n' "$2" >"$_cph_/.github/workflows/$1"; }
+_cph_count() { # _cph_count <label> <major> <expected-line-count>
+  local got n
+  got="$(_core_caller_pin_hits "$_cph_" "$2")"
+  n=0
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$3" ]]; then
+    pass "fleet caller-pin: $1"
+  else
+    fail "fleet caller-pin: $1 (got $n finding(s), want $3)"
+  fi
+}
+
+# THE REGRESSION, in the shape an OS repo actually carries it.
+_cph_write lint.yml '  lint:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v5
+    secrets: inherit'
+_cph_count "a live caller left on a retired major is a finding" 6 1
+_cph_count "...and is clean once the fleet is on that major" 5 0
+
+# THE GAP, ASSERTED. The same fixture, through all three helpers: only this one sees it.
+_cph_gap_ref="$(_core_workflow_ref_hits "$_cph_" 6)"
+_cph_gap_ex="$(_core_workflow_example_hits "$_cph_" 6)"
+_cph_gap_new="$(_core_caller_pin_hits "$_cph_" 6)"
+if [[ -z "$_cph_gap_ref" && -z "$_cph_gap_ex" && -n "$_cph_gap_new" ]]; then
+  pass "fleet caller-pin: a stale LIVE caller is invisible to both sibling guards and caught only here (#804's gap, as an assertion)"
+else
+  fail "fleet caller-pin: the three guards no longer split the file as documented (ref=[$_cph_gap_ref] example=[$_cph_gap_ex] caller=[$_cph_gap_new])"
+fi
+unset _cph_gap_ref _cph_gap_ex _cph_gap_new
+
+# A SHA PIN IS NOT JUDGED. dotfiles-MacBook pins by SHA on purpose; this gate answers
+# "which major", not "which pinning style" — check-modern.sh owns that, and a second
+# opinion here would make it two gates wearing one name.
+_cph_write lint.yml '    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@c0cd22b22819aa8113ce37e548757eeeb8736f77 # v7.0.0'
+_cph_count "a deliberate SHA pin is not judged (MacBook's shape)" 6 0
+
+# THE MIRROR OF THE SIBLING GATE. A COMMENTED example on a dead major is the other guard's
+# finding, not this one's — each reads the half the other skips, and asserting both
+# directions is what keeps them from silently overlapping or silently gapping.
+_cph_write lint.yml '#   uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v5
+  lint:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v6'
+_cph_count "a commented example on a dead major belongs to the OTHER guard, not this one" 6 0
+if [[ -n "$(_core_workflow_example_hits "$_cph_" 6)" ]]; then
+  pass "fleet caller-pin: ...and that same comment IS caught by the example guard"
+else
+  fail "fleet caller-pin: the commented example went unjudged by BOTH guards — the split has a hole"
+fi
+
+# A LOOKALIKE REPOSITORY NAME IS NOT ATTRIBUTED TO dotfiles-core, the same left-boundary
+# property the example guard pins. Without it this always-on gate reds on a file it has no
+# business judging.
+_cph_write lint.yml '    uses: someone/not-dotfiles-core/.github/workflows/x.yml@v5
+    uses: notdotgibson/dotfiles-core/.github/workflows/x.yml@v5'
+_cph_count "a lookalike repository name is NOT attributed to dotfiles-core" 6 0
+
+# EVERY CALLER IN A FILE, not the first: a repo bumps its pins one job at a time, so the
+# half-swept file is the realistic mid-sweep state and must report both.
+_cph_write ci.yml '  lint:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v5
+  test:
+    uses: dotgibson/dotfiles-core/.github/workflows/test-call.yml@v6
+  integrity:
+    uses: dotgibson/dotfiles-core/.github/workflows/core-integrity-call.yml@v5'
+_cph_count "a half-swept file reports EVERY stale caller, not just the first" 6 2
+
+_cph_reset
+# ── the live fleet ──
+# The fixtures prove the matcher; this proves the gate is SATISFIABLE by the tree it will
+# actually run against. A guard that is green only on invented input is the failure mode
+# these files exist to catch.
+if load_os_repos && [[ -r "$HERE/core.version" ]]; then
+  _cph_major="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+  _cph_root="$(cd "$HERE/.." && pwd)"
+  _cph_seen=0
+  _cph_stale=""
+  for _cph_repo in "${CORE_OS_REPOS[@]}"; do
+    _cph_dir="$(resolve_repo_dir "$_cph_root" "$_cph_repo")" || _cph_dir="$_cph_root/$_cph_repo"
+    [[ -e "$_cph_dir/.git" ]] || continue
+    _cph_seen=$((_cph_seen + 1))
+    [[ -n "$(_core_caller_pin_hits "$_cph_dir" "$_cph_major")" ]] && _cph_stale="$_cph_stale $_cph_repo"
+  done
+  if ((_cph_seen == 0)); then
+    skip_env "fleet caller-pin: no sibling OS repo checked out — nothing to read here"
+  elif [[ -z "$_cph_stale" ]]; then
+    pass "fleet caller-pin: every checked-out repo calls @v$_cph_major or pins a SHA ($_cph_seen repo(s))"
+  else
+    fail "fleet caller-pin: checked-out repo(s) on a retired major —$_cph_stale"
+  fi
+  unset _cph_major _cph_root _cph_seen _cph_stale _cph_repo _cph_dir
+else
+  skip_env "fleet caller-pin: cannot enumerate the fleet or read core.version"
+fi
+unset _cph_
+unset -f _cph_reset _cph_write _cph_count
+
 # ── first-vendor pin major guard (common.sh :: _core_vendor_pin_hits) ─────────
 # Third sibling of the two guards above, for the third copyable instruction that names a
 # major: the first-vendor recipe (`refs/tags/vN`, `git checkout vN`, `vN^{commit}`) and
