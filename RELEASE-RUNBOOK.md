@@ -279,14 +279,25 @@ carried the change, so start at step 2.
 3. Then merge the remaining Linux/Role repos' `core.lock` PRs.
 4. On each host, the change lands when you re-run `./bootstrap.sh` (or pull).
 
-**Finding the stragglers for step 1 is a manual sweep.** `make fleet-drift` won't surface
-them: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance against
-Core, not its workflow `uses:` pins — so grep for the **outgoing** major (e.g.
-`grep -rl 'uses:.*@v<old>' .github/workflows` across the repos in `scripts/os-repos.txt`).
-That sweep has a blind spot worth knowing: **`dotfiles-Windows` is not in `os-repos.txt`** (it
+**Finding the stragglers for step 1 is checked, not remembered** — as of #804.
+`audit-core.sh` **§9n** reads each sibling in `scripts/os-repos.txt` and reports any live
+`uses: …/<file>@vN` whose major is not `core.version`'s, so `make audit` goes red until the
+sweep is complete. Run it with the fleet cloned beside Core (it is an environment skip
+otherwise, and `--require-siblings` reds that). A SHA pin is deliberately **not** judged —
+see below.
+
+`make fleet-drift` still won't surface stragglers, and it is worth knowing why so the two
+are not confused: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance
+against Core, not its workflow `uses:` pins. Different axis, different gate.
+
+§9n's scope has a blind spot worth knowing, and it is deliberate: **`dotfiles-Windows` is not
+in `os-repos.txt`** (it
 vendors no `core/`), and it SHA-pins its `auto-tag-call` caller on purpose rather than tracking
-the moving `@vN` alias — so it is invisible to the grep AND unmoved by the alias. Check it by hand on a major,
-and whenever an `auto-tag-call` change should reach it.
+the moving `@vN` alias — so it is invisible to **§9n** AND unmoved by the alias. Widening the
+gate to a repo the fleet list does not contain would put the list and the gate in
+disagreement, so the list stays the one place scope lives and this one stays a hand check.
+Check it on a major, and whenever an `auto-tag-call` change should reach it. #805 is what
+that blind spot costs when it is not checked: a full major behind, for five releases.
 Repos that SHA-pin *and* sit inside the fan-out (`dotfiles-MacBook`, `dotfiles-Defense`)
 need no hand bump: since #482 `sync-core.sh` moves those pins in the same commit that
 stamps `core.lock`. Only alias-pinned repos and Windows are yours.
