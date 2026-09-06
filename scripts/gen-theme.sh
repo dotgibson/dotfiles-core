@@ -726,9 +726,8 @@ $TARGETS
 EOF
 
 # ── PARITY.md's style claim ───────────────────────────────────────────────────
-# PARITY.md's Theme and FZF-palette rows name the style in prose ("tokyonight-storm"),
-# as a cross-repo
-# contract with dotfiles-Windows. It is deliberately NOT generated: a generator
+# PARITY.md's Theme and FZF-palette rows name the style in prose ("tokyonight-storm"), as
+# a cross-repo contract with dotfiles-Windows. It is deliberately NOT generated: a generator
 # rewriting Core's half of a two-repo claim would let a Core-side flip silently rewrite
 # the assertion ABOUT pwsh. So it is checked instead — a flip fails at author time
 # rather than becoming doc-drift for /doc-audit to find weeks later.
@@ -736,7 +735,13 @@ EOF
 # Advisory-shaped but not silent: it only fires when PARITY.md exists AND names a style.
 if [[ -r PARITY.md ]]; then
   _pm_style="$(pal_raw style)"
-  if grep -qE '^\| (Theme|FZF palette) ' PARITY.md && ! grep -qF "tokyonight-$_pm_style" PARITY.md; then
+  # `^ {0,3}\|`, NOT `^\|`: CommonMark allows one to three leading spaces on a table row, and
+  # this guard is the whole trigger — indent PARITY.md's Theme row and the match goes false,
+  # so the cross-shell style contract stops being checked with `gen-theme --check` still
+  # GREEN. Silent-disable, not a false alarm, which is the worse direction. Exactly the bug
+  # #682 fixed in parity-check.sh's own row parser, in a sibling that did not get the memo
+  # (#820). Four or more spaces IS an indented code block and must still be ignored.
+  if grep -qE '^ {0,3}\| (Theme|FZF palette) ' PARITY.md && ! grep -qF "tokyonight-$_pm_style" PARITY.md; then
     if [[ "$MODE" == check ]]; then
       printf 'gen-theme: PARITY.md still names a different style than %s (style = %s).\n' "$PALETTE" "$_pm_style" >&2
       printf '  Its Theme and FZF-palette rows are a cross-repo contract with dotfiles-Windows,\n' >&2
