@@ -153,8 +153,18 @@ tracked as #808 — a feature, not a contract repair.
 Two rows are deliberately honest about proving less than they look like they prove:
 
 - **Theme** shares its pwsh evidence with **FZF palette** — the fzf `--color` block is the
-  only place `dotfiles-Windows` carries tokyonight colours at all, since it has no
-  `_CORE_ACCENT_SPEC` equivalent. That accent half remains a genuine `gap`.
+  only place `dotfiles-Windows` **renders** tokyonight colours. The accent half remains a
+  genuine `gap`, and it is worth being precise about what kind: pwsh is no longer missing the
+  *primitive*. dotgibson/dotfiles-Windows#229 added `Get-DotAccentSpec` to
+  `powershell/core/05-lib.ps1`, generated from this same `theme/palette.toml` — truecolor
+  tier keyed on `$COLORTERM` exactly as `zsh/05-ui.zsh` does, both raw-SGR and bare-spec
+  forms mirroring Core's two rendering paths, and the 256-colour fallbacks carried verbatim
+  including their deliberate SGR-vs-spec disagreement. **Nothing on the pwsh side consumes
+  it yet**, so the row stays a `gap`: this file's bar for `aligned` is that both shells
+  actually render with the capability, not that both could. Promoting it would mean a needle
+  proving `Get-DotAccentSpec` *exists*, which is the certifies-less-than-it-looks-like shape
+  the rest of this section exists to stop. What closes the row is a pwsh consumer, not
+  another assertion here.
 - **Word nav**'s pwsh half is a *PSReadLine default*, not configuration: nothing in
   `dotfiles-Windows` binds Ctrl+Arrow, so there is no string to grep. Its check asserts
   Core's half and reports the pwsh half as a skip carrying that reason, rather than
