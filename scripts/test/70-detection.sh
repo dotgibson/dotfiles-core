@@ -16,7 +16,7 @@
 # audit-core.sh's static pass leave the highest-LOGIC, highest
 # fan-out helpers unproven: the package-manager and scheduler detection LADDERS
 # (which differ per distro and silently mis-fire) and ui.zsh's defensive no-TTY
-# confirm. A regression in any of these ships to all nine OS repos — exactly what a
+# confirm. A regression in any of these ships to all nine Core-vendoring repos — exactly what a
 # behavioral gate must catch. Each is driven HERMETICALLY against a stubbed PATH
 # (the same technique the clip ladder in scripts/test/10-clipboard.sh uses), so the result is
 # deterministic on every CI userland (glibc / BSD / musl) regardless of what's
@@ -633,7 +633,7 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
 # versionless `✓ fd` there (the probe forks `"$bin" --version`, a parameter expansion, and
 # parameters are never alias-expanded — the error was swallowed by the pipeline).
 # Both halves are pinned here against a stubbed PATH, hermetically, because a regression
-# fans out to all nine OS repos and is invisible on macOS where the names are canonical.
+# fans out to all nine Core-vendoring repos and is invisible on macOS where the names are canonical.
 RNBIN="$SANDBOX/rnbin"
 _real_grep="$(command -v grep)"
 _real_head="$(command -v head)"

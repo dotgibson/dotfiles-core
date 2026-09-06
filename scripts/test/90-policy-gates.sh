@@ -355,6 +355,109 @@ while IFS= read -r _rc_pat; do
 done <<<"$_rc_pats"
 unset _rc_doc _rc_wf _rc_local _rc_pats _rc_n _rc_pat _rc_i
 
+# ── the fan-out count (common.sh :: _core_fanout_count_hits) ─────────────────
+# #770 found the number contradicting itself across the tree — five sites saying EIGHT
+# against ~20 saying nine — after #668 had found one of the five a year earlier and
+# deliberately left it, because correcting one of several inconsistent sites makes the tree
+# no more correct. A gate is the answer to drift that has recurred; these cases pin the two
+# properties that decide whether it is a USEFUL one.
+#
+# BOTH DIRECTIONS, deliberately. The negative cases carry as much weight as the positive:
+# three different numbers are correct here about three different sets (9 Core-vendoring,
+# 8 OS-native, 11 total), and a gate that reds on the legitimate ones is noise — which is
+# how a check teaches the fleet to ignore it. Those lines are verbatim from the tree.
+hdr "fan-out count guard (_core_fanout_count_hits)"
+_fc_="$SANDBOX/fanout"
+_fc_setup() { # _fc_setup <file-content...> — a throwaway git repo holding one tracked file
+  rm -rf "$_fc_"
+  mkdir -p "$_fc_"
+  git -C "$_fc_" init -q >/dev/null 2>&1 || return 1
+  printf '%s\n' "$@" >"$_fc_/claims.md"
+  git -C "$_fc_" add -A >/dev/null 2>&1
+}
+_fc_count() { # _fc_count <label> <want-findings>
+  local got n=0
+  got="$(_core_fanout_count_hits "$_fc_" 9)"
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$2" ]]; then pass "fan-out count: $1"; else fail "fan-out count: $1 (got $n finding(s), want $2)"; fi
+}
+
+if ! git --version >/dev/null 2>&1; then
+  skip_env "fan-out count guard (git not available — the helper enumerates through git ls-files)"
+else
+  # THE TWO SURVIVORS OF #770, verbatim. CODEOWNERS:1 is the one #668 found and left.
+  _fc_setup '# CODEOWNERS — Core fans out to all eight OS repos, so every change' # core:fanout-fixture
+  _fc_count "the CODEOWNERS line #668 found and left is a finding" 1
+
+  _fc_setup '--         2. `cond` gates the whole spec on the `claude` binary. Core vendors into eight OS repos' # core:fanout-fixture
+  _fc_count "the nvim plugin comment is a finding" 1
+
+  # THE WRAPPED CLAIM. ci.yml put the verb on one comment line and the number on the NEXT,
+  # so a line-based check read neither half as a claim and the defect survived a sweep that
+  # was looking straight at it. Reported against the line carrying the NUMBER — the line an
+  # author edits.
+  _fc_setup \
+    "  # or a shebang script that isn't +x sails through green and vendors into all" \
+    '  # 8 repos. The audit job deliberately does NOT replicate these file-hygiene hooks' # core:fanout-fixture
+  _fc_count "a claim wrapped across two comment lines is still a claim" 1
+  if [[ "$(_core_fanout_count_hits "$_fc_" 9)" == claims.md:2:* ]]; then
+    pass "fan-out count: a wrapped claim is reported against the line holding the number"
+  else
+    fail "fan-out count: a wrapped claim was reported against the verb's line, which is not the line to edit"
+  fi
+
+  # ── the legitimate other-set usages, all verbatim from the tree ─────────────
+  # 8, correctly: the nine vendoring repos minus dotfiles-Alpine, which uses doas.
+  _fc_setup '# sudo-first is right for eight repos and WRONG for dotfiles-Alpine, whose'
+  _fc_count "eight repos relying on sudo-first is not a fan-out claim" 0
+
+  # 8, correctly again, and a DIFFERENT eight: the lint-call.yml callers (nine minus MacBook).
+  _fc_setup '  # by hand and found ELEVEN defects across eight repos in three shapes:'
+  _fc_count "#775's eleven-defects-across-eight-repos sweep is not a fan-out claim" 0
+
+  # 11, correctly: the whole system, 8 OS + 2 Role + dotfiles-core.
+  _fc_setup 'a eleven-repo dotfiles system built on a three-layer model'
+  _fc_count "the eleven-repo system count is not a fan-out claim" 0
+
+  # A number that is not a count of repos at all.
+  _fc_setup 'Core fans out to all nine OS repos, and 8 of them ship a Makefile.'
+  _fc_count "a correct claim followed by an unrelated number stays clean" 0
+
+  # THE POSITIVE CONTROL. A gate whose clean cases all pass because it matches nothing is
+  # the failure mode these fixtures exist to rule out.
+  _fc_setup 'A change here fans out to all nine OS repos, so the bar is high.'
+  _fc_count "a correct claim is clean" 0
+  if [[ -n "$(_core_fanout_count_hits "$_fc_" 8)" ]]; then
+    pass "fan-out count: the same correct-at-9 claim IS a finding when the fleet lists 8 (the check reads the list, not a constant)"
+  else
+    fail "fan-out count: a nine-repo claim went clean against a fleet of 8 — the number is hardcoded, so the gate cannot follow os-repos.txt"
+  fi
+
+  # CHANGELOG IS EXCLUDED: it records what was true when written, and rewriting old entries
+  # to match today's fleet would be a lie about what shipped.
+  _fc_setup 'placeholder'
+  printf '%s\n' '  fan out to all eight OS repos, silently. luacheck does not help' >"$_fc_/CHANGELOG.md" # core:fanout-fixture
+  git -C "$_fc_" add -A >/dev/null 2>&1
+  _fc_count "a historical fan-out claim in CHANGELOG.md is not rewritten by the gate" 0
+
+  # THE OPT-OUT ITSELF. `core:fanout-fixture` is how the cases above hold the wrong claims
+  # verbatim without reddening the gate that reads this very file. An exemption nothing
+  # tests is an exemption that can silently swallow a real claim, so both halves are pinned:
+  # a marked line is exempt, and an unmarked one in the SAME file is still judged.
+  _fc_setup \
+    '# Core fans out to all eight OS repos # core:fanout-fixture' \
+    '# Core fans out to all eight OS repos' # core:fanout-fixture (this physical line, too)
+  _fc_count "the fixture marker exempts its own line and nothing else" 1
+
+  # AND UNTRACKED FILES: a claim in a scratch file is not a claim the fleet ships.
+  _fc_setup 'placeholder'
+  printf '%s\n' '# Core fans out to all eight OS repos' >"$_fc_/scratch.md" # core:fanout-fixture
+  _fc_count "an UNTRACKED file's fan-out claim is not judged" 0
+fi
+rm -rf "$_fc_"
+unset _fc_
+unset -f _fc_setup _fc_count
+
 hdr "parity coverage gate (scripts/parity-check.sh)"
 PCR="$SANDBOX/parityrepo"
 PCOUT="$SANDBOX/parity-run.out"
@@ -404,7 +507,6 @@ _pc_win() {
     # the row format where it is parsed; only the pwsh half is written out here.
     # shellcheck disable=SC2034
     IFS='|' read -r k l zf zn pf pn <<<"$row"
-    [[ "$pn" == "-" ]] && continue # the framework defaults: nothing to write, by definition
     # A `count:N:` needle demands N matching LINES (pwsh binds Ctrl+R twice on purpose), so
     # the fixture has to satisfy the count, not just the string.
     want=1
@@ -502,9 +604,9 @@ _pc_row "an unknown status is rejected, not treated as not-aligned" 1 \
   "has status \`aligend\`" \
   '/^\| Word nav \|/ { sub(/`aligned`/, "`aligend`") } { print }'
 
-# 6. A pwsh half that is a framework default must be REPORTED, never certified. The
-#    summary line is the assertion: it may not say "all aligned rows hold" when a half was
-#    skipped. (Windows is absent from the fixture, so this pins the Core-side wording.)
+# 6. A run that never READ the pwsh side must not certify it. The summary line is the
+#    assertion: it may not say "all aligned rows hold" when a whole shell went unread.
+#    (Windows is absent from the fixture, so this pins the Core-side wording.)
 _pc_fixture "$HERE/PARITY.md" || true
 if grep -qF "pwsh side skipped" "$PCOUT"; then
   pass "parity coverage: a run without dotfiles-Windows says so instead of claiming both shells"
@@ -524,19 +626,18 @@ _pc_row "a 4-space-indented row is an indented code block, not a contract row" 0
   "aligned PARITY.md rows have a check" \
   '/^\| Word nav \|/ { print "     | Clipboard sync | `pbcopy` | `x` | `aligned` |" } { print }'
 
-# 8. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the `-`
-#    branch and the qualified summary never ran. With a synthetic dotfiles-Windows in place
-#    both must: each Word-nav half is reported as a skip, and the closing line must NOT say
-#    "all aligned rows hold across zsh + pwsh" — the overclaim this PR exists to remove.
+# 8. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the
+#    unqualified summary never ran. With a synthetic dotfiles-Windows in place it must — and
+#    it must be unqualified, because since #849 there is nothing left to qualify: EVERY row's
+#    pwsh half is asserted. A skip surviving here would mean a needle went back to a sentinel.
 _pc_fixture "$HERE/PARITY.md" win && _pc_win_rc=0 || _pc_win_rc=$?
-_pc_win_n="$(grep -c "nothing to grep" "$PCOUT" || true)"
-if ((_pc_win_rc == 0)) && ((_pc_win_n == 2)) &&
-  grep -qF "every CONFIGURED aligned row holds" "$PCOUT" &&
-  ! grep -qF "all aligned rows hold across zsh + pwsh" "$PCOUT"; then
-  pass "parity coverage: a Windows-present run reports both framework-default halves and refuses to certify them"
+_pc_win_n="$(grep -c '^–' "$PCOUT" || true)"
+if ((_pc_win_rc == 0)) && ((_pc_win_n == 0)) &&
+  grep -qF "all aligned rows hold across zsh + pwsh" "$PCOUT"; then
+  pass "parity coverage: a Windows-present run asserts every pwsh half and skips none"
 else
-  fail "parity coverage: Windows-present run (rc=$_pc_win_rc, $_pc_win_n default skips) did not report both halves and qualify its summary"
-  grep -E "coverage|nothing to grep|aligned rows hold|CONFIGURED" "$PCOUT" | sed 's/^/    /' >&2
+  fail "parity coverage: Windows-present run (rc=$_pc_win_rc, $_pc_win_n skips) did not assert every pwsh half"
+  grep -E "coverage|aligned rows hold|^–" "$PCOUT" | sed 's/^/    /' >&2
 fi
 unset _pc_win_rc _pc_win_n
 
@@ -580,12 +681,6 @@ _pv_is() { # _pv_is <label> <rc> <output> <expected-verdict>
 _pv_is "a clean both-shells run is ok-full" 0 "✓ all aligned rows hold across zsh + pwsh" ok-full
 _pv_is "an absent dotfiles-Windows is ok-no-sibling, not a full pass" \
   0 "– dotfiles-Windows not checked out at /x — pwsh side not verified" ok-no-sibling
-_pv_is "an unasserted framework default is ok-defaults, not a full pass" \
-  0 "– word nav: forward-word on Ctrl+Right — pwsh half is a PSReadLine default; nothing to grep" ok-defaults
-# Precedence: with no sibling repo the pwsh half never runs, so a default can never ALSO be
-# reported. If both notices somehow appear, the weaker claim must win.
-_pv_is "no-sibling outranks framework-default when both appear" \
-  0 "– dotfiles-Windows not checked out — nothing to grep" ok-no-sibling
 _pv_is "exit 1 is drift, whatever it printed" 1 "" drift
 _pv_is "exit 2 is broken, NOT a clean contract" 2 "" broken
 _pv_is "a non-standard exit is broken, not silently ok" 127 "" broken
@@ -594,11 +689,10 @@ unset -f _pv_is
 # The verdict is matched on parity-check.sh's own notice wording, and §9f's whole
 # classification rests on reading them. Pin both ends so a reword on either side is a
 # failure HERE rather than a silently-wrong audit line — the luacheck pin's reason (:2035).
-if grep -qF 'dotfiles-Windows not checked out' "$HERE/scripts/parity-check.sh" &&
-  grep -qF 'nothing to grep' "$HERE/scripts/parity-check.sh"; then
-  pass "parity verdict: parity-check.sh still emits both notices _core_parity_verdict reads"
+if grep -qF 'dotfiles-Windows not checked out' "$HERE/scripts/parity-check.sh"; then
+  pass "parity verdict: parity-check.sh still emits the notice _core_parity_verdict reads"
 else
-  fail "parity verdict: parity-check.sh reworded a notice _core_parity_verdict matches on — §9f will misclassify"
+  fail "parity verdict: parity-check.sh reworded the notice _core_parity_verdict matches on — §9f will misclassify"
 fi
 if grep -q '_core_parity_verdict' "$HERE/scripts/audit-core.sh"; then
   pass "parity verdict: audit-core.sh §9f classifies via the helper, not an inline if-chain"
