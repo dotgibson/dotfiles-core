@@ -334,9 +334,9 @@ opt-in. It was `cargo install --locked ouch` until dotgibson/dotfiles-Gentoo#133
 upstream-latest reasoning `watchexec`²⁵ still carries. That reasoning does not survive contact
 here twice over. The cargo build **cannot succeed on a GCC/libstdc++ box at all**: ouch's
 default `unrar` feature pulls `unrar-ng-sys`, whose `build.rs` unconditionally adds
-`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.1 — the _same_ version as upstream's
-latest release, with a `src_prepare()` that seds exactly that flag out. So the route-around
-bought no version and cost the tool, on every run, silently.
+`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.1 — **one patch release** behind
+upstream's 0.8.2 (2026-08-31), with a `src_prepare()` that seds exactly that flag out. So the
+route-around bought no meaningful version advantage and cost the tool, on every run, silently.
 
 **`shellcheck` on Gentoo is `dev-util/shellcheck-bin`, and the `-bin` is load-bearing.**
 `dev-util/shellcheck` is the Haskell build: it needs `>=dev-haskell/aeson-1.4.0` and the rest
