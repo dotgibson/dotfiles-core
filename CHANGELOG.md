@@ -42,6 +42,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `dotfiles-Windows` stays a hand check **because** it is not in `scripts/os-repos.txt` —
   widening the gate past the fleet list would put the list and the gate in disagreement, and
   #805 is what that blind spot costs when nobody checks it.
+- **`audit-core.sh` §9m — the fan-out count is a gate now, not a number five files got wrong
+  (#770).** `scripts/os-repos.txt` is the canonical fleet list and its own header says so
+  (_"THIS FILE IS THE ONLY EDIT"_), but nothing read it against the prose that states how many
+  repos a Core change reaches. Five sites said **eight** against ~20 saying nine, and two of
+  the five were Core files — so the wrong number was replicated nine ways on every sync. #668
+  had found one of them a year earlier and _deliberately left it_, because correcting one of
+  several inconsistent sites makes the tree no more correct. That is the argument for a gate.
+  **Keyed on the CLAIM, not the number.** Three different numbers are correct here about three
+  different sets — 9 Core-vendoring, 8 OS-native (including `dotfiles-Windows`, which vendors
+  nothing), 11 for the whole system — so "eight" was never simply a stale nine: it is someone
+  correctly counting OS repos and attaching it to the **fan-out**, which is a different set. A
+  check on the bare number would red on `85-escalation.sh`'s _"eight repos rely on sudo-first"_
+  (nine minus Alpine) and on #775's _"eleven defects across eight repos"_ (the lint-call
+  callers) — noise, and noise is how a check teaches the fleet to ignore it. So
+  `_core_fanout_count_hits` fires only where a **fan-out verb governs the count**. Measured
+  against the tree: 23 such claims, and exactly the two genuine defects among them.
+  **It carries one line of memory**, because that is how the `ci.yml` survivor hid — the verb
+  on one comment line, `8 repos` on the next, so a line-based check read neither half as a
+  claim while a hand-sweep looked straight at it. The finding is reported against the line
+  holding the **number**, which is the line an author edits. `CHANGELOG*`/`V*-PROPOSAL.md` are
+  excluded (a historical record is correct for when it was written), untracked files are not
+  judged, and a per-line `# core:fanout-fixture` marker lets `test/90-policy-gates.sh` hold the
+  wrong claims verbatim — the trap that once made `_core_make_gate_hits` report Core as the
+  repo missing its own rule. Thirteen cases, and the negative ones carry as much weight as the
+  positive: they are the legitimate other-set lines, copied out of the tree.
 
 - **`blib_resolve_su --prefer TOOL` — the escalator order is not a universal fact (#867).**
   `blib_resolve_su` has resolved sudo-then-doas since it was written, which is right for eight
@@ -308,6 +333,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   now points at one of those instead of the §9f call site it used to guard. The Windows-present
   case in `test/90-policy-gates.sh` inverts accordingly: it now proves the run asserts **every**
   pwsh half and skips none, where it used to prove it refused to certify two.
+- **The fleet's repo count contradicted itself — five sites said eight, the manifest says nine
+  (#770).** `CODEOWNERS:1`, `audit-core.sh`, `.github/workflows/ci.yml` and
+  `nvim/.../claudecode-nvim.lua` all described the fan-out set and were off by one
+  (`sync-core.sh:293`, the fifth, had already been corrected). Two of them are Core files, so
+  the wrong number reached nine repos on every sync. Fixed, and **the phrasing with them**:
+  the fan-out claims now read _"the nine **Core-vendoring** repos"_ rather than _"nine OS
+  repos"_, which is wrong in kind and not merely in count — two of the nine (`dotfiles-Offense`
+  and `dotfiles-Defense`) are **Role** repos, and that ambiguity is exactly what made the drift
+  self-renewing, since both numbers are right about something and the prose rarely said which.
+  `PORTING-MATRIX.md` already modelled the phrasing; it is now the fleet's. §9m above keeps it.
 
 - **A linked-worktree OS repo was classified as "not cloned", and under `--strict` that skip
   was exit 1 (#850).** `sync-core.sh` asked "is this a clone?" with `-d "$path/.git"` at three
