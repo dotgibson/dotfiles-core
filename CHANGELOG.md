@@ -222,6 +222,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   a needle proving the function _exists_, which is the certifies-less-than-it-looks-like
   shape that section exists to stop. What closes the row is a pwsh consumer, not another
   assertion here; the note now says which.
+- **`new-os-repo.sh`'s pin floor was v4.1.0 and should have been v4.15.1 — the scaffold and
+  its own recipe disagreed (#851).** The floor existed for the `repos:` footer the recovery
+  verdict reads, which arrived in v4.1.0. But the scaffold **materializes** `core/`
+  (`core_vendor_materialize` — a plain tree with no subtree metadata), and releases v4.1.0
+  through v4.15.0 sync with `git subtree pull --squash`, which on such a tree dies with
+  `fatal: can't squash-merge: 'core' was never added` — **reproduced**, not inferred. So on
+  every pin in that range the registration command the scaffold **itself prints** could never
+  stamp `core.lock`. v4.15.1 is the first release whose `sync-core.sh` materializes
+  (`_sync_materialize_core`, _"replaces `git subtree pull --squash`"_); v4.15.0 still pulls —
+  confirmed by reading both tags. The constant is renamed `_footer_floor` → `_pin_floor`,
+  since it now encodes two constraints and the newer one binds, and the refusal message names
+  **the mechanism** rather than the footer: the old wording was true of v4.0.2 and false of
+  v4.10.0, and a refusal that misdiagnoses itself sends the reader to fix the wrong thing.
+  `v4.10.0` accordingly **moves sides** in `test/35-new-os-repo.sh`'s F7c lists, from accepted
+  to refused, which is the regression the case now pins. The floor is restated in `--help`,
+  the two stale in-script references, and the three recipe copies (`ARCHITECTURE.md`,
+  `VENDORING.md`, `PORTING-MATRIX.md`). The v7.0.0 entry's "since v4.1.0" line is **left
+  alone**: it was true when written, and the historical record is not the place to fix a
+  floor.
+- **Two generated claims in the scaffold overstated what they describe (#851).** The
+  generated README said `test.yml` "runs on every push"; its filter is
+  `branches: [main, master]`, so a feature-branch push with no PR open runs **nothing** — it
+  now says default-branch pushes and pull requests, and names the filter. And the generated
+  `test/check-links.sh` header said it "needs only bash", while its mise-seed assertion shells
+  out to `git hash-object` and the body uses `find`, `ls`, `readlink`, `cksum`, `awk`, `sort`
+  and `stat`. Both are true of any runner that could have cloned the repo, which is the point
+  worth making — so the header now says that, instead of a portability claim that is not quite
+  true.
 - **The fleet's repo count contradicted itself — five sites said eight, the manifest says nine
   (#770).** `CODEOWNERS:1`, `audit-core.sh`, `.github/workflows/ci.yml` and
   `nvim/.../claudecode-nvim.lua` all described the fan-out set and were off by one

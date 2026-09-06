@@ -660,27 +660,44 @@ if have git; then
     fail "recovery: a dry-run relative target was embedded unanchored — expected [REPOS_ROOT=$(printf '%q' "$_rc_recov/not yet") ]; 'not yet' exists: $([[ -e "$_rc_recov/not yet" ]] && echo yes || echo no); hint: $(cut -c1-300 <<<"$_rc_dry")"
   fi
   unset _rc_dry
-  # That verdict reads the released script's `repos:` footer, which exists since v4.1.0:
-  # an older exact freeze prints a per-CHECK count, so a successful sync would be reported
-  # as a failure AFTER vendoring and stamping the target. The scaffold refuses such a pin
-  # before writing anything (exit 2, target absent); the floor itself, a major alias at or
-  # above it, a newer freeze and a ref it cannot judge (a branch) all pass. A prerelease
-  # sorts below its release: v4.0.2-rc1 and v4.1.0-rc.1 are older than the floor,
-  # v4.1.1-rc1 is not.
+  # THE FLOOR IS v4.15.1 (#851), and it moved for a reason unrelated to the footer. The
+  # verdict reads the released script's `repos:` footer, which exists since v4.1.0 — but the
+  # scaffold MATERIALIZES core/, and releases v4.1.0..v4.15.0 sync with `git subtree pull
+  # --squash`, which on a tree with no subtree metadata dies with "can't squash-merge:
+  # 'core' was never added". So on those pins the registration command the scaffold itself
+  # advertises cannot stamp core.lock at all. v4.15.1 is the first materializing sync.
+  #
+  # v4.10.0 MOVED SIDES in this test, from accepted to refused, and that is the regression
+  # this case now pins: it satisfied the old footer floor and could never have completed the
+  # recipe. The scaffold refuses such a pin before writing anything (exit 2, target absent);
+  # the floor itself, a major alias at or above it, a newer freeze and a ref it cannot judge
+  # (a branch) all pass. A prerelease sorts below its release: v4.0.2-rc1 and v4.15.1-rc.1
+  # are older than the floor, v4.15.2-rc1 is not.
   _rc_floor_bad=""
-  for _rc_pin in v3.9.0 refs/tags/v3 v4.0.2 refs/tags/v4.0.9 refs/tags/v4.0.2-rc1 v4.1.0-rc.1; do
+  for _rc_pin in v3.9.0 refs/tags/v3 v4.0.2 refs/tags/v4.0.9 refs/tags/v4.0.2-rc1 v4.1.0 refs/tags/v4.10.0 v4.15.0 v4.15.1-rc.1; do
     _rc_fo="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH="$_rc_pin" bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/old-pin" 2>&1)"; _rc_frc=$?
-    { ((_rc_frc == 2)) && grep -qF 'older than v4.1.0' <<<"$_rc_fo" && [[ ! -e "$SANDBOX/recovery/old-pin" ]]; } || _rc_floor_bad="$_rc_floor_bad $_rc_pin(rc=$_rc_frc,exists=$([[ -e "$SANDBOX/recovery/old-pin" ]] && echo yes || echo no))"
+    { ((_rc_frc == 2)) && grep -qF 'older than v4.15.1' <<<"$_rc_fo" && [[ ! -e "$SANDBOX/recovery/old-pin" ]]; } || _rc_floor_bad="$_rc_floor_bad $_rc_pin(rc=$_rc_frc,exists=$([[ -e "$SANDBOX/recovery/old-pin" ]] && echo yes || echo no))"
     rm -rf "$SANDBOX/recovery/old-pin"
   done
-  for _rc_pin in v4.1.0 refs/tags/v4 refs/tags/v4.10.0 v4.1.1-rc1 v6.1.0 main; do
+  for _rc_pin in v4.15.1 refs/tags/v4 refs/tags/v4.19.0 v4.15.2-rc1 v6.1.0 main; do
     env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH="$_rc_pin" bash "$HERE/scripts/new-os-repo.sh" --dry-run --no-vendor Fixture "$SANDBOX/recovery/new-pin" >/dev/null 2>&1 || _rc_floor_bad="$_rc_floor_bad $_rc_pin(refused:$?)"
   done
   if [[ -z "$_rc_floor_bad" ]]; then
-    pass "recovery: a pin older than v4.1.0 (no repos: footer to judge, prereleases included) is refused before anything is written; the floor, a v4+ alias, a newer freeze and a branch pass"
+    pass "recovery: a pin older than v4.15.1 (subtree-pull syncs that cannot update a materialized core/, prereleases included) is refused before anything is written; the floor, a v4+ alias, a newer freeze and a branch pass"
   else
-    fail "recovery: the footer floor is wrong for —$_rc_floor_bad"
+    fail "recovery: the pin floor is wrong for —$_rc_floor_bad"
   fi
+  # THE REFUSAL NAMES THE REAL REASON. The message used to say only "prints no per-repo
+  # summary", which is true of v4.0.2 and FALSE of v4.10.0 — the pin the floor now refuses.
+  # A refusal that misdiagnoses itself sends the reader to fix the wrong thing.
+  _rc_fo="$(env -u CORE_JSON CORE_REMOTE='https://example.invalid/fork.git' CORE_BRANCH=v4.10.0 bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$SANDBOX/recovery/old-pin" 2>&1)"
+  rm -rf "$SANDBOX/recovery/old-pin"
+  if grep -qF "can't squash-merge" <<<"$_rc_fo"; then
+    pass "recovery: the refusal names the subtree-pull mechanism, not just the missing footer"
+  else
+    fail "recovery: the refusal did not name why a v4.10.0 pin cannot work — got: $(cut -c1-200 <<<"$_rc_fo")"
+  fi
+  unset _rc_fo
   unset _rc_floor_bad _rc_pin _rc_fo _rc_frc
   # The canonical path ALREADY resolving to the scaffold — a pre-made link here, standing
   # in for a basename that differs only by case on a case-insensitive filesystem — gets
