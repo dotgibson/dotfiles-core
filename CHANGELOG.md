@@ -77,6 +77,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   follow-up once `assets/demo.gif` is re-rendered, rather than blocking every unrelated
   `make sync` in the meantime.
 
+### Fixed
+
+- **The maint job's neovim step reported ✓ over a session in which nothing ran (#829).**
+  `nvim --headless` exits **0** when a `-c` command fails — the error goes to stderr and the
+  process still succeeds — so `step()` read a 0 and logged a green tick for a run that had
+  updated no plugins, no parsers and no registry. `step()` was not at fault:
+  `rc=${PIPESTATUS[0]}` is the right status to read; the problem was that the status carried
+  no information about whether the commands ran. On an Ubuntu 24.04 box whose apt `nvim` was
+  0.9.5, the config aborted at load on a 0.11+ option, `lazy.nvim` therefore never loaded,
+  `:Lazy! sync` did not exist — and the step had been green for as long as the editor had been
+  broken. It surfaced only because a stderr traceback happened to land in a terminal someone
+  was reading; under the systemd timer, which is the designed mode, nothing would ever have
+  shown it. **Every arm is now a `pcall` that records its failure, and a final `-c` turns a
+  non-empty record into a real exit status with `:cq`** — the documented way to make nvim exit
+  non-zero. The sentinel is fail-**closed**: an unset record means the setup `-c` itself never
+  ran, which is the same false green in a smaller box, so that counts as a failure too.
+  Reaches every OS repo that vendors Core, on every box, whatever the cause — a config error,
+  a missing plugin, a renamed command all produced the identical false ✓.
+- **`MasonUpdate` had never actually run in that step (#829).** mason.nvim is a _dependency_ of
+  nvim-lspconfig / conform / nvim-lint, every one of which loads on a buffer event that never
+  fires in a headless session — so `:MasonUpdate` did not exist there and `+silent! MasonUpdate`
+  swallowed the `E492` on every single run since the step was written. Found while making the
+  arms loud: with the failure recorded instead of silenced, the arm reds immediately. The step
+  now `require("mason")` first, pulling the plugin in through lazy's require shim so the command
+  exists; a live run confirms `Successfully updated 1 registry`. Same class as the `:TSUpdateSync`
+  note already in that block — a `silent!` that outlived the command it was protecting.
+  `test/73-maint-runner.sh` covers both directions against the **shipped** argv (extracted by
+  sourcing the real step invocation with `nvim` stubbed, so a hand-written copy cannot drift):
+  every arm runnable → 0, the `:Lazy` command absent → non-zero.
+
 ## [v7.0.0] - 2026-09-04
 
 ### Added
