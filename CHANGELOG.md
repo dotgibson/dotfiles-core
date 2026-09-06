@@ -44,6 +44,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   against fixtures. Five repos, not nine: `dotfiles-MacBook`, `-Fedora`, `-Offense` and
   `-Defense` have no column, so the gate is **silent** about them rather than inventing a
   verdict for a repo the matrix cannot see.
+- **`audit-core.sh` §9o — `core/` described as a `git subtree` is a checked fact now (#891,
+  the gate #774 asked for).** #587 replaced the fan-out's `git subtree pull --squash` with a
+  pinned fetch plus `git read-tree --prefix=core/`; #668 retired the framing from Core's docs;
+  #774 swept the eight OS repos' `CLAUDE.md` by hand. This is what makes the next recurrence
+  visible. The framing matters because it is what leads a reader to reach for
+  `git subtree pull`, which moves `core/` but **not** `core.lock` and leaves `core-integrity`
+  reporting `TAMPERED` — precisely what `VENDORING.md:154` forbids.
+  **Running it once found twenty-one more sites.** #774 scoped itself to `CLAUDE.md`; the
+  same stale claim is live in `README.md`, `CONTRIBUTING.md`, `SECURITY.md` and the PR
+  templates across **all nine repos** — including one line in `dotfiles-Defense` that manages
+  to say both, calling `core/` _"a vendored subtree, materialized by dotfiles-core's own"_.
+  A hand sweep scoped to one filename missed them precisely because it was scoped to one
+  filename, which is the whole argument for the gate.
+  Those 21 landed as nine PRs in the same pass, so this ships **blocking** rather than
+  advisory — and the flip was made against the **tree**, not the PR list: re-checked against
+  every repo's `origin/main` (0 of 21 remaining, nine repos), because a repo can regain a line
+  and an environment skip with no siblings cloned looks exactly like a pass. **Keyed on the claim, not the token**, and that is forced rather than fastidious: two
+  `git subtree` mentions in `dotfiles-Offense` are correct — one of them a sentence arguing
+  this gate's own position, the other the `offensive/companion` subtree, which genuinely is
+  one — and a blanket scan would red both. Nine cases, every fixture **real text**: the
+  positives lifted from the repos #774 corrected, the negatives from what replaced them.
+  Stated limit, because a gate that overstates its reach is the defect it exists to prevent:
+  the **prohibition** shape (`dotfiles-MacBook`'s old _"a manual `git subtree pull` is not
+  supported"_) is invisible to it, since `core/` follows `subtree` there rather than being its
+  subject — and separating that from a legitimately negative sentence needs semantics a line
+  matcher does not have.
 
 - **`audit-core.sh` §9n — the fleet's caller pins are checked now, not remembered (#804).** The
   v5 → v6 caller sweep was **45 pins across 8 repos, done entirely by hand**, and nothing
