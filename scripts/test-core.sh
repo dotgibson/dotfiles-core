@@ -5,7 +5,7 @@
 # reach. audit-core.sh proves the modules PARSE (zsh -n) and that the manifest and
 # exec-bits are consistent; this proves the modules actually LOAD TOGETHER in the
 # canonical order and that the pure shell functions DO what they claim. A defect
-# here passes every per-file `zsh -n` cleanly and still fans out to nine OS repos —
+# here passes every per-file `zsh -n` cleanly and still fans out to nine Core-vendoring repos —
 # which is exactly the gap this file closes.
 #
 # THIS FILE IS THE DISPATCHER; the suite lives in scripts/test/NN-name.sh. Each
