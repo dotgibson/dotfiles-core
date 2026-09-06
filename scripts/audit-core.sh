@@ -332,6 +332,21 @@ META_ALLOWLIST=(
   # starship/, lazygit/ and lib/ux.sh — which is exactly the core.manifest-vs-core.vendor
   # distinction those two files draw. Listed as an EXACT path, not a theme/ prefix, so a
   # second file dropped into that directory has to be accounted for deliberately.
+  #
+  # IT NOW HAS A CONSUMER, and the line above is still the right home for it (#798).
+  # dotfiles-Windows vendors this FILE — theme-sync.ps1 copies it to its own theme/
+  # alongside a theme/.core-ref pinning the Core commit, CI hash-gates the pair, and its
+  # gen-theme.ps1 renders nine blocks from it (dotgibson/dotfiles-Windows#229). So "no OS
+  # repo reads it out of core/" is still literally true and is no longer the whole story:
+  # that repo vendors no core/ AT ALL and reads this path out of THIS repo directly.
+  #
+  # WHY NOT A core.manifest ROW, which is what #798 asked about. The manifest is the set
+  # sync-core.sh materializes into each OS repo's core/. Adding this would ship a
+  # generation-time input into nine trees where nothing reads it, to describe a dependency
+  # held by the one repo that has no core/ — the manifest would become less true, not more.
+  # The dependency is recorded where it can be acted on instead: in this comment and in the
+  # file's own header, both of which say that moving the path breaks a downstream CI gate.
+  # desktop/PARITY.shared.md below is the same shape and the precedent for it.
   theme/palette.toml
   # desktop/PARITY.shared.md is theme/palette.toml's shape exactly: a generation-time INPUT
   # to scripts/gen-desktop-parity.sh, not shipped Core. Nothing symlinks it and no OS repo
