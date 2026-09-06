@@ -259,6 +259,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Five doc-consistency findings from #811's sweep, verified live before fixing.** The
+  routine reported nine; four had already been closed by work since (#885 took the
+  `tree-sitter-cli` hedge, the Gentoo `ouch` prose is past-tense and correct, and the
+  generated package-manager table self-corrected once #686 made it render from
+  `os/*.capabilities`). These five were still true:
+  **D7** — `PORTING-MATRIX.md`'s footnote 35 said Fedora's refresh is `dnf check-update`
+  while the **generated cell** two hundred lines above it and `fedora.capabilities` both say
+  `sudo dnf check-update`. The two halves of one file disagreed, which is the shape that
+  becomes possible once half a file is generated and half is not.
+  **D8** — footnote 37 explains at length why Gentoo's `count-pending` is a real resolve
+  rather than `eix -u`, and never says what the cell **is**: `gentoo-pkg-pending`, a wrapper
+  `dotfiles-Gentoo` ships. It is the one row whose declared value is a script rather than an
+  invocation, because the `-1` sentinel cannot be expressed as a pipeline.
+  **D5** — `PORTING-MATRIX.md` called Offense _"the one repo that isn't stamped from
+  Fedora"_ while two other sites in the same file correctly say Offense **and** macOS.
+  **D4** — `ARCHITECTURE.md`'s repo table gave `dotfiles-Offense` an _"apt OS layer"_. It has
+  no `os/` directory at all; it is a pure role layer taking its OS band from
+  `dotfiles-Debian`.
+  **D9** — `core.vendor`'s same-repo line citations had rotted. The report named two; there
+  were **four** — `zsh/30-functions.zsh:765` (actually `:1224`), `zsh/02-capabilities.zsh:114`
+  (`:126`), `zsh/55-maint.zsh:488,528` (`:462,503`) and `zsh/60-update.zsh:762` (`:526`). Paths
+  are what `audit-core.sh` §1e enforces, and every path was right; the line numbers are
+  checked by nobody, which is why they drift.
+
 - **Minted tokens carried the installation's full grant set; every consumer scopes its verbs
   now (#830).** `repositories:` bounds **where** a token works and `permission-*` bounds
   **what** it may do there — independent axes, and only the first was ever set. So the
