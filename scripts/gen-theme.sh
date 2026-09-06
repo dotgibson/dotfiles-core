@@ -545,6 +545,45 @@ build_file() {
   done <"$file"
 }
 
+# ── the reverse scan's file set ───────────────────────────────────────────────
+# Which files preflight() reads when hunting for an UNREGISTERED marker. Split out
+# because the discovery rule, not the scan, is the subtle part.
+#
+# GIT-AWARE when the tree is a repo, because a plain `grep -r .` walk is wrong in a
+# way that only shows up on a developer box: it descends into `.claude/worktrees/`,
+# where Claude Code parks a full checkout per session. Every themed consumer in every
+# OTHER session's worktree was reported as unregistered drift — 57 phantom failures
+# against a tracked tree with no drift at all — and `make audit` then printed
+# `the real tree has drifted — run: make gen-theme`. That remediation is actively
+# wrong: the tree had not drifted, and regenerating from a scan polluted by unrelated
+# checkouts is a worse outcome than the gate simply not running.
+#
+# `_audit_ls` (tracked + untracked-but-not-ignored) is the right primitive and was
+# what the comment above already claimed to be using. It keeps the property that
+# motivates the reverse scan — an untracked consumer about to be committed is still
+# caught — while inheriting git's exclusions, and `.claude/` is ignored (.gitignore).
+#
+# THE FALLBACK IS NOT BELT-AND-BRACES. test-core.sh's fixtures are plain directories
+# with no `git init` (scripts/test/40-gen-theme-aliases.sh builds $SANDBOX/themerepo
+# by hand), so git-only discovery would list zero files there and report success —
+# coverage loss reading as health, the exact failure this preflight exists to end.
+# The walk is correct in a fixture, which has no nested checkouts to trip over.
+#
+# The git path is taken only when the work-tree root IS the directory being scanned.
+# A fixture created under a $TMPDIR that happens to sit inside some other repo would
+# otherwise satisfy `--is-inside-work-tree` and get that repo's file list.
+_theme_scan_files() {
+  local top
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || top=""
+  if [[ -n "$top" && "$top" -ef "$PWD" ]]; then
+    _audit_ls '*.toml' '*.yml' '*.zsh' '*.sh' '*.conf'
+  else
+    find . -name .git -prune -o -name .claude -prune -o -type f \
+      \( -name '*.toml' -o -name '*.yml' -o -name '*.zsh' -o -name '*.sh' -o -name '*.conf' \) \
+      -print 2>/dev/null | sed 's|^\./||' | sort -u
+  fi
+}
+
 # ── preflight: the registry and the tree must agree ───────────────────────────
 # Runs before anything is emitted or compared. A block silently deleted from a
 # consumer would otherwise just stop being generated, and --check would stay green
@@ -569,7 +608,8 @@ EOF
   # Reverse: a marker in the tree that the registry does not know about. Without
   # this, adding a block and forgetting to register it reads as success — the file
   # is simply never rendered. _audit_ls-style discovery so an UNTRACKED consumer
-  # about to be committed is caught too.
+  # about to be committed is caught too — see _theme_scan_files for why that phrase
+  # now names the actual helper instead of describing a hand-rolled imitation of it.
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     f="${line%%:*}"
@@ -581,9 +621,17 @@ EOF
   # scripts/ is EXCLUDED: it is dev tooling, never a shipped consumer, and
   # test-core.sh's hermetic fixtures legitimately contain marker text inside
   # heredocs. Scanning it would report this script's own test suite as drift.
-  done < <(grep -rnE '^[[:space:]]*# core:theme:gen ' . \
-    --include='*.toml' --include='*.yml' --include='*.zsh' --include='*.sh' --include='*.conf' 2>/dev/null |
-    sed 's|^\./||' | grep -v '^\.git/' | grep -v '^scripts/' |
+  #
+  # `/dev/null` in the grep argument list does two jobs, and both are load-bearing:
+  #   1. a batch of exactly one file still prints a filename — without it grep emits
+  #      bare `LINE:text` and the awk below reads the line number as the path;
+  #   2. it makes the empty-input case safe WITHOUT GNU's `xargs -r`, which BSD/macOS
+  #      xargs does not accept. On empty input GNU xargs runs grep once with only
+  #      /dev/null to read, which is a clean no-match rather than a read from stdin.
+  # `tr '\n' '\0' | xargs -0` is the idiom common.sh:1954 already uses, and likewise
+  # without `-r` — PORTABILITY.md §1 puts macOS inside the floor.
+  done < <(_theme_scan_files | grep -v '^scripts/' |
+    tr '\n' '\0' | xargs -0 grep -nE '^[[:space:]]*# core:theme:gen ' /dev/null 2>/dev/null |
     awk -F: '{f=$1; $1=""; $2=""; sub(/^ +/,""); print f":"$0}' |
     sed 's/[[:space:]]*$//' | sort -u)
   return $rc
