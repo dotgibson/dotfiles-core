@@ -297,6 +297,77 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Two openSUSE claims in `PORTING-MATRIX.md`'s footnotes, from the
+  `/os-package-availability` routine (dotfiles-openSUSE#164).** Both are footnote prose, not
+  matrix cells, so nothing generated moved and no `make gen-porting-matrix` run is implied.
+  Both were re-verified against OBS's anonymous API before editing — it answers on **binary**
+  package names, which is what `zypper in` matches, so it is the index that decides these:
+  `.../_repository?binary=<name>`, returning a `<binary filename="…rpm" size="…"/>` on a hit
+  and a zero-size stub on a miss.
+  **Footnote ⁵ — the tree-sitter shared library is `libtree-sitter0_26`, not
+  `tree-sitter0_26`.** `binary=tree-sitter0_26` resolves on **none** of the three openSUSE
+  targets (Factory, and the Backports ∪ SLFO unions behind Leap 16.0 and 16.1);
+  `binary=libtree-sitter0_26` resolves on all three, at 0.26.8. Nothing installs the library,
+  so nothing was broken — but that footnote exists **precisely** to stop the next reader
+  reaching for a wrong name, with the dotfiles-openSUSE#113 autopsy (`tree-sitter-cli`, the
+  Arch/Alpine split name, cargo-built on every box for want of the right one) two sentences
+  above it. A signpost that hands the reader the same class of wrong name it is warning about
+  is worse than no signpost. The same word was wrong in `dotfiles-openSUSE`'s own
+  `install/packages.txt` comment, fixed there in the same pass.
+  **Footnote ¹⁰ — difftastic's `openSUSE` is Tumbleweed-only.** `binary=difftastic` resolves
+  on `openSUSE:Factory` and on **none** of the four Leap 16 sources (Backports SLE-16.0 and
+  SLE-16.1, SLFO 1.2 and 1.3), so on Leap the documented route is the footnote's own
+  `cargo install difftastic`, not `zypper`. The **cell** is right as it stands — the column is
+  Tumbleweed-named by the convention footnote ¹⁸ states — and the footnote is where the
+  qualification belongs; its neighbour ²⁴ already does exactly this for lnav, which is
+  Tumbleweed-only for the same reason and correctly labelled.
+
+- **Two silent-failure shapes in the gate scripts, from #820's shell review (F2, F3).** Both
+  reproduced before fixing, because a report is a claim until it is run.
+  **F2 — `gen-theme.sh`'s PARITY.md style guard anchored at column 0.** CommonMark allows one
+  to three leading spaces on a table row, so indenting PARITY.md's Theme row made
+  `grep -qE '^\| (Theme|FZF palette) '` go false — and because the block only fires _"when
+  PARITY.md exists AND names a style"_, the cross-repo style contract **stopped being checked
+  with `gen-theme --check` still green**. Silent-disable, not a false alarm, which is the
+  worse direction. It is exactly the bug #682 fixed in `parity-check.sh`'s own row parser, in
+  a sibling that did not get the memo. Four cases now pin both directions: 0–3 spaces is a
+  row, four is an indented code block and still ignored.
+  **F3 — `parity-check.sh` parsed every pipe table in the file.** It took `cap = $2` and
+  `status = $(NF - 1)` from any row and skipped only separators, so tabulating PARITY.md's
+  status vocabulary — prose today, valid Markdown, passes markdownlint — would parse
+  `aligned` as a capability. Reproduced: the old parser reported ``row `aligned` has status
+  `the` ``, on a **blocking, deliberately un-scope-guarded** gate, with a message pointing
+  nowhere near the cause. The header now **arms** the table rather than being skipped: a
+  table whose first column is not `Capability` is not a contract table.
+  Worth recording that the first fix for F3 **introduced a second bug of the same class** —
+  making a 4-space line clear the table state dropped every row after it, silently reducing
+  coverage. The existing case 7 caught it, which is the argument for pinning both directions
+  of a bound rather than only the one you are fixing.
+
+- **Five doc-consistency findings from #811's sweep, verified live before fixing.** The
+  routine reported nine; four had already been closed by work since (#885 took the
+  `tree-sitter-cli` hedge, the Gentoo `ouch` prose is past-tense and correct, and the
+  generated package-manager table self-corrected once #686 made it render from
+  `os/*.capabilities`). These five were still true:
+  **D7** — `PORTING-MATRIX.md`'s footnote 35 said Fedora's refresh is `dnf check-update`
+  while the **generated cell** two hundred lines above it and `fedora.capabilities` both say
+  `sudo dnf check-update`. The two halves of one file disagreed, which is the shape that
+  becomes possible once half a file is generated and half is not.
+  **D8** — footnote 37 explains at length why Gentoo's `count-pending` is a real resolve
+  rather than `eix -u`, and never says what the cell **is**: `gentoo-pkg-pending`, a wrapper
+  `dotfiles-Gentoo` ships. It is the one row whose declared value is a script rather than an
+  invocation, because the `-1` sentinel cannot be expressed as a pipeline.
+  **D5** — `PORTING-MATRIX.md` called Offense _"the one repo that isn't stamped from
+  Fedora"_ while two other sites in the same file correctly say Offense **and** macOS.
+  **D4** — `ARCHITECTURE.md`'s repo table gave `dotfiles-Offense` an _"apt OS layer"_. It has
+  no `os/` directory at all; it is a pure role layer taking its OS band from
+  `dotfiles-Debian`.
+  **D9** — `core.vendor`'s same-repo line citations had rotted. The report named two; there
+  were **four** — `zsh/30-functions.zsh:765` (actually `:1224`), `zsh/02-capabilities.zsh:114`
+  (`:126`), `zsh/55-maint.zsh:488,528` (`:462,503`) and `zsh/60-update.zsh:762` (`:526`). Paths
+  are what `audit-core.sh` §1e enforces, and every path was right; the line numbers are
+  checked by nobody, which is why they drift.
+
 - **Minted tokens carried the installation's full grant set; every consumer scopes its verbs
   now (#830).** `repositories:` bounds **where** a token works and `permission-*` bounds
   **what** it may do there — independent axes, and only the first was ever set. So the

@@ -205,7 +205,7 @@ that once contradicted the `resolved` line in the same report.
 **Arch:** `extra` carries 0.26.9 (clears the floor).
 **openSUSE:** the CLI is in the **base `tree-sitter` package** (0.26.8 on Tumbleweed,
 Leap 16.1 and Leap 16.0 — clears the floor); what got split off there is the shared
-_library_, as `tree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
+_library_, as `libtree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
 searching for that name is precisely why `dotfiles-openSUSE` carried this as `cargo³` and
 cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversion against
 the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
@@ -298,7 +298,8 @@ replacement**. delta stays the default `git diff` pager; difft is wired as an on
 git difftool (`git dft`, and the `gdft` shell alias — see `git/gitconfig`), never as a
 `GIT_EXTERNAL_DIFF`/pager override, so it never shadows delta. Binary is `difft` (Core
 sets `HAVE_DIFFT`). Packaged on Arch (`extra`), Alpine (`community` — a musl build, so the
-usual outlier is covered), Fedora, Gentoo (`dev-util/difftastic`), openSUSE, Homebrew
+usual outlier is covered), Fedora, Gentoo (`dev-util/difftastic`),
+openSUSE (Tumbleweed; **not** Leap 16.0/16.1), Homebrew
 (`difftastic`) and Debian/Kali apt; where unpackaged, `cargo install difftastic` or `mise`.
 Inert without the binary — the `gdft` alias is `HAVE_DIFFT`-guarded and `git dft` just errors.
 ¹¹ ast-grep: OPT-IN AST-aware structural search/rewrite — the syntax-tree complement to
@@ -334,9 +335,9 @@ opt-in. It was `cargo install --locked ouch` until dotgibson/dotfiles-Gentoo#133
 upstream-latest reasoning `watchexec`²⁵ still carries. That reasoning does not survive contact
 here twice over. The cargo build **cannot succeed on a GCC/libstdc++ box at all**: ouch's
 default `unrar` feature pulls `unrar-ng-sys`, whose `build.rs` unconditionally adds
-`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.1 — the _same_ version as upstream's
-latest release, with a `src_prepare()` that seds exactly that flag out. So the route-around
-bought no version and cost the tool, on every run, silently.
+`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.1 — **one patch release** behind
+upstream's 0.8.2 (2026-08-31), with a `src_prepare()` that seds exactly that flag out. So the
+route-around bought no meaningful version advantage and cost the tool, on every run, silently.
 
 **`shellcheck` on Gentoo is `dev-util/shellcheck-bin`, and the `-bin` is load-bearing.**
 `dev-util/shellcheck` is the Haskell build: it needs `>=dev-haskell/aeson-1.4.0` and the rest
@@ -740,9 +741,9 @@ timestamp, follows like `tail -f`, and exposes the parsed records to SQL. Its ow
 (no alias, like `jq`/`gron`/`jnv`), probed into the `_CORE_PROBED` ledger by
 `zsh/00-tools.zsh` and carrying no flag since #694, inert without the binary. A **C++** CLI, so it has no `cargo`/`go install` escape hatch like the
 Rust/Go tools above — but it does not need one: upstream publishes **static musl binaries**
-per release (`lnav-0.14.0-linux-musl-x86_64.zip`, and an `arm64` twin), so the fallback on
+per release (`lnav-0.14.1-linux-musl-x86_64.zip`, and an `arm64` twin), so the fallback on
 an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
-the cleanest way to get 0.14.0 onto Gentoo or Debian/Kali without waiting for the package.
+the cleanest way to get 0.14.1 onto Gentoo or Debian/Kali without waiting for the package.
 **No `bootstrap.sh` installs it anywhere**, but it is not detect-only across the board:
 `dotfiles-Alpine` (`lnav`) and `dotfiles-Gentoo` (`app-admin/lnav`) both carry it in
 `install/packages.txt`, and the MacBook `Brewfile` has it too (added 2026-07-15). On the other
@@ -751,32 +752,36 @@ four Linux repos `core-doctor` reports it present only once you install it yours
 package it, cargo everywhere else" one: every distro in the table above ships lnav, and two of
 the repos ask for it.
 
-Versions **verified against each distro's own package pages** on 2026-08-12, not taken from
-a repology snapshot. Upstream is 0.14.0 (2026-04-12). Rolling targets get one query each,
-because that query is the complete answer; **Fedora is versioned, so every supported stable
-release is named separately** rather than collapsed into one unqualified ✓:
+Versions **verified against each distro's own package pages** on 2026-08-12, every row
+re-verified the same way on 2026-09-06, not taken from a repology snapshot. Upstream is
+0.14.1 (2026-09-05). Rolling targets get one query each, because that query is the complete
+answer; **Fedora is versioned, so every supported stable release is named separately**
+rather than collapsed into one unqualified ✓:
 
 | Target          | Release                                  | lnav              |
 | --------------- | ---------------------------------------- | ----------------- |
-| Arch            | `extra` (rolling)                        | 0.14.0-1          |
+| Arch            | `extra` (rolling)                        | 0.14.1-1          |
 | openSUSE        | Tumbleweed (rolling)                     | 0.14.0            |
-| Alpine          | `edge/community` — **native musl build** | 0.14.0-r0         |
-| Homebrew        | rolling                                  | 0.14.0            |
+| Alpine          | `edge/community` — **native musl build** | 0.14.1-r0         |
+| Homebrew        | rolling                                  | 0.14.1            |
 | **Fedora**      | **Rawhide / F45**                        | **0.14.0-3.fc45** |
 | **Fedora**      | **F44**                                  | **0.13.2-2.fc44** |
 | **Fedora**      | **F43**                                  | **0.12.4-2.fc43** |
 | **Kali/Debian** | rolling / sid                            | **0.13.2**        |
 | **Gentoo**      | `app-admin/lnav`                         | **0.11.2**        |
 
-So "Fedora has it" is true but "Fedora is current" is only true on F45/Rawhide — F44 and F43
-track one and two minors back respectively. Two targets lag enough to be worth naming:
+So "Fedora has it" is true, but as of the 2026-09-06 re-check "Fedora is current" is no
+longer true anywhere: 0.14.1 landed on 2026-09-05 and Rawhide/F45 still carries 0.14.0-3, one
+patch back, while F44 and F43 track one and two minors back respectively. The rolling three —
+Arch, Alpine and Homebrew — picked 0.14.1 up within a day; nothing else has. Two targets lag
+enough to be worth naming:
 
 - **Gentoo `app-admin/lnav` is 0.11.2** — the only version in the tree, stable on amd64/x86,
   and the package is flagged as **needing a new maintainer**, so do not expect it to close
   the gap on its own. Three minor releases behind. Re-check on the next Gentoo stamp.
 - **Kali/Debian `lnav` is 0.13.2** — one minor behind, the smaller gap of the two.
 
-On either, the upstream static musl zip above is the way to 0.14.0 without waiting.
+On either, the upstream static musl zip above is the way to 0.14.1 without waiting.
 
 ²⁵ watchexec: OPT-IN **event**-driven repetition — the third corner of a triangle Core
 already had two of. `viddy` re-runs on a **timer** (`watch`), `hyperfine` re-runs a fixed
@@ -794,9 +799,11 @@ cargo-installs it from the extras block. The other seven machines are opt-in.
 including macOS"; Alpine falsified the first half, and Gentoo — checked against `bootstrap.sh`
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
 2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
-re-verified 2026-08-30 against each repo's own package pages:
+re-verified 2026-08-30 against each repo's own package pages, and the Arch/Homebrew pair
+alone re-verified again 2026-09-06 (the other rows below still carry the 08-30 stamp):
 
-- **Arch `extra` and Homebrew** — 2.7.0 (Arch's package revision is `2.7.0-1`).
+- **Arch `extra` and Homebrew** — 2.7.2 (Arch's package revision is `2.7.2-1`). Still the
+  same version on both, re-checked 2026-09-06: Arch shipped `2.7.2-1` that morning.
 - **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
   line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
   like once two of the four move and two do not.)
@@ -1192,23 +1199,36 @@ output. Every target above clears that floor except `dotfiles-Debian`'s two lane
 2.32.1. It degrades rather than breaks, which is why that repo's `install/packages.txt`
 declares no `# min:` floor for it.
 
-³³ **neovim — "the package exists" is not "the package is usable", and Gentoo is the
-SECOND target where that bites.** Core's nvim pins nvim-treesitter to `main`
-(`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Two cells in the neovim
+³³ **neovim — "the package exists" is not "the package is usable", and it bites on THREE
+targets, by three different mechanisms.** Core's nvim pins nvim-treesitter to `main`
+(`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Several cells in the neovim
 row above resolve perfectly and give you something Core's config will not load on:
 
-| Target        | What `neovim` actually gets you       | Clears 0.12? |
-| ------------- | ------------------------------------- | ------------ |
-| **Debian**    | Ubuntu 24.04 `neovim` **0.9.5**       | no — see ²⁸  |
-| **Gentoo**    | newest **stable** ebuild, **0.11.7**  | no           |
-| Gentoo, fixed | **0.12.3**, via the `>=` keyword line | yes          |
+| Target          | What `neovim` actually gets you       | Clears 0.12? |
+| --------------- | ------------------------------------- | ------------ |
+| **Debian**      | Ubuntu 24.04 `neovim` **0.9.5**       | no — see ²⁸  |
+| **Gentoo**      | newest **stable** ebuild, **0.11.7**  | no           |
+| Gentoo, fixed   | **0.12.3**, via the `>=` keyword line | yes          |
+| **Alpine** 3.21 | `neovim` **0.10.4-r0**                | no           |
+| **Alpine** 3.22 | `neovim` **0.11.1-r1**                | no           |
+| **Alpine** 3.23 | `neovim` **0.11.7-r0**                | no           |
+| Alpine 3.24     | `neovim` **0.12.2-r0**                | yes          |
+| Alpine edge     | `neovim` **0.12.2**                   | yes          |
 
-The two get there by different mechanisms and only one of them looks like a problem.
+They get there by three different mechanisms and only one of them looks like a problem.
 Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
 `dotfiles-Debian` declares a `# min:0.12.0` floor its CI enforces. Gentoo's is
 **keywords**: 0.12.0–0.12.3 are all in `::gentoo` right now, all `~arch`, so a stable
 profile silently picks 0.11.7 and reports success. Nothing in an availability check can
 see it — the atom exists, installs, and is the wrong version.
+
+Alpine's is **branch spread**, and it is the one this file got wrong for a full release
+cycle. Alpine is not rolling: it carries four supported stable branches at once plus `edge`,
+each frozen at the version it released with, so "does `apk add neovim` clear the floor?" has
+no single fleet answer — it has five, and **three of them are no**. A check run on a v3.24
+or `edge` box sees a perfectly current 0.12.2 and reports the row healthy for Alpine
+entirely. Sibling footnote ⁵ already spells this spread out correctly for `tree-sitter-cli`;
+this footnote simply never got the same treatment.
 
 `dotfiles-Gentoo` therefore borrows Debian's contract and pairs it with the Portage-native
 fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-restricted**
@@ -1216,9 +1236,23 @@ fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-rest
 0.11.x keeps tracking stable), and a check in `scripts/check-packages.sh` that fails when a
 declared floor is not reachable. Filed as dotfiles-Gentoo#116, verified 2026-08-23.
 
-**If you stamp a new source-based or stable/testing-split target, ask the keyword question,
-not just the name question.** Every other column here is rolling, which is why this trap has
-only ever shown up on the fleet's two non-rolling lanes.
+`dotfiles-Alpine` has no keyword or archive lever to pull — there is no newer branch to
+point `apk` at without moving the whole box, and neovim's own releases are glibc-linked
+AppImages that will not run on musl — so it takes the remaining option: `bootstrap.sh`
+declares `NEOVIM_FLOOR="0.12.0"` beside the `TREESITTER_FLOOR` it already had, and **warns**
+when the installed nvim is below it rather than pretending to fix it. Worth naming what that
+repo actually had: a version guard on nvim-treesitter's _dependency_ (`tree-sitter-cli`) and
+none at all on nvim-treesitter's _host_, failing on the same three branches, for as long as
+the floor has existed. Half a requirement checked reads exactly like a whole one.
+Filed as dotfiles-Alpine#170, verified 2026-09-06.
+
+**If you stamp a new source-based or stable/testing-split target, ask the keyword question
+and the branch question, not just the name question.** This trap only shows up on the
+fleet's non-rolling lanes — and "non-rolling" covers three shapes, not one: a frozen archive
+(Debian), a stable/testing keyword split (Gentoo), and a set of concurrently supported
+release branches (Alpine; structurally openSUSE Leap too, though its neovim row is not
+currently affected). A rolling column can be answered once. Each of these has to be answered
+per lane, and a check that samples only the newest lane will report all of them healthy.
 
 ³⁴ **jq — a recorded security floor of ≥ 1.8.2, and deliberately NOT a version gate.**
 1.8.2 (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an
@@ -1229,8 +1263,20 @@ is pointed at output produced by machines other than yours: Core probes it
 provisioning gate a role layer runs against `core-doctor --json` ²⁰.
 
 Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
-Tumbleweed, Homebrew and Alpine edge. **Below it** on Alpine 3.22/3.23/3.24 and Fedora 43/44
-(1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+Tumbleweed, Homebrew, Alpine edge, **Alpine 3.22/3.23/3.24** and **Fedora 45/Rawhide**.
+Alpine backported `jq 1.8.2-r0` into `main` on all three of its supported stable branches
+rather than leaving them on the version they shipped with, which is exactly the behaviour a
+`# min:` floor is supposed to reward; Fedora 45 and Rawhide carry `jq 1.8.2-5`. **Below it**
+on Fedora 43/44 (1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+
+Fedora reaches that floor by the opposite mechanic, and it is the one crossing with a date
+on it. F45 branched from Rawhide on 2026-08-11 and goes GA **2026-10-20**. F43/F44 sit at
+1.8.1-3 with nothing in updates-testing, so they never cross at all: on this lane you clear
+the floor by **upgrading release**, where Alpine's stables cleared it **in place**. Same
+floor, opposite mechanics, and neither is visible in `jq --version` — which is why this
+footnote records a floor to act on when provisioning rather than prescribing a gate.
+(Fedora re-verified 2026-09-06 against `packages.fedoraproject.org/pkgs/jq/jq/`; the other
+lanes are as at time of writing.)
 
 **Do not build a guard on `jq --version`.** On the Debian family the version string is not
 evidence either way — Debian backports security fixes without bumping the version, so a
@@ -1246,7 +1292,7 @@ Core itself is unaffected: nothing in Core shells out to jq (detect-only, no ali
 same shape as `sd` and `gron`, both ledger-only probes since #694). This is a note for the role layers and for anyone
 piping untrusted JSON through a distro jq.
 
-³⁵ Fedora `refresh` is `dnf check-update`, and it is **not really a refresh** — dnf has no
+³⁵ Fedora `refresh` is `sudo dnf check-update`, and it is **not really a refresh** — dnf has no
 standalone index-refresh verb. Refreshing is a _flag_ on the verb that needs it
 (`dnf upgrade --refresh`), which is why the Fedora `upgrade` and `count-pending` cells both
 carry it and why `os/fedora.capabilities` declares no `PKG_UPGRADE_PRE`. The schema calls
@@ -1260,7 +1306,10 @@ pending. That is what the optional `PKG_COUNT_REFRESH` key exists for. Core runs
 because the once-a-day nudge that produced the count already paid for the network.
 
 ³⁷ Gentoo `count-pending` **is** the real dependency calculation, and it is the one cell
-here that cost a measurement to get right (#753 → #756). The obvious answer is `eix -u`,
+here that cost a measurement to get right (#753 → #756). **The cell renders
+`gentoo-pkg-pending`, a wrapper `dotfiles-Gentoo` ships**, not a bare Portage command — the
+one row whose declared value is a script rather than an invocation, because the `-1` sentinel
+below cannot be expressed as a pipeline. The obvious answer is `eix -u`,
 which is what Core shipped: it is fast and it reads its own cache. It also answers the
 wrong question. `eix -u` asks "is a higher version present in the tree?"; `up` runs
 `emerge -uDN @world`, which asks "what will actually change?" — and on a healthy box those
@@ -1344,7 +1393,8 @@ where the learning is. Tool _names_ are full atoms (`category/name`). Treat this
 repo as your "understand the system from the ground up" build; it's the most
 educational and the most time-expensive.
 
-**Offense (Kali / WSL2)** — The one repo that isn't stamped from Fedora: it's Debian-family
+**Offense (Kali / WSL2)** — One of the two repos that are not stamped from Fedora (macOS
+is the other, see _Repo status_): it's Debian-family
 (apt) and carries a unique **offensive role layer** on top of the usual OS layer,
 adding an `offensive` stage to the zsh loader (`… os offensive local`). Two things
 actually bite. (1) Debian renames binaries — `bat`→`batcat`, and the `fd-find`
