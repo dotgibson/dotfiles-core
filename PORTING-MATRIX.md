@@ -25,7 +25,9 @@ _Repo status_ at the bottom).
    the add succeeded; the RELEASED script runs in that worktree — it exits 0 after a per-repo
    failure and may predate `--strict` — so its summary line is the verdict: `updated 1
    skipped 0   failed 0` for the one target, and nothing else counts; that `repos:` footer
-   exists since v4.1.0, so an older exact freeze cannot be judged this way)
+   exists since v4.1.0, so an older exact freeze cannot be judged this way — and the
+   binding floor is v4.15.1 anyway, the first release whose sync MATERIALIZES rather than
+   `git subtree pull --squash`, which cannot update a materialized `core/` at all)
    — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v7`
    (the tags are annotated; see `RELEASE-STRATEGY.md` §"Safe deployment"; `VENDORING.md`
    § "One-time setup" has the same four commands on separate lines). Step 1 already copied Fedora's `core/` across, so there is no
