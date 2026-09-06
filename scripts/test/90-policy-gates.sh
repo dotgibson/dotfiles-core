@@ -118,16 +118,59 @@ _mg_write "markdown:
 		|| { echo \"markdownlint-cli2 not installed: npm i -g markdownlint-cli2 — skipping\"; exit 0; }
 	@markdownlint-cli2 '*.md' '!core/**'
 "
-_mg_count "the real Debian pre-fix recipe reports the skip AND the narrow glob" 2
+# THREE findings, not two: R5 (#873) reads the same recipe and adds the unpinned linter to
+# the skip and the narrow glob. All three were genuinely wrong with it at once, which is the
+# point — each rule was added after a separate sweep found the shape it names.
+_mg_count "the real Debian pre-fix recipe reports the skip, the narrow glob AND the unpinned linter" 3
 
-# The same target after #38 — one recipe line, git ls-files. Both findings must clear.
+# The same target after #38 — one recipe line, git ls-files. R1 and R4 clear... and R5 does
+# NOT, because this recipe still calls a global `markdownlint-cli2`. That is not a
+# regression in the fixture; it is the history. #38 fixed the skip and the scope, the target
+# read clean to every rule that existed, and #873 found eighteen months later that on a box
+# without `npm i -g markdownlint-cli2` — the default — it had never linted anything at all.
+# Pinning R1-R4 as clean and R5 as a finding on the SAME recipe is what records that.
 _mg_write "markdown:
 	@if ! command -v markdownlint-cli2 >/dev/null 2>&1; then \\
 	  echo \"markdownlint-cli2 not installed: npm i -g markdownlint-cli2 — skipping\"; \\
 	elif test -z \"\$(MD_FILES)\"; then echo \"no repo-owned .md\"; \\
 	else echo \"markdownlint-cli2 \$(MD_FILES)\"; markdownlint-cli2 \$(MD_FILES); fi
 "
-_mg_count "the same target after the fix is clean" 0
+_mg_count "the post-#38 recipe clears the skip and the scope but is still UNPINNED" 1
+
+# ── R5 clean: the post-#873 recipe the whole fleet now runs, verbatim from dotfiles-Debian.
+# npx plus a pinned version read from the vendored pins, and a refusal rather than a guess
+# when that pin is unreadable. All five rules must clear.
+_mg_write "markdown:
+	@if ! command -v npx >/dev/null 2>&1; then echo \"npx not available — skipping markdown\"; \\
+	elif test -z \"\$(MARKDOWNLINT_VERSION)\"; then \\
+	  echo \"!! MARKDOWNLINT_VERSION unreadable from \$(CORE_PINS) — refusing to lint unpinned\"; exit 1; \\
+	elif test -z \"\$(MD_FILES)\"; then echo \"no repo-owned .md\"; \\
+	else echo \"markdownlint-cli2@\$(MARKDOWNLINT_VERSION) \$(MD_FILES)\"; \\
+	  npx --yes markdownlint-cli2@\$(MARKDOWNLINT_VERSION) \$(MD_FILES); fi
+"
+_mg_count "the post-#873 recipe the fleet now runs is clean under all five rules" 0
+
+# ── R5 MUST NOT FIRE on the comment that explains the fix. Every converged recipe carries a
+# block naming the bare binary it replaced, and a rule that reds its own rationale is the
+# false-positive class this whole function is written around (see the note on tool_runs).
+_mg_write "markdown:
+	@# npx AND A PIN, not a global markdownlint-cli2 (dotfiles-core#873). The probe used to
+	@# be \`command -v markdownlint-cli2\`, and nothing in this repo installs that.
+	@if ! command -v npx >/dev/null 2>&1; then echo \"npx not available — skipping markdown\"; \\
+	else npx --yes markdownlint-cli2@\$(MARKDOWNLINT_VERSION) \$(MD_FILES); fi
+"
+_mg_count "a comment naming the bare binary it replaced is not an unpinned invocation" 0
+
+# ── R5 MUST NOT FIRE on a QUOTED invocation. dotfiles-MacBook writes its pin that way, and
+# tool_runs treats quoted text as prose fleet-wide, so this reads as not-an-invocation
+# rather than as unpinned. Under-checked by design, and that repo is pinned regardless —
+# recorded here so the gap is a decision on the record and not a surprise.
+_mg_write "markdownlint:
+	@if ! command -v npx >/dev/null 2>&1; then echo \"skip\"; exit 0; fi; \\
+	 v=\"\$\$(sed -n 's/^MARKDOWNLINT_VERSION=//p' core/scripts/tool-versions.env)\"; \\
+	 npx --yes \"markdownlint-cli2@\$\${v:-latest}\" \$(MD_FILES)
+"
+_mg_count "a quoted (MacBook-shaped) pinned invocation is not reported" 0
 
 # ── R1 must survive the tool being named in its own skip MESSAGE. Every one of these
 # guards does that ("markdownlint-cli2 not installed: npm i -g markdownlint-cli2"), and a

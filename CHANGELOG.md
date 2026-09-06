@@ -16,6 +16,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`_core_make_gate_hits` R5 — a local markdown gate must run the PINNED linter (#876).**
+  The Makefile-gate guard already had four rules, and `lint-call.yml`'s `make-gates` leg
+  already runs them against every caller — a skip that cannot skip, a check that cannot fail,
+  a blocking CI leg with no local mirror, and a scope narrower than the gate. #873 walked
+  straight past all four: six repos probed for a **global** `markdownlint-cli2` that nothing
+  in their bootstrap installs, so on an ordinary box the guard fired every time and the
+  target skipped — correctly, at exit 0, forever. R3 could not see it because the Makefile
+  plainly spelled the tool; R1 could not, because the skip was honest. **A local mirror of a
+  blocking gate that never runs is not a mirror**, and the four existing rules all judge a
+  target that runs. R5 judges _which_ linter runs: an invocation must carry
+  `markdownlint-cli2@` plus a version, because the gate installs `MARKDOWNLINT_VERSION` from
+  the vendored `core/scripts/tool-versions.env` and a global binary is whatever npm last put
+  there — so a rule that changes across a bump reds a required check against a green local
+  run. Proven on the real thing in both directions: R5 fires on all six pre-#873 Makefiles,
+  naming each repo's own target (`markdown`, `md`, `lint-md`), and is silent on all nine
+  post-#873 plus Core — **green on arrival**. Two deliberate exclusions, both the
+  prose-is-not-a-command rule `tool_runs` already applies fleet-wide: a comment naming the
+  bare binary it replaced is not an invocation (every converged recipe carries one, and a
+  gate that reds its own rationale gets turned off), and a _quoted_ invocation reads as prose
+  — which under-checks `dotfiles-MacBook`, the one repo that writes its pin that way, and is
+  pinned regardless. `test/90-policy-gates.sh` pins all of it, including the historically
+  honest pair: the post-#38 Debian recipe is clean under R1–R4 **and** a finding under R5,
+  which is exactly the eighteen months #873 spent invisible.
+
 - **`audit-core.sh` §5k — the bash 3.2 floor is a gate now, not ten comments (#874).**
   `PORTABILITY.md` §1 has put the shell floor at bash 3.2 since it was written, because macOS
   ships 2007's bash and the audit matrix runs a `macos-latest` leg. **Ten** scripts here carry
