@@ -295,6 +295,54 @@ unset -f _mg_write _mg_count
 # PARITY.md varies between rows, so every verdict below is attributable to the coverage
 # logic and nothing else. dotfiles-Windows is deliberately absent from the fixture root,
 # so the pwsh half self-skips and cannot colour the result.
+# ── the recovery runbook's caller derivation (GITHUB-APP-AUTH.md) ────────────
+# #832: the Recovery section tells the operator to DERIVE the caller list rather than trust
+# a written one — and then handed them a grep that could not see Core's own caller. It
+# needled `notify-web-call.yml@`, the REMOTE `uses:` form; Core's caller is LOCAL
+# (`release.yml` reads `uses: ./.github/workflows/notify-web-call.yml`, no `@`), so an
+# operator following the procedure omitted Core's mapping and lost the release-path dispatch
+# the moment step 7 disabled the App.
+#
+# WHY THIS IS A TEST AND NOT A CAREFUL REREAD. That grep was itself added to fix an earlier
+# review finding — "derive it, do not freeze it" — so the derivation was made AUTHORITATIVE
+# before it was made CORRECT, which is worse than the frozen list it replaced, because the
+# next step instructs the operator to trust it. A derivation nothing exercises is a frozen
+# list that looks live. This runs the documented commands, as written, against Core's own
+# tree and asserts they find the caller that is actually there.
+hdr "recovery caller derivation (GITHUB-APP-AUTH.md)"
+_rc_doc="$HERE/GITHUB-APP-AUTH.md"
+_rc_wf="$HERE/.github/workflows"
+# GROUND TRUTH FIRST. If Core stops calling the reusable locally, the assertions below would
+# pass vacuously against a pattern that matches nothing — so the caller's existence is
+# asserted separately from the patterns' ability to see it.
+_rc_local="$(grep -rlE '^[[:space:]]*uses:[[:space:]]*\./\.github/workflows/notify-web-call\.yml' "$_rc_wf" 2>/dev/null)"
+if [[ -n "$_rc_local" ]]; then
+  pass "recovery derivation: Core still has a LOCAL notify-web-call caller ($(basename "$_rc_local")) — the case the runbook's grep must see"
+else
+  fail "recovery derivation: no local notify-web-call caller in $_rc_wf — the assertions below would go green against a shape Core no longer has; re-check the runbook before deleting this"
+fi
+# THE PATTERNS ARE READ OUT OF THE DOC, not restated here. Restating them would test this
+# file against itself and stay green over a reworded runbook — the same render-vs-judge
+# separation the parity verdict's notice pin exists for. Selected by CONTENT rather than by
+# position, so inserting an unrelated grep into the procedure does not silently shift which
+# command is under test.
+_rc_pats="$(sed -n "s/.*grep -r[a-zE]* '\([^']*\)'.*/\1/p" "$_rc_doc" | grep -F 'notify-web-call')"
+_rc_n="$(printf '%s\n' "$_rc_pats" | grep -c . || true)"
+if ((_rc_n == 2)); then
+  pass "recovery derivation: both documented notify-web-call greps were extracted from the runbook"
+else
+  fail "recovery derivation: extracted $_rc_n notify-web-call grep(s) from GITHUB-APP-AUTH.md, want 2 (steps 2 and 5) — the runbook's commands were reshaped and this check is reading the wrong thing"
+fi
+while IFS= read -r _rc_pat; do
+  [[ -n "$_rc_pat" ]] || continue
+  if [[ -n "$_rc_local" ]] && grep -rlE "$_rc_pat" "$_rc_wf" 2>/dev/null | grep -qxF "$_rc_local"; then
+    pass "recovery derivation: the runbook grep /${_rc_pat}/ finds Core's own local caller"
+  else
+    fail "recovery derivation: the runbook grep /${_rc_pat}/ does NOT find Core's own local caller — an operator following the procedure would omit Core's secrets mapping and lose the release-path dispatch at step 7 (#832)"
+  fi
+done <<<"$_rc_pats"
+unset _rc_doc _rc_wf _rc_local _rc_pats _rc_n _rc_pat
+
 hdr "parity coverage gate (scripts/parity-check.sh)"
 PCR="$SANDBOX/parityrepo"
 PCOUT="$SANDBOX/parity-run.out"

@@ -33,6 +33,15 @@ the App.**
   list stays the one place scope lives. The trade is a broader token for that one job, and
   it is why the install list should stay minimal.
 
+**Neither shape scopes *verbs*.** No consumer passes `permission-*`, so a minted token
+carries the installation's **full** grant set — Contents + Pull requests + Workflows write —
+on whatever repositories it covers, however little the job needs. Repository reach is
+bounded; verb reach is not. That is the one dimension the App migration did **not** narrow,
+and it is still true today — which is what
+[`GITHUB-APP-MIGRATION.md`](GITHUB-APP-MIGRATION.md) defers to this section to answer.
+Tightening it is #830; *Adding a new consumer* below tells a new consumer to diverge from
+every existing one rather than copy the omission.
+
 Two settings make it work, both at the **organization** level:
 
 | Name | Kind | What it is |
@@ -285,7 +294,8 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
 
    ```sh
    # repos needing WEBHOOK_SECRET — anything dispatching, whether via the reusable or inline
-   grep -rln 'notify-web-call.yml@\|repos/dotgibson/dotfiles-web/dispatches' ../*/.github/workflows/
+   # (the `uses:` half matches BOTH forms; Core's own caller is local, with no `@` — step 5)
+   grep -rlE '^[[:space:]]*uses:.*notify-web-call\.yml|repos/dotgibson/dotfiles-web/dispatches' ../*/.github/workflows/
    # repos needing FLEET_SYNC_TOKEN — anything running a cross-repo fan-out
    grep -rln 'sync-fanout' ../*/.github/workflows/
    ```
@@ -363,9 +373,19 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
    current shape rather than trusting this paragraph:
 
    ```sh
-   # who calls it, and at what ref
-   grep -rn 'notify-web-call.yml@' ../dotfiles-*/.github/workflows/ 2>/dev/null
+   # who calls it, and at what ref — BOTH forms, and Core's own tree
+   grep -rnE '^[[:space:]]*uses:.*notify-web-call\.yml' ../*/.github/workflows/ 2>/dev/null
    ```
+
+   > **Match both `uses:` forms.** An earlier version of this command needled
+   > `notify-web-call.yml@`, which matches only the **remote** form. Core's own caller is
+   > **local** — `release.yml:124` reads `uses: ./.github/workflows/notify-web-call.yml`,
+   > with no `@` — so it was invisible to the derivation, and step 6 below instructs you to
+   > trust that list. An operator following the procedure would have omitted Core's
+   > `release.yml` mapping and lost the release-path dispatch the moment step 7 disabled
+   > the App. Anchoring on `uses:` also skips the reusable's own documentation comment,
+   > which is not a caller. Run it from the Core checkout that sits **beside** the sibling
+   > clones — `../*/` from a git worktree points somewhere else entirely.
 
    Edits to steps 3-4 sit on `main`, invisible to every one of them. Until this lands,
    step 6 hands the reusable a secret that the version actually running still ignores, and
