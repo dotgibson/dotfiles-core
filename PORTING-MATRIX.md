@@ -741,9 +741,9 @@ timestamp, follows like `tail -f`, and exposes the parsed records to SQL. Its ow
 (no alias, like `jq`/`gron`/`jnv`), probed into the `_CORE_PROBED` ledger by
 `zsh/00-tools.zsh` and carrying no flag since #694, inert without the binary. A **C++** CLI, so it has no `cargo`/`go install` escape hatch like the
 Rust/Go tools above — but it does not need one: upstream publishes **static musl binaries**
-per release (`lnav-0.14.0-linux-musl-x86_64.zip`, and an `arm64` twin), so the fallback on
+per release (`lnav-0.14.1-linux-musl-x86_64.zip`, and an `arm64` twin), so the fallback on
 an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
-the cleanest way to get 0.14.0 onto Gentoo or Debian/Kali without waiting for the package.
+the cleanest way to get 0.14.1 onto Gentoo or Debian/Kali without waiting for the package.
 **No `bootstrap.sh` installs it anywhere**, but it is not detect-only across the board:
 `dotfiles-Alpine` (`lnav`) and `dotfiles-Gentoo` (`app-admin/lnav`) both carry it in
 `install/packages.txt`, and the MacBook `Brewfile` has it too (added 2026-07-15). On the other
@@ -752,32 +752,36 @@ four Linux repos `core-doctor` reports it present only once you install it yours
 package it, cargo everywhere else" one: every distro in the table above ships lnav, and two of
 the repos ask for it.
 
-Versions **verified against each distro's own package pages** on 2026-08-12, not taken from
-a repology snapshot. Upstream is 0.14.0 (2026-04-12). Rolling targets get one query each,
-because that query is the complete answer; **Fedora is versioned, so every supported stable
-release is named separately** rather than collapsed into one unqualified ✓:
+Versions **verified against each distro's own package pages** on 2026-08-12, every row
+re-verified the same way on 2026-09-06, not taken from a repology snapshot. Upstream is
+0.14.1 (2026-09-05). Rolling targets get one query each, because that query is the complete
+answer; **Fedora is versioned, so every supported stable release is named separately**
+rather than collapsed into one unqualified ✓:
 
 | Target          | Release                                  | lnav              |
 | --------------- | ---------------------------------------- | ----------------- |
-| Arch            | `extra` (rolling)                        | 0.14.0-1          |
+| Arch            | `extra` (rolling)                        | 0.14.1-1          |
 | openSUSE        | Tumbleweed (rolling)                     | 0.14.0            |
-| Alpine          | `edge/community` — **native musl build** | 0.14.0-r0         |
-| Homebrew        | rolling                                  | 0.14.0            |
+| Alpine          | `edge/community` — **native musl build** | 0.14.1-r0         |
+| Homebrew        | rolling                                  | 0.14.1            |
 | **Fedora**      | **Rawhide / F45**                        | **0.14.0-3.fc45** |
 | **Fedora**      | **F44**                                  | **0.13.2-2.fc44** |
 | **Fedora**      | **F43**                                  | **0.12.4-2.fc43** |
 | **Kali/Debian** | rolling / sid                            | **0.13.2**        |
 | **Gentoo**      | `app-admin/lnav`                         | **0.11.2**        |
 
-So "Fedora has it" is true but "Fedora is current" is only true on F45/Rawhide — F44 and F43
-track one and two minors back respectively. Two targets lag enough to be worth naming:
+So "Fedora has it" is true, but as of the 2026-09-06 re-check "Fedora is current" is no
+longer true anywhere: 0.14.1 landed on 2026-09-05 and Rawhide/F45 still carries 0.14.0-3, one
+patch back, while F44 and F43 track one and two minors back respectively. The rolling three —
+Arch, Alpine and Homebrew — picked 0.14.1 up within a day; nothing else has. Two targets lag
+enough to be worth naming:
 
 - **Gentoo `app-admin/lnav` is 0.11.2** — the only version in the tree, stable on amd64/x86,
   and the package is flagged as **needing a new maintainer**, so do not expect it to close
   the gap on its own. Three minor releases behind. Re-check on the next Gentoo stamp.
 - **Kali/Debian `lnav` is 0.13.2** — one minor behind, the smaller gap of the two.
 
-On either, the upstream static musl zip above is the way to 0.14.0 without waiting.
+On either, the upstream static musl zip above is the way to 0.14.1 without waiting.
 
 ²⁵ watchexec: OPT-IN **event**-driven repetition — the third corner of a triangle Core
 already had two of. `viddy` re-runs on a **timer** (`watch`), `hyperfine` re-runs a fixed
@@ -795,9 +799,11 @@ cargo-installs it from the extras block. The other seven machines are opt-in.
 including macOS"; Alpine falsified the first half, and Gentoo — checked against `bootstrap.sh`
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
 2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
-re-verified 2026-08-30 against each repo's own package pages:
+re-verified 2026-08-30 against each repo's own package pages, and the Arch/Homebrew pair
+alone re-verified again 2026-09-06 (the other rows below still carry the 08-30 stamp):
 
-- **Arch `extra` and Homebrew** — 2.7.0 (Arch's package revision is `2.7.0-1`).
+- **Arch `extra` and Homebrew** — 2.7.2 (Arch's package revision is `2.7.2-1`). Still the
+  same version on both, re-checked 2026-09-06: Arch shipped `2.7.2-1` that morning.
 - **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
   line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
   like once two of the four move and two do not.)
