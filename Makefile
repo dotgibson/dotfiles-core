@@ -117,6 +117,12 @@ gen-aliases: ## Regenerate aliases.md's tables from the zsh alias sources (edit 
 check-aliases: ## Report whether aliases.md's tables have drifted from the zsh sources — also run inside `make audit`
 	@./scripts/gen-aliases.sh --check
 
+gen-have-api: ## Regenerate zsh/have-api.txt from PORTABILITY.md §5's declared table (edit the table, not the file)
+	@./scripts/gen-have-api.sh
+
+check-have-api: ## Report whether zsh/have-api.txt has drifted from PORTABILITY.md §5 — also run inside `make audit`
+	@./scripts/gen-have-api.sh --check
+
 gen-porting-matrix: ## Regenerate PORTING-MATRIX.md's two tables from the sibling OS repos (edit the repo, not the table)
 	@./scripts/gen-porting-matrix.sh
 
