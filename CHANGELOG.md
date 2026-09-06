@@ -477,6 +477,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and `dotfiles-Defense`) are **Role** repos, and that ambiguity is exactly what made the drift
   self-renewing, since both numbers are right about something and the prose rarely said which.
   `PORTING-MATRIX.md` already modelled the phrasing; it is now the fleet's. §9m above keeps it.
+- **`check-links.sh` verified `loader.zsh` and none of the modules it loads (#854).** The gate
+  asserted seven Core-owned links, including `.config/zsh/loader.zsh`, and — since #853 —
+  that each resolves to the _right_ file. But `blib_link_core` links the **whole** directory
+  (`for f in "$dotfiles"/core/zsh/*.zsh`), and the loader then globs `NN-*.zsh` in the
+  destination. So a bootstrap that wired `loader.zsh` and **none of the fragments** passed
+  with the loader having nothing to load — a shell that starts clean and is configured with
+  none of Core, certified as a healthy graph. `scripts/test-core.sh` already treats the
+  complete flat set as load-bearing, so the contract existed; the gate just did not check it.
+  **Derived, not listed**, and from the repo being checked rather than from Core's own tree:
+  a hardcoded list drifts every time a module is added — the argument the loader's own glob
+  and `test-core.sh`'s fragment glob already make — and the vendored `core/zsh` is right
+  there, which is what `blib_link_core` itself reads. An **empty** derivation is a finding in
+  its own right (exit 2, naming "nothing to load") rather than a quiet pass, because vacuous
+  is the state this closes. Five cases, and the fake bootstrap in the suite was **itself an
+  example of the incomplete graph** — it wired `loader.zsh` alone, and now runs
+  `blib_link_core`'s loop verbatim so the stub cannot drift from the linker it stands in for.
+  Verified against the fleet: `dotfiles-Fedora`, `-Offense` and `-Defense` each go from 7
+  links checked to **21, fourteen of them derived fragments**, all green.
 
 - **A linked-worktree OS repo was classified as "not cloned", and under `--strict` that skip
   was exit 1 (#850).** `sync-core.sh` asked "is this a clone?" with `-d "$path/.git"` at three
