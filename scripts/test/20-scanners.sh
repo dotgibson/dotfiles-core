@@ -733,6 +733,78 @@ _to_is "a fleet with no covered repo checked out yields no verdict" 0
 rm -rf "$_to_"
 unset _to_
 unset -f _to_setup _to_is
+# ── the vendoring-claim scanner (common.sh :: _core_vendoring_claim_hits) ────
+# #891, the gate #774 asked for. Every fixture below is REAL TEXT — the positives lifted
+# from the repos #774 corrected, the negatives from what replaced them plus the two
+# dotfiles-Offense lines that are correct and must survive. Invented fixtures would prove
+# the regex matches itself; these prove it separates the CLAIM from the TOKEN.
+hdr "vendoring-claim scanner (_core_vendoring_claim_hits)"
+_vcs="$SANDBOX/vendorclaim"
+_vcs_write() { # _vcs_write <line...> — a fresh one-file fixture repo
+  rm -rf "$_vcs"; mkdir -p "$_vcs"
+  git -C "$_vcs" init -q >/dev/null 2>&1 || return 1
+  printf '%s\n' "$@" >"$_vcs/CLAUDE.md"
+  git -C "$_vcs" add -A >/dev/null 2>&1
+}
+_vcs_count() { # _vcs_count <label> <want>
+  local got n=0
+  got="$(_core_vendoring_claim_hits "$_vcs")"
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | grep -c .)"
+  if [[ "$n" == "$2" ]]; then pass "vendoring claim: $1"; else fail "vendoring claim: $1 (got $n, want $2)"; fi
+}
+
+if ! git --version >/dev/null 2>&1; then
+  skip_env "vendoring-claim scanner (git unavailable — the helper enumerates through git ls-files)"
+else
+  _vcs_write '`core/` is a **vendored `git subtree` copy of [dotfiles-core](https://github.com/dotgibson/dotfiles-core)** — it'
+  _vcs_count "the CLAUDE.md opener seven repos carried is a finding" 1
+
+  _vcs_write '- `core/` is a vendored subtree of dotfiles-core — never edit it here; fix'
+  _vcs_count "dotfiles-Defense's softer 'a vendored subtree of' is also a finding" 1
+
+  _vcs_write '`core/` is a vendored subtree and is **already present** in a clone — there is no'
+  _vcs_count "the README phrasing #774 never looked at is a finding" 1
+
+  # This one argues the gate's own position; reddening it would teach the next author to
+  # falsify a true sentence — the failure mode #770's §9m records for repo counts.
+  _vcs_write 'filtered subset of upstream, which `git subtree pull` cannot produce). It is also no'
+  _vcs_count "the sentence saying a subtree pull CANNOT produce core/ is not a finding" 0
+
+  # offensive/companion genuinely IS a subtree of htpx, and sync-companion.sh really pulls it.
+  # `core/` appears late in this line, AFTER `subtree` — which is what the ordered match uses
+  # to tell the two apart, with no allowlist to maintain.
+  _vcs_write '- `offensive/companion` — **a vendored `git subtree` of [dotgibson/htpx](https://github.com/dotgibson/htpx)** (provenance in `companion.lock`). **Same rule as `core/`: do not hand-edit the vendored tree** — it is overwritten on the next sync.'
+  _vcs_count "the htpx companion subtree, a DIFFERENT prefix, is not a finding" 0
+
+  _vcs_write '`core/` is a **vendored copy of [dotfiles-core](https://github.com/dotgibson/dotfiles-core)** — it' \
+    'The sync is a **pinned fetch plus `git read-tree --prefix=core/`**, with `core.lock`' \
+    'recording the commit — **not** `git subtree` (dotgibson/dotfiles-core#587). That distinction' \
+    'has teeth: `git subtree pull` moves `core/` without moving `core.lock`, and `core-integrity`' \
+    'then reports the tree as **TAMPERED**.'
+  _vcs_count "#774's replacement text is clean (the gate does not red its own fix)" 0
+
+  # THE VENDORED COPY IS PRUNED. An OS repo's core/ is a copy of the repo being checked
+  # against, so counting it would report every repo for Core's own prose.
+  _vcs_write 'nothing to see here'
+  mkdir -p "$_vcs/core"
+  printf '%s\n' '`core/` is a **vendored `git subtree` copy of upstream** — it' >"$_vcs/core/VENDORING.md"
+  git -C "$_vcs" add -A >/dev/null 2>&1
+  _vcs_count "a claim inside the VENDORED core/ is pruned, not attributed to the repo" 0
+
+  # NON-MARKDOWN IS OUT OF SCOPE: new-os-repo.sh's one-time `git subtree add` is still live
+  # (#668's own note), and a scanner reading .sh would report the scaffold for working.
+  _vcs_write 'nothing to see here'
+  printf '%s\n' 'git subtree add --prefix=core "$remote" "$ref" --squash' >"$_vcs/scaffold.sh"
+  git -C "$_vcs" add -A >/dev/null 2>&1
+  _vcs_count "a live subtree add in a shell script is out of scope" 0
+
+  _vcs_write 'nothing to see here'
+  printf '%s\n' '`core/` is a vendored subtree of dotfiles-core' >"$_vcs/scratch.md"
+  _vcs_count "an UNTRACKED markdown file is not judged" 0
+fi
+rm -rf "$_vcs"
+unset _vcs
+unset -f _vcs_write _vcs_count
 
 # Fixtures are BUILT, never typed: every marker below is assembled with printf, so this file
 # does not itself contain the thing it tests. It is tracked, §5h scans every tracked file, and

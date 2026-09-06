@@ -2689,6 +2689,60 @@ $(printf '%s\n' "$_cp_hits" | sed 's/^/  /')"
   unset _cp_major
 fi
 
+# ── 9o. `core/` described as a git subtree (the fleet's markdown) ────────────
+# #891, the gate #774 asked for. #587 replaced the fan-out's `git subtree pull --squash`
+# with a pinned fetch plus `git read-tree --prefix=core/`; #668 retired the framing from
+# Core's docs; #774 swept the eight OS repos' CLAUDE.md by hand. This is what makes the
+# next recurrence a checked fact rather than a remembered one.
+#
+# BLOCKING, and it earned that in one step. Running it for the first time surfaced
+# TWENTY-ONE more sites in files #774 never looked at — README.md, CONTRIBUTING.md,
+# SECURITY.md and the PR templates, across all nine repos. A hand sweep scoped to one
+# filename missed them precisely because it was scoped to one filename, which is the argument
+# for the gate. Those landed as nine PRs, and the fleet was re-checked against origin/main
+# (0 of 21 remaining, nine repos) before this flipped from advisory — the tree, not the PR
+# list, because a repo can regain a line and an environment skip looks like a pass.
+#
+# KEYED ON THE CLAIM, NOT THE TOKEN — see _core_vendoring_claim_hits for why that is
+# forced: two `git subtree` mentions in dotfiles-Offense are CORRECT, one of them a sentence
+# arguing this gate's own position, and a blanket scan would red both.
+hdr 'vendoring claims (core/ is not a git subtree)'
+if ! load_os_repos; then
+  skip_env "vendoring claims ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+else
+  _vc_root="$(cd "$HERE/.." && pwd)"
+  _vc_checked=0 _vc_absent=0 _vc_repos=0 _vc_lines=0 _vc_out=""
+  for _vc_repo in "${CORE_OS_REPOS[@]}"; do
+    _vc_dir="$(resolve_repo_dir "$_vc_root" "$_vc_repo")" || _vc_dir="$_vc_root/$_vc_repo"
+    # `-e`: a linked worktree's .git is a FILE (#850).
+    if [[ ! -e "$_vc_dir/.git" ]]; then
+      _vc_absent=$((_vc_absent + 1))
+      continue
+    fi
+    _vc_checked=$((_vc_checked + 1))
+    _vc_hits="$(_core_vendoring_claim_hits "$_vc_dir")"
+    if [[ -n "$_vc_hits" ]]; then
+      _vc_repos=$((_vc_repos + 1))
+      _vc_lines=$((_vc_lines + $(printf '%s\n' "$_vc_hits" | grep -c .)))
+      _vc_out="$_vc_out
+$_vc_repo:
+$(printf '%s\n' "$_vc_hits" | sed 's/^/  /')"
+    fi
+  done
+  if ((_vc_checked == 0)); then
+    skip_env "vendoring claims (no sibling OS repo checked out — nothing to read here)"
+  elif ((_vc_repos)); then
+    # The fix is upstream in the repo that owns the prose, never here — Core cannot edit it,
+    # so the message names the repo and the line rather than offering a command to run.
+    fail "$_vc_lines line(s) in $_vc_repos of $_vc_checked repo(s) describe core/ as a git subtree — the fan-out has used a pinned fetch plus read-tree since #587; fix the prose in that repo"
+    fail_detail "$_vc_out"
+  else
+    pass "vendoring claims: no checked-out repo describes core/ as a git subtree ($_vc_checked repo(s))"
+  fi
+  ((_vc_absent)) && skip_env "vendoring claims: $_vc_absent repo(s) not checked out — not covered by this run"
+  unset _vc_root _vc_checked _vc_absent _vc_repos _vc_lines _vc_out _vc_hits _vc_dir _vc_repo
+fi
+
 # ── 9p. TOOLS_OPTIN ↔ PORTING-MATRIX.md's cell-level ²¹ marks ────────────────
 # #890, out of #836. Three copies of one set, and only two were gated: the matrix's ²¹
 # marks (the human contract), Core's _CORE_DOCTOR_OPTIN (the ROW-level set, re-derived and
