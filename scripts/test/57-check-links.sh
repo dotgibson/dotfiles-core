@@ -34,6 +34,12 @@ _cl_repo() { # _cl_repo [extra-lines-for-the-stub]
   mkdir -p "$_cl_root/core/zsh" "$_cl_root/core/nvim" "$_cl_root/core/starship" \
     "$_cl_root/core/lazygit" "$_cl_root/core/tmux" "$_cl_root/core/vim" "$_cl_root/core/git"
   : >"$_cl_root/core/zsh/loader.zsh"; : >"$_cl_root/core/starship/starship.toml"
+  # THE NUMBERED FRAGMENTS, because blib_link_core links the whole core/zsh directory and
+  # the loader then globs `NN-*.zsh` in the destination. Until #854 this fixture wired only
+  # loader.zsh — so it was itself an example of the incomplete graph the gate now catches:
+  # a loader linked, resolvable, and with nothing to load.
+  : >"$_cl_root/core/zsh/00-tools.zsh"; : >"$_cl_root/core/zsh/30-functions.zsh"
+  : >"$_cl_root/core/zsh/60-update.zsh"
   : >"$_cl_root/core/lazygit/config.yml"; : >"$_cl_root/core/tmux/tmux.conf"
   : >"$_cl_root/core/vim/vimrc"; : >"$_cl_root/core/git/gitconfig"
   : >"$_cl_root/core/tmux/role.conf"
@@ -44,7 +50,10 @@ set -u
 env | grep -E '^(XDG_CONFIG_HOME|XDG_DATA_HOME|XDG_STATE_HOME|XDG_CACHE_HOME|ZDOTDIR)=' | sort >"\$HOME/.env_seen" || true
 P="$_cl_root/core"
 mkdir -p "\$HOME/.config/zsh" "\$HOME/.config/lazygit" "\$HOME/.config/tmux" "\$HOME/.config/sesh"
-ln -sf "\$P/zsh/loader.zsh"        "\$HOME/.config/zsh/loader.zsh"
+# The fragment loop verbatim from blib_link_core — a glob over core/zsh/*.zsh linked flat
+# by basename, loader.zsh included. Enumerating them here instead would let the stub and the
+# linker it stands in for drift, which is the shape this whole file exists to catch.
+for f in "\$P"/zsh/*.zsh; do ln -sf "\$f" "\$HOME/.config/zsh/\$(basename "\$f")"; done
 ln -sf "\$P/starship/starship.toml" "\$HOME/.config/starship.toml"
 ln -sf "\$P/lazygit/config.yml"    "\$HOME/.config/lazygit/config.yml"
 ln -sf "\$P/nvim"                  "\$HOME/.config/nvim"
@@ -145,6 +154,72 @@ fi
 _cl_repo 'rm -f "$P/zsh/loader.zsh"'
 (cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
 if ((rc == 2)); then pass "links: a dangling loader.zsh symlink is caught"; else fail "links: dangling loader.zsh exited $rc, want 2"; fi
+
+# ── the numbered fragments (#854) ────────────────────────────────────────────
+# The gate verified loader.zsh and nothing else under core/zsh, while blib_link_core links
+# the WHOLE directory and the loader globs `NN-*.zsh` in the destination. So a bootstrap
+# wiring loader.zsh alone passed with the loader having nothing to load — a shell that
+# starts clean and is configured with none of Core, certified as a healthy graph.
+#
+# ONE OMITTED FRAGMENT, which is the shape a partial linker actually produces: everything
+# else present and resolvable, one module silently absent. A whole-set check that only
+# noticed an EMPTY core/zsh would miss it.
+_cl_repo 'rm -f "$HOME/.config/zsh/30-functions.zsh"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a bootstrap that omits ONE numbered fragment is caught"; else fail "links: an omitted 30-functions.zsh exited $rc, want 2 — the loader would glob a directory missing a module"; fi
+
+# ...and it must name the fragment, not merely fail: the operator's next action is to look
+# at that module's link, and a gate that says "the graph is wrong" sends them reading all of it.
+_cl_repo 'rm -f "$HOME/.config/zsh/30-functions.zsh"'
+_cl_out="$(cd "$_cl_root" && "$_cl_sh" 2>&1)"
+if printf '%s' "$_cl_out" | grep -qF '.config/zsh/30-functions.zsh'; then
+  pass "links: the omitted fragment is NAMED in the finding"
+else
+  fail "links: the finding did not name .config/zsh/30-functions.zsh"
+fi
+
+# A DANGLING fragment — the link exists and resolves to nothing. loader.zsh already pins
+# this; the fragments must not be the weaker half of the same graph.
+#
+# THE LINK IS BENT, NOT THE SOURCE FILE DELETED, and the difference is a property of the
+# derivation worth stating. The expected set is read from core/zsh in the repo being
+# checked, so deleting 60-update.zsh there removes it from the set too — correctly: what
+# should be linked is what the linker would link TODAY. Nor can a stale link from an
+# earlier install survive, because bootstrap runs into a THROWAWAY HOME. So the reachable
+# dangling shape is a fragment that IS expected pointed at something absent.
+_cl_repo 'ln -sfn "$P/zsh/renamed-upstream.zsh" "$HOME/.config/zsh/60-update.zsh"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a dangling numbered-fragment symlink is caught"; else fail "links: a dangling 60-update.zsh exited $rc, want 2"; fi
+
+# WRONG TARGET, one fragment pointed at another. Every link present, every link resolvable,
+# and the shell loading the wrong module twice — the `-ef` question, asked of the derived
+# set rather than only of the seven in the table.
+_cl_repo 'ln -sfn "$P/zsh/00-tools.zsh" "$HOME/.config/zsh/30-functions.zsh"'
+(cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); rc=$?
+if ((rc == 2)); then pass "links: a fragment resolving to the WRONG module is caught"; else fail "links: 30-functions.zsh pointing at 00-tools.zsh exited $rc, want 2"; fi
+
+# NO FRAGMENTS AT ALL: the derivation is empty, so every fragment assertion would be
+# vacuous. Vacuous is the state this section exists to end, so it is a finding in its own
+# right rather than a quiet pass — and rc 2, not 1: the check RAN, and what it found is a
+# tree that cannot configure a shell.
+_cl_repo
+rm -f "$_cl_root"/core/zsh/[0-9]*.zsh
+_cl_out="$(cd "$_cl_root" && "$_cl_sh" 2>&1)"; rc=$?
+if ((rc == 2)) && printf '%s' "$_cl_out" | grep -qF 'NOTHING TO LOAD'; then
+  pass "links: a core/zsh with no numbered fragments is a finding, not a vacuous pass"
+else
+  fail "links: an empty fragment set exited $rc (want 2) without saying the loader has nothing to load"
+fi
+
+# THE POSITIVE CONTROL. The four cases above are only worth anything if the COMPLETE set
+# passes — a derivation that reddened every repo would be found by CI, but a derivation
+# that is merely never satisfied is the same bug as one that never fires.
+_cl_repo
+if (cd "$_cl_root" && "$_cl_sh" >/dev/null 2>&1); then
+  pass "links: the complete fragment set passes (the derivation is satisfiable)"
+else
+  fail "links: a complete graph was rejected — the derived fragment set cannot be satisfied"
+fi
 
 # COULD-NOT-RUN IS 1, and bootstrap's own output is what diagnoses it.
 _cl_repo
