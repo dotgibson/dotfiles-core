@@ -131,6 +131,20 @@ jobs:
           # safety net: a permission EDIT awaiting installation approval still mints on
           # the OLD set, so every fan-out keeps failing with the same message until it is
           # accepted. Confirm on Install App → ⚙ → Permissions; don't assume it took.
+          #
+          # THE VERBS ARE SCOPED, even though the REACH deliberately is not (#830). Those
+          # are independent axes: no `repositories:` means "every repo the installation
+          # covers", and no `permission-*` used to mean "every verb the installation
+          # holds" on each of them. This job needs exactly three, and each is load-bearing:
+          #   contents      — push the sync branch
+          #   pull-requests — `gh pr create` for it
+          #   workflows     — a sync branch can carry .github/workflows/* pin moves, and
+          #                   GitHub refuses the WHOLE push without it (the paragraph above)
+          # Anything the App gains later — Issues, Packages, Administration — no longer
+          # rides along on a fan-out token just because the installation happens to hold it.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
 
       # ── Fail early and legibly if the mint above was SKIPPED (no FLEET_APP_ID variable
       # or no FLEET_APP_PRIVATE_KEY secret) — otherwise the first clone/push would fail with

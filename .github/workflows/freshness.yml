@@ -70,6 +70,14 @@ jobs:
         with:
           app-id: ${{ vars.FLEET_APP_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+          # Push the bump branch, open its PR — that is the whole job (#830). Neither
+          # `owner:` nor `repositories:` is set, which already scopes the token to THIS
+          # repository; these bound the verbs on it. Deliberately NOT workflows: write —
+          # a pin bump touches zsh/ and nvim/lazy-lock.json, never .github/workflows/, and
+          # if that ever changes the push fails loudly rather than the token having quietly
+          # been able to rewrite CI all along.
+          permission-contents: write
+          permission-pull-requests: write
       # Check out with the App token when we have one, so the branch push is App-authored
       # too (a GITHUB_TOKEN push would re-gate CI on the PR's `synchronize` updates).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -133,6 +141,14 @@ jobs:
         with:
           app-id: ${{ vars.FLEET_APP_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+          # Push the bump branch, open its PR — that is the whole job (#830). Neither
+          # `owner:` nor `repositories:` is set, which already scopes the token to THIS
+          # repository; these bound the verbs on it. Deliberately NOT workflows: write —
+          # a pin bump touches zsh/ and nvim/lazy-lock.json, never .github/workflows/, and
+          # if that ever changes the push fails loudly rather than the token having quietly
+          # been able to rewrite CI all along.
+          permission-contents: write
+          permission-pull-requests: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: true  # the bot pushes its branch (git push -f -u origin) before opening the PR

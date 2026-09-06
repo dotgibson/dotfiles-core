@@ -74,6 +74,14 @@ jobs:
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: dotfiles-web
+          # VERBS, not just reach (#830). `repositories:` bounds WHERE the token works;
+          # without a `permission-*` it still carries the installation's FULL grant set
+          # there — Contents + Pull requests + Workflows write — to POST one dispatch.
+          # `POST /repos/{owner}/{repo}/dispatches` needs Contents: write and nothing else,
+          # so that is all this asks for. Under-scoping fails LOUDLY with a 403 on the
+          # curl below, which is the failure mode to prefer over a token that can rewrite
+          # dotfiles-web's workflows because nobody narrowed it.
+          permission-contents: write
 
       - name: Notify dotfiles-web to rebuild
         env:
