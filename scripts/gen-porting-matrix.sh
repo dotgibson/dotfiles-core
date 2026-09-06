@@ -227,7 +227,7 @@ sesh⁹	-	AUR⁹	go⁹	go⁹	go⁹	go⁹	go³
 difftastic¹⁰	-	\`difftastic\`	\`difftastic\`	=	=	asset²⁸	asset²⁸
 git-absorb²¹ ²⁶	-	\`git-absorb\`	\`git-absorb\`	=	=	\`git-absorb\`	\`git-absorb\`
 ast-grep¹¹	-	\`ast-grep\`	=¹⁸	=	cargo²¹	cargo²¹	—²⁹
-uv³⁰	uv python3-uv	=	\`python3-uv\`	=	=	asset²⁸	asset²⁸
+uv³⁰	uv python3-uv	=	\`python3-uv\`²¹	=	=	asset²⁸	asset²⁸
 w3m	-	=	=	=	=	=	="
 
 # ── helpers ───────────────────────────────────────────────────────────────────
