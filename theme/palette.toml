@@ -17,8 +17,18 @@
 # fixed config paths), and regenerating on a live box would dirty the vendored
 # core/ tree that scripts/core-integrity.sh exists to keep pristine.
 #
-# NOT VENDORED. This is a generation-time INPUT, like scripts/modern-baseline.yml.
-# Its OUTPUTS ship; it does not (audit-core.sh's META_ALLOWLIST).
+# NOT VENDORED INTO core/. This is a generation-time INPUT, like
+# scripts/modern-baseline.yml: its OUTPUTS ship into every OS repo's core/, and it does
+# not (audit-core.sh's META_ALLOWLIST).
+#
+# IT DOES HAVE A DOWNSTREAM CONSUMER, though, which it did not when that was written.
+# dotfiles-Windows vendors THIS FILE — not its outputs — by a separate route: theme-sync.ps1
+# copies it to dotfiles-Windows/theme/palette.toml beside a theme/.core-ref recording the
+# Core commit, its CI hash-gates the pair (tests/Assert-ThemeParity.ps1), and its own
+# gen-theme.ps1 renders nine blocks across powershell/core/ and psmux/ from it
+# (dotgibson/dotfiles-Windows#229, dotfiles-core#798). That repo vendors no core/ at all, so
+# it reads this path out of THIS repo directly. **Moving or renaming this file breaks a
+# downstream CI gate**, which is a fleet contract change and not a local refactor.
 #
 # FLAT ON PURPOSE — no [tables]. gen-theme.sh reads this with one anchored awk
 # regex and no TOML library, the same no-dependency discipline check-modern.sh
