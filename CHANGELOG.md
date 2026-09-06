@@ -297,6 +297,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`gen-theme.sh`'s reverse scan walked the filesystem, so it audited other repositories
+  (found while auditing #904, never filed).** `preflight()`'s reverse half — the one that
+  catches a `core:theme:gen` marker the registry does not know about — discovered files with
+  `grep -r . --include=…`, excluding only `.git/` and `scripts/`. A filesystem walk does not
+  consult `.gitignore`, so it descended into `.claude/worktrees/`, where Claude Code parks a
+  full checkout per session: **57 phantom failures against a tracked tree with no drift at
+  all**, on any box with a worktree present.
+  The failure mode is the reason this is a `fix` and not a tidy-up. `make audit` printed
+  `gen-theme.sh --check could not run (exit 2) — the drift gate checked NOTHING this run`
+  and `the real tree has drifted — run: make gen-theme` **together**, and the second is
+  actively harmful advice: the tree had not drifted, and regenerating consumers from a scan
+  polluted by unrelated checkouts is worse than the gate not running at all.
+  The primitive was already here and the comment above the scan already **claimed** it —
+  "_audit_ls-style discovery so an UNTRACKED consumer about to be committed is caught too".
+  `_audit_ls` is `git ls-files` plus `git ls-files --others --exclude-standard`, which keeps
+  exactly the untracked-consumer property that motivates the scan while inheriting git's
+  exclusions (`.claude/*` is ignored). The code was imitating its own comment.
+  Note what this is **not**: a switch to plain `git ls-files`, which lists only TRACKED files
+  and would silently drop that property — trading a loud wrong answer for a quiet one. The
+  new `_theme_scan_files` therefore keeps a filesystem fallback, and that fallback is **not**
+  belt-and-braces: `scripts/test/40-gen-theme-aliases.sh` builds `$SANDBOX/themerepo` by hand
+  with no `git init`, so git-only discovery would enumerate zero files there and report
+  success — coverage loss reading as health, the exact failure this preflight exists to end.
+  The git path is taken only when the work-tree root **is** the directory being scanned, so a
+  fixture under a `$TMPDIR` that happens to sit inside another repo cannot inherit its list.
+  `audit-core.sh:1602` is the only other recursive walk in the gate scripts and does **not**
+  share the blind spot — it targets `$HERE/zsh`, a tracked subdirectory, not `.`.
+
 - **Two openSUSE claims in `PORTING-MATRIX.md`'s footnotes, from the
   `/os-package-availability` routine (dotfiles-openSUSE#164).** Both are footnote prose, not
   matrix cells, so nothing generated moved and no `make gen-porting-matrix` run is implied.
