@@ -211,12 +211,20 @@ cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversi
 the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
 is the one you want; openSUSE is the exact opposite, so the same name means opposite things
 on the two platforms and neither instinct transfers.
-**Gentoo:** `dev-util/tree-sitter-cli` 0.26.11 is **stable on amd64** and clears the floor,
-so it takes no `package.accept_keywords` line and no cargo build — `dotfiles-Gentoo`
-cargo-built the crate until 2026-08-23, when the atom was found to have been packaged and
-stabilised underneath it (dotfiles-Gentoo#116). Between this, the openSUSE paragraph above
-(dotfiles-openSUSE#113) and the Alpine one below (dotfiles-Alpine#122), **three distros in
-this one footnote moved in a fortnight** — re-query this row on every stamp.
+**Gentoo:** `dev-util/tree-sitter-cli` 0.26.11 is **stable on amd64 and arm64**
+(`KEYWORDS="amd64 arm arm64 ~loong ~mips ppc ppc64 ~riscv ~s390 ~sparc x86"`) and clears
+the floor, so it takes no `package.accept_keywords` line and no cargo build —
+`dotfiles-Gentoo` cargo-built the crate until 2026-08-23, when the atom was found to have
+been packaged and stabilised underneath it (dotfiles-Gentoo#116). 0.26.12 exists but is
+`~`-keyworded on **every** arch, so 0.26.11 is still the stable one to reason about.
+**Maintainer-needed as of 2026-08-30** (dotfiles-Gentoo#144): availability is unchanged —
+it is the maintainer that went away, not the package — but orphaning is what precedes a
+treeclean, which is the same hedge `dotfiles-Gentoo` already carries on `w3m` and `lnav`.
+Between this, the openSUSE paragraph above (dotfiles-openSUSE#113) and the Alpine one below
+(dotfiles-Alpine#122), **three distros in this one footnote moved in a fortnight** —
+re-query this row on every stamp. Read the `.json` endpoint or the ebuild, **not** the
+rendered arch table on `packages.gentoo.org`: it reported `app-shells/starship` as having
+no stable amd64 keyword where the ebuild says `KEYWORDS="amd64 arm64"`.
 Where unpackaged: `mise use -g tree-sitter` or `cargo install tree-sitter-cli`.
 **Alpine:** the `community` package **is** the musl build on every branch, but it clears
 the floor on only **two of five** — v3.24 (`0.26.7-r0`) and edge (`0.26.7-r1`). v3.21
