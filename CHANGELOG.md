@@ -16,6 +16,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`audit-core.sh` §9p — `TOOLS_OPTIN` was the third copy of one set, and the only ungated
+  one (#890, out of #836).** `PORTING-MATRIX.md`'s ²¹ marks are the human contract; Core's
+  `_CORE_DOCTOR_OPTIN` is the **row-level** set, already re-derived and asserted by
+  `test/65-functions.sh`; each OS repo's `TOOLS_OPTIN` carries the **cell-level** marks and
+  was checked by nothing. **The miss already happened and was found by eye**: `uv` is in
+  `_CORE_DOCTOR_WIRED`, `dotfiles-openSUSE` installs none and declared no `TOOLS_OPTIN`, so
+  it fell back to Core's default — which does not list `uv` — and `core-doctor` rendered a
+  false `✗` on every openSUSE box.
+  The rule is exact, and the fleet already satisfies it: _a repo whose matrix column carries
+  cell-level ²¹ must declare `TOOLS_OPTIN` as Core's row-level set **plus** those tools; a
+  repo with no cell-level mark may omit it_. The "plus" is the whole set repeated, because a
+  declared list **replaces** the default rather than adding to it — declaring only the delta
+  would trade one false `✗` for nine, which is its own test case.
+  **Blocking, unlike §9o**, and the difference is the fleet's state rather than a change of
+  heart: every covered repo passes today, so it can red on a regression without reddening
+  anything that exists.
+  Two maps are **explicit because neither is derivable**, and both had a trap behind them.
+  `Kali (apt)` and `Debian/Ubuntu` are two columns of **one repo**, so a header-to-directory
+  guess would invent a `dotfiles-Kali` or drop Kali's marks. And a parenthetical in the Tool
+  cell is not reliably a binary name — `jujutsu (jj)` is an alias, `op (1Password)` is a
+  description — so an unknown one is **reported rather than guessed at**. The derivation also
+  stops after the first table: footnote 21 carries a coverage table of its own whose first
+  column is backticked tool names (`PORTING-MATRIX.md:653`), and a scan that stays armed
+  sweeps `` `gping` `` in twice and invents a flag. Both traps are asserted, and both were
+  live bugs in the first draft — caught by running it against the real fleet rather than
+  against fixtures. Five repos, not nine: `dotfiles-MacBook`, `-Fedora`, `-Offense` and
+  `-Defense` have no column, so the gate is **silent** about them rather than inventing a
+  verdict for a repo the matrix cannot see.
 - **`audit-core.sh` §9o — `core/` described as a `git subtree` is a checked fact now (#891,
   the gate #774 asked for).** #587 replaced the fan-out's `git subtree pull --squash` with a
   pinned fetch plus `git read-tree --prefix=core/`; #668 retired the framing from Core's docs;
@@ -29,9 +57,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   to say both, calling `core/` _"a vendored subtree, materialized by dotfiles-core's own"_.
   A hand sweep scoped to one filename missed them precisely because it was scoped to one
   filename, which is the whole argument for the gate.
-  So it lands **advisory**, reporting the count rather than failing, exactly as §9c does while
-  the fleet closes its capability gap; flipping it is a three-line follow-up once the sweep
-  lands. **Keyed on the claim, not the token**, and that is forced rather than fastidious: two
+  Those 21 landed as nine PRs in the same pass, so this ships **blocking** rather than
+  advisory — and the flip was made against the **tree**, not the PR list: re-checked against
+  every repo's `origin/main` (0 of 21 remaining, nine repos), because a repo can regain a line
+  and an environment skip with no siblings cloned looks exactly like a pass. **Keyed on the claim, not the token**, and that is forced rather than fastidious: two
   `git subtree` mentions in `dotfiles-Offense` are correct — one of them a sentence arguing
   this gate's own position, the other the `offensive/companion` subtree, which genuinely is
   one — and a blanket scan would red both. Nine cases, every fixture **real text**: the

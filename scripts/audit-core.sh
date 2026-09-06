@@ -2663,13 +2663,13 @@ fi
 # Core's docs; #774 swept the eight OS repos' CLAUDE.md by hand. This is what makes the
 # next recurrence a checked fact rather than a remembered one.
 #
-# ADVISORY, NOT BLOCKING, and the reason is a finding rather than caution: running it for
-# the first time surfaced TWENTY-ONE more sites in files #774 never looked at — README.md,
-# CONTRIBUTING.md, SECURITY.md and the PR templates, across all nine repos. A hand sweep
-# scoped to one filename missed them precisely because it was scoped to one filename, which
-# is the argument for the gate. It cannot block until that backlog is cleared, so it reports
-# and says how many, exactly as §9c does for undeclared capabilities while the fleet closes
-# its own gap. Flipping it is a three-line follow-up once the sweep lands.
+# BLOCKING, and it earned that in one step. Running it for the first time surfaced
+# TWENTY-ONE more sites in files #774 never looked at — README.md, CONTRIBUTING.md,
+# SECURITY.md and the PR templates, across all nine repos. A hand sweep scoped to one
+# filename missed them precisely because it was scoped to one filename, which is the argument
+# for the gate. Those landed as nine PRs, and the fleet was re-checked against origin/main
+# (0 of 21 remaining, nine repos) before this flipped from advisory — the tree, not the PR
+# list, because a repo can regain a line and an environment skip looks like a pass.
 #
 # KEYED ON THE CLAIM, NOT THE TOKEN — see _core_vendoring_claim_hits for why that is
 # forced: two `git subtree` mentions in dotfiles-Offense are CORRECT, one of them a sentence
@@ -2700,16 +2700,64 @@ $(printf '%s\n' "$_vc_hits" | sed 's/^/  /')"
   if ((_vc_checked == 0)); then
     skip_env "vendoring claims (no sibling OS repo checked out — nothing to read here)"
   elif ((_vc_repos)); then
-    # ADVISORY: `pass`, not `fail`. The sweep RAN and answered; what it found is a backlog
-    # the fleet is mid-way through closing, and a fail here would deadlock every unrelated
-    # `make sync` on prose in a repo this one cannot edit. §9c's posture, same reason.
-    pass "vendoring claims: $_vc_lines line(s) in $_vc_repos of $_vc_checked repo(s) still describe core/ as a git subtree — advisory until the sweep lands (#891), then this blocks"
-    ((${CORE_JSON:-0})) || printf '%s\n' "$_vc_out"
+    # The fix is upstream in the repo that owns the prose, never here — Core cannot edit it,
+    # so the message names the repo and the line rather than offering a command to run.
+    fail "$_vc_lines line(s) in $_vc_repos of $_vc_checked repo(s) describe core/ as a git subtree — the fan-out has used a pinned fetch plus read-tree since #587; fix the prose in that repo"
+    fail_detail "$_vc_out"
   else
     pass "vendoring claims: no checked-out repo describes core/ as a git subtree ($_vc_checked repo(s))"
   fi
   ((_vc_absent)) && skip_env "vendoring claims: $_vc_absent repo(s) not checked out — not covered by this run"
   unset _vc_root _vc_checked _vc_absent _vc_repos _vc_lines _vc_out _vc_hits _vc_dir _vc_repo
+fi
+
+# ── 9p. TOOLS_OPTIN ↔ PORTING-MATRIX.md's cell-level ²¹ marks ────────────────
+# #890, out of #836. Three copies of one set, and only two were gated: the matrix's ²¹
+# marks (the human contract), Core's _CORE_DOCTOR_OPTIN (the ROW-level set, re-derived and
+# asserted by test/65-functions.sh), and each OS repo's TOOLS_OPTIN (the CELL-level marks,
+# gated by nothing).
+#
+# THE MISS ALREADY HAPPENED, and was found by eye rather than by check: `uv` is in
+# _CORE_DOCTOR_WIRED, dotfiles-openSUSE installs none and declared no TOOLS_OPTIN, so it fell
+# back to Core's default — which does not list uv — and core-doctor rendered a false ✗ on
+# every openSUSE box. That is the alarm-fatigue failure the opt-in state exists to prevent,
+# and nothing would have caught the next one.
+#
+# BLOCKING, unlike §9o, and the difference is the state of the fleet rather than a change of
+# heart: every covered repo satisfies the rule today (verified against origin/main), so this
+# can red on a regression without reddening anything that exists. §9o reports because its
+# backlog is real; this fails because its backlog is empty.
+#
+# FIVE REPOS, NOT NINE. The matrix's package table has columns for Arch, openSUSE, Alpine,
+# Gentoo, Kali and Debian/Ubuntu — the last two being one repo. dotfiles-MacBook, -Fedora,
+# -Offense and -Defense have no column, so this says nothing about them: the matrix is the
+# authority for what it covers and silent about the rest, which is better than inventing a
+# verdict for a repo it cannot see.
+hdr "TOOLS_OPTIN ↔ matrix ²¹ marks"
+if ! load_os_repos; then
+  skip_env "TOOLS_OPTIN ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+else
+  _to_root="$(cd "$HERE/.." && pwd)"
+  # A COVERED repo absent from the box is an environment skip, not a pass: the helper is
+  # silent on a directory it cannot read, and silence must never be reported as agreement.
+  _to_seen=0
+  for _to_repo in dotfiles-Arch dotfiles-openSUSE dotfiles-Alpine dotfiles-Gentoo dotfiles-Debian; do
+    [[ -e "$_to_root/$_to_repo/.git" ]] && _to_seen=$((_to_seen + 1))
+  done
+  if ((_to_seen == 0)); then
+    skip_env "TOOLS_OPTIN (none of the five matrix-covered repos checked out — nothing to read here)"
+  else
+    _to_out="$(_core_tools_optin_hits "$HERE" "$_to_root")"
+    if [[ -z "$_to_out" ]]; then
+      pass "TOOLS_OPTIN — every checked-out matrix-covered repo declares what its column marks ($_to_seen of 5)"
+    else
+      fail "a repo's TOOLS_OPTIN disagrees with its PORTING-MATRIX.md column — core-doctor will misreport a tool's absence on every box of that OS"
+      fail_detail "$_to_out"
+    fi
+    unset _to_out
+    ((_to_seen < 5)) && skip_env "TOOLS_OPTIN: $((5 - _to_seen)) of the 5 matrix-covered repos not checked out — not covered by this run"
+  fi
+  unset _to_root _to_seen _to_repo
 fi
 
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
