@@ -16,6 +16,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`audit-core.sh` §9n — the fleet's caller pins are checked now, not remembered (#804).** The
+  v5 → v6 caller sweep was **45 pins across 8 repos, done entirely by hand**, and nothing
+  would have reported a repo that was missed. Two gates looked adjacent and neither covered
+  it: §8a's `_core_workflow_ref_hits` is called as `. "$major"`, so its scope is **Core's own**
+  `.github/workflows/`; `fleet-drift` reads each repo's recorded `core.lock` provenance, a
+  different axis entirely. #736 predicted this and expected #672 to close it — #672 closed as
+  _"done and now gated"_, but the gating it refers to is §8a. So the fleet half was never
+  covered by anything.
+  **A missed repo is worse than an ordinary stale pin**: it runs the _outgoing_ major's
+  reusable workflows, and on a major that changes what `core-integrity` expects — #676 is
+  exactly one — its CI reports `TAMPERED` against a tree nobody touched and its fan-out PR
+  cannot merge. It is also self-healing in the **wrong** direction, staying quiet until the
+  pinned workflow is deleted or diverges, so the failure surfaces long after the release that
+  caused it.
+  `_core_caller_pin_hits` is the third half of a check that had two: §8a reads `ref:` keys,
+  §8b reads comment examples, and this reads the live `uses:` an OS repo actually executes.
+  It shares the sibling matcher exactly — owner plus left boundary, so `notdotgibson/…` and
+  `someone/not-dotfiles-core/…` are not judged — and **only `@v<digits>` is judged**:
+  `dotfiles-MacBook` pins by SHA on purpose, and answering "which pinning style" is
+  `check-modern.sh`'s job, not a second opinion here. Nine cases, and the sharpest drives all
+  three helpers over one fixture to assert that a stale live caller is invisible to both
+  siblings and visible only to this one — #804's gap stated as an assertion rather than as
+  prose. `RELEASE-RUNBOOK.md` §2 now says the sweep is checked, and records that
+  `dotfiles-Windows` stays a hand check **because** it is not in `scripts/os-repos.txt` —
+  widening the gate past the fleet list would put the list and the gate in disagreement, and
+  #805 is what that blind spot costs when nobody checks it.
+
 - **`blib_resolve_su --prefer TOOL` — the escalator order is not a universal fact (#867).**
   `blib_resolve_su` has resolved sudo-then-doas since it was written, which is right for eight
   repos and **wrong for `dotfiles-Alpine`**: its `os/alpine.capabilities` declares _"DOAS, NOT
