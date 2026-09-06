@@ -64,6 +64,9 @@ jobs:
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: dotfiles-web
+          # Contents: write is exactly what `POST /repos/…/dispatches` needs, and all this
+          # job does (#830). Same reasoning as the reusable's copy in notify-web-call.yml.
+          permission-contents: write
       - name: Notify dotfiles-web to rebuild
         env:
           TOKEN: ${{ steps.app.outputs.token }}
