@@ -236,11 +236,22 @@ if have nvim; then
       nvim() { printf "%s\0" "$@" >"'"$_MRT/nvim.argv"'"; }
       . "'"$_MRT/nvimstep.bash"'"
     ' >/dev/null 2>&1
+    # A read loop, NOT `mapfile -d ''` — mapfile is bash 4+ and macOS ships 2007's bash 3.2,
+    # which the audit matrix runs (PORTABILITY.md §1; every other script here says so too).
+    # `read -d ''` splits on the NUL the stub wrote, so an argument containing whitespace —
+    # every -c lua arm does — still arrives as exactly one element.
     _nvargv=()
-    if [[ -s "$_MRT/nvim.argv" ]]; then mapfile -t -d '' _nvargv <"$_MRT/nvim.argv"; fi
-    # Drop the leading --headless; this harness supplies its own flags.
+    if [[ -s "$_MRT/nvim.argv" ]]; then
+      while IFS= read -r -d '' _nvarg; do _nvargv+=("$_nvarg"); done <"$_MRT/nvim.argv"
+    fi
+    unset _nvarg
+    # Drop the leading --headless; this harness supplies its own flags. `${a[@]+"${a[@]}"}`,
+    # not a bare `"${a[@]}"`: under `set -u` (set at the top of test-core.sh) bash 3.2 counts
+    # an EMPTY array's expansion as unset and dies — the same rule 85-escalation.sh pins.
+    # An empty argv is the capture having failed, which the ((${#_nvarms[@]} == 0)) arm below
+    # reports properly; it must not take the whole run down first.
     _nvarms=()
-    for _a in "${_nvargv[@]}"; do [[ "$_a" == "--headless" ]] && continue; _nvarms+=("$_a"); done
+    for _a in ${_nvargv[@]+"${_nvargv[@]}"}; do [[ "$_a" == "--headless" ]] && continue; _nvarms+=("$_a"); done
 
     # The three stand-ins, as --cmd (they must exist BEFORE the -c arms run).
     _ts_stub='lua package.preload["nvim-treesitter"] = function() return { update = function() return { wait = function() end } end } end; package.preload["nvim-treesitter.config"] = function() return { get_installed = function() return {} end } end; package.preload["mason"] = function() return {} end'
