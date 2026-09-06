@@ -1981,3 +1981,109 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
     }
   ' "$mk"
 }
+
+# ── _core_fanout_count_hits: the fan-out set, counted wrong ───────────────────
+# _core_fanout_count_hits <repo-root> <live-count> — print every TRACKED line that says
+# how many repos a Core change fans out into, where the stated number disagrees with
+# <live-count>. Output is `path:LINE: msg`. Silence = clean.
+#
+# WHY THIS EXISTS. dotgibson/dotfiles-core#770 found the number contradicting itself across
+# the tree: five sites said EIGHT against ~20 that said nine, and two of the five were Core
+# files, so the wrong number was replicated nine ways on every sync. It had been fixed
+# piecemeal before — #668 found it on CODEOWNERS:1 and deliberately left it, because
+# correcting one of several inconsistent sites makes the tree no more correct.
+#
+# WHY IT KEEPS COMING BACK, and what that means for the pattern. There are three genuinely
+# different correct numbers here, and prose rarely says which is meant:
+#
+#   · 9  — repos that vendor `core/` (scripts/os-repos.txt; 7 OS + 2 Role)
+#   · 8  — OS-native repos, INCLUDING dotfiles-Windows, which vendors nothing
+#   · 11 — the whole system (8 OS + 2 Role + dotfiles-core)
+#
+# So "eight" was never simply a stale nine: it is someone correctly counting OS repos and
+# attaching it to the FAN-OUT, which is a different set. A gate keyed on the bare number
+# would therefore red on `85-escalation.sh`'s "eight repos rely on sudo-first" (nine minus
+# Alpine — correct), on #775's "eleven defects across eight repos" (the lint-call callers —
+# correct), and on every "eleven-repo system". That gate would be noise, and noise is how a
+# check teaches the fleet to ignore it.
+#
+# KEYED ON THE CLAIM, NOT THE NUMBER. A count is only checkable when the sentence says
+# which set it is counting, so this fires only where a FAN-OUT VERB governs the count —
+# "fans out to", "vendors into", "lands in", "ships to". Measured against the tree at the
+# time of writing: 23 such claims, and exactly the two genuine defects among them. Every
+# legitimate other-set usage above is invisible to it, because none of them is a fan-out
+# claim.
+#
+# CHANGELOG IS EXCLUDED, deliberately. It is a historical record and is correct for when
+# each entry was written; rewriting old entries to match today's fleet would be a lie about
+# what shipped. Same for the V*-PROPOSAL design records.
+#
+# THE COUNT IS PASSED IN, not read here, so the caller stays the one reader of
+# scripts/os-repos.txt (load_os_repos, the single reader since #669) and this helper is
+# drivable from a test with any number.
+_core_fanout_count_hits() { # _core_fanout_count_hits <repo-root> <live-count>
+  local root="${1:-.}" want="${2:-0}" file
+  command -v git >/dev/null 2>&1 || return 0
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  # ls-files, not a find: a fan-out claim in an untracked scratch file is not a claim the
+  # fleet ships. -z + read -d keeps a path with a space intact.
+  while IFS= read -r -d '' file; do
+    case "$file" in
+    CHANGELOG*.md | V[0-9]-PROPOSAL.md) continue ;;
+    esac
+    [[ -f "$root/$file" ]] || continue
+    awk -v f="$file" -v want="$want" '
+      # Number words the fleet actually writes, plus bare digits. An unknown word is not a
+      # count and is skipped rather than guessed at.
+      function num(w,   n) {
+        n["seven"] = 7; n["eight"] = 8; n["nine"] = 9; n["ten"] = 10; n["eleven"] = 11
+        if (w ~ /^[0-9]+$/) return w + 0
+        return (tolower(w) in n) ? n[tolower(w)] : -1
+      }
+      # claim_num(s) — the repo count a fan-out claim in <s> applies, or -1 for no claim.
+      # The verb must GOVERN the count: a short run of words between them is allowed (the
+      # claims in-tree read "fans out to all nine Core-vendoring repos", "vendors into
+      # nine repos", and the older "nine OS repos" the regex still has to catch),
+      # but not a sentence boundary, which would let an unrelated later number match.
+      function claim_num(s,   claim, tail) {
+        s = tolower(s)
+        if (!match(s, /(fans? out|fan-out|vendors? into|vendors? to|lands? in|ships? into|ships? to)[^.!?]{0,40}[[:space:]]+(seven|eight|nine|ten|eleven|[0-9]+)[[:space:]-]+(os[[:space:]-]+|core-vendoring[[:space:]-]+)?repos?/)) return -1
+        claim = substr(s, RSTART, RLENGTH)
+        # The LAST number before "repos" is the one being applied to it.
+        if (!match(claim, /(seven|eight|nine|ten|eleven|[0-9]+)[[:space:]-]+(os[[:space:]-]+|core-vendoring[[:space:]-]+)?repos?$/)) return -1
+        tail = substr(claim, RSTART, RLENGTH)
+        sub(/[[:space:]-]+(os[[:space:]-]+|core-vendoring[[:space:]-]+)?repos?$/, "", tail)
+        word = tail
+        return num(tail)
+      }
+      # THE GATE MUST NOT RED ON ITS OWN FIXTURES. 90-policy-gates.sh holds the wrong
+      # claims verbatim, on purpose, because a gate proven only against strings invented for
+      # it is proven against nothing. An explicit per-line opt-out beats excluding the whole
+      # file: the exemption is visible where it is taken, greps in one command, and cannot
+      # quietly grow to cover a real claim someone later adds to that file. It is the trap
+      # that once made _core_make_gate_hits report Core as the repo missing its own rule.
+      /core:fanout-fixture/ { prev = ""; next }
+      {
+        got = claim_num($0)
+        # A ONE-LINE CARRY, because a wrapped comment is how one of #770'"'"'s two survivors
+        # hid: ci.yml said "vendors into all" and put "8 repos" on the NEXT comment line, so
+        # a line-based check read neither half as a claim. Joining with the previous line
+        # catches the wrap; the finding is reported against the line carrying the NUMBER,
+        # which is the line an author has to edit.
+        # ...and ONLY when neither half is a claim on its own. Without that guard the line
+        # AFTER a complete claim joins with it and is reported a second time, against a line
+        # that says nothing about repos.
+        if (got < 0 && NR > 1 && claim_num(prev) < 0) {
+          joined = prev
+          sub(/^[[:space:]]*(#|--|\/\/)[[:space:]]*/, " ", $0)
+          got = claim_num(joined " " $0)
+        }
+        if (got > 0 && got != want) {
+          printf "%s:%d: a fan-out claim says %s repos; scripts/os-repos.txt lists %d — Core vendors into the %d Core-vendoring repos (7 OS + 2 Role; dotfiles-Windows vendors no core/)\n", \
+            f, FNR, word, want, want
+        }
+        prev = $0
+      }
+    ' "$root/$file"
+  done < <(git -C "$root" ls-files -z)
+}

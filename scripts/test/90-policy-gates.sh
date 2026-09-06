@@ -295,6 +295,109 @@ unset -f _mg_write _mg_count
 # PARITY.md varies between rows, so every verdict below is attributable to the coverage
 # logic and nothing else. dotfiles-Windows is deliberately absent from the fixture root,
 # so the pwsh half self-skips and cannot colour the result.
+# ── the fan-out count (common.sh :: _core_fanout_count_hits) ─────────────────
+# #770 found the number contradicting itself across the tree — five sites saying EIGHT
+# against ~20 saying nine — after #668 had found one of the five a year earlier and
+# deliberately left it, because correcting one of several inconsistent sites makes the tree
+# no more correct. A gate is the answer to drift that has recurred; these cases pin the two
+# properties that decide whether it is a USEFUL one.
+#
+# BOTH DIRECTIONS, deliberately. The negative cases carry as much weight as the positive:
+# three different numbers are correct here about three different sets (9 Core-vendoring,
+# 8 OS-native, 11 total), and a gate that reds on the legitimate ones is noise — which is
+# how a check teaches the fleet to ignore it. Those lines are verbatim from the tree.
+hdr "fan-out count guard (_core_fanout_count_hits)"
+_fc_="$SANDBOX/fanout"
+_fc_setup() { # _fc_setup <file-content...> — a throwaway git repo holding one tracked file
+  rm -rf "$_fc_"
+  mkdir -p "$_fc_"
+  git -C "$_fc_" init -q >/dev/null 2>&1 || return 1
+  printf '%s\n' "$@" >"$_fc_/claims.md"
+  git -C "$_fc_" add -A >/dev/null 2>&1
+}
+_fc_count() { # _fc_count <label> <want-findings>
+  local got n=0
+  got="$(_core_fanout_count_hits "$_fc_" 9)"
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$2" ]]; then pass "fan-out count: $1"; else fail "fan-out count: $1 (got $n finding(s), want $2)"; fi
+}
+
+if ! git --version >/dev/null 2>&1; then
+  skip_env "fan-out count guard (git not available — the helper enumerates through git ls-files)"
+else
+  # THE TWO SURVIVORS OF #770, verbatim. CODEOWNERS:1 is the one #668 found and left.
+  _fc_setup '# CODEOWNERS — Core fans out to all eight OS repos, so every change' # core:fanout-fixture
+  _fc_count "the CODEOWNERS line #668 found and left is a finding" 1
+
+  _fc_setup '--         2. `cond` gates the whole spec on the `claude` binary. Core vendors into eight OS repos' # core:fanout-fixture
+  _fc_count "the nvim plugin comment is a finding" 1
+
+  # THE WRAPPED CLAIM. ci.yml put the verb on one comment line and the number on the NEXT,
+  # so a line-based check read neither half as a claim and the defect survived a sweep that
+  # was looking straight at it. Reported against the line carrying the NUMBER — the line an
+  # author edits.
+  _fc_setup \
+    "  # or a shebang script that isn't +x sails through green and vendors into all" \
+    '  # 8 repos. The audit job deliberately does NOT replicate these file-hygiene hooks' # core:fanout-fixture
+  _fc_count "a claim wrapped across two comment lines is still a claim" 1
+  if [[ "$(_core_fanout_count_hits "$_fc_" 9)" == claims.md:2:* ]]; then
+    pass "fan-out count: a wrapped claim is reported against the line holding the number"
+  else
+    fail "fan-out count: a wrapped claim was reported against the verb's line, which is not the line to edit"
+  fi
+
+  # ── the legitimate other-set usages, all verbatim from the tree ─────────────
+  # 8, correctly: the nine vendoring repos minus dotfiles-Alpine, which uses doas.
+  _fc_setup '# sudo-first is right for eight repos and WRONG for dotfiles-Alpine, whose'
+  _fc_count "eight repos relying on sudo-first is not a fan-out claim" 0
+
+  # 8, correctly again, and a DIFFERENT eight: the lint-call.yml callers (nine minus MacBook).
+  _fc_setup '  # by hand and found ELEVEN defects across eight repos in three shapes:'
+  _fc_count "#775's eleven-defects-across-eight-repos sweep is not a fan-out claim" 0
+
+  # 11, correctly: the whole system, 8 OS + 2 Role + dotfiles-core.
+  _fc_setup 'a eleven-repo dotfiles system built on a three-layer model'
+  _fc_count "the eleven-repo system count is not a fan-out claim" 0
+
+  # A number that is not a count of repos at all.
+  _fc_setup 'Core fans out to all nine OS repos, and 8 of them ship a Makefile.'
+  _fc_count "a correct claim followed by an unrelated number stays clean" 0
+
+  # THE POSITIVE CONTROL. A gate whose clean cases all pass because it matches nothing is
+  # the failure mode these fixtures exist to rule out.
+  _fc_setup 'A change here fans out to all nine OS repos, so the bar is high.'
+  _fc_count "a correct claim is clean" 0
+  if [[ -n "$(_core_fanout_count_hits "$_fc_" 8)" ]]; then
+    pass "fan-out count: the same correct-at-9 claim IS a finding when the fleet lists 8 (the check reads the list, not a constant)"
+  else
+    fail "fan-out count: a nine-repo claim went clean against a fleet of 8 — the number is hardcoded, so the gate cannot follow os-repos.txt"
+  fi
+
+  # CHANGELOG IS EXCLUDED: it records what was true when written, and rewriting old entries
+  # to match today's fleet would be a lie about what shipped.
+  _fc_setup 'placeholder'
+  printf '%s\n' '  fan out to all eight OS repos, silently. luacheck does not help' >"$_fc_/CHANGELOG.md" # core:fanout-fixture
+  git -C "$_fc_" add -A >/dev/null 2>&1
+  _fc_count "a historical fan-out claim in CHANGELOG.md is not rewritten by the gate" 0
+
+  # THE OPT-OUT ITSELF. `core:fanout-fixture` is how the cases above hold the wrong claims
+  # verbatim without reddening the gate that reads this very file. An exemption nothing
+  # tests is an exemption that can silently swallow a real claim, so both halves are pinned:
+  # a marked line is exempt, and an unmarked one in the SAME file is still judged.
+  _fc_setup \
+    '# Core fans out to all eight OS repos # core:fanout-fixture' \
+    '# Core fans out to all eight OS repos' # core:fanout-fixture (this physical line, too)
+  _fc_count "the fixture marker exempts its own line and nothing else" 1
+
+  # AND UNTRACKED FILES: a claim in a scratch file is not a claim the fleet ships.
+  _fc_setup 'placeholder'
+  printf '%s\n' '# Core fans out to all eight OS repos' >"$_fc_/scratch.md" # core:fanout-fixture
+  _fc_count "an UNTRACKED file's fan-out claim is not judged" 0
+fi
+rm -rf "$_fc_"
+unset _fc_
+unset -f _fc_setup _fc_count
+
 hdr "parity coverage gate (scripts/parity-check.sh)"
 PCR="$SANDBOX/parityrepo"
 PCOUT="$SANDBOX/parity-run.out"
