@@ -200,6 +200,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Minted tokens carried the installation's full grant set; every consumer scopes its verbs
+  now (#830).** `repositories:` bounds **where** a token works and `permission-*` bounds
+  **what** it may do there — independent axes, and only the first was ever set. So the
+  `notify-web` dispatch held a token that could rewrite `dotfiles-web`'s workflows in order
+  to `POST` one `repository_dispatch`. All five mint steps are narrowed to what their job
+  actually calls:
+  `notify-web-call.yml` and `notify-web.yml` take **`contents: write`** and nothing else —
+  that is precisely what `POST /repos/…/dispatches` needs. `freshness.yml`'s two mints take
+  **`contents` + `pull-requests`**: they push a bump branch and open its PR, and they set
+  neither `owner:` nor `repositories:`, which already scopes them to this repository.
+  `sync-fanout.yml` takes **`contents` + `pull-requests` + `workflows`**, and keeps its
+  deliberately unbounded reach — the install list is the one place scope lives, and a second
+  copy of `scripts/os-repos.txt` there would drift and 403 a newly-added repo.
+  **`workflows: write` is the interesting one.** `sync-fanout` genuinely needs it: a sync
+  branch can carry `.github/workflows/*` pin moves and GitHub refuses the _whole_ push
+  without it. `freshness.yml` deliberately does **not** take it — a pin bump touches `zsh/`
+  and `nvim/lazy-lock.json`, never workflows, so if that ever changes the push fails loudly
+  rather than the token having quietly been able to rewrite CI all along. That asymmetry is
+  the point of scoping rather than pasting one block everywhere.
+  **Under-scoping fails loudly**, which is the failure mode to prefer here: a missing verb
+  is a 403 at the call site, never a silent downgrade. `GITHUB-APP-AUTH.md`'s two
+  known-gaps bullets said the opposite and are replaced by a per-consumer table; the
+  new-consumer template already told newcomers to scope, so it needed no change — it was
+  the existing consumers that had not caught up.
+
 - **`PORTING-MATRIX.md`: the openSUSE `uv` cell asserted a name for a package the repo does not
   install, and the file was not a prettier fixed point (#836).** Two of the five findings that
   issue parked while wiring the generator.

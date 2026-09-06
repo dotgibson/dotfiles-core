@@ -33,14 +33,30 @@ the App.**
   list stays the one place scope lives. The trade is a broader token for that one job, and
   it is why the install list should stay minimal.
 
-**Neither shape scopes *verbs*.** No consumer passes `permission-*`, so a minted token
-carries the installation's **full** grant set — Contents + Pull requests + Workflows write —
-on whatever repositories it covers, however little the job needs. Repository reach is
-bounded; verb reach is not. That is the one dimension the App migration did **not** narrow,
-and it is still true today — which is what
-[`GITHUB-APP-MIGRATION.md`](GITHUB-APP-MIGRATION.md) defers to this section to answer.
-Tightening it is #830; *Adding a new consumer* below tells a new consumer to diverge from
-every existing one rather than copy the omission.
+**Both shapes now scope *verbs* too, and they are independent axes.** `repositories:`
+bounds **where** a token works; `permission-*` bounds **what** it may do there. Until #830
+no consumer passed the second, so a minted token carried the installation's **full** grant
+set — Contents + Pull requests + Workflows write — on whatever repositories it covered,
+however little the job needed. That was the one dimension the App migration did not narrow,
+and it is the question [`GITHUB-APP-MIGRATION.md`](GITHUB-APP-MIGRATION.md) defers to this
+section to answer. It is now narrowed, per mint:
+
+| Consumer | Reach | Verbs |
+| --- | --- | --- |
+| `notify-web-call.yml`, `notify-web.yml` | `dotfiles-web` | `contents: write` — all `POST /repos/…/dispatches` needs |
+| `sync-fanout.yml` | the whole installation, deliberately | `contents` + `pull-requests` + `workflows: write` |
+| `freshness.yml` (×2) | this repository (no `owner:`/`repositories:`) | `contents` + `pull-requests: write` |
+
+`sync-fanout.yml` is the one that keeps **Workflows: write**, and it is load-bearing rather
+than cautious: a sync branch can carry `.github/workflows/*` pin moves, and GitHub refuses
+the **whole** push without it. `freshness.yml` deliberately does **not** take it — a pin
+bump touches `zsh/` and `nvim/lazy-lock.json`, never workflows, and if that ever changes the
+push fails loudly rather than the token having quietly been able to rewrite CI all along.
+
+**Under-scoping fails loudly, which is the failure mode to prefer.** A missing verb is a
+403 at the call site, not a silent downgrade — so the risk of narrowing is a red job, while
+the risk of not narrowing is a token that can rewrite another repo's workflows because
+nobody got round to it.
 
 Two settings make it work, both at the **organization** level:
 
@@ -167,11 +183,12 @@ fleet, in which case move them together.
 >   so a new consumer cannot simply switch inputs without the variable changing too.
 >   **Use `app-id` for now** — it is the only input `FLEET_APP_ID` fits — and expect to
 >   move with the fleet. Migrating it is #831.
-> - **No consumer scopes permissions.** Omitting `permission-*` gives the token the
->   installation's **full** grant set — Contents + Pull requests + Workflows write — on
->   whatever repositories it covers, however little the job needs. **Scope yours** (the
->   template below does); this is the one place a new consumer should diverge from every
->   existing one. Tightening those is #830.
+> - **Scope the permissions.** Omitting `permission-*` gives the token the installation's
+>   **full** grant set — Contents + Pull requests + Workflows write — on whatever
+>   repositories it covers, however little the job needs. Every existing consumer now
+>   scopes its verbs (#830, see the table under *What the fleet runs today*), so match
+>   them: name the verbs your job actually uses and no more. Under-scoping is a 403 at the
+>   call site, which is a better outcome than a token that can do more than the job.
 
 Then, in the job:
 
