@@ -295,7 +295,7 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
    ```sh
    # repos needing WEBHOOK_SECRET — anything dispatching, whether via the reusable or inline
    # (the `uses:` half matches BOTH forms; Core's own caller is local, with no `@` — step 5)
-   grep -rlE '^[[:space:]]*uses:.*notify-web-call\.yml|repos/dotgibson/dotfiles-web/dispatches' ../*/.github/workflows/
+   grep -rl -e '^[[:space:]]*uses:.*notify-web-call\.yml' -e 'repos/dotgibson/dotfiles-web/dispatches' ../*/.github/workflows/
    # repos needing FLEET_SYNC_TOKEN — anything running a cross-repo fan-out
    grep -rln 'sync-fanout' ../*/.github/workflows/
    ```
@@ -374,7 +374,7 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
 
    ```sh
    # who calls it, and at what ref — BOTH forms, and Core's own tree
-   grep -rnE '^[[:space:]]*uses:.*notify-web-call\.yml' ../*/.github/workflows/ 2>/dev/null
+   grep -rn -e '^[[:space:]]*uses:.*notify-web-call\.yml' ../*/.github/workflows/ 2>/dev/null
    ```
 
    > **Match both `uses:` forms.** An earlier version of this command needled
@@ -386,6 +386,14 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
    > the App. Anchoring on `uses:` also skips the reusable's own documentation comment,
    > which is not a caller. Run it from the Core checkout that sits **beside** the sibling
    > clones — `../*/` from a git worktree points somewhere else entirely.
+   >
+   > **Two `-e` patterns, POSIX BRE, no `-E`.** The first draft of this command used a
+   > single ERE with an `|` alternation, and it did **not** match under **busybox grep** —
+   > caught by the Alpine audit leg, which is a machine in this fleet and therefore a box
+   > someone could be running this recovery from. Both patterns are valid BRE as written,
+   > so dropping `-E` costs nothing and removes the construct that differed. A recovery
+   > command that works on the maintainer's laptop and not on Alpine is the same class of
+   > defect as one that cannot see Core's own caller.
 
    Edits to steps 3-4 sit on `main`, invisible to every one of them. Until this lands,
    step 6 hands the reusable a secret that the version actually running still ignores, and

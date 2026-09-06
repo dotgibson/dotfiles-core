@@ -326,22 +326,34 @@ fi
 # separation the parity verdict's notice pin exists for. Selected by CONTENT rather than by
 # position, so inserting an unrelated grep into the procedure does not silently shift which
 # command is under test.
-_rc_pats="$(sed -n "s/.*grep -r[a-zE]* '\([^']*\)'.*/\1/p" "$_rc_doc" | grep -F 'notify-web-call')"
+# EVERY `-e 'PATTERN'` on a `grep -r` line, then the ones about notify-web-call. The
+# `[-]e` bracket avoids a leading dash that grep would read as an option, without needing
+# `--` (busybox and GNU disagree less about brackets than about option terminators), and
+# the whole pipeline is POSIX so it runs on the Alpine leg that caught the ERE in the first
+# place. Step 2's other pattern is the INLINE dispatcher half and is not expected to match
+# release.yml, so filtering to notify-web-call is what makes the assertion meaningful.
+_rc_pats="$(sed -n '/grep -r/p' "$_rc_doc" | grep -o "[-]e '[^']*'" | sed "s/^-e '//; s/'\$//" | grep -F 'notify-web-call')"
 _rc_n="$(printf '%s\n' "$_rc_pats" | grep -c . || true)"
 if ((_rc_n == 2)); then
   pass "recovery derivation: both documented notify-web-call greps were extracted from the runbook"
 else
   fail "recovery derivation: extracted $_rc_n notify-web-call grep(s) from GITHUB-APP-AUTH.md, want 2 (steps 2 and 5) — the runbook's commands were reshaped and this check is reading the wrong thing"
 fi
+# The pattern is applied WITHOUT -E, exactly as the runbook now spells it: a step that
+# reverted to an ERE-only construct would fail here rather than only on the Alpine leg.
+# Numbered, because the two commands legitimately carry the SAME pattern now and two
+# identical lines in the output would look like a duplicate rather than two checks.
+_rc_i=0
 while IFS= read -r _rc_pat; do
   [[ -n "$_rc_pat" ]] || continue
-  if [[ -n "$_rc_local" ]] && grep -rlE "$_rc_pat" "$_rc_wf" 2>/dev/null | grep -qxF "$_rc_local"; then
-    pass "recovery derivation: the runbook grep /${_rc_pat}/ finds Core's own local caller"
+  _rc_i=$((_rc_i + 1))
+  if [[ -n "$_rc_local" ]] && grep -rl -e "$_rc_pat" "$_rc_wf" 2>/dev/null | grep -qxF "$_rc_local"; then
+    pass "recovery derivation: runbook grep $_rc_i of 2 (/${_rc_pat}/, BRE) finds Core's own local caller"
   else
-    fail "recovery derivation: the runbook grep /${_rc_pat}/ does NOT find Core's own local caller — an operator following the procedure would omit Core's secrets mapping and lose the release-path dispatch at step 7 (#832)"
+    fail "recovery derivation: runbook grep $_rc_i (/${_rc_pat}/) does NOT find Core's own local caller under a plain BRE grep — an operator following the procedure would omit Core's secrets mapping and lose the release-path dispatch at step 7 (#832)"
   fi
 done <<<"$_rc_pats"
-unset _rc_doc _rc_wf _rc_local _rc_pats _rc_n _rc_pat
+unset _rc_doc _rc_wf _rc_local _rc_pats _rc_n _rc_pat _rc_i
 
 hdr "parity coverage gate (scripts/parity-check.sh)"
 PCR="$SANDBOX/parityrepo"

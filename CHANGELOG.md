@@ -135,7 +135,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   before it was made _correct_ — worse than the frozen list it replaced, because the next
   step instructs the operator to trust it. Both commands now anchor on `^\s*uses:` and match
   either form (which also skips the reusable's own documentation comment, not a caller), and
-  the step-2 visibility grep is held to the same standard. **A derivation nothing exercises
+  the step-2 visibility grep is held to the same standard. **Both commands are plain POSIX
+  BRE with two `-e` patterns, not one `-E` alternation**: the first draft used the
+  alternation and it did not match under **busybox grep**, which the Alpine audit leg caught
+  — and Alpine is a machine in this fleet, so it is a box someone could be running this
+  recovery from. A recovery command that works on the maintainer's laptop and not on Alpine
+  is the same class of defect as one that cannot see Core's own caller. **A derivation nothing exercises
   is a frozen list that looks live**, so `test/90-policy-gates.sh` now reads the patterns
   _out of the runbook_ and runs them against Core's own tree, asserting they find the caller
   that is actually there — with Core's local caller asserted separately, so the check cannot
