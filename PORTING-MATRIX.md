@@ -1263,11 +1263,20 @@ is pointed at output produced by machines other than yours: Core probes it
 provisioning gate a role layer runs against `core-doctor --json` ²⁰.
 
 Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
-Tumbleweed, Homebrew, Alpine edge, and **Alpine 3.22/3.23/3.24** — Alpine backported
-`jq 1.8.2-r0` into `main` on all three of its supported stable branches rather than leaving
-them on the version they shipped with, which is exactly the behaviour a `# min:` floor is
-supposed to reward. **Below it** on Fedora 43/44 (1.8.1), Alpine 3.21, Debian 13 /
-Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+Tumbleweed, Homebrew, Alpine edge, **Alpine 3.22/3.23/3.24** and **Fedora 45/Rawhide**.
+Alpine backported `jq 1.8.2-r0` into `main` on all three of its supported stable branches
+rather than leaving them on the version they shipped with, which is exactly the behaviour a
+`# min:` floor is supposed to reward; Fedora 45 and Rawhide carry `jq 1.8.2-5`. **Below it**
+on Fedora 43/44 (1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+
+Fedora reaches that floor by the opposite mechanic, and it is the one crossing with a date
+on it. F45 branched from Rawhide on 2026-08-11 and goes GA **2026-10-20**. F43/F44 sit at
+1.8.1-3 with nothing in updates-testing, so they never cross at all: on this lane you clear
+the floor by **upgrading release**, where Alpine's stables cleared it **in place**. Same
+floor, opposite mechanics, and neither is visible in `jq --version` — which is why this
+footnote records a floor to act on when provisioning rather than prescribing a gate.
+(Fedora re-verified 2026-09-06 against `packages.fedoraproject.org/pkgs/jq/jq/`; the other
+lanes are as at time of writing.)
 
 **Do not build a guard on `jq --version`.** On the Debian family the version string is not
 evidence either way — Debian backports security fixes without bumping the version, so a
