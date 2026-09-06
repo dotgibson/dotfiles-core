@@ -1465,6 +1465,75 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
   done
 }
 
+# ── _core_caller_pin_hits: an OS repo CALLING a retired major ────────────────
+# _core_caller_pin_hits <repo-root> <expected-major> — print every LIVE `uses:` of a
+# dotfiles-core reusable workflow in <repo-root> pinned to a major other than
+# <expected-major>. Silence = clean. Output is `file:LINE: msg`.
+#
+# WHY THIS EXISTS, and why the two sibling helpers do not cover it (#804). They read
+# Core's OWN tree:
+#
+#   · _core_workflow_ref_hits reads `ref:` KEYS — the reusable's second checkout of
+#     dotfiles-core — and audit-core.sh §8a calls it as `. "$major"`, so its scope is
+#     literally Core's own .github/workflows/.
+#   · _core_workflow_example_hits reads COMMENT lines, the copyable example a human
+#     pastes, and says so in as many words.
+#
+# Neither reads the thing an OS repo actually executes: its own live
+# `uses: dotgibson/dotfiles-core/.github/workflows/<file>@vN`. So the v5 → v6 caller
+# sweep — 45 pins across 8 repos — was done entirely by hand, and NOTHING would have
+# reported a repo that was missed. #736 predicted this in as many words ("if #672's
+# fleet-drift.sh improvement landed, this step is checked rather than remembered — if it
+# did not, it is a hand grep again"); it did not, and §8a is not it.
+#
+# WHY A MISSED REPO IS WORSE THAN A NORMALLY-STALE PIN. It runs the OUTGOING major's
+# reusable workflows. On a major that changes what core-integrity expects — #676 is
+# exactly one — that repo's CI reports TAMPERED against a tree nobody touched, and its
+# fan-out PR cannot merge. It is also self-healing in the WRONG direction: the repo keeps
+# working on the old major until its pinned workflow is deleted or diverges, so the
+# failure surfaces long after the release that caused it.
+#
+# SAME MATCHER, SAME DOCTRINE as _core_workflow_example_hits, deliberately:
+#   · The owner and a LEFT BOUNDARY are part of the match, so `notdotgibson/dotfiles-core`
+#     and `someone/not-dotfiles-core` are not judged.
+#   · The path anchor means the match is always a caller reference and never narrative.
+#   · ONLY `@v<digits>` IS JUDGED. A SHA pin is deliberately not — dotfiles-MacBook pins
+#     by SHA on purpose, and this gate answers "which major", not "which pinning style".
+#     Inventing a second opinion about style would make it two gates wearing one name.
+# The one difference is which lines it reads: live `uses:`, not comments. Between them the
+# two cover the file; alone, each was green while the other's half rotted.
+#
+# NOT A REPLACEMENT FOR check-modern.sh, which owns pinning POLICY (is this action pinned
+# at all, and to what kind of ref). This answers a different question about a pin that
+# policy already accepts.
+_core_caller_pin_hits() { # _core_caller_pin_hits <repo-root> <expected-major>
+  local root="${1:-.}" want="${2:-}" f
+  [ -n "$want" ] || return 0
+  [ -d "$root/.github/workflows" ] || return 0
+  for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
+    [ -f "$f" ] || continue
+    awk -v want="$want" -v file="${f#"$root"/}" '
+      # LIVE `uses:` ONLY — the mirror of _core_workflow_example_hits, which reads the
+      # comment lines this skips. A commented example pinning a dead major is that gate;
+      # a job actually running one is this one.
+      /^[[:space:]]*#/ { next }
+      /(^|[^A-Za-z0-9._-])uses:[[:space:]]/ {
+        line = $0
+        while (match(line, /(^|[^A-Za-z0-9._-])dotgibson\/dotfiles-core\/\.github\/workflows\/[A-Za-z0-9._-]+@v[0-9]+/)) {
+          ref = substr(line, RSTART, RLENGTH)
+          ver = ref
+          sub(/^.*@v/, "", ver)
+          if (ver != want) {
+            printf "%s:%d: calls a dotfiles-core reusable workflow at @v%s, but core.version is major v%s — this job runs the RETIRED major'"'"'s workflows\n", \
+              file, NR, ver, want
+          }
+          line = substr(line, RSTART + RLENGTH)
+        }
+      }
+    ' "$f"
+  done
+}
+
 # ── _core_vendor_pin_hits: the first-vendor recipe names the CURRENT major ───
 # _core_vendor_pin_hits <repo-root> <expected-major> — print every first-vendor pin in
 # the root docs and scripts/ that names a major other than <expected-major>. Silence =

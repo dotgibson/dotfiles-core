@@ -2559,6 +2559,81 @@ else
 fi
 unset _ghs_out _ghs_rc
 
+# ── 9n. the fleet's CALLER pins (os-repos.txt ↔ each repo's live `uses:`) ─────
+# §9l is reserved for the hero-tape date check (#877's follow-up), §9m is the fan-out
+# count, so this takes 9n.
+#
+# THE THIRD HALF OF A CHECK THAT ONLY HAD TWO (#804). §8a reads Core's own `ref:` keys;
+# §8b reads Core's own comment examples. Neither reads the thing an OS repo actually
+# EXECUTES — its live `uses: …/<file>@vN`. So the v5 → v6 caller sweep, 45 pins across 8
+# repos, was done entirely by hand and nothing would have reported a repo that was missed.
+# #736 predicted this in as many words and expected #672 to close it; #672 closed as "done
+# and now gated", but the gating it refers to is §8a — Core's own refs, not the fleet's
+# callers.
+#
+# WHY A MISSED REPO IS WORSE THAN AN ORDINARY STALE PIN. It runs the OUTGOING major's
+# reusable workflows. On a major that changes what core-integrity expects — #676 is exactly
+# one — that repo's CI reports TAMPERED against a tree nobody touched and its fan-out PR
+# cannot merge, which is why RELEASE-RUNBOOK.md §2 makes the caller bump step 1. It is also
+# self-healing in the WRONG direction: the repo keeps working until its pinned workflow is
+# deleted or diverges, so the failure surfaces long after the release that caused it.
+#
+# A SHA PIN IS NOT JUDGED, and that is deliberate rather than an oversight: dotfiles-MacBook
+# pins by SHA on purpose. This gate answers "which major", not "which pinning style" —
+# check-modern.sh owns the latter, and a second opinion here would make it two gates
+# wearing one name.
+#
+# dotfiles-Windows IS OUT OF SCOPE, because scripts/os-repos.txt is the fleet list and it is
+# deliberately absent from it (it vendors no core/). That is a real blind spot — it is
+# exactly the first of the three that let #805's pin sit a full major behind — but widening
+# THIS gate to a repo the fleet list does not contain would put the list and the gate in
+# disagreement, which is its own defect. The list is the one place scope lives.
+#
+# ADVISORY POSTURE ON AN UNREADABLE FLEET LIST and an environment skip on absent siblings,
+# exactly like §9c: an absent sibling is genuinely uncovered, and --require-siblings is what
+# reds it.
+hdr "fleet caller pins (@vN ↔ core.version)"
+if [[ ! -r core.version ]]; then
+  fail "core.version missing — cannot check the fleet's caller pins"
+elif ! load_os_repos; then
+  skip_env "fleet caller pins ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+else
+  _cp_major="$(tr -d '[:space:]' <core.version | cut -d. -f1)"
+  if [[ ! "$_cp_major" =~ ^[0-9]+$ ]]; then
+    fail "core.version major unreadable ('$_cp_major') — cannot check the fleet's caller pins"
+  else
+    _cp_root="$(cd "$HERE/.." && pwd)"
+    _cp_checked=0 _cp_absent=0 _cp_bad=0 _cp_out=""
+    for _cp_repo in "${CORE_OS_REPOS[@]}"; do
+      _cp_dir="$(resolve_repo_dir "$_cp_root" "$_cp_repo")" || _cp_dir="$_cp_root/$_cp_repo"
+      # `-e`: a linked worktree's .git is a FILE (#850).
+      if [[ ! -e "$_cp_dir/.git" ]]; then
+        _cp_absent=$((_cp_absent + 1))
+        continue
+      fi
+      _cp_checked=$((_cp_checked + 1))
+      _cp_hits="$(_core_caller_pin_hits "$_cp_dir" "$_cp_major")"
+      if [[ -n "$_cp_hits" ]]; then
+        _cp_bad=$((_cp_bad + 1))
+        _cp_out="$_cp_out
+$_cp_repo:
+$(printf '%s\n' "$_cp_hits" | sed 's/^/  /')"
+      fi
+    done
+    if ((_cp_checked == 0)); then
+      skip_env "fleet caller pins (no sibling OS repo checked out — nothing to read here)"
+    elif ((_cp_bad)); then
+      fail "$_cp_bad of $_cp_checked checked-out repo(s) call a dotfiles-core reusable workflow at a RETIRED major — those jobs run v$_cp_major's body against another major's scripts; bump them (RELEASE-RUNBOOK.md §2)"
+      fail_detail "$_cp_out"
+    else
+      pass "fleet caller pins — every checked-out repo calls @v$_cp_major or pins a SHA ($_cp_checked repo(s))"
+    fi
+    ((_cp_absent)) && skip_env "fleet caller pins: $_cp_absent repo(s) not checked out — not covered by this run"
+    unset _cp_root _cp_checked _cp_absent _cp_bad _cp_out _cp_hits _cp_dir _cp_repo
+  fi
+  unset _cp_major
+fi
+
 # ── 10. behavioral tests (load-order smoke + function unit tests) ─────────────
 # Static analysis above proves the modules PARSE; this proves they LOAD TOGETHER
 # in canonical order and that the pure functions behave. Delegated to test-core.sh
