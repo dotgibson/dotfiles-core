@@ -1192,23 +1192,36 @@ output. Every target above clears that floor except `dotfiles-Debian`'s two lane
 2.32.1. It degrades rather than breaks, which is why that repo's `install/packages.txt`
 declares no `# min:` floor for it.
 
-³³ **neovim — "the package exists" is not "the package is usable", and Gentoo is the
-SECOND target where that bites.** Core's nvim pins nvim-treesitter to `main`
-(`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Two cells in the neovim
+³³ **neovim — "the package exists" is not "the package is usable", and it bites on THREE
+targets, by three different mechanisms.** Core's nvim pins nvim-treesitter to `main`
+(`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Several cells in the neovim
 row above resolve perfectly and give you something Core's config will not load on:
 
-| Target        | What `neovim` actually gets you       | Clears 0.12? |
-| ------------- | ------------------------------------- | ------------ |
-| **Debian**    | Ubuntu 24.04 `neovim` **0.9.5**       | no — see ²⁸  |
-| **Gentoo**    | newest **stable** ebuild, **0.11.7**  | no           |
-| Gentoo, fixed | **0.12.3**, via the `>=` keyword line | yes          |
+| Target          | What `neovim` actually gets you       | Clears 0.12? |
+| --------------- | ------------------------------------- | ------------ |
+| **Debian**      | Ubuntu 24.04 `neovim` **0.9.5**       | no — see ²⁸  |
+| **Gentoo**      | newest **stable** ebuild, **0.11.7**  | no           |
+| Gentoo, fixed   | **0.12.3**, via the `>=` keyword line | yes          |
+| **Alpine** 3.21 | `neovim` **0.10.4-r0**                | no           |
+| **Alpine** 3.22 | `neovim` **0.11.1-r1**                | no           |
+| **Alpine** 3.23 | `neovim` **0.11.7-r0**                | no           |
+| Alpine 3.24     | `neovim` **0.12.2-r0**                | yes          |
+| Alpine edge     | `neovim` **0.12.2**                   | yes          |
 
-The two get there by different mechanisms and only one of them looks like a problem.
+They get there by three different mechanisms and only one of them looks like a problem.
 Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
 `dotfiles-Debian` declares a `# min:0.12.0` floor its CI enforces. Gentoo's is
 **keywords**: 0.12.0–0.12.3 are all in `::gentoo` right now, all `~arch`, so a stable
 profile silently picks 0.11.7 and reports success. Nothing in an availability check can
 see it — the atom exists, installs, and is the wrong version.
+
+Alpine's is **branch spread**, and it is the one this file got wrong for a full release
+cycle. Alpine is not rolling: it carries four supported stable branches at once plus `edge`,
+each frozen at the version it released with, so "does `apk add neovim` clear the floor?" has
+no single fleet answer — it has five, and **three of them are no**. A check run on a v3.24
+or `edge` box sees a perfectly current 0.12.2 and reports the row healthy for Alpine
+entirely. Sibling footnote ⁵ already spells this spread out correctly for `tree-sitter-cli`;
+this footnote simply never got the same treatment.
 
 `dotfiles-Gentoo` therefore borrows Debian's contract and pairs it with the Portage-native
 fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-restricted**
@@ -1216,9 +1229,23 @@ fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-rest
 0.11.x keeps tracking stable), and a check in `scripts/check-packages.sh` that fails when a
 declared floor is not reachable. Filed as dotfiles-Gentoo#116, verified 2026-08-23.
 
-**If you stamp a new source-based or stable/testing-split target, ask the keyword question,
-not just the name question.** Every other column here is rolling, which is why this trap has
-only ever shown up on the fleet's two non-rolling lanes.
+`dotfiles-Alpine` has no keyword or archive lever to pull — there is no newer branch to
+point `apk` at without moving the whole box, and neovim's own releases are glibc-linked
+AppImages that will not run on musl — so it takes the remaining option: `bootstrap.sh`
+declares `NEOVIM_FLOOR="0.12.0"` beside the `TREESITTER_FLOOR` it already had, and **warns**
+when the installed nvim is below it rather than pretending to fix it. Worth naming what that
+repo actually had: a version guard on nvim-treesitter's _dependency_ (`tree-sitter-cli`) and
+none at all on nvim-treesitter's _host_, failing on the same three branches, for as long as
+the floor has existed. Half a requirement checked reads exactly like a whole one.
+Filed as dotfiles-Alpine#170, verified 2026-09-06.
+
+**If you stamp a new source-based or stable/testing-split target, ask the keyword question
+and the branch question, not just the name question.** This trap only shows up on the
+fleet's non-rolling lanes — and "non-rolling" covers three shapes, not one: a frozen archive
+(Debian), a stable/testing keyword split (Gentoo), and a set of concurrently supported
+release branches (Alpine; structurally openSUSE Leap too, though its neovim row is not
+currently affected). A rolling column can be answered once. Each of these has to be answered
+per lane, and a check that samples only the newest lane will report all of them healthy.
 
 ³⁴ **jq — a recorded security floor of ≥ 1.8.2, and deliberately NOT a version gate.**
 1.8.2 (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an
@@ -1229,8 +1256,11 @@ is pointed at output produced by machines other than yours: Core probes it
 provisioning gate a role layer runs against `core-doctor --json` ²⁰.
 
 Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
-Tumbleweed, Homebrew and Alpine edge. **Below it** on Alpine 3.22/3.23/3.24 and Fedora 43/44
-(1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+Tumbleweed, Homebrew, Alpine edge, and **Alpine 3.22/3.23/3.24** — Alpine backported
+`jq 1.8.2-r0` into `main` on all three of its supported stable branches rather than leaving
+them on the version they shipped with, which is exactly the behaviour a `# min:` floor is
+supposed to reward. **Below it** on Fedora 43/44 (1.8.1), Alpine 3.21, Debian 13 /
+Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
 
 **Do not build a guard on `jq --version`.** On the Debian family the version string is not
 evidence either way — Debian backports security fixes without bumping the version, so a
