@@ -1230,8 +1230,18 @@ is pointed at output produced by machines other than yours: Core probes it
 provisioning gate a role layer runs against `core-doctor --json` ²⁰.
 
 Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
-Tumbleweed, Homebrew and Alpine edge. **Below it** on Alpine 3.22/3.23/3.24 and Fedora 43/44
-(1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+Tumbleweed, Homebrew, Alpine edge and Fedora 45/Rawhide (1.8.2). **Below it** on Alpine
+3.22/3.23/3.24 and Fedora 43/44 (1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and
+Leap 15.x (1.6).
+
+**Fedora is the first lane to appear on both sides of that line**, and the only one whose
+position carries a date. F45 branched from Rawhide on 2026-08-11 with `jq 1.8.2-5` and goes
+GA **2026-10-20** — which is when a _supported stable_ release, not merely a rolling or edge
+lane, clears this floor for the first time anywhere in the fleet. F43/F44 are still 1.8.1-3
+with nothing in updates-testing, so on current evidence they cross by being **upgraded past**
+rather than updated over — which is the one crossing shape a version-pinned lane cannot
+schedule for itself. (Fedora re-verified 2026-09-06 against
+`packages.fedoraproject.org/pkgs/jq/jq/`; the other lanes are as at time of writing.)
 
 **Do not build a guard on `jq --version`.** On the Debian family the version string is not
 evidence either way — Debian backports security fixes without bumping the version, so a
