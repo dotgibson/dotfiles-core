@@ -79,6 +79,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A linked-worktree OS repo was classified as "not cloned", and under `--strict` that skip
+  was exit 1 (#850).** `sync-core.sh` asked "is this a clone?" with `-d "$path/.git"` at three
+  sites — the staleness pre-flight, the parallel prefetch loop and the per-repo fan-out. A
+  linked worktree (and a submodule checkout) has a `.git` **file**, not a directory, so a
+  perfectly good target was skipped; once `--strict` (#848) turned a skip into a failure, a
+  targeted sync over a worktree checkout did not merely under-report, it **refused**. The
+  repository's established form is `-e`, and `resolve_repo_dir` — the helper every one of
+  these call sites goes through first — already carries the comment explaining why. Swept the
+  other three sites that ask the same question the same wrong way rather than fixing only the
+  two the report named: `audit-core.sh`'s secret-scan policy adoption and its os.capabilities
+  fleet coverage, and `scripts/fleet-coverage.sh`'s row loop, each of which would silently drop
+  a worktree sibling out of a fleet count. There is now no `-d "$…/.git"` left in `scripts/`.
+  `test/32-sync-core.sh` covers a real `git worktree add` target against `--strict`, asserting
+  both that the run exits 0 and that "not cloned" never appears — verified red against the
+  pre-fix script, which reports exactly the symptom in the report
+  (`– dotfiles-Worktree (not cloned at …)`, `rc=1`).
 - **The maint job's neovim step reported ✓ over a session in which nothing ran (#829).**
   `nvim --headless` exits **0** when a `-c` command fails — the error goes to stderr and the
   process still succeeds — so `step()` read a 0 and logged a green tick for a run that had
