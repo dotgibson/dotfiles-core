@@ -71,10 +71,6 @@ WIN="$ROOT/dotfiles-Windows"
 # mapping. Several checks MAY share a row-key: that is how the five utility functions and
 # the three fuzzy-git verbs get a needle EACH, instead of one standing in for the set —
 # the shape of bug that let `gaf` alone certify a row claiming `gaf`/`grf`/`grsf`.
-#
-# A pwsh-needle of `-` means the pwsh half comes from a FRAMEWORK DEFAULT and there is no
-# string to grep (word-nav is the only one). Those report as a SKIP carrying the reason,
-# never as a pass — the point is to be visibly honest, not to manufacture a green.
 CHECKS=(
   # PARITY.md's Theme row, which was marked `aligned` with NO check behind it until #679
   # (#682 Bug 3) — one of the four rows that made the "every aligned row has a check here"
@@ -140,17 +136,24 @@ CHECKS=(
   # never the chord invoking it.
   "session-picker|sessionizer target|zsh/35-fzf.zsh|_tmux_sessionizer() {|powershell/core/10-tools.ps1|Insert('Invoke-DotfilesSessionizer')"
   "autosuggest-toggle|autosuggest/prediction toggle on Ctrl+\\|zsh/40-bindings.zsh|-M viins '^\\' autosuggest-toggle|powershell/core/10-tools.ps1|-Chord 'Ctrl+\\'"
-  # Word nav's pwsh half is a PSReadLine DEFAULT, not configuration: nothing in
-  # dotfiles-Windows binds Ctrl+Arrow — 10-tools.ps1's "Ctrl+arrow word movement" comment
-  # sits directly above a line that sets Tab. There is no string to grep, so this asserts
-  # Core's half and SKIPS pwsh's with the reason, rather than inventing a needle that
-  # would go green without proving anything. dotgibson/dotfiles-Windows#231 tracks binding
-  # it explicitly, which would upgrade this skip into a real assertion.
   # One needle per DIRECTION: the row promises Ctrl+Right and Ctrl+Left, and a single
   # forward-word needle left `'^[[1;5D' backward-word` free to be deleted with the row
   # still green — the partial-coverage shape this whole gate exists to end.
-  "word-nav|word nav: forward-word on Ctrl+Right|zsh/40-bindings.zsh|-M viins '^[[1;5C' forward-word|powershell/core/10-tools.ps1|-"
-  "word-nav|word nav: backward-word on Ctrl+Left|zsh/40-bindings.zsh|-M viins '^[[1;5D' backward-word|powershell/core/10-tools.ps1|-"
+  #
+  # These were the gate's only two `-` sentinels until #849: the pwsh half was a PSReadLine
+  # DEFAULT with no string to grep, so it was reported as a skip rather than asserted.
+  # dotgibson/dotfiles-Windows#238 binds the chords explicitly, which is what upgrades the
+  # skip into this assertion.
+  #
+  # count:2 is the Vi INSERT table plus the COMMAND table. A bare `-Key` under `-EditMode Vi`
+  # binds Insert only, so a single binding would leave `vicmd` resting on the very default
+  # this row stopped depending on — the mirror of our own `-M viins` + `-M vicmd` pairs at
+  # zsh/40-bindings.zsh:22-23,44-45. And pwsh binds `NextWord`, not `ForwardWord`: PSReadLine's
+  # ForwardWord moves to the END of the current word, while NextWord moves to the START of the
+  # next one, which is what zsh's forward-word does. The row is honestly `aligned`; only the
+  # function NAME differs between the shells.
+  "word-nav|word nav: forward-word on Ctrl+Right|zsh/40-bindings.zsh|-M viins '^[[1;5C' forward-word|powershell/core/10-tools.ps1|count:2:-Key Ctrl+RightArrow -Function NextWord"
+  "word-nav|word nav: backward-word on Ctrl+Left|zsh/40-bindings.zsh|-M viins '^[[1;5D' backward-word|powershell/core/10-tools.ps1|count:2:-Key Ctrl+LeftArrow -Function BackwardWord"
   # One needle per function, not one standing in for five: the row named `extract`,
   # `mkbak`, `serve`, `fif`, `fbr` and nothing tested ANY of them until #682.
   "utility-functions|extract|zsh/30-functions.zsh|extract() {|powershell/core/20-functions.ps1|function extract"
@@ -233,7 +236,6 @@ _needle_says() {
 hdr "Cross-shell parity (PARITY.md aligned rows)"
 
 DRIFT=0
-UNASSERTED=0 # pwsh halves that are framework defaults — reported, never asserted (see `-`)
 WIN_PRESENT=1
 if [[ ! -d "$WIN" ]]; then
   WIN_PRESENT=0
@@ -391,13 +393,6 @@ for _row in "${CHECKS[@]}"; do
   fi
   # pwsh side (only when the Windows repo is present)
   ((WIN_PRESENT)) || continue
-  # `-`: the pwsh half is a framework default with no string to grep. Reported, not
-  # asserted — a needle that cannot fail is worse than an honest skip.
-  if [[ "$pneedle" == "-" ]]; then
-    skip "$label — pwsh half is a PSReadLine default, not configuration in $pfile; nothing to grep (PARITY.md, Enforcement)"
-    UNASSERTED=$((UNASSERTED + 1))
-    continue
-  fi
   if _has "$WIN/$pfile" "$pneedle"; then
     pass "$label — pwsh ($pfile)"
   else
@@ -500,11 +495,7 @@ if ((DRIFT)); then
   exit 1
 fi
 if ((WIN_PRESENT)); then
-  if ((UNASSERTED)); then
-    pass "every CONFIGURED aligned row holds across zsh + pwsh; $UNASSERTED pwsh half/halves were reported, not asserted (framework defaults — see the skips above)"
-  else
-    pass "all aligned rows hold across zsh + pwsh"
-  fi
+  pass "all aligned rows hold across zsh + pwsh"
 else
   pass "all aligned rows hold on zsh (pwsh side skipped — clone dotfiles-Windows to verify)"
 fi

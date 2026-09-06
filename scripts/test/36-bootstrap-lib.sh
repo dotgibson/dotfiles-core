@@ -250,25 +250,25 @@ esac
 
 # THE NOTE CLASS. A skip that reports an unassertable fact is NOT a coverage gap, so it must
 # not be counted as an absent tool — otherwise `--strict` fails a fully-provisioned box purely
-# because §9f is being honest about a PSReadLine default, and disagrees with
-# `parity-check.sh --strict`, which accepts the same reported default.
+# because a gate is being honest about something it declined to assert.
 _nt_out="$(_tsc '
   skip      "luacheck (not installed)"
   skip_env  "coverage register (no sibling OS repo checked out — nothing to read here)"
-  skip_note "cross-shell parity: 2 pwsh half/halves are framework defaults — not asserted"
+  skip_note "hero tape: dotfiles-Alpine has no assets/demo.gif yet — nothing to weigh"
 ')"
 case "$_nt_out" in
 "3 1 1") pass "_core_tool_skip_count: a note skip is not an absent tool (--strict stays green on a full box)" ;;
-*)       fail "_core_tool_skip_count: got '$_nt_out', want '3 1 1' — a reported framework default is being counted as a missing tool, so --strict fails a fully-provisioned box" ;;
+*)       fail "_core_tool_skip_count: got '$_nt_out', want '3 1 1' — a declined assertion is being counted as a missing tool, so --strict fails a fully-provisioned box" ;;
 esac
 unset _nt_out
 
-# And the binding for it: §9f must actually reach for the class, or the assertion above guards
-# a call site that no longer exists.
-if grep -q 'skip_note "cross-shell parity' "$HERE/scripts/audit-core.sh"; then
-  pass "_core_tool_skip_count: §9f reports its framework-default halves as a NOTE, not a tool gap"
+# And the binding for it: a gate must actually reach for the class, or the assertion above
+# guards a call site that no longer exists. §9f was the first caller; #849 turned its
+# framework default into a real assertion, so the live one is gen-hero-tape.sh's weigher.
+if grep -q 'skip_note ' "$HERE/scripts/gen-hero-tape.sh"; then
+  pass "_core_tool_skip_count: the hero-tape weigher reports its unrenderable gifs as a NOTE, not a tool gap"
 else
-  fail "_core_tool_skip_count: §9f no longer uses skip_note — a Windows-present --strict run will fail on an honest report"
+  fail "_core_tool_skip_count: no gate uses skip_note any more — the NOTE class has no caller to guard"
 fi
 
 # BINDING. The two assertions above are only worth anything if audit-core.sh actually uses the
