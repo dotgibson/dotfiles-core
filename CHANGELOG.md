@@ -122,6 +122,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`PORTING-MATRIX.md` footnote 5: `tree-sitter-cli` is maintainer-needed on Gentoo, and the
+  arch claim was narrower than the truth (#780).** The footnote closes with its own standing
+  instruction — _"re-query this row on every stamp"_ — and this is that re-query, re-confirmed
+  against the live `.json` endpoint on 2026-09-06. `dev-util/tree-sitter-cli`'s `metadata.xml`
+  carries **no `<maintainer>` element at all**; availability is unchanged — 0.26.11 is still
+  stable and still clears the ≥ 0.26.1 floor — but orphaning is what precedes a treeclean, and
+  `dotfiles-Gentoo` already carries exactly this hedge on `w3m` and `lnav`. And "stable on
+  amd64" understated it: the keyword line is
+  `amd64 arm arm64 ~loong ~mips ppc ppc64 ~riscv ~s390 ~sparc x86`, so it reads as an
+  amd64-only guarantee while `dotfiles-Gentoo` is tightening exactly what it claims per-arch.
+  Two things added beyond the report: **0.26.12 exists but is `~`-keyworded on every arch**,
+  so a future reader does not "update" the claim to a version nothing has stabilised; and the
+  warning that `packages.gentoo.org`'s rendered arch table is unreliable — it reported
+  `app-shells/starship` as having no stable amd64 keyword where the ebuild says
+  `KEYWORDS="amd64 arm64"`. The `dotfiles-Gentoo` half is already done
+  (dotfiles-Gentoo#145), and its `packages.txt` comment points **here** for this half,
+  because `core/` is vendored read-only there and the same edit made in the OS repo is
+  overwritten on the next `make sync`.
+
 - **A linked-worktree OS repo was classified as "not cloned", and under `--strict` that skip
   was exit 1 (#850).** `sync-core.sh` asked "is this a clone?" with `-d "$path/.git"` at three
   sites — the staleness pre-flight, the parallel prefetch loop and the per-repo fan-out. A
