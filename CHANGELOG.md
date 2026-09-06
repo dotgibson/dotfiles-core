@@ -250,6 +250,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   and `stat`. Both are true of any runner that could have cloned the repo, which is the point
   worth making — so the header now says that, instead of a portability claim that is not quite
   true.
+- **`core help` understated `core-whatsnew`'s interface — one of its two flags (#806).**
+  The verb takes `--full` **and** `--all` (`_core_usage` and `zsh/completions/_core-whatsnew`
+  both say so), but the cheat sheet's row keyed it `core-whatsnew [--full]` and the front
+  door's dispatch comment did the same. `aliases.md`'s row was the site the issue named, and
+  it is already right — #834 made that table _generated_ from the `_core_help` call, which
+  carries both flags — so the hand-written surfaces were the ones left behind, which is the
+  argument for generating them in the first place. **The flags moved to the description, not
+  into the key**, on purpose: `_core_help_render` sizes its key column to the widest key, so
+  spelling both out there would have shifted every row on the sheet eight columns right to
+  document one verb. The index already elides flags this way (`core-status`, whose real usage
+  takes `[--json]`), and the description now names both — strictly more than the key said.
 - **The fleet's repo count contradicted itself — five sites said eight, the manifest says nine
   (#770).** `CODEOWNERS:1`, `audit-core.sh`, `.github/workflows/ci.yml` and
   `nvim/.../claudecode-nvim.lua` all described the fan-out set and were off by one
