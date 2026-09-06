@@ -792,7 +792,7 @@ fi
 # ── 4b. nvim module reachability (the orphan backstop) ───────────────────────
 # core.manifest lists `nvim/` as a DIRECTORY, so §1's manifest⇄fs drift check auto-lists
 # every new path under it and cannot see an orphan — a lua module nothing loads would sit
-# in the tree and fan out to all nine OS repos silently. core.manifest said that gap was
+# in the tree and fan out to all nine Core-vendoring repos silently. core.manifest said that gap was
 # covered "by verify-core.sh instead"; that script has never existed here (#454). The real
 # logic — a graph walk from nvim/init.lua, not a "is this name mentioned" scan — lives in
 # the script below, along with the rationale for its roots and its two resolved edges. It
@@ -1721,8 +1721,9 @@ else
   skip "yaml parse (python3 PyYAML not importable)"
 fi
 # JSON: nvim/lazy-lock.json pins every Neovim plugin's commit for a reproducible
-# editor across the 8 repos — a truncated/corrupt lock breaks `:Lazy restore` for
-# all of them, and like the toml/yaml above it's valid *text* the other gates skip.
+# editor across the nine Core-vendoring repos — a truncated/corrupt lock breaks
+# `:Lazy restore` for all of them, and like the toml/yaml above it's valid *text*
+# the other gates skip.
 # `*.json` (not `*.jsonc`) so the JSONC config files keep their comments. json is in
 # the stdlib, so this only needs python3 — no extra import gate like PyYAML.
 if have python3; then
@@ -2350,17 +2351,6 @@ ok-full)
   pass "parity coverage — every aligned PARITY.md row has a check behind it"
   pass "parity contract holds across zsh + pwsh"
   ;;
-ok-defaults)
-  pass "parity coverage — every aligned PARITY.md row has a check behind it"
-  # QUALIFIED HERE, not walked back on the next line: the reader believes the green line.
-  pass "parity contract holds across zsh + pwsh for every CONFIGURED row (framework-default halves are reported below, not asserted)"
-  # A half the child refused to certify must stay uncertified here too.
-  # skip_note, not skip: nothing is ABSENT here. A plain skip counts as a missing TOOL, so
-  # --strict would fail a fully-provisioned box purely because the contract is being honest
-  # about a PSReadLine default — and would disagree with `parity-check.sh --strict`, which
-  # accepts the same reported default.
-  skip_note "cross-shell parity: $(printf '%s\n' "$_pc_out" | grep -c "nothing to grep") pwsh half/halves are framework defaults — reported by parity-check.sh, not asserted"
-  ;;
 ok-no-sibling)
   pass "parity coverage — every aligned PARITY.md row has a check behind it"
   # skip_env, not skip: a coverage gap the BOX could not cover (no sibling repo), so
@@ -2558,6 +2548,39 @@ else
   fail_detail "$_ghs_out"
 fi
 unset _ghs_out _ghs_rc
+
+# ── 9m. the fan-out count (scripts/os-repos.txt ↔ every claim about it) ──────
+# §9l is reserved for the hero-tape date check (#877's follow-up), so this takes 9m.
+#
+# THE SAME SHAPE AS EVERY OTHER §9: one source of truth, many copies, and nothing reading
+# the two together. Here the truth is scripts/os-repos.txt — whose own header says "THIS
+# FILE IS THE ONLY EDIT" — and the copies are the sentences that say how many repos a Core
+# change reaches. #770 found five saying EIGHT against ~20 saying nine, two of them in Core
+# files, so the wrong number was replicated nine ways on every sync. #668 had found one of
+# the five a year earlier and deliberately left it: correcting one of several inconsistent
+# sites makes the tree no more correct, which is the argument for a gate rather than a fix.
+#
+# KEYED ON THE CLAIM, NOT THE NUMBER — see _core_fanout_count_hits for why. Three different
+# numbers are correct here about three different sets (9 vendoring, 8 OS-native, 11 total),
+# so a check on the bare number would red on a dozen legitimate lines. Only a sentence whose
+# verb says FAN-OUT has committed to which set it counts, and only those are judged.
+#
+# ADVISORY POSTURE ON AN UNREADABLE FLEET LIST, like §5f's helper-adoption gate: if
+# load_os_repos cannot enumerate, this cannot know the right number, and a section that
+# does not know must say so rather than fail.
+hdr "fan-out count (os-repos.txt ↔ the claims about it)"
+if ! load_os_repos; then
+  skip_env "fan-out count ($CORE_OS_REPOS_ERR — cannot enumerate the fleet, so the right number is unknown)"
+else
+  _fc_out="$(_core_fanout_count_hits "$HERE" "${#CORE_OS_REPOS[@]}")"
+  if [[ -z "$_fc_out" ]]; then
+    pass "fan-out count — every fan-out claim in the tree says ${#CORE_OS_REPOS[@]}, the number os-repos.txt lists"
+  else
+    fail "a fan-out claim disagrees with scripts/os-repos.txt — the fleet list is the source of truth; fix the prose, not the list"
+    fail_detail "$_fc_out"
+  fi
+  unset _fc_out
+fi
 
 # ── 9n. the fleet's CALLER pins (os-repos.txt ↔ each repo's live `uses:`) ─────
 # §9l is reserved for the hero-tape date check (#877's follow-up), §9m is the fan-out
