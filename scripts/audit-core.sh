@@ -1455,6 +1455,59 @@ else
   unset _fr_out _fr_rc
 fi
 
+# ── 5h (cont.) the vendoring-hint register ───────────────────────────────────
+# Every OS repo prints a hint when core/ is missing or half-vendored, and eight of nine
+# printed a WRONG one: `git subtree add ... main --squash` to create and `git subtree pull`
+# to update. Vendoring from a branch is not the commit the fan-out pins, so core-integrity
+# reports the fresh repo as TAMPERED; `git subtree pull` moves core/ without core.lock and
+# merges the whole tree rather than the vendor set (#676). The hint fires exactly when a
+# user is already repairing a broken clone, so it handed them the two commands that make it
+# worse (dotgibson/dotfiles-Arch#158 and the fleet sweep behind it).
+#
+# THE FIX EXISTED AND DID NOT PROPAGATE — which is what this register is really for.
+# dotfiles-MacBook had the correct "released tag, never main" warning the whole time;
+# nothing read the other eight to notice they disagreed. Then MacBook's own hint went stale
+# at the v4 major against a v7 fleet, landing in the same TAMPERED state its warning exists
+# to prevent. So the register asserts the guidance is RIGHT (a tag, not a branch; no subtree
+# pull for core/) and CURRENT (the tag's major matches core.version, derived at run time —
+# the day Core cuts v8 every stale v7 hint reports itself).
+#
+# Advisory, like the three registers above and for the same reason: a sibling can drift
+# without Core changing, so this is fleet drift rather than a regression in the commit under
+# test. Core's own VENDORING.md row is the exception in spirit — but a per-row posture would
+# be more machinery than the finding is worth.
+hdr "vendoring-hint x repo register (advisory)"
+if [[ ! -x "$HERE/scripts/fleet-vendor-guidance.sh" ]]; then
+  skip "vendoring-hint register (scripts/fleet-vendor-guidance.sh missing — out of scope)"
+else
+  _vg_out="$("$HERE/scripts/fleet-vendor-guidance.sh" --check 2>&1)"
+  _vg_rc=$?
+  if [[ "$_vg_out" == *"no sibling repo checked out"* ]]; then
+    skip_env "vendoring-hint register (no sibling OS repo checked out — nothing to read here)"
+  elif [[ "$_vg_out" == *"core.version unreadable"* ]]; then
+    # The expected major could not be DERIVED, so the register has no contract to judge
+    # against. Core broken, not an environment short of siblings: red, never a skip —
+    # "every hint is current" against an empty expectation is the green-because-absent
+    # result skip_env exists to avoid.
+    fail "vendoring-hint register: core.version would not load — cannot derive the expected tag major"
+    fail_detail "$_vg_out"
+  elif [[ "$_vg_out" == *"fleet list "* ]]; then
+    # Could not enumerate the fleet at all — not the same finding as "hints are stale".
+    skip_env "vendoring-hint register (fleet list would not load — cannot enumerate the fleet)"
+  elif ((_vg_rc == 0)); then
+    pass "vendoring-hint register: $_vg_out"
+  elif ((_vg_rc == 1)); then
+    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f. Exit 1 is the reporter's
+    # verdict; anything else is the reporter itself failing, which is red below.
+    ((${CORE_JSON:-0})) || printf '%s\n' "$_vg_out" | sed 's/^/  /'
+    pass "vendoring-hint register: core/ vendoring hint(s) pinning a branch, a stale major, or using subtree pull — advisory; VENDORING.md has the one-time vendor recipe"
+  else
+    fail "vendoring-hint register: scripts/fleet-vendor-guidance.sh exited $_vg_rc — the reporter is broken, not the fleet"
+    fail_detail "$_vg_out"
+  fi
+  unset _vg_out _vg_rc
+fi
+
 # ── 5i. leftover conflict markers (tracked files) ────────────────────────────
 # A conflict resolved by hand can leave a marker behind, and bcdd7dd (#650) did exactly
 # that: a literal base marker landed in CHANGELOG.md at the end of [Unreleased]'s Fixed
