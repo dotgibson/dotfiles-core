@@ -115,7 +115,7 @@ check "pullall on a repo-less dir prints the summary and returns 0" \
 # throwaway $GIT_AUTHOR_* identity and git init in mktemp), advance the remote, then run
 # pullall and assert it fast-forwarded the clone (tally "updated: 1", a real new file on
 # disk, zero failures). This exercises trunk auto-detection, the --ff-only pull, and the
-# ✅ tally — the per-repo path that fans out to all nine OS repos.
+# ✅ tally — the per-repo path that fans out to all nine Core-vendoring repos.
 check_dep "pullall fast-forwards a behind repo and tallies it (hermetic bare remote)" git \
   'export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@e GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@e
    w=$(mktemp -d)

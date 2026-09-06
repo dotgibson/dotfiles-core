@@ -1,4 +1,4 @@
-<!-- Core fans out to all 9 OS repos — a defect here is an N-way
+<!-- Core fans out to all 9 Core-vendoring repos — a defect here is an N-way
      defect. Keep changes truly Core, and green before merge. -->
 
 ## What & why
