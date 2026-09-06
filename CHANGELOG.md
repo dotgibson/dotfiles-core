@@ -170,6 +170,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   accepted. `gen-porting-matrix.sh --check` and `prettier --check` are both green, and the
   generator reproduces prettier's padding exactly — so the two cannot fight on the next
   regeneration.
+- **`theme/palette.toml` said nobody consumes it; `dotfiles-Windows` has since 2026-08-31
+  (#798).** The file's header and `audit-core.sh`'s `META_ALLOWLIST` comment both justified
+  keeping it out of the shipped set with _"nothing symlinks it and no OS repo reads it out of
+  `core/`"_. That premise no longer holds: dotgibson/dotfiles-Windows#229 vendors **this
+  file** — `theme-sync.ps1` copies it beside a `theme/.core-ref` pinning the Core commit, CI
+  hash-gates the pair (`tests/Assert-ThemeParity.ps1`), and its own `gen-theme.ps1` renders
+  nine blocks across `powershell/core/` and `psmux/` from it. **Not** added to
+  `core.manifest`, which is what the issue asked about and offered to be argued out of: the
+  manifest is the set `sync-core.sh` materializes into each OS repo's `core/`, so a row there
+  would ship a generation-time input into nine trees where nothing reads it, in order to
+  describe a dependency held by the **one repo that has no `core/` at all**. That makes the
+  manifest less true, not more. The dependency is recorded where it can be acted on instead —
+  in the file's own header and the allowlist comment, both of which now say plainly that
+  moving or renaming the path **breaks a downstream CI gate**, which is a fleet contract
+  change and not a local refactor. `desktop/PARITY.shared.md` is the same shape and the
+  precedent. (Checked while here: Windows' pin `a85622e` is current — `theme/palette.toml`
+  has not moved since.)
+- **`PARITY.md`'s accent `gap` was right but imprecise (#798).** pwsh is no longer missing the
+  _primitive_: `Get-DotAccentSpec` (dotgibson/dotfiles-Windows#229) is generated from this
+  same palette — truecolor tier keyed on `$COLORTERM` exactly as `zsh/05-ui.zsh` does, both
+  raw-SGR and bare-spec forms mirroring Core's two rendering paths, and the 256-colour
+  fallbacks carried verbatim including their deliberate SGR-vs-spec disagreement. **Nothing
+  consumes it yet**, so the row stays a `gap` — this file's bar for `aligned` is that both
+  shells actually _render_ with the capability, not that both could. Promoting it would mean
+  a needle proving the function _exists_, which is the certifies-less-than-it-looks-like
+  shape that section exists to stop. What closes the row is a pwsh consumer, not another
+  assertion here; the note now says which.
 - **`core help` understated `core-whatsnew`'s interface — one of its two flags (#806).**
   The verb takes `--full` **and** `--all` (`_core_usage` and `zsh/completions/_core-whatsnew`
   both say so), but the cheat sheet's row keyed it `core-whatsnew [--full]` and the front
