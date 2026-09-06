@@ -2351,17 +2351,6 @@ ok-full)
   pass "parity coverage — every aligned PARITY.md row has a check behind it"
   pass "parity contract holds across zsh + pwsh"
   ;;
-ok-defaults)
-  pass "parity coverage — every aligned PARITY.md row has a check behind it"
-  # QUALIFIED HERE, not walked back on the next line: the reader believes the green line.
-  pass "parity contract holds across zsh + pwsh for every CONFIGURED row (framework-default halves are reported below, not asserted)"
-  # A half the child refused to certify must stay uncertified here too.
-  # skip_note, not skip: nothing is ABSENT here. A plain skip counts as a missing TOOL, so
-  # --strict would fail a fully-provisioned box purely because the contract is being honest
-  # about a PSReadLine default — and would disagree with `parity-check.sh --strict`, which
-  # accepts the same reported default.
-  skip_note "cross-shell parity: $(printf '%s\n' "$_pc_out" | grep -c "nothing to grep") pwsh half/halves are framework defaults — reported by parity-check.sh, not asserted"
-  ;;
 ok-no-sibling)
   pass "parity coverage — every aligned PARITY.md row has a check behind it"
   # skip_env, not skip: a coverage gap the BOX could not cover (no sibling repo), so

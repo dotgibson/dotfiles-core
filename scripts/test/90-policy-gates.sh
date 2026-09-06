@@ -507,7 +507,6 @@ _pc_win() {
     # the row format where it is parsed; only the pwsh half is written out here.
     # shellcheck disable=SC2034
     IFS='|' read -r k l zf zn pf pn <<<"$row"
-    [[ "$pn" == "-" ]] && continue # the framework defaults: nothing to write, by definition
     # A `count:N:` needle demands N matching LINES (pwsh binds Ctrl+R twice on purpose), so
     # the fixture has to satisfy the count, not just the string.
     want=1
@@ -605,9 +604,9 @@ _pc_row "an unknown status is rejected, not treated as not-aligned" 1 \
   "has status \`aligend\`" \
   '/^\| Word nav \|/ { sub(/`aligned`/, "`aligend`") } { print }'
 
-# 6. A pwsh half that is a framework default must be REPORTED, never certified. The
-#    summary line is the assertion: it may not say "all aligned rows hold" when a half was
-#    skipped. (Windows is absent from the fixture, so this pins the Core-side wording.)
+# 6. A run that never READ the pwsh side must not certify it. The summary line is the
+#    assertion: it may not say "all aligned rows hold" when a whole shell went unread.
+#    (Windows is absent from the fixture, so this pins the Core-side wording.)
 _pc_fixture "$HERE/PARITY.md" || true
 if grep -qF "pwsh side skipped" "$PCOUT"; then
   pass "parity coverage: a run without dotfiles-Windows says so instead of claiming both shells"
@@ -627,19 +626,18 @@ _pc_row "a 4-space-indented row is an indented code block, not a contract row" 0
   "aligned PARITY.md rows have a check" \
   '/^\| Word nav \|/ { print "     | Clipboard sync | `pbcopy` | `x` | `aligned` |" } { print }'
 
-# 8. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the `-`
-#    branch and the qualified summary never ran. With a synthetic dotfiles-Windows in place
-#    both must: each Word-nav half is reported as a skip, and the closing line must NOT say
-#    "all aligned rows hold across zsh + pwsh" — the overclaim this PR exists to remove.
+# 8. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the
+#    unqualified summary never ran. With a synthetic dotfiles-Windows in place it must — and
+#    it must be unqualified, because since #849 there is nothing left to qualify: EVERY row's
+#    pwsh half is asserted. A skip surviving here would mean a needle went back to a sentinel.
 _pc_fixture "$HERE/PARITY.md" win && _pc_win_rc=0 || _pc_win_rc=$?
-_pc_win_n="$(grep -c "nothing to grep" "$PCOUT" || true)"
-if ((_pc_win_rc == 0)) && ((_pc_win_n == 2)) &&
-  grep -qF "every CONFIGURED aligned row holds" "$PCOUT" &&
-  ! grep -qF "all aligned rows hold across zsh + pwsh" "$PCOUT"; then
-  pass "parity coverage: a Windows-present run reports both framework-default halves and refuses to certify them"
+_pc_win_n="$(grep -c '^–' "$PCOUT" || true)"
+if ((_pc_win_rc == 0)) && ((_pc_win_n == 0)) &&
+  grep -qF "all aligned rows hold across zsh + pwsh" "$PCOUT"; then
+  pass "parity coverage: a Windows-present run asserts every pwsh half and skips none"
 else
-  fail "parity coverage: Windows-present run (rc=$_pc_win_rc, $_pc_win_n default skips) did not report both halves and qualify its summary"
-  grep -E "coverage|nothing to grep|aligned rows hold|CONFIGURED" "$PCOUT" | sed 's/^/    /' >&2
+  fail "parity coverage: Windows-present run (rc=$_pc_win_rc, $_pc_win_n skips) did not assert every pwsh half"
+  grep -E "coverage|aligned rows hold|^–" "$PCOUT" | sed 's/^/    /' >&2
 fi
 unset _pc_win_rc _pc_win_n
 
@@ -683,12 +681,6 @@ _pv_is() { # _pv_is <label> <rc> <output> <expected-verdict>
 _pv_is "a clean both-shells run is ok-full" 0 "✓ all aligned rows hold across zsh + pwsh" ok-full
 _pv_is "an absent dotfiles-Windows is ok-no-sibling, not a full pass" \
   0 "– dotfiles-Windows not checked out at /x — pwsh side not verified" ok-no-sibling
-_pv_is "an unasserted framework default is ok-defaults, not a full pass" \
-  0 "– word nav: forward-word on Ctrl+Right — pwsh half is a PSReadLine default; nothing to grep" ok-defaults
-# Precedence: with no sibling repo the pwsh half never runs, so a default can never ALSO be
-# reported. If both notices somehow appear, the weaker claim must win.
-_pv_is "no-sibling outranks framework-default when both appear" \
-  0 "– dotfiles-Windows not checked out — nothing to grep" ok-no-sibling
 _pv_is "exit 1 is drift, whatever it printed" 1 "" drift
 _pv_is "exit 2 is broken, NOT a clean contract" 2 "" broken
 _pv_is "a non-standard exit is broken, not silently ok" 127 "" broken
@@ -697,11 +689,10 @@ unset -f _pv_is
 # The verdict is matched on parity-check.sh's own notice wording, and §9f's whole
 # classification rests on reading them. Pin both ends so a reword on either side is a
 # failure HERE rather than a silently-wrong audit line — the luacheck pin's reason (:2035).
-if grep -qF 'dotfiles-Windows not checked out' "$HERE/scripts/parity-check.sh" &&
-  grep -qF 'nothing to grep' "$HERE/scripts/parity-check.sh"; then
-  pass "parity verdict: parity-check.sh still emits both notices _core_parity_verdict reads"
+if grep -qF 'dotfiles-Windows not checked out' "$HERE/scripts/parity-check.sh"; then
+  pass "parity verdict: parity-check.sh still emits the notice _core_parity_verdict reads"
 else
-  fail "parity verdict: parity-check.sh reworded a notice _core_parity_verdict matches on — §9f will misclassify"
+  fail "parity verdict: parity-check.sh reworded the notice _core_parity_verdict matches on — §9f will misclassify"
 fi
 if grep -q '_core_parity_verdict' "$HERE/scripts/audit-core.sh"; then
   pass "parity verdict: audit-core.sh §9f classifies via the helper, not an inline if-chain"
