@@ -254,6 +254,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (dotfiles-Gentoo#145), and its `packages.txt` comment points **here** for this half,
   because `core/` is vendored read-only there and the same edit made in the OS repo is
   overwritten on the next `make sync`.
+- **The recovery runbook's caller-discovery grep could not see Core's own caller (#832).**
+  `GITHUB-APP-AUTH.md`'s Recovery section — the incident path — tells the operator to
+  **derive** the caller list rather than trust a written one, and then handed them
+  `grep -rn 'notify-web-call.yml@' ../dotfiles-*/.github/workflows/`, which matches only the
+  **remote** `uses:` form. Core's own caller is **local**: `release.yml` reads
+  `uses: ./.github/workflows/notify-web-call.yml`, no `@`. Step 6 then says to use step 5's
+  derived list, so an operator following the procedure omitted Core's `release.yml` mapping
+  and the release-path dispatch lost its restored fallback the moment step 7 disabled the
+  App. **This was a defect in a fix**: the "derive it, do not freeze it" instruction was
+  itself added to close an earlier review finding, so the derivation was made _authoritative_
+  before it was made _correct_ — worse than the frozen list it replaced, because the next
+  step instructs the operator to trust it. Both commands now anchor on `^\s*uses:` and match
+  either form (which also skips the reusable's own documentation comment, not a caller), and
+  the step-2 visibility grep is held to the same standard. **Both commands are plain POSIX
+  BRE with two `-e` patterns, not one `-E` alternation**: the first draft used the
+  alternation and it did not match under **busybox grep**, which the Alpine audit leg caught
+  — and Alpine is a machine in this fleet, so it is a box someone could be running this
+  recovery from. A recovery command that works on the maintainer's laptop and not on Alpine
+  is the same class of defect as one that cannot see Core's own caller. **A derivation nothing exercises
+  is a frozen list that looks live**, so `test/90-policy-gates.sh` now reads the patterns
+  _out of the runbook_ and runs them against Core's own tree, asserting they find the caller
+  that is actually there — with Core's local caller asserted separately, so the check cannot
+  pass vacuously if that caller ever goes away. Verified: the old pattern fails it.
+- **`GITHUB-APP-MIGRATION.md`'s permission-status pointer led to a section that did not hold
+  it (#832).** The frozen record defers _"whether that is still true"_ about verb scope to
+  _What the fleet runs today_ — a section covering **repository** scope only, while the live
+  statement that consumers still inherit the installation's full grant set sat two sections
+  away under _Adding a new consumer_. A reader following the deferral could not determine
+  whether the historical limitation still applied, which is the one thing the deferral exists
+  to let them do. Fixed at the target rather than the pointer: _What the fleet runs today_
+  now carries **"Neither shape scopes verbs"** — the dimension the migration did not narrow,
+  still true, still tracked as #830 — so the section that claims to describe today stops
+  omitting it.
 
 - **A linked-worktree OS repo was classified as "not cloned", and under `--strict` that skip
   was exit 1 (#850).** `sync-core.sh` asked "is this a clone?" with `-d "$path/.git"` at three
