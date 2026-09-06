@@ -205,7 +205,7 @@ that once contradicted the `resolved` line in the same report.
 **Arch:** `extra` carries 0.26.9 (clears the floor).
 **openSUSE:** the CLI is in the **base `tree-sitter` package** (0.26.8 on Tumbleweed,
 Leap 16.1 and Leap 16.0 — clears the floor); what got split off there is the shared
-_library_, as `tree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
+_library_, as `libtree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
 searching for that name is precisely why `dotfiles-openSUSE` carried this as `cargo³` and
 cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversion against
 the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
@@ -298,7 +298,8 @@ replacement**. delta stays the default `git diff` pager; difft is wired as an on
 git difftool (`git dft`, and the `gdft` shell alias — see `git/gitconfig`), never as a
 `GIT_EXTERNAL_DIFF`/pager override, so it never shadows delta. Binary is `difft` (Core
 sets `HAVE_DIFFT`). Packaged on Arch (`extra`), Alpine (`community` — a musl build, so the
-usual outlier is covered), Fedora, Gentoo (`dev-util/difftastic`), openSUSE, Homebrew
+usual outlier is covered), Fedora, Gentoo (`dev-util/difftastic`),
+openSUSE (Tumbleweed; **not** Leap 16.0/16.1), Homebrew
 (`difftastic`) and Debian/Kali apt; where unpackaged, `cargo install difftastic` or `mise`.
 Inert without the binary — the `gdft` alias is `HAVE_DIFFT`-guarded and `git dft` just errors.
 ¹¹ ast-grep: OPT-IN AST-aware structural search/rewrite — the syntax-tree complement to
