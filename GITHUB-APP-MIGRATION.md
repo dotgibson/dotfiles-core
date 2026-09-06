@@ -41,7 +41,11 @@ passed no `permission-*` inputs, so a minted token carried the installation's fu
 set on whatever repositories it covered.
 
 Whether that is still true is **not recorded here** — see *What the fleet runs today* in
-[`GITHUB-APP-AUTH.md`](GITHUB-APP-AUTH.md), which tracks the current position.
+[`GITHUB-APP-AUTH.md`](GITHUB-APP-AUTH.md), whose *"Neither shape scopes verbs"* paragraph
+tracks the current position. Naming the paragraph is deliberate: that section once covered
+**repository** scope only, and the live verb-scope statement sat two sections away under
+*Adding a new consumer*, so a reader following this deferral could not answer the one
+question it exists to let them answer (#832).
 
 ## The rollout, as planned
 
