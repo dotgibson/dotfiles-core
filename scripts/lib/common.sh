@@ -1851,6 +1851,29 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
           printf "Makefile:%d: target `%s` ends a checker with `;` before a success echo — the echo runs regardless AND becomes the line exit status, so findings print and the target still exits 0 (use `&&`)\n", \
             lstart[i], target
         }
+        # ── R5: an UNPINNED markdownlint ─────────────────────────────────────
+        # R1-R4 all judge a target that runs. This judges WHICH markdownlint runs, and it is
+        # the dimension that let dotgibson/dotfiles-core#873 hide behind a green R1: six
+        # repos probed for a GLOBAL markdownlint-cli2 that nothing in their bootstrap
+        # installs, so on an ordinary box the guard fired every time and the target skipped
+        # — correctly, at exit 0, forever. A local mirror of a BLOCKING gate that never runs
+        # is not a mirror, and R3 could not see it because the Makefile plainly spelled the
+        # tool. Where the binary WAS present it was whatever npm last put there, while the
+        # gate installs MARKDOWNLINT_VERSION from the vendored core/scripts/tool-versions.env
+        # — so a rule that changes across a bump reds a required check against a green run.
+        #
+        # The trailing @ is the whole test: pinned means the version travels WITH the
+        # invocation, which is what npx needs and what a global install can never give.
+        # Comment lines are skipped because the fixed recipes explain what they replaced and
+        # name the bare binary while doing it — the same prose-is-not-a-command rule
+        # tool_runs() applies to quoted text. That rule also means a quoted invocation
+        # (dotfiles-MacBook writes one) reads as prose and is not judged here; it is the one
+        # shape R5 under-checks, and that repo is pinned anyway.
+        if (lbody[i] !~ /^[ \t]*@?#/ && tool_runs(lbody[i], "markdownlint-cli2") \
+            && lbody[i] !~ /markdownlint-cli2@/) {
+          printf "Makefile:%d: target `%s` runs markdownlint-cli2 UNPINNED — the blocking gate installs MARKDOWNLINT_VERSION from core/scripts/tool-versions.env, and a global binary is whatever npm last put there. Use npx with markdownlint-cli2@ plus that version (dotgibson/dotfiles-core#873)\n", \
+            lstart[i], target
+        }
       }
       ln = 0
     }
