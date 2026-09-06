@@ -287,6 +287,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   now carries **"Neither shape scopes verbs"** — the dimension the migration did not narrow,
   still true, still tracked as #830 — so the section that claims to describe today stops
   omitting it.
+- **Word nav's pwsh half stops being a skip — the gate's last unasserted row (#849).**
+  `scripts/parity-check.sh` carried two `-` sentinels, both on **Word nav**: pwsh got
+  `Ctrl+←/→` from a PSReadLine **default**, so there was no string to grep and the check
+  asserted Core's half and _reported_ pwsh's rather than inventing a needle that could not
+  fail. dotgibson/dotfiles-Windows#238 binds the chords explicitly, so both halves are now
+  real assertions — `count:2:-Key Ctrl+RightArrow -Function NextWord` and its `Ctrl+LeftArrow`
+  / `BackwardWord` mirror. **`count:2` is the point**, not decoration: a bare `-Key` under
+  `-EditMode Vi` binds the **Insert** table only, so a single binding would leave `vicmd`
+  resting on the very default the upstream fix exists to stop depending on — the mirror of
+  Core's own `bindkey -M viins` + `bindkey -M vicmd` pairs. pwsh binds `NextWord`, **not**
+  `ForwardWord`, and that is not drift: PSReadLine's `ForwardWord` moves to the _end_ of the
+  current word while `NextWord` moves to the _start_ of the next one, which is what zsh's
+  `forward-word` does. The row stays honestly `aligned`; only the function _name_ differs.
+  With its only user gone, **the sentinel machinery is retired with it** — the `pneedle == "-"`
+  branch, the `UNASSERTED` counter and its qualified summary, `_core_parity_verdict`'s
+  `ok-defaults` verdict and §9f's render arm for it. A verdict no run can return is a claim no
+  test can hold to account. `skip_note` itself stays: the NOTE skip class has live callers in
+  `gen-hero-tape.sh` and the bench gate, and `test/36-bootstrap-lib.sh`'s binding assertion
+  now points at one of those instead of the §9f call site it used to guard. The Windows-present
+  case in `test/90-policy-gates.sh` inverts accordingly: it now proves the run asserts **every**
+  pwsh half and skips none, where it used to prove it refused to certify two.
 - **`check-links.sh` verified `loader.zsh` and none of the modules it loads (#854).** The gate
   asserted seven Core-owned links, including `.config/zsh/loader.zsh`, and — since #853 —
   that each resolves to the _right_ file. But `blib_link_core` links the **whole** directory
