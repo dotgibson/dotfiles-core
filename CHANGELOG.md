@@ -16,6 +16,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`audit-core.sh` §9p — `TOOLS_OPTIN` was the third copy of one set, and the only ungated
+  one (#890, out of #836).** `PORTING-MATRIX.md`'s ²¹ marks are the human contract; Core's
+  `_CORE_DOCTOR_OPTIN` is the **row-level** set, already re-derived and asserted by
+  `test/65-functions.sh`; each OS repo's `TOOLS_OPTIN` carries the **cell-level** marks and
+  was checked by nothing. **The miss already happened and was found by eye**: `uv` is in
+  `_CORE_DOCTOR_WIRED`, `dotfiles-openSUSE` installs none and declared no `TOOLS_OPTIN`, so
+  it fell back to Core's default — which does not list `uv` — and `core-doctor` rendered a
+  false `✗` on every openSUSE box.
+  The rule is exact, and the fleet already satisfies it: _a repo whose matrix column carries
+  cell-level ²¹ must declare `TOOLS_OPTIN` as Core's row-level set **plus** those tools; a
+  repo with no cell-level mark may omit it_. The "plus" is the whole set repeated, because a
+  declared list **replaces** the default rather than adding to it — declaring only the delta
+  would trade one false `✗` for nine, which is its own test case.
+  **Blocking, unlike §9o**, and the difference is the fleet's state rather than a change of
+  heart: every covered repo passes today, so it can red on a regression without reddening
+  anything that exists.
+  Two maps are **explicit because neither is derivable**, and both had a trap behind them.
+  `Kali (apt)` and `Debian/Ubuntu` are two columns of **one repo**, so a header-to-directory
+  guess would invent a `dotfiles-Kali` or drop Kali's marks. And a parenthetical in the Tool
+  cell is not reliably a binary name — `jujutsu (jj)` is an alias, `op (1Password)` is a
+  description — so an unknown one is **reported rather than guessed at**. The derivation also
+  stops after the first table: footnote 21 carries a coverage table of its own whose first
+  column is backticked tool names (`PORTING-MATRIX.md:653`), and a scan that stays armed
+  sweeps `` `gping` `` in twice and invents a flag. Both traps are asserted, and both were
+  live bugs in the first draft — caught by running it against the real fleet rather than
+  against fixtures. Five repos, not nine: `dotfiles-MacBook`, `-Fedora`, `-Offense` and
+  `-Defense` have no column, so the gate is **silent** about them rather than inventing a
+  verdict for a repo the matrix cannot see.
 - **The `HAVE_*` contract is enforced caller-side now, so direction 2 is not advisory
   (#866).** `audit-core.sh` §5j direction 2 — _no OS or role repo reads a Core `HAVE_*` flag
   `PORTABILITY.md` §5 does not declare_ — **never fired in any CI**. Core's own CI checks out
