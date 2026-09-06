@@ -149,6 +149,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`PORTING-MATRIX.md`: the openSUSE `uv` cell asserted a name for a package the repo does not
+  install, and the file was not a prettier fixed point (#836).** Two of the five findings that
+  issue parked while wiring the generator.
+  The `uv` row's openSUSE cell names `python3-uv` as an asserted literal in `PKG_ROWS`, but
+  `dotfiles-openSUSE/install/packages.txt` carries no `uv` at all — Arch, Alpine and Gentoo do
+  install theirs. So the cell now carries **²¹ ("available, not installed")**, which is the
+  convention the matrix already has for exactly this, and footnote 30 says so rather than
+  leaving the reader to infer it from a name that reads like an install. The derivation check
+  in `test/65-functions.sh` still passes because ²¹ here is **cell-level**, not row-level, and
+  a cell-level case belongs to the repo whose cell it is — the rule that array's own comment
+  states.
+  And the file is now a **prettier fixed point**, which it was not on `main`. That is not
+  cosmetic: Core's nvim formats markdown with prettierd on save, so anyone who opened this file
+  got a surprise 19-line reformat mixed into their diff — the mechanism that let the desktop
+  `PARITY.md` pair drift 3.5 KB apart in #693. Two of the three spots were **multi-line code
+  spans inside indented list items**, where prettier's de-indent silently changes what the span
+  contains; both are rewritten to single-line spans, so the fix removes the ambiguity rather
+  than accepting a reflow of the rendered text. The third was table padding around `✔`, now
+  accepted. `gen-porting-matrix.sh --check` and `prettier --check` are both green, and the
+  generator reproduces prettier's padding exactly — so the two cannot fight on the next
+  regeneration.
+
 - **A linked-worktree OS repo was classified as "not cloned", and under `--strict` that skip
   was exit 1 (#850).** `sync-core.sh` asked "is this a clone?" with `-d "$path/.git"` at three
   sites — the staleness pre-flight, the parallel prefetch loop and the per-repo fan-out. A
