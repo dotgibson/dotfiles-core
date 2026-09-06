@@ -78,7 +78,7 @@ manifest row, not a code change.
 | Session picker | `Ctrl+G` (sesh) | `Ctrl+G` (psmux sessionizer) | `aligned` — jump-to-session both |
 | Cheatsheet | `cheat` / `core-help` | `navi` / `cheat` | `deliberate` — command, not a keybind |
 | Autosuggest toggle | `Ctrl+\` (`autosuggest-toggle`) | `Ctrl+\` (flips `PredictionSource`) | `aligned` |
-| Word nav | `Ctrl+←/→` | `Ctrl+←/→` (PSReadLine) | `aligned` |
+| Word nav | `Ctrl+←/→` (`forward-word`/`backward-word`) | `Ctrl+←/→` (`NextWord`/`BackwardWord`) | `aligned` |
 
 ## Functions
 
@@ -112,11 +112,11 @@ pusher (`gsync`); the rows below say which of those pwsh has. Enforced by
 ## Enforcement
 
 `scripts/parity-check.sh` (`make parity-check`, and §9f of `make audit`) mechanises the
-`aligned` rows: it asserts a distinctive needle for each is present in a zsh source and —
-wherever the capability is *configured* rather than inherited from a framework default —
-in the pwsh source too, and exits non-zero when one side drifts. The one row that is a
-framework default on pwsh is named below and reports that half rather than asserting it;
-the summary counts those halves instead of certifying them. It reads pwsh from a sibling
+`aligned` rows: it asserts a distinctive needle for each is present in a zsh source **and**
+in the pwsh source, and exits non-zero when one side drifts. Every `aligned` row is now
+asserted on both shells — **Word nav** was the last one whose pwsh half was a framework
+default with nothing to grep, reported rather than asserted, until
+dotgibson/dotfiles-Windows#238 bound `Ctrl+←/→` explicitly (#849). It reads pwsh from a sibling
 `dotfiles-Windows` checkout (skipped with a notice if absent, unless `--strict`), exactly
 like `scripts/fleet-drift.sh`. The weekly `.github/workflows/parity-check.yml` clones
 `dotfiles-Windows` and runs it `--strict`, failing red on drift.
@@ -150,14 +150,16 @@ Theme's check; #682 added the rest, removed the `Alt+C` fiction, and made the cl
 mechanical. Whether an `Alt+C` subdirectory picker is wanted on both shells for real is
 tracked as #808 — a feature, not a contract repair.
 
-Two rows are deliberately honest about proving less than they look like they prove:
+One row is deliberately honest about proving less than it looks like it proves:
 
 - **Theme** shares its pwsh evidence with **FZF palette** — the fzf `--color` block is the
   only place `dotfiles-Windows` carries tokyonight colours at all, since it has no
   `_CORE_ACCENT_SPEC` equivalent. That accent half remains a genuine `gap`.
-- **Word nav**'s pwsh half is a *PSReadLine default*, not configuration: nothing in
-  `dotfiles-Windows` binds Ctrl+Arrow, so there is no string to grep. Its check asserts
-  Core's half and reports the pwsh half as a skip carrying that reason, rather than
-  inventing a needle that would go green without proving anything — and the closing summary
-  says how many halves were reported rather than asserted, instead of certifying them.
-  dotgibson/dotfiles-Windows#231 tracks binding it explicitly.
+
+**Word nav** is worth a note now that it asserts. Its pwsh needles are counted (`count:2`)
+because a bare `-Key` under `-EditMode Vi` binds the Insert table only, so a single binding
+would leave `vicmd` resting on the very default the explicit binding exists to stop
+depending on — the mirror of Core's own `bindkey -M viins` + `bindkey -M vicmd` pairs. And
+pwsh binds `NextWord`, not `ForwardWord`: PSReadLine's `ForwardWord` moves to the *end* of
+the current word, while `NextWord` moves to the *start* of the next one, which is what
+zsh's `forward-word` does. The row is honestly `aligned`; only the function *name* differs.
