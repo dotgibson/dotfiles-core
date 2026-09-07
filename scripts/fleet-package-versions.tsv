@@ -21,30 +21,40 @@
 #       The recorded floor. at-or-below is DERIVED by comparing each row against it, so a
 #       row cannot claim a status its own version contradicts.
 #
-#   ver <tool> <target> <version> <verified> <source>
-#       One observation. <verified> is ISO date. <source> names where it was read, because
-#       "1.8.2" is worth nothing without it — Repology splits some projects across
+#   ver <tool> <target> <version> <verified> <source> <probe>
+#       One observation. <verified> is ISO date. <source> names where the value was read,
+#       because "1.8.2" is worth nothing without it — Repology splits some projects across
 #       version-named entries and reports false absences (dotfiles-Alpine#170), so a row
-#       read there is weaker evidence than one read from the distro's own index.
+#       read there is weaker evidence than one read from the distro's own index. <source>
+#       is PROVENANCE and is not rewritten by the bot.
 #
-# RE-VERIFYING. Check the row's source, update <version> and <verified>, run
-# `make gen-porting-matrix`, commit both. Ordering here is display order.
+#       <probe> is the Repology repository id the freshness bot re-reads this row from, or
+#       `-` for a row only a human can confirm. It is deliberately separate from <source>:
+#       an Alpine row whose value came from pkgs.alpinelinux.org keeps saying so even
+#       though the bot re-checks it through Repology, because collapsing the two would
+#       silently downgrade the recorded evidence to the weaker source.
+#
+# RE-VERIFYING. `make update-fleet-versions` re-reads every probeable row and rewrites
+# <version> and <verified>; `--check` reports without writing, and the freshness bot runs
+# it weekly. A row the probe cannot answer keeps its old date and is reported as needing a
+# human — which is the honest outcome, not a silent pass. By hand: check <source>, update
+# <version> and <verified>, run `make gen-porting-matrix`, commit both.
 
 floor	jq	1.8.2
 
-ver	jq	Arch	1.8.2	2026-09-06	repology:arch
-ver	jq	Gentoo	1.8.2	2026-09-06	repology:gentoo
-ver	jq	openSUSE Tumbleweed	1.8.2	2026-09-06	repology:opensuse_tumbleweed
-ver	jq	Homebrew	1.8.2	2026-09-06	repology:homebrew
-ver	jq	Alpine edge	1.8.2	2026-09-06	repology:alpine_edge
-ver	jq	Alpine 3.24	1.8.2	2026-09-06	pkgs.alpinelinux.org
-ver	jq	Alpine 3.23	1.8.2	2026-09-06	pkgs.alpinelinux.org
-ver	jq	Alpine 3.22	1.8.2	2026-09-06	pkgs.alpinelinux.org
-ver	jq	Fedora Rawhide	1.8.2	2026-09-06	repology:fedora_rawhide
-ver	jq	Fedora 45	1.8.2	2026-09-06	packages.fedoraproject.org
-ver	jq	Fedora 44	1.8.1	2026-09-06	repology:fedora_44
-ver	jq	Fedora 43	1.8.1	2026-09-06	repology:fedora_43
-ver	jq	Alpine 3.21	1.7.1	2026-09-06	pkgs.alpinelinux.org
-ver	jq	Debian 13	1.7.1	2026-09-06	repology:debian_13
-ver	jq	Ubuntu 24.04	1.7.1	2026-09-06	repology:ubuntu_24_04
-ver	jq	openSUSE Leap 15.x	1.6	2026-09-06	repology:opensuse_leap_15_6
+ver	jq	Arch	1.8.2	2026-09-07	repology:arch	arch
+ver	jq	Gentoo	1.8.2	2026-09-07	repology:gentoo	gentoo
+ver	jq	openSUSE Tumbleweed	1.8.2	2026-09-07	repology:opensuse_tumbleweed	opensuse_tumbleweed
+ver	jq	Homebrew	1.8.2	2026-09-07	repology:homebrew	homebrew
+ver	jq	Alpine edge	1.8.2	2026-09-07	repology:alpine_edge	alpine_edge
+ver	jq	Alpine 3.24	1.8.2	2026-09-07	pkgs.alpinelinux.org	alpine_3_24
+ver	jq	Alpine 3.23	1.8.2	2026-09-07	pkgs.alpinelinux.org	alpine_3_23
+ver	jq	Alpine 3.22	1.8.2	2026-09-07	pkgs.alpinelinux.org	alpine_3_22
+ver	jq	Fedora Rawhide	1.8.2	2026-09-07	repology:fedora_rawhide	fedora_rawhide
+ver	jq	Fedora 45	1.8.2	2026-09-06	packages.fedoraproject.org	fedora_45
+ver	jq	Fedora 44	1.8.1	2026-09-07	repology:fedora_44	fedora_44
+ver	jq	Fedora 43	1.8.1	2026-09-07	repology:fedora_43	fedora_43
+ver	jq	Alpine 3.21	1.7.1	2026-09-07	pkgs.alpinelinux.org	alpine_3_21
+ver	jq	Debian 13	1.7.1	2026-09-07	repology:debian_13	debian_13
+ver	jq	Ubuntu 24.04	1.7.1	2026-09-07	repology:ubuntu_24_04	ubuntu_24_04
+ver	jq	openSUSE Leap 15.x	1.6	2026-09-07	repology:opensuse_leap_15_6	opensuse_leap_15_6

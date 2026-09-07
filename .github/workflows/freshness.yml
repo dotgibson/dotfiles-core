@@ -1,10 +1,18 @@
 name: freshness
 
-# Supply-chain freshness bot for Core's RUNTIME pins. The zsh-plugin SHAs
-# (zsh/45-plugins.zsh) and the Neovim lockfile (nvim/lazy-lock.json) are pinned so nothing
-# floats silently into the nine OS repos — but a pin, once set, also rots: a
-# pinned-and-forgotten plugin can sit on a known-vuln commit indefinitely across every
-# machine. Renovate (the shared org preset, see renovate.json) watches the github-actions
+# Freshness bot for the facts Core records and cannot otherwise re-check. Two kinds:
+#
+#   • RUNTIME PINS — the zsh-plugin SHAs (zsh/45-plugins.zsh) and the Neovim lockfile
+#     (nvim/lazy-lock.json). Pinned so nothing floats; rolled forward here so nothing rots.
+#   • RECORDED OBSERVATIONS — scripts/fleet-package-versions.tsv, the distro package
+#     versions PORTING-MATRIX.md's footnotes assert. A pin rots by staying still while
+#     upstream moves; an observation rots the same way, and until this job existed nothing
+#     in Core could tell. That footnote was corrected twice in one day before it was
+#     generated from data (#902, #904); generating it made the claim checkable, and this
+#     is what actually checks it.
+#
+# A pinned-and-forgotten plugin can sit on a known-vuln commit indefinitely across every
+# machine in the fleet. Renovate (the shared org preset, see renovate.json) watches the github-actions
 # ecosystem, not these runtime pins, so they were unmonitored. Weekly (and on demand) this
 # rolls the pins forward and OPENS A PR (B10) so the bump is reviewable in one click —
 # instead of only a red "you should run make update-plugins" nudge that a human still had
@@ -193,12 +201,98 @@ jobs:
           fi
           echo "📦 opened/updated PR on \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
 
+  # scripts/fleet-package-versions.tsv feeds PORTING-MATRIX.md's generated fleet-versions
+  # block. gen-porting-matrix.sh never reaches the network (it runs inside an offline
+  # audit), so it can only say a row has not been re-checked lately — it cannot check.
+  # This is the half that looks. Same shape as the pin jobs above, and for the same reason:
+  # a nudge a human has to action by hand is one nobody actions.
+  fleet-versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      MODE: ${{ github.event.inputs.mode || 'pr' }}
+      BRANCH: automation/freshness-fleet-versions
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
+    steps:
+      - name: Mint a scoped installation token (if the App is installed here)
+        id: app
+        if: env.MODE == 'pr' && vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.FLEET_APP_ID }}
+          private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+          # This job rewrites scripts/fleet-package-versions.tsv and the generated block in
+          # PORTING-MATRIX.md — never .github/workflows/, so no workflows: write. If that
+          # ever changes the push fails loudly rather than the token having quietly been
+          # able to rewrite CI all along.
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          token: ${{ steps.app.outputs.token || github.token }}
+      - name: Check recorded fleet versions (report only)
+        if: env.MODE == 'check'
+        run: |
+          if ./scripts/update-fleet-versions.sh --check; then
+            echo "✅ every probeable fleet version row is current" >> "$GITHUB_STEP_SUMMARY"
+          else
+            rc=$?
+            # 1 = a row is behind (the report, working as intended). 2 = the probe could
+            # not be reached, which is an environment failure and must not be filed as a
+            # fleet finding — the distinction the updater exits separately for.
+            if [ "$rc" = 2 ]; then
+              echo "### ❌ the version probe was unreachable — nothing was verified" >> "$GITHUB_STEP_SUMMARY"
+            else
+              { echo "### ⚠️ a recorded fleet version is behind upstream"; echo ""; \
+                echo "Re-run this workflow with mode=pr to roll the rows forward."; } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit "$rc"
+          fi
+      - name: Re-verify fleet versions and open a PR
+        if: env.MODE == 'pr'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+        run: |
+          set -euo pipefail
+          # Apply mode rewrites confirmed rows (version AND verified date) and regenerates
+          # the matrix block. A row it could not confirm keeps its old date, so the
+          # staleness notice still names it rather than a failed probe reading as fresh.
+          ./scripts/update-fleet-versions.sh
+          if git diff --quiet -- scripts/fleet-package-versions.tsv PORTING-MATRIX.md; then
+            echo "✅ fleet versions already current — no PR needed" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add scripts/fleet-package-versions.tsv PORTING-MATRIX.md
+          git commit -m "chore(matrix): re-verify fleet package versions (freshness bot)"
+          git push -f -u origin "$BRANCH"
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --head "$BRANCH" --base "$DEFAULT_BRANCH" \
+              --title "chore(matrix): re-verify fleet package versions" \
+              --body "Automated by the freshness bot. Re-read every probeable row in \`scripts/fleet-package-versions.tsv\` from upstream and regenerated PORTING-MATRIX.md's fleet-versions block.
+
+          A changed version means a distro moved. An unchanged version with a newer \`verified\` date means the row was confirmed — that is the point: it proves somebody looked, so a stable row does not read as stale. Rows the probe could not answer keep their old date and are listed in the run log as needing a human.
+
+          Review the diff, let CI run, then merge.
+
+          No-Issue: routine automated re-verification, nothing filed"
+          fi
+          echo "📦 opened/updated PR on \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
+
   # Turn a red run into a deduplicated issue (G1). Scheduled-only: a manual `mode=check`
   # run exits non-zero BY DESIGN when pins are behind (that's the report, not a crash), so
   # scoping to schedule avoids paging on that intended signal while still catching a real
   # scheduled-run failure (a crashed updater, a failed push).
   notify-failure:
-    needs: [zsh-plugins, nvim-plugins]
+    needs: [zsh-plugins, nvim-plugins, fleet-versions]
     if: failure() && github.event_name == 'schedule'
     permissions:
       contents: read
