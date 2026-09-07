@@ -214,6 +214,61 @@ else
   fail "maint: the set of step() calls with no _to ceiling changed (#899 F4) — got '${_mr_got//$'\n'/, }', declared '${_mr_allowed//$'\n'/, }'. A new entry is a step that can block \`maint-run\` forever, on the tty arm through a grandchild holding the tee pipe; a missing one means this inventory needs updating with the reason."
 fi
 unset _mr_bare _mr_unbounded _mr_allowed _mr_got
+
+# ── a record starts its own line, whatever the previous writer left (#919) ────
+# step() pipes each command's RAW output into $LOG, and `echo` in log() emits a trailing
+# newline but no leading one — so a step ending WITHOUT a newline swallowed the front of the
+# next record. Observed on a live box as
+#   `Successfully updated 1 registry.2026-09-07 12:17:26  ✓ neovim: …`
+# Harmless for a ✓. For a ✗ it moves the ONLY record that anything failed out of column 0,
+# where a timestamp-anchored scan and an operator's eye both miss it — and step() continues
+# past failures with the process still exiting 0, so that line is the whole error contract.
+#
+# THE FIXTURE IS THE FAILING CASE, not the passing one: a command that prints without a
+# trailing newline AND exits non-zero, so the record at risk is the ✗ rather than a ✓ nobody
+# would miss. Both log() and step() are extracted from the SHIPPED runner (same block-
+# boundary rule as the cases above), so deleting the guard changes the extracted text and
+# reds this rather than quietly passing.
+hdr "maint log records start their own line (#919)"
+if sed -n '/^log() {/,/^}/p' "$_MAINT_SH" >"$_MRT/log.bash" && [[ -s "$_MRT/log.bash" ]] &&
+  [[ -s "$_MRT/step.bash" ]]; then
+  _nl_log="$_MRT/newline.log"
+  : >"$_nl_log"
+  bash -c '
+      LOG="'"$_nl_log"'"
+      . "'"$_MRT/log.bash"'"
+      . "'"$_MRT/step.bash"'"
+      step "trailing" sh -c "printf NO_NEWLINE; exit 3"
+    ' >/dev/null 2>&1
+  # The ✗ record must be findable the way anything reads a log: anchored at line start.
+  if grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[[:space:]]+✗ trailing' "$_nl_log"; then
+    pass "maint: a ✗ record after newline-less output still starts its own line"
+  else
+    fail "maint: a ✗ record after newline-less output was appended to the previous line — a timestamp-anchored scan cannot see it (#919): $(tr '\n' '|' <"$_nl_log" | tail -c 200)"
+  fi
+  # The corruption signature itself: the step's output and a log record sharing one line.
+  if grep -q 'NO_NEWLINE.*✗' "$_nl_log"; then
+    fail "maint: the step's output and the ✗ record share a line (#919)"
+  else
+    pass "maint: a step's newline-less output does not absorb the next record"
+  fi
+  # …and the guard must not fire on the healthy path, or every run doubles its blank lines
+  # and MAINT_LOG_KEEP starts trimming whitespace instead of history.
+  : >"$_nl_log"
+  bash -c '
+      LOG="'"$_nl_log"'"
+      . "'"$_MRT/log.bash"'"
+      log "one"; log "two"
+    ' >/dev/null 2>&1
+  if [[ "$(grep -c '^$' "$_nl_log" || true)" == 0 ]]; then
+    pass "maint: consecutive records insert no blank line (the guard is conditional)"
+  else
+    fail "maint: the newline guard fired on already-terminated output — every run would gain blank lines"
+  fi
+  unset _nl_log
+else
+  fail "maint: could not extract log()/step() from ${_MAINT_SH##*/}"
+fi
 # ── step() on a TTY: mirrors to the terminal, and still reports the COMMAND's rc ──────
 # The other arm of the same function. `maint-run` is a foreground run, and a step that
 # prints nothing for the tens of minutes a musl source build takes is indistinguishable

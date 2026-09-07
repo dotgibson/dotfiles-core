@@ -155,6 +155,76 @@ else
   skip "maint launchd plist (python3 absent — cannot parse plist XML)"
 fi
 
+
+# ── maint-status reports ABSENCE, not an empty listing (#918) ─────────────────
+# `systemctl --user list-timers <missing unit>` prints its header and `0 timers listed` on
+# STDOUT and exits 0; the one call that knows — `status` — writes "could not be found" to
+# STDERR, which maint-status discards. So the systemd arm rendered a clean-looking listing on
+# a box where maint-install had never written anything, and the operator read it as healthy.
+# Reproduced on a live Proxmox node before this was fixed: no unit files, `is-enabled`
+# not-found, no crontab entry, and maint-status output indistinguishable from a healthy box.
+#
+# The launchd and cron arms have always had an absence branch; systemd was the only one of
+# the three without, and it is the arm Debian/Fedora/Arch/openSUSE/Defense/Offense all take.
+#
+# THE STUB IS WHAT MAKES THIS HERMETIC AND HONEST: it reproduces systemd's real stream
+# discipline — list-timers to stdout with exit 0, status to stderr — so a fix that merely
+# stopped discarding stderr would still have to produce a verdict to pass.
+hdr "maint-status reports absence rather than an empty listing (#918)"
+MSBIN="$SANDBOX/msbin"
+mkdir -p "$MSBIN"
+cat >"$MSBIN/systemctl" <<'STUB'
+#!/bin/sh
+# $1 is --user, $2 the verb — the shapes maint-status actually invokes.
+case "$2" in
+is-enabled)
+  printf '%s\n' "${STUB_IS_ENABLED:-not-found}"
+  [ "${STUB_IS_ENABLED:-not-found}" = enabled ] || exit 1
+  ;;
+list-timers) printf 'NEXT LEFT LAST PASSED UNIT ACTIVATES\n\n0 timers listed.\n' ;;
+status) printf 'Unit dotfiles-maint.timer could not be found.\n' >&2; exit 4 ;;
+*) : ;;
+esac
+STUB
+chmod +x "$MSBIN/systemctl"
+
+# 1. THE LIVE CASE. Declared unit dir, nothing written there — maint-status must SAY so.
+ucheck "maint-status: a missing unit is reported, not rendered as an empty listing" \
+  "source '$UI'; source '$MNT'; ${_MSD}; out=\"\$(maint-status 2>&1)\"; [[ \"\$out\" == *'not installed'* ]]" \
+  PATH="$MSBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/ms-absent"
+
+# 2. THE SECOND FACT, which fails INDEPENDENTLY and which list-timers renders identically:
+#    the unit exists but was never enabled, so it will never fire. Different repair, so it
+#    must not be reported as "not installed".
+mkdir -p "$SANDBOX/ms-present/systemd/user"
+: >"$SANDBOX/ms-present/systemd/user/dotfiles-maint.service"
+ucheck "maint-status: an installed-but-not-enabled unit is called out (it will never fire)" \
+  "source '$UI'; source '$MNT'; ${_MSD}; out=\"\$(maint-status 2>&1)\"; [[ \"\$out\" == *'NOT enabled'* ]]" \
+  PATH="$MSBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/ms-present"
+
+# 3. …and a healthy box must stay quiet about both, or the fix trades one wrong answer for
+#    another. This is the regression that would make the gate cry wolf on every good host.
+ucheck "maint-status: an installed AND enabled unit reports neither complaint" \
+  "source '$UI'; source '$MNT'; ${_MSD}; out=\"\$(maint-status 2>&1)\"; [[ \"\$out\" != *'not installed'* && \"\$out\" != *'NOT enabled'* ]]" \
+  PATH="$MSBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/ms-present" STUB_IS_ENABLED=enabled
+
+# 4. THE THIRD CAUSE, and the reason "not installed" alone would be the wrong message: an
+#    undeclared SCHEDULER_UNIT_DIR means maint-install had nowhere to write, so naming the
+#    missing file would point the operator at the wrong repair (#763's rule — Core resolves
+#    no unit path rather than guessing a directory).
+ucheck "maint-status: an undeclared SCHEDULER_UNIT_DIR names THAT, not a missing file" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _core_cap() { return 0 }; out=\"\$(maint-status 2>&1)\"; [[ \"\$out\" == *'no SCHEDULER_UNIT_DIR'* ]]" \
+  PATH="$MSBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/ms-absent"
+
+# LIVE CANARY, the lesson every synthetic case here shares: all four would still pass if the
+# launchd/cron arms lost the absence branches this one was modelled on. Assert the shipped
+# file still carries all three, so the asymmetry cannot silently return.
+if [[ "$(grep -c 'not loaded\|no cron entry\|not installed' "$MNT")" -ge 3 ]]; then
+  pass "maint-status: all three scheduler arms still carry an absence branch"
+else
+  fail "maint-status: a scheduler arm lost its absence branch — that arm now reports a clean listing on a box where nothing is installed (#918)"
+fi
+unset MSBIN
 # ── the PATH capture (the one seam where an OS prefix may enter the runner) ───
 # maint/dotfiles-maint.sh is portable Core and names no Homebrew/pkgsrc/Nix prefix, so
 # the scheduler unit is the ONLY thing that tells the unattended runner where this box
