@@ -297,6 +297,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`audit-core.sh` §1c walked other sessions' worktrees, so `make audit` reported 1002
+  findings about files no commit here owns (#905).** `_core_claude_untracked_hits` answers
+  "is a file sitting under `.claude/` that git will never ship" by walking the filesystem —
+  it has to, because its whole subject is the file `git status` refuses to mention. Claude
+  Code parks a full checkout at `.claude/worktrees/<name>/`, so the walk descended into
+  every other session's tree and reported all of it: `pass 431 skip 1 fail 1004`, of which
+  **1002 were other people's worktrees** and none were about the tree under test.
+  **This reds only where it is required to be green.** CI checks out the repo alone and has
+  no worktrees, so the gate passed on all four platforms while being unusable on a
+  maintainer's machine — the one place `RELEASE-RUNBOOK.md` §1.1 step 0 demands a green
+  `make audit` before a tag. The remedy each finding printed ("negate it in `.gitignore`")
+  was wrong twice over: those files are already tracked at their real path, and nothing in
+  this checkout can change a verdict about another one.
+  `_core_nested_worktrees` asks **git**, not the filesystem — `git worktree list
+  --porcelain` is the registry git maintains itself, so a vendored `core/` or a stray
+  directory cannot be mistaken for a checkout — and §1c `-prune`s what it names. Pruning
+  rather than filtering afterwards is the point: the walk spends a `git check-ignore` per
+  file, so descending into a worktree bought a thousand subprocesses to produce a thousand
+  wrong answers (3.1s → 0.02s on the real tree).
+  **Not `_audit_ls`, which is how #906 fixed the same blind spot one function over.** That
+  scan could switch to git-aware discovery because it hunts shippable consumers; this one
+  cannot, because every git-derived listing returns nothing for an ignored file and would
+  turn the gate green by seeing less. The two halves of #905 needed opposite fixes.
+  The behavioral cases assert **both directions against the same tree**: a hidden file
+  inside the nested worktree is not a finding, and the host's own hidden file still is —
+  so the cheap wrong answer (stop walking `.claude/`) fails rather than passing quietly.
+
 - **`gen-theme.sh`'s reverse scan walked the filesystem, so it audited other repositories
   (found while auditing #904, never filed).** `preflight()`'s reverse half — the one that
   catches a `core:theme:gen` marker the registry does not know about — discovered files with

@@ -1027,6 +1027,59 @@ _core_helper_called() { # _core_helper_called <file> <helper>
   grep -qE "(^|[^A-Za-z0-9_])${h}([^A-Za-z0-9_]|\$)" <<<"$code"
 }
 
+# ── _core_nested_worktrees: checkouts of this repo parked INSIDE this checkout ──
+# _core_nested_worktrees <repo-root> — print, one per line and relative to <repo-root>, the
+# root of every linked git worktree whose checkout lives under it. Silence = none.
+#
+# WHY THIS EXISTS. Claude Code puts its worktrees at `.claude/worktrees/<name>/`, i.e. INSIDE
+# the checkout they branch from. A gate that walks the FILESYSTEM then reads other sessions'
+# working copies as this repo's own content and reports on files no commit here can fix
+# (#905: `make audit` printed 1004 failures, 1002 of them about three other worktrees). CI
+# never saw it — a fresh checkout has no worktrees — so the gate reds ONLY on a maintainer's
+# machine, the one place RELEASE-RUNBOOK.md §1.1 demands it green.
+#
+# WHY NOT `_audit_ls`, WHICH IS HOW #906 FIXED THE SAME BLIND SPOT IN gen-theme.sh. That scan
+# could switch to git-aware discovery because it hunts SHIPPABLE consumers, and git's
+# exclusions are exactly right for it. _core_claude_untracked_hits cannot: its whole subject
+# is the file git refuses to mention, so every git-derived listing returns nothing for it and
+# would turn the gate green by seeing less. It has to walk, so it has to prune.
+#
+# GIT IS ASKED, NOT THE FILESYSTEM. `git worktree list --porcelain` is the registry git
+# maintains itself, so this cannot mistake a vendored `core/` or a stray directory for a
+# checkout, and it costs one subprocess rather than a stat per file. Both sides are
+# normalised through `cd`/`pwd -P` before the prefix test: git records the path it was
+# HANDED, which can differ from <repo-root>'s spelling by a symlink, and a textual compare
+# would then silently prune nothing — the vacuous-pass shape §1c's own canary exists for.
+#
+# SCOPE IS LINKED WORKTREES OF THIS REPO. An unrelated clone parked under this tree is not in
+# git's registry and stays reportable on purpose: nobody registered it, so "is this meant to
+# be here" is a real question. This answers only the half git can answer.
+_core_nested_worktrees() { # _core_nested_worktrees <repo-root>
+  local root="${1:-.}" abs line wt
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  abs="$(cd "$root" 2>/dev/null && pwd -P)" || return 0
+  [ -n "$abs" ] || return 0
+  # Heredoc rather than a pipe, the reason _core_claude_untracked_hits gives below: callers
+  # run under `set -o pipefail`, and a repo with no linked worktree must read as "none", not
+  # as a scanner failure.
+  while IFS= read -r line; do
+    case "$line" in
+    'worktree '*) wt="${line#worktree }" ;;
+    *) continue ;;
+    esac
+    [ -d "$wt" ] || continue # a stale entry git has not pruned yet
+    wt="$(cd "$wt" 2>/dev/null && pwd -P)" || continue
+    [ "$wt" = "$abs" ] && continue # the checkout we were handed is not nested in itself
+    # "$abs" is QUOTED inside the pattern so a repo path containing a glob character matches
+    # literally; the trailing /* is left unquoted because it is meant as a pattern.
+    case "$wt" in
+    "$abs"/*) printf '%s\n' "${wt#"$abs"/}" ;;
+    esac
+  done <<EOF
+$(git -C "$root" worktree list --porcelain 2>/dev/null)
+EOF
+}
+
 # ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
 # _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
 # not ship AND that nothing will ever tell you about. Silence = clean.
@@ -1052,13 +1105,25 @@ _core_helper_called() { # _core_helper_called <file> <helper>
 # in the tree. The defect this exists for is invisibility: a blanket rule hid the file, so no
 # other signal exists. That is the whole scope.
 _core_claude_untracked_hits() { # _core_claude_untracked_hits <repo-root>
-  local root="${1:-.}" tracked f rel line before pat
+  local root="${1:-.}" tracked f rel line before pat wt
+  local -a prune=()
   [ -d "$root/.claude" ] || return 0
   git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
   # Newline-DELIMITED for a whole-line membership test with no subprocess per file, and so
   # `.claude/a.md` is not satisfied by `x.claude/a.md` — the same reasoning audit-core.sh
   # §1b gives for its own tracked list.
   tracked=$'\n'"$(git -C "$root" ls-files '.claude/*')"$'\n'
+  # Nested worktrees are PRUNED, not filtered out afterwards: Claude Code parks a whole
+  # checkout at `.claude/worktrees/<name>/`, and this walk spends a `git check-ignore` per
+  # file — so descending into one buys a thousand subprocesses in order to report a thousand
+  # findings about a tree no commit here owns (#905). The array is assembled BEFORE the loop
+  # because the heredoc feeding it is expanded when the loop is entered.
+  while IFS= read -r wt; do
+    [ -n "$wt" ] || continue
+    prune+=(-path "$root/$wt" -prune -o)
+  done <<EOF
+$(_core_nested_worktrees "$root")
+EOF
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     rel="${f#"$root"/}"
@@ -1078,7 +1143,7 @@ _core_claude_untracked_hits() { # _core_claude_untracked_hits <repo-root>
 $(git -C "$root" check-ignore -v "$rel" 2>/dev/null)
 EOF
   done <<EOF
-$(find "$root/.claude" -type f 2>/dev/null | sort)
+$(find "$root/.claude" ${prune[@]+"${prune[@]}"} -type f -print 2>/dev/null | sort)
 EOF
 }
 
