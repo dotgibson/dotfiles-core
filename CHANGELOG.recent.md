@@ -5,14 +5,16 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.1.1 … v5.4.3), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.1.2 … v5.4.3), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
 
-## [v7.1.1] - 2026-09-07
+## [v7.1.2] - 2026-09-07
 
 ### Fixed
+
+- **v7.1.1 was staged and never published — this release carries its content.** The cut promoted an empty `[Unreleased]`, because #920's entries had been filed under `[v7.1.0]` by mistake and the section they should have landed in was bare. `tag-release.sh` refused to tag it: `release.yml` builds the Release body from that section, and an empty body on an immutable tag burns the version. No `v7.1.1` tag was ever created and no repo vendored it, so the number is simply skipped — the same outcome `RELEASE-RUNBOOK.md` records for v4.11.0. The two entries below are unchanged.
 
 - **`maint-status` reported a clean listing on a box where nothing was installed (#918).** Its
   systemd arm ran `list-timers` (header + `0 timers listed` on **stdout**, exit 0) and
