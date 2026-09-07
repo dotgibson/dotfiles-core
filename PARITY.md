@@ -78,14 +78,21 @@ manifest row, not a code change.
 | Session picker | `Ctrl+G` (sesh) | `Ctrl+G` (psmux sessionizer) | `aligned` — jump-to-session both |
 | Cheatsheet | `cheat` / `core-help` | `navi` / `cheat` | `deliberate` — command, not a keybind |
 | Autosuggest toggle | `Ctrl+\` (`autosuggest-toggle`) | `Ctrl+\` (flips `PredictionSource`) | `aligned` |
-| Word nav | `Ctrl+←/→` (`forward-word`/`backward-word`) | `Ctrl+←/→` (`NextWord`/`BackwardWord`) | `aligned` |
+| Word nav backward | `Ctrl+←` (`backward-word`) | `Ctrl+←` (`BackwardWord`) | `aligned` |
+| Word nav forward | `Ctrl+→` (`forward-word`) | `Ctrl+→` (`NextWord`) | `aligned` |
 
 ## Functions
 
 | Capability | zsh | pwsh | Status |
 | --- | --- | --- | --- |
-| Utility functions | `extract` `mkbak` `serve` `fif` `fbr` | `extract` `mkbak` `serve` `fif` `fbr` | `aligned` |
-| Fuzzy git stage/restore | `gaf` `grf` `grsf` | `gaf` `grf` `grsf` | `aligned` |
+| `extract` | `extract` (archive unpacker) | `extract` (archive unpacker) | `aligned` |
+| `mkbak` | `mkbak` (timestamped copy) | `mkbak` (timestamped copy) | `aligned` |
+| `serve` | `serve` (ad-hoc HTTP server) | `serve` (ad-hoc HTTP server) | `aligned` |
+| `fif` | `fif` (find-in-files, fzf) | `fif` (find-in-files, fzf) | `aligned` |
+| `fbr` | `fbr` (git branch picker, fzf) | `fbr` (git branch picker, fzf) | `aligned` |
+| `gaf` | `gaf` (fuzzy git stage) | `gaf` (fuzzy git stage) | `aligned` |
+| `grf` | `grf` (fuzzy git restore) | `grf` (fuzzy git restore) | `aligned` |
+| `grsf` | `grsf` (fuzzy git unstage) | `grsf` (fuzzy git unstage) | `aligned` |
 | `cheat` | `cheat` → `core-help` (Core's own command index) | `cheat` → cht.sh (`Invoke-RestMethod`) | `deliberate` — same trigger, different source |
 
 ## Fleet front door (`core`)
@@ -128,20 +135,29 @@ exists. Adding an `aligned` row without a needle fails the gate; so does leaving
 behind after its row is **renamed or deleted**, or wording two Capability cells so they
 collide, which would let one row's check certify the other. Reclassifying a row does *not*
 fail — a `deliberate` or `gap` row is allowed to keep its check, as `cheat` does; it is
-only `aligned` rows that must have one. A row may carry several checks, which is how the
-five utility functions, the three fuzzy-git verbs and the two word-nav directions are each
-covered individually rather than by one needle standing in for the set.
+only `aligned` rows that must have one. A row may still carry several checks, and two do —
+**History search** and **Maintenance**, where one claim needs several pieces of evidence
+rather than where one row makes several claims.
 
-The coverage this proves is **row-level, not claim-level**: a row whose cells name two
-triggers is not mechanically forced to carry two needles. That is exactly how `Alt+C` hid
-behind `Alt+Z`'s needle for years, so every multi-trigger row here now spends a needle per
-trigger — but adding a trigger to a row still means remembering to add its needle. Saying
-so is the point; a gate that overstated its reach a second time would be the same bug.
-Closing that half is #809, which is a decision about this file's format rather than a
-change to the gate.
+**One row, one claim (#809).** The coverage above is row-level, so for years it was strictly
+weaker than it read: a row whose cells named two triggers was not forced to carry two
+needles, which is exactly how `Alt+C` hid behind `Alt+Z`'s needle. That is closed here by
+changing *this table* rather than the gate — word nav is two rows, and each utility function
+and fuzzy-git verb is its own row, so row-level and claim-level coincide and the existing
+one-to-one gate reaches every claim for free.
+
+The rejected alternative is worth recording, because it looks like the obvious one. Declaring
+a claim **count** per row (`<!-- claims:2 -->`, asserted against the needle count) only fires
+if whoever widens a cell also bumps the number; widen it and leave the count alone and the
+gate stays green — the original bug, wearing a marker. Splitting rows needs no new machinery
+and makes the natural editing act (add a row) the act that is already gated.
+
+What remains ungated is a cell that grows a second trigger **in place**. No format short of a
+machine-readable claim list catches that, and this file is written for people first. What
+changed is that there is no longer a multi-claim row here to imitate.
 
 This used to be a discipline ("add a check in the same change"), and disciplines do not
-hold. **Theme**, **History search**, **Word nav** and the five-function row were all
+hold. **Theme**, **History search**, **Word nav** and the utility-function row were all
 marked `aligned` for years with nothing behind them while this section claimed otherwise,
 and `Alt+C` was listed as an aligned dir-jump binding that **neither** shell has ever
 had — zsh never binds `^[c` and never sources fzf's own key-bindings, and
@@ -166,7 +182,7 @@ One row is deliberately honest about proving less than it looks like it proves:
   the rest of this section exists to stop. What closes the row is a pwsh consumer, not
   another assertion here.
 
-**Word nav** is worth a note now that it asserts. Its pwsh needles are counted (`count:2`)
+**Word nav** is worth a note now that it asserts. Its two rows' pwsh needles are counted (`count:2`)
 because a bare `-Key` under `-EditMode Vi` binds the Insert table only, so a single binding
 would leave `vicmd` resting on the very default the explicit binding exists to stop
 depending on — the mirror of Core's own `bindkey -M viins` + `bindkey -M vicmd` pairs. And

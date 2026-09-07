@@ -68,9 +68,16 @@ WIN="$ROOT/dotfiles-Windows"
 # ROW-KEY is the PARITY.md table row this check enforces — the slugified Capability cell
 # ("Dir jump" -> dir-jump). It is what makes the one-to-one claim CHECKABLE rather than
 # merely stated; the coverage gate below reads both sides and fails on either half of the
-# mapping. Several checks MAY share a row-key: that is how the five utility functions and
-# the three fuzzy-git verbs get a needle EACH, instead of one standing in for the set —
-# the shape of bug that let `gaf` alone certify a row claiming `gaf`/`grf`/`grsf`.
+# mapping. Several checks MAY share a row-key, and two kinds of row still do: `history-search`
+# and `maintenance`, where ONE claim needs several pieces of evidence (Ctrl+R must exist,
+# survive atuin's init, and be restored on both PSFzf paths; every maint sub-verb dispatches
+# through a single zsh line and an explicit pwsh arm each).
+#
+# That is no longer how a row with several CLAIMS is covered. The five utility functions and
+# the three fuzzy-git verbs used to share one key apiece, which is the shape of bug that let
+# `gaf` alone certify a row claiming `gaf`/`grf`/`grsf`; since #809 each is its own PARITY.md
+# row with its own key, so the coverage gate below reaches every claim without anyone having
+# to remember the convention.
 CHECKS=(
   # PARITY.md's Theme row, which was marked `aligned` with NO check behind it until #679
   # (#682 Bug 3) — one of the four rows that made the "every aligned row has a check here"
@@ -152,19 +159,19 @@ CHECKS=(
   # ForwardWord moves to the END of the current word, while NextWord moves to the START of the
   # next one, which is what zsh's forward-word does. The row is honestly `aligned`; only the
   # function NAME differs between the shells.
-  "word-nav|word nav: forward-word on Ctrl+Right|zsh/40-bindings.zsh|-M viins '^[[1;5C' forward-word|powershell/core/10-tools.ps1|count:2:-Key Ctrl+RightArrow -Function NextWord"
-  "word-nav|word nav: backward-word on Ctrl+Left|zsh/40-bindings.zsh|-M viins '^[[1;5D' backward-word|powershell/core/10-tools.ps1|count:2:-Key Ctrl+LeftArrow -Function BackwardWord"
+  "word-nav-forward|word nav: forward-word on Ctrl+Right|zsh/40-bindings.zsh|-M viins '^[[1;5C' forward-word|powershell/core/10-tools.ps1|count:2:-Key Ctrl+RightArrow -Function NextWord"
+  "word-nav-backward|word nav: backward-word on Ctrl+Left|zsh/40-bindings.zsh|-M viins '^[[1;5D' backward-word|powershell/core/10-tools.ps1|count:2:-Key Ctrl+LeftArrow -Function BackwardWord"
   # One needle per function, not one standing in for five: the row named `extract`,
   # `mkbak`, `serve`, `fif`, `fbr` and nothing tested ANY of them until #682.
-  "utility-functions|extract|zsh/30-functions.zsh|extract() {|powershell/core/20-functions.ps1|function extract"
-  "utility-functions|mkbak|zsh/30-functions.zsh|mkbak() {|powershell/core/20-functions.ps1|function mkbak"
-  "utility-functions|serve|zsh/30-functions.zsh|serve() {|powershell/core/20-functions.ps1|function serve"
-  "utility-functions|fif|zsh/35-fzf.zsh|fif() {|powershell/core/20-functions.ps1|function fif"
-  "utility-functions|fbr|zsh/35-fzf.zsh|fbr() {|powershell/core/20-functions.ps1|function fbr"
+  "extract|extract|zsh/30-functions.zsh|extract() {|powershell/core/20-functions.ps1|function extract"
+  "mkbak|mkbak|zsh/30-functions.zsh|mkbak() {|powershell/core/20-functions.ps1|function mkbak"
+  "serve|serve|zsh/30-functions.zsh|serve() {|powershell/core/20-functions.ps1|function serve"
+  "fif|fif|zsh/35-fzf.zsh|fif() {|powershell/core/20-functions.ps1|function fif"
+  "fbr|fbr|zsh/35-fzf.zsh|fbr() {|powershell/core/20-functions.ps1|function fbr"
   # Likewise: the row claims gaf/grf/grsf, and only gaf was needled before #682.
-  "fuzzy-git-stage-restore|fuzzy git stage (gaf)|zsh/25-git.zsh|function gaf|powershell/core/20-functions.ps1|function gaf"
-  "fuzzy-git-stage-restore|fuzzy git restore (grf)|zsh/25-git.zsh|function grf|powershell/core/20-functions.ps1|function grf"
-  "fuzzy-git-stage-restore|fuzzy git unstage (grsf)|zsh/25-git.zsh|function grsf|powershell/core/20-functions.ps1|function grsf"
+  "gaf|fuzzy git stage (gaf)|zsh/25-git.zsh|function gaf|powershell/core/20-functions.ps1|function gaf"
+  "grf|fuzzy git restore (grf)|zsh/25-git.zsh|function grf|powershell/core/20-functions.ps1|function grf"
+  "grsf|fuzzy git unstage (grsf)|zsh/25-git.zsh|function grsf|powershell/core/20-functions.ps1|function grsf"
   # `cheat` is a `deliberate` row as of #682 — zsh's opens Core's own command index
   # (`alias cheat='core-help'`), pwsh's queries cht.sh — so it is not REQUIRED to carry a
   # check. Pinning that both shells still define the command is worth keeping anyway, and
@@ -258,15 +265,23 @@ fi
 # populates KNOWN_ROWS, and `deliberate`/`gap` rows may keep one (see the `cheat` row).
 # Only `aligned` rows are REQUIRED to have one.
 #
-# WHAT THIS PROVES, AND WHAT IT DOES NOT. Coverage here is ROW-level: every aligned row has
-# at least one check. It is not CLAIM-level — a row whose cells name two triggers is not
-# forced to carry two needles, so widening a row's claim can still outrun its needles. That
-# is precisely how `Alt+C` hid behind Alt+Z's needle, so the multi-check row-key exists for
-# it and every multi-trigger row uses it (word-nav per direction, the five utility
-# functions, the three fuzzy-git verbs). Adding a trigger to a row means adding its needle;
-# that half is still a discipline, and this comment is the honest statement of the limit
-# rather than a second overclaim. Tracked as #809 — the fix is a contract-format decision,
-# not a change to this loop.
+# WHAT THIS PROVES. Coverage here is ROW-level: every aligned row has at least one check.
+# That used to be strictly weaker than the claim-level cover the contract wants, because a
+# row whose cells named two triggers was not forced to carry two needles — precisely how
+# `Alt+C` hid behind Alt+Z's needle for years.
+#
+# #809 CLOSED THAT BY MOVING THE TABLE, NOT THIS LOOP. Each claim is now its own PARITY.md
+# row — word nav per direction, one row per utility function and per fuzzy-git verb — so
+# row-level and claim-level coincide and the existing gate covers both for free. The reason
+# to prefer that over declaring a per-row claim COUNT is that a count only fires if whoever
+# widens the cell also bumps it; widen and leave it alone, and the gate stays green. That is
+# the original bug wearing a marker. Splitting rows instead makes the natural editing act —
+# add a row — the act that is already gated.
+#
+# What is still not gated is a cell that grows a second trigger IN PLACE. Nothing stops
+# someone writing two chords into one row's cell, and the honest answer is that no format
+# short of a machine-readable claim list catches it; what changed is that there is now no
+# multi-claim row to imitate, and the needles are one-to-one with the rows.
 #
 # bash 3.2 (macOS ships 2007's bash): no associative arrays, no mapfile — PORTABILITY.md
 # §1, the same discipline gen-theme.sh and check-modern.sh keep. Membership is tested

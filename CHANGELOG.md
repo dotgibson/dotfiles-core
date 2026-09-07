@@ -295,6 +295,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   follow-up once `assets/demo.gif` is re-rendered, rather than blocking every unrelated
   `make sync` in the meantime.
 
+### Changed
+
+- **`PARITY.md` gives every claim its own row, so the coverage gate that was row-level is now
+  claim-level (#809, out of #682/#807).** `parity-check.sh` proved that every `aligned` row
+  had a needle. It did not prove that every claim _inside_ a row did — and a row whose cells
+  named several triggers was not forced to carry several needles. **That is exactly how
+  `Alt+C` survived**: `PARITY.md` claimed `Alt+Z` _and_ `Alt+C` while the needle tested only
+  `Alt+Z`, and the gate ran green for years. #807 removed the false claim; the mechanism that
+  let a row outgrow its needles was untouched.
+  **Fixed by moving the table, not the gate.** Word nav becomes two rows, and each utility
+  function and fuzzy-git verb becomes its own row — so row-level and claim-level coincide and
+  the existing one-to-one gate reaches every claim with **no new machinery**. 20 aligned rows
+  became 29; `CHECKS` row-keys move with them.
+  **The rejected alternative is recorded, because it looks like the obvious one.** #809
+  proposed declaring a claim **count** per row (`<!-- claims:2 -->`) and asserting it against
+  the needle count, and called it the option that "catches the widening case exactly". It does
+  not: the count only fires if whoever widens the cell also bumps it. Widen it and leave the
+  number alone — which is precisely what the `Alt+C` author did with the needle — and the gate
+  stays green. It gates count-vs-needles, not widening. Splitting rows instead makes the
+  natural editing act, _add a row_, the act that is already gated.
+  Still ungated, and now said plainly in both the file and the script instead of deferred to
+  an issue: a cell that grows a second trigger **in place**. Nothing short of a
+  machine-readable claim list catches that, and `PARITY.md` is written for people first — what
+  changed is that there is no longer a multi-claim row there to imitate.
+  Two rows keep several checks and are not multi-claim rows: **History search** and
+  **Maintenance**, where _one_ claim needs several pieces of evidence. The distinction is now
+  written down where the row-key convention is defined.
+  `90-policy-gates.sh`'s parity fixtures re-anchor from `Word nav` (a row this change splits)
+  onto `Autosuggest toggle`. A fixture whose anchor stops matching inserts nothing, leaves the
+  gate green, and passes every negative case for the wrong reason — so the anchor deliberately
+  sits on a row with no reason to move.
+
 ### Fixed
 
 - **The maint runner's stdin-discipline claim counted one site and there were two, and three

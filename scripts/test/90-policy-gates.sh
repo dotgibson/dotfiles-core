@@ -571,9 +571,15 @@ _pc_row "the real contract is fully covered" 0 \
 
 # 1. An aligned row nobody enforces — the defect #682 was filed for. It must NAME the row:
 #    a bare count would send the reader diffing two lists by hand.
+#
+#    THIS IS ALSO THE #809 CASE NOW. Since each claim is its own PARITY.md row, widening the
+#    contract means ADDING a row, and this is what fires when its needle does not follow. The
+#    fixtures below anchor on `Autosuggest toggle` rather than a row that was split, so a
+#    future split cannot silently turn a mutation into a no-op — a fixture that inserts
+#    nothing leaves the gate green and every negative case here passes for the wrong reason.
 _pc_row "an aligned row with no needle fails, and names it" 1 \
   "no check behind them: clipboard-sync" \
-  '/^\| Word nav \|/ { print "| Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |" } { print }'
+  '/^\| Autosuggest toggle \|/ { print "| Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |" } { print }'
 
 # 2. The other direction: rename a Capability cell and its check no longer matches a row.
 #    Both halves of the mapping must fire — the old key orphans, the new row is uncovered.
@@ -586,7 +592,7 @@ _pc_row "a renamed row orphans its check, and names the key" 1 \
 #    different hat, so it is a hard fail rather than a warning.
 _pc_row "two rows slugifying to one key fail" 1 \
   "both slugify to \`theme\`" \
-  '/^\| Word nav \|/ { print "| Theme | x | y | `aligned` |" } { print }'
+  '/^\| Autosuggest toggle \|/ { print "| Theme | x | y | `aligned` |" } { print }'
 
 # 4. The case the PR description got WRONG before review caught it: reclassifying a row
 #    does NOT orphan its check. `deliberate`/`gap` rows may keep one (see `cheat`), and
@@ -602,7 +608,7 @@ _pc_row "reclassifying an aligned row keeps its check valid" 0 \
 #    accepted, and anything else is a hard fail naming the row and what it said.
 _pc_row "an unknown status is rejected, not treated as not-aligned" 1 \
   "has status \`aligend\`" \
-  '/^\| Word nav \|/ { sub(/`aligned`/, "`aligend`") } { print }'
+  '/^\| Autosuggest toggle \|/ { sub(/`aligned`/, "`aligend`") } { print }'
 
 # 6. A run that never READ the pwsh side must not certify it. The summary line is the
 #    assertion: it may not say "all aligned rows hold" when a whole shell went unread.
@@ -632,10 +638,10 @@ _pc_row "a | Status | Meaning | docs table is not parsed as capability rows" 0 \
 #    directions are pinned, because a fix that swallowed code blocks would be its own bug.
 _pc_row "a one-space-indented aligned row is enforced, not ignored" 1 \
   "no check behind them: clipboard-sync" \
-  '/^\| Word nav \|/ { print " | Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |" } { print }'
+  '/^\| Autosuggest toggle \|/ { print " | Clipboard sync | `pbcopy` | `Set-Clipboard` | `aligned` |" } { print }'
 _pc_row "a 4-space-indented row is an indented code block, not a contract row" 0 \
   "aligned PARITY.md rows have a check" \
-  '/^\| Word nav \|/ { print "     | Clipboard sync | `pbcopy` | `x` | `aligned` |" } { print }'
+  '/^\| Autosuggest toggle \|/ { print "     | Clipboard sync | `pbcopy` | `x` | `aligned` |" } { print }'
 
 # 8. THE WINDOWS-PRESENT PATH. Everything above forces the pwsh half to be absent, so the
 #    unqualified summary never ran. With a synthetic dotfiles-Windows in place it must — and
