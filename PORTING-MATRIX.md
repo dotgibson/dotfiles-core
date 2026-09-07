@@ -119,56 +119,56 @@ and a footnote here.** The footnotes below stay hand-written.
 
 <!-- core:porting-matrix:gen packages -->
 
-| Tool             | Arch              | openSUSE       | Alpine            | Gentoo (atom)                       | Kali (apt)²¹ᵃ              | Debian/Ubuntu |
-| ---------------- | ----------------- | -------------- | ----------------- | ----------------------------------- | -------------------------- | ------------- |
-| eza              | `eza`             | `eza`          | `eza`             | `sys-apps/eza`                      | `eza`                      | `eza`         |
-| bat              | `bat`             | `bat`          | `bat`             | `sys-apps/bat`                      | `bat`⁴                     | `bat`⁴        |
-| fd               | `fd`              | `fd`           | `fd`              | `sys-apps/fd`                       | `fd-find`⁴                 | `fd-find`⁴    |
-| ripgrep          | `ripgrep`         | `ripgrep`      | `ripgrep`         | `sys-apps/ripgrep`                  | `ripgrep`                  | `ripgrep`     |
-| zoxide           | `zoxide`          | `zoxide`       | `zoxide`          | `app-shells/zoxide`                 | `zoxide`                   | `zoxide`      |
-| fzf              | `fzf`             | `fzf`          | `fzf`             | `app-shells/fzf`                    | `fzf`                      | `fzf`         |
-| git-delta        | `git-delta`       | `git-delta`    | `delta`           | `dev-util/git-delta`                | asset²⁸                    | `git-delta`   |
-| btop             | `btop`            | `btop`         | `btop`            | `sys-process/btop`                  | `btop`                     | `btop`        |
-| tldr             | `tealdeer`        | `tealdeer`¹    | cargo³            | `app-misc/tealdeer`¹²               | `tealdeer`                 | `tealdeer`    |
-| neovim³³         | `neovim`          | `neovim`       | `neovim`          | `app-editors/neovim` ≥ 0.12.0       | `neovim` ≥ 0.12.0          | asset²⁸       |
-| lazygit          | `lazygit`         | `lazygit`      | `lazygit`         | `dev-vcs/lazygit`¹²                 | `lazygit`                  | asset²⁸       |
-| zsh              | `zsh`             | `zsh`          | `zsh`²            | `app-shells/zsh`                    | `zsh`                      | `zsh`         |
-| tmux             | `tmux`            | `tmux`         | `tmux`            | `app-misc/tmux`                     | `tmux`                     | `tmux`        |
-| starship         | `starship`        | `starship`¹⁸   | `starship`        | `app-shells/starship`               | `starship`                 | asset²⁸       |
-| atuin²⁰          | `atuin`           | `atuin`¹⁸      | `atuin`           | `app-shells/atuin`                  | asset²⁸                    | asset²⁸       |
-| mise³⁰           | `mise`            | script³⁰       | script³⁰          | script³⁰                            | asset²⁸                    | asset²⁸       |
-| direnv³²         | `direnv`          | `direnv`       | `direnv`          | `app-shells/direnv`¹²               | `direnv`                   | `direnv`      |
-| yazi             | `yazi`            | `yazi`¹⁸       | `yazi`            | `app-misc/yazi`¹²                   | cargo³                     | —²⁹           |
-| tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter`  | `tree-sitter-cli` | `dev-util/tree-sitter-cli` ≥ 0.26.1 | `tree-sitter-cli` ≥ 0.26.1 | asset²⁸       |
-| jq³⁴             | `jq`              | `jq`           | `jq`              | `app-misc/jq`                       | `jq`                       | `jq`          |
-| yq⁶              | `go-yq`           | `yq`           | `yq-go`           | `app-misc/yq-go`                    | `yq-go`                    | go³           |
-| duf              | `duf`             | `duf`          | testing¹⁴         | `sys-fs/duf`                        | `duf`                      | `duf`         |
-| dust             | `dust`            | `dust`         | `dust`            | `sys-block/dust`                    | `du-dust`⁴                 | asset²⁸       |
-| procs            | `procs`           | `procs`        | `procs`           | `sys-process/procs`                 | `procs`                    | asset²⁸       |
-| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸      | `viddy`           | cargo³                              | cargo³                     | —²⁹           |
-| sd²²             | `sd`              | `sd`           | `sd`              | `sys-apps/sd`¹²                     | `sd`                       | `sd`          |
-| gron             | `gron`            | `gron`         | `gron`            | go³                                 | `gron`                     | `gron`        |
-| jnv¹⁷            | `jnv`             | cargo          | cargo³            | cargo                               | cargo                      | —²⁹           |
-| lnav²¹ ²⁴        | `lnav`            | `lnav`         | `lnav`            | `app-admin/lnav`²⁴                  | `lnav`²⁴                   | `lnav`        |
-| glow             | `glow`            | `glow`         | testing¹⁴         | `app-misc/glow`¹²                   | `glow`¹⁵                   | charm apt     |
-| gum              | `gum`             | `gum`          | `gum`             | mise³⁰                              | `gum`¹⁵                    | charm apt     |
-| xh               | `xh`              | `xh`           | `xh`              | `net-misc/xh`¹²                     | `xh`                       | asset²⁸       |
-| doggo            | `doggo`           | `doggo`¹⁸      | `doggo`           | `net-dns/doggo`                     | go³                        | go³           |
-| gping¹⁹          | `gping`           | `gping`¹⁹      | `gping`           | GURU¹⁹                              | `gping`¹⁹                  | `gping`       |
-| carapace         | AUR²⁷             | rpm²⁷          | `carapace`        | `app-shells/carapace`¹²             | deb²⁷                      | deb²⁷         |
-| op (1Password)¹³ | AUR               | vendor rpm     | vendor apk        | GURU¹²                              | vendor apt                 | vendor apt    |
-| hyperfine²¹      | `hyperfine`       | `hyperfine`    | `hyperfine`       | `app-benchmarks/hyperfine`          | `hyperfine`                | `hyperfine`   |
-| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`    | `watchexec`       | cargo²⁵                             | cargo²⁵                    | —²⁹           |
-| shellcheck²¹     | `shellcheck`      | `ShellCheck`   | `shellcheck`      | `dev-util/shellcheck-bin`           | `shellcheck`               | `shellcheck`  |
-| shfmt⁷ ²¹        | `shfmt`           | `shfmt`        | `shfmt`           | go²¹                                | `shfmt`⁷                   | `shfmt`       |
-| ouch²¹           | `ouch`            | `ouch`¹⁸       | testing¹⁴         | GURU¹² ²¹                           | cargo²¹                    | —²⁹           |
-| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`      | `jujutsu`         | `dev-vcs/jj`²¹                      | cargo²¹                    | —²⁹           |
-| sesh⁹            | AUR⁹              | go⁹            | go⁹               | go⁹                                 | go⁹                        | go³           |
-| difftastic¹⁰     | `difftastic`      | `difftastic`   | `difftastic`      | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
-| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`   | `git-absorb`      | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
-| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸   | `ast-grep`        | cargo²¹                             | cargo²¹                    | —²⁹           |
-| uv³⁰             | `uv`              | `python3-uv`²¹ | `uv`              | `dev-python/uv`                     | asset²⁸                    | asset²⁸       |
-| w3m              | `w3m`             | `w3m`          | `w3m`             | `www-client/w3m`                    | `w3m`                      | `w3m`         |
+| Tool             | Arch              | openSUSE       | Alpine                     | Gentoo (atom)                       | Kali (apt)²¹ᵃ              | Debian/Ubuntu |
+| ---------------- | ----------------- | -------------- | -------------------------- | ----------------------------------- | -------------------------- | ------------- |
+| eza              | `eza`             | `eza`          | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
+| bat              | `bat`             | `bat`          | `bat`                      | `sys-apps/bat`                      | `bat`⁴                     | `bat`⁴        |
+| fd               | `fd`              | `fd`           | `fd`                       | `sys-apps/fd`                       | `fd-find`⁴                 | `fd-find`⁴    |
+| ripgrep          | `ripgrep`         | `ripgrep`      | `ripgrep`                  | `sys-apps/ripgrep`                  | `ripgrep`                  | `ripgrep`     |
+| zoxide           | `zoxide`          | `zoxide`       | `zoxide`                   | `app-shells/zoxide`                 | `zoxide`                   | `zoxide`      |
+| fzf              | `fzf`             | `fzf`          | `fzf`                      | `app-shells/fzf`                    | `fzf`                      | `fzf`         |
+| git-delta        | `git-delta`       | `git-delta`    | `delta`                    | `dev-util/git-delta`                | asset²⁸                    | `git-delta`   |
+| btop             | `btop`            | `btop`         | `btop`                     | `sys-process/btop`                  | `btop`                     | `btop`        |
+| tldr             | `tealdeer`        | `tealdeer`¹    | cargo³                     | `app-misc/tealdeer`¹²               | `tealdeer`                 | `tealdeer`    |
+| neovim³³         | `neovim`          | `neovim`       | `neovim` ≥ 0.12.0          | `app-editors/neovim` ≥ 0.12.0       | `neovim` ≥ 0.12.0          | asset²⁸       |
+| lazygit          | `lazygit`         | `lazygit`      | `lazygit`                  | `dev-vcs/lazygit`¹²                 | `lazygit`                  | asset²⁸       |
+| zsh              | `zsh`             | `zsh`          | `zsh`²                     | `app-shells/zsh`                    | `zsh`                      | `zsh`         |
+| tmux             | `tmux`            | `tmux`         | `tmux`                     | `app-misc/tmux`                     | `tmux`                     | `tmux`        |
+| starship         | `starship`        | `starship`¹⁸   | `starship`                 | `app-shells/starship`               | `starship`                 | asset²⁸       |
+| atuin²⁰          | `atuin`           | `atuin`¹⁸      | `atuin`                    | `app-shells/atuin`                  | asset²⁸                    | asset²⁸       |
+| mise³⁰           | `mise`            | script³⁰       | script³⁰                   | script³⁰                            | asset²⁸                    | asset²⁸       |
+| direnv³²         | `direnv`          | `direnv`       | `direnv`                   | `app-shells/direnv`¹²               | `direnv`                   | `direnv`      |
+| yazi             | `yazi`            | `yazi`¹⁸       | `yazi`                     | `app-misc/yazi`¹²                   | cargo³                     | —²⁹           |
+| tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter`  | `tree-sitter-cli` ≥ 0.26.1 | `dev-util/tree-sitter-cli` ≥ 0.26.1 | `tree-sitter-cli` ≥ 0.26.1 | asset²⁸       |
+| jq³⁴             | `jq`              | `jq`           | `jq`                       | `app-misc/jq`                       | `jq`                       | `jq`          |
+| yq⁶              | `go-yq`           | `yq`           | `yq-go`                    | `app-misc/yq-go`                    | `yq-go`                    | go³           |
+| duf              | `duf`             | `duf`          | testing¹⁴                  | `sys-fs/duf`                        | `duf`                      | `duf`         |
+| dust             | `dust`            | `dust`         | `dust`                     | `sys-block/dust`                    | `du-dust`⁴                 | asset²⁸       |
+| procs            | `procs`           | `procs`        | `procs`                    | `sys-process/procs`                 | `procs`                    | asset²⁸       |
+| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸      | `viddy`                    | cargo³                              | cargo³                     | —²⁹           |
+| sd²²             | `sd`              | `sd`           | `sd`                       | `sys-apps/sd`¹²                     | `sd`                       | `sd`          |
+| gron             | `gron`            | `gron`         | `gron`                     | go³                                 | `gron`                     | `gron`        |
+| jnv¹⁷            | `jnv`             | cargo          | cargo³                     | cargo                               | cargo                      | —²⁹           |
+| lnav²¹ ²⁴        | `lnav`            | `lnav`         | `lnav`                     | `app-admin/lnav`²⁴                  | `lnav`²⁴                   | `lnav`        |
+| glow             | `glow`            | `glow`         | testing¹⁴                  | `app-misc/glow`¹²                   | `glow`¹⁵                   | charm apt     |
+| gum              | `gum`             | `gum`          | `gum`                      | mise³⁰                              | `gum`¹⁵                    | charm apt     |
+| xh               | `xh`              | `xh`           | `xh`                       | `net-misc/xh`¹²                     | `xh`                       | asset²⁸       |
+| doggo            | `doggo`           | `doggo`¹⁸      | `doggo`                    | `net-dns/doggo`                     | go³                        | go³           |
+| gping¹⁹          | `gping`           | `gping`¹⁹      | `gping`                    | GURU¹⁹                              | `gping`¹⁹                  | `gping`       |
+| carapace         | AUR²⁷             | rpm²⁷          | `carapace`                 | `app-shells/carapace`¹²             | deb²⁷                      | deb²⁷         |
+| op (1Password)¹³ | AUR               | vendor rpm     | vendor apk                 | GURU¹²                              | vendor apt                 | vendor apt    |
+| hyperfine²¹      | `hyperfine`       | `hyperfine`    | `hyperfine`                | `app-benchmarks/hyperfine`          | `hyperfine`                | `hyperfine`   |
+| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`    | `watchexec`                | cargo²⁵                             | cargo²⁵                    | —²⁹           |
+| shellcheck²¹     | `shellcheck`      | `ShellCheck`   | `shellcheck`               | `dev-util/shellcheck-bin`           | `shellcheck`               | `shellcheck`  |
+| shfmt⁷ ²¹        | `shfmt`           | `shfmt`        | `shfmt`                    | go²¹                                | `shfmt`⁷                   | `shfmt`       |
+| ouch²¹           | `ouch`            | `ouch`¹⁸       | testing¹⁴                  | GURU¹² ²¹                           | cargo²¹                    | —²⁹           |
+| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`      | `jujutsu`                  | `dev-vcs/jj`²¹                      | cargo²¹                    | —²⁹           |
+| sesh⁹            | AUR⁹              | go⁹            | go⁹                        | go⁹                                 | go⁹                        | go³           |
+| difftastic¹⁰     | `difftastic`      | `difftastic`   | `difftastic`               | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
+| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`   | `git-absorb`               | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
+| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸   | `ast-grep`                 | cargo²¹                             | cargo²¹                    | —²⁹           |
+| uv³⁰             | `uv`              | `python3-uv`²¹ | `uv`                       | `dev-python/uv`                     | asset²⁸                    | asset²⁸       |
+| w3m              | `w3m`             | `w3m`          | `w3m`                      | `www-client/w3m`                    | `w3m`                      | `w3m`         |
 
 <!-- core:porting-matrix:end packages -->
 
