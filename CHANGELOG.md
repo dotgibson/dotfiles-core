@@ -16,6 +16,44 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`scripts/fleet-vendor-guidance.sh` — the vendoring hint every repo prints was wrong in
+  eight of nine, and one repo had been right the whole time.** When `core/` is missing or
+  half-vendored, each OS repo prints a hint. Seven printed
+  `git subtree add … main --squash` to create and `git subtree pull` to update. A branch is
+  not the commit the fan-out pins, so `core-integrity` reports the fresh repo as **TAMPERED**
+  before it has done anything wrong; `subtree pull` moves `core/` without `core.lock` and
+  merges upstream's whole tree rather than the vendor set (#676). The hint fires precisely
+  when someone is already repairing a broken clone, so it handed them the two commands that
+  make it worse. `dotfiles-Defense` shipped the same text in a **weekly workflow** that files
+  a drift issue, pointing at `git subtree pull` and a `make core-lock` target that repo does
+  not define.
+  **The finding is not that eight repos were wrong — it is that the fix existed and did not
+  propagate.** `dotfiles-MacBook` has carried "take the RELEASED tag (never main, or
+  core-integrity reports the fresh subtree as TAMPERED)" for years, and nothing read the
+  other eight to notice they disagreed. Then MacBook's own hint went stale at
+  `refs/tags/v4` against a v7 fleet, landing in the same TAMPERED state its warning exists to
+  prevent: correct advice, defeated by a hardcoded number nothing checked.
+  So the register asserts the guidance is **right** (a tag not a branch — `branch`; the
+  moving major tag not a point tag — `non-major-tag`; `add` not `pull` — `subtree-pull`) and
+  **current** (`stale-vN`, against a major **derived from `core.version` at run time**, so the
+  day Core cuts v8 every stale `v7` hint in the fleet reports itself instead of waiting to be
+  discovered). Each defect class gets its own label, because a register that says "wrong"
+  without saying how is one nobody acts on.
+  Two scoping decisions are load-bearing. It matches **`--prefix=core` only**: `git subtree`
+  is not banned fleet-wide, and `dotfiles-Offense` vendors `offensive/companion` from
+  `dotgibson/htpx`, which genuinely is a subtree whose `sync-companion.sh` runs `subtree pull`
+  on purpose — flagging it would train people to ignore the gate. And it matches **commands,
+  not prose**, since these repos discuss `git subtree pull` correctly and constantly; the
+  discriminator is a `--prefix` naming `core`.
+  Wired as `make fleet-vendor-guidance` and as an advisory §5h section of `audit-core.sh`,
+  alongside the coverage, vocabulary and release-trigger registers — advisory for their
+  reason, that a sibling can drift without Core changing. **Core counts its own row but not
+  toward the sibling total**: it is the repo the script lives in, so it is always present, and
+  a naive count would report "every hint is current" off `VENDORING.md` alone while reading no
+  fleet at all — the green-because-absent result `skip_env` exists to avoid.
+  Green on arrival across all ten repos, following the fleet sweep in
+  dotgibson/dotfiles-Arch#158.
+
 - **`audit-core.sh` §9p — `TOOLS_OPTIN` was the third copy of one set, and the only ungated
   one (#890, out of #836).** `PORTING-MATRIX.md`'s ²¹ marks are the human contract; Core's
   `_CORE_DOCTOR_OPTIN` is the **row-level** set, already re-derived and asserted by

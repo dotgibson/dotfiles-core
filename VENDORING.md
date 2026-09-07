@@ -742,3 +742,44 @@ Core (which writes `core.lock` and installs the guard), and add the `core-integr
 `bootstrap` workflow callers. (The generated README used to suggest a raw
 `git subtree pull` — the stale-lock path this document warns about — and now points at the
 fan-out instead.)
+
+### Keeping the hint current (`make fleet-vendor-guidance`)
+
+Every OS repo prints a hint when `core/` is missing or half-vendored, and that hint is the
+one piece of this document a user reaches without opening this document. Eight of nine got
+it wrong: `git subtree add … main --squash` to create, `git subtree pull` to update — a
+branch is not the commit the fan-out pins (so `core-integrity` reports the fresh repo as
+TAMPERED), and `subtree pull` moves `core/` without `core.lock`. It fires exactly when
+someone is already repairing a broken clone.
+
+The instructive part is not that eight repos were wrong; it is that **`dotfiles-MacBook`
+was right the whole time** and nothing propagated it. Its hint has carried "take the
+RELEASED tag (never main, or core-integrity reports the fresh subtree as TAMPERED)" for
+years. Nothing read the other eight to notice they disagreed — and then MacBook's own hint
+went stale at the **v4** major against a v7 fleet, which lands in the same TAMPERED state its
+warning exists to prevent. Correct advice, defeated by a hardcoded number nothing checked.
+
+`scripts/fleet-vendor-guidance.sh` is the register that closes both halves. It reads the
+guidance files in every repo (this one included) and asserts each `--prefix=core` subtree
+invocation is:
+
+- a **tag**, not a branch — `branch` otherwise;
+- the **moving major tag** `vN`, not a point tag — `non-major-tag` otherwise;
+- the **current** major, derived from this repo's `core.version` at run time — `stale-vN`
+  otherwise, so the day Core cuts v8 every stale `v7` hint in the fleet reports itself;
+- an `add`, never a `pull` — `subtree-pull` otherwise.
+
+```bash
+make fleet-vendor-guidance            # the register as a markdown table
+./scripts/fleet-vendor-guidance.sh --check   # exit 1 if any hint is wrong or stale
+```
+
+`audit-core.sh` runs it as part of §5h, advisory like the registers beside it: a sibling can
+drift without Core changing, so a finding is fleet drift rather than a regression in the
+commit under test.
+
+Two deliberate limits. It is scoped to `--prefix=core`, because `git subtree` is not banned
+fleet-wide — `dotfiles-Offense` vendors `offensive/companion` from `dotgibson/htpx`, which
+genuinely is a subtree and whose `sync-companion.sh` runs `subtree pull` on purpose. And it
+matches commands rather than prose, since the correct writing about `git subtree pull`
+throughout these repos must not be flagged: the discriminator is a `--prefix` naming `core`.
