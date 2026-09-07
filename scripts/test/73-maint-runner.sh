@@ -15,8 +15,9 @@
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
 # `maint-run`). Every step's output goes to $LOG, so a step that PROMPTS asks its question
 # where nobody can see it and then blocks on the tty forever — the run stops dead after the
-# last ✓ with no error. THREE separate redirects prevent that, in three different shapes,
-# and each is easy to drop in a refactor without any other test noticing:
+# last ✓ with no error. THREE separate redirects prevent that FOR THE THREE SITES A REDIRECT
+# CAN REACH, in three different shapes, each easy to drop in a refactor with no other test
+# noticing:
 #
 #   step()          `"$@" </dev/null >>"$LOG" 2>&1`   — covers every labelled step
 #   package count   `fi </dev/null` on the if/elif    — that chain is NOT a step()
@@ -24,6 +25,13 @@
 #                                                       the only one whose stderr is
 #                                                       /dev/null too, so a prompt there is
 #                                                       invisible as well as blocking
+#
+# A FOURTH SITE IS NOT ON THAT LIST BECAUSE A REDIRECT DOES NOT FIX IT (#899). The zsh-plugin
+# loop is not a step() call either, and its git fetch/pull put stdout AND stderr into $LOG —
+# invisible and blocking, the worse of the two shapes. The header above used to read as the
+# complete inventory of this contract and was not: git asks for credentials on /dev/tty, so an
+# EOF on stdin leaves the prompt exactly where it was. That site is answered by
+# `export GIT_TERMINAL_PROMPT=0` plus a ceiling, and it has its own section further down.
 #
 # These extract the REAL definitions out of the runner rather than restating them, so the
 # assertions track the shipped code: delete a redirect and the extracted text changes and
@@ -128,6 +136,84 @@ else
   fail "maint: could not extract the mise bump probe from ${_MAINT_SH##*/}"
 fi
 
+
+# ── every unbounded call in the runner is unbounded ON PURPOSE (#899, out of #820) ────
+# Two findings from #820's read, and one test, because they have one repair: a ceiling.
+#
+# F1 said `:334` claimed the mise probe was "the one command in the run that inherits the
+# caller's stdin". It was not — the zsh-plugin loop is not a step() call either, and its git
+# fetch/pull put stdout AND stderr into $LOG, which this file's own comments call the worst
+# shape available: invisible and blocking. F4 said the tty arm's `| tee` returns only when
+# every writer closes the pipe, so a step leaving a background process on stdout blocks
+# `maint-run` after its own work is done — in the very command the tty arm exists to make
+# less likely to look wedged.
+#
+# NEITHER IS REPRODUCIBLE IN THIS SUITE, and that is why the assertions below are textual.
+# F1's live case needs a plugin remote that demands credentials; F4's needs a step that
+# actually leaks the fd, which #820's author could not produce and neither could #899. A test
+# that pretended to exercise either would be theatre. What CAN be pinned is that the ceilings
+# and the no-prompt policy are still in the shipped file, since both are one refactor away
+# from being dropped with nothing else noticing — the same argument the three redirect cases
+# above make for themselves.
+#
+# THE INVENTORY IS ASSERTED IN BOTH DIRECTIONS, not spot-checked. A list of "these three must
+# be wrapped" goes stale the moment a fourth network step is added unwrapped. So the check
+# derives the set of step() calls that have NO ceiling and compares it to the set that is
+# ALLOWED not to have one — a new unwrapped step fails, and wrapping a listed one fails too,
+# which is the nudge to come back here and say why it changed.
+hdr "maint runner: ceilings on the calls that reach the network (#899)"
+
+# The policy that answers a git credential prompt. step()'s `</dev/null` cannot: git asks on
+# /dev/tty, not stdin. Asserted on the EXPORT, because a bare assignment would not reach TPM's
+# own git invocations, which are the ones nobody here writes.
+if grep -qxF 'export GIT_TERMINAL_PROMPT=0' "$_MAINT_SH"; then
+  pass "maint: the runner exports GIT_TERMINAL_PROMPT=0 (no git call may ask a question)"
+else
+  fail "maint: the runner no longer exports GIT_TERMINAL_PROMPT=0 — step()'s </dev/null does not cover git, which prompts on /dev/tty, so a plugin remote wanting credentials blocks \`maint-run\` on the terminal (#899 F1)"
+fi
+
+# The zsh-plugin loop's two network calls. It is not a step() call, so it inherits neither
+# step()'s EOF nor any ceiling; until #899 these were the only network calls in the file with
+# no bound at all. Matched on the git subcommand, so a fetch or pull that loses its wrapper is
+# what fails — not the presence of the word `_to` somewhere nearby.
+_mr_bare="$(grep -nE '^[[:space:]]*(elif )?git -C "\$d" (fetch|pull)' "$_MAINT_SH" || true)"
+if [[ -z "$_mr_bare" ]]; then
+  pass "maint: the zsh-plugin loop's git fetch/pull are _to-wrapped (bounded network)"
+else
+  fail "maint: the zsh-plugin loop has an UNWRAPPED git network call — a stalled remote holds the whole run for as long as it likes (#899 F1): ${_mr_bare//$'\n'/; }"
+fi
+
+# The step() inventory. Continuation lines are joined first: the neovim step puts its `_to` on
+# the second line, and a per-line reading would call the file's longest-bounded step unbounded.
+_mr_unbounded="$(awk '
+  /^[[:space:]]*step "/ {
+    acc = $0
+    while (acc ~ /\\$/) { sub(/\\$/, "", acc); if ((getline nxt) > 0) acc = acc nxt; else break }
+    if (match(acc, /step "[^"]*"/)) {
+      lbl = substr(acc, RSTART + 6, RLENGTH - 7)
+      rest = substr(acc, RSTART + RLENGTH)
+      sub(/^[[:space:]]+/, "", rest)
+      if (rest !~ /^_to[[:space:]]/) print lbl
+    }
+  }' "$_MAINT_SH")"
+# ALLOWED to be unbounded, each for a reason that is not "nobody got to it":
+#   zsh: byte-compile …  local CPU over a fixed file set — no network, and nothing to stall on
+#   system: refresh/upgrade/cleanup
+#                        a privileged package-manager TRANSACTION. dpkg and rpm interrupted
+#                        mid-transaction leave a half-configured system, so a ceiling here
+#                        would trade a slow run for a broken box. Unbounded is the safe answer,
+#                        and it is the reason this is an inventory rather than a blanket rule.
+_mr_allowed="system: cleanup
+system: refresh
+system: upgrade
+zsh: byte-compile fragments + plugins"
+_mr_got="$(printf '%s\n' "$_mr_unbounded" | grep -v '^$' | sort || true)"
+if [[ "$_mr_got" == "$_mr_allowed" ]]; then
+  pass "maint: every step() that reaches the network has a ceiling; the unbounded ones are the declared four"
+else
+  fail "maint: the set of step() calls with no _to ceiling changed (#899 F4) — got '${_mr_got//$'\n'/, }', declared '${_mr_allowed//$'\n'/, }'. A new entry is a step that can block \`maint-run\` forever, on the tty arm through a grandchild holding the tee pipe; a missing one means this inventory needs updating with the reason."
+fi
+unset _mr_bare _mr_unbounded _mr_allowed _mr_got
 # ── step() on a TTY: mirrors to the terminal, and still reports the COMMAND's rc ──────
 # The other arm of the same function. `maint-run` is a foreground run, and a step that
 # prints nothing for the tens of minutes a musl source build takes is indistinguishable

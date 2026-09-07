@@ -297,6 +297,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The maint runner's stdin-discipline claim counted one site and there were two, and three
+  network steps had no ceiling at all (#899, out of #820 F1/F4).** `maint/dotfiles-maint.sh`
+  is a file whose comments are its contract, and one of them said the `mise outdated` probe
+  was "the one command in the run that inherits the caller's stdin". It never was: the
+  zsh-plugin loop is not a `step()` call either, and its `git fetch`/`git pull` put **stdout
+  and stderr into `$LOG`** — invisible _and_ blocking, which the file itself calls the worst
+  shape available.
+  **The repair is not another `</dev/null`.** git asks for credentials on `/dev/tty`, not
+  stdin, so an EOF leaves the prompt exactly where it was. `export GIT_TERMINAL_PROMPT=0` is
+  what actually answers it, and it is set for the whole runner rather than per call site
+  because the git invocations are not all ours — TPM shells out to git for every plugin it
+  clones. Left honest rather than half-fixed: an SSH remote whose key wants a passphrase
+  prompts through **ssh**, which that variable does not reach; the new ceiling bounds it.
+  **F4 is a risk, and it is treated as one.** `step()`'s tty arm pipes through `tee`, which
+  returns only when _every_ writer closes the pipe — so a step leaving a background process
+  on stdout blocks `maint-run` after its own work is done, in the very command the tty arm
+  exists to stop looking wedged. Nobody has reproduced a specific step leaking the fd, so the
+  fix is a ceiling rather than a redesign of the mirror: `_to` on `brew cleanup` and the two
+  TPM steps (the likeliest to leave a tmux server holding the pipe), plus new
+  `MAINT_GIT_TIMEOUT` and `MAINT_TPM_TIMEOUT` knobs.
+  **The new test asserts an inventory in both directions, not three spot checks.** It derives
+  the set of `step()` calls with no ceiling and compares it to the set allowed to have none —
+  so a fourth unwrapped network step fails, and wrapping a listed one fails too. The four that
+  stay unbounded are declared with reasons: byte-compilation is local CPU, and `system:
+  refresh`/`upgrade`/`cleanup` are privileged package-manager **transactions**, where a
+  ceiling would trade a slow run for a half-configured box. Neither finding is reproducible in
+  the suite — F1's live case needs a remote demanding credentials, F4's needs a step that
+  actually leaks the fd — so the assertions are textual, and say so.
 - **`audit-core.sh` §1c walked other sessions' worktrees, so `make audit` reported 1002
   findings about files no commit here owns (#905).** `_core_claude_untracked_hits` answers
   "is a file sitting under `.claude/` that git will never ship" by walking the filesystem —
@@ -323,6 +351,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   The behavioral cases assert **both directions against the same tree**: a hidden file
   inside the nested worktree is not a finding, and the host's own hidden file still is —
   so the cheap wrong answer (stop walking `.claude/`) fails rather than passing quietly.
+||||||| parent of f8fcd41 (fix(maint): the runner's stdin claim counted one site and there were two, and three network steps had no ceiling (#899))
 
 - **`gen-theme.sh`'s reverse scan walked the filesystem, so it audited other repositories
   (found while auditing #904, never filed).** `preflight()`'s reverse half — the one that
