@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v7.1.0] - 2026-09-06
+
 ### Added
 
 - **`scripts/fleet-vendor-guidance.sh` — the vendoring hint every repo prints was wrong in
