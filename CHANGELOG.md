@@ -14,9 +14,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
-## [v7.1.1] - 2026-09-07
+## [v7.1.2] - 2026-09-07
 
 ### Fixed
+
+- **v7.1.1 was staged and never published — this release carries its content.** The cut promoted an empty `[Unreleased]`, because #920's entries had been filed under `[v7.1.0]` by mistake and the section they should have landed in was bare. `tag-release.sh` refused to tag it: `release.yml` builds the Release body from that section, and an empty body on an immutable tag burns the version. No `v7.1.1` tag was ever created and no repo vendored it, so the number is simply skipped — the same outcome `RELEASE-RUNBOOK.md` records for v4.11.0. The two entries below are unchanged.
 
 - **`maint-status` reported a clean listing on a box where nothing was installed (#918).** Its
   systemd arm ran `list-timers` (header + `0 timers listed` on **stdout**, exit 0) and
