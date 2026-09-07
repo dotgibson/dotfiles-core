@@ -16,6 +16,44 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`scripts/fleet-vendor-guidance.sh` — the vendoring hint every repo prints was wrong in
+  eight of nine, and one repo had been right the whole time.** When `core/` is missing or
+  half-vendored, each OS repo prints a hint. Seven printed
+  `git subtree add … main --squash` to create and `git subtree pull` to update. A branch is
+  not the commit the fan-out pins, so `core-integrity` reports the fresh repo as **TAMPERED**
+  before it has done anything wrong; `subtree pull` moves `core/` without `core.lock` and
+  merges upstream's whole tree rather than the vendor set (#676). The hint fires precisely
+  when someone is already repairing a broken clone, so it handed them the two commands that
+  make it worse. `dotfiles-Defense` shipped the same text in a **weekly workflow** that files
+  a drift issue, pointing at `git subtree pull` and a `make core-lock` target that repo does
+  not define.
+  **The finding is not that eight repos were wrong — it is that the fix existed and did not
+  propagate.** `dotfiles-MacBook` has carried "take the RELEASED tag (never main, or
+  core-integrity reports the fresh subtree as TAMPERED)" for years, and nothing read the
+  other eight to notice they disagreed. Then MacBook's own hint went stale at
+  `refs/tags/v4` against a v7 fleet, landing in the same TAMPERED state its warning exists to
+  prevent: correct advice, defeated by a hardcoded number nothing checked.
+  So the register asserts the guidance is **right** (a tag not a branch — `branch`; the
+  moving major tag not a point tag — `non-major-tag`; `add` not `pull` — `subtree-pull`) and
+  **current** (`stale-vN`, against a major **derived from `core.version` at run time**, so the
+  day Core cuts v8 every stale `v7` hint in the fleet reports itself instead of waiting to be
+  discovered). Each defect class gets its own label, because a register that says "wrong"
+  without saying how is one nobody acts on.
+  Two scoping decisions are load-bearing. It matches **`--prefix=core` only**: `git subtree`
+  is not banned fleet-wide, and `dotfiles-Offense` vendors `offensive/companion` from
+  `dotgibson/htpx`, which genuinely is a subtree whose `sync-companion.sh` runs `subtree pull`
+  on purpose — flagging it would train people to ignore the gate. And it matches **commands,
+  not prose**, since these repos discuss `git subtree pull` correctly and constantly; the
+  discriminator is a `--prefix` naming `core`.
+  Wired as `make fleet-vendor-guidance` and as an advisory §5h section of `audit-core.sh`,
+  alongside the coverage, vocabulary and release-trigger registers — advisory for their
+  reason, that a sibling can drift without Core changing. **Core counts its own row but not
+  toward the sibling total**: it is the repo the script lives in, so it is always present, and
+  a naive count would report "every hint is current" off `VENDORING.md` alone while reading no
+  fleet at all — the green-because-absent result `skip_env` exists to avoid.
+  Green on arrival across all ten repos, following the fleet sweep in
+  dotgibson/dotfiles-Arch#158.
+
 - **`audit-core.sh` §9p — `TOOLS_OPTIN` was the third copy of one set, and the only ungated
   one (#890, out of #836).** `PORTING-MATRIX.md`'s ²¹ marks are the human contract; Core's
   `_CORE_DOCTOR_OPTIN` is the **row-level** set, already re-derived and asserted by
@@ -258,6 +296,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `make sync` in the meantime.
 
 ### Fixed
+
+- **`audit-core.sh` §1c walked other sessions' worktrees, so `make audit` reported 1002
+  findings about files no commit here owns (#905).** `_core_claude_untracked_hits` answers
+  "is a file sitting under `.claude/` that git will never ship" by walking the filesystem —
+  it has to, because its whole subject is the file `git status` refuses to mention. Claude
+  Code parks a full checkout at `.claude/worktrees/<name>/`, so the walk descended into
+  every other session's tree and reported all of it: `pass 431 skip 1 fail 1004`, of which
+  **1002 were other people's worktrees** and none were about the tree under test.
+  **This reds only where it is required to be green.** CI checks out the repo alone and has
+  no worktrees, so the gate passed on all four platforms while being unusable on a
+  maintainer's machine — the one place `RELEASE-RUNBOOK.md` §1.1 step 0 demands a green
+  `make audit` before a tag. The remedy each finding printed ("negate it in `.gitignore`")
+  was wrong twice over: those files are already tracked at their real path, and nothing in
+  this checkout can change a verdict about another one.
+  `_core_nested_worktrees` asks **git**, not the filesystem — `git worktree list
+  --porcelain` is the registry git maintains itself, so a vendored `core/` or a stray
+  directory cannot be mistaken for a checkout — and §1c `-prune`s what it names. Pruning
+  rather than filtering afterwards is the point: the walk spends a `git check-ignore` per
+  file, so descending into a worktree bought a thousand subprocesses to produce a thousand
+  wrong answers (3.1s → 0.02s on the real tree).
+  **Not `_audit_ls`, which is how #906 fixed the same blind spot one function over.** That
+  scan could switch to git-aware discovery because it hunts shippable consumers; this one
+  cannot, because every git-derived listing returns nothing for an ignored file and would
+  turn the gate green by seeing less. The two halves of #905 needed opposite fixes.
+  The behavioral cases assert **both directions against the same tree**: a hidden file
+  inside the nested worktree is not a finding, and the host's own hidden file still is —
+  so the cheap wrong answer (stop walking `.claude/`) fails rather than passing quietly.
 
 - **`gen-theme.sh`'s reverse scan walked the filesystem, so it audited other repositories
   (found while auditing #904, never filed).** `preflight()`'s reverse half — the one that
