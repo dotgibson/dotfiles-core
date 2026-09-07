@@ -16,6 +16,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [v7.1.1] - 2026-09-07
 
+### Fixed
+
+- **`maint-status` reported a clean listing on a box where nothing was installed (#918).** Its
+  systemd arm ran `list-timers` (header + `0 timers listed` on **stdout**, exit 0) and
+  `status` (`Unit … could not be found` on **stderr**, discarded by `2>/dev/null`). The one
+  call that knew the unit was missing was the one whose output was thrown away, so the arm
+  rendered output indistinguishable from a healthy box.
+  Found on a live Proxmox node: `maint-install` had written nothing, both unit files were
+  absent, `is-enabled` said `not-found`, there was no crontab entry — and `maint-status`
+  looked fine. The operator reasonably believed the daily run was scheduled.
+  **The bug is an asymmetry, not an oversight in one line.** `launchd` has carried
+  `|| echo "not loaded"` and `cron` `|| echo "no cron entry"` all along; **systemd was the
+  only arm of the three without an absence branch**, and it is the arm Debian, Fedora, Arch,
+  openSUSE, Defense and Offense all take.
+  It now reports **three** distinguishable states, because they fail independently and
+  `list-timers` renders all of them as the same empty output: no `SCHEDULER_UNIT_DIR`
+  declared (nowhere to write — #763's rule), declared but no unit file (not installed), and
+  installed but not enabled (exists, will never fire). Naming only the second would have
+  pointed at the wrong repair for the other two.
+  The same failure family as #829, where `nvim --headless` exited 0 over a session in which
+  nothing ran: a status command that cannot report absence turns an unanswered question into
+  a wrong answer, and the next signal is noticing weeks later that nothing has updated.
+
+- **A maint step whose output lacked a trailing newline swallowed the front of the next log
+  record — including its `✗` (#919).** `log()` used `echo`, which emits a trailing newline
+  but no **leading** one, so a record only began on a fresh line if whatever wrote last
+  happened to end with one. `step()` pipes each command's raw output into `$LOG` — through
+  `tee` on the tty arm, `>>` on the scheduled one — and neither can promise that. Observed
+  on a live box as `Successfully updated 1 registry.2026-09-07 12:17:26  ✓ neovim: …`.
+  Harmless for a `✓`. For a `✗` it moves the **only** record that anything failed out of
+  column 0, where a timestamp-anchored scan and an operator's eye both miss it — and
+  `step()` deliberately continues past failures with the process still exiting 0, so that
+  log line is the entire error contract. **Not foreground-only**: the scheduled arm has the
+  same shape, so an unattended 3am run corrupts its log with nobody watching.
+  Fixed in `log()` rather than `step()`, because `step()` is not the only writer (the mise
+  bump probe and the zsh-plugin loop also append) and `log()` is the one place every record
+  passes through. The newline goes to the **file only** — the terminal's column is not
+  knowable, and at the start of a run the log may end mid-line from a previous run while the
+  terminal is fresh, so emitting to both would print a spurious blank line every time. The
+  guard is conditional, asserted by a case that fails if consecutive records ever gain a
+  blank line between them.
+
 ## [v7.1.0] - 2026-09-06
 
 ### Added
@@ -332,46 +374,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   sits on a row with no reason to move.
 
 ### Fixed
-
-- **`maint-status` reported a clean listing on a box where nothing was installed (#918).** Its
-  systemd arm ran `list-timers` (header + `0 timers listed` on **stdout**, exit 0) and
-  `status` (`Unit … could not be found` on **stderr**, discarded by `2>/dev/null`). The one
-  call that knew the unit was missing was the one whose output was thrown away, so the arm
-  rendered output indistinguishable from a healthy box.
-  Found on a live Proxmox node: `maint-install` had written nothing, both unit files were
-  absent, `is-enabled` said `not-found`, there was no crontab entry — and `maint-status`
-  looked fine. The operator reasonably believed the daily run was scheduled.
-  **The bug is an asymmetry, not an oversight in one line.** `launchd` has carried
-  `|| echo "not loaded"` and `cron` `|| echo "no cron entry"` all along; **systemd was the
-  only arm of the three without an absence branch**, and it is the arm Debian, Fedora, Arch,
-  openSUSE, Defense and Offense all take.
-  It now reports **three** distinguishable states, because they fail independently and
-  `list-timers` renders all of them as the same empty output: no `SCHEDULER_UNIT_DIR`
-  declared (nowhere to write — #763's rule), declared but no unit file (not installed), and
-  installed but not enabled (exists, will never fire). Naming only the second would have
-  pointed at the wrong repair for the other two.
-  The same failure family as #829, where `nvim --headless` exited 0 over a session in which
-  nothing ran: a status command that cannot report absence turns an unanswered question into
-  a wrong answer, and the next signal is noticing weeks later that nothing has updated.
-
-- **A maint step whose output lacked a trailing newline swallowed the front of the next log
-  record — including its `✗` (#919).** `log()` used `echo`, which emits a trailing newline
-  but no **leading** one, so a record only began on a fresh line if whatever wrote last
-  happened to end with one. `step()` pipes each command's raw output into `$LOG` — through
-  `tee` on the tty arm, `>>` on the scheduled one — and neither can promise that. Observed
-  on a live box as `Successfully updated 1 registry.2026-09-07 12:17:26  ✓ neovim: …`.
-  Harmless for a `✓`. For a `✗` it moves the **only** record that anything failed out of
-  column 0, where a timestamp-anchored scan and an operator's eye both miss it — and
-  `step()` deliberately continues past failures with the process still exiting 0, so that
-  log line is the entire error contract. **Not foreground-only**: the scheduled arm has the
-  same shape, so an unattended 3am run corrupts its log with nobody watching.
-  Fixed in `log()` rather than `step()`, because `step()` is not the only writer (the mise
-  bump probe and the zsh-plugin loop also append) and `log()` is the one place every record
-  passes through. The newline goes to the **file only** — the terminal's column is not
-  knowable, and at the start of a run the log may end mid-line from a previous run while the
-  terminal is fresh, so emitting to both would print a spurious blank line every time. The
-  guard is conditional, asserted by a case that fails if consecutive records ever gain a
-  blank line between them.
 
 - **The maint runner's stdin-discipline claim counted one site and there were two, and three
   network steps had no ceiling at all (#899, out of #820 F1/F4).** `maint/dotfiles-maint.sh`
