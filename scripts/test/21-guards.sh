@@ -720,6 +720,80 @@ else
   skip "unreferenced .claude/ scanner (git not installed)"
 fi
 
+# ── nested-worktree pruning (common.sh :: _core_nested_worktrees) ──────────────
+# WHY THIS IS TESTED ON A REAL REPO, the reason the scanner above gives: every verdict comes
+# from `git worktree list`, so no text fixture can stand in for it. Each case builds a
+# throwaway repo and checks a real linked worktree out INSIDE it — the shape Claude Code
+# creates at .claude/worktrees/<name>/, and the one that made `make audit` unusable in any
+# checkout that had ever hosted a session (#905: 1004 failures, 1002 of them about three
+# other sessions' worktrees, on the one machine RELEASE-RUNBOOK.md §1.1 demands green).
+#
+# THE PAIR OF DIRECTIONS IS THE POINT. Prune too little and the defect stands; prune too much
+# and §1c goes blind to the #700 shape it exists for. Both are asserted against the SAME
+# tree, in the same state, so a "fix" that simply stopped walking .claude/ fails here rather
+# than passing quietly — which is the cheap wrong answer this gate invites.
+if have git; then
+  hdr "nested-worktree pruning (_core_nested_worktrees)"
+  _nwd="$SANDBOX/nestedwt"
+  _nw_fresh() { # a repo with Core's .gitignore shape: blanket rule + per-path negations
+    rm -rf "$_nwd"
+    mkdir -p "$_nwd/.claude/commands"
+    git -C "$_nwd" init -q
+    git -C "$_nwd" config user.email t@example.com
+    git -C "$_nwd" config user.name tester
+    printf '.claude/*\n!.claude/commands/\n.claude/settings.local.json\n' >"$_nwd/.gitignore"
+    printf 'cmd\n' >"$_nwd/.claude/commands/a.md"
+    git -C "$_nwd" add -A >/dev/null 2>&1
+    git -C "$_nwd" commit -qm init >/dev/null 2>&1
+  }
+  _nw_is() { # _nw_is <label> <expected> <actual>
+    if [[ "$3" == "$2" ]]; then
+      pass "nested-worktree prune: $1"
+    else
+      fail "nested-worktree prune: $1 (got '${3//$'\n'/, }', want '${2//$'\n'/, }')"
+    fi
+  }
+
+  # A worktree checked out INSIDE the repo is reported, relative to the root.
+  _nw_fresh
+  git -C "$_nwd" worktree add -q -b wtbranch "$_nwd/.claude/worktrees/sess" >/dev/null 2>&1
+  _nw_is "a linked worktree under .claude/ is reported, relative to the root" \
+    ".claude/worktrees/sess" "$(_core_nested_worktrees "$_nwd")"
+
+  # …and the files it hides are NOT §1c findings: they belong to another checkout, and no
+  # commit in this one can change that verdict. This is the 1002 failures, in miniature.
+  mkdir -p "$_nwd/.claude/worktrees/sess/.claude"
+  printf 'ledger\n' >"$_nwd/.claude/worktrees/sess/.claude/tool-decisions-v2.md"
+  _nw_is "a hidden file inside a nested worktree is not a finding" \
+    "" "$(_core_claude_untracked_hits "$_nwd")"
+
+  # THE OTHER DIRECTION, and the one that keeps the prune honest: the host's OWN hidden file
+  # is still caught, in the very same tree, with the worktree still nested in it.
+  printf 'ledger\n' >"$_nwd/.claude/tool-decisions-v2.md"
+  _nw_is "the host's own hidden file is still a finding while a worktree is nested in it" \
+    ".claude/tool-decisions-v2.md" "$(_core_claude_untracked_hits "$_nwd")"
+
+  # A worktree checked out BESIDE the repo is not nested and must not be reported: the prefix
+  # test is the only thing separating them, and it is the easy half to get wrong.
+  _nw_fresh
+  git -C "$_nwd" worktree add -q -b sib "$SANDBOX/nestedwt-sibling" >/dev/null 2>&1
+  _nw_is "a sibling worktree outside the repo is not reported" "" "$(_core_nested_worktrees "$_nwd")"
+  git -C "$_nwd" worktree remove --force "$SANDBOX/nestedwt-sibling" >/dev/null 2>&1
+
+  # Degenerate inputs: silence, never a crash or a false claim.
+  _nw_fresh
+  _nw_is "a repo with no linked worktree yields nothing" "" "$(_core_nested_worktrees "$_nwd")"
+  rm -rf "$_nwd"
+  mkdir -p "$_nwd"
+  _nw_is "a non-git directory yields nothing (no repo, no claim)" "" "$(_core_nested_worktrees "$_nwd")"
+
+  rm -rf "$_nwd" "$SANDBOX/nestedwt-sibling"
+  unset -f _nw_fresh _nw_is
+  unset _nwd
+else
+  skip "nested-worktree pruning (git not installed)"
+fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
