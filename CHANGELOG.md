@@ -351,7 +351,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   The behavioral cases assert **both directions against the same tree**: a hidden file
   inside the nested worktree is not a finding, and the host's own hidden file still is —
   so the cheap wrong answer (stop walking `.claude/`) fails rather than passing quietly.
-||||||| parent of f8fcd41 (fix(maint): the runner's stdin claim counted one site and there were two, and three network steps had no ceiling (#899))
 
 - **`gen-theme.sh`'s reverse scan walked the filesystem, so it audited other repositories
   (found while auditing #904, never filed).** `preflight()`'s reverse half — the one that
