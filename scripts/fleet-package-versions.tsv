@@ -1,0 +1,50 @@
+# scripts/fleet-package-versions.tsv — observed package versions across the fleet.
+# ──────────────────────────────────────────────────────────────────────────────
+# WHAT THIS IS FOR. PORTING-MATRIX.md's footnotes state where the fleet sits relative to
+# a recorded floor. Those sentences enumerated a dozen distro versions in prose, and prose
+# goes stale silently: footnote 34's jq line was corrected twice in one day — once for
+# Alpine (#902) and once for Fedora (#904) — because nothing could disagree with it.
+#
+# This file is the data those sentences assert. gen-porting-matrix.sh renders it into the
+# marked block in that footnote, and check-porting-matrix fails when the two diverge. The
+# REASONING stays hand-written prose beside the block; only the enumeration is generated.
+#
+# WHAT IT DOES NOT DO. It cannot notice that a distro shipped a new version — nothing here
+# reaches the network, deliberately, because this generator runs inside an offline audit.
+# What it does is make staleness VISIBLE: every row carries the date it was checked, and a
+# row past FRESH_DAYS is reported as due for re-verification. "Nobody has looked in 90
+# days" is a fact you can act on; "as at time of writing" is not.
+#
+# FORMAT — tab-separated, first field is the record type:
+#
+#   floor <tool> <version>
+#       The recorded floor. at-or-below is DERIVED by comparing each row against it, so a
+#       row cannot claim a status its own version contradicts.
+#
+#   ver <tool> <target> <version> <verified> <source>
+#       One observation. <verified> is ISO date. <source> names where it was read, because
+#       "1.8.2" is worth nothing without it — Repology splits some projects across
+#       version-named entries and reports false absences (dotfiles-Alpine#170), so a row
+#       read there is weaker evidence than one read from the distro's own index.
+#
+# RE-VERIFYING. Check the row's source, update <version> and <verified>, run
+# `make gen-porting-matrix`, commit both. Ordering here is display order.
+
+floor	jq	1.8.2
+
+ver	jq	Arch	1.8.2	2026-09-06	repology:arch
+ver	jq	Gentoo	1.8.2	2026-09-06	repology:gentoo
+ver	jq	openSUSE Tumbleweed	1.8.2	2026-09-06	repology:opensuse_tumbleweed
+ver	jq	Homebrew	1.8.2	2026-09-06	repology:homebrew
+ver	jq	Alpine edge	1.8.2	2026-09-06	repology:alpine_edge
+ver	jq	Alpine 3.24	1.8.2	2026-09-06	pkgs.alpinelinux.org
+ver	jq	Alpine 3.23	1.8.2	2026-09-06	pkgs.alpinelinux.org
+ver	jq	Alpine 3.22	1.8.2	2026-09-06	pkgs.alpinelinux.org
+ver	jq	Fedora Rawhide	1.8.2	2026-09-06	repology:fedora_rawhide
+ver	jq	Fedora 45	1.8.2	2026-09-06	packages.fedoraproject.org
+ver	jq	Fedora 44	1.8.1	2026-09-06	repology:fedora_44
+ver	jq	Fedora 43	1.8.1	2026-09-06	repology:fedora_43
+ver	jq	Alpine 3.21	1.7.1	2026-09-06	pkgs.alpinelinux.org
+ver	jq	Debian 13	1.7.1	2026-09-06	repology:debian_13
+ver	jq	Ubuntu 24.04	1.7.1	2026-09-06	repology:ubuntu_24_04
+ver	jq	openSUSE Leap 15.x	1.6	2026-09-06	repology:opensuse_leap_15_6

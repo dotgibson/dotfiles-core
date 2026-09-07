@@ -120,7 +120,7 @@ trap 'rm -f "$LISTFILE"' EXIT
 
 # ── the registry ──────────────────────────────────────────────────────────────
 # Block ids, in the doc's order. Each has exactly one marker pair in $TARGET.
-BLOCK_IDS="commands packages"
+BLOCK_IDS="commands packages fleet-versions"
 
 # The commands table. id<TAB>header<TAB>repo<TAB>declaration(s)<TAB>unit
 #   declaration(s): space-separated `os/<os>.capabilities` paths, each optionally
@@ -505,6 +505,7 @@ render_for() { # $1 = id — the pre-rendered block, blank-line padded
   case "$1" in
   commands) printf '\n%s\n\n' "$CMD_TABLE" ;;
   packages) printf '\n%s\n\n' "$PKG_TABLE" ;;
+  fleet-versions) printf '\n%s\n\n' "$FLEET_TABLE" ;;
   *) printf 'gen-porting-matrix: unknown block id: %s\n' "$1" >&2; return 2 ;;
   esac
 }
@@ -610,8 +611,112 @@ fi
 
 read_caps
 read_pkgs
+# ── fleet package versions (footnote enumerations) ────────────────────────────
+# PORTING-MATRIX's floor footnotes used to enumerate a dozen distro versions in prose, and
+# prose cannot be checked: footnote 34's jq line was corrected twice in one day, once for
+# Alpine and once for Fedora, because nothing could contradict it. The enumeration now
+# comes from scripts/fleet-package-versions.tsv and the REASONING stays hand-written
+# beside it — facts generated, argument authored.
+#
+# at-or-below is DERIVED here rather than recorded, so a row cannot assert a status its own
+# version contradicts. That was the actual defect both times: the version and the side of
+# the line it was filed under disagreed, and only a human re-reading the sentence could
+# notice.
+FLEET_VERSIONS="$HERE/scripts/fleet-package-versions.tsv"
+FRESH_DAYS="${FRESH_DAYS:-90}"
+
+# Field-wise numeric compare, the same shape used across the fleet's floor guards: a
+# string compare ranks 1.10 below 1.9, and an -r suffix is truncated rather than parsed.
+_fv_lt() { # <a> <b> — true when a sorts below b
+  local i x y; local -a A B; local IFS=.
+  # shellcheck disable=SC2206  # deliberate word-splitting on IFS=. — that IS the parse
+  A=(${1%%-*})
+  # shellcheck disable=SC2206
+  B=(${2%%-*})
+  unset IFS
+  for ((i = 0; i < 4; i++)); do
+    x="${A[i]:-0}"; y="${B[i]:-0}"
+    [[ "$x" =~ ^[0-9]+$ ]] || x=0
+    [[ "$y" =~ ^[0-9]+$ ]] || y=0
+    ((10#$x < 10#$y)) && return 0
+    ((10#$x > 10#$y)) && return 1
+  done
+  return 1 # equal is NOT below a >= floor
+}
+
+render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
+  [[ -r "$FLEET_VERSIONS" ]] || {
+    printf 'gen-porting-matrix: cannot read %s\n' "$FLEET_VERSIONS" >&2
+    return 2
+  }
+  local tool="jq" floor="" rt t target ver vdate status
+  floor="$(awk -F'\t' -v tool="$tool" '$1 == "floor" && $2 == tool { print $3; exit }' "$FLEET_VERSIONS")"
+  [[ -n "$floor" ]] || {
+    printf 'gen-porting-matrix: no floor recorded for %s in %s\n' "$tool" "$FLEET_VERSIONS" >&2
+    return 2
+  }
+
+  # shellcheck disable=SC2016  # the backticks are literal MARKDOWN code ticks, not a subshell
+  printf '| Target | `%s` | vs ≥ %s | verified |\n' "$tool" "$floor"
+  printf '| --- | --- | --- | --- |\n'
+  local rows=0
+  while IFS=$'\t' read -r rt t target ver vdate _; do
+    [[ "$rt" == "ver" && "$t" == "$tool" ]] || continue
+    if _fv_lt "$ver" "$floor"; then status="**below**"; else status="at or above"; fi
+    printf '| %s | %s | %s | %s |\n' "$target" "$ver" "$status" "$vdate"
+    rows=$((rows + 1))
+  done < <(grep -v '^[[:space:]]*#' "$FLEET_VERSIONS")
+
+  ((rows)) || {
+    printf 'gen-porting-matrix: no version rows for %s in %s\n' "$tool" "$FLEET_VERSIONS" >&2
+    return 2
+  }
+}
+
+# Staleness is REPORTED, never failed. This generator cannot see upstream, so an old row
+# means "nobody has looked recently", not "this is wrong" — and failing CI on the calendar
+# would red PRs that changed nothing. Printed to stderr so it surfaces in a run's output
+# without becoming part of the generated file.
+#
+# The date arithmetic is done in awk, NOT with `date`. The first cut used
+# `date -d "$today - $FRESH_DAYS days"` with a `date -v` fallback and `|| return 0`, which
+# is GNU-or-BSD-only: busybox date accepts neither, so on Alpine — a first-class fleet
+# target, and the very lane this footnote is about — the whole check silently did nothing
+# and reported success. A staleness gate that goes quiet on one libc is worse than none,
+# because its silence reads as "all fresh". Days-from-civil needs no date library at all.
+warn_stale_versions() {
+  [[ -r "$FLEET_VERSIONS" ]] || return 0
+  local today
+  today="$(date -u +%Y-%m-%d)" || {
+    printf 'gen-porting-matrix: cannot read the current date — staleness NOT checked\n' >&2
+    return 0
+  }
+  grep -v '^[[:space:]]*#' "$FLEET_VERSIONS" |
+    awk -F'\t' -v today="$today" -v days="$FRESH_DAYS" '
+      # days_from_civil (Howard Hinnant) — integer-only and calendar-correct
+      # (leap years included). Portable everywhere awk is, which is the point.
+      function dfc(y, m, d,   era, yoe, doy, doe) {
+        y -= (m <= 2)
+        era = int((y >= 0 ? y : y - 399) / 400)
+        yoe = y - era * 400
+        doy = int((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1
+        doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+        return era * 146097 + doe - 719468
+      }
+      function dnum(s,   p) { split(s, p, "-"); return dfc(p[1] + 0, p[2] + 0, p[3] + 0) }
+      BEGIN { cutoff = dnum(today) - days; n = 0 }
+      $1 == "ver" && dnum($5) < cutoff {
+        if (n++ == 0) printf "gen-porting-matrix: version rows not re-verified in %s days:\n", days
+        printf "  %-24s %-8s last checked %s (%s)\n", $2 "/" $3, $4, $5, $6
+      }
+      END { if (n) print "  re-check the source in each row, then: make gen-porting-matrix" }
+    ' >&2
+}
+
 CMD_TABLE="$(render_commands)" || exit 2
 PKG_TABLE="$(render_packages)" || exit 2
+FLEET_TABLE="$(render_fleet_versions)" || exit 2
+warn_stale_versions
 
 if [[ "$MODE" == list ]]; then
   cat "$LISTFILE"

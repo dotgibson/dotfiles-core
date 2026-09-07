@@ -1262,12 +1262,39 @@ is pointed at output produced by machines other than yours: Core probes it
 (`zsh/00-tools.zsh`, ledger row only — no flag since #694) and this file prescribes `jq -e '.detection.missed == []'` as the
 provisioning gate a role layer runs against `core-doctor --json` ²⁰.
 
-Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
-Tumbleweed, Homebrew, Alpine edge, **Alpine 3.22/3.23/3.24** and **Fedora 45/Rawhide**.
-Alpine backported `jq 1.8.2-r0` into `main` on all three of its supported stable branches
-rather than leaving them on the version they shipped with, which is exactly the behaviour a
-`# min:` floor is supposed to reward; Fedora 45 and Rawhide carry `jq 1.8.2-5`. **Below it**
-on Fedora 43/44 (1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+Fleet position, generated from `scripts/fleet-package-versions.tsv` — this enumeration was
+prose until it was corrected twice in one day, once for Alpine and once for Fedora, because
+nothing could contradict it. The side of the floor each row falls on is DERIVED from its
+version rather than recorded beside it, which is precisely what both corrections were: a
+version and a verdict that disagreed.
+
+<!-- core:porting-matrix:gen fleet-versions -->
+
+| Target | `jq` | vs ≥ 1.8.2 | verified |
+| --- | --- | --- | --- |
+| Arch | 1.8.2 | at or above | 2026-09-06 |
+| Gentoo | 1.8.2 | at or above | 2026-09-06 |
+| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-09-06 |
+| Homebrew | 1.8.2 | at or above | 2026-09-06 |
+| Alpine edge | 1.8.2 | at or above | 2026-09-06 |
+| Alpine 3.24 | 1.8.2 | at or above | 2026-09-06 |
+| Alpine 3.23 | 1.8.2 | at or above | 2026-09-06 |
+| Alpine 3.22 | 1.8.2 | at or above | 2026-09-06 |
+| Fedora Rawhide | 1.8.2 | at or above | 2026-09-06 |
+| Fedora 45 | 1.8.2 | at or above | 2026-09-06 |
+| Fedora 44 | 1.8.1 | **below** | 2026-09-06 |
+| Fedora 43 | 1.8.1 | **below** | 2026-09-06 |
+| Alpine 3.21 | 1.7.1 | **below** | 2026-09-06 |
+| Debian 13 | 1.7.1 | **below** | 2026-09-06 |
+| Ubuntu 24.04 | 1.7.1 | **below** | 2026-09-06 |
+| openSUSE Leap 15.x | 1.6 | **below** | 2026-09-06 |
+
+<!-- core:porting-matrix:end fleet-versions -->
+
+The two mechanics behind that table are the part worth reading. Alpine backported
+`jq 1.8.2-r0` into `main` on all three of its supported stable branches rather than leaving
+them on the version they shipped with — exactly the behaviour a `# min:` floor is supposed
+to reward.
 
 Fedora reaches that floor by the opposite mechanic, and it is the one crossing with a date
 on it. F45 branched from Rawhide on 2026-08-11 and goes GA **2026-10-20**. F43/F44 sit at
