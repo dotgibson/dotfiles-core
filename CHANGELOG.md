@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v7.2.0] - 2026-09-08
+
 ### Added
 
 - **The `core:theme:gen` marker grammar learns a second comment syntax, so the zebar palette
