@@ -14,6 +14,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`core status --deep` — verify the COMMITTED `core/` against upstream, not just against
+  HEAD (#797).** The existing Integrity row compares the **worktree** to HEAD: it catches the
+  hazard operators actually hit (a hand-edit the next `make sync` clobbers) and is offline and
+  instant, which is most of `core status`'s value. It cannot catch an edit that was
+  **committed** — a bad `git subtree pull`, a hand-edit that got committed, a conflict resolved
+  wrongly. `--deep` fetches the pinned `core_sha` and answers that half.
+  **Tree OIDs, not a file-by-file diff.** `core-integrity.sh` already frames the question as
+  _"the git tree object of `HEAD:core`"_, and git trees are content-addressed — so an OID
+  computed in the fetched clone equals the local one exactly when the content does. No
+  materialisation, no `checkout-index`, and no diff binary (#572).
+  **The filter comes from the fetched commit, never from anything vendored.** #676 removed
+  `core-vendor.sh` from the vendor set because a gate resolving trees in Core's object store
+  cannot run in a repo that has none; reading it out of the commit just fetched sidesteps that,
+  and a `core_sha` predating the allowlist carries no such file, so the comparison falls
+  through to the whole tree and spans the migration with no flag day.
+  **Opt-in, and never on the default path** — it is the only row that touches the network, and
+  it carries a 20s ceiling. It **degrades, never errors**: offline, no git, a sha upstream will
+  not serve → a stated `unverifiable` and exit 0. The one exception is a malformed `core.lock`,
+  which is `broken`: a `core_sha` that is not 40 hex characters is a defect in the checkout,
+  not a fact about the network, and reporting it as "could not check" would launder it.
+  `--json` grows `.integrity.deep` as a **sibling** key with its own token set
+  (`verified`/`differs`/`broken`/`na`/`unverifiable`), leaving `.integrity.status` untouched —
+  the never-widen rule `_core_doctor_json` established. It is `null` when `--deep` was not
+  asked for, so "we did not look" stays distinguishable from "we looked and it was fine".
+
 ### Fixed
 
 - **The freshness bot's `fleet-versions` job could never finish on a runner (#917).** #914 added
