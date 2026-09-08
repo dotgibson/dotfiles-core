@@ -1162,3 +1162,87 @@ check_dep "extract refuses to clobber an existing entry (no TTY)" tar \
 # clobber and overwrite (the bug this asserts against).
 check_dep "extract guards the gz output at the archive's path, not \$PWD" gzip \
   'd=$(mktemp -d); sub="$d/sub"; mkdir -p "$sub"; print new > "$sub/f.txt"; gzip "$sub/f.txt"; print OLD > "$sub/f.txt"; cd "$d"; extract "$sub/f.txt.gz" </dev/null; rc=$?; [[ "$(cat -- "$sub/f.txt")" == OLD && $rc -ne 0 ]]'
+
+# ── core status --deep (#797) ────────────────────────────────────────────────
+# The shallow Integrity row compares the WORKTREE against HEAD. --deep answers the other
+# half — is what was COMMITTED what core.lock pins — which needs Core's object store and so
+# needs a fetch. Everything below is hermetic: no network, no real repo. The verdicts that
+# depend on reaching upstream are exercised through their DEGRADATION, which is the part
+# that must never lie.
+hdr "core status --deep (#797)"
+_csd="$SANDBOX/csdeep"
+_csd_probe() { # _csd_probe <lockfile> -> "<token>|<detail>"
+  zsh -fc "
+    source '$UI' 2>/dev/null; source '$HERE/zsh/30-functions.zsh' 2>/dev/null
+    REPLY=''; REPLY2=''
+    _core_status_integrity_deep '$1'
+    print -r -- \"\$REPLY2|\$REPLY\"
+  " 2>/dev/null
+}
+
+# 1. A MALFORMED LOCK IS A HARD FAIL, never a silent skip. A core_sha that is not 40 hex
+#    characters is a defect in THIS checkout, not a fact about the network — reporting it as
+#    "could not check" would launder a broken lock into the weather.
+rm -rf "$_csd"; mkdir -p "$_csd"
+(cd "$_csd" && git init -q && git config user.email t@e.com && git config user.name t)
+printf 'core_sha=not-a-sha\n' >"$_csd/core.lock"
+if [[ "$(_csd_probe "$_csd")" == broken\|* ]]; then
+  pass "core status --deep: a malformed core_sha is 'broken', not a silent skip"
+else
+  fail "core status --deep: a malformed core_sha did not report broken — got '$(_csd_probe "$_csd")'"
+fi
+
+# 2. NO core.lock AT ALL is n/a — Core's own checkout, not a consumer. Distinct from broken:
+#    nothing is wrong, there is simply nothing to verify.
+rm -f "$_csd/core.lock"
+if [[ "$(_csd_probe "$_csd")" == na\|* ]]; then
+  pass "core status --deep: a checkout with no core.lock is 'na', not an error"
+else
+  fail "core status --deep: a lock-less checkout did not report na — got '$(_csd_probe "$_csd")'"
+fi
+
+# 3. A WELL-FORMED LOCK WITH NO VENDORED core/ is also na, and NOT 'differs'. This is the
+#    arm the first draft got wrong in the other direction: `HEAD:core^{tree}` is a parse
+#    error, not a lookup miss, so rev-parse printed nothing and a repo that HAD a core/ was
+#    reported as having none. Pinning the empty case keeps the distinction honest.
+printf 'core_sha=%040d\n' 0 >"$_csd/core.lock"
+(cd "$_csd" && : >f && git add f && git commit -qm init)
+if [[ "$(_csd_probe "$_csd")" == na\|* ]]; then
+  pass "core status --deep: a lock with no vendored core/ is 'na', not 'differs'"
+else
+  fail "core status --deep: a core-less HEAD did not report na — got '$(_csd_probe "$_csd")'"
+fi
+
+# 4. AN UNREACHABLE UPSTREAM DEGRADES, never errors — the rule every row in this panel
+#    follows. Pointed at a local path that is not a repo, which is the offline case without
+#    needing the network to be down.
+(cd "$_csd" && mkdir -p core && : >core/x && git add core/x && git commit -qm core)
+_csd_out="$(CORE_UPSTREAM="$SANDBOX/definitely-not-a-repo" zsh -fc "
+  source '$UI' 2>/dev/null; source '$HERE/zsh/30-functions.zsh' 2>/dev/null
+  _core_status_integrity_deep '$_csd'; print -r -- \"\$REPLY2|\$REPLY\"" 2>/dev/null)"
+if [[ "$_csd_out" == unverifiable\|* ]]; then
+  pass "core status --deep: an unreachable upstream degrades to 'unverifiable', exit 0"
+else
+  fail "core status --deep: an unreachable upstream did not degrade — got '$_csd_out'"
+fi
+
+# 5. THE JSON KEY IS A SIBLING, NEVER A WIDENING. `.integrity.status` is a published token
+#    set (clean/dirty/unknown/na); a consumer matching on it must not start seeing `verified`
+#    because somebody passed a flag. And null — "not asked" — must stay distinguishable from
+#    a real na verdict, or "we did not look" reads as "we looked and it was fine".
+if command -v python3 >/dev/null 2>&1; then
+  _csd_json="$(zsh -fc "source '$UI' 2>/dev/null; source '$HERE/zsh/30-functions.zsh' 2>/dev/null; core-status --json" 2>/dev/null)"
+  if printf '%s' "$_csd_json" | python3 -c '
+import json,sys
+d = json.load(sys.stdin)["integrity"]
+sys.exit(0 if d["deep"] is None and d["status"] in ("clean","dirty","unknown","na") else 1)'; then
+    pass "core status --json: .integrity.deep is null without --deep, and .status keeps its own token set"
+  else
+    fail "core status --json: .integrity.deep was not null on a default run, or .status was widened"
+  fi
+else
+  skip "core status --deep JSON shape (python3 absent)"
+fi
+rm -rf "$_csd"
+unset -f _csd_probe
+unset _csd _csd_out _csd_json

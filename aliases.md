@@ -177,7 +177,7 @@ one-liner, which is why the front door itself is not a row in the table.
 | `pullall [dir]` | pull every git repo under a dir in parallel (prunes, stashes, fast-forwards trunk) |
 | `core-doctor [-v\|--versions] [--json]` | report Core's detected tools + which integrations are actually wired (-v adds versions; --json for machines) |
 | `core-version` | print the vendored Core layer's version |
-| `core-status [--json]` | is this box current: Core version + provenance, the live OS/role layers, tool health, and whether core/ has been edited |
+| `core-status [--json] [--deep]` | is this box current: Core version + provenance, the live OS/role layers, tool health, and whether core/ has been edited (--deep also verifies the COMMITTED core/ against upstream — needs the network) |
 | `core-whatsnew [--full] [--all]` | release notes since you last looked (--full for the prose, --all for every release the notes carry) |
 | `core-help [filter]` | scannable cheat sheet of Core's functions, keys & maintenance; pass a word to filter |
 
