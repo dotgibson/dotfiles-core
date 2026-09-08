@@ -1386,7 +1386,8 @@ fi
 # repo genuinely lacks is a stub target that says so, never declared away)
 # and whether the repo meets the test floor: a test/ (or tests/) directory with content,
 # run from a workflow. Same shape as the register above and the same advisory posture —
-# this is fleet drift, not a regression in the commit under test.
+# this is fleet drift, not a regression in the commit under test. dotfiles-Windows rides
+# as a last row read by name (#855): the same verbs, spelled `.\task.ps1 <verb>`.
 hdr "Makefile vocabulary x repo register + test floor (advisory)"
 if [[ ! -x "$HERE/scripts/fleet-vocabulary.sh" ]]; then
   skip "vocabulary register (scripts/fleet-vocabulary.sh missing — out of scope)"

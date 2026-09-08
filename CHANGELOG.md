@@ -14,6 +14,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **The vocabulary register reads `dotfiles-Windows` — the same seven verbs, spelled
+  `.\task.ps1 <verb>` (#855, a #691 follow-up).** #691's promise is that a contributor
+  moving between repos re-learns nothing, and the one repo still outside it was the
+  fleet's most-tested: no Makefile, no runner, bare scripts, in exactly the place where
+  "reproduce the CI gate locally" has the most to offer. Windows is deliberately absent
+  from `scripts/os-repos.txt` (that list drives the fan-out, and Windows vendors no
+  `core/`), so the register now names it the way `fleet-drift.sh` does — **an outlier row
+  read by name**, last in the table, with `task.ps1` beside the repo so the `make <verb>`
+  headers stay the contract's names — and `os-repos.txt` stays Windows-free, which the
+  suite pins. `make` is not a given on a Windows host and `just` would be a new dependency,
+  so the shim is PowerShell: a dispatcher over the repo's existing entry points, landing in
+  `dotfiles-Windows` as `task.ps1`.
+  The read is **static**, like the Makefile read: a verb is a quoted key of `Get-TaskVerbs`
+  alone at the start of its line — a key on a comment line or inside a string declares
+  nothing — and `test` is credited only when its entry names the suite runner under the
+  populated `tests/` by path (either separator), else **no-op**; a Windows clone without the
+  shim renders **no task.ps1** across its row, the way a fleet repo without a Makefile
+  renders **no Makefile**. The test-floor column is the same reader as everywhere else,
+  which already credited a `shell: pwsh` step running `./tests/Invoke-Tests.ps1`. The
+  per-verb cell logic that was inline in the fleet loop is one function shared by both row
+  kinds, so a label cannot drift between them.
+
 ## [v7.2.0] - 2026-09-08
 
 ### Added
