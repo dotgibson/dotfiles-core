@@ -40,6 +40,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Nothing drifted — all eleven values already agreed, so this is pure gating, and a
   hand-edited hex in the bar now exits 1.
 
+- **`Alt+C` — cd into a subdirectory — is real on both shells, after years of being advertised
+  and bound by neither (#808).** `PARITY.md` listed it as `aligned` beside `Alt+Z`; #682
+  established that **zsh had never bound `^[c`** and never sourced fzf's own key-bindings (the
+  `FZF_ALT_C_*` exports that would have configured fzf's stock widget were deleted in v6.0.0 as
+  dead config), and that `dotfiles-Windows` set only the provider and reverse-history chords.
+  #682 deleted the claim rather than implementing it; this implements it.
+  **It is not a second key for `Alt+Z`.** `Alt+Z` is a frecency jump to anywhere zoxide has
+  seen; `Alt+C` is scoped below `$PWD` and finds directories zoxide has never visited. Different
+  intents, and an operator arriving from stock fzf or PSFzf expects the latter here.
+  `_fzf_cd_dir` follows the three sibling widgets exactly, including the guard: bound
+  unconditionally, so it warns in Core's voice rather than piping an unset `$FD_BIN` into a
+  missing fzf. `.git` is excluded for the file picker's reason — a repo's object store is
+  thousands of directories nobody wants to cd into.
+  **It gets its own `PARITY.md` row, not a widened `Dir jump`.** #808 predates #809, which made
+  every row a single claim precisely so a row could not outgrow its needles; folding `Alt+C`
+  back into `Dir jump` would recreate the shape that let `Alt+C` hide behind `Alt+Z`'s needle
+  for years. The pwsh needle greps the **`Set-PsFzfOption` argument**, not the chord string:
+  `Alt+c` also appears on the lazy-load stub's line, so a chord match would stay green if the
+  real binding were deleted.
 - **`core status --deep` — verify the COMMITTED `core/` against upstream, not just against
   HEAD (#797).** The existing Integrity row compares the **worktree** to HEAD: it catches the
   hazard operators actually hit (a hand-edit the next `make sync` clobbers) and is offline and

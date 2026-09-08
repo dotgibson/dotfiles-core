@@ -124,6 +124,15 @@ CHECKS=(
   "history-search|Ctrl+R restored below atuin on the PSFzf-option path|zsh/00-tools.zsh|export ATUIN_NOBIND=true|powershell/core/10-tools.ps1|after:atuin init:-PSReadlineChordReverseHistory 'Ctrl+r'"
   "file-picker|file picker on Ctrl+T|zsh/40-bindings.zsh|-M viins '^T' _fzf_file_no_hidden|powershell/core/10-tools.ps1|PSReadlineChordProvider 'Ctrl+t'"
   "atuin-tui|atuin on Ctrl+E|zsh/40-bindings.zsh|-M viins '^E' _atuin_search_widget|powershell/core/10-tools.ps1|-Chord 'Ctrl+e'"
+  # Alt+C — cd into a SUBDIRECTORY, distinct from Alt+Z's frecency jump (#808). Its OWN row,
+  # not a second claim on `dir-jump`: #809 made every PARITY.md row a single claim precisely
+  # so a row could not outgrow its needles, and folding Alt+C back into Dir jump would
+  # recreate the shape that let Alt+C hide behind Alt+Z's needle for years.
+  #
+  # The pwsh needle greps the OPTION, not the chord string. `Alt+c` also appears on the lazy
+  # stub's Set-PSReadLineKeyHandler line, so a chord match would stay green if the real
+  # binding — the Set-PsFzfOption argument that survives PSFzf's import — were deleted.
+  "subdir-picker|subdir picker on Alt+C|zsh/40-bindings.zsh|-M viins '^[c' _fzf_cd_dir|powershell/core/10-tools.ps1|-PSReadlineChordSetLocation 'Alt+c'"
   # KEY-ANCHORED, like the Ctrl+T row above. This needled the bare `_fzf_zoxide_jump`
   # until #682 — which a rebind to a different key, or a mere COMMENT naming the widget,
   # passed unchanged. The row's claim is about the key, so the needle is too. The same
