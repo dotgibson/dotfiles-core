@@ -240,16 +240,29 @@ zebar-palette	desktop/zebar/vanilla-clear/styles.css	dotfiles-Windows"
 # with $FLEET/<repo>. MISSING_REPOS collects the siblings that are not checked out, which
 # the driver reports as an environment SKIP rather than passing over in silence: a green
 # `--check` that never opened a file is the failure this whole gate exists to prevent.
+#
+# MISSING_FILES is the OTHER way a sibling row can go unread, and it needs its own list
+# because it is a different fact: the repo IS checked out but the registered file is not in
+# it — the sibling has not landed the palette yet, the path moved (zebar's config paths are
+# not stable), or someone deleted it. Until #933 only the directory was tested here, so that
+# row fell to the render loop's partial-tree `continue` and --check exited 0 having inspected
+# nothing: coverage loss reading as health, in the gate whose comment above says it exists
+# to prevent exactly that. Core-relative rows keep the silent `continue` — a partial Core
+# tree is the documented fixture case — but a sibling that is present and incomplete is
+# reported by file, and exits 3 like an absent one.
 TARGETS=""
 MISSING_REPOS=""
+MISSING_FILES=""
 while IFS="$(printf '\t')" read -r _b_id _b_path _b_repo; do
   [[ -n "$_b_path" ]] || continue
   if [[ -z "${_b_repo:-}" ]]; then
     TARGETS="$TARGETS$_b_path
 "
-  elif [[ -d "$FLEET/$_b_repo" ]]; then
+  elif [[ -f "$FLEET/$_b_repo/$_b_path" ]]; then
     TARGETS="$TARGETS$FLEET/$_b_repo/$_b_path
 "
+  elif [[ -d "$FLEET/$_b_repo" ]]; then
+    MISSING_FILES="$MISSING_FILES $_b_repo/$_b_path "
   else
     case "$MISSING_REPOS" in
     *" $_b_repo "*) ;;
@@ -260,6 +273,7 @@ done <<EOF
 $BLOCKS
 EOF
 TARGETS="$(printf '%s' "$TARGETS" | sort -u)"
+MISSING_FILES="$(printf '%s' "$MISSING_FILES" | sed 's/^ *//; s/ *$//; s/  */ /g')"
 unset _b_id _b_path _b_repo
 
 # _block_path <path> <repo> — the ONE place a registry row becomes a filesystem path.
@@ -943,9 +957,19 @@ EOF
 # skip), and §9d classifies on it the way §9h/§9i already do for their siblings. Real
 # drift outranks it — the `rc == 0` guard means a genuine mismatch still reports as
 # drift, with the skip named alongside rather than instead.
+#
+# Two lines, not one: "not checked out" and "checked out, but the registered file is not
+# there" are different facts with different fixes (clone the sibling vs. land the file or
+# fix the registry row), and a reader acting on the skip should not have to guess which.
+# audit-core.sh §9d collects the names from both to label its skip_env.
 if [[ -n "$MISSING_REPOS" ]]; then
   printf 'gen-theme: SKIPPED — not checked out: %s (their blocks were not inspected)\n' \
     "$(printf '%s' "$MISSING_REPOS" | sed 's/^ *//; s/ *$//; s/  */ /g')" >&2
+  ((rc == 0)) && rc=3
+fi
+if [[ -n "$MISSING_FILES" ]]; then
+  printf 'gen-theme: SKIPPED — registered file absent in a checked-out sibling: %s (its block was not inspected)\n' \
+    "$MISSING_FILES" >&2
   ((rc == 0)) && rc=3
 fi
 
