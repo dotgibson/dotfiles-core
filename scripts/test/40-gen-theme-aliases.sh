@@ -29,11 +29,22 @@ if have git; then
   hdr "theme generation (scripts/gen-theme.sh)"
   GT="$HERE/scripts/gen-theme.sh"
   GTR="$SANDBOX/themerepo"
+  # THE FIXTURE NEEDS A FLEET AS WELL AS A TREE (#857). gen-theme.sh now carries a block
+  # that lives in dotfiles-MacBook, and resolves siblings under --fleet (default: the
+  # repo's parent). The fixture's parent is $SANDBOX, which holds no sibling — so without
+  # this every case here would take the absent-sibling path and get 3 instead of 0, and
+  # the suite would be asserting the skip rather than the behaviour it was written for.
+  GTFLEET="$SANDBOX/themefleet"
 
   # _gt_fixture — rebuild a pristine fixture tree. Every assertion starts from this,
   # so a mutation in one row cannot leak into the next.
   _gt_fixture() {
-    rm -rf "$GTR"
+    rm -rf "$GTR" "$GTFLEET"
+    # The sibling stub: markers only. gen-theme fills the region, which is what case
+    # "renders in 0xAARRGGBB" then reads back.
+    mkdir -p "$GTFLEET/dotfiles-MacBook/sketchybar"
+    printf '# core:theme:gen sketchybar-colors\n# core:theme:end sketchybar-colors\n' \
+      >"$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh"
     mkdir -p "$GTR/theme" "$GTR/scripts" "$GTR/scripts/lib" "$GTR/zsh" "$GTR/lib" "$GTR/tmux"
     cp "$HERE/scripts/gen-theme.sh" "$GTR/scripts/"
     cp "$HERE/scripts/lib/common.sh" "$GTR/scripts/lib/"
@@ -97,8 +108,9 @@ GTTOOLS
   # _gt_run <args...> — invoke the generator against the fixture, echo its exit code.
   # env -u CORE_JSON: CORE_JSON is exported to nested gates and would suppress the
   # child's human output (see the boundary note at the top of this file).
-  _gt_run() { (cd "$GTR" && env -u CORE_JSON bash ./scripts/gen-theme.sh "$@" >/dev/null 2>&1; echo $?); }
-  _gt_out() { (cd "$GTR" && env -u CORE_JSON bash ./scripts/gen-theme.sh "$@" 2>&1); }
+  # --fleet FIRST, so a case that passes its own overrides it (the parser takes the last).
+  _gt_run() { (cd "$GTR" && env -u CORE_JSON bash ./scripts/gen-theme.sh --fleet "$GTFLEET" "$@" >/dev/null 2>&1; echo $?); }
+  _gt_out() { (cd "$GTR" && env -u CORE_JSON bash ./scripts/gen-theme.sh --fleet "$GTFLEET" "$@" 2>&1); }
 
   _gt_fixture
   _gt_gen_rc="$(_gt_run)"
@@ -269,20 +281,35 @@ GTTOOLS
 
   # 12. --list is the coverage surface, so it must agree with the tree rather than
   # with a second hand-maintained list inside the script.
+  #
+  # FIVE, not four, as of #857: the fixture now carries a sibling stub as well as the four
+  # Core files, and --list resolves a sibling row through --fleet like every other consumer.
+  # A count that stayed at four would mean --list had gone blind to the cross-repo half.
   _gt_fixture
-  if [[ "$(_gt_out --list | grep -c .)" == 4 ]]; then
-    pass "gen-theme: --list enumerates exactly the blocks present in the tree"
+  if [[ "$(_gt_out --list | grep -c .)" == 5 ]]; then
+    pass "gen-theme: --list enumerates exactly the blocks present in the tree, siblings included"
   else
-    fail "gen-theme: --list disagreed with the fixture ($(_gt_out --list | grep -c .) of 4)"
+    fail "gen-theme: --list disagreed with the fixture ($(_gt_out --list | grep -c .) of 5)"
   fi
 
   # 13. LIVE SMOKE against the real tree. Deliberately duplicates audit-core.sh §9d:
   # `make test` runs without the audit, and check-modern.sh sets the same precedent.
-  if [[ "$(cd "$HERE" && env -u CORE_JSON bash "$GT" --check >/dev/null 2>&1; echo $?)" == 0 ]]; then
+  #
+  # THREE ARMS, MIRRORING §9d (#857). The real tree now carries a block in a sibling repo,
+  # and this runs with no --fleet — so on a checkout without the fleet beside it (a CI leg,
+  # or a Claude worktree, whose parent is .claude/worktrees/) the honest answer is 3, "I
+  # could not look". Collapsing that into the failure arm would red the suite for an
+  # environment fact; collapsing it into the pass arm would claim a file it never opened.
+  # §9d makes exactly this split, so the smoke that duplicates §9d makes it too.
+  _gt_live_rc="$(cd "$HERE" && env -u CORE_JSON bash "$GT" --check >/dev/null 2>&1; echo $?)"
+  if [[ "$_gt_live_rc" == 0 ]]; then
     pass "gen-theme: the real tree matches theme/palette.toml"
+  elif [[ "$_gt_live_rc" == 3 ]]; then
+    skip "gen-theme live smoke (a registered sibling repo is not checked out — §9d records the same skip)"
   else
-    fail "gen-theme: the real tree has drifted — run: make gen-theme"
+    fail "gen-theme: the real tree has drifted — run: make gen-theme (rc=$_gt_live_rc)"
   fi
+  unset _gt_live_rc
 
   # 14. The cross-repo needle parity-check.sh greps in BOTH shells. Reformatting the
   # fzf block — one-per-line to a single line, reordering, dropping :regular — breaks
@@ -337,6 +364,67 @@ GTTOOLS
   _gt_style_sees "...but NOT a 4-space one, which is an indented code block" "    " 0
   unset -f _gt_style_sees
 
+
+  # ── reaching a SIBLING repo's palette (#857) ────────────────────────────────
+  # dotfiles-MacBook's sketchybar and dotfiles-Windows' zebar both hand-authored the same
+  # twelve Tokyo Night values, held in step by a comment reading "matched to core/starship
+  # + core/tmux". That is the construction #693 and #682 exist to end, and #679's own note
+  # — "a comment is not a gate" — was written about this very palette.
+  #
+  # The registry's third column names the sibling repo a row's path is relative to, and
+  # --fleet says where the siblings live. Everything below drives the REAL script against a
+  # fixture fleet, so the cross-repo path is exercised without a sibling checkout.
+  _gtf="$SANDBOX/gtfleet-empty"
+
+  # 1. THE BLOCK RENDERS INTO THE SIBLING, and carries the palette's values in sketchybar's
+  #    own 0xAARRGGBB form — alpha FIRST, which is why this needed an emitter rather than a
+  #    reuse of an existing one.
+  _gt_fixture && _gt_run >/dev/null
+  if grep -qx 'export ACCENT=0xff7aa2f7' "$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh" &&
+    grep -qx 'export BAR_COLOR=0xee1d202f' "$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh"; then
+    pass "gen-theme: a sibling repo's block renders in 0xAARRGGBB, with its per-entry alpha"
+  else
+    fail "gen-theme: the sibling block did not render — got '$(tr '\n' '|' <"$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh")'"
+  fi
+
+  # 2. AND IT IS GATED. Hand-edit one hex in the sibling and --check must go red — the whole
+  #    point, since today nothing anywhere reads that file.
+  _gt_fixture && _gt_run >/dev/null
+  sed -i.bak 's/^export ACCENT=.*/export ACCENT=0xffdeadbe/' \
+    "$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh" &&
+    rm -f "$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh.bak"
+  if [[ "$(_gt_run --check)" == 1 ]]; then
+    pass "gen-theme: a hand-edited hex in the SIBLING's palette fails --check"
+  else
+    fail "gen-theme: a hand-edited sibling hex did not fail --check — the bar is ungated again"
+  fi
+
+  # 3. AN ABSENT SIBLING IS A REPORTED SKIP (3), NEVER A SILENT PASS. This is the case every
+  #    CI leg takes, and getting it wrong in the generous direction would replace one
+  #    unchecked claim ("matched to core/…") with a more confident one ("every generated
+  #    block matches"). audit-core.sh §9d classifies the 3 as skip_env.
+  rm -rf "$_gtf"; mkdir -p "$_gtf"
+  if [[ "$(_gt_run --check --fleet "$_gtf")" == 3 ]] &&
+    printf '%s' "$(_gt_out --check --fleet "$_gtf")" | grep -q 'SKIPPED — not checked out: dotfiles-MacBook'; then
+    pass "gen-theme: an absent sibling exits 3 and NAMES the repo it could not inspect"
+  else
+    fail "gen-theme: an absent sibling did not report a skip (rc=$(_gt_run --check --fleet "$_gtf"))"
+  fi
+
+  # 4. REAL DRIFT OUTRANKS THE SKIP. With the sibling absent AND a Core block hand-edited,
+  #    the answer must be 1 (drift) — not 3. A gate that reported the environment while a
+  #    defect sat in the tree would be worse than one that reported neither.
+  _gt_fixture && _gt_run >/dev/null
+  rm -rf "$_gtf"; mkdir -p "$_gtf"
+  sed -i.bak 's/#7aa2f7/#deadbe/' "$GTR/tmux/tmux.conf" && rm -f "$GTR/tmux/tmux.conf.bak"
+  if [[ "$(_gt_run --check --fleet "$_gtf")" == 1 ]]; then
+    pass "gen-theme: real drift outranks the absent-sibling skip (1, not 3)"
+  else
+    fail "gen-theme: an absent sibling masked real drift — got $(_gt_run --check --fleet "$_gtf"), want 1"
+  fi
+  _gt_fixture && _gt_run >/dev/null # put the fixture back
+  rm -rf "$_gtf"
+  unset _gtf
   rm -rf "$GTR"
   unset _gt_gen_rc _gt_drift_rc _gt_before _gt_after _gt_nopal_rc _gt_fg _gt_refresh_rc
   unset _gt_drift_out _gt_bad_out
