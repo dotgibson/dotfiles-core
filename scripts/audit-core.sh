@@ -2347,6 +2347,25 @@ if ((_gt_rc == 0)); then
 elif ((_gt_rc == 1)); then
   fail "theme drift — a generated block no longer matches theme/palette.toml; run: make gen-theme"
   fail_detail "$_gt_out"
+elif ((_gt_rc == 3)); then
+  # A REGISTERED SIBLING IS NOT CHECKED OUT (#857). Since gen-theme.sh reaches into
+  # dotfiles-MacBook's sketchybar palette, a Core-only clone — every CI leg — cannot
+  # inspect it. That is an environment fact, so it records the way §9h and §9i already
+  # record theirs: a SKIP naming what went unchecked, not a pass implying it did.
+  #
+  # 3 is only returned when nothing else went wrong: real drift still reports as drift
+  # above, with the un-inspected sibling named in the same output.
+  # A REGISTERED SIBLING IS NOT CHECKED OUT (#857). gen-theme.sh reaches into
+  # dotfiles-MacBook's sketchybar palette, so a Core-only clone — every CI leg — cannot
+  # inspect it. Recorded the way §9h and §9i record theirs, and for their reason:
+  # skip_env, not a bare skip, so the class is carried by INDEX and --strict reads it as
+  # "clone the sibling" rather than "install a tool". A bare skip would fail --strict on a
+  # fully-provisioned box purely for being honest about what it could not reach.
+  #
+  # 3 is only returned when nothing else went wrong, so real drift still reports above.
+  _gt_missing="${_gt_out#*not checked out: }"
+  skip_env "theme drift (${_gt_missing%% (*} — not covered by this run)"
+  unset _gt_missing
 else
   fail "gen-theme.sh --check could not run (exit $_gt_rc) — the drift gate checked NOTHING this run"
   fail_detail "$_gt_out"

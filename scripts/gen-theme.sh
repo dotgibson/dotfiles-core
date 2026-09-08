@@ -78,6 +78,7 @@ source "$HERE/scripts/lib/common.sh"
 MODE=bare
 REFRESH=0
 ROOT=""
+FLEET=""
 while (($#)); do
   case "$1" in
   --check) MODE=check ;;
@@ -89,6 +90,9 @@ while (($#)); do
   --root)
     [[ -n "${2:-}" ]] || { printf 'gen-theme: --root needs a directory\n' >&2; exit 2; }
     ROOT="$2"; shift ;;
+  --fleet)
+    [[ -n "${2:-}" ]] || { printf 'gen-theme: --fleet needs a directory\n' >&2; exit 2; }
+    FLEET="$2"; shift ;;
   -h | --help)
     # Self-documenting, like parity-check.sh:44 — print the header block above.
     sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d;s/^# \{0,1\}//'
@@ -106,6 +110,18 @@ done
 # parity-check.sh:38 and core-integrity.sh take one.
 [[ -n "$ROOT" ]] && HERE="$(cd -- "$ROOT" && pwd)"
 cd "$HERE" || exit 2
+
+# ── where the SIBLING repos live ──────────────────────────────────────────────
+# Two consumers of this palette are not in Core and never will be: dotfiles-MacBook's
+# sketchybar and dotfiles-Windows' zebar bar. Both hand-authored the same twelve Tokyo
+# Night values, held in step by a comment reading "matched to core/starship + core/tmux"
+# — the construction #693 and #682 exist to end, and #679's own note ("a comment is not a
+# gate") was written about this very palette (#857).
+#
+# Defaults to Core's PARENT, the same convention gen-porting-matrix.sh and parity-check.sh
+# use, so a normal fleet checkout needs no flag and the behavioural suite can point it at a
+# fixture. Resolved AFTER the --root cd so a fixture root gets a fixture fleet.
+[[ -n "$FLEET" ]] || FLEET="$(cd -- "$HERE/.." && pwd)"
 
 PALETTE="theme/palette.toml"
 
@@ -180,6 +196,10 @@ pal_raw() { local r="PAL_$1"; printf '%s' "${!r}"; }        # pal_raw fallback_a
 
 # hex -> "R;G;B" decimal, for the 24-bit SGR sequences in 05-ui.zsh / ux.sh /
 # tmux-cheat.sh. $((16#..)) rather than printf %d 0x.., which is ambiguous.
+# The bare six hex digits, for forms that supply their own prefix. sketchybar wants
+# 0xAARRGGBB — alpha FIRST — so the caller cannot simply prepend to `pal`'s output.
+pal_hex() { local h; h="$(pal "$1")"; printf '%s' "${h#\#}"; }
+
 _rgb() { local h="${1#\#}"; printf '%d;%d;%d' "$((16#${h:0:2}))" "$((16#${h:2:2}))" "$((16#${h:4:2}))"; }
 
 # ── what carries blocks ───────────────────────────────────────────────────────
@@ -193,6 +213,10 @@ _rgb() { local h="${1#\#}"; printf '%d;%d;%d' "$((16#${h:0:2}))" "$((16#${h:2:2}
 # "was this block deleted?" check below still has full force there — the case it
 # guards is a marker pair removed from a file that still exists, which is exactly
 # how a consumer would silently stop being covered.
+# THREE COLUMNS AS OF #857: id, path, and the SIBLING REPO the path is relative to.
+# An empty third column means Core's own tree, which is every row that predates #857 —
+# so the added column costs those rows nothing and the resolver below reads one rule
+# rather than two. A row naming a repo is resolved under --fleet.
 BLOCKS="palette-colors	theme/palette.toml
 tmux-palette	tmux/tmux.conf
 battery-palette	tmux/scripts/tmux-battery.sh
@@ -208,9 +232,44 @@ transient-prompt-chars	zsh/45-plugins.zsh
 ui-accent-tiers	zsh/05-ui.zsh
 pkgup-accent-tiers	zsh/60-update.zsh
 sep-rule-colors	zsh/00-tools.zsh
-ux-accent-tiers	lib/ux.sh"
+ux-accent-tiers	lib/ux.sh
+sketchybar-colors	sketchybar/colors.sh	dotfiles-MacBook"
 
-TARGETS="$(awk -F'\t' '{print $2}' <<<"$BLOCKS" | sort -u)"
+# TARGETS carries RESOLVED paths — Core-relative rows unchanged, sibling rows prefixed
+# with $FLEET/<repo>. MISSING_REPOS collects the siblings that are not checked out, which
+# the driver reports as an environment SKIP rather than passing over in silence: a green
+# `--check` that never opened a file is the failure this whole gate exists to prevent.
+TARGETS=""
+MISSING_REPOS=""
+while IFS="$(printf '\t')" read -r _b_id _b_path _b_repo; do
+  [[ -n "$_b_path" ]] || continue
+  if [[ -z "${_b_repo:-}" ]]; then
+    TARGETS="$TARGETS$_b_path
+"
+  elif [[ -d "$FLEET/$_b_repo" ]]; then
+    TARGETS="$TARGETS$FLEET/$_b_repo/$_b_path
+"
+  else
+    case "$MISSING_REPOS" in
+    *" $_b_repo "*) ;;
+    *) MISSING_REPOS="$MISSING_REPOS $_b_repo " ;;
+    esac
+  fi
+done <<EOF
+$BLOCKS
+EOF
+TARGETS="$(printf '%s' "$TARGETS" | sort -u)"
+unset _b_id _b_path _b_repo
+
+# _block_path <path> <repo> — the ONE place a registry row becomes a filesystem path.
+# Prints nothing when the row names a sibling that is not checked out, so every caller
+# gets the same answer to "can I read this?" and none of them re-implements the rule.
+_block_path() {
+  local path="$1" repo="${2:-}"
+  [[ -n "$repo" ]] || { printf '%s' "$path"; return 0; }
+  [[ -d "$FLEET/$repo" ]] || return 0
+  printf '%s' "$FLEET/$repo/$path"
+}
 
 # ── emitters: one function per block id ───────────────────────────────────────
 # NOT a generic renderer over a spec table. The forms differ in quoting, in `=`
@@ -470,6 +529,34 @@ emit_sep_rule_colors() {
     "$1" "$(pal_role rule)" "$(pal_role err)"
 }
 
+# ── dotfiles-MacBook :: sketchybar/colors.sh ──────────────────────────────────
+# 0xAARRGGBB, alpha FIRST — sketchybar's own format, not a variant of anything Core
+# already emits. The alpha is PER ENTRY rather than a constant: the bar background is
+# deliberately translucent (0xee, ~93%) over the storm black.
+#
+# TRANSPARENT (0x00000000) is NOT emitted and must stay outside the markers: it is not a
+# palette colour, it is the absence of one, and there is no token in palette.toml it could
+# be derived from. A generator inventing one would be asserting a colour nobody chose.
+#
+# Bare assignments, no trailing comments, deliberately. The hand-written file aligned its
+# comment column in contiguous groups — which is what shfmt does — and a generator
+# reproducing shfmt's alignment by hand is a fight waiting to happen the first time a
+# token's name changes length. The prose moves above the block, where it is not generated.
+emit_sketchybar_colors() {
+  local i="$1"
+  printf '%sexport BAR_COLOR=0xee%s\n' "$i" "$(pal_hex black)"
+  printf '%sexport BG=0xff%s\n' "$i" "$(pal_hex bg)"
+  printf '%sexport FG=0xff%s\n' "$i" "$(pal_hex fg)"
+  printf '%sexport ACCENT=0xff%s\n' "$i" "$(pal_hex blue)"
+  printf '%sexport GREEN=0xff%s\n' "$i" "$(pal_hex green)"
+  printf '%sexport YELLOW=0xff%s\n' "$i" "$(pal_hex yellow)"
+  printf '%sexport RED=0xff%s\n' "$i" "$(pal_hex red)"
+  printf '%sexport MAGENTA=0xff%s\n' "$i" "$(pal_hex magenta)"
+  printf '%sexport CYAN=0xff%s\n' "$i" "$(pal_hex cyan)"
+  printf '%sexport ORANGE=0xff%s\n' "$i" "$(pal_hex orange)"
+  printf '%sexport GREY=0xff%s\n' "$i" "$(pal_hex comment)"
+}
+
 render_for() { # $1 = id, $2 = indent
   case "$1" in
   palette-colors) emit_palette_colors "$2" ;;
@@ -486,6 +573,7 @@ render_for() { # $1 = id, $2 = indent
   transient-prompt-chars) emit_transient_prompt_chars "$2" ;;
   ui-accent-tiers) emit_ui_accent_tiers "$2" ;;
   ux-accent-tiers) emit_ux_accent_tiers "$2" ;;
+  sketchybar-colors) emit_sketchybar_colors "$2" ;;
   pkgup-accent-tiers) emit_pkgup_accent_tiers "$2" ;;
   sep-rule-colors) emit_sep_rule_colors "$2" ;;
   *) printf 'gen-theme: unknown block id: %s\n' "$1" >&2; return 2 ;;
@@ -590,12 +678,15 @@ _theme_scan_files() {
 # about a file it no longer covers — coverage loss reading as health, which is the
 # failure mode this whole script exists to end.
 preflight() {
-  local rc=0 id f n line
+  local rc=0 id f n line repo
   # Forward: every REGISTERED block must appear exactly once in its file — unless
   # that file is absent, which is the documented partial-tree case.
-  while IFS="$(printf '\t')" read -r id f; do
+  while IFS="$(printf '\t')" read -r id f repo; do
     [[ -n "$id" ]] || continue
-    [[ -f "$f" ]] || continue
+    f="$(_block_path "$f" "${repo:-}")"
+    # Empty = the sibling repo is not checked out. That is an ENVIRONMENT fact, reported
+    # once by the driver as a skip, never a per-block failure here.
+    [[ -n "$f" && -f "$f" ]] || continue
     n="$(grep -c "^[[:space:]]*# core:theme:gen $id\$" "$f" || true)"
     case "$n" in
     1) ;;
@@ -717,8 +808,10 @@ _pal_load || exit 2
 if [[ "$MODE" == list ]]; then
   # id<TAB>file for every block whose file is present, so coverage is enumerable
   # without parsing this script.
-  while IFS="$(printf '\t')" read -r _id _f; do
-    [[ -n "$_id" && -f "$_f" ]] || continue
+  while IFS="$(printf '\t')" read -r _id _f _r; do
+    [[ -n "$_id" ]] || continue
+    _f="$(_block_path "$_f" "${_r:-}")"
+    [[ -n "$_f" && -f "$_f" ]] || continue
     printf '%s\t%s\n' "$_id" "$_f"
   done <<EOF
 $BLOCKS
@@ -772,6 +865,23 @@ while IFS= read -r t; do
 done <<EOF
 $TARGETS
 EOF
+
+# ── a sibling that is not checked out is SAID, never passed over ──────────────
+# The whole point of reaching into dotfiles-MacBook is that its palette stops being held
+# in step by a comment. A run that could not open the file and still printed "every
+# generated block matches" would replace one unchecked claim with a more confident one —
+# so the skip is reported, and `--check` returns 3 for it.
+#
+# 3, NOT 2: gen-porting-matrix.sh draws exactly this line (its own comment explains that
+# collapsing them would let audit-core.sh record a corrupted document as an environment
+# skip), and §9d classifies on it the way §9h/§9i already do for their siblings. Real
+# drift outranks it — the `rc == 0` guard means a genuine mismatch still reports as
+# drift, with the skip named alongside rather than instead.
+if [[ -n "$MISSING_REPOS" ]]; then
+  printf 'gen-theme: SKIPPED — not checked out: %s (their blocks were not inspected)\n' \
+    "$(printf '%s' "$MISSING_REPOS" | sed 's/^ *//; s/ *$//; s/  */ /g')" >&2
+  ((rc == 0)) && rc=3
+fi
 
 # ── PARITY.md's style claim ───────────────────────────────────────────────────
 # PARITY.md's Theme and FZF-palette rows name the style in prose ("tokyonight-storm"), as
