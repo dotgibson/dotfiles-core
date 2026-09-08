@@ -14,12 +14,12 @@
 # one thing that varies, and it DEFAULTS to "refresh" so every existing caller is untouched.
 # "core-release" is the other side of the contract — it wakes dotfiles-web's fleet-sync (the
 # bot that regenerates AND COMMITS generated.json) rather than deploy.yml's cache-purge
-# rebuild. AUTH (G2, GITHUB-APP-AUTH.md): the fleet App — the FLEET_APP_ID variable set AND
+# rebuild. AUTH (G2, GITHUB-APP-AUTH.md): the fleet App — the FLEET_APP_CLIENT_ID variable set AND
 # the caller passing the private key — mints a short-lived dotfiles-web-scoped installation
 # token for the dispatch. That is the ONLY auth: the legacy WEBHOOK_SECRET PAT was deleted
 # when G2 finished (#683), and the input below survives as a deprecated no-op purely so
 # callers still passing it keep working. Two outcomes: a caller passing NO App key (or an
-# unset FLEET_APP_ID) skips the mint and the dispatch warns and no-ops; a mint that IS
+# unset FLEET_APP_CLIENT_ID) skips the mint and the dispatch warns and no-ops; a mint that IS
 # attempted but cannot reach dotfiles-web fails in create-github-app-token, so the job
 # goes red before the warning branch is reachable. First-party only
 # (actions/create-github-app-token + curl; no marketplace action).
@@ -41,7 +41,7 @@ on:
         default: false
     secrets:
       FLEET_APP_PRIVATE_KEY:
-        description: "Fleet GitHub App private key (G2). With the FLEET_APP_ID variable set, mints the dotfiles-web-scoped token used for the dispatch. This is the SOLE active dispatch credential — the legacy PAT it once fell back to was deleted when G2 finished (#683)."
+        description: "Fleet GitHub App private key (G2). With the FLEET_APP_CLIENT_ID variable set, mints the dotfiles-web-scoped token used for the dispatch. This is the SOLE active dispatch credential — the legacy PAT it once fell back to was deleted when G2 finished (#683)."
         required: false
 
 permissions:
@@ -58,7 +58,7 @@ jobs:
       # Presence flag for the App private key. Secrets can't be tested in a step `if:`, but
       # an env DERIVED from a secret comparison can — and it never exposes the key (the value
       # is just 'true'/'false'). This gates the mint so a caller that passes no key no-ops
-      # below — even when FLEET_APP_ID is set org-wide — instead of the mint step failing
+      # below — even when FLEET_APP_CLIENT_ID is set org-wide — instead of the mint step failing
       # on an empty key.
       HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
     steps:
@@ -67,10 +67,12 @@ jobs:
       # (GITHUB-APP-AUTH.md, G2). ~1h expiry.
       - name: Mint a scoped installation token (if the App is configured)
         id: app
-        if: vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        if: vars.FLEET_APP_CLIENT_ID != '' && env.HAS_APP_KEY == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.FLEET_APP_ID }}
+          # client-id, not app-id: the latter is deprecated at this pin (#831), and the variable
+          # holds the App's Client ID — a different value from its App ID.
+          client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: dotfiles-web
@@ -93,14 +95,14 @@ jobs:
         run: |
           set -euo pipefail
           # An empty TOKEN can only mean the mint step above was SKIPPED — its `if:` found
-          # no FLEET_APP_ID variable, or the CALLER passed no FLEET_APP_PRIVATE_KEY (a
+          # no FLEET_APP_CLIENT_ID variable, or the CALLER passed no FLEET_APP_PRIVATE_KEY (a
           # reusable workflow sees only the secrets its caller hands it). A mint that is
           # ATTEMPTED and fails errors inside create-github-app-token, failing the job
           # before this step runs. Both causes are named below because nine repos execute
           # THIS file, and with no PAT fallback left this warning is their only signal that
           # a dispatch silently stopped happening.
           if [ -z "${TOKEN:-}" ]; then
-            echo "::warning::fleet App auth unavailable (no FLEET_APP_ID variable, or this caller passed no FLEET_APP_PRIVATE_KEY) — skipping showcase refresh"
+            echo "::warning::fleet App auth unavailable (no FLEET_APP_CLIENT_ID variable, or this caller passed no FLEET_APP_PRIVATE_KEY) — skipping showcase refresh"
             exit 0
           fi
           # Only the two events dotfiles-web actually listens for. A typo'd event_type

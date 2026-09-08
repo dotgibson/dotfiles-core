@@ -72,11 +72,13 @@ jobs:
       # fall back to GITHUB_TOKEN (PR still opens; its CI then needs "Approve and run").
       - name: Mint a scoped installation token (if the App is installed here)
         id: app
-        if: env.MODE == 'pr' && vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        if: env.MODE == 'pr' && vars.FLEET_APP_CLIENT_ID != '' && env.HAS_APP_KEY == 'true'
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.FLEET_APP_ID }}
+          # client-id, not app-id: the latter is deprecated at this pin (#831), and the variable
+          # holds the App's Client ID — a different value from its App ID.
+          client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           # Push the bump branch, open its PR — that is the whole job (#830). Neither
           # `owner:` nor `repositories:` is set, which already scopes the token to THIS
@@ -143,11 +145,13 @@ jobs:
     steps:
       - name: Mint a scoped installation token (if the App is installed here)
         id: app
-        if: env.MODE == 'pr' && vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        if: env.MODE == 'pr' && vars.FLEET_APP_CLIENT_ID != '' && env.HAS_APP_KEY == 'true'
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.FLEET_APP_ID }}
+          # client-id, not app-id: the latter is deprecated at this pin (#831), and the variable
+          # holds the App's Client ID — a different value from its App ID.
+          client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           # Push the bump branch, open its PR — that is the whole job (#830). Neither
           # `owner:` nor `repositories:` is set, which already scopes the token to THIS
@@ -220,11 +224,13 @@ jobs:
     steps:
       - name: Mint a scoped installation token (if the App is installed here)
         id: app
-        if: env.MODE == 'pr' && vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        if: env.MODE == 'pr' && vars.FLEET_APP_CLIENT_ID != '' && env.HAS_APP_KEY == 'true'
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.FLEET_APP_ID }}
+          # client-id, not app-id: the latter is deprecated at this pin (#831), and the variable
+          # holds the App's Client ID — a different value from its App ID.
+          client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           # This job rewrites scripts/fleet-package-versions.tsv and the generated block in
           # PORTING-MATRIX.md — never .github/workflows/, so no workflows: write. If that
