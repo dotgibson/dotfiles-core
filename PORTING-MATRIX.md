@@ -627,9 +627,10 @@ before detection now.
 **Coverage here is per tool, never a fleet-wide zero** — the table below is the authority, not
 the prose. **Two** repos' `bootstrap.sh` really do install entries from this family:
 `dotfiles-Alpine` (`ouch` and `jnv`¹⁷, via cargo¹⁴) and `dotfiles-Gentoo` (`shfmt`
-unconditionally via `go`; `ouch`, `ast-grep`¹¹, `jnv`¹⁷ and `watchexec`²⁵ via cargo, plus
-`dev-vcs/jj`⁸ via emerge, all in an opt-in extras block that `--no-extras` skips; and `gping`¹⁹
-via GURU). For the other seven repos "no bootstrap installs it" still holds.
+unconditionally via `go`; `ast-grep`¹¹, `jnv`¹⁷ and `watchexec`²⁵ via cargo, plus
+`dev-vcs/jj`⁸ via emerge and `app-arch/ouch` via GURU's `guru_extras_install` seam, all in an
+opt-in extras block that `--no-extras` skips; and `gping`¹⁹ via GURU). For the other seven
+repos "no bootstrap installs it" still holds.
 
 **How the Gentoo half of that went unnoticed is the lesson worth keeping:** this table was
 previously verified against each repo's `install/packages.txt` **alone**, and Gentoo is the repo
@@ -663,13 +664,15 @@ you:
 - "extras" above means Gentoo's opt-in block: installed by default, **skipped by
   `--no-extras`**. That flag is the one thing keeping these honest as ²¹ entries rather than ³
   ones — the tool is still something you can decline.
-- **Gentoo's `ouch` cell is a cargo cell by CHOICE, not by availability** — the same shape as
-  `watchexec`²⁵, and worth stating because only one of the two said so. GURU carries
+- **Gentoo's `ouch` cell is a GURU cell, and it used to be a cargo cell by CHOICE** — the same
+  shape `watchexec`²⁵ still has, and worth stating because the two parted ways. GURU carries
   `app-arch/ouch` (0.7.1, 0.8.0, **0.8.1**) and `::gentoo` carries no `ouch` at any category;
-  `dotfiles-Gentoo` `cargo install`s it anyway, for upstream-latest. Read the cell as "cargo,
-  over an available overlay ebuild", not "nothing packages it". Verified 2026-08-23 against
-  `gentoo/guru@master`. The genuinely-unpackaged Gentoo entries in this family are
-  `ast-grep`¹¹ and `jnv`¹⁷, absent from both trees.
+  `dotfiles-Gentoo` `cargo install`ed it anyway, for upstream-latest, until
+  dotgibson/dotfiles-Gentoo#133 found the cargo build cannot succeed on a GCC/libstdc++ box at
+  all (¹² has the mechanism) and moved it to `guru_extras_install app-arch/ouch`. Read the
+  cell as "overlay ebuild, opt-in", and `watchexec` as the one cargo-by-choice example left.
+  Verified 2026-08-23 against `gentoo/guru@master`. The genuinely-unpackaged Gentoo entries in
+  this family are `ast-grep`¹¹ and `jnv`¹⁷, absent from both trees.
 - This list used to read "**macOS-only in practice**: the MacBook `Brewfile` carries them;
   **no** Linux repo does." Every row above falsifies that — Alpine carries seven of the eight
   outright and Gentoo installs all eight, four of them from `bootstrap.sh`. Keep it a **per-tool**
@@ -1422,8 +1425,10 @@ educational and the most time-expensive.
 
 **Offense (Kali / WSL2)** — One of the two repos that are not stamped from Fedora (macOS
 is the other, see _Repo status_): it's Debian-family
-(apt) and carries a unique **offensive role layer** on top of the usual OS layer,
-adding an `offensive` stage to the zsh loader (`… os offensive local`). Two things
+(apt) and carries a unique **offensive role layer** on top of an OS layer it no longer
+ships itself — `dotfiles-Debian` owns band 80 and accepts `ID=kali` as a first-class
+target, and Offense adds the `85-offensive.zsh` stage to the loader between it and
+`99-local.zsh` (`80-os → 85-offensive → 99-local`). Two things
 actually bite. (1) Debian renames binaries — `bat`→`batcat`, and the `fd-find`
 package installs `fdfind`; Core handles both. (2) **WSL2 is NAT'd**, so a listener
 or reverse shell in Kali isn't reachable from your LAN until you enable **mirrored
