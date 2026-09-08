@@ -14,6 +14,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **nvim plugin pins move forward for five plugins.** `friendly-snippets`, `nvim-lspconfig`,
+  `nvim-tree.lua`, `nvim-treesitter` and `schemastore.nvim` advance to upstream HEAD — the set
+  the 2026-09-07 fleet health board (#794) reported as stale, one day after the freshness bot's
+  Monday refresh (#916) had rolled the previous set.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`, `behind_by=0`
+  in all five), and each range was read before promotion:
+
+  - **`friendly-snippets`** `6cd7280` → `30bfd47`, 16 commits: snippet-data fixes and additions
+    (markdown todo variants, django template tags, a Java class fix, zig 0.15 `buildExe`) plus a
+    repo-wide Prettier/StyLua reformat that accounts for most of the 76 touched files. Core loads
+    it only as blink.cmp's snippet source; no Lua API is involved.
+  - **`nvim-lspconfig`** `615d7b2` → `19576de`, 6 commits: fixes to `robotcode`, `powershell_es`
+    and `phpantom_lsp` — none of which Core configures — and a `plugin/lspconfig.lua` refactor
+    that moves legacy-only code below its version check. Nothing under Core's `servers/` tree is
+    affected.
+  - **`nvim-tree.lua`** `b2aadda` → `882c54f`, 1 commit: an "invalid 'line'" renderer fix for an
+    empty tree with `hidden_display` set. Core calls `setup()` and `api.tree.open()`, both public
+    and unchanged.
+  - **`nvim-treesitter`** `32dbd2e` → `5cb0114`, 1 commit: type-annotation tightening in
+    `async.lua`; the three `install.lua` lines it touches are `---@type` comments, so the
+    `install()` Core calls has the same signature.
+  - **`schemastore.nvim`** `4a0e1b7` → `2224119`, 2 commits: catalog refreshes only.
+
+  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
+
 ## [v7.2.0] - 2026-09-08
 
 ### Added
