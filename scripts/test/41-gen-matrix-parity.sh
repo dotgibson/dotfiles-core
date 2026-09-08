@@ -142,6 +142,19 @@ EOF
   _gp_run() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$GPF" "$@" >/dev/null 2>&1; echo $?); }
   _gp_out() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$GPF" "$@" 2>&1); }
   _gp_row() { grep -qF -- "$1" "$GPR/PORTING-MATRIX.md"; }
+  # _gp_cells <cell> [cell ...] — a row match that is BLIND TO COLUMN PADDING. The tables
+  # are emitted through _table in prettier's aligned form, so every cell is padded to its
+  # column's width — and those widths move whenever any value in the column changes length.
+  # A fixed-string match on the unpadded text was silently coupled to the fixture's longest
+  # row; asserting the CELLS instead says what the test actually means.
+  _gp_cells() {
+    local re="\\|" c
+    for c in "$@"; do
+      c="$(printf '%s' "$c" | sed 's/[][\.^$*+?(){}|]/\\&/g')"
+      re="$re *$c *\\|"
+    done
+    grep -qE -- "$re" "$GPR/PORTING-MATRIX.md"
+  }
 
   _gp_fixture
   _gp_gen_rc="$(_gp_run)"
@@ -160,13 +173,44 @@ EOF
   # the whole point of the block — footnote 34 was corrected twice because a version and the
   # verdict filed beside it disagreed. 1.10.0 is the row that matters: a string compare ranks
   # it BELOW 1.8.2 and would mark it below the floor.
-  if _gp_row '| Fixture Above | 1.10.0 | at or above |' &&
-    _gp_row '| Fixture Equal | 1.8.2 | at or above |' &&
-    _gp_row '| Fixture Below | 1.7.1 | **below** |'; then
+  if _gp_cells 'Fixture Above' '1.10.0' 'at or above' &&
+    _gp_cells 'Fixture Equal' '1.8.2' 'at or above' &&
+    _gp_cells 'Fixture Below' '1.7.1' '**below**'; then
     pass "gen-porting-matrix: fleet-versions derives at/below from the version, field-wise (1.10.0 outranks 1.8.2)"
   else
     fail "gen-porting-matrix: the fleet-versions block did not derive the floor comparison correctly"
   fi
+
+  # EVERY generated table is emitted in prettier's aligned form, and that is a contract with
+  # a second tool, not a preference. This file's header states it: conform runs prettierd on
+  # markdown at save, so an unpadded table is re-padded the next time anyone opens
+  # PORTING-MATRIX.md — and then --check calls it drift. `make gen-porting-matrix` puts it
+  # back, prettierd re-pads it, and the two gates loop, each correct on its own terms.
+  #
+  # fleet-versions shipped raw `printf '| %s | … |'` rows and was the one block that was not
+  # a fixed point (#836). Asserted WITHOUT prettier, which the suite cannot depend on:
+  # in an aligned table every row of a block has the same rendered width, so a single
+  # unpadded row shows up as a second distinct width. Code points, not bytes — the target
+  # names carry no multi-byte characters today but the packages table's superscripts do,
+  # and a byte count would call that table ragged the moment this helper is reused.
+  # SCOPED TO THE BLOCK, not to a row pattern: the three tables legitimately have different
+  # widths from each other, so counting across the whole file answers a question nobody asked.
+  _gp_widths() { # $1 = block id -> how many distinct rendered widths its rows have
+    awk -v id="$1" '
+      BEGIN { for (i = 128; i < 192; i++) cont[sprintf("%c", i)] = 1 }
+      function width(s,  i, n, w) { n = length(s); w = 0; for (i = 1; i <= n; i++) if (!(substr(s, i, 1) in cont)) w++; return w }
+      $0 ~ ("core:porting-matrix:gen " id " -->") { f = 1; next }
+      f && $0 ~ ("core:porting-matrix:end " id " -->") { f = 0 }
+      f && /^\|/ { seen[width($0)] = 1 }
+      END { n = 0; for (w in seen) n++; print n }
+    ' "$GPR/PORTING-MATRIX.md"
+  }
+  if [[ "$(_gp_widths fleet-versions)" == 1 ]]; then
+    pass "gen-porting-matrix: the fleet-versions rows are column-aligned (a prettier fixed point)"
+  else
+    fail "gen-porting-matrix: fleet-versions rows have $(_gp_widths fleet-versions) distinct widths — the block is not aligned, so prettierd will re-pad it and --check will call that drift (#836)"
+  fi
+  unset -f _gp_widths
 
   # The RENDERED BYTES, one row per rule.
   if _gp_row '`neovim` ≥ 0.12.0' && _gp_row '`fx-cat/neovim` ≥ 0.12.0'; then

@@ -94,6 +94,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`PORTING-MATRIX.md`'s `fleet-versions` table was the one generated block that was not a
+  prettier fixed point, so two gates disagreed about it (#836).** `gen-porting-matrix.sh`'s own
+  header states the rule — markdown is emitted in prettier's **aligned** form because conform
+  runs prettierd on save, _"so an unpadded table would be re-padded on the next save and read
+  as drift"_ — and `_table` exists to do it. `render_fleet_versions` (#914) printed raw
+  `printf '| %s | … |'` rows instead, bypassing it.
+  The consequence was a loop, not a cosmetic wart: open `PORTING-MATRIX.md` in Core's own
+  nvim, save, and prettierd re-pads the block; §9h then calls that drift; `make
+  gen-porting-matrix` puts it back unpadded; prettierd re-pads it again. Each gate correct on
+  its own terms. `prettier --check` now reports the file clean and `--check` is green on the
+  same bytes.
+  **This supersedes what #836 recorded.** That issue described "two pre-existing non-fixed-point
+  spots in the hand-written prose … unrelated to the generated regions". Both prose spots are
+  gone, and every remaining complaint was inside a generated block that did not exist when the
+  issue was filed. Three of #836's five items had likewise been closed in passing — the
+  openSUSE `uv` cell now carries its ²¹ mark, `_CORE_DOCTOR_OPTIN` is gated by §9p plus
+  `test/65-functions.sh`, and `dotfiles-Debian`'s workflow no longer hard-codes a footnote
+  number.
+  The regression guard asserts alignment **without prettier**, which the suite cannot depend
+  on: in an aligned table every row of a block renders to the same width, so one unpadded row
+  shows up as a second distinct width. Counted in code points rather than bytes, because the
+  packages table's superscripts would make a byte count call that table ragged the moment the
+  helper is reused. Reverting the generator gives 5 distinct widths and reds.
+  The fleet-versions row assertions also stop matching fixed strings: padding widths move
+  whenever any value in a column changes length, so the test now asserts **cells**, which is
+  what it always meant.
+
 - **The freshness bot's `fleet-versions` job could never finish on a runner (#917).** #914 added
   a job that re-probes the recorded fleet package versions, writes
   `scripts/fleet-package-versions.tsv`, then regenerates `PORTING-MATRIX.md` from it. The
