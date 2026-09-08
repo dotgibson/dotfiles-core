@@ -2379,6 +2379,7 @@ _core_help_render() {
     "Ctrl-E|Atuin history TUI|atuin"
     "Ctrl-G|session picker (sesh)|sesh"
     "Alt-Z|zoxide project jump|zoxide"
+    "Alt-C|cd into a subdirectory|fzf"
     "Ctrl-\\|toggle autosuggestions"
     "§updates & maintenance"
     "up [-y]|apply package updates (interactive; confirms first)"

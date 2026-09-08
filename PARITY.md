@@ -75,6 +75,7 @@ manifest row, not a code change.
 | File picker | `Ctrl+T` (`_fzf_file_no_hidden`) | `Ctrl+T` (PSFzf) | `aligned` |
 | atuin TUI | `Ctrl+E` (`_atuin_search_widget`) | `Ctrl+E` (`Invoke-AtuinSearch`) | `aligned` |
 | Dir jump | `Alt+Z` (`_fzf_zoxide_jump`) | `Alt+Z` (zoxide `zi`) | `aligned` |
+| Subdir picker | `Alt+C` (`_fzf_cd_dir`) | `Alt+C` (PSFzf `SetLocation`) | `aligned` |
 | Session picker | `Ctrl+G` (sesh) | `Ctrl+G` (psmux sessionizer) | `aligned` — jump-to-session both |
 | Cheatsheet | `cheat` / `core-help` | `navi` / `cheat` | `deliberate` — command, not a keybind |
 | Autosuggest toggle | `Ctrl+\` (`autosuggest-toggle`) | `Ctrl+\` (flips `PredictionSource`) | `aligned` |
