@@ -42,9 +42,15 @@ if have git; then
     rm -rf "$GTR" "$GTFLEET"
     # The sibling stub: markers only. gen-theme fills the region, which is what case
     # "renders in 0xAARRGGBB" then reads back.
-    mkdir -p "$GTFLEET/dotfiles-MacBook/sketchybar"
+    mkdir -p "$GTFLEET/dotfiles-MacBook/sketchybar" \
+      "$GTFLEET/dotfiles-Windows/desktop/zebar/vanilla-clear"
     printf '# core:theme:gen sketchybar-colors\n# core:theme:end sketchybar-colors\n' \
       >"$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh"
+    # BOTH siblings, for the reason the MacBook stub exists: a registered row whose repo is
+    # absent takes the environment-skip path, so a fixture missing one turns every case here
+    # into an assertion about the skip rather than about the behaviour under test (#926).
+    printf ':root {\n  /* core:theme:gen zebar-palette */\n  /* core:theme:end zebar-palette */\n}\n' \
+      >"$GTFLEET/dotfiles-Windows/desktop/zebar/vanilla-clear/styles.css"
     mkdir -p "$GTR/theme" "$GTR/scripts" "$GTR/scripts/lib" "$GTR/zsh" "$GTR/lib" "$GTR/tmux"
     cp "$HERE/scripts/gen-theme.sh" "$GTR/scripts/"
     cp "$HERE/scripts/lib/common.sh" "$GTR/scripts/lib/"
@@ -286,10 +292,12 @@ GTTOOLS
   # Core files, and --list resolves a sibling row through --fleet like every other consumer.
   # A count that stayed at four would mean --list had gone blind to the cross-repo half.
   _gt_fixture
-  if [[ "$(_gt_out --list | grep -c .)" == 5 ]]; then
+  # SIX as of #926: four Core files plus both sibling stubs. The count moves with the
+  # registry on purpose — a number that stayed put would mean --list had gone blind to a row.
+  if [[ "$(_gt_out --list | grep -c .)" == 6 ]]; then
     pass "gen-theme: --list enumerates exactly the blocks present in the tree, siblings included"
   else
-    fail "gen-theme: --list disagreed with the fixture ($(_gt_out --list | grep -c .) of 5)"
+    fail "gen-theme: --list disagreed with the fixture ($(_gt_out --list | grep -c .) of 6)"
   fi
 
   # 13. LIVE SMOKE against the real tree. Deliberately duplicates audit-core.sh §9d:
@@ -425,6 +433,83 @@ GTTOOLS
   _gt_fixture && _gt_run >/dev/null # put the fixture back
   rm -rf "$_gtf"
   unset _gtf
+
+  # ── the marker grammar learns a second comment syntax (#926) ────────────────
+  # Every consumer up to #857 was `#`-commented — toml, yml, zsh, sh, conf — so the grammar
+  # was written for `#` and that looked like a property of the tool rather than an accident
+  # of which files happened to carry blocks. CSS has no `#` comment at all (`#` there begins
+  # an id selector), which is why dotfiles-Windows' zebar palette stayed the LAST
+  # hand-authored copy of Core's colours after sketchybar's was generated.
+  #
+  # The style is registered nowhere: build_file echoes both markers VERBATIM, so only the
+  # MATCHERS ever need to know. These drive the real script against a CSS fixture in the
+  # fleet, the same way the sketchybar cases do.
+  _gt_css="$GTFLEET/dotfiles-Windows/desktop/zebar/vanilla-clear/styles.css"
+  # The fixture builds the CSS stub now, so this is just a rebuild — kept as a name because
+  # the cases below read better saying what they reset.
+  _gt_css_fresh() { _gt_fixture; }
+
+  # 1. A `/* … */` MARKER IS RECOGNISED and the block renders as CSS custom properties,
+  #    indented to match the marker — the same indent rule the `#` form has always had.
+  _gt_css_fresh
+  _gt_run >/dev/null 2>&1
+  if grep -qx '  --tn-blue: #7aa2f7;' "$_gt_css" && grep -qx '  --tn-orange: #ff9e64;' "$_gt_css"; then
+    pass "gen-theme: a /* */ marker renders its block, indented to the marker"
+  else
+    fail "gen-theme: the CSS block did not render — got '$(tr '\n' '|' <"$_gt_css")'"
+  fi
+
+  # 2. AND IT IS GATED — the point of the whole exercise, since nothing read that file before.
+  _gt_css_fresh
+  _gt_run >/dev/null 2>&1
+  sed -i.bak 's/--tn-blue: #7aa2f7;/--tn-blue: #deadbe;/' "$_gt_css" && rm -f "$_gt_css.bak"
+  if [[ "$(_gt_run --check)" == 1 ]]; then
+    pass "gen-theme: a hand-edited hex in a CSS block fails --check"
+  else
+    fail "gen-theme: a hand-edited CSS hex did not fail --check — the bar is ungated again"
+  fi
+
+  # 3. THE MARKERS SURVIVE VERBATIM. build_file echoes them rather than writing them, which is
+  #    what lets one grammar serve two syntaxes; a generator that re-emitted them would have to
+  #    know the style and would turn the CSS pair into `#` comments, silently breaking the file.
+  _gt_css_fresh
+  _gt_run >/dev/null 2>&1
+  # -F: `/*` is a BRE quantifier ("zero or more /"), so without it this pattern does not
+  # mean what it looks like and the assertion passes or fails for the wrong reason.
+  if grep -qxF '  /* core:theme:gen zebar-palette */' "$_gt_css" &&
+    grep -qxF '  /* core:theme:end zebar-palette */' "$_gt_css"; then
+    pass "gen-theme: CSS markers are preserved verbatim, not rewritten as # comments"
+  else
+    fail "gen-theme: the CSS markers were rewritten or lost"
+  fi
+
+  # 4. AN UNTERMINATED `/*` IS NOT A MARKER. A line that opens a comment it never closes would
+  #    swallow the generated block into it — the file would still parse while rendering nothing,
+  #    which is the quietest possible failure.
+  _gt_css_fresh
+  printf '/* core:theme:gen zebar-palette\n' >>"$_gt_css"
+  if [[ "$(_gt_run --check)" != 2 ]]; then
+    pass "gen-theme: an unterminated /* is not treated as a marker"
+  else
+    fail "gen-theme: an unterminated /* was parsed as a marker (it would swallow the block)"
+  fi
+
+  # 5. THE REVERSE SCAN SEES CSS, AND NAMES THE BLOCK. Two failures live here: *.css was
+  #    missing from the scanned file set, so a stray CSS marker was invisible; and the id was
+  #    taken as the last whitespace field, which on this syntax is the closing `*/` — so every
+  #    CSS block would have reported as unregistered under a name no registry could carry.
+  _gt_css_fresh
+  printf '/* core:theme:gen bogus-css-block */\n/* core:theme:end bogus-css-block */\n' >"$GTR/stray.css"
+  _gt_css_out="$(_gt_out --check)"
+  rm -f "$GTR/stray.css"
+  if [[ "$_gt_css_out" == *'stray.css carries an unregistered block: bogus-css-block'* ]]; then
+    pass "gen-theme: the reverse scan finds a stray CSS marker and names it correctly"
+  else
+    fail "gen-theme: the reverse scan missed a CSS marker or misnamed it — got '${_gt_css_out//$'\n'/ | }'"
+  fi
+  _gt_fixture && _gt_run >/dev/null
+  unset -f _gt_css_fresh
+  unset _gt_css _gt_css_out
   rm -rf "$GTR"
   unset _gt_gen_rc _gt_drift_rc _gt_before _gt_after _gt_nopal_rc _gt_fg _gt_refresh_rc
   unset _gt_drift_out _gt_bad_out

@@ -233,7 +233,8 @@ ui-accent-tiers	zsh/05-ui.zsh
 pkgup-accent-tiers	zsh/60-update.zsh
 sep-rule-colors	zsh/00-tools.zsh
 ux-accent-tiers	lib/ux.sh
-sketchybar-colors	sketchybar/colors.sh	dotfiles-MacBook"
+sketchybar-colors	sketchybar/colors.sh	dotfiles-MacBook
+zebar-palette	desktop/zebar/vanilla-clear/styles.css	dotfiles-Windows"
 
 # TARGETS carries RESOLVED paths — Core-relative rows unchanged, sibling rows prefixed
 # with $FLEET/<repo>. MISSING_REPOS collects the siblings that are not checked out, which
@@ -557,6 +558,30 @@ emit_sketchybar_colors() {
   printf '%sexport GREY=0xff%s\n' "$i" "$(pal_hex comment)"
 }
 
+# ── dotfiles-Windows :: desktop/zebar/vanilla-clear/styles.css ────────────────
+# Plain #rrggbb CSS custom properties. The `--tn-` prefix and the property names are the
+# BAR'S OWN vocabulary, not Core's, so they are spelled here rather than derived: each
+# emitter is a literal picture of the block it renders, which is the rule the emitter header
+# above states for all of them.
+#
+# The last hand-authored copy of Core's palette (#857/#926). sketchybar's was generated
+# first; this one had to wait for the marker grammar to learn a second comment syntax,
+# because `#` in CSS is an id selector and not a comment at all.
+emit_zebar_palette() {
+  local i="$1"
+  printf '%s--tn-bg: %s;\n' "$i" "$(pal bg)"
+  printf '%s--tn-fg: %s;\n' "$i" "$(pal fg)"
+  printf '%s--tn-fg-dim: %s;\n' "$i" "$(pal fg_dark)"
+  printf '%s--tn-blue: %s;\n' "$i" "$(pal blue)"
+  printf '%s--tn-comment: %s;\n' "$i" "$(pal comment)"
+  printf '%s--tn-red: %s;\n' "$i" "$(pal red)"
+  printf '%s--tn-green: %s;\n' "$i" "$(pal green)"
+  printf '%s--tn-yellow: %s;\n' "$i" "$(pal yellow)"
+  printf '%s--tn-cyan: %s;\n' "$i" "$(pal cyan)"
+  printf '%s--tn-purple: %s;\n' "$i" "$(pal magenta)"
+  printf '%s--tn-orange: %s;\n' "$i" "$(pal orange)"
+}
+
 render_for() { # $1 = id, $2 = indent
   case "$1" in
   palette-colors) emit_palette_colors "$2" ;;
@@ -574,6 +599,7 @@ render_for() { # $1 = id, $2 = indent
   ui-accent-tiers) emit_ui_accent_tiers "$2" ;;
   ux-accent-tiers) emit_ux_accent_tiers "$2" ;;
   sketchybar-colors) emit_sketchybar_colors "$2" ;;
+  zebar-palette) emit_zebar_palette "$2" ;;
   pkgup-accent-tiers) emit_pkgup_accent_tiers "$2" ;;
   sep-rule-colors) emit_sep_rule_colors "$2" ;;
   *) printf 'gen-theme: unknown block id: %s\n' "$1" >&2; return 2 ;;
@@ -588,15 +614,47 @@ render_for() { # $1 = id, $2 = indent
 # the same subshell trap _pal_load avoids by reading from a process substitution
 # instead of a pipeline; getting it wrong here silently flattened every emitted
 # line to column 0, which only lazygit/config.yml's nested block would have shown.
+# TWO COMMENT SYNTAXES, because a marker has to be a comment in ITS OWN file's language and
+# `#` is not one everywhere (#926). Every consumer up to now happened to be `#`-commented —
+# toml, yml, zsh, sh, conf — so the grammar was written for `#` and that looked like a
+# property of the tool rather than an accident of which files had blocks. CSS has no `#`
+# comment at all (`#` there begins an id selector), so dotfiles-Windows' zebar palette could
+# not carry a marker in any form and stayed the last hand-authored copy of Core's colours.
+#
+# THE STYLE IS NOT REGISTERED ANYWHERE, and that is the whole shape of this change.
+# build_file echoes both markers VERBATIM — it never writes them — so the generator never
+# needs to know which syntax a file uses. Only the MATCHERS do, and they can simply accept
+# either. A fourth registry column (the first design) would have been a fact stored in two
+# places, and the copy in the file is the one that decides.
+# The ERE the three greps below share. Defined once because it was restated in three places
+# and a fourth syntax would have had to find all of them — which is exactly how the `#`-only
+# assumption survived unnoticed until a CSS file needed a block (#926). `marker_id` above
+# stays a pair of explicit [[ =~ ]] arms rather than reusing this: it must CAPTURE the id and
+# reject an unterminated `/*`, neither of which a shared presence-test pattern should carry.
+MARKER_RE='^[[:space:]]*(#|/\*)[[:space:]]core:theme:gen[[:space:]]'
+
 marker_id() { # $1 = gen|end, $2 = line; prints the id, or returns 1
   local kind="$1" line="$2"
-  [[ "$line" =~ ^[[:space:]]*#[[:space:]]core:theme:${kind}[[:space:]]([a-z0-9-]+)[[:space:]]*$ ]] || return 1
-  printf '%s' "${BASH_REMATCH[1]}"
+  # `#`-comment form: toml, yml, zsh, sh, conf.
+  if [[ "$line" =~ ^[[:space:]]*#[[:space:]]core:theme:${kind}[[:space:]]([a-z0-9-]+)[[:space:]]*$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  # `/* … */` form: CSS. The closing delimiter is REQUIRED, not optional — a line opening a
+  # comment it does not close would swallow the generated block into it, and the file would
+  # still parse while rendering nothing.
+  if [[ "$line" =~ ^[[:space:]]*/\*[[:space:]]core:theme:${kind}[[:space:]]([a-z0-9-]+)[[:space:]]*\*/[[:space:]]*$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
 }
 
 # The opening marker's leading whitespace, re-applied to every emitted line. This
 # is what lets lazygit/config.yml carry a block inside its 4-space gui.theme map;
 # everywhere else it is the empty string.
+# Unchanged by #926: it takes the leading run of spaces, which is the same question
+# whatever the comment delimiter that follows is.
 marker_indent() { # $1 = line
   local line="$1"
   printf '%s' "${line%%[! ]*}"
@@ -664,10 +722,11 @@ _theme_scan_files() {
   local top
   top="$(git rev-parse --show-toplevel 2>/dev/null)" || top=""
   if [[ -n "$top" && "$top" -ef "$PWD" ]]; then
-    _audit_ls '*.toml' '*.yml' '*.zsh' '*.sh' '*.conf'
+    _audit_ls '*.toml' '*.yml' '*.zsh' '*.sh' '*.conf' '*.css'
   else
     find . -name .git -prune -o -name .claude -prune -o -type f \
-      \( -name '*.toml' -o -name '*.yml' -o -name '*.zsh' -o -name '*.sh' -o -name '*.conf' \) \
+      \( -name '*.toml' -o -name '*.yml' -o -name '*.zsh' -o -name '*.sh' -o -name '*.conf' \
+      -o -name '*.css' \) \
       -print 2>/dev/null | sed 's|^\./||' | sort -u
   fi
 }
@@ -687,7 +746,9 @@ preflight() {
     # Empty = the sibling repo is not checked out. That is an ENVIRONMENT fact, reported
     # once by the driver as a skip, never a per-block failure here.
     [[ -n "$f" && -f "$f" ]] || continue
-    n="$(grep -c "^[[:space:]]*# core:theme:gen $id\$" "$f" || true)"
+    # Both syntaxes, and the `/* … */` arm requires its closing delimiter for marker_id's
+    # reason — a count that matched an unterminated opener would call a broken file healthy.
+    n="$(grep -cE "^[[:space:]]*(#[[:space:]]core:theme:gen ${id}|/\*[[:space:]]core:theme:gen ${id}[[:space:]]\*/)[[:space:]]*\$" "$f" || true)"
     case "$n" in
     1) ;;
     0) printf 'gen-theme: %s: registered block is missing: %s (was its region deleted?)\n' "$f" "$id" >&2; rc=2 ;;
@@ -704,7 +765,12 @@ EOF
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     f="${line%%:*}"
+    # THE LAST FIELD IS NOT THE ID IN EVERY SYNTAX. `${line##* }` was written when a marker
+    # could only be a `#` comment, where the id does end the line; on the CSS form it yields
+    # the closing `*/` instead, so every CSS block in this tree would report as unregistered
+    # under a name no registry could ever carry (#926). Strip a trailing `*/` first.
     id="${line##* }"
+    [[ "$id" == '*/' ]] && { id="${line% \*/}"; id="${id##* }"; }
     grep -qxF "$(printf '%s\t%s' "$id" "$f")" <<<"$BLOCKS" || {
       printf 'gen-theme: %s carries an unregistered block: %s\n' "$f" "$id" >&2
       rc=2
@@ -722,7 +788,7 @@ EOF
   # `tr '\n' '\0' | xargs -0` is the idiom common.sh:1954 already uses, and likewise
   # without `-r` — PORTABILITY.md §1 puts macOS inside the floor.
   done < <(_theme_scan_files | grep -v '^scripts/' |
-    tr '\n' '\0' | xargs -0 grep -nE '^[[:space:]]*# core:theme:gen ' /dev/null 2>/dev/null |
+    tr '\n' '\0' | xargs -0 grep -nE "$MARKER_RE" /dev/null 2>/dev/null |
     awk -F: '{f=$1; $1=""; $2=""; sub(/^ +/,""); print f":"$0}' |
     sed 's/[[:space:]]*$//' | sort -u)
   return $rc
@@ -834,7 +900,7 @@ while IFS= read -r t; do
   # A configured target that is not present is skipped, not fatal, so a partial
   # fixture tree (test-core.sh's) and a standalone checkout both stay clean.
   [[ -f "$t" ]] || continue
-  grep -qE '^[[:space:]]*# core:theme:gen ' "$t" || continue
+  grep -qE "$MARKER_RE" "$t" || continue
   if ! generated="$(build_file "$t")"; then
     _bump 2
     continue

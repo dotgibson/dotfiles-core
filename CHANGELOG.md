@@ -16,6 +16,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **The `core:theme:gen` marker grammar learns a second comment syntax, so the zebar palette
+  — the last hand-authored copy of Core's colours — is generated too (#926, closing #857).**
+  Every consumer up to #857 was `#`-commented (toml, yml, zsh, sh, conf), so the grammar was
+  written for `#` and that looked like a property of the tool rather than an accident of which
+  files happened to carry blocks. **CSS has no `#` comment** — `#` there begins an id selector
+  — so `dotfiles-Windows`' `styles.css` could not carry a marker in any form.
+  **The style is registered nowhere, which is the whole shape of the change.** `build_file`
+  echoes both markers **verbatim** — it never writes them — so the generator never needs to
+  know which syntax a file uses. Only the matchers do, and they simply accept either. The
+  fourth registry column #926 first proposed would have stored a fact in two places, and the
+  copy in the file is the one that decides.
+  The pattern was restated in **three** greps; it is defined once now, which is how the
+  `#`-only assumption survived unnoticed in the first place.
+  **Two defects surfaced only by running it.** `*.css` was missing from the reverse scan's
+  file set, so a stray CSS marker was invisible to the gate that exists to find exactly that.
+  And the scan took the block id as the last whitespace-separated field — which on this syntax
+  is the closing `*/`, so every CSS block would have reported as unregistered under a name no
+  registry could ever carry.
+  An unterminated `/*` is deliberately **not** a marker: a line opening a comment it never
+  closes would swallow the generated block into it, leaving a file that still parses while
+  rendering nothing.
+  Nothing drifted — all eleven values already agreed, so this is pure gating, and a
+  hand-edited hex in the bar now exits 1.
+
 - **`gen-theme.sh` reaches `dotfiles-MacBook`'s sketchybar palette, so the last hand-authored
   copy of the Tokyo Night values is generated (#857).** `theme/palette.toml` is meant to be the
   only place a hex is authored — the rule `CLAUDE.md` states and `audit-core.sh` §9d enforces.
