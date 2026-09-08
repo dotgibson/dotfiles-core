@@ -40,6 +40,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (`verified`/`differs`/`broken`/`na`/`unverifiable`), leaving `.integrity.status` untouched —
   the never-widen rule `_core_doctor_json` established. It is `null` when `--deep` was not
   asked for, so "we did not look" stays distinguishable from "we looked and it was fine".
+- **`gen-theme.sh` reaches `dotfiles-MacBook`'s sketchybar palette, so the last hand-authored
+  copy of the Tokyo Night values is generated (#857).** `theme/palette.toml` is meant to be the
+  only place a hex is authored — the rule `CLAUDE.md` states and `audit-core.sh` §9d enforces.
+  `sketchybar/colors.sh` sat outside it entirely: no `core:theme:gen` block, so §9d had never
+  looked at it, held in step with Core by its own third line reading _"matched to
+  core/starship + core/tmux"_. That is the construction #693 and #682 exist to end, and #679's
+  own note (_"a comment is not a gate"_) was written about this very palette.
+  **Nothing drifted.** All twelve values already agreed with the palette, verified before and
+  after — this is pure gating, which is the good moment for it. A hand-edited hex in the bar
+  now exits 1 where previously nothing anywhere read the file.
+  The registry gained a third column naming the sibling repo a row's path is relative to
+  (empty = Core, which is every pre-existing row), and `--fleet DIR` says where the siblings
+  live — defaulting to Core's parent, the convention `gen-porting-matrix.sh` and
+  `parity-check.sh` already use. `emit_sketchybar_colors` renders sketchybar's `0xAARRGGBB`
+  form, with the alpha **per entry** rather than constant: the bar background is deliberately
+  translucent (`0xee`) over the storm black.
+  **An absent sibling is a reported skip, never a silent pass.** `--check` returns **3** and
+  names the repo it could not open; §9d classifies that through `skip_env`, the way §9h and §9i
+  already classify theirs, so `--strict` reads it as "clone the sibling" rather than "install a
+  tool". Real drift outranks it — 3 is only returned when nothing else went wrong — and that
+  precedence is pinned by a test, because a gate that reported the environment while a defect
+  sat in the tree would be worse than one that reported neither.
+
+### Changed
+
+- **`dotfiles-Windows`' zebar palette is NOT covered by #857, and the reason is worth
+  recording.** The marker grammar is `#`-comment-only —
+  `^[[:space:]]*#[[:space:]]core:theme:gen …` — which every current consumer satisfies (toml,
+  yml, zsh, sh, conf). CSS has no `#` comment, so `styles.css` cannot carry a marker at all.
+  The issue's own scope note asked whether the **renderer** set covered both forms; the actual
+  obstacle is one layer down, in the grammar that `marker_id`, `marker_indent`, preflight and
+  #906's reverse scan all share. Split out rather than bolted on.
 
 ### Fixed
 
