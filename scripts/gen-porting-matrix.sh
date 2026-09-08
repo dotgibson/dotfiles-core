@@ -656,14 +656,23 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
     return 2
   }
 
-  # shellcheck disable=SC2016  # the backticks are literal MARKDOWN code ticks, not a subshell
-  printf '| Target | `%s` | vs ≥ %s | verified |\n' "$tool" "$floor"
-  printf '| --- | --- | --- | --- |\n'
-  local rows=0
+  # THROUGH _table, like the other two blocks — this is not cosmetic. The header of this
+  # file states the rule: markdown here is emitted in prettier's ALIGNED form, because
+  # conform runs prettierd on save, so an unpadded table is re-padded the next time anyone
+  # opens the file and then reads as drift to --check. This renderer printed raw pipes and
+  # was the one block in PORTING-MATRIX.md that was not a prettier fixed point (#836): a
+  # save in Core's own nvim reformatted it and red §9h, and `make gen-porting-matrix` put it
+  # back — a loop between two gates, each correct on its own terms.
+  #
+  # Rows are collected BEFORE the pipe rather than counted inside it: a `while` on the right
+  # of a pipeline runs in a subshell on bash 3.2, so `rows` incremented there is lost and the
+  # empty-input guard below would never fire.
+  local rows=0 body=""
   while IFS=$'\t' read -r rt t target ver vdate _; do
     [[ "$rt" == "ver" && "$t" == "$tool" ]] || continue
     if _fv_lt "$ver" "$floor"; then status="**below**"; else status="at or above"; fi
-    printf '| %s | %s | %s | %s |\n' "$target" "$ver" "$status" "$vdate"
+    body="$body$target\t$ver\t$status\t$vdate
+"
     rows=$((rows + 1))
   done < <(grep -v '^[[:space:]]*#' "$FLEET_VERSIONS")
 
@@ -671,6 +680,10 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
     printf 'gen-porting-matrix: no version rows for %s in %s\n' "$tool" "$FLEET_VERSIONS" >&2
     return 2
   }
+
+  # shellcheck disable=SC2016  # the backticks are literal MARKDOWN code ticks, not a subshell
+  { printf 'Target\t`%s`\tvs ≥ %s\tverified\n' "$tool" "$floor"
+    printf '%b' "$body"; } | _table
 }
 
 # Staleness is REPORTED, never failed. This generator cannot see upstream, so an old row
