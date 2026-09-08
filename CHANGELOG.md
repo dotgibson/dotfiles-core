@@ -49,6 +49,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   obstacle is one layer down, in the grammar that `marker_id`, `marker_indent`, preflight and
   #906's reverse scan all share. Split out rather than bolted on.
 
+### Fixed
+
+- **The freshness bot's `fleet-versions` job could never finish on a runner (#917).** #914 added
+  a job that re-probes the recorded fleet package versions, writes
+  `scripts/fleet-package-versions.tsv`, then regenerates `PORTING-MATRIX.md` from it. The
+  regeneration reads the **sibling OS checkouts**, defaulting to this repo's parent directory —
+  which on a CI runner is empty. Its first scheduled run probed all 16 rows successfully and
+  then died:
+  `gen-porting-matrix: not checked out under /home/runner/work/dotfiles-core: … !! regeneration failed`.
+  The job now clones the fleet first, public/anonymous/shallow — the idiom `parity-check.yml`
+  already uses — and the list comes from `scripts/os-repos.txt` rather than being spelled in the
+  workflow, because that file is the one place fleet membership lives and a second copy in YAML
+  is the kind that goes stale unnoticed. `update-fleet-versions.sh` gained `--fleet DIR` to pass
+  it through.
+  **Two smaller defects were underneath it.** The updater collapsed every non-zero exit from the
+  generator into one message, discarding the split `gen-porting-matrix.sh` goes out of its way
+  to make — exit **3** for "the fleet is not here" versus **2** for a structural fault — the same
+  split `audit-core.sh` §9h relies on to record an absent fleet as an environment skip rather
+  than a defect. And it wrote the TSV **before** regenerating, so a failed regeneration left the
+  tree carrying a new TSV against a stale matrix: drift that reds §9h for the next person who
+  runs it beside the fleet. The write is now staged behind a backup and rolled back if the
+  matrix cannot follow it, so the two halves of one artifact move together or not at all.
+
 ## [v7.1.2] - 2026-09-07
 
 ### Fixed

@@ -26,11 +26,22 @@
 # Usage:
 #   scripts/update-fleet-versions.sh            # apply: rewrite versions + dates in place
 #   scripts/update-fleet-versions.sh --check    # report only; exit 1 if any row DRIFTED
+#   scripts/update-fleet-versions.sh --fleet D  # where the sibling OS clones live
+#
+# --fleet EXISTS BECAUSE APPLY MODE CANNOT FINISH WITHOUT THE FLEET (#917). The TSV feeds
+# PORTING-MATRIX.md's generated block, so writing one without regenerating the other leaves
+# the tree carrying a matrix that disagrees with its own source. gen-porting-matrix.sh reads
+# the sibling checkouts and defaults to this repo's PARENT directory — which on a CI runner
+# holds nothing. The flag is passed straight through.
 #
 # Exit codes:
 #   0  every probeable row confirmed (apply: file updated; check: nothing drifted)
 #   1  --check only: at least one row's upstream version differs from the recorded one
 #   2  usage/environment failure, or the probe could not be reached at all
+#   3  apply only: the sibling fleet is not present, so the matrix could not be regenerated
+#      — DISTINCT from 2 on purpose, mirroring gen-porting-matrix.sh's own split, which
+#      audit-core.sh §9h relies on to record an absent fleet as an environment skip rather
+#      than a defect. Collapsing the two is what made the freshness bot red (#917).
 set -uo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,14 +51,21 @@ API="${REPOLOGY_API:-https://repology.org/api/v1/project}"
 UA="dotgibson-dotfiles-core-freshness/1.0 (+https://github.com/dotgibson/dotfiles-core)"
 
 CHECK=0
-case "${1:-}" in
---check) CHECK=1 ;;
-"") ;;
-*)
-  echo "usage: $0 [--check]" >&2
-  exit 2
-  ;;
-esac
+FLEET=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --check) CHECK=1 ;;
+  --fleet)
+    [[ -n "${2:-}" ]] || { echo "usage: $0 [--check] [--fleet DIR]" >&2; exit 2; }
+    FLEET="$2"; shift
+    ;;
+  *)
+    echo "usage: $0 [--check] [--fleet DIR]" >&2
+    exit 2
+    ;;
+  esac
+  shift
+done
 
 [[ -r "$TSV" ]] || { echo "!! cannot read $TSV" >&2; exit 2; }
 command -v curl >/dev/null 2>&1 || { echo "!! curl is required" >&2; exit 2; }
@@ -144,6 +162,30 @@ if ((CHECK)); then
   exit 0
 fi
 
+# THE TSV IS WRITTEN BEHIND A BACKUP, and restored if the matrix cannot follow it. The two
+# files are one artifact: PORTING-MATRIX.md's fleet-versions block is generated FROM this
+# TSV, so a tree carrying a new TSV and an old matrix is drift that audit-core.sh §9h reds
+# the moment anyone runs it beside the fleet. Before #917 the write happened first and the
+# failure exited straight out, leaving exactly that state behind.
+_ufv_backup="$(mktemp "${TMPDIR:-/tmp}/fleet-tsv.XXXXXX")" || { echo "!! cannot stage a backup" >&2; exit 2; }
+cp -- "$TSV" "$_ufv_backup" || { echo "!! cannot stage a backup" >&2; exit 2; }
 printf '%s\n' "${NEW_LINES[@]}" >"$TSV"
 say "wrote $TSV"
-./scripts/gen-porting-matrix.sh || { echo "!! regeneration failed" >&2; exit 2; }
+
+_ufv_args=()
+[[ -n "$FLEET" ]] && _ufv_args=(--fleet "$FLEET")
+./scripts/gen-porting-matrix.sh ${_ufv_args[@]+"${_ufv_args[@]}"}
+_ufv_rc=$?
+if ((_ufv_rc == 3)); then
+  # The fleet is absent — an ENVIRONMENT fact, not a defect in this tree. Put the TSV back
+  # so nothing half-applied is left to commit, and say which half could not run.
+  cp -- "$_ufv_backup" "$TSV"; rm -f -- "$_ufv_backup"
+  echo "!! the sibling fleet is not checked out — the matrix could not be regenerated, so $TSV was left unchanged" >&2
+  echo "   clone the fleet beside this repo, or pass --fleet DIR" >&2
+  exit 3
+elif ((_ufv_rc != 0)); then
+  cp -- "$_ufv_backup" "$TSV"; rm -f -- "$_ufv_backup"
+  echo "!! regeneration failed (rc=$_ufv_rc) — $TSV was left unchanged" >&2
+  exit 2
+fi
+rm -f -- "$_ufv_backup"
