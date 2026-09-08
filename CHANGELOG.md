@@ -14,6 +14,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **The CI floor now bans blanket `permissions:` grants — `banned_permission_values`.** Rule 5
+  requires every workflow to declare a `permissions:` block but never looked at its value, so
+  `permissions: write-all` — the maximal token grant, strictly worse than omitting the block —
+  satisfied a rule named for least privilege. A new dimension (5b) in `scripts/check-modern.sh`
+  reads the value: at any indent, so the job-level form is caught too (a job grant that widens
+  to everything narrows nothing); bare or quoted; and with a trailing `# comment` tolerated, so
+  a rationale beside the grant is not the way past the gate. It is anchored to the key and the
+  line end, which is why it is its own dimension rather than a `banned_patterns` entry: that
+  list is a blind `grep -F`, under which the word could never appear in a workflow comment at
+  all — not even to explain why a grant is narrow. `read-all` is deliberately not banned; it is
+  not a token-abuse vector, and banning it buys noise.
+
+  Like rule 8, this is not deprecation-driven, and the baseline says so plainly. The fleet is at
+  zero occurrences, so it is adopted at zero fix-first cost — and Core owns the `*-call.yml@vN`
+  reusable workflows the OS repos actually execute. Both directions are covered by fixtures in
+  the hermetic `check-modern` harness: the workflow-level, job-level and quoted-with-comment
+  forms are each caught, while the word in a comment, `read-all`, and a named-scope `write`
+  are not. (#816)
+
+### Fixed
+
+- **Rule 2 of the CI floor now sees the `runs-on:` mapping form.** The matcher required the
+  banned label on the same line as `runs-on:` or `os:`, so `runs-on:` alone on its line with
+  the label on a nested `labels:` child — the runner-group syntax — walked straight through
+  the ban. The alternation gains `labels:`; no baseline change, and a fixture pins the shape.
+  Latent rather than live — the fleet uses no runner groups or self-hosted labels — and a
+  matrix key named anything other than `os:` still escapes, deliberately: catching it means
+  dropping the key prefix, which would then fire on every comment in the tree that names a
+  label. (#816)
+
+### Changed
+
+- **Rule 1's node20 rationale carries the final date.** The ban was already correct; the
+  comment said "fall 2026". Node 20 leaves the runners on **2026-09-23** — the 2025-09-19
+  deprecation changelog, its date fixed by an editor's note of 2026-08-25. No fix-first work:
+  every external action in the tree (`actions/checkout`, `actions/cache`,
+  `actions/create-github-app-token`) already resolves to `using: node24` at its pinned SHA.
+  (#816)
+
 ## [v7.2.0] - 2026-09-08
 
 ### Added

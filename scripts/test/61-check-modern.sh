@@ -20,7 +20,7 @@
 # Hermetic: a throwaway git repo (the gate inventories through `git ls-files`, so a plain
 # directory yields "no workflow/action files to check" and every assertion below would
 # vacuously pass) holding only the script, its lib and a crafted workflow.
-hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 7 + 8)"
+hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 5b, 7 + 8)"
 if ! have git; then
   skip "check-modern rule fixtures (git not installed)"
 else
@@ -113,6 +113,27 @@ jobs:
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
+  # The mapping form (#816). `runs-on:` alone on its line with the label on a nested
+  # `labels:` child is the runner-group syntax, and the matcher wanted the label on the
+  # SAME line as its key — so this shape walked straight through the ban.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on:
+      labels: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - run: echo hi')"
+  if grep -q 'EOL runner (ubuntu-22.04)' <<<"$_cm_out"; then
+    pass "check-modern rule 2: the runs-on: mapping form (nested labels:) is caught"
+  else
+    fail "check-modern rule 2: a banned label under runs-on: → labels: slipped the ban"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
   # A supported runner whose name merely CONTAINS a banned one must not fire.
   _cm_out="$(_cm_run 'name: p
 on: [push]
@@ -166,6 +187,54 @@ jobs:
     pass "check-modern rule 3: a SHA-pinned first-party ref is still accepted"
   else
     fail "check-modern rule 3: SHA-pinned first-party ref was rejected"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # Rule 5b (#816): rule 5 checks that a permissions: block EXISTS and never what it says,
+  # so `permissions: write-all` — the maximal grant — satisfied a rule named for least
+  # privilege. Three shapes in one fixture, each a way past a narrower matcher: the
+  # top-level bare form, the JOB-level form (a wider indent), and a QUOTED value with a
+  # trailing comment. The absence of a rule-5 hit is asserted too: it proves the block
+  # was accepted as present, so 5b is the only thing standing between the grant and green.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions: write-all
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: "write-all"   # widened for the tag push
+    steps:
+      - run: echo hi')"
+  if [[ "$(grep -c 'blanket permissions grant (write-all)' <<<"$_cm_out")" == 2 ]] \
+    && ! grep -q 'no top-level permissions' <<<"$_cm_out"; then
+    pass "check-modern rule 5b: write-all is caught at workflow and job level, bare or quoted (want 2)"
+  else
+    fail "check-modern rule 5b: a blanket write-all grant slipped through (want exactly 2 hits)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # …and the shapes that must NOT fire, each a reason the rule is its own dimension rather
+  # than a `banned_patterns` entry (which is a blind grep -F): the word in a COMMENT — the
+  # rationale for a narrow grant is exactly where it will appear; `read-all`, deliberately
+  # not banned (no token-abuse vector, only noise); and a named-scope mapping that grants
+  # `write` on one scope, which is the least-privilege shape the rule exists to protect.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+# scopes are named below — never write-all, see modern-baseline.yml 5b
+permissions: read-all
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - run: echo hi')"
+  if ! grep -q 'blanket permissions grant' <<<"$_cm_out"; then
+    pass "check-modern rule 5b: a comment, read-all and a named-scope write do not fire"
+  else
+    fail "check-modern rule 5b: false positive — this shape is the prescribed remedy"
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
