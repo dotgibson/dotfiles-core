@@ -44,6 +44,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The weekly routines no longer file a stub as the report when their subagent outlives the
+  main turn (#932).** Headless `claude -p` prints only the final turn, and it waits for
+  background work for a bounded 600 s before killing it and emitting whatever text it has.
+  `/tool-scout` delegates its research to a subagent; on 2026-09-08 that delegate was still
+  researching when the main turn ended, the ceiling fired, and `file-routine-issue.sh` filed
+  the "I'll relay its proposal when it lands" preamble as the scan — a report that reads as
+  "nothing found" to anyone who does not open the run log. `claude-routines.yml` now sets
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` for every job, so each job's `timeout-minutes` is
+  the only ceiling and overrunning it is a red job that `notify-failure` reports, not a green
+  one with a hollow issue. The two delegating routines (`/tool-scout`, `/doc-audit`) also now
+  say to wait for the delegate in the foreground, so the fix does not rest on one env var.
+  `/tool-scout` additionally learns how to check for an open `atuin-guard-verify:` verdict
+  without `Bash` — WebFetch the issue search — instead of reporting `gh` as unavailable every
+  week, which it always will be in that job.
 - **`gen-theme.sh --check` passed green over a sibling that was checked out but missing
   its registered file (#933).** The sibling arm decided "can I reach this row?" on the
   **directory**, so when `dotfiles-MacBook/` existed without `sketchybar/colors.sh` — the

@@ -13,8 +13,11 @@ about meaning, not structure.
 Scope for this run: **$ARGUMENTS** (empty = full fleet sweep).
 
 Delegate the heavy reading to the `doc-consistency` subagent so the sweep does not
-fill this conversation with file dumps — launch it with the Task tool and relay
-its report. Then, only if asked, open a PR with the fixes.
+fill this conversation with file dumps — launch it with the Task tool, **wait for it in
+the foreground** (`run_in_background: false`), and relay its report. The weekly job runs
+this headless (`claude -p`), which prints only the final turn: a delegate still reading when
+your turn ends is lost, and whatever you wrote while waiting is what gets filed (#932).
+Then, only if asked, open a PR with the fixes.
 
 ## What to check
 
