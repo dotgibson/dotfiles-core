@@ -59,6 +59,11 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **starship drew a dragon emoji on Kali** (#948, the Offense and Defense heroes, which film on
+  Kali). `[os.symbols]` had no `Kali` entry, so starship fell through to its own default — the
+  same gap openSUSE had until #950, with the same tofu wherever no colour-emoji font is
+  installed. `Kali` now gets the Nerd Font Kali glyph.
+
 - **`up -n`'s spinner painted a healthy dry run red** (found filming the nine OS/role README
   heroes, #948). The spinner reports the exit of `_pkgup_list_to`, which is the COUNT VERB's —
   and most archives overload it: `dnf check-update` exits 100 when updates _exist_,
