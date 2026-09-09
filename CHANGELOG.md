@@ -38,88 +38,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   per-verb cell logic that was inline in the fleet loop is one function shared by both row
   kinds, so a label cannot drift between them.
 
-### Changed
 
-- **nvim plugin pins move forward for five plugins.** `friendly-snippets`, `nvim-lspconfig`,
-  `nvim-tree.lua`, `nvim-treesitter` and `schemastore.nvim` advance to upstream HEAD — the set
-  the 2026-09-07 fleet health board (#794) reported as stale, one day after the freshness bot's
-  Monday refresh (#916) had rolled the previous set.
+- **The CI floor now bans blanket `permissions:` grants — `banned_permission_values`.** Rule 5
+  requires every workflow to declare a `permissions:` block but never looked at its value, so
+  `permissions: write-all` — the maximal token grant, strictly worse than omitting the block —
+  satisfied a rule named for least privilege. A new dimension (5b) in `scripts/check-modern.sh`
+  reads the value: at any indent, so the job-level form is caught too (a job grant that widens
+  to everything narrows nothing); bare or quoted; and with a trailing `# comment` tolerated, so
+  a rationale beside the grant is not the way past the gate. It is anchored to the key and the
+  line end, which is why it is its own dimension rather than a `banned_patterns` entry: that
+  list is a blind `grep -F`, under which the word could never appear in a workflow comment at
+  all — not even to explain why a grant is narrow. `read-all` is deliberately not banned; it is
+  not a token-abuse vector, and banning it buys noise.
 
-  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`, `behind_by=0`
-  in all five), and each range was read before promotion:
-
-  - **`friendly-snippets`** `6cd7280` → `30bfd47`, 16 commits: snippet-data fixes and additions
-    (markdown todo variants, django template tags, a Java class fix, zig 0.15 `buildExe`) plus a
-    repo-wide Prettier/StyLua reformat that accounts for most of the 76 touched files. Core loads
-    it only as blink.cmp's snippet source; no Lua API is involved.
-  - **`nvim-lspconfig`** `615d7b2` → `19576de`, 6 commits: fixes to `robotcode`, `powershell_es`
-    and `phpantom_lsp` — none of which Core configures — and a `plugin/lspconfig.lua` refactor
-    that moves legacy-only code below its version check. Nothing under Core's `servers/` tree is
-    affected.
-  - **`nvim-tree.lua`** `b2aadda` → `882c54f`, 1 commit: an "invalid 'line'" renderer fix for an
-    empty tree with `hidden_display` set. Core calls `setup()` and `api.tree.open()`, both public
-    and unchanged.
-  - **`nvim-treesitter`** `32dbd2e` → `5cb0114`, 1 commit: type-annotation tightening in
-    `async.lua`; the three `install.lua` lines it touches are `---@type` comments, so the
-    `install()` Core calls has the same signature.
-  - **`schemastore.nvim`** `4a0e1b7` → `2224119`, 2 commits: catalog refreshes only.
-
-  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
-
-- **Bumped two pins in `scripts/tool-versions.env` on the weekly freshness review; held the
-  third (#813).** This is the class no bot covers — the CLI gate pins sit between
-  `/freshness-triage`'s plugin locks and Renovate's manifests — so the routine re-audited all
-  ten against upstream and found seven still current:
-
-  | Pin | Was | Now | |
-  | --- | --- | --- | --- |
-  | `NVIM_VERSION` | 0.12.4 | **0.12.5** | one patch on the 0.12 line |
-  | `CLAUDE_CODE_VERSION` | 2.1.222 | **2.1.265** | the routine bots' own CLI |
-  | `SHFMT_VERSION` | 3.13.1 | 3.13.1 | **held** — 3.14.x changes formatting output, see below |
-
-  nvim 0.12.5 is fixes-plus-features on a line whose breaking changes (diagnostic sign config,
-  `vim.diagnostic.disable()`, `vim.diff` → `vim.text.diff`, the `'shelltemp'` default) all
-  landed at 0.12.0 and were absorbed by the 0.12.4 pin; nothing new to adapt to.
-  `NVIM_SHA256` recomputed with `make update-tool-checksums` and **cross-checked against the
-  `digest` GitHub reports for the release asset** rather than trusted from our own download —
-  the four unbumped hashes re-derived byte-identical, which is its own integrity signal.
-
-  **shfmt stays at 3.13.1 deliberately.** 3.14.0 changed _output_, not just behaviour — a space
-  after `!` in arithmetic, nested closing parens spaced like the opening ones, no `;`-joined
-  `then`/`do` when a heredoc is pending — and 3.14.1 followed a week later with heredoc
-  indentation fixes. Core's own audit does not gate shfmt, so a green tick here proves nothing
-  about it; the pin exists only so `setup-core-tools` installs one verified shfmt for MacBook
-  and the distro/role lint workflows, where a bump can newly flag files that pass today with
-  no diff in this repo to warn you. The consumer step is advisory (`::warning::`, not red), so
-  it would not break them — but it would start nagging on every run until each repo reformats.
-  Bump it alongside a reformat pass across the consumers, not on its own.
-
-- **Every mint step passes `client-id`, not the deprecated `app-id`, and reads a new
-  `FLEET_APP_CLIENT_ID` org variable (#831).** Our pinned `create-github-app-token` (v3.2.0)
-  carries `deprecationMessage: "Use 'client-id' instead."` on `app-id`, and all five mints
-  here — `notify-web.yml`, the reusable `notify-web-call.yml`, `sync-fanout.yml` and
-  `freshness.yml`'s three — passed it.
-  **It is not a one-line swap, which is why it needed its own change.** `FLEET_APP_ID` holds
-  the App **ID**; the new input wants the App's **Client ID**, a different value on the same
-  settings page (and a public one: `gh api /apps/dotgibson-fleet-sync --jq .client_id`). So the
-  variable is a **new** one rather than a repurposed one — the two names never hold different
-  meanings mid-rollout — and the `if:` guards move in the same commit as the input, because a
-  guard still testing `vars.FLEET_APP_ID` against a step reading `FLEET_APP_CLIENT_ID` would
-  keep gating on a variable the mint no longer uses.
-  **Precondition, not a follow-up: the org variable must exist before this merges.** With it
-  unset, every guard is false, `sync-fanout`'s preflight goes red (the loud half) and the
-  `notify-web` dispatch degrades to a `::warning::` and skips (the quiet half) — the exact
-  failure shape #831 was written to avoid.
-  **`FLEET_APP_ID` is retired here but must not be deleted yet.** The nine OS-repo callers
-  execute `notify-web-call.yml` at the `@v7` alias, which reads the old variable until the next
-  release advances it; `htpx`'s fan-out and `dotfiles-Windows`' inline notifier still pass
-  `app-id` and are tracked in their own repos. `GITHUB-APP-AUTH.md` carries the retirement
-  note with the grep that derives the remaining readers, its _Re-creating or re-keying_ section
-  now tells you to collect the Client ID, and the known-gaps callout shrinks to the one gap
-  left (scope the verbs).
+  Like rule 8, this is not deprecation-driven, and the baseline says so plainly. The fleet is at
+  zero occurrences, so it is adopted at zero fix-first cost — and Core owns the `*-call.yml@vN`
+  reusable workflows the OS repos actually execute. Both directions are covered by fixtures in
+  the hermetic `check-modern` harness: the workflow-level, job-level and quoted-with-comment
+  forms are each caught, while the word in a comment, `read-all`, and a named-scope `write`
+  are not. (#816)
 
 ### Fixed
 
+- **Rule 2 of the CI floor now sees the `runs-on:` mapping form.** The matcher required the
+  banned label on the same line as `runs-on:` or `os:`, so `runs-on:` alone on its line with
+  the label on a nested `labels:` child — the runner-group syntax — walked straight through
+  the ban. The alternation gains `labels:`; no baseline change, and a fixture pins the shape.
+  Latent rather than live — the fleet uses no runner groups or self-hosted labels — and a
+  matrix key named anything other than `os:` still escapes, deliberately: catching it means
+  dropping the key prefix, which would then fire on every comment in the tree that names a
+  label. (#816)
 - **The atuin daemon guard probes the `/tmp` socket the 18.21.0 client gained (#941).**
   Upstream PR atuinsh/atuin#4036 (merged 2026-08-31, in 18.21.0) makes the client try
   `$TMPDIR/atuin-$UID/atuin.sock` and _then_ `/tmp/atuin-$UID/atuin.sock` even when `$TMPDIR`
@@ -198,6 +146,90 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   before appending the line, so its `!= 2` assertion can actually fail — on an unrendered
   stub `--check` was already 1, and the case passed whatever the parser did. Also dropped a
   duplicated 12-line comment paragraph in §9d (#933).
+
+### Changed
+
+- **nvim plugin pins move forward for five plugins.** `friendly-snippets`, `nvim-lspconfig`,
+  `nvim-tree.lua`, `nvim-treesitter` and `schemastore.nvim` advance to upstream HEAD — the set
+  the 2026-09-07 fleet health board (#794) reported as stale, one day after the freshness bot's
+  Monday refresh (#916) had rolled the previous set.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`, `behind_by=0`
+  in all five), and each range was read before promotion:
+
+  - **`friendly-snippets`** `6cd7280` → `30bfd47`, 16 commits: snippet-data fixes and additions
+    (markdown todo variants, django template tags, a Java class fix, zig 0.15 `buildExe`) plus a
+    repo-wide Prettier/StyLua reformat that accounts for most of the 76 touched files. Core loads
+    it only as blink.cmp's snippet source; no Lua API is involved.
+  - **`nvim-lspconfig`** `615d7b2` → `19576de`, 6 commits: fixes to `robotcode`, `powershell_es`
+    and `phpantom_lsp` — none of which Core configures — and a `plugin/lspconfig.lua` refactor
+    that moves legacy-only code below its version check. Nothing under Core's `servers/` tree is
+    affected.
+  - **`nvim-tree.lua`** `b2aadda` → `882c54f`, 1 commit: an "invalid 'line'" renderer fix for an
+    empty tree with `hidden_display` set. Core calls `setup()` and `api.tree.open()`, both public
+    and unchanged.
+  - **`nvim-treesitter`** `32dbd2e` → `5cb0114`, 1 commit: type-annotation tightening in
+    `async.lua`; the three `install.lua` lines it touches are `---@type` comments, so the
+    `install()` Core calls has the same signature.
+  - **`schemastore.nvim`** `4a0e1b7` → `2224119`, 2 commits: catalog refreshes only.
+
+  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
+- **Bumped two pins in `scripts/tool-versions.env` on the weekly freshness review; held the
+  third (#813).** This is the class no bot covers — the CLI gate pins sit between
+  `/freshness-triage`'s plugin locks and Renovate's manifests — so the routine re-audited all
+  ten against upstream and found seven still current:
+
+  | Pin | Was | Now | |
+  | --- | --- | --- | --- |
+  | `NVIM_VERSION` | 0.12.4 | **0.12.5** | one patch on the 0.12 line |
+  | `CLAUDE_CODE_VERSION` | 2.1.222 | **2.1.265** | the routine bots' own CLI |
+  | `SHFMT_VERSION` | 3.13.1 | 3.13.1 | **held** — 3.14.x changes formatting output, see below |
+
+  nvim 0.12.5 is fixes-plus-features on a line whose breaking changes (diagnostic sign config,
+  `vim.diagnostic.disable()`, `vim.diff` → `vim.text.diff`, the `'shelltemp'` default) all
+  landed at 0.12.0 and were absorbed by the 0.12.4 pin; nothing new to adapt to.
+  `NVIM_SHA256` recomputed with `make update-tool-checksums` and **cross-checked against the
+  `digest` GitHub reports for the release asset** rather than trusted from our own download —
+  the four unbumped hashes re-derived byte-identical, which is its own integrity signal.
+
+  **shfmt stays at 3.13.1 deliberately.** 3.14.0 changed _output_, not just behaviour — a space
+  after `!` in arithmetic, nested closing parens spaced like the opening ones, no `;`-joined
+  `then`/`do` when a heredoc is pending — and 3.14.1 followed a week later with heredoc
+  indentation fixes. Core's own audit does not gate shfmt, so a green tick here proves nothing
+  about it; the pin exists only so `setup-core-tools` installs one verified shfmt for MacBook
+  and the distro/role lint workflows, where a bump can newly flag files that pass today with
+  no diff in this repo to warn you. The consumer step is advisory (`::warning::`, not red), so
+  it would not break them — but it would start nagging on every run until each repo reformats.
+  Bump it alongside a reformat pass across the consumers, not on its own.
+- **Every mint step passes `client-id`, not the deprecated `app-id`, and reads a new
+  `FLEET_APP_CLIENT_ID` org variable (#831).** Our pinned `create-github-app-token` (v3.2.0)
+  carries `deprecationMessage: "Use 'client-id' instead."` on `app-id`, and all five mints
+  here — `notify-web.yml`, the reusable `notify-web-call.yml`, `sync-fanout.yml` and
+  `freshness.yml`'s three — passed it.
+  **It is not a one-line swap, which is why it needed its own change.** `FLEET_APP_ID` holds
+  the App **ID**; the new input wants the App's **Client ID**, a different value on the same
+  settings page (and a public one: `gh api /apps/dotgibson-fleet-sync --jq .client_id`). So the
+  variable is a **new** one rather than a repurposed one — the two names never hold different
+  meanings mid-rollout — and the `if:` guards move in the same commit as the input, because a
+  guard still testing `vars.FLEET_APP_ID` against a step reading `FLEET_APP_CLIENT_ID` would
+  keep gating on a variable the mint no longer uses.
+  **Precondition, not a follow-up: the org variable must exist before this merges.** With it
+  unset, every guard is false, `sync-fanout`'s preflight goes red (the loud half) and the
+  `notify-web` dispatch degrades to a `::warning::` and skips (the quiet half) — the exact
+  failure shape #831 was written to avoid.
+  **`FLEET_APP_ID` is retired here but must not be deleted yet.** The nine OS-repo callers
+  execute `notify-web-call.yml` at the `@v7` alias, which reads the old variable until the next
+  release advances it; `htpx`'s fan-out and `dotfiles-Windows`' inline notifier still pass
+  `app-id` and are tracked in their own repos. `GITHUB-APP-AUTH.md` carries the retirement
+  note with the grep that derives the remaining readers, its _Re-creating or re-keying_ section
+  now tells you to collect the Client ID, and the known-gaps callout shrinks to the one gap
+  left (scope the verbs).
+- **Rule 1's node20 rationale carries the final date.** The ban was already correct; the
+  comment said "fall 2026". Node 20 leaves the runners on **2026-09-23** — the 2025-09-19
+  deprecation changelog, its date fixed by an editor's note of 2026-08-25. No fix-first work:
+  every external action in the tree (`actions/checkout`, `actions/cache`,
+  `actions/create-github-app-token`) already resolves to `using: node24` at its pinned SHA.
+  (#816)
 
 ## [v7.2.0] - 2026-09-08
 
