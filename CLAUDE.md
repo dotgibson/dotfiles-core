@@ -83,7 +83,9 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   caps the rendered gif at 2 MiB, weighing whatever the tape's `Output` line names, and §9l
   dates the gif against the tape by **git history** — a rewritten tape beside a stale gif is
   red, and re-rendering needs `vhs` plus a Nerd Font on a host matching the row (`assets/README.md`
-  has the exact commands). The nine OS/role repos are already registered;
+  has the exact commands). The tape exports `DOTFILES_NO_AUTOTMUX=1` before sourcing the zshrc,
+  and the generator refuses a row whose OS layer auto-attaches tmux without honouring it — every
+  OS layer's guard must read that knob. The nine OS/role repos are already registered;
   `make gen-hero-tape-fleet` writes their tapes, but rendering and committing their gifs is
   #877's remaining item — nine boxes, because `@@HOSTGUARD@@` films each on its own distro.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners

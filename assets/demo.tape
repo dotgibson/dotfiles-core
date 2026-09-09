@@ -44,8 +44,23 @@ Set Framerate 24
 # then films $HOME — a hero of the wrong tree, which is #698's original defect wearing a
 # different hat. Exiting kills the session instead, so vhs fails visibly rather than
 # producing a plausible-looking gif of the wrong directory.
+#
+# DOTFILES_NO_AUTOTMUX=1 IS THE THIRD PRECONDITION, and it must be exported BEFORE the
+# `source`. Every OS layer auto-attaches tmux for an interactive TTY, and the shell vhs
+# drives IS one — so on an unguarded host the `source` line below attaches (or creates)
+# a `main` session and never returns; every keystroke after it lands in that pane, the
+# `cd` never happens, and the gif films a tmux status bar over whatever directory the pane
+# had. That is how the first #877 render came out. The knob is the fleet's ONE opt-out
+# name (MacBook, openSUSE and Gentoo honoured it first; #877 made it all seven), and
+# scripts/gen-hero-tape.sh refuses to render a row whose shell layer auto-attaches without
+# honouring it — so the check is at GENERATION time, against the layer's source.
+#
+# WHY NO `[[ -z $TMUX ]] || exit 1` AFTER THE source, mirroring the cd: if the knob were
+# ignored, that line would be typed INTO the attached pane, where $TMUX is set — and
+# `exit 1` there closes a shell in the user's real session. The generator-time check has
+# no such failure mode, which is why it lives there and not here.
 Hide
-Type "export CORE_NO_PAGER=1 GIT_PAGER=cat" Enter
+Type "export CORE_NO_PAGER=1 GIT_PAGER=cat DOTFILES_NO_AUTOTMUX=1" Enter
 Type "source ~/.config/zsh/.zshrc" Enter
 Type "cd ~/code/dotgibson/dotfiles-core || exit 1" Enter
 Type "true" Enter

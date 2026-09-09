@@ -14,13 +14,7 @@ vhs assets/demo.tape    # writes assets/demo.gif
 ```
 
 Requires a Nerd Font installed locally — the icons in `eza` and `starship` render as
-boxes without one. **Render from a shell that will not auto-attach tmux.** The hidden setup
-sources `~/.config/zsh/.zshrc`, and an OS layer whose `80-os.zsh` attaches or creates a
-`main` session on every interactive shell (Fedora's does) will do so inside the recording —
-the rest of the tour is then typed into a tmux pane, the `cd` never lands, and the hero films
-a status bar over the wrong directory. Hide `tmux` from `PATH` for the render, or set whatever
-that guard skips on (`TERM_PROGRAM=vscode` for the current one). Always optimize afterwards —
-the raw VHS output is not what ships:
+boxes without one. Always optimize afterwards — the raw VHS output is not what ships:
 
 ```sh
 gifsicle -O3 --lossy=80 --colors 64 assets/demo.gif -o assets/demo.gif
@@ -49,6 +43,31 @@ counts as freshly rendered; a modified tape beside an untouched gif is the defec
 It was a script and not a gate for one release on purpose: #870 landed it red, and greening
 it needs `vhs` on a host matching the row, which CI is not. #877 re-rendered the gif and wired
 the check in as §9l in the same change, so a rewritten tape can no longer ship over a stale hero.
+
+## The render must not land in tmux
+
+The hidden setup sources `~/.config/zsh/.zshrc` from inside vhs, which is an interactive TTY —
+so an OS layer that auto-attaches tmux for interactive shells attaches **inside the recording**.
+The `source` never returns, every later keystroke lands in the pane, the `cd` never happens,
+and the gif films a tmux status bar over whatever directory the pane had. The first #877 render
+came out exactly like that.
+
+Every OS layer auto-attaches, so the tape exports the fleet's one opt-out **before** the source:
+
+```sh
+export CORE_NO_PAGER=1 GIT_PAGER=cat DOTFILES_NO_AUTOTMUX=1
+```
+
+`DOTFILES_NO_AUTOTMUX` was already honoured by MacBook, openSUSE and Gentoo; #877 made it all
+seven (Debian keeps `DEBIAN_NO_TMUX` working alongside). And because a knob only helps on a
+layer that reads it, `gen-hero-tape.sh` **refuses to render a row whose shell layer auto-attaches
+without honouring it** (exit 2, the cannot-run leg) — scanning that repo's own `os/` and `zsh/`,
+never the vendored `core/`, with comment lines dropped in both directions. The `.` row scans this
+repo's `zsh/` the same way, so the check is never vacuous.
+
+There is deliberately **no** `[[ -z $TMUX ]] || exit 1` after the source: if the knob were
+ignored, that line would be typed into the attached pane, where `$TMUX` *is* set, and `exit 1`
+there closes a shell in a real session. The generation-time check has no such failure mode.
 
 ## `demo.tape` is generated — edit `hero.tape.in`
 

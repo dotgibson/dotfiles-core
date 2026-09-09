@@ -39,6 +39,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   are written by `make gen-hero-tape-fleet` today, but `@@HOSTGUARD@@` requires each to be
   filmed on the distro its row is about, so that is nine boxes, not one.
 
+- **The hero render can no longer be hijacked by the OS layer's tmux auto-attach (#877).**
+  The tape's hidden setup sources `~/.config/zsh/.zshrc` from inside vhs — an interactive TTY —
+  and every OS layer attaches (or creates) a `main` tmux session for one. The `source` then
+  never returns: the rest of the tour is typed into the pane, the `cd` never lands, and the gif
+  films a tmux status bar over the wrong directory, which is exactly how the first #877 render
+  came out. The fleet already had an opt-out, spelled two ways — `DOTFILES_NO_AUTOTMUX` on
+  MacBook, openSUSE and Gentoo, `DEBIAN_NO_TMUX` on Debian — and nothing at all on Alpine, Arch
+  and Fedora. **`DOTFILES_NO_AUTOTMUX` is now the one name**: the template exports it before the
+  source, the four repos that did not read it gain the guard (Debian keeps its own name working
+  alongside), and `gen-hero-tape.sh` **refuses to render a row whose shell layer auto-attaches
+  without honouring it** — exit 2, the cannot-run leg, scanning that repo's own `os/` and
+  `zsh/` (never the vendored `core/`) with comment lines dropped in both directions, so
+  Alpine's prose about an inline attach it does not do is not an attach, and a knob that is only
+  mentioned guards nothing. The `.` row scans Core's own `zsh/`, so the check is never vacuous.
+  Deliberately **not** an in-tape `[[ -z $TMUX ]] || exit 1` after the source: on an unguarded
+  host that line would be typed into the attached pane and `exit 1` a shell in a real session.
+  The tape changed, so the gif is re-rendered in the same commit — the only order §9l accepts.
+
 ## [v7.2.0] - 2026-09-08
 
 ### Added
