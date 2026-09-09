@@ -23,7 +23,7 @@
 # branch or open a PR in another repo. This mints a short-lived, OS-repo-scoped GitHub
 # App installation token at run time (contents + pull-requests + workflows write — the last
 # because a sync branch can carry .github/workflows/* pin moves) from the fleet App —
-# the FLEET_APP_ID variable + FLEET_APP_PRIVATE_KEY secret, see GITHUB-APP-AUTH.md. The
+# the FLEET_APP_CLIENT_ID variable + FLEET_APP_PRIVATE_KEY secret, see GITHUB-APP-AUTH.md. The
 # App is the ONLY auth here: the legacy FLEET_SYNC_TOKEN PAT was deleted when G2 finished
 # (#683), so there is nothing behind it. The preflight fails loudly, before the first
 # clone, if the mint did not happen.
@@ -80,7 +80,7 @@ jobs:
       # Presence flag for the App private key (value is 'true'/'false', never the key):
       # secrets can't be tested in a step `if:`, but an env derived from a secret comparison
       # can. Gates the mint on the key ACTUALLY being present, so a partial App setup (the
-      # FLEET_APP_ID variable set org-wide but the key not scoped to this repo) reaches the
+      # FLEET_APP_CLIENT_ID variable set org-wide but the key not scoped to this repo) reaches the
       # preflight's legible error instead of failing the mint on an empty key. It no longer
       # selects a PAT — there is none (#683) — it only chooses WHICH error you get.
       HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
@@ -113,10 +113,12 @@ jobs:
       # turns that into a legible failure instead of an opaque 403 mid-fan-out. ──
       - name: Mint a scoped installation token (if the App is configured)
         id: app
-        if: steps.resolve.outputs.skip != 'true' && vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        if: steps.resolve.outputs.skip != 'true' && vars.FLEET_APP_CLIENT_ID != '' && env.HAS_APP_KEY == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.FLEET_APP_ID }}
+          # client-id rather than app-id, which is deprecated at this pin (#831). The variable
+          # holds the App's Client ID — a different value from its App ID.
+          client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           # No `repositories:` list on purpose: the token's scope is the App's
@@ -146,7 +148,7 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
 
-      # ── Fail early and legibly if the mint above was SKIPPED (no FLEET_APP_ID variable
+      # ── Fail early and legibly if the mint above was SKIPPED (no FLEET_APP_CLIENT_ID variable
       # or no FLEET_APP_PRIVATE_KEY secret) — otherwise the first clone/push would fail with
       # an opaque 403. An ATTEMPTED mint that fails errors inside create-github-app-token
       # and never reaches here, so an empty token below has exactly one cause. ──
@@ -160,7 +162,7 @@ jobs:
             echo "::error::No fleet write token available."
             echo "::error::This workflow pushes sync branches and opens PRs in the OS repos,"
             echo "::error::which the built-in GITHUB_TOKEN cannot reach. Configure the fleet"
-            echo "::error::GitHub App (set the FLEET_APP_ID variable + FLEET_APP_PRIVATE_KEY"
+            echo "::error::GitHub App (set the FLEET_APP_CLIENT_ID variable + FLEET_APP_PRIVATE_KEY"
             echo "::error::secret — see GITHUB-APP-AUTH.md). There is NO PAT fallback: the"
             echo "::error::legacy FLEET_SYNC_TOKEN was deleted when G2 finished (#683)."
             exit 1
@@ -421,7 +423,7 @@ jobs:
 
   # Turn a failed fan-out into a deduplicated issue (G1). A release that can't reach the
   # fleet is exactly the silent break this closes — often a fleet-App auth problem (G2):
-  # the App not installed on a target repo, or the FLEET_APP_ID / private key not in scope.
+  # the App not installed on a target repo, or the FLEET_APP_CLIENT_ID / private key not in scope.
   notify-failure:
     needs: fanout
     if: failure()
@@ -433,4 +435,4 @@ jobs:
       workflow: sync-fanout
       title: "ci-failure: Core fan-out (sync-fanout) is red"
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "The release fan-out failed — Core did not reach one or more OS repos. Common cause: the fleet GitHub App is misconfigured — not installed on a target OS repo, or the FLEET_APP_ID variable / FLEET_APP_PRIVATE_KEY secret isn't scoped to dotfiles-core (see GITHUB-APP-AUTH.md). The fleet may be sitting a version behind until this is resolved."
+      details: "The release fan-out failed — Core did not reach one or more OS repos. Common cause: the fleet GitHub App is misconfigured — not installed on a target OS repo, or the FLEET_APP_CLIENT_ID variable / FLEET_APP_PRIVATE_KEY secret isn't scoped to dotfiles-core (see GITHUB-APP-AUTH.md). The fleet may be sitting a version behind until this is resolved."

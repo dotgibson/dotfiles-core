@@ -62,7 +62,7 @@ Two settings make it work, both at the **organization** level:
 
 | Name | Kind | What it is |
 | --- | --- | --- |
-| `FLEET_APP_ID` | variable | the App's ID. A *variable*, not a secret — it is not sensitive, and variables are readable in a job `if:`, which is how the mint step gates itself |
+| `FLEET_APP_CLIENT_ID` | variable | the App's **Client ID** — not its App ID, which is a different value on the same settings page and is what `create-github-app-token`'s deprecated `app-id` input took (#831). A *variable*, not a secret — it is not sensitive (the Client ID is readable by anyone from `gh api /apps/dotgibson-fleet-sync`), and variables are readable in a job `if:`, which is how the mint step gates itself |
 | `FLEET_APP_PRIVATE_KEY` | secret | the App's `.pem`, in full, including the `-----BEGIN/END-----` lines |
 
 > **Deletion verified 2026-09-01** (#683). `FLEET_SYNC_TOKEN` and `WEBHOOK_SECRET` are
@@ -77,6 +77,24 @@ Two settings make it work, both at the **organization** level:
 > ```
 >
 > Needs an admin token, or an empty listing is a permissions artefact rather than a fact.
+>
+> **`FLEET_APP_ID` is retired, not yet deleted (#831).** It held the App ID, which no
+> consumer *here* reads any more — every mint passes `client-id` with `FLEET_APP_CLIENT_ID`.
+> It still has readers until three things land, and the variable must outlive all of them:
+> the reusable `notify-web-call.yml` at the **`@v7` alias** the nine OS-repo callers pin
+> (they execute the old `if:` guard until the next release advances the alias — see
+> `RELEASE-RUNBOOK.md` §1.1 step 5), `htpx`'s `sync-fanout.yml`, and `dotfiles-Windows`'
+> inline `notify-web.yml`. Derive the list rather than trusting this one, then delete the
+> org variable once it is empty:
+>
+> ```sh
+> grep -rln 'FLEET_APP_ID' ../*/.github/workflows/          # any reader, any repo
+> git ls-remote --tags origin 'refs/tags/v7' | cut -f1      # is the alias past #831?
+> ```
+>
+> Deleting it early does not break the mint here — nothing here reads it — but it silently
+> skips the mint in every reader the grep still returns, which for a fan-out is a red
+> preflight and for a dispatch is a `::warning::` nobody sees.
 
 ## The permissions the App must hold
 
@@ -130,7 +148,14 @@ lines — become `FLEET_APP_PRIVATE_KEY`. **Store the `.pem` in a password manag
 the download.** Generating a new key does not revoke the old one: delete the superseded key
 on the App's page, or rotation leaves two valid credentials.
 
-The **App ID** is on the same page and becomes `FLEET_APP_ID`.
+The **Client ID** is on the same page and becomes `FLEET_APP_CLIENT_ID`. The **App ID** sits
+beside it and is **not** the value to collect: `create-github-app-token` deprecated its `app-id`
+input in favour of `client-id` (#831), and the two are different values. GitHub accepts either
+as the JWT issuer today and recommends the Client ID, so the wrong one may still mint — which is
+exactly why the variable is named for the value it holds: a name that says which one is in it
+is the only thing stopping the two from drifting apart. The Client ID is not sensitive —
+`gh api /apps/dotgibson-fleet-sync --jq .client_id` returns it to anyone — which is why it is a
+variable and can be read in a step `if:`.
 
 ## Where the App is installed
 
@@ -174,15 +199,11 @@ gh api repos/actions/create-github-app-token/git/refs/tags/v3 --jq .object.sha
 (`bcd2ba49218906704ab6c1aa796996da409d3eb1`) — unless you are deliberately moving the
 fleet, in which case move them together.
 
-> **Two known gaps — and they want opposite treatment.** One you must copy for now, the
-> other you must not. Both are tracked:
+> **One known gap — and it is one you must not copy.** Every consumer here now passes
+> `client-id` with `FLEET_APP_CLIENT_ID` (#831) — `app-id` is deprecated at this pin, so do
+> not reach for it, and do not reach for the retired `FLEET_APP_ID` either (the note under
+> *What the fleet runs today* says when it can be deleted). The gap that remains:
 >
-> - **`app-id` is deprecated at this pin.** The action's own `action.yml` carries
->   `deprecationMessage: "Use 'client-id' instead."`. Every consumer here still passes
->   `app-id` with the `FLEET_APP_ID` variable, which holds an App ID, not a Client ID —
->   so a new consumer cannot simply switch inputs without the variable changing too.
->   **Use `app-id` for now** — it is the only input `FLEET_APP_ID` fits — and expect to
->   move with the fleet. Migrating it is #831.
 > - **Scope the permissions.** Omitting `permission-*` gives the token the installation's
 >   **full** grant set — Contents + Pull requests + Workflows write — on whatever
 >   repositories it covers, however little the job needs. Every existing consumer now
@@ -207,10 +228,10 @@ jobs:
       # that into a legible outcome instead of an opaque 401 later.
       - name: Mint a scoped installation token
         id: app
-        if: vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        if: vars.FLEET_APP_CLIENT_ID != '' && env.HAS_APP_KEY == 'true'
         uses: actions/create-github-app-token@<PIN-40-HEX-SHA> # vX.Y.Z
         with:
-          app-id: ${{ vars.FLEET_APP_ID }}
+          client-id: ${{ vars.FLEET_APP_CLIENT_ID }} # NOT app-id — deprecated at our pin (#831)
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: dotfiles-Offense # scope to the one target this job writes to
@@ -243,7 +264,7 @@ jobs:
 **Handle the two outcomes separately** — they are different failures and want different
 responses:
 
-- **No `FLEET_APP_ID`, or no key** → the mint step is **skipped** and the token is empty.
+- **No `FLEET_APP_CLIENT_ID`, or no key** → the mint step is **skipped** and the token is empty.
   Decide deliberately whether that is a clean no-op (a dispatch that can wait for the next
   push) or a hard error (a fan-out that must not half-run). Say which in the message, and
   name the missing credential rather than the App's behaviour.
@@ -280,7 +301,7 @@ secret again, and the reversal's step 3 removes it once more afterwards.
 
 ## Recovery — re-provisioning off the App
 
-**This is not a toggle, and unsetting `FLEET_APP_ID` does not restore service.** It
+**This is not a toggle, and unsetting `FLEET_APP_CLIENT_ID` does not restore service.** It
 disables the mint, and with the PATs gone that means `sync-fanout.yml`'s preflight fails
 the fan-out outright and the `notify-web` dispatch degrades to a `::warning::` naming the
 missing credentials, then skips and exits 0.
@@ -442,7 +463,7 @@ seven steps are ONE change — doing part of it looks like a rollback and does n
 
    `sync-fanout.yml` and Core's own inline `notify-web.yml` are not reusable workflows and
    need only step 3.
-7. **Then unset `FLEET_APP_ID`**, or the restored expression will never choose the PAT.
+7. **Then unset `FLEET_APP_CLIENT_ID`**, or the restored expression will never choose the PAT.
    `steps.app.outputs.token || secrets.…` prefers the *left* side whenever it is non-empty,
    so an App that still mints — even an under-scoped one whose token 403s on the actual
    push — keeps winning; and an App that fails to mint fails the *step*, so execution never
@@ -465,7 +486,7 @@ Treat the workaround as time-boxed:
   you. Nothing in CI will warn you; the first symptom is a fan-out or dispatch failing on a
   403 for no visible reason, which is exactly the failure mode this whole migration closed.
 - **Once the App is working again**, reverse all seven steps, in this order:
-  1. Re-set `FLEET_APP_ID` (undoes step 7) — the mint resumes and takes precedence again.
+  1. Re-set `FLEET_APP_CLIENT_ID` (undoes step 7) — the mint resumes and takes precedence again.
   2. Remove the caller `secrets:` mappings (step 6) and drop the `|| secrets.…` fallbacks
      back to the bare `${{ steps.app.outputs.token }}` (step 3).
   3. **If step 4 re-declared `WEBHOOK_SECRET` after a MAJOR had removed it, remove it

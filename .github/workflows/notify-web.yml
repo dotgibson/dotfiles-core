@@ -19,10 +19,10 @@
 # published by HAND from the GitHub UI — a human-raised event, which does fire — and
 # release.yml does not run in that case (no tag push), so the two never double-send.
 #
-# AUTH (G2): the fleet GitHub App (the FLEET_APP_ID variable + FLEET_APP_PRIVATE_KEY
+# AUTH (G2): the fleet GitHub App (the FLEET_APP_CLIENT_ID variable + FLEET_APP_PRIVATE_KEY
 # secret — see dotfiles-core GITHUB-APP-AUTH.md) mints a short-lived dotfiles-web-scoped
 # token for the dispatch. That is the ONLY auth: the legacy WEBHOOK_SECRET PAT was
-# deleted when G2 finished (#683). Two different outcomes, deliberately: with NO App ID
+# deleted when G2 finished (#683). Two different outcomes, deliberately: with NO Client ID
 # or key (a fork, or a repo the org secret doesn't reach) the mint is skipped and the
 # dispatch no-ops with a warning; but if the mint is ATTEMPTED and the App cannot reach
 # dotfiles-web, create-github-app-token fails the step and the job goes red — the warning
@@ -57,10 +57,12 @@ jobs:
       # GITHUB-APP-AUTH.md, G2); no App/key -> SKIPPED, and the dispatch below no-ops.
       - name: Mint a scoped installation token (if the App is configured)
         id: app
-        if: vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        if: vars.FLEET_APP_CLIENT_ID != '' && env.HAS_APP_KEY == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.FLEET_APP_ID }}
+          # client-id rather than app-id, which is deprecated at this pin (#831). The variable
+          # holds the App's Client ID — a different value from its App ID.
+          client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: dotfiles-web
@@ -77,13 +79,13 @@ jobs:
         run: |
           set -euo pipefail
           # An empty TOKEN can only mean the mint step above was SKIPPED — its `if:` found
-          # no FLEET_APP_ID variable or no FLEET_APP_PRIVATE_KEY secret. A mint that is
+          # no FLEET_APP_CLIENT_ID variable or no FLEET_APP_PRIVATE_KEY secret. A mint that is
           # ATTEMPTED and fails errors inside create-github-app-token, failing the job
           # before this step runs, so it never reaches this branch. Name the missing
           # credentials rather than the App's behaviour: with no PAT fallback left, this
           # warning is the only signal that this repo has silently stopped refreshing.
           if [ -z "${TOKEN:-}" ]; then
-            echo "::warning::fleet App auth not configured here (no FLEET_APP_ID variable or FLEET_APP_PRIVATE_KEY secret) — skipping showcase refresh"
+            echo "::warning::fleet App auth not configured here (no FLEET_APP_CLIENT_ID variable or FLEET_APP_PRIVATE_KEY secret) — skipping showcase refresh"
             exit 0
           fi
           curl -fsS -X POST \
