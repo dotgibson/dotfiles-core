@@ -48,6 +48,21 @@ for f in "${core_frags[@]}"; do ln -s "$f" "$ZDOT/$(basename "$f")"; done
 # once in common.sh (_seed_plugin_dirs), shared with the integration + bench.
 _seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
 
+# 45-plugins.zsh must initialise zsh-vi-mode AT LOAD (ZVM_INIT_MODE=sourcing), and say so
+# before it loads the plugin. zvm's default is a lazy init from the first precmd — after every
+# rc file, so after the transient prompt has registered zle-line-finish — at which point zvm
+# WRAPS that widget, and zvm_reset_prompt reads the wrapper's dynamically-scoped $rawfunc and
+# calls the widget back into itself: FUNCNEST on every prompt, seen on Debian 13's zsh while
+# filming #948's README hero. The plugin dirs above are empty, so this cannot be exercised
+# live here; pin the knob and its position instead — the fix is exactly that ordering.
+_zvm_mode_line=$(grep -n '^ZVM_INIT_MODE=sourcing$' "$HERE/zsh/45-plugins.zsh" | head -1 | cut -d: -f1)
+_zvm_load_line=$(grep -n '^_zplugin_load jeffreytse zsh-vi-mode$' "$HERE/zsh/45-plugins.zsh" | head -1 | cut -d: -f1)
+if [[ -n $_zvm_mode_line && -n $_zvm_load_line && $_zvm_mode_line -lt $_zvm_load_line ]]; then
+  pass "45-plugins: zsh-vi-mode initialises at load (ZVM_INIT_MODE=sourcing precedes its load)"
+else
+  fail "45-plugins: ZVM_INIT_MODE=sourcing must be set before zsh-vi-mode loads (mode line: ${_zvm_mode_line:-none}, load line: ${_zvm_load_line:-none})"
+fi
+
 # Generate the sandbox .zshrc the v4 way: set ZSH_CFG, source the loader,
 # print a sentinel. We deliberately do NOT key success on each fragment's exit code — a
 # fragment whose LAST statement is a false guard (e.g. 20-aliases.zsh ends on
