@@ -38,7 +38,6 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   per-verb cell logic that was inline in the fleet loop is one function shared by both row
   kinds, so a label cannot drift between them.
 
-
 - **The CI floor now bans blanket `permissions:` grants — `banned_permission_values`.** Rule 5
   requires every workflow to declare a `permissions:` block but never looked at its value, so
   `permissions: write-all` — the maximal token grant, strictly worse than omitting the block —
