@@ -232,8 +232,15 @@ fi
 # row: a row that says `12s` renders `Sleep 12s` on its signature line, a row that says
 # nothing renders the 4s default, and a value vhs cannot parse — or an empty seventh field —
 # is exit 2 before anything is written, like every other malformed row.
+# _gh_add_col <repo> <value> — append a seventh column to one fixture row. awk, not sed: BSD
+# sed reads `\t` in a pattern as a literal t, so the macOS leg would edit nothing and then
+# "prove" the default — a green that covered nothing (the #948 review's own catch).
+_gh_add_col() {
+  awk -F'\t' -v OFS='\t' -v repo="$1" -v val="$2" '$1 == repo { $0 = $0 OFS val } { print }' \
+    "$GHR/assets/hero-repos.txt" >"$GHR/assets/hero-repos.txt.new" && mv "$GHR/assets/hero-repos.txt.new" "$GHR/assets/hero-repos.txt"
+}
 _gh_fixture
-sed -i 's|^dotfiles-Fedora\t\(.*\)$|dotfiles-Fedora\t\1\t12s|' "$GHR/assets/hero-repos.txt"
+_gh_add_col dotfiles-Fedora 12s
 _gh_run --fleet >/dev/null
 _gh_sig_fedora="$(grep -F 'Type "up -n"' "$GHF/dotfiles-Fedora/assets/demo.tape" 2>/dev/null)"
 _gh_sig_suse="$(grep -F 'Type "up -n"' "$GHF/dotfiles-openSUSE/assets/demo.tape" 2>/dev/null)"
@@ -243,7 +250,7 @@ else
   fail "gen-hero-tape: sigwait not honoured (fedora: '$_gh_sig_fedora' / suse: '$_gh_sig_suse')"
 fi
 _gh_fixture
-sed -i 's|^dotfiles-Fedora\t\(.*\)$|dotfiles-Fedora\t\1\t12|' "$GHR/assets/hero-repos.txt"
+_gh_add_col dotfiles-Fedora 12
 _gh_rc="$(_gh_run --fleet)"
 _gh_msg="$(_gh_out --fleet)"
 if [[ "$_gh_rc" == 2 ]] && [[ "$_gh_msg" == *'sigwait'* ]]; then
@@ -252,7 +259,7 @@ else
   fail "gen-hero-tape: an unparseable sigwait was accepted (rc=$_gh_rc)"
 fi
 _gh_fixture
-sed -i 's|^dotfiles-Fedora\t\(.*\)$|dotfiles-Fedora\t\1\t|' "$GHR/assets/hero-repos.txt"
+_gh_add_col dotfiles-Fedora ''
 if [[ "$(_gh_run --fleet)" == 2 ]]; then
   pass "gen-hero-tape: an EMPTY seventh column is refused, not read as the default"
 else
