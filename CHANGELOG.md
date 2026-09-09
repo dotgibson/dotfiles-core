@@ -108,6 +108,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Every mint step passes `client-id`, not the deprecated `app-id`, and reads a new
+  `FLEET_APP_CLIENT_ID` org variable (#831).** Our pinned `create-github-app-token` (v3.2.0)
+  carries `deprecationMessage: "Use 'client-id' instead."` on `app-id`, and all five mints
+  here — `notify-web.yml`, the reusable `notify-web-call.yml`, `sync-fanout.yml` and
+  `freshness.yml`'s three — passed it.
+  **It is not a one-line swap, which is why it needed its own change.** `FLEET_APP_ID` holds
+  the App **ID**; the new input wants the App's **Client ID**, a different value on the same
+  settings page (and a public one: `gh api /apps/dotgibson-fleet-sync --jq .client_id`). So the
+  variable is a **new** one rather than a repurposed one — the two names never hold different
+  meanings mid-rollout — and the `if:` guards move in the same commit as the input, because a
+  guard still testing `vars.FLEET_APP_ID` against a step reading `FLEET_APP_CLIENT_ID` would
+  keep gating on a variable the mint no longer uses.
+  **Precondition, not a follow-up: the org variable must exist before this merges.** With it
+  unset, every guard is false, `sync-fanout`'s preflight goes red (the loud half) and the
+  `notify-web` dispatch degrades to a `::warning::` and skips (the quiet half) — the exact
+  failure shape #831 was written to avoid.
+  **`FLEET_APP_ID` is retired here but must not be deleted yet.** The nine OS-repo callers
+  execute `notify-web-call.yml` at the `@v7` alias, which reads the old variable until the next
+  release advances it; `htpx`'s fan-out and `dotfiles-Windows`' inline notifier still pass
+  `app-id` and are tracked in their own repos. `GITHUB-APP-AUTH.md` carries the retirement
+  note with the grep that derives the remaining readers, its _Re-creating or re-keying_ section
+  now tells you to collect the Client ID, and the known-gaps callout shrinks to the one gap
+  left (scope the verbs).
 - **Rule 1's node20 rationale carries the final date.** The ban was already correct; the
   comment said "fall 2026". Node 20 leaves the runners on **2026-09-23** — the 2025-09-19
   deprecation changelog, its date fixed by an editor's note of 2026-08-25. No fix-first work:
