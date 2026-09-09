@@ -49,6 +49,19 @@ on:
 permissions:
   contents: read
 
+env:
+  # HEADLESS `claude -p` PRINTS ONLY THE FINAL TURN, and it waits for background work for a
+  # bounded time before giving up: the CLI's default ceiling is 600 s, after which it kills
+  # whatever is still running and emits the text it has. Every routine here delegates to a
+  # subagent (tool-scout, doc-consistency), and a delegate that is still researching when the
+  # main turn ends is BACKGROUND work — so on 2026-09-08 the tool-scout job printed "the
+  # subagent is running now — I'll relay its proposal when it lands", the ceiling fired at
+  # 600 s, and file-routine-issue.sh filed that preamble as the weekly report (#932). Zero
+  # means wait indefinitely; each job's `timeout-minutes` is the real backstop, and hitting
+  # it is a red job that notify-failure reports — which is the correct failure mode. A stub
+  # filed as a report is the incorrect one, because it reads as "the scan found nothing".
+  CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: "0"
+
 concurrency:
   group: claude-routines-${{ github.ref }}
   cancel-in-progress: true
