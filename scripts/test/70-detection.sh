@@ -461,6 +461,25 @@ ucheck "update: startup hook still refreshes once the throttle window has elapse
 ucheck "update: up --dry-run lists pending packages and exits 0 (applies nothing)" \
   "source '$UI'; source '$CAPZ'; source '$UPD'; out=\$(up --dry-run); (( \$? == 0 )) && [[ \$out == *foo* && \$out == *bar* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
+# The dry run's spinner paints the status of _pkgup_list_to, which is the COUNT VERB's — and
+# most archives overload it: `dnf check-update` exits 100 when updates EXIST, `checkupdates`
+# exits 2 when there are NONE. #948's first hero renders filmed every OS row's signature
+# moment red — `x checking pacman for upgradable packages (exit 2)` over a green "nothing to
+# upgrade" — for a status the list path is documented to ignore. Pin that the helper answers
+# 0 for an undeclared status (the list IS the answer) and still propagates it once the archive
+# says its exit is meaningful (PKG_COUNT_EXIT_TRUSTED, Gentoo's case). No mktemp: the isolated
+# PATH has only the stub, and `>|` clobbers a pre-existing target anyway.
+printf '#!/bin/sh\ncase "$*" in *"-s upgrade"*) printf "Inst foo [1.0] (1.1)\\n"; exit 100;; esac\n' >"$PMBIN/apt-get"
+ucheck "update: _pkgup_list_to answers 0 for an overloaded count-verb exit the archive never vouched for" \
+  "source '$UI'; source '$CAPZ'; source '$UPD'; _pkgup_list_to '$SANDBOX/list-to.out'; rc=\$?; [[ \$(<'$SANDBOX/list-to.out') == foo ]] && (( rc == 0 ))" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
+_decl_as "$_DECL_APT
+PKG_COUNT_EXIT_TRUSTED=1"
+ucheck "update: _pkgup_list_to propagates the count verb's status once PKG_COUNT_EXIT_TRUSTED vouches for it" \
+  "source '$UI'; source '$CAPZ'; source '$UPD'; _pkgup_list_to '$SANDBOX/list-to.out'; (( \$? == 100 ))" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_CAPABILITIES_FILE="$CAPDECL"
+_decl_as "$_DECL_APT"
+printf '#!/bin/sh\ncase "$*" in *"-s upgrade"*) printf "Inst foo [1.0] (1.1)\\nInst bar [2.0] (2.1)\\n";; esac\n' >"$PMBIN/apt-get"
 # ...and the SAME flag on an UNDECLARED box must refuse, not report a clean bill of health.
 # This is the regression #763 nearly shipped: the PKG_UPGRADE guard used to sit down at the
 # dispatch, after `-n` had already returned, so `up -n` resolved no PKG_COUNT_PENDING, read
