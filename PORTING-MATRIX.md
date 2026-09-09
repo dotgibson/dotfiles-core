@@ -492,6 +492,20 @@ guard probes the new default and both legacy paths, newest first, so it follows 
 across the version boundary in either direction. The research apparatus was the part that
 fell behind — its autostart measurement still waited on the old path until #826.
 
+**18.21.0 added a second `/tmp` candidate, and the guard follows it (#941).** Upstream
+PR #4036 (merged 2026-08-31) makes the client try `$TMPDIR/atuin-$UID/atuin.sock` and _then_
+`/tmp/atuin-$UID/atuin.sock` even when `$TMPDIR` is set, because the daemon and the shell need
+not agree on `$TMPDIR` — a systemd user unit starts without one and binds `/tmp`, while a shell
+that exports one (a `99-local`, a tmux server started under a different environment, a unit
+with `PrivateTmp=`) resolved only its own. On that shape the guard probed a path nobody binds
+and took the same silent one-way degrade, one candidate short of where atuin's own client
+would have connected. It now appends the `/tmp` path whenever `$TMPDIR` is set and is not
+`/tmp`, in upstream's order. Upstream calls #4036 a hotfix with a more robust resolution in the
+works, so this list may grow again; the candidate-list test in `scripts/test/71-prompt-atuin.sh`
+is where a new path gets pinned. Both anchors were re-dated to 18.21.0 in the same change, on
+the strength of the 2026-09-03 `atuin-guard-verify` dispatches (three runs, `holds` on both
+premises) rather than a changelog read.
+
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
 wrong on the other eight. `autostart` is mutually exclusive with `systemd_socket = true` —

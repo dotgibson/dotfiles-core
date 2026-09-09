@@ -16,6 +16,24 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The atuin daemon guard probes the `/tmp` socket the 18.21.0 client gained (#941).**
+  Upstream PR atuinsh/atuin#4036 (merged 2026-08-31, in 18.21.0) makes the client try
+  `$TMPDIR/atuin-$UID/atuin.sock` and _then_ `/tmp/atuin-$UID/atuin.sock` even when `$TMPDIR`
+  is set, because the daemon and the shell need not agree on `$TMPDIR`: a systemd user unit
+  starts without one and binds `/tmp`, while a shell that exports one — a `99-local`, a tmux
+  server started under a different environment, a unit with `PrivateTmp=` — resolved only its
+  own. `_core_atuin_daemon_guard` probed that path, found nothing, exported
+  `ATUIN_DAEMON__ENABLED=false` at the first precmd and unhooked for the life of the shell with
+  **no warning**, because `_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path — one candidate
+  short of where atuin's own client would have connected. The candidate list now appends the
+  `/tmp` path whenever `$TMPDIR` is set and is not `/tmp`, in upstream's order, still by
+  parameter expansion alone; the common case pays one connect as before. The suite gained the
+  case, which skips rather than clobbers when a real daemon already owns that inode on the box
+  running it. The finding came from the 2026-09-01 `/tool-scout` run, whose report was lost to
+  a filing error (#932). Both `VERIFIED_AGAINST` anchors in `zsh/00-tools.zsh` move from
+  `18.19.0` to `18.21.0` in the same change — a claim of re-measurement, not a version bump:
+  `atuin-guard-verify` was dispatched three times on 2026-09-03 against upstream's then-latest
+  and reported `holds` on both premises.
 - **The weekly routines no longer file a stub as the report when their subagent outlives the
   main turn (#932).** Headless `claude -p` prints only the final turn, and it waits for
   background work for a bounded 600 s before killing it and emitting whatever text it has.
