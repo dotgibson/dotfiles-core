@@ -249,7 +249,7 @@ What you do with the alias depends on the bump you chose in §1.0
    not what CI publishes.)
 2. `sync-fanout.yml` opens a `core.lock`-bump PR in every repo in `scripts/os-repos.txt`,
    each vendoring `vX.Y.Z` by materializing `core/` at that commit (#587). **It opens PRs, never merges.**
-   (Requires the fleet GitHub App — the `FLEET_APP_ID` variable + `FLEET_APP_PRIVATE_KEY`
+   (Requires the fleet GitHub App — the `FLEET_APP_CLIENT_ID` variable + `FLEET_APP_PRIVATE_KEY`
    secret, both org-level — installed on every target repo. There is no PAT fallback;
    see `GITHUB-APP-AUTH.md`.)
 
@@ -544,7 +544,7 @@ git checkout main && git fetch origin && git pull --ff-only origin main
    against `dotfiles-Offense` (bumps `companion.lock` only — never `core.lock`).
 4. Review and merge that dotfiles-Offense PR.
 
-Requires the org-level `FLEET_APP_ID` variable + `FLEET_APP_PRIVATE_KEY` secret to be
+Requires the org-level `FLEET_APP_CLIENT_ID` variable + `FLEET_APP_PRIVATE_KEY` secret to be
 visible to **htpx**, so its workflow can mint a token whose installation includes
 `dotfiles-Offense`. The App needs **no access to htpx itself** — htpx is read with the
 built-in token — so do not add it to the installation on that account. There is no PAT
