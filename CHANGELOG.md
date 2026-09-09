@@ -16,6 +16,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Bumped two pins in `scripts/tool-versions.env` on the weekly freshness review; held the
+  third (#813).** This is the class no bot covers — the CLI gate pins sit between
+  `/freshness-triage`'s plugin locks and Renovate's manifests — so the routine re-audited all
+  ten against upstream and found seven still current:
+
+  | Pin | Was | Now | |
+  | --- | --- | --- | --- |
+  | `NVIM_VERSION` | 0.12.4 | **0.12.5** | one patch on the 0.12 line |
+  | `CLAUDE_CODE_VERSION` | 2.1.222 | **2.1.265** | the routine bots' own CLI |
+  | `SHFMT_VERSION` | 3.13.1 | 3.13.1 | **held** — 3.14.x changes formatting output, see below |
+
+  nvim 0.12.5 is fixes-plus-features on a line whose breaking changes (diagnostic sign config,
+  `vim.diagnostic.disable()`, `vim.diff` → `vim.text.diff`, the `'shelltemp'` default) all
+  landed at 0.12.0 and were absorbed by the 0.12.4 pin; nothing new to adapt to.
+  `NVIM_SHA256` recomputed with `make update-tool-checksums` and **cross-checked against the
+  `digest` GitHub reports for the release asset** rather than trusted from our own download —
+  the four unbumped hashes re-derived byte-identical, which is its own integrity signal.
+
+  **shfmt stays at 3.13.1 deliberately.** 3.14.0 changed _output_, not just behaviour — a space
+  after `!` in arithmetic, nested closing parens spaced like the opening ones, no `;`-joined
+  `then`/`do` when a heredoc is pending — and 3.14.1 followed a week later with heredoc
+  indentation fixes. Core's own audit does not gate shfmt, so a green tick here proves nothing
+  about it; the pin exists only so `setup-core-tools` installs one verified shfmt for MacBook
+  and the distro/role lint workflows, where a bump can newly flag files that pass today with
+  no diff in this repo to warn you. The consumer step is advisory (`::warning::`, not red), so
+  it would not break them — but it would start nagging on every run until each repo reformats.
+  Bump it alongside a reformat pass across the consumers, not on its own.
+
 - **Every mint step passes `client-id`, not the deprecated `app-id`, and reads a new
   `FLEET_APP_CLIENT_ID` org variable (#831).** Our pinned `create-github-app-token` (v3.2.0)
   carries `deprecationMessage: "Use 'client-id' instead."` on `app-id`, and all five mints
