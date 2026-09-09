@@ -123,6 +123,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   before appending the line, so its `!= 2` assertion can actually fail — on an unrendered
   stub `--check` was already 1, and the case passed whatever the parser did. Also dropped a
   duplicated 12-line comment paragraph in §9d (#933).
+- **`/doc-audit`'s 2026-09-01 fleet sweep (#811) — the Core-side drift that survived the
+  v7 cut.** The sweep was filed against 6.0.0 and most of its findings were overtaken by the
+  v6→v7 release work (the `refs/tags/v5` vendoring commands, the Fedora `sudo dnf
+  check-update` and Gentoo `gentoo-pkg-pending` cells, the tree-sitter-cli orphaning hedge and
+  the Offense repo-status row were all already right). What was not: `CLAUDE.md` and
+  `RELEASE-RUNBOOK.md` still named `@v5` as the fleet's _current_ caller alias while every
+  caller is `@v7`; `PORTING-MATRIX.md` said `dotfiles-Gentoo` cargo-installs `ouch` in two
+  places while its own table cell, footnote ¹² and the repo's `bootstrap.sh` all say
+  `guru_extras_install app-arch/ouch` (dotgibson/dotfiles-Gentoo#133); `ARCHITECTURE.md` and
+  the matrix's Offense paragraph still described `dotfiles-Offense` as carrying its own apt OS
+  layer (it ships no `os/` at all — band 80 comes from `dotfiles-Debian`, which accepts
+  `ID=kali`), and the paragraph quoted the pre-v4 loader chain (`… os offensive local`) for
+  what is now `80-os → 85-offensive → 99-local`.
+- **`core.vendor`'s line-number citations rotted a second time in a week, so the cross-repo
+  ones are gone.** The same-repo `zsh/30-functions.zsh` cite for the `PORTING-MATRIX.md` hint
+  string had moved 1224 → 1382 (the sweep found it stale at 765 a week earlier), and 27 of
+  the 43 cross-repo `file:line` cites — every one of the seven into `dotfiles-MacBook`'s
+  `ci.yml`, all seven `check-capabilities.sh` Makefile lines — pointed at the wrong line.
+  Those files move independently of Core, so the numbers can never stay right; the
+  annotations now name the consumer file and keep the exact line only for cites into this
+  repo, which is what `audit-core.sh` §1e can hold to reality. (#811)
 
 - **The README hero is re-rendered from the current tape, and the render-date check is wired
   in as `audit-core.sh` §9l (#877 items 1 and 2, the last of #698's original defect).**

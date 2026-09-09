@@ -168,11 +168,13 @@ from scratch in PowerShell rather than ported one-to-one from the Unix Core, so
 it carries no vendored `core/` subtree and `sync-core.sh` must never fan out into
 it.
 
-`dotfiles-Debian` and `dotfiles-Offense` are both Debian-family and both use apt, which
-is not duplication: `dotfiles-Offense` targets Kali, a _rolling_ sid derivative, and
-exists for the offensive role layer stacked on top, while `dotfiles-Debian` is a plain
-OS-native layer for a _frozen_ Ubuntu LTS. The freeze is the whole difference — it is why that
-repo carries version floors and a large pinned-asset set that no rolling repo needs.
+`dotfiles-Debian` and `dotfiles-Offense` are both Debian-family and both drive apt, which
+is not duplication: `dotfiles-Offense` targets Kali, a _rolling_ sid derivative, and exists
+for the offensive role layer alone — it ships no `os/` directory and no OS band, and takes
+band 80 from `dotfiles-Debian`, which accepts `ID=kali` as a first-class target beside
+Ubuntu and Debian. `dotfiles-Debian` is the OS-native layer for the whole family, and the
+_frozen_ Ubuntu LTS is why it carries version floors and a large pinned-asset set that no
+rolling target needs.
 
 ## Vendoring topology
 
