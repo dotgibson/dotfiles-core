@@ -33,6 +33,19 @@
 # from the repo at run time, so a target renamed away from the canonical spelling shows up
 # on the next run instead of in the next contributor's confusion.
 #
+# THE WINDOWS ROW (#855). dotfiles-Windows is deliberately absent from scripts/os-repos.txt
+# — that list drives sync-core.sh's fan-out, and Windows vendors no core/ — but it is a
+# repo a contributor moves to, and the fleet's most-tested one, so the vocabulary's promise
+# ("re-learn nothing") is worth the most exactly there. `make` is not a given on a Windows
+# host, so its verbs are spelled `.\task.ps1 <verb>`: a PowerShell dispatcher over the
+# repo's existing entry points, whose verb table is the quoted keys of `Get-TaskVerbs`.
+# This register reads that table STATICALLY, the way it reads a Makefile — `'<verb>' = @{`
+# alone at the start of a line is the declaration, and `test` is credited only when the
+# lines of its entry name the populated suite directory by path (`tests/Invoke-Tests.ps1`),
+# which is as far as a static read of PowerShell honestly goes: no conditional is decided
+# and no body is evaluated. The repo is named HERE, as fleet-drift.sh names it — an outlier
+# row read by name, never a fan-out target — so os-repos.txt stays Windows-free.
+#
 # Usage:
 #   ./scripts/fleet-vocabulary.sh              # markdown table on stdout
 #   ./scripts/fleet-vocabulary.sh --check      # exit 1 if any verb does not resolve
@@ -50,7 +63,7 @@ for a in "$@"; do
   case "$a" in
   --check) CHECK=1 ;;
   -h | --help)
-    sed -n '2,40p' "${BASH_SOURCE[0]}"
+    sed -n '2,/^# Env: /p' "${BASH_SOURCE[0]}"
     exit 0
     ;;
   *)
@@ -86,6 +99,10 @@ load_os_repos || {
   exit 2
 }
 REPOS=("${CORE_OS_REPOS[@]}")
+
+# The outlier row (header: THE WINDOWS ROW). Named here and nowhere in the fleet list.
+WIN_REPO="dotfiles-Windows"
+WIN_TASK="task.ps1"
 
 # MAKE CONDITIONALS, decided where they can be, shared by the four Makefile scanners
 # (shell-level text, spliced in): an `ifeq`/`ifneq` whose operands carry no `$` is
@@ -1205,6 +1222,80 @@ _test_floor() { # _test_floor <repo-dir> → ok | no-dir | empty | not-in-ci
   printf 'not-in-ci'
 }
 
+_ps_verbs() { # _ps_verbs <task.ps1> → every declared verb, one per line (header: THE WINDOWS ROW)
+  # A verb is a single-quoted key, alone at the start of its line, opening a hashtable:
+  # `    'dry-run'        = @{`. That is the shape task.ps1's own suite pins, and nothing
+  # else in the file — a step path in quotes, a `-Because` string — opens with `'x' = @{`.
+  # A `#` line is a comment. The quote comes in as SQ and the pattern is built as a
+  # string (every awk on the fleet's three lanes reads that alike).
+  awk -v SQ="'" '
+    BEGIN { key = "^[ \t]*" SQ "[A-Za-z0-9_-]+" SQ "[ \t]*=[ \t]*@\\{" }
+    /^[ \t]*#/ { next }
+    $0 ~ key { s = $0; sub("^[ \t]*" SQ, "", s); sub(SQ ".*$", "", s); print s }
+  ' "$1"
+}
+
+_ps_suite_verbs() { # _ps_suite_verbs <task.ps1> <dir-alternation: test|tests> → the verbs whose entry names the suite by path
+  # The lines of a verb's entry run from its key to the next key (or a line that is only
+  # a closing brace). One of them, not a comment, must name a `.ps1` under a POPULATED
+  # suite directory — `tests/Invoke-Tests.ps1`, either separator — for the verb to be
+  # credited with running the suite. The body is not evaluated; naming the runner by
+  # path is the static fact a PowerShell table exposes, and the Makefile reader asks
+  # for the same thing of a recipe.
+  awk -v SQ="'" -v dirs="$2" '
+    BEGIN {
+      key = "^[ \t]*" SQ "[A-Za-z0-9_-]+" SQ "[ \t]*=[ \t]*@\\{"
+      re = "(^|[^A-Za-z0-9_])(" dirs ")[/\\\\][^ \t\"" SQ "]*[.]ps1([^A-Za-z0-9_]|$)"
+    }
+    /^[ \t]*#/ { next }
+    $0 ~ key {
+      if (cur != "" && hit) print cur
+      cur = $0; sub("^[ \t]*" SQ, "", cur); sub(SQ ".*$", "", cur); hit = 0; next
+    }
+    /^[ \t]*\}[ \t]*$/ { if (cur != "" && hit) print cur; cur = ""; hit = 0; next }
+    cur != "" && $0 ~ re { hit = 1 }
+    END { if (cur != "" && hit) print cur }
+  ' "$1"
+}
+
+_row_cells() { # _row_cells <have> <suite> <absent-label> <runner-present: 0|1> — append one cell per verb to $line, count the misses
+  local have="$1" suite="$2" absent="$3" runner="$4" v
+  for v in "${VERBS[@]}"; do
+    # Herestring, not a printf pipe: §5d's pipefail rule, and grep -q exits early anyway.
+    # Every verb must RESOLVE: ok, or one of three reasons it does not — the label is the
+    # finding. A verb that does not apply is stubbed (header), never declared away.
+    if [[ "$v" == test ]] && grep -qxF -- test <<<"$have" && ! grep -qxF -- test <<<"$suite"; then
+      # The canonical `test` exists but RUNS NO SUITE — `@true`, a recipe that never
+      # touches one, a path-shadowing target without .PHONY, or no populated suite
+      # directory for it to run at all. The contract is that `make test` runs the suite
+      # and `test` has no stub form, so this is a missing cell with a truer label — even
+      # when the floor column says `no-dir` beside it: both statements are true.
+      line="$line **no-op** |"
+      missing=$((missing + 1))
+    elif grep -qxF -- "$v" <<<"$have"; then
+      line="$line ok |"
+    elif ((!runner)); then
+      line="$line **$absent** |"
+      missing=$((missing + 1))
+    else
+      line="$line **missing** |"
+      missing=$((missing + 1))
+    fi
+  done
+}
+
+_row_floor() { # _row_floor <repo-dir> — append the test-floor cell to $line, count a short repo
+  local floor
+  floor="$(_test_floor "$1")"
+  case "$floor" in
+  ok) line="$line ok |" ;;
+  *)
+    line="$line **$floor** |"
+    floor_short=$((floor_short + 1))
+    ;;
+  esac
+}
+
 rows=""
 missing=0
 floor_short=0
@@ -1222,39 +1313,31 @@ for repo in "${REPOS[@]}"; do
     have="$(_targets <(printf '%s\n' "$mktext"))"
     suite="$(_suite_names "$dir")"
   fi
-  for v in "${VERBS[@]}"; do
-    # Herestring, not a printf pipe: §5d's pipefail rule, and grep -q exits early anyway.
-    # Every verb must RESOLVE: ok, or one of three reasons it does not — the label is the
-    # finding. A verb that does not apply is stubbed (header), never declared away.
-    if [[ "$v" == test ]] && grep -qxF -- test <<<"$have" && ! grep -qxF -- test <<<"$suite"; then
-      # The canonical `test` exists but RUNS NO SUITE — `@true`, a recipe that never
-      # touches one, a path-shadowing target without .PHONY, or no populated suite
-      # directory for it to run at all. The contract is that `make test` runs the suite
-      # and `test` has no stub form, so this is a missing cell with a truer label — even
-      # when the floor column says `no-dir` beside it: both statements are true.
-      line="$line **no-op** |"
-      missing=$((missing + 1))
-    elif grep -qxF -- "$v" <<<"$have"; then
-      line="$line ok |"
-    elif [[ ! -f "$dir/Makefile" ]]; then
-      line="$line **no Makefile** |"
-      missing=$((missing + 1))
-    else
-      line="$line **missing** |"
-      missing=$((missing + 1))
-    fi
-  done
-  floor="$(_test_floor "$dir")"
-  case "$floor" in
-  ok) line="$line ok |" ;;
-  *)
-    line="$line **$floor** |"
-    floor_short=$((floor_short + 1))
-    ;;
-  esac
+  _row_cells "$have" "$suite" "no Makefile" "$([[ -f "$dir/Makefile" ]] && echo 1 || echo 0)"
+  _row_floor "$dir"
   rows="$rows$line
 "
 done
+
+# The Windows row: same verbs, same floor, read from task.ps1 (header: THE WINDOWS ROW).
+# The first cell says how the verb is spelled there, so the `make <verb>` column headers
+# read as the contract's names rather than a claim that make runs on that host.
+dir="$(resolve_repo_dir "$REPOS_ROOT" "$WIN_REPO")" || dir="$REPOS_ROOT/$WIN_REPO"
+if [[ -e "$dir/.git" ]]; then
+  present=$((present + 1))
+  line="| \`${WIN_REPO#dotfiles-}\` (\`$WIN_TASK\`) |"
+  have=""
+  suite=""
+  if [[ -f "$dir/$WIN_TASK" ]]; then
+    have="$(_ps_verbs "$dir/$WIN_TASK")"
+    dirs="$(_suite_dirs "$dir")"
+    [[ -n "$dirs" ]] && suite="$(_ps_suite_verbs "$dir/$WIN_TASK" "$dirs")"
+  fi
+  _row_cells "$have" "$suite" "no $WIN_TASK" "$([[ -f "$dir/$WIN_TASK" ]] && echo 1 || echo 0)"
+  _row_floor "$dir"
+  rows="$rows$line
+"
+fi
 
 if ((CHECK)); then
   if ((present == 0)); then

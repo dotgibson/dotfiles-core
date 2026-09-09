@@ -28,6 +28,10 @@
 # `test` has no stub form: the test floor makes a repo-owned suite universal, and
 # `make test` must run it.
 #
+# ON A HOST WITHOUT MAKE the verb is the same word with another runner in front of it:
+# dotfiles-Windows spells these `.\task.ps1 <verb>` (#855), and the register reads that
+# file's verb table by name — Windows is not in scripts/os-repos.txt and must not be.
+#
 # Format: `<verb>  <meaning>`, one per line; blank lines and `#` comments ignored. The
 # verb is the exact target name. Adding a verb here is a fleet-wide ask — every repo's
 # register cell turns **missing** until it defines or declares the new target — which is

@@ -581,8 +581,24 @@ coverage bar, which is disproportionate for a thin OS shim;
 `scripts/fleet-vocabulary.sh` renders the register, `make fleet-vocabulary` prints it, and
 `audit-core.sh` §5h reports it — advisory, like the gate register above, because a cell
 going missing is fleet drift rather than a regression in the Core commit under test.
-`dotfiles-Windows` is outside this register as it is outside the fleet list: its host
-layer is PowerShell with its own Pester floor, not a Makefile.
+
+**`dotfiles-Windows` speaks the same verbs without `make` (#855).** It stays outside the
+fleet list — that list drives the fan-out, and Windows vendors no `core/` — but it is a repo
+a contributor moves to, and the fleet's most-tested one, so "re-learn nothing" is worth the
+most exactly there. `make` is not a given on a Windows host and `just` would be a new
+dependency, so its spelling is `.\task.ps1 <verb>`: a PowerShell dispatcher over the
+repo's existing entry points (`lint` is `tests/Invoke-Validation.ps1` plus
+`gen-theme.ps1 -Check`, `test` is `tests/Invoke-Tests.ps1`, `dry-run` is
+`install.ps1 -DryRun`, `check` is lint plus the links-only bootstrap _previewed_ — Windows
+has no throwaway `HOME` to run it in — `packages-check` resolves the managed packages
+against scoop/winget, `core-verify` is the three `Assert-*Parity.ps1` gates over the
+mirrored assets). The register reads it by name, as `fleet-drift.sh` does, and renders it as
+the last row with `task.ps1` named beside the repo, so the `make <verb>` headers stay the
+contract's names. The read is static, like the Makefile read: a verb is a quoted key of
+`Get-TaskVerbs` alone at the start of its line, and `test` is credited only when its entry
+names the suite runner under the populated `tests/` by path — nothing in the body is
+evaluated, which is as far as a static read of PowerShell honestly goes. The repo's own
+`tests/Task.Tests.ps1` pins that shape and the exact verb set.
 
 #### `ssh/config` — the one with a deletion order (#450)
 
