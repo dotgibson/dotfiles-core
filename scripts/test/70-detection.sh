@@ -565,11 +565,12 @@ ucheck "Ctrl-R widget degrades in Core's voice without fzf (no 'command not foun
 ucheck "Alt-Z widget degrades in Core's voice without zoxide/fzf (no 'command not found')" \
   "source '$UI'; source '$FZF_FILE' 2>/dev/null; zle() { : }; out=\$(_fzf_zoxide_jump 2>&1); (( \$? != 0 )) && [[ \$out == *'Alt-Z: needs'* && \$out != *'command not found'* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
-# Alt+C is bound unconditionally like its three siblings, so it needs the same guard — and
-# the FD_BIN='' arm specifically: on a bare box $FD_BIN is unset, and an unquoted empty
-# command piped into a missing fzf is the "command not found" this whole section exists to
-# keep out of Core's output (#808).
-ucheck "Alt-C widget degrades in Core's voice without fzf/fd (no 'command not found')" \
+# Alt+C is bound unconditionally like its three siblings, so it needs the same guard. The
+# widget delegates to fcd (#933), which is NOT sourced here — so this also proves the guard
+# fires before the delegation: on a bare box a missing fzf must be Core's warning, never
+# "command not found" from a function this file never defined. FD_BIN='' stays as the
+# bare-box shape; fd's absence is fcd's find fallback now, not a refusal (#808).
+ucheck "Alt-C widget degrades in Core's voice without fzf (no 'command not found')" \
   "source '$UI'; source '$FZF_FILE' 2>/dev/null; zle() { : }; FD_BIN=''; out=\$(_fzf_cd_dir 2>&1); (( \$? != 0 )) && [[ \$out == *'Alt-C: needs'* && \$out != *'command not found'* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
 # Colour degradation (U8): the nudge/welcome accents must drop from 24-bit hex to a

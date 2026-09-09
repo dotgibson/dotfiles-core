@@ -45,6 +45,52 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   matrix key named anything other than `os:` still escapes, deliberately: catching it means
   dropping the key prefix, which would then fire on every comment in the tree that names a
   label. (#816)
+- **`gen-theme.sh --check` passed green over a sibling that was checked out but missing
+  its registered file (#933).** The sibling arm decided "can I reach this row?" on the
+  **directory**, so when `dotfiles-MacBook/` existed without `sketchybar/colors.sh` — the
+  sibling has not landed the palette yet, the zebar path moved, someone deleted it — no
+  `SKIPPED` line was printed, `preflight` and the render loop each took their partial-tree
+  `continue`, and §9d recorded a pass over a file nobody opened: coverage loss reading as
+  health, in the gate whose own comment says it exists to prevent exactly that. Both CI
+  legs that clone the fleet reliably have the directory, so that was the shape the failure
+  would have taken there. The row is now tested on the **file**; a present-but-incomplete
+  sibling is reported on its own `SKIPPED —` line, by file, and exits 3 like an absent one
+  (Core-relative rows keep the documented partial-tree `continue` — a different fact). §9d
+  collects its skip label from every `SKIPPED —` line rather than stripping at the first
+  phrase, and the suite gained the case the old one lacked: repo present, file absent.
+- **`Alt+C` could not reach hidden directories, and was a second, weaker copy of `fcd`
+  (#933).** `_fzf_cd_dir` re-implemented `fd | fzf` inline without `--hidden`, so the
+  widget skipped `.config`, `.github`, `.claude` and `.ssh` — the interesting directories
+  in a dotfiles tree, which `fcd` reached — and refused outright without fd where `fcd`
+  falls back to `find`. Its `--exclude .git` was dead config too: without `--hidden`, fd
+  already skips `.git` for being hidden, while the comment above it claimed the flag kept
+  the object store out of the list. The widget now **delegates to `fcd`**, which carries
+  the prompt and preview the widget used to have alone, so "cd into a subdirectory" has
+  one definition on both entry points. The widget's guard needs only fzf now.
+- **`Alt+C`'s collision with vi's change operator is stated (#933).** In viins `^[` is
+  `vi-cmd-mode` and `c` is `vi-change`, and a terminal sends Alt+C as exactly those two
+  bytes. The binding is kept — Core loads zsh-vi-mode, whose NEX engine disambiguates Esc
+  with `ZVM_ESCAPE_KEYTIMEOUT` (30 ms, not the 0.4 s `ZVM_KEYTIMEOUT`), which a terminal's
+  chord lands inside and a human's `Esc` `cw` almost never does; and the parity row that
+  justifies the key has no such problem, since PSReadLine is not in vi mode. The widget's
+  comment now owns that tradeoff instead of omitting it.
+- **`freshness.yml`'s apply step could not take the exit 3 the updater grew for it (#933).**
+  `update-fleet-versions.sh` exits 3 so an absent fleet stops reading as a defect (#917),
+  but its only caller ran it bare under `set -euo pipefail`, where 3 reds the step exactly
+  as 2 did — the check-mode step forty lines above already branched on the code, which
+  made the omission visible by contrast. The apply step now branches too: 3 is a summary
+  line and exit 0. The fleet-clone loop above it is tolerant as well: one repo that cannot
+  be cloned anonymously is warned by name and skipped, rather than aborting the loop
+  before either graceful path downstream could run.
+- **`render_fleet_versions` ran TSV data through `printf '%b'` (#933).** Rows were
+  accumulated with a literal `\t` and emitted with `%b`, which reinterprets escapes in the
+  fields as well as the separators — a backslash in any field would have been rewritten,
+  and a `\c` would have truncated the rest of the table silently. It now joins with the
+  `$TAB` the script already defines and emits with `%s`, removing the class.
+- Suite: the "an unterminated `/*` is not treated as a marker" case renders the fixture
+  before appending the line, so its `!= 2` assertion can actually fail — on an unrendered
+  stub `--check` was already 1, and the case passed whatever the parser did. Also dropped a
+  duplicated 12-line comment paragraph in §9d (#933).
 
 ### Changed
 
