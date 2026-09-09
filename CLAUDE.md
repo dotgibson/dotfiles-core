@@ -85,9 +85,10 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   red, and re-rendering needs `vhs` plus a Nerd Font on a host matching the row (`assets/README.md`
   has the exact commands). The tape exports `DOTFILES_NO_AUTOTMUX=1` before sourcing the zshrc,
   and the generator refuses a row whose OS layer auto-attaches tmux without honouring it — every
-  OS layer's guard must read that knob. The nine OS/role repos are already registered;
-  `make gen-hero-tape-fleet` writes their tapes, but rendering and committing their gifs is
-  #877's remaining item — nine boxes, because `@@HOSTGUARD@@` films each on its own distro.
+  OS layer's guard must read that knob. The nine OS/role repos are registered and
+  `make gen-hero-tape-fleet` writes their tapes; eight of their gifs are committed in their
+  repos (#948, filmed on rootless chroots — `assets/README.md`, "Filming a sibling hero without
+  its box"), and MacBook's needs a Mac.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
 - **A user-visible change lands in `CHANGELOG.md` under `[Unreleased]`** in the

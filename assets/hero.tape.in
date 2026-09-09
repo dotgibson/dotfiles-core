@@ -24,6 +24,8 @@
 #   @@PROOF@@     the line that makes the resolution VISIBLE: `up -n` prints "via zypper",
 #                 the manager and not the verb, so it alone cannot show `dup` rather than
 #                 `up` — the distinction #698 is about. This prints the resolved command.
+#   @@SIGWAIT@@   how long the tape holds after the signature command: the registry's
+#                 optional seventh column, 4s when a row has none.
 #
 # KEEP IT SHORT — the budget is ~15 s. But §9k caps BYTES, not seconds, and the two are
 # only loosely related: adding a command that repaints the screen costs far more than
@@ -96,6 +98,13 @@ Sleep 1500ms
 Type "ll" Sleep 400ms Enter Sleep 1600ms             # eza — icons + git status
 Type "cat README.md" Sleep 400ms Enter Sleep 1600ms  # bat — syntax highlighting
 Type "glog -8" Sleep 400ms Enter Sleep 1600ms        # git log, graphed and decorated
-Type "@@SIGCMD@@" Sleep 400ms Enter Sleep 2200ms  # @@SIGNOTE@@
+# @@SIGWAIT@@, not the 2.2 s the other steps get: the signature command is the one that does
+# WORK, and how long it works is the archive's. Fedora's dry run is `dnf --refresh check-update`,
+# which re-validates repo metadata against the mirror before it answers — ~3 s on a warm cache
+# — and at 2.2 s the first #948 render typed the proof line INTO the spinner and cut before the
+# answer. Portage resolves `emerge --pretend` in ~10 s. So the wait is a registry column: 4 s
+# unless the row says otherwise (hero-repos.txt `sigwait`). Stillness on a static screen is
+# nearly free in bytes; a truncated answer is not free at all.
+Type "@@SIGCMD@@" Sleep 400ms Enter Sleep @@SIGWAIT@@  # @@SIGNOTE@@
 Type "@@PROOF@@" Sleep 400ms Enter Sleep 2200ms
 Sleep 1s
