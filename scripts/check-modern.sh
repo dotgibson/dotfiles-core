@@ -79,10 +79,17 @@ done < <(_yaml_list banned_patterns)
 # Matching the suffix here rather than adding six more entries keeps `banned_runners`
 # reading as ONE label per image, and covers every present and future variant of every
 # label already on it — including ones added later.
+#
+# `labels:` is the mapping form — `runs-on:` alone on its line, the label on a nested
+# `labels:` child (the runner-group syntax). The matcher wants the label on the SAME line
+# as its key, so that shape escaped it; the alternation closes it. A matrix key named
+# anything other than `os:` (`runner:`, `platform:`) still escapes, deliberately: catching
+# it means dropping the key prefix, which would then fire on every comment in the tree
+# that names a label. Latent, not live — the fleet uses no runner groups.
 while IFS= read -r rn; do
   [ -n "$rn" ] || continue
   while IFS= read -r hit; do note "EOL runner ($rn): $hit"; done \
-    < <(grep -HnE "(runs-on|os):.*(^|[[:space:],\"'[])${rn}(-(arm|large|xlarge))?([[:space:],\"'*]|\]|\$)" "${FILES[@]}" 2>/dev/null || true)
+    < <(grep -HnE "(runs-on|os|labels):.*(^|[[:space:],\"'[])${rn}(-(arm|large|xlarge))?([[:space:],\"'*]|\]|\$)" "${FILES[@]}" 2>/dev/null || true)
 done < <(_yaml_list banned_runners)
 
 # ── 3) external action `uses:` must pin a 40-hex SHA (fleet's own owner exempt) ─
@@ -170,6 +177,23 @@ if _yaml_bool require_workflow_permissions && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
     grep -qE '^permissions:[[:space:]]*$|^permissions:[[:space:]]+' "$wf" \
       || note "no top-level permissions: block (least-privilege): $wf"
   done
+fi
+
+# ── 5b) a permissions: block must not be a blanket grant ─────────────────────
+# Rule 5 checks that the block EXISTS and never what it says — so `permissions: write-all`,
+# the maximal token grant, satisfied a rule named for least privilege. Read the value:
+# at ANY indent (a job-level grant that widens to everything is the same hole, one level
+# down), bare or quoted, and with a trailing `# comment` tolerated — a rationale beside
+# the grant must not be the way past the gate. Anchored to the key and the line end, so
+# the word in a comment or in prose does not fire; that is why this is a dimension of its
+# own and not a `banned_patterns` entry (rule 1 is a blind `grep -F`).
+# Scoped to WORKFLOWS like rule 5: `permissions:` is not a key a composite action has.
+if [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  while IFS= read -r pv; do
+    [ -n "$pv" ] || continue
+    while IFS= read -r hit; do note "blanket permissions grant ($pv): $hit"; done \
+      < <(grep -HnE "^[[:space:]]*permissions:[[:space:]]*[\"']?${pv}[\"']?[[:space:]]*(#.*)?\$" "${WORKFLOWS[@]}" 2>/dev/null || true)
+  done < <(_yaml_list banned_permission_values)
 fi
 
 # ── 6) every actions/checkout states persist-credentials: explicitly ─────────
