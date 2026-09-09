@@ -210,6 +210,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **nvim plugin pins move forward for three plugins.** `friendly-snippets`, `gitsigns.nvim` and
+  `nvim-lspconfig` advance to upstream HEAD — the set a re-run of the fleet health board's
+  signals (#794) found stale on 2026-09-09, the day after #938 and the freshness bot's Monday
+  refresh (#946) had rolled the previous set.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`, `behind_by=0`
+  in all three), and each range was read before promotion:
+
+  - **`friendly-snippets`** `30bfd47` → `6290e13`, 6 commits: snippet data only — React
+    `className`, Python async, Kubernetes kustomization/helm/namespace and Unity
+    `SerializeField`/`RequireComponent` snippets, a Perl tabstop fix, and one `package.json`
+    line mapping `typescriptreact` onto the HTML snippets. Core loads it only as blink.cmp's
+    snippet source; no Lua API is involved.
+  - **`gitsigns.nvim`** `5be654f` → `f2421c5`, 6 commits: a new repository diff panel (an
+    additive `diff` action with its own `actions/diff.lua`, `git/diff.lua` and
+    `git/commit.lua`), a `diffthis` cleanup that ignores already-closed source windows, a
+    `show` fix that reads the requested revision's path, and an attach guard for a buffer
+    wiped while `on_attach_pre` yields. Core sets `on_attach`, not `on_attach_pre`, and the
+    actions its keymaps call (`nav_hunk`, `stage_hunk`, `reset_hunk`, `stage_buffer`,
+    `preview_hunk`, `blame_line`, `diffthis`, `select_hunk` via `:Gitsigns`) keep their
+    signatures — the only new signature is the internal `create_revision_buf` helper.
+  - **`nvim-lspconfig`** `19576de` → `84b6b6c`, 2 commits: a new `laravel_lsp` server config
+    and its docs. Core does not configure it; nothing under Core's `servers/` tree is affected.
+
+  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
+
 - **nvim plugin pins move forward for five plugins.** `friendly-snippets`, `nvim-lspconfig`,
   `nvim-tree.lua`, `nvim-treesitter` and `schemastore.nvim` advance to upstream HEAD — the set
   the 2026-09-07 fleet health board (#794) reported as stale, one day after the freshness bot's
