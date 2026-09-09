@@ -37,6 +37,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   which already credited a `shell: pwsh` step running `./tests/Invoke-Tests.ps1`. The
   per-verb cell logic that was inline in the fleet loop is one function shared by both row
   kinds, so a label cannot drift between them.
+
 ### Fixed
 
 - **`gen-theme.sh --check` passed green over a sibling that was checked out but missing
