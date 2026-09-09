@@ -22,13 +22,16 @@ banned_patterns:
   - "::set-env"
   - "::add-path"
   # Old JS action runtimes: Node 24 is the default runner runtime since 2026-06-16;
-  # node20 removal lands fall 2026, node16 is long gone. Guards first-party action.yml
-  # `using:` declarations from browning out (third-party runtimes live in SHA-pinned
-  # upstreams and are a freshness-triage concern, not a floor one).
+  # node20 is removed from the runners on 2026-09-23 (the 2025-09-19 deprecation
+  # changelog; its editor's note of 2026-08-25 fixed the date); node16 is long gone.
+  # Guards first-party action.yml `using:` declarations from browning out (third-party
+  # runtimes live in SHA-pinned upstreams and are a freshness-triage concern, not a
+  # floor one — and every external action in the tree already resolves to node24 at
+  # its pinned SHA).
   - "using: node16"
   - "using: node20"
   # The per-step opt-out that forces a node20 action to keep running on node20. It
-  # stops working entirely once node20 leaves the runners (fall 2026), so reaching
+  # stops working entirely once node20 leaves the runners (2026-09-23), so reaching
   # for it buys a few months and then browns out — ban the dead end rather than let
   # a future bump-dodge land on it.
   - "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION"
@@ -89,6 +92,26 @@ require_container_digest_pin: true
 #    a valid key in a composite action.yml, so check-modern.sh scopes this rule to
 #    .github/workflows/ and skips .github/actions/.
 require_workflow_permissions: true
+
+# 5b) A `permissions:` block must not be a BLANKET grant. `write-all` hands the job token
+#     every scope there is — it satisfies rule 5 (a block is present and named) while being
+#     strictly worse than no block at all, which is the one hole in "naming the grant makes
+#     it reviewable". check-modern.sh reads the VALUE at any indent, so the job-level form
+#     is caught too (a job grant that widens to everything narrows nothing), quoted or bare,
+#     and with a trailing `# comment` tolerated — a rationale beside the grant must not be
+#     the way past the gate.
+#
+#     `read-all` is deliberately NOT here: it is not a token-abuse vector, and banning it
+#     buys noise. And this is its own dimension rather than a `banned_patterns` entry
+#     because that list is a blind `grep -F` — the word could then never appear in a
+#     workflow comment at all, not even to explain why a grant is narrow.
+#
+#     Like rule 8, not deprecation-driven, and worth saying so plainly: it is free while the
+#     fleet is at 0 occurrences, and Core owns the *-call.yml@vN reusable workflows the OS
+#     repos actually execute. Full-line comments only, per the parser note under
+#     banned_runners above.
+banned_permission_values:
+  - write-all
 
 # 6) Every `actions/checkout` step must state `persist-credentials:` explicitly. Left
 #    unset it defaults to TRUE, writing the job's token into .git/config where any later
