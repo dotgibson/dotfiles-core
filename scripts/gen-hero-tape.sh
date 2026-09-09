@@ -61,7 +61,8 @@
 # Exit: 0 = every in-scope tape matches the template (or was written);
 #       1 = drift, an unwritable target, or a gif over the ceiling;
 #       2 = usage, or the generator cannot run (missing template/registry/palette,
-#           a malformed row, a capability declaration with no PKG_UPGRADE);
+#           a malformed row, a capability declaration with no PKG_UPGRADE, a shell layer
+#           that auto-attaches tmux without honouring DOTFILES_NO_AUTOTMUX);
 #       3 = --fleet only: a sibling repo is NOT CHECKED OUT, so this run could not
 #           cover it. Callers read that as an ENVIRONMENT skip — the posture
 #           gen-porting-matrix.sh (§9h) and gen-desktop-parity.sh (§9i) take for the
@@ -439,6 +440,47 @@ host_guard() {
 # repo's hero even is.
 output_gif() { awk '/^[[:space:]]*Output[[:space:]]/ { print $2; exit }' "$1"; }
 
+# autotmux_guarded <repo> <dir> — does every tmux auto-attach in the repo's OWN shell
+# layer honour DOTFILES_NO_AUTOTMUX?
+#
+# The template's hidden setup sources the zshrc from inside vhs, which IS an interactive
+# TTY — so an OS layer that attaches tmux for interactive shells attaches here too, and the
+# rest of the tour is typed into the pane (#877's first render filmed exactly that). The
+# tape exports DOTFILES_NO_AUTOTMUX=1 before the source; this checks that the layer it
+# will be sourcing on that host actually reads the knob, the way signature_note checks the
+# declaration actually carries PKG_UPGRADE. A render whose precondition cannot hold is
+# exit 2 — the same "cannot run" leg — never a tape that looks rendered.
+#
+# SCOPE IS THE REPO'S OWN LAYER: os/ and zsh/, never the vendored core/ (Core's own layer
+# is scanned through the `.` row, where $dir IS this repo). A `.zsh` or a `zshrc`, because
+# MacBook's attach sits in zsh/zshrc rather than os/macos.zsh. Comment lines are dropped
+# BEFORE matching in both directions — Alpine's prose names an inline `tmux attach` it
+# deliberately does not do, and a knob that is only ever mentioned guards nothing. The
+# attach pattern avoids `\b`, which BSD grep does not know (PORTABILITY.md).
+autotmux_guarded() {
+  local repo="$1" dir="$2" f rel bad=0
+  local label="$repo"
+  [[ "$repo" == "." ]] && label="dotfiles-core"
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if awk '
+      /^[[:space:]]*#/ { next }
+      /(^|[^[:alnum:]_])tmux[[:space:]]+(attach|attach-session|new-session|new)([[:space:]]|$)/ { attach = 1 }
+      /DOTFILES_NO_AUTOTMUX/ { knob = 1 }
+      END { exit !(attach && !knob) }' "$f"; then
+      rel="${f#"$dir"/}"
+      fail "$label: $rel auto-attaches tmux without honouring DOTFILES_NO_AUTOTMUX — the hidden setup sources the zshrc from inside vhs, so a render on that host would type the tour into a tmux pane (#877); guard the attach with [[ -z \"\${DOTFILES_NO_AUTOTMUX:-}\" ]]"
+      bad=1
+    fi
+  done < <(
+    for d in "$dir/os" "$dir/zsh"; do
+      [[ -d "$d" ]] || continue
+      find "$d" -type f \( -name '*.zsh' -o -name 'zshrc' -o -name '.zshrc' \) 2>/dev/null
+    done | LC_ALL=C sort
+  )
+  ((bad == 0))
+}
+
 # `<short-sha> (<date>)` for a commit — the provenance a stale-hero message has to carry,
 # because "the gif is old" is unactionable and "rendered 2026-07-06, tape rewritten
 # 2026-09-04" is not.
@@ -614,6 +656,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
 
   if ! signote="$(signature_note "$repo" "$dir" "$signature")"; then _bump 2; continue; fi
   if ! hostguard="$(host_guard "$repo" "$dir" "$signature")"; then _bump 2; continue; fi
+  if ! autotmux_guarded "$repo" "$dir"; then _bump 2; continue; fi
 
   # ── --check-size: the byte ceiling on the RENDERED hero ────────────────────
   # A tape is a script; a gif is bytes, and #698's third finding is that nothing
