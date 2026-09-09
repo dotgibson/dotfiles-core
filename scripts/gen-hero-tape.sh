@@ -261,9 +261,17 @@ validate_registry() {
   awk -F'\t' '
     /^[[:space:]]*#/ { next }
     /^[[:space:]]*$/ { next }
-    NF != 6 {
-      printf "gen-hero-tape: %s:%d: expected 6 tab-separated fields, found %d\n", FILENAME, FNR, NF > "/dev/stderr"
+    NF != 6 && NF != 7 {
+      printf "gen-hero-tape: %s:%d: expected 6 tab-separated fields (7 with a sigwait), found %d\n", FILENAME, FNR, NF > "/dev/stderr"
       bad = 1; next
+    }
+    # THE OPTIONAL SEVENTH FIELD IS A VHS DURATION AND NOTHING ELSE. It lands verbatim after
+    # `Sleep` on the signature line, so a value vhs cannot parse is a tape that cannot run —
+    # and one that carries a space would be typed as tape syntax. Present means non-empty:
+    # an empty seventh column is a row that says "wait" and does not say how long.
+    NF == 7 && $7 !~ /^[0-9]+(ms|s)$/ {
+      printf "gen-hero-tape: %s:%d: field 7 (sigwait) must be a vhs duration such as 4s or 2500ms, found %s\n", FILENAME, FNR, ($7 == "" ? "an empty field" : $7) > "/dev/stderr"
+      bad = 1
     }
     {
       for (i = 1; i <= 6; i++) {
@@ -370,7 +378,7 @@ rows() {
   awk -F'\t' '
     /^[[:space:]]*#/ { next }
     /^[[:space:]]*$/ { next }
-    NF == 6 { print }
+    NF == 6 || NF == 7 { print }
   ' "$REGISTRY"
 }
 
@@ -527,7 +535,7 @@ banner() {
 # Linux and Alpine and failed only on the macOS leg (#698 review). Every remaining -v
 # value is a single line by construction; keep it that way.
 render() {
-  awk -v checkout="$1" -v sigcmd="$2" -v signote="$3" -v proof="$4" -v guard="$5" -v theme="$6" '
+  awk -v checkout="$1" -v sigcmd="$2" -v signote="$3" -v proof="$4" -v guard="$5" -v theme="$6" -v sigwait="$7" '
     # lit(s, ph, v) — every occurrence of the LITERAL ph in s replaced by the LITERAL v.
     function lit(s, ph, v,   out, i) {
       out = ""
@@ -549,6 +557,7 @@ render() {
       if (line ~ /@@SIGCMD@@/) {
         head = line; sub(/[ \t]*#.*/, "", head)
         head = lit(head, "@@SIGCMD@@", sigcmd)
+        head = lit(head, "@@SIGWAIT@@", sigwait)
         printf "%-53s# %s\n", head, signote
         next
       }
@@ -561,6 +570,7 @@ render() {
       line = lit(line, "@@CHECKOUT@@", checkout)
       line = lit(line, "@@SIGCMD@@", sigcmd)
       line = lit(line, "@@SIGNOTE@@", signote)
+      line = lit(line, "@@SIGWAIT@@", sigwait)
       if (line ~ /@@[A-Z]+@@/) {
         printf "gen-hero-tape: %s: unsubstituted placeholder: %s\n", FILENAME, line > "/dev/stderr"
         exit 2
@@ -633,8 +643,13 @@ hdr "README hero tapes (rendered from assets/hero.tape.in)"
 # Process substitution, NOT a pipeline: a `rows | while` loop runs in a subshell and
 # every _bump is lost with it — the script would exit 0 over a drifted tape. The same
 # trap gen-theme.sh's _pal_load documents.
-while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
+while IFS="$TAB" read -r repo out checkout sigcmd proof signature sigwait; do
   [[ -n "$repo" ]] || continue
+  # How long the tape holds after the signature command — the ONE step that does work, and
+  # whose work is the archive's: `dnf --refresh check-update` answers in ~3 s, Portage's
+  # dependency resolution for `emerge --pretend` in ~10 s. The registry says so per row;
+  # a row that says nothing gets the budget every other archive fits in.
+  : "${sigwait:=4s}"
 
   # A sibling row is OUT OF SCOPE without --fleet. Not a skip and not a failure: #698
   # sequences those renders after #667, so a default run has no business reaching into
@@ -814,7 +829,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature; do
   # `{ banner && render; }` yields render's status when banner succeeds, so a failed
   # render is still caught — and the banner reaches the file through bash's own printf
   # rather than an awk -v the macOS awk refuses (see render's note).
-  if ! { banner "$repo" && render "$checkout" "$sigcmd" "$signote" "$proof" "$hostguard" "$THEME_LINE"; } >"$tmp"; then
+  if ! { banner "$repo" && render "$checkout" "$sigcmd" "$signote" "$proof" "$hostguard" "$THEME_LINE" "$sigwait"; } >"$tmp"; then
     fail "$label/$out — rendering the tape failed; the file was NOT modified"
     rm -f "$tmp"; _bump 2; continue
   fi

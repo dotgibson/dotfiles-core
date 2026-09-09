@@ -210,6 +210,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **The README hero tour's wait after its signature command is a registry column** (#948,
+  the nine sibling heroes): `assets/hero-repos.txt` gains an optional seventh field, `sigwait`,
+  a vhs duration that lands after `Sleep` on the signature line, 4s when absent (it was a
+  fixed 2.2 s). `dnf --refresh check-update` re-validates every enabled repo's metadata before
+  it answers — ~3 s on a warm cache — and at 2.2 s the first Fedora render typed the proof line
+  into the spinner and cut before the answer; Portage resolves `emerge --pretend` in ~10 s, so
+  Gentoo's row says `15s` and nobody else's says anything. `gen-hero-tape.sh` validates the
+  field (a duration vhs can parse; an empty seventh column is refused) and the suite pins it.
+  Every tape and this repo's own gif are re-rendered. Seven of the nine sibling heroes are now filmed and committed in their
+  repos — Fedora, Alpine, Arch, Debian, Gentoo, Offense and Defense, each on a rootless chroot
+  of its distro; `assets/README.md` records the recipe and the five traps. openSUSE waits on
+  the starship fix reaching its vendored `core/`; MacBook needs a Mac.
+
 - **nvim plugin pins move forward for five plugins.** `friendly-snippets`, `nvim-lspconfig`,
   `nvim-tree.lua`, `nvim-treesitter` and `schemastore.nvim` advance to upstream HEAD — the set
   the 2026-09-07 fleet health board (#794) reported as stale, one day after the freshness bot's

@@ -72,6 +72,13 @@ Sleep 1500ms
 Type "ll" Sleep 400ms Enter Sleep 1600ms             # eza — icons + git status
 Type "cat README.md" Sleep 400ms Enter Sleep 1600ms  # bat — syntax highlighting
 Type "glog -8" Sleep 400ms Enter Sleep 1600ms        # git log, graphed and decorated
-Type "core status" Sleep 400ms Enter Sleep 2200ms    # the provenance panel — version, live layers, tool health
+# 4s, not the 2.2 s the other steps get: the signature command is the one that does
+# WORK, and how long it works is the archive's. Fedora's dry run is `dnf --refresh check-update`,
+# which re-validates repo metadata against the mirror before it answers — ~3 s on a warm cache
+# — and at 2.2 s the first #948 render typed the proof line INTO the spinner and cut before the
+# answer. Portage resolves `emerge --pretend` in ~10 s. So the wait is a registry column: 4 s
+# unless the row says otherwise (hero-repos.txt `sigwait`). Stillness on a static screen is
+# nearly free in bytes; a truncated answer is not free at all.
+Type "core status" Sleep 400ms Enter Sleep 4s        # the provenance panel — version, live layers, tool health
 Type "core-version" Sleep 400ms Enter Sleep 2200ms
 Sleep 1s

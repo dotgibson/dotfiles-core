@@ -227,6 +227,38 @@ else
   fail "gen-hero-tape: a later malformed row still left an earlier tape rewritten"
 fi
 
+# THE OPTIONAL SEVENTH COLUMN is how long the tape holds after the signature command (#948).
+# Portage resolves `emerge --pretend` in ~10 s where dnf answers in ~3 s, so the wait is per
+# row: a row that says `12s` renders `Sleep 12s` on its signature line, a row that says
+# nothing renders the 4s default, and a value vhs cannot parse — or an empty seventh field —
+# is exit 2 before anything is written, like every other malformed row.
+_gh_fixture
+sed -i 's|^dotfiles-Fedora\t\(.*\)$|dotfiles-Fedora\t\1\t12s|' "$GHR/assets/hero-repos.txt"
+_gh_run --fleet >/dev/null
+_gh_sig_fedora="$(grep -F 'Type "up -n"' "$GHF/dotfiles-Fedora/assets/demo.tape" 2>/dev/null)"
+_gh_sig_suse="$(grep -F 'Type "up -n"' "$GHF/dotfiles-openSUSE/assets/demo.tape" 2>/dev/null)"
+if [[ "$_gh_sig_fedora" == *'Enter Sleep 12s'* ]] && [[ "$_gh_sig_suse" == *'Enter Sleep 4s'* ]]; then
+  pass "gen-hero-tape: a row's sigwait lands on its signature line, and an absent one is 4s"
+else
+  fail "gen-hero-tape: sigwait not honoured (fedora: '$_gh_sig_fedora' / suse: '$_gh_sig_suse')"
+fi
+_gh_fixture
+sed -i 's|^dotfiles-Fedora\t\(.*\)$|dotfiles-Fedora\t\1\t12|' "$GHR/assets/hero-repos.txt"
+_gh_rc="$(_gh_run --fleet)"
+_gh_msg="$(_gh_out --fleet)"
+if [[ "$_gh_rc" == 2 ]] && [[ "$_gh_msg" == *'sigwait'* ]]; then
+  pass "gen-hero-tape: a sigwait vhs cannot parse (no unit) is refused as 2, naming the column"
+else
+  fail "gen-hero-tape: an unparseable sigwait was accepted (rc=$_gh_rc)"
+fi
+_gh_fixture
+sed -i 's|^dotfiles-Fedora\t\(.*\)$|dotfiles-Fedora\t\1\t|' "$GHR/assets/hero-repos.txt"
+if [[ "$(_gh_run --fleet)" == 2 ]]; then
+  pass "gen-hero-tape: an EMPTY seventh column is refused, not read as the default"
+else
+  fail "gen-hero-tape: an empty sigwait column was accepted (rc=$(_gh_run --fleet))"
+fi
+
 # A REPO LISTED TWICE would render its tape twice, the second silently winning.
 _gh_fixture
 printf 'dotfiles-Fedora\tassets/demo.tape\t~/dup\tup -n\tcore-version\tcaps:os/fedora.capabilities\n' >>"$GHR/assets/hero-repos.txt"
