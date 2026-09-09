@@ -59,6 +59,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`up -n`'s spinner painted a healthy dry run red** (found filming the nine OS/role README
+  heroes, #948). The spinner reports the exit of `_pkgup_list_to`, which is the COUNT VERB's —
+  and most archives overload it: `dnf check-update` exits 100 when updates _exist_,
+  `checkupdates` exits 2 when there are _none_. The list path was documented to ignore that
+  status (a partial list is still a better preview than none) but the spinner was not, so
+  every OS repo's signature moment read `x checking pacman for upgradable packages (exit 2)`
+  over a green "nothing to upgrade". The helper now answers 0 unless the archive declared its
+  exit meaningful (`PKG_COUNT_EXIT_TRUSTED`, Gentoo's case), where it still propagates.
+  Pinned both ways in `scripts/test/70-detection.sh`.
+
+- **starship drew a lizard emoji on openSUSE** (same hunt, #948). starship names SLES `SUSE`
+  and Leap/Tumbleweed `openSUSE`; `[os.symbols]` declared only the first, so an openSUSE
+  prompt fell through to starship's own default for the second — 🦎, which renders as tofu
+  wherever no colour-emoji font is installed, which is every terminal this palette targets.
+  `openSUSE` now gets the same Nerd Font glyph as `SUSE`.
+
 - **Every prompt on Debian 13 died with "maximum nested function level reached"** (found
   filming dotfiles-Debian's README hero, #948). zsh-vi-mode's default is a lazy init from the
   first precmd — after every rc file, so after the transient prompt has registered
