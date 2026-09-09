@@ -458,7 +458,8 @@ output_gif() { awk '/^[[:space:]]*Output[[:space:]]/ { print $2; exit }' "$1"; }
 # deliberately does not do, and a knob that is only ever mentioned guards nothing. The
 # attach pattern avoids `\b`, which BSD grep does not know (PORTABILITY.md).
 autotmux_guarded() {
-  local repo="$1" dir="$2" label="$repo" f rel bad=0
+  local repo="$1" dir="$2" f rel bad=0
+  local label="$repo"
   [[ "$repo" == "." ]] && label="dotfiles-core"
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
