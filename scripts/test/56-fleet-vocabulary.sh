@@ -717,9 +717,16 @@ _fv_win_suite() { # _fv_win_suite <repo> — a populated tests/ with the runner 
 _fv_ps_entry() { # _fv_ps_entry <verb> <step-path> — one Get-TaskVerbs entry, as task.ps1 spells it
   printf "        '%s' = @{\\n            Meaning = 'm'\\n            Steps   = @(\\n                '%s'\\n            )\\n        }\\n" "$1" "$2"
 }
-# Joined with an explicit newline: `$(…)` strips the trailing one, and two entries glued
-# onto one line would leave only the first key at a line start.
-_fv_task_all="function Get-TaskVerbs {\\n    [ordered]@{\\n$(_fv_ps_entry help '')\\n$(_fv_ps_entry lint tests/Invoke-Validation.ps1)\\n$(_fv_ps_entry check install.ps1)\\n$(_fv_ps_entry dry-run install.ps1)\\n$(_fv_ps_entry packages-check packages/Check-PackageFreshness.ps1)\\n$(_fv_ps_entry core-verify tests/Assert-NvimParity.ps1)\\n$(_fv_ps_entry test tests/Invoke-Tests.ps1)\\n    }\\n}\\n"
+# The table is BUILT from slots, never edited by `${var/pattern/replacement}`: the one
+# pattern that would carry a `/` (tests/Invoke-Tests.ps1) splits that expression on the
+# macOS lane's bash 3.2, and the fixture then silently keeps the wrong entry (#943).
+# Each slot is joined with an explicit newline, since `$(…)` strips the trailing one.
+_fv_task_body() { # _fv_task_body <dry-run-entry-text> <test-entry-text> — the full table with those two entries as given
+  printf 'function Get-TaskVerbs {\n    [ordered]@{\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n    }\n}\n' \
+    "$(_fv_ps_entry help '')" "$(_fv_ps_entry lint tests/Invoke-Validation.ps1)" "$(_fv_ps_entry check install.ps1)" \
+    "$1" "$(_fv_ps_entry packages-check packages/Check-PackageFreshness.ps1)" "$(_fv_ps_entry core-verify tests/Assert-NvimParity.ps1)" "$2"
+}
+_fv_task_all="$(_fv_task_body "$(_fv_ps_entry dry-run install.ps1)" "$(_fv_ps_entry test tests/Invoke-Tests.ps1)")"
 
 # Windows alone is a present repo: the register has something to read, and it reads it.
 _fv_reset; _fv_repo dotfiles-Windows; _fv_task dotfiles-Windows "$_fv_task_all"; _fv_win_suite dotfiles-Windows; _fv_win_ci dotfiles-Windows
@@ -746,7 +753,7 @@ fi
 
 # A KEY THAT IS NOT ALONE AT LINE START IS NOT A DECLARATION, and a step path in quotes
 # is not a key: drop dry-run's entry, mention it on a comment line and in a string.
-_fv_mk="${_fv_task_all/"$(_fv_ps_entry dry-run install.ps1)"/"        # 'dry-run' = @{ is not declared here\\n        'check-again' = @{ Meaning = \\042'dry-run' = @{\\042; Steps = @() }\\n"}"
+_fv_mk="$(_fv_task_body "$(printf "        # 'dry-run' = @{ is not declared here\\n        'check-again' = @{ Meaning = \\042'dry-run' = @{\\042; Steps = @() }")" "$(_fv_ps_entry test tests/Invoke-Tests.ps1)")"
 _fv_reset; _fv_repo dotfiles-Windows; _fv_task dotfiles-Windows "$_fv_mk"; _fv_win_suite dotfiles-Windows; _fv_win_ci dotfiles-Windows
 _fv_out="$(_fv_run --check)"; rc=$?
 row="$(_fv_run | grep -F '| `Windows`')"
@@ -758,7 +765,7 @@ fi
 
 # `test` MUST NAME THE SUITE RUNNER BY PATH: a test entry routed elsewhere is **no-op**
 # even though CI runs the suite (the floor holds), exactly as a `test: ; @true` recipe is.
-_fv_mk="${_fv_task_all/"$(_fv_ps_entry test tests/Invoke-Tests.ps1)"/"$(_fv_ps_entry test install.ps1)"}"
+_fv_mk="$(_fv_task_body "$(_fv_ps_entry dry-run install.ps1)" "$(_fv_ps_entry test install.ps1)")"
 _fv_reset; _fv_repo dotfiles-Windows; _fv_task dotfiles-Windows "$_fv_mk"; _fv_win_suite dotfiles-Windows; _fv_win_ci dotfiles-Windows
 _fv_out="$(_fv_run --check)"; rc=$?
 row="$(_fv_run | grep -F '| `Windows`')"
@@ -768,7 +775,7 @@ else
   fail "vocab: Windows no-op test handling (rc=$rc): $_fv_out / $row"
 fi
 # …and a runner named only on a COMMENT line inside the entry does not credit it.
-_fv_mk="${_fv_task_all/"$(_fv_ps_entry test tests/Invoke-Tests.ps1)"/"        'test' = @{\\n            # was: 'tests/Invoke-Tests.ps1'\\n            Steps = @('install.ps1')\\n        }\\n"}"
+_fv_mk="$(_fv_task_body "$(_fv_ps_entry dry-run install.ps1)" "$(printf "        'test' = @{\\n            # was: 'tests/Invoke-Tests.ps1'\\n            Steps = @('install.ps1')\\n        }")")"
 _fv_reset; _fv_repo dotfiles-Windows; _fv_task dotfiles-Windows "$_fv_mk"; _fv_win_suite dotfiles-Windows; _fv_win_ci dotfiles-Windows
 row="$(_fv_run | grep -F '| `Windows`')"
 if [[ "$row" == *'| **no-op** | ok |' ]]; then
@@ -777,7 +784,7 @@ else
   fail "vocab: commented runner credited the Windows test verb: $row"
 fi
 # A backslash path (`tests\\Invoke-Tests.ps1`) is how a Windows contributor may well spell it.
-_fv_mk="${_fv_task_all/"$(_fv_ps_entry test tests/Invoke-Tests.ps1)"/"$(_fv_ps_entry test 'tests\\\\Invoke-Tests.ps1')"}"
+_fv_mk="$(_fv_task_body "$(_fv_ps_entry dry-run install.ps1)" "$(_fv_ps_entry test 'tests\\Invoke-Tests.ps1')")"
 _fv_reset; _fv_repo dotfiles-Windows; _fv_task dotfiles-Windows "$_fv_mk"; _fv_win_suite dotfiles-Windows; _fv_win_ci dotfiles-Windows
 if _fv_out="$(_fv_run --check)" && [[ "$_fv_out" == *"every verb x repo cell resolves"* ]]; then
   pass "vocab: a backslash-separated suite path in the test entry is credited"
