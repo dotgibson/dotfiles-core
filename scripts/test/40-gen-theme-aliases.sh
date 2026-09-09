@@ -430,6 +430,19 @@ GTTOOLS
   else
     fail "gen-theme: an absent sibling masked real drift — got $(_gt_run --check --fleet "$_gtf"), want 1"
   fi
+  # 5. A SIBLING THAT IS CHECKED OUT BUT LACKS THE REGISTERED FILE IS ALSO A REPORTED SKIP
+  #    (#933). Until then only the DIRECTORY was tested, so this row fell through to the
+  #    render loop's partial-tree `continue`: no skip line, rc 0, §9d recorded a pass — while
+  #    the sibling's palette went uninspected. The two CI legs that clone the fleet reliably
+  #    have the directory, so this is the shape a moved or not-yet-landed file takes there.
+  _gt_fixture && _gt_run >/dev/null
+  rm -f "$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh"
+  if [[ "$(_gt_run --check)" == 3 ]] &&
+    printf '%s' "$(_gt_out --check)" | grep -q 'registered file absent in a checked-out sibling: dotfiles-MacBook/sketchybar/colors.sh'; then
+    pass "gen-theme: a checked-out sibling missing its registered file exits 3 and NAMES the file"
+  else
+    fail "gen-theme: a checked-out sibling missing its registered file was passed over (rc=$(_gt_run --check))"
+  fi
   _gt_fixture && _gt_run >/dev/null # put the fixture back
   rm -rf "$_gtf"
   unset _gtf
@@ -486,7 +499,11 @@ GTTOOLS
   # 4. AN UNTERMINATED `/*` IS NOT A MARKER. A line that opens a comment it never closes would
   #    swallow the generated block into it — the file would still parse while rendering nothing,
   #    which is the quietest possible failure.
+  #    Rendered FIRST, as the sketchybar cases do: on an unrendered stub --check is already 1
+  #    (drift), so without this the `!= 2` below could not fail whatever the appended line
+  #    did (#933). On a rendered tree the only path to a non-0 answer is the marker parser.
   _gt_css_fresh
+  _gt_run >/dev/null 2>&1
   printf '/* core:theme:gen zebar-palette\n' >>"$_gt_css"
   if [[ "$(_gt_run --check)" != 2 ]]; then
     pass "gen-theme: an unterminated /* is not treated as a marker"

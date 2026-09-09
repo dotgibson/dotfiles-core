@@ -76,7 +76,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          # client-id, not app-id: the latter is deprecated at this pin (#831), and the variable
+          # client-id rather than app-id, which is deprecated at this pin (#831). The variable
           # holds the App's Client ID — a different value from its App ID.
           client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
@@ -149,7 +149,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          # client-id, not app-id: the latter is deprecated at this pin (#831), and the variable
+          # client-id rather than app-id, which is deprecated at this pin (#831). The variable
           # holds the App's Client ID — a different value from its App ID.
           client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
@@ -228,7 +228,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          # client-id, not app-id: the latter is deprecated at this pin (#831), and the variable
+          # client-id rather than app-id, which is deprecated at this pin (#831). The variable
           # holds the App's Client ID — a different value from its App ID.
           client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
@@ -276,11 +276,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/fleet"
+          # One repo that cannot be cloned anonymously — private, renamed, archived — must not
+          # abort the loop under `set -e` before the updater's own absent-fleet path gets to
+          # run (#933). It is warned by name and skipped; gen-porting-matrix.sh reports a
+          # sibling it cannot read as an environment skip, which is the honest answer.
           while IFS= read -r repo; do
             case "$repo" in ''|\#*) continue ;; esac
             git clone --depth 1 --quiet \
               "https://github.com/${GITHUB_REPOSITORY_OWNER}/$repo.git" \
-              "$RUNNER_TEMP/fleet/$repo"
+              "$RUNNER_TEMP/fleet/$repo" ||
+              echo "::warning::could not clone $repo anonymously — its column will be skipped"
           done < scripts/os-repos.txt
           echo "cloned: $(find "$RUNNER_TEMP/fleet" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
 
@@ -293,7 +298,19 @@ jobs:
           # Apply mode rewrites confirmed rows (version AND verified date) and regenerates
           # the matrix block. A row it could not confirm keeps its old date, so the
           # staleness notice still names it rather than a failed probe reading as fresh.
-          ./scripts/update-fleet-versions.sh --fleet "$RUNNER_TEMP/fleet"
+          #
+          # 3 = the fleet is absent, which the updater exits separately for so that an
+          # environment fact stops reading as a defect (#917) — but under `set -e` a bare
+          # call reds the step on 3 exactly as it did on 2, so the distinction only exists if
+          # the caller branches on it (#933). The check-mode step above already does.
+          if ! ./scripts/update-fleet-versions.sh --fleet "$RUNNER_TEMP/fleet"; then
+            rc=$?
+            if [ "$rc" = 3 ]; then
+              echo "### ⚠️ the sibling fleet was unavailable — versions were probed but the matrix could not be regenerated, so nothing was written" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            exit "$rc"
+          fi
           if git diff --quiet -- scripts/fleet-package-versions.tsv PORTING-MATRIX.md; then
             echo "✅ fleet versions already current — no PR needed" >> "$GITHUB_STEP_SUMMARY"
             exit 0
