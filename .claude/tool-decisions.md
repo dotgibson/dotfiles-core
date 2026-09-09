@@ -53,6 +53,9 @@ whether a prior decision exists.** Filing a decision is not enough if nothing re
 | `uutils coreutils` | not Core's call | [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | swapping the system coreutils is a **distro** decision; it changes with the OS, so it fails the Core test |
 | `numbat` / `serpl` | skip | [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | rejected without deep research, deliberately — no gap either one fills in this stack |
 | `cargo-update` | skip | [#702](https://github.com/dotgibson/dotfiles-core/issues/702) | would close the ²⁵ gap, but it is a heavy source build with native deps on exactly the boxes that lack a package for it |
+| `ripgrep-all` (`rga`) | skip | [2026-09-01 run](https://github.com/dotgibson/dotfiles-core/actions/runs/33507695467) (the scan that filed no issue), re-confirmed [#932](https://github.com/dotgibson/dotfiles-core/issues/932) | its reach depends on external adapters (pandoc/poppler/ffmpeg) that are **not** in the binary, so it silently searches fewer file types on boxes that lack them — cross-fleet capability variance, not a missing verb; absent from Fedora/openSUSE/Alpine, and last released 2024-11-09 on top |
+| `prek` | not Core's call | [#932](https://github.com/dotgibson/dotfiles-core/issues/932) | a Rust `pre-commit` reimplementation is repo dev-tooling — nothing vendors out — and 0.5.x was shipping weekly on review; if wanted it is a `/modernize` (CI) question |
+| `bat-extras` (`batman`/`batgrep`/`batpipe`) | skip | [#932](https://github.com/dotgibson/dotfiles-core/issues/932) | last release 2024-08-24; Core already hand-wires `MANPAGER` through bat, and Debian/Fedora package none of it |
 
 ### `hexyl` — the long form
 
@@ -93,9 +96,11 @@ no longer a watch, and re-proposing it needs a fresh argument rather than the ol
 | tool | held since | the condition that would end the watch |
 | --- | --- | --- |
 | `xan` | [#327](https://github.com/dotgibson/dotfiles-core/issues/327), [#376](https://github.com/dotgibson/dotfiles-core/issues/376), re-held [#702](https://github.com/dotgibson/dotfiles-core/issues/702) | two consecutive minors with **no breaking argument changes** — see the long form; the original packaging and frequency reasons have both expired |
-| `csvlens` | [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | reaching Alpine `community`. **Still unmet** as of 2026-08-25 (0.15.1, 2026-01-08; Arch/Homebrew/nixpkgs only) |
+| `csvlens` | [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | reaching Alpine `community`. **Still unmet** as of 2026-09-08 (0.15.1, 2026-01-08; Arch/Homebrew/nixpkgs/BSDs only — not even Alpine edge) |
 | `trippy` | [#327](https://github.com/dotgibson/dotfiles-core/issues/327), [#376](https://github.com/dotgibson/dotfiles-core/issues/376), [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | a release that lands, **plus** an answer to `CAP_NET_RAW`. Neither has moved: 0.13.0 is from 2025-05-05, and 0.14.0's behaviour change was pre-announced and undelivered |
 | `sesh picker` (sesh's built-in TUI, replacing the `sesh list \| fzf` pipe) | [#376](https://github.com/dotgibson/dotfiles-core/issues/376), [#518](https://github.com/dotgibson/dotfiles-core/issues/518), re-held [#702](https://github.com/dotgibson/dotfiles-core/issues/702) | a **colour/theme schema in `[tui]`**. #518's "no preview" blocker is spent; #376's "loss of fzf theming" is **not**, and it is the one that costs something |
+| `mergiraf` (syntax-aware git merge driver) | [#932](https://github.com/dotgibson/dotfiles-core/issues/932) | **either** upstream tolerating `merge.conflictstyle = zdiff3` (its docs say zdiff3 "can confuse" it, and Core's conflict tooling is built on zdiff3's four markers) **or** an opt-in recipe under `examples/` — a merge driver in `git/gitconfig` is not inert without the binary, so it cannot ship as Core config. Packaged on Arch/Alpine community/Gentoo/openSUSE TW/Homebrew; Debian and Fedora have none |
+| `mise` `packslip:` backend (signed release manifests) | [#932](https://github.com/dotgibson/dotfiles-core/issues/932) | a manifest existing for something `mise/config.toml` declares — `ubi:foundry-rs/foundry` is the one unsigned fetch in the runtime set. Stable since mise v2026.9.2; `/runtime-freshness` owns that file, so the check is its |
 
 ### `xan` — the long form, because its reason changed
 

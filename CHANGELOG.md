@@ -44,8 +44,46 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   it would not break them — but it would start nagging on every run until each repo reformats.
   Bump it alongside a reformat pass across the consumers, not on its own.
 
+- **Every mint step passes `client-id`, not the deprecated `app-id`, and reads a new
+  `FLEET_APP_CLIENT_ID` org variable (#831).** Our pinned `create-github-app-token` (v3.2.0)
+  carries `deprecationMessage: "Use 'client-id' instead."` on `app-id`, and all five mints
+  here — `notify-web.yml`, the reusable `notify-web-call.yml`, `sync-fanout.yml` and
+  `freshness.yml`'s three — passed it.
+  **It is not a one-line swap, which is why it needed its own change.** `FLEET_APP_ID` holds
+  the App **ID**; the new input wants the App's **Client ID**, a different value on the same
+  settings page (and a public one: `gh api /apps/dotgibson-fleet-sync --jq .client_id`). So the
+  variable is a **new** one rather than a repurposed one — the two names never hold different
+  meanings mid-rollout — and the `if:` guards move in the same commit as the input, because a
+  guard still testing `vars.FLEET_APP_ID` against a step reading `FLEET_APP_CLIENT_ID` would
+  keep gating on a variable the mint no longer uses.
+  **Precondition, not a follow-up: the org variable must exist before this merges.** With it
+  unset, every guard is false, `sync-fanout`'s preflight goes red (the loud half) and the
+  `notify-web` dispatch degrades to a `::warning::` and skips (the quiet half) — the exact
+  failure shape #831 was written to avoid.
+  **`FLEET_APP_ID` is retired here but must not be deleted yet.** The nine OS-repo callers
+  execute `notify-web-call.yml` at the `@v7` alias, which reads the old variable until the next
+  release advances it; `htpx`'s fan-out and `dotfiles-Windows`' inline notifier still pass
+  `app-id` and are tracked in their own repos. `GITHUB-APP-AUTH.md` carries the retirement
+  note with the grep that derives the remaining readers, its _Re-creating or re-keying_ section
+  now tells you to collect the Client ID, and the known-gaps callout shrinks to the one gap
+  left (scope the verbs).
+
 ### Fixed
 
+- **The weekly routines no longer file a stub as the report when their subagent outlives the
+  main turn (#932).** Headless `claude -p` prints only the final turn, and it waits for
+  background work for a bounded 600 s before killing it and emitting whatever text it has.
+  `/tool-scout` delegates its research to a subagent; on 2026-09-08 that delegate was still
+  researching when the main turn ended, the ceiling fired, and `file-routine-issue.sh` filed
+  the "I'll relay its proposal when it lands" preamble as the scan — a report that reads as
+  "nothing found" to anyone who does not open the run log. `claude-routines.yml` now sets
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` for every job, so each job's `timeout-minutes` is
+  the only ceiling and overrunning it is a red job that `notify-failure` reports, not a green
+  one with a hollow issue. The two delegating routines (`/tool-scout`, `/doc-audit`) also now
+  say to wait for the delegate in the foreground, so the fix does not rest on one env var.
+  `/tool-scout` additionally learns how to check for an open `atuin-guard-verify:` verdict
+  without `Bash` — WebFetch the issue search — instead of reporting `gh` as unavailable every
+  week, which it always will be in that job.
 - **`gen-theme.sh --check` passed green over a sibling that was checked out but missing
   its registered file (#933).** The sibling arm decided "can I reach this row?" on the
   **directory**, so when `dotfiles-MacBook/` existed without `sketchybar/colors.sh` — the
