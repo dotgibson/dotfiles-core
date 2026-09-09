@@ -75,6 +75,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   wherever no colour-emoji font is installed, which is every terminal this palette targets.
   `openSUSE` now gets the same Nerd Font glyph as `SUSE`.
 
+- **Every prompt on Debian 13 died with "maximum nested function level reached"** (found
+  filming dotfiles-Debian's README hero, #948). zsh-vi-mode's default is a lazy init from the
+  first precmd — after every rc file, so after the transient prompt has registered
+  `zle-line-finish` — at which point zvm wraps that widget, and `zvm_reset_prompt` reads the
+  wrapper's dynamically-scoped `$rawfunc` and calls the widget straight back into itself.
+  `45-plugins.zsh` now sets `ZVM_INIT_MODE=sourcing` before loading zvm, so the load order
+  means what its comments always said: zvm first, the transient prompt last, and last wins
+  `zle-line-finish`. Late `bindkey`s (50+, OS, role layers) now also land after zvm's reset
+  instead of under it. Pinned in `scripts/test/60-loader.sh`.
+
 - **Rule 2 of the CI floor now sees the `runs-on:` mapping form.** The matcher required the
   banned label on the same line as `runs-on:` or `os:`, so `runs-on:` alone on its line with
   the label on a nested `labels:` child — the runner-group syntax — walked straight through
