@@ -628,10 +628,77 @@ else
   fail "gen-hero-tape: a multi-line value is passed to awk -v — the macOS leg rejects that"
 fi
 
+# THE RENDER MUST NOT BE HIJACKED BY tmux (#877). The hidden setup sources the zshrc from
+# inside vhs — an interactive TTY — so an OS layer that auto-attaches tmux for interactive
+# shells attaches THERE too, and the rest of the tour is typed into the pane: the first #877
+# render filmed a tmux status bar over the wrong directory. Two halves, both pinned: the
+# template exports the fleet's one opt-out BEFORE the source (after is too late — the source
+# never returns), and the generator refuses a row whose shell layer auto-attaches without
+# honouring it, so the precondition is checked where a check cannot itself misfire.
+_gh_exp="$(grep -nE '^Type "export [^"]*DOTFILES_NO_AUTOTMUX=1[^"]*" Enter' "$HERE/assets/hero.tape.in" | cut -d: -f1 | head -1)"
+_gh_src="$(grep -nE '^Type "source ' "$HERE/assets/hero.tape.in" | cut -d: -f1 | head -1)"
+if [[ -n "$_gh_exp" && -n "$_gh_src" ]] && ((_gh_exp < _gh_src)); then
+  pass "gen-hero-tape: the hidden setup exports DOTFILES_NO_AUTOTMUX=1 before it sources the zshrc"
+else
+  fail "gen-hero-tape: DOTFILES_NO_AUTOTMUX=1 is not exported before the source (export line ${_gh_exp:-none}, source line ${_gh_src:-none}) — the source would auto-attach tmux"
+fi
+# … and the export reaches the rendered tape, since that is what vhs actually types.
+_gh_fixture && _gh_run >/dev/null
+if grep -qE '^Type "export [^"]*DOTFILES_NO_AUTOTMUX=1' "$GHR/assets/demo.tape"; then
+  pass "gen-hero-tape: the rendered tape carries the DOTFILES_NO_AUTOTMUX export"
+else
+  fail "gen-hero-tape: the export did not reach the rendered tape"
+fi
+
+# An UNGUARDED sibling attach is 2 (cannot run), and the message names the file and the knob.
+_gh_fixture
+printf 'if command -v tmux >/dev/null 2>&1 && [[ -z "$TMUX" && -t 1 ]]; then\n  tmux attach -t main 2>/dev/null || tmux new-session -s main\nfi\n' >"$GHF/dotfiles-Fedora/os/fedora.zsh"
+_gh_tmux_out="$(_gh_out --fleet --check)"
+if [[ "$(_gh_run --fleet --check)" == 2 ]] && grep -q 'os/fedora.zsh' <<<"$_gh_tmux_out" && grep -q 'DOTFILES_NO_AUTOTMUX' <<<"$_gh_tmux_out"; then
+  pass "gen-hero-tape: a shell layer that auto-attaches tmux without the opt-out is 2, named by file and knob"
+else
+  fail "gen-hero-tape: an unguarded tmux auto-attach was not refused (rc=$(_gh_run --fleet --check))"
+fi
+# A GUARDED attach passes — the shape openSUSE, Gentoo and MacBook already had.
+printf 'if [[ -z "${DOTFILES_NO_AUTOTMUX:-}" ]] && command -v tmux >/dev/null 2>&1 && [[ -z "$TMUX" && -t 1 ]]; then\n  tmux attach -t main 2>/dev/null || tmux new-session -s main\nfi\n' >"$GHF/dotfiles-Fedora/os/fedora.zsh"
+_gh_run --fleet >/dev/null
+if [[ "$(_gh_run --fleet --check)" == 0 ]]; then
+  pass "gen-hero-tape: an auto-attach guarded by DOTFILES_NO_AUTOTMUX renders"
+else
+  fail "gen-hero-tape: a guarded auto-attach was refused (rc=$(_gh_run --fleet --check))"
+fi
+# A COMMENT is neither an attach nor a guard: Alpine's prose names an inline `tmux attach`
+# it deliberately does not do, and a knob that is only mentioned guards nothing.
+printf '# do not "simplify" this back to an inline `tmux attach`\n' >"$GHF/dotfiles-Fedora/os/fedora.zsh"
+_gh_run --fleet >/dev/null
+if [[ "$(_gh_run --fleet --check)" == 0 ]]; then
+  pass "gen-hero-tape: a commented-out tmux attach is not an attach"
+else
+  fail "gen-hero-tape: a comment mentioning tmux attach was refused (rc=$(_gh_run --fleet --check))"
+fi
+printf '# DOTFILES_NO_AUTOTMUX is deliberately not honoured here\ntmux attach -t main 2>/dev/null || tmux new-session -s main\n' >"$GHF/dotfiles-Fedora/os/fedora.zsh"
+if [[ "$(_gh_run --fleet --check)" == 2 ]]; then
+  pass "gen-hero-tape: a knob that appears only in a comment guards nothing"
+else
+  fail "gen-hero-tape: a comment-only DOTFILES_NO_AUTOTMUX satisfied the check (rc=$(_gh_run --fleet --check))"
+fi
+# CORE'S OWN LAYER IS IN THE DEFAULT SCOPE — the `.` row scans this repo's zsh/, so the
+# check is never vacuous on a Core-only clone.
+_gh_fixture
+mkdir -p "$GHR/zsh" && printf 'tmux attach -t main 2>/dev/null || tmux new-session -s main\n' >"$GHR/zsh/99-local.zsh"
+if [[ "$(_gh_run --check)" == 2 ]]; then
+  pass "gen-hero-tape: the . row scans Core's own zsh/ for an unguarded attach"
+else
+  fail "gen-hero-tape: an unguarded attach in Core's own layer passed the default scope (rc=$(_gh_run --check))"
+fi
+
 # THE GATE MUST ACTUALLY BE WIRED. A generator nothing calls is a script, not a gate — and
-# both legs matter: §9j proves the tape tracks its template, §9k that the render stayed
-# small. Pinned here rather than trusted, exactly as F11 pins parity-check.yml's --check.
-for _gh_leg in '--check' '--check-size'; do
+# all three legs matter: §9j proves the tape tracks its template, §9k that the render stayed
+# small, §9l that the render is newer than the tape that made it. The third was a script and
+# not a gate for one release on purpose (#870 landed it red; #877 greened and wired it), which
+# is exactly the state this loop exists to notice. Pinned here rather than trusted, exactly
+# as F11 pins parity-check.yml's --check.
+for _gh_leg in '--check' '--check-size' '--check-render'; do
   if grep -qE "scripts/gen-hero-tape\.sh\" $_gh_leg" "$HERE/scripts/audit-core.sh"; then
     pass "gen-hero-tape: audit-core.sh runs the generator with $_gh_leg"
   else
@@ -640,4 +707,4 @@ for _gh_leg in '--check' '--check-size'; do
 done
 
 rm -rf "$GHR" "$GHF" "$_gh_shim"
-unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad _gh_guard _gh_path _gh_miss_out _gh_fix_out
+unset GHR GHF _gh_bg _gh_shim _gh_leg _gh_drift_rc _gh_drift_out _gh_nodiff_rc _gh_ro_rc _gh_ro_out _gh_out_size _gh_sib_out _gh_sum _gh_col _gh_list_cols _gh_help_cols _gh_fence_bad _gh_md _gh_ship_row _gh_ship_alien _gh_r _gh_bad _gh_guard _gh_path _gh_miss_out _gh_fix_out _gh_exp _gh_src _gh_tmux_out

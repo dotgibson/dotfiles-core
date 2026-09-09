@@ -2652,8 +2652,50 @@ else
 fi
 unset _ghs_out _ghs_rc
 
+# ── 9l. README hero render date (the gif is newer than the tape that made it) ─
+# §9j proves the tape tracks its template; §9k weighs the gif and checks it exists. Both
+# were GREEN across #862 while this repo's front page showed a hero of the WRONG REPO: the
+# tape had been rewritten to film a dotfiles-core checkout, the gif was left as the
+# 2026-07-06 render of `~/code/dotfiles/dotfiles-MacBook`, and nothing compared the two
+# (#877). A generated script whose OUTPUT nobody dates is generated in name only — the
+# property assets/README.md advertises ("re-run the command and the hero updates") was the
+# one thing neither gate checked.
+#
+# GIT HISTORY IS THE CLOCK, not mtime — mtime does not survive a clone, so on a fresh CI
+# checkout every hero would date to the second it was written. The script's own header
+# carries the full argument; what matters here is the exit contract: 1 is a gif older than
+# its tape (or a missing one — README.md's [product-screenshot] points at it), and 3 is a
+# tree that CANNOT date anything (shallow, not a checkout, unrelated histories). Three is an
+# ENVIRONMENT skip, §9h's posture, and it is a skip and not a pass because #821 is the
+# standing lesson: a history-dependent check on a tree without history must say so, never
+# go green because the evidence was absent. CI's audit job takes fetch-depth: 0, so it is
+# never that tree.
+#
+# WIRED ONLY ONCE IT COULD BE GREEN. #870 landed --check-render and deliberately left it out
+# of this file: the check was correct and RED, and greening it needs vhs on a host matching
+# the row, so wiring it then would have blocked every unrelated `make sync` behind a render
+# nobody could do from CI. #877 re-rendered the gif; this is the one block that entry promised.
+#
+# ALWAYS ON and NOT SCOPE-GUARDED, for §9j's reason: a `.tape` and a `.gif` are both INERT
+# to ci-classify.sh, so the push that rewrites the tape and forgets the render arrives here
+# as --scope none and must still be gated.
+hdr "README hero render date (gen-hero-tape.sh --check-render)"
+_ghr_out="$("$HERE/scripts/gen-hero-tape.sh" --check-render 2>&1)" && _ghr_rc=0 || _ghr_rc=$?
+if ((_ghr_rc == 0)); then
+  pass "gen-hero-tape --check-render (every rendered hero is newer than the tape that made it)"
+elif ((_ghr_rc == 1)); then
+  fail "README hero render is stale — see below; the tape changed after the gif was last rendered (or the gif is missing). Re-render on a host matching the row (vhs assets/demo.tape, then the gifsicle pass assets/README.md documents) and commit the gif"
+  fail_detail "$_ghr_out"
+elif ((_ghr_rc == 3)); then
+  skip_env "README hero render date (no usable git history to date the gif against — shallow clone or not a checkout; not covered by this run)"
+else
+  fail "gen-hero-tape.sh --check-render could not run (exit $_ghr_rc) — a tape names no Output, or the registry/template is unreadable; the render-date gate dated NOTHING this run"
+  fail_detail "$_ghr_out"
+fi
+unset _ghr_out _ghr_rc
+
 # ── 9m. the fan-out count (scripts/os-repos.txt ↔ every claim about it) ──────
-# §9l is reserved for the hero-tape date check (#877's follow-up), so this takes 9m.
+# §9l is the hero-tape render-date check (#877), so this takes 9m.
 #
 # THE SAME SHAPE AS EVERY OTHER §9: one source of truth, many copies, and nothing reading
 # the two together. Here the truth is scripts/os-repos.txt — whose own header says "THIS
@@ -2686,8 +2728,8 @@ else
 fi
 
 # ── 9n. the fleet's CALLER pins (os-repos.txt ↔ each repo's live `uses:`) ─────
-# §9l is reserved for the hero-tape date check (#877's follow-up), §9m is the fan-out
-# count, so this takes 9n.
+# §9l is the hero-tape render-date check (#877), §9m is the fan-out count, so this
+# takes 9n.
 #
 # THE THIRD HALF OF A CHECK THAT ONLY HAD TWO (#804). §8a reads Core's own `ref:` keys;
 # §8b reads Core's own comment examples. Neither reads the thing an OS repo actually

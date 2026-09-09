@@ -33,12 +33,41 @@ about. Nothing noticed, because §9j checks the tape against its template and §
 the gif's bytes, and neither ties one to the other:
 
 ```sh
-make check-hero-render  # exit 1 if a committed gif predates the tape that renders it
+make check-hero-render  # exit 1 if a committed gif predates the tape that renders it (audit-core.sh §9l runs this)
 ```
 
 It dates the gif by **git history**, not mtime — mtime does not survive a clone — so a
 tree without usable history skips loudly rather than passing green. An uncommitted gif
 counts as freshly rendered; a modified tape beside an untouched gif is the defect.
+
+It was a script and not a gate for one release on purpose: #870 landed it red, and greening
+it needs `vhs` on a host matching the row, which CI is not. #877 re-rendered the gif and wired
+the check in as §9l in the same change, so a rewritten tape can no longer ship over a stale hero.
+
+## The render must not land in tmux
+
+The hidden setup sources `~/.config/zsh/.zshrc` from inside vhs, which is an interactive TTY —
+so an OS layer that auto-attaches tmux for interactive shells attaches **inside the recording**.
+The `source` never returns, every later keystroke lands in the pane, the `cd` never happens,
+and the gif films a tmux status bar over whatever directory the pane had. The first #877 render
+came out exactly like that.
+
+Every OS layer auto-attaches, so the tape exports the fleet's one opt-out **before** the source:
+
+```sh
+export CORE_NO_PAGER=1 GIT_PAGER=cat DOTFILES_NO_AUTOTMUX=1
+```
+
+`DOTFILES_NO_AUTOTMUX` was already honoured by MacBook, openSUSE and Gentoo; #877 made it all
+seven (Debian keeps `DEBIAN_NO_TMUX` working alongside). And because a knob only helps on a
+layer that reads it, `gen-hero-tape.sh` **refuses to render a row whose shell layer auto-attaches
+without honouring it** (exit 2, the cannot-run leg) — scanning that repo's own `os/` and `zsh/`,
+never the vendored `core/`, with comment lines dropped in both directions. The `.` row scans this
+repo's `zsh/` the same way, so the check is never vacuous.
+
+There is deliberately **no** `[[ -z $TMUX ]] || exit 1` after the source: if the knob were
+ignored, that line would be typed into the attached pane, where `$TMUX` *is* set, and `exit 1`
+there closes a shell in a real session. The generation-time check has no such failure mode.
 
 ## `demo.tape` is generated — edit `hero.tape.in`
 
@@ -158,6 +187,10 @@ loosely related. The first shortened cut ran ~13 s against the old ~25 s and cam
 **bigger** (2.46 MB vs 1.84 MB): GIF pays per changed pixel, and this tour has four
 full-screen colour redraws where the old one had pager quits and a `clear`. Sleeps on a
 static screen are nearly free.
+
+The first render of the current tape (#877, `Set Framerate 24`, ~16 s) measured **2.77 MB raw
+and 1.19 MB after the gifsicle pass** — over the ceiling before optimization, comfortably under
+it after. The pass is not a nicety; it is the difference between red and green.
 
 So the levers, in order of effect per unit of ugliness:
 
