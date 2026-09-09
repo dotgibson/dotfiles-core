@@ -231,6 +231,32 @@ ucheck "atuin daemon: still reaches the legacy data-dir socket (#518)" \
   "rm -f '$ATSOCKTMP/xdgdata/atuin/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/xdgdata/atuin/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
   ATUIN_DAEMON__ENABLED=true TMPDIR="$ATSOCKTMP/nowhere" XDG_RUNTIME_DIR= \
   XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+# (d3) THE /tmp FALLBACK (#941). atuin PR #4036 (merged 2026-08-31, ships in 18.21.0) makes the
+#      client try /tmp/atuin-$UID/atuin.sock AFTER $TMPDIR/atuin-$UID/atuin.sock even when
+#      $TMPDIR is set — the daemon (a systemd user unit, no $TMPDIR) and the shell (exports
+#      one) need not agree. A guard that resolved only its own $TMPDIR degraded on exactly
+#      that shape while atuin's client would have connected.
+#
+#      The fallback is a LITERAL /tmp, so the listener has to sit there — and a real daemon on
+#      the box running this suite may already own that inode. Never clobber it: if the path
+#      exists this case is a SKIP, not a pass, and the suite creates the directory 0700 (the
+#      mode atuin itself demands) and removes only what it made.
+_at_tmpsock="/tmp/atuin-$(id -u)/atuin.sock"
+if [[ -e "$_at_tmpsock" ]]; then
+  skip "atuin daemon: /tmp fallback (#941) — $_at_tmpsock already exists on this box, not clobbering a real daemon's socket"
+else
+  _at_tmpdir_made=0
+  [[ -d "${_at_tmpsock%/*}" ]] || { mkdir -m 0700 "${_at_tmpsock%/*}" && _at_tmpdir_made=1; }
+  # $TMPDIR points somewhere nothing listens; XDG paths likewise; only the literal /tmp answers.
+  ucheck "atuin daemon: falls back to /tmp/atuin-\$UID/atuin.sock when \$TMPDIR differs (18.21.0, #941)" \
+    "rm -f '$_at_tmpsock'; zmodload zsh/net/socket; zsocket -l '$_at_tmpsock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
+    ATUIN_DAEMON__ENABLED=true TMPDIR="$ATSOCKTMP/nowhere" XDG_RUNTIME_DIR="$ATSOCKTMP/xdgrun" \
+    XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+  rm -f "$_at_tmpsock"
+  ((_at_tmpdir_made)) && rmdir "${_at_tmpsock%/*}" 2>/dev/null
+  unset _at_tmpdir_made
+fi
+unset _at_tmpsock
 # An EXPLICIT ATUIN_DAEMON__SOCKET_PATH must win outright and probe nothing else. Point it at
 # an absent path while a live listener sits on a candidate: the guard must still degrade, or
 # the config knob has stopped being authoritative — which would be a worse bug than the one
