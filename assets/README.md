@@ -146,11 +146,11 @@ does not declare, even though only the `proof` line reaches the viewer.
 
 Rendering and committing those nine gifs, and adding the hero block to each repo's
 README, was #698's follow-up — sequenced after `os.capabilities` (#667) and done as #948:
-eight of the nine are filmed and committed in their repos, `dotfiles-openSUSE`'s once the
-starship fix from dotfiles-core#950 had been synced into its vendored `core/` (before that the
-prompt drew the openSUSE symbol as a lizard emoji, which is tofu wherever no colour-emoji
-font is installed). `dotfiles-MacBook` needs a Mac — its guard asserts `brew upgrade`, and
-`up -n` probes `$PATH`, so no Linux box can film it honestly.
+all nine are filmed and committed in their repos — `dotfiles-openSUSE`'s once the starship
+fix from dotfiles-core#950 had been synced into its vendored `core/` (before that the prompt
+drew the openSUSE symbol as a lizard emoji, which is tofu wherever no colour-emoji font is
+installed), and `dotfiles-MacBook`'s on a Mac, since its guard asserts `brew upgrade` and
+`up -n` probes `$PATH`, which no Linux box can pass honestly.
 
 **`dotfiles-Windows` is deliberately not registered**, which means those ten rows are not
 the ten repos #698 counted: that list included Windows, and this covers nine of it. The
@@ -224,7 +224,7 @@ So that a skip is never mistaken for a pass, the summary line counts what it act
 on the scale:
 
 ```text
-✓ README hero size — 9 weighed, under the 2097152-byte ceiling; 1 not rendered yet (not covered by this run)
+✓ README hero size — 10 weighed, all under the 2097152-byte ceiling
 ```
 
 It is a **ceiling, not a target**, and it counts bytes rather than seconds — which are only

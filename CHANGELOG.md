@@ -273,7 +273,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Every tape and this repo's own gif are re-rendered. Eight of the nine sibling heroes are now
   filmed and committed in their repos — Fedora, Alpine, Arch, Debian, Gentoo, openSUSE, Offense
   and Defense, each on a rootless chroot of its distro; `assets/README.md` records the recipe
-  and the five traps. MacBook needs a Mac.
+  and the five traps; MacBook's was filmed on a Mac, which closes the set.
 
 - **nvim plugin pins move forward for five plugins.** `friendly-snippets`, `nvim-lspconfig`,
   `nvim-tree.lua`, `nvim-treesitter` and `schemastore.nvim` advance to upstream HEAD — the set
