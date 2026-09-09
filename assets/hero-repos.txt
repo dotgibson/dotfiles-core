@@ -61,12 +61,10 @@
 #
 # RENDER STATE (#948, 2026-09-09). Every row's tape is written by `make gen-hero-tape-fleet`;
 # a row's gif lives in ITS repo, beside the tape, and §9l dates one against the other there.
-# Seven of the nine sibling heroes were filmed for #948 on rootless chroots of each distro
-# (assets/README.md, "Filming a sibling hero without its box"). The two that were not:
-#   dotfiles-openSUSE — waits on dotfiles-core#950 reaching its vendored core/: starship
-#                       drew its openSUSE symbol as a lizard emoji, tofu in every terminal
-#                       this palette targets. The tape and README block are staged; film
-#                       on Tumbleweed after the next Core sync.
+# Eight of the nine sibling heroes were filmed for #948 on rootless chroots of each distro
+# (assets/README.md, "Filming a sibling hero without its box") — openSUSE's once #950's
+# starship fix had been synced into its vendored core/ (before that, the prompt drew the
+# openSUSE symbol as a lizard emoji). The one that was not:
 #   dotfiles-MacBook  — needs a Mac. @@HOSTGUARD@@ asserts `brew upgrade` and `up -n`
 #                       probes $PATH; no Linux box can film it honestly.
 # ──────────────────────────────────────────────────────────────────────────────

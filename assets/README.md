@@ -146,11 +146,11 @@ does not declare, even though only the `proof` line reaches the viewer.
 
 Rendering and committing those nine gifs, and adding the hero block to each repo's
 README, was #698's follow-up — sequenced after `os.capabilities` (#667) and done as #948:
-seven of the nine are filmed and committed in their repos. `dotfiles-openSUSE` waits on
-dotfiles-core#950 reaching its vendored `core/` (starship drew the openSUSE symbol as a lizard emoji,
-which is tofu wherever no colour-emoji font is installed), and `dotfiles-MacBook` needs a
-Mac — its guard asserts `brew upgrade`, and `up -n` probes `$PATH`, so no Linux box can
-film it honestly.
+eight of the nine are filmed and committed in their repos, `dotfiles-openSUSE`'s once the
+starship fix from dotfiles-core#950 had been synced into its vendored `core/` (before that the
+prompt drew the openSUSE symbol as a lizard emoji, which is tofu wherever no colour-emoji
+font is installed). `dotfiles-MacBook` needs a Mac — its guard asserts `brew upgrade`, and
+`up -n` probes `$PATH`, so no Linux box can film it honestly.
 
 **`dotfiles-Windows` is deliberately not registered**, which means those ten rows are not
 the ten repos #698 counted: that list included Windows, and this covers nine of it. The
@@ -163,7 +163,7 @@ nothing for.
 
 ### Filming a sibling hero without its box
 
-`@@HOSTGUARD@@` wants the distro, not the hardware. #948 filmed seven rows from one Fedora
+`@@HOSTGUARD@@` wants the distro, not the hardware. #948 filmed eight rows from one Fedora
 box by giving each row a **rootless chroot** of its distro: the OCI base image's layers
 pulled straight from Docker Hub with a 40-line registry client (no container runtime), unpacked
 and entered under `unshare --user --map-user=0 --map-group=0 --map-auto` (root → you, 1…65535
@@ -224,7 +224,7 @@ So that a skip is never mistaken for a pass, the summary line counts what it act
 on the scale:
 
 ```text
-✓ README hero size — 8 weighed, under the 2097152-byte ceiling; 2 not rendered yet (not covered by this run)
+✓ README hero size — 9 weighed, under the 2097152-byte ceiling; 1 not rendered yet (not covered by this run)
 ```
 
 It is a **ceiling, not a target**, and it counts bytes rather than seconds — which are only
