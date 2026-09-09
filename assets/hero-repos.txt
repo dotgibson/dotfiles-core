@@ -61,12 +61,11 @@
 #
 # RENDER STATE (#948, 2026-09-09). Every row's tape is written by `make gen-hero-tape-fleet`;
 # a row's gif lives in ITS repo, beside the tape, and §9l dates one against the other there.
-# Eight of the nine sibling heroes were filmed for #948 on rootless chroots of each distro
-# (assets/README.md, "Filming a sibling hero without its box") — openSUSE's once #950's
-# starship fix had been synced into its vendored core/ (before that, the prompt drew the
-# openSUSE symbol as a lizard emoji). The one that was not:
-#   dotfiles-MacBook  — needs a Mac. @@HOSTGUARD@@ asserts `brew upgrade` and `up -n`
-#                       probes $PATH; no Linux box can film it honestly.
+# All nine sibling heroes are filmed and committed in their repos (#948): eight on rootless
+# chroots of each distro (assets/README.md, "Filming a sibling hero without its box") —
+# openSUSE's once #950's starship fix had been synced into its vendored core/ — and
+# MacBook's on a Mac, because @@HOSTGUARD@@ asserts `brew upgrade` and `up -n` probes
+# $PATH, which no Linux box can pass honestly.
 # ──────────────────────────────────────────────────────────────────────────────
 .	assets/demo.tape	~/code/dotgibson/dotfiles-core	core status	core-version	note:the provenance panel — version, live layers, tool health
 dotfiles-MacBook	assets/demo.tape	~/code/dotgibson/dotfiles-MacBook	up -n	echo up resolves to $(_core_cap PKG_UPGRADE)	caps:os/macos.capabilities
