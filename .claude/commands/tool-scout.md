@@ -13,7 +13,10 @@ reviewable proposal, not a blind upgrade.
 Focus for this run: **$ARGUMENTS** (empty = scan the whole modern-CLI stack).
 
 Delegate the web research to the `tool-scout` subagent (it has WebSearch/WebFetch
-and its own context) and relay its ranked proposal.
+and its own context) and relay its ranked proposal. **Wait for it in the foreground**
+(`run_in_background: false`): the weekly job runs this headless (`claude -p`), which prints
+only the final turn, so a delegate still researching when your turn ends is lost and the
+preamble you wrote while waiting gets filed as the report — which is exactly what #932 was.
 
 ## Establish the baseline first
 
@@ -116,7 +119,10 @@ one a workaround was verified against is a finding in its own right, not a footn
      machines, so there is no single "version in use", and the fleet-correct question is
      whether a newer atuin exists that any of them could be on.
   2. **If a verdict issue is open, lead with it.** It is a claim in this repo that has gone
-     stale, and a stale one costs history rather than convenience.
+     stale, and a stale one costs history rather than convenience. There is no `Bash` here,
+     so `gh` is not how you look: WebFetch the issue search
+     (`https://github.com/dotgibson/dotfiles-core/issues?q=is%3Aissue+is%3Aopen+atuin-guard-verify`)
+     and report what it shows — "could not check" is a finding, "nothing open" is a claim.
   3. **If the premise has `moved`, weigh the remedy** — retire, version-gate, or reshape —
      as an **eight-repo change**: retiring the guard removes a `precmd` hook from every
      interactive shell in the fleet. That is the judgment call the workflow deliberately does
