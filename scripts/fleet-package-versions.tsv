@@ -42,19 +42,19 @@
 
 floor	jq	1.8.2
 
-ver	jq	Arch	1.8.2	2026-09-07	repology:arch	arch
-ver	jq	Gentoo	1.8.2	2026-09-07	repology:gentoo	gentoo
-ver	jq	openSUSE Tumbleweed	1.8.2	2026-09-07	repology:opensuse_tumbleweed	opensuse_tumbleweed
-ver	jq	Homebrew	1.8.2	2026-09-07	repology:homebrew	homebrew
-ver	jq	Alpine edge	1.8.2	2026-09-07	repology:alpine_edge	alpine_edge
-ver	jq	Alpine 3.24	1.8.2	2026-09-07	pkgs.alpinelinux.org	alpine_3_24
-ver	jq	Alpine 3.23	1.8.2	2026-09-07	pkgs.alpinelinux.org	alpine_3_23
-ver	jq	Alpine 3.22	1.8.2	2026-09-07	pkgs.alpinelinux.org	alpine_3_22
-ver	jq	Fedora Rawhide	1.8.2	2026-09-07	repology:fedora_rawhide	fedora_rawhide
+ver	jq	Arch	1.8.2	2026-09-09	repology:arch	arch
+ver	jq	Gentoo	1.8.2	2026-09-09	repology:gentoo	gentoo
+ver	jq	openSUSE Tumbleweed	1.8.2	2026-09-09	repology:opensuse_tumbleweed	opensuse_tumbleweed
+ver	jq	Homebrew	1.8.2	2026-09-09	repology:homebrew	homebrew
+ver	jq	Alpine edge	1.8.2	2026-09-09	repology:alpine_edge	alpine_edge
+ver	jq	Alpine 3.24	1.8.2	2026-09-09	pkgs.alpinelinux.org	alpine_3_24
+ver	jq	Alpine 3.23	1.8.2	2026-09-09	pkgs.alpinelinux.org	alpine_3_23
+ver	jq	Alpine 3.22	1.8.2	2026-09-09	pkgs.alpinelinux.org	alpine_3_22
+ver	jq	Fedora Rawhide	1.8.2	2026-09-09	repology:fedora_rawhide	fedora_rawhide
 ver	jq	Fedora 45	1.8.2	2026-09-06	packages.fedoraproject.org	fedora_45
-ver	jq	Fedora 44	1.8.1	2026-09-07	repology:fedora_44	fedora_44
-ver	jq	Fedora 43	1.8.1	2026-09-07	repology:fedora_43	fedora_43
-ver	jq	Alpine 3.21	1.7.1	2026-09-07	pkgs.alpinelinux.org	alpine_3_21
-ver	jq	Debian 13	1.7.1	2026-09-07	repology:debian_13	debian_13
-ver	jq	Ubuntu 24.04	1.7.1	2026-09-07	repology:ubuntu_24_04	ubuntu_24_04
-ver	jq	openSUSE Leap 15.x	1.6	2026-09-07	repology:opensuse_leap_15_6	opensuse_leap_15_6
+ver	jq	Fedora 44	1.8.1	2026-09-09	repology:fedora_44	fedora_44
+ver	jq	Fedora 43	1.8.1	2026-09-09	repology:fedora_43	fedora_43
+ver	jq	Alpine 3.21	1.7.1	2026-09-09	pkgs.alpinelinux.org	alpine_3_21
+ver	jq	Debian 13	1.7.1	2026-09-09	repology:debian_13	debian_13
+ver	jq	Ubuntu 24.04	1.7.1	2026-09-09	repology:ubuntu_24_04	ubuntu_24_04
+ver	jq	openSUSE Leap 15.x	1.6	2026-09-09	repology:opensuse_leap_15_6	opensuse_leap_15_6

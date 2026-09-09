@@ -1275,22 +1275,22 @@ version and a verdict that disagreed.
 
 | Target              | `jq`  | vs ≥ 1.8.2  | verified   |
 | ------------------- | ----- | ----------- | ---------- |
-| Arch                | 1.8.2 | at or above | 2026-09-07 |
-| Gentoo              | 1.8.2 | at or above | 2026-09-07 |
-| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-09-07 |
-| Homebrew            | 1.8.2 | at or above | 2026-09-07 |
-| Alpine edge         | 1.8.2 | at or above | 2026-09-07 |
-| Alpine 3.24         | 1.8.2 | at or above | 2026-09-07 |
-| Alpine 3.23         | 1.8.2 | at or above | 2026-09-07 |
-| Alpine 3.22         | 1.8.2 | at or above | 2026-09-07 |
-| Fedora Rawhide      | 1.8.2 | at or above | 2026-09-07 |
+| Arch                | 1.8.2 | at or above | 2026-09-09 |
+| Gentoo              | 1.8.2 | at or above | 2026-09-09 |
+| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-09-09 |
+| Homebrew            | 1.8.2 | at or above | 2026-09-09 |
+| Alpine edge         | 1.8.2 | at or above | 2026-09-09 |
+| Alpine 3.24         | 1.8.2 | at or above | 2026-09-09 |
+| Alpine 3.23         | 1.8.2 | at or above | 2026-09-09 |
+| Alpine 3.22         | 1.8.2 | at or above | 2026-09-09 |
+| Fedora Rawhide      | 1.8.2 | at or above | 2026-09-09 |
 | Fedora 45           | 1.8.2 | at or above | 2026-09-06 |
-| Fedora 44           | 1.8.1 | **below**   | 2026-09-07 |
-| Fedora 43           | 1.8.1 | **below**   | 2026-09-07 |
-| Alpine 3.21         | 1.7.1 | **below**   | 2026-09-07 |
-| Debian 13           | 1.7.1 | **below**   | 2026-09-07 |
-| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-09-07 |
-| openSUSE Leap 15.x  | 1.6   | **below**   | 2026-09-07 |
+| Fedora 44           | 1.8.1 | **below**   | 2026-09-09 |
+| Fedora 43           | 1.8.1 | **below**   | 2026-09-09 |
+| Alpine 3.21         | 1.7.1 | **below**   | 2026-09-09 |
+| Debian 13           | 1.7.1 | **below**   | 2026-09-09 |
+| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-09-09 |
+| openSUSE Leap 15.x  | 1.6   | **below**   | 2026-09-09 |
 
 <!-- core:porting-matrix:end fleet-versions -->
 
