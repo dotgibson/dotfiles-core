@@ -671,7 +671,12 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
   while IFS=$'\t' read -r rt t target ver vdate _; do
     [[ "$rt" == "ver" && "$t" == "$tool" ]] || continue
     if _fv_lt "$ver" "$floor"; then status="**below**"; else status="at or above"; fi
-    body="$body$target\t$ver\t$status\t$vdate
+    # A real TAB, via the $TAB the file already defines, and `%s` below: the first cut wrote
+    # a literal `\t` and emitted with `%b`, which reinterprets escapes in the DATA too — a
+    # backslash in any field would have been rewritten, and a `\c` would have truncated the
+    # rest of the table without a word (#933). Version strings make that unlikely; the
+    # class is removed anyway, for the same number of characters.
+    body="$body$target$TAB$ver$TAB$status$TAB$vdate
 "
     rows=$((rows + 1))
   done < <(grep -v '^[[:space:]]*#' "$FLEET_VERSIONS")
@@ -683,7 +688,7 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
 
   # shellcheck disable=SC2016  # the backticks are literal MARKDOWN code ticks, not a subshell
   { printf 'Target\t`%s`\tvs ≥ %s\tverified\n' "$tool" "$floor"
-    printf '%b' "$body"; } | _table
+    printf '%s' "$body"; } | _table
 }
 
 # Staleness is REPORTED, never failed. This generator cannot see upstream, so an old row
