@@ -146,8 +146,8 @@ does not declare, even though only the `proof` line reaches the viewer.
 
 Rendering and committing those nine gifs, and adding the hero block to each repo's
 README, was #698's follow-up — sequenced after `os.capabilities` (#667) and done as #948:
-seven of the nine are filmed and committed in their repos. `dotfiles-openSUSE` waits on the
-#950 fix reaching its vendored `core/` (starship drew the openSUSE symbol as a lizard emoji,
+seven of the nine are filmed and committed in their repos. `dotfiles-openSUSE` waits on
+dotfiles-core#950 reaching its vendored `core/` (starship drew the openSUSE symbol as a lizard emoji,
 which is tofu wherever no colour-emoji font is installed), and `dotfiles-MacBook` needs a
 Mac — its guard asserts `brew upgrade`, and `up -n` probes `$PATH`, so no Linux box can
 film it honestly.
