@@ -14,7 +14,13 @@ vhs assets/demo.tape    # writes assets/demo.gif
 ```
 
 Requires a Nerd Font installed locally — the icons in `eza` and `starship` render as
-boxes without one. Always optimize afterwards — the raw VHS output is not what ships:
+boxes without one. **Render from a shell that will not auto-attach tmux.** The hidden setup
+sources `~/.config/zsh/.zshrc`, and an OS layer whose `80-os.zsh` attaches or creates a
+`main` session on every interactive shell (Fedora's does) will do so inside the recording —
+the rest of the tour is then typed into a tmux pane, the `cd` never lands, and the hero films
+a status bar over the wrong directory. Hide `tmux` from `PATH` for the render, or set whatever
+that guard skips on (`TERM_PROGRAM=vscode` for the current one). Always optimize afterwards —
+the raw VHS output is not what ships:
 
 ```sh
 gifsicle -O3 --lossy=80 --colors 64 assets/demo.gif -o assets/demo.gif
@@ -33,12 +39,16 @@ about. Nothing noticed, because §9j checks the tape against its template and §
 the gif's bytes, and neither ties one to the other:
 
 ```sh
-make check-hero-render  # exit 1 if a committed gif predates the tape that renders it
+make check-hero-render  # exit 1 if a committed gif predates the tape that renders it (audit-core.sh §9l runs this)
 ```
 
 It dates the gif by **git history**, not mtime — mtime does not survive a clone — so a
 tree without usable history skips loudly rather than passing green. An uncommitted gif
 counts as freshly rendered; a modified tape beside an untouched gif is the defect.
+
+It was a script and not a gate for one release on purpose: #870 landed it red, and greening
+it needs `vhs` on a host matching the row, which CI is not. #877 re-rendered the gif and wired
+the check in as §9l in the same change, so a rewritten tape can no longer ship over a stale hero.
 
 ## `demo.tape` is generated — edit `hero.tape.in`
 
@@ -158,6 +168,10 @@ loosely related. The first shortened cut ran ~13 s against the old ~25 s and cam
 **bigger** (2.46 MB vs 1.84 MB): GIF pays per changed pixel, and this tour has four
 full-screen colour redraws where the old one had pager quits and a `clear`. Sleeps on a
 static screen are nearly free.
+
+The first render of the current tape (#877, `Set Framerate 24`, ~16 s) measured **2.77 MB raw
+and 1.19 MB after the gifsicle pass** — over the ceiling before optimization, comfortably under
+it after. The pass is not a nicety; it is the difference between red and green.
 
 So the levers, in order of effect per unit of ugliness:
 

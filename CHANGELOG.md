@@ -14,6 +14,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The README hero is re-rendered from the current tape, and the render-date check is wired
+  in as `audit-core.sh` §9l (#877 items 1 and 2, the last of #698's original defect).**
+  `assets/demo.gif` on `main` was still the blob committed on 2026-07-06: a `dotfiles-MacBook`
+  tree walked through `z dotfiles` and `core help`, two months before #862 rewrote the tape to
+  film a `dotfiles-core` checkout, and two releases after #870 landed `--check-render` red and
+  deliberately un-wired. The front page showed the very thing #698 was filed about the whole
+  time. The gif is now the current tape's tour — `ll`, `cat README.md`, `glog -8`,
+  `core status`, `core-version` — filmed on a Core host over a clean `main` checkout, then put
+  through the `gifsicle -O3 --lossy=80 --colors 64` pass `assets/README.md` documents.
+  **§9k's ceiling was never tested against this tape until now**: `assets/hero.tape.in`'s own
+  comment records the first shortened cut at 2.46 MB, so the byte count is in the PR, not in
+  prose. `make check-hero-render` flips green on the uncommitted gif and stays green once the
+  gif and this entry land in the same commit, which is the only order §9l accepts.
+  **§9l is the one block #870's entry promised.** It mirrors §9k's shape — exit 1 is a stale or
+  missing gif with the script's own per-row remedy carried through `fail_detail`, exit 2 is
+  "could not run", and exit 3 (no usable history: shallow, not a checkout, unrelated
+  histories) is an **environment skip** in §9h's posture, never a pass, which is #821's lesson.
+  Always on and not scope-guarded, for §9j's reason: a `.tape` and a `.gif` are both inert to
+  `ci-classify.sh`. `scripts/test/42-gen-hero-tape.sh` pins the third leg as wired, exactly
+  as it pins the first two. Item 3 — the nine sibling heroes — stays open on #877: the tapes
+  are written by `make gen-hero-tape-fleet` today, but `@@HOSTGUARD@@` requires each to be
+  filmed on the distro its row is about, so that is nine boxes, not one.
+
 ## [v7.2.0] - 2026-09-08
 
 ### Added

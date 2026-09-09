@@ -629,9 +629,12 @@ else
 fi
 
 # THE GATE MUST ACTUALLY BE WIRED. A generator nothing calls is a script, not a gate — and
-# both legs matter: §9j proves the tape tracks its template, §9k that the render stayed
-# small. Pinned here rather than trusted, exactly as F11 pins parity-check.yml's --check.
-for _gh_leg in '--check' '--check-size'; do
+# all three legs matter: §9j proves the tape tracks its template, §9k that the render stayed
+# small, §9l that the render is newer than the tape that made it. The third was a script and
+# not a gate for one release on purpose (#870 landed it red; #877 greened and wired it), which
+# is exactly the state this loop exists to notice. Pinned here rather than trusted, exactly
+# as F11 pins parity-check.yml's --check.
+for _gh_leg in '--check' '--check-size' '--check-render'; do
   if grep -qE "scripts/gen-hero-tape\.sh\" $_gh_leg" "$HERE/scripts/audit-core.sh"; then
     pass "gen-hero-tape: audit-core.sh runs the generator with $_gh_leg"
   else
