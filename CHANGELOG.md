@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v7.3.0] - 2026-09-09
+
 ### Added
 
 - **The vocabulary register reads `dotfiles-Windows` — the same seven verbs, spelled
