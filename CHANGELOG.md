@@ -66,6 +66,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   plus the finding that the "one source, generated outward" milestone has already shipped
   as minors and should be closed rather than scheduled.
 
+### Changed
+
+- **The `--json` contract fixture ran the whole suite twice; it now runs it once, and the
+  suite is 27% faster (#467).** `scripts/test/52-atuin-autostart.sh` proves two things
+  about `--json`: that stdout carries exactly one parseable object, and that the mode does
+  not change the VERDICT (#511). Each was checked by re-running the real suite at
+  `--scope none`, on the belief written into the fixture that this is _"the cheapest scope,
+  a few seconds"_. It is not, and the arithmetic is the tell: measured at `7.3.0` on macOS,
+  a `--scope none` run is **1,119s** of which **743.7s is this one fragment** — because a
+  nested run IS a base run (375.3s base, 371.9s per nested run). The fixture **tripled**
+  every `--scope none` invocation, `audit-core.sh`'s scoped runs included, and made one
+  fragment **61.5% of a 1,536s full run**.
+
+  The verdict property is about the MODE, not about the real fixtures, so it no longer
+  needs the real suite: it now runs against a staged throwaway suite of one fragment —
+  `05-suite-shape.sh`'s pattern, two fragments up — in ~60ms. **The first run stays real,
+  deliberately.** Failure shape 1 in that section's own header, _"a fixture leaking to
+  STDOUT"_ (last seen as a no-op `git commit` printing "nothing to commit"), is only
+  observable when the actual fixtures run; staging both would have left the gate asserting
+  against its own fixture and deleted the coverage it exists for.
+
+  It also checks MORE than before. A staged suite can be made to fail on purpose, so
+  agreement is now asserted for **both** verdicts; the old comparison only ever exercised
+  `ok`, because the real suite is green whenever anyone runs it — the `failed` half of a
+  gate about verdicts had never once been executed.
+
+  Measured, same box, before → after: the full suite **1,536s → 1,125s** and `--scope none`
+  **1,119s → 733s**, both green, with one assertion more than before.
+
+  **This also corrects the record on #467**, closed `not_planned` as _"`test-core.sh` hangs
+  on macOS"_. It does not hang — it completes, `pass 2074 fail 0`. Both nested runs
+  captured their output, so the parent printed nothing for 15.8 minutes, and that silence
+  is what every report of a hang has been looking at. What remains open there is the other
+  half: `--scope none` gates `shell`/`nvim`/`atuin` and nothing else, so five un-gated
+  fragments (`56-fleet-vocabulary` 141.8s, `40-gen-theme-aliases` 75.0s,
+  `41-gen-matrix-parity` 38.0s, `35-new-os-repo` 35.5s, `32-sync-core` 21.5s) are **83%** of
+  its 375.3s base. Making the cheapest scope actually cheap would make the one remaining
+  real self-run nearly free as a side effect.
+
 ## [v7.3.0] - 2026-09-09
 
 ### Added

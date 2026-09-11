@@ -1252,9 +1252,18 @@ fi
 #   2. an inherited CORE_JSON silencing a child gate's skip() lines, which flips assertions
 #      that grep for them and reports a failing result on a healthy tree.
 #
-# Runs the suite against ITSELF at --scope none (the cheapest scope, a few seconds).
-# CORE_TEST_SELFJSON=1 in the child is what stops the recursion, and the guard is on the
-# PARENT so a nested run simply skips this section rather than re-entering it.
+# Runs the suite against ITSELF at --scope none. CORE_TEST_SELFJSON=1 in the child is what
+# stops the recursion, and the guard is on the PARENT so a nested run simply skips this
+# section rather than re-entering it.
+#
+# THAT NESTED RUN IS NOT CHEAP, whatever this comment used to claim ("the cheapest scope, a
+# few seconds"). Measured at v7.3.0 on macOS it is 371.9s, because --scope none gates
+# shell/nvim/atuin and nothing else — five un-gated fragments (56-fleet-vocabulary 141.8s,
+# 40-gen-theme-aliases 75.0s, 41-gen-matrix-parity 38.0s, 35-new-os-repo 35.5s,
+# 32-sync-core 21.5s) are 83% of its 375.3s base. It is kept anyway because it is the only
+# thing that can see a REAL fixture leaking onto stdout; the #511 verdict check below no
+# longer pays it a second time. Making --scope none genuinely cheap is the open half of
+# #467, and it would make this run nearly free as a side effect.
 #
 # Placed ABOVE the zsh-gated block below, not at the end of the file, because that block
 # ends in `summary; exit` on a box where zsh is absent or shell scope is off — so anything
@@ -1289,19 +1298,70 @@ $(printf '%s\n' "$_sj_out" | grep -v '^{' | head -5)"
       skip "--json parse (python3 not installed)"
     fi
   fi
-  # THE property #511 was filed about: --json must not change the VERDICT. Compared against
-  # the same scope without it, so a disagreement means the mode itself moved the result.
-  if [[ -n "$_sj_result" ]]; then
-    if env -u CORE_TEST_NESTED CORE_TEST_SELFJSON=1 bash "$HERE/scripts/test-core.sh" --scope none --quiet --color never >/dev/null 2>&1; then
-      _sj_plain=ok
+  # THE property #511 was filed about: --json must not change the VERDICT.
+  #
+  # THIS USED TO RE-RUN THE REAL SUITE at --scope none to get the non-JSON verdict, on the
+  # belief stated above that --scope none is "the cheapest scope, a few seconds". It is
+  # not, and the gap is not small: measured at v7.3.0 on macOS, a --scope none run is
+  # 1,119s and THIS FRAGMENT is 744s of it, because a nested run IS a base run (375.3s
+  # base, 371.9s per nested run — the arithmetic closes). The fixture tripled every
+  # --scope none invocation, audit-core.sh's scoped runs included, and made this one
+  # fragment 61.5% of a full 1,536s run. Both nested runs capture their output, so the
+  # parent printed nothing for 15.8 minutes — which is what every report of a "hang" on
+  # macOS has actually been looking at (#467).
+  #
+  # The verdict property is about the MODE, not about the real fixtures, so it does not
+  # need the real suite. A staged throwaway suite proves it in ~60ms, using the pattern
+  # 05-suite-shape.sh already uses two fragments up.
+  #
+  # THE RUN ABOVE STAYS REAL, deliberately. Failure shape 1 in this section's header — "a
+  # fixture leaking to STDOUT", last seen as a no-op `git commit` printing "nothing to
+  # commit" — is only observable when the actual fixtures run. Staging both would delete
+  # the coverage this gate exists for and leave it asserting against its own fixture.
+  #
+  # It also tests MORE than the old form did. A staged suite can be made to fail ON
+  # PURPOSE, so agreement is checked for both verdicts; the old comparison only ever
+  # exercised `ok`, because the real suite is green whenever anyone runs it.
+  _sj_stage() { # _sj_stage <root> <ok|failed> — a throwaway suite of exactly one fragment
+    mkdir -p "$1/scripts/lib" "$1/scripts/test" "$1/lib" || return 1
+    # common.sh sources ../../lib/ux.sh for the palette, so the relative shape matters.
+    cp "$HERE/scripts/test-core.sh" "$1/scripts/" 2>/dev/null || return 1
+    cp "$HERE/scripts/lib/common.sh" "$1/scripts/lib/" 2>/dev/null || return 1
+    cp "$HERE/lib/ux.sh" "$1/lib/" 2>/dev/null || return 1
+    if [[ "$2" == failed ]]; then
+      printf 'hdr "staged"\nfail "a deliberately failing assertion"\n' >"$1/scripts/test/10-staged.sh"
     else
-      _sj_plain=failed
+      printf 'hdr "staged"\npass "a passing assertion"\nskip "a skipped assertion"\n' >"$1/scripts/test/10-staged.sh"
     fi
-    if [[ "$_sj_result" == "$_sj_plain" ]]; then
-      pass "--json: the verdict matches the identical run without --json (#511)"
+  }
+  for _sj_want in ok failed; do
+    _sj_root="$SANDBOX/selfjson-$_sj_want"
+    if ! _sj_stage "$_sj_root" "$_sj_want"; then
+      skip "--json verdict agreement ($_sj_want): could not stage the dispatcher"
+      continue
+    fi
+    # -u CORE_JSON -u CORE_TEST_NESTED for the same reason the run above does it: both
+    # govern how the child produces output, and either one leaking in flips the assertion
+    # for a reason that has nothing to do with the contract.
+    _sj_j="$(env -u CORE_JSON -u CORE_TEST_NESTED bash "$_sj_root/scripts/test-core.sh" --json 2>/dev/null)"
+    _sj_jv="$(printf '%s' "$_sj_j" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"])' 2>/dev/null)" || _sj_jv=""
+    if env -u CORE_JSON -u CORE_TEST_NESTED bash "$_sj_root/scripts/test-core.sh" --quiet --color never >/dev/null 2>&1; then
+      _sj_pv=ok
     else
-      fail "--json: reported '$_sj_result' where the same scope without --json reported '$_sj_plain' — the mode changed the result"
+      _sj_pv=failed
     fi
-  fi
-  unset _sj_out _sj_lines _sj_result _sj_plain
+    if [[ -z "$_sj_jv" ]]; then
+      if have python3; then
+        fail "--json verdict agreement ($_sj_want): --json produced no parseable .result"
+      else
+        skip "--json verdict agreement ($_sj_want): python3 not installed"
+      fi
+    elif [[ "$_sj_jv" == "$_sj_pv" && "$_sj_jv" == "$_sj_want" ]]; then
+      pass "--json: verdict matches the identical run without --json, both '$_sj_want' (#511)"
+    else
+      fail "--json: a staged '$_sj_want' suite reported --json '$_sj_jv' and plain '$_sj_pv' — the mode changed the result (#511)"
+    fi
+  done
+  unset -f _sj_stage
+  unset _sj_out _sj_lines _sj_result _sj_want _sj_root _sj_j _sj_jv _sj_pv
 fi
