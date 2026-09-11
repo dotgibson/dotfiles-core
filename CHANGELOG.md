@@ -14,6 +14,58 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`V8-PROPOSAL.md` — the design record for the next major.** Core is at `7.3.0` with an
+  empty backlog, no open PRs, and a Breaking Backlog milestone holding zero issues, so a
+  major had no content to find. Same situation `V5-PROPOSAL.md` was written into, and the
+  same answer: write the content down where it can be argued with. The thesis is **the OS
+  repo stops carrying code Core owns** — v5 made the OS layer declare, v6 made the vendored
+  payload only Core, v7 deleted the last fallbacks, and what is left is the other
+  direction: portable logic stranded OUTSIDE Core, hand-maintained N times, which no gate
+  has ever been allowed to fail on.
+
+  What earns the major is the one thing neither the roadmap nor `V5-PROPOSAL.md` names:
+  three legs of `lint-call.yml` ship advisory with a promise to flip, two of them printing
+  `This warning becomes a BLOCKING failure in the next Core release` to users since
+  2026-08-21 and 2026-09-06 — and three releases have passed without flipping them. Not
+  neglect. Callers pin `@v7`, a MOVING major tag, so a flip on a minor turns every OS repo
+  red the moment `auto-tag` advances it, before a maintainer could act; `lint-call.yml:297`
+  calls that _"red-on-arrival by construction"_. A MAJOR is the only mechanism the fleet
+  owns that dissolves it: `RELEASE-RUNBOOK.md` §1.1 step 5 mints `v8` fresh and leaves `v7`
+  **frozen**, so one simultaneous fleet-wide break becomes nine independent opt-ins, each
+  repo adopting on the day it merges its own bump PR.
+
+  **Two claims the release was expected to rest on did not survive contact, and the
+  proposal records both rather than quietly correcting them.** The roadmap asserts that
+  consolidating `bootstrap.sh` _"changes the symlink contract, so every host
+  re-bootstraps"_; it does not — that contract IS `blib_link_core` / `blib_link_os_layer` /
+  `blib_link_role_layer` (`lib/bootstrap-lib.sh:558,718,826`), which already live in Core
+  and which every repo already calls. v5 earned its major there because #663 added a NEW
+  overlay, and absent one this is a large refactor of OS-repo-owned code, which the bump
+  table calls MINOR however many lines it touches. Whether the per-repo hook becomes an
+  overlay is left OPEN, as §4.4, with the smaller claim recommended. The second: the
+  `audit-core.sh` split was expected to change what a consumer receives in the #676 mould,
+  and `scripts/audit-core.sh` is absent from `core.vendor` — it ships to nobody, so it
+  rides along and earns nothing.
+
+  Measurements the proposal is built on, all re-derived rather than inherited: §5f's
+  ledger has **four helpers at 1/9**, every one adopted by `dotfiles-Gentoo` alone, and
+  `dotfiles-MacBook` — the reference implementation — is absent from four of eight rows
+  while being the size outlier at 1,604 lines against Arch's 418 (it was 1,505 when
+  `V5-PROPOSAL.md` §11 deferred this; nothing was done and it grew). `audit-core.sh` is
+  3,059 lines over 47 sections that run `1 1c 1d 1e 1b 1c …` — **`1c` is defined twice**,
+  `1b` runs after `1e`, `5l` is deliberately skipped — which is verbatim the condition
+  `test-core.sh`'s header cites for the #699 split, one file later; splitting it four ways
+  costs **698 ms against the whole file's 2,405 ms** of ShellCheck on identical content.
+  And `dotfiles-MacBook` calls no `lint-call.yml` at all, so the canary cannot canary the
+  gates this release flips.
+
+  Recorded as a proposal, not a plan: nothing here has shipped, and §10 carries the
+  non-goals (the non-mutable host as the right NEXT major, the nvim split needing its own)
+  plus the finding that the "one source, generated outward" milestone has already shipped
+  as minors and should be closed rather than scheduled.
+
 ## [v7.3.0] - 2026-09-09
 
 ### Added
