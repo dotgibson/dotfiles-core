@@ -341,7 +341,16 @@ jobs:
           fi
           echo "${#files[@]} repo-owned .zsh — none re-implements a Core-owned block"
 
-      # ── ADVISORY: no repo-owned zsh reads an UNDECLARED Core HAVE_* flag.
+      # ── BLOCKING: no repo-owned zsh reads an UNDECLARED Core HAVE_* flag.
+      #
+      # FLIPPED FROM ADVISORY. It shipped warning-only in #892 because callers pin @vN, a
+      # MOVING tag, so a leg that lands blocking is red-on-arrival for every repo the moment
+      # auto-tag advances the alias — before a maintainer could act. The flip was gated on
+      # the fleet being clean, and it is: all eight lint-call callers were scanned with this
+      # leg's own `_core_have_read_hits` against the vendored have-api.txt, and the only flag
+      # any of them reads is HAVE_ATUIN, which is the one row the contract declares.
+      # dotfiles-Debian was measured through the GitHub API rather than skipped for not being
+      # checked out locally — the tightest case is exactly the one a partial sweep omits.
       #
       # THE GAP THIS CLOSES (#866). audit-core.sh §5j direction 2 asserts exactly this, and
       # it has never fired anywhere. Core's own CI checks out this repo alone, so direction 2
@@ -370,7 +379,7 @@ jobs:
       # file rather than restated here, so a flag declared in §5 reaches this leg by the same
       # sync that ships the code — and a caller whose core/ predates the file is told to sync
       # rather than judged against an allowlist it never received.
-      - name: Undeclared Core HAVE_* reads (repo-owned zsh) — advisory
+      - name: Undeclared Core HAVE_* reads (repo-owned zsh)
         working-directory: caller
         env:
           CORE_ROOT: ${{ github.workspace }}
@@ -403,19 +412,30 @@ jobs:
             hits=1
           done
           if [ "$hits" -ne 0 ]; then
-            echo "::warning::this repo reads a Core HAVE_* flag outside the declared surface (see above)"
+            echo "::error::this repo reads a Core HAVE_* flag outside the declared surface (see above)"
             echo "Core may rename or drop an undeclared flag in any release, so a read of one"
             echo "breaks silently: the guard goes false and the feature it gates goes quiet."
             echo "Two ways forward, and the first is the ask rather than a workaround:"
             echo "  1. Declare it — add the row to PORTABILITY.md §5's 'What downstream may"
             echo "     use' table in dotfiles-core, in the same change that reads it."
             echo "  2. Or stop depending on Core's probe: command -v <tool> >/dev/null 2>&1"
-            echo "This warning becomes a BLOCKING failure in the next Core release."
-            exit 0
+            exit 1
           fi
           echo "no repo-owned zsh reads an undeclared Core HAVE_* flag ($(printf '%s' "$declared" | wc -l | tr -d ' ')+1 declared)"
 
-      # ── BLOCKING: the OS capability declaration validates against Core's schema.
+      # ── BLOCKING: the OS capability declaration exists AND validates against the schema.
+      #
+      # THE MISSING CASE FLIPPED FROM ADVISORY. A MALFORMED declaration has always failed
+      # here; an ABSENT one only warned, because this leg landed one Core release before the
+      # declarations themselves did and a gate cannot demand a file the fleet has not written
+      # yet. It has now: every caller with an os/ band carries a declaration, and the two that
+      # carry none (dotfiles-Defense, dotfiles-Offense) have no os/ band either — they layer a
+      # Role band over an OS repo's, which the `[ ! -d os ]` arm above already exempts.
+      #
+      # The warning's own text has also expired and is corrected in the same change: it said
+      # Core "is running its built-in fallback rows here". Since #763 there are no fallback
+      # rows. An undeclared box does not quietly get a default any more — `up` refuses and
+      # names --links-only — so the absent declaration is a hard break, not a degradation.
       #
       # WHY HERE AND NOT IN EACH REPO'S `make lint`. Every declaring repo does have a
       # `capabilities` target, and it runs the SAME script — but no OS repo's CI invokes
@@ -474,10 +494,10 @@ jobs:
             # blocking check here would be red-on-arrival on every OS repo, which is how a
             # gate gets switched off. audit-core.sh §9c is the BLOCKING backstop — it sweeps
             # the fleet from Core, where the declarations cannot be missing unnoticed.
-            echo "::warning::this repo has an os/ band but no os/*.capabilities — Core is running its built-in fallback rows here"
+            echo "::error::this repo has an os/ band but no os/*.capabilities — and since dotgibson/dotfiles-core#763 Core has NO fallback rows left to run here"
             echo "Author one: see core/examples/os.capabilities.example and core/PORTING-MATRIX.md"
             echo "(dotgibson/dotfiles-core#663 defines the schema, #667 stamped the fleet)"
-            exit 0
+            exit 1
           fi
           if [ "$rc" -ne 0 ]; then
             echo "::error::os.capabilities does not satisfy Core's schema (see the FAIL lines above)"
@@ -568,7 +588,9 @@ jobs:
   # so in its own header. Core lints its own markdown (audit-core.sh §7 + a pre-commit
   # hook), so the gap was in the REUSABLE gate specifically, not in Core's hygiene.
   #
-  # ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT — and unlike the owned-block leg, this
+  # BLOCKING since #592 — it shipped advisory for one cycle, and unlike the owned-block leg this
+  # one was never a judgement call. The measurement below is the state BEFORE that flip, kept
+  # because it is the argument for warning first rather than a description of today:
   # one is not a judgement call. Measured across the fleet before landing, with each repo's
   # own config and excludes:
   #

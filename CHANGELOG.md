@@ -104,6 +104,45 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Two of `lint-call.yml`'s three advisory legs now block, and the third cannot yet — the
+  difference is measured rather than assumed.** The undeclared-`HAVE_*`-reads leg (#892) and
+  the missing-`os.capabilities` leg (#663/#667) shipped warning-only because callers pin
+  `@vN`, a MOVING tag: a leg that lands blocking is red-on-arrival for every repo the moment
+  `auto-tag` advances the alias, before a maintainer could act. Both flips were gated on the
+  fleet being clean, and both fleets are.
+
+  All **eight** `lint-call.yml` callers were scanned with the legs' own helpers rather than
+  by eye. `HAVE_*`: the only flag any repo reads is `HAVE_ATUIN`, which is the single row
+  `zsh/have-api.txt` declares — **0 of 8** would fail. `os.capabilities`: every caller with
+  an `os/` band carries a declaration, and the two carrying none (`dotfiles-Defense`,
+  `dotfiles-Offense`) have no `os/` band either, which the leg's `[ ! -d os ]` arm already
+  exempts — **0 of 8** would fail. `dotfiles-Debian` was measured through the GitHub API
+  rather than skipped for not being checked out locally; a partial sweep omits exactly the
+  case that would have made this wrong.
+
+  **The owned-block leg stays advisory, and the measurement is why.** It is the one that is
+  genuinely red-on-arrival: `_core_owned_block_hits` finds **6 of 8** callers still
+  hand-rolling the WSL predicate Core took over in #449 — `dotfiles-Alpine`, `-Arch`,
+  `-Debian`, `-Fedora`, `-Gentoo` and `-openSUSE` each carry a local `_IS_WSL` plus the
+  `/proc/version` read that `core/zsh/00-tools.zsh :: _core_is_wsl` already provides. Its
+  stated precondition — _"once fleet-drift shows all nine clean"_ — is unmet, so flipping it
+  would red six repos on the next alias move. Six OS-repo PRs deleting the duplicate are the
+  work that unblocks it, not a change here.
+
+  **This narrows `V8-PROPOSAL.md`'s argument, and the correction belongs on the record.**
+  That document reasons that three advisory legs each need a MAJOR, because a frozen
+  outgoing alias is the only mechanism that turns one simultaneous fleet-wide break into
+  nine independent opt-ins. That holds for the owned-block leg and for it alone: the other
+  two break nobody today, so they need no major and take none. The proposal's mechanism is
+  right; its count was three and is one.
+
+  The `os.capabilities` warning text expired too and is corrected in the same change: it
+  said Core _"is running its built-in fallback rows here"_. Since #763 there are none — an
+  undeclared box does not get a quiet default, `up` refuses and names `--links-only` — so an
+  absent declaration is a hard break rather than a degradation. The markdown leg's own
+  comment still read _"ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT"_ having blocked since
+  #592; its measurement is kept but relabelled as the pre-flip state it describes.
+
 - **The README hero ceiling drops from 2 MiB to 1.5 MiB (#698).** §9k's number was sized in
   #698 around a ~1.8 MB clip that no longer exists — the shortened template plus the
   gifsicle pass took the hero to about half of it. A ceiling at twice the size of the thing
