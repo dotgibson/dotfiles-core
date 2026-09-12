@@ -278,6 +278,33 @@ _set_scope() { # _set_scope <comma-list: shell,nvim,atuin | all | none>
     SCOPE_NVIM=1
     SCOPE_ATUIN=1
   }
+  # ── SCOPE_TOOLING: DERIVED from the three axes above, deliberately not a fourth token ──
+  # The cross-cutting bash-tooling fragments (the fan-out, the scaffold, the generators, the
+  # vocabulary register) belong to no single area: they test scripts/ itself, which can
+  # re-gate any shipped module. They were gated by NOTHING, which made `none` — documented as
+  # the cheapest scope — cost 375.3s, of which 311.9s (83%) was five such fragments. That is
+  # what made the --json self-run fixture in scripts/test/52-atuin-autostart.sh expensive
+  # enough to read as a hang on macOS (#467).
+  #
+  # ON FOR ANY AREA, off only for the explicit minimal run. That is the whole rule, and it is
+  # chosen so CI COVERAGE DOES NOT MOVE: ci.yml builds its scope from ci-classify.sh, whose
+  # `scripts/*` arm sets shell=true — so every change that can reach this tooling already
+  # selects an area, and these fragments still run. The one case that changes is a docs-only
+  # diff, where ci-classify yields no area and ci.yml passes `none`; the generators' OUTPUT is
+  # still held by audit-core.sh §9d/§9g/§9h/§9i/§9j, which are static sections outside the
+  # scope system entirely, so what is skipped is behavioural tests of generators that a
+  # markdown edit cannot reach.
+  #
+  # A TOKEN would have been the wrong shape. It would add a fourth axis to ci-classify.sh's
+  # output, whose exact three-line format scripts/test/22-ci-classify.sh pins, and to three
+  # separate scope assemblies in ci.yml — a coordinated five-file change whose failure mode is
+  # a silently narrowed CI run. Derived, the fail-safe paths above carry it for free: an
+  # unknown token and an empty scope both force all three axes on, so they force this on too.
+  # SC2034: assigned here and read by the SOURCED test fragments, which ShellCheck cannot
+  # follow from this file. The three axes above escape the same diagnostic only because
+  # the condition on this very line reads them.
+  # shellcheck disable=SC2034
+  if ((SCOPE_SHELL || SCOPE_NVIM || SCOPE_ATUIN)); then SCOPE_TOOLING=1; else SCOPE_TOOLING=0; fi
 }
 
 # Pre-seed the EMPTY plugin dirs the hermetic zsh tests + bench need so 45-plugins.zsh's

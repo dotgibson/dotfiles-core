@@ -17,6 +17,19 @@
 # drive the real script against a fake fleet root, one throwaway sibling per case, and pin
 # the two facts that make the register a contract: an ALIAS does not satisfy a verb, and
 # the test floor has no waiver line.
+# ── SCOPE GATE: cross-cutting tooling ─────────────────────────────────────────
+# SCOPE_TOOLING is DERIVED by scripts/lib/common.sh :: _set_scope — on for ANY area, off
+# only for the explicit `--scope none`. This fragment tests scripts/ itself, which belongs
+# to no single area, and was gated by nothing: five such fragments were 311.9s of the
+# 375.3s that `--scope none` cost before any of this (#467). CI coverage does not move —
+# ci-classify.sh's `scripts/*` arm sets shell=true, so every diff that can reach this
+# tooling still selects an area and still runs it.
+if ! ((SCOPE_TOOLING)); then
+  hdr "Makefile vocabulary register (fleet-vocabulary.sh)"
+  skip "Makefile vocabulary register (fleet-vocabulary.sh) (out of scope)"
+  return 0
+fi
+
 hdr "Makefile vocabulary register (fleet-vocabulary.sh)"
 _fv_root="$SANDBOX/fleet-vocab"
 _fv_reset() { rm -rf "$_fv_root"; mkdir -p "$_fv_root"; }

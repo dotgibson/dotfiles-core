@@ -29,6 +29,19 @@
 #
 # Asserted here rather than trusted, because the pull toward renaming these back to
 # match their destinations is permanent — the filenames LOOK wrong until you know why.
+# ── SCOPE GATE: cross-cutting tooling ─────────────────────────────────────────
+# SCOPE_TOOLING is DERIVED by scripts/lib/common.sh :: _set_scope — on for ANY area, off
+# only for the explicit `--scope none`. This fragment tests scripts/ itself, which belongs
+# to no single area, and was gated by nothing: five such fragments were 311.9s of the
+# 375.3s that `--scope none` cost before any of this (#467). CI coverage does not move —
+# ci-classify.sh's `scripts/*` arm sets shell=true, so every diff that can reach this
+# tooling still selects an area and still runs it.
+if ! ((SCOPE_TOOLING)); then
+  hdr "repo scaffold (new-os-repo.sh)"
+  skip "repo scaffold (new-os-repo.sh) (out of scope)"
+  return 0
+fi
+
 if have git && have zsh; then
   hdr "new-os-repo.sh entry files (lintable by construction)"
   NOR="$SANDBOX/newosrepo"

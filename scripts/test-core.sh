@@ -57,6 +57,9 @@ JSON=0 # --json: machine-readable summary on stdout (implies quiet); mirrors aud
 SCOPE_SHELL=1
 SCOPE_NVIM=1
 SCOPE_ATUIN=1
+# Derived by _set_scope from the three above; initialised here for the no---scope
+# default (everything runs) and so `set -u` has it before any fragment reads it.
+SCOPE_TOOLING=1
 # Shared palette + pass/skip/fail/hdr/have + _set_scope + _seed_plugin_dirs (one
 # definition for every gate script). Sourced HERE — before the arg loop calls _set_scope
 # — and after QUIET is set so the lib's `: "${QUIET:=0}"` preserves it.
@@ -112,6 +115,9 @@ script is the dispatcher. Adding a section is adding a file there.
                   none. The clipboard + CI-classifier sections always run.
                   `atuin` drives the premise detector's hermetic self-test
                   (scripts/research/verify-atuin-guard.sh) — the slowest thing here by far.
+                  The cross-cutting bash-tooling sections (fan-out, scaffold, generators,
+                  vocabulary register) run for ANY area and are skipped only by `none`,
+                  which is what makes `none` the genuinely cheap scope it claims to be.
   --color WHEN    auto (default) | always | never; NO_COLOR still wins. (CORE_COLOR env.)
   --json          machine-readable summary on stdout (implies --quiet):
                   {pass,skip,fail,seconds,skipped[],result}
