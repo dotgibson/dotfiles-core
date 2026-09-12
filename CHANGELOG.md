@@ -68,6 +68,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`--scope none` gates the cross-cutting tooling fragments, and is 86% faster (#467).**
+  The scope vocabulary has three axes — `shell`, `nvim`, `atuin` — and the bash-tooling
+  fragments belong to none of them, so they were gated by **nothing**: five of them
+  (`56-fleet-vocabulary` 141.8s, `40-gen-theme-aliases` 75.0s, `41-gen-matrix-parity` 38.0s,
+  `35-new-os-repo` 35.5s, `32-sync-core` 21.5s) were **311.9s of the 375.3s** that the
+  scope documented as _"the cheapest"_ actually cost. They now honour `SCOPE_TOOLING`.
+
+  **It is DERIVED from the three axes, deliberately not a fourth token** — on for ANY area,
+  off only for the explicit minimal run. A token would have to be threaded through
+  `ci-classify.sh`'s output, whose exact three-line format `scripts/test/22-ci-classify.sh`
+  pins, and through three separate scope assemblies in `ci.yml`: a five-file coordinated
+  change whose failure mode is a silently narrowed CI run. Derived, the two fail-safe arms
+  carry it for free — an unknown token and an empty scope already force all three axes on,
+  so they force this on too.
+
+  **CI coverage does not move**, and that is the property the rule was chosen for:
+  `ci-classify.sh`'s `scripts/*` arm sets `shell=true`, so every diff that can reach this
+  tooling still selects an area and still runs it. The one case that changes is a docs-only
+  diff, where the classifier yields no area and `ci.yml` passes `none` — there the five
+  fragments now skip. What they test is generator _behaviour_; the generators' **output**
+  is held by `audit-core.sh` §9d/§9g/§9h/§9i/§9j, static sections outside the scope system
+  entirely, so a markdown edit is still covered by the gates that can actually see it.
+
+  Measured, same box: the full suite **1,125s → 856s** and `--scope none` **733s → 155s**.
+  Against `v7.3.0` before any of this work, that is **1,536s → 856s (−44%)** and
+  **1,119s → 155s (−86%)**. The remaining real self-run in
+  `scripts/test/52-atuin-autostart.sh` invokes `--scope none`, so it got cheap as a side
+  effect — which was the point.
+
+- **`_set_scope` has a test now, and it is the one function whose bugs were invisible by
+  construction.** Nothing exercised the scope parser, and getting it wrong makes the suite
+  _smaller_ — a smaller suite still reports green, which is the exact failure the dispatcher
+  refuses an empty glob to prevent. `scripts/test/06-scope-contract.sh` pins the truth table
+  for all four flags, both fail-safe arms (widen to everything **and** say so on stderr, so a
+  typo'd scope is not silently honoured), that `none` beside a real area does not cancel it
+  — CI builds its list by appending — and that the cases, which run in subshells, did not
+  re-scope the live run they are part of.
+
+  `scripts/lib/common.sh` is vendored (`core.vendor`), so this reaches the nine repos on the
+  next sync. Purely additive: one new variable, no change to what any existing caller reads.
+
 - **The `--json` contract fixture ran the whole suite twice; it now runs it once, and the
   suite is 27% faster (#467).** `scripts/test/52-atuin-autostart.sh` proves two things
   about `--json`: that stdout carries exactly one parseable object, and that the mode does

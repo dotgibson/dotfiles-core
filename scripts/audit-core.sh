@@ -91,6 +91,9 @@ SCOPE_EXPLICIT=0 # an explicit --scope always wins over --changed
 SCOPE_SHELL=1
 SCOPE_NVIM=1
 SCOPE_ATUIN=1
+# Derived by _set_scope from the three above; initialised here for the no---scope
+# default (everything runs) and so `set -u` has it before any fragment reads it.
+SCOPE_TOOLING=1
 # Shared palette + pass/skip/fail/hdr/have + _set_scope (one definition for every gate
 # script). Sourced HERE — before the arg loop below calls _set_scope — and after QUIET
 # is set so the lib's `: "${QUIET:=0}"` preserves it.
@@ -187,6 +190,8 @@ version/behavioral checks. CI and pre-commit run this exact script.
                   shell, nvim, atuin, all (default), none. Cheap structural/config/
                   markdown/workflow/version checks always run. CI sets this from
                   scripts/ci-classify.sh; omit it locally to run the full audit.
+                  The behavioral suite's cross-cutting bash-tooling sections run for
+                  ANY area and are skipped only by `none`.
                   `atuin` is the hermetic self-test of the premise detector
                   (scripts/research/verify-atuin-guard.sh) — the suite's most expensive
                   section by a wide margin, and reachable only from that script,

@@ -33,6 +33,19 @@
 # than assuming `have git` implies it — otherwise the fixture silently builds an OS repo
 # with no core/ and half these tests fail for a reason that has nothing to do with
 # sync-core.sh. Probing the exec-path is deterministic; `git subtree --help` can page.
+# ── SCOPE GATE: cross-cutting tooling ─────────────────────────────────────────
+# SCOPE_TOOLING is DERIVED by scripts/lib/common.sh :: _set_scope — on for ANY area, off
+# only for the explicit `--scope none`. This fragment tests scripts/ itself, which belongs
+# to no single area, and was gated by nothing: five such fragments were 311.9s of the
+# 375.3s that `--scope none` cost before any of this (#467). CI coverage does not move —
+# ci-classify.sh's `scripts/*` arm sets shell=true, so every diff that can reach this
+# tooling still selects an area and still runs it.
+if ! ((SCOPE_TOOLING)); then
+  hdr "fan-out + vendoring filter (sync-core.sh)"
+  skip "fan-out + vendoring filter (sync-core.sh) (out of scope)"
+  return 0
+fi
+
 _sc_subtree=0
 if have git; then
   if [[ -x "$(git --exec-path 2>/dev/null)/git-subtree" ]] || have git-subtree; then _sc_subtree=1; fi

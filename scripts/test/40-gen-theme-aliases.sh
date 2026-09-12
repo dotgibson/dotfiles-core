@@ -25,6 +25,19 @@
 # lib/ux.sh, and the gate would then be green about a file it no longer rendered.
 # That is the exact shape of coverage-loss-reading-as-health this whole feature
 # exists to end, so each encoding gets its own row below.
+# ── SCOPE GATE: cross-cutting tooling ─────────────────────────────────────────
+# SCOPE_TOOLING is DERIVED by scripts/lib/common.sh :: _set_scope — on for ANY area, off
+# only for the explicit `--scope none`. This fragment tests scripts/ itself, which belongs
+# to no single area, and was gated by nothing: five such fragments were 311.9s of the
+# 375.3s that `--scope none` cost before any of this (#467). CI coverage does not move —
+# ci-classify.sh's `scripts/*` arm sets shell=true, so every diff that can reach this
+# tooling still selects an area and still runs it.
+if ! ((SCOPE_TOOLING)); then
+  hdr "theme + aliases generation"
+  skip "theme + aliases generation (out of scope)"
+  return 0
+fi
+
 if have git; then
   hdr "theme generation (scripts/gen-theme.sh)"
   GT="$HERE/scripts/gen-theme.sh"
