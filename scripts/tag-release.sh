@@ -55,7 +55,9 @@ Finish the release that release.sh staged, in two phases.
 
   --publish     PHASE 2 — run AFTER the release PR merges. Proves origin/main really
                 carries this core.version, then creates the annotated vX.Y.Z and moves
-                the vN alias AT origin/main, and pushes both.
+                the vN alias AT THE RELEASE COMMIT (the commit that set core.version to
+                this value, which is not origin/main's tip once main has moved on), and
+                pushes both atomically.
 
   -h, --help    show this help and exit
 
@@ -313,7 +315,7 @@ if [[ "$MODE" == publish ]]; then
   fi
 
   if ! git tag -fa "$TAG" "$RELEASE_SHA" -m "$TAG"; then
-    fail "tag-release.sh: could not create $TAG at origin/main"
+    fail "tag-release.sh: could not create $TAG at the release commit ($RELEASE_SHA)"
     exit 1
   fi
   pass "tagged $TAG at $(git rev-parse --short "$RELEASE_SHA")"
