@@ -80,7 +80,7 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   `assets/hero-repos.txt` (the per-repo `cd` path and signature command) and
   `theme/palette.toml` (the `Set Theme` block) — so hand-editing the tape is a gate failure
   (`audit-core.sh` §9j). Edit the template or the registry, run `make gen-hero-tape`. §9k
-  caps the rendered gif at 2 MiB, weighing whatever the tape's `Output` line names, and §9l
+  caps the rendered gif at 1.5 MiB, weighing whatever the tape's `Output` line names, and §9l
   dates the gif against the tape by **git history** — a rewritten tape beside a stale gif is
   red, and re-rendering needs `vhs` plus a Nerd Font on a host matching the row (`assets/README.md`
   has the exact commands). The tape exports `DOTFILES_NO_AUTOTMUX=1` before sourcing the zshrc,

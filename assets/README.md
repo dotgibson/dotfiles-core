@@ -212,7 +212,7 @@ is filming. If the clip ever gets a fifth slot, that is what should fill it.
 ## Keep it short — the ceiling is enforced
 
 `make check-hero-size` (audit-core.sh §9k) weighs the file each tape's `Output` line
-names and fails over **2 MiB**. A **missing** hero fails too where this repo is concerned —
+names and fails over **1.5 MiB**. A **missing** hero fails too where this repo is concerned —
 `README.md`'s `[product-screenshot]` points at `assets/demo.gif`, so an absent file is a
 broken front page, and a size gate that weighs nothing and reports green is the failure the
 section exists to prevent. A *sibling's* absent gif is only a note: a sibling's hero is
@@ -224,7 +224,7 @@ So that a skip is never mistaken for a pass, the summary line counts what it act
 on the scale:
 
 ```text
-✓ README hero size — 10 weighed, all under the 2097152-byte ceiling
+✓ README hero size — 10 weighed, all under the 1572864-byte ceiling
 ```
 
 It is a **ceiling, not a target**, and it counts bytes rather than seconds — which are only

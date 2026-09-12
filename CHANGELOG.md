@@ -104,6 +104,40 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **The README hero ceiling drops from 2 MiB to 1.5 MiB (#698).** §9k's number was sized in
+  #698 around a ~1.8 MB clip that no longer exists — the shortened template plus the
+  gifsicle pass took the hero to about half of it. A ceiling at twice the size of the thing
+  it guards is not a gate, it is a formality, and `assets/hero-repos.txt` now registers
+  **ten** heroes rather than one, which is the difference between a preference and a policy.
+
+  **The binding case is not this repo**, which is the correction that matters here.
+  Measured across all ten registered heroes: Debian 0.80 · Fedora 0.89 · Gentoo 0.94 ·
+  Arch 0.97 · Alpine 1.01 · core 1.02 · Defense 1.06 · openSUSE 1.12 · MacBook 1.18 ·
+  **Offense 1.34** MiB. Offense sets the floor under any tighter number — its tour ends on
+  the provenance panel with a role layer stacked over an OS layer, so there are more
+  distinct frames to redraw — and 1.5 MiB leaves it ~161 KiB. Core's own gif, at 1.02 MiB,
+  would have supported a far tighter ceiling and is the wrong thing to size against.
+
+  **Two of the ten skip on a local run, and one of them is the binding case.**
+  `--check-size --fleet` reports `dotfiles-Debian` and `dotfiles-Offense` as not checked
+  out (Offense's clone carries its pre-rename directory name), so a green local sweep
+  weighs eight gifs and silently omits the tightest. Both were measured out-of-band against
+  the GitHub API before this number was chosen rather than inferred from the eight that did
+  run — an environment SKIP that reads as coverage is exactly what the fleet gates warn
+  about elsewhere.
+
+  1 MiB was considered and rejected on cost, and the reasoning is recorded beside the
+  constant: the two free levers are spent (`Set Framerate 24` against VHS's default 50, and
+  gifsicle `--colors 64`), and everything left degrades what a reader sees — narrowing
+  Width wraps `glog` subjects past 90 characters, shortening Height truncates the `bat` and
+  `core status` panels, and dropping a tour step removes a marquee moment. It would also
+  put Offense under the line by shaving exactly what its gif exists to show.
+
+  Found on `gerrrt/hero-ceiling-1-5-mib`, pushed 2026-09-04 and never opened as a PR. Its
+  number was right and its arithmetic was not: it cited a 1.31 MiB re-render and ~200 KB of
+  headroom, both measured against Core's gif five days before the nine sibling heroes were
+  filmed (#948). Re-authored against what the fleet actually weighs today.
+
 - **`--scope none` gates the cross-cutting tooling fragments, and is 86% faster (#467).**
   The scope vocabulary has three axes — `shell`, `nvim`, `atuin` — and the bash-tooling
   fragments belong to none of them, so they were gated by **nothing**: five of them

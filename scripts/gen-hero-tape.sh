@@ -80,12 +80,31 @@ MODE="write"
 FLEET=0
 ROOT=""
 FLEET_ROOT=""
-# The hero ceiling, in bytes. 2 MiB is a CEILING, not a target: the committed clip
-# is ~1.8 MB for ~25 s, which is the size #698 filed against, and the shortened
-# template plus the gifsicle pass assets/README.md documents lands well under half
-# of it. One heavy gif is a preference; ten is a policy, so the number is asserted
-# here rather than described in prose nothing reads.
-MAX_BYTES=2097152
+# The hero ceiling, in bytes: 1.5 MiB. A CEILING, not a target. One heavy gif is a
+# preference; TEN is a policy — assets/hero-repos.txt registers ten heroes and this gate
+# weighs every one that is rendered — so the number is asserted here rather than described
+# in prose nothing reads.
+#
+# WHY 1.5 AND NOT 2. The first ceiling was 2 MiB, sized in #698 around a ~1.8 MB clip that
+# no longer exists: the shortened template plus the gifsicle pass assets/README.md
+# documents took it to about half that. A ceiling at twice the size of the thing it guards
+# is not a gate, it is a formality.
+#
+# THE BINDING CASE IS NOT THIS REPO. Measured across all ten registered heroes:
+# Debian 0.80 · Fedora 0.89 · Gentoo 0.94 · Arch 0.97 · Alpine 1.01 · core 1.02 ·
+# Defense 1.06 · openSUSE 1.12 · MacBook 1.18 · **Offense 1.34** MiB. Offense is the one
+# that sets the floor under any tighter number, and it is there because the role repo's
+# tour ends on the provenance panel with a role layer stacked over an OS layer — more
+# distinct frames to redraw. 1.5 MiB leaves it ~161 KiB, which is the headroom a tour that
+# gains a step actually needs.
+#
+# 1 MiB IS NOT WORTH WHAT IT COSTS. The two free levers are already spent — `Set Framerate
+# 24` (VHS defaults to 50) and gifsicle's `--colors 64`. Everything left is visible to a
+# reader: narrowing Width wraps `glog` subjects, which run past 90 characters in this repo;
+# shortening Height truncates the `bat` and `core status` panels; and dropping a tour step
+# removes a marquee moment. Buying 300 KB with any of those is a bad trade for a file that
+# loads once, and it would put Offense under the line by shaving what the gif is FOR.
+MAX_BYTES=1572864
 
 while (($#)); do
   case "$1" in
