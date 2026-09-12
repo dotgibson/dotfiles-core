@@ -103,7 +103,14 @@ gh pr create --base main --head release/vX.Y.Z --title "release vX.Y.Z"
 
 # 5. After the PR merges, publish the tags. `make publish` refuses unless origin/main
 #    actually carries this core.version, so it cannot tag a release that has not landed.
-#    It creates vX.Y.Z AT origin/main, force-moves the vN alias there, and pushes both.
+#    It creates vX.Y.Z at the RELEASE COMMIT — the commit that set core.version to this
+#    value, not origin/main's tip — force-moves the vN alias to the same commit, and pushes
+#    both atomically. The distinction bites whenever main has advanced since the release
+#    merged: core.version does not change again until the NEXT release, so "main carries
+#    this version" stays true for every commit that lands afterwards, and tagging the tip
+#    would sweep work still sitting under [Unreleased] into the release that release.yml
+#    then describes from the [vX.Y.Z] section. `make publish` says so when it happens
+#    ("origin/main has advanced N commit(s) since the release").
 git checkout main && git pull --ff-only origin main
 make publish
 ```
@@ -225,14 +232,25 @@ What you do with the alias depends on the bump you chose in §1.0
   up automatically on its next run. **No caller edits.** This auto-fan-out of guard/bootstrap
   fixes is the whole reason the alias moves.
 - **MAJOR** — you are minting a **new** major, so step 5's alias is `vN+1`, created fresh at
-  the merged tip. **Leave `vN` frozen:** do *not* run the alias line against the outgoing
+  the **release commit** — not at the merged tip. **Leave `vN` frozen:** do *not* run the alias line against the outgoing
   major — advancing it would push the breaking change onto every caller still pinned `@vN`.
   Then bump the callers that should adopt the new major from `@vN` to `@vN+1` **by hand** —
   that fleet-wide `uses:` edit is the single intentional, reviewed change a MAJOR is meant to
   be, and it's tracked as part of rollout (§2), not this step.
 
-  The v4→v5 cut is the worked example: `git tag -fa v5 origin/main -m v5 && git push -f
+  The v4→v5 cut is the worked example: `git tag -fa v5 v5.0.0^{commit} -m v5 && git push -f
   origin v5`, with `v4` left frozen at v4.19.0 and the callers moved `@v4` → `@v5` by hand.
+
+  **Target the peeled release tag, never `origin/main`.** This line read `origin/main` until
+  #467's cleanup found it, and it is the copyable one, so it is the one that does damage: if
+  main has advanced since the release merged, it points `vN+1` at later unrelated work while
+  the immutable `vN.0.0` points at the release — two refs for one release, disagreeing, and
+  every caller pinned `@vN+1` follows the wrong one. `^{commit}` is required for the same
+  reason `RELEASE-STRATEGY.md` gives: the release tags are annotated, so an unpeeled name
+  resolves to the tag object and makes the alias a *nested* tag rather than the
+  direct-to-commit ref `make publish` creates. You should not be typing this at all — it is
+  the hand fallback for a `make publish` that could not run; `make publish` resolves the
+  release commit itself (`scripts/tag-release.sh` :: `RELEASE_SHA`).
 
 > `make publish` handles the alias itself, safely for either case: `tag-release.sh`
 > derives it from the version (`MAJOR="v${VERSION%%.*}"`), so a MAJOR cut force-moves the

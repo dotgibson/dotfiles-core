@@ -14,6 +14,42 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`RELEASE-RUNBOOK.md` told you to tag the new major alias at the merged tip; every other
+  source says the release commit.** Four sites, one defect. §1.1 step 5's inline comment
+  claimed `make publish` _"creates vX.Y.Z AT origin/main"_; the MAJOR bullet said the new
+  alias is _"created fresh at the merged tip"_; the worked v4→v5 example handed you a
+  copyable `git tag -fa v5 origin/main -m v5`; and `tag-release.sh --help` repeated
+  _"moves the vN alias AT origin/main"_, with its own failure message naming origin/main for
+  a tag it creates somewhere else.
+
+  **The code has been right the whole time, and says why at length.**
+  `scripts/tag-release.sh` resolves `RELEASE_SHA` by walking `origin/main` for the commit
+  that SET `core.version` to this value — _"THE guard, and it must identify the RELEASE
+  COMMIT — not merely today's tip"_ — because `core.version` does not change again until
+  the next release, so _"origin/main carries this version"_ stays true for every commit that
+  lands afterwards. Tag the tip and you sweep work still sitting under `[Unreleased]` into a
+  release whose GitHub body `release.yml` then builds from the `[vX.Y.Z]` section, leaving
+  those changes shipped and undescribed. `--publish` already prints
+  `origin/main has advanced N commit(s) since the release — tagging the release commit, not
+  the tip` when it happens.
+
+  `RELEASE-STRATEGY.md` was already correct (`git tag -fa vN vN.0.0^{commit}`), which is what
+  makes this the shape the runbook's own header warns about: _"When they disagree,
+  `RELEASE-STRATEGY.md` wins; fix this"_ — and the one handing out commands was the wrong
+  one. On a MAJOR the consequence is the sharp end: `vN+1` lands on later unrelated work
+  while the immutable `vN.0.0` points at the release, two refs for one release disagreeing,
+  and every caller pinned `@vN+1` follows the wrong one. `main` is 2 commits past `v7.3.0`
+  as this lands, so the window is open now rather than hypothetical.
+
+  The worked example also gains the `^{commit}` peel and the reason for it — the release
+  tags are annotated, so an unpeeled name makes the alias a _nested_ tag instead of the
+  direct-to-commit ref `make publish` creates.
+
+  Found by inspecting `fix/runbook-major-alias-release-commit`, a branch pushed 2026-08-17
+  that never opened a PR and was still correct a month later.
+
 ### Added
 
 - **`V8-PROPOSAL.md` — the design record for the next major.** Core is at `7.3.0` with an
