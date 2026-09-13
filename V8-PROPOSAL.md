@@ -6,7 +6,8 @@
 > hook**, so Change 2 adds no overlay and stays MINOR. Change 3 never shipped to a repo.
 > No section writes a breaking bullet, so `tag-release.sh` would never mint a `v8` alias
 > from this content — and must not. What remains (§4.2's ratchet, §5's split, §6's
-> leftovers) is minor-class work that needs no coordinated event. The next major's
+> leftovers) is minor-class work that needs no coordinated event, tracked since 2026-09-13
+> in #973 (the ratchet), #975 (§10 Q3) and #976 (the hook); §5's split shipped in #970. The next major's
 > content is the **non-mutable host** (§10), the one roadmap theme with an external
 > forcing function; nothing here should be read as scheduling it.
 >
@@ -260,13 +261,15 @@ Concretely, in the order the evidence supports:
    `blib_note_fail`, `blib_failures_report` and `blib_sudo_keepalive_start` are already
    written, already tested and already proven in Gentoo. Adoption is per-repo and the
    §5f ledger tightens one line at a time. This is the whole of the change that is
-   *ready*, and it is not breaking.
+   *ready*, and it is not breaking. *Started 2026-09-13: Debian and Fedora adopted all four
+   (dotgibson/dotfiles-Debian#75, dotgibson/dotfiles-Fedora#178), so the rows read 3/9; #973
+   tracks the other five repos with each one's measured friction.*
 2. **Bring MacBook to the contract.** It is the canary and the template, and it is the
    least adopted. Retiring its private `fail_note` / `print_ledger` in favour of
    `blib_note_fail` / `blib_failures_report` is the single highest-value row in the
    ledger.
 3. **Define the per-repo hook** for what genuinely remains OS-specific after (1) and (2).
-   §4.4 is the open decision about what shape that takes.
+   §4.4 decided the shape: the repo-internal hook.
 
 ### 4.3 What breaks
 

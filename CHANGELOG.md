@@ -156,6 +156,30 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Debian and Fedora adopted the four `bootstrap-lib` helpers the §5f ledger had reported at
+  1/9 since #748** (#867, #973; dotgibson/dotfiles-Debian#75, dotgibson/dotfiles-Fedora#178).
+  #867 closed as completed on 2026-09-06 when #879 (`blib_resolve_su --prefer`) merged — but
+  #879 was the unblocker, not the adoption, and measured on every sibling's `origin/main` a
+  week later all four rows still read Gentoo only. `V8-PROPOSAL.md` §4.2(1) names the ratchet
+  as "the whole of the change that is ready"; the two lowest-friction repos took it first: both
+  carried the same hand-rolled root/sudo/doas probe, a `note_fail`/`FAILED_STEPS` ledger and a
+  private sudo-keepalive loop with its own `EXIT` trap. Each `bootstrap.sh` now calls
+  `blib_resolve_su` (`--require` only on the provisioning path, so `--dry-run` needs no
+  escalator), `blib_sudo_keepalive_start`/`_stop` with `provision()` owning the trap, a
+  one-line `note_fail() { blib_note_fail "$@"; }` shim over the untouched call sites, and
+  `blib_failures_report` for the closing tally — which also surfaces the failures the shared
+  lib records _itself_ (the tpm clone, `blib_install_system_file`) that both scripts used to
+  drop. Output and `--strict` semantics are unchanged. The four `_ha_ledger` lines in
+  §5f (`scripts/audit/40-fleet-registers.sh` since #970) now read
+  `dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo` and the header's measured figures say 3/9; landing order was sibling-first, ledger-second, because
+  `_core_helper_verdict` fails `regressed` the other way round and `sync-fanout.yml` is where
+  §5f meets real siblings. #973 tracks the remaining five repos with each one's measured
+  friction (openSUSE exits 2, Alpine needs `--prefer doas`, Arch calls the underscore-private
+  `_blib_priv`, Offense hardcodes `sudo`, MacBook has a `warn_note` channel and exits 3); #975
+  (`check-links.sh` vendored with zero callers across all nine repos, §10 Q3) and #976 (the
+  per-repo hook, §4.2(3)) carry the rest of what the proposal still owed, none of which was
+  tracked anywhere — the split (§5) was filed as #974 the same afternoon #970 shipped it, and
+  closed as superseded. (`scripts/audit/40-fleet-registers.sh`, `V8-PROPOSAL.md`)
 - **The audit is 48 named sections in `scripts/audit/`, not one 3,064-line file (#970).** The
   gate got the #699 treatment, for the reasons #699 gave. ShellCheck's cost is superlinear
   in file length: linting this one file cost **2.50 s of CPU / 3.1–3.4 s wall** on every CI
