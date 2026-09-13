@@ -156,6 +156,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **MacBook adopted the ledger helpers and the `lint-call.yml` caller — the §5f rows read
+  8/9, and the ratchet `V8-PROPOSAL.md` §4.2 named is done in a day** (#973;
+  dotgibson/dotfiles-MacBook#247, #248). The proposal called MacBook's row the single
+  highest-value one: the reference implementation carried a private `FAILURES`/`fail_note`/
+  `print_ledger` that already half-bridged to the lib — resetting `BLIB_FAILED` before the
+  wiring step and folding it back after — plus one bare `sudo tee`. `fail_note` is now a
+  shim over `blib_note_fail`, the closing tally is `blib_failures_report`, the reset and
+  fold are gone (the reset would have dropped a miss recorded before wiring), `warn_note`
+  stays local because the lib has no warnings channel, and the one `tee` runs through
+  `blib_resolve_su` / `blib_priv`. Its keepalive row is **exempt**, with the reason in the
+  fragment: `os/macos.capabilities` declares nothing privileged and a refresher loop around
+  one write behind an interactive confirm would be theatre — the opposite reason to the
+  role-repo exemption Offense just lost. §10 Q4 is answered too: MacBook calls
+  `lint-call.yml` (SHA-pinned like its other callers), so #961's "eight is the whole
+  denominator" is nine; its four repo-owned zsh files measured clean on all three legs
+  first. Seven repos adopted in one day against a tracker that had read 1/9 for a week
+  after #867 closed; Defense, which installs nothing, is the one gap left on three rows.
+  (`scripts/audit/40-fleet-registers.sh`, `V8-PROPOSAL.md`)
+
 - **Offense adopted the four `bootstrap-lib` helpers — the §5f rows read 7/9, and its
   keepalive exemption is gone** (#973; dotgibson/dotfiles-Offense#326). The role repo had been
   exempt from `blib_sudo_keepalive_start` on the reasoning that a role layer installs no long

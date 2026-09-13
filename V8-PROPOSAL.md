@@ -261,15 +261,18 @@ Concretely, in the order the evidence supports:
    `blib_note_fail`, `blib_failures_report` and `blib_sudo_keepalive_start` are already
    written, already tested and already proven in Gentoo. Adoption is per-repo and the
    §5f ledger tightens one line at a time. This is the whole of the change that is
-   *ready*, and it is not breaking. *Started 2026-09-13: Debian, Fedora, openSUSE, Alpine,
-   Arch and Offense adopted all four (dotgibson/dotfiles-Debian#75,
+   *ready*, and it is not breaking. *Done 2026-09-13, in one day: Debian, Fedora, openSUSE,
+   Alpine, Arch, Offense and MacBook adopted (dotgibson/dotfiles-Debian#75,
    dotgibson/dotfiles-Fedora#178, dotgibson/dotfiles-openSUSE#183, dotgibson/dotfiles-Alpine#191,
-   dotgibson/dotfiles-Arch#171, dotgibson/dotfiles-Offense#326), so the rows read 7/9 and
-   Offense's keepalive exemption is gone; #973 tracks MacBook, the last one.*
+   dotgibson/dotfiles-Arch#171, dotgibson/dotfiles-Offense#326, dotgibson/dotfiles-MacBook#247),
+   so the rows read 8/9 with Defense — which installs nothing — the one gap; Offense's
+   keepalive exemption went and MacBook gained one (one `tee` behind a confirm). #973.*
 2. **Bring MacBook to the contract.** It is the canary and the template, and it is the
    least adopted. Retiring its private `fail_note` / `print_ledger` in favour of
    `blib_note_fail` / `blib_failures_report` is the single highest-value row in the
-   ledger.
+   ledger. *Done in dotgibson/dotfiles-MacBook#247: `fail_note` shims `blib_note_fail`, the
+   tally is `blib_failures_report`, the reset-and-fold bridge between the two ledgers is
+   gone, and its `warn_note` channel stays local because the lib models failures only.*
 3. **Define the per-repo hook** for what genuinely remains OS-specific after (1) and (2).
    §4.4 decided the shape: the repo-internal hook.
 
@@ -582,3 +585,5 @@ force an `X.0.0` the content does not earn.
    runs the audit target but not this workflow. Adopting the caller is the only way its
    zsh gets the same three checks the other eight repos get. Not tied to a major; a
    MacBook-repo change, and #961's *"eight is the whole denominator"* becomes nine.
+   **Answered 2026-09-13: adopted** (dotgibson/dotfiles-MacBook#248), SHA-pinned like the
+   repo's other callers; its four repo-owned zsh files measured clean on all three legs.
