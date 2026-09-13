@@ -34,11 +34,12 @@
 # and is also not the same question as "how many repos are compliant": an EXEMPT repo calls
 # nothing and is short of nothing. Both numbers are given, because conflating them is how
 # `blib_user_bindirs_on_path` got written up as 8/9 when seven repos call it:
-#   blib_resolve_su 3/9 · blib_sudo_keepalive_start 3/9 (+2 exempt = 5/9 compliant) ·
-#   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) · blib_note_fail 3/9 ·
-#   blib_failures_report 3/9 · blib_wire_summary 8/9 · blib_install_core_guard 7/9 ·
+#   blib_resolve_su 4/9 · blib_sudo_keepalive_start 4/9 (+2 exempt = 6/9 compliant) ·
+#   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) · blib_note_fail 4/9 ·
+#   blib_failures_report 4/9 · blib_wire_summary 8/9 · blib_install_core_guard 7/9 ·
 #   BLIB_DRY 9/9
-#   (the four 1/9 rows became 3/9 on 2026-09-13 when Debian and Fedora adopted; #867, #973)
+#   (the four 1/9 rows became 3/9 on 2026-09-13 when Debian and Fedora adopted, then 4/9
+#   the same day with openSUSE; #867, #973)
 #
 # Each gap is a live defect in the repos missing it: no blib_resolve_su means a hand-rolled
 # `[[ "$(id -u)" -eq 0 ]]`, an ARITHMETIC comparison where an empty `id` output evaluates as
@@ -95,11 +96,11 @@ else
   # than in bootstrap-lib.sh so the rationale lives with the check that reports it;
   # VENDORING.md carries the human contract.
   _ha_ledger='
-blib_resolve_su          dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo
-blib_sudo_keepalive_start dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo
+blib_resolve_su          dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-openSUSE
+blib_sudo_keepalive_start dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-openSUSE
 blib_user_bindirs_on_path dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
-blib_note_fail           dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo
-blib_failures_report     dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo
+blib_note_fail           dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-openSUSE
+blib_failures_report     dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-openSUSE
 blib_wire_summary        dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 blib_install_core_guard  dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense
 BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE

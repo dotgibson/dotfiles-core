@@ -261,9 +261,10 @@ Concretely, in the order the evidence supports:
    `blib_note_fail`, `blib_failures_report` and `blib_sudo_keepalive_start` are already
    written, already tested and already proven in Gentoo. Adoption is per-repo and the
    §5f ledger tightens one line at a time. This is the whole of the change that is
-   *ready*, and it is not breaking. *Started 2026-09-13: Debian and Fedora adopted all four
-   (dotgibson/dotfiles-Debian#75, dotgibson/dotfiles-Fedora#178), so the rows read 3/9; #973
-   tracks the other five repos with each one's measured friction.*
+   *ready*, and it is not breaking. *Started 2026-09-13: Debian, Fedora and openSUSE adopted
+   all four (dotgibson/dotfiles-Debian#75, dotgibson/dotfiles-Fedora#178,
+   dotgibson/dotfiles-openSUSE#183), so the rows read 4/9; #973 tracks the other four repos
+   with each one's measured friction.*
 2. **Bring MacBook to the contract.** It is the canary and the template, and it is the
    least adopted. Retiring its private `fail_note` / `print_ledger` in favour of
    `blib_note_fail` / `blib_failures_report` is the single highest-value row in the
