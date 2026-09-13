@@ -1730,11 +1730,14 @@ blib_main() {
   blib_user_bindirs_on_path
 
   # ── escalator: demanded only when packages will actually be installed ──────────
+  # And resolved at all only when something privileged CAN happen — a provisioning hook, or
+  # the login-shell change (chsh + /etc/shells). A report-only role repo with neither must
+  # not be told "no privilege escalator found" on a box that has none; it needs none.
   if [[ "${BOOTSTRAP_SU:-}" == lazy ]]; then
     : # a hook resolves it at the point of need (Offense: inside --install)
   elif declare -F bootstrap_provision >/dev/null 2>&1 && ((_bm_links == 0 && _bm_dry == 0)); then
     blib_resolve_su ${BOOTSTRAP_SU_PREFER:+--prefer "$BOOTSTRAP_SU_PREFER"} --require || return 1
-  else
+  elif declare -F bootstrap_provision >/dev/null 2>&1 || [[ "${BOOTSTRAP_LOGIN_SHELL:-1}" != 0 ]]; then
     blib_resolve_su ${BOOTSTRAP_SU_PREFER:+--prefer "$BOOTSTRAP_SU_PREFER"} || true
   fi
 
