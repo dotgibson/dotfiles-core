@@ -156,7 +156,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
-- **The audit is 48 named sections in `scripts/audit/`, not one 3,064-line file.** The
+- **The audit is 48 named sections in `scripts/audit/`, not one 3,064-line file (#970).** The
   gate got the #699 treatment, for the reasons #699 gave. ShellCheck's cost is superlinear
   in file length: linting this one file cost **2.50 s of CPU / 3.1–3.4 s wall** on every CI
   leg for any PR touching any shell file; the dispatcher plus sixteen fragments, linted the

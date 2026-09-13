@@ -78,7 +78,7 @@ _as_ids="$(grep -hE '^# ── [0-9][0-9a-z-]*\. ' "$_as_dir"/[0-9][0-9]-*.sh 2>
 _as_dups="$(printf '%s\n' "$_as_ids" | sort | uniq -d | tr '\n' ' ')"
 _as_n="$(printf '%s\n' "$_as_ids" | grep -c .)"
 if [[ -n "$_as_dups" ]]; then
-  fail "audit layout: section id worn by two gates: ${_as_dups% }— rename one; the docs cite these ids and a duplicate makes every citation ambiguous (this is how 1c named two gates until #NNN)"
+  fail "audit layout: section id worn by two gates: ${_as_dups% }— rename one; the docs cite these ids and a duplicate makes every citation ambiguous (this is how 1c named two gates until #970)"
 elif ((_as_n >= 45)); then
   pass "audit layout: $_as_n section ids across the fragments, no two alike"
 else

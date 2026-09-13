@@ -306,7 +306,7 @@ gate for the second is evidence that the fleet has **re-bootstrapped**, which ne
 
 ## 5. Change 3 — the audit gets the `#699` treatment
 
-> **Status: shipped, as a minor.** `scripts/audit-core.sh` is a 579-line dispatcher and the
+> **Status: shipped in #970, as a minor.** `scripts/audit-core.sh` is a 579-line dispatcher and the
 > gates live in sixteen `scripts/audit/NN-name.sh` fragments. One thing changed against
 > §5.2 as written: the `NN-` prefix carries run order and the `§`-ids **stay** — some 330
 > prose references in 67 files cite them, two of those files (`core.vendor`, the generated
