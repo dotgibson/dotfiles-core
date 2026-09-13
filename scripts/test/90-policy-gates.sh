@@ -736,3 +736,40 @@ if _audit_grep -q 'CORE_JSON=0 "\$HERE/scripts/parity-check.sh"'; then
 else
   fail "parity verdict: §9f no longer clears CORE_JSON for the parity child — --json runs will report a full pass on a box with no pwsh file"
 fi
+
+# ── _core_vendor_consumer_hits: a vendored entry script's REAL consumers (#975) ──────
+# The gate audit §5l rests on. Fixture-driven in both directions like the gitleaks matcher
+# above: the finding it exists for is a script that was MENTIONED everywhere (its core.vendor
+# entry, a README) and RUN nowhere, so the negative cases are the ones that matter.
+hdr "_core_vendor_consumer_hits (vendored entry consumers)"
+_vcf="$(mktemp -d "$SANDBOX/vconsumer.XXXXXX")"
+mkdir -p "$_vcf/.github/workflows" "$_vcf/test" "$_vcf/core/scripts"
+_vc_is() { # _vc_is <label> <expected, space-joined, C-sorted>
+  local got
+  got="$(_core_vendor_consumer_hits "$_vcf" check-links.sh | LC_ALL=C sort | tr '\n' ' ')"
+  got="${got% }"
+  if [[ "$got" == "$2" ]]; then
+    pass "vendored consumers: $1"
+  else
+    fail "vendored consumers: $1 (want '$2', got '$got')"
+  fi
+}
+_vc_is "an empty repo has no consumer" ""
+printf '%s\n' 'Run core/scripts/check-links.sh after a sync.' >"$_vcf/README.md"
+printf 'check: lint\n\t@# core/scripts/check-links.sh would go here — see #852\n\t@true\n' >"$_vcf/Makefile"
+_vc_is "prose, and a Makefile comment about the script, are mentions — not consumers" ""
+printf 'check: lint\n\t@core/scripts/check-links.sh --require .config/zsh/80-os.zsh\n' >"$_vcf/Makefile"
+_vc_is "a Makefile recipe that runs the script is a consumer" "Makefile"
+printf 'jobs:\n  links:\n    steps:\n      - run: core/scripts/check-links.sh\n' >"$_vcf/.github/workflows/check.yml"
+printf '#!/usr/bin/env bash\ncore/scripts/check-links.sh "$@"\n' >"$_vcf/test/links.sh"
+_vc_is "a workflow step and a test/ script count too, each file once" ".github/workflows/check.yml Makefile test/links.sh"
+printf '#!/usr/bin/env bash\necho "I am check-links.sh"\n' >"$_vcf/core/scripts/check-links.sh"
+_vc_is "the vendored copy under core/ is not its own consumer" ".github/workflows/check.yml Makefile test/links.sh"
+_vc_is_other="$(_core_vendor_consumer_hits "$_vcf" check-capabilities.sh)"
+if [[ -z "$_vc_is_other" ]]; then
+  pass "vendored consumers: a different script's name is not matched by these files"
+else
+  fail "vendored consumers: check-capabilities.sh reported consumers in a fixture that never names it: $_vc_is_other"
+fi
+unset -f _vc_is
+unset _vcf _vc_is_other
