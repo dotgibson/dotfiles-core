@@ -34,14 +34,16 @@
 # and is also not the same question as "how many repos are compliant": an EXEMPT repo calls
 # nothing and is short of nothing. Both numbers are given, because conflating them is how
 # `blib_user_bindirs_on_path` got written up as 8/9 when seven repos call it:
-#   blib_resolve_su 8/9 · blib_sudo_keepalive_start 7/9 (+2 exempt = 9/9 compliant) ·
-#   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) · blib_note_fail 8/9 ·
-#   blib_failures_report 8/9 · blib_wire_summary 8/9 · blib_install_core_guard 7/9 ·
-#   BLIB_DRY 9/9
-#   (the four 1/9 rows became 3/9 on 2026-09-13 when Debian and Fedora adopted, then 4/9
-#   with openSUSE, 5/9 with Alpine, 6/9 with Arch, 7/9 with Offense — which retired
-#   Offense's keepalive exemption — and 8/9 with MacBook, which gained one, all the same
-#   day; #867, #973. Defense is the one gap left on three rows, and it installs nothing.)
+#   blib_resolve_su 8/9 (+1 exempt = 9/9 compliant) ·
+#   blib_sudo_keepalive_start 7/9 (+2 exempt = 9/9 compliant) ·
+#   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) ·
+#   blib_note_fail 8/9 (+1 exempt = 9/9 compliant) · blib_failures_report 9/9 ·
+#   blib_wire_summary 8/9 · blib_install_core_guard 7/9 · BLIB_DRY 9/9
+#   (the four 1/9 rows went 3/9 → 4/9 → 5/9 → 6/9 → 7/9 → 8/9 on 2026-09-13 as Debian and
+#   Fedora, openSUSE, Alpine, Arch, Offense and MacBook adopted, then Defense closed the
+#   last row: it adopts the report and is exempt from the other two with the reasons in
+#   the case below. Offense lost its keepalive exemption that day and MacBook gained one.
+#   #867, #973 — the four rows are compliant fleet-wide.)
 #
 # Each gap is a live defect in the repos missing it: no blib_resolve_su means a hand-rolled
 # `[[ "$(id -u)" -eq 0 ]]`, an ARITHMETIC comparison where an empty `id` output evaluates as
@@ -102,7 +104,7 @@ blib_resolve_su          dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
 blib_sudo_keepalive_start dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 blib_user_bindirs_on_path dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 blib_note_fail           dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
-blib_failures_report     dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
+blib_failures_report     dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
 blib_wire_summary        dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 blib_install_core_guard  dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense
 BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
@@ -134,7 +136,14 @@ BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
       # said — behind a one-shot `sudo -v` that primed once and expired mid-run, the exact
       # invisible-prompt hang blib_sudo_keepalive_start exists for. An exemption is a claim
       # about what a repo does; both times the repo's own file said otherwise.
-      # dotfiles-Defense installs nothing and probes nothing, so it stays exempt.
+      # dotfiles-Defense installs nothing and probes nothing, so it stays exempt — and for
+      # the same two facts it is exempt from blib_resolve_su (nothing in its bootstrap is
+      # privileged; it deliberately declines blib_set_login_shell because that sudo's) and
+      # from blib_note_fail (no best-effort step of its own: the host-tool probe is
+      # report-only by design, and every write goes through blib_link, which records its
+      # own misses). It DOES adopt blib_failures_report, because the scaffold it calls can
+      # still record a failure — a tpm clone behind a proxy — and a closing "complete" over
+      # that is the exact silence the ledger exists to end (dotfiles-Defense#291).
       #
       # dotfiles-MacBook is exempt from the keepalive for the opposite reason to a role repo:
       # os/macos.capabilities declares NOTHING HERE IS PRIVILEGED (Homebrew refuses root),
@@ -145,6 +154,7 @@ BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
       # long privileged install ever appears there, the exemption goes the way Offense's did.
       case "$_ha_repo:$_ha_h" in
       dotfiles-Defense:blib_sudo_keepalive_start | dotfiles-Defense:blib_user_bindirs_on_path | \
+        dotfiles-Defense:blib_resolve_su | dotfiles-Defense:blib_note_fail | \
         dotfiles-MacBook:blib_sudo_keepalive_start)
         continue
         ;;

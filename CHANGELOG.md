@@ -156,6 +156,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Defense closes the last row — the four `bootstrap-lib` helpers are compliant fleet-wide,
+  and #973 is done** (dotgibson/dotfiles-Defense#291). A report-only bootstrap that installs
+  nothing and escalates nothing has no best-effort step of its own to ledger and nothing to
+  resolve an escalator for, so `blib_note_fail` and `blib_resolve_su` are exempt for this repo
+  with those reasons written into the §5f case — the same standard the day's other two
+  exemption changes were held to (Offense lost one, MacBook gained one). It does adopt
+  `blib_failures_report`: the scaffold it calls can still record a tpm-clone failure, and a
+  closing "complete" over that was the exact silence the ledger exists to end; a new
+  `--strict` there turns a non-empty tally into exit 1. The header's measured figures now
+  read 9/9 compliant on all four rows, against 1/9 when the day started. (`scripts/audit/40-fleet-registers.sh`,
+  `V8-PROPOSAL.md`)
+
 - **MacBook adopted the ledger helpers and the `lint-call.yml` caller — the §5f rows read
   8/9, and the ratchet `V8-PROPOSAL.md` §4.2 named is done in a day** (#973;
   dotgibson/dotfiles-MacBook#247, #248). The proposal called MacBook's row the single

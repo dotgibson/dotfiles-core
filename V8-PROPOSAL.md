@@ -265,8 +265,10 @@ Concretely, in the order the evidence supports:
    Alpine, Arch, Offense and MacBook adopted (dotgibson/dotfiles-Debian#75,
    dotgibson/dotfiles-Fedora#178, dotgibson/dotfiles-openSUSE#183, dotgibson/dotfiles-Alpine#191,
    dotgibson/dotfiles-Arch#171, dotgibson/dotfiles-Offense#326, dotgibson/dotfiles-MacBook#247),
-   so the rows read 8/9 with Defense — which installs nothing — the one gap; Offense's
-   keepalive exemption went and MacBook gained one (one `tee` behind a confirm). #973.*
+   and Defense closed the last row (dotgibson/dotfiles-Defense#291: it adopts the report and
+   is exempt from the other two, with the reasons in the fragment). The four rows are
+   compliant fleet-wide; Offense's keepalive exemption went and MacBook gained one (one `tee`
+   behind a confirm). #973 is closed.*
 2. **Bring MacBook to the contract.** It is the canary and the template, and it is the
    least adopted. Retiring its private `fail_note` / `print_ledger` in favour of
    `blib_note_fail` / `blib_failures_report` is the single highest-value row in the
