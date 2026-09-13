@@ -201,6 +201,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   comment still read _"ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT"_ having blocked since
   #592; its measurement is kept but relabelled as the pre-flip state it describes.
 
+- **`lint-call.yml`'s last advisory leg blocks: the Core-owned-block scan now fails a caller
+  that re-implements a block Core owns (#961).** #960 left it warning because its own
+  measurement found **6 of 8** callers still hand-rolling the WSL predicate Core took over
+  in #449. Those six repo PRs landed 2026-09-12 (Alpine#185, Arch#168, Debian#71, Fedora#171,
+  Gentoo#177, openSUSE#179), and the flip was gated on a re-measurement rather than on the
+  issue states: all **eight** callers — nine repo-owned zsh files, `dotfiles-Alpine`'s two
+  and one each elsewhere — scanned with `_core_owned_block_hits` through the GitHub API,
+  **0 hits, 0 download failures**. `dotfiles-MacBook` and `-Windows` call no `lint-call.yml`,
+  so eight is the whole denominator.
+
+  Two corrections to the sweep #961 was filed from. It called `dotfiles-Gentoo`'s predicate
+  dead code; it gated `open`/`xdg-open`/`cdwin` exactly as Debian's did, so the fix there
+  was a swap to `_core_is_wsl`, not a deletion. And it undercounted: it printed two hits per
+  file, the WSL lines filled both, and `dotfiles-Fedora`'s direnv/gh/uv/ty init block — the
+  other half of #449 — went unlisted until Fedora#176 removed it (closed 2026-09-13).
+
+  Not a MAJOR, for the reason #960 gave: no caller is in the failing state, so nothing a
+  consumer relies on changes meaning, and `tag-release.sh` would force `X.0.0` on a
+  breaking-change bullet — the wrong number for a gate that reds nobody. `V8-PROPOSAL.md`'s
+  count of advisory legs needing the frozen-alias mechanism went three → one in #960 and is
+  now **zero**; §3 carries a status note and Change 1 drops out of the v8 case. Stale prose
+  fixed alongside: `PORTABILITY.md` §5 still said the caller-side `HAVE_*` leg _"does not
+  yet run"_ (running since #892, blocking since #960); the `scripts/test/20-scanners.sh`
+  comment and the Makefile header `new-os-repo.sh` scaffolds both still called this leg
+  advisory; and the `os.capabilities` step kept an _"ADVISORY, not blocking"_ comment above
+  the `exit 1` #960 gave it.
+
 - **The README hero ceiling drops from 2 MiB to 1.5 MiB (#698).** §9k's number was sized in
   #698 around a ~1.8 MB clip that no longer exists — the shortened template plus the
   gifsicle pass took the hero to about half of it. A ceiling at twice the size of the thing

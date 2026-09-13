@@ -585,10 +585,11 @@ w "$TARGET/Makefile" <<'EOF'
 # gitleaks.toml, this repo's .markdownlint.jsonc. The gate itself is called by
 # .github/workflows/lint.yml (scaffolded beside this file), and it is the verdict: it
 # installs and verifies PINNED tool versions (core/scripts/tool-versions.env) where these
-# recipes use whatever is on PATH, and it also runs the advisory shfmt and Core-owned-block
-# legs, which are not mirrored here. A leg whose tool is not installed SAYS SO and skips —
-# never silently, and CI still runs it — so on a bare box the skips name what was not
-# checked, and a local green is a strong prediction of the gate, not the gate.
+# recipes use whatever is on PATH, and it also runs two legs not mirrored here: shfmt
+# (advisory) and the Core-owned-block scan (blocking since #961). A leg whose tool is not
+# installed SAYS SO and skips — never silently, and CI still runs it — so on a bare box the
+# skips name what was not checked, and a local green is a strong prediction of the gate,
+# not the gate.
 #
 # THE VERBS ARE THE FLEET'S, NOT THIS REPO'S. help / lint / check / dry-run /
 # packages-check / core-verify / test are the canonical vocabulary every repo that vendors

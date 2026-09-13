@@ -471,8 +471,8 @@ unset _ob_core_ok _obf
 # The direct regression signal, and the only assertion here that watches the real defect
 # rather than a fixture. SKIPs when a sibling clone is absent (CI, a partial checkout), the
 # same graceful degradation scripts/fleet-drift.sh uses — a missing repo is not a failure.
-# EXPECTED TO SKIP OR FAIL until the fan-out lands: the copies are still there on the day
-# Core takes the blocks over, which is exactly why the lint leg ships advisory (#449).
+# It SKIPPED as "fan-out pending" from the day Core took the blocks over (#449) until the
+# six repo PRs deleted their copies — which is what let the lint leg flip to blocking (#961).
 _ob_fleet_seen=0 _ob_fleet_dirty=""
 # Siblings of this repo, the layout every fleet script assumes (see scripts/sync-core.sh).
 _ob_root="$(cd "$HERE/.." && pwd)"
