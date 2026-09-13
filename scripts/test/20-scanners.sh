@@ -872,16 +872,21 @@ else
   # compared with leading whitespace stripped, since the two live at different indents. A
   # range-based extraction would break on an unrelated edit nearby and report a divergence
   # that is not one, which is its own way of teaching people to ignore the check.
-  _gha_awk() { # _gha_awk <file> — the §5 parse body, one line per rule, de-indented
-    grep -E '^[[:space:]]*(/\^### What downstream may use/|inb &&|if \(match\(\$0,)' "$1" |
+  _gha_awk() { # _gha_awk <file…> — the §5 parse body, one line per rule, de-indented
+    grep -hE '^[[:space:]]*(/\^### What downstream may use/|inb &&|if \(match\(\$0,)' "$@" |
       sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
   }
   _gha_gen="$(_gha_awk "$_gha")"
-  _gha_aud="$(_gha_awk "$HERE/scripts/audit-core.sh")"
-  if [[ -n "$_gha_gen" && "$_gha_gen" == "$_gha_aud" ]]; then
-    pass "gen-have-api: parses §5's table with the SAME awk as audit-core.sh §5j (one table, one parser)"
+  # The AUDIT SIDE is the whole audit source: §5j moved into a scripts/audit/ fragment, and
+  # which fragment is an editorial choice this check must not encode. -h on the grep above
+  # keeps the two sides byte-comparable — with several files grep would otherwise prefix
+  # each line with its path and no two sides could ever match.
+  # shellcheck disable=SC2154  # cross-fragment: assembled in scripts/test-core.sh
+  _gha_aud="$(_gha_awk "${_audit_src[@]}")"
+  if [[ -n "$_gha_gen" && -n "$_gha_aud" && "$_gha_gen" == "$_gha_aud" ]]; then
+    pass "gen-have-api: parses §5's table with the SAME awk as the audit's §5j (one table, one parser)"
   else
-    fail "gen-have-api: its §5 parser has diverged from audit-core.sh §5j's — two parsers for one table is how the table and its gate drift apart"
+    fail "gen-have-api: its §5 parser has diverged from the audit's §5j parser — two parsers for one table is how the table and its gate drift apart"
   fi
   unset _gha_gen _gha_aud
   unset -f _gha_awk
@@ -1278,12 +1283,21 @@ gsub(/command[ \\t]+-v[ \\t]+[^ \\t;|&)}]+/, \" \", s)
 wait \"\$pid\""
   if [[ -z "$(_core_bash4_hits "$_b4d/lookalike.sh")" ]]; then pass "bash 3.2 scan: near-miss spellings are not findings"; else fail "bash 3.2 scan: flagged a look-alike — $(_core_bash4_hits "$_b4d/lookalike.sh" | tr '\n' ' ')"; fi
 
-  # And the two files that define and run the rule. Both necessarily discuss it.
+  # And the files that define and run the rule. Both necessarily discuss it.
   if [[ -z "$(_core_bash4_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "bash 3.2 scan: does not flag its own definition"; else fail "bash 3.2 scan: flagged common.sh itself"; fi
-  if [[ -z "$(_core_bash4_hits "$HERE/scripts/audit-core.sh")" ]]; then pass "bash 3.2 scan: does not flag the gate that calls it"; else fail "bash 3.2 scan: flagged audit-core.sh itself"; fi
+  # The gate that CALLS it is the dispatcher PLUS every scripts/audit/ fragment — the same
+  # widening the RETURN and conflict-marker self-scans took at #699, for the same reason:
+  # §5k's own prose moved into a fragment, and scanning only the dispatcher would leave the
+  # file that spells `mapfile` out loud unwatched until §5k reds the audit itself.
+  _b4_self=""
+  # shellcheck disable=SC2154  # cross-fragment: assembled in scripts/test-core.sh
+  for _b4_f in "${_audit_src[@]}"; do
+    [[ -n "$(_core_bash4_hits "$_b4_f")" ]] && _b4_self="${_b4_self:+$_b4_self }${_b4_f#"$HERE/"}"
+  done
+  if [[ -z "$_b4_self" ]]; then pass "bash 3.2 scan: does not flag the gate that calls it (dispatcher + every scripts/audit/ fragment)"; else fail "bash 3.2 scan: flagged the audit's own source: $_b4_self — §5k will red the whole audit on the next run"; fi
 
   unset -f _b4_write _b4_line
-  unset _b4d _b4_mf _b4_ra _b4_at _b4_amp _b4_ff _b4_lc _b4_pipe _b4_wn
+  unset _b4d _b4_mf _b4_ra _b4_at _b4_amp _b4_ff _b4_lc _b4_pipe _b4_wn _b4_f _b4_self
 else
   skip "bash 3.2 floor scanner (not a git checkout)"
 fi

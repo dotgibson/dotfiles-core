@@ -108,6 +108,17 @@ make audit-changed  # only what your diff touches (fast loop)
 make sync           # fan Core out to every OS repo (after a green audit)
 ```
 
+The gate's own **sections** live in `scripts/audit/NN-name.sh` — one numbered fragment per
+subject — and `scripts/audit-core.sh` is the dispatcher that globs them in `NN` order and
+**sources** them into its own shell (one set of counters, one summary, one exit code, one
+EXIT trap, the same CLI). Adding a section is adding a file; there is no registry to update.
+The `NN-` prefix is load-bearing (`scripts/audit/05-shape.sh` fails the run if you leave one
+off, or if two fragments wear the same section id), and the fragments are sourced libraries,
+so they are `100644`, not `+x`. **Section ids are stable across the split** (`§5c`, `§5f`,
+`§9e` …): `CONTRIBUTING.md`, `VENDORING.md`, `PORTABILITY.md`, `core.vendor` and the
+CHANGELOG all cite gates by id, so cite the **id**, never a line number. Same shape, same
+reason, and the same ShellCheck arithmetic as the behavioral suite below.
+
 The **behavioral suite** the gate delegates to is `scripts/test/NN-name.sh` — one numbered
 fragment per subject — and `scripts/test-core.sh` is the dispatcher that globs them in `NN`
 order and **sources** them into its own shell (one `$SANDBOX`, one set of counters, one

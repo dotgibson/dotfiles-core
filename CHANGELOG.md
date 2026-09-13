@@ -170,16 +170,97 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `blib_failures_report` for the closing tally — which also surfaces the failures the shared
   lib records _itself_ (the tpm clone, `blib_install_system_file`) that both scripts used to
   drop. Output and `--strict` semantics are unchanged. The four `_ha_ledger` lines in
-  `audit-core.sh` §5f now read `dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo` and the
-  header's measured figures say 3/9; landing order was sibling-first, ledger-second, because
+  §5f (`scripts/audit/40-fleet-registers.sh` since #970) now read
+  `dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo` and the header's measured figures say 3/9; landing order was sibling-first, ledger-second, because
   `_core_helper_verdict` fails `regressed` the other way round and `sync-fanout.yml` is where
   §5f meets real siblings. #973 tracks the remaining five repos with each one's measured
   friction (openSUSE exits 2, Alpine needs `--prefer doas`, Arch calls the underscore-private
-  `_blib_priv`, Offense hardcodes `sudo`, MacBook has a `warn_note` channel and exits 3); #974
-  (the `audit-core.sh` split, §5), #975 (`check-links.sh` vendored with zero callers across all
-  nine repos, §10 Q3) and #976 (the per-repo hook, §4.2(3)) carry the rest of what the
-  proposal still owed, none of which was tracked anywhere. (`scripts/audit-core.sh`,
-  `V8-PROPOSAL.md`)
+  `_blib_priv`, Offense hardcodes `sudo`, MacBook has a `warn_note` channel and exits 3); #975
+  (`check-links.sh` vendored with zero callers across all nine repos, §10 Q3) and #976 (the
+  per-repo hook, §4.2(3)) carry the rest of what the proposal still owed, none of which was
+  tracked anywhere — the split (§5) was filed as #974 the same afternoon #970 shipped it, and
+  closed as superseded. (`scripts/audit/40-fleet-registers.sh`, `V8-PROPOSAL.md`)
+- **The audit is 48 named sections in `scripts/audit/`, not one 3,064-line file (#970).** The
+  gate got the #699 treatment, for the reasons #699 gave. ShellCheck's cost is superlinear
+  in file length: linting this one file cost **2.50 s of CPU / 3.1–3.4 s wall** on every CI
+  leg for any PR touching any shell file; the dispatcher plus sixteen fragments, linted the
+  way §5 lints them — one process per file — cost **1.47 s / 1.65 s**, the same lines and
+  the same rule set. About 2×, and stated as measured rather than as the 3.4× the proposal
+  estimated from four equal parts without process startup. The sections now live in
+  **`scripts/audit/NN-name.sh`**, one numbered fragment per subject, and `audit-core.sh` is
+  a 579-line dispatcher that globs them in `NN` order and **sources** them into its own
+  shell — one set of PASS/SKIP/FAIL counters, one summary, one exit code, one EXIT trap.
+  `--quiet`, `--json`, `--scope`, `--changed`, `--strict`, `--require-siblings`, the exit
+  codes, the `audit-core` pre-commit hook, `make audit` and every script that calls the
+  path (`sync-core.sh`, `tag-release.sh`, `release.sh`, `setup.sh`) are untouched.
+
+  **A move, not a rewrite.** The fragments rejoin to the old file's lines 399–2912 **byte
+  for byte** — the whole cut is two hunks, the renamed banner and one case arm — and the
+  251 pass/skip/fail label strings come back identical in text and order, with only the
+  shape gate's seventeen added at the head. The comments travel with their sections: the
+  file was 48% comment and that prose carries the issue numbers, the measurements and the
+  "why it blocks vs reports" policy that exists nowhere else, so none of it was summarised
+  away. Section 10 — the wait on the behavioral suite the dispatcher backgrounds at the
+  top — stays in the dispatcher, because it is the collect half of that launch and the
+  EXIT trap that reaps it, and because "last" has to be structural rather than a matter of
+  `NN`.
+
+  **The `§`-ids are the stable part and did not move.** The proposal said the `NN-` prefix
+  would _replace_ the letters; it carries run order instead, and `§5c` is still `§5c`.
+  Some 330 prose references in 67 files cite gates by id — `CLAUDE.md`, `CONTRIBUTING.md`,
+  `VENDORING.md`, `PORTABILITY.md`, `lint-call.yml`, `common.sh`, the doc-audit routine —
+  and two of those files are vendored to nine repos (`core.vendor`'s comments and the
+  generated `CHANGELOG.recent.md` header), so renaming would have been a fleet-wide churn
+  for no gate value. The ids had drifted because letters are addition order within a
+  family and were never meant to sort: `1b` ran fifth, `5k` between `5e` and `5f`, `9c`
+  before `9b`, and the file's own header indexed 23 of the 48. Filenames fix the ordering
+  by construction. **One id had to change:** `1c` named two unrelated gates — the
+  `core.vendor` existence check (#676) and the unreferenced-`.claude/`-files scanner (#700,
+  #905) — and the second is now **`§1f`**, the next free letter in its family. The shipped
+  release notes for #700 and #905 still say `§1c`; they are history and were left alone,
+  which is why this sentence exists.
+
+  **`scripts/audit/05-shape.sh` keeps it from recurring.** It runs first and fails the run
+  if any two fragments share a banner id, if a `*.sh` lands there without the `NN-` prefix
+  (the glob would skip it in silence while the audit reported OK), if a fragment is
+  executable, untracked, or carries no section banner at all. The empty-glob refusal —
+  `exit 2` rather than an `audit OK` over zero gates — is **driven** rather than believed,
+  from the new `scripts/test/23-audit-shape.sh`, because the audit has no sandbox of its
+  own to stage a tree in and a fragment must never install a second EXIT trap. That test
+  also asserts the suite's own view of the audit resolved: `scripts/test-core.sh` now
+  assembles `_audit_src` — the dispatcher plus every fragment — once, and the fifteen
+  static assertions that used to grep one file (`36-bootstrap-lib.sh`, `20-scanners.sh`,
+  `21-guards.sh`, `42-gen-hero-tape.sh`, `56-fleet-vocabulary.sh`,
+  `58-fleet-release-triggers.sh`, `90-policy-gates.sh`) grep that set through
+  `_audit_grep` / `_audit_cat` / `_audit_frag`. Widening them is not cosmetic: the
+  `_tool_skips` binding's sharpest assertion is a must-NOT-match, and a narrow file list
+  passes it by looking away. Three of those tests needed design rather than a rename. The
+  `--json` guard in `36-bootstrap-lib.sh` scans a **line range** between the `5f.` and `5i.`
+  banners, so §5f–§5i are kept contiguous in `40-fleet-registers.sh` and the guard now
+  fails, naming both files, if they ever separate. `22-ci-classify.sh`'s enumeration
+  tripwire held `audit-core.sh:11:5` exactly; it now holds the dispatcher at `0:1` and the
+  fragments as a **globbed sum** of `11:4` — a per-fragment table would be a second
+  registry that never counts a new fragment and reds on a pure move, while a sum keeps the
+  exactness the rule defends and is invariant to regrouping. And `90-policy-gates.sh`'s
+  gitleaks self-check, which looped over a hand-named file list, would have gone green
+  over files that no longer call gitleaks; it sweeps the audit's source set and now also
+  asserts the set _contains_ an invocation.
+
+  §2 learns that `scripts/audit/*.sh` are sourced libraries (`100644`), the same arm
+  `scripts/test/*.sh` got in #699. `scripts/` was already a `META_PREFIXES` entry, so the
+  new directory needed no allowlist edit; `META_ALLOWLIST` itself stays in the dispatcher
+  because five citations, two in vendored files, name it there. `scripts/lib/common.sh` did
+  not move — it is in `core.vendor` and `dotfiles-MacBook` sources it directly. Nothing
+  outside this repo changes: `audit-core.sh` is in neither `core.manifest` nor
+  `core.vendor` and ships to no machine, which is why this is a minor and why
+  `V8-PROPOSAL.md` §5 carries a status note rather than a breaking bullet. Four stale
+  references found on the way are fixed in the same change: `CONTRIBUTING.md` cited
+  `audit-core.sh:583` for a sentence at `:907`, `gen-theme.sh` cited `audit-core.sh:80`
+  for a note at `:101`, the audit's own note cited "line 48" for a `cd` on line 74, and
+  `.gitattributes` credited the changelog-digest gate to `§9c` (it is `§9e`).
+  (`scripts/audit-core.sh`, `scripts/audit/`, `scripts/test-core.sh`, `scripts/test/`,
+  `scripts/lib/common.sh`, `CLAUDE.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`,
+  `V8-PROPOSAL.md`, `.gitattributes`, `scripts/gen-theme.sh`)
 
 - **`V8-PROPOSAL.md` is decided, and no major comes out of it.** The document was written
   two days ago as the content of a major that had none to find, resting on three changes.

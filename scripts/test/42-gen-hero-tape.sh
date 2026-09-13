@@ -738,10 +738,10 @@ fi
 # is exactly the state this loop exists to notice. Pinned here rather than trusted, exactly
 # as F11 pins parity-check.yml's --check.
 for _gh_leg in '--check' '--check-size' '--check-render'; do
-  if grep -qE "scripts/gen-hero-tape\.sh\" $_gh_leg" "$HERE/scripts/audit-core.sh"; then
-    pass "gen-hero-tape: audit-core.sh runs the generator with $_gh_leg"
+  if _audit_grep -qE "scripts/gen-hero-tape\.sh\" $_gh_leg"; then
+    pass "gen-hero-tape: the audit runs the generator with $_gh_leg"
   else
-    fail "gen-hero-tape: audit-core.sh never calls gen-hero-tape.sh $_gh_leg — that leg gates nothing"
+    fail "gen-hero-tape: nothing in the audit calls gen-hero-tape.sh $_gh_leg — that leg gates nothing"
   fi
 done
 

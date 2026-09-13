@@ -292,11 +292,11 @@ _frt_reset; _frt_repo dotfiles-Fedora "$_frt_good"
 if _frt_run >/dev/null; then pass "triggers: report mode exits 0 (rendering is not a verdict)"; else fail "triggers: report mode exits non-zero"; fi
 
 # The wiring, so the register cannot become a script nothing runs.
-if grep -q 'fleet-release-triggers.sh" --check' "$HERE/scripts/audit-core.sh" &&
-  grep -qF '"fleet list "' "$HERE/scripts/audit-core.sh"; then
-  pass "triggers: audit-core.sh §5h runs the register and reads its fleet-list notice as an environment skip"
+if _audit_grep -q 'fleet-release-triggers.sh" --check' &&
+  _audit_grep -qF '"fleet list "'; then
+  pass "triggers: the audit's §5h runs the register and reads its fleet-list notice as an environment skip"
 else
-  fail "triggers: audit-core.sh §5h no longer runs fleet-release-triggers.sh --check"
+  fail "triggers: nothing in the audit runs fleet-release-triggers.sh --check any more"
 fi
 if grep -qE '^fleet-release-triggers: ' "$HERE/Makefile"; then
   pass "triggers: \`make fleet-release-triggers\` prints the register"

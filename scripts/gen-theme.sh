@@ -66,7 +66,8 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # Via the ALREADY-ABSOLUTE $HERE, not ${BASH_SOURCE[0]%/*}: we cd below, and
 # BASH_SOURCE stays relative to the caller's original directory, so invoking this
 # by a relative path from elsewhere would resolve the lib against the wrong base.
-# The same note sits on check-modern.sh:23 and audit-core.sh:80.
+# The same note sits on check-modern.sh and audit-core.sh, above each one's
+# `source … lib/common.sh`.
 
 # For core_files_identical — the cmp/diff BINARIES are forbidden in this repo (#572;
 # see the helper's note in common.sh): that helper for equality and `git diff --no-index` for a

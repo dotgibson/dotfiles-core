@@ -31,7 +31,7 @@ bin/clip-paste text eol=lf
 Makefile    text eol=lf
 # ── Generated, not authored ───────────────────────────────────────────────────
 # CHANGELOG.recent.md is rendered from CHANGELOG.md by scripts/gen-changelog-recent.sh and
-# committed (audit §9c fails if the two disagree). The marker collapses its ~50 KB hunk in
+# committed (audit §9e fails if the two disagree). The marker collapses its ~50 KB hunk in
 # GitHub's diff view on every release PR, where reviewing it is noise — the CHANGELOG.md
 # hunk beside it is the thing to read. It does NOT affect `git diff`, so the freshness gate
 # and a local review are unchanged. Deliberately NO merge strategy: since #587 the sync

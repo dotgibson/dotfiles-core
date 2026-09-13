@@ -232,6 +232,53 @@ _core_test_cleanup() {
 }
 trap '_core_test_cleanup' EXIT
 
+# ── the audit's source files, as one array ────────────────────────────────────
+# scripts/audit-core.sh split into scripts/audit/NN-name.sh the way this file split into
+# scripts/test/NN-name.sh (#699). So "does the audit's source say X?" — which fifteen
+# static assertions across this suite ask — stopped being a question about ONE file.
+# Assembled HERE, once, for the reason the fragment glob below is a glob: fifteen
+# per-fragment copies is fifteen places to forget the audit/ half, and the copy you forget
+# is the assertion that silently stops watching. Not in common.sh: that file is vendored
+# to nine repos, and this is test-only machinery.
+#
+# GLOB, not a registry, and not fail-closed HERE: scripts/test/23-audit-shape.sh asserts
+# the set resolved, so a missing scripts/audit/ is a named failure inside the run rather
+# than an exit before it — which also keeps 05-suite-shape.sh's empty-suite fixture (a
+# tree with no scripts/audit/ at all) exiting for the reason it is testing.
+_audit_src=("$HERE/scripts/audit-core.sh")
+for _audit_f in "$HERE"/scripts/audit/[0-9][0-9]-*.sh; do
+  [[ -e "$_audit_f" ]] && _audit_src+=("$_audit_f")
+done
+unset _audit_f
+
+# grep every one of them. Matches print as `<path>:<line>:<text>`, which is strictly more
+# useful than the old single-file output: a failure now names the fragment to open.
+# Functions, not the bare array, are the API a fragment reaches for: a bare array reference
+# from a fragment is SC2154 to shellcheck's file scope, a call is not. All three are invoked
+# only from fragments, which shellcheck's file scope cannot see — both codes, for the same
+# two-version reason as _core_test_cleanup below.
+# shellcheck disable=SC2317,SC2329  # invoked from scripts/test/NN-*.sh, sourced below
+_audit_grep() { # _audit_grep <grep args…> <pattern>
+  grep "$@" "${_audit_src[@]}"
+}
+
+# The same set as ONE stream — for `grep -c` (which prefixes per-file counts otherwise)
+# and for `sed -n '/from/,/to/p'` range extractions.
+# shellcheck disable=SC2317,SC2329  # invoked from scripts/test/NN-*.sh, sourced below
+_audit_cat() { cat "${_audit_src[@]}"; }
+
+# The SINGLE fragment whose text matches — for the one assertion that needs a line RANGE
+# inside one file (36-bootstrap-lib.sh's §5f→§5i --json guard). Non-zero and silent when
+# nothing matches or when two files do: an ambiguous answer must fail the caller, not be
+# picked arbitrarily.
+# shellcheck disable=SC2317,SC2329  # invoked from scripts/test/NN-*.sh, sourced below
+_audit_frag() { # _audit_frag <ERE> → path, or rc 1
+  local _hits
+  _hits="$(_audit_grep -lE "$1")" || return 1
+  [[ -z "$_hits" || "$_hits" == *$'\n'* ]] && return 1
+  printf '%s\n' "$_hits"
+}
+
 # ── the suite: scripts/test/NN-name.sh, sourced in NN order ───────────────────
 # GLOB + SORT, not a hand-maintained list — the same reason zsh/loader.zsh globs its
 # numbered fragments instead of naming them. A registry is a second place to edit, and
