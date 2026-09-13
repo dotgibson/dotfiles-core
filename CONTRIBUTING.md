@@ -209,7 +209,8 @@ same commit.
    is a real cost on every push in the fleet.
 
    **§5c of `scripts/audit-core.sh` is deliberately NOT on this list.** Its scope is
-   derived from `core.manifest` — the file says so at `scripts/audit-core.sh:583` —
+   derived from `core.manifest` — §5c says so in its own comment, in
+   `scripts/audit/30-boundary.sh` —
    so a path added to the manifest in step 4 is scanned automatically. This step used
    to send you there to edit a hand-kept list; that list is gone, and looking for it
    wastes the one moment you were most likely to be careful.

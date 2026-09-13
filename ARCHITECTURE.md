@@ -321,7 +321,9 @@ rather than an immutable tree, so wordcode-beside-source is safe and stays there
 drift in both directions, exec-bit assertions, shell and Lua syntax, shellcheck,
 luacheck, markdownlint, and a behavioral test suite. CI, the pre-commit hook, and
 `make audit` all call it. A red tree must never be vendored out, so it is green
-before any sync.
+before any sync. Its sections live in `scripts/audit/NN-name.sh`, sourced in order by
+the dispatcher, under section ids (`§5c`, `§9e` …) that the docs cite and that the
+split did not renumber.
 
 ```bash
 make audit          # the full gate

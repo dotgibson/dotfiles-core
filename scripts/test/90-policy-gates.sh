@@ -70,17 +70,28 @@ _gp_is "a non-scanning subcommand is not a finding" j.mk ""
 
 # Core's OWN consumers must be clean, or §5g would be asking the fleet for something Core
 # does not do itself — the same inverse property the owned-block scan asserts.
+#
+# THE FILE LIST IS THE AUDIT'S SOURCE SET. §8b moved into a scripts/audit/ fragment, and a
+# hand-named list would have kept scanning the dispatcher and the Makefile, found no
+# violation in files that no longer call gitleaks, and passed — green, asserting nothing.
+# Hence _gp_core_saw: the set must CONTAIN an invocation. That is the assertion that cannot
+# be satisfied by looking away, and it is the one this block was missing.
 _gp_core_ok=1
-for _gpf in "$HERE/audit-core.sh" "$HERE/scripts/audit-core.sh" "$HERE/Makefile"; do
+_gp_core_saw=0
+# shellcheck disable=SC2154  # cross-fragment: assembled in scripts/test-core.sh
+for _gpf in "${_audit_src[@]}" "$HERE/Makefile"; do
   [[ -f "$_gpf" ]] || continue
+  grep -qE '^[^#]*(^|[[:space:]])gitleaks[[:space:]]' "$_gpf" && _gp_core_saw=1
   [[ -z "$(_core_gitleaks_policy_hits "$_gpf")" ]] || _gp_core_ok=0
 done
-if (( _gp_core_ok )); then
+if ((_gp_core_saw == 0)); then
+  fail "gitleaks policy: no gitleaks invocation anywhere in scripts/audit-core.sh, scripts/audit/ or the Makefile — the gate moved and this check is a clean bill of health over files that never call it"
+elif ((_gp_core_ok)); then
   pass "gitleaks policy: Core's own gitleaks calls all pass a config (Core meets the rule it sets)"
 else
   fail "gitleaks policy: Core itself runs gitleaks with no config — the rule §5g applies to the fleet"
 fi
-unset _gp_scan _gp_det _gp_hist _gp_core_ok _gpf _gph
+unset _gp_scan _gp_det _gp_hist _gp_core_ok _gp_core_saw _gpf _gph
 unset -f _gp_w _gp_is
 
 # ── Makefile gate guard (common.sh :: _core_make_gate_hits) ──────────────────
@@ -711,16 +722,16 @@ if grep -qF 'dotfiles-Windows not checked out' "$HERE/scripts/parity-check.sh"; 
 else
   fail "parity verdict: parity-check.sh reworded the notice _core_parity_verdict matches on — §9f will misclassify"
 fi
-if grep -q '_core_parity_verdict' "$HERE/scripts/audit-core.sh"; then
-  pass "parity verdict: audit-core.sh §9f classifies via the helper, not an inline if-chain"
+if _audit_grep -q '_core_parity_verdict'; then
+  pass "parity verdict: the audit's §9f classifies via the helper, not an inline if-chain"
 else
-  fail "parity verdict: audit-core.sh §9f stopped using _core_parity_verdict — the classification is untestable again"
+  fail "parity verdict: nothing in the audit uses _core_parity_verdict any more — §9f's classification is untestable again"
 fi
 # CORE_JSON=1 is EXPORTED by `audit --json` and silences common.sh's skip(), which is where
 # both notices above come from. Without the reset at the child boundary a --json run
 # classifies every box as ok-full — it reported a full zsh+pwsh pass on a box with no pwsh
 # file. That reset is one token with no runtime symptom in a normal run, so it is pinned.
-if grep -q 'CORE_JSON=0 "\$HERE/scripts/parity-check.sh"' "$HERE/scripts/audit-core.sh"; then
+if _audit_grep -q 'CORE_JSON=0 "\$HERE/scripts/parity-check.sh"'; then
   pass "parity verdict: §9f clears CORE_JSON at the child boundary (a --json run would else read no notices)"
 else
   fail "parity verdict: §9f no longer clears CORE_JSON for the parity child — --json runs will report a full pass on a box with no pwsh file"

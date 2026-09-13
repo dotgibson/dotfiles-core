@@ -189,17 +189,17 @@ while IFS= read -r _ha_line; do
   case "$_ha_line" in
   *skip_env*) ;;
   *)
-    fail "helper adoption: a plain skip() here lands in the TOOL-absent class and reds --strict in CI — $_ha_line"
+    fail "helper adoption: a plain skip() here lands in the TOOL-absent class and reds --strict in CI — ${_ha_line#"$HERE/"}"
     _ha_bad=1
     ;;
   esac
 done <<EOF
-$(grep -n 'skip[_a-z]* "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+$(_audit_grep -n 'skip[_a-z]* "helper adoption' 2>/dev/null || true)
 EOF
-if ((_ha_bad == 0)) && grep -q 'skip_env "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
+if ((_ha_bad == 0)) && _audit_grep -q 'skip_env "helper adoption' 2>/dev/null; then
   pass "helper adoption: every sibling skip goes through skip_env, so --strict stays green in CI"
 elif ((_ha_bad == 0)); then
-  fail "helper adoption: audit-core.sh has no helper-adoption skip at all — the section is gone or renamed"
+  fail "helper adoption: the audit has no helper-adoption skip at all (searched scripts/audit-core.sh and every scripts/audit/ fragment) — the section is gone or renamed"
 fi
 # skip_env must actually EXIST and be the thing that records the class — otherwise the
 # assertion above passes against a typo'd call that silently becomes an unbound command.
@@ -274,21 +274,27 @@ fi
 # BINDING. The two assertions above are only worth anything if audit-core.sh actually uses the
 # helper AND does not adjust the number afterwards. The demonstrated regression was precisely
 # that shape: leave the classification correct, then re-add a subtracting statement after it.
+#
+# ALL THREE READ THE WHOLE AUDIT, not just the dispatcher — even though the assignment
+# itself stays there (beside the summary that consumes it). The count is the point: "exactly
+# one" is only a guarantee if it is counted everywhere a second one could be written, and
+# since the split that is scripts/audit/NN-name.sh too. The `_tool_skips=$((_tool_skips`
+# line is the sharp end — a must-NOT-match that a narrow file list passes by looking away.
 _tb=0
-_tb_asg="$(grep -c '^_tool_skips=' "$HERE/scripts/audit-core.sh" || true)"
+_tb_asg="$(_audit_cat | grep -c '^_tool_skips=' || true)"
 [[ "$_tb_asg" == 1 ]] || {
-  fail "binding: _tool_skips is assigned $_tb_asg times in audit-core.sh, want exactly 1 — a second assignment can undo a correct classification"
+  fail "binding: _tool_skips is assigned $_tb_asg times across the audit's source (dispatcher + scripts/audit/), want exactly 1 — a second assignment can undo a correct classification"
   _tb=1
 }
-grep -q '^_tool_skips="\$(_core_tool_skip_count)"' "$HERE/scripts/audit-core.sh" || {
-  fail "binding: audit-core.sh does not take _tool_skips straight from _core_tool_skip_count — the tested helper is not the code that runs"
+_audit_grep -q '^_tool_skips="\$(_core_tool_skip_count)"' || {
+  fail "binding: the audit does not take _tool_skips straight from _core_tool_skip_count — the tested helper is not the code that runs"
   _tb=1
 }
-grep -q '_tool_skips=\$((_tool_skips' "$HERE/scripts/audit-core.sh" && {
-  fail "binding: audit-core.sh post-processes _tool_skips — this is the exact partial revert the helper was extracted to prevent"
+_audit_grep -q '_tool_skips=\$((_tool_skips' && {
+  fail "binding: the audit post-processes _tool_skips — this is the exact partial revert the helper was extracted to prevent"
   _tb=1
 }
-((_tb)) || pass "binding: audit-core.sh takes _tool_skips solely from _core_tool_skip_count, with no post-processing"
+((_tb)) || pass "binding: the audit takes _tool_skips solely from _core_tool_skip_count, with no post-processing"
 
 # ANCHORED to a statement that can REACH stdout, which is not the same as a line starting
 # with `printf` — and that distinction is why the previous two versions of this block were
@@ -302,11 +308,20 @@ grep -q '_tool_skips=\$((_tool_skips' "$HERE/scripts/audit-core.sh" && {
 # and a string being built reaches stdout only through whatever prints it, which this scan
 # sees separately. Then assert the scan is NON-EMPTY, because "matched nothing" is exactly
 # how this test failed silently twice.
-_jg_from="$(grep -n '^# ── 5f\.' "$HERE/scripts/audit-core.sh" | cut -d: -f1)"
-_jg_to="$(grep -n '^# ── 5i\.' "$HERE/scripts/audit-core.sh" | cut -d: -f1)"
-if [ -z "$_jg_from" ] || [ -z "$_jg_to" ]; then
-  fail "--json: cannot locate the §5f→§5i fleet sections in audit-core.sh — the banners were renamed and this guard now covers nothing"
+# ONE FILE, DELIBERATELY. The scan is a LINE RANGE, so it needs the §5f and §5i banners in
+# one file's numbering. Since the split those banners live in a scripts/audit/ fragment, and
+# the sections between them (§5f, §5g, the four §5h registers, §5i) are kept contiguous
+# there precisely so this range stays meaningful. Split across two fragments this guard
+# would silently cover half the fleet sections, so the two-file case is a FAILURE naming
+# both, not a quietly narrower scan.
+_jg_file="$(_audit_frag '^# ── 5f\.')"
+_jg_i="$(_audit_frag '^# ── 5i\.')"
+if [ -z "$_jg_file" ] || [ "$_jg_file" != "$_jg_i" ]; then
+  fail "--json: §5f and §5i are not in one audit source file (5f: '${_jg_file:-<none/ambiguous>}', 5i: '${_jg_i:-<none/ambiguous>}') — this guard reads a line RANGE, so a split here covers only part of the fleet sections"
 else
+  _jg_rel="${_jg_file#"$HERE/"}"
+  _jg_from="$(grep -n '^# ── 5f\.' "$_jg_file" | cut -d: -f1)"
+  _jg_to="$(grep -n '^# ── 5i\.' "$_jg_file" | cut -d: -f1)"
   _jg_bad=0
   _jg_seen=0
   while IFS= read -r _jg_line; do
@@ -315,7 +330,7 @@ else
     case "$_jg_line" in
     *CORE_JSON*) ;;
     *)
-      fail "--json: an unguarded fleet-section printf breaks JSON-only stdout — $_jg_line"
+      fail "--json: an unguarded fleet-section printf breaks JSON-only stdout — $_jg_rel:$_jg_line"
       _jg_bad=1
       ;;
     esac
@@ -324,15 +339,15 @@ $(awk -v a="$_jg_from" -v b="$_jg_to" '
     NR>=a && NR<=b && /printf/ && !/>&2/ {
       if (match($0, /\$\([[:space:]]*printf/)) next
       printf "%d: %s\n", NR, $0
-    }' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+    }' "$_jg_file" 2>/dev/null || true)
 EOF
   if ((_jg_seen == 0)); then
-    fail "--json: the fleet-section scan matched NO printf at all — it is vacuous again, which is how it stayed green through two rewrites while protecting nothing"
+    fail "--json: the fleet-section scan matched NO printf at all in $_jg_rel — it is vacuous again, which is how it stayed green through two rewrites while protecting nothing"
   elif ((_jg_bad == 0)); then
-    pass "--json: all $_jg_seen fleet-section stdout writes (§5f–§5i) are CORE_JSON-guarded"
+    pass "--json: all $_jg_seen fleet-section stdout writes (§5f–§5i, $_jg_rel) are CORE_JSON-guarded"
   fi
 fi
-unset _jg_from _jg_to _jg_seen
+unset _jg_from _jg_to _jg_seen _jg_file _jg_i _jg_rel
 
 # ── the adoption RATCHET: _core_helper_verdict, as a unit ───────────────────────
 # What used to be here was a single assertion on the section's SOURCE TEXT — "audit-core.sh
@@ -369,19 +384,19 @@ unset _hv_bad
 # helper, and that each verdict lands where the ratchet needs it: both movements on fail(),
 # the standing gap on the advisory accumulator.
 _hb=0
-grep -q '_core_helper_verdict' "$HERE/scripts/audit-core.sh" || {
-  fail "binding: audit-core.sh §5f does not call _core_helper_verdict — the tested judgment is not the code that runs"
+_audit_grep -q '_core_helper_verdict' || {
+  fail "binding: the audit's §5f does not call _core_helper_verdict — the tested judgment is not the code that runs"
   _hb=1
 }
-grep -q 'fail "helper adoption: .* no longer calls' "$HERE/scripts/audit-core.sh" || {
+_audit_grep -q 'fail "helper adoption: .* no longer calls' || {
   fail "binding: §5f has no 'regressed' fail — a repo dropping a helper is back to being a silently smaller number"
   _hb=1
 }
-grep -q 'fail "helper adoption: .* and the ledger does not say so' "$HERE/scripts/audit-core.sh" || {
+_audit_grep -q 'fail "helper adoption: .* and the ledger does not say so' || {
   fail "binding: §5f has no 'advanced' fail — nothing forces the ledger to be ratcheted, so it will go stale"
   _hb=1
 }
-grep -q 'gap) _ha_gaps=' "$HERE/scripts/audit-core.sh" || {
+_audit_grep -q 'gap) _ha_gaps=' || {
   fail "binding: §5f no longer routes a 'gap' to the advisory report — if it now fails, 8 of 9 repos red the fleet on arrival"
   _hb=1
 }
@@ -399,7 +414,7 @@ while IFS= read -r _hl_repo; do
     _hl_bad=1
   }
 done <<EOF
-$(sed -n '/^  _ha_ledger=/,/^'"'"'$/p' "$HERE/scripts/audit-core.sh" | grep -o 'dotfiles-[A-Za-z]*' | sort -u)
+$(_audit_cat | sed -n '/^  _ha_ledger=/,/^'"'"'$/p' | grep -o 'dotfiles-[A-Za-z]*' | sort -u)
 EOF
 ((_hl_bad)) || pass "§5f ledger: every repo it names is a real entry in scripts/os-repos.txt"
 unset _hl_bad _hl_repo _ha_bad _ha_line
@@ -490,7 +505,7 @@ rm -rf "$_hc_dir"
 unset _hc_dir _hc_bad _hc_pf
 
 # BINDING: §5f must ask the predicate, not grep the file itself.
-if grep -q '_core_helper_called "\$_ha_dir/bootstrap.sh" "\$_ha_h"' "$HERE/scripts/audit-core.sh"; then
+if _audit_grep -q '_core_helper_called "\$_ha_dir/bootstrap.sh" "\$_ha_h"'; then
   pass "binding: §5f tests adoption through _core_helper_called (comments cannot satisfy the ledger)"
 else
   fail "binding: §5f no longer calls _core_helper_called — a bare grep counts a comment as a call, which is how a deleted helper stays invisible"

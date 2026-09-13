@@ -1076,7 +1076,7 @@ _core_helper_called() { # _core_helper_called <file> <helper>
 # checkout, and it costs one subprocess rather than a stat per file. Both sides are
 # normalised through `cd`/`pwd -P` before the prefix test: git records the path it was
 # HANDED, which can differ from <repo-root>'s spelling by a symlink, and a textual compare
-# would then silently prune nothing — the vacuous-pass shape §1c's own canary exists for.
+# would then silently prune nothing — the vacuous-pass shape §1f's own canary exists for.
 #
 # SCOPE IS LINKED WORKTREES OF THIS REPO. An unrelated clone parked under this tree is not in
 # git's registry and stays reportable on purpose: nobody registered it, so "is this meant to
