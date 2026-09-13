@@ -131,6 +131,37 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **nvim plugin pins move forward for six plugins.** `crates.nvim`, `friendly-snippets`,
+  `nvim-dap`, `nvim-lspconfig`, `nvim-treesitter` and `schemastore.nvim` advance to upstream
+  HEAD — the set a 2026-09-12 re-run of the fleet health board's signals (#794) found stale,
+  three days after #949 rolled the previous one. The other three signals were green on the
+  same run: every repo, Windows included, on Core `v7.3.0`; all nine vendored `core/` trees
+  pristine; all eight zsh plugin pins current.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`,
+  `behind_by=0` in all six), and each range was read before promotion:
+
+  - **`crates.nvim`** `b8281be` → `7039bc1`, 1 commit: a CI workflow tweak. No Lua touched.
+  - **`friendly-snippets`** `6290e13` → `b4d01b0`, 3 commits: C# MSTest snippets and a
+    snippet-definition validator under `debug/`. Core loads it only as blink.cmp's snippet
+    source.
+  - **`nvim-dap`** `c9a0738` → `cfa2d58`, 2 commits: child-session lookup when handling
+    source buffers, and a `winfixbuf` guard when `switchbuf` contains `uselast`. Internal to
+    `_cmds.lua`/`session.lua`; every entry point Core binds (`continue`, `step_*`,
+    `toggle_breakpoint`, `set_breakpoint`, `run_last`, `terminate`, `repl.toggle`/`close`,
+    `ui.widgets`) keeps its signature.
+  - **`nvim-lspconfig`** `84b6b6c` → `ac9d2f7`, 3 commits: a new `jetls` server config and
+    its generated docs. Core does not configure it.
+  - **`nvim-treesitter`** `5cb0114` → `9a168f6`, 3 commits: the `kdl` parser and queries
+    updated (marked `feat!` upstream — a query rewrite for that one language), query
+    maintainers dropped from `parsers.lua`, and a parser-revision bot bump. Core's
+    `ensure_installed` does not include `kdl`, and Core reads nothing from the parser
+    metadata table; `setup()` and `get_installed()`, the two calls it makes, live in files the
+    range does not touch.
+  - **`schemastore.nvim`** `10c76a6` → `05e938c`, 4 commits: catalog refreshes, data only.
+
+  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
+
 - **Two of `lint-call.yml`'s three advisory legs now block, and the third cannot yet — the
   difference is measured rather than assumed.** The undeclared-`HAVE_*`-reads leg (#892) and
   the missing-`os.capabilities` leg (#663/#667) shipped warning-only because callers pin
