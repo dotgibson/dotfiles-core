@@ -156,6 +156,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **openSUSE adopted the four `bootstrap-lib` helpers — the §5f rows read 4/9** (#973;
+  dotgibson/dotfiles-openSUSE#183). The third repo in the ratchet, and the first whose ledger
+  had its own contract to keep: `_report_failures` exits **2** (documented in `--help` and the
+  README as "completed but optional tools failed") and honours `--tolerate-failures`, so it
+  now _wraps_ `blib_failures_report` instead of being replaced by it — the lib's return
+  decides whether there is anything to report, the repo decides what that costs. Its old
+  `_priv_preflight` was the fleet's clearest case for `blib_sudo_keepalive_start`: a one-shot
+  `sudo -v 2>/dev/null || true` that primed the cache once and let it expire mid-cargo-build,
+  the invisible-prompt hang the helper exists to prevent. `_note_fail` was silent until the
+  closing tally; as a shim over `blib_note_fail` it now warns at the moment of the miss as
+  well. The ledger lines in `scripts/audit/40-fleet-registers.sh` add `dotfiles-openSUSE` and
+  the header figures move to 4/9. (`scripts/audit/40-fleet-registers.sh`, `V8-PROPOSAL.md`)
+
 - **Debian and Fedora adopted the four `bootstrap-lib` helpers the §5f ledger had reported at
   1/9 since #748** (#867, #973; dotgibson/dotfiles-Debian#75, dotgibson/dotfiles-Fedora#178).
   #867 closed as completed on 2026-09-06 when #879 (`blib_resolve_su --prefer`) merged — but
