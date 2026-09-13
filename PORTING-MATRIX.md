@@ -215,8 +215,8 @@ on the two platforms and neither instinct transfers.
 (`KEYWORDS="amd64 arm arm64 ~loong ~mips ppc ppc64 ~riscv ~s390 ~sparc x86"`) and clears
 the floor, so it takes no `package.accept_keywords` line and no cargo build —
 `dotfiles-Gentoo` cargo-built the crate until 2026-08-23, when the atom was found to have
-been packaged and stabilised underneath it (dotfiles-Gentoo#116). 0.26.12 exists but is
-`~`-keyworded on **every** arch, so 0.26.11 is still the stable one to reason about.
+been packaged and stabilised underneath it (dotfiles-Gentoo#116). 0.26.12 and 0.27.0 exist
+but are `~`-keyworded on **every** arch, so 0.26.11 is still the stable one to reason about.
 **Maintainer-needed as of 2026-08-30** (dotfiles-Gentoo#144): availability is unchanged —
 it is the maintainer that went away, not the package — but orphaning is what precedes a
 treeclean, which is the same hedge `dotfiles-Gentoo` already carries on `w3m` and `lnav`.
@@ -335,9 +335,9 @@ opt-in. It was `cargo install --locked ouch` until dotgibson/dotfiles-Gentoo#133
 upstream-latest reasoning `watchexec`²⁵ still carries. That reasoning does not survive contact
 here twice over. The cargo build **cannot succeed on a GCC/libstdc++ box at all**: ouch's
 default `unrar` feature pulls `unrar-ng-sys`, whose `build.rs` unconditionally adds
-`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.1 — **one patch release** behind
-upstream's 0.8.2 (2026-08-31), with a `src_prepare()` that seds exactly that flag out. So the
-route-around bought no meaningful version advantage and cost the tool, on every run, silently.
+`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.2 — **level with upstream** (2026-08-31),
+with a `src_prepare()` that seds exactly that flag out. So the route-around bought no version
+advantage at all and cost the tool, on every run, silently.
 
 **`shellcheck` on Gentoo is `dev-util/shellcheck-bin`, and the `-bin` is load-bearing.**
 `dev-util/shellcheck` is the Haskell build: it needs `>=dev-haskell/aeson-1.4.0` and the rest
@@ -680,12 +680,12 @@ you:
   ones — the tool is still something you can decline.
 - **Gentoo's `ouch` cell is a GURU cell, and it used to be a cargo cell by CHOICE** — the same
   shape `watchexec`²⁵ still has, and worth stating because the two parted ways. GURU carries
-  `app-arch/ouch` (0.7.1, 0.8.0, **0.8.1**) and `::gentoo` carries no `ouch` at any category;
+  `app-arch/ouch` (0.8.0, 0.8.1, **0.8.2**) and `::gentoo` carries no `ouch` at any category;
   `dotfiles-Gentoo` `cargo install`ed it anyway, for upstream-latest, until
   dotgibson/dotfiles-Gentoo#133 found the cargo build cannot succeed on a GCC/libstdc++ box at
   all (¹² has the mechanism) and moved it to `guru_extras_install app-arch/ouch`. Read the
   cell as "overlay ebuild, opt-in", and `watchexec` as the one cargo-by-choice example left.
-  Verified 2026-08-23 against `gentoo/guru@master`. The genuinely-unpackaged Gentoo entries in
+  Verified 2026-09-13 against `gentoo/guru@master`. The genuinely-unpackaged Gentoo entries in
   this family are `ast-grep`¹¹ and `jnv`¹⁷, absent from both trees.
 - This list used to read "**macOS-only in practice**: the MacBook `Brewfile` carries them;
   **no** Linux repo does." Every row above falsifies that — Alpine carries seven of the eight
