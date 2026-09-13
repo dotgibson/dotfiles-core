@@ -1,10 +1,11 @@
 # v5 proposal — the OS layer becomes a contract
 
-> **Status: PARTIALLY SHIPPED — a record, not an open decision.** Three of the five
-> changes in §2's table are released, as are §7's ride-alongs; **two are still open** ([#690](https://github.com/dotgibson/dotfiles-core/issues/690)
-> and [#694](https://github.com/dotgibson/dotfiles-core/issues/694)). Nothing here is
-> awaiting a verdict, so do **not** close issues against it — the original header said
-> to, and that instruction is withdrawn.
+> **Status: SHIPPED — a closed record.** All five changes in §2's table are released, as
+> are §7's ride-alongs. The last two, [#690](https://github.com/dotgibson/dotfiles-core/issues/690)
+> and [#694](https://github.com/dotgibson/dotfiles-core/issues/694), both landed in
+> `v7.0.0` (closed 2026-09-03 and 2026-09-04; `PORTABILITY.md` §5 is the `HAVE_*` surface
+> #694 declared). Nothing here is open and nothing is awaiting a verdict. What §11 deferred
+> was picked up by `V8-PROPOSAL.md`, which records what became of it.
 >
 > **The major it proposes is `v6.0.0`, not `v5.0.0`.**
 > [#736](https://github.com/dotgibson/dotfiles-core/issues/736) renumbered the roadmap's
@@ -62,8 +63,8 @@ block #791 collapsed; the bump table is now `RELEASE-RUNBOOK.md` §1.0 — which
 | §3 `os.capabilities` | a new bootstrap symlink **and** a new load-order slot before `20-aliases` | **shipped `v4.19.0` as a MINOR** (#663) — see below |
 | §4 vendoring allowlist | changes what a consumer repo receives; `core-integrity` must be retaught in lockstep | shipped `v6.0.0` (#676) |
 | §5 delete `CORE_PROFILE` | removes a documented public knob | shipped `v6.0.0` (#677) |
-| §5 declare `HAVE_*` | removes fourteen public globals | **in review** (#694) |
-| §6 `clip --sensitive` | changes observable behaviour of a public binary | **still open** (#690) |
+| §5 declare `HAVE_*` | removes fourteen public globals | shipped `v7.0.0` (#694) |
+| §6 `clip --sensitive` | changes observable behaviour of a public binary | shipped `v7.0.0` (#690) |
 
 **This section's own argument did not survive contact.** It named §3 as one of the two
 changes earning the major — "a new `bootstrap.sh` symlink, plus a new load-order slot".
@@ -471,11 +472,10 @@ major.
 
 **Open questions:**
 
-1. **`CHANGELOG.md`: dropped or promoted?** §4 removes it as freight; #680 makes it
-   a feature's backing store. **Recommendation: build #680 first** — it is in the
-   earlier `v4.19.0` milestone, it is additive, and it lets §4 inherit a file with
-   a stated consumer instead of guessing. If §4 lands first, decide #680's fate in
-   that PR rather than after it.
+1. ~~**`CHANGELOG.md`: dropped or promoted?**~~ **Answered: promoted.** #680 shipped
+   `core whatsnew`, `CHANGELOG.recent.md` is in `core.vendor` as its backing store, and
+   the full `CHANGELOG.md` stays repo-meta. The recommendation held: #680 was built first
+   and §4 inherited a file with a stated consumer. (Recorded in `V8-PROPOSAL.md` §10.)
 2. ~~**Is `HAVE_*` a supported downstream API, or internal?**~~ **Answered:
    supported, enumerated** — see §5.2. The "five existing consumers" were one, so no
    migration was needed either way.
@@ -484,4 +484,5 @@ major.
    re-bootstraps as part of this major anyway, which argues for the hard failure.
 4. **Does the consumer list in §4 get rationalised or transcribed?** Only Alpine
    calls `verify-atuin-guard.sh`; only MacBook calls `test-core.sh`. Some of those
-   are probably accidents, and this is the moment to find out.
+   are probably accidents, and this is the moment to find out. *Left unfound in v6;
+   carried forward as `V8-PROPOSAL.md` §10 question 3.*

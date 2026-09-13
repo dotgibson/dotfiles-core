@@ -16,6 +16,25 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`RELEASE-STRATEGY.md` promised a "predictable monthly rhythm" the tags have never
+  shown.** The summary, the §2 cadence table and the whole _"Tagged releases (monthly +
+  security)"_ subsection said Core is cut _"once a month on a fixed day"_ and argued why
+  monthly beats weekly and quarterly. Measured from `v1.0.0` (2026-06-18) to `v7.3.0`
+  (2026-09-09): **78** `vX.Y.Z` releases in 87 days, one every day or two, with **seven
+  majors**, the last three within ten days of each other. `V8-PROPOSAL.md` §6 flagged the
+  gap and offered the choice — move the claim to the practice, or declare the practice a
+  deviation. The claim moved. The section is now _"Tagged releases (on demand)"_: cut when
+  `[Unreleased]` holds something a host should receive and the audit is green, `X.0.0`
+  when it holds a breaking bullet (which `tag-release.sh` enforces anyway), preferably
+  after Monday's freshness PR has baked — a guideline, not a gate. It keeps the measured
+  history as the evidence and says why the fan-out churn the monthly argument feared never
+  arrived: `sync-fanout.yml` opens the nine PRs unattended and a host relinks only when a
+  major says so, so a small release is a small sync, and releasing _more_ often is what
+  keeps a sync boring. `monthly` appeared in no other document, so nothing else moved.
+  The proposal's own numbers were wrong the way §2 of that document warns about — it
+  said 84 tags and the last _four_ majors; the count included alias tags — and are
+  corrected there in the same change. (`RELEASE-STRATEGY.md`, `V8-PROPOSAL.md`)
+
 - **`lint-call.yml`'s owned-block remediation text pointed at the wrong file.** A failing
   caller was told the gh/uv/ty completions run from `core/zsh/45-plugins.zsh`; #579 moved
   them to `00-tools.zsh` (`_cache_completion`, generated into fpath before compinit), and
@@ -136,6 +155,48 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   as minors and should be closed rather than scheduled.
 
 ### Changed
+
+- **`V8-PROPOSAL.md` is decided, and no major comes out of it.** The document was written
+  two days ago as the content of a major that had none to find, resting on three changes.
+  Change 1 — the three advisory lint legs flip — shipped as minors in #960 and #961 once
+  the fleet measured clean, which the proposal's own §3 status note already recorded.
+  That left one open decision carrying the whole bump class: §4.4, whether the
+  `bootstrap.sh` consolidation's per-repo hook becomes a **declared overlay** that
+  `blib_link_os_layer` symlinks into `$ZDOTDIR` (MAJOR — every host relinks) or stays a
+  **repo-internal function** Core's driver calls (MINOR — nothing on a host changes
+  meaning). **Decided: the hook.** No consumer for a second overlay emerged; nothing but
+  `bootstrap.sh` reads provisioning facts, and a symlink only its author reads is a file
+  in a different directory, not a contract. If one ever does, extending `os.capabilities`
+  — already KEY=value, read-never-sourced, linked and validated — is cheaper than a second
+  overlay. The symlink contract itself is `blib_link_core` / `blib_link_os_layer` /
+  `blib_link_role_layer`, already in Core and already called by every repo; consolidation
+  moves provisioning, which no host sees — the proposal's §2 had already shown that the
+  roadmap's _"changes the symlink contract"_ claim did not follow.
+
+  So the status header goes from _PROPOSED — awaiting a verdict_ to _DECIDED — no major
+  comes out of this proposal_. No section writes a breaking bullet, `tag-release.sh` never
+  mints a `v8` alias from this content, and what remains — the §4.2 ratchet of four
+  helpers still at 1/9 (re-measured 2026-09-13: unchanged; MacBook still 1,604 lines with
+  19 `fail_note`/`print_ledger` references; openSUSE grew 667 → 716; Debian, omitted from
+  the original table, is 1,003), the §5 audit split (now 3,064 lines and 49 banners, `1c`
+  still defined twice), and §10 question 3 — ships as minors needing no coordinated
+  event. The next major's content is the one §10 already names: the non-mutable host.
+  §6's five ride-alongs each carry their outcome (three landed within a day of being
+  written down, in #957 and #960; two land here), §7–§9's rollout costs are kept for
+  whichever major does come, §8's clean-up step is marked already done fleet-wide, and a
+  fourth open question is added — `dotfiles-MacBook` adopting the `lint-call.yml` caller,
+  no longer a canary problem but still the only way its repo-owned zsh gets the same three
+  checks the other eight repos get.
+
+  `V5-PROPOSAL.md` closes in the same pass. Its header still said #690 and #694 were
+  _"still open"_; both landed in `v7.0.0` (`PORTABILITY.md` §5 is the `HAVE_*` surface
+  #694 declared), so it is now _SHIPPED — a closed record_. Its §10 question 1 —
+  _`CHANGELOG.md`: dropped or promoted?_ — is struck as **promoted**: #680 shipped
+  `core whatsnew`, `CHANGELOG.recent.md` is in `core.vendor` as its backing store, and
+  the full file stays repo-meta. Its question 4, the `core.vendor` consumer list, is
+  marked carried forward to the v8 record, where it is still open. Two proposals, both
+  now records; the next one starts from a roadmap theme, not from an empty backlog.
+  (`V8-PROPOSAL.md`, `V5-PROPOSAL.md`)
 
 - **`test-core.sh`'s owned-block fleet sweep reds a dirty sibling instead of skipping it,
   and reads the population the lint leg reads (#966).** It had skipped as _"fan-out
