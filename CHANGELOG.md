@@ -156,6 +156,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Arch adopted the four `bootstrap-lib` helpers — the §5f rows read 6/9** (#973;
+  dotgibson/dotfiles-Arch#171). The repo with no root check at all: it leaned on the lib's
+  default of `sudo` through `_blib_priv`, an underscore-private symbol, which is the shape the
+  fleet's `HAVE_*` and owned-block legs exist to catch in zsh and nothing caught in bash.
+  `blib_resolve_su` now pins the escalator up front, the five calls go through the lib's public
+  `blib_priv`, the keepalive pair spans the go builds, and `blib_note_fail` records the
+  per-package misses, the go installs and the Flathub remote where `PROVISION_FAILED` held one
+  kind of miss and `|| true` swallowed the rest. Arch's exit-1-on-any-miss contract is kept
+  around `blib_failures_report`. The ledger lines in `scripts/audit/40-fleet-registers.sh` add
+  `dotfiles-Arch` and the header figures move to 6/9; the two repos left are Offense (exempt
+  from the keepalive) and MacBook. (`scripts/audit/40-fleet-registers.sh`, `V8-PROPOSAL.md`)
+
 - **Alpine adopted the four `bootstrap-lib` helpers — the §5f rows read 5/9** (#973;
   dotgibson/dotfiles-Alpine#191). The repo #879 was written for: its `bootstrap.sh` had kept a
   hand-rolled doas-first probe with a comment explaining that `blib_resolve_su` resolved sudo
