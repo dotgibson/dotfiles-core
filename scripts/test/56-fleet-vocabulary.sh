@@ -834,19 +834,24 @@ if [[ "$have" == "$want" ]]; then
 else
   fail "vocab: make-vocabulary.txt drifted from the #691 set: '$have'"
 fi
-if grep -q 'fleet-vocabulary.sh" --check' "$HERE/scripts/audit-core.sh" &&
-  grep -qF '"fleet list "' "$HERE/scripts/audit-core.sh"; then
-  pass "vocab: audit-core.sh §5h runs the register and reads its fleet-list notice as an environment skip"
+if _audit_grep -q 'fleet-vocabulary.sh" --check' &&
+  _audit_grep -qF '"fleet list "'; then
+  pass "vocab: the audit's §5h runs the register and reads its fleet-list notice as an environment skip"
 else
-  fail "vocab: audit-core.sh §5h no longer runs fleet-vocabulary.sh --check or dropped the fleet-list match"
+  fail "vocab: the audit's §5h no longer runs fleet-vocabulary.sh --check or dropped the fleet-list match"
 fi
 # The CONTRACT failing to load is Core broken, not a missing sibling: §5h must go red.
-if grep -qF 'vocabulary list "* ]]; then' "$HERE/scripts/audit-core.sh" &&
-  sed -n '/vocabulary list "\* \]\]; then/,/elif/p' "$HERE/scripts/audit-core.sh" | grep -q 'fail "vocabulary register: scripts/make-vocabulary.txt would not load'; then
-  pass "vocab: audit-core.sh §5h FAILS (not skips) when make-vocabulary.txt itself would not load"
+# The range is pulled from the audit's whole source and matched in bash rather than piped
+# into `grep -q` — that pipe is the §5d SIGPIPE shape, where the reader exiting early makes
+# a SUCCESSFUL pipeline report failure under the pipefail this suite runs with.
+_fv_5h="$(_audit_cat | sed -n '/vocabulary list "\* \]\]; then/,/elif/p')"
+if _audit_grep -qF 'vocabulary list "* ]]; then' &&
+  [[ "$_fv_5h" == *'fail "vocabulary register: scripts/make-vocabulary.txt would not load'* ]]; then
+  pass "vocab: the audit's §5h FAILS (not skips) when make-vocabulary.txt itself would not load"
 else
-  fail "vocab: audit-core.sh §5h turns an unreadable make-vocabulary.txt into an environment skip"
+  fail "vocab: the audit's §5h turns an unreadable make-vocabulary.txt into an environment skip"
 fi
+unset _fv_5h
 if grep -qE '^fleet-vocabulary: ' "$HERE/Makefile"; then
   pass "vocab: \`make fleet-vocabulary\` prints the register"
 else

@@ -57,10 +57,10 @@ _lv_is "no arguments is ok (no inputs, no claim)" "" "" ok
 # would still pass if §4 stopped consulting this function. Assert the real gate still routes
 # through it — otherwise these tests pin a helper nothing calls, which is the shape of a gate
 # that is green because it checks nothing.
-if grep -q '_core_luacheck_verdict' "$HERE/scripts/audit-core.sh"; then
-  pass "luacheck verdict: audit-core.sh §4 still routes its verdict through this function"
+if _audit_grep -q '_core_luacheck_verdict'; then
+  pass "luacheck verdict: the audit's §4 still routes its verdict through this function"
 else
-  fail "luacheck verdict: audit-core.sh no longer calls _core_luacheck_verdict — §4 decides on its own again, so every case above pins a helper nothing uses (#726)"
+  fail "luacheck verdict: nothing in the audit calls _core_luacheck_verdict any more — §4 decides on its own again, so every case above pins a helper nothing uses (#726)"
 fi
 unset -f _lv_is
 
@@ -729,7 +729,7 @@ fi
 # other sessions' worktrees, on the one machine RELEASE-RUNBOOK.md §1.1 demands green).
 #
 # THE PAIR OF DIRECTIONS IS THE POINT. Prune too little and the defect stands; prune too much
-# and §1c goes blind to the #700 shape it exists for. Both are asserted against the SAME
+# and §1f goes blind to the #700 shape it exists for. Both are asserted against the SAME
 # tree, in the same state, so a "fix" that simply stopped walking .claude/ fails here rather
 # than passing quietly — which is the cheap wrong answer this gate invites.
 if have git; then
@@ -760,7 +760,7 @@ if have git; then
   _nw_is "a linked worktree under .claude/ is reported, relative to the root" \
     ".claude/worktrees/sess" "$(_core_nested_worktrees "$_nwd")"
 
-  # …and the files it hides are NOT §1c findings: they belong to another checkout, and no
+  # …and the files it hides are NOT §1f findings: they belong to another checkout, and no
   # commit in this one can change that verdict. This is the 1002 failures, in miniature.
   mkdir -p "$_nwd/.claude/worktrees/sess/.claude"
   printf 'ledger\n' >"$_nwd/.claude/worktrees/sess/.claude/tool-decisions-v2.md"

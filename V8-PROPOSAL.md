@@ -208,7 +208,8 @@ says why. This proposal recommends the former and does not assume it.
 `lib/bootstrap-lib.sh` is 1,576 lines and 28 `blib_*` helpers, and the fleet's adoption of
 it is tracked by `audit-core.sh` §5f as a **ratchet**, not a gate: a repo that drops a
 helper fails, a repo that adopts an unrecorded one fails, and an unclaimed gap is merely
-reported. The ledger (`scripts/audit-core.sh:1155-1162`) is the roadmap's thesis in one
+reported. The ledger (`audit-core.sh` **§5f**, `scripts/audit/40-fleet-registers.sh` since
+the split) is the roadmap's thesis in one
 table:
 
 | helper | repos that call it |
@@ -237,7 +238,7 @@ Alpine   660   Offense 596   Arch    418   Defense  270
 
 MacBook was 1,505 lines when the v5 proposal measured it. Nothing was done, and it grew.
 Re-measured 2026-09-13, the day after this was written: the four 1/9 rows are unchanged
-(`audit-core.sh:1161-1167`), openSUSE is 716, Debian — omitted from the list above — is
+(`audit-core.sh` §5f's ledger), openSUSE is 716, Debian — omitted from the list above — is
 1,003, and MacBook still carries 19 `fail_note` / `print_ledger` references.
 
 **Core already knows what a 1/9 reading costs.** `#748` is exactly that story:
@@ -304,6 +305,21 @@ gate for the second is evidence that the fleet has **re-bootstrapped**, which ne
 *declares* and what matters is whether a *box has relinked*.
 
 ## 5. Change 3 — the audit gets the `#699` treatment
+
+> **Status: shipped in #970, as a minor.** `scripts/audit-core.sh` is a 579-line dispatcher and the
+> gates live in sixteen `scripts/audit/NN-name.sh` fragments. One thing changed against
+> §5.2 as written: the `NN-` prefix carries run order and the `§`-ids **stay** — some 330
+> prose references in 67 files cite them, two of those files (`core.vendor`, the generated
+> `CHANGELOG.recent.md` header) are vendored to nine repos, and the doc-audit routine reads
+> them — so renaming the letters would have been a fleet-wide churn for no gate value. The
+> duplicate `1c` is the one id that moved (the second is `1f`), and
+> `scripts/audit/05-shape.sh` fails the run on any future duplicate. As shipped the file was
+> 3,064 lines and 52 `hdr` sections under 48 ids (the count below was measured two days
+> earlier); the rejoin is byte-for-byte and all 251 pass/skip/fail labels came back
+> identical in order. `shellcheck -x` went from 3.1–3.4 s wall / 2.50 s CPU on the one file
+> to 1.65 s / 1.47 s for the per-file loop §5 actually runs — about 2×, not the 3.4× the
+> four-equal-parts estimate below promised, because that estimate did not pay seventeen
+> process startups. The CHANGELOG entry carries the rest.
 
 ### 5.1 Current
 

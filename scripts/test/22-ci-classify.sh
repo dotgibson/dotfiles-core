@@ -129,7 +129,24 @@ if have git; then
   # on the machine where the bug is invisible. Both call sites are the same question — one
   # builds the tracked set to test membership against, the other picks the routine docs to
   # scan — so both take the git-state side.
-  _als_expect="audit-core.sh:11:5 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  #
+  # THE AUDIT'S SECTIONS ARE A GLOB NOW, and the counts stay exact. scripts/audit-core.sh
+  # split into scripts/audit/NN-name.sh, so "which file holds §5d" became an editorial
+  # choice its dispatcher resolves by globbing. A per-fragment table here would be a SECOND
+  # registry with two failure modes the rule cannot afford: a NEW fragment is absent from
+  # it, so an enumeration added there is never counted at all — the precise hole this
+  # tripwire exists to close — and a pure MOVE reds a test about a rule nothing changed,
+  # which is how a tripwire trains people to bump the number without reading it. So the
+  # fragments are globbed and their TOTAL is held exactly. Exactness is the property the
+  # notes above defend, and a sum has all of it: add an `_audit_ls` and the total moves;
+  # add a bare `git ls-files` and the total moves; move a section between fragments and it
+  # does not, because the rule is about which ENUMERATION a gate uses, never which file it
+  # sits in. The dispatcher keeps exactly one enumeration — `_changed_scope`'s bare
+  # `git ls-files`, a pure git-state question (what does my diff touch?) that must stay
+  # with the flag parsing that drives it — so its row is 0:1 and the fragments carry 11:4.
+  _als_expect="audit-core.sh:0:1 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  _als_frag_want_c=11
+  _als_frag_want_d=4
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"
@@ -141,11 +158,25 @@ if have git; then
     [[ "$_als_gc" == "$_als_wc" && "$_als_gd" == "$_als_wd" ]] ||
       _als_bad="${_als_bad}${_als_f} (got ${_als_gc}/${_als_gd}, want ${_als_wc}/${_als_wd}) "
   done
+  # the audit's own sections, globbed the way its dispatcher globs them
+  _als_fc=0 _als_fd=0 _als_fn=0
+  for _als_frag in "$HERE"/scripts/audit/[0-9][0-9]-*.sh; do
+    [[ -e "$_als_frag" ]] || break
+    _als_fn=$((_als_fn + 1))
+    _als_fc=$((_als_fc + $(_als_calls "$_als_frag")))
+    _als_fd=$((_als_fd + $(_als_direct "$_als_frag")))
+  done
+  if ((_als_fn == 0)); then
+    _als_bad="${_als_bad}scripts/audit/[0-9][0-9]-*.sh matched nothing (the audit's sections are globbed; an empty glob satisfies this rule by counting nothing) "
+  elif ((_als_fc != _als_frag_want_c || _als_fd != _als_frag_want_d)); then
+    _als_bad="${_als_bad}scripts/audit/*.sh (got ${_als_fc}/${_als_fd} across ${_als_fn} fragments, want ${_als_frag_want_c}/${_als_frag_want_d}) "
+  fi
   if [[ -z "$_als_bad" ]]; then
-    pass "enumeration split is exact across all three gate scripts (content via _audit_ls / git-state direct)"
+    pass "enumeration split is exact: $_als_fn audit fragments + the dispatcher + the two standalone gate scripts (content via _audit_ls / git-state direct)"
   else
     fail "enumeration split changed: ${_als_bad}— a new enumeration must pick a side (content → _audit_ls, git-state → git ls-files), then update these counts"
   fi
+  unset _als_frag _als_fc _als_fd _als_fn _als_frag_want_c _als_frag_want_d
 fi
 
 # ── CI path classifier (scripts/ci-classify.sh) ───────────────────────────────
