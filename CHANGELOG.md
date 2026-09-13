@@ -137,6 +137,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **`test-core.sh`'s owned-block fleet sweep reds a dirty sibling instead of skipping it,
+  and reads the population the lint leg reads (#966).** It had skipped as _"fan-out
+  pending"_ since #449 — right while the fan-out was pending, and a coverage-shaped silence
+  once #961 flipped `lint-call.yml`'s leg to blocking. The sweep now enumerates
+  `git ls-files '*.zsh' zsh/zshenv zsh/zshrc zsh/zprofile ':!:core/**'` per sibling instead
+  of globbing `os/*.zsh` — the set the fleet is actually gated on, which the old glob
+  undercounted: **13** repo-owned zsh files across the nine siblings, not 9;
+  `dotfiles-Alpine`'s `zsh/zshenv.zsh`, the Defense/Offense role files and
+  `dotfiles-MacBook`'s three entry files were invisible — and the pass line counts files, so
+  a one-file sweep of a two-file repo shows. A red names the repo, lists every hit as
+  `repo/file:line:rule` under the ✗, and says to pull first: a clone behind its fan-out PR
+  is indistinguishable from a regression until it is pulled, and the verdict is red either
+  way. A sibling that is a directory but not a clone, or absent, is still not-checked-out;
+  a box without `git` skips by name; and CI — which checks Core out alone — still skips.
+
+  The first run found one. `dotfiles-MacBook` is in `os-repos.txt`, so this sweep reads
+  it, but it calls no `lint-call.yml`, so #961's _all eight callers clean_ never measured
+  it: `os/macos.zsh` still carried the direnv/gh/uv/ty block, both arms, **8 hits** — every
+  one of which Core `v7.3.0`, the tag MacBook vendors, already provides from
+  `zsh/00-tools.zsh`. dotfiles-MacBook#244 deleted it before this landed, so the flip reds
+  nobody. (`scripts/test/20-scanners.sh`, #966)
+
 - **nvim plugin pins move forward for six plugins.** `crates.nvim`, `friendly-snippets`,
   `nvim-dap`, `nvim-lspconfig`, `nvim-treesitter` and `schemastore.nvim` advance to upstream
   HEAD — the set a 2026-09-12 re-run of the fleet health board's signals (#794) found stale,

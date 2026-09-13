@@ -469,11 +469,33 @@ unset _ob_core_ok _obf
 
 # ── the fleet itself, when it is checked out ──
 # The direct regression signal, and the only assertion here that watches the real defect
-# rather than a fixture. SKIPs when a sibling clone is absent (CI, a partial checkout), the
-# same graceful degradation scripts/fleet-drift.sh uses — a missing repo is not a failure.
-# It SKIPPED as "fan-out pending" from the day Core took the blocks over (#449) until the
-# six repo PRs deleted their copies — which is what let the lint leg flip to blocking (#961).
-_ob_fleet_seen=0 _ob_fleet_dirty=""
+# rather than a fixture. SKIPs when no sibling clone is present (CI checks Core out alone; a
+# partial checkout) — the graceful degradation scripts/fleet-drift.sh uses, because a
+# missing repo is not a failure. A sibling that IS present and still carries a Core-owned
+# block FAILS. It SKIPPED as "fan-out pending" from the day Core took the blocks over (#449)
+# until the six repo PRs deleted their copies and the lint leg flipped to blocking (#961);
+# past that point a dirty sibling is a regression, and a skip is the one verdict that never
+# turns anything red (#966).
+#
+# SAME POPULATION AS THE LINT LEG (lint-call.yml, "Core-owned block duplication"): every
+# tracked *.zsh plus the three zsh entry files, minus the vendored core/. This block read
+# `os/*.zsh`, a narrower set than the one the fleet is gated on — dotfiles-Alpine's
+# zsh/zshenv.zsh, dotfiles-Defense's and -Offense's role files and MacBook's entry files
+# were invisible here, so the two gates could disagree about one repo. Enumerated through
+# `git ls-files`, as the leg is: an untracked scratch file is not a finding, and a sibling
+# directory that is not a clone is treated as not checked out. Counted in FILES, not repos,
+# so a one-file sweep of a two-file repo shows in the pass line.
+#
+# THIS SWEEP COVERS ONE REPO THE LINT LEG CANNOT. dotfiles-MacBook is in os-repos.txt but
+# calls no lint-call.yml (its CI ports the rules), so #961's "all eight callers clean" never
+# measured it — and it still carried the direnv/gh/uv/ty block, both arms, when this flipped
+# (dotfiles-MacBook#244 deleted it).
+#
+# A red has two readings, and the fail line says which to settle first: the clone is BEHIND
+# its upstream (the fan-out PR landed; this box never pulled) or the block has grown back.
+# Pulling is the test — the same stale-clone-vs-real-drift split fleet-drift.sh's BEHIND row
+# makes — and not a softer verdict: either way the box is not what a green run would claim.
+_ob_fleet_seen=0 _ob_fleet_repos=0 _ob_fleet_dirty="" _ob_fleet_detail="" _ob_fleet_nhits=0
 # Siblings of this repo, the layout every fleet script assumes (see scripts/sync-core.sh).
 _ob_root="$(cd "$HERE/.." && pwd)"
 # The fleet comes from scripts/os-repos.txt via load_os_repos (#669). It used to be a
@@ -485,27 +507,47 @@ _ob_fleet=1
 load_os_repos || _ob_fleet=0
 # Guarded rather than looped-over-empty: "${CORE_OS_REPOS[@]}" on an empty array trips
 # `set -u` on bash <= 4.3, and this file runs on macOS's bash 3.2.
-if ((_ob_fleet)); then
+if ((_ob_fleet)) && have git; then
   for _obr in "${CORE_OS_REPOS[@]}"; do
     _obp="$(resolve_repo_dir "$_ob_root" "$_obr" 2>/dev/null)" || continue
     [[ -n "$_obp" && -d "$_obp" ]] || continue
-    for _obf in "$_obp"/os/*.zsh; do
-      [[ -f "$_obf" ]] || continue
+    # CAPTURED, not `< <(git …)`: a process substitution throws away git's exit status, and
+    # "not a git repository" must read as not-checked-out, not as a clean repo.
+    _ob_list="$(git -C "$_obp" ls-files '*.zsh' zsh/zshenv zsh/zshrc zsh/zprofile ':!:core/**' 2>/dev/null)" || continue
+    [[ -n "$_ob_list" ]] || continue
+    _ob_fleet_repos=$((_ob_fleet_repos + 1))
+    _ob_repo_dirty=0
+    # Read loop, NOT mapfile — bash 3.2.
+    while IFS= read -r _obf; do
+      # ls-files also lists a path deleted in the worktree but still in the index.
+      [[ -n "$_obf" && -f "$_obp/$_obf" ]] || continue
       _ob_fleet_seen=$((_ob_fleet_seen + 1))
-      [[ -z "$(_core_owned_block_hits "$_obf")" ]] || _ob_fleet_dirty="$_ob_fleet_dirty ${_obr}"
-    done
+      _ob_hits="$(_core_owned_block_hits "$_obp/$_obf")"
+      [[ -n "$_ob_hits" ]] || continue
+      _ob_repo_dirty=1
+      while IFS= read -r _obh; do
+        [[ -n "$_obh" ]] || continue
+        _ob_fleet_nhits=$((_ob_fleet_nhits + 1))
+        _ob_fleet_detail="${_ob_fleet_detail}${_ob_fleet_detail:+$'\n'}${_obr}/${_obf}:${_obh}"
+      done <<<"$_ob_hits"
+    done <<<"$_ob_list"
+    ((_ob_repo_dirty)) && _ob_fleet_dirty="$_ob_fleet_dirty ${_obr}"
   done
 fi
 if (( ! _ob_fleet )); then
   skip "owned-block scan: $CORE_OS_REPOS_ERR (fleet regression check)"
+elif ! have git; then
+  skip "owned-block scan: git unavailable — the fleet sweep enumerates through git ls-files (fleet regression check)"
 elif (( _ob_fleet_seen == 0 )); then
   skip "owned-block scan: no sibling OS repo checked out (fleet regression check)"
 elif [[ -n "$_ob_fleet_dirty" ]]; then
-  skip "owned-block scan: fan-out pending —$_ob_fleet_dirty still carry a Core-owned block (#449 step 7)"
+  fail "owned-block scan:$_ob_fleet_dirty carry a Core-owned block ($_ob_fleet_nhits hit(s) below) — the fleet was clean at #961; pull it first (a clone behind its fan-out PR reads exactly like a regression), and if it is at its upstream tip fix the OS repo, never core/"
+  fail_detail "$_ob_fleet_detail"
 else
-  pass "owned-block scan: all $_ob_fleet_seen checked-out os layers are free of Core-owned blocks"
+  pass "owned-block scan: all $_ob_fleet_seen repo-owned zsh files across $_ob_fleet_repos checked-out siblings are free of Core-owned blocks"
 fi
-unset _ob_fleet_seen _ob_fleet_dirty _ob_fleet _ob_root _obr _obp _obf
+unset _ob_fleet_seen _ob_fleet_repos _ob_fleet_dirty _ob_fleet_detail _ob_fleet_nhits _ob_fleet _ob_root
+unset _ob_repo_dirty _ob_list _ob_hits _obr _obp _obf _obh
 
 # ── ONE definition, and it must stay one (same contract as the RETURN leg above) ──
 _ob_wf="$HERE/.github/workflows/lint-call.yml"
