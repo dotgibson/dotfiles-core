@@ -33,7 +33,8 @@ times.** Three changes:
 
 1. **The three advisory legs of `lint-call.yml` flip to blocking** — duplicated
    Core-owned blocks, undeclared `HAVE_*` reads, and an `os/` band with no capability
-   declaration all stop being warnings.
+   declaration all stop being warnings. *Shipped as minors in #960 and #961, after the
+   fleet was measured clean; see the §3 status note.*
 2. **`bootstrap.sh` consolidates** into `blib_*` plus a thin per-repo hook. Four helpers
    sit at **1/9** adoption, and the size spread is 1,604 lines (MacBook) to 270
    (Defense).
@@ -59,7 +60,7 @@ already uses changes meaning, it's at most MINOR — even if the diff is large."
 
 | change | trigger it clears | verdict |
 | ------ | ----------------- | ------- |
-| §3 the three advisory legs flip | changes the reusable-workflow contract every OS repo's CI calls | **earns it** — the v7.0.0 `WEBHOOK_SECRET` precedent |
+| §3 the three advisory legs flip | changes the reusable-workflow contract every OS repo's CI calls | **shipped as minors (#960, #961)** — no caller was in the failing state, so nothing changed meaning; see §3 |
 | §4 `bootstrap.sh` consolidation | **only if** it adds or moves a linked overlay | **open — §4.4 decides** |
 | §5 the audit split | none; ships to no repo | ride-along |
 | §6 doc and comment repair | none | ride-along |
@@ -90,9 +91,20 @@ rides along. (The near miss is worth naming: `scripts/lib/common.sh` **is** vend
 would be breaking. §5 must not.)
 
 So the major rests on §3. That is not a thin result, because §3 is not merely *permitted*
-by a major — it is **impossible without one**, which §3.2 is about.
+by a major — it is **impossible without one**, which §3.2 is about. (As of #961 it no
+longer does — see §3's status note.)
 
 ## 3. Change 1 — the gates stop being advisory
+
+> **Status (2026-09-12): superseded — all three legs flipped as MINORs.** #960 flipped the
+> `HAVE_*` and `os.capabilities` legs and #961 the Core-owned-block leg, each only after all
+> eight `lint-call.yml` callers were measured clean with the leg's own scanner (the six repo
+> PRs deleting the duplicated WSL predicate landed 2026-09-12). §3.2's mechanism is right
+> and turned out unnecessary: a leg that reds nobody needs no frozen alias, and §3.3's "not
+> gated on the fleet being clean" is moot — the flips were gated on exactly that. The
+> section is kept as the record of the argument. Change 1 drops out of the v8 case, so §2's
+> "the major rests on §3" and §4.4's "§3 alone carries the major" no longer hold: nothing
+> does unless §4.4 lands on the overlay.
 
 ### 3.1 Current
 
@@ -253,7 +265,7 @@ Two shapes, and they differ in bump class, not just design:
 
 - **Repo-internal hook** — each `bootstrap.sh` keeps a small, named function that Core's
   driver calls. Nothing new is linked; nothing on a host changes meaning. **MINOR**, and
-  §3 alone carries the major.
+  §3 alone carried the major — which #961 removed, so nothing does (see §3's status note).
 - **Declared overlay** — provisioning facts become data in a file `blib_link_os_layer`
   symlinks into `$ZDOTDIR`, the way `os.capabilities` already is. **MAJOR**: every host
   must run `./bootstrap.sh --links-only` before the declaration is live.

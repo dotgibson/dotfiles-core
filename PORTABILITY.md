@@ -303,12 +303,13 @@ names which repos went uncovered.
 
 **Know what that costs today.** Core's CI checks out this repo alone, so direction 2 records
 a skip on every CI run and fires only where the fleet sits beside Core — a maintainer's
-`make audit`, or the scheduled fleet jobs. The reusable `lint` workflow the OS repos call
-does not yet run it, so an OS-repo PR adding an undeclared read can merge without a red.
-Closing that needs a caller-side leg in `lint-call.yml`, which in turn needs the declared
-table reachable from a vendored checkout — and this file is **not** in `core.vendor`. That
-is [#866](https://github.com/dotgibson/dotfiles-core/issues/866), deliberately separate:
-changing the vendoring allowlist is its own blast radius across nine repos. It matches reads by their **sigil** (`$HAVE_X`,
+`make audit`, or the scheduled fleet jobs. The caller side is covered separately: the
+reusable `lint` workflow runs the same `_core_have_read_hits` in every OS repo's own CI,
+against the vendored `zsh/have-api.txt` — the machine-readable twin of the §5 table,
+rendered by `scripts/gen-have-api.sh` because this file is **not** in `core.vendor`
+([#866](https://github.com/dotgibson/dotfiles-core/issues/866)). Advisory from #892 and
+blocking since #960, so an OS-repo PR adding an undeclared read is red in that repo's own
+gate, and direction 2 here is the Core-side belt. It matches reads by their **sigil** (`$HAVE_X`,
 `${HAVE_X}`) rather than by the bare name, which is what lets it ignore the many prose
 mentions in comments without needing a parser for five grammars — the trap §3 documents.
 Whole-line comments are dropped on top of that, on both the read and the assignment side —
