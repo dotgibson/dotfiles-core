@@ -817,15 +817,19 @@ cargo-installs it from the extras block. The other seven machines are opt-in.
 including macOS"; Alpine falsified the first half, and Gentoo — checked against `bootstrap.sh`
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
 2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
-re-verified 2026-08-30 against each repo's own package pages, and the Arch/Homebrew pair
-alone re-verified again 2026-09-06 (the other rows below still carry the 08-30 stamp):
+re-verified 2026-08-30 against each repo's own package pages, the Arch/Homebrew pair
+alone re-verified again 2026-09-06, and the Alpine row re-verified 2026-09-13 on all five
+branches — the stables it had never named (the remaining rows still carry the 08-30 stamp):
 
 - **Arch `extra` and Homebrew** — 2.7.2 (Arch's package revision is `2.7.2-1`). Still the
   same version on both, re-checked 2026-09-06: Arch shipped `2.7.2-1` that morning.
 - **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
   line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
   like once two of the four move and two do not.)
-- **Alpine `community`** — 2.5.1-r0, a native musl build.
+- **Alpine `community`** — 2.5.1-r0 on `edge`; the supported stables lag (v3.24 2.3.2-r1,
+  v3.23/v3.22 2.3.2-r0, v3.21 2.2.0-r0). A native musl build on every branch. This line used
+  to read `2.5.1-r0` unqualified — the fleet-wide shape ²⁴'s table avoids by naming
+  `edge/community` — and dotfiles-Alpine#188 caught it.
 - **Gentoo: GURU carries 2.5.0**, and there is no `::gentoo` atom — but the cell reads
   `cargo²⁵`, not `GURU`, because `dotfiles-Gentoo` does not emerge that atom: it
   `cargo install`s `watchexec-cli` in its opt-in extras block instead, for upstream-latest.
@@ -921,10 +925,12 @@ it with the same caution as the version stamps below.
 not `jnv`¹⁷'s. The MacBook `Brewfile` carries it, and so do `dotfiles-Alpine`
 (`git-absorb`) and `dotfiles-Gentoo` (`dev-vcs/git-absorb`) in their `install/packages.txt`;
 the other four Linux repos are detect-only (re-verified 2026-08-21). Package versions verified
-2026-08-12 against each distro's own package pages:
+2026-08-12 against each distro's own package pages, the Alpine row re-verified 2026-09-13 on
+all five branches (dotfiles-Alpine#188):
 
-- **Arch `extra`** 0.9.0-2, **Alpine `community`** 0.9.0-r0, **Gentoo `dev-vcs/git-absorb`**
-  0.9.0 (**stable on amd64**, in the main tree — no GURU needed), **Homebrew** 0.9.0.
+- **Arch `extra`** 0.9.0-2, **Alpine `community`** 0.9.0-r0 on `edge` and v3.24 (v3.23/v3.22
+  0.8.0-r0, v3.21 0.6.16-r0), **Gentoo `dev-vcs/git-absorb`** 0.9.0 (**stable on amd64**, in
+  the main tree — no GURU needed), **Homebrew** 0.9.0.
 - **Debian `git-absorb`** 0.9.0-2 per packages.debian.org, but **Kali rolling ships
   0.6.17-2+b4** — verified on-box 2026-08-17. The two now have their own columns above, and
   this is a case where that matters: Kali is a laggard here rather than a Debian follower.
@@ -1202,9 +1208,10 @@ else, which is a change from the band-80 arrangement, where Offense missed it to
 no `os/` layer at all. So the hook is live there and simply finds no binary. The Kali cell
 above is the apt name you would install by hand.
 
-Verified 2026-08-21 against each distro's own index: **Arch `extra`** 2.37.1-1, **Alpine
-`community`** 2.37.1-r7 (v3.24 — a Go binary, so a native musl build), **openSUSE** Tumbleweed
-2.37.1 with **Leap 16.0 and 16.1 both at 2.34.0** through Backports (`bp160.1.13` /
+Verified 2026-08-21 against each distro's own index, the Alpine stamp re-verified 2026-09-13
+(dotfiles-Alpine#188): **Arch `extra`** 2.37.1-1, **Alpine `community`** 2.37.1-r8 (v3.24 and
+`edge`; v3.23 still carries 2.37.1-r7 — a Go binary, so a native musl build), **openSUSE**
+Tumbleweed 2.37.1 with **Leap 16.0 and 16.1 both at 2.34.0** through Backports (`bp160.1.13` /
 `bp161.1.9`, both arches), **kali-rolling** 2.37.1-1, **Ubuntu 24.04 `universe`**
 2.32.1-2ubuntu0.24.04.3 and **Debian trixie** 2.32.1-2+b16. **Gentoo is GURU-only** — 2.37.1,
 `~amd64 ~x86`, no `::gentoo` atom and no `dev-util/direnv`; see ¹². Where unpackaged, the
