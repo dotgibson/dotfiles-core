@@ -156,6 +156,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Debian and Fedora adopted the four `bootstrap-lib` helpers the §5f ledger had reported at
+  1/9 since #748** (#867, #973; dotgibson/dotfiles-Debian#75, dotgibson/dotfiles-Fedora#178).
+  #867 closed as completed on 2026-09-06 when #879 (`blib_resolve_su --prefer`) merged — but
+  #879 was the unblocker, not the adoption, and measured on every sibling's `origin/main` a
+  week later all four rows still read Gentoo only. `V8-PROPOSAL.md` §4.2(1) names the ratchet
+  as "the whole of the change that is ready"; the two lowest-friction repos took it first: both
+  carried the same hand-rolled root/sudo/doas probe, a `note_fail`/`FAILED_STEPS` ledger and a
+  private sudo-keepalive loop with its own `EXIT` trap. Each `bootstrap.sh` now calls
+  `blib_resolve_su` (`--require` only on the provisioning path, so `--dry-run` needs no
+  escalator), `blib_sudo_keepalive_start`/`_stop` with `provision()` owning the trap, a
+  one-line `note_fail() { blib_note_fail "$@"; }` shim over the untouched call sites, and
+  `blib_failures_report` for the closing tally — which also surfaces the failures the shared
+  lib records _itself_ (the tpm clone, `blib_install_system_file`) that both scripts used to
+  drop. Output and `--strict` semantics are unchanged. The four `_ha_ledger` lines in
+  `audit-core.sh` §5f now read `dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo` and the
+  header's measured figures say 3/9; landing order was sibling-first, ledger-second, because
+  `_core_helper_verdict` fails `regressed` the other way round and `sync-fanout.yml` is where
+  §5f meets real siblings. #973 tracks the remaining five repos with each one's measured
+  friction (openSUSE exits 2, Alpine needs `--prefer doas`, Arch calls the underscore-private
+  `_blib_priv`, Offense hardcodes `sudo`, MacBook has a `warn_note` channel and exits 3); #974
+  (the `audit-core.sh` split, §5), #975 (`check-links.sh` vendored with zero callers across all
+  nine repos, §10 Q3) and #976 (the per-repo hook, §4.2(3)) carry the rest of what the
+  proposal still owed, none of which was tracked anywhere. (`scripts/audit-core.sh`,
+  `V8-PROPOSAL.md`)
+
 - **`V8-PROPOSAL.md` is decided, and no major comes out of it.** The document was written
   two days ago as the content of a major that had none to find, resting on three changes.
   Change 1 — the three advisory lint legs flip — shipped as minors in #960 and #961 once
