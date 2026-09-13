@@ -17,8 +17,9 @@ or `CONTRIBUTING.md`, those win; fix this.
 
 The short version: **Core is the only thing released on a planned cadence. The OS
 and Role repos are consumers that pull a named Core version when they choose to —
-and that tag their own installable work as it lands.** Core releases are cut on a
-predictable monthly rhythm (plus out-of-band for security), tagged `vX.Y.Z`, proven
+and that tag their own installable work as it lands.** Core releases are cut **on
+demand** — whenever `[Unreleased]` holds shippable content, and as a major whenever it
+holds a breaking bullet (`tag-release.sh` enforces the `X.0.0`) — tagged `vX.Y.Z`, proven
 green by the audit before they fan out, and rolled out canary-first so a bad Core can
 never reach all nine operating systems at once. A consumer's own tag needs no cadence:
 CI cuts it when that repo's installable state moves.
@@ -80,7 +81,7 @@ failures — keep them separate.
 | --- | --- | --- | --- | --- |
 | Continuous integration | every merge to `main` | per-merge | no | none until synced |
 | Routine pin bumps | the freshness bot | weekly (Mon 06:00 UTC) | no | one PR to review |
-| Tagged Core release | calendar + on-demand | monthly + security | `vX.Y.Z` | the whole fleet |
+| Tagged Core release | content in `[Unreleased]` | on demand (measured: every 1–2 days since 2026-06-18) | `vX.Y.Z` | the whole fleet |
 
 ### Continuous (per-merge)
 
@@ -106,23 +107,39 @@ Plugin and nvim pin bumps are batched into the weekly freshness PR, never landed
 per-tool, so the fleet sees one reviewed step a week rather than a trickle of
 unaudited churn. A quiet week means nothing needs doing.
 
-### Tagged releases (monthly + security)
+### Tagged releases (on demand)
 
-Cut a tagged Core release **once a month** on a fixed day (e.g. the first
-Monday, after that week's freshness PR has merged and baked on `main`), plus
-**out-of-band** for a security fix or a regression that is actively biting a
-host.
+Cut a tagged Core release **when `[Unreleased]` has something a host should receive**
+and the audit is green — a fix, a feature, a security patch, a regression that is
+actively biting a box. There is no calendar. A section that holds a `**BREAKING` bullet
+is cut as `X.0.0` (`tag-release.sh` refuses anything else); one that does not is a
+minor or a patch by the bump table. Prefer cutting after Monday's freshness PR has
+merged, so that week's pin bumps bake on `main` before they are frozen into a tag —
+a guideline, not a gate.
 
-Why monthly is the sweet spot for a nine-repo fleet (`scripts/os-repos.txt`):
+This is the measured practice, and the doc used to say something else. An earlier
+version of this section promised a *"predictable monthly rhythm"*; the tags never
+showed one. From `v1.0.0` on 2026-06-18 to `v7.3.0` on 2026-09-09, Core cut **78**
+`vX.Y.Z` releases in 87 days — one every day or two — including **seven majors**, the
+last three (`v5.0.0`, `v6.0.0`, `v7.0.0`) within ten days of each other.
+`V8-PROPOSAL.md` §6 recorded the gap; this rewrite closed it.
 
-- **Weekly tags** would 8× the fan-out churn — every OS repo re-syncs, every
-  host re-bootstraps — for changes that are mostly already on `main` and
-  available to anyone who wants them early.
-- **Quarterly tags** let Core drift far enough from the synced fleet that a
-  sync becomes a big, risky catch-up instead of a small, boring one.
-- **Monthly** keeps each release small enough to reason about and roll back,
-  while giving the weekly pin bumps time to bake on `main` before they are
-  frozen into a tag.
+Why on-demand is the right cadence for a nine-repo fleet (`scripts/os-repos.txt`), and
+not the churn the old text feared:
+
+- **Each release is small, so each sync is small and boring.** The risk a calendar was
+  meant to contain — Core drifting far enough from the synced fleet that a sync becomes
+  a big catch-up — is contained better by releasing *more* often, not less. A release
+  with three entries is reasoned about and rolled back in minutes.
+- **The fan-out cost the monthly argument assumed never materialised.** *"Every OS repo
+  re-syncs, every host re-bootstraps"* was the fear. In practice `sync-fanout.yml` opens
+  the nine PRs unattended, `fleet-drift.yml` reports who lagged, and a host re-bootstraps
+  only when a **major** says so — most releases change nothing a box has to relink. What
+  is left is a PR review per repo per release, and that is the cost of a fleet.
+- **Batching is still real, at the major.** The discipline §2 is built around — one
+  coordinated event that pays the per-repo migration once — applies to breaking work,
+  and `V5-PROPOSAL.md` and `V8-PROPOSAL.md` are the record of how that content is
+  gathered. Minors do not need it and do not wait for it.
 
 ### SemVer, mapped to dotfiles
 

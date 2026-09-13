@@ -1,11 +1,21 @@
 # v8 proposal — the OS repo stops carrying code Core owns
 
-> **Status: PROPOSED — awaiting a verdict.** Nothing here has shipped. Core is at
-> `7.3.0` with an empty `[Unreleased]`, no open PRs, and a **Breaking Backlog milestone
-> with zero open issues** — so this document is the content of a major, written because
+> **Status: DECIDED (2026-09-13) — no major comes out of this proposal. A record, not an
+> open decision.** Change 1 (§3) shipped as **minors** in #960 and #961, gated on the fleet
+> measuring clean rather than on a frozen alias. §4.4 is decided for the **repo-internal
+> hook**, so Change 2 adds no overlay and stays MINOR. Change 3 never shipped to a repo.
+> No section writes a breaking bullet, so `tag-release.sh` would never mint a `v8` alias
+> from this content — and must not. What remains (§4.2's ratchet, §5's split, §6's
+> leftovers) is minor-class work that needs no coordinated event. The next major's
+> content is the **non-mutable host** (§10), the one roadmap theme with an external
+> forcing function; nothing here should be read as scheduling it.
+>
+> Written when Core was at `7.3.0` with an empty `[Unreleased]`, no open PRs, and a
+> **Breaking Backlog milestone with zero open issues** — as the content of a major, because
 > there was none to find. That is the same situation `V5-PROPOSAL.md` was written into,
 > and `CHANGELOG.md` records the reasoning: *"the machinery for cutting a major was
-> documented and rehearsed while the content of one was not written down anywhere."*
+> documented and rehearsed while the content of one was not written down anywhere."* The
+> answer this time was that the content did not survive measurement, which is a result.
 >
 > Written in the RFC "Current → Proposed → What breaks" voice the v4 proposal established
 > and the v5 proposal kept. When a claim here drifts from `RELEASE-STRATEGY.md`,
@@ -37,17 +47,19 @@ times.** Three changes:
    fleet was measured clean; see the §3 status note.*
 2. **`bootstrap.sh` consolidates** into `blib_*` plus a thin per-repo hook. Four helpers
    sit at **1/9** adoption, and the size spread is 1,604 lines (MacBook) to 270
-   (Defense).
+   (Defense). *Ships as minors — §4.4 chose the hook, so nothing new is linked.*
 3. **`audit-core.sh` gets the `#699` treatment** — 3,059 lines and 47 sections in one
    file, with a duplicate `§1c`, reproducing exactly the condition that justified
-   splitting `test-core.sh`.
+   splitting `test-core.sh`. *Ships as a minor — it is not vendored; see §5.3.*
 
-They are bundled because the first two are the same move seen from two sides — the gate makes
-the duplication *fail*, the consolidation gives it *somewhere to go* — and because both
-need the **same per-repo event**: one PR per repo that bumps its `@v7` pin and adopts.
+They were bundled because the first two are the same move seen from two sides — the gate
+makes the duplication *fail*, the consolidation gives it *somewhere to go* — and because
+both need the **same per-repo event**: one PR per repo that bumps its `@v7` pin and adopts.
 Shipping them separately would make every OS repo take two migration PRs for one idea.
 One `v8.0.0` pays the fan-out cost once, which is the batching discipline
-`RELEASE-STRATEGY.md` §2 is built around and the same argument v4 and v5 each made.
+`RELEASE-STRATEGY.md` §2 is built around and the same argument v4 and v5 each made. The
+bundle dissolved because neither half turned out to need the major: the gates flipped
+without a frozen alias once the fleet measured clean, and the hook links nothing.
 
 ## 2. Why these earn a major — and where this proposal's own framing failed
 
@@ -61,7 +73,7 @@ already uses changes meaning, it's at most MINOR — even if the diff is large."
 | change | trigger it clears | verdict |
 | ------ | ----------------- | ------- |
 | §3 the three advisory legs flip | changes the reusable-workflow contract every OS repo's CI calls | **shipped as minors (#960, #961)** — no caller was in the failing state, so nothing changed meaning; see §3 |
-| §4 `bootstrap.sh` consolidation | **only if** it adds or moves a linked overlay | **open — §4.4 decides** |
+| §4 `bootstrap.sh` consolidation | **only if** it adds or moves a linked overlay | **decided: repo-internal hook — MINOR (§4.4)** |
 | §5 the audit split | none; ships to no repo | ride-along |
 | §6 doc and comment repair | none | ride-along |
 
@@ -90,9 +102,9 @@ rides along. (The near miss is worth naming: `scripts/lib/common.sh` **is** vend
 `_core_return_trap_hits` — so a split that moved analysis engines *out of `common.sh`*
 would be breaking. §5 must not.)
 
-So the major rests on §3. That is not a thin result, because §3 is not merely *permitted*
-by a major — it is **impossible without one**, which §3.2 is about. (As of #961 it no
-longer does — see §3's status note.)
+So the major rested on §3. That was not a thin result, because §3 was not merely
+*permitted* by a major — it looked **impossible without one**, which §3.2 is about. Since #961
+it no longer does (see §3's status note), and since §4.4's verdict **nothing does**.
 
 ## 3. Change 1 — the gates stop being advisory
 
@@ -103,8 +115,8 @@ longer does — see §3's status note.)
 > and turned out unnecessary: a leg that reds nobody needs no frozen alias, and §3.3's "not
 > gated on the fleet being clean" is moot — the flips were gated on exactly that. The
 > section is kept as the record of the argument. Change 1 drops out of the v8 case, so §2's
-> "the major rests on §3" and §4.4's "§3 alone carries the major" no longer hold: nothing
-> does unless §4.4 lands on the overlay.
+> "the major rests on §3" no longer holds: nothing does, now that §4.4 has landed on the
+> hook.
 
 ### 3.1 Current
 
@@ -224,6 +236,9 @@ Alpine   660   Offense 596   Arch    418   Defense  270
 ```
 
 MacBook was 1,505 lines when the v5 proposal measured it. Nothing was done, and it grew.
+Re-measured 2026-09-13, the day after this was written: the four 1/9 rows are unchanged
+(`audit-core.sh:1161-1167`), openSUSE is 716, Debian — omitted from the list above — is
+1,003, and MacBook still carries 19 `fail_note` / `print_ledger` references.
 
 **Core already knows what a 1/9 reading costs.** `#748` is exactly that story:
 `blib_user_bindirs_on_path` sat at 1/9 in an advisory report while the gap it named
@@ -259,24 +274,25 @@ helpers Core already ships, and §5f's ratchet is the mechanism that lands them
 incrementally. They ride in this release because the per-repo bump PR is already open for
 §3 — not because they need a major.
 
-### 4.4 The open decision: does the hook become an overlay?
+### 4.4 The decision: the repo-internal hook
 
-Two shapes, and they differ in bump class, not just design:
+Two shapes were on the table, and they differ in bump class, not just design:
 
 - **Repo-internal hook** — each `bootstrap.sh` keeps a small, named function that Core's
-  driver calls. Nothing new is linked; nothing on a host changes meaning. **MINOR**, and
-  §3 alone carried the major — which #961 removed, so nothing does (see §3's status note).
+  driver calls. Nothing new is linked; nothing on a host changes meaning. **MINOR.**
 - **Declared overlay** — provisioning facts become data in a file `blib_link_os_layer`
   symlinks into `$ZDOTDIR`, the way `os.capabilities` already is. **MAJOR**: every host
   must run `./bootstrap.sh --links-only` before the declaration is live.
 
-**Recommendation: the repo-internal hook, unless a concrete consumer for a new overlay
-emerges.** A smaller claim that is true beats a larger one that is not, and §2 is this
-document's own demonstration of the cost of the reverse. If provisioning data genuinely
-needs to be readable by something other than `bootstrap.sh`, extending the existing
-`os.capabilities` file is the cheaper answer than a second overlay — it is already
-KEY=value, already read-never-sourced, already linked, and already validated by
-`scripts/check-capabilities.sh`.
+**Decided 2026-09-13: the repo-internal hook.** No consumer for a second overlay emerged —
+nothing other than `bootstrap.sh` needs to read provisioning facts, and a symlink that
+only its own author reads is not a contract, it is a file in a different directory. A
+smaller claim that is true beats a larger one that is not, and §2 is this document's own
+demonstration of the cost of the reverse. If provisioning data ever does need to be
+readable by something else, extending the existing `os.capabilities` file is the cheaper
+answer than a second overlay — it is already KEY=value, already read-never-sourced,
+already linked, and already validated by `scripts/check-capabilities.sh`. With §3 gone
+(#961) and the hook chosen here, no change in this document is a MAJOR.
 
 **And the sequencing constraint from v5 applies either way.** `ARCHITECTURE.md` records
 why `#667` (author the declarations) and `#763` (delete the fallbacks) had to be two
@@ -351,38 +367,51 @@ major is when the fleet re-reads its own tooling, not because it needs one.
 
 ## 6. Ride-alongs
 
-These break nothing and need no migration. They land with the major because a major is
-when the fleet re-reads its own documentation.
+These break nothing and need no migration. They were to land with the major because a
+major is when the fleet re-reads its own documentation; in the event every one of them
+landed as a minor within a day of being written down, which says something about how much
+a major was needed as the occasion. Each bullet carries its outcome.
 
-- **`lint-call.yml:571`'s `ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT` comment is
-  stale.** `#592`/`#651` flipped the markdownlint leg to blocking on 2026-08-24; the step
-  no longer warns, and the measured per-repo backlog in that comment block is now a
-  historical record presented as a live one. Exactly the drift class `/doc-audit` exists
-  to catch.
-- **`CLAUDE.md` says the audit runs "§1..§9l".** Four sections past that exist.
-- **`V5-PROPOSAL.md`'s status header is wrong.** It records `#690` and `#694` as *"still
-  open"*; both are closed (`#694` in v7.0.0, and `PORTABILITY.md` §5 is the surface it
-  declared). With §10's milestone findings, that file becomes a fully closed record.
-- **The behavioral suite takes 25 minutes locally, and `#467` has been re-opened with the
-  measurements.** That issue — *"`scripts/test-core.sh` hangs on macOS, so neither `make
-  test` nor `make core-audit` can be run locally on the fleet's canary platform"* — was
-  closed `not_planned` on a diagnosis that does not hold: the suite **does not hang**. On
-  Darwin 25.6.0 at `7.3.0` it completes, `pass 2074 skip 6 fail 0`, in **1,536s**.
-  `--scope none` is **1,119s** and is not the workaround it looks like. A single fragment,
-  `scripts/test/52-atuin-autostart.sh`, is **61.5%** of the full run — not for atuin work,
-  but because its `--json` contract fixture runs the whole suite against itself **twice**
-  (`:1272`, `:1295`) at 372s a time, while its own comment at `:1255` calls that *"the
-  cheapest scope, a few seconds."* Both nested runs capture their output, so the parent
-  emits nothing for 15.8 minutes, which is what every report of a "hang" has actually
-  been looking at. Worth naming against §5: the gate whose instruction is *"green it
-  before you push"* costs 25 minutes on the canary platform, and 83% of even its cheapest
-  scope is five fragments no scope gates.
-- **`RELEASE-STRATEGY.md` promises a "predictable monthly rhythm."** The tag history says
-  otherwise: 84 tags and **seven majors** since 2026-06-18, the last four majors within
-  ten days of each other. Either the cadence claim moves to match the practice or the
-  practice is deliberate and the doc should say what it actually is.
+- *Fixed in #960.* **`lint-call.yml:571`'s `ADVISORY IN THIS RELEASE, BLOCKING IN THE
+  NEXT` comment is stale.** `#592`/`#651` flipped the markdownlint leg to blocking on
+  2026-08-24; the step no longer warns, and the measured per-repo backlog in that comment
+  block is now a historical record presented as a live one. Exactly the drift class
+  `/doc-audit` exists to catch.
+- *Fixed.* **`CLAUDE.md` says the audit runs "§1..§9l".** Four sections past that exist.
+- *Fixed in the change that recorded §4.4.* **`V5-PROPOSAL.md`'s status header is
+  wrong.** It records `#690` and `#694` as *"still open"*; both are closed (both in
+  v7.0.0, and `PORTABILITY.md` §5 is the surface `#694` declared). With §10's milestone
+  findings, that file becomes a fully closed record.
+- *Fixed in #957.* **The behavioral suite takes 25 minutes locally, and `#467` has been
+  re-opened with the measurements.** That issue — *"`scripts/test-core.sh` hangs on macOS,
+  so neither `make test` nor `make core-audit` can be run locally on the fleet's canary
+  platform"* — was closed `not_planned` on a diagnosis that does not hold: the suite
+  **does not hang**. On Darwin 25.6.0 at `7.3.0` it completes, `pass 2074 skip 6 fail 0`,
+  in **1,536s**. `--scope none` is **1,119s** and is not the workaround it looks like. A
+  single fragment, `scripts/test/52-atuin-autostart.sh`, is **61.5%** of the full run —
+  not for atuin work, but because its `--json` contract fixture runs the whole suite
+  against itself **twice** (`:1272`, `:1295`) at 372s a time, while its own comment at
+  `:1255` calls that *"the cheapest scope, a few seconds."* Both nested runs capture their
+  output, so the parent emits nothing for 15.8 minutes, which is what every report of a
+  "hang" has actually been looking at. Worth naming against §5: the gate whose instruction
+  is *"green it before you push"* costs 25 minutes on the canary platform, and 83% of even
+  its cheapest scope is five fragments no scope gates.
+- *Fixed in the change that recorded §4.4 — rewritten to match the practice.*
+  **`RELEASE-STRATEGY.md` promises a "predictable monthly rhythm."** The tag history says
+  otherwise: **78** `vX.Y.Z` tags and **seven majors** in the 87 days since 2026-06-18
+  (`git tag | grep -cE '^v[0-9]+\.[0-9]+\.[0-9]+$'`), the last **three** majors —
+  `v5.0.0`, `v6.0.0`, `v7.0.0` — within ten days of each other. (The first draft of this
+  bullet said 84 tags and the last four; the count included alias tags and the four was
+  wrong. Measured before fixing, as §2 asks.) Either the cadence claim moves to match the
+  practice or the practice is deliberate and the doc should say what it actually is. The
+  claim moved: releases are cut on demand, and the doc now says why that is safe here.
 
 ## 7. Combined blast radius
+
+> **Status:** §7–§9 describe the rollout of a major this proposal no longer produces. They
+> are kept because the costs they enumerate — the caller sweep, the Windows hand bump, the
+> in-tree `v7` strings, the ordering rule — belong to *any* major, and the next one
+> (§10, the non-mutable host) will need exactly this list.
 
 A host reaches `v8` only through the three independent opt-in gates
 `RELEASE-STRATEGY.md` §"Safe deployment" defines — nothing is pushed:
@@ -430,6 +459,10 @@ first as the canary, then the rest:
    - delete any Core-owned block the repo re-implements (the leg names the lines);
    - stop reading any `HAVE_*` flag outside `core/zsh/have-api.txt`'s declared surface;
    - confirm `os/*.capabilities` exists and validates under `make check-capabilities`.
+
+   *Already done fleet-wide: the three legs block on `@v7` today (#960, #961), and every
+   caller was measured clean before each flip. This step is a no-op until a future leg
+   ships advisory.*
 3. **Merge the fan-out PR** — `sync-fanout.yml` opens `sync/core-v8.0.0` automatically.
    It opens PRs; it never merges.
 4. **Adopt the ratcheted helpers** where §4.2 names a gap for that repo, and tighten the
@@ -456,17 +489,21 @@ They are deliberately **not** duplicated here, to avoid the two-copies drift v4 
 both refused.
 
 `tag-release.sh` refuses to cut a release whose section carries a `**BREAKING` bullet or a
-`BREAKING CHANGE:` footer unless the version is `X.0.0`, and it has no bypass. If §4.4
-lands on the repo-internal hook, §3 is the only section that writes such a bullet — and it
-must, or the `v8` alias would never be minted and the flips would fan out onto `@v7`
-callers, which is the precise failure that check exists to prevent.
+`BREAKING CHANGE:` footer unless the version is `X.0.0`, and it has no bypass. As first
+written, §3 was the only section that would write such a bullet — and it had to, or the
+`v8` alias would never be minted and the flips would fan out onto `@v7` callers, the
+precise failure that check exists to prevent. With §3 shipped as minors and §4.4 on the
+hook, **no section writes one**: everything this proposal still owes lands under
+`[Unreleased]` as minor-class entries, and the `v8` alias is not minted from here. The
+check now guards the other direction — a stray `**BREAKING` bullet in that work would
+force an `X.0.0` the content does not earn.
 
 ## 10. Non-goals and open questions
 
 **Findings about the roadmap itself**, which should be settled before v8 is scheduled:
 
-- **The "one source, generated outward" milestone has already shipped, and should be
-  closed rather than scheduled.** All five of its named inputs are closed — `#679`
+- *Closed.* **The "one source, generated outward" milestone has already shipped, and
+  should be closed rather than scheduled.** All five of its named inputs are closed — `#679`
   (palette), `#685` (`aliases.md`), `#686` (`PORTING-MATRIX.md`), `#682`/`#693` (the
   PARITY pair) — and the generators plus their gates `§9d`, `§9g`, `§9h`, `§9i` and `§9j`
   are live. It predicted it would need a major because *"hand-edits to those files stop
@@ -502,15 +539,25 @@ callers, which is the precise failure that check exists to prevent.
 
 **Open questions:**
 
-1. **§4.4 — repo-internal hook or declared overlay?** The recommendation is the hook, and
-   it decides whether this release is a major on §3 alone or on §3 and §4 together.
-2. **`CHANGELOG.md`: dropped or promoted?** `V5-PROPOSAL.md` §9 recorded this and declined
-   to settle it. It is now decidable: `#680` shipped, `core whatsnew` exists, and
+1. ~~**§4.4 — repo-internal hook or declared overlay?**~~ **Answered 2026-09-13: the
+   hook.** With §3 already shipped as minors, that leaves this release a major on nothing —
+   see the status header and §4.4.
+2. ~~**`CHANGELOG.md`: dropped or promoted?**~~ **Answered: promoted.** `V5-PROPOSAL.md`
+   §9 recorded this and declined to settle it. `#680` shipped, `core whatsnew` exists, and
    `CHANGELOG.recent.md` is in `core.vendor` as its backing store while the full 947 KB
-   `CHANGELOG.md` is repo-meta. The question is therefore already answered in the tree —
-   what remains is deleting the sentence in `V5-PROPOSAL.md` that says it is open.
+   `CHANGELOG.md` is repo-meta. The sentence in `V5-PROPOSAL.md` that said it was open is
+   struck.
 3. **Does the `core.vendor` consumer list get rationalised or transcribed?**
    `V5-PROPOSAL.md` §11 asked this and it was **left unfound**. Only Alpine calls
    `verify-atuin-guard.sh`; only MacBook sources `scripts/lib/common.sh`;
    `scripts/check-links.sh` is vendored with **no caller yet, deliberately**. Some of
-   those are probably accidents, and every major is another moment to find out.
+   those are probably accidents, and every major is another moment to find out. **Still
+   open**, and no longer waiting on a major.
+4. **Does `dotfiles-MacBook` adopt the `lint-call.yml` caller?** §3.4 raised it as a
+   canary problem — the reference implementation cannot canary a gate it does not run.
+   The flips landed as minors so the canary question is moot, but the rest of it is not:
+   MacBook's repo-owned zsh has never been scanned by the Core-owned-block leg, because
+   the leg's population is *"all eight callers"* and MacBook is not one — its own `ci.yml`
+   runs the audit target but not this workflow. Adopting the caller is the only way its
+   zsh gets the same three checks the other eight repos get. Not tied to a major; a
+   MacBook-repo change, and #961's *"eight is the whole denominator"* becomes nine.
