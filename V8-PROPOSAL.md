@@ -276,7 +276,18 @@ Concretely, in the order the evidence supports:
    tally is `blib_failures_report`, the reset-and-fold bridge between the two ledgers is
    gone, and its `warn_note` channel stays local because the lib models failures only.*
 3. **Define the per-repo hook** for what genuinely remains OS-specific after (1) and (2).
-   §4.4 decided the shape: the repo-internal hook.
+   §4.4 decided the shape: the repo-internal hook. *Defined 2026-09-13 (#976): `blib_main`
+   in `lib/bootstrap-lib.sh` runs the shared skeleton — flags, guard, escalator, probe,
+   provision under the keepalive, the Core/OS/Role wiring, the loader, the closing report —
+   and calls the repo's named hooks (`bootstrap_guard`, `bootstrap_check`,
+   `bootstrap_provision`, `bootstrap_wire_pre_loader`/`_post_loader`, `bootstrap_closing`,
+   `bootstrap_flag`, `bootstrap_usage`) with declarations (`BOOTSTRAP_OS`, `BOOTSTRAP_ROLE`,
+   `BOOTSTRAP_SU`, `BOOTSTRAP_LOGIN_SHELL`, `BOOTSTRAP_STRICT_DEFAULT`, `BOOTSTRAP_FAIL_EXIT`)
+   read off the nine files as they stood after (1) and (2): measured, the shared skeleton is
+   ~1,290 of 7,390 lines, and the driver is ~200. §5f credits a `blib_main` caller with the
+   whole contract and ratchets the driver's own row. Defense is the pilot; MacBook stays
+   outside the driver by design — its `--json`/`--uninstall`/`--quiet` surface is a
+   consumed contract the driver must not flatten.*
 
 ### 4.3 What breaks
 

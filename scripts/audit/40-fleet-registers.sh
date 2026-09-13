@@ -108,6 +108,7 @@ blib_failures_report     dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
 blib_wire_summary        dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 blib_install_core_guard  dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense
 BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
+blib_main
 '
   _ha_checked=0
   _ha_missing=0
@@ -122,7 +123,8 @@ BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
     _ha_checked=$((_ha_checked + 1))
     _ha_gaps=""
     for _ha_h in blib_resolve_su blib_sudo_keepalive_start blib_user_bindirs_on_path \
-      blib_note_fail blib_failures_report blib_wire_summary blib_install_core_guard BLIB_DRY; do
+      blib_note_fail blib_failures_report blib_wire_summary blib_install_core_guard BLIB_DRY \
+      blib_main; do
       # A ROLE repo layers on top of an OS repo's bootstrap and does no package installation
       # of its own, so the helper that exists for long privileged installs does not apply.
       # Exempting it is what keeps the report actionable rather than noisy — the same shape
@@ -176,6 +178,10 @@ BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
       # figures in this section's header were wrong by three, in the flattering direction.
       _ha_present=0
       _core_helper_called "$_ha_dir/bootstrap.sh" "$_ha_h" && _ha_present=1
+      # A repo on the DRIVER (#976) calls every helper through blib_main rather than by
+      # name, so the name is absent from its bootstrap.sh and present in its behaviour.
+      # Credit the whole contract to it; the driver's own row ratchets like the rest.
+      ((_ha_present)) || { _core_helper_called "$_ha_dir/bootstrap.sh" blib_main && _ha_present=1; }
       case "$(_core_helper_verdict "$_ha_in_led" "$_ha_present")" in
       ok) ;;
       gap) _ha_gaps="$_ha_gaps $_ha_h" ;;

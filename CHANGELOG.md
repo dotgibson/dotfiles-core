@@ -104,6 +104,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`blib_main` — the bootstrap driver, and the per-repo hook `V8-PROPOSAL.md` §4.2(3)
+  named** (#976). Every `bootstrap.sh` in the fleet hand-rolled the same skeleton around its
+  genuinely OS-specific part: the flag loop, the `core/` guard, the two `source` lines,
+  `blib_select`, the PATH prelude, the `blib_resolve_su` branch, the wiring sequence and the
+  closing report — measured at ~1,290 of the fleet's 7,390 bootstrap lines, in nine copies
+  that agree until they do not (Defense could not parse `--only zsh,git`; four repos rendered
+  `--help` four different ways). The driver owns that skeleton once — `--links-only`,
+  `--dry-run`/`-n`, `--strict`, `--only`/`--skip` in both spellings, one `--help` — and calls a
+  small set of NAMED hooks the repo defines: `bootstrap_guard`, `bootstrap_check` (report-only,
+  skipped under `--links-only`), `bootstrap_provision` (a full run only, never faked under
+  `--dry-run`, under a resolved escalator and the sudo keepalive), `bootstrap_wire_pre_loader`
+  and `_post_loader` (two slots, because Alpine's `~/.zshenv` must follow the managed `~/.zshrc`
+  while a distro tier's capability re-link must precede it), `bootstrap_closing`,
+  `bootstrap_flag` (a repo flag, with a return code for one that takes a value) and
+  `bootstrap_usage`. Declarations carry the rest: `BOOTSTRAP_OS` / `BOOTSTRAP_ROLE` (which
+  overlays to wire), `BOOTSTRAP_SU=lazy` (Offense resolves inside `--install`),
+  `BOOTSTRAP_SU_PREFER=doas` (Alpine), `BOOTSTRAP_LOGIN_SHELL=0` with the new
+  `blib_login_shell_hint` (the report-only guard Defense and Offense each carried),
+  `BOOTSTRAP_STRICT_DEFAULT` and `BOOTSTRAP_FAIL_EXIT` (Arch's always-exit-1 and openSUSE's
+  documented exit 2 survive adoption unchanged). Nothing new is linked onto a host and nothing
+  a host reads changes meaning — the driver calls the same helpers in the same order the repos
+  already call by hand, which is why §4.4 chose this over an overlay and why it ships as a
+  minor. `scripts/test/37-bootstrap-driver.sh` drives it end to end against a fixture repo
+  (hook order under each flag, dry-run inertness, the tally and `--strict`, the declared exit
+  policy, selection reaching `blib_select`, a value-taking repo flag). §5f credits a
+  `blib_main` caller with the whole helper contract and adds `blib_main` as a ratchet row.
+  MacBook stays outside the driver by design: its `--json` / `--uninstall` / `--quiet` surface
+  is a consumed contract, and the driver's job is to absorb the other eight. Defense is the
+  pilot (dotgibson/dotfiles-Defense#292, after this ships and syncs). (`lib/bootstrap-lib.sh`,
+  `scripts/audit/40-fleet-registers.sh`, `scripts/test/37-bootstrap-driver.sh`, `V8-PROPOSAL.md`)
 - **Audit §5l: a vendored `scripts/*.sh` entry must have a consumer that actually RUNS it**
   (#975; `V8-PROPOSAL.md` §10 Q3). `core.vendor`'s own header calls its `scripts/` block "the
   five things an OS repo actually runs from core/", and §1e walks the closure from the
