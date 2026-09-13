@@ -156,6 +156,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Offense adopted the four `bootstrap-lib` helpers — the §5f rows read 7/9, and its
+  keepalive exemption is gone** (#973; dotgibson/dotfiles-Offense#326). The role repo had been
+  exempt from `blib_sudo_keepalive_start` on the reasoning that a role layer installs no long
+  package sets. Its own `--install` says otherwise: the Kali route runs the whole offensive apt
+  list — "go get coffee", the comment reads — behind a one-shot `sudo -v` that primed once and
+  expired mid-run, the exact hang the helper exists for. That is the second time the
+  "installs no packages" claim was wrong for this repo (#748 was the first, for
+  `blib_user_bindirs_on_path`), so the exemption is retired and the rationale comment now says
+  why an exemption is a claim the repo's own file can contradict. Defense keeps both of its
+  exemptions: it installs nothing and probes nothing. The ledger lines in
+  `scripts/audit/40-fleet-registers.sh` add `dotfiles-Offense`, the header figures move to 7/9,
+  and MacBook is the one repo left. (`scripts/audit/40-fleet-registers.sh`, `V8-PROPOSAL.md`)
+
 - **Arch adopted the four `bootstrap-lib` helpers — the §5f rows read 6/9** (#973;
   dotgibson/dotfiles-Arch#171). The repo with no root check at all: it leaned on the lib's
   default of `sudo` through `_blib_priv`, an underscore-private symbol, which is the shape the
