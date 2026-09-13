@@ -577,8 +577,14 @@ force an `X.0.0` the content does not earn.
    `V5-PROPOSAL.md` §11 asked this and it was **left unfound**. Only Alpine calls
    `verify-atuin-guard.sh`; only MacBook sources `scripts/lib/common.sh`;
    `scripts/check-links.sh` is vendored with **no caller yet, deliberately**. Some of
-   those are probably accidents, and every major is another moment to find out. **Still
-   open**, and no longer waiting on a major.
+   those are probably accidents, and every major is another moment to find out.
+   **Answered 2026-09-13 (#975): transcribed, then gated.** `check-links.sh` had been vendored
+   nine releases with zero callers — the four Makefiles it was written for never switched.
+   They switched (dotgibson/dotfiles-Fedora#179, dotgibson/dotfiles-Debian#76,
+   dotgibson/dotfiles-Gentoo#185, dotgibson/dotfiles-openSUSE#184), the entry names them as
+   files, and audit §5l now fails a `scripts/*.sh` entry that nothing in a fully cloned fleet
+   runs — the companion to §1e's closure walk, in the other direction. The single-consumer
+   entries (`verify-atuin-guard.sh`, `scripts/lib/common.sh`) are real consumers and stay.
 4. **Does `dotfiles-MacBook` adopt the `lint-call.yml` caller?** §3.4 raised it as a
    canary problem — the reference implementation cannot canary a gate it does not run.
    The flips landed as minors so the canary question is moot, but the rest of it is not:

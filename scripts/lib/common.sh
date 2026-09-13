@@ -703,6 +703,34 @@ _core_gitleaks_policy_hits() { # _core_gitleaks_policy_hits <file>
   done <"$f"
 }
 
+# ── _core_vendor_consumer_hits: does a sibling actually RUN a vendored entry script? ──
+# _core_vendor_consumer_hits <repo-dir> <basename> — print each RUNNABLE repo-owned file in
+# <repo-dir> that names <basename> on a non-comment line, one per line, relative to the repo.
+# The population is what a repo EXECUTES: Makefile, .pre-commit-config.yaml, its workflows,
+# test/ and tests/, and top-level *.sh. Prose does not count (README, CHANGELOG), and neither
+# does the vendored core/ tree itself — a mention is not a consumer, which is the finding
+# audit §5l exists for (#975): scripts/check-links.sh shipped to nine boxes for nine releases
+# with its consumer named in core.vendor "as intent rather than as a file", and nothing ran it.
+# Comment lines are skipped the way _core_gitleaks_policy_hits skips them, `@#` included, so
+# a recipe's own explanation of why it calls the script cannot satisfy the check.
+_core_vendor_consumer_hits() { # _core_vendor_consumer_hits <repo-dir> <basename>
+  local dir="${1:-}" name="${2:-}" f line body
+  [[ -d "$dir" && -n "$name" ]] || return 0
+  for f in "$dir"/Makefile "$dir"/.pre-commit-config.yaml "$dir"/.github/workflows/*.yml \
+    "$dir"/.github/workflows/*.yaml "$dir"/test/*.sh "$dir"/tests/*.sh "$dir"/*.sh; do
+    [[ -f "$f" ]] || continue # unmatched glob stays literal (nullglob is off)
+    while IFS= read -r line; do
+      body="${line#"${line%%[![:space:]]*}"}"
+      case "$body" in '#'* | '@#'*) continue ;; esac
+      case "$line" in *"$name"*)
+        printf '%s\n' "${f#"$dir"/}"
+        break
+        ;;
+      esac
+    done <"$f"
+  done
+}
+
 # ── _audit_ls: the file set the CONTENT gates inspect ─────────────────────────
 # Tracked files PLUS untracked-but-not-ignored ones. The distinction matters, and it
 # cost a real round-trip: a brand-new script is invisible to `git ls-files` until the
