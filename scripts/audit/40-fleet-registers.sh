@@ -305,6 +305,67 @@ else
   ((_gp_absent)) && skip_env "gitleaks policy: $_gp_absent repo(s) not checked out — not covered by this run"
 fi
 
+# ── 5l. vendored entry scripts have a consumer that actually runs them ────────
+# core.vendor ships five things under scripts/ to every OS repo, and the rule its own header
+# states is "the five things an OS repo actually RUNS from core/". §1e walks the closure from
+# the `# entry` roots so a vendored script cannot reach an unvendored file; nothing checked
+# the other direction — that something RUNS the script. scripts/check-links.sh showed why
+# that matters: vendored in #852 with its consumer named "as intent rather than as a file"
+# (the four Makefiles that inlined the block would switch "on the next sync"), it then rode
+# nine releases into nine repos with no caller at all, and no gate could say so (#975). A
+# vendor entry is a claim about a consumer; this makes the claim checkable.
+#
+# THE POPULATION IS WHAT A REPO EXECUTES (_core_vendor_consumer_hits, lib/common.sh):
+# Makefile, .pre-commit-config.yaml, workflows, test/ and tests/, top-level *.sh — comment
+# lines excluded, prose excluded, the vendored core/ tree itself excluded. A README that
+# describes the script is not a consumer; a recipe's `@#` comment about it is not either.
+#
+# BLOCKING only on a FULLY cloned fleet: a script with no consumer among some of the repos
+# is not evidence of anything, so a partial checkout records an ENVIRONMENT skip (the same
+# skip_env class as §5f/§5g — inert under --strict, red under --require-siblings), and the
+# per-script consumer counts are printed either way so the number is never silent.
+hdr "vendored entry scripts x consumers"
+_vc_root="$(cd "$HERE/.." && pwd)"
+_vc_entries="$(grep -E '^scripts/[^[:space:]]+\.sh[[:space:]]+#[[:space:]]*entry([[:space:]]|$)' core.vendor 2>/dev/null | awk '{print $1}')"
+if [[ -z "$_vc_entries" ]]; then
+  fail "vendored consumers: core.vendor names no scripts/*.sh '# entry' root — the closure walk (§1e) and this check both have nothing to stand on"
+elif ! load_os_repos; then
+  skip_env "vendored consumers ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+else
+  _vc_checked=0
+  _vc_absent=0
+  for _vc_repo in "${CORE_OS_REPOS[@]}"; do
+    _vc_dir="$(resolve_repo_dir "$_vc_root" "$_vc_repo")" || _vc_dir="$_vc_root/$_vc_repo"
+    # `-e`: a linked worktree's .git is a FILE (#850).
+    if [[ -e "$_vc_dir/.git" ]]; then _vc_checked=$((_vc_checked + 1)); else _vc_absent=$((_vc_absent + 1)); fi
+  done
+  _vc_orphans=""
+  for _vc_e in $_vc_entries; do
+    _vc_b="${_vc_e##*/}"
+    _vc_n=0
+    _vc_who=""
+    for _vc_repo in "${CORE_OS_REPOS[@]}"; do
+      _vc_dir="$(resolve_repo_dir "$_vc_root" "$_vc_repo")" || _vc_dir="$_vc_root/$_vc_repo"
+      [[ -e "$_vc_dir/.git" ]] || continue
+      [[ -n "$(_core_vendor_consumer_hits "$_vc_dir" "$_vc_b")" ]] || continue
+      _vc_n=$((_vc_n + 1))
+      _vc_who="$_vc_who $_vc_repo"
+    done
+    ((${CORE_JSON:-0})) || printf '  %s%s%s %s — run by %d checked-out repo(s):%s\n' "${c_yel}" "•" "${c_rst}" "$_vc_e" "$_vc_n" "${_vc_who:- none}"
+    ((_vc_n)) || _vc_orphans="$_vc_orphans $_vc_e"
+  done
+  if ((_vc_checked == 0)); then
+    skip_env "vendored consumers (no sibling OS repo checked out — nothing to read here)"
+  elif [[ -n "$_vc_orphans" ]] && ((_vc_absent == 0)); then
+    fail "vendored consumers: nothing in the fleet RUNS$_vc_orphans — a vendored script with no consumer is shipped to nine boxes for no reader (#975); wire it into a Makefile, workflow or test, or drop its core.vendor entry"
+  elif [[ -n "$_vc_orphans" ]]; then
+    skip_env "vendored consumers: no consumer found for$_vc_orphans among $_vc_checked checked-out repo(s), and $_vc_absent repo(s) are not checked out — not judged on a partial fleet"
+  else
+    pass "vendored consumers: every scripts/*.sh '# entry' root is run by at least one checked-out repo ($_vc_checked repo(s))"
+  fi
+  ((_vc_absent)) && skip_env "vendored consumers: $_vc_absent repo(s) not checked out — not covered by this run"
+fi
+
 # ── 5h. the gate x repo coverage register ────────────────────────────────────
 # Coverage used to be inferred by reading the `uses:` lines in each repo's workflows, and
 # that inference is WRONG for any repo that satisfies a gate its own way. It has misfired

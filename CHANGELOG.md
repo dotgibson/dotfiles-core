@@ -134,6 +134,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   is a consumed contract, and the driver's job is to absorb the other eight. Defense is the
   pilot (dotgibson/dotfiles-Defense#292, after this ships and syncs). (`lib/bootstrap-lib.sh`,
   `scripts/audit/40-fleet-registers.sh`, `scripts/test/37-bootstrap-driver.sh`, `V8-PROPOSAL.md`)
+- **Audit §5l: a vendored `scripts/*.sh` entry must have a consumer that actually RUNS it**
+  (#975; `V8-PROPOSAL.md` §10 Q3). `core.vendor`'s own header calls its `scripts/` block "the
+  five things an OS repo actually runs from core/", and §1e walks the closure from the
+  `# entry` roots so a vendored script cannot reach an unvendored file — but nothing checked
+  the other direction. `scripts/check-links.sh` showed the cost: vendored in #852 with its
+  consumer named "as intent rather than as a file" (the four Makefiles that inlined the block
+  would switch "on the next sync"), it then rode nine releases into nine repos with no caller,
+  and no gate could say so. The four Makefiles have now switched (dotgibson/dotfiles-Fedora#179,
+  dotgibson/dotfiles-Debian#76, dotgibson/dotfiles-Gentoo#185, dotgibson/dotfiles-openSUSE#184
+  — Fedora's ran green for real: 25 links, 1 seeded), the entry names them as files, and the
+  new gate reads each checked-out sibling's Makefile, pre-commit config, workflows, `test/`,
+  `tests/` and top-level scripts — comment lines and prose excluded — through
+  `_core_vendor_consumer_hits` in `scripts/lib/common.sh`, fixture-tested in both directions.
+  It blocks only on a fully cloned fleet and records an environment skip otherwise, the same
+  posture as §5f and §5g; the per-script consumer counts print either way. (`scripts/audit/40-fleet-registers.sh`,
+  `scripts/lib/common.sh`, `scripts/test/90-policy-gates.sh`, `core.vendor`, `V8-PROPOSAL.md`)
 
 - **`V8-PROPOSAL.md` — the design record for the next major.** Core is at `7.3.0` with an
   empty backlog, no open PRs, and a Breaking Backlog milestone holding zero issues, so a
