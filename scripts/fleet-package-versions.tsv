@@ -45,6 +45,7 @@ floor	jq	1.8.2
 ver	jq	Arch	1.8.2	2026-09-09	repology:arch	arch
 ver	jq	Gentoo	1.8.2	2026-09-09	repology:gentoo	gentoo
 ver	jq	openSUSE Tumbleweed	1.8.2	2026-09-09	repology:opensuse_tumbleweed	opensuse_tumbleweed
+ver	jq	openSUSE Leap 16.1	1.8.2	2026-09-12	download.opensuse.org	-
 ver	jq	Homebrew	1.8.2	2026-09-09	repology:homebrew	homebrew
 ver	jq	Alpine edge	1.8.2	2026-09-09	repology:alpine_edge	alpine_edge
 ver	jq	Alpine 3.24	1.8.2	2026-09-09	pkgs.alpinelinux.org	alpine_3_24
@@ -57,4 +58,4 @@ ver	jq	Fedora 43	1.8.1	2026-09-09	repology:fedora_43	fedora_43
 ver	jq	Alpine 3.21	1.7.1	2026-09-09	pkgs.alpinelinux.org	alpine_3_21
 ver	jq	Debian 13	1.7.1	2026-09-09	repology:debian_13	debian_13
 ver	jq	Ubuntu 24.04	1.7.1	2026-09-09	repology:ubuntu_24_04	ubuntu_24_04
-ver	jq	openSUSE Leap 15.x	1.6	2026-09-09	repology:opensuse_leap_15_6	opensuse_leap_15_6
+ver	jq	openSUSE Leap 16.0	1.7.1	2026-09-12	download.opensuse.org	-

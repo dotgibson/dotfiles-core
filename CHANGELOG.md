@@ -50,6 +50,33 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Found by inspecting `fix/runbook-major-alias-release-commit`, a branch pushed 2026-08-17
   that never opened a PR and was still correct a month later.
 
+- **`PORTING-MATRIX.md` was blind to openSUSE Leap 16 in three places, from the
+  `/os-package-availability` routine (dotfiles-openSUSE#178, #962).** Footnote ³³'s neovim
+  table exempted openSUSE by name — _"its neovim row is not currently affected"_ — and Leap
+  16.0 ships `neovim` **0.11.3-bp160.2.1**, below the 0.12 floor nvim-treesitter's `main`
+  hard-requires, while Leap 16.1 (0.12.4) and Tumbleweed (0.12.5) clear it. That is the
+  concurrently-supported-branches shape the footnote attributes to Alpine, so it now names
+  **four** targets, carries the three openSUSE rows, and records the remedy
+  dotfiles-openSUSE#181 shipped (`# min:0.12.0`, a warn-only `NEOVIM_FLOOR`, a floor gate in
+  its package test). The openSUSE cell in the neovim row moved to `` `neovim` ≥ 0.12.0 `` on
+  the same regen — derived from that `# min:`, not hand-typed.
+
+  Footnote ³⁴'s generated jq table had one openSUSE Leap row, **15.x at 1.6**, probed through
+  `repology:opensuse_leap_15_6` — a release EOL since 2026-04-30 and the only Leap Repology
+  indexes at all, so `make update-fleet-versions` could never move it and the table was
+  silent about both releases openSUSE users are on. `scripts/fleet-package-versions.tsv` now
+  carries Leap 16.1 (1.8.2, at or above) and Leap 16.0 (1.7.1, below _by version_), read from
+  `download.opensuse.org` with a `-` probe, so the weekly bot reports them as needing a
+  human rather than re-stamping an EOL row. The _"do not build a guard on `jq --version`"_
+  paragraph names openSUSE Leap as a second backport lane beside the Debian family: 16.0's
+  `1.7.1-160000.4.1` is openSUSE-SU-2026:21318-1 (CVE-2026-49839), a security rebuild that
+  did not bump the version.
+
+  Footnote ²⁴'s _"every distro in the table above ships lnav"_ is softened — lnav is
+  Tumbleweed-only on openSUSE, absent from Leap 16.0 and 16.1 — and its openSUSE row gains
+  the `(Tumbleweed; **not** Leap 16.0/16.1)` hedge footnote ¹⁰ already uses for difftastic.
+  Footnote prose and a data file, so nothing in the Tool column's marks moved.
+
 ### Added
 
 - **`V8-PROPOSAL.md` — the design record for the next major.** Core is at `7.3.0` with an

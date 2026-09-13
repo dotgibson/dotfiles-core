@@ -119,56 +119,56 @@ and a footnote here.** The footnotes below stay hand-written.
 
 <!-- core:porting-matrix:gen packages -->
 
-| Tool             | Arch              | openSUSE       | Alpine                     | Gentoo (atom)                       | Kali (apt)²¹ᵃ              | Debian/Ubuntu |
-| ---------------- | ----------------- | -------------- | -------------------------- | ----------------------------------- | -------------------------- | ------------- |
-| eza              | `eza`             | `eza`          | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
-| bat              | `bat`             | `bat`          | `bat`                      | `sys-apps/bat`                      | `bat`⁴                     | `bat`⁴        |
-| fd               | `fd`              | `fd`           | `fd`                       | `sys-apps/fd`                       | `fd-find`⁴                 | `fd-find`⁴    |
-| ripgrep          | `ripgrep`         | `ripgrep`      | `ripgrep`                  | `sys-apps/ripgrep`                  | `ripgrep`                  | `ripgrep`     |
-| zoxide           | `zoxide`          | `zoxide`       | `zoxide`                   | `app-shells/zoxide`                 | `zoxide`                   | `zoxide`      |
-| fzf              | `fzf`             | `fzf`          | `fzf`                      | `app-shells/fzf`                    | `fzf`                      | `fzf`         |
-| git-delta        | `git-delta`       | `git-delta`    | `delta`                    | `dev-util/git-delta`                | asset²⁸                    | `git-delta`   |
-| btop             | `btop`            | `btop`         | `btop`                     | `sys-process/btop`                  | `btop`                     | `btop`        |
-| tldr             | `tealdeer`        | `tealdeer`¹    | cargo³                     | `app-misc/tealdeer`¹²               | `tealdeer`                 | `tealdeer`    |
-| neovim³³         | `neovim`          | `neovim`       | `neovim` ≥ 0.12.0          | `app-editors/neovim` ≥ 0.12.0       | `neovim` ≥ 0.12.0          | asset²⁸       |
-| lazygit          | `lazygit`         | `lazygit`      | `lazygit`                  | `dev-vcs/lazygit`¹²                 | `lazygit`                  | asset²⁸       |
-| zsh              | `zsh`             | `zsh`          | `zsh`²                     | `app-shells/zsh`                    | `zsh`                      | `zsh`         |
-| tmux             | `tmux`            | `tmux`         | `tmux`                     | `app-misc/tmux`                     | `tmux`                     | `tmux`        |
-| starship         | `starship`        | `starship`¹⁸   | `starship`                 | `app-shells/starship`               | `starship`                 | asset²⁸       |
-| atuin²⁰          | `atuin`           | `atuin`¹⁸      | `atuin`                    | `app-shells/atuin`                  | asset²⁸                    | asset²⁸       |
-| mise³⁰           | `mise`            | script³⁰       | script³⁰                   | script³⁰                            | asset²⁸                    | asset²⁸       |
-| direnv³²         | `direnv`          | `direnv`       | `direnv`                   | `app-shells/direnv`¹²               | `direnv`                   | `direnv`      |
-| yazi             | `yazi`            | `yazi`¹⁸       | `yazi`                     | `app-misc/yazi`¹²                   | cargo³                     | —²⁹           |
-| tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter`  | `tree-sitter-cli` ≥ 0.26.1 | `dev-util/tree-sitter-cli` ≥ 0.26.1 | `tree-sitter-cli` ≥ 0.26.1 | asset²⁸       |
-| jq³⁴             | `jq`              | `jq`           | `jq`                       | `app-misc/jq`                       | `jq`                       | `jq`          |
-| yq⁶              | `go-yq`           | `yq`           | `yq-go`                    | `app-misc/yq-go`                    | `yq-go`                    | go³           |
-| duf              | `duf`             | `duf`          | testing¹⁴                  | `sys-fs/duf`                        | `duf`                      | `duf`         |
-| dust             | `dust`            | `dust`         | `dust`                     | `sys-block/dust`                    | `du-dust`⁴                 | asset²⁸       |
-| procs            | `procs`           | `procs`        | `procs`                    | `sys-process/procs`                 | `procs`                    | asset²⁸       |
-| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸      | `viddy`                    | cargo³                              | cargo³                     | —²⁹           |
-| sd²²             | `sd`              | `sd`           | `sd`                       | `sys-apps/sd`¹²                     | `sd`                       | `sd`          |
-| gron             | `gron`            | `gron`         | `gron`                     | go³                                 | `gron`                     | `gron`        |
-| jnv¹⁷            | `jnv`             | cargo          | cargo³                     | cargo                               | cargo                      | —²⁹           |
-| lnav²¹ ²⁴        | `lnav`            | `lnav`         | `lnav`                     | `app-admin/lnav`²⁴                  | `lnav`²⁴                   | `lnav`        |
-| glow             | `glow`            | `glow`         | testing¹⁴                  | `app-misc/glow`¹²                   | `glow`¹⁵                   | charm apt     |
-| gum              | `gum`             | `gum`          | `gum`                      | mise³⁰                              | `gum`¹⁵                    | charm apt     |
-| xh               | `xh`              | `xh`           | `xh`                       | `net-misc/xh`¹²                     | `xh`                       | asset²⁸       |
-| doggo            | `doggo`           | `doggo`¹⁸      | `doggo`                    | `net-dns/doggo`                     | go³                        | go³           |
-| gping¹⁹          | `gping`           | `gping`¹⁹      | `gping`                    | GURU¹⁹                              | `gping`¹⁹                  | `gping`       |
-| carapace         | AUR²⁷             | rpm²⁷          | `carapace`                 | `app-shells/carapace`¹²             | deb²⁷                      | deb²⁷         |
-| op (1Password)¹³ | AUR               | vendor rpm     | vendor apk                 | GURU¹²                              | vendor apt                 | vendor apt    |
-| hyperfine²¹      | `hyperfine`       | `hyperfine`    | `hyperfine`                | `app-benchmarks/hyperfine`          | `hyperfine`                | `hyperfine`   |
-| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`    | `watchexec`                | cargo²⁵                             | cargo²⁵                    | —²⁹           |
-| shellcheck²¹     | `shellcheck`      | `ShellCheck`   | `shellcheck`               | `dev-util/shellcheck-bin`           | `shellcheck`               | `shellcheck`  |
-| shfmt⁷ ²¹        | `shfmt`           | `shfmt`        | `shfmt`                    | go²¹                                | `shfmt`⁷                   | `shfmt`       |
-| ouch²¹           | `ouch`            | `ouch`¹⁸       | testing¹⁴                  | GURU¹² ²¹                           | cargo²¹                    | —²⁹           |
-| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`      | `jujutsu`                  | `dev-vcs/jj`²¹                      | cargo²¹                    | —²⁹           |
-| sesh⁹            | AUR⁹              | go⁹            | go⁹                        | go⁹                                 | go⁹                        | go³           |
-| difftastic¹⁰     | `difftastic`      | `difftastic`   | `difftastic`               | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
-| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`   | `git-absorb`               | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
-| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸   | `ast-grep`                 | cargo²¹                             | cargo²¹                    | —²⁹           |
-| uv³⁰             | `uv`              | `python3-uv`²¹ | `uv`                       | `dev-python/uv`                     | asset²⁸                    | asset²⁸       |
-| w3m              | `w3m`             | `w3m`          | `w3m`                      | `www-client/w3m`                    | `w3m`                      | `w3m`         |
+| Tool             | Arch              | openSUSE          | Alpine                     | Gentoo (atom)                       | Kali (apt)²¹ᵃ              | Debian/Ubuntu |
+| ---------------- | ----------------- | ----------------- | -------------------------- | ----------------------------------- | -------------------------- | ------------- |
+| eza              | `eza`             | `eza`             | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
+| bat              | `bat`             | `bat`             | `bat`                      | `sys-apps/bat`                      | `bat`⁴                     | `bat`⁴        |
+| fd               | `fd`              | `fd`              | `fd`                       | `sys-apps/fd`                       | `fd-find`⁴                 | `fd-find`⁴    |
+| ripgrep          | `ripgrep`         | `ripgrep`         | `ripgrep`                  | `sys-apps/ripgrep`                  | `ripgrep`                  | `ripgrep`     |
+| zoxide           | `zoxide`          | `zoxide`          | `zoxide`                   | `app-shells/zoxide`                 | `zoxide`                   | `zoxide`      |
+| fzf              | `fzf`             | `fzf`             | `fzf`                      | `app-shells/fzf`                    | `fzf`                      | `fzf`         |
+| git-delta        | `git-delta`       | `git-delta`       | `delta`                    | `dev-util/git-delta`                | asset²⁸                    | `git-delta`   |
+| btop             | `btop`            | `btop`            | `btop`                     | `sys-process/btop`                  | `btop`                     | `btop`        |
+| tldr             | `tealdeer`        | `tealdeer`¹       | cargo³                     | `app-misc/tealdeer`¹²               | `tealdeer`                 | `tealdeer`    |
+| neovim³³         | `neovim`          | `neovim` ≥ 0.12.0 | `neovim` ≥ 0.12.0          | `app-editors/neovim` ≥ 0.12.0       | `neovim` ≥ 0.12.0          | asset²⁸       |
+| lazygit          | `lazygit`         | `lazygit`         | `lazygit`                  | `dev-vcs/lazygit`¹²                 | `lazygit`                  | asset²⁸       |
+| zsh              | `zsh`             | `zsh`             | `zsh`²                     | `app-shells/zsh`                    | `zsh`                      | `zsh`         |
+| tmux             | `tmux`            | `tmux`            | `tmux`                     | `app-misc/tmux`                     | `tmux`                     | `tmux`        |
+| starship         | `starship`        | `starship`¹⁸      | `starship`                 | `app-shells/starship`               | `starship`                 | asset²⁸       |
+| atuin²⁰          | `atuin`           | `atuin`¹⁸         | `atuin`                    | `app-shells/atuin`                  | asset²⁸                    | asset²⁸       |
+| mise³⁰           | `mise`            | script³⁰          | script³⁰                   | script³⁰                            | asset²⁸                    | asset²⁸       |
+| direnv³²         | `direnv`          | `direnv`          | `direnv`                   | `app-shells/direnv`¹²               | `direnv`                   | `direnv`      |
+| yazi             | `yazi`            | `yazi`¹⁸          | `yazi`                     | `app-misc/yazi`¹²                   | cargo³                     | —²⁹           |
+| tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter`     | `tree-sitter-cli` ≥ 0.26.1 | `dev-util/tree-sitter-cli` ≥ 0.26.1 | `tree-sitter-cli` ≥ 0.26.1 | asset²⁸       |
+| jq³⁴             | `jq`              | `jq`              | `jq`                       | `app-misc/jq`                       | `jq`                       | `jq`          |
+| yq⁶              | `go-yq`           | `yq`              | `yq-go`                    | `app-misc/yq-go`                    | `yq-go`                    | go³           |
+| duf              | `duf`             | `duf`             | testing¹⁴                  | `sys-fs/duf`                        | `duf`                      | `duf`         |
+| dust             | `dust`            | `dust`            | `dust`                     | `sys-block/dust`                    | `du-dust`⁴                 | asset²⁸       |
+| procs            | `procs`           | `procs`           | `procs`                    | `sys-process/procs`                 | `procs`                    | asset²⁸       |
+| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸         | `viddy`                    | cargo³                              | cargo³                     | —²⁹           |
+| sd²²             | `sd`              | `sd`              | `sd`                       | `sys-apps/sd`¹²                     | `sd`                       | `sd`          |
+| gron             | `gron`            | `gron`            | `gron`                     | go³                                 | `gron`                     | `gron`        |
+| jnv¹⁷            | `jnv`             | cargo             | cargo³                     | cargo                               | cargo                      | —²⁹           |
+| lnav²¹ ²⁴        | `lnav`            | `lnav`            | `lnav`                     | `app-admin/lnav`²⁴                  | `lnav`²⁴                   | `lnav`        |
+| glow             | `glow`            | `glow`            | testing¹⁴                  | `app-misc/glow`¹²                   | `glow`¹⁵                   | charm apt     |
+| gum              | `gum`             | `gum`             | `gum`                      | mise³⁰                              | `gum`¹⁵                    | charm apt     |
+| xh               | `xh`              | `xh`              | `xh`                       | `net-misc/xh`¹²                     | `xh`                       | asset²⁸       |
+| doggo            | `doggo`           | `doggo`¹⁸         | `doggo`                    | `net-dns/doggo`                     | go³                        | go³           |
+| gping¹⁹          | `gping`           | `gping`¹⁹         | `gping`                    | GURU¹⁹                              | `gping`¹⁹                  | `gping`       |
+| carapace         | AUR²⁷             | rpm²⁷             | `carapace`                 | `app-shells/carapace`¹²             | deb²⁷                      | deb²⁷         |
+| op (1Password)¹³ | AUR               | vendor rpm        | vendor apk                 | GURU¹²                              | vendor apt                 | vendor apt    |
+| hyperfine²¹      | `hyperfine`       | `hyperfine`       | `hyperfine`                | `app-benchmarks/hyperfine`          | `hyperfine`                | `hyperfine`   |
+| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`       | `watchexec`                | cargo²⁵                             | cargo²⁵                    | —²⁹           |
+| shellcheck²¹     | `shellcheck`      | `ShellCheck`      | `shellcheck`               | `dev-util/shellcheck-bin`           | `shellcheck`               | `shellcheck`  |
+| shfmt⁷ ²¹        | `shfmt`           | `shfmt`           | `shfmt`                    | go²¹                                | `shfmt`⁷                   | `shfmt`       |
+| ouch²¹           | `ouch`            | `ouch`¹⁸          | testing¹⁴                  | GURU¹² ²¹                           | cargo²¹                    | —²⁹           |
+| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`         | `jujutsu`                  | `dev-vcs/jj`²¹                      | cargo²¹                    | —²⁹           |
+| sesh⁹            | AUR⁹              | go⁹               | go⁹                        | go⁹                                 | go⁹                        | go³           |
+| difftastic¹⁰     | `difftastic`      | `difftastic`      | `difftastic`               | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
+| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`      | `git-absorb`               | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
+| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸      | `ast-grep`                 | cargo²¹                             | cargo²¹                    | —²⁹           |
+| uv³⁰             | `uv`              | `python3-uv`²¹    | `uv`                       | `dev-python/uv`                     | asset²⁸                    | asset²⁸       |
+| w3m              | `w3m`             | `w3m`             | `w3m`                      | `www-client/w3m`                    | `w3m`                      | `w3m`         |
 
 <!-- core:porting-matrix:end packages -->
 
@@ -766,8 +766,9 @@ the cleanest way to get 0.14.1 onto Gentoo or Debian/Kali without waiting for th
 `install/packages.txt`, and the MacBook `Brewfile` has it too (added 2026-07-15). On the other
 four Linux repos `core-doctor` reports it present only once you install it yourself. So `lnav` sits in
 ²¹'s family — probed but never bootstrap-installed — rather than jnv's thinner "two platforms
-package it, cargo everywhere else" one: every distro in the table above ships lnav, and two of
-the repos ask for it.
+package it, cargo everywhere else" one: every distro in the table above packages lnav on at
+least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and two of the repos
+ask for it.
 
 Versions **verified against each distro's own package pages** on 2026-08-12, every row
 re-verified the same way on 2026-09-06, not taken from a repology snapshot. Upstream is
@@ -775,17 +776,17 @@ re-verified the same way on 2026-09-06, not taken from a repology snapshot. Upst
 answer; **Fedora is versioned, so every supported stable release is named separately**
 rather than collapsed into one unqualified ✓:
 
-| Target          | Release                                  | lnav              |
-| --------------- | ---------------------------------------- | ----------------- |
-| Arch            | `extra` (rolling)                        | 0.14.1-1          |
-| openSUSE        | Tumbleweed (rolling)                     | 0.14.0            |
-| Alpine          | `edge/community` — **native musl build** | 0.14.1-r0         |
-| Homebrew        | rolling                                  | 0.14.1            |
-| **Fedora**      | **Rawhide / F45**                        | **0.14.0-3.fc45** |
-| **Fedora**      | **F44**                                  | **0.13.2-2.fc44** |
-| **Fedora**      | **F43**                                  | **0.12.4-2.fc43** |
-| **Kali/Debian** | rolling / sid                            | **0.13.2**        |
-| **Gentoo**      | `app-admin/lnav`                         | **0.11.2**        |
+| Target          | Release                                      | lnav              |
+| --------------- | -------------------------------------------- | ----------------- |
+| Arch            | `extra` (rolling)                            | 0.14.1-1          |
+| openSUSE        | Tumbleweed (rolling); **not** Leap 16.0/16.1 | 0.14.0            |
+| Alpine          | `edge/community` — **native musl build**     | 0.14.1-r0         |
+| Homebrew        | rolling                                      | 0.14.1            |
+| **Fedora**      | **Rawhide / F45**                            | **0.14.0-3.fc45** |
+| **Fedora**      | **F44**                                      | **0.13.2-2.fc44** |
+| **Fedora**      | **F43**                                      | **0.12.4-2.fc43** |
+| **Kali/Debian** | rolling / sid                                | **0.13.2**        |
+| **Gentoo**      | `app-admin/lnav`                             | **0.11.2**        |
 
 So "Fedora has it" is true, but as of the 2026-09-06 re-check "Fedora is current" is no
 longer true anywhere: 0.14.1 landed on 2026-09-05 and Rawhide/F45 still carries 0.14.0-3, one
@@ -1216,21 +1217,24 @@ output. Every target above clears that floor except `dotfiles-Debian`'s two lane
 2.32.1. It degrades rather than breaks, which is why that repo's `install/packages.txt`
 declares no `# min:` floor for it.
 
-³³ **neovim — "the package exists" is not "the package is usable", and it bites on THREE
+³³ **neovim — "the package exists" is not "the package is usable", and it bites on FOUR
 targets, by three different mechanisms.** Core's nvim pins nvim-treesitter to `main`
 (`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Several cells in the neovim
 row above resolve perfectly and give you something Core's config will not load on:
 
-| Target          | What `neovim` actually gets you       | Clears 0.12? |
-| --------------- | ------------------------------------- | ------------ |
-| **Debian**      | Ubuntu 24.04 `neovim` **0.9.5**       | no — see ²⁸  |
-| **Gentoo**      | newest **stable** ebuild, **0.11.7**  | no           |
-| Gentoo, fixed   | **0.12.3**, via the `>=` keyword line | yes          |
-| **Alpine** 3.21 | `neovim` **0.10.4-r0**                | no           |
-| **Alpine** 3.22 | `neovim` **0.11.1-r1**                | no           |
-| **Alpine** 3.23 | `neovim` **0.11.7-r0**                | no           |
-| Alpine 3.24     | `neovim` **0.12.2-r0**                | yes          |
-| Alpine edge     | `neovim` **0.12.2**                   | yes          |
+| Target                 | What `neovim` actually gets you       | Clears 0.12? |
+| ---------------------- | ------------------------------------- | ------------ |
+| **Debian**             | Ubuntu 24.04 `neovim` **0.9.5**       | no — see ²⁸  |
+| **Gentoo**             | newest **stable** ebuild, **0.11.7**  | no           |
+| Gentoo, fixed          | **0.12.3**, via the `>=` keyword line | yes          |
+| **Alpine** 3.21        | `neovim` **0.10.4-r0**                | no           |
+| **Alpine** 3.22        | `neovim` **0.11.1-r1**                | no           |
+| **Alpine** 3.23        | `neovim` **0.11.7-r0**                | no           |
+| Alpine 3.24            | `neovim` **0.12.2-r0**                | yes          |
+| Alpine edge            | `neovim` **0.12.2**                   | yes          |
+| **openSUSE** Leap 16.0 | `neovim` **0.11.3-bp160.2.1**         | no           |
+| openSUSE Leap 16.1     | `neovim` **0.12.4-bp161.1.1**         | yes          |
+| openSUSE Tumbleweed    | `neovim` **0.12.5-1.1**               | yes          |
 
 They get there by three different mechanisms and only one of them looks like a problem.
 Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
@@ -1246,6 +1250,15 @@ no single fleet answer — it has five, and **three of them are no**. A check ru
 or `edge` box sees a perfectly current 0.12.2 and reports the row healthy for Alpine
 entirely. Sibling footnote ⁵ already spells this spread out correctly for `tree-sitter-cli`;
 this footnote simply never got the same treatment.
+
+openSUSE Leap is Alpine's shape with two lanes instead of four. Leap 16.0 and 16.1 are both
+supported, each frozen at the Backports build it released with (`bp160` 0.11.3, `bp161`
+0.12.4) while Tumbleweed rolls (0.12.5). A check that samples Tumbleweed or 16.1 reports the
+openSUSE column healthy, and a 16.0 box gets a `neovim` that installs cleanly and will not
+load Core's config. Neither Debian's nor Gentoo's lever exists there: no newer build in
+16.0's OSS or Backports repos, and no keyword to reach past. An earlier revision of this
+footnote exempted openSUSE by name — "though its neovim row is not currently affected" —
+which was true of 15.6 and stopped being true the day 16.0 shipped.
 
 `dotfiles-Gentoo` therefore borrows Debian's contract and pairs it with the Portage-native
 fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-restricted**
@@ -1263,13 +1276,20 @@ none at all on nvim-treesitter's _host_, failing on the same three branches, for
 the floor has existed. Half a requirement checked reads exactly like a whole one.
 Filed as dotfiles-Alpine#170, verified 2026-09-06.
 
+`dotfiles-openSUSE` takes Alpine's remedy for Alpine's reason: `# min:0.12.0` on the
+manifest line — which is where the `≥ 0.12.0` in the openSUSE cell above is derived from — a
+warn-only `NEOVIM_FLOOR` in `bootstrap.sh` compared with `zypper versioncmp`, and a floor
+gate in `test/check-packages.sh` that fails a Tumbleweed shortfall (that would mean Core's
+pin outran the fleet) and reports a Leap one. Filed as dotfiles-openSUSE#178, verified
+2026-09-12.
+
 **If you stamp a new source-based or stable/testing-split target, ask the keyword question
 and the branch question, not just the name question.** This trap only shows up on the
 fleet's non-rolling lanes — and "non-rolling" covers three shapes, not one: a frozen archive
 (Debian), a stable/testing keyword split (Gentoo), and a set of concurrently supported
-release branches (Alpine; structurally openSUSE Leap too, though its neovim row is not
-currently affected). A rolling column can be answered once. Each of these has to be answered
-per lane, and a check that samples only the newest lane will report all of them healthy.
+release branches (Alpine, and openSUSE Leap). A rolling column can be answered once. Each
+of these has to be answered per lane, and a check that samples only the newest lane will
+report all of them healthy.
 
 ³⁴ **jq — a recorded security floor of ≥ 1.8.2, and deliberately NOT a version gate.**
 1.8.2 (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an
@@ -1292,6 +1312,7 @@ version and a verdict that disagreed.
 | Arch                | 1.8.2 | at or above | 2026-09-09 |
 | Gentoo              | 1.8.2 | at or above | 2026-09-09 |
 | openSUSE Tumbleweed | 1.8.2 | at or above | 2026-09-09 |
+| openSUSE Leap 16.1  | 1.8.2 | at or above | 2026-09-12 |
 | Homebrew            | 1.8.2 | at or above | 2026-09-09 |
 | Alpine edge         | 1.8.2 | at or above | 2026-09-09 |
 | Alpine 3.24         | 1.8.2 | at or above | 2026-09-09 |
@@ -1304,7 +1325,7 @@ version and a verdict that disagreed.
 | Alpine 3.21         | 1.7.1 | **below**   | 2026-09-09 |
 | Debian 13           | 1.7.1 | **below**   | 2026-09-09 |
 | Ubuntu 24.04        | 1.7.1 | **below**   | 2026-09-09 |
-| openSUSE Leap 15.x  | 1.6   | **below**   | 2026-09-09 |
+| openSUSE Leap 16.0  | 1.7.1 | **below**   | 2026-09-12 |
 
 <!-- core:porting-matrix:end fleet-versions -->
 
@@ -1325,8 +1346,14 @@ lanes are as at time of writing.)
 **Do not build a guard on `jq --version`.** On the Debian family the version string is not
 evidence either way — Debian backports security fixes without bumping the version, so a
 `1.7.1-x` build may carry all, some or none of these, and a version gate would false-positive
-across the whole Debian/Kali/Ubuntu lane. This is a third shape, distinct from the two other
-version-sensitive rows in this file, and the distinction is the point: `⁵` (tree-sitter)
+across the whole Debian/Kali/Ubuntu lane. openSUSE Leap is a second such lane: 16.0's
+`1.7.1-160000.4.1` is the third maintenance rebuild of 1.7.1 (`.2.2` → `.3.1` → `.4.1`), the
+last of them openSUSE-SU-2026:21318-1 for CVE-2026-49839, so the table's **below** for
+Leap 16.0 is a statement about the version string, not about which of the sixteen fixes the
+build carries. Leap 16.1 clears the floor outright at 1.8.2 — and neither Leap release is
+visible to Repology, which is why those two rows carry a `-` probe and are re-read by hand
+rather than by `make update-fleet-versions`. This is a third shape, distinct from the two
+other version-sensitive rows in this file, and the distinction is the point: `⁵` (tree-sitter)
 mandates a **version** check because apk is honestly old, and `²²` (`sd`) forbids one and
 mandates **capability probing** because `--version` lies. jq's version is neither honest nor
 probeable — nothing in the CLI surface reveals which patches a build carries. So this is a
