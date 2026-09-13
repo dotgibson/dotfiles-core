@@ -16,6 +16,12 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`lint-call.yml`'s owned-block remediation text pointed at the wrong file.** A failing
+  caller was told the gh/uv/ty completions run from `core/zsh/45-plugins.zsh`; #579 moved
+  them to `00-tools.zsh` (`_cache_completion`, generated into fpath before compinit), and
+  `_core_owned_block_owner` already said so. The message now names `00-tools.zsh` for all
+  four. (`.github/workflows/lint-call.yml`)
+
 - **`RELEASE-RUNBOOK.md` told you to tag the new major alias at the merged tip; every other
   source says the release commit.** Four sites, one defect. §1.1 step 5's inline comment
   claimed `make publish` _"creates vX.Y.Z AT origin/main"_; the MAJOR bullet said the new
