@@ -156,6 +156,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Alpine adopted the four `bootstrap-lib` helpers — the §5f rows read 5/9** (#973;
+  dotgibson/dotfiles-Alpine#191). The repo #879 was written for: its `bootstrap.sh` had kept a
+  hand-rolled doas-first probe with a comment explaining that `blib_resolve_su` resolved sudo
+  before doas and naming `--prefer` as the unblocker, and this is the adoption that comment
+  promised. It is also the first repo in the ratchet that had **no failure ledger at all** —
+  every best-effort install was `|| true` or an indented `echo`, and the script exited 0
+  regardless — so `blib_note_fail` now records the apk per-package misses, the three
+  upstream installers, seven musl cargo builds, the go installs and `op`, `blib_failures_report`
+  prints the tally, and a new `--strict` turns it into exit 1 like Debian, Fedora and Gentoo.
+  Its `test/check-root-probe.sh` gate, which extracted the root condition from `bootstrap.sh`
+  and evaluated it with `id` stubbed, now extracts it from the vendored lib's
+  `blib_resolve_su` instead — a Core sync that changed the rule changes what it evaluates —
+  and pins that `bootstrap.sh` delegates doas-first. The ledger lines in
+  `scripts/audit/40-fleet-registers.sh` add `dotfiles-Alpine` and the header figures move to
+  5/9. (`scripts/audit/40-fleet-registers.sh`, `V8-PROPOSAL.md`)
+
 - **openSUSE adopted the four `bootstrap-lib` helpers — the §5f rows read 4/9** (#973;
   dotgibson/dotfiles-openSUSE#183). The third repo in the ratchet, and the first whose ledger
   had its own contract to keep: `_report_failures` exits **2** (documented in `--help` and the
