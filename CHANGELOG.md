@@ -14,6 +14,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Defense is the first repo on the bootstrap driver — the §5f ledger records it** (#986;
+  dotgibson/dotfiles-Defense#292, after v7.4.0 vendored `blib_main` there). Its `bootstrap.sh`
+  now declares what it is and hands over to the driver, so `blib_main` gets its first ledger
+  entry and `blib_install_core_guard`, the row Defense had always been short on, is satisfied
+  by the driver installing the guard on a fresh clone. The scanner credits a `blib_main` caller
+  with the whole helper contract, so every other row it held stays `ok` with the names gone from
+  the file. (`scripts/audit/40-fleet-registers.sh`)
+
 ## [v7.4.0] - 2026-09-13
 
 ### Fixed
