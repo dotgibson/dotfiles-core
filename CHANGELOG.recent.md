@@ -5,10 +5,56 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.4.0 … v6.0.1), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.4.1 … v6.1.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.4.1] - 2026-09-13
+
+### Fixed
+
+- **`blib_main` always exports `BLIB_DRY` as 0 or 1, and `BOOTSTRAP_SU=lazy` also skips the
+  driver's sudo keepalive** (#990, #991 — two defects in #985, each found by the next adopter).
+  The driver exported `BLIB_DRY` only on a dry run, so a hook written `((BLIB_DRY)) || return 0`
+  — valid bash, clean under every linter — died with `unbound variable` under `set -u` on the
+  first REAL run: the stubbed full-provision CI leg, the one path a dry-run test cannot cover
+  (dotgibson/dotfiles-Debian#78's first run). And `lazy` told the driver not to resolve an
+  escalator but still wrapped `bootstrap_provision` in the keepalive, which would prime sudo
+  on a repo whose run may never need it (Offense without `--install`) and fail outright where
+  the escalator is not sudo. Both knobs are now always 0/1 and lazy means the hook owns
+  escalation end to end; the fixture in `scripts/test/37-bootstrap-driver.sh` reads
+  `BLIB_DRY` bare on purpose and runs a lazy case with `BLIB_SU` unset. (`lib/bootstrap-lib.sh`)
+
+### Changed
+
+- **openSUSE is on the bootstrap driver — the `blib_main` row reads 4/9** (#986;
+  dotgibson/dotfiles-openSUSE#186). The repo whose closing report exits 2 whenever an optional
+  install did not complete now declares that contract (`BOOTSTRAP_STRICT_DEFAULT=1`,
+  `BOOTSTRAP_FAIL_EXIT=2`, `--tolerate-failures` flipping the default off through
+  `bootstrap_flag`) instead of wrapping the driver's report in a private one; its OS check,
+  the `--only`/`--skip` exclusion and the links-only WSL note are `bootstrap_guard`, zypper
+  provisioning is `bootstrap_provision` with the body unchanged, and the Leap capability
+  re-link takes the pre-loader slot. 716 → 657 lines. (`scripts/audit/40-fleet-registers.sh`)
+
+- **Fedora and Debian are on the bootstrap driver — the `blib_main` row reads 3/9** (#986;
+  dotgibson/dotfiles-Fedora#181, dotgibson/dotfiles-Debian#78). The two the survey called the
+  driver's shape verbatim: each keeps its OS guard and preflight as `bootstrap_guard`, its
+  package phase as `bootstrap_provision` with the body unchanged, its dry-run preview as
+  `bootstrap_check`, and its own flags through `bootstrap_flag`; Debian also uses the
+  pre-loader slot for the distro tier's capability re-link and the closing hook for its
+  shadowed-tools report — the two slots the survey said had to exist. Fedora's `make check`
+  ran the vendored links gate through the driver on a Fedora box and a real `--dry-run`
+  printed the 38-package plan and wrote nothing. Together with Defense that is 753 + 962 + 270
+  → 660 + 876 + 205 lines. (`scripts/audit/40-fleet-registers.sh`)
+
+- **Defense is the first repo on the bootstrap driver — the §5f ledger records it** (#986;
+  dotgibson/dotfiles-Defense#292, after v7.4.0 vendored `blib_main` there). Its `bootstrap.sh`
+  now declares what it is and hands over to the driver, so `blib_main` gets its first ledger
+  entry and `blib_install_core_guard`, the row Defense had always been short on, is satisfied
+  by the driver installing the guard on a fresh clone. The scanner credits a `blib_main` caller
+  with the whole helper contract, so every other row it held stays `ok` with the names gone from
+  the file. (`scripts/audit/40-fleet-registers.sh`)
 
 ## [v7.4.0] - 2026-09-13
 
@@ -3106,137 +3152,3 @@ repo-meta and stays upstream:
   (#819). Dropping the declaration is a caller-visible break either way — it changes the
   `workflow_call` contract — so it is marked deprecated-and-ignored and comes out on the
   next MAJOR.
-
-## [v6.0.1] - 2026-09-01
-
-### Added
-
-- **`make audit` runs the cross-shell parity contract (§9f, #682).** `parity-check.sh`
-  ran only on `make parity-check` and a weekly cron, so a false or unenforced `PARITY.md`
-  row merged clean and sat until Monday — which is how the contract promised an `Alt+C`
-  dir-jump binding for years with the gate green the whole time. Its most valuable
-  assertion is Core-only (the coverage half reads `PARITY.md` and the `CHECKS` array,
-  both in this repo), so it belongs on the blocking path; the cross-repo half self-skips
-  without a sibling `dotfiles-Windows`, exactly like §9c, and the pass line says which
-  half actually ran rather than claiming "zsh + pwsh" on a box that opened no pwsh file.
-  Not scope-guarded, for §9d's reason: `PARITY.md` is a `*.md` file and inert to
-  `ci-classify.sh`, so the very push that adds an unenforced row arrives as `--scope none`.
-  The unassertable half is reported through a new `skip_note` class (`scripts/lib/common.sh`):
-  a plain `skip` counts as a missing TOOL, so `--strict` would have failed a
-  fully-provisioned box purely because the contract was being honest about a PSReadLine
-  default — and would have disagreed with `parity-check.sh --strict`, which accepts the same
-  reported default. A gate punished for reporting honestly teaches the next author to stop
-  reporting.
-
-### Fixed
-
-- **`scripts/parity-check.sh` proves its one-to-one claim instead of asserting it (#682).**
-  The script's own comment said it "mirrors PARITY.md's `aligned` rows one-to-one — every
-  aligned row has a check here", and `PARITY.md`'s Enforcement section repeated it. Both
-  were false: **21 aligned rows, 18 checks.** Three rows had no check at all
-  (**History search**, **Word nav**, and one row covering five functions) and two were only
-  half-checked, which is worse than none because the row renders green while half of it is
-  fiction — **Dir jump** claimed `Alt+Z` _and_ `Alt+C` while the needle tested only
-  `Alt+Z`, and **Fuzzy git** claimed `gaf`/`grf`/`grsf` while the needle tested only
-  `gaf`. Honest coverage was **16 of 21**. (#682 reported 17 checks, four unchecked rows
-  and 15 of 21 — one release stale: #679 had just added **Theme**'s check. The shape of
-  the defect was identical either way.) Every check now carries the row-key of the table
-  row it enforces, and the script parses `PARITY.md` to assert the mapping in both
-  directions: an `aligned` row with no needle fails, and so does a needle whose row was
-  renamed or deleted. (Reclassifying a row does _not_ orphan its check — every status
-  populates the known set, and `deliberate`/`gap` rows may keep one, as `cheat` now does.)
-  A slug collision fails too, since one row's check would otherwise silently certify
-  another's. Several checks may share a row-key, which is what lets the five utility
-  functions, the three fuzzy-git verbs and the two word-nav directions each get a needle
-  instead of one standing in for the set. Coverage is row-level, not claim-level — a row
-  that grows a second trigger is still not forced to grow a second needle, and
-  `parity-check.sh` says so rather than overclaiming a second time. Verified the only way
-  a gate can be — negatively, in `test-core.sh`: an uncovered row, an orphaned row-key, a
-  slug collision, a misspelled status and a reclassified-but-still-checked row each produce
-  the right verdict and exit code. The status check matters more than it looks: a typo like
-  `aligend` left the row in the known set (so its check was not orphaned) while dropping it
-  out of the required set, retiring a contract row from enforcement with the gate green.
-  So does the parser's column anchoring: a Markdown-legal row indented one space parsed as
-  nothing at all, so a new `aligned` row could sit there unenforced while the gate reported
-  full coverage. Up to three leading spaces is now a row (CommonMark's limit); four or more
-  is still an indented code block, and both directions are pinned.
-
-  Two needles also proved less than their rows claimed. `Ctrl+R` on pwsh is bound **twice**
-  on purpose — PSFzf's lazy stub, then a re-assertion after atuin's init seizes the chord —
-  and the two lines are identical but for whitespace, so a presence needle was satisfied by
-  either and deleting the re-assertion left the row green while atuin kept `Ctrl+R`. Needles
-  may now demand a minimum match count (`count:2:`), which is the only thing that separates
-  those two. And key-anchoring the **Session picker** row had dropped its pwsh _behaviour_
-  needle, so `Ctrl+G` bound to anything satisfied it; the chord and the target now get a
-  needle each under the shared row-key, rather than one replacing the other.
-
-  Two needles proved less than their rows claimed in a subtler way still. `count:2:` shows
-  both `Ctrl+R` bindings exist but says nothing about **where**, and the re-assertion only
-  means anything _below_ `atuin init` — atuin ignores `ATUIN_NOBIND` on pwsh and seizes the
-  chord on init. Hoisting both bindings above the anchor satisfied the count while breaking
-  the advertised behaviour at runtime, so needles may now also demand position
-  (`after:atuin init:`), which is the one property a count cannot express. And the word-nav
-  needles matched the `vicmd` bindings four lines below the `viins` ones, so deleting the
-  contractual insert-mode binding left the row green; every keybinding needle now pins its
-  keymap (`-M viins '…'`) rather than matching whichever copy survives.
-
-  Two more needles matched something adjacent to their claim rather than the claim.
-  `Invoke-DotfilesSessionizer` appears in `10-tools.ps1`'s `provides:` header and its own
-  function definition as well as in the `Ctrl+G` handler, so the Session picker's target
-  needle proved the function _existed_ and never that the chord invoked it — deleting the
-  handler body left both its checks green. It now needles the insertion expression. And pwsh
-  restores `Ctrl+R` on **two** runtime paths after atuin — the lazy path re-binds the
-  `-Chord` stub, the already-loaded path calls `Set-PsFzfOption` — so deleting the
-  already-loaded branch left the `-Chord` count at two and the position check passing while
-  atuin kept `Ctrl+R` on that path. Both paths are needled now, each for existence _and_
-  position — the already-loaded branch only means anything below `atuin init` too, so
-  hoisting it keeps the count at two and still fails.
-
-- **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
-  Found by doing the work above, since a contract nothing checks is a contract nothing
-  corrects. The three fail differently: one capability did not exist, one existed on both
-  shells but did different things, and one exists on pwsh only as a framework default.
-  **`Alt+C` never existed on either side** — the issue assumed pwsh had it via
-  PSFzf and zsh had drifted, but zsh never binds `^[c` and never sources fzf's own
-  key-bindings (there is no `eval "$(fzf --zsh)"` anywhere in `zsh/` or `lib/`), and
-  `dotfiles-Windows` sets only PSFzf's `-PSReadlineChordProvider` and
-  `-PSReadlineChordReverseHistory` — `-PSReadlineChordSetLocation` is opt-in and appears
-  nowhere in that repo. Not a divergence and not a `gap`; the claim is simply gone, and
-  the surviving `Alt+Z` needle is now key-anchored (`'^[z' _fzf_zoxide_jump`) like the
-  Ctrl+T row, because the bare widget name it used before passed even if the key moved —
-  as does **Session picker**'s, which had the same shape and was missed in the first pass.
-  **`cheat` is `deliberate`, not `aligned`** — zsh's is `alias cheat='core-help'`, Core's
-  own command index, while pwsh's queries cht.sh; same trigger, different source, and the
-  `alias cheat=` needle passed regardless of target. **Word nav** stays `aligned` but is
-  explicit that its pwsh half is a PSReadLine _default_, not configuration: nothing in
-  `dotfiles-Windows` binds Ctrl+Arrow, so that half reports as a skip carrying the reason
-  rather than a needle that cannot fail.
-
-- **`maint-run` no longer looks wedged while a step is working.** `step()` sent every
-  command's stdout and stderr to `$LOG` alone, while `log()` teed the `▶`/`✓`/`✗` lines to
-  the terminal. A foreground `maint-run` therefore printed `▶ mise upgrade` and then showed
-  **nothing at all** until the step ended. That is survivable when a step takes seconds; it
-  is not on musl, where mise's `all_compile` default (every prebuilt runtime being
-  glibc-linked) means `mise upgrade` COMPILES node/python/ruby from source — tens of minutes
-  of dead terminal, against a `MAINT_MISE_TIMEOUT` ceiling of 45 of them **per step**, three
-  mise steps deep. Nothing on screen separates "compiling V8" from "hung", so the operator
-  interrupts it; mise discards the partial build, nothing is installed, and the next run
-  starts the identical compile over. dotfiles-Alpine sat in that loop, rebuilding node
-  24.20.0 from scratch daily and never finishing it.
-
-  `step()` now MIRRORS the step to the terminal when stdout is a tty (`tee -a "$LOG"`), and
-  keeps the exact log-only path when it is not — so **the scheduled run is unchanged** and
-  only the interactive one gains output. Three properties are preserved deliberately:
-  `</dev/null` still hands every step an EOF (the guard the comment above `step()` explains);
-  the reported rc is `${PIPESTATUS[0]}`, the command's own status, not `tee`'s, because
-  `pipefail` would otherwise blame the step for a `tee` that died on a full disk; and stdout
-  is a pipe in the new arm and a file in the old — never a terminal — so a step that
-  colourizes on `isatty` still sees false and `$LOG` keeps the same clean text.
-
-- **The `mise outdated --bump` probe can no longer block on an invisible prompt.** It is the
-  one command in the run that is not a `step()` call, so it alone inherited the caller's
-  stdin — a terminal, under `maint-run` — while its stderr went to `/dev/null`. A mise that
-  decided to prompt there (an untrusted config path, a credential) asked a question nobody
-  could see and blocked until `MAINT_MISE_TIMEOUT` expired. It now takes `</dev/null` like
-  every other command in the file, which turns that into the fast non-zero rc the
-  "bump check UNAVAILABLE" gate directly below it already knows how to report.
