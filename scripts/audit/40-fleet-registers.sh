@@ -38,7 +38,8 @@
 #   blib_sudo_keepalive_start 7/9 (+2 exempt = 9/9 compliant) ·
 #   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) ·
 #   blib_note_fail 8/9 (+1 exempt = 9/9 compliant) · blib_failures_report 9/9 ·
-#   blib_wire_summary 8/9 · blib_install_core_guard 9/9 · BLIB_DRY 9/9 · blib_main 7/9
+#   blib_wire_summary 8/9 · blib_install_core_guard 9/9 · BLIB_DRY 9/9 ·
+#   blib_main 8/9 (+1 exempt = 9/9 compliant)
 #   (Defense piloted the driver, dotgibson/dotfiles-Defense#292; Fedora and Debian followed
 #   the same day — dotgibson/dotfiles-Fedora#181, dotgibson/dotfiles-Debian#78 — and openSUSE
 #   the next, dotgibson/dotfiles-openSUSE#186, declaring its exit-2-on-any-miss contract
@@ -46,9 +47,11 @@
 #   never installed, so blib_install_core_guard closes at 9/9. Offense and Gentoo followed on
 #   v7.4.2 — dotgibson/dotfiles-Offense#328, dotgibson/dotfiles-Gentoo#187 — the two on
 #   BOOTSTRAP_SU=lazy, where the hook owns escalation (#991); Arch on v7.4.2 too —
-#   dotgibson/dotfiles-Arch#174, its exit-1-on-any-miss declared. A blib_main caller is credited
-#   with the whole contract, since the driver calls every helper above. #986 ratchets the
-#   rest; MacBook stays outside by design.)
+#   dotgibson/dotfiles-Arch#174, its exit-1-on-any-miss declared; Alpine last,
+#   dotgibson/dotfiles-Alpine#194, doas-first declared. A blib_main caller is credited with
+#   the whole contract, since the driver calls every helper above. MacBook stays outside by
+#   design and is exempt with the reason in the case below — #986 is closed: every repo
+#   that can run on the driver does.)
 #   (the four 1/9 rows went 3/9 → 4/9 → 5/9 → 6/9 → 7/9 → 8/9 on 2026-09-13 as Debian and
 #   Fedora, openSUSE, Alpine, Arch, Offense and MacBook adopted, then Defense closed the
 #   last row: it adopts the report and is exempt from the other two with the reasons in
@@ -118,7 +121,7 @@ blib_failures_report     dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
 blib_wire_summary        dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 blib_install_core_guard  dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
 BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
-blib_main                dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
+blib_main                dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 '
   _ha_checked=0
   _ha_missing=0
@@ -164,10 +167,21 @@ blib_main                dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles
       # blib_resolve_su and blib_priv (dotfiles-MacBook#247). A background refresher loop
       # around one write would be theatre, so the row is exempt rather than adopted. If a
       # long privileged install ever appears there, the exemption goes the way Offense's did.
+      #
+      # dotfiles-MacBook is also the one repo OUTSIDE the driver (blib_main, #976/#986), by
+      # design rather than by lag. Its bootstrap has a CONSUMED surface the driver does not
+      # model and must not flatten: --json (machine-readable link plan, read by its own
+      # tests), --uninstall (walks the .pre-dotfiles backups back), --quiet, and an
+      # end-to-end reporting channel (warn_note beside the failure ledger, exit 3). It does
+      # not use blib_write_zshrc_loader either — its ZDOTDIR entry trio is its own — and it
+      # already calls the wiring helpers directly (dotfiles-MacBook#247), so every OTHER row
+      # here is satisfied by name. What the exemption asserts is narrow: no bootstrap.sh in
+      # the fleet is on the pre-driver shape by accident. If MacBook's surface ever shrinks
+      # to what blib_main covers, this line goes and the row reads 9/9.
       case "$_ha_repo:$_ha_h" in
       dotfiles-Defense:blib_sudo_keepalive_start | dotfiles-Defense:blib_user_bindirs_on_path | \
         dotfiles-Defense:blib_resolve_su | dotfiles-Defense:blib_note_fail | \
-        dotfiles-MacBook:blib_sudo_keepalive_start)
+        dotfiles-MacBook:blib_sudo_keepalive_start | dotfiles-MacBook:blib_main)
         continue
         ;;
       esac

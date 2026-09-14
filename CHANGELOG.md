@@ -16,6 +16,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Alpine is on the bootstrap driver, MacBook is exempt by design — the `blib_main` row
+  closes at 8/9 + 1 exempt** (closes #986; dotgibson/dotfiles-Alpine#194, on v7.4.2). Alpine
+  declares doas-first (`BOOTSTRAP_SU_PREFER=doas`) and the driver resolves with it; its
+  `~/.zshenv` ZDOTDIR shim takes the post-loader slot, and its root-probe test now pins the
+  declaration plus the hand-over instead of a literal `blib_resolve_su` call. MacBook's
+  `--json`/`--uninstall`/`--quiet` surface and its own reporting channel are a consumed
+  contract the driver does not model, so §5f records the exemption with that reason
+  rather than a gap — the assertion is that no bootstrap in the fleet is on the pre-driver
+  shape by accident. Eight repos run on the driver; the starter that `new-os-repo.sh`
+  writes is the one bootstrap still in the old shape (#999).
+  (`scripts/audit/40-fleet-registers.sh`)
+
 - **Arch is on the bootstrap driver — the `blib_main` row reads 7/9** (#986;
   dotgibson/dotfiles-Arch#174, on v7.4.2). The rolling-release repo declares its
   exit-1-on-any-miss contract (`BOOTSTRAP_STRICT_DEFAULT=1`) instead of hand-rolling it;
