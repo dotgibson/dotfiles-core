@@ -45,7 +45,9 @@ bootstrap_flag() {
   return 1
 }
 bootstrap_guard() { _log guard; }
-bootstrap_check() { ((DO_CHECK)) || return 0; _log check; }
+# `((BLIB_DRY))` BARE, on purpose: the fixture runs under set -u, so this line is the
+# regression test for a driver that leaves the knob unset on a real run (Debian#78).
+bootstrap_check() { ((DO_CHECK)) || return 0; ((BLIB_DRY)) && _log dry; _log check; }
 if [[ "${FIX_PROVISION:-0}" != 0 ]]; then
   bootstrap_provision() {
     _log provision
@@ -129,7 +131,7 @@ FIX
 
   # ── dry-run: probe yes, provisioning never, nothing written ────────────────
   FIX_PROVISION=1 _bd_run dry --dry-run
-  if [[ $BD_RC -eq 0 && "$BD_LOG" == "guard check wire_pre wire_post closing:0" && ! -e "$BD/config/zsh/85-defense.zsh" && ! -e "$BD/home/.zshrc" ]]; then
+  if [[ $BD_RC -eq 0 && "$BD_LOG" == "guard dry check wire_pre wire_post closing:0" && ! -e "$BD/config/zsh/85-defense.zsh" && ! -e "$BD/home/.zshrc" ]]; then
     pass "driver: --dry-run runs the probe, skips provisioning, and writes nothing"
   else
     fail "driver: --dry-run (rc=$BD_RC, log='$BD_LOG', wrote something under $BD/config/zsh)"

@@ -1641,8 +1641,9 @@ HOOK
 # runs the probe (report-only), and skips provisioning. --strict turns a non-empty failure
 # tally into exit BOOTSTRAP_FAIL_EXIT (1); misses are listed either way. Unknown flag: 2.
 #
-# EXPORTED for the hooks: BLIB_LINKS_ONLY, BLIB_STRICT, BLIB_DRY (already the lib's own
-# switch), BLIB_SU. Exit: 0 clean, 1 a hook refused or --strict with misses, 2 usage.
+# EXPORTED for the hooks, always as 0 or 1 so a bare `((BLIB_DRY))` is safe under `set -u`:
+# BLIB_DRY (the lib's own switch), BLIB_LINKS_ONLY, BLIB_STRICT; and BLIB_SU when resolved.
+# Exit: 0 clean, 1 a hook refused or --strict with misses, 2 usage.
 #
 # NOT here, deliberately: --json, --uninstall, --quiet — MacBook's own surface, and the
 # reason MacBook is the one bootstrap this driver does not aim to absorb (its report is
@@ -1717,8 +1718,13 @@ blib_main() {
   # Re-read after the parse: a bootstrap_flag may have declared the policy (a
   # `--tolerate-failures` that flips it off, say), and the declaration wins over the default.
   ((_bm_strict)) || _bm_strict="${BOOTSTRAP_STRICT_DEFAULT:-0}"
-  ((_bm_dry)) && export BLIB_DRY=1
-  export BLIB_LINKS_ONLY="$_bm_links" BLIB_STRICT="$_bm_strict"
+  # Always exported as 0 or 1, never left unset: a hook written `((BLIB_DRY)) || return 0`
+  # is valid bash and passes every linter, and under `set -u` it dies on the first REAL
+  # run — the exact leg (a stubbed full provision in CI) the dry-run test cannot cover.
+  # Found on dotgibson/dotfiles-Debian#78's first CI run; the driver now makes the knob
+  # safe to read bare, and BLIB_LINKS_ONLY / BLIB_STRICT are 0/1 for the same reason.
+  ((_bm_dry)) && BLIB_DRY=1
+  export BLIB_DRY="${BLIB_DRY:-0}" BLIB_LINKS_ONLY="$_bm_links" BLIB_STRICT="$_bm_strict"
   # blib_select aborts the run itself on a malformed selector — called directly, never in
   # a subshell, so that exit is the bootstrap's.
   [[ -n "$_bm_only" ]] && blib_select --only "$_bm_only"
