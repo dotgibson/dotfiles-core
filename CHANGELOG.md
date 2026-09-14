@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+### Fixed
+
+- **The `~/.zshrc` loader's backup is counted** (#1026). `blib_write_zshrc_loader` backed up
+  a pre-existing real `~/.zshrc` and warned about it, but never bumped `BLIB_BACKED`, so the
+  closing tally said `0 backed up` on the same run that printed the backup (the R3 research
+  run on Fedora exposed it). Every backup site now counts; the bootstrap-lib suite asserts it.
+
 ## [v7.5.0] - 2026-09-14
 
 ### Added
