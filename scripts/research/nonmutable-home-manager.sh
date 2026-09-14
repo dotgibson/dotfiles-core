@@ -50,14 +50,17 @@ cfg="${XDG_CONFIG_HOME:-$HOME/.config}"
 # path says which), or a real file.
 inventory() {
   say "### $1"; say ""; say '```text'
-  local p t kind
+  local p t kind shape managed
   for p in "$HOME/.zshenv" "$HOME/.zshrc" "$HOME/.gitconfig" "$cfg/zsh/.zshrc" "$cfg/zsh/.zprofile" "$cfg/zsh/loader.zsh" "$cfg/zsh/00-tools.zsh" "$cfg/zsh/80-os.zsh" "$cfg/zsh/os.capabilities" "$cfg/nvim" "$cfg/tmux/tmux.conf" "$cfg/tmux/plugins/tpm" "$cfg/starship.toml" "$cfg/mise/config.toml"; do
     if [[ -L "$p" ]]; then
       t="$(readlink "$p")"
       case "$t" in /nix/store/*) kind="store   " ;; *) kind="outstore" ;; esac
       printf '%-9s %-42s -> %s\n' "$kind" "${p/#$HOME/~}" "$t" >>"$out"
     elif [[ -e "$p" ]]; then
-      printf '%-9s %-42s (real %s%s)\n' "real     " "${p/#$HOME/~}" "$([[ -d "$p" ]] && echo dir || echo file)" "$([[ -f "$p" ]] && grep -q 'dotfiles-managed v4' "$p" 2>/dev/null && echo ', Core managed loader' || true)" >>"$out"
+      shape='file'; [[ -d "$p" ]] && shape='dir'
+      managed=''
+      if [[ -f "$p" ]] && grep -q 'dotfiles-managed v4' "$p" 2>/dev/null; then managed=', Core managed loader'; fi
+      printf '%-9s %-42s (real %s%s)\n' "real     " "${p/#$HOME/~}" "$shape" "$managed" >>"$out"
     else
       printf '%-9s %-42s\n' "absent   " "${p/#$HOME/~}" >>"$out"
     fi
