@@ -11,8 +11,14 @@
 #              microos   — openSUSE MicroOS / Aeon lineage. Runs dotfiles-openSUSE.
 #              nixos     — NixOS. Runs a repo scaffolded by scripts/new-os-repo.sh (there
 #                          is no dotfiles-NixOS yet), with this Core seeded as its core/.
-#   --out DIR  where the report goes (default: research-out/<target>.md)
-#   --repo-ref the fleet repo ref to run (default: main)
+#   --out FILE  where the report goes (default: research-out/<target>.md)
+#   --repo-ref  the fleet repo ref to run (default: main)
+#   --repo-dir  run THIS checkout instead of cloning or scaffolding one — how the VM legs
+#               hand a repo prepared on the runner (a scaffolded dotfiles-NixOS with Core
+#               seeded, say) to a guest that has no Core checkout of its own
+#   --as-user   run the bootstrap as the calling user with the escalator RESOLVED (BLIB_SU
+#               unset) rather than as root with BLIB_SU= — the realistic path on a booted
+#               host, where sudo is what the driver would find
 #
 # WHAT IT MEASURES, in order, each recorded as it happens:
 #   1. what the host is: os-release, the update tooling present, which of /usr /etc /var
@@ -41,11 +47,13 @@
 set -uo pipefail
 
 target="${1:-}"; shift || true
-out=""; repo_ref="main"
+out=""; repo_ref="main"; repo_dir=""; as_user=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --out) out="$2"; shift 2 ;;
   --repo-ref) repo_ref="$2"; shift 2 ;;
+  --repo-dir) repo_dir="$2"; shift 2 ;;
+  --as-user) as_user=1; shift ;;
   *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -141,7 +149,11 @@ nixos)
 esac
 
 h2 "2. The repo"
-if [[ "$repo" == SCAFFOLD ]]; then
+if [[ -n "$repo_dir" ]]; then
+  say "Using the prepared checkout \`$repo_dir\` (--repo-dir)."
+  rdir="$repo_dir"
+  say "- vendored Core: \`$(cat "$rdir/core/core.version" 2>/dev/null || echo '?')\` (core.lock: $(grep -m1 '^core_tag' "$rdir/core.lock" 2>/dev/null || echo 'none'))"
+elif [[ "$repo" == SCAFFOLD ]]; then
   say "No \`dotfiles-NixOS\` exists; scaffolding one with \`scripts/new-os-repo.sh --no-vendor NixOS\` and seeding THIS Core as its \`core/\` (the same seeding \`scripts/test/35-new-os-repo.sh\` does)."
   rdir="$work/dotfiles-NixOS"
   run "scaffold" env -u CORE_JSON bash "$HERE/scripts/new-os-repo.sh" --no-vendor NixOS "$rdir"
@@ -158,13 +170,19 @@ fi
 cd "$rdir" || { say "**could not enter the repo dir — stopping**"; exit 0; }
 say "- bootstrap.sh hands over to the driver: $(grep -qE '^\s*blib_main\s+"\$@"' bootstrap.sh && echo yes || echo NO)"
 
-h2 "3. Probe-only paths (throwaway HOME, BLIB_SU= as root)"
+# How every bootstrap below is invoked. Default: BLIB_SU= (root inside an image, or root
+# in a guest). --as-user: leave BLIB_SU unset so the driver resolves the escalator the way
+# a person's run would — that is the realistic path on a booted host.
+if ((as_user)); then su_env=(); su_note="escalator resolved by the driver (--as-user)"; else su_env=(BLIB_SU=); su_note="BLIB_SU= (no escalator; uid $(id -u))"; fi
+bs() { env HOME="$1" XDG_CONFIG_HOME="$1/.config" "${su_env[@]}" ./bootstrap.sh "${@:2}"; }
+
+h2 "3. Probe-only paths (throwaway HOME; $su_note)"
 home="$work/home"; mkdir -p "$home/.config/tmux/plugins/tpm"   # tpm placeholder: no network needed for links
-run "--help" env HOME="$home" XDG_CONFIG_HOME="$home/.config" BLIB_SU= ./bootstrap.sh --help
-run "--links-only" env HOME="$home" XDG_CONFIG_HOME="$home/.config" BLIB_SU= ./bootstrap.sh --links-only
+run "--help" bs "$home" --help
+run "--links-only" bs "$home" --links-only
 say "- links made under the throwaway HOME: $(find "$home" -type l 2>/dev/null | wc -l | tr -d ' '); managed ~/.zshrc: $([[ -f "$home/.zshrc" ]] && grep -q 'dotfiles-managed v4' "$home/.zshrc" && echo yes || echo no)"
 home2="$work/home-dry"; mkdir -p "$home2"
-run "--dry-run" env HOME="$home2" XDG_CONFIG_HOME="$home2/.config" BLIB_SU= ./bootstrap.sh --dry-run
+run "--dry-run" bs "$home2" --dry-run
 if [[ -z "$(find "$home2" -mindepth 1 -print 2>/dev/null | head -1)" ]]; then
   say "- --dry-run wrote into HOME: nothing"
 else
@@ -172,9 +190,9 @@ else
 fi
 
 h2 "4. The real run (this is the measurement)"
-say "Run as root with \`BLIB_SU=\` so the escalator resolves to nothing; the provisioning verb is whatever the repo declares. On a container this is the image-build context, not a booted host — read §1 before trusting a green here."
+say "Invoked with $su_note; the provisioning verb is whatever the repo declares. On a container this is the image-build context, not a booted host — read §1 before trusting a green here."
 home3="$work/home-real"; mkdir -p "$home3/.config/tmux/plugins/tpm"
-run "full run" env HOME="$home3" XDG_CONFIG_HOME="$home3/.config" BLIB_SU= ./bootstrap.sh
+run "full run" bs "$home3"
 say "- login shell now: $(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7 || awk -F: -v u="$(id -un)" '$1==u{print $7}' /etc/passwd)"
 say "- /etc/shells now: $([[ -f /etc/shells ]] && tr '\n' ' ' </etc/shells || echo absent)"
 say "- tools on PATH after the run: $(for t in zsh tmux nvim git starship atuin mise yazi; do command -v $t >/dev/null 2>&1 && printf '%s ' "$t"; done)"

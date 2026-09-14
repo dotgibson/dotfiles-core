@@ -1,0 +1,275 @@
+# .github/workflows/research-nonmutable-vm.yml
+# ──────────────────────────────────────────────────────────────────────────────
+# R1 of NON-MUTABLE-HOST-PROPOSAL.md §5 (#1004), RUNG TWO: booted hosts. The container
+# legs (research-nonmutable.yml) showed that every update verb refuses outside a booted
+# system and that MicroOS has no container image at all — so the measurement that
+# matters happens here, in a VM per target family, on `ubuntu-latest`'s KVM:
+#
+#   bootc    — build a bootc disk image from quay.io/fedora/fedora-bootc:42 with
+#              bootc-image-builder (git, zsh and a NOPASSWD wheel user layered in), boot
+#              it under QEMU/KVM, ssh in, run scripts/research/nonmutable-host.sh bootc.
+#   microos  — boot openSUSE MicroOS's OpenStack-Cloud qcow2 with a cloud-init seed, ssh
+#              in, `transactional-update pkg in git zsh` + REBOOT (that round trip IS the
+#              first measurement), then run the script.
+#   nixos    — `nixos-rebuild build-vm` from a minimal configuration.nix (sshd, the key,
+#              git, zsh), run the VM it produces, ship a scaffolded dotfiles-NixOS in, run
+#              the script with --repo-dir.
+#
+# Each leg is `continue-on-error`: a leg that cannot boot is a finding about the harness,
+# not about the target, and the other two must still report. Manual only; never a gate.
+name: research-nonmutable-vm
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Space-separated subset of: bootc microos nixos (blank = all three)"
+        required: false
+        default: ""
+      repo_ref:
+        description: "Fleet repo ref to run (dotfiles-Fedora / dotfiles-openSUSE)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      bootc: ${{ steps.m.outputs.bootc }}
+      microos: ${{ steps.m.outputs.microos }}
+      nixos: ${{ steps.m.outputs.nixos }}
+    steps:
+      - id: m
+        env:
+          TARGETS: ${{ github.event.inputs.targets }}
+        run: |
+          want="${TARGETS:-bootc microos nixos}"
+          for t in bootc microos nixos; do
+            case " $want " in *" $t "*) echo "$t=true" >>"$GITHUB_OUTPUT" ;; *) echo "$t=false" >>"$GITHUB_OUTPUT" ;; esac
+          done
+
+  bootc:
+    needs: plan
+    if: needs.plan.outputs.bootc == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: KVM + QEMU + podman on the runner
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils podman >/dev/null
+          ls -la /dev/kvm; qemu-system-x86_64 --version | head -1
+          ssh-keygen -t ed25519 -N '' -f /tmp/research_key -q
+      - name: Build the bootc disk (git + zsh + a NOPASSWD wheel user layered in)
+        run: |
+          set -euo pipefail
+          mkdir -p bib && cd bib
+          cat >Containerfile <<'EOF'
+          FROM quay.io/fedora/fedora-bootc:42
+          RUN dnf -y install --setopt=install_weak_deps=False git zsh findutils util-linux shadow-utils && dnf clean all
+          RUN echo '%wheel ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/wheel-nopasswd && chmod 0440 /etc/sudoers.d/wheel-nopasswd
+          EOF
+          cat >config.toml <<EOF
+          [[customizations.user]]
+          name = "research"
+          password = "research"
+          key = "$(cat /tmp/research_key.pub)"
+          groups = ["wheel"]
+          EOF
+          sudo podman build -q -t localhost/research-bootc:latest -f Containerfile .
+          mkdir -p output
+          sudo podman run --rm --privileged --pull=newer --security-opt label=type:unconfined_t \
+            -v "$PWD/config.toml:/config.toml:ro" -v "$PWD/output:/output" \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            quay.io/centos-bootc/bootc-image-builder:latest --type qcow2 --local localhost/research-bootc:latest
+          sudo chown -R "$(id -u):$(id -g)" output
+          ls -la output/qcow2
+      - name: Boot it and run the probe over ssh
+        env:
+          REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
+          sshr() { ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key "$@"; }
+          scpr() { scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key "$@"; }
+          mkdir -p research-out
+          qemu-system-x86_64 -enable-kvm -cpu host -m 4096 -smp 2 \
+            -drive file=bib/output/qcow2/disk.qcow2,if=virtio,format=qcow2 \
+            -nic user,model=virtio,hostfwd=tcp::2222-:22 -nographic -serial file:bootc-serial.log -display none &
+          for _ in $(seq 1 60); do sshr -p 2222 research@localhost true 2>/dev/null && break; sleep 5; done
+          sshr -p 2222 research@localhost true || { echo "no ssh after 5 min"; tail -40 bootc-serial.log; exit 1; }
+          scpr -P 2222 scripts/research/nonmutable-host.sh research@localhost:/tmp/nonmutable-host.sh
+          # Two passes: as the user with sudo resolved (the realistic one), then as root.
+          sshr -p 2222 research@localhost "bash /tmp/nonmutable-host.sh bootc --as-user --repo-ref '$REPO_REF' --out /tmp/bootc-user.md" || true
+          sshr -p 2222 research@localhost "sudo bash /tmp/nonmutable-host.sh bootc --repo-ref '$REPO_REF' --out /tmp/bootc-root.md" || true
+          scpr -P 2222 research@localhost:/tmp/bootc-user.md research-out/bootc-vm-user.md || true
+          scpr -P 2222 research@localhost:/tmp/bootc-root.md research-out/bootc-vm-root.md || true
+          ls -la research-out
+      - name: Summary + artifact
+        if: always()
+        run: |
+          for f in research-out/*.md; do [ -f "$f" ] && cat "$f" >>"$GITHUB_STEP_SUMMARY"; done; true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: r1-vm-bootc
+          path: |
+            research-out/
+            bootc-serial.log
+          retention-days: 30
+          if-no-files-found: warn
+
+  microos:
+    needs: plan
+    if: needs.plan.outputs.microos == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: KVM + QEMU + cloud-init tools on the runner
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils >/dev/null
+          ssh-keygen -t ed25519 -N '' -f /tmp/research_key -q
+      - name: Fetch the MicroOS cloud image and seed cloud-init
+        run: |
+          set -euo pipefail
+          curl -fsSL -o microos.qcow2 https://download.opensuse.org/tumbleweed/appliances/openSUSE-MicroOS.x86_64-ContainerHost-OpenStack-Cloud.qcow2
+          qemu-img resize microos.qcow2 20G
+          cat >user-data <<EOF
+          #cloud-config
+          disable_root: false
+          ssh_pwauth: false
+          ssh_authorized_keys:
+            - $(cat /tmp/research_key.pub)
+          EOF
+          printf 'instance-id: research-microos\nlocal-hostname: microos\n' >meta-data
+          cloud-localds seed.iso user-data meta-data
+      - name: Boot, install git+zsh transactionally (reboot), run the probe over ssh
+        env:
+          REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
+          sshr() { ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key "$@"; }
+          scpr() { scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key "$@"; }
+          mkdir -p research-out
+          boot() {
+            qemu-system-x86_64 -enable-kvm -cpu host -m 4096 -smp 2 \
+              -drive file=microos.qcow2,if=virtio,format=qcow2 -drive file=seed.iso,if=virtio,format=raw \
+              -nic user,model=virtio,hostfwd=tcp::2223-:22 -nographic -serial file:microos-serial.log -display none &
+          }
+          wait_ssh() { for _ in $(seq 1 60); do sshr -p 2223 root@localhost true 2>/dev/null && return 0; sleep 5; done; return 1; }
+          boot; wait_ssh || { echo "no ssh after 5 min"; tail -40 microos-serial.log; exit 1; }
+          {
+            echo "# MicroOS VM: the prep round trip (this is a measurement too)"
+            echo; echo '```text'
+            # shellcheck disable=SC2016  # the $? is the GUEST's, expanded there
+            sshr -p 2223 root@localhost 'cat /etc/os-release | grep -E "^(ID|VARIANT_ID|VERSION_ID)="; findmnt -no FSTYPE,OPTIONS /; transactional-update --version; time transactional-update -n pkg install git zsh findutils util-linux shadow; echo "transactional-update exit=$?"; command -v git zsh || echo "git/zsh NOT visible before reboot (expected)"' 2>&1 || true
+            echo '```'
+          } >research-out/microos-vm-prep.md
+          sshr -p 2223 root@localhost 'systemctl reboot' 2>/dev/null || true
+          sleep 20; wait_ssh || { echo "no ssh after reboot"; tail -40 microos-serial.log; exit 1; }
+          echo "- after reboot, command -v git zsh: $(sshr -p 2223 root@localhost 'command -v git zsh | tr "\n" " "' 2>/dev/null)" >>research-out/microos-vm-prep.md
+          scpr -P 2223 scripts/research/nonmutable-host.sh root@localhost:/tmp/nonmutable-host.sh
+          sshr -p 2223 root@localhost "bash /tmp/nonmutable-host.sh microos --repo-ref '$REPO_REF' --out /tmp/microos-root.md" || true
+          scpr -P 2223 root@localhost:/tmp/microos-root.md research-out/microos-vm-root.md || true
+          ls -la research-out
+      - name: Summary + artifact
+        if: always()
+        run: |
+          for f in research-out/*.md; do [ -f "$f" ] && cat "$f" >>"$GITHUB_STEP_SUMMARY"; done; true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: r1-vm-microos
+          path: |
+            research-out/
+            microos-serial.log
+          retention-days: 30
+          if-no-files-found: warn
+
+  nixos:
+    needs: plan
+    if: needs.plan.outputs.nixos == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: KVM + nix on the runner
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 >/dev/null
+          curl -fsSL https://install.determinate.systems/nix | sh -s -- install linux --no-confirm --init none >/dev/null 2>&1
+          ssh-keygen -t ed25519 -N '' -f /tmp/research_key -q
+      - name: Build the NixOS VM (sshd + key, git, zsh) and scaffold dotfiles-NixOS on the runner
+        run: |
+          set -euo pipefail
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+          cat >configuration.nix <<EOF
+          { pkgs, ... }: {
+            services.openssh.enable = true;
+            services.openssh.settings.PermitRootLogin = "prohibit-password";
+            users.users.root.openssh.authorizedKeys.keys = [ "$(cat /tmp/research_key.pub)" ];
+            environment.systemPackages = with pkgs; [ git zsh findutils util-linux shadow ];
+            programs.zsh.enable = true;
+            virtualisation.vmVariant.virtualisation = { memorySize = 3072; cores = 2; graphics = false; forwardPorts = [ { from = "host"; host.port = 2224; guest.port = 22; } ]; };
+            system.stateVersion = "25.05";
+          }
+          EOF
+          nix-build '<nixpkgs/nixos>' -A vm -I nixos-config=./configuration.nix -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz -o nixos-vm 2>&1 | tail -3
+          ls nixos-vm/bin
+          # The repo the guest will run: scaffolded HERE (the guest has no Core checkout).
+          env -u CORE_JSON bash scripts/new-os-repo.sh --no-vendor NixOS /tmp/dotfiles-NixOS >/dev/null 2>&1
+          mkdir -p /tmp/dotfiles-NixOS/core/scripts/lib
+          for d in zsh tmux starship nvim git mise lib bin; do [ -d "$d" ] && cp -r "$d" /tmp/dotfiles-NixOS/core/; done
+          cp scripts/lib/common.sh /tmp/dotfiles-NixOS/core/scripts/lib/; cp core.version /tmp/dotfiles-NixOS/core/
+          tar -C /tmp -czf dotfiles-NixOS.tgz dotfiles-NixOS
+      - name: Boot it and run the probe over ssh
+        run: |
+          set -euo pipefail
+          # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
+          sshr() { ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key "$@"; }
+          scpr() { scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key "$@"; }
+          mkdir -p research-out
+          set -- nixos-vm/bin/run-*-vm; vm="$1"
+          QEMU_OPTS="-nographic -serial file:nixos-serial.log" "$vm" >/dev/null 2>&1 &
+          for _ in $(seq 1 60); do sshr -p 2224 root@localhost true 2>/dev/null && break; sleep 5; done
+          sshr -p 2224 root@localhost true || { echo "no ssh after 5 min"; tail -40 nixos-serial.log 2>/dev/null; exit 1; }
+          scpr -P 2224 scripts/research/nonmutable-host.sh dotfiles-NixOS.tgz root@localhost:/tmp/
+          sshr -p 2224 root@localhost 'cd /tmp && tar xzf dotfiles-NixOS.tgz && cd dotfiles-NixOS && git init -q && git add -A >/dev/null 2>&1 && git -c user.email=r@x -c user.name=r commit -q -m seed >/dev/null 2>&1; bash /tmp/nonmutable-host.sh nixos --repo-dir /tmp/dotfiles-NixOS --out /tmp/nixos-root.md' || true
+          scpr -P 2224 root@localhost:/tmp/nixos-root.md research-out/nixos-vm-root.md || true
+          ls -la research-out
+      - name: Summary + artifact
+        if: always()
+        run: |
+          for f in research-out/*.md; do [ -f "$f" ] && cat "$f" >>"$GITHUB_STEP_SUMMARY"; done; true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: r1-vm-nixos
+          path: |
+            research-out/
+            nixos-serial.log
+          retention-days: 30
+          if-no-files-found: warn
