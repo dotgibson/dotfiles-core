@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v7.4.2] - 2026-09-13
+
 ### Fixed
 
 - **openSUSE is recorded on the `blib_install_core_guard` row — the row closes at 9/9** (#986;
