@@ -36,6 +36,7 @@ permissions:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
     steps:
@@ -62,6 +63,9 @@ jobs:
   probe:
     needs: plan
     runs-on: ubuntu-latest
+    # A real run installs packages inside the image; the bootc leg's dnf and the nix leg's
+    # nix-env are the slow ones. Generous, but bounded — this is research, not a gate.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
