@@ -46,6 +46,11 @@ PKG_PENDING_FIELD=3
 
 # ── the staged change becomes live (prototype) ────────────────────────────────
 PKG_APPLY=sudo systemctl reboot
+# R5 (measured): transactional-update touches /run/reboot-needed when it closes a
+# snapshot; a user can test it (0.0 s, exit 0 = staged). rebootmgrctl says the same
+# ("Status: Reboot not requested" / requested) at the same cost. `snapper list` and
+# `btrfs subvolume get-default` are root-only.
+PKG_APPLY_PENDING=test -e /run/reboot-needed
 
 # ── scheduler (required) ──────────────────────────────────────────────────────
 SCHEDULER=systemd

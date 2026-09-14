@@ -12,6 +12,17 @@
   (118 + 18 and 65 + 10 lines; NixOS stays a new repo). The `trailing-whitespace`
   pre-commit hook now leaves `*.patch` alone — a blank diff context line is a lone space.
 
+- **`PKG_APPLY_PENDING` / `PKG_APPLY_PENDING_EXIT`, the staged-change probe, for the
+  non-mutable host research** (R5 of `NON-MUTABLE-HOST-PROPOSAL.md`, #1004).
+  `scripts/check-capabilities.sh` accepts the pair (optional; the probe needs `PKG_APPLY`
+  beside it, the exit is 1–255) and lets `PKG_COUNT_PENDING` be absent when it is
+  declared — on an atomic host the "is there something newer" verb is root-only
+  (measured), so the nudge reports the staged state instead. Read by no consumer yet; the
+  bootc and MicroOS prototypes under `scripts/research/nonmutable/` declare it. Also the R5
+  harness (`scripts/research/nonmutable-r5.sh`, the VM legs' `r5=true`, a registry-backed
+  bootc origin). (`scripts/check-capabilities.sh`, `examples/os.capabilities.example`,
+  `scripts/test/55-capabilities.sh`)
+
 ### Fixed
 
 - **The `~/.zshrc` loader's backup is counted** (#1026). `blib_write_zshrc_loader` backed up

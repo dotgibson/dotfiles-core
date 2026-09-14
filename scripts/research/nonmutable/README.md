@@ -85,7 +85,13 @@ The major this proposal was written to plan does not come from the schema.
   two added, two gone — 10 lines). Small, but not "a line or two": the variant shape
   (one repo, a second declaration selected by `VARIANT_ID`/`ID`) is where this points,
   and R4 still diffs the bootstrap hooks before it decides.
-- **The consumer change list** (R5/R6, and the proposal's §4 rewrite): `up` prints
+- **R5** (`up` and the maint runner) — answered, in the proposal's §5 R5 findings: two
+  keys for two questions. `bootc.capabilities` drops its count verb (the AVAILABLE
+  question is root-only on an atomic host, measured) and declares
+  `PKG_APPLY_PENDING=rpm-ostree status --pending-exit-77` / `_EXIT=77`;
+  `microos.capabilities` keeps `zypper -q lu` and adds `PKG_APPLY_PENDING=test -e
+  /run/reboot-needed`. The validator accepts the pair.
+- **The consumer change list** (R5's, and the proposal's §4 rewrite): `up` prints
   `PKG_APPLY` after a staged upgrade and counts by exit status when
   `PKG_PENDING_EXIT_*` is declared; `core-doctor`'s install hint says "layered — reboot to
   use" / "or declare it"; the driver's provision hook runs, then says the same; the maint

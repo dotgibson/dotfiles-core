@@ -1,6 +1,6 @@
 # R4 prototype patch for dotgibson/dotfiles-Fedora — NOT a shipped change (NON-MUTABLE-HOST-PROPOSAL.md §5 R4, #1004).
 # Base: abf4e6a977d496becc52bc5a0f7d72e6f90fd3e2 (origin/main on 2026-09-14). Applied by scripts/research/nonmutable-variant.sh on a booted guest.
-# Iteration 2: base-provided names dropped before layering; --continue on every transactional-update; key import routed around the read-only rpmdb.
+# Iteration 2 (R4) + the R5 keys in the declaration (PKG_APPLY_PENDING).
 diff --git i/bootstrap.sh w/bootstrap.sh
 index f9a25d65..6f1eb74d 100755
 --- i/bootstrap.sh
@@ -244,10 +244,10 @@ index f9a25d65..6f1eb74d 100755
  blib_main "$@"
 diff --git i/os/fedora.atomic.capabilities w/os/fedora.atomic.capabilities
 new file mode 100644
-index 00000000..51465c60
+index 00000000..0cf37209
 --- /dev/null
 +++ w/os/fedora.atomic.capabilities
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,37 @@
 +# os/fedora.atomic.capabilities — the ATOMIC edition's declaration (Silverblue, Kinoite,
 +# any bootc host). Selected by bootstrap.sh's bootstrap_wire_pre_loader when
 +# /run/ostree-booted exists; os/fedora.capabilities stays the dnf one. Read by Core's
@@ -256,8 +256,8 @@ index 00000000..51465c60
 +# What differs from the dnf declaration, and why (measured on fedora-bootc:42):
 +#   · install and upgrade STAGE a new deployment; nothing is live until PKG_APPLY.
 +#     `dnf install` resolves and then refuses ("configured to be read-only").
-+#   · "packages pending" is one staged deployment, answered by an exit status (77),
-+#     not a line list — PKG_PENDING_EXIT_SOME says so; no PKG_PENDING_MATCH.
++#   · "is a change staged?" is answered by an exit status (77) — PKG_APPLY_PENDING (R5);
++#     "is there something newer?" has no unprivileged verb, so no PKG_COUNT_PENDING.
 +#   · no PKG_ASSUME_YES (nothing prompts), no PKG_UPGRADE_PARTIAL (the image updates as
 +#     a whole). MAINT_UNATTENDED_UPGRADE stays: a staged upgrade is inert until the
 +#     operator reboots, so unattended staging is SAFER than a mutable upgrade.
@@ -271,8 +271,10 @@ index 00000000..51465c60
 +PKG_REMOVE=sudo rpm-ostree uninstall
 +PKG_SEARCH=dnf search
 +PKG_OWNS=rpm -qf
-+PKG_COUNT_PENDING=rpm-ostree status --pending-exit-77
-+PKG_PENDING_EXIT_SOME=77
++# R5: no count verb — the AVAILABLE question is root-only here (measured); the maint
++# runner's unattended `rpm-ostree upgrade` asks it, the nudge reports the STAGED state.
++PKG_APPLY_PENDING=rpm-ostree status --pending-exit-77
++PKG_APPLY_PENDING_EXIT=77
 +
 +# ── the staged change becomes live ────────────────────────────────────────────
 +PKG_APPLY=sudo systemctl reboot
