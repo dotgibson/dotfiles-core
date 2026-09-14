@@ -9,7 +9,7 @@
   apply" line); `scripts/research/nonmutable-variant.sh` applies and runs them on the
   booted guests, and `research-nonmutable-vm.yml`'s `r4=true` input drives the run,
   reboot and re-run. Measured verdict, in `NON-MUTABLE-HOST-PROPOSAL.md` §5: **variant**
-  (118 + 18 and 63 + 10 lines; NixOS stays a new repo). The `trailing-whitespace`
+  (118 + 18 and 65 + 10 lines; NixOS stays a new repo). The `trailing-whitespace`
   pre-commit hook now leaves `*.patch` alone — a blank diff context line is a lone space.
 
 ### Fixed

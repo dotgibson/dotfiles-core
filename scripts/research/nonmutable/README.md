@@ -74,7 +74,7 @@ The major this proposal was written to plan does not come from the schema.
   home-manager box `core-doctor`'s hint says "add it to `home.packages`".
 - **R4** (repo shape) — answered: **variant**. The bootstrap half is a pair of real
   patches under `r4/` (`dotfiles-Fedora.patch`: 118 code lines in `bootstrap.sh` + the
-  18-line declaration delta; `dotfiles-openSUSE.patch`: 63 + 10, after the two iterations
+  18-line declaration delta; `dotfiles-openSUSE.patch`: 65 + 10, after the two iterations
   the guests asked for), applied and run on the booted guests by
   `../nonmutable-variant.sh`; the proposal's §5 R4 findings carry the measurement and the
   verdict. The declaration half was measured here first: against the fleet's own files (comment-stripped, sorted,

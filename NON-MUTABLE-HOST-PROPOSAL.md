@@ -6,7 +6,7 @@
 > validated), R3 has its answer (coexist: home-manager owns packages and the shell
 > declaration, the driver owns every link and the entry — measured on both hosts), R4
 > has its answer (variant: the existing repo grows a second declaration and a staging
-> path, 118 + 18 and 63 + 10 lines, run on both guests; NixOS is a new repo);
+> path, 118 + 18 and 65 + 10 lines, run on both guests; NixOS is a new repo);
 > R5–R6 are open.** This is the planning document for the
 > roadmap milestone *"the non-mutable host"* — the one theme on the roadmap with an
 > external forcing function rather than an internal cleanup. `V8-PROPOSAL.md` §10 named it
@@ -666,7 +666,7 @@ the imperative case, and `core-doctor`'s hint on a home-manager box says "add it
 `home.packages`". The eight mutable hosts take nothing from it: without home-manager the
 driver's link step is the only owner, as today.
 
-### R4 findings — repo shape: variant (2026-09-14, run 34893435585 and R4_RUN2)
+### R4 findings — repo shape: variant (2026-09-14, runs 34893435585 and 34895922848)
 
 The brief's measure was a line count: how much differs between a *working* Silverblue
 declaration + provision hook and Fedora's today, with ~150 as the line between "the
@@ -678,7 +678,7 @@ the booted guests by `scripts/research/nonmutable-variant.sh` through the VM leg
 re-run.
 
 **The counts.** `dotfiles-Fedora`: **118 code lines** changed in `bootstrap.sh` (155 with
-comments) plus the **18-line** declaration delta; `dotfiles-openSUSE`: **63 + 10**. Both
+comments) plus the **18-line** declaration delta; `dotfiles-openSUSE`: **65 + 10**. Both
 under the bar after two iterations, and neither is a rewrite — every hunk is a branch on
 one flag. What a variant needs, on the evidence of writing and running it:
 
@@ -736,7 +736,21 @@ Two asides the runs surfaced, not R4's: the atuin installer exited 1 on both gue
 (unpatched runs too — a `setup.atuin.sh` question, not a variant one), and the
 declaration relink flaps twice per run (`blib_link_os_layer` links the mutable file, the
 hook relinks the variant — the same two lines Leap prints today). **Iteration 2**
-(base-provided names dropped, `--continue`, the key import routed): R4_ITER2
+(base-provided names dropped, `--continue`, the key import routed), run 34895922848:
+**the shape works end to end on both hosts.** bootc: **34 packages layered in one
+transaction** (310 RPMs, 412 MB), the only miss the atuin installer; `--pending-exit-77`
+went 0 → 77; after the reboot twelve of the thirteen probed tools were on PATH (`zsh tmux
+nvim git fd bat eza zoxide fzf cargo gcc lazygit`); the re-run found "every requested
+package is already in the base image or layered" and started the cargo builds — which ran
+the 20 GB research disk out of space (a harness limit, and a cost note: the atomic
+edition's cargo fallbacks sit on top of a full second deployment). MicroOS: **47
+transacted**, `--continue` chained the carapace and 1Password transactions onto the same
+pending snapshot (3 → 4 → 5), the reboot booted snapshot 5 with the same twelve tools
+live, the 1Password repo refreshed and installed on the re-run, and the only miss left is
+`python3-pip` (a Tumbleweed naming question for `install/packages.txt`, not a variant
+one). The re-run re-transacted the list (snapshots 6–8) because the filter checked
+availability, not installation — the `rpm -q` skip the Fedora hunk already had is in the
+openSUSE patch now (the +2 in its count).
 
 **Verdict: variant, for the two hosts that have a sibling; a new repo for NixOS.**
 `scripts/os-repos.txt` grows by **one**, not three, and the fan-out cost with it. The

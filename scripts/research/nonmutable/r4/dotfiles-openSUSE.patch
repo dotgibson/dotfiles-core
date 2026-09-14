@@ -1,8 +1,8 @@
 # R4 prototype patch for dotgibson/dotfiles-openSUSE — NOT a shipped change (NON-MUTABLE-HOST-PROPOSAL.md §5 R4, #1004).
 # Base: 03b614a32680795c3472daf21d364e49c67c719a (origin/main on 2026-09-14). Applied by scripts/research/nonmutable-variant.sh on a booted guest.
-# Iteration 2: base-provided names dropped before layering; --continue on every transactional-update; key import routed around the read-only rpmdb.
+# Iteration 2: --continue on every transactional-update; key import routed around the read-only rpmdb; installed names skipped so a re-run transacts nothing.
 diff --git i/bootstrap.sh w/bootstrap.sh
-index a0c7a92..2da7201 100755
+index a0c7a92..785a812 100755
 --- i/bootstrap.sh
 +++ w/bootstrap.sh
 @@ -170,6 +170,18 @@ _priv() {
@@ -24,7 +24,7 @@ index a0c7a92..2da7201 100755
  # ── zypper with retry ─────────────────────────────────────────────────────────
  # openSUSE's OSS mirror (cdn.opensuse.org) intermittently times out (curl error 28).
  # .github/workflows/bootstrap.yml already documents this and wraps its CI prep in a
-@@ -201,6 +213,30 @@ zypper_retry() { # <zypper args...>
+@@ -201,6 +213,33 @@ zypper_retry() { # <zypper args...>
  zypper_install() {
    local -a pkgs=("$@")
    local rc=0
@@ -40,6 +40,9 @@ index a0c7a92..2da7201 100755
 +    # 4 with none of them.
 +    local -a avail=() p
 +    for p in "${pkgs[@]}"; do
++      # already installed → nothing to transact (a re-run otherwise re-transacts the whole
++      # list into three more snapshots — measured on iteration 2, snapshots 6–8)
++      rpm -q "$p" >/dev/null 2>&1 && continue
 +      zypper --non-interactive --quiet se --match-exact --type package "$p" >/dev/null 2>&1 && avail+=("$p") || {
 +        echo "   skipped (unavailable on this box?): $p"
 +        _note_fail "package '$p' — not available; check with: zypper se --provides $p"
@@ -55,7 +58,7 @@ index a0c7a92..2da7201 100755
    zypper_retry --non-interactive install --no-recommends "${pkgs[@]}" || rc=$?
    # zypper's exit codes are not a simple 0/non-0: 102 (reboot needed), 103 (zypper
    # itself needs restarting) and 106 (a repo was unavailable but the install
-@@ -370,7 +406,9 @@ provision() {
+@@ -370,7 +409,9 @@ provision() {
    # knows only that yazi is not on PATH and not at ~/.cargo/bin/yazi. A yazi installed
    # somewhere else entirely would trip this, and blaming zypper would then send the
    # operator down the wrong path.
@@ -66,7 +69,7 @@ index a0c7a92..2da7201 100755
      _note_fail "yazi — not on PATH and not at ~/.cargo/bin/yazi. Preferred fix: sudo zypper in yazi (it is packaged, and in install/packages.txt). Upstream alternative: cargo install --locked yazi-fm yazi-cli, which yields 'yazi' + 'ya'"
    fi
    # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
-@@ -500,8 +538,18 @@ provision() {
+@@ -500,8 +541,18 @@ provision() {
          grep -o "\"browser_download_url\": *\"[^\"]*linux_${_cara_arch}\.rpm\"" |
          cut -d'"' -f4 | head -1)" || true
        if [[ -n "$_cara_url" ]]; then
@@ -87,7 +90,7 @@ index a0c7a92..2da7201 100755
        else
          _note_fail "carapace: could not resolve the latest linux_${_cara_arch} RPM (offline? API rate-limited?) — see github.com/carapace-sh/carapace-bin/releases"
        fi
-@@ -545,7 +593,11 @@ provision() {
+@@ -545,7 +596,11 @@ provision() {
    # and the refresh no longer auto-imports.
    if ! command -v op >/dev/null 2>&1; then
      blib_say "op (1Password CLI, official signed repo)"
@@ -100,7 +103,7 @@ index a0c7a92..2da7201 100755
        _note_fail "op — 1Password signing key import failed; repo NOT added (refusing to trust an unverified key). See https://developer.1password.com/docs/cli/get-started/"
      else
        # NOTE: $basearch stays LITERAL — zypper expands it itself, so it MUST be
-@@ -556,8 +608,16 @@ provision() {
+@@ -556,8 +611,16 @@ provision() {
        _priv zypper --non-interactive addrepo --refresh --gpgcheck \
          'https://downloads.1password.com/linux/rpm/stable/$basearch' 1password || true
        if zypper_retry --non-interactive refresh 1password; then
@@ -119,7 +122,7 @@ index a0c7a92..2da7201 100755
        else
          _note_fail "op — 1password repo refresh failed; see https://developer.1password.com/docs/cli/get-started/"
        fi
-@@ -612,7 +672,11 @@ provision() {
+@@ -612,7 +675,11 @@ provision() {
  # shellcheck disable=SC2329
  bootstrap_check() {
    [[ "${BLIB_DRY:-0}" != 0 ]] || return 0
@@ -132,7 +135,7 @@ index a0c7a92..2da7201 100755
  }
  
  # shellcheck disable=SC2329
-@@ -637,12 +701,21 @@ bootstrap_wire_pre_loader() {
+@@ -637,12 +704,21 @@ bootstrap_wire_pre_loader() {
      blib_say "Leap detected — using the Leap capability declaration (zypper up, unattended upgrades permitted)"
      blib_link "$DOTFILES/os/opensuse.leap.capabilities" "$CONFIG/zsh/os.capabilities"
    fi
