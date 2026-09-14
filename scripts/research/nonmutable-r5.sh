@@ -139,6 +139,7 @@ staged_probes() { # <label>
     measure me   "snapper list (user)"                          snapper --no-headers list
     measure root "snapper list (root; last 3)"                  sh -c 'snapper --no-headers list | tail -3'
     measure me   "rebootmgrctl is-active (user)"                rebootmgrctl is-active
+    measure me   "rebootmgrctl status (user)"                   rebootmgrctl status
     ;;
   nixos)
     measure me   "booted vs current kernel (user)"              sh -c 'b=$(readlink -f /run/booted-system/kernel); c=$(readlink -f /run/current-system/kernel); [ "$b" = "$c" ] && echo "same kernel: $b" || echo "DIFFER booted=$b current=$c"'
@@ -148,6 +149,8 @@ staged_probes() { # <label>
   esac
 }
 h2 "2. STAGED — is a change waiting for PKG_APPLY?"
+# bootc: the registry switch (workflow) queued a deployment — clear it so "before" is idle
+[[ "$target" == bootc ]] && run root "rpm-ostree cleanup -p (drop the pending deployment so 'before' is idle)" rpm-ostree cleanup -p
 staged_probes "2a. Before staging anything"
 
 h2 "3. Stage something small (as root), then ask again"
@@ -186,10 +189,11 @@ if [[ -n "$repo_dir" && -d "$repo_dir" ]]; then
   # shellcheck disable=SC2016  # the zsh -c body is the probe; it expands on the guest
   consumer() { # <label>
     local log; log="$(mktemp "$work/c.XXXXXX")"
-    env HOME="$HOME" XDG_CACHE_HOME="$work/cache" XDG_STATE_HOME="$work/state" CORE_CAPABILITIES_FILE="$decl" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_WHATSNEW_NUDGE=0 \
-      zsh -c '
-        source "$1/core/zsh/02-capabilities.zsh" 2>/dev/null
-        source "$1/core/zsh/60-update.zsh" 2>/dev/null
+    # 60-update.zsh returns unless the shell is interactive, and it leans on the ui and
+    # functions fragments — so: `zsh -ic`, the whole loader, the repo's vendored core/zsh.
+    env HOME="$HOME" XDG_CACHE_HOME="$work/cache" XDG_STATE_HOME="$work/state" TERM=dumb NO_COLOR=1 ZSH_CFG="$repo_dir/core/zsh" CORE_CAPABILITIES_FILE="$decl" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_WHATSNEW_NUDGE=0 DOTFILES_NO_AUTOTMUX=1 \
+      zsh -ic '
+        source "$ZSH_CFG/loader.zsh" 2>/dev/null
         echo "_pkgup_mgr      → $(_pkgup_mgr)"
         echo "_pkgup_count    → $(_pkgup_count 2>&1 | tail -1)"
         echo "_pkgup_pending  → $(_pkgup_pending 2>&1 | head -3 | tr "\n" "|") (lines: $(_pkgup_pending 2>/dev/null | wc -l | tr -d " "))"
