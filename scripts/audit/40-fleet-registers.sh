@@ -38,10 +38,11 @@
 #   blib_sudo_keepalive_start 7/9 (+2 exempt = 9/9 compliant) ·
 #   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) ·
 #   blib_note_fail 8/9 (+1 exempt = 9/9 compliant) · blib_failures_report 9/9 ·
-#   blib_wire_summary 8/9 · blib_install_core_guard 8/9 · BLIB_DRY 9/9 · blib_main 1/9
-#   (Defense is the driver's pilot, dotgibson/dotfiles-Defense#292 — its bootstrap calls
-#   blib_main, which calls every helper above, so the scanner credits it with the whole
-#   contract; the guard row it was short on is satisfied by the driver. #986 ratchets the rest.)
+#   blib_wire_summary 8/9 · blib_install_core_guard 8/9 · BLIB_DRY 9/9 · blib_main 3/9
+#   (Defense piloted the driver, dotgibson/dotfiles-Defense#292; Fedora and Debian followed
+#   the same day — dotgibson/dotfiles-Fedora#181, dotgibson/dotfiles-Debian#78. A blib_main
+#   caller is credited with the whole contract, since the driver calls every helper above.
+#   #986 ratchets the rest; MacBook stays outside by design.)
 #   (the four 1/9 rows went 3/9 → 4/9 → 5/9 → 6/9 → 7/9 → 8/9 on 2026-09-13 as Debian and
 #   Fedora, openSUSE, Alpine, Arch, Offense and MacBook adopted, then Defense closed the
 #   last row: it adopts the report and is exempt from the other two with the reasons in
@@ -111,7 +112,7 @@ blib_failures_report     dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
 blib_wire_summary        dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE
 blib_install_core_guard  dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense
 BLIB_DRY                 dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-MacBook dotfiles-Offense dotfiles-openSUSE
-blib_main                dotfiles-Defense
+blib_main                dotfiles-Debian dotfiles-Defense dotfiles-Fedora
 '
   _ha_checked=0
   _ha_missing=0
