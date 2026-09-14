@@ -272,7 +272,7 @@ jobs:
             nix-build '<nixpkgs/nixos>' -A vm -I nixos-config=./configuration.nix \
               -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz \
               -I home-manager=https://github.com/nix-community/home-manager/archive/release-25.05.tar.gz \
-              -o nixos-vm 2>&1 | tail -3
+              -o nixos-vm 2>&1 | tail -15
           ls nixos-vm/bin
       - name: Boot it and run the probe over ssh
         run: |

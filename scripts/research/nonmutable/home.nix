@@ -13,7 +13,7 @@
 #   · nvim, tmux, starship, gitconfig, lazygit, atuin, jujutsu, tealdeer
 #   · mise/config.toml SEEDED as a copy (a store symlink would be read-only under
 #     `mise use -g`, which rewrites it — the same reason blib_adopt copies it)
-#   · tpm — as a nixpkgs package, not a git clone at bootstrap time
+#   · tpm — a rev-pinned fetch, not an unpinned git clone at bootstrap time
 #   · the packages the OS repo would install, as nixpkgs attributes
 #   · PATH: ~/.local/bin, ~/.cargo/bin
 #   · the zsh ENTRY — and this is the contested item. Core's driver writes a managed
@@ -81,9 +81,15 @@ in
       # the OS layer (blib_link_os_layer)
       "zsh/80-os.zsh".source = link "${repo}/os/${os}.zsh";
       "zsh/os.capabilities".source = link "${repo}/os/${os}.capabilities";
-      # tpm from nixpkgs — the one thing here home-manager does BETTER than the
-      # bootstrap's `git clone` (pinned by nixpkgs, no network at bootstrap time)
-      "tmux/plugins/tpm".source = pkgs.tmuxPlugins.tpm.rtp;
+      # tpm pinned by revision — the one thing here home-manager does BETTER than the
+      # bootstrap's unpinned `git clone` at bootstrap time. nixpkgs 25.05 carries no
+      # tmuxPlugins.tpm (measured: "Did you mean one of cpu or fpp?" — run 34859573589),
+      # so the pin is a rev-locked fetch rather than a package.
+      "tmux/plugins/tpm".source = builtins.fetchGit {
+        url = "https://github.com/tmux-plugins/tpm";
+        ref = "refs/tags/v3.1.0";
+        rev = "7bdb7ca33c9cc6440a600202b50142f401b6fe21";
+      };
     };
 
   home.file.".gitconfig".source = link "${core}/git/gitconfig";
