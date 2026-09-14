@@ -59,8 +59,9 @@ The major this proposal was written to plan does not come from the schema.
 
 - bootc: `dnf search` on a booted host (only `dnf install` was probed); `rpm-ostree
   upgrade --check` against a registry-backed image (the research disk's origin is local).
-- MicroOS: `zypper -q list-updates` on the guest (the probe died of the harness's own
-  SIGPIPE in iteration 3; iteration 4 re-measures).
+  `rpm-ostree install --dry-run` as root is measured (exit 0, run 34852611338).
+- MicroOS: `zypper -q list-updates` is measured on the guest (exit 0, run 34852611338);
+  what remains is whether an `/etc` edit survives `transactional-update dup`.
 - NixOS: whether `chsh` survives `nixos-rebuild switch`; `nix-locate` needs `nix-index`.
 
 ## What R2 hands to the next items
