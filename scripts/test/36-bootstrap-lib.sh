@@ -41,6 +41,28 @@ _bl_run() { # <dry> <src> <dst>
 }
 _bl_tally() { printf '%s' "${1##*$'--\n'}" | tr -d '\n'; } # the line after the -- marker
 
+# blib_write_zshrc_loader's backup of a pre-existing real ~/.zshrc must be COUNTED, not just
+# announced (#1026): the R3 research run printed "backed up existing ~/.zshrc" and then
+# "0 backed up" on the same tally line. Fresh bash -c for the same re-entry reason as above.
+_zl_home="$(mktemp -d "$SANDBOX/zlhome.XXXXXX")"
+printf '# skeleton zshrc\n' >"$_zl_home/.zshrc"
+_zl_out="$(HOME="$_zl_home" XDG_CONFIG_HOME="$_zl_home/.config" BLIB_ONLY="" BLIB_SKIP="" bash -c '
+  set -u
+  . "'"$HERE/lib/bootstrap-lib.sh"'"
+  blib_write_zshrc_loader
+  printf -- "--\n%s %s\n" "$BLIB_BACKED" "$(find "$HOME" -maxdepth 1 -name ".zshrc.pre-dotfiles.*" | wc -l | tr -d " ")"
+' 2>&1)"
+case "$(_bl_tally "$_zl_out")" in
+  "1 1") pass "blib_write_zshrc_loader: a pre-existing real ~/.zshrc is backed up AND counted (#1026)" ;;
+  *)     fail "blib_write_zshrc_loader: backup/tally mismatch — expected 'BLIB_BACKED files' = '1 1' (got: $(_bl_tally "$_zl_out"))" ;;
+esac
+if grep -q 'dotfiles-managed v4' "$_zl_home/.zshrc"; then
+  pass "blib_write_zshrc_loader: the managed loader replaced the skeleton"
+else
+  fail "blib_write_zshrc_loader: ~/.zshrc is not the managed loader afterwards"
+fi
+unset _zl_home _zl_out
+
 # 1) a symlink pointing ELSEWHERE: repointed, its old target NAMED, counted as relinked
 #    and NOT as backed up, and no stray .pre-dotfiles.* left behind.
 ln -sfn "$_bl/other" "$_bl/dst1"
