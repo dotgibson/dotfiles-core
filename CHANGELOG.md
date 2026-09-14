@@ -14,6 +14,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Offense and Gentoo are on the bootstrap driver — the `blib_main` row reads 6/9** (#986;
+  dotgibson/dotfiles-Offense#328, dotgibson/dotfiles-Gentoo#187, both on v7.4.2). The two
+  lazy-escalation repos: Offense declares `BOOTSTRAP_ROLE=offensive`, no login shell and
+  `BOOTSTRAP_SU=lazy`, so only `--install` escalates, inside its own hook; Gentoo declares
+  lazy too and keeps its `--user` fallback — the guard resolves an escalator and downgrades
+  to user mode when there is none, the provision hook primes the keepalive itself, and
+  `provision_user` folds into `bootstrap_provision`. Both keep their package bodies verbatim.
+  619 + 1316 → 551 + 1236 lines. (`scripts/audit/40-fleet-registers.sh`)
+
 ## [v7.4.2] - 2026-09-13
 
 ### Fixed
