@@ -4,8 +4,10 @@
 > consumer changes until §5's research phase reports — R1 has measured all three hosts and R2
 > has its verdict (additive; four optional keys and one conditional rule, prototyped and
 > validated), R3 has its answer (coexist: home-manager owns packages and the shell
-> declaration, the driver owns every link and the entry — measured on both hosts);
-> R4–R6 are open.** This is the planning document for the
+> declaration, the driver owns every link and the entry — measured on both hosts), R4
+> has its answer (variant: the existing repo grows a second declaration and a staging
+> path, 118 + 18 and 65 + 10 lines, run on both guests; NixOS is a new repo);
+> R5–R6 are open.** This is the planning document for the
 > roadmap milestone *"the non-mutable host"* — the one theme on the roadmap with an
 > external forcing function rather than an internal cleanup. `V8-PROPOSAL.md` §10 named it
 > the right **next** major and put it out of scope *"because no work has started and the
@@ -663,6 +665,104 @@ home-manager's own collision check is what keeps it stable. This is R2's
 the imperative case, and `core-doctor`'s hint on a home-manager box says "add it to
 `home.packages`". The eight mutable hosts take nothing from it: without home-manager the
 driver's link step is the only owner, as today.
+
+### R4 findings — repo shape: variant (2026-09-14, runs 34893435585 and 34895922848)
+
+The brief's measure was a line count: how much differs between a *working* Silverblue
+declaration + provision hook and Fedora's today, with ~150 as the line between "the
+existing repo grows a variant" and "a new repo per target". The declaration half was
+measured in R2 (18 and 10 changed lines). The bootstrap half is now two real patches,
+kept under `scripts/research/nonmutable/r4/` with their base commits, applied and run on
+the booted guests by `scripts/research/nonmutable-variant.sh` through the VM legs'
+`r4=true` input: apply, validate the declaration, dry-run, the real run, a reboot, the
+re-run.
+
+**The counts.** `dotfiles-Fedora`: **118 code lines** changed in `bootstrap.sh` (155 with
+comments) plus the **18-line** declaration delta; `dotfiles-openSUSE`: **65 + 10**. Both
+under the bar after two iterations, and neither is a rewrite — every hunk is a branch on
+one flag. What a variant needs, on the evidence of writing and running it:
+
+- **a host marker, not an ID.** fedora-bootc:42 reports `ID=fedora` and *no*
+  `VARIANT_ID` (measured), so the Fedora guard passes unchanged and `VARIANT_ID` cannot
+  be the test; `/run/ostree-booted` is. MicroOS reports `ID=opensuse-microos` with
+  `ID_LIKE` carrying `opensuse` and `opensuse-tumbleweed` (measured), so the openSUSE
+  guard *and* its Tumbleweed probe both pass; the marker there is `transactional-update`
+  on PATH beside a read-only `/usr`. (Aeon's `ID` is still unmeasured; the marker makes
+  it moot.)
+- **a second declaration, relinked by `bootstrap_wire_pre_loader`** — the idiom
+  `dotfiles-openSUSE` already uses to select Leap's. A declaration is data and cannot
+  probe; the hook can. Measured on both guests: the shell reads the variant file
+  (`PROVISIONER=atomic` / `transactional`), across the reboot and the re-run. Nothing in
+  Core learns a new file name; `gen-porting-matrix.sh`'s registry already takes a
+  labelled list of declarations per repo (that is how Leap renders today).
+- **a staging path in the provision hook**: `rpm-ostree install --idempotent` over the
+  names `dnf repoquery` resolves and `rpm -q` does not already answer; one
+  `transactional-update -n --continue pkg in` over the names `zypper se` finds. COPR, the
+  carapace RPM and 1Password go through the same verbs.
+- **a closing line**: "N layered — reboot to apply, then re-run once", because the
+  cargo/go tools behind `command -v cargo` guards are skipped on the first run by the
+  guards the repos already have, and picked up on the re-run.
+
+**Did it work? Yes — and the first dispatch measured three things the hunks had wrong,
+each a fact about the host rather than about the shape:**
+
+- **bootc**: `rpm-ostree install --idempotent` refuses a name the base image already
+  provides (*"curl is already provided by curl-8.11.1-8.fc42 … Use --allow-inactive"*),
+  and that one name failed the whole 38-package layer; `--idempotent` forgives packages
+  already *layered*, not base ones. lazygit (via the COPR repo file) and the carapace RPM
+  did layer: `rpm-ostree status --pending-exit-77` went from 0 to **77** after the run,
+  the reboot booted the new deployment (`LayeredPackages: lazygit`, `LocalPackages:
+  carapace-bin rpmfusion-free-release`), `lazygit` was on PATH afterwards, the re-run was
+  idempotent (exit 0, `35 linked · 2 relinked`) and the loader booted (`core-doctor`
+  defined). The fix is `rpm -q` before layering.
+- **MicroOS**: the 47 filtered packages went into snapshot 3 in one 20-second
+  transaction — and the *next* `transactional-update` call (the carapace RPM) opened
+  snapshot 4 **from the booted snapshot 2**, so the reboot booted 4 with none of them
+  (`tools on PATH: zsh git`). That is transactional-update's documented default: without
+  `--continue` every call restarts from the running system and silently discards the
+  pending snapshot. Every call now carries `--continue`. The rest held: the dry run
+  named the snapshot verbs, the declaration relinked, the closing line said "47
+  transacted — reboot to apply", the reboot booted the new default, the re-run was
+  idempotent.
+- **both**: `rpm --import` cannot take the rpmdb lock on a read-only root (*"can't
+  create transaction lock on /usr/share/rpm/.rpm.lock"* on bootc, `/usr/lib/sysimage/rpm`
+  on MicroOS), so the 1Password key import — the one step both repos run before adding
+  its repo — fails and the repo is refused. Fedora's variant installs the
+  fingerprint-verified key under `/etc/pki/rpm-gpg` and points the repo's `gpgkey` at it
+  (rpm-ostree imports a repo's key when it layers from it); openSUSE's imports inside
+  the pending snapshot via `transactional-update run`.
+
+Two asides the runs surfaced, not R4's: the atuin installer exited 1 on both guests
+(unpatched runs too — a `setup.atuin.sh` question, not a variant one), and the
+declaration relink flaps twice per run (`blib_link_os_layer` links the mutable file, the
+hook relinks the variant — the same two lines Leap prints today). **Iteration 2**
+(base-provided names dropped, `--continue`, the key import routed), run 34895922848:
+**the shape works end to end on both hosts.** bootc: **34 packages layered in one
+transaction** (310 RPMs, 412 MB), the only miss the atuin installer; `--pending-exit-77`
+went 0 → 77; after the reboot twelve of the thirteen probed tools were on PATH (`zsh tmux
+nvim git fd bat eza zoxide fzf cargo gcc lazygit`); the re-run found "every requested
+package is already in the base image or layered" and started the cargo builds — which ran
+the 20 GB research disk out of space (a harness limit, and a cost note: the atomic
+edition's cargo fallbacks sit on top of a full second deployment). MicroOS: **47
+transacted**, `--continue` chained the carapace and 1Password transactions onto the same
+pending snapshot (3 → 4 → 5), the reboot booted snapshot 5 with the same twelve tools
+live, the 1Password repo refreshed and installed on the re-run, and the only miss left is
+`python3-pip` (a Tumbleweed naming question for `install/packages.txt`, not a variant
+one). The re-run re-transacted the list (snapshots 6–8) because the filter checked
+availability, not installation — the `rpm -q` skip the Fedora hunk already had is in the
+openSUSE patch now (the +2 in its count).
+
+**Verdict: variant, for the two hosts that have a sibling; a new repo for NixOS.**
+`scripts/os-repos.txt` grows by **one**, not three, and the fan-out cost with it. The
+variant's real cost is not the diff but what sits beside it: a flavour-pair test per
+repo (openSUSE's `test/check-flavors.sh` is the template — the two declarations must
+differ in exactly the allowed ways), a CI leg that can exercise the staging path (R6),
+and one registry line in `gen-porting-matrix.sh`. What the variant shape rules out is a
+per-target `install/` list or OS layer: the atomic edition's packages *are* Fedora's
+packages, and `os/fedora.zsh` needs nothing (its `dnfi` alias is wrong there — a
+one-line follow-up, not a fork). NixOS stays a new repo because nothing of it is shared:
+no package list in Fedora's format, no `dnf`-shaped verbs, and (R3) a different owner
+for packages and the shell declaration.
 
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 

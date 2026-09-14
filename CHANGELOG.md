@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+### Added
+
+- **The R4 harness for the non-mutable host research, and its answer** (#1004). Two
+  prototype patches under `scripts/research/nonmutable/r4/` give `dotfiles-Fedora` and
+  `dotfiles-openSUSE` an atomic / transactional _variant_ (a host marker, a second
+  declaration relinked by `bootstrap_wire_pre_loader`, a staging path, a "reboot to
+  apply" line); `scripts/research/nonmutable-variant.sh` applies and runs them on the
+  booted guests, and `research-nonmutable-vm.yml`'s `r4=true` input drives the run,
+  reboot and re-run. Measured verdict, in `NON-MUTABLE-HOST-PROPOSAL.md` §5: **variant**
+  (118 + 18 and 65 + 10 lines; NixOS stays a new repo). The `trailing-whitespace`
+  pre-commit hook now leaves `*.patch` alone — a blank diff context line is a lone space.
+
 ### Fixed
 
 - **The `~/.zshrc` loader's backup is counted** (#1026). `blib_write_zshrc_loader` backed up
