@@ -91,7 +91,9 @@ jobs:
           sudo podman run --rm --privileged --pull=newer --security-opt label=type:unconfined_t \
             -v "$PWD/config.toml:/config.toml:ro" -v "$PWD/output:/output" \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
-            quay.io/centos-bootc/bootc-image-builder:latest --type qcow2 --local localhost/research-bootc:latest
+            quay.io/centos-bootc/bootc-image-builder:latest --type qcow2 --rootfs xfs --local localhost/research-bootc:latest
+          # --rootfs: the Fedora bootc base carries no default root filesystem metadata
+          # ("missing required info: DefaultRootFs", first run) — say xfs, Fedora's default.
           sudo chown -R "$(id -u):$(id -g)" output
           ls -la output/qcow2
       - name: Boot it and run the probe over ssh
@@ -150,7 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSL -o microos.qcow2 https://download.opensuse.org/tumbleweed/appliances/openSUSE-MicroOS.x86_64-ContainerHost-OpenStack-Cloud.qcow2
-          qemu-img resize microos.qcow2 20G
+          qemu-img resize microos.qcow2 +10G   # relative: the image's virtual size already exceeds 20G (first run)
           cat >user-data <<EOF
           #cloud-config
           disable_root: false
@@ -220,7 +222,10 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
           sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 >/dev/null
-          curl -fsSL https://install.determinate.systems/nix | sh -s -- install linux --no-confirm --init none >/dev/null 2>&1
+          # Default init (systemd): with --init none the daemon never starts and nix-build
+          # dies on /nix/var/nix/db/big-lock (first run). The runner has systemd.
+          curl -fsSL https://install.determinate.systems/nix | sh -s -- install linux --no-confirm >/dev/null 2>&1
+          sudo systemctl is-active nix-daemon.socket nix-daemon.service || true
           ssh-keygen -t ed25519 -N '' -f /tmp/research_key -q
       - name: Build the NixOS VM (sshd + key, git, zsh) and scaffold dotfiles-NixOS on the runner
         run: |
