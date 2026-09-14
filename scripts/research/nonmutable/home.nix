@@ -55,6 +55,10 @@ let
 in
 {
   home.stateVersion = "25.05";
+  # Standalone: the first `switch` replaces the user profile with home-manager-path, and the
+  # `home-manager` the installer put there is gone unless this module carries it (measured:
+  # the second switch was "home-manager: command not found", run 34863339069).
+  programs.home-manager.enable = true;
   # Standalone home-manager needs these; the NixOS module sets them itself (and wins:
   # these are mkDefault).
   home.username = lib.mkDefault (env "HM_USER" "research");
