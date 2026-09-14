@@ -48,9 +48,12 @@ bootstrap_guard() { _log guard; }
 # `((BLIB_DRY))` BARE, on purpose: the fixture runs under set -u, so this line is the
 # regression test for a driver that leaves the knob unset on a real run (Debian#78).
 bootstrap_check() { ((DO_CHECK)) || return 0; ((BLIB_DRY)) && _log dry; _log check; }
+[[ "${FIX_LAZY:-0}" != 0 ]] && BOOTSTRAP_SU=lazy
 if [[ "${FIX_PROVISION:-0}" != 0 ]]; then
   bootstrap_provision() {
     _log provision
+    # Under lazy the driver must have resolved nothing and primed nothing before us.
+    [[ "${BOOTSTRAP_SU:-}" == lazy && -z "${BLIB_SU+x}" && -z "${BLIB_SUDO_KEEPALIVE_PID:-}" ]] && _log lazy-clean
     [[ "${FIX_FAIL:-0}" != 0 ]] && blib_note_fail "fixture step did not complete"
     return 0
   }
@@ -65,9 +68,12 @@ FIX
     rm -rf "${BD:?}/home" "${BD:?}/config"
     mkdir -p "$BD/home" "$BD/config/tmux/plugins/tpm"
     : >"$log"
-    BD_OUT="$(cd "$BD/dotfiles" && HOME="$BD/home" XDG_CONFIG_HOME="$BD/config" BLIB_SU='' \
-      FIX_LOG="$log" FIX_PROVISION="${FIX_PROVISION:-0}" FIX_FAIL="${FIX_FAIL:-0}" \
-      BLIB_ONLY="" BLIB_SKIP="" bash ./bootstrap.sh "$@" 2>&1)" && BD_RC=0 || BD_RC=$?
+    local -a _bd_env=(HOME="$BD/home" XDG_CONFIG_HOME="$BD/config" FIX_LOG="$log"
+      FIX_PROVISION="${FIX_PROVISION:-0}" FIX_FAIL="${FIX_FAIL:-0}" FIX_LAZY="${FIX_LAZY:-0}"
+      BLIB_ONLY="" BLIB_SKIP="")
+    # BLIB_SU is set EMPTY (what CI does) unless a case needs the driver to see it unset.
+    [[ "${BD_UNSET_SU:-0}" != 0 ]] || _bd_env+=(BLIB_SU='')
+    BD_OUT="$(cd "$BD/dotfiles" && env -u BLIB_SU "${_bd_env[@]}" bash ./bootstrap.sh "$@" 2>&1)" && BD_RC=0 || BD_RC=$?
     BD_LOG="$(tr '\n' ' ' <"$log")"
     BD_LOG="${BD_LOG% }"
   }
@@ -168,6 +174,17 @@ FIX
     pass "driver: a bootstrap_flag that returns 2 consumes the value after it (the driver shifts twice)"
   else
     fail "driver: flag with value (rc=$BD_RC, log='$BD_LOG'): $(printf '%s' "$BD_OUT" | tail -2)"
+  fi
+
+  # ── BOOTSTRAP_SU=lazy: the hook owns escalation and the keepalive ──────────
+  # BLIB_SU is deliberately UNSET here (the harness sets it empty for every other case):
+  # an unset BLIB_SU is what lets blib_resolve_su probe, and the point is that the driver
+  # must not probe, resolve or prime anything before a lazy hook decides it needs to.
+  FIX_PROVISION=1 FIX_LAZY=1 BD_UNSET_SU=1 _bd_run lazy
+  if [[ $BD_RC -eq 0 && "$BD_LOG" == "guard check provision lazy-clean wire_pre wire_post closing:0" ]]; then
+    pass "driver: BOOTSTRAP_SU=lazy runs the provision hook with no escalator resolved and no keepalive primed"
+  else
+    fail "driver: lazy escalation (rc=$BD_RC, log='$BD_LOG'): $(printf '%s' "$BD_OUT" | tail -2)"
   fi
 
   # ── module selection reaches blib_select ───────────────────────────────────
