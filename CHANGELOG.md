@@ -14,6 +14,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **openSUSE is recorded on the `blib_install_core_guard` row — the row closes at 9/9** (#986;
+  follow-up to #992). A `blib_main` caller is credited with the whole helper contract, and the
+  driver installs the Core guard openSUSE's own bootstrap never had, so §5f read the repo as
+  `advanced` on that row the moment dotgibson/dotfiles-openSUSE#186 merged — the state the
+  v7.4.1 fan-out audit meets. Same shape as Defense in #988. (`scripts/audit/40-fleet-registers.sh`)
+
 ## [v7.4.1] - 2026-09-13
 
 ### Fixed
