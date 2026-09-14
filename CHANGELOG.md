@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v7.4.3] - 2026-09-13
+
 ### Changed
 
 - **Alpine is on the bootstrap driver, MacBook is exempt by design — the `blib_main` row
