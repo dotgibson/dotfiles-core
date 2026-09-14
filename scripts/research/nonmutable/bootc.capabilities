@@ -7,11 +7,11 @@
 # The R2 test: does any REQUIRED key end up a lie? Read against os/fedora.capabilities:
 #   PKG_INSTALL   dnf resolves 317 packages then "this bootc system is configured to be
 #                 read-only" (measured, root) — the mutable verb is a refusal. The honest
-#                 verb STAGES; it is true only with PKG_APPLY beside it.
+#                 verb STAGES (`rpm-ostree install --dry-run` as root: exit 0, measured,
+#                 run 34852611338); it is true only with PKG_APPLY beside it.
 #   PKG_UPGRADE   `rpm-ostree upgrade` stages a deployment (documented; --check measured as
 #                 far as a local-origin disk allows). Same shape.
 #   PKG_COUNT_PENDING
-#                 (`rpm-ostree install --dry-run` as root: exit 0, measured, run 34852611338)
 #                 the only user-runnable question is "is a deployment staged?" —
 #                 `rpm-ostree status --pending-exit-77` answers with its exit status
 #                 (measured: exit 0 idle; 77 when staged). The answer is one deployment,
