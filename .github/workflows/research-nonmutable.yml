@@ -85,7 +85,10 @@ jobs:
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
         run: |
           set -euo pipefail
-          mkdir -p research-out
+          # world-writable: the probe runs as an unprivileged container user (uid 1000) and copies
+          # its report into this bind mount, which the runner (uid 1001) owns — run 34861740026
+          # finished the probe and then lost the report to "Permission denied" on that cp.
+          mkdir -p research-out && chmod 1777 research-out
           # fedora:42, digest-pinned as the modern baseline requires (the matrix legs pin by variable)
           docker pull registry.fedoraproject.org/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c >/dev/null
           docker run --rm -v "$PWD:/w" -w /w registry.fedoraproject.org/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c bash -c '
