@@ -1,7 +1,8 @@
 # R4 prototype patch for dotgibson/dotfiles-Fedora — NOT a shipped change (NON-MUTABLE-HOST-PROPOSAL.md §5 R4, #1004).
 # Base: abf4e6a977d496becc52bc5a0f7d72e6f90fd3e2 (origin/main on 2026-09-14). Applied by scripts/research/nonmutable-variant.sh on a booted guest.
+# Iteration 2: base-provided names dropped before layering; --continue on every transactional-update; key import routed around the read-only rpmdb.
 diff --git i/bootstrap.sh w/bootstrap.sh
-index f9a25d65..4a51ca6f 100755
+index f9a25d65..6f1eb74d 100755
 --- i/bootstrap.sh
 +++ w/bootstrap.sh
 @@ -122,6 +122,17 @@ os_guard() {
@@ -91,7 +92,7 @@ index f9a25d65..4a51ca6f 100755
  
    blib_say "dnf packages (from install/packages.txt)"
    local -a pkgs=()
-@@ -247,7 +281,24 @@ bootstrap_provision() {
+@@ -247,7 +281,33 @@ bootstrap_provision() {
    # Guard the empty case: an all-comment/blank packages.txt yields a zero-length
    # array, and `dnf install` with no args errors out — aborting the whole bootstrap
    # under `set -e`. Skip the install instead and carry on with the rest.
@@ -101,23 +102,32 @@ index f9a25d65..4a51ca6f 100755
 +    # dnf's metadata is readable on the host (only its transaction is refused), so ask it
 +    # which of the requested names resolve, and layer exactly those. Already-in-base names
 +    # are fine under --idempotent.
-+    local -a avail=()
++    local -a avail=() todo=() p
 +    mapfile -t avail < <(dnf -q repoquery --qf '%{name}\n' "${pkgs[@]}" 2>/dev/null | sort -u)
 +    ((${#avail[@]})) || avail=("${pkgs[@]}") # metadata unreadable: let rpm-ostree be the judge
 +    if ((${#avail[@]} < ${#pkgs[@]})); then
 +      blib_warn "$((${#pkgs[@]} - ${#avail[@]})) of ${#pkgs[@]} requested names are not in the enabled repos and are skipped"
 +    fi
-+    if priv rpm-ostree install --idempotent "${avail[@]}"; then
-+      ATOMIC_STAGED=$((ATOMIC_STAGED + ${#avail[@]}))
-+      blib_ok "rpm-ostree: ${#avail[@]} packages layered into the next deployment (${#pkgs[@]} requested)"
-+    else
-+      note_fail "rpm-ostree install failed — retry later: ${BLIB_SU:+$BLIB_SU }rpm-ostree install --idempotent ${avail[*]}"
++    # Names the BASE IMAGE already provides must not be requested either: rpm-ostree
++    # refuses them outright ("curl is already provided by … Use --allow-inactive") and
++    # --idempotent only forgives packages already LAYERED (measured: one base-provided
++    # name failed the whole 38-package layer). rpm -q reads the booted deployment's db.
++    for p in "${avail[@]}"; do rpm -q "$p" >/dev/null 2>&1 || todo+=("$p"); done
++    avail=("${todo[@]}")
++    ((${#avail[@]})) || { blib_ok "rpm-ostree: every requested package is already in the base image or layered"; }
++    if ((${#avail[@]})); then
++      if priv rpm-ostree install --idempotent "${avail[@]}"; then
++        ATOMIC_STAGED=$((ATOMIC_STAGED + ${#avail[@]}))
++        blib_ok "rpm-ostree: ${#avail[@]} packages layered into the next deployment (${#pkgs[@]} requested)"
++      else
++        note_fail "rpm-ostree install failed — retry later: ${BLIB_SU:+$BLIB_SU }rpm-ostree install --idempotent ${avail[*]}"
++      fi
 +    fi
 +  elif ((${#pkgs[@]})); then
      priv dnf -y install --skip-unavailable "${pkgs[@]}"
      blib_ok "dnf packages installed (${#pkgs[@]} requested)"
    else
-@@ -405,10 +456,21 @@ bootstrap_provision() {
+@@ -405,10 +465,21 @@ bootstrap_provision() {
      # stderr stays VISIBLE on every privileged call from here down (only stdout is
      # silenced). Hiding it is what made a mid-run sudo prompt invisible; it also hid the
      # reason a COPR install failed.
@@ -139,7 +149,7 @@ index f9a25d65..4a51ca6f 100755
    fi
  
    # ── doctor-probed tools not (reliably) in Fedora repos ─────────────────────
-@@ -531,8 +593,16 @@ bootstrap_provision() {
+@@ -531,8 +602,16 @@ bootstrap_provision() {
          grep -o "\"browser_download_url\": *\"[^\"]*linux_${_cara_arch}\.rpm\"" |
          cut -d'"' -f4 | head -1)" || true
        if [[ -n "$_cara_url" ]]; then
@@ -158,9 +168,35 @@ index f9a25d65..4a51ca6f 100755
        else
          note_fail "carapace: could not resolve the latest linux_${_cara_arch} RPM (offline? API rate-limited?) — see github.com/carapace-sh/carapace-bin/releases"
        fi
-@@ -607,8 +677,16 @@ gpgcheck=1
+@@ -596,19 +675,38 @@ bootstrap_provision() {
+       rm -f "$_op_key"
+       _op_key=""
+     fi
+-    if [[ -n "$_op_key" ]] && priv rpm --import "$_op_key" >/dev/null; then
++    # The rpmdb is read-only on an atomic host ("can't create transaction lock on
++    # /usr/share/rpm/.rpm.lock" — measured), so `rpm --import` cannot run there. The
++    # VERIFIED key file goes to /etc/pki/rpm-gpg instead and the repo points at it;
++    # rpm-ostree imports a repo's gpgkey itself when it layers from it.
++    local _op_gpgkey="https://downloads.1password.com/linux/keys/1password.asc"
++    if ((IS_ATOMIC)); then
++      _op_gpgkey="file:///etc/pki/rpm-gpg/RPM-GPG-KEY-1password"
++      [[ -n "$_op_key" ]] && { priv install -D -m 0644 "$_op_key" /etc/pki/rpm-gpg/RPM-GPG-KEY-1password >/dev/null || { rm -f "$_op_key"; _op_key=""; }; }
++    elif [[ -n "$_op_key" ]] && ! priv rpm --import "$_op_key" >/dev/null; then
++      rm -f "$_op_key"; _op_key=""
++    fi
++    if [[ -n "$_op_key" ]]; then
+       rm -f "$_op_key"
+-      priv sh -c 'cat >/etc/yum.repos.d/1password.repo' <<'REPO' || true
++      priv sh -c "cat >/etc/yum.repos.d/1password.repo" <<REPO || true
+ [1password]
+ name=1Password Stable Channel
+-baseurl=https://downloads.1password.com/linux/rpm/stable/$basearch
++baseurl=https://downloads.1password.com/linux/rpm/stable/\$basearch
+ enabled=1
+ gpgcheck=1
  repo_gpgcheck=1
- gpgkey=https://downloads.1password.com/linux/keys/1password.asc
+-gpgkey=https://downloads.1password.com/linux/keys/1password.asc
++gpgkey=$_op_gpgkey
  REPO
 -      priv dnf -y install 1password-cli >/dev/null ||
 -        note_fail "op: install failed; see developer.1password.com/docs/cli/get-started"
@@ -177,7 +213,7 @@ index f9a25d65..4a51ca6f 100755
      else
        rm -f "$_op_key"
        note_fail "op: signing key not imported — skipping the repo (an unverifiable repo breaks every later dnf transaction); see developer.1password.com/docs/cli/get-started"
-@@ -657,4 +735,28 @@ REPO
+@@ -657,4 +755,28 @@ REPO
    fi
  }
  

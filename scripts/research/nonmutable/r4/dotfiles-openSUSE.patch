@@ -1,7 +1,8 @@
 # R4 prototype patch for dotgibson/dotfiles-openSUSE — NOT a shipped change (NON-MUTABLE-HOST-PROPOSAL.md §5 R4, #1004).
 # Base: 03b614a32680795c3472daf21d364e49c67c719a (origin/main on 2026-09-14). Applied by scripts/research/nonmutable-variant.sh on a booted guest.
+# Iteration 2: base-provided names dropped before layering; --continue on every transactional-update; key import routed around the read-only rpmdb.
 diff --git i/bootstrap.sh w/bootstrap.sh
-index a0c7a92..26dbc35 100755
+index a0c7a92..2da7201 100755
 --- i/bootstrap.sh
 +++ w/bootstrap.sh
 @@ -170,6 +170,18 @@ _priv() {
@@ -23,7 +24,7 @@ index a0c7a92..26dbc35 100755
  # ── zypper with retry ─────────────────────────────────────────────────────────
  # openSUSE's OSS mirror (cdn.opensuse.org) intermittently times out (curl error 28).
  # .github/workflows/bootstrap.yml already documents this and wraps its CI prep in a
-@@ -201,6 +213,26 @@ zypper_retry() { # <zypper args...>
+@@ -201,6 +213,30 @@ zypper_retry() { # <zypper args...>
  zypper_install() {
    local -a pkgs=("$@")
    local rc=0
@@ -33,6 +34,10 @@ index a0c7a92..26dbc35 100755
 +    # read-only repo cache answers `zypper se` on the running system, so drop the unknown
 +    # names FIRST and transact once. Its options go BEFORE the command (-n here, not
 +    # --non-interactive after `pkg in`), and `pkg in` passes the rest to zypper install.
++    # --continue on EVERY call: without it each transaction starts from the BOOTED
++    # snapshot and silently discards the pending one — measured: 47 packages went into
++    # snapshot 3, the next call opened snapshot 4 from snapshot 2, and the reboot booted
++    # 4 with none of them.
 +    local -a avail=() p
 +    for p in "${pkgs[@]}"; do
 +      zypper --non-interactive --quiet se --match-exact --type package "$p" >/dev/null 2>&1 && avail+=("$p") || {
@@ -41,7 +46,7 @@ index a0c7a92..26dbc35 100755
 +      }
 +    done
 +    ((${#avail[@]})) || return 0
-+    _priv transactional-update -n --no-selfupdate pkg in --no-recommends "${avail[@]}" || rc=$?
++    _priv transactional-update -n --no-selfupdate --continue pkg in --no-recommends "${avail[@]}" || rc=$?
 +    case $rc in
 +    0 | 102 | 103 | 106) TU_STAGED=$((TU_STAGED + ${#avail[@]})); return 0 ;;
 +    *) _note_fail "transactional-update pkg in failed (rc=$rc) — retry later: ${BLIB_SU-sudo} transactional-update -n pkg in ${avail[*]}"; return 0 ;;
@@ -50,7 +55,18 @@ index a0c7a92..26dbc35 100755
    zypper_retry --non-interactive install --no-recommends "${pkgs[@]}" || rc=$?
    # zypper's exit codes are not a simple 0/non-0: 102 (reboot needed), 103 (zypper
    # itself needs restarting) and 106 (a repo was unavailable but the install
-@@ -500,8 +532,18 @@ provision() {
+@@ -370,7 +406,9 @@ provision() {
+   # knows only that yazi is not on PATH and not at ~/.cargo/bin/yazi. A yazi installed
+   # somewhere else entirely would trip this, and blaming zypper would then send the
+   # operator down the wrong path.
+-  if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]]; then
++  if ((IS_TRANSACTIONAL)) && ((TU_STAGED)) && ! command -v yazi >/dev/null; then
++    blib_say "yazi is in the next snapshot — live after the reboot"
++  elif ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]]; then
+     _note_fail "yazi — not on PATH and not at ~/.cargo/bin/yazi. Preferred fix: sudo zypper in yazi (it is packaged, and in install/packages.txt). Upstream alternative: cargo install --locked yazi-fm yazi-cli, which yields 'yazi' + 'ya'"
+   fi
+   # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
+@@ -500,8 +538,18 @@ provision() {
          grep -o "\"browser_download_url\": *\"[^\"]*linux_${_cara_arch}\.rpm\"" |
          cut -d'"' -f4 | head -1)" || true
        if [[ -n "$_cara_url" ]]; then
@@ -59,7 +75,7 @@ index a0c7a92..26dbc35 100755
 +        if ((IS_TRANSACTIONAL)); then
 +          # a global zypper option (--no-gpg-checks) cannot ride `pkg in`; `run` executes
 +          # the whole zypper command inside the new snapshot instead
-+          if _priv transactional-update -n --no-selfupdate run zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null; then
++          if _priv transactional-update -n --no-selfupdate --continue run zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null; then
 +            TU_STAGED=$((TU_STAGED + 1))
 +          else
 +            _note_fail "carapace: RPM transaction failed — retry later: ${BLIB_SU-sudo} transactional-update -n run zypper -n --no-gpg-checks install --allow-unsigned-rpm $_cara_url"
@@ -71,14 +87,27 @@ index a0c7a92..26dbc35 100755
        else
          _note_fail "carapace: could not resolve the latest linux_${_cara_arch} RPM (offline? API rate-limited?) — see github.com/carapace-sh/carapace-bin/releases"
        fi
-@@ -556,8 +598,16 @@ provision() {
+@@ -545,7 +593,11 @@ provision() {
+   # and the refresh no longer auto-imports.
+   if ! command -v op >/dev/null 2>&1; then
+     blib_say "op (1Password CLI, official signed repo)"
+-    if ! _priv rpm --import https://downloads.1password.com/linux/keys/1password.asc; then
++    # The rpmdb is read-only on the running snapshot ("can't create transaction lock on
++    # /usr/lib/sysimage/rpm/.rpm.lock" — measured); import inside the pending snapshot.
++    local -a _op_import=(rpm --import https://downloads.1password.com/linux/keys/1password.asc)
++    ((IS_TRANSACTIONAL)) && _op_import=(transactional-update -n --no-selfupdate --continue run "${_op_import[@]}")
++    if ! _priv "${_op_import[@]}"; then
+       _note_fail "op — 1Password signing key import failed; repo NOT added (refusing to trust an unverified key). See https://developer.1password.com/docs/cli/get-started/"
+     else
+       # NOTE: $basearch stays LITERAL — zypper expands it itself, so it MUST be
+@@ -556,8 +608,16 @@ provision() {
        _priv zypper --non-interactive addrepo --refresh --gpgcheck \
          'https://downloads.1password.com/linux/rpm/stable/$basearch' 1password || true
        if zypper_retry --non-interactive refresh 1password; then
 -        _priv zypper --non-interactive install --no-recommends 1password-cli ||
 -          _note_fail "op — install failed; see https://developer.1password.com/docs/cli/get-started/"
 +        if ((IS_TRANSACTIONAL)); then
-+          if _priv transactional-update -n --no-selfupdate pkg in --no-recommends 1password-cli; then
++          if _priv transactional-update -n --no-selfupdate --continue pkg in --no-recommends 1password-cli; then
 +            TU_STAGED=$((TU_STAGED + 1))
 +          else
 +            _note_fail "op — transaction failed; see https://developer.1password.com/docs/cli/get-started/"
@@ -90,7 +119,7 @@ index a0c7a92..26dbc35 100755
        else
          _note_fail "op — 1password repo refresh failed; see https://developer.1password.com/docs/cli/get-started/"
        fi
-@@ -612,7 +662,11 @@ provision() {
+@@ -612,7 +672,11 @@ provision() {
  # shellcheck disable=SC2329
  bootstrap_check() {
    [[ "${BLIB_DRY:-0}" != 0 ]] || return 0
@@ -103,7 +132,7 @@ index a0c7a92..26dbc35 100755
  }
  
  # shellcheck disable=SC2329
-@@ -637,12 +691,21 @@ bootstrap_wire_pre_loader() {
+@@ -637,12 +701,21 @@ bootstrap_wire_pre_loader() {
      blib_say "Leap detected — using the Leap capability declaration (zypper up, unattended upgrades permitted)"
      blib_link "$DOTFILES/os/opensuse.leap.capabilities" "$CONFIG/zsh/os.capabilities"
    fi
