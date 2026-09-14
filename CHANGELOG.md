@@ -1,5 +1,18 @@
 ## [Unreleased]
 
+### Fixed
+
+- **The sudo keepalive no longer dies on a non-interactive run whose sudo needs no
+  password** (#1018, found by the non-mutable-host research on a booted bootc guest). The
+  prime was a bare `sudo -v`, and sudoers' default `verifypw=all` makes `-v` prompt unless
+  _every_ rule matching the user is NOPASSWD — Fedora's stock wheel rule beside a NOPASSWD
+  drop-in is one passworded rule too many, so a run with no terminal ended "authentication
+  failed" on a host where every command was passwordless. `blib_sudo_keepalive_start` now
+  primes by how the run can answer: `-v` at a terminal; `-A -v` when `SUDO_ASKPASS` is set;
+  otherwise `-n -v`, then `-n true`, then a warning that names the actual problem (no
+  terminal and a password required) before the driver's "cannot provision packages" line.
+  (`lib/bootstrap-lib.sh`, `scripts/test/85-escalation.sh`)
+
 ## [v7.4.4] - 2026-09-13
 
 ### Changed
