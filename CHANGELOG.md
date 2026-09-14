@@ -12,6 +12,17 @@
   live under `scripts/research/nonmutable/`, each validated, with the R2 verdict
   (additive — no schema version, no re-author) in their README. (`scripts/check-capabilities.sh`,
   `examples/os.capabilities.example`, `scripts/test/55-capabilities.sh`)
+- **The R3 harness for the non-mutable host research, and its answer** (#1004).
+  `scripts/research/nonmutable/home.nix` is a home-manager module that tries to own
+  everything the driver wires as out-of-store links into the vendored `core/`;
+  `scripts/research/nonmutable-home-manager.sh` applies it, runs the repo's
+  `bootstrap.sh --links-only` over the result, switches again and records who owns each
+  path. `research-nonmutable.yml` gained a `homemanager` leg (Fedora 42, standalone) and
+  `research-nonmutable-vm.yml`'s NixOS guest applies it as a NixOS module. Measured
+  verdict, in `NON-MUTABLE-HOST-PROPOSAL.md` §5: **coexist** — the driver overwrites
+  home-manager's links silently, home-manager tolerates the driver's links but refuses to
+  activate over its zsh entry, so a fleet `home.nix` owns packages, the shell declaration,
+  tpm and PATH and declares no files.
 
 ### Fixed
 

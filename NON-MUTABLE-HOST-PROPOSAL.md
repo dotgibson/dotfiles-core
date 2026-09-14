@@ -3,7 +3,9 @@
 > **Status: RESEARCH (opened 2026-09-14). Nothing is decided, nothing is scheduled, and no
 > consumer changes until §5's research phase reports — R1 has measured all three hosts and R2
 > has its verdict (additive; four optional keys and one conditional rule, prototyped and
-> validated); R3–R6 are open.** This is the planning document for the
+> validated), R3 has its answer (coexist: home-manager owns packages and the shell
+> declaration, the driver owns every link and the entry — measured on both hosts);
+> R4–R6 are open.** This is the planning document for the
 > roadmap milestone *"the non-mutable host"* — the one theme on the roadmap with an
 > external forcing function rather than an internal cleanup. `V8-PROPOSAL.md` §10 named it
 > the right **next** major and put it out of scope *"because no work has started and the
@@ -579,6 +581,89 @@ upgrade --check` against a registry-backed image; `chsh` across `nixos-rebuild s
 `/etc` edits across `transactional-update dup`. None changes R2's verdict; each is a
 value inside a prototype marked "to verify".
 
+### R3 findings — the Nix answer, measured (2026-09-14, runs 34861743072 and 34866897223)
+
+The `home.nix` is kept at `scripts/research/nonmutable/home.nix`, the probe beside it as
+`scripts/research/nonmutable-home-manager.sh`, and the two legs that apply them in
+`research-nonmutable-vm.yml` (a NixOS 25.05 guest, home-manager as the NixOS module for
+root, over the starter-scaffolded `dotfiles-NixOS`) and `research-nonmutable.yml` (Fedora
+42, single-user nix, standalone home-manager release-25.05 as an unprivileged user, over
+`dotfiles-Fedora`). The module tries to own everything the driver wires — every Core zsh
+fragment, the OS layer, nvim, tmux, starship, gitconfig, lazygit, atuin, jj, tealdeer, tpm,
+the packages, PATH and the zsh entry — as **out-of-store symlinks into the vendored
+`core/`**, so the fleet's provenance model is untouched and only *ownership of the link* is
+contested. The probe inventories the home, runs the repo's own `bootstrap.sh --links-only`
+over home-manager's result, switches again where it can (standalone), and reads who owns
+each path after each step. It took four dispatches (#1021, #1023, #1024, #1025: no
+`tmuxPlugins.tpm` in nixpkgs 25.05, a quoting bug, a bind-mount owner, and the standalone
+`home-manager` CLI vanishing after its own first switch unless the module carries
+`programs.home-manager.enable` — that last one is a finding in its own right).
+
+**What home-manager owned, on both hosts: all of it, on the first activation.** Every
+inventoried path became a link into `…-home-manager-files/` — a *store hop*:
+`mkOutOfStoreSymlink` puts a symlink in the store that points at the checkout, and
+home-manager links the home path at that store symlink, so each "out-of-store" link is two
+hops (`~/.config/zsh/00-tools.zsh → /nix/store/…-home-manager-files/.config/zsh/00-tools.zsh
+→ ~/dotfiles/core/zsh/00-tools.zsh`). The entry it wrote is `$ZDOTDIR/.zshrc` with the
+same v4 loader line the driver writes, plus `~/.zshenv` pointing `ZDOTDIR` at it; a
+pre-existing `~/.zshrc` (Fedora's `/etc/skel`) it left alone. Packages: 619 links in the
+user environment on Fedora, the whole `install/packages.txt` set from one nixpkgs pin. The
+mise seed (`home.activation`) fired on Fedora and **not on NixOS**: there the activation
+ran at system activation and the checkout it copies from arrived afterwards — a
+declarative host orders *configuration first, repo later*, the driver *checkout first, then
+link*, and an activation script cannot wait for a clone.
+
+**What the driver did over it (`--links-only`, exit 0 on both).** NixOS: `28 linked · 2
+seeded · 0 backed up · 25 relinked · 0 skipped`; Fedora: `34 linked · 2 seeded · 0 backed
+up · 28 relinked`. Every home-manager link was **relinked** — the first hop points into
+the store, not at the checkout, so `blib_link` sees a symlink with the wrong target and
+replaces it, silently and without a backup (a differing symlink is a relink, not a foreign
+file). It wrote `~/.zshrc` (backing up Fedora's skeleton one — a backup the tally did not
+count, #1026), relinked `$ZDOTDIR/.zshrc` at it, seeded `local.gitconfig` and (NixOS)
+`mise/config.toml`, and left two things of home-manager's alone: `tmux/plugins/tpm`, which
+`--links-only` never touches, and on Fedora `~/.zshenv`, which that repo does not wire.
+The shell booted afterwards on both (`core-doctor` defined), through home-manager's
+`.zshenv` and the driver's loader — the two entries compose by accident, because both
+resolve to the same v4 line.
+
+**What the second switch did (Fedora, standalone, `-b hm-backup2`): nothing — it
+refused.** Exit 1 at `checkLinkTargets`, before a single link was touched. For 27 of the
+28 paths the driver had relinked, home-manager printed *"is in the way of … will be
+skipped since they are the same"*: its collision check compares **content** (`cmp -s`),
+and a direct link into the checkout has the same bytes as its own two-hop one, so it would
+have left the driver's links alone for good — in the way, tolerated, never re-owned. The
+one it could not tolerate was `$ZDOTDIR/.zshrc`: the driver's is a symlink at `~/.zshrc`
+(the v4 loader), home-manager's is its own `initContent` file, different bytes — and `-b`
+did not help, because home-manager backs up only a *regular* foreign file, never a foreign
+symlink (`[[ ! -L "$targetPath" && -n "$HOME_MANAGER_BACKUP_EXT" ]]`,
+`modules/files/check-link-targets.sh`, release-25.05). A home the driver has linked is
+therefore one home-manager can no longer activate at all until that link is removed or
+`home.file.<entry>.force` is set — and the driver's next run would relink it. That is the
+deadlock, and it is over exactly one file: the entry.
+
+**Verdict: coexist, with a hard line — and the line is the entry.** The two tools are not
+symmetric: the driver overwrites everything of home-manager's silently; home-manager
+tolerates everything of the driver's except the one file whose bytes differ, and on that
+one it stops the whole activation. So a home cannot have two link owners, but the fight is
+not over the fragments — it is over `$ZDOTDIR/.zshrc`, which means `programs.zsh` must be
+off in any `home.nix` a fleet repo ships. *Adopt* is rejected on that measurement, and on
+three things home-manager has no hook for: the login shell (`users.users.<name>.shell` on
+NixOS, `chsh` elsewhere), the `core/` pre-commit guard (a hook in a checkout, not a home
+file), and the ordering above (its activation cannot seed from a checkout that does not
+exist yet). *Reject* is wrong too: what home-manager did better was real — the package list
+is a pinned nixpkgs set instead of `PKG_INSTALL` over a text file, tpm is a rev-locked
+fetch instead of a bootstrap-time clone, PATH entries are declared, and on a mutable host
+it is a per-user package manager that needs no escalation at all. So the NixOS repo, when
+it exists, ships both with the boundary written down: **`configuration.nix` / `home.nix`
+own packages, the login-shell declaration, tpm and PATH; the driver owns every link and the
+zsh entry, and `home.nix` declares none of them — no `home.file`, no `xdg.configFile`, no
+`programs.zsh`.** The `--links-only` run measured here is that shape's steady state, and
+home-manager's own collision check is what keeps it stable. This is R2's
+`PROVISIONER=declarative` made concrete: `PKG_INSTALL` / `PKG_REMOVE` stay `nix-env` for
+the imperative case, and `core-doctor`'s hint on a home-manager box says "add it to
+`home.packages`". The eight mutable hosts take nothing from it: without home-manager the
+driver's link step is the only owner, as today.
+
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 
 Read off the upstream manuals while the first R1 harness run was in flight (the harness
@@ -691,9 +776,10 @@ Recorded now so the cost is visible before the research decides whether to pay i
 - **Containers as the fleet's home** (toolbox/distrobox as the primary target). A
   container is a mutable host inside an immutable one; the existing repos already work
   there. The question this document asks is about the *host*.
-- **Replacing the vendoring model with Nix.** R3 may find home-manager can own more than
-  expected; even then, `core/` stays the vendored source of truth and `core.lock` the
-  provenance. A declarative provisioner is a provisioner, not a distribution mechanism.
+- **Replacing the vendoring model with Nix.** R3 found home-manager *can* own every link
+  (measured) and that it must not (the entry deadlock, §5 R3 findings); either way `core/`
+  stays the vendored source of truth and `core.lock` the provenance. A declarative
+  provisioner is a provisioner, not a distribution mechanism.
 - **The nvim split.** Its own document, `NVIM-SPLIT-PROPOSAL.md`.
 
 ## 8. Open questions
