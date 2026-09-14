@@ -111,6 +111,11 @@ jobs:
           for _ in $(seq 1 60); do sshr -p 2222 research@localhost true 2>/dev/null && break; sleep 5; done
           sshr -p 2222 research@localhost true || { echo "no ssh after 5 min"; tail -40 bootc-serial.log; exit 1; }
           scpr -P 2222 scripts/research/nonmutable-host.sh research@localhost:/tmp/nonmutable-host.sh
+          # The layered sudoers drop-in did not take on the first run ("a password is
+          # required" — the image's /etc/sudoers.d entry lost to the deployment's own
+          # wheel rule); a non-interactive ssh has no TTY for the prompt, and the driver's
+          # keepalive died there. Grant it now, on the booted host, with the password once.
+          sshr -p 2222 research@localhost "echo research | sudo -S sh -c 'echo \"research ALL=(ALL) NOPASSWD: ALL\" >/etc/sudoers.d/99-research && chmod 0440 /etc/sudoers.d/99-research' && sudo -n true && echo 'sudo -n ok'"
           # Two passes: as the user with sudo resolved (the realistic one), then as root.
           sshr -p 2222 research@localhost "bash /tmp/nonmutable-host.sh bootc --as-user --repo-ref '$REPO_REF' --out /tmp/bootc-user.md" || true
           sshr -p 2222 research@localhost "sudo bash /tmp/nonmutable-host.sh bootc --repo-ref '$REPO_REF' --out /tmp/bootc-root.md" || true
@@ -262,7 +267,10 @@ jobs:
           for _ in $(seq 1 60); do sshr -p 2224 root@localhost true 2>/dev/null && break; sleep 5; done
           sshr -p 2224 root@localhost true || { echo "no ssh after 5 min"; tail -40 nixos-serial.log 2>/dev/null; exit 1; }
           scpr -P 2224 scripts/research/nonmutable-host.sh dotfiles-NixOS.tgz root@localhost:/tmp/
-          sshr -p 2224 root@localhost 'cd /tmp && tar xzf dotfiles-NixOS.tgz && cd dotfiles-NixOS && git init -q && git add -A >/dev/null 2>&1 && git -c user.email=r@x -c user.name=r commit -q -m seed >/dev/null 2>&1; bash /tmp/nonmutable-host.sh nixos --repo-dir /tmp/dotfiles-NixOS --out /tmp/nixos-root.md' || true
+          # chown after extract: the tarball carries the runner's uid, and git refuses a
+          # tree owned by someone else ("dubious ownership") — which read as "not a git
+          # working tree" to the core guard on the first run.
+          sshr -p 2224 root@localhost 'cd /tmp && tar xzf dotfiles-NixOS.tgz && chown -R root:root dotfiles-NixOS && cd dotfiles-NixOS && git add -A >/dev/null 2>&1 && git -c user.email=r@x -c user.name=r commit -q -m seed >/dev/null 2>&1; bash /tmp/nonmutable-host.sh nixos --repo-dir /tmp/dotfiles-NixOS --out /tmp/nixos-root.md' || true
           scpr -P 2224 root@localhost:/tmp/nixos-root.md research-out/nixos-vm-root.md || true
           ls -la research-out
       - name: Summary + artifact

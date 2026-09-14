@@ -357,6 +357,88 @@ login-shell step runs inside `--links-only`. (4) The scaffold is ready to become
 from `download.opensuse.org`, and `nixos-rebuild build-vm` — each running the same script
 over ssh, each answering §3's first three rows for real.
 
+### R1 findings — rung two, booted hosts (2026-09-14, run 34819015395)
+
+Three VMs on `ubuntu-latest`'s KVM (`research-nonmutable-vm.yml`): a **bootc** disk built
+from `fedora-bootc:42` with `bootc-image-builder`, the **MicroOS** OpenStack-Cloud qcow2
+with a cloud-init seed, and a **NixOS 25.05** guest from `nixos-rebuild build-vm`. Same
+script, over ssh. These are the measurements §3 asked for.
+
+**MicroOS (`ID="opensuse-microos"`, `ID_LIKE="suse opensuse opensuse-tumbleweed microos
+sl-micro"`; `/` is btrfs **ro**, snapshot subvolume; `/usr` not writable, `/etc` `/var`
+`/home` `/root` writable).**
+
+- **The transactional round trip, measured.** `transactional-update -n pkg install git zsh
+  …`: opened snapshot 2 from 1, ran `zypper -R <snapshot> install` inside it, closed it —
+  *"New default snapshot is #2 … Please reboot your machine to activate the changes"* —
+  **21 s wall**, exit 0. Before the reboot `command -v git zsh` found nothing; after it,
+  both. §3 row 1 (**`PKG_INSTALL` is synchronous: breaks**) is measured, and the shape of
+  the two-phase bootstrap §4(3) sketched is exactly this.
+- **The declared verb is refused outright.** `dotfiles-openSUSE` unchanged, guard passed
+  (`opensuse` is in `ID`), `--links-only` (34 links) and `--dry-run` exit 0 — and the
+  **real run exits 2**: every `zypper in` answers *"Transactional system detected: A
+  transactional-wrapper command is not installed. Please use transactional-update to
+  modify or update the system"* (rc 5), the per-package fallback records each as a miss,
+  and openSUSE's exit-on-any-miss contract fires. So `PKG_INSTALL=sudo zypper in` **is a
+  lie on this host today**, and the honest value is `transactional-update -n pkg in`. The
+  upstream installers that write under `$HOME` (starship's `curl | sh`) succeeded — after
+  the run, `zsh git starship` were on `PATH`. **`chsh` works** (login shell → zsh) and
+  `/etc/shells` is writable — the `/etc` overlay holds for this; whether it survives the
+  next `transactional-update dup` is R1's remaining MicroOS question.
+- `snapper list` works on the host (it could not in a container); `transactional-update`
+  6.1.3; `sudo` present.
+
+**bootc (Fedora 42 bootc, `ID=fedora`, no `VARIANT_ID`; as the user: `/usr` `/etc` `/var`
+`/home` `/opt` all NOT writable, only `/var/home/<user>`; as root: `/etc` `/var` `/home`
+writable, `/usr` `/opt` not).**
+
+- **The update verbs, from a user session.** `rpm-ostree status` and `rpm-ostree status
+  --pending-exit-77` answer as the user (exit 0, *"State: idle"*, nothing pending);
+  `rpm-ostree upgrade --check` needs authorisation (*"AutomaticUpdateTrigger not allowed
+  for user"*); `bootc status` and `bootc upgrade --check` **require root**. As root
+  `bootc status` answers; `upgrade --check` fails because this disk's origin is the local
+  image it was built from (*"pinging container registry localhost"*) — a registry-backed
+  Silverblue image is needed for that one (`bootc switch quay.io/fedora/fedora-bootc:42`
+  first; next iteration). So the count verb for `up` is **`rpm-ostree status
+  --pending-exit-77`** (user-runnable, exit 77 = pending) with `rpm-ostree upgrade --check`
+  behind `sudo` for the "is there one" question — both already modelled by
+  `PKG_COUNT_PENDING` + the `PKG_PENDING_EXIT_NONE` gap §5's documentation findings named.
+- **The driver, as the user.** `--links-only`: 34 links, and **`chsh` ran and succeeded
+  without sudo** (*"Changing shell for research. Shell changed."*) — the setuid `chsh`
+  edits `/etc/passwd` on a host where the user cannot write `/etc`. `--dry-run` wrote
+  nothing. The **real run exited 1 at the sudo keepalive**: *"sudo: a terminal is required
+  to read the password … sudo authentication failed — cannot provision packages"* — a
+  harness fact (the layered `sudoers.d` drop-in did not take on the deployed host; the
+  next iteration grants it after boot), but also a real one: the driver's keepalive has no
+  askpass path, so a non-interactive run on any host with a passworded sudo stops there.
+- **The driver, as root.** The real run **exits 1 inside `dnf`** after resolving the full
+  38-package transaction — the report's 6 KB cap cut the refusal itself (fixed: head and
+  tail are kept now); rung-two iteration 2 records the exact message. Root's login shell
+  moved to zsh; `/etc/shells` gained the entry.
+
+**NixOS 25.05 (`ID=nixos`, `VARIANT_ID=""`; everything "writable" to root — `/etc` is a
+real directory of generated links, rebuilt on `switch`; `sudo`, `chsh`, `getent`, `zsh`
+under `/run/wrappers` and `/run/current-system/sw/bin`; `/etc/shells` lists zsh because
+`programs.zsh.enable` was declared).**
+
+- **The scaffolded `dotfiles-NixOS` runs clean end to end** on a real NixOS: `--help`,
+  `--links-only` (28 links), `--dry-run` (wrote nothing), real run — all exit 0, nothing
+  provisioned (no hook), login shell left alone (`BOOTSTRAP_LOGIN_SHELL=0`). This is the
+  starting point for the NixOS repo; what it lacks is the declaration and the arm.
+- `nix` 2.28.5, `nixos-rebuild` present, `home-manager` absent (not declared). The
+  `chsh`-then-rebuild question (does `mutableUsers` keep a hand-set shell across `switch`?)
+  is the next iteration's probe; so is `nix profile install --dry-run`, the imperative verb
+  the declaration would otherwise name.
+
+**What rung two settles.** (1) On MicroOS the schema's `PKG_INSTALL` is a *refusal*, not a
+slow path: the required verb cannot be filled truthfully with zypper → **R2 leans
+breaking-or-conditional** for that family unless `transactional-update -n pkg in` plus a
+reboot verb is accepted as the honest value (it fits the existing key; the *reboot* is
+what the schema lacks). (2) On bootc the user-runnable verbs exist and the read-only tree
+bites the provisioner, not the wiring. (3) `--links-only` is clean on all three booted
+hosts — the driver's `$HOME` half needs no arm. (4) `chsh` is the one system write that
+worked everywhere it was tried, as a user, without an escalator.
+
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 
 Read off the upstream manuals while the first R1 harness run was in flight (the harness
