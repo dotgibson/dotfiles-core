@@ -45,3 +45,6 @@ mise.local.toml
 # scripts/research/nonmutable-host.sh + research-nonmutable.yml write their reports here;
 # they are read and transcribed into NON-MUTABLE-HOST-PROPOSAL.md, never committed.
 research-out/
+
+# the loader byte-compiles fragments beside their source when sourced from a checkout (research probes do)
+*.zwc

@@ -173,9 +173,12 @@ jobs:
             sshr -p 2222 research@localhost "git clone -q --depth=1 --branch '$REPO_REF' https://github.com/dotgibson/dotfiles-Fedora.git /home/research/dotfiles-Fedora-r5" || true
             sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; sudo sh -c 'printf \"[[registry]]\nlocation = \\\"10.0.2.2:5000\\\"\ninsecure = true\n\" >/etc/containers/registries.conf.d/research.conf'; time sudo bootc switch --transport registry 10.0.2.2:5000/research-bootc:latest 2>&1 | tail -5" >research-out/r5-bootc-switch.txt 2>&1 || true
             sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /home/research/nonmutable-r5.sh bootc --repo-dir /home/research/dotfiles-Fedora-r5 --patch /home/research/dotfiles-Fedora.patch --out /home/research/r5-bootc.md" || true
-            # v2 of the image, same tag: now the registry IS newer than what the guest runs
-            (cd bib && printf 'FROM localhost/research-bootc:latest\nRUN echo v2 >/usr/lib/research-v2 && rpm -q htop >/dev/null 2>&1 || true\n' >Containerfile.v2 && sudo podman build -q -t localhost/research-bootc:latest -f Containerfile.v2 . && sudo podman push -q --tls-verify=false localhost/research-bootc:latest localhost:5000/research-bootc:latest)
-            sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; { echo; echo '## 6. After a v2 image was pushed to the registry under the same tag'; echo; echo '| what | as | exit | cost | first lines |'; echo '| --- | --- | --- | --- | --- |'; for c in 'rpm-ostree upgrade --check' 'rpm-ostree upgrade --check --unchanged-exit-77' 'bootc upgrade --check'; do for w in user root; do s=\$(date +%s%3N); if [ \$w = root ]; then o=\$(sudo -n \$c 2>&1); rc=\$?; else o=\$(\$c 2>&1); rc=\$?; fi; e=\$(date +%s%3N); printf '| %s | %s | **%s** | %s ms | %s |\n' \"\$c\" \$w \$rc \$((e-s)) \"\$(printf '%s' \"\$o\" | head -3 | tr '\n' ' ' | cut -c1-160)\"; done; done; } >>/home/research/r5-bootc.md" || true
+            # v2 of the image, same tag: now the registry IS newer than what the guest runs.
+            # The checks run from a script on the guest (the first attempt inlined them
+            # through two layers of quoting and asked for a command named "rpm-ostree upgrade --check").
+            (cd bib && printf 'FROM localhost/research-bootc:latest\nRUN echo v2 >/usr/lib/research-v2\n' >Containerfile.v2 && sudo podman build -q -t localhost/research-bootc:latest -f Containerfile.v2 . && sudo podman push -q --tls-verify=false localhost/research-bootc:latest localhost:5000/research-bootc:latest)
+            scpr -P 2222 scripts/research/nonmutable-r5-v2.sh research@localhost:/home/research/r5-v2.sh
+            sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /home/research/r5-v2.sh" || true
             scpr -P 2222 research@localhost:/home/research/r5-bootc.md research-out/r5-bootc.md || true
           fi
           ls -la research-out
