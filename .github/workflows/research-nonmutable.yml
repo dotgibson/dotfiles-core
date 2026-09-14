@@ -101,7 +101,7 @@ jobs:
               nix-channel --add https://github.com/nix-community/home-manager/archive/release-25.05.tar.gz home-manager
               nix-channel --add https://nixos.org/channels/nixos-25.05 nixpkgs
               nix-channel --update >/tmp/channels.log 2>&1 || tail -3 /tmp/channels.log
-              nix-shell "<home-manager>" -A install >/tmp/hm-install.log 2>&1 || { echo hm-install-failed; tail -5 /tmp/hm-install.log; }
+              nix-shell \"<home-manager>\" -A install >/tmp/hm-install.log 2>&1 || { echo hm-install-failed; tail -5 /tmp/hm-install.log; }
               export PATH=\$HOME/.nix-profile/bin:\$PATH
               git clone -q --depth=1 --branch '"$REPO_REF"' https://github.com/dotgibson/dotfiles-Fedora.git \$HOME/dotfiles
               HM_USER=research HM_HOME=\$HOME bash /w/scripts/research/nonmutable-home-manager.sh \$HOME/dotfiles fedora --switch --out /tmp/home-manager-fedora.md
