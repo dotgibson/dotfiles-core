@@ -14,6 +14,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`blib_main` always exports `BLIB_DRY` as 0 or 1, and `BOOTSTRAP_SU=lazy` also skips the
+  driver's sudo keepalive** (#990, #991 — two defects in #985, each found by the next adopter).
+  The driver exported `BLIB_DRY` only on a dry run, so a hook written `((BLIB_DRY)) || return 0`
+  — valid bash, clean under every linter — died with `unbound variable` under `set -u` on the
+  first REAL run: the stubbed full-provision CI leg, the one path a dry-run test cannot cover
+  (dotgibson/dotfiles-Debian#78's first run). And `lazy` told the driver not to resolve an
+  escalator but still wrapped `bootstrap_provision` in the keepalive, which would prime sudo
+  on a repo whose run may never need it (Offense without `--install`) and fail outright where
+  the escalator is not sudo. Both knobs are now always 0/1 and lazy means the hook owns
+  escalation end to end; the fixture in `scripts/test/37-bootstrap-driver.sh` reads
+  `BLIB_DRY` bare on purpose and runs a lazy case with `BLIB_SU` unset. (`lib/bootstrap-lib.sh`)
+
 ### Changed
 
 - **Fedora and Debian are on the bootstrap driver — the `blib_main` row reads 3/9** (#986;
