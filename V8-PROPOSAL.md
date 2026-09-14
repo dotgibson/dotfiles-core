@@ -6,10 +6,14 @@
 > hook**, so Change 2 adds no overlay and stays MINOR. Change 3 never shipped to a repo.
 > No section writes a breaking bullet, so `tag-release.sh` would never mint a `v8` alias
 > from this content — and must not. What remains (§4.2's ratchet, §5's split, §6's
-> leftovers) is minor-class work that needs no coordinated event, tracked since 2026-09-13
-> in #973 (the ratchet), #975 (§10 Q3) and #976 (the hook); §5's split shipped in #970. The next major's
-> content is the **non-mutable host** (§10), the one roadmap theme with an external
-> forcing function; nothing here should be read as scheduling it.
+> leftovers) was minor-class work that needed no coordinated event, and **all of it has
+> landed** (2026-09-14): #973 (the four-helper ratchet, 9/9), #975 (§10 Q3), #976 (the
+> hook, `blib_main`) and #986 (the driver fleet-wide: eight callers, MacBook exempt by
+> design), #999 (the scaffold writes the driver form) — §5's split shipped in #970. This
+> file is a closed record, the way `V5-PROPOSAL.md` is. The next major's content is the
+> **non-mutable host** (§10), the one roadmap theme with an external forcing function —
+> planned in `NON-MUTABLE-HOST-PROPOSAL.md`, research first; the nvim split has its own
+> document, `NVIM-SPLIT-PROPOSAL.md`. Nothing here schedules either.
 >
 > Written when Core was at `7.3.0` with an empty `[Unreleased]`, no open PRs, and a
 > **Breaking Backlog milestone with zero open issues** — as the content of a major, because
