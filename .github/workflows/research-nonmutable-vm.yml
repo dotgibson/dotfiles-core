@@ -34,6 +34,10 @@ on:
         description: "R4: also apply the variant patch (scripts/research/nonmutable/r4/) to the sibling on the bootc/microos guest, run its bootstrap, reboot, re-run"
         required: false
         default: "false"
+      r5:
+        description: "R5: measure the AVAILABLE / STAGED verbs, stage something small, and run Core's consumers against the variant declaration (all three guests; bootc gets a registry-backed image)"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -91,6 +95,14 @@ jobs:
           groups = ["wheel"]
           EOF
           sudo podman build -q -t localhost/research-bootc:latest -f Containerfile .
+          # R5: a plain registry on the runner (reachable from the guest as 10.0.2.2:5000,
+          # QEMU's user-net gateway), holding the same image — so the guest can be
+          # `bootc switch`ed to a registry-backed origin and `bootc upgrade --check` /
+          # `rpm-ostree upgrade --check` are asked a real question, twice: once with nothing
+          # newer, once after a v2 image is pushed under the same tag.
+          sudo podman run -d --name registry -p 5000:5000 docker.io/library/registry:2 >/dev/null
+          sleep 3
+          sudo podman push -q --tls-verify=false localhost/research-bootc:latest localhost:5000/research-bootc:latest
           mkdir -p output
           sudo podman run --rm --privileged --pull=newer --security-opt label=type:unconfined_t \
             -v "$PWD/config.toml:/config.toml:ro" -v "$PWD/output:/output" \
@@ -104,6 +116,7 @@ jobs:
         env:
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
           R4: ${{ github.event.inputs.r4 || 'false' }}
+          R5: ${{ github.event.inputs.r5 || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
@@ -151,6 +164,19 @@ jobs:
             sleep 30; wait_ssh || { echo "no ssh after the R4 reboot"; tail -40 bootc-serial.log; }
             timeout 50m ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /home/research/nonmutable-variant.sh bootc --repo-dir /home/research/dotfiles-Fedora --patch /home/research/dotfiles-Fedora.patch --phase 2 --as-user --out /home/research/r4-bootc.md" || echo "phase 2 exit=$?"
             scpr -P 2222 research@localhost:/home/research/r4-bootc.md research-out/r4-bootc.md || true
+          fi
+          if [ "$R5" = "true" ]; then
+            # R5 on bootc: switch the guest to the registry-backed image (same content),
+            # measure the AVAILABLE / STAGED verbs, stage htop, ask again; then push a v2
+            # image under the same tag and ask the upgrade checks once more.
+            scpr -P 2222 scripts/research/nonmutable-r5.sh scripts/research/nonmutable/r4/dotfiles-Fedora.patch research@localhost:/home/research/
+            sshr -p 2222 research@localhost "git clone -q --depth=1 --branch '$REPO_REF' https://github.com/dotgibson/dotfiles-Fedora.git /home/research/dotfiles-Fedora-r5" || true
+            sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; sudo sh -c 'printf \"[[registry]]\nlocation = \\\"10.0.2.2:5000\\\"\ninsecure = true\n\" >/etc/containers/registries.conf.d/research.conf'; time sudo bootc switch --transport registry 10.0.2.2:5000/research-bootc:latest 2>&1 | tail -5" >research-out/r5-bootc-switch.txt 2>&1 || true
+            sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /home/research/nonmutable-r5.sh bootc --repo-dir /home/research/dotfiles-Fedora-r5 --patch /home/research/dotfiles-Fedora.patch --out /home/research/r5-bootc.md" || true
+            # v2 of the image, same tag: now the registry IS newer than what the guest runs
+            (cd bib && printf 'FROM localhost/research-bootc:latest\nRUN echo v2 >/usr/lib/research-v2 && rpm -q htop >/dev/null 2>&1 || true\n' >Containerfile.v2 && sudo podman build -q -t localhost/research-bootc:latest -f Containerfile.v2 . && sudo podman push -q --tls-verify=false localhost/research-bootc:latest localhost:5000/research-bootc:latest)
+            sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; { echo; echo '## 6. After a v2 image was pushed to the registry under the same tag'; echo; echo '| what | as | exit | cost | first lines |'; echo '| --- | --- | --- | --- | --- |'; for c in 'rpm-ostree upgrade --check' 'rpm-ostree upgrade --check --unchanged-exit-77' 'bootc upgrade --check'; do for w in user root; do s=\$(date +%s%3N); if [ \$w = root ]; then o=\$(sudo -n \$c 2>&1); rc=\$?; else o=\$(\$c 2>&1); rc=\$?; fi; e=\$(date +%s%3N); printf '| %s | %s | **%s** | %s ms | %s |\n' \"\$c\" \$w \$rc \$((e-s)) \"\$(printf '%s' \"\$o\" | head -3 | tr '\n' ' ' | cut -c1-160)\"; done; done; } >>/home/research/r5-bootc.md" || true
+            scpr -P 2222 research@localhost:/home/research/r5-bootc.md research-out/r5-bootc.md || true
           fi
           ls -la research-out
       - name: Summary + artifact
@@ -202,6 +228,7 @@ jobs:
         env:
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
           R4: ${{ github.event.inputs.r4 || 'false' }}
+          R5: ${{ github.event.inputs.r5 || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
@@ -239,6 +266,14 @@ jobs:
             sleep 30; wait_ssh || { echo "no ssh after the R4 reboot"; tail -40 microos-serial.log; }
             timeout 50m ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key -p 2223 root@localhost "bash /root/nonmutable-variant.sh microos --repo-dir /root/dotfiles-openSUSE --patch /root/dotfiles-openSUSE.patch --phase 2 --out /root/r4-microos.md" || echo "phase 2 exit=$?"
             scpr -P 2223 root@localhost:/root/r4-microos.md research-out/r4-microos.md || true
+          fi
+          if [ "$R5" = "true" ]; then
+            # R5 on MicroOS: as root, with an unprivileged `research` user for the "as the
+            # user" questions (useradd writes /etc, which is writable on the running snapshot).
+            scpr -P 2223 scripts/research/nonmutable-r5.sh scripts/research/nonmutable/r4/dotfiles-openSUSE.patch root@localhost:/root/
+            sshr -p 2223 root@localhost "useradd -m research 2>/dev/null || true; git clone -q --depth=1 --branch '$REPO_REF' https://github.com/dotgibson/dotfiles-openSUSE.git /root/dotfiles-openSUSE-r5" || true
+            sshr -p 2223 root@localhost "bash /root/nonmutable-r5.sh microos --user research --repo-dir /root/dotfiles-openSUSE-r5 --patch /root/dotfiles-openSUSE.patch --out /root/r5-microos.md" || true
+            scpr -P 2223 root@localhost:/root/r5-microos.md research-out/r5-microos.md || true
           fi
           ls -la research-out
       - name: Summary + artifact
@@ -310,6 +345,8 @@ jobs:
               -o nixos-vm 2>&1 | tail -15
           ls nixos-vm/bin
       - name: Boot it and run the probe over ssh
+        env:
+          R5: ${{ github.event.inputs.r5 || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
@@ -328,6 +365,13 @@ jobs:
           sshr -p 2224 root@localhost 'cd /root && tar xzf /tmp/dotfiles-NixOS.tgz && chown -R root:root dotfiles-NixOS && cd dotfiles-NixOS && git add -A >/dev/null 2>&1 && git -c user.email=r@x -c user.name=r commit -q -m seed >/dev/null 2>&1; mkdir -p /tmp/w/scripts/research/nonmutable && cp /tmp/nonmutable-home-manager.sh /tmp/w/scripts/research/; bash /tmp/w/scripts/research/nonmutable-home-manager.sh /root/dotfiles-NixOS nixos --no-switch --out /tmp/home-manager-nixos.md; bash /tmp/nonmutable-host.sh nixos --repo-dir /root/dotfiles-NixOS --out /tmp/nixos-root.md' || true
           scpr -P 2224 root@localhost:/tmp/home-manager-nixos.md research-out/home-manager-nixos.md || true
           scpr -P 2224 root@localhost:/tmp/nixos-root.md research-out/nixos-vm-root.md || true
+          if [ "$R5" = "true" ]; then
+            # R5 on NixOS: as root, the scaffolded repo for the declaration (its
+            # os/nixos.capabilities is the starter's; the R2 prototype is what §4 reads).
+            scpr -P 2224 scripts/research/nonmutable-r5.sh scripts/research/nonmutable/nixos.capabilities root@localhost:/root/
+            sshr -p 2224 root@localhost "useradd -m research 2>/dev/null || true; cp /root/nixos.capabilities /root/dotfiles-NixOS/os/nixos.capabilities; bash /root/nonmutable-r5.sh nixos --user research --repo-dir /root/dotfiles-NixOS --out /root/r5-nixos.md" || true
+            scpr -P 2224 root@localhost:/root/r5-nixos.md research-out/r5-nixos.md || true
+          fi
           ls -la research-out
       - name: Summary + artifact
         if: always()

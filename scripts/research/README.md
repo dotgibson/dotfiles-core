@@ -49,6 +49,17 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   reboot, re-run. The diff counts are the R4 measurement; the reports say whether the
   shape WORKS.
 
+- **`nonmutable-r5.sh`** — R5's probe, on all three guests with `r5=true`: the AVAILABLE
+  verbs (is something newer upstream — `rpm-ostree upgrade --check`, `bootc upgrade
+  --check`, `zypper lu`, `transactional-update --dry-run`, a channel/flake check) and the
+  STAGED verbs (is a change waiting for a reboot — `rpm-ostree status --pending-exit-77`,
+  `/run/reboot-needed`, booted-vs-current on NixOS), each as the user and as root with its
+  exit status, output shape and cost; then it stages something small and asks again, and
+  runs Core's own `_pkgup_count` / nudge / `up -n` against the variant declaration to
+  record what a user sees TODAY. The bootc leg first switches the guest to a registry-
+  backed origin (a registry on the runner) so the upgrade checks have a real remote, and
+  asks again after a v2 image is pushed under the same tag.
+
 ## The rules
 
 - **Never vendored.** None of this is in `core.manifest` or `core.vendor`, so no OS repo
