@@ -50,7 +50,14 @@ jobs:
           for t in $want; do
             case "$t" in
               bootc)   img='quay.io/fedora/fedora-bootc:42';               prep='dnf install -y --setopt=install_weak_deps=False bash zsh git findutils util-linux shadow-utils || true' ;;
-              microos) img='registry.opensuse.org/opensuse/microos:latest'; prep='zypper --non-interactive install bash zsh git findutils util-linux shadow || true' ;;
+              # There is NO MicroOS container image (registry.opensuse.org has opensuse/tumbleweed,
+              # opensuse/leap and the BCI set; nothing under opensuse/microos — measured 2026-09-14,
+              # HTTP 404 on every plausible name). MicroOS is a booted-host product: its whole
+              # difference is the btrfs snapshot transaction, which a container cannot have. So
+              # this leg runs TUMBLEWEED with transactional-update installed — a stand-in that
+              # measures the package's presence and its refusal to transact without snapper, and
+              # nothing more. The report says so. The real MicroOS/Aeon leg is the qcow2 VM.
+              microos) img='registry.opensuse.org/opensuse/tumbleweed:latest';  prep='zypper --non-interactive install bash zsh git findutils util-linux shadow transactional-update snapper || true' ;;
               nixos)   img='nixos/nix:latest';                              prep='nix-env -iA nixpkgs.bash nixpkgs.zsh nixpkgs.git nixpkgs.findutils nixpkgs.shadow nixpkgs.coreutils nixpkgs.gnugrep nixpkgs.gawk || true' ;;
               *) echo "unknown target: $t" >&2; exit 2 ;;
             esac

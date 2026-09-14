@@ -282,6 +282,74 @@ layering natively, and this repo's habit is to document its rejections."*
   only a VM can test, and therefore what the register must mark *not covered* rather
   than green.
 
+### R1 findings — rung one, containers (2026-09-14, run 34811939804)
+
+The harness ran on `main` at v7.4.3 (dotfiles-Fedora at v7.4.3; the NixOS repo scaffolded
+by `new-os-repo.sh` with this Core seeded). Reports: the `r1-*` artifacts of that run.
+**Everything below is a container, not a booted host** — what a container can and cannot
+say is itself the first finding.
+
+**bootc (`quay.io/fedora/fedora-bootc:42`, dotfiles-Fedora unchanged).**
+
+- *What the image is.* `ID=fedora`, `VERSION_ID=42`, **no `VARIANT_ID`** in the bootc base
+  image (Silverblue's is set by its own image build — R1's VM leg checks). `rpm-ostree`,
+  `bootc`, `dnf`, `toolbox` present; `flatpak`, `distrobox`, `brew` absent. `/usr`, `/etc`,
+  `/var` all writable (a container; the read-only `/usr` is a property of the *deployed*
+  host). `sudo`, `chsh`, `getent`, `zsh` present; `/etc/shells` already lists zsh.
+- *The verbs.* `bootc status` **works in a container** (exit 0, reports the image) —
+  `bootc upgrade --check` refuses: *"Detected container; this command requires a booted
+  host system"* (exit 1). Every `rpm-ostree` verb refuses: *"This system was not booted via
+  libostree"* (exit 1). `dnf5 5.2.18` works. **So the update verbs cannot be measured in a
+  container at all** — R5 is VM-only, as expected; `bootc status` is the one read-only probe
+  a container can answer and is how a provisioner could detect "bootc image" at build time.
+- *The driver, unchanged.* `--help`, `--links-only` (34 links, the managed `~/.zshrc`), and
+  `--dry-run` (38-package plan, wrote nothing) all exit 0. The **real run exits 0** and
+  installs the whole list through `dnf` — which is the image-build path, exactly the case
+  §3 said a container would show; it says nothing about a deployed Silverblue.
+- *Two things worth recording anyway.* (1) `--links-only` **changed root's login shell**
+  (`chsh` ran, "Shell changed"): with `BLIB_SU=` set and `chsh` present the driver's login-
+  shell step is not gated on `--links-only`, only on the escalator — on a NixOS host that
+  step would fight the declaration; on any host it is a system write inside a "links only"
+  run. Worth a `BOOTSTRAP_LOGIN_SHELL` re-read for the atomic/declarative arm (§4(3)).
+  (2) Fedora 42's repos installed **`neovim` 0.11.5** and **`tree-sitter-cli` 0.25.10** —
+  both *below* the fleet's floors (≥ 0.12.0, ≥ 0.26.1; `PORTING-MATRIX.md` ³³ and ⁵). A
+  side finding for the matrix, not for this proposal, filed separately.
+
+**NixOS (`nixos/nix:latest`, a scaffolded `dotfiles-NixOS`).**
+
+- *What the image is.* **No `/etc/os-release`**, no `sudo`/`doas`/`chsh`/`getent`/`zsh`, no
+  `/etc/shells`, no `/run/current-system` — this is a mutable container carrying `nix`
+  2.35.2 and `nix-env`, not NixOS. The prep's `nix-env -iA nixpkgs.zsh …` did not land a
+  `zsh` (the image's channel layout differs; to fix in the harness), so the tool-detection
+  half is unmeasured here. **Nothing about NixOS-the-host is learned from this image**; the
+  leg proves only the scaffold and the driver on a bare box.
+- *The driver, unchanged.* The `new-os-repo.sh` starter (driver form, #999) works
+  end-to-end on it: `--help`, `--links-only` (28 links, the managed `~/.zshrc`, the guard
+  installed), `--dry-run` (wrote nothing), real run — all exit 0, and with
+  `BOOTSTRAP_LOGIN_SHELL=0` **no login-shell step ran** (the `chsh`-less host was never
+  asked). This is the shape the NixOS repo would start from; the declaration and the
+  provisioner arm are what it lacks.
+
+**MicroOS / Aeon.** The leg did not run: **there is no MicroOS container image.**
+`registry.opensuse.org` serves `opensuse/tumbleweed`, `opensuse/leap` and the BCI set;
+every plausible `opensuse/microos*` / `opensuse/aeon` name is HTTP 404 (measured). That is
+a finding in itself — MicroOS *is* the booted-host transaction, and the project ships it
+as a disk image only. The container leg now runs **Tumbleweed with the
+`transactional-update` package** as a labelled stand-in (presence and refusal to transact
+without snapper are all it can show); the qcow2 VM is the only real measurement.
+
+**What rung one settles.** (1) `--links-only` and `--dry-run` hold unchanged on both
+images — the `$HOME`-only half of the fleet survives, as §3 expected. (2) The update verbs
+are unmeasurable without a booted host, on both families that have them; R5 moves entirely
+to the VM legs. (3) One driver behaviour to reconsider regardless of target: the
+login-shell step runs inside `--links-only`. (4) The scaffold is ready to become
+`dotfiles-NixOS` the day the declaration exists.
+
+**Rung two (next):** the VM legs — a bootc disk built from the same image
+(`bootc-image-builder` → qcow2 → QEMU/KVM on `ubuntu-latest`), the Aeon/MicroOS qcow2
+from `download.opensuse.org`, and `nixos-rebuild build-vm` — each running the same script
+over ssh, each answering §3's first three rows for real.
+
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 
 Read off the upstream manuals while the first R1 harness run was in flight (the harness
