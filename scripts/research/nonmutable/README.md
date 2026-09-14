@@ -72,7 +72,11 @@ The major this proposal was written to plan does not come from the schema.
   zsh entry, because home-manager tolerates the driver's links but cannot activate over
   its entry). `nixos.capabilities` keeps `nix-env` for the imperative verbs; on a
   home-manager box `core-doctor`'s hint says "add it to `home.packages`".
-- **R4** (repo shape): measured against the fleet's own files (comment-stripped, sorted,
+- **R4** (repo shape) — the bootstrap half is now a pair of real patches under `r4/`
+  (`dotfiles-Fedora.patch`: 98 code lines in `bootstrap.sh` + the 18-line declaration
+  delta; `dotfiles-openSUSE.patch`: 55 + 10), applied and run on the booted guests by
+  `../nonmutable-variant.sh`; the proposal's §5 R4 findings carry the verdict. The
+  declaration half was measured here first: against the fleet's own files (comment-stripped, sorted,
   `comm -3`): `bootc.capabilities` touches **12 keys** of `os/fedora.capabilities` (six
   verbs change, `PROVISIONER` / `PKG_APPLY` / `PKG_PENDING_EXIT_SOME` are added, the
   auto-confirm, partial-upgrade and pending-match keys go — 18 changed lines) and

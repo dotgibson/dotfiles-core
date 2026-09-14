@@ -30,6 +30,10 @@ on:
         description: "Fleet repo ref to run (dotfiles-Fedora / dotfiles-openSUSE)"
         required: false
         default: "main"
+      r4:
+        description: "R4: also apply the variant patch (scripts/research/nonmutable/r4/) to the sibling on the bootc/microos guest, run its bootstrap, reboot, re-run"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -56,7 +60,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.bootc == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 150 # R4 adds a real run, a reboot and a capped 50-minute re-run
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,17 +103,20 @@ jobs:
       - name: Boot it and run the probe over ssh
         env:
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
+          R4: ${{ github.event.inputs.r4 || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
           sshr() { ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key "$@"; }
           scpr() { scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key "$@"; }
           mkdir -p research-out
-          qemu-system-x86_64 -enable-kvm -cpu host -m 4096 -smp 2 \
-            -drive file=bib/output/qcow2/disk.qcow2,if=virtio,format=qcow2 \
-            -nic user,model=virtio,hostfwd=tcp::2222-:22 -nographic -serial file:bootc-serial.log -display none &
-          for _ in $(seq 1 60); do sshr -p 2222 research@localhost true 2>/dev/null && break; sleep 5; done
-          sshr -p 2222 research@localhost true || { echo "no ssh after 5 min"; tail -40 bootc-serial.log; exit 1; }
+          boot() {
+            qemu-system-x86_64 -enable-kvm -cpu host -m 4096 -smp 2 \
+              -drive file=bib/output/qcow2/disk.qcow2,if=virtio,format=qcow2 \
+              -nic user,model=virtio,hostfwd=tcp::2222-:22 -nographic -serial file:bootc-serial.log -display none &
+          }
+          wait_ssh() { for _ in $(seq 1 60); do sshr -p 2222 research@localhost true 2>/dev/null && return 0; sleep 5; done; return 1; }
+          boot; wait_ssh || { echo "no ssh after 5 min"; tail -40 bootc-serial.log; exit 1; }
           scpr -P 2222 scripts/research/nonmutable-host.sh research@localhost:/tmp/nonmutable-host.sh
           # The layered sudoers drop-in did not take on the first run ("a password is
           # required" — the image's /etc/sudoers.d entry lost to the deployment's own
@@ -130,6 +137,21 @@ jobs:
           sshr -p 2222 research@localhost "sudo bash /tmp/nonmutable-host.sh bootc --repo-ref '$REPO_REF' --out /tmp/bootc-root.md" || true
           scpr -P 2222 research@localhost:/tmp/bootc-user.md research-out/bootc-vm-user.md || true
           scpr -P 2222 research@localhost:/tmp/bootc-root.md research-out/bootc-vm-root.md || true
+          if [ "$R4" = "true" ]; then
+            # R4: the variant patch on the real user's home — phase 1 stages, the guest
+            # reboots (rpm-ostree's deployment goes live), phase 2 re-runs. Files live in
+            # $HOME, not /tmp: a reboot empties /tmp. Phase 2 is capped — the re-run builds
+            # every cargo crate the layered toolchain now allows, and that is the cost being
+            # measured, not a hang to wait out.
+            scpr -P 2222 scripts/research/nonmutable-variant.sh scripts/research/nonmutable/r4/dotfiles-Fedora.patch research@localhost:/home/research/
+            sshr -p 2222 research@localhost "git clone -q --depth=1 --branch '$REPO_REF' https://github.com/dotgibson/dotfiles-Fedora.git /home/research/dotfiles-Fedora" || true
+            sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /home/research/nonmutable-variant.sh bootc --repo-dir /home/research/dotfiles-Fedora --patch /home/research/dotfiles-Fedora.patch --phase 1 --as-user --out /home/research/r4-bootc.md" || true
+            scpr -P 2222 research@localhost:/home/research/r4-bootc.md research-out/r4-bootc.md || true
+            sshr -p 2222 research@localhost 'sudo systemctl reboot' 2>/dev/null || true
+            sleep 30; wait_ssh || { echo "no ssh after the R4 reboot"; tail -40 bootc-serial.log; }
+            timeout 50m ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /home/research/nonmutable-variant.sh bootc --repo-dir /home/research/dotfiles-Fedora --patch /home/research/dotfiles-Fedora.patch --phase 2 --as-user --out /home/research/r4-bootc.md" || echo "phase 2 exit=$?"
+            scpr -P 2222 research@localhost:/home/research/r4-bootc.md research-out/r4-bootc.md || true
+          fi
           ls -la research-out
       - name: Summary + artifact
         if: always()
@@ -149,7 +171,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.microos == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 150 # R4 adds a real run, a reboot and a capped 50-minute re-run
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -179,6 +201,7 @@ jobs:
       - name: Boot, install git+zsh transactionally (reboot), run the probe over ssh
         env:
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
+          R4: ${{ github.event.inputs.r4 || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
@@ -205,6 +228,18 @@ jobs:
           scpr -P 2223 scripts/research/nonmutable-host.sh root@localhost:/tmp/nonmutable-host.sh
           sshr -p 2223 root@localhost "bash /tmp/nonmutable-host.sh microos --repo-ref '$REPO_REF' --out /tmp/microos-root.md" || true
           scpr -P 2223 root@localhost:/tmp/microos-root.md research-out/microos-vm-root.md || true
+          if [ "$R4" = "true" ]; then
+            # R4 on MicroOS: as root with BLIB_SU= (the cloud image has no sudo user); the
+            # variant transacts into a new snapshot, the reboot boots it, phase 2 re-runs.
+            scpr -P 2223 scripts/research/nonmutable-variant.sh scripts/research/nonmutable/r4/dotfiles-openSUSE.patch root@localhost:/root/
+            sshr -p 2223 root@localhost "git clone -q --depth=1 --branch '$REPO_REF' https://github.com/dotgibson/dotfiles-openSUSE.git /root/dotfiles-openSUSE" || true
+            sshr -p 2223 root@localhost "bash /root/nonmutable-variant.sh microos --repo-dir /root/dotfiles-openSUSE --patch /root/dotfiles-openSUSE.patch --phase 1 --out /root/r4-microos.md" || true
+            scpr -P 2223 root@localhost:/root/r4-microos.md research-out/r4-microos.md || true
+            sshr -p 2223 root@localhost 'systemctl reboot' 2>/dev/null || true
+            sleep 30; wait_ssh || { echo "no ssh after the R4 reboot"; tail -40 microos-serial.log; }
+            timeout 50m ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key -p 2223 root@localhost "bash /root/nonmutable-variant.sh microos --repo-dir /root/dotfiles-openSUSE --patch /root/dotfiles-openSUSE.patch --phase 2 --out /root/r4-microos.md" || echo "phase 2 exit=$?"
+            scpr -P 2223 root@localhost:/root/r4-microos.md research-out/r4-microos.md || true
+          fi
           ls -la research-out
       - name: Summary + artifact
         if: always()
