@@ -66,9 +66,12 @@ The major this proposal was written to plan does not come from the schema.
 
 ## What R2 hands to the next items
 
-- **R3** (the Nix answer): `nixos.capabilities` assumes channels and a per-user `nix-env`
-  profile; a `home-manager` box would replace `PKG_INSTALL`/`PKG_REMOVE` with "edit
-  `home.nix`" and this file would say so.
+- **R3** (the Nix answer) — answered: **coexist**. `home.nix` beside this README is the
+  measured module; the proposal's §5 R3 findings carry the verdict (home-manager owns
+  packages, the login-shell declaration, tpm and PATH; the driver owns every link and the
+  zsh entry, because home-manager tolerates the driver's links but cannot activate over
+  its entry). `nixos.capabilities` keeps `nix-env` for the imperative verbs; on a
+  home-manager box `core-doctor`'s hint says "add it to `home.packages`".
 - **R4** (repo shape): measured against the fleet's own files (comment-stripped, sorted,
   `comm -3`): `bootc.capabilities` touches **12 keys** of `os/fedora.capabilities` (six
   verbs change, `PROVISIONER` / `PKG_APPLY` / `PKG_PENDING_EXIT_SOME` are added, the

@@ -38,7 +38,8 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   inventories the home, runs the repo's `bootstrap.sh --links-only` OVER it and records
   the fight. `research-nonmutable.yml`'s `homemanager` leg runs it standalone on a
   mutable Fedora; the VM leg's NixOS guest gets it as a NixOS module. Adopt / coexist /
-  reject is read off the reports.
+  reject is read off the reports — and was: coexist, `NON-MUTABLE-HOST-PROPOSAL.md` §5
+  "R3 findings".
 
 ## The rules
 
