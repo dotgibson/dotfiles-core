@@ -1,4 +1,4 @@
-# scripts/research/ — the atuin daemon-guard research apparatus (archived, #687)
+# scripts/research/ — research apparatus: the atuin daemon guard (archived, #687) and the non-mutable host (R1, #1004)
 
 These scripts answered a question once, and the answer is recorded. They are kept so the
 question can be **re-asked on purpose**, not so it is re-asked on a clock.
@@ -13,6 +13,19 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   `make bench-atuin-systemd`.
 - **`lib/atuin-db.sh`** — the one row-count SQL and WAL checkpoint both scripts read atuin's
   history DB with. Sourced, mode 100644, never run.
+
+## The non-mutable host (R1, `NON-MUTABLE-HOST-PROPOSAL.md` §5, #1004)
+
+- **`nonmutable-host.sh <bootc|microos|nixos>`** — runs a fleet repo's bootstrap
+  **unchanged** on a non-mutable target and writes a Markdown report: what the host is
+  (os-release, update tooling, which of `/usr` `/etc` `/var` is writable, escalator and
+  login-shell machinery, the update verbs' exit codes), the probe-only paths against a
+  throwaway `HOME`, the real run, and a table to fill in against the proposal's §3. Every
+  probe is tolerant — a failing probe *is* the measurement. `gh workflow run
+  research-nonmutable` runs it inside the three container images and uploads the reports;
+  the VM legs (a booted bootc disk, an Aeon qcow2, `nixos-rebuild build-vm`) reuse the
+  same script over ssh and are R1's real deliverable. Not scheduled, not a gate; the
+  findings are read by a person and recorded in the proposal.
 
 ## The rules
 
