@@ -30,6 +30,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **openSUSE is on the bootstrap driver — the `blib_main` row reads 4/9** (#986;
+  dotgibson/dotfiles-openSUSE#186). The repo whose closing report exits 2 whenever an optional
+  install did not complete now declares that contract (`BOOTSTRAP_STRICT_DEFAULT=1`,
+  `BOOTSTRAP_FAIL_EXIT=2`, `--tolerate-failures` flipping the default off through
+  `bootstrap_flag`) instead of wrapping the driver's report in a private one; its OS check,
+  the `--only`/`--skip` exclusion and the links-only WSL note are `bootstrap_guard`, zypper
+  provisioning is `bootstrap_provision` with the body unchanged, and the Leap capability
+  re-link takes the pre-loader slot. 716 → 657 lines. (`scripts/audit/40-fleet-registers.sh`)
+
 - **Fedora and Debian are on the bootstrap driver — the `blib_main` row reads 3/9** (#986;
   dotgibson/dotfiles-Fedora#181, dotgibson/dotfiles-Debian#78). The two the survey called the
   driver's shape verbatim: each keeps its OS guard and preflight as `bootstrap_guard`, its
