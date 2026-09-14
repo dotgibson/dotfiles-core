@@ -1596,9 +1596,12 @@ HOOK
 #   BOOTSTRAP_ROLE         defense|offensive — wires the band-85 role via blib_link_role_layer
 #   BOOTSTRAP_SU_PREFER    doas — blib_resolve_su --prefer, for a box whose declared
 #                          escalator is not sudo (os/alpine.capabilities)
-#   BOOTSTRAP_SU           lazy — the driver resolves NO escalator; a hook that needs one
-#                          calls blib_resolve_su itself (Offense: only --install does).
-#                          Default: resolved up front, --require on a provisioning run.
+#   BOOTSTRAP_SU           lazy — the driver resolves NO escalator and runs NO sudo
+#                          keepalive; a hook that needs them calls blib_resolve_su and
+#                          blib_sudo_keepalive_start/_stop itself at the point of need
+#                          (Offense: only --install, and only its apt route, does).
+#                          Default: resolved up front, --require on a provisioning run,
+#                          the keepalive wrapped around bootstrap_provision.
 #   BOOTSTRAP_LOGIN_SHELL  0 to NOT call blib_set_login_shell (a role repo that installs
 #                          nothing and declines to sudo — Defense, Offense); pair it with
 #                          blib_login_shell_hint in bootstrap_closing to still say so
@@ -1744,13 +1747,20 @@ blib_main() {
   # ── probe, then provision ────────────────────────────────────────────────────
   if declare -F bootstrap_check >/dev/null 2>&1 && ((_bm_links == 0)); then bootstrap_check; fi
   if declare -F bootstrap_provision >/dev/null 2>&1 && ((_bm_links == 0 && _bm_dry == 0)); then
-    trap 'blib_sudo_keepalive_stop' EXIT
-    blib_sudo_keepalive_start || {
-      blib_warn "sudo authentication failed — cannot provision packages"
-      return 1
-    }
-    bootstrap_provision
-    blib_sudo_keepalive_stop
+    if [[ "${BOOTSTRAP_SU:-}" == lazy ]]; then
+      # The hook owns escalation end to end: priming sudo here would prompt for a
+      # privilege the run may never use (Offense without --install, or on its pipx/go
+      # route), and on a box whose escalator is not sudo it would fail outright.
+      bootstrap_provision
+    else
+      trap 'blib_sudo_keepalive_stop' EXIT
+      blib_sudo_keepalive_start || {
+        blib_warn "sudo authentication failed — cannot provision packages"
+        return 1
+      }
+      bootstrap_provision
+      blib_sudo_keepalive_stop
+    fi
   fi
 
   # ── wire ────────────────────────────────────────────────────────────────────
