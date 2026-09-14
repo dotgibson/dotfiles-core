@@ -285,9 +285,12 @@ Concretely, in the order the evidence supports:
    `BOOTSTRAP_SU`, `BOOTSTRAP_LOGIN_SHELL`, `BOOTSTRAP_STRICT_DEFAULT`, `BOOTSTRAP_FAIL_EXIT`)
    read off the nine files as they stood after (1) and (2): measured, the shared skeleton is
    ~1,290 of 7,390 lines, and the driver is ~200. §5f credits a `blib_main` caller with the
-   whole contract and ratchets the driver's own row. Defense is the pilot; MacBook stays
+   whole contract and ratchets the driver's own row. Defense was the pilot; MacBook stays
    outside the driver by design — its `--json`/`--uninstall`/`--quiet` surface is a
-   consumed contract the driver must not flatten.*
+   consumed contract the driver must not flatten — and §5f records that as an exemption
+   with the reason. Adopted fleet-wide 2026-09-13/14 (#986): Defense, Fedora, Debian,
+   openSUSE on v7.4.0/v7.4.1, Offense, Gentoo, Arch, Alpine on v7.4.2 — 8/9 + 1 exempt.
+   Two driver defects surfaced by adopters and fixed in v7.4.1 (#990, #991).*
 
 ### 4.3 What breaks
 
