@@ -1,0 +1,67 @@
+# scripts/research/nonmutable/nixos.capabilities — R2 PROTOTYPE, not a fleet declaration
+# (NON-MUTABLE-HOST-PROPOSAL.md §5 R2, #1004). What a dotfiles-NixOS would declare — a
+# repo that does not exist yet; the new-os-repo.sh starter ran clean on a NixOS 25.05
+# guest (research-nonmutable-vm.yml, runs 34819015395 and 34820719480). Written for a
+# CHANNEL-managed box; a flake-managed one swaps two verbs (noted inline).
+#
+# The R2 test, against the schema rather than a sibling (there is none):
+#   PKG_INSTALL / PKG_REMOVE
+#                 a NixOS box DOES have an imperative install: `nix-env -i` into the
+#                 user's profile, which persists across `nixos-rebuild switch` (the user
+#                 profile is not the system configuration). It is the documented
+#                 anti-pattern — the declarative way is `environment.systemPackages` —
+#                 but it is a TRUE verb, and the newer `nix profile install nixpkgs#…`
+#                 cannot take the schema's space-separated argument. Declared, with the
+#                 caveat; core-doctor's hint would say "or declare it in configuration.nix".
+#   PKG_UPGRADE   `nixos-rebuild switch --upgrade` refreshes root's channel, rebuilds and
+#                 ACTIVATES — no PKG_APPLY; the one family where the mutable assumption
+#                 "returns with the box updated" holds. (Flakes: `nix flake update` in
+#                 the config directory, then `nixos-rebuild switch --flake .`.)
+#   PKG_COUNT_PENDING
+#                 THE ONE REQUIRED KEY WITH NO TRUTHFUL VALUE. "Packages pending" is not a
+#                 thing a declarative host knows; the nearest question — what would a
+#                 rebuild change? — is `nixos-rebuild dry-build --upgrade`, which needs
+#                 root's channel (sudo) and lists derivations, not packages. So the key is
+#                 ABSENT, which the prototype validator allows under
+#                 PROVISIONER=declarative, and `up` already reads an absent count verb as
+#                 the -1 sentinel that keeps the nudge silent. That relaxation is the
+#                 schema's one concession to this family.
+#   PKG_OWNS      `nix-locate` answers "which package provides this path" but needs the
+#                 nix-index database; declared with that caveat — the same shape as
+#                 `dnf provides` needing dnf's metadata.
+# Verdict for this family: additive, with one required key made conditional — a validator
+# rule, not a re-author for the nine.
+
+PROVISIONER=declarative
+
+# ── package-manager verbs (required) ──────────────────────────────────────────
+PKG_REFRESH=sudo nix-channel --update
+# Rebuilds AND activates: no reboot, no PKG_APPLY. The kernel is the exception (a new
+# kernel activates at the next boot), which `nixos-rebuild` itself says.
+PKG_UPGRADE=sudo nixos-rebuild switch --upgrade
+# Imperative, per-user, persists across rebuilds. See the header for why not
+# `nix profile install`.
+PKG_INSTALL=nix-env -i
+PKG_REMOVE=nix-env -e
+# `nix search` needs the nix-command feature on a box that has not enabled it.
+PKG_SEARCH=nix --extra-experimental-features nix-command search nixpkgs
+# Needs nix-index (`nix-index` once, then nix-locate reads its database).
+PKG_OWNS=nix-locate --top-level
+# PKG_COUNT_PENDING — deliberately absent; see the header.
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+# Measured: systemd user units work on the guest; the declarative alternative is
+# `systemd.user.services` in the configuration, which a repo could ship instead.
+SCHEDULER=systemd
+SCHEDULER_UNIT_DIR=~/.config/systemd/user
+
+# ── how `up` applies (optional) ───────────────────────────────────────────────
+# No PKG_ASSUME_YES (nixos-rebuild does not prompt). No PKG_UPGRADE_PARTIAL (a
+# configuration switches as a whole). No MAINT_UNATTENDED_UPGRADE: NixOS has
+# `system.autoUpgrade`, declared in the configuration, and Core's runner must not run a
+# second one beside it.
+
+# ── the login shell on this host (measured, for the driver's arm) ─────────────
+# `chsh -s zsh` TOOK on the guest (users.mutableUsers defaults to true); whether the next
+# `nixos-rebuild switch` keeps it is unmeasured. The declaration the driver should print
+# instead of running chsh:  users.users.<name>.shell = pkgs.zsh;  programs.zsh.enable = true;

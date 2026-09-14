@@ -189,6 +189,46 @@ else
   # resolve reads as "nothing to do". Omission is how you turn it off.
   { cat "$CAPEX"; printf 'PKG_COUNT_EXIT_TRUSTED=0\n'; } >"$CAPV/trust-zero"
   _cap_rejects "PKG_COUNT_EXIT_TRUSTED=0 (omit it to mean off)" "$CAPV/trust-zero"
+  # ── the non-mutable host prototype keys (R2 of NON-MUTABLE-HOST-PROPOSAL.md, #1004) ──
+  # Four OPTIONAL keys the validator accepts and no consumer reads yet, plus the one
+  # relaxation (PKG_COUNT_PENDING may be absent under PROVISIONER=declarative). Pinned so
+  # the prototype schema cannot drift out from under the three declarations that use it —
+  # and so the relaxation stays exactly one key wide, on exactly one provisioner.
+  _cap_accepts() { # <label> <file>
+    if "$CAPCHK" "$2" >/dev/null 2>&1; then
+      pass "validator: accepts $1"
+    else
+      fail "validator: rejected $1 — $("$CAPCHK" "$2" 2>&1 | head -2 | tr '\n' ' ')"
+    fi
+  }
+  { cat "$CAPEX"; printf 'PROVISIONER=atomic\nPKG_APPLY=sudo systemctl reboot\nPKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-atomic"
+  _cap_accepts "the prototype keys on an otherwise-mutable declaration (PROVISIONER=atomic, PKG_APPLY, PKG_PENDING_EXIT_SOME)" "$CAPV/proto-atomic"
+  { cat "$CAPEX"; printf 'PROVISIONER=magic\n'; } >"$CAPV/proto-enum"
+  _cap_rejects "a PROVISIONER outside its enum" "$CAPV/proto-enum"
+  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_NONE=77\nPKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-both"
+  _cap_rejects "both PKG_PENDING_EXIT_NONE and _SOME (a verb answers with one status)" "$CAPV/proto-both"
+  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_NONE=seventy-seven\n'; } >"$CAPV/proto-word"
+  _cap_rejects "a non-numeric PKG_PENDING_EXIT_NONE" "$CAPV/proto-word"
+  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=300\n'; } >"$CAPV/proto-range"
+  _cap_rejects "a PKG_PENDING_EXIT_SOME above 255" "$CAPV/proto-range"
+  { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-orphan"
+  _cap_rejects "a PKG_PENDING_EXIT_* with no PKG_COUNT_PENDING to describe" "$CAPV/proto-orphan"
+  { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=declarative\n'; } >"$CAPV/proto-decl"
+  _cap_accepts "PROVISIONER=declarative with no PKG_COUNT_PENDING (the one relaxation)" "$CAPV/proto-decl"
+  { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=atomic\n'; } >"$CAPV/proto-decl-not"
+  _cap_rejects "PROVISIONER=atomic with no PKG_COUNT_PENDING (the relaxation is declarative-only)" "$CAPV/proto-decl-not"
+  { grep -v '^PKG_INSTALL=' "$CAPEX"; printf 'PROVISIONER=declarative\n'; } >"$CAPV/proto-decl-install"
+  _cap_rejects "PROVISIONER=declarative with no PKG_INSTALL (the relaxation is one key wide)" "$CAPV/proto-decl-install"
+  # And the three prototype declarations themselves validate — the files R2 wrote to answer
+  # its question must keep answering it.
+  for _cap_proto in bootc microos nixos; do
+    if [[ -r "$HERE/scripts/research/nonmutable/$_cap_proto.capabilities" ]]; then
+      _cap_accepts "the R2 prototype scripts/research/nonmutable/$_cap_proto.capabilities" "$HERE/scripts/research/nonmutable/$_cap_proto.capabilities"
+    else
+      fail "validator: the R2 prototype $_cap_proto.capabilities is missing from scripts/research/nonmutable/"
+    fi
+  done
+  unset _cap_proto
   # --packages cross-checks the leading BINARY of each command-valued verb. The
   # PKG_PENDING_* keys are awk data (`^Inst[[:space:]]`, `3`, `|`), so running them through
   # that check would warn that `^Inst[[:space:]]` "is not in packages.txt" — nonsense

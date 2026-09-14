@@ -1,7 +1,9 @@
 # Non-mutable host proposal — the fleet on a box it cannot write to
 
 > **Status: RESEARCH (opened 2026-09-14). Nothing is decided, nothing is scheduled, and no
-> code changes until §5's research phase reports.** This is the planning document for the
+> consumer changes until §5's research phase reports — R1 has measured all three hosts and R2
+> has its verdict (additive; four optional keys and one conditional rule, prototyped and
+> validated); R3–R6 are open.** This is the planning document for the
 > roadmap milestone *"the non-mutable host"* — the one theme on the roadmap with an
 > external forcing function rather than an internal cleanup. `V8-PROPOSAL.md` §10 named it
 > the right **next** major and put it out of scope *"because no work has started and the
@@ -509,6 +511,46 @@ still open, and R2's prototype declarations are the next thing to write.
 switch quay.io/fedora/fedora-bootc:42` in the guest first); `chsh` across
 `nixos-rebuild switch`; `/etc` edits across `transactional-update dup`; the two zypper
 cells; the bootc user-with-sudo pass.
+
+### R2 findings — the prototype declarations (2026-09-14)
+
+Written, validated and kept under `scripts/research/nonmutable/` (`bootc.capabilities`,
+`microos.capabilities`, `nixos.capabilities`, and a README with the reasoning). The
+validator, `scripts/check-capabilities.sh`, gained the four **optional** prototype keys
+they need — `PROVISIONER`, `PKG_APPLY`, `PKG_PENDING_EXIT_SOME`, `PKG_PENDING_EXIT_NONE`
+— read by no consumer yet, and one conditional rule: `PKG_COUNT_PENDING` may be absent
+when `PROVISIONER=declarative`. The shipped example and every fleet declaration validate
+unchanged.
+
+**Verdict: additive.** The R2 test was whether a required key ends up a lie on any host:
+
+- `PKG_INSTALL` / `PKG_UPGRADE` — the mutable verbs are refusals on both atomic and
+  transactional hosts (R1, measured), but the honest verbs (`rpm-ostree install
+  --idempotent`, `transactional-update -n pkg in`, `rpm-ostree upgrade`,
+  `transactional-update dup`) fit the existing keys exactly. What they lack is the next
+  step, which **`PKG_APPLY`** (a reboot) supplies. No required key changes meaning.
+- `PKG_COUNT_PENDING` — on bootc the truthful user-runnable answer is an **exit status**
+  (`rpm-ostree status --pending-exit-77`), which `PKG_PENDING_EXIT_SOME=77` describes;
+  on NixOS there is no truthful unprivileged verb, so the key is **absent** and the
+  validator allows that for `declarative` — `up` already reads an absent count as the
+  silent `-1` sentinel. A validator rule, not a re-author.
+- Everything else filled in on all three (`nix-env -i`/`-e`, `nix-locate`, `zypper se`,
+  `rpm -qf`, `SCHEDULER=systemd` with a user unit directory — the last measured).
+
+So: four optional keys, one conditional relaxation, consumer changes that branch on them,
+and **no schema version, no coordinated re-author of the nine**. The major this proposal
+was written to plan does not come from the schema. What the atomic and transactional
+families *do* need from Core is behavioural: `up` printing `PKG_APPLY` after a staged
+upgrade and counting by exit status; `core-doctor`'s hint saying "layered — reboot to
+use"; the driver's provision hook running and then saying the same (the two-phase run of
+§4(3)); the maint runner never running `PKG_APPLY`. R4's head start is measured too: the
+atomic and transactional prototypes touch **12 and 7 keys** of their mutable siblings'
+declarations (18 and 10 changed lines, comment-stripped) — small enough for the variant
+shape, and R4 still diffs the bootstrap hooks before deciding.
+
+**Still "to verify" inside the files:** `dnf search` on a booted bootc host;
+`rpm-ostree upgrade --check` against a registry-backed image; `zypper -q list-updates` on
+the MicroOS guest; `chsh` across `nixos-rebuild switch`.
 
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 

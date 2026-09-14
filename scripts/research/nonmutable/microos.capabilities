@@ -1,0 +1,67 @@
+# scripts/research/nonmutable/microos.capabilities — R2 PROTOTYPE, not a fleet declaration
+# (NON-MUTABLE-HOST-PROPOSAL.md §5 R2, #1004). What dotfiles-openSUSE's
+# os/opensuse.capabilities WOULD become on MicroOS / Aeon (ID="opensuse-microos" /
+# "opensuse-aeon", ID_LIKE carrying opensuse-tumbleweed — a Tumbleweed base, so `dup`),
+# every value measured on a booted MicroOS 20260911 guest (research-nonmutable-vm.yml,
+# runs 34819015395 and 34820719480) or marked "to verify".
+#
+# The R2 test against os/opensuse.capabilities:
+#   PKG_INSTALL   `zypper in` → "Transactional system detected: A transactional-wrapper
+#                 command is not installed. Please use transactional-update" (rc 5, every
+#                 package, measured) — a refusal. The honest verb transacts into a NEW
+#                 SNAPSHOT (measured: 21 s, exit 0, "Please reboot"); nothing is on PATH
+#                 until PKG_APPLY.
+#   PKG_UPGRADE   same shape: `transactional-update dup` stages, the reboot applies.
+#   PKG_COUNT_PENDING
+#                 transactional-update has NO check or dry-run mode (documented), so the
+#                 count stays zypper's read-only list — TO VERIFY on the guest (the
+#                 iteration-3 probe died of the harness's own SIGPIPE).
+# Verdict for this family: additive — the honest install and upgrade verbs fit the
+# existing keys once PKG_APPLY exists to say what happens next.
+
+PROVISIONER=transactional
+
+# ── package-manager verbs (required) ──────────────────────────────────────────
+# Measured on the guest: "All repositories have been refreshed" — the cache lives under
+# /var, which is writable on the read-only root.
+PKG_REFRESH=sudo zypper refresh
+# INTERACTIVE, as the key requires: zypper asks inside the snapshot. `-n` cannot be
+# appended by `up -y` (transactional-update takes its options BEFORE the command), so
+# PKG_ASSUME_YES is omitted and `up -y` behaves like `up`. `transactional-update apply`
+# exists (mounts the new snapshot's /usr /etc /boot live) but is documented as "not one
+# atomic operation" — the reboot is the declaration.
+PKG_UPGRADE=sudo transactional-update dup
+# Non-interactive, as the key requires; -n sits before the command. Measured: snapshot 2
+# from 1, zypper inside it, "New default snapshot is #2 … Please reboot".
+PKG_INSTALL=sudo transactional-update -n pkg in
+PKG_REMOVE=sudo transactional-update -n pkg rm
+PKG_SEARCH=zypper se
+PKG_OWNS=zypper se --provides
+# TO VERIFY on the guest: read-only against the running snapshot's repo cache.
+PKG_COUNT_PENDING=zypper -q list-updates
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3
+
+# ── the staged change becomes live (prototype) ────────────────────────────────
+PKG_APPLY=sudo systemctl reboot
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+SCHEDULER=systemd
+SCHEDULER_UNIT_DIR=~/.config/systemd/user
+
+# ── how `up` applies (optional) ───────────────────────────────────────────────
+# No PKG_UPGRADE_PARTIAL: a snapshot is all-or-nothing, which is what "transactional"
+# means. No MAINT_UNATTENDED_UPGRADE: MicroOS ships its OWN unattended
+# transactional-update.timer + health-checker rollback; Core's runner must not run a
+# second one beside it. Omitting the key is the refusal.
+
+# ── optional ──────────────────────────────────────────────────────────────────
+# Carried over from os/opensuse.capabilities unchanged: what is optional on the archive
+# does not change with how the archive is applied.
+TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv
+
+# ── `/etc` on this host (measured, for the driver's arm) ──────────────────────
+# `/etc` is a per-snapshot overlay and IS writable in the running system: `chsh` took,
+# `/etc/shells` accepted an entry. Documented caveat, unmeasured: a file changed both
+# during an update and afterwards in the running system keeps only the snapshot's copy.
