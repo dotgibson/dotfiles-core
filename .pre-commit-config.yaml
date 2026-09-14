@@ -15,7 +15,9 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: '\.md$'
+        # a blank context line in a unified diff IS a lone space — stripping it corrupts the
+        # research patches under scripts/research/nonmutable/r4/ (the hook rewrote them in CI)
+        exclude: '\.(md|patch)$'
       - id: end-of-file-fixer
       - id: check-merge-conflict
       # Parse-check the config/data files that fan out to all nine Core-vendoring repos: a broken
