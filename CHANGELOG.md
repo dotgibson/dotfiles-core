@@ -16,6 +16,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Arch is on the bootstrap driver — the `blib_main` row reads 7/9** (#986;
+  dotgibson/dotfiles-Arch#174, on v7.4.2). The rolling-release repo declares its
+  exit-1-on-any-miss contract (`BOOTSTRAP_STRICT_DEFAULT=1`) instead of hand-rolling it;
+  the Arch check is `bootstrap_guard`, the pacman phase is `bootstrap_provision` with the
+  body unchanged, the dry-run preview is `bootstrap_check`, and its `-E` ERR trap stays,
+  stepping aside for the driver's own `return` verdicts. 446 → 421 lines.
+  (`scripts/audit/40-fleet-registers.sh`)
+
 - **Offense and Gentoo are on the bootstrap driver — the `blib_main` row reads 6/9** (#986;
   dotgibson/dotfiles-Offense#328, dotgibson/dotfiles-Gentoo#187, both on v7.4.2). The two
   lazy-escalation repos: Offense declares `BOOTSTRAP_ROLE=offensive`, no login shell and
