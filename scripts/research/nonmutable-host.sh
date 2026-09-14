@@ -82,8 +82,13 @@ run() {
   say "**$label** — \`$*\` → exit **$rc**"
   say ""
   say '```text'
-  head -c 6000 "$log" >>"$out"
-  [[ "$(wc -c <"$log")" -gt 6000 ]] && say "… (truncated)"
+  # Head AND tail: a package manager's list can run past any cap, and the exit reason is
+  # at the END — the first VM run lost dnf's refusal behind 6 KB of "Installing:" rows.
+  if [[ "$(wc -c <"$log")" -gt 7000 ]]; then
+    head -c 3500 "$log" >>"$out"; say ""; say "… (middle omitted) …"; say ""; tail -c 3500 "$log" >>"$out"
+  else
+    cat "$log" >>"$out"
+  fi
   say '```'
   return 0
 }
@@ -130,12 +135,20 @@ bootc)
   probe "bootc status" bootc status
   probe "bootc upgrade --check" bootc upgrade --check
   probe "dnf --version" dnf --version
+  # The mutable verb, as the Fedora declaration would call it: what does dnf say on a booted
+  # bootc host? (--assumeno: resolve, print, refuse — no transaction.)
+  probe "dnf install --assumeno tmux (the mutable verb, refused how?)" dnf install --assumeno tmux
+  # And the layering verb the schema would need instead (dry: no download).
+  probe "rpm-ostree install --dry-run tmux" rpm-ostree install --dry-run tmux
   ;;
 microos)
   probe "transactional-update --version" transactional-update --version
-  probe "transactional-update --help" transactional-update --help
   probe "snapper list" snapper list
   probe "zypper --version" zypper --version
+  # The count verb the schema would fall back to (transactional-update has no check mode):
+  # read-only against the running snapshot's repo cache.
+  probe "zypper --non-interactive lu (read-only pending list)" zypper --non-interactive lu
+  probe "zypper --non-interactive in --dry-run zsh (the mutable verb, refused?)" zypper --non-interactive in --dry-run zsh
   probe "findmnt / (fstype)" findmnt -no FSTYPE,OPTIONS /
   ;;
 nixos)
@@ -143,8 +156,14 @@ nixos)
   probe "nixos-version" nixos-version
   probe "nix-env --version" nix-env --version
   probe "home-manager --version" home-manager --version
-  probe "ls /run/current-system/sw/bin" ls /run/current-system/sw/bin
+  probe "ls /run/current-system/sw/bin (count)" sh -c 'ls /run/current-system/sw/bin | wc -l'
   probe "ls ~/.nix-profile/bin" ls "$HOME/.nix-profile/bin"
+  # The imperative install the schema would name, and the declarative rebuild it is meant to
+  # replace. `nix profile install` is the anti-pattern the proposal names; measure it anyway.
+  probe "nix profile install nixpkgs#hello (imperative, --dry-run)" nix --extra-experimental-features 'nix-command flakes' profile install nixpkgs#hello --dry-run
+  probe "nixos-rebuild dry-build" nixos-rebuild dry-build
+  # shellcheck disable=SC2016  # the $(…) are for the guest's sh, on purpose
+  probe "chsh -s zsh (mutableUsers default: does it take?)" sh -c 'chsh -s "$(command -v zsh)" "$(id -un)" && getent passwd "$(id -un)" | cut -d: -f7'
   ;;
 esac
 
