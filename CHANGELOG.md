@@ -16,6 +16,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Changed
 
+- **Fedora and Debian are on the bootstrap driver — the `blib_main` row reads 3/9** (#986;
+  dotgibson/dotfiles-Fedora#181, dotgibson/dotfiles-Debian#78). The two the survey called the
+  driver's shape verbatim: each keeps its OS guard and preflight as `bootstrap_guard`, its
+  package phase as `bootstrap_provision` with the body unchanged, its dry-run preview as
+  `bootstrap_check`, and its own flags through `bootstrap_flag`; Debian also uses the
+  pre-loader slot for the distro tier's capability re-link and the closing hook for its
+  shadowed-tools report — the two slots the survey said had to exist. Fedora's `make check`
+  ran the vendored links gate through the driver on a Fedora box and a real `--dry-run`
+  printed the 38-package plan and wrote nothing. Together with Defense that is 753 + 962 + 270
+  → 660 + 876 + 205 lines. (`scripts/audit/40-fleet-registers.sh`)
+
 - **Defense is the first repo on the bootstrap driver — the §5f ledger records it** (#986;
   dotgibson/dotfiles-Defense#292, after v7.4.0 vendored `blib_main` there). Its `bootstrap.sh`
   now declares what it is and hands over to the driver, so `blib_main` gets its first ledger
