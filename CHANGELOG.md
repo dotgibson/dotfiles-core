@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v7.4.0] - 2026-09-13
+
 ### Fixed
 
 - **`RELEASE-STRATEGY.md` promised a "predictable monthly rhythm" the tags have never
