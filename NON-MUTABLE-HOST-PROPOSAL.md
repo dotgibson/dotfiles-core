@@ -330,13 +330,20 @@ say is itself the first finding.
   asked). This is the shape the NixOS repo would start from; the declaration and the
   provisioner arm are what it lacks.
 
-**MicroOS / Aeon.** The leg did not run: **there is no MicroOS container image.**
-`registry.opensuse.org` serves `opensuse/tumbleweed`, `opensuse/leap` and the BCI set;
-every plausible `opensuse/microos*` / `opensuse/aeon` name is HTTP 404 (measured). That is
-a finding in itself — MicroOS *is* the booted-host transaction, and the project ships it
-as a disk image only. The container leg now runs **Tumbleweed with the
-`transactional-update` package** as a labelled stand-in (presence and refusal to transact
-without snapper are all it can show); the qcow2 VM is the only real measurement.
+**MicroOS / Aeon.** **There is no MicroOS container image.** `registry.opensuse.org`
+serves `opensuse/tumbleweed`, `opensuse/leap` and the BCI set; every plausible
+`opensuse/microos*` / `opensuse/aeon` name is HTTP 404 (measured). That is a finding in
+itself — MicroOS *is* the booted-host transaction, and the project ships it as a disk
+image only. The leg re-ran as **Tumbleweed with the `transactional-update` package**
+(run 34816013743), a labelled stand-in: `transactional-update` 6.1.3 is present and
+`snapper list` fails at once (*"org.freedesktop.DBus.Error.FileNotFound"* — no snapper
+daemon, no btrfs, nothing to transact); `findmnt` is absent from the base image; no
+`sudo`/`doas` in the image but `chsh`, `getent`, `zsh` present. `dotfiles-openSUSE` at
+v7.4.4 held its guard (`ID="opensuse-tumbleweed"`, `ID_LIKE="opensuse suse"`),
+`--links-only` (34 links) and `--dry-run` (wrote nothing) exit 0; the real run **exits 2**
+— openSUSE's declared exit-on-any-miss (`BOOTSTRAP_FAIL_EXIT=2`) after optional installs
+that a container cannot complete, which is the contract working, not a target finding.
+The qcow2 VM is the only real MicroOS measurement.
 
 **What rung one settles.** (1) `--links-only` and `--dry-run` hold unchanged on both
 images — the `$HOME`-only half of the fleet survives, as §3 expected. (2) The update verbs
