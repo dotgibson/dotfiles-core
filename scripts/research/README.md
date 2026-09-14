@@ -32,6 +32,14 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   it now accepts; `nonmutable/README.md` carries the R2 verdict (additive) and what each
   file still marks "to verify". Not fleet declarations; nothing links them.
 
+- **`nonmutable/home.nix`** + **`nonmutable-home-manager.sh`** — R3's probe: a
+  home-manager module that tries to own what a fleet bootstrap wires (out-of-store links
+  into the vendored `core/`, the packages, the zsh entry), and a script that applies it,
+  inventories the home, runs the repo's `bootstrap.sh --links-only` OVER it and records
+  the fight. `research-nonmutable.yml`'s `homemanager` leg runs it standalone on a
+  mutable Fedora; the VM leg's NixOS guest gets it as a NixOS module. Adopt / coexist /
+  reject is read off the reports.
+
 ## The rules
 
 - **Never vendored.** None of this is in `core.manifest` or `core.vendor`, so no OS repo

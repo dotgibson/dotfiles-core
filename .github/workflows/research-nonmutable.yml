@@ -48,6 +48,7 @@ jobs:
           want="${TARGETS:-bootc microos nixos}"
           json='['
           for t in $want; do
+            [ "$t" = homemanager ] && continue   # the R3 leg is its own job, not a container probe
             case "$t" in
               bootc)   img='quay.io/fedora/fedora-bootc:42';               prep='dnf install -y --setopt=install_weak_deps=False bash zsh git findutils util-linux shadow-utils || true' ;;
               # There is NO MicroOS container image (registry.opensuse.org has opensuse/tumbleweed,
@@ -66,6 +67,56 @@ jobs:
           json="${json%,}]"
           echo "matrix=$json" >>"$GITHUB_OUTPUT"
           echo "$json"
+
+  # R3: home-manager on a MUTABLE host (Fedora 42, standalone home-manager as an
+  # unprivileged user), applying scripts/research/nonmutable/home.nix over dotfiles-Fedora
+  # and then running the driver over the result. The NixOS half of R3 is the VM leg.
+  homemanager:
+    needs: plan
+    if: github.event.inputs.targets == '' || contains(github.event.inputs.targets, 'homemanager')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fedora 42 + single-user nix + home-manager, as a user; apply home.nix over dotfiles-Fedora; run the driver over it
+        env:
+          REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          mkdir -p research-out
+          # fedora:42, digest-pinned as the modern baseline requires (the matrix legs pin by variable)
+          docker pull registry.fedoraproject.org/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c >/dev/null
+          docker run --rm -v "$PWD:/w" -w /w registry.fedoraproject.org/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c bash -c '
+            set -u
+            dnf -y install --setopt=install_weak_deps=False bash zsh git curl xz findutils util-linux shadow-utils >/dev/null 2>&1 || true
+            useradd -m research
+            mkdir -m 0755 /nix && chown research /nix
+            su -l research -c "
+              set -u
+              export HOME=/home/research
+              sh <(curl -fsSL https://nixos.org/nix/install) --no-daemon --yes >/tmp/nix-install.log 2>&1 || { echo nix-install-failed; tail -5 /tmp/nix-install.log; }
+              . \$HOME/.nix-profile/etc/profile.d/nix.sh
+              nix-channel --add https://github.com/nix-community/home-manager/archive/release-25.05.tar.gz home-manager
+              nix-channel --add https://nixos.org/channels/nixos-25.05 nixpkgs
+              nix-channel --update >/tmp/channels.log 2>&1 || tail -3 /tmp/channels.log
+              nix-shell "<home-manager>" -A install >/tmp/hm-install.log 2>&1 || { echo hm-install-failed; tail -5 /tmp/hm-install.log; }
+              export PATH=\$HOME/.nix-profile/bin:\$PATH
+              git clone -q --depth=1 --branch '"$REPO_REF"' https://github.com/dotgibson/dotfiles-Fedora.git \$HOME/dotfiles
+              HM_USER=research HM_HOME=\$HOME bash /w/scripts/research/nonmutable-home-manager.sh \$HOME/dotfiles fedora --switch --out /tmp/home-manager-fedora.md
+              cp /tmp/home-manager-fedora.md /w/research-out/home-manager-fedora.md
+            "
+          ' || true
+          ls -la research-out
+          [ -s research-out/home-manager-fedora.md ] || printf '# R3 — home-manager on Fedora\n\n**No report** — see the job log.\n' >research-out/home-manager-fedora.md
+      - name: Summary
+        run: cat research-out/home-manager-fedora.md >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: r3-home-manager-fedora
+          path: research-out/home-manager-fedora.md
+          retention-days: 30
 
   probe:
     needs: plan
