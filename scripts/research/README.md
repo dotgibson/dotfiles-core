@@ -41,6 +41,14 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   reject is read off the reports — and was: coexist, `NON-MUTABLE-HOST-PROPOSAL.md` §5
   "R3 findings".
 
+- **`nonmutable/r4/dotfiles-{Fedora,openSUSE}.patch`** + **`nonmutable-variant.sh`** — R4's
+  probe: the "existing repo grows a variant" shape as two real patches against the
+  siblings (a host marker, a second declaration relinked by `bootstrap_wire_pre_loader`,
+  a staging path in the provision hook, a closing "reboot to apply" line), and a script the
+  VM legs run on the booted guest with `r4=true`: apply, validate, dry-run, real run,
+  reboot, re-run. The diff counts are the R4 measurement; the reports say whether the
+  shape WORKS.
+
 ## The rules
 
 - **Never vendored.** None of this is in `core.manifest` or `core.vendor`, so no OS repo

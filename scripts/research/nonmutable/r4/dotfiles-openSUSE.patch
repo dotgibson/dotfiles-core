@@ -1,0 +1,172 @@
+# R4 prototype patch for dotgibson/dotfiles-openSUSE — NOT a shipped change (NON-MUTABLE-HOST-PROPOSAL.md §5 R4, #1004).
+# Base: 03b614a32680795c3472daf21d364e49c67c719a (origin/main on 2026-09-14). Applied by scripts/research/nonmutable-variant.sh on a booted guest.
+diff --git i/bootstrap.sh w/bootstrap.sh
+index a0c7a92..26dbc35 100755
+--- i/bootstrap.sh
++++ w/bootstrap.sh
+@@ -170,6 +170,18 @@ _priv() {
+ IS_WSL=0
+ if blib_is_wsl; then IS_WSL=1; fi
+ 
++# ── transactional edition? (MicroOS, Aeon, Kalpa) ─────────────────────────────
++# The root is read-only and transactional-update is the only installer: `zypper in` is
++# refused outright ("Transactional system detected", rc 5 — measured on MicroOS 20260911,
++# whose os-release says ID=opensuse-microos with ID_LIKE carrying opensuse-tumbleweed, so
++# the guard above and the Tumbleweed probe below both pass). Test the HOST, not the ID:
++# the verb exists and /usr cannot be written. Everything the transactional edition changes
++# hangs off this flag: the declaration it links, how packages are installed (into a new
++# snapshot, live after a reboot), and the closing line that says so.
++IS_TRANSACTIONAL=0
++if command -v transactional-update >/dev/null 2>&1 && [[ ! -w /usr ]]; then IS_TRANSACTIONAL=1; fi
++TU_STAGED=0 # packages transacted into the next snapshot this run — the closing hint keys on it
++
+ # ── zypper with retry ─────────────────────────────────────────────────────────
+ # openSUSE's OSS mirror (cdn.opensuse.org) intermittently times out (curl error 28).
+ # .github/workflows/bootstrap.yml already documents this and wraps its CI prep in a
+@@ -201,6 +213,26 @@ zypper_retry() { # <zypper args...>
+ zypper_install() {
+   local -a pkgs=("$@")
+   local rc=0
++  if ((IS_TRANSACTIONAL)); then
++    # One snapshot, not one per package: transactional-update takes ~20 s per transaction
++    # (measured) and, like zypper, aborts the whole install on one unknown name. The
++    # read-only repo cache answers `zypper se` on the running system, so drop the unknown
++    # names FIRST and transact once. Its options go BEFORE the command (-n here, not
++    # --non-interactive after `pkg in`), and `pkg in` passes the rest to zypper install.
++    local -a avail=() p
++    for p in "${pkgs[@]}"; do
++      zypper --non-interactive --quiet se --match-exact --type package "$p" >/dev/null 2>&1 && avail+=("$p") || {
++        echo "   skipped (unavailable on this box?): $p"
++        _note_fail "package '$p' — not available; check with: zypper se --provides $p"
++      }
++    done
++    ((${#avail[@]})) || return 0
++    _priv transactional-update -n --no-selfupdate pkg in --no-recommends "${avail[@]}" || rc=$?
++    case $rc in
++    0 | 102 | 103 | 106) TU_STAGED=$((TU_STAGED + ${#avail[@]})); return 0 ;;
++    *) _note_fail "transactional-update pkg in failed (rc=$rc) — retry later: ${BLIB_SU-sudo} transactional-update -n pkg in ${avail[*]}"; return 0 ;;
++    esac
++  fi
+   zypper_retry --non-interactive install --no-recommends "${pkgs[@]}" || rc=$?
+   # zypper's exit codes are not a simple 0/non-0: 102 (reboot needed), 103 (zypper
+   # itself needs restarting) and 106 (a repo was unavailable but the install
+@@ -500,8 +532,18 @@ provision() {
+         grep -o "\"browser_download_url\": *\"[^\"]*linux_${_cara_arch}\.rpm\"" |
+         cut -d'"' -f4 | head -1)" || true
+       if [[ -n "$_cara_url" ]]; then
+-        _priv zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null ||
+-          _note_fail "carapace: RPM install failed — retry later: ${BLIB_SU-sudo} zypper -n --no-gpg-checks install --allow-unsigned-rpm $_cara_url"
++        if ((IS_TRANSACTIONAL)); then
++          # a global zypper option (--no-gpg-checks) cannot ride `pkg in`; `run` executes
++          # the whole zypper command inside the new snapshot instead
++          if _priv transactional-update -n --no-selfupdate run zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null; then
++            TU_STAGED=$((TU_STAGED + 1))
++          else
++            _note_fail "carapace: RPM transaction failed — retry later: ${BLIB_SU-sudo} transactional-update -n run zypper -n --no-gpg-checks install --allow-unsigned-rpm $_cara_url"
++          fi
++        else
++          _priv zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null ||
++            _note_fail "carapace: RPM install failed — retry later: ${BLIB_SU-sudo} zypper -n --no-gpg-checks install --allow-unsigned-rpm $_cara_url"
++        fi
+       else
+         _note_fail "carapace: could not resolve the latest linux_${_cara_arch} RPM (offline? API rate-limited?) — see github.com/carapace-sh/carapace-bin/releases"
+       fi
+@@ -556,8 +598,16 @@ provision() {
+       _priv zypper --non-interactive addrepo --refresh --gpgcheck \
+         'https://downloads.1password.com/linux/rpm/stable/$basearch' 1password || true
+       if zypper_retry --non-interactive refresh 1password; then
+-        _priv zypper --non-interactive install --no-recommends 1password-cli ||
+-          _note_fail "op — install failed; see https://developer.1password.com/docs/cli/get-started/"
++        if ((IS_TRANSACTIONAL)); then
++          if _priv transactional-update -n --no-selfupdate pkg in --no-recommends 1password-cli; then
++            TU_STAGED=$((TU_STAGED + 1))
++          else
++            _note_fail "op — transaction failed; see https://developer.1password.com/docs/cli/get-started/"
++          fi
++        else
++          _priv zypper --non-interactive install --no-recommends 1password-cli ||
++            _note_fail "op — install failed; see https://developer.1password.com/docs/cli/get-started/"
++        fi
+       else
+         _note_fail "op — 1password repo refresh failed; see https://developer.1password.com/docs/cli/get-started/"
+       fi
+@@ -612,7 +662,11 @@ provision() {
+ # shellcheck disable=SC2329
+ bootstrap_check() {
+   [[ "${BLIB_DRY:-0}" != 0 ]] || return 0
+-  blib_say "(dry run) would provision zypper packages from install/packages.txt, then the upstream/cargo/go tool set"
++  if ((IS_TRANSACTIONAL)); then
++    blib_say "(dry run) transactional edition: would transactional-update pkg in the packages from install/packages.txt into a NEW snapshot (live after a reboot), then the upstream/cargo/go tool set"
++  else
++    blib_say "(dry run) would provision zypper packages from install/packages.txt, then the upstream/cargo/go tool set"
++  fi
+ }
+ 
+ # shellcheck disable=SC2329
+@@ -637,12 +691,21 @@ bootstrap_wire_pre_loader() {
+     blib_say "Leap detected — using the Leap capability declaration (zypper up, unattended upgrades permitted)"
+     blib_link "$DOTFILES/os/opensuse.leap.capabilities" "$CONFIG/zsh/os.capabilities"
+   fi
++  # The transactional edition is a Tumbleweed base (its ID_LIKE says so), so the branch
++  # above keeps the `dup` declaration — and this one replaces it with the snapshot verbs.
++  if ((IS_TRANSACTIONAL)); then
++    blib_say "transactional edition detected — using the transactional-update capability declaration (staged install/upgrade, reboot applies)"
++    blib_link "$DOTFILES/os/opensuse.microos.capabilities" "$CONFIG/zsh/os.capabilities"
++  fi
+ }
+ 
+ # What only this repo knows at the end: the two hints under a non-empty tally. The driver
+ # prints the tally, the "finished WITH the misses above" line, and applies the exit code.
+ # shellcheck disable=SC2329
+ bootstrap_closing() {
++  if ((TU_STAGED)); then
++    blib_warn "$TU_STAGED package(s) transacted into the next snapshot — reboot to apply (${BLIB_SU-sudo} systemctl reboot), then re-run ./bootstrap.sh once so the cargo/go tools build against the new snapshot's toolchain"
++  fi
+   if (($1)); then
+     blib_warn "the rest of the box is wired and usable"
+     if ((BOOTSTRAP_STRICT_DEFAULT)); then
+diff --git i/os/opensuse.microos.capabilities w/os/opensuse.microos.capabilities
+new file mode 100644
+index 0000000..62568b8
+--- /dev/null
++++ w/os/opensuse.microos.capabilities
+@@ -0,0 +1,39 @@
++# os/opensuse.microos.capabilities — the TRANSACTIONAL edition's declaration (MicroOS,
++# Aeon, Kalpa). Selected by bootstrap.sh's bootstrap_wire_pre_loader when
++# transactional-update exists and /usr is read-only; os/opensuse.capabilities (Tumbleweed)
++# and os/opensuse.leap.capabilities stay as they are. Read by Core's 02-capabilities.zsh;
++# validated by core/scripts/check-capabilities.sh.
++#
++# What differs from the Tumbleweed declaration, and why (measured on MicroOS 20260911):
++#   · `zypper in` is refused ("Transactional system detected", rc 5); install and upgrade
++#     go through transactional-update into a NEW snapshot, live after PKG_APPLY.
++#   · transactional-update takes its options BEFORE the command, so `up -y` cannot append
++#     -n: no PKG_ASSUME_YES. No PKG_UPGRADE_PARTIAL: a snapshot is all-or-nothing.
++#   · no MAINT_UNATTENDED_UPGRADE: MicroOS ships its own transactional-update.timer and a
++#     health-checker rollback; Core's runner must not run a second one beside it.
++#   · the pending count stays zypper's read-only list-updates (measured: exit 0 on the
++#     running snapshot); transactional-update has no check mode.
++
++PROVISIONER=transactional
++
++# ── package-manager verbs (required) ──────────────────────────────────────────
++PKG_REFRESH=sudo zypper refresh
++PKG_UPGRADE=sudo transactional-update dup
++PKG_INSTALL=sudo transactional-update -n pkg in
++PKG_REMOVE=sudo transactional-update -n pkg rm
++PKG_SEARCH=zypper se
++PKG_OWNS=zypper se --provides
++PKG_COUNT_PENDING=zypper -q list-updates
++PKG_PENDING_MATCH=^v[[:space:]]
++PKG_PENDING_FS=|
++PKG_PENDING_FIELD=3
++
++# ── the staged change becomes live ────────────────────────────────────────────
++PKG_APPLY=sudo systemctl reboot
++
++# ── scheduler (required) ──────────────────────────────────────────────────────
++SCHEDULER=systemd
++SCHEDULER_UNIT_DIR=~/.config/systemd/user
++
++# ── optional ──────────────────────────────────────────────────────────────────
++TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv
