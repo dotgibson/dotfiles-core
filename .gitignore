@@ -41,3 +41,7 @@ mise.local.toml
 !.claude/agents/
 !.claude/tool-decisions.md
 .claude/settings.local.json
+
+# scripts/research/nonmutable-host.sh + research-nonmutable.yml write their reports here;
+# they are read and transcribed into NON-MUTABLE-HOST-PROPOSAL.md, never committed.
+research-out/
