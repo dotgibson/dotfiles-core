@@ -51,7 +51,7 @@ while [[ $# -gt 0 ]]; do
 done
 case "$target" in
 bootc) repo=dotfiles-Fedora ;;
-microos) repo=dotfiles-openSUSE ;;
+microos) repo=dotfiles-openSUSE ;;   # in a container this is Tumbleweed + the transactional-update PACKAGE — see the workflow
 nixos) repo=SCAFFOLD ;;
 *) echo "usage: $0 bootc|microos|nixos [--out DIR] [--repo-ref REF]" >&2; exit 2 ;;
 esac
