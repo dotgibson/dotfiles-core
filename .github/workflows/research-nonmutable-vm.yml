@@ -116,8 +116,17 @@ jobs:
           # wheel rule); a non-interactive ssh has no TTY for the prompt, and the driver's
           # keepalive died there. Grant it now, on the booted host, with the password once.
           sshr -p 2222 research@localhost "echo research | sudo -S sh -c 'echo \"research ALL=(ALL) NOPASSWD: ALL\" >/etc/sudoers.d/99-research && chmod 0440 /etc/sudoers.d/99-research' && sudo -n true && echo 'sudo -n ok'"
+          # Iteration 2 still saw "a password is required" in the user pass, minutes later,
+          # in a fresh ssh session. Record what sudo thinks applies, and pre-warm the
+          # timestamp in the SAME session the script runs in, so the driver's `sudo -v`
+          # keepalive finds a valid ticket whatever the drop-in did.
+          {
+            echo "# bootc VM: sudo as the user (diagnostics)"; echo; echo '```text'
+            sshr -p 2222 research@localhost 'echo research | sudo -S -l 2>&1 | tail -8; echo "--- sudoers.d:"; echo research | sudo -S ls -la /etc/sudoers.d 2>&1; echo research | sudo -S cat /etc/sudoers.d/99-research 2>&1; echo "--- sudo -n true:"; sudo -n true 2>&1 && echo ok' || true
+            echo '```'
+          } >research-out/bootc-vm-sudo.md
           # Two passes: as the user with sudo resolved (the realistic one), then as root.
-          sshr -p 2222 research@localhost "bash /tmp/nonmutable-host.sh bootc --as-user --repo-ref '$REPO_REF' --out /tmp/bootc-user.md" || true
+          sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /tmp/nonmutable-host.sh bootc --as-user --repo-ref '$REPO_REF' --out /tmp/bootc-user.md" || true
           sshr -p 2222 research@localhost "sudo bash /tmp/nonmutable-host.sh bootc --repo-ref '$REPO_REF' --out /tmp/bootc-root.md" || true
           scpr -P 2222 research@localhost:/tmp/bootc-user.md research-out/bootc-vm-user.md || true
           scpr -P 2222 research@localhost:/tmp/bootc-root.md research-out/bootc-vm-root.md || true

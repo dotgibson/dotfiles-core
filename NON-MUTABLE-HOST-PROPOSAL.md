@@ -439,6 +439,77 @@ bites the provisioner, not the wiring. (3) `--links-only` is clean on all three 
 hosts — the driver's `$HOME` half needs no arm. (4) `chsh` is the one system write that
 worked everywhere it was tried, as a user, without an escalator.
 
+### R1 findings — rung two, iteration 3 (2026-09-14, run 34820719480): the refusals, verbatim
+
+- **bootc, as root: `dnf` resolves everything and refuses at the last step.** The
+  unchanged `dotfiles-Fedora` run refreshed metadata, added RPM Fusion, resolved the full
+  list — *"Transaction Summary: Installing: 317 packages … 394 MiB"* — and then:
+  **`Error: this bootc system is configured to be read-only. For more information, run
+  bootc --help.`** Exit 1, after several minutes of work. So `PKG_INSTALL=sudo dnf install
+  -y` on Silverblue/bootc is not a slow path and not a partial one: it is a refusal that
+  arrives *after* the resolution, which is the worst shape for a bootstrap (the run spends
+  the cost and gets nothing). The same fact as MicroOS's *"Transactional system
+  detected"*, one distribution over — and the second required verb that cannot be filled
+  truthfully.
+- **bootc, as the user: the layering verb is gated by polkit.** `rpm-ostree install
+  --dry-run tmux` → *"rpmostreed OS operation PkgChange not allowed for user"*; likewise
+  `upgrade --check` (*AutomaticUpdateTrigger*). `rpm-ostree status` and `status
+  --pending-exit-77` remain user-runnable. So an atomic declaration's install and upgrade
+  verbs need the escalator like everyone else's, while its *count* verb does not — the
+  same split the mutable repos have. (As root, `rpm-ostree install --dry-run` checked out
+  the tree and then **exited 134** — an abort, on a disk whose origin is a local image;
+  re-check against a registry-backed image before reading anything into it.)
+- **bootc, the user pass, again stopped at the keepalive** (*"sudo: a terminal is required
+  to read the password"*) — the post-boot `sudoers.d` grant did not change the outcome in
+  a fresh session. Iteration 4 records `sudo -l` and pre-warms the ticket in the same
+  session; until then the user-with-sudo measurement on bootc is missing, and the driver
+  fact stands: **the keepalive has no non-interactive path** (no `SUDO_ASKPASS`, no `-A`),
+  so any unattended run on a passworded-sudo host stops at provisioning. Worth a driver
+  change regardless of this proposal.
+- **NixOS: `chsh` takes.** `chsh -s $(command -v zsh)` as root → `getent passwd` reads
+  `/run/current-system/sw/bin/zsh`; `users.mutableUsers` (default true) let it through.
+  Whether the next `nixos-rebuild switch` keeps or reverts it is still unmeasured (a
+  `build-vm` guest carries no `/etc/nixos/configuration.nix`, so `nixos-rebuild dry-build`
+  exits 1 there — harness, not target). `nix profile install` has no `--dry-run`. The
+  scaffold's core guard installed once the shipped tree was `chown`ed (git's "dubious
+  ownership" had read as "not a git working tree").
+- **MicroOS: the closing report is the contract working.** 40 packages *"not available;
+  check with: zypper se --provides …"* — every one a *"Transactional system detected"*
+  refusal recorded as a miss — plus atuin's installer failing, carapace's RPM install
+  refused the same way, op's key import failing; then *"the rest of the box is wired and
+  usable … exiting non-zero (this repo exits 2 whenever an optional install did not
+  complete)"*. Starship's `curl | sh` landed in `$HOME`. The `zypper lu` / `zypper in
+  --dry-run` probes came back exit 105 — **zypper's "exit on signal": the harness piped
+  them into `head -1`** and they died of SIGPIPE, so those two cells are unmeasured;
+  iteration 4's probes capture to a file first. (`dnf --assumeno`'s 141 in the user pass
+  is the same artifact.)
+
+**§3, measured.** The table §3 guessed, with the cells rung two answered:
+
+| Assumption | Silverblue / bootc | MicroOS | NixOS |
+| --- | --- | --- | --- |
+| `PKG_INSTALL` is synchronous | **Refused** — `dnf` resolves 317 pkgs, then *"configured to be read-only"* (root); `rpm-ostree install` needs polkit (user) | **Refused** — *"Transactional system detected"*, rc 5, every package; `transactional-update pkg in` = 21 s + reboot | Not a verb — the starter provisions nothing; `nix profile install` exists (no dry-run) |
+| `PKG_UPGRADE` returns with the box updated | unmeasured (`upgrade --check` needs a registry-backed origin) | measured in the prep: staged, reboot to apply | unmeasured (`switch` needs a config the VM lacks) |
+| `PKG_COUNT_PENDING` lists packages | `rpm-ostree status --pending-exit-77` user-runnable, exit 0/77 (a deployment, not N packages) | `zypper lu` — unmeasured (SIGPIPE artifact) | unmeasured |
+| `/etc` writable: `chsh`, `/etc/shells`, system files | user: `/etc` **not** writable, `chsh` **works** (setuid); root: `/etc` `/var` writable, `/usr` not | root: `/etc` writable (overlay), `chsh` works, `/usr` not | root: everything writable, `chsh` takes; regenerated on `switch` (per docs) |
+| Escalator + keepalive | `sudo` present; **keepalive needs a TTY or askpass** | `sudo` present | `sudo` under `/run/wrappers` |
+| Tools on `PATH` by package | layered → `/usr/bin` after reboot (unmeasured); `$HOME` installers land | `$HOME` installers land (starship); packages after reboot | declared → `/run/current-system/sw/bin` (855 entries) |
+| `--links-only` holds unchanged | **yes** (34 links, user and root) | **yes** (34) | **yes** (28) |
+| Guard accepts the host | `ID=fedora` → yes (no `VARIANT_ID` on the bootc base) | `opensuse` in `ID` → yes | n/a (new repo) |
+
+**R2 lean, after rung two.** Two of three families **refuse** the required `PKG_INSTALL`
+verb outright, and the honest replacements (`rpm-ostree install`, `transactional-update
+-n pkg in`) both *stage* — the schema has no word for "and then reboot". Filling
+`PKG_INSTALL` with the staging verb is truthful only if a `PKG_APPLY` (or the driver's
+two-phase run) exists to say what happens next. That is one new optional key plus a
+consumer change, **not** a change to a required key's meaning — so the additive path is
+still open, and R2's prototype declarations are the next thing to write.
+
+**Still open in R1:** `bootc upgrade --check` against a registry-backed image (`bootc
+switch quay.io/fedora/fedora-bootc:42` in the guest first); `chsh` across
+`nixos-rebuild switch`; `/etc` edits across `transactional-update dup`; the two zypper
+cells; the bootc user-with-sudo pass.
+
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 
 Read off the upstream manuals while the first R1 harness run was in flight (the harness
