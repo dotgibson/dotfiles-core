@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.5.0] - 2026-09-14
+
 ### Added
 
 - **Four prototype `os.capabilities` keys, for the non-mutable host research** (R2 of
