@@ -377,9 +377,12 @@ _ka_prime() { # <shim body> [VAR=value…] — start against the shim, print "rc
   # shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
   ( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
     for _kv in "$@"; do export "${_kv?}"; done
-    _e="$(blib_sudo_keepalive_start 2>&1 >/dev/null)"; _r=$?
+    # stderr goes to a FILE, never to this $(…)'s pipe: a successful prime forks the refresher,
+    # whose `{ … } >/dev/null 2>&1 &` keeps bash's saved copy of the fd it inherited — a pipe
+    # there is held open until the loop dies, and the command substitution never returns.
+    blib_sudo_keepalive_start >/dev/null 2>"$_ka_bin/prime.err"; _r=$?
     blib_sudo_keepalive_stop
-    printf '%s|%s|%s' "$_r" "$(tr '\n' ' ' <"$_ka_argv")" "$_e" )
+    printf '%s|%s|%s' "$_r" "$(tr '\n' ' ' <"$_ka_argv")" "$(tr '\n' ' ' <"$_ka_bin/prime.err")" )
 }
 # verifypw=all with a passworded rule beside NOPASSWD: `-v` (with or without -n) is refused,
 # a command is not. The helper must proceed — and by `-n true`, recorded.
