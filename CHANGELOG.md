@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.4.4] - 2026-09-13
+
 ### Changed
 
 - **`new-os-repo.sh` scaffolds the starter bootstrap in the driver form** (#999). A repo
