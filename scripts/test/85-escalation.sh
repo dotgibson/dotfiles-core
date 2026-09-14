@@ -370,19 +370,25 @@ case "$_ka_mode" in *"-n -v|"*"-n -v"*) pass "the background refresh uses 'sudo 
 if { : </dev/tty; } 2>/dev/null; then
   skip "keepalive prime (#1018): this shell has a controlling terminal, so the non-interactive branches are unreachable here — CI covers them"
 else
+# Its OWN shim directory: the sleeper and interval cases further down prime against
+# $_ka_bin/sudo and expect the exit-0 recorder written above — a prime shim left behind
+# here (the last one exits 1) made them fork nothing.
+_ka_pbin="$(mktemp -d "$SANDBOX/kaprime.XXXXXX")"
+_ka_pargv="$_ka_pbin/argv"
 _ka_prime() { # <shim body> [VAR=value…] — start against the shim, print "rc|argv|stderr"
   local body="$1"; shift
-  : >"$_ka_argv"
-  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\n%s\n' "$_ka_argv" "$body" >"$_ka_bin/sudo"
+  : >"$_ka_pargv"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\n%s\n' "$_ka_pargv" "$body" >"$_ka_pbin/sudo"
+  chmod +x "$_ka_pbin/sudo"
   # shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
-  ( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  ( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_pbin:$PATH"
     for _kv in "$@"; do export "${_kv?}"; done
     # stderr goes to a FILE, never to this $(…)'s pipe: a successful prime forks the refresher,
     # whose `{ … } >/dev/null 2>&1 &` keeps bash's saved copy of the fd it inherited — a pipe
     # there is held open until the loop dies, and the command substitution never returns.
-    blib_sudo_keepalive_start >/dev/null 2>"$_ka_bin/prime.err"; _r=$?
+    blib_sudo_keepalive_start >/dev/null 2>"$_ka_pbin/prime.err"; _r=$?
     blib_sudo_keepalive_stop
-    printf '%s|%s|%s' "$_r" "$(tr '\n' ' ' <"$_ka_argv")" "$(tr '\n' ' ' <"$_ka_bin/prime.err")" )
+    printf '%s|%s|%s' "$_r" "$(tr '\n' ' ' <"$_ka_pargv")" "$(tr '\n' ' ' <"$_ka_pbin/prime.err")" )
 }
 # verifypw=all with a passworded rule beside NOPASSWD: `-v` (with or without -n) is refused,
 # a command is not. The helper must proceed — and by `-n true`, recorded.
@@ -401,7 +407,7 @@ _ka_p="$(_ka_prime 'case "$*" in "-A -v") exit 0 ;; "-n -v") exit 0 ;; *) exit 1
 case "$_ka_p" in 0\|"-A -v"*) pass "keepalive prime: SUDO_ASKPASS set → primed with 'sudo -A -v' first" ;; *) fail "keepalive prime: SUDO_ASKPASS is not honoured (got $_ka_p)" ;; esac
 _ka_p="$(_ka_prime 'exit 1' SUDO_ASKPASS=/usr/bin/false)"
 case "$_ka_p" in 1\|*"askpass helper did not authenticate"*) pass "keepalive prime: a failing askpass helper is reported as such" ;; *) fail "keepalive prime: a failing askpass helper is misreported (got $_ka_p)" ;; esac
-unset _ka_p
+unset _ka_p _ka_pbin _ka_pargv
 unset -f _ka_prime
 fi
 # The refresher's SLEEPER is a separate process. Killing only the loop shell leaves it
