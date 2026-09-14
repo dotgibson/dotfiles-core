@@ -27,6 +27,11 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   same script over ssh and are R1's real deliverable. Not scheduled, not a gate; the
   findings are read by a person and recorded in the proposal.
 
+- **`nonmutable/*.capabilities`** — R2's three prototype declarations (bootc, MicroOS,
+  NixOS), each validated by `scripts/check-capabilities.sh` with the four prototype keys
+  it now accepts; `nonmutable/README.md` carries the R2 verdict (additive) and what each
+  file still marks "to verify". Not fleet declarations; nothing links them.
+
 ## The rules
 
 - **Never vendored.** None of this is in `core.manifest` or `core.vendor`, so no OS repo

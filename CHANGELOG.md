@@ -1,5 +1,18 @@
 ## [Unreleased]
 
+### Added
+
+- **Four prototype `os.capabilities` keys, for the non-mutable host research** (R2 of
+  `NON-MUTABLE-HOST-PROPOSAL.md`, #1004). `scripts/check-capabilities.sh` accepts
+  `PROVISIONER` (`mutable` | `atomic` | `transactional` | `declarative`), `PKG_APPLY` (the
+  verb that makes a staged change live), and `PKG_PENDING_EXIT_SOME` / `_NONE` (a count
+  verb whose answer is its exit status) — all optional, all read by no consumer yet — and
+  lets `PKG_COUNT_PENDING` be absent under `PROVISIONER=declarative`. Every existing
+  declaration validates unchanged. The three prototype declarations they were written for
+  live under `scripts/research/nonmutable/`, each validated, with the R2 verdict
+  (additive — no schema version, no re-author) in their README. (`scripts/check-capabilities.sh`,
+  `examples/os.capabilities.example`, `scripts/test/55-capabilities.sh`)
+
 ### Fixed
 
 - **The sudo keepalive no longer dies on a non-interactive run whose sudo needs no

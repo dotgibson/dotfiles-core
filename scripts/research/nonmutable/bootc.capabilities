@@ -1,0 +1,67 @@
+# scripts/research/nonmutable/bootc.capabilities — R2 PROTOTYPE, not a fleet declaration
+# (NON-MUTABLE-HOST-PROPOSAL.md §5 R2, #1004). What dotfiles-Fedora's os/fedora.capabilities
+# WOULD become on Silverblue / a bootc host, written with the existing keys plus the four
+# prototype ones, every value either measured on a booted fedora-bootc:42 guest
+# (research-nonmutable-vm.yml, runs 34819015395 and 34820719480) or marked "to verify".
+#
+# The R2 test: does any REQUIRED key end up a lie? Read against os/fedora.capabilities:
+#   PKG_INSTALL   dnf resolves 317 packages then "this bootc system is configured to be
+#                 read-only" (measured, root) — the mutable verb is a refusal. The honest
+#                 verb STAGES; it is true only with PKG_APPLY beside it.
+#   PKG_UPGRADE   `rpm-ostree upgrade` stages a deployment (documented; --check measured as
+#                 far as a local-origin disk allows). Same shape.
+#   PKG_COUNT_PENDING
+#                 the only user-runnable question is "is a deployment staged?" —
+#                 `rpm-ostree status --pending-exit-77` answers with its exit status
+#                 (measured: exit 0 idle; 77 when staged). The answer is one deployment,
+#                 not N packages — PKG_PENDING_EXIT_SOME says so.
+# Everything else fills in truthfully. Verdict for this family: additive — no required
+# key changes meaning; two optional keys (PROVISIONER, PKG_APPLY) and one exit-status key
+# carry the difference.
+
+PROVISIONER=atomic
+
+# ── package-manager verbs (required) ──────────────────────────────────────────
+# Layered-package metadata; the base image needs none.
+PKG_REFRESH=sudo rpm-ostree refresh-md
+# STAGES the next deployment. Non-interactive by nature (no transaction prompt), so
+# PKG_ASSUME_YES is omitted: `up -y` behaves like `up`. `up` should print PKG_APPLY.
+PKG_UPGRADE=sudo rpm-ostree upgrade
+# Layers into the NEXT deployment; nothing is on PATH until PKG_APPLY. --idempotent so a
+# re-run over an already-layered package is not an error (the driver's provision hook
+# re-runs). `-A` (apply-live) exists and is deliberately not declared: it is documented as
+# partial, and a bootstrap that half-applies is the failure mode this schema avoids.
+PKG_INSTALL=sudo rpm-ostree install --idempotent
+PKG_REMOVE=sudo rpm-ostree uninstall
+# Read-only metadata queries work on the deployed host (dnf is present; only the
+# transaction is refused). TO VERIFY: `dnf search` on a booted host — the harness probed
+# only `dnf install`.
+PKG_SEARCH=dnf search
+PKG_OWNS=rpm -qf
+# User-runnable, exit-coded: 77 = a deployment is staged (reboot to apply), 0 = idle.
+# The "is a NEWER image available" question (`rpm-ostree upgrade --check
+# --unchanged-exit-77`) is polkit-gated for a user ("AutomaticUpdateTrigger not allowed",
+# measured) and belongs behind `up`'s privileged path, not the once-a-day nudge.
+PKG_COUNT_PENDING=rpm-ostree status --pending-exit-77
+PKG_PENDING_EXIT_SOME=77
+
+# ── the staged change becomes live (prototype) ────────────────────────────────
+# `rpm-ostree upgrade --reboot` and `bootc upgrade --apply` exist; a plain reboot is the
+# one verb that applies BOTH an upgrade and a layered install, so it is the declaration.
+PKG_APPLY=sudo systemctl reboot
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+# Measured: systemd user units work on the guest unchanged.
+SCHEDULER=systemd
+SCHEDULER_UNIT_DIR=~/.config/systemd/user
+
+# ── how `up` applies (optional) ───────────────────────────────────────────────
+# No PKG_ASSUME_YES (nothing prompts). No PKG_UPGRADE_PARTIAL: the image updates as a
+# whole — the same safety declaration Arch makes, here by construction.
+# A staged upgrade is inert until PKG_APPLY, so an unattended `rpm-ostree upgrade` is
+# SAFER than a mutable one: nothing changes under a running session. The runner must
+# never run PKG_APPLY; that is the operator's reboot.
+MAINT_UNATTENDED_UPGRADE=1
+
+# ── how `up` counts (optional) ────────────────────────────────────────────────
+# None of PKG_PENDING_MATCH / FIELD / FS: the answer is the exit status, not a line list.
