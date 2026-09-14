@@ -552,6 +552,33 @@ shape, and R4 still diffs the bootstrap hooks before deciding.
 `rpm-ostree upgrade --check` against a registry-backed image; `zypper -q list-updates` on
 the MicroOS guest; `chsh` across `nixos-rebuild switch`.
 
+### R1 findings — rung two, iteration 4 (2026-09-14, run 34852611338): the tainted cells, and the keepalive explained
+
+- **The keepalive, explained — a driver defect (#1018).** With the harness recording
+  `sudo -l` this time: the user holds `(ALL) NOPASSWD: ALL` (the layered drop-in *had*
+  taken) beside Fedora's stock `(ALL) ALL`, and `sudo -n true` succeeds. The driver's
+  prime is **`sudo -v`**, and sudoers' default **`verifypw=all`** requires *every*
+  matching rule to be NOPASSWD before `-v` goes unprompted — so it prompted, there was no
+  TTY, and the run ended *"sudo authentication failed"* on a host where every command
+  was passwordless. Not a target finding: any Fedora box with a NOPASSWD drop-in beside
+  the stock wheel rule behaves the same. Filed as #1018 (prime with `sudo -n true` when
+  there is no TTY; honour `SUDO_ASKPASS`; say which of the three failures it was).
+- **bootc, root:** `rpm-ostree install --dry-run tmux` → **exit 0** (iteration 3's 134
+  was the harness's own SIGPIPE, not the tool); `dnf install --assumeno tmux` → exit 1
+  after resolving (the read-only refusal, as in the full run). `upgrade --check` still
+  needs a registry-backed origin.
+- **MicroOS:** `zypper --non-interactive lu` → **exit 0** on the guest, so the prototype's
+  `PKG_COUNT_PENDING=zypper -q list-updates` is measured, not assumed; `zypper in
+  --dry-run zsh` also exits 0 — the transactional refusal fires at commit, not at
+  resolution, which is one more reason the count verb may stay zypper's.
+- **NixOS:** `nix build nixpkgs#hello --dry-run` → exit 0 (it fetched the unstable channel
+  to do it); `chsh` took; the shipped scaffold's core guard installed.
+
+**What R1 still owes**, now four cells: `dnf search` on a booted bootc host; `bootc
+upgrade --check` against a registry-backed image; `chsh` across `nixos-rebuild switch`;
+`/etc` edits across `transactional-update dup`. None changes R2's verdict; each is a
+value inside a prototype marked "to verify".
+
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 
 Read off the upstream manuals while the first R1 harness run was in flight (the harness

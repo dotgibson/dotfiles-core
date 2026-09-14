@@ -37,7 +37,8 @@ PKG_INSTALL=sudo transactional-update -n pkg in
 PKG_REMOVE=sudo transactional-update -n pkg rm
 PKG_SEARCH=zypper se
 PKG_OWNS=zypper se --provides
-# TO VERIFY on the guest: read-only against the running snapshot's repo cache.
+# Measured on the guest (run 34852611338): `zypper --non-interactive lu` exits 0 —
+# read-only against the running snapshot's repo cache, on the read-only root.
 PKG_COUNT_PENDING=zypper -q list-updates
 PKG_PENDING_MATCH=^v[[:space:]]
 PKG_PENDING_FS=|
