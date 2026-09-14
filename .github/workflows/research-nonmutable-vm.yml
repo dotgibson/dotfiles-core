@@ -245,8 +245,14 @@ jobs:
         run: |
           set -euo pipefail
           . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+          # R3: home-manager as a NixOS module, applying scripts/research/nonmutable/home.nix
+          # for root over the scaffolded repo. Evaluated HERE (readDir on /tmp/dotfiles-NixOS),
+          # linking to where the GUEST will have it (/root/dotfiles-NixOS).
           cat >configuration.nix <<EOF
           { pkgs, ... }: {
+            imports = [ <home-manager/nixos> ];
+            home-manager.useGlobalPkgs = true;
+            home-manager.users.root = import $PWD/scripts/research/nonmutable/home.nix;
             services.openssh.enable = true;
             services.openssh.settings.PermitRootLogin = "prohibit-password";
             users.users.root.openssh.authorizedKeys.keys = [ "$(cat /tmp/research_key.pub)" ];
@@ -256,14 +262,18 @@ jobs:
             system.stateVersion = "25.05";
           }
           EOF
-          nix-build '<nixpkgs/nixos>' -A vm -I nixos-config=./configuration.nix -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz -o nixos-vm 2>&1 | tail -3
-          ls nixos-vm/bin
-          # The repo the guest will run: scaffolded HERE (the guest has no Core checkout).
+          # The scaffold FIRST: home.nix reads its core/zsh at evaluation.
           env -u CORE_JSON bash scripts/new-os-repo.sh --no-vendor NixOS /tmp/dotfiles-NixOS >/dev/null 2>&1
           mkdir -p /tmp/dotfiles-NixOS/core/scripts/lib
           for d in zsh tmux starship nvim git mise lib bin; do [ -d "$d" ] && cp -r "$d" /tmp/dotfiles-NixOS/core/; done
           cp scripts/lib/common.sh /tmp/dotfiles-NixOS/core/scripts/lib/; cp core.version /tmp/dotfiles-NixOS/core/
           tar -C /tmp -czf dotfiles-NixOS.tgz dotfiles-NixOS
+          DOTFILES_REPO=/root/dotfiles-NixOS DOTFILES_BUILD=/tmp/dotfiles-NixOS DOTFILES_OS=nixos \
+            nix-build '<nixpkgs/nixos>' -A vm -I nixos-config=./configuration.nix \
+              -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz \
+              -I home-manager=https://github.com/nix-community/home-manager/archive/release-25.05.tar.gz \
+              -o nixos-vm 2>&1 | tail -3
+          ls nixos-vm/bin
       - name: Boot it and run the probe over ssh
         run: |
           set -euo pipefail
@@ -275,11 +285,13 @@ jobs:
           QEMU_OPTS="-nographic -serial file:nixos-serial.log" "$vm" >/dev/null 2>&1 &
           for _ in $(seq 1 60); do sshr -p 2224 root@localhost true 2>/dev/null && break; sleep 5; done
           sshr -p 2224 root@localhost true || { echo "no ssh after 5 min"; tail -40 nixos-serial.log 2>/dev/null; exit 1; }
-          scpr -P 2224 scripts/research/nonmutable-host.sh dotfiles-NixOS.tgz root@localhost:/tmp/
+          scpr -P 2224 scripts/research/nonmutable-host.sh scripts/research/nonmutable-home-manager.sh dotfiles-NixOS.tgz root@localhost:/tmp/
+          # The repo lands where home.nix's out-of-store links point (/root/dotfiles-NixOS).
           # chown after extract: the tarball carries the runner's uid, and git refuses a
           # tree owned by someone else ("dubious ownership") — which read as "not a git
           # working tree" to the core guard on the first run.
-          sshr -p 2224 root@localhost 'cd /tmp && tar xzf dotfiles-NixOS.tgz && chown -R root:root dotfiles-NixOS && cd dotfiles-NixOS && git add -A >/dev/null 2>&1 && git -c user.email=r@x -c user.name=r commit -q -m seed >/dev/null 2>&1; bash /tmp/nonmutable-host.sh nixos --repo-dir /tmp/dotfiles-NixOS --out /tmp/nixos-root.md' || true
+          sshr -p 2224 root@localhost 'cd /root && tar xzf /tmp/dotfiles-NixOS.tgz && chown -R root:root dotfiles-NixOS && cd dotfiles-NixOS && git add -A >/dev/null 2>&1 && git -c user.email=r@x -c user.name=r commit -q -m seed >/dev/null 2>&1; mkdir -p /tmp/w/scripts/research/nonmutable && cp /tmp/nonmutable-home-manager.sh /tmp/w/scripts/research/; bash /tmp/w/scripts/research/nonmutable-home-manager.sh /root/dotfiles-NixOS nixos --no-switch --out /tmp/home-manager-nixos.md; bash /tmp/nonmutable-host.sh nixos --repo-dir /root/dotfiles-NixOS --out /tmp/nixos-root.md' || true
+          scpr -P 2224 root@localhost:/tmp/home-manager-nixos.md research-out/home-manager-nixos.md || true
           scpr -P 2224 root@localhost:/tmp/nixos-root.md research-out/nixos-vm-root.md || true
           ls -la research-out
       - name: Summary + artifact
