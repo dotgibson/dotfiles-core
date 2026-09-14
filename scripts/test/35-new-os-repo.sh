@@ -59,26 +59,33 @@ if have git && have zsh; then
   rm -rf "$SANDBOX/nor-trunk"
   if env -u CORE_JSON bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
     _nor_bad=""
-    for _nor_f in zshenv zprofile zshrc; do
+    for _nor_f in zshenv zprofile; do
       [[ -f "$NOR/zsh/$_nor_f.zsh" ]] || _nor_bad="$_nor_bad zsh/$_nor_f.zsh(missing)"
       # The extensionless name must NOT come back alongside it: a generator writing both
       # would satisfy the check above while still shipping an unlinted file.
       [[ -e "$NOR/zsh/$_nor_f" ]] && _nor_bad="$_nor_bad zsh/$_nor_f(extensionless)"
     done
+    # No zshrc.zsh: the interactive entry is the driver's managed ~/.zshrc loader (#999).
+    # A scaffold that wrote its own copy again would be a second loader definition to
+    # drift, which is the thing the driver form exists to end.
+    [[ -e "$NOR/zsh/zshrc.zsh" || -e "$NOR/zsh/zshrc" ]] && _nor_bad="$_nor_bad zsh/zshrc(second loader definition)"
     if [[ -z "$_nor_bad" ]]; then
-      pass "new-os-repo: the three ZDOTDIR entry files are written as *.zsh (lint-gate visible)"
+      pass "new-os-repo: the ZDOTDIR entry pair is written as *.zsh (lint-gate visible), and no zshrc copy of the loader"
     else
       fail "new-os-repo: entry-file naming wrong —$_nor_bad"
     fi
     # The rename is only behaviour-neutral if the generated bootstrap follows it. A repo
-    # with zshenv.zsh on disk and `link .../zsh/zshenv` in bootstrap.sh has no ~/.zshenv
-    # at all — no ZDOTDIR, so the loader is never reached and the shell starts bare.
-    if grep -q 'link "\$REPO/zsh/zshenv\.zsh" *"\$HOME/\.zshenv"' "$NOR/bootstrap.sh" &&
-      grep -q 'link "\$REPO/zsh/zprofile\.zsh" *"\$CFG/zsh/\.zprofile"' "$NOR/bootstrap.sh" &&
-      grep -q 'link "\$REPO/zsh/zshrc\.zsh" *"\$CFG/zsh/\.zshrc"' "$NOR/bootstrap.sh"; then
-      pass "new-os-repo: bootstrap.sh links the .zsh sources to the extensionless destinations"
+    # with zshenv.zsh on disk and `blib_link .../zsh/zshenv` in bootstrap.sh has no
+    # ~/.zshenv at all — no ZDOTDIR, so the loader is never reached and the shell starts
+    # bare. And the starter must be in the DRIVER form (#999): declare the OS, hand over.
+    if grep -q 'blib_link "\$DOTFILES/zsh/zshenv\.zsh" *"\$HOME/\.zshenv"' "$NOR/bootstrap.sh" &&
+      grep -q 'blib_link "\$DOTFILES/zsh/zprofile\.zsh" *"\$CONFIG/zsh/\.zprofile"' "$NOR/bootstrap.sh" &&
+      grep -q '^BOOTSTRAP_OS=fixture$' "$NOR/bootstrap.sh" &&
+      grep -q '^blib_main "\$@"$' "$NOR/bootstrap.sh" &&
+      ! grep -q '^link() ' "$NOR/bootstrap.sh"; then
+      pass "new-os-repo: bootstrap.sh is the driver form — declares BOOTSTRAP_OS, links the .zsh entry pair in the post-loader hook, hands over to blib_main, carries no link() of its own"
     else
-      fail "new-os-repo: bootstrap.sh link lines disagree with the scaffolded filenames"
+      fail "new-os-repo: bootstrap.sh is not the driver form, or its entry-pair link lines disagree with the scaffolded filenames"
     fi
     # And the gate can only help if what it reads actually parses. This is the check that
     # never ran on these three files in any repo until #451.
@@ -188,7 +195,9 @@ if have git && have zsh; then
     # Then the VENDORED state: core/ seeded from Core's OWN tree — the same directories
     # bootstrap.sh links — so the Core-provided branches (every zsh module, both tmux
     # files, the single configs, mise-as-copy) are exercised rather than skipped.
-    for _nor_d in zsh tmux starship nvim git mise; do
+    # lib/ too: the driver form sources core/lib/ux.sh + bootstrap-lib.sh, so the
+    # scaffold's suite runs Core's OWN driver here — the same one the fleet vendors.
+    for _nor_d in zsh tmux starship nvim git mise lib; do
       [[ -d "$HERE/$_nor_d" ]] && cp -r "$HERE/$_nor_d" "$NOR/core/"
     done
     # ...and the three vendored files the lint legs read: the scanners, the pinned tool
@@ -306,12 +315,20 @@ if have git && have zsh; then
     fi
     unset _nor_d
     # ...and it CAN fail. A gate nobody has seen red is not known to work (the bench-gate
-    # lesson, #688). Strip the "already linked" short-circuit from a copy of the bootstrap,
-    # so every run re-links and announces it: the idempotency assertion must go red.
+    # lesson, #688). Break the "already linked" short-circuit — which lives in the vendored
+    # driver's blib_link now, not in the starter (#999) — in a copy of the scaffold, so
+    # every run re-links and announces it: the idempotency assertion must go red. The
+    # condition line is REPLACED (with awk, on a fixed string), not deleted: deleting the
+    # `if` would leave its `fi` orphaned and break the lib outright, which is a different
+    # red than the one this proves.
     _nor_brk="$SANDBOX/newosrepo-broken"
     rm -rf "$_nor_brk"
     cp -r "$NOR" "$_nor_brk"
-    sed -i.bak '/readlink "\$dest"/d' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    awk 'index($0, "\"$(readlink \"$dst\")\" == \"$src\"") { print "  if false; then"; next } { print }' \
+      "$NOR/core/lib/bootstrap-lib.sh" >"$_nor_brk/core/lib/bootstrap-lib.sh"
+    if cmp -s "$NOR/core/lib/bootstrap-lib.sh" "$_nor_brk/core/lib/bootstrap-lib.sh"; then
+      fail "new-os-repo: could not break blib_link's short-circuit in the fixture copy — the negative cases below prove nothing (re-point the awk at the lib's current line)"
+    fi
     if (cd "$_nor_brk" && ./test/check-links.sh) >/dev/null 2>&1; then
       fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links on every run — it cannot fail"
     else
@@ -322,7 +339,7 @@ if have git && have zsh; then
     # not the `linked` lines and not inode identity — a filesystem may hand a re-created
     # link the same inode straight back. So a bootstrap that removes and re-creates every
     # link while saying nothing must go red on THAT witness.
-    sed -i.bak '/echo "linked /d' "$_nor_brk/bootstrap.sh" && rm -f "$_nor_brk/bootstrap.sh.bak"
+    sed -i.bak '/blib_say "relinking /d' "$_nor_brk/core/lib/bootstrap-lib.sh" && rm -f "$_nor_brk/core/lib/bootstrap-lib.sh.bak"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-silent.out" 2>&1; then
       fail "new-os-repo: the scaffolded suite passed a bootstrap that re-links silently — the mutating-command witness (the rm/ln shims) did not fire"
     elif grep -q 'invoked mutating commands' "$SANDBOX/nor-silent.out"; then
@@ -343,7 +360,7 @@ if have git && have zsh; then
     _nor_brk="$SANDBOX/newosrepo-rewrite"
     rm -rf "$_nor_brk"
     cp -r "$NOR" "$_nor_brk"
-    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && printf x >>\"$CFG/mise/config.toml\"" }' \
+    awk '{ print } /^CONFIG="\$\{XDG_CONFIG_HOME:-\$HOME\/\.config\}"$/ { print "[[ -f \"$CONFIG/mise/config.toml\" ]] && printf x >>\"$CONFIG/mise/config.toml\"" }' \
       "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-rewrite.out" 2>&1; then
       fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites the mise seed in place on every run — the checksum witness does not fire"
@@ -359,7 +376,7 @@ if have git && have zsh; then
     _nor_brk="$SANDBOX/newosrepo-samebytes"
     rm -rf "$_nor_brk"
     cp -r "$NOR" "$_nor_brk"
-    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && cat \"$REPO/core/mise/config.toml\" >\"$CFG/mise/config.toml\"" }' \
+    awk '{ print } /^CONFIG="\$\{XDG_CONFIG_HOME:-\$HOME\/\.config\}"$/ { print "[[ -f \"$CONFIG/mise/config.toml\" ]] && cat \"$DOTFILES/core/mise/config.toml\" >\"$CONFIG/mise/config.toml\"" }' \
       "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-samebytes.out" 2>&1; then
       fail "new-os-repo: the scaffolded suite passed a bootstrap that rewrites a file with identical bytes on every run — no write witness"
@@ -378,7 +395,7 @@ if have git && have zsh; then
     _nor_brk="$SANDBOX/newosrepo-chmod"
     rm -rf "$_nor_brk"
     cp -r "$NOR" "$_nor_brk"
-    awk '{ print } /^CFG="\$HOME\/\.config"$/ { print "[[ -f \"$CFG/mise/config.toml\" ]] && /bin/chmod u+x \"$CFG/mise/config.toml\"" }' \
+    awk '{ print } /^CONFIG="\$\{XDG_CONFIG_HOME:-\$HOME\/\.config\}"$/ { print "[[ -f \"$CONFIG/mise/config.toml\" ]] && /bin/chmod u+x \"$CONFIG/mise/config.toml\"" }' \
       "$NOR/bootstrap.sh" >"$_nor_brk/bootstrap.sh"
     if (cd "$_nor_brk" && ./test/check-links.sh) >"$SANDBOX/nor-chmod.out" 2>&1; then
       fail "new-os-repo: the scaffolded suite passed a bootstrap that changes a file's mode on every run — the snapshot does not carry modes"

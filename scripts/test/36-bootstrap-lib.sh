@@ -748,6 +748,74 @@ else
 fi
 
 
+# ── a second run invokes no mutating command (lib/bootstrap-lib.sh, #999) ──────
+# The scaffolded test/check-links.sh (scripts/new-os-repo.sh) shims rm/ln/mv/cp/mkdir/
+# chmod on a bootstrap's SECOND run and reads any invocation as a change — the strongest
+# idempotency witness in the system, and the one the driver form put Core's own wiring
+# under for the first time. Three every-run mutations fell out of it: `chmod +x` on the
+# tmux scripts and bin/ tools, `mkdir -p` + `chmod 700` on ~/.ssh, and a byte-identical
+# pre-commit hook rewritten (mkdir, redirect, chmod) by blib_install_core_guard on every
+# call. Each now asks first. Pinned here with the same shim, so the lib cannot regress
+# behind a scaffold test that happens not to run.
+hdr "second run is silent: blib_link_core / os layer / core guard invoke no mutating command"
+_sr="$(mktemp -d "$SANDBOX/silentrun.XXXXXX")"
+mkdir -p "$_sr/home" "$_sr/config" "$_sr/shim" "$_sr/repo/core/tmux/scripts" "$_sr/repo/core/bin" "$_sr/repo/core/ssh" "$_sr/repo/ssh" "$_sr/repo/core/zsh"
+printf '#!/bin/sh\n' >"$_sr/repo/core/tmux/scripts/x.sh"
+printf '#!/bin/sh\n' >"$_sr/repo/core/bin/clip"
+printf 'Host *\n' >"$_sr/repo/core/ssh/config"
+printf 'Host os\n' >"$_sr/repo/ssh/os.conf"
+printf '# loader\n' >"$_sr/repo/core/zsh/loader.zsh"
+for _sr_c in rm ln mv cp mkdir chmod; do
+  printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "${0##*/}" "$*" >>"$MUT_LOG"\nPATH="${PATH#*:}" exec "${0##*/}" "$@"\n' >"$_sr/shim/$_sr_c"
+  chmod +x "$_sr/shim/$_sr_c"
+done
+git -C "$_sr/repo" init -q >/dev/null 2>&1
+# A placeholder stands in for the tpm clone (the one network fetch in the wiring), made
+# HERE and not inside a pass: a mkdir inside the shimmed run would be the fixture's own
+# command in the log.
+mkdir -p "$_sr/config/tmux/plugins/tpm"
+_sr_run() { # <mutation-log> — one wiring pass: core surface, os layer, guard
+  HOME="$_sr/home" XDG_CONFIG_HOME="$_sr/config" MUT_LOG="$1" PATH="$_sr/shim:$PATH" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_link_core "'"$_sr"'/repo" "'"$_sr"'/config"
+    blib_link_os_layer "'"$_sr"'/repo" "'"$_sr"'/config" testos
+    blib_install_core_guard "'"$_sr"'/repo"
+  ' >/dev/null 2>&1
+}
+: >"$_sr/first.log"; : >"$_sr/second.log"
+_sr_run "$_sr/first.log"
+_sr_run "$_sr/second.log"
+if [[ -s "$_sr/first.log" ]]; then
+  if [[ ! -s "$_sr/second.log" ]]; then
+    pass "silent second run: the first pass mutated ($(wc -l <"$_sr/first.log" | tr -d ' ') commands) and the second invoked no rm/ln/mv/cp/mkdir/chmod at all"
+  else
+    fail "silent second run: the second pass still invoked mutating commands — $(head -3 "$_sr/second.log" | tr '\n' ';')"
+  fi
+else
+  fail "silent second run: the first pass invoked NO mutating command through the shims — the fixture is not exercising the wiring (nothing to compare)"
+fi
+# And the guard's short-circuit is a real byte compare, not a "file exists" check: a hook
+# that is present but not ours is still refused (custom hook, left alone), and one that
+# is ours but stale (different bytes) is rewritten — here by an appended line.
+_sr_hook="$_sr/repo/.git/hooks/pre-commit"
+if [[ -x "$_sr_hook" ]] && grep -q 'dotfiles-core-guard' "$_sr_hook"; then
+  printf '# stale\n' >>"$_sr_hook"
+  : >"$_sr/third.log"
+  _sr_run "$_sr/third.log"
+  if ! grep -q '# stale' "$_sr_hook" && grep -q 'dotfiles-core-guard' "$_sr_hook"; then
+    pass "silent second run: a hook that is ours but stale is rewritten (the short-circuit compares bytes, not presence)"
+  else
+    fail "silent second run: a stale hook was left in place — the guard's short-circuit is a presence check"
+  fi
+else
+  fail "silent second run: the guard hook was not installed executable by the first pass"
+fi
+rm -rf "$_sr"
+unset _sr _sr_c _sr_hook
+unset -f _sr_run
+
+
 # ── blib_link_role_layer (lib/bootstrap-lib.sh) ──────────────────────────────
 # The Role band (85-94) had no Core wiring for years, so BOTH role repos hand-rolled it
 # and drifted: dotfiles-Defense honoured BLIB_DRY when dropping the stale pre-v4

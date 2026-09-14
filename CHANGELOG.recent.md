@@ -14,6 +14,19 @@ repo-meta and stays upstream:
 
 ### Changed
 
+- **`new-os-repo.sh` scaffolds the starter bootstrap in the driver form** (#999). A repo
+  born from the generator declares what it is (`BOOTSTRAP_NAME`, `BOOTSTRAP_OS`,
+  `BOOTSTRAP_LOGIN_SHELL=0` — a starter must not `chsh`), links its ZDOTDIR entry pair in
+  `bootstrap_wire_post_loader`, and hands over to `blib_main` — the shape all eight fleet
+  repos on the driver have (#986) rather than the one they just left. The starter's hand
+  copy of the link step (and of `blib_link`'s backup suffix, "keep the two in step") goes,
+  and so does its `zsh/zshrc.zsh` copy of the loader: the driver writes the managed
+  `~/.zshrc` and seeds `$ZDOTDIR/.zshrc` as a symlink to it, one definition for the fleet.
+  The generated `test/check-links.sh` asserts that shape, stands a placeholder in for the
+  tpm clone (the one network fetch in the wiring; the suite tests links, not GitHub), and
+  keeps its three idempotency witnesses — which now hold the driver to the same bar.
+  (`scripts/new-os-repo.sh`, `scripts/test/35-new-os-repo.sh`)
+
 - **Alpine is on the bootstrap driver, MacBook is exempt by design — the `blib_main` row
   closes at 8/9 + 1 exempt** (closes #986; dotgibson/dotfiles-Alpine#194, on v7.4.2). Alpine
   declares doas-first (`BOOTSTRAP_SU_PREFER=doas`) and the driver resolves with it; its
@@ -42,6 +55,17 @@ repo-meta and stays upstream:
   to user mode when there is none, the provision hook primes the keepalive itself, and
   `provision_user` folds into `bootstrap_provision`. Both keep their package bodies verbatim.
   619 + 1316 → 551 + 1236 lines. (`scripts/audit/40-fleet-registers.sh`)
+
+### Fixed
+
+- **A second bootstrap run invokes no mutating command** (#999, found by holding the
+  driver to the scaffold's idempotency witness). `blib_link_core` ran `chmod +x` on Core's
+  tmux scripts and `bin/` tools and `mkdir -p`/`chmod 700` on `~/.ssh` on EVERY run, and
+  `blib_install_core_guard` rewrote an identical pre-commit hook every time — no-ops on
+  disk, but a witness that logs every `mkdir`/`chmod` reads each as a change. Every one
+  now asks first (`_blib_ensure_exec`, `_blib_private_dir`, a byte compare against the
+  hook text held in `_blib_core_guard_hook`) and the hook's bytes are unchanged.
+  (`lib/bootstrap-lib.sh`)
 
 ## [v7.4.2] - 2026-09-13
 
