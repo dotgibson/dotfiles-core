@@ -282,6 +282,83 @@ layering natively, and this repo's habit is to document its rejections."*
   only a VM can test, and therefore what the register must mark *not covered* rather
   than green.
 
+### Findings so far — documentation, 2026-09-14 (before any host was measured)
+
+Read off the upstream manuals while the first R1 harness run was in flight (the harness
+is `scripts/research/nonmutable-host.sh` + `.github/workflows/research-nonmutable.yml`,
+landed in #1005). These are what the tools *document*, not what a host *did*; each is
+re-checked by R1's probes and marked measured when it is.
+
+**rpm-ostree / bootc (R5).** The verbs the schema would call already exist and already
+model "staged" as a first-class state:
+
+- `rpm-ostree upgrade --check` — *"just check if an upgrade is available, without
+  downloading it or performing a package-level diff"*; `--unchanged-exit-77` — *"exit
+  status 77 to indicate that the system is already up to date. This tristate return
+  model is intended to support idempotency-oriented systems automation tools like
+  Ansible"*; `rpm-ostree status --pending-exit-77` — *"exit status 77 if a pending
+  deployment is available."* `rpm-ostree install` *"has no effect on your running system,
+  and will only take effect when you reboot"*; `-A`/`--apply-live` exists. *"The only
+  writable directories are `/etc` and `/var`"*; at upgrade *"the process takes the new
+  default `/etc`, and adds your changes on top."* ([man/rpm-ostree.xml][rpo],
+  [administrator handbook][rpo-hb])
+- `bootc upgrade` — *"Download and queue an updated container image to apply. This does
+  not affect the running system … A queued update is visible as `staged` in `bootc
+  status`."* `--check` downloads only the manifest; the update is applied at shutdown by
+  `ostree-finalize-staged.service`, or by `bootc upgrade --apply`, which *"currently always
+  reboots the system"* (`--soft-reboot=auto` where available); `--download-only` /
+  `--from-downloaded` split staging from applying. ([bootc-upgrade(8)][bootc])
+- **What this means for the schema.** `PKG_COUNT_PENDING=rpm-ostree upgrade --check
+  --unchanged-exit-77` answers with **exit 77 = nothing pending, exit 0 = an update is
+  available** — an exit code that *means* "none", the dnf-exits-100 shape inverted. The
+  schema's `PKG_COUNT_EXIT_TRUSTED` says "non-zero = could not answer", which would read
+  77 as *unknown*. So even the additive path needs one more optional key — a
+  `PKG_PENDING_EXIT_NONE=77` (an exit status meaning "none pending") — or the count verb
+  is wrapped. First schema gap, found before a host was touched. A `PKG_APPLY` verb has an
+  obvious value on both (`bootc upgrade --apply`, `systemctl reboot`).
+
+**transactional-update (R5, R1).** `pkg install`/`pkg in` install into a new snapshot;
+`dup` is `zypper dup --no-allow-vendor-change` and `up` is `zypper up`, both *into the
+snapshot*, both needing a reboot to activate. **There is no dry-run or check mode** —
+so `PKG_COUNT_PENDING` cannot be a `transactional-update` verb at all; it would be plain
+`zypper --non-interactive lu` (read-only against the running system's repo cache — to
+verify it works on the read-only root). `apply` *"mounts /usr, /etc and /boot of the (new)
+default snapshot into the currently running system"* but *"is not one atomic operation"*
+and services are not restarted. Exit codes: 0 ok, 1 a command failed and the snapshot was
+deleted, 2 `apply` failed. `/etc` is an overlay per snapshot under `/var/lib/overlay`:
+*"configuration file changes applied to the currently running system will be visible in
+the new system, but not vice versa"*, with a documented loss case when a file changes both
+during an update and afterwards in the running system — the caveat §3 guessed at, and the
+reason `blib_install_system_file` and `chsh` on MicroOS need R1's real run, not a container.
+([transactional-update(8)][tu])
+
+**NixOS (R3, R1).** `users.users.<name>.shell` — *"The path to the user's shell … Don't
+forget to enable your shell in `programs` if necessary, like `programs.zsh.enable =
+true;`"* — and an assertion refuses a shell whose `programs.<shell>.enable` is false
+(*"might make logging in as that user impossible"*). `/etc/shells` is generated from the
+configured users' shells. `users.mutableUsers` (default true) merges the existing
+`/etc/passwd` with the generated one on activation — so a `chsh` may *work* and then be
+reverted or contradicted by the next `nixos-rebuild switch`; which, is exactly what R1's VM
+leg measures. `blib_set_login_shell` on NixOS therefore prints the declaration rather than
+running `chsh`, as §4(3) sketched — and the declaration is two lines, not one.
+([nixpkgs users-groups.nix][nix])
+
+**Repo shape (R4).** Aeon's `/etc/os-release` reads `ID="opensuse-aeon"` with
+`ID_LIKE="suse opensuse opensuse-tumbleweed opensuse-microos microos"`
+([openSUSE bug 1228361][aeon-id]); Silverblue is `ID=fedora` with `VARIANT_ID=silverblue`
+(to verify on the host). `dotfiles-Fedora`'s guard matches on `ID=fedora`, so Silverblue
+passes it unchanged; `dotfiles-openSUSE`'s matches `ID=opensuse*`, which `opensuse-aeon`
+satisfies — both existing repos will *run* on their atomic editions and reach the
+provisioning verb before anything refuses. That is the case for the **variant** shape
+(R4 option a) before a line is diffed; the diff count decides.
+
+[rpo]: https://github.com/coreos/rpm-ostree/blob/main/man/rpm-ostree.xml
+[rpo-hb]: https://coreos.github.io/rpm-ostree/administrator-handbook/
+[bootc]: https://github.com/bootc-dev/bootc/blob/main/docs/src/man/bootc-upgrade.8.md
+[tu]: https://kubic.opensuse.org/documentation/man-pages/transactional-update.8.html
+[nix]: https://github.com/NixOS/nixpkgs/blob/nixos-25.05/nixos/modules/config/users-groups.nix
+[aeon-id]: https://lists.opensuse.org/archives/list/bugs@lists.opensuse.org/message/JCQCE4KZE6VRZIOQQNSF4W4C7D2B4CXV/
+
 ### Exit criteria
 
 The research phase is done when this file carries, under R1–R6, measured answers and:

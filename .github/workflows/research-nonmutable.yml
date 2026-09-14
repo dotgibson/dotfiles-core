@@ -1,0 +1,122 @@
+# .github/workflows/research-nonmutable.yml
+# ──────────────────────────────────────────────────────────────────────────────
+# R1 of NON-MUTABLE-HOST-PROPOSAL.md §5 (#1004): run the fleet's bootstrap, UNCHANGED, on
+# the three non-mutable target families and record what the host is and what the driver
+# did. Manual only (workflow_dispatch) — this is research, not a gate; nothing here is
+# required and nothing here blocks a PR. Each leg runs scripts/research/nonmutable-host.sh
+# inside the target's container image and uploads the Markdown report it writes; the
+# findings are read by a human and recorded in the proposal under R1.
+#
+# CONTAINERS, NOT HOSTS — deliberately, as the first rung. A bootc image runs dnf (that is
+# how images are built) and no rpm-ostree daemon; MicroOS in a container has no btrfs
+# snapshots for transactional-update to transact; nixos/nix is a plain container with nix
+# in it. Each report says which of those it was. The VM legs — a booted bootc disk, a
+# MicroOS/Aeon qcow2, a `nixos-rebuild build-vm` — are R1's real deliverable and come
+# next; they reuse the same script over ssh. `ubuntu-latest` exposes /dev/kvm for that.
+#
+# Same shape as bootstrap-test.yml's container legs: `docker run "$IMAGE"` rather than a
+# `container:` key, so the image is an input and the prep runs inside it with retries.
+name: research-nonmutable
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Space-separated subset of: bootc microos nixos (blank = all three)"
+        required: false
+        default: ""
+      repo_ref:
+        description: "Fleet repo ref to run (dotfiles-Fedora / dotfiles-openSUSE)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env:
+          TARGETS: ${{ github.event.inputs.targets }}
+        run: |
+          set -euo pipefail
+          want="${TARGETS:-bootc microos nixos}"
+          json='['
+          for t in $want; do
+            case "$t" in
+              bootc)   img='quay.io/fedora/fedora-bootc:42';               prep='dnf install -y --setopt=install_weak_deps=False bash zsh git findutils util-linux shadow-utils || true' ;;
+              microos) img='registry.opensuse.org/opensuse/microos:latest'; prep='zypper --non-interactive install bash zsh git findutils util-linux shadow || true' ;;
+              nixos)   img='nixos/nix:latest';                              prep='nix-env -iA nixpkgs.bash nixpkgs.zsh nixpkgs.git nixpkgs.findutils nixpkgs.shadow nixpkgs.coreutils nixpkgs.gnugrep nixpkgs.gawk || true' ;;
+              *) echo "unknown target: $t" >&2; exit 2 ;;
+            esac
+            json="$json{\"target\":\"$t\",\"image\":\"$img\",\"prep\":\"$prep\"},"
+          done
+          json="${json%,}]"
+          echo "matrix=$json" >>"$GITHUB_OUTPUT"
+          echo "$json"
+
+  probe:
+    needs: plan
+    runs-on: ubuntu-latest
+    # A real run installs packages inside the image; the bootc leg's dnf and the nix leg's
+    # nix-env are the slow ones. Generous, but bounded — this is research, not a gate.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pull ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          n=0
+          until docker pull "$IMAGE"; do
+            n=$((n + 1)); [ "$n" -ge 3 ] && { echo "pull failed after $n attempts" >&2; exit 1; }
+            sleep $((n * 15))
+          done
+
+      - name: Run the R1 probe inside the image
+        env:
+          IMAGE: ${{ matrix.image }}
+          PREP: ${{ matrix.prep }}
+          TARGET: ${{ matrix.target }}
+          REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          mkdir -p research-out
+          # The prep is best-effort (|| true inside): a missing tool is a FINDING the
+          # report records (§1 lists what is present), not a reason to have no report.
+          docker run --rm -v "$PWD:/w" -w /w -e HOME=/root "$IMAGE" sh -c '
+            set -u
+            n=0; until sh -c "$0"; do n=$((n+1)); [ "$n" -ge 3 ] && break; sleep $((n*10)); done
+            command -v bash >/dev/null 2>&1 || { echo "no bash after prep — cannot run the probe" >&2; exit 0; }
+            bash scripts/research/nonmutable-host.sh "$1" --out "/w/research-out/$1.md" --repo-ref "$2"
+          ' "$PREP" "$TARGET" "$REPO_REF" || true
+          ls -la research-out
+          [ -s "research-out/$TARGET.md" ] || { echo "# R1 — $TARGET" > "research-out/$TARGET.md"; echo "" >> "research-out/$TARGET.md"; echo "**No report: the probe did not run in $IMAGE** (prep or bash missing — see the job log)." >> "research-out/$TARGET.md"; }
+
+      - name: Summary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          {
+            cat "research-out/$TARGET.md"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: r1-${{ matrix.target }}
+          path: research-out/${{ matrix.target }}.md
+          retention-days: 30
