@@ -95,8 +95,13 @@ run() {
 # probe <label> <cmd…> — one line: exit status and the first output line
 probe() {
   local label="$1"; shift
-  local rc first
-  first="$( ("$@") 2>&1 | head -1 )"; rc=${PIPESTATUS[0]}
+  local rc first log
+  # Capture to a file, then read the first line — NOT `| head -1`: a verbose command dies of
+  # SIGPIPE when head exits, and its exit status reads as 141 (dnf) or zypper's 105
+  # ("exit on signal"), which iteration 2 wrote down as if the tool had said it.
+  log="$(mktemp "$work/probe.XXXXXX")"
+  ("$@") >"$log" 2>&1; rc=$?
+  first="$(head -1 "$log")"
   say "- **$label**: \`$*\` → exit $rc${first:+ — \`$(printf '%s' "$first" | cut -c1-160)\`}"
 }
 writable() { # writable <dir> — can root create a file there?
@@ -160,8 +165,10 @@ nixos)
   probe "ls ~/.nix-profile/bin" ls "$HOME/.nix-profile/bin"
   # The imperative install the schema would name, and the declarative rebuild it is meant to
   # replace. `nix profile install` is the anti-pattern the proposal names; measure it anyway.
-  probe "nix profile install nixpkgs#hello (imperative, --dry-run)" nix --extra-experimental-features 'nix-command flakes' profile install nixpkgs#hello --dry-run
-  probe "nixos-rebuild dry-build" nixos-rebuild dry-build
+  # `nix profile install` has no --dry-run (measured: "unrecognised flag"); `nix build
+  # --dry-run` is the fetch-and-resolve half of the same imperative path.
+  probe "nix build nixpkgs#hello --dry-run (imperative fetch, resolved only)" nix --extra-experimental-features 'nix-command flakes' build nixpkgs#hello --dry-run
+  probe "nixos-rebuild dry-build (needs /etc/nixos/configuration.nix — a build-vm guest has none)" nixos-rebuild dry-build
   # shellcheck disable=SC2016  # the $(…) are for the guest's sh, on purpose
   probe "chsh -s zsh (mutableUsers default: does it take?)" sh -c 'chsh -s "$(command -v zsh)" "$(id -un)" && getent passwd "$(id -un)" | cut -d: -f7'
   ;;
