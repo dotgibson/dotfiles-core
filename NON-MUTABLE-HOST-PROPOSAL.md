@@ -809,16 +809,17 @@ the only verb that upgrades a layered deployment, and it answered from the regis
 
 | host | verb | as user | cost | answer |
 | --- | --- | --- | --- | --- |
-| bootc | `rpm-ostree status --pending-exit-77` | **yes** | 0.2 s | exit 77 = queued for next boot, 0 = idle |
+| bootc | `rpm-ostree status --pending-exit-77` | **yes** | 0.1–0.2 s | exit **0** idle, **77** queued for next boot (both measured, run 34911196631) |
 | bootc | `rpm-ostree status --json` | yes | 0.1 s | `deployments[].staged` |
 | MicroOS | `test -e /run/reboot-needed` | **yes** | 0.0 s | exit 0 once a snapshot is closed |
 | MicroOS | `rebootmgrctl status` | yes | 0.0 s | *"Reboot not requested"* / requested |
 | MicroOS | `btrfs subvolume get-default /`, `snapper list` | **no** (`btrfs` off the user's PATH; *"No permissions"*) | — | root only |
 | NixOS | `/run/booted-system/kernel` vs `/run/current-system/kernel` | yes | 0.1 s | the one reboot-needed case NixOS has |
 
-**What Core's consumers say today** (the fragments replayed against the guests' exact
+**What Core's consumers say today** (run on the bootc guest under an interactive
+loader against the R4 declaration, and replayed locally against the other guests' exact
 stdout and exit statuses; `_pkgup_count`, the cached nudge, `up -n`): on the atomic
-declaration the count verb's nine status lines become **"󰚰 8 updates available — run 'up'
+declaration the count verb's ten status lines become **"󰚰 10 updates available — run 'up'
 to apply"** and `up -n` lists `State:` / `Deployments:` as packages; on the transactional
 declaration the count is 0 and the nudge is **silent** while a snapshot sits waiting for a
 reboot; on NixOS `_pkgup_mgr` finds no manager and `up` refuses (*"none of
