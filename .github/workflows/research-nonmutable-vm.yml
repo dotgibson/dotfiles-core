@@ -172,6 +172,13 @@ jobs:
             scpr -P 2222 scripts/research/nonmutable-r5.sh scripts/research/nonmutable/r4/dotfiles-Fedora.patch research@localhost:/home/research/
             sshr -p 2222 research@localhost "git clone -q --depth=1 --branch '$REPO_REF' https://github.com/dotgibson/dotfiles-Fedora.git /home/research/dotfiles-Fedora-r5" || true
             sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; sudo sh -c 'printf \"[[registry]]\nlocation = \\\"10.0.2.2:5000\\\"\ninsecure = true\n\" >/etc/containers/registries.conf.d/research.conf'; time sudo bootc switch --transport registry 10.0.2.2:5000/research-bootc:latest 2>&1 | tail -5" >research-out/r5-bootc-switch.txt 2>&1 || true
+            # `bootc switch` only QUEUES the registry-backed deployment; the booted one keeps
+            # its localhost origin, and every upgrade check asks the BOOTED origin (the second
+            # dispatch's cleanup -p dropped the queued switch and all six checks pinged
+            # localhost). Reboot onto it first, so the checks talk to the registry for real.
+            sshr -p 2222 research@localhost 'sudo systemctl reboot' 2>/dev/null || true
+            sleep 30; wait_ssh || { echo "no ssh after the R5 switch reboot"; tail -40 bootc-serial.log; }
+            sshr -p 2222 research@localhost 'echo research | sudo -S -v 2>/dev/null; sudo bootc status 2>&1 | grep -E -i "image:|booted" | head -4' >>research-out/r5-bootc-switch.txt 2>&1 || true
             sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /home/research/nonmutable-r5.sh bootc --repo-dir /home/research/dotfiles-Fedora-r5 --patch /home/research/dotfiles-Fedora.patch --out /home/research/r5-bootc.md" || true
             # v2 of the image, same tag: now the registry IS newer than what the guest runs.
             # The checks run from a script on the guest (the first attempt inlined them
