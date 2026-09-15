@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.7.0] - 2026-09-15
+
 ### Added
 
 - **`bootstrap-test.yml` learns the staged host: the `provisioner:` input, the sweep's
