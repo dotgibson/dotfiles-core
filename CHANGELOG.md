@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.6.0] - 2026-09-15
+
 ### Added
 
 - **`up`, the shell-start nudge, the maint runner and `core-doctor` learn the staged
