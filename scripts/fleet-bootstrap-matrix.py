@@ -55,6 +55,23 @@ def legs(repo_dir: pathlib.Path):
             image, prep = w.get("image"), w.get("prep")
             if not image:
                 continue
+            # A caller that forces a STAGED host's provisioning branch (`provisioner: atomic`
+            # / `transactional`, NON-MUTABLE-HOST-PROPOSAL.md §4.4, #1050) has no leg here.
+            # This sweep installs for real in the container, and the container is not the
+            # host: it has no /run/ostree-booted and a writable /usr, so an unstubbed run
+            # walks the variant's MUTABLE branch — a green tick over the wrong code. The
+            # staging verb needs a booted image (the rpm-ostree daemon, btrfs snapshots);
+            # scripts/research's VM harness covers it on demand. Named, not silent: the
+            # notice reaches the log as an annotation and the summary as a VM-only line.
+            provisioner = w.get("provisioner")
+            if isinstance(provisioner, str) and provisioner.strip():
+                print(
+                    f"::notice::{repo_dir.name}/{job}: VM-only — the caller declares "
+                    f"provisioner: {provisioner.strip()}, and an unstubbed container run would "
+                    f"test the mutable branch, not the staging path; not in this sweep",
+                    file=sys.stderr,
+                )
+                continue
             # A repo declaring a non-numeric timeout gets the default rather than a crashed
             # matrix job — that would take the whole eight-leg sweep down over one typo.
             try:

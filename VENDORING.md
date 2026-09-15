@@ -526,6 +526,20 @@ Only the exceptions need a line — anything calling the reusable is derived fro
 and `audit-core.sh` §5h asserts every gate × repo cell is filled, so a **new** gate cannot
 ship without each repo declaring a position on it.
 
+One column is a **sweep, not a reusable**: `real-bootstrap`, the weekly unstubbed run
+(#1050). Its legs are derived from your `bootstrap-test.yml` caller, so a caller that declares
+no `provisioner:` reads `sweep` with nothing to write. A caller that forces a staged host's
+branch (`provisioner: atomic` / `transactional`) has **no** leg there — a container has no
+`/run/ostree-booted`, so an unstubbed run would install down the mutable branch and read green
+over the wrong code — and a repo whose every caller does that declares why:
+
+```text
+real-bootstrap none the staging verb needs a booted host; the VM harness under scripts/research covers it on demand
+```
+
+A repo with no `bootstrap-test.yml` caller at all inherits its `bootstrap-test` line for this
+column, because the sweep is a derivation of that same caller.
+
 ### The `make` vocabulary, and the test floor (#691)
 
 Nine repos had nine dialects. "Dry run" was `dry-run` in four repos and `bootstrap-dry` in

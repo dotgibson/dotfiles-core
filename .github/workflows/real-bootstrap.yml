@@ -112,7 +112,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pip install --quiet --disable-pip-version-check pyyaml
-          legs="$(python3 scripts/fleet-bootstrap-matrix.py ../fleet)"
+          # stderr is kept: the script announces what it left OUT there — a caller forcing
+          # a staged host's branch (`provisioner:`) is VM-only and gets a ::notice::, which
+          # must reach both the log (as an annotation) and the summary, or the absence
+          # reads as coverage (#1050).
+          legs="$(python3 scripts/fleet-bootstrap-matrix.py ../fleet 2>matrix.stderr)"
+          cat matrix.stderr
+          grep '^::notice::' matrix.stderr | sed 's/^::notice::/- /' >>"$GITHUB_STEP_SUMMARY" || true
           n="$(printf '%s' "$legs" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
           # A zero-leg run must be LOUD. Silence here would look exactly like a green sweep,
           # which is the "advisory gate that never runs reads as coverage" failure.

@@ -65,6 +65,13 @@ if have git && have zsh; then
       # would satisfy the check above while still shipping an unlinted file.
       [[ -e "$NOR/zsh/$_nor_f" ]] && _nor_bad="$_nor_bad zsh/$_nor_f(extensionless)"
     done
+    # THE STAGED HOST (#1050): the capability stub carries PROVISIONER / PKG_APPLY /
+    # PKG_APPLY_PENDING as COMMENTED examples (a stub declaring them live would make every
+    # new repo a staged host), and the starter bootstrap shows the staging-shaped hook with
+    # CI's BOOTSTRAP_PROVISIONER seam beside the host marker.
+    grep -qE '^#PROVISIONER=' "$NOR/os/fixture.capabilities" && grep -qE '^#PKG_APPLY=' "$NOR/os/fixture.capabilities" || _nor_bad="$_nor_bad capabilities(no-commented-staged-keys)"
+    grep -qE '^PROVISIONER=|^PKG_APPLY' "$NOR/os/fixture.capabilities" && _nor_bad="$_nor_bad capabilities(staged-key-declared-LIVE)"
+    grep -q 'BOOTSTRAP_PROVISIONER' "$NOR/bootstrap.sh" && grep -q '/run/ostree-booted' "$NOR/bootstrap.sh" || _nor_bad="$_nor_bad bootstrap.sh(no-staging-shape)"
     # No zshrc.zsh: the interactive entry is the driver's managed ~/.zshrc loader (#999).
     # A scaffold that wrote its own copy again would be a second loader definition to
     # drift, which is the thing the driver form exists to end.
