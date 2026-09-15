@@ -32,6 +32,15 @@
   with, the VM-only gap list, and the note that every exit criterion is met — the next
   step is the §4 rewrite to PROPOSED.
 
+- **`NON-MUTABLE-HOST-PROPOSAL.md` is PROPOSED** (#1004). §4 is now the proposal — a
+  minor, not a major: the six optional capability keys (shipped), three consumer changes
+  (`up` and the nudge, the maint runner, `core-doctor`), one CI input
+  (`bootstrap-test.yml` `provisioner:`), atomic / transactional variants for
+  `dotfiles-Fedora` and `dotfiles-openSUSE`, and a `dotfiles-NixOS` repo with the
+  home-manager boundary written down — with §4.6 as the per-repo runbook and every line
+  citing §5's measurements. The former §6 and §8 stay as the record of what a major would
+  have cost and what was asked.
+
 ### Fixed
 
 - **The `~/.zshrc` loader's backup is counted** (#1026). `blib_write_zshrc_loader` backed up
