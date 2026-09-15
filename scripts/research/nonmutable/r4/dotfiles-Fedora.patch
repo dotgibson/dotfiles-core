@@ -1,11 +1,11 @@
 # R4 prototype patch for dotgibson/dotfiles-Fedora — NOT a shipped change (NON-MUTABLE-HOST-PROPOSAL.md §5 R4, #1004).
 # Base: abf4e6a977d496becc52bc5a0f7d72e6f90fd3e2 (origin/main on 2026-09-14). Applied by scripts/research/nonmutable-variant.sh on a booted guest.
-# Iteration 2 (R4) + the R5 keys in the declaration (PKG_APPLY_PENDING).
+# Iteration 2 (R4) + the R5 keys in the declaration + the R6 CI seam (BOOTSTRAP_PROVISIONER forces the host marker).
 diff --git i/bootstrap.sh w/bootstrap.sh
-index f9a25d65..6f1eb74d 100755
+index f9a25d65..a87dfd47 100755
 --- i/bootstrap.sh
 +++ w/bootstrap.sh
-@@ -122,6 +122,17 @@ os_guard() {
+@@ -122,6 +122,20 @@ os_guard() {
  IS_WSL=0
  if blib_is_wsl; then IS_WSL=1; fi
  
@@ -18,12 +18,15 @@ index f9a25d65..6f1eb74d 100755
 +# line that says so.
 +IS_ATOMIC=0
 +[[ -e /run/ostree-booted ]] && IS_ATOMIC=1
++# CI's seam (R6): a container has no /run/ostree-booted, so the stubbed-provision leg could
++# never reach the staging path; BOOTSTRAP_PROVISIONER=atomic forces it, with rpm-ostree shimmed.
++[[ "${BOOTSTRAP_PROVISIONER:-}" == atomic ]] && IS_ATOMIC=1
 +ATOMIC_STAGED=0 # packages layered this run — the closing hint says "reboot" only when non-zero
 +
  # priv <cmd...> — run CMD under the escalator blib_main resolved (BLIB_SU: an absolute path,
  # or empty when root). Never invokes an empty-string command.
  priv() {
-@@ -137,6 +148,7 @@ preflight_cmds() {
+@@ -137,6 +151,7 @@ preflight_cmds() {
    # must not demand git — the reusable CI test provisions only `bash zsh` and pre-seeds the
    # tpm dir precisely so the wiring path stays offline and deterministic.
    ((BLIB_LINKS_ONLY)) || need=(dnf rpm curl sed awk)
@@ -31,7 +34,7 @@ index f9a25d65..6f1eb74d 100755
    local c
    for c in "${need[@]}"; do
      command -v "$c" >/dev/null 2>&1 || missing+=("$c")
-@@ -166,11 +178,19 @@ bootstrap_guard() {
+@@ -166,11 +181,19 @@ bootstrap_guard() {
  # shellcheck disable=SC2329
  bootstrap_check() {
    [[ "${BLIB_DRY:-0}" != 0 ]] || return 0 # unset on a real run under set -u; the lib reads it the same way
@@ -53,7 +56,7 @@ index f9a25d65..6f1eb74d 100755
    else
      blib_warn "install/packages.txt is missing — a real run would abort here"
    fi
-@@ -220,16 +240,30 @@ bootstrap_provision() {
+@@ -220,16 +243,30 @@ bootstrap_provision() {
      exit 1
    }
  
@@ -92,7 +95,7 @@ index f9a25d65..6f1eb74d 100755
  
    blib_say "dnf packages (from install/packages.txt)"
    local -a pkgs=()
-@@ -247,7 +281,33 @@ bootstrap_provision() {
+@@ -247,7 +284,33 @@ bootstrap_provision() {
    # Guard the empty case: an all-comment/blank packages.txt yields a zero-length
    # array, and `dnf install` with no args errors out — aborting the whole bootstrap
    # under `set -e`. Skip the install instead and carry on with the rest.
@@ -127,7 +130,7 @@ index f9a25d65..6f1eb74d 100755
      priv dnf -y install --skip-unavailable "${pkgs[@]}"
      blib_ok "dnf packages installed (${#pkgs[@]} requested)"
    else
-@@ -405,10 +465,21 @@ bootstrap_provision() {
+@@ -405,10 +468,21 @@ bootstrap_provision() {
      # stderr stays VISIBLE on every privileged call from here down (only stdout is
      # silenced). Hiding it is what made a mid-run sudo prompt invisible; it also hid the
      # reason a COPR install failed.
@@ -149,7 +152,7 @@ index f9a25d65..6f1eb74d 100755
    fi
  
    # ── doctor-probed tools not (reliably) in Fedora repos ─────────────────────
-@@ -531,8 +602,16 @@ bootstrap_provision() {
+@@ -531,8 +605,16 @@ bootstrap_provision() {
          grep -o "\"browser_download_url\": *\"[^\"]*linux_${_cara_arch}\.rpm\"" |
          cut -d'"' -f4 | head -1)" || true
        if [[ -n "$_cara_url" ]]; then
@@ -168,7 +171,7 @@ index f9a25d65..6f1eb74d 100755
        else
          note_fail "carapace: could not resolve the latest linux_${_cara_arch} RPM (offline? API rate-limited?) — see github.com/carapace-sh/carapace-bin/releases"
        fi
-@@ -596,19 +675,38 @@ bootstrap_provision() {
+@@ -596,19 +678,38 @@ bootstrap_provision() {
        rm -f "$_op_key"
        _op_key=""
      fi
@@ -213,7 +216,7 @@ index f9a25d65..6f1eb74d 100755
      else
        rm -f "$_op_key"
        note_fail "op: signing key not imported — skipping the repo (an unverifiable repo breaks every later dnf transaction); see developer.1password.com/docs/cli/get-started"
-@@ -657,4 +755,28 @@ REPO
+@@ -657,4 +758,28 @@ REPO
    fi
  }
  

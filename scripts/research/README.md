@@ -60,6 +60,14 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   backed origin (a registry on the runner) so the upgrade checks have a real remote, and
   asks again after a v2 image is pushed under the same tag.
 
+- **`nonmutable-r6.sh`** — R6's probe, inside each container image with `r6=true` on
+  `research-nonmutable.yml`: the reusable `bootstrap-test.yml` legs' own recipes (lint,
+  links-only with its assertions, the provision-stub shim set, `packages_check`'s
+  resolver loop) run against the sibling with the R4 variant applied — plus the same
+  stubbed run with `BOOTSTRAP_PROVISIONER=<atomic|transactional>` forced and the staging
+  verbs shimmed, the seam a container needs to reach the staging path at all. The report
+  is the CI matrix a target is born with and the list of what only a VM can test.
+
 ## The rules
 
 - **Never vendored.** None of this is in `core.manifest` or `core.vendor`, so no OS repo
