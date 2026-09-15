@@ -925,6 +925,15 @@ skipped every name and only the COPR / RPM layers reached `rpm-ostree` — "1 pa
 layered", not 38. A `provisioner:` input therefore also makes the `rpm` shim answer `-q`
 with **1**; otherwise the leg proves the closing line and not the layer.
 
+And one thing the forced run did to the *image*: the atomic branch fetches the COPR repo
+file with `curl -o` into the writable `/etc/yum.repos.d`, and the reusable shim honours
+`-o` by writing the word `shim` — after which every `dnf` call in that container fails
+with *"Error in configuration file"* (measured, runs 34935739494 and 34938554648: the
+resolver leg reported 38 of 38 unresolved until it was moved ahead of the stubbed legs).
+The reusable job never sees this because nothing runs the package manager after its
+stubbed bootstrap; a `provisioner:` leg that shares a container with anything else must
+run last, or the stubbed run must be given its own.
+
 **The matrix a target is born with**, and the gap list:
 
 | leg | mutable host today | atomic / transactional target | declarative target (NixOS) |
