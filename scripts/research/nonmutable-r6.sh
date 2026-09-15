@@ -112,6 +112,10 @@ resolve_all() { # the reusable resolver loop, as bootstrap-test.yml runs it
 }
 if [[ -n "$resolve" ]]; then
   l="$work/resolve.log"; t0=$(date +%s)
+  # A Fedora caller's prep (`dnf install -y -q bash zsh`) fills dnf's metadata cache before
+  # the resolver runs; this image's prep may not have touched dnf, and `dnf -q provides`
+  # then fails every name in a second (measured, run 34933037546). Do what the prep does.
+  case "$resolve" in dnf*) dnf -q makecache >/dev/null 2>&1 || true ;; esac
   resolve_all >"$l" 2>&1; rc=$?
   leg "packages_check (\`$resolve\`)" "$rc" "$(tail -1 "$l" | cut -c1-140) — $(( $(date +%s) - t0 )) s"
 else
