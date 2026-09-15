@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+### Changed
+
+- **`PORTING-MATRIX.md`'s openSUSE column renders the transactional edition** (runbook step
+  4 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6, dotgibson/dotfiles-openSUSE#191 / #195).
+  `scripts/gen-porting-matrix.sh`'s registry names the third declaration,
+  `Transactional=os/opensuse.microos.capabilities`, in the Leap idiom, so the commands
+  table's upgrade / install / remove cells now carry `Transactional: sudo
+  transactional-update dup` / `-n pkg in` / `-n pkg rm` beside the two zypper flavours;
+  every other cell is unchanged (the transactional edition is a Tumbleweed base and reads
+  its archive). Registry order is render order, and the section comment says so. The
+  Fedora atomic column follows once dotgibson/dotfiles-Fedora#189 lands. The generator's
+  fixture fleet carries the third declaration too, so the parity suite pins a
+  three-label cell beside the one-value cell.
+  (`scripts/gen-porting-matrix.sh`, `PORTING-MATRIX.md`, `scripts/test/41-gen-matrix-parity.sh`)
+
 ## [v7.7.0] - 2026-09-15
 
 ### Added
