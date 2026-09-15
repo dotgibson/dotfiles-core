@@ -182,7 +182,9 @@ jobs:
               set -u
               n=0; until sh -c "$0"; do n=$((n+1)); [ "$n" -ge 3 ] && break; sleep $((n*10)); done
               command -v bash >/dev/null 2>&1 || { echo "no bash after prep" >&2; exit 0; }
-              t="$1"; repo="$2"; ref="$3"; resolve="$4"
+              # positional: $0=PREP $1=TARGET $2=REPO_REF $3=repo $4=resolve (the first
+              # dispatch read ref and repo the other way round and cloned dotgibson/main)
+              t="$1"; ref="$2"; repo="$3"; resolve="$4"
               if [ -n "$repo" ]; then
                 git clone -q --depth=1 --branch "$ref" "https://github.com/dotgibson/$repo.git" /tmp/r6-repo
                 patch="/w/scripts/research/nonmutable/r4/$repo.patch"
