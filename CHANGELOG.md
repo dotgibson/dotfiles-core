@@ -2,6 +2,28 @@
 
 ### Added
 
+- **`up`, the shell-start nudge, the maint runner and `core-doctor` learn the staged
+  host** (#1049, runbook step 1 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6). Three optional
+  declaration keys — `PROVISIONER`, `PKG_APPLY`, `PKG_APPLY_PENDING` (+ `_EXIT`) — are read
+  for the first time, and every branch is on a key the nine mutable repos never declare, so
+  their behaviour and their nudge cache are byte-identical. On an atomic (bootc) or
+  transactional (MicroOS) host: `up` closes with `staged — reboot to apply: <PKG_APPLY>`
+  (the verb is printed, never run), `up -n` with no count verb says the host stages instead
+  of "nothing to upgrade", and the nudge prints **`󰚰 update staged — reboot to apply`** in
+  place of a count. The STAGED question is asked by the refresh (`_pkgup_refresh`, and
+  the maint runner after its optional apply) and cached as lines 3–4 of `pkg-updates`
+  (`staged`/`idle` + the kernel's boot id), so the per-shell path stays fork-free and a
+  reboot silences the line at the next shell. `MAINT_UNATTENDED_UPGRADE` under `atomic`
+  is stage-only and logs `staged — reboot to apply (never run by this runner)`;
+  `declarative` (NixOS) is treated as mutable, `_pkgup_mgr` answers the `PROVISIONER`
+  token when no manager is on PATH (so `up` no longer refuses NixOS), and `core-doctor`'s
+  install hint says "reboot to use" over a staged change and "add it to `home.packages` /
+  `environment.systemPackages`" on a declarative host. Unit tests are the R5 shim replay:
+  the research declarations' package half against stub managers answering with the
+  measured exit statuses. (`zsh/02-capabilities.zsh` `_core_cap_staged`,
+  `zsh/60-update.zsh`, `maint/dotfiles-maint.sh`, `zsh/30-functions.zsh`,
+  `scripts/test/{65-functions,73-maint-runner,74-zsh-helpers}.sh`)
+
 - **The R4 harness for the non-mutable host research, and its answer** (#1004). Two
   prototype patches under `scripts/research/nonmutable/r4/` give `dotfiles-Fedora` and
   `dotfiles-openSUSE` an atomic / transactional _variant_ (a host marker, a second

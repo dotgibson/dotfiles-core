@@ -176,7 +176,8 @@ line of this section is a measured finding from §5, cited by research item.
 ### 4.1 The schema (R2, R5 — shipped)
 
 Six optional keys, all in `scripts/check-capabilities.sh` and
-`examples/os.capabilities.example` today, read by no consumer yet:
+`examples/os.capabilities.example` today; `PROVISIONER`, `PKG_APPLY` and
+`PKG_APPLY_PENDING` are read by the §4.2 consumers as of #1049:
 
 | key | meaning | measured on |
 | --- | --- | --- |
@@ -315,7 +316,7 @@ exist on `@v7`.
 
 1. **Core — consumers** (§4.2): `60-update.zsh`, `maint/dotfiles-maint.sh`, `core-doctor`,
    with the R5 shim replay as the unit test (the fragments are pure shell over stdout and
-   exit status). One PR, one minor.
+   exit status). One PR, one minor. — **#1049.**
 2. **Core — CI** (§4.4): `bootstrap-test.yml`'s `provisioner:` input and its own
    container, `fleet-bootstrap-matrix.py`, `fleet-coverage.sh`'s `real-bootstrap` gate,
    `new-os-repo.sh`'s stamps. One PR; the reusable workflow rides `@v7`.

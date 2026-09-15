@@ -2,9 +2,11 @@
 
 Three **prototype** `os.capabilities` declarations, one per target family, written after
 R1 measured what each host actually does (`NON-MUTABLE-HOST-PROPOSAL.md` §5). They are
-**not** fleet declarations: no repo links them, the fleet's own files are untouched, and
-the four keys they introduce are read by no consumer. They exist to answer R2's question
-with files that validate rather than with prose.
+**not** fleet declarations: no repo links them and the fleet's own files are untouched.
+They exist to answer R2's question with files that validate rather than with prose — and,
+since #1049, their package half is the fixture the unit suite replays `up`, the nudge, the
+maint runner and `core-doctor` against (`scripts/test/74-zsh-helpers.sh`,
+`73-maint-runner.sh`, `65-functions.sh`).
 
 | File | Family | Extends | What it settles |
 | ---- | ------ | ------- | --------------- |

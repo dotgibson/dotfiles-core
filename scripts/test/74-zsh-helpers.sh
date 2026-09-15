@@ -415,6 +415,163 @@ _upcheck "count: a ';' in a declared value is an argument, never a command separ
   "_pkgup_list >/dev/null 2>&1; [[ ! -e '$CAPD_UP/pwned' ]]"
 rm -rf "$PMBIN"
 
+# ── update.zsh on a staged host (#1049, NON-MUTABLE-HOST-PROPOSAL.md §4.2) ──────
+# An atomic (bootc) or transactional (MicroOS) host STAGES an upgrade and a reboot applies
+# it; NixOS has no manager on PATH at all. Three optional keys — PROVISIONER, PKG_APPLY,
+# PKG_APPLY_PENDING (+ _EXIT) — teach `up`, the nudge and the cache that, and every branch
+# is on a key the nine mutable repos never declare. These cases are the R5 shim replay
+# (scripts/research/nonmutable-r5.sh §4) as a unit test: the research declarations'
+# package half, a stub manager answering with the guest's measured exit status, and the
+# consumers' stdout asserted — the same shape as every case above.
+#
+# THE REGRESSION THE FIRST CASE PINS, measured on the bootc guest against the R2 declaration:
+# ten `rpm-ostree status` lines became "󰚰 10 updates available — run 'up' to apply". The
+# atomic declaration now counts nothing (its AVAILABLE verb is root-only) and the STAGED
+# question is asked instead — so the stub prints those ten lines and the assertion is that
+# they are never counted, on top of the staged line being printed.
+hdr "update.zsh on a staged host (#1049)"
+CAPD_STG="$SANDBOX/capstaged"
+rm -rf "$CAPD_STG"
+mkdir -p "$CAPD_STG"
+# The bootc declaration's package half (scripts/research/nonmutable/bootc.capabilities):
+# no PKG_COUNT_PENDING, the staged probe answering 77 = staged.
+_DECL_ATOMIC='PROVISIONER=atomic
+PKG_UPGRADE=sudo rpm-ostree upgrade
+PKG_INSTALL=sudo rpm-ostree install --idempotent
+PKG_APPLY_PENDING=rpm-ostree status --pending-exit-77
+PKG_APPLY_PENDING_EXIT=77
+PKG_APPLY=sudo systemctl reboot'
+# MicroOS: a count verb (`zypper lu`) AND a staged probe — `test -e` is a zsh builtin, and
+# the file it names is this suite's stand-in for /run/reboot-needed.
+_DECL_TRANS="PROVISIONER=transactional
+PKG_UPGRADE=sudo transactional-update dup
+PKG_COUNT_PENDING=zypper -q list-updates
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3
+PKG_APPLY=sudo systemctl reboot
+PKG_APPLY_PENDING=test -e $CAPD_STG/reboot-needed"
+# NixOS: a provisioner, an upgrade verb, nothing that stages and nothing to count.
+_DECL_NIX='PROVISIONER=declarative
+PKG_UPGRADE=sudo nixos-rebuild switch --upgrade'
+# _stg_stub <staged-rc> — rpm-ostree answering the STAGED question with <staged-rc> and
+# echoing every other verb; sudo/systemctl/zypper/nixos-rebuild echo theirs, so "never run"
+# is an assertion on the transcript. mkdir joins the coreutils: _pkgup_refresh creates the
+# cache directory, and each case below gets a fresh one.
+_stg_stub() {
+  _up_stub sudo systemctl zypper nixos-rebuild transactional-update
+  printf '#!/bin/sh\ncase "$*" in\n"status --pending-exit-77") printf "State: idle\\nDeployments:\\n* fedora:fedora/42/x86_64/silverblue\\n  Version: 42.1\\n  Commit: abc\\n  Staged: yes\\n  Version: 42.2\\n  Commit: def\\n  Diff: 10 upgraded\\n  LayeredPackages: htop\\n"; exit %s ;;\n*) printf "RUN: rpm-ostree %%s\\n" "$*" ;;\nesac\n' "$1" >"$PMBIN/rpm-ostree"
+  chmod +x "$PMBIN/rpm-ostree"
+  ln -s "$(command -v mkdir)" "$PMBIN/mkdir" 2>/dev/null
+}
+# _stgcheck <label> <decl> <body> — _upcheck with a fresh, per-case cache directory, so a
+# case can assert the exact lines the refresh wrote.
+_stgcheck() {
+  printf '%s\n' "$2" >"$CAPD_STG/os.capabilities"
+  rm -rf "$CAPD_STG/cache"
+  ucheck "$1" \
+    "source '$UI'; source '$CAPZ'; source '$UPD'; _core_confirm() { return 0 }; $3" \
+    PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 NO_COLOR=1 \
+    XDG_CACHE_HOME="$CAPD_STG/cache" CORE_CAPABILITIES_FILE="$CAPD_STG/os.capabilities"
+}
+# 1. The nudge. A staged host's refresh writes the verdict as line 3 and the boot id as line
+#    4, and the nudge renders "update staged" INSTEAD of a count — the ten status lines are
+#    never counted (line 1 is the -1 sentinel: no count verb).
+_stg_stub 77
+_stgcheck "staged: the refresh records 'staged' (line 3) and the boot id (line 4) on an atomic host" \
+  "$_DECL_ATOMIC" \
+  '_pkgup_refresh; l=("${(@f)$(<$XDG_CACHE_HOME/zsh/pkg-updates)}"); [[ ${#l} -ge 3 && $l[1] == -1 && $l[3] == staged ]]'
+_stgcheck "staged: the nudge prints 'update staged — reboot to apply' and never counts the status lines" \
+  "$_DECL_ATOMIC" \
+  '_pkgup_refresh; out=$(_pkgup_notice); [[ $out == *"update staged"*"reboot to apply"* && $out != *"available"* && $out != *"10 update"* ]]'
+_stg_stub 0
+_stgcheck "staged: an idle atomic host records 'idle' and the nudge stays silent (no count verb → -1)" \
+  "$_DECL_ATOMIC" \
+  '_pkgup_refresh; l=("${(@f)$(<$XDG_CACHE_HOME/zsh/pkg-updates)}"); [[ $l[3] == idle ]] && [[ -z $(_pkgup_notice) ]]'
+# THE REBOOT IS WHAT CHANGES THE ANSWER, and the cache must not outlive it. A `staged` line
+# recorded under a previous boot id is the reboot having happened — silence, not a stale
+# "reboot to apply" for a day. Needs a readable boot id to compare against.
+if [[ -r /proc/sys/kernel/random/boot_id ]]; then
+  _stgcheck "staged: a 'staged' verdict from a previous boot is silent (line 4 ≠ the running boot id)" \
+    "$_DECL_ATOMIC" \
+    'mkdir -p $XDG_CACHE_HOME/zsh; printf -- "-1\n1\nstaged\nnot-this-boot\n" >$XDG_CACHE_HOME/zsh/pkg-updates; [[ -z $(_pkgup_notice) ]]'
+  _stgcheck "staged: a 'staged' verdict from THIS boot still prints" \
+    "$_DECL_ATOMIC" \
+    'mkdir -p $XDG_CACHE_HOME/zsh; printf -- "-1\n1\nstaged\n%s\n" "$(</proc/sys/kernel/random/boot_id)" >$XDG_CACHE_HOME/zsh/pkg-updates; [[ $(_pkgup_notice) == *"update staged"* ]]'
+else
+  skip "staged: boot-id invalidation of a cached verdict (no /proc/sys/kernel/random/boot_id on this host)"
+fi
+# An EMPTY line 4 is "could not tell" (no /proc), and the verdict is trusted.
+_stgcheck "staged: a 'staged' verdict with no boot id recorded is trusted" \
+  "$_DECL_ATOMIC" \
+  'mkdir -p $XDG_CACHE_HOME/zsh; printf -- "-1\n1\nstaged\n\n" >$XDG_CACHE_HOME/zsh/pkg-updates; [[ $(_pkgup_notice) == *"update staged"* ]]'
+# 2. Transactional: the count verb still counts, and the staged line REPLACES the count line
+#    while a snapshot waits — "2 updates available" over a reboot that makes them moot was
+#    the wrong, silent-until-now answer measured on MicroOS.
+_stg_stub 0
+printf '#!/bin/sh\ncase "$*" in *list-updates*) printf "v | repo | bash | 1 | 2 | x86_64\\nv | repo | vim | 1 | 2 | x86_64\\n" ;; esac\n' >"$PMBIN/zypper"
+chmod +x "$PMBIN/zypper"
+rm -f "$CAPD_STG/reboot-needed"
+_stgcheck "staged: a transactional host with nothing staged counts as before (2 updates available)" \
+  "$_DECL_TRANS" \
+  '_pkgup_refresh; l=("${(@f)$(<$XDG_CACHE_HOME/zsh/pkg-updates)}"); [[ $l[1] == 2 && $l[3] == idle ]] && [[ $(_pkgup_notice) == *"2 updates available"* ]]'
+: >"$CAPD_STG/reboot-needed"
+_stgcheck "staged: a waiting snapshot replaces the count line with 'update staged' (test -e, exit 0 = staged)" \
+  "$_DECL_TRANS" \
+  '_pkgup_refresh; l=("${(@f)$(<$XDG_CACHE_HOME/zsh/pkg-updates)}"); out=$(_pkgup_notice); [[ $l[1] == 2 && $l[3] == staged && $out == *"update staged"* && $out != *"available"* ]]'
+rm -f "$CAPD_STG/reboot-needed"
+# 3. THE MUTABLE HOST SEES NOTHING. Same stubs, the apt declaration: two cache lines exactly,
+#    the count line as ever, no staged line anywhere in `up`'s transcript.
+_stg_stub 0
+printf '#!/bin/sh\ncase "$*" in *"-s upgrade"*) printf "Inst bash [5.1]\\n" ;; *) printf "RUN: apt-get %%s\\n" "$*" ;; esac\n' >"$PMBIN/apt-get"
+chmod +x "$PMBIN/apt-get"
+_stgcheck "staged: a mutable declaration still writes the two-line cache and counts (nothing changes for the nine)" \
+  "$_DECL_APT" \
+  '_pkgup_refresh; l=("${(@f)$(<$XDG_CACHE_HOME/zsh/pkg-updates)}"); [[ ${#l} -eq 2 && $l[1] == 1 ]] && [[ $(_pkgup_notice) == *"1 update available"* ]] && out=$(up -y 2>&1) && [[ $out == *"RUN: sudo apt-get full-upgrade -y"* && $out != *staged* ]]'
+# 4. `up` itself. After a staged PKG_UPGRADE the closing line PRINTS PKG_APPLY and never runs
+#    it; `up -n` with no count verb says the host stages instead of "nothing to upgrade" (an
+#    empty list read as an empty answer — the 0-vs-unknown confusion, through another door).
+_stg_stub 77
+_stgcheck "staged: up runs the declared rpm-ostree upgrade and closes with 'staged — reboot to apply: <PKG_APPLY>'" \
+  "$_DECL_ATOMIC" \
+  'out=$(up -y 2>&1); [[ $out == *"RUN: sudo rpm-ostree upgrade"*"staged — reboot to apply: sudo systemctl reboot"* ]]'
+_stgcheck "staged: up prints PKG_APPLY and NEVER runs it" \
+  "$_DECL_ATOMIC" \
+  'out=$(up -y 2>&1); [[ $out != *"RUN: sudo systemctl"* && $out != *"RUN: systemctl"* ]]'
+_stgcheck "staged: up -n with no count verb reports the staged update, not 'nothing to upgrade'" \
+  "$_DECL_ATOMIC" \
+  'out=$(up -n 2>&1); [[ $out == *"update staged"*"sudo systemctl reboot"* && $out != *"nothing to upgrade"* ]]'
+_stg_stub 0
+_stgcheck "staged: up -n on an idle atomic host says the host stages (run up, then reboot)" \
+  "$_DECL_ATOMIC" \
+  'out=$(up -n 2>&1); [[ $out == *"this host stages"*"reboot"* && $out != *"nothing to upgrade"* ]]'
+# 5. Declarative (NixOS): no manager on PATH, a PROVISIONER — `up` runs the declared verb
+#    instead of refusing with "none of brew/pacman/… is on PATH", the label is the
+#    provisioner's, and nothing about staging is claimed (nixos-rebuild activates in place).
+#    The stub set here deliberately holds NO manager from the ladder (the zypper stub the
+#    cases above carry would be found first): sudo and nixos-rebuild only.
+_up_stub sudo nixos-rebuild
+ln -s "$(command -v mkdir)" "$PMBIN/mkdir" 2>/dev/null
+_stgcheck "staged: _pkgup_mgr answers the PROVISIONER token when no manager is on PATH" \
+  "$_DECL_NIX" \
+  '[[ $(_pkgup_mgr) == declarative ]]'
+_stgcheck "staged: _pkgup_mgr still answers none with no manager AND no PROVISIONER" \
+  "$_DECL_APT" \
+  '[[ $(_pkgup_mgr) == none ]]'
+_stgcheck "staged: up on a declarative host runs nixos-rebuild, labelled by the provisioner, and prints no staged line" \
+  "$_DECL_NIX" \
+  'out=$(up -y 2>&1); [[ $out == *"RUN: sudo nixos-rebuild switch --upgrade"* && $out != *"is on PATH"* && $out != *staged* ]]'
+_stgcheck "staged: a declarative host writes the two-line cache (nothing stages there)" \
+  "$_DECL_NIX" \
+  '_pkgup_refresh; l=("${(@f)$(<$XDG_CACHE_HOME/zsh/pkg-updates)}"); [[ ${#l} -eq 2 ]]'
+# 6. The probe's contract, which every consumer above leans on: 2 = undeclared, 1 = idle
+#    (exit ≠ the declared status), 0 = staged; the default status is 0.
+_stg_stub 77
+_stgcheck "staged: _core_cap_staged is 0 staged / 1 idle / 2 undeclared" \
+  "$_DECL_ATOMIC" \
+  '_core_cap_staged; (( $? == 0 )) || exit 1; _CORE_CAP[PKG_APPLY_PENDING_EXIT]=0; _core_cap_staged; (( $? == 1 )) || exit 1; unset "_CORE_CAP[PKG_APPLY_PENDING]"; _core_cap_staged; (( $? == 2 ))'
+rm -rf "$PMBIN"
+
 # ── op.zsh 1Password helpers ──────────────────────────────────────────────────
 # op.zsh fans out to nine repos and handles SECRETS, yet had zero behavioral coverage. The
 # module short-circuits (returns) unless `op` is on PATH, so we stub a fake `op` (echoes

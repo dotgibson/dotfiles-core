@@ -515,6 +515,117 @@ else
 fi
 rm -f "$_MRT/bin/timeout" "$_MRT/bin/brew"
 
+# ── the staged host: MAINT_UNATTENDED_UPGRADE under atomic is STAGE ONLY (#1049) ──
+# NON-MUTABLE-HOST-PROPOSAL.md §4.2: on bootc the runner's unattended `rpm-ostree upgrade`
+# stages a deployment and PKG_APPLY (a reboot) makes it live. The runner PRINTS that verb
+# and never runs it, and the STAGED question (PKG_APPLY_PENDING, asked AFTER the apply so
+# the deployment it just queued is seen) lands in the nudge cache as lines 3–4, the shape
+# zsh/60-update.zsh writes. Both pieces are extracted from the shipped runner by the same
+# block-boundary rule the count chain uses; `cap` is the fixture, `step` and `log` record.
+hdr "maint runner: the staged host (#1049)"
+sed -n '/^_pkg_apply_pending_write() {/,/^}/p' "$_MAINT_SH" >"$_MRT/apw.bash"
+sed -n '/^if \[\[ "\$MAINT_SYSTEM_UPGRADE" == 1 \]\]/,/^fi$/p' "$_MAINT_SH" >"$_MRT/apply.bash"
+sed -n '/^_priv_decl() {/,/^}/p' "$_MAINT_SH" >"$_MRT/priv.bash"
+if [[ -s "$_MRT/apw.bash" && -s "$_MRT/apply.bash" && -s "$_MRT/priv.bash" ]]; then
+  # _mr_stg <staged-rc> <cache-body> <cap-case-arms> → runs _pkg_apply_pending_write with a
+  # rpm-ostree stub exiting <staged-rc>; prints the log lines, then `---`, then the cache.
+  _mr_stg() {
+    printf '#!/bin/sh\nexit %s\n' "$1" >"$_MRT/bin/rpm-ostree"
+    chmod +x "$_MRT/bin/rpm-ostree"
+    printf '%b' "$2" >"$_MRT/pkg-cache"
+    bash -c '
+      PATH="'"$_MRT/bin"'":$PATH
+      PKG_CACHE="'"$_MRT/pkg-cache"'"; MAINT_PKGCOUNT_TIMEOUT=5
+      _to() { shift; "$@"; }
+      log() { printf "%s\n" "$*"; }
+      cap() { case "$1" in '"$3"' esac; return 0; }
+      . "'"$_MRT/apw.bash"'"
+      _pkg_apply_pending_write
+      echo ---
+      cat "$PKG_CACHE"
+    ' 2>/dev/null
+  }
+  _mr_atomic='PKG_APPLY_PENDING) printf "rpm-ostree status --pending-exit-77";; PKG_APPLY_PENDING_EXIT) printf 77;; PKG_APPLY) printf "sudo systemctl reboot";;'
+  # Line 4 is the boot id, EMPTY on a host with no /proc (the macOS leg) — and `$(…)` strips
+  # the trailing newlines, so the pattern ends at the verdict and must not demand a line 4.
+  out="$(_mr_stg 77 '-1\n1700000000\n' "$_mr_atomic")"
+  if [[ "$out" == *"update STAGED — reboot to apply (never run by this runner): sudo systemctl reboot"* &&
+    "${out#*---}" == $'\n-1\n1700000000\nstaged'* ]]; then
+    pass "maint: a staged deployment (rc 77 = PKG_APPLY_PENDING_EXIT) writes 'staged' as cache line 3 and logs the reboot verb"
+  else
+    fail "maint: staged verdict — got: ${out//$'\n'/ | }"
+  fi
+  out="$(_mr_stg 0 '-1\n1700000000\n' "$_mr_atomic")"
+  if [[ "$out" == *"nothing staged"* && "${out#*---}" == $'\n-1\n1700000000\nidle'* ]]; then
+    pass "maint: an idle host writes 'idle' as cache line 3, keeping the count and epoch"
+  else
+    fail "maint: idle verdict — got: ${out//$'\n'/ | }"
+  fi
+  # Undeclared = the nine mutable repos: the cache keeps its two lines, nothing is logged.
+  out="$(_mr_stg 0 '3\n1700000000\n' 'PKG_COUNT_PENDING) printf "brew outdated";;')"
+  if [[ "${out#*---}" == $'\n3\n1700000000' && "$out" != *staged* ]]; then
+    pass "maint: no PKG_APPLY_PENDING declared → the two-line cache is untouched and nothing is logged"
+  else
+    fail "maint: undeclared staged probe changed the cache — got: ${out//$'\n'/ | }"
+  fi
+  # A probe the ceiling killed did not answer: no verdict is written (a stalled probe must
+  # not assert idle), the two lines stay, and the log says UNAVAILABLE. Same busybox 143
+  # spelling the count chain is pinned on.
+  printf '#!/bin/sh\nexit 143\n' >"$_MRT/bin/timeout"
+  chmod +x "$_MRT/bin/timeout"
+  out="$(printf '#!/bin/sh\nexit 0\n' >"$_MRT/bin/rpm-ostree"; chmod +x "$_MRT/bin/rpm-ostree"; printf -- '-1\n1700000000\n' >"$_MRT/pkg-cache"; bash -c '
+      PATH="'"$_MRT/bin"'":$PATH
+      PKG_CACHE="'"$_MRT/pkg-cache"'"; MAINT_PKGCOUNT_TIMEOUT=1
+      have() { command -v "$1" >/dev/null 2>&1; }
+      log() { printf "%s\n" "$*"; }
+      cap() { case "$1" in '"$_mr_atomic"' esac; return 0; }
+      . "'"$_MRT/to.bash"'"
+      . "'"$_MRT/apw.bash"'"
+      _pkg_apply_pending_write
+      echo ---
+      cat "$PKG_CACHE"
+    ' 2>/dev/null)"
+  rm -f "$_MRT/bin/timeout"
+  if [[ "$out" == *"staged-state probe UNAVAILABLE"* && "${out#*---}" == $'\n-1\n1700000000' ]]; then
+    pass "maint: a timed-out staged probe (143) writes no verdict and logs UNAVAILABLE"
+  else
+    fail "maint: timed-out staged probe — got: ${out//$'\n'/ | }"
+  fi
+  # The apply block: under atomic the declared upgrade runs (through sudo -n, as ever) and the
+  # log carries the stage-only line; the reboot verb is printed and never handed to step().
+  _mr_apply() { # _mr_apply <cap-case-arms>
+    bash -c '
+      set -u
+      MAINT_SYSTEM_UPGRADE=1
+      log() { printf "LOG: %s\n" "$*"; }
+      step() { printf "STEP: %s\n" "$*"; }
+      cap_declared() { return 0; }
+      cap() { case "$1" in '"$1"' esac; return 0; }
+      . "'"$_MRT/priv.bash"'"
+      . "'"$_MRT/apply.bash"'"
+    ' 2>/dev/null
+  }
+  out="$(_mr_apply 'MAINT_UNATTENDED_UPGRADE) printf 1;; PKG_UPGRADE) printf "sudo rpm-ostree upgrade";; PROVISIONER) printf atomic;; PKG_APPLY) printf "sudo systemctl reboot";;')"
+  # "Never a step" is asserted on the STEP lines alone — a glob over the whole transcript
+  # would span from the upgrade step into the log line that names the reboot verb.
+  _mr_steps="$(printf '%s\n' "$out" | grep '^STEP:' || true)"
+  if [[ "$out" == *"STEP: system: upgrade sudo -n rpm-ostree upgrade"*"staged — reboot to apply (never run by this runner): sudo systemctl reboot"* &&
+    "$_mr_steps" != *systemctl* ]]; then
+    pass "maint: MAINT_UNATTENDED_UPGRADE under atomic stages only — the reboot verb is logged, never a step"
+  else
+    fail "maint: atomic apply — got: ${out//$'\n'/ | }"
+  fi
+  out="$(_mr_apply 'MAINT_UNATTENDED_UPGRADE) printf 1;; PKG_UPGRADE) printf "sudo nixos-rebuild switch --upgrade";; PROVISIONER) printf declarative;;')"
+  if [[ "$out" == *"STEP: system: upgrade sudo -n nixos-rebuild switch --upgrade"* && "$out" != *staged* ]]; then
+    pass "maint: MAINT_UNATTENDED_UPGRADE under declarative is the mutable path (nixos-rebuild activates; no staged line)"
+  else
+    fail "maint: declarative apply — got: ${out//$'\n'/ | }"
+  fi
+  unset _mr_atomic _mr_steps
+else
+  fail "maint: could not extract _pkg_apply_pending_write / the apply block / _priv_decl from ${_MAINT_SH##*/}"
+fi
+
 # update.zsh: the first-run welcome (U2 — the cheat-sheet discoverability hint) must
 # greet EXACTLY ONCE per machine. Drive _core_welcome directly (the TTY gate lives at
 # its call site, so a captured run can exercise the greet+sentinel logic): first call

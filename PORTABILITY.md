@@ -110,7 +110,7 @@ branching on an OS name.**
 | clipboard | `bin/clip`, `bin/clip-paste` | `$WSL_DISTRO_NAME` → `pbcopy` → `wl-copy` → `xclip` → `xsel` |
 | scheduler | `_maint_scheduler` (`zsh/55-maint.zsh`) | the OS layer's declared `SCHEDULER`, else launchd / `/run/systemd/system` / `crontab` |
 | scheduler **unit dir** | `_maint_unit_file` (`zsh/55-maint.zsh`) | the OS layer's declared `SCHEDULER_UNIT_DIR`, and nothing else |
-| package manager | `_pkgup_mgr` (`zsh/60-update.zsh`) | `command -v` over seven managers |
+| package manager | `_pkgup_mgr` (`zsh/60-update.zsh`) | `command -v` over seven managers, then the declared `PROVISIONER` token (NixOS has none on PATH) |
 | package-manager **verbs** | `_pkgup_verb` (`zsh/60-update.zsh`) | the OS layer's `os.capabilities` declaration, and nothing else |
 | privilege | `_pkgup_priv`, `_blib_priv` | `sudo` → `doas` → bare |
 | timeout | `_to` (`maint/dotfiles-maint.sh`) | `timeout` → `gtimeout` → unbounded |
