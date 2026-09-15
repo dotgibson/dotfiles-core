@@ -62,6 +62,53 @@ grep -q 'dotfiles-managed v4' "$h1/.zshrc" 2>/dev/null || miss="$miss zshrc-unma
 [[ -f core/mise/config.toml ]] && { [[ -f "$h1/.config/mise/config.toml" && ! -L "$h1/.config/mise/config.toml" ]] || miss="$miss mise-not-adopted"; }
 leg "links-only + the reusable job's assertions" "$rc" "$( ((rc == 0)) && [[ -z "$miss" ]] && echo "pass — $(grep -o '[0-9]* linked' "$l" | tail -1), assertions hold" || echo "FAILED —${miss:- see log}")"
 
+# packages_check runs BEFORE the stubbed legs: under the forced atomic path the variant
+# writes a COPR repo file through the reusable curl shim, which drops the literal word
+# "shim" into any -o path — /etc/yum.repos.d then holds a malformed file and every later
+# dnf call fails with "Error in configuration file" (measured, run 34938554648). The
+# reusable job never notices because nothing runs dnf after its stubbed bootstrap.
+# ── packages_check ──────────────────────────────────────────────────────────
+resolve_all() { # the reusable resolver loop, as bootstrap-test.yml runs it
+  local -a pkgs=()
+  local p n=0 unresolved="" out=""   # `out` is the REPORT PATH globally — keep the verb's output local
+  # shellcheck disable=SC1091
+  . core/lib/bootstrap-lib.sh
+  blib_read_pkgs_into pkgs install/packages.txt || return 1
+  echo ":: resolving ${#pkgs[@]} names with: $resolve"
+  local first_out=""
+  for p in "${pkgs[@]}"; do
+    n=$((n + 1))
+    if ! out="$($resolve "$p" 2>&1)"; then
+      echo "  UNRESOLVED: $p"; unresolved="$unresolved $p"
+      [[ -n "$first_out" ]] || first_out="$(printf '%s' "$out" | tail -n 6)"
+    fi
+  done
+  echo ":: $n asked, $(echo "$unresolved" | wc -w | tr -d ' ') unresolved:$unresolved"
+  if [[ -n "$unresolved" ]]; then
+    # the reusable job prints the tail of the failing output; so do we, plus the
+    # resolver's version and the two neighbouring verbs, for the first miss
+    local p1; read -r p1 _ <<<"${unresolved# }"
+    echo ":: first miss ($p1), tail of its output:"; printf '%s\n' "$first_out" | sed 's/^/      | /'
+    echo ":: resolver version: $($(printf '%s' "$resolve" | cut -d' ' -f1) --version 2>&1 | head -1)"
+    case "$resolve" in
+    dnf*) echo ":: dnf repoquery $p1 → exit $(dnf -q repoquery "$p1" >/dev/null 2>&1; echo $?); dnf repoquery --whatprovides $p1 → exit $(dnf -q repoquery --whatprovides "$p1" >/dev/null 2>&1; echo $?); dnf provides $p1 (no -q) → exit $(dnf provides "$p1" >/dev/null 2>&1; echo $?)" ;;
+    esac
+  fi
+  [[ -z "$unresolved" ]]
+}
+if [[ -n "$resolve" ]]; then
+  l="$work/resolve.log"; t0=$(date +%s)
+  # A Fedora caller's prep (`dnf install -y -q bash zsh`) fills dnf's metadata cache before
+  # the resolver runs; this image's prep may not have touched dnf, and `dnf -q provides`
+  # then fails every name in a second (measured, run 34933037546). Do what the prep does.
+  case "$resolve" in dnf*) dnf -q makecache >/dev/null 2>&1 || true ;; esac
+  resolve_all >"$l" 2>&1; rc=$?
+  leg "packages_check (\`$resolve\`)" "$rc" "$(tail -1 "$l" | cut -c1-140) — $(( $(date +%s) - t0 )) s"
+else
+  leg "packages_check" "-" "no --resolve given for this target (the repo does not exist yet, or the archive has no per-name resolver)"
+fi
+
+
 # ── the reusable provision-stub shim set, verbatim in spirit ────────────────
 # shellcheck disable=SC2016  # the shim bodies are written to files; they expand when run
 mkshims() { # <dir> <log> [extra cmds…]
@@ -97,26 +144,6 @@ bootc)   stubbed "provision-stub, BOOTSTRAP_PROVISIONER=atomic (+ rpm-ostree, bo
 microos) stubbed "provision-stub, BOOTSTRAP_PROVISIONER=transactional (+ transactional-update, snapper shims)" transactional transactional-update snapper btrfs ;;
 nixos)   stubbed "provision-stub (+ nix-env, nix-channel, nixos-rebuild shims)" "" nix-env nix-channel nixos-rebuild nix ;;
 esac
-
-# ── packages_check ──────────────────────────────────────────────────────────
-resolve_all() { # the reusable resolver loop, as bootstrap-test.yml runs it
-  local -a pkgs=()
-  local p n=0 unresolved=""
-  # shellcheck disable=SC1091
-  . core/lib/bootstrap-lib.sh
-  blib_read_pkgs_into pkgs install/packages.txt || return 1
-  echo ":: resolving ${#pkgs[@]} names with: $resolve"
-  for p in "${pkgs[@]}"; do n=$((n + 1)); if ! $resolve "$p" >/dev/null 2>&1; then echo "  UNRESOLVED: $p"; unresolved="$unresolved $p"; fi; done
-  echo ":: $n asked, $(echo "$unresolved" | wc -w | tr -d ' ') unresolved:$unresolved"
-  [[ -z "$unresolved" ]]
-}
-if [[ -n "$resolve" ]]; then
-  l="$work/resolve.log"; t0=$(date +%s)
-  resolve_all >"$l" 2>&1; rc=$?
-  leg "packages_check (\`$resolve\`)" "$rc" "$(tail -1 "$l" | cut -c1-140) — $(( $(date +%s) - t0 )) s"
-else
-  leg "packages_check" "-" "no --resolve given for this target (the repo does not exist yet, or the archive has no per-name resolver)"
-fi
 
 h2 "Reading it"
 say "Per leg: green in a container, green only with a forced provisioner + shims, or VM-only. The R1 rung-one reports already hold the UNSTUBBED container run for each image (the package manager works in the image-build context — that is the mutable path, not the host's)."
