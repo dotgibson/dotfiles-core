@@ -39,12 +39,17 @@ PKG_REMOVE=sudo rpm-ostree uninstall
 # only `dnf install`.
 PKG_SEARCH=dnf search
 PKG_OWNS=rpm -qf
-# User-runnable, exit-coded: 77 = a deployment is staged (reboot to apply), 0 = idle.
-# The "is a NEWER image available" question (`rpm-ostree upgrade --check
-# --unchanged-exit-77`) is polkit-gated for a user ("AutomaticUpdateTrigger not allowed",
-# measured) and belongs behind `up`'s privileged path, not the once-a-day nudge.
-PKG_COUNT_PENDING=rpm-ostree status --pending-exit-77
-PKG_PENDING_EXIT_SOME=77
+# R5 (measured): the AVAILABLE question — is a newer image upstream? — has no
+# unprivileged answer here: `rpm-ostree upgrade --check` is "AutomaticUpdateTrigger not
+# allowed for user" (0.1 s, exit 1) and `bootc upgrade --check` "must be executed as
+# root"; as root the first answers in 0.1 s with 77 = unchanged. So no count verb: the
+# maint runner's unattended `rpm-ostree upgrade` (safe — inert until the reboot) asks it,
+# and the nudge reports the STAGED state below instead. (`dnf -q check-update` does run
+# unprivileged, 1.4 s, exit 100 with 30 lines — but it counts RPM updates against the
+# deployment's rpmdb, which is not how an image host updates; a false nudge.)
+# STAGED: user-runnable, 0.2 s, exit 77 = a deployment is queued for the next boot.
+PKG_APPLY_PENDING=rpm-ostree status --pending-exit-77
+PKG_APPLY_PENDING_EXIT=77
 
 # ── the staged change becomes live (prototype) ────────────────────────────────
 # `rpm-ostree upgrade --reboot` and `bootc upgrade --apply` exist; a plain reboot is the
@@ -65,4 +70,4 @@ SCHEDULER_UNIT_DIR=~/.config/systemd/user
 MAINT_UNATTENDED_UPGRADE=1
 
 # ── how `up` counts (optional) ────────────────────────────────────────────────
-# None of PKG_PENDING_MATCH / FIELD / FS: the answer is the exit status, not a line list.
+# Nothing to count: no PKG_COUNT_PENDING (see above), so no PKG_PENDING_MATCH / FIELD / FS.

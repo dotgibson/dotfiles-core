@@ -6,8 +6,10 @@
 > validated), R3 has its answer (coexist: home-manager owns packages and the shell
 > declaration, the driver owns every link and the entry — measured on both hosts), R4
 > has its answer (variant: the existing repo grows a second declaration and a staging
-> path, 118 + 18 and 65 + 10 lines, run on both guests; NixOS is a new repo);
-> R5–R6 are open.** This is the planning document for the
+> path, 118 + 18 and 65 + 10 lines, run on both guests; NixOS is a new repo), R5 has
+> its answer (two keys for two questions: `PKG_COUNT_PENDING` for AVAILABLE,
+> `PKG_APPLY_PENDING` for STAGED — measured, in the validator, consumer list drawn);
+> R6 is open.** This is the planning document for the
 > roadmap milestone *"the non-mutable host"* — the one theme on the roadmap with an
 > external forcing function rather than an internal cleanup. `V8-PROPOSAL.md` §10 named it
 > the right **next** major and put it out of scope *"because no work has started and the
@@ -763,6 +765,123 @@ packages, and `os/fedora.zsh` needs nothing (its `dnfi` alias is wrong there —
 one-line follow-up, not a fork). NixOS stays a new repo because nothing of it is shared:
 no package list in Fedora's format, no `dnf`-shaped verbs, and (R3) a different owner
 for packages and the shell declaration.
+
+### R5 findings — `up` and the maint runner on a staged host (2026-09-14, runs 34903663184, 34911196631 and 34912321933)
+
+A mutable host asks one question once a day — *is there something newer?* — and `up`
+answers it with `PKG_UPGRADE`, which returns with the box updated. A staged host asks
+**two**: *is there something newer upstream* (AVAILABLE), and *is a change already
+staged, waiting for a reboot* (STAGED). R2's prototypes folded the second into
+`PKG_COUNT_PENDING` (`rpm-ostree status --pending-exit-77`, `PKG_PENDING_EXIT_SOME=77`);
+R5 measured every candidate verb for both questions on all three guests — as the user
+and as root, with exit status, output shape and cost (`scripts/research/nonmutable-r5.sh`,
+the VM legs' `r5=true`) — then staged something small and asked again, and ran Core's
+own consumers against the variant declarations. The bootc guest was first switched to a
+registry-backed origin (a registry on the runner; `bootc switch` pulled and queued it in
+13 s), so the upgrade checks had a real remote.
+
+**AVAILABLE, measured.**
+
+| host | verb | as user | as root | cost |
+| --- | --- | --- | --- | --- |
+| bootc | `rpm-ostree upgrade --check [--unchanged-exit-77]` | exit 1, *"AutomaticUpdateTrigger not allowed for user"* | exit **77** = unchanged (a note: *"--check and --preview may be unreliable"*) | 0.1 s idle, 2.6 s with a staged deployment |
+| bootc | `bootc upgrade --check` | exit 1, *"must be executed as root"* | exit 0, *"No changes in: docker://10.0.2.2:5000/research-bootc:latest"* — and after one layered package: exit 1, *"Deployment contains local rpm-ostree modifications; cannot upgrade via bootc"* | 0.3 s |
+| bootc | `dnf -q check-update` | exit 100, 30 lines | — | 1.4 s |
+| MicroOS | `zypper -q list-updates` | exit 0, a table (0 rows on the fresh image) | same | 0.6 s |
+| MicroOS | `zypper --non-interactive dup --dry-run` | exit 5, *"Root privileges are required"* | exit 0, 26 lines — the real AVAILABLE answer for a `dup` host | 0.7 s |
+| MicroOS | `transactional-update --dry-run` | — | **does not exist** (usage, exit 1); the manual was right | — |
+| NixOS | `nix-channel --list` | nothing (channels are per user) | `nixos https://nixos.org/channels/nixos-25.05` | 0.1 s |
+| NixOS | `nixos-rebuild dry-build` | — | exit 1 (a `build-vm` guest has no `/etc/nixos/configuration.nix`) | 0.1 s |
+| NixOS | `nix flake metadata github:NixOS/nixpkgs/nixos-25.05 --json` | exit 0, 956 bytes | — | **140 s** (it fetches the tarball) |
+| NixOS | `nix-channel --update` | — | exit 0 | 18.8 s |
+
+Two of these decide the design. On bootc the AVAILABLE question has **no unprivileged
+answer**: both checks refuse a user, and `dnf check-update` does run (1.4 s) but counts
+RPM updates against the deployment's rpmdb, which is not how an image host updates — a
+false nudge. And once the variant has layered a package, **`bootc upgrade` refuses the
+host outright**; the atomic declaration's `PKG_UPGRADE=sudo rpm-ostree upgrade` (R2) is
+the only verb that upgrades a layered deployment, and it answered from the registry in
+2.6 s.
+
+**STAGED, measured.** Staging `htop` for real (`rpm-ostree install --idempotent`: 28.7 s;
+`transactional-update -n --continue pkg in`: 3.1 s; NixOS has no staged state — `nix-env
+-iA` activates in 3.7 s and `/run/booted-system` still equals `/run/current-system`):
+
+| host | verb | as user | cost | answer |
+| --- | --- | --- | --- | --- |
+| bootc | `rpm-ostree status --pending-exit-77` | **yes** | 0.1–0.2 s | exit **0** idle, **77** queued for next boot (both measured, run 34911196631) |
+| bootc | `rpm-ostree status --json` | yes | 0.1 s | `deployments[].staged` |
+| MicroOS | `test -e /run/reboot-needed` | **yes** | 0.0 s | exit 0 once a snapshot is closed |
+| MicroOS | `rebootmgrctl status` | yes | 0.0 s | *"Reboot not requested"* / requested |
+| MicroOS | `btrfs subvolume get-default /`, `snapper list` | **no** (`btrfs` off the user's PATH; *"No permissions"*) | — | root only |
+| NixOS | `/run/booted-system/kernel` vs `/run/current-system/kernel` | yes | 0.1 s | the one reboot-needed case NixOS has |
+
+**What Core's consumers say today** (run on the bootc guest under an interactive
+loader against the R4 declaration, and replayed locally against the other guests' exact
+stdout and exit statuses; `_pkgup_count`, the cached nudge, `up -n`): on the atomic
+declaration the count verb's ten status lines become **"󰚰 10 updates available — run 'up'
+to apply"** and `up -n` lists `State:` / `Deployments:` as packages; on the transactional
+declaration the count is 0 and the nudge is **silent** while a snapshot sits waiting for a
+reboot; on NixOS `_pkgup_mgr` finds no manager and `up` refuses (*"none of
+brew/pacman/dnf/zypper/apt/apk/emerge is on PATH"*). Wrong, silent, and refused — the three
+shapes the consumer changes below fix.
+
+**The registry-backed upgrade check — R1's open cell, closed** (run 34912321933: the
+guest rebooted onto the registry-backed deployment, then a v2 image was pushed under the
+same tag):
+
+| moment | `rpm-ostree upgrade --check --unchanged-exit-77` (root) | `bootc upgrade --check` (root) |
+| --- | --- | --- |
+| nothing newer | exit **77**, 0.1 s | exit 0, *"No changes in: docker://10.0.2.2:5000/research-bootc:latest"*, 0.3 s |
+| v2 pushed | exit **0**, *"AvailableUpdate: Total layers: 68"*, 70 ms | exit 0, *"Update available for: … Digest: sha256:2c7d…"*, 157 ms |
+| after `rpm-ostree upgrade` (staged the v2 in 5.7 s; `--pending-exit-77` went 0 → **77**) | still exit 0 (compares against the *booted* image) | *"No changes"* again (the staged deployment counts) |
+
+So on an atomic host the AVAILABLE verb for a *privileged* caller is `rpm-ostree upgrade
+--check --unchanged-exit-77`: it answers by exit status (77 = nothing newer, 0 = an update
+is available — the `PKG_PENDING_EXIT_NONE=77` shape R2 wrote down), in under a tenth of a
+second, and from a real registry. `bootc upgrade --check` answers by text with exit 0
+either way, and refuses any host with a layered package. Neither answers a user.
+
+**The design: two keys for two questions.** No required key changes meaning (R2's
+verdict holds). `PKG_COUNT_PENDING` stays the AVAILABLE question — `zypper -q lu` on
+MicroOS as declared, and **absent** on the atomic host: its honest verb is root-only, so
+the maint runner's unattended `rpm-ostree upgrade` (safe: inert until the reboot) does
+the asking. **`PKG_APPLY_PENDING`** (+ `PKG_APPLY_PENDING_EXIT`, 1–255; absent = "exit
+0 means staged") is the STAGED question: `rpm-ostree status --pending-exit-77` / `77` on
+bootc, `test -e /run/reboot-needed` on MicroOS, cheap enough to ask live on every shell
+start. Declaring it is the second way the count verb may be absent (the validator, the
+example and the prototypes carry it as of this write-up; the two guest declarations
+validate). NixOS declares neither: nothing stages there, and the kernel comparison is a
+two-line script a NixOS repo can ship if it wants the nudge.
+
+**The consumer change list** (each a branch on a key that is absent today, so the nine
+mutable repos see nothing):
+
+1. `zsh/60-update.zsh` `_pkgup_notice`: when `PKG_APPLY_PENDING` says staged, print
+   **`󰚰 update staged — reboot to apply`** (muted: `— run 'up' again after`) and skip the
+   count line — a staged host has nothing to "run `up`" for.
+2. `_pkgup_mgr`: accept a declaration with no manager on PATH when `PROVISIONER` is set;
+   the name `up` prints becomes `PROVISIONER`'s.
+3. `up`: after `PKG_UPGRADE` returns 0 under `atomic` / `transactional`, print
+   `staged — reboot to apply: <PKG_APPLY>` instead of the mutable "done"; `up -n` with no
+   count verb says "this host stages — run `up`, then reboot"; `up -i` already refuses
+   (no `PKG_UPGRADE_PARTIAL`), `up -y` already degrades (no `PKG_ASSUME_YES`).
+4. `maint/dotfiles-maint.sh`: `MAINT_UNATTENDED_UPGRADE` under `atomic` means *stage
+   only* — `system: upgrade` runs `rpm-ostree upgrade` as today and then logs
+   `staged — reboot to apply (never run by this runner)`; the count cache gets the
+   `PKG_APPLY_PENDING` verdict as a third line. Under `transactional` the key is absent
+   by design (MicroOS ships its own timer and rollback); under `declarative` the upgrade
+   is `nixos-rebuild switch --upgrade`, which activates — the runner treats it as mutable.
+5. `core-doctor`'s install hint: a missing tool with `PKG_APPLY_PENDING` staged reads
+   "layered — reboot to use", not "install with `PKG_INSTALL`".
+6. `scripts/check-capabilities.sh` + `examples/os.capabilities.example`: done here.
+
+**The "reboot to apply" line, designed.** One sentence, three places, the same words,
+`PKG_APPLY`'s value printed and never run: the bootstrap's closing hint (R4: *"N
+package(s) layered into the next deployment — reboot to apply (`sudo systemctl reboot`),
+then re-run ./bootstrap.sh once"*), `up`'s closing line (*"staged — reboot to apply:
+`sudo systemctl reboot`"*), and the shell-start nudge (*"󰚰 update staged — reboot to
+apply"*). The only thing that runs it is the operator.
 
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 

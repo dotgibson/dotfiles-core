@@ -1,6 +1,6 @@
 # R4 prototype patch for dotgibson/dotfiles-openSUSE — NOT a shipped change (NON-MUTABLE-HOST-PROPOSAL.md §5 R4, #1004).
 # Base: 03b614a32680795c3472daf21d364e49c67c719a (origin/main on 2026-09-14). Applied by scripts/research/nonmutable-variant.sh on a booted guest.
-# Iteration 2: --continue on every transactional-update; key import routed around the read-only rpmdb; installed names skipped so a re-run transacts nothing.
+# Iteration 2 (R4) + the R5 keys in the declaration (PKG_APPLY_PENDING).
 diff --git i/bootstrap.sh w/bootstrap.sh
 index a0c7a92..785a812 100755
 --- i/bootstrap.sh
@@ -159,10 +159,10 @@ index a0c7a92..785a812 100755
      if ((BOOTSTRAP_STRICT_DEFAULT)); then
 diff --git i/os/opensuse.microos.capabilities w/os/opensuse.microos.capabilities
 new file mode 100644
-index 0000000..62568b8
+index 0000000..f89e270
 --- /dev/null
 +++ w/os/opensuse.microos.capabilities
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,41 @@
 +# os/opensuse.microos.capabilities — the TRANSACTIONAL edition's declaration (MicroOS,
 +# Aeon, Kalpa). Selected by bootstrap.sh's bootstrap_wire_pre_loader when
 +# transactional-update exists and /usr is read-only; os/opensuse.capabilities (Tumbleweed)
@@ -195,6 +195,8 @@ index 0000000..62568b8
 +
 +# ── the staged change becomes live ────────────────────────────────────────────
 +PKG_APPLY=sudo systemctl reboot
++# R5: a closed snapshot leaves /run/reboot-needed; a user can test it (measured).
++PKG_APPLY_PENDING=test -e /run/reboot-needed
 +
 +# ── scheduler (required) ──────────────────────────────────────────────────────
 +SCHEDULER=systemd
