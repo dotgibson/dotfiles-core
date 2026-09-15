@@ -766,7 +766,7 @@ one-line follow-up, not a fork). NixOS stays a new repo because nothing of it is
 no package list in Fedora's format, no `dnf`-shaped verbs, and (R3) a different owner
 for packages and the shell declaration.
 
-### R5 findings — `up` and the maint runner on a staged host (2026-09-14, runs 34903663184 and R5_RUN2)
+### R5 findings — `up` and the maint runner on a staged host (2026-09-14, runs 34903663184, 34911196631 and 34912321933)
 
 A mutable host asks one question once a day — *is there something newer?* — and `up`
 answers it with `PKG_UPGRADE`, which returns with the box updated. A staged host asks
@@ -826,7 +826,21 @@ reboot; on NixOS `_pkgup_mgr` finds no manager and `up` refuses (*"none of
 brew/pacman/dnf/zypper/apt/apk/emerge is on PATH"*). Wrong, silent, and refused — the three
 shapes the consumer changes below fix.
 
-R5_V2
+**The registry-backed upgrade check — R1's open cell, closed** (run 34912321933: the
+guest rebooted onto the registry-backed deployment, then a v2 image was pushed under the
+same tag):
+
+| moment | `rpm-ostree upgrade --check --unchanged-exit-77` (root) | `bootc upgrade --check` (root) |
+| --- | --- | --- |
+| nothing newer | exit **77**, 0.1 s | exit 0, *"No changes in: docker://10.0.2.2:5000/research-bootc:latest"*, 0.3 s |
+| v2 pushed | exit **0**, *"AvailableUpdate: Total layers: 68"*, 70 ms | exit 0, *"Update available for: … Digest: sha256:2c7d…"*, 157 ms |
+| after `rpm-ostree upgrade` (staged the v2 in 5.7 s; `--pending-exit-77` went 0 → **77**) | still exit 0 (compares against the *booted* image) | *"No changes"* again (the staged deployment counts) |
+
+So on an atomic host the AVAILABLE verb for a *privileged* caller is `rpm-ostree upgrade
+--check --unchanged-exit-77`: it answers by exit status (77 = nothing newer, 0 = an update
+is available — the `PKG_PENDING_EXIT_NONE=77` shape R2 wrote down), in under a tenth of a
+second, and from a real registry. `bootc upgrade --check` answers by text with exit 0
+either way, and refuses any host with a layered package. Neither answers a user.
 
 **The design: two keys for two questions.** No required key changes meaning (R2's
 verdict holds). `PKG_COUNT_PENDING` stays the AVAILABLE question — `zypper -q lu` on
