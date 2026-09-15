@@ -99,6 +99,33 @@ else
   # The parity assertion. One-directional on purpose: an emitted key nothing consumes is
   # harmless, a CONSUMED key nothing emits expands to the empty string and fails open.
   # This retro-covers image/prep/name/repo/timeout/offensive as well as postcheck.
+  # THE STAGED HOST (#1050, NON-MUTABLE-HOST-PROPOSAL.md §4.4). A caller that forces a staged
+  # host's branch (`provisioner: atomic|transactional`) has no leg in the unstubbed sweep — a
+  # container has no /run/ostree-booted, so an unstubbed run would install for real down the
+  # MUTABLE branch and read green over the wrong code. Skipped, and NAMED: the absence must
+  # reach the log as a ::notice:: and the summary as VM-only, or it reads as coverage.
+  _fbm_json="$(_fbm_caller 'provisioner: atomic')"
+  _fbm_n="$(printf '%s' "$_fbm_json" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null)"
+  if [[ "$_fbm_n" != 0 ]]; then
+    fail "matrix: a caller declaring provisioner: atomic still produced $_fbm_n leg(s) — the sweep would install for real down the mutable branch (#1050)"
+  elif ! grep -q '::notice::.*VM-only.*provisioner: atomic' "$_fbm_root/stderr"; then
+    fail "matrix: the provisioner leg was dropped SILENTLY — no ::notice:: naming it VM-only (got: $(tr '\n' ' ' <"$_fbm_root/stderr"))"
+  else
+    pass "matrix: a caller forcing a staged host (provisioner: atomic) is skipped and announced as VM-only"
+  fi
+  _fbm_json="$(_fbm_caller 'provisioner: ""')"
+  if [[ "$(_fbm_key "$_fbm_json" image)" == "alpine:3.20" ]]; then
+    pass "matrix: an EMPTY provisioner is the mutable host — the leg stays in the sweep"
+  else
+    fail "matrix: an empty provisioner dropped the leg — mutable callers must be unaffected (#1050)"
+  fi
+  # The sweep must actually surface those notices: the derive step keeps the script's stderr
+  # and appends the ::notice:: lines to the run summary.
+  if grep -q 'fleet-bootstrap-matrix.py ../fleet 2>matrix.stderr' "$_fbm_wf" && grep -q "grep '^::notice::' matrix.stderr" "$_fbm_wf"; then
+    pass "real-bootstrap: the derive step keeps the matrix script's stderr and writes its VM-only notices into the summary"
+  else
+    fail "real-bootstrap: the derive step no longer routes fleet-bootstrap-matrix.py's ::notice:: lines into the run summary — a skipped provisioner leg would vanish (#1050)"
+  fi
   _fbm_json="$(_fbm_caller 'bootstrap_postcheck: ./x.sh')"
   _fbm_emits="$(printf '%s' "$_fbm_json" | python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin)[0])))' 2>/dev/null)"
   _fbm_missing=""
@@ -199,6 +226,55 @@ else
   unset _rb_open _rb_close _rb_block
 
   unset -f _fbm_caller _fbm_key
-  unset _fbm_root _fbm_json _fbm_emits _fbm_missing _fbm_k
+  unset _fbm_root _fbm_json _fbm_emits _fbm_missing _fbm_k _fbm_n
 fi
 unset _fbm _fbm_wf
+
+# ── bootstrap-test.yml's provision-stub block: the same apostrophe rule, plus the seam ──
+# The whole stubbed run is one single-quoted `sh -euc '…'` (the shim is built inline, by
+# design — see the job). An apostrophe inside it closes the quote early, and #1050 added
+# the most text that block has seen in a while (the provisioner seam), so the rule the
+# real-bootstrap case above pins is pinned here too. Then the seam's parts, each of which
+# is one refactor away from being dropped with nothing noticing: the input reaches the
+# container, the staging verbs are shimmed, rpm -q answers 1, and a forced run must print
+# "reboot to apply".
+hdr "bootstrap-test.yml provision-stub (the staged-host seam, #1050)"
+_bt_wf="$HERE/.github/workflows/bootstrap-test.yml"
+_bt_open="$(awk '/^  provision-stub:/{p=1} p && /sh -euc '"'"'$/{print NR; exit}' "$_bt_wf")"
+_bt_block=""
+if [[ -n "$_bt_open" ]]; then
+  _bt_close="$(tail -n +"$((_bt_open + 1))" "$_bt_wf" | grep -n "^[[:space:]]*'[[:space:]]*\$" | head -1 | cut -d: -f1)"
+  [[ -n "$_bt_close" ]] && _bt_block="$(sed -n "$((_bt_open + 1)),$((_bt_open + _bt_close - 1))p" "$_bt_wf")"
+fi
+if [[ -z "$_bt_block" ]]; then
+  fail "bootstrap-test: could not extract the provision-stub sh -euc block (opener line: ${_bt_open:-none}) — the extraction has drifted from the workflow's shape; fix the harness"
+elif [[ "$_bt_block" == *"'"* ]]; then
+  fail "bootstrap-test: an apostrophe has appeared inside the provision-stub's single-quoted sh -euc block — it closes the quote early"
+else
+  pass "bootstrap-test: the provision-stub sh -euc block is apostrophe-free ($(wc -l <<<"$_bt_block" | tr -d ' ') lines read)"
+fi
+if grep -q 'docker run .*-e PROVISIONER' "$_bt_wf" && [[ "$_bt_block" == *'BOOTSTRAP_PROVISIONER="$PROVISIONER"'* ]]; then
+  pass "bootstrap-test: the provisioner input reaches the container and becomes BOOTSTRAP_PROVISIONER"
+else
+  fail "bootstrap-test: the provisioner input no longer reaches the stubbed run as BOOTSTRAP_PROVISIONER — a variant caller would test its mutable branch (#1050)"
+fi
+_bt_missing=""
+for _bt_c in rpm-ostree bootc transactional-update snapper btrfs; do
+  [[ "$_bt_block" == *" $_bt_c "* || "$_bt_block" == *" $_bt_c;"* ]] || _bt_missing="$_bt_missing $_bt_c"
+done
+if [[ -z "$_bt_missing" ]]; then
+  pass "bootstrap-test: the staging verbs (rpm-ostree bootc transactional-update snapper btrfs) are in the shim list"
+else
+  fail "bootstrap-test: staging verb(s) missing from the shim list:$_bt_missing — a forced run would find them absent, not stubbed (#1050)"
+fi
+if [[ "$_bt_block" == *'case \"\${1:-}\" in -q) exit 1 ;; esac'* ]]; then
+  pass "bootstrap-test: under a forced provisioner the rpm shim answers -q with 1 (the layer filter keeps its names)"
+else
+  fail "bootstrap-test: the rpm shim no longer answers -q with 1 under a forced provisioner — the variant's base-image filter would skip every name (R6)"
+fi
+if [[ "$_bt_block" == *'grep -q "reboot to apply" /tmp/bootstrap.out'* ]]; then
+  pass "bootstrap-test: a forced provisioner run must print the staged closing line, or the leg fails"
+else
+  fail "bootstrap-test: the forced-provisioner run no longer asserts the staged closing line — a seam that did not engage would read green over the mutable branch (#1050)"
+fi
+unset _bt_wf _bt_open _bt_close _bt_block _bt_missing _bt_c

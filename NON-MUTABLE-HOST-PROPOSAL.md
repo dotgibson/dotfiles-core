@@ -319,7 +319,7 @@ exist on `@v7`.
    exit status). One PR, one minor. — **#1049.**
 2. **Core — CI** (§4.4): `bootstrap-test.yml`'s `provisioner:` input and its own
    container, `fleet-bootstrap-matrix.py`, `fleet-coverage.sh`'s `real-bootstrap` gate,
-   `new-os-repo.sh`'s stamps. One PR; the reusable workflow rides `@v7`.
+   `new-os-repo.sh`'s stamps. One PR; the reusable workflow rides `@v7`. — **#1050.**
 3. **`dotfiles-Fedora`** — the atomic variant from `r4/dotfiles-Fedora.patch`: the
    declaration with the R5 keys, the hooks, `test/check-flavors.sh`, `dnfi` fixed,
    `bootstrap.yml` gaining `provisioner: atomic` on a `fedora-bootc:42` leg beside the

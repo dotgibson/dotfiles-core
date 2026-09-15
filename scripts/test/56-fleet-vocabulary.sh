@@ -862,4 +862,91 @@ fi
 _fv_reset; _fv_repo dotfiles-Fedora "$_fv_all"; _fv_suite dotfiles-Fedora; _fv_ci dotfiles-Fedora "make test"
 if _fv_run >/dev/null; then pass "vocab: report mode exits 0 (rendering is not a verdict)"; else fail "vocab: report mode exits non-zero"; fi
 if REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" >/dev/null 2>&1; then pass "vocab: fleet-coverage.sh report mode exits 0 with no footnotes too"; else fail "vocab: fleet-coverage.sh report mode still exits 1 with no footnotes"; fi
+
+# ── the coverage register's `real-bootstrap` gate (#1050) ─────────────────────
+# Not a reusable workflow: the weekly unstubbed sweep derives its legs from each repo's
+# bootstrap-test.yml caller, so the register derives the cell the same way. A mutable caller
+# is `sweep`; a caller forcing a staged host (`provisioner: atomic|transactional`) has no leg
+# there and must declare `real-bootstrap none <why>`; a repo with no caller at all inherits
+# its bootstrap-test declaration. The lie this prevents: green off a container run that
+# exercised the wrong branch.
+hdr "coverage register: the derived real-bootstrap gate (#1050)"
+_fc_caller() { # _fc_caller <repo> <file> <extra with: lines…>
+  mkdir -p "$_fv_root/$1/.github/workflows" "$_fv_root/$1/.git"
+  {
+    printf 'name: bootstrap\non: [pull_request]\njobs:\n  test:\n'
+    printf '    uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v7\n'
+    printf '    with:\n      image: fedora:latest\n      prep: dnf -y install bash zsh\n'
+    shift 2
+    local _l
+    for _l in "$@"; do printf '      %s\n' "$_l"; done
+  } >"$_fv_root/${1}/.github/workflows/${2}"
+}
+_fc_cell() { # _fc_cell <repo-short> → the real-bootstrap cell (last column) of that row
+  REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" 2>/dev/null | awk -F'|' -v r="\`$1\`" '$2 ~ r { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $(NF-1)); print $(NF-1); exit }'
+}
+# _fc_others <repo> — declare every OTHER gate `none` so --check's verdict is about the
+# real-bootstrap cell alone (the scratch repo calls no reusable). Derived from the same
+# workflow_call glob the script uses, so a new gate cannot silently widen the verdict.
+_fc_others() {
+  local f g
+  mkdir -p "$_fv_root/$1/.github"
+  for f in "$HERE"/.github/workflows/*.yml; do
+    grep -qE '^[[:space:]]*workflow_call:' "$f" 2>/dev/null || continue
+    g="$(basename "$f" .yml)"
+    [[ "$g" == notify-failure-call ]] && continue
+    printf '%s none scratch fixture\n' "$g" >>"$_fv_root/$1/.github/core-gates.txt"
+  done
+}
+_fv_reset
+_fc_caller dotfiles-Fedora bootstrap.yml
+if [[ "$(_fc_cell Fedora)" == sweep ]]; then
+  pass "coverage: a mutable bootstrap-test caller derives \`sweep\` for real-bootstrap"
+else
+  fail "coverage: a mutable caller's real-bootstrap cell reads '$(_fc_cell Fedora)', want sweep"
+fi
+_fv_reset
+_fc_caller dotfiles-Fedora bootstrap.yml 'provisioner: atomic'
+_fc_others dotfiles-Fedora
+_fc_check_out="$(REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" --check 2>&1)"
+_fc_check_rc=$?
+if [[ "$(_fc_cell Fedora)" == '**undeclared**' && "$_fc_check_rc" != 0 && "$_fc_check_out" == *"1 gate x repo cell(s) undeclared"* ]]; then
+  pass "coverage: a caller forcing provisioner: atomic derives NO sweep leg — undeclared until the repo says why, and --check fails on that one cell"
+else
+  fail "coverage: a provisioner-only caller reads '$(_fc_cell Fedora)' for real-bootstrap (--check rc=$_fc_check_rc: ${_fc_check_out//$'\n'/ | }) — it must not read as covered (#1050)"
+fi
+printf 'real-bootstrap none the staging verb needs a booted host; the VM harness under scripts/research covers it on demand\n' >>"$_fv_root/dotfiles-Fedora/.github/core-gates.txt"
+if [[ "$(_fc_cell Fedora)" == "none[^"*"]" ]] && REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" --check >/dev/null 2>&1; then
+  pass "coverage: \`real-bootstrap none <why>\` fills the cell with the reason as a footnote, and --check passes"
+else
+  fail "coverage: a declared real-bootstrap none reads '$(_fc_cell Fedora)' (want none[^N]) or --check still fails"
+fi
+unset _fc_check_out _fc_check_rc
+# Two legs in one repo, one mutable: the sweep still has a leg, so the cell is derived.
+_fv_reset
+_fc_caller dotfiles-Fedora bootstrap.yml
+_fc_caller dotfiles-Fedora bootstrap-atomic.yml 'provisioner: atomic'
+if [[ "$(_fc_cell Fedora)" == sweep ]]; then
+  pass "coverage: a variant repo keeping its mutable leg beside the forced one is still \`sweep\`"
+else
+  fail "coverage: a repo with a mutable AND a forced leg reads '$(_fc_cell Fedora)', want sweep"
+fi
+# An EMPTY provisioner is the mutable host, exactly as the reusable and the matrix read it.
+_fv_reset
+_fc_caller dotfiles-Fedora bootstrap.yml 'provisioner: ""'
+if [[ "$(_fc_cell Fedora)" == sweep ]]; then
+  pass "coverage: provisioner: \"\" is mutable — the leg is in the sweep"
+else
+  fail "coverage: an empty provisioner reads '$(_fc_cell Fedora)', want sweep"
+fi
+# No caller at all: the sweep derives nothing from it, so the cell IS bootstrap-test's.
+_fv_reset
+mkdir -p "$_fv_root/dotfiles-MacBook/.git" "$_fv_root/dotfiles-MacBook/.github"
+printf 'bootstrap-test own ci.yml runs provision() on a macOS runner\n' >"$_fv_root/dotfiles-MacBook/.github/core-gates.txt"
+if [[ "$(_fc_cell MacBook)" == "own[^"*"]" ]] && REPOS_ROOT="$_fv_root" "$HERE/scripts/fleet-coverage.sh" 2>/dev/null | grep -q 'real-bootstrap` — inherited from `bootstrap-test` — no caller'; then
+  pass "coverage: a repo with no bootstrap-test caller inherits that gate's declaration for real-bootstrap, saying so"
+else
+  fail "coverage: a caller-less repo's real-bootstrap cell reads '$(_fc_cell MacBook)' — want the inherited bootstrap-test position"
+fi
+unset -f _fc_caller _fc_cell _fc_others
 rm -rf "$_fv_root"

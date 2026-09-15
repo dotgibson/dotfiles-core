@@ -1,5 +1,26 @@
 ## [Unreleased]
 
+### Added
+
+- **`bootstrap-test.yml` learns the staged host: the `provisioner:` input, the sweep's
+  VM-only skip, the register's `real-bootstrap` gate, and the scaffold's stamps** (#1050,
+  runbook step 2 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6). A container is not the host
+  (no `/run/ostree-booted`, a writable `/usr`), so a variant repo's stubbed provision walked
+  its mutable branch and never reached the staging path (R6, measured). `provisioner:
+  atomic|transactional` (empty = mutable, unchanged) exports `BOOTSTRAP_PROVISIONER` into
+  the provision-stub run, shims `rpm-ostree bootc transactional-update snapper btrfs`,
+  makes the `rpm` shim answer `-q` with 1 so the variant's base-image filter keeps its
+  names, and fails the leg unless the run prints the staged closing line ("reboot to
+  apply"). `scripts/fleet-bootstrap-matrix.py` skips such a caller (the unstubbed sweep
+  would install down the mutable branch) and names it VM-only via a `::notice::` that
+  `real-bootstrap.yml` writes into the run summary. `scripts/fleet-coverage.sh` grows a
+  derived `real-bootstrap` gate: `sweep` for a mutable caller, `real-bootstrap none <why>`
+  required of a provisioner-only repo, and a caller-less repo inherits its `bootstrap-test`
+  declaration. `scripts/new-os-repo.sh` stamps `PROVISIONER` / `PKG_APPLY` /
+  `PKG_APPLY_PENDING` as commented examples into the capability stub and shows the staging
+  shape of a provision hook in the starter bootstrap. (`scripts/test/{33-bootstrap-matrix,
+  35-new-os-repo,56-fleet-vocabulary}.sh`)
+
 ## [v7.6.0] - 2026-09-15
 
 ### Added

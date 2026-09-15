@@ -440,6 +440,20 @@ SCHEDULER=systemd
 # path — Core appends its own unit name. An OS-absolute path is CORRECT here and
 # wrong in Core, which is this key's whole point.
 SCHEDULER_UNIT_DIR=~/.config/systemd/user
+
+# ── optional — the STAGED host (core/NON-MUTABLE-HOST-PROPOSAL.md §4, Core v7.6.0) ────
+# Leave these commented on a mutable host. On an atomic (bootc, Silverblue) or
+# transactional (MicroOS, Aeon) edition PKG_INSTALL / PKG_UPGRADE return with the
+# change STAGED and a reboot makes it live: \`up\`, the shell-start nudge, the maint
+# runner and core-doctor read these three and PRINT PKG_APPLY, never run it. A
+# declarative host (NixOS) declares PROVISIONER=declarative alone — nothing stages
+# there. PKG_APPLY_PENDING (+ _EXIT) is the "is a change waiting?" probe, answered by
+# exit status (bootc: \`rpm-ostree status --pending-exit-77\` / 77; MicroOS:
+# \`test -e /run/reboot-needed\`); declaring it lets PKG_COUNT_PENDING be absent.
+#PROVISIONER=atomic
+#PKG_APPLY=sudo systemctl reboot
+#PKG_APPLY_PENDING=rpm-ostree status --pending-exit-77
+#PKG_APPLY_PENDING_EXIT=77
 EOF
 
 # ── starter bootstrap ─────────────────────────────────────────────────────────
@@ -479,6 +493,32 @@ BOOTSTRAP_OS=$os_lc
 # when the repo provisions and should switch the login shell to zsh like the fleet.
 # shellcheck disable=SC2034
 BOOTSTRAP_LOGIN_SHELL=0
+
+# ── provisioning, when this repo grows it ────────────────────────────────────
+# Define bootstrap_provision() and the driver runs it on a full run, under the keepalive,
+# after resolving an escalator (priv/priv_run). On a STAGED host — an atomic (bootc) or
+# transactional (MicroOS) edition, core/NON-MUTABLE-HOST-PROPOSAL.md §4 — the hook has one
+# more branch, and dotfiles-Fedora's atomic variant is the reference shape:
+#
+#   IS_STAGED=0
+#   [[ -e /run/ostree-booted ]] && IS_STAGED=1          # the HOST MARKER, never an os-release ID
+#   [[ "\${BOOTSTRAP_PROVISIONER:-}" == atomic ]] && IS_STAGED=1   # CI's seam: bootstrap-test.yml
+#                                                     # \`provisioner: atomic\` forces it in a container
+#   STAGED=0
+#   bootstrap_provision() {
+#     if ((IS_STAGED)); then
+#       priv rpm-ostree install --idempotent "\${pkgs[@]}" && STAGED=\${#pkgs[@]}   # stages; live after reboot
+#     else
+#       priv dnf install -y "\${pkgs[@]}"
+#     fi
+#   }
+#   bootstrap_closing() {
+#     ((STAGED)) && blib_warn "\$STAGED package(s) layered into the next deployment — reboot to apply (sudo systemctl reboot), then re-run ./bootstrap.sh once"
+#   }
+#
+# The closing line PRINTS the reboot verb and never runs it; the second run is "just re-run"
+# (the guards the hook already has skip what the first run staged). Declare PROVISIONER /
+# PKG_APPLY in os/<os>.capabilities beside it, so \`up\` and the nudge say the same sentence.
 
 # The $OS half of --help; the driver prints the shared flags after it. bootstrap_usage()
 # is the ONE place a repo flag is documented — never a line range of this header, which

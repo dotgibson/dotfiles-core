@@ -22,6 +22,8 @@
 #                       the tools group, and the ssh directory modes.
 #   3. provision-stub — OPT-IN (`provision_stub: true`). Runs provision() with the package
 #                       managers stubbed. See the long note on that job for its real limits.
+#                       `provisioner: atomic|transactional` (#1050) forces a STAGED host's
+#                       staging branch inside the container — see that input.
 #   4. packages-check — OPT-IN (`packages_check: "<resolve command>"`). Resolves every name
 #                       in the package list against the distro repos without downloading
 #                       anything, using the same parser bootstrap.sh reads the list with.
@@ -199,6 +201,36 @@ on:
           enables it once its provision() tolerates a stub that returns 0 and writes no file.
         type: boolean
         default: false
+      provisioner:
+        description: >-
+          Force the STAGED host's provisioning branch in the provision-stub job: `atomic`
+          (bootc, Silverblue) or `transactional` (MicroOS, Aeon). Empty (the default) is a
+          mutable host and changes nothing (NON-MUTABLE-HOST-PROPOSAL.md §4.4, #1050).
+
+          WHY A SEAM IS NEEDED AT ALL. A container is not the host: `fedora-bootc:42` has no
+          /run/ostree-booted and a writable /usr, and the Tumbleweed image has no
+          transactional-update — so a variant repo's bootstrap walks its MUTABLE branch in
+          every container leg and the staging path it exists for is never executed (R6,
+          measured). The value is exported as BOOTSTRAP_PROVISIONER into the stubbed run,
+          which is the marker a variant's own bootstrap.sh honours beside the real one; the
+          staging verbs (rpm-ostree, bootc, transactional-update, snapper, btrfs) join the
+          shim set; and the `rpm` shim answers `-q` with 1 ("not installed") instead of 0 —
+          without that the variant's "already in the base image" filter skips every name and
+          the leg proves the closing line but never the layer (R6). The run must then print
+          the staged closing line ("reboot to apply"); a forced provisioner whose run never
+          reaches it FAILS the leg, because a green tick over the wrong branch is the exact
+          false coverage this input exists to prevent.
+
+          ONLY provision-stub reads it. links-only returns before provision(), and the
+          weekly unstubbed real-bootstrap.yml sweep SKIPS a caller that declares this (the
+          container would install for real down the mutable path and test the wrong
+          branch) and names the leg VM-only in its summary; declare `real-bootstrap none …`
+          in .github/core-gates.txt so the coverage register says so too. Every job here
+          runs its own `docker run`, so the forced run never shares a container with the
+          resolver (its curl shim writes a malformed COPR repo file that breaks every
+          later dnf — R6, measured).
+        type: string
+        default: ""
       packages_check:
         description: >-
           The distro RESOLVE-ONLY command to run against every name in the package list, e.g.
@@ -538,8 +570,15 @@ jobs:
         env:
           IMAGE: ${{ inputs.image }}
           PREP: ${{ inputs.prep }}
+          PROVISIONER: ${{ inputs.provisioner }}
         run: |
-          docker run --rm -e PREP -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+          docker run --rm -e PREP -e PROVISIONER -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+            # The staged-host seam (#1050): validated first, so a typo fails here and not as
+            # a mutable run that reads green. See the provisioner input for the whole story.
+            case "$PROVISIONER" in
+              ""|atomic|transactional) ;;
+              *) echo "::error::provisioner must be atomic, transactional or empty (got: $PROVISIONER)"; exit 1 ;;
+            esac
             n=0
             until eval "$PREP"; do
               n=$((n+1))
@@ -585,17 +624,36 @@ jobs:
 
             # Package managers and the rest: logged no-ops. git is deliberately absent —
             # bootstraps clone real things the caller pre-seeds, and stubbing it would mask
-            # wiring bugs this job should still catch.
+            # wiring bugs this job should still catch. The staging verbs of an atomic /
+            # transactional host (rpm-ostree bootc transactional-update snapper btrfs) sit in
+            # the same list: a mutable bootstrap never calls them, and a forced one must find
+            # them stubbed rather than absent.
             for c in apt-get apt apt-key add-apt-repository dpkg debconf-set-selections \
                      dnf yum rpm pacman paru yay zypper apk emerge eselect layman brew \
                      snap flatpak gpgconf systemctl update-alternatives unattended-upgrade \
-                     pipx go cargo npm; do
+                     pipx go cargo npm rpm-ostree bootc transactional-update snapper btrfs; do
               { echo "#!/bin/sh"
                 echo "echo \"$c \$*\" >>$LOG"
                 echo "exit 0"
               } >"$SHIM/$c"
               chmod +x "$SHIM/$c"
             done
+
+            # Under a forced provisioner, `rpm -q <name>` answers 1 (not installed). The
+            # variant filters its layer to names the base image lacks, and a shim that says
+            # every name is present empties that layer: R6 measured "1 package(s) layered"
+            # (the COPR/RPM extras) instead of 38. Only -q flips; -qf and the rest stay 0.
+            if [ -n "$PROVISIONER" ]; then
+              { echo "#!/bin/sh"
+                echo "echo \"rpm \$*\" >>$LOG"
+                echo "case \"\${1:-}\" in -q) exit 1 ;; esac"
+                echo "exit 0"
+              } >"$SHIM/rpm"
+              chmod +x "$SHIM/rpm"
+              BOOTSTRAP_PROVISIONER="$PROVISIONER"
+              export BOOTSTRAP_PROVISIONER
+              echo "── provisioner forced: BOOTSTRAP_PROVISIONER=$PROVISIONER (staging verbs shimmed, rpm -q answers 1) ──"
+            fi
 
             # sudo/doas drop the escalation and re-exec, so the wrapped command still reaches
             # its stub and still gets logged. Swallowing them would skip the command under test.
@@ -633,7 +691,17 @@ jobs:
             trap _shim_dump EXIT
 
             echo "── running the FULL bootstrap with provisioning stubbed ──"
-            ./bootstrap.sh
+            if [ -n "$PROVISIONER" ]; then
+              # Captured so the closing line can be asserted; printed whatever happens.
+              ./bootstrap.sh >/tmp/bootstrap.out 2>&1 || { rc=$?; cat /tmp/bootstrap.out; exit "$rc"; }
+              cat /tmp/bootstrap.out
+              if ! grep -q "reboot to apply" /tmp/bootstrap.out; then
+                echo "provisioner=$PROVISIONER was forced but the run never printed the staged closing line (reboot to apply) — the seam did not reach the staging path, so this leg tested the mutable branch" >&2
+                exit 1
+              fi
+            else
+              ./bootstrap.sh
+            fi
 
             # provision() returning is necessary but not sufficient: the bug this job exists
             # for aborted AFTER provision did its work and BEFORE wire_links, so assert the
