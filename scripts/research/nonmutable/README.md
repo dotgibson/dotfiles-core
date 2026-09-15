@@ -91,6 +91,10 @@ The major this proposal was written to plan does not come from the schema.
   `PKG_APPLY_PENDING=rpm-ostree status --pending-exit-77` / `_EXIT=77`;
   `microos.capabilities` keeps `zypper -q lu` and adds `PKG_APPLY_PENDING=test -e
   /run/reboot-needed`. The validator accepts the pair.
+- **R6** (what CI can hold) — answered, in the proposal's §5 R6 findings: containers hold
+  lint, links-only, the stubbed provision and `packages_check`; the staging path only
+  through the `BOOTSTRAP_PROVISIONER` seam the `r4/` patches carry; the real verb, the
+  reboot and the re-run are VM-only and the coverage register marks them *not covered*.
 - **The consumer change list** (R5's, and the proposal's §4 rewrite): `up` prints
   `PKG_APPLY` after a staged upgrade and counts by exit status when
   `PKG_PENDING_EXIT_*` is declared; `core-doctor`'s install hint says "layered — reboot to

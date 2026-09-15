@@ -8,8 +8,12 @@
 > has its answer (variant: the existing repo grows a second declaration and a staging
 > path, 118 + 18 and 65 + 10 lines, run on both guests; NixOS is a new repo), R5 has
 > its answer (two keys for two questions: `PKG_COUNT_PENDING` for AVAILABLE,
-> `PKG_APPLY_PENDING` for STAGED — measured, in the validator, consumer list drawn);
-> R6 is open.** This is the planning document for the
+> `PKG_APPLY_PENDING` for STAGED — measured, in the validator, consumer list drawn), and
+> R6 has its answer (containers hold lint, links-only, the stubbed provision — the staging
+> path only through a forced-provisioner seam — and `packages_check`; the real verb, the
+> reboot and the re-run are VM-only and the register must say so). The research phase is
+> complete: every exit criterion in §5 is met, and the next step is the one those criteria
+> name — flip to PROPOSED and rewrite §4 as the proposal.** This is the planning document for the
 > roadmap milestone *"the non-mutable host"* — the one theme on the roadmap with an
 > external forcing function rather than an internal cleanup. `V8-PROPOSAL.md` §10 named it
 > the right **next** major and put it out of scope *"because no work has started and the
@@ -883,6 +887,85 @@ then re-run ./bootstrap.sh once"*), `up`'s closing line (*"staged — reboot to 
 `sudo systemctl reboot`"*), and the shell-start nudge (*"󰚰 update staged — reboot to
 apply"*). The only thing that runs it is the operator.
 
+### R6 findings — what CI can hold (2026-09-15, runs 34933037546 and 34945498882)
+
+The reusable legs a target repo is born with are `bootstrap-test.yml`'s (lint,
+links-only, the opt-in provision-stub and packages-check), the weekly unstubbed
+`real-bootstrap.yml` sweep derived from the same caller, `lint-call.yml`, and the
+capability validator. All of them run in a **container** the caller names. R6 ran each
+leg's own recipe — the same shell, the same shim set, the same resolver loop — inside the
+three images (`fedora-bootc:42`, the Tumbleweed stand-in, `nixos/nix`) against the
+siblings with the R4 variant applied (`scripts/research/nonmutable-r6.sh`, the container
+workflow's `r6=true`), and once more with the host marker **forced**.
+
+**The one fact that shapes the matrix:** a container is not the host. `fedora-bootc:42`
+has no `/run/ostree-booted` and a writable `/usr`; the Tumbleweed image has no
+`transactional-update` (measured). So every container leg walks the variant's *mutable*
+branch — the dnf / zypper path — and never reaches the staging path R4 built. That is
+correct behaviour for the variant (the image-build context *is* mutable, R1 rung one)
+and useless as a test of it. The R4 patches therefore carry one seam,
+`BOOTSTRAP_PROVISIONER=atomic|transactional`, which forces the marker; with the staging
+verbs shimmed beside the reusable job's own shims, the provision-stub leg walks the
+staging path and its closing line in a container.
+
+**Measured, per leg and image:**
+
+| leg (the reusable job's recipe) | `fedora-bootc:42` + `dotfiles-Fedora` variant | Tumbleweed + `dotfiles-openSUSE` variant | `nixos/nix` + the scaffolded `dotfiles-NixOS` |
+| --- | --- | --- | --- |
+| markers in the image | `/run/ostree-booted` absent, `/usr` writable | `transactional-update` present (prep installed it), `/usr` writable | none |
+| `lint` (bash -n, `--help`) | exit 0 | exit 0 | exit 0 |
+| `links-only` + the job's assertions | exit 0, 34 linked, assertions hold | exit 0, 34 linked, assertions hold | exit 0, 28 linked, assertions hold |
+| `provision-stub`, the job's shims as they are | exit 0; intercepted `dnf`×6, `cargo`×7, `curl`×5, `go`×3 — **the dnf path** | exit 2 (the repo's strict default over stubbed optional tools); intercepted `zypper`×5 — **the zypper path** | exit 0; intercepted nothing (the starter's provision hook has nothing to stub yet) |
+| `provision-stub` + **`BOOTSTRAP_PROVISIONER`** forced + the staging verbs shimmed | exit 0; intercepted `rpm-ostree`×2, `rpm`×39; closing line *"1 package(s) layered into the next deployment — reboot to apply"* — **the staging path, in a container** | exit 2; intercepted `transactional-update`×2, `rpm`×47; closing line *"1 package(s) transacted into the next snapshot — reboot to apply"* | n/a |
+| `packages_check` with the caller's own verb | `dnf -q provides`: 38 asked, **0 unresolved**, 89 s — the same archive, the same verb, the same answer as `fedora:latest` (run 34945498882, once the resolver ran ahead of the stubbed legs) | `zypper --non-interactive install --dry-run --allow-downgrade`: 47 asked, 1 unresolved (`gawk`, already in the image — the verb's known false negative), 27 s | no per-name resolver exists |
+
+One thing the forced run measured about the *stub*, not the host: the reusable shim set
+answers `rpm -q` with exit 0, so the variant's "already in the base image" filter (R4)
+skipped every name and only the COPR / RPM layers reached `rpm-ostree` — "1 package(s)
+layered", not 38. A `provisioner:` input therefore also makes the `rpm` shim answer `-q`
+with **1**; otherwise the leg proves the closing line and not the layer.
+
+And one thing the forced run did to the *image*: the atomic branch fetches the COPR repo
+file with `curl -o` into the writable `/etc/yum.repos.d`, and the reusable shim honours
+`-o` by writing the word `shim` — after which every `dnf` call in that container fails
+with *"Error in configuration file"* (measured, runs 34935739494 and 34938554648: the
+resolver leg reported 38 of 38 unresolved until it was moved ahead of the stubbed legs).
+The reusable job never sees this because nothing runs the package manager after its
+stubbed bootstrap; a `provisioner:` leg that shares a container with anything else must
+run last, or the stubbed run must be given its own.
+
+**The matrix a target is born with**, and the gap list:
+
+| leg | mutable host today | atomic / transactional target | declarative target (NixOS) |
+| --- | --- | --- | --- |
+| `lint` (shellcheck, syntax, `--help`) | container | container | container |
+| `links-only` + assertions | container | container — unchanged, the wiring is pure shell | container |
+| `provision-stub` | container | container, **only with `provisioner: atomic` / `transactional`** (`bootstrap-test.yml` input → `BOOTSTRAP_PROVISIONER` + the staging verbs shimmed); without it the leg tests Fedora's path, not the edition's | container, with `nix-env` / `nixos-rebuild` shimmed |
+| `packages_check` | container (`dnf -q provides`, `zypper … --dry-run`) | container — the archive is the same (bootc reads Fedora's repos; MicroOS reads Tumbleweed's), so the caller's verb answers unchanged | **none**: no per-name resolver that fits the caller's `<cmd> <name>` shape; `nix eval nixpkgs#<name>` needs flakes, network and ~seconds per name |
+| `real-bootstrap` (unstubbed, weekly) | container | **VM only** — the container's `dnf` / `zypper` install for real (R1 rung one), which is the mutable path again; the staging verb needs the `rpm-ostree` daemon / btrfs snapshots | container (`nix-env -i` works in `nixos/nix`); `nixos-rebuild switch` is VM only |
+| the reboot and the re-run (R4 phase 2) | n/a | **VM only** (`research-nonmutable-vm.yml` is the only place it exists) | VM only |
+| `up` / the nudge on a staged host (R5) | n/a | **VM only** for the verbs; the consumers are pure shell over stdout + exit status and can be unit-tested with shims (R5 did) | n/a |
+| capability validator | Core CI | Core CI (both declarations of a variant; a flavour-pair test per repo) | Core CI |
+
+**What the register must say.** `scripts/fleet-coverage.sh` derives coverage from
+`uses:` lines and lets a repo declare `own` / `none` in `.github/core-gates.txt`. A variant
+repo calling `bootstrap-test.yml` with `provisioner:` set is *covered* for links-only and
+the stubbed staging path; its `real-bootstrap` cell is **not covered** and must say so —
+`real-bootstrap none the staging verb needs a booted host; the VM harness under
+scripts/research covers it on demand` — rather than reading green off a container run
+that exercised the wrong branch. That is the sentence the brief asked for: the register
+marks the VM-only legs *not covered*, with the reason, instead of green.
+
+**What Core changes for it** (the R6 entries for the §4 rewrite): `bootstrap-test.yml`
+gains a `provisioner` input (`atomic` | `transactional`; empty = mutable) that exports
+`BOOTSTRAP_PROVISIONER` into the provision-stub job and adds `rpm-ostree bootc
+transactional-update snapper btrfs` to its shim list; `fleet-bootstrap-matrix.py` skips a
+leg whose caller declares `provisioner:` (the unstubbed sweep would test the wrong path)
+and the sweep's summary names it as VM-only; `fleet-coverage.sh` learns the
+`real-bootstrap` gate so the `none` declaration has a row to sit in. The VM harness
+(`research-nonmutable-vm.yml`) stays a research tool, not a gate: 60–150 minutes a leg
+on a `ubuntu-latest` runner with KVM is a weekly measurement at most.
+
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 
 Read off the upstream manuals while the first R1 harness run was in flight (the harness
@@ -972,6 +1055,17 @@ The research phase is done when this file carries, under R1–R6, measured answe
 
 Then this file's status line changes to PROPOSED, §4 is rewritten as a proposal with a
 "What breaks" section and a per-repo runbook, and the milestone's issues are filed from it.
+
+**Met, 2026-09-15.** (1) additive — R2, unchanged by R3–R6. (2) the three declarations
+under `scripts/research/nonmutable/`, validated, with the R5 keys. (3) the lib change list
+is **empty for the variant**: every hunk R4 needed lives in the repo's own `bootstrap.sh`
+hooks and declarations, through functions the lib already has (`blib_link`,
+`blib_note_fail`, the closing hook); what Core changes is consumer-side — `60-update.zsh`,
+the maint runner, `core-doctor` (R5's list), `bootstrap-test.yml`'s `provisioner` input,
+`fleet-bootstrap-matrix.py` and `fleet-coverage.sh` (R6's), and the validator (done). The
+one lib arm the research named — `blib_set_login_shell` printing the NixOS declaration
+instead of running `chsh` — belongs to the NixOS repo's first PR, not to the variant.
+(4) R4: variant for Fedora and openSUSE, a new repo for NixOS; R3: coexist.
 
 ## 6. What breaks — if it is the major
 
