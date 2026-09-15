@@ -546,15 +546,17 @@ if [[ -s "$_MRT/apw.bash" && -s "$_MRT/apply.bash" && -s "$_MRT/priv.bash" ]]; t
     ' 2>/dev/null
   }
   _mr_atomic='PKG_APPLY_PENDING) printf "rpm-ostree status --pending-exit-77";; PKG_APPLY_PENDING_EXIT) printf 77;; PKG_APPLY) printf "sudo systemctl reboot";;'
+  # Line 4 is the boot id, EMPTY on a host with no /proc (the macOS leg) — and `$(…)` strips
+  # the trailing newlines, so the pattern ends at the verdict and must not demand a line 4.
   out="$(_mr_stg 77 '-1\n1700000000\n' "$_mr_atomic")"
   if [[ "$out" == *"update STAGED — reboot to apply (never run by this runner): sudo systemctl reboot"* &&
-    "${out#*---}" == $'\n-1\n1700000000\nstaged\n'* ]]; then
+    "${out#*---}" == $'\n-1\n1700000000\nstaged'* ]]; then
     pass "maint: a staged deployment (rc 77 = PKG_APPLY_PENDING_EXIT) writes 'staged' as cache line 3 and logs the reboot verb"
   else
     fail "maint: staged verdict — got: ${out//$'\n'/ | }"
   fi
   out="$(_mr_stg 0 '-1\n1700000000\n' "$_mr_atomic")"
-  if [[ "$out" == *"nothing staged"* && "${out#*---}" == $'\n-1\n1700000000\nidle\n'* ]]; then
+  if [[ "$out" == *"nothing staged"* && "${out#*---}" == $'\n-1\n1700000000\nidle'* ]]; then
     pass "maint: an idle host writes 'idle' as cache line 3, keeping the count and epoch"
   else
     fail "maint: idle verdict — got: ${out//$'\n'/ | }"
