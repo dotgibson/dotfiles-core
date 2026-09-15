@@ -1,19 +1,9 @@
 # Non-mutable host proposal — the fleet on a box it cannot write to
 
-> **Status: RESEARCH (opened 2026-09-14). Nothing is decided, nothing is scheduled, and no
-> consumer changes until §5's research phase reports — R1 has measured all three hosts and R2
-> has its verdict (additive; four optional keys and one conditional rule, prototyped and
-> validated), R3 has its answer (coexist: home-manager owns packages and the shell
-> declaration, the driver owns every link and the entry — measured on both hosts), R4
-> has its answer (variant: the existing repo grows a second declaration and a staging
-> path, 118 + 18 and 65 + 10 lines, run on both guests; NixOS is a new repo), R5 has
-> its answer (two keys for two questions: `PKG_COUNT_PENDING` for AVAILABLE,
-> `PKG_APPLY_PENDING` for STAGED — measured, in the validator, consumer list drawn), and
-> R6 has its answer (containers hold lint, links-only, the stubbed provision — the staging
-> path only through a forced-provisioner seam — and `packages_check`; the real verb, the
-> reboot and the re-run are VM-only and the register must say so). The research phase is
-> complete: every exit criterion in §5 is met, and the next step is the one those criteria
-> name — flip to PROPOSED and rewrite §4 as the proposal.** This is the planning document for the
+> **Status: PROPOSED (research 2026-09-14 → 2026-09-15; proposed 2026-09-15). A minor, not
+> a major: six optional capability keys (shipped), three consumer changes, one CI input,
+> two sibling variants and one new repo — §4 is the proposal, §4.6 the runbook, §5 the
+> measurements every line of it cites.** This is the planning document for the
 > roadmap milestone *"the non-mutable host"* — the one theme on the roadmap with an
 > external forcing function rather than an internal cleanup. `V8-PROPOSAL.md` §10 named it
 > the right **next** major and put it out of scope *"because no work has started and the
@@ -57,11 +47,12 @@ fleet is still installable on a 2031 desktop"* — Fedora, openSUSE and the desk
 mainstream are moving their defaults toward image-based delivery, and the fleet's Fedora
 and openSUSE repos target the mutable editions of both.
 
-What this document does **not** do is propose the schema change. §4 sketches the shape
-the milestone suggested — a `PROVISIONER` axis, `up` learning the three update verbs,
-bootstrap learning it may not be able to write where it assumes — so that §5 has something
-concrete to test. §5 is the deliverable: a research phase with measured exit criteria,
-after which this file's status line changes to PROPOSED or CLOSED.
+§4 is the proposal, written after §5's research phase measured all three hosts: a
+`PROVISIONER` axis and five more optional keys (shipped), `up` and the maint runner
+learning the staged host's two questions, the two mutable repos growing an atomic /
+transactional variant, and a NixOS repo with the home-manager boundary written down. §5
+is the record — six research items, every one measured on a booted guest — and §4 cites
+it line by line.
 
 ## 2. Current — what Core assumes today, measured
 
@@ -173,39 +164,194 @@ The row that matters most is the first: **the schema's verbs are imperative and
 synchronous, and on two of three targets the truth is "staged, reboot to apply."** That
 is a *semantic* break, not a spelling one — which is what makes it a schema question.
 
-## 4. Candidate shape — the milestone's sketch, made concrete enough to test
+## 4. Proposed — the non-mutable host, as a minor
 
-Not a proposal. The milestone suggested three moves; here they are as testable
-statements, each with the additive-vs-breaking question attached (§5 R2 settles it).
+**The verdict, in one sentence:** the fleet reaches Silverblue / bootc and Aeon / MicroOS
+by giving `dotfiles-Fedora` and `dotfiles-openSUSE` a second capability declaration and a
+staging branch in their own `bootstrap.sh`, reaches NixOS with a tenth repo, and asks
+Core for **six optional keys, three consumer changes and one CI input** — no required key
+changes meaning, no declaration re-authors, no `bootstrap-lib` change, no major. Every
+line of this section is a measured finding from §5, cited by research item.
 
-1. **A `PROVISIONER` axis:** `PROVISIONER=mutable | atomic | declarative`. Absent means
-   `mutable` (so every existing declaration is unchanged — **additive if it stays optional**).
-   Consumers branch on it: `up` prints "staged — reboot to apply" and offers the reboot
-   verb after an `atomic` upgrade; `core-doctor` reports a missing tool with the
-   target's own install path (`rpm-ostree install`, `distrobox`, "add to `home.nix`")
-   rather than `PKG_INSTALL`; `blib_set_login_shell` declines on `declarative` with the
-   declaration to add.
-2. **`up` learns the three update verbs.** Mostly *no schema change*: `PKG_UPGRADE=sudo
-   rpm-ostree upgrade`, `PKG_COUNT_PENDING=rpm-ostree upgrade --check` already fit the
-   existing keys; what does not fit is the *meaning* of the count (one image, not N
-   packages) and the *reboot* that follows. A `PKG_APPLY` key (the reboot/switch verb) and
-   a `PKG_PENDING_KIND=packages|image` hint may cover it — both optional.
-3. **Bootstrap learns it may not be able to write.** A `BOOTSTRAP_PROVISIONER` declaration
-   the driver reads: on `atomic`, run `bootstrap_provision` and then say "layered — reboot,
-   then re-run for the tools that need them" (a two-phase bootstrap, idempotent by
-   construction because every step already is); on `declarative`, skip provisioning,
-   print the declaration the repo ships (`nix/home.nix`?), and wire links only.
-   `blib_install_system_file` and `blib_set_login_shell` get a "cannot on this host" arm
-   with the target's own instruction — the exact shape `blib_login_shell_hint` already
-   has for a repo that declines to `chsh`.
+### 4.1 The schema (R2, R5 — shipped)
 
-**Where the breaking version hides.** If R1 shows that a *required* verb is wrong on
-these hosts — that `PKG_INSTALL` cannot honestly be filled in for a declarative host at
-all, say — then the schema needs a required key to change meaning or a required key to
-become conditional on `PROVISIONER`, and every one of the nine declarations re-authors
-under a `CAP_SCHEMA_VERSION`. That is the major. If R1 shows the required verbs can be
-filled honestly on all three and only the *consumers* need to learn the new keys, the
-whole thing is a minor with three new repos, the way the v8 content turned out to be.
+Six optional keys, all in `scripts/check-capabilities.sh` and
+`examples/os.capabilities.example` today, read by no consumer yet:
+
+| key | meaning | measured on |
+| --- | --- | --- |
+| `PROVISIONER=atomic\|transactional\|declarative` | absent = mutable; what a consumer branches on | all three |
+| `PKG_APPLY` | the verb that makes a staged change live — a reboot on both staged hosts | bootc, MicroOS |
+| `PKG_PENDING_EXIT_SOME` / `_NONE` | a count verb that answers by exit status | bootc (`rpm-ostree upgrade --check --unchanged-exit-77`: 77 nothing newer, 0 an update, from a registry, 0.1 s) |
+| `PKG_APPLY_PENDING` (+ `_EXIT`) | the STAGED question: is a change waiting for `PKG_APPLY`? | bootc (`rpm-ostree status --pending-exit-77`: 0 idle / 77 queued, user-runnable, 0.1 s); MicroOS (`test -e /run/reboot-needed`) |
+
+Two relaxations: `PKG_COUNT_PENDING` may be absent under `PROVISIONER=declarative` (no
+truthful unprivileged verb) and whenever `PKG_APPLY_PENDING` is declared (on an atomic
+host the AVAILABLE verb is root-only — *"AutomaticUpdateTrigger not allowed for user"* —
+so the maint runner's unattended staging asks it and the nudge reports the staged state).
+The three declarations as they would ship are `scripts/research/nonmutable/{bootc,microos,
+nixos}.capabilities`, validated. Nothing about the eight required verbs changes on any host.
+
+### 4.2 The consumers (R5)
+
+Each is a branch on a key that is absent on the nine mutable repos, so they see nothing:
+
+1. **`zsh/60-update.zsh`** — `_pkgup_notice` prints **"󰚰 update staged — reboot to apply"**
+   when `PKG_APPLY_PENDING` says staged, and skips the count line; `_pkgup_mgr` accepts a
+   declaration with no manager on PATH when `PROVISIONER` is set (NixOS today: *"none of
+   brew/pacman/dnf/zypper/apt/apk/emerge is on PATH"*); `up` prints `staged — reboot to
+   apply: <PKG_APPLY>` after a staged `PKG_UPGRADE`, and `up -n` with no count verb says
+   the host stages. Measured today: the atomic declaration turns ten `rpm-ostree status`
+   lines into *"10 updates available — run 'up' to apply"*.
+2. **`maint/dotfiles-maint.sh`** — `MAINT_UNATTENDED_UPGRADE` under `atomic` means *stage
+   only*: `rpm-ostree upgrade` runs as today, then the log says `staged — reboot to apply
+   (never run by this runner)`, and the count cache carries the `PKG_APPLY_PENDING`
+   verdict as a third line. Under `transactional` the key is absent by design (MicroOS
+   ships its own timer and rollback); under `declarative` `nixos-rebuild switch --upgrade`
+   activates and the runner treats it as mutable.
+3. **`core-doctor`** — a missing tool with `PKG_APPLY_PENDING` staged reads "layered —
+   reboot to use"; on `declarative` the hint says "add it to `home.packages` /
+   `environment.systemPackages`".
+
+**The "reboot to apply" line** is one sentence in three places, `PKG_APPLY`'s value
+printed and never run: the bootstrap's closing hint (*"N package(s) layered into the next
+deployment — reboot to apply (`sudo systemctl reboot`), then re-run ./bootstrap.sh
+once"*), `up`'s closing line, and the shell-start nudge. The only thing that runs it is
+the operator.
+
+### 4.3 The repos (R3, R4)
+
+**`dotfiles-Fedora` and `dotfiles-openSUSE` grow a variant** — the shape
+`dotfiles-openSUSE` already uses for Leap, measured end to end on booted guests:
+
+- a **host marker**, not an ID: `/run/ostree-booted` (fedora-bootc:42 reports `ID=fedora`
+  and no `VARIANT_ID`); `transactional-update` on PATH beside a read-only `/usr` (MicroOS
+  reports `ID=opensuse-microos`, `ID_LIKE` carrying `opensuse-tumbleweed`, so both of the
+  repo's existing probes pass). `BOOTSTRAP_PROVISIONER=atomic|transactional` forces the
+  marker for CI (R6).
+- a **second declaration** (`os/fedora.atomic.capabilities`, `os/opensuse.microos.capabilities`)
+  relinked by `bootstrap_wire_pre_loader`, and a flavour-pair test per repo on the model
+  of openSUSE's `test/check-flavors.sh`.
+- a **staging branch in the provision hook**: `rpm-ostree install --idempotent` over the
+  names `dnf repoquery` resolves and `rpm -q` does not already answer (a base-provided
+  name refuses the whole layer, even under `--idempotent`); one `transactional-update -n
+  --continue pkg in` over the names `zypper se` finds (without `--continue` each call
+  restarts from the *booted* snapshot and silently discards the pending one); COPR, the
+  carapace RPM and 1Password through the same verbs; `rpm --import` cannot lock a
+  read-only rpmdb, so the key goes to `/etc/pki/rpm-gpg` with `gpgkey=file://` on Fedora
+  and through `transactional-update run` on openSUSE.
+- a **closing line** that says "reboot to apply, then re-run once", because the cargo/go
+  tools behind `command -v cargo` guards are skipped on the first run by guards the repos
+  already have and picked up on the re-run.
+
+The cost: **118 code lines + an 18-line declaration delta** (Fedora), **65 + 10**
+(openSUSE) — both under the brief's ~150 bar — plus the flavour test, one registry line
+in `gen-porting-matrix.sh` (`Atomic=os/fedora.atomic.capabilities`, the Leap idiom), and a
+one-line alias fix (`dnfi` is wrong on the atomic edition). The patches, with their base
+commits, are `scripts/research/nonmutable/r4/dotfiles-{Fedora,openSUSE}.patch`; a repo PR
+starts from them. No `install/` list and no `os/*.zsh` layer forks: the atomic edition's
+packages *are* Fedora's packages.
+
+**`dotfiles-NixOS` is a new repo**, scaffolded by `new-os-repo.sh` (measured clean on a
+NixOS 25.05 guest, R1) with the boundary R3 measured written down: `configuration.nix` /
+`home.nix` own packages, the login-shell declaration (`users.users.<name>.shell`,
+`programs.zsh.enable`), tpm and PATH; **the driver owns every link and the zsh entry**, and
+`home.nix` declares no files and no `programs.zsh`. That line is not a preference: the
+driver relinks everything home-manager links, silently; home-manager tolerates the
+driver's links (it compares content) but refuses to activate over the driver's
+`$ZDOTDIR/.zshrc`, and `-b` cannot back up a foreign symlink. `blib_set_login_shell`
+prints the declaration there instead of running `chsh`; that arm is the new repo's first
+PR, not a lib change. `scripts/os-repos.txt` grows by **one**.
+
+### 4.4 CI (R6)
+
+Containers hold lint, links-only with its assertions, the stubbed provision and
+`packages_check` (bootc: `dnf -q provides`, 38 of 38; MicroOS: Tumbleweed's archive, the
+caller's verb unchanged). The stubbed provision walks the **mutable** branch in a
+container — there is no `/run/ostree-booted` and `/usr` is writable — so:
+
+- **`bootstrap-test.yml`** gains a `provisioner:` input (`atomic` | `transactional`;
+  empty = mutable) that exports `BOOTSTRAP_PROVISIONER` into the provision-stub job, adds
+  `rpm-ostree bootc transactional-update snapper btrfs` to its shim list, makes the `rpm`
+  shim answer `-q` with **1** (it answers 0 today, and the layer filter then skips every
+  name), and runs that job in its own container: the forced run writes the COPR repo file
+  through the `curl` shim and every later `dnf` in that container fails.
+- **`fleet-bootstrap-matrix.py`** skips a leg whose caller declares `provisioner:` (the
+  unstubbed weekly sweep would test the wrong branch) and names it as VM-only;
+  **`fleet-coverage.sh`** learns the `real-bootstrap` gate so a variant repo can declare
+  `real-bootstrap none the staging verb needs a booted host; scripts/research's VM harness
+  covers it on demand` — *not covered*, with the reason, never green off the wrong branch.
+- The VM harness (`research-nonmutable-vm.yml`: a bootc disk, a MicroOS cloud image, a
+  NixOS `build-vm`, 60–150 minutes a leg) stays a research tool, run on demand.
+
+### 4.5 What breaks
+
+**For the nine mutable repos: nothing.** Every existing declaration validates unchanged
+(`§9c`); every consumer change branches on an absent key; the schema does not version;
+no re-author. What changes visibly:
+
+- `PORTING-MATRIX.md`'s generated table gains the atomic and transactional columns from
+  the two variant declarations (one registry line each) and, once `dotfiles-NixOS`
+  exists, its column; `/os-package-availability` does the footnotes.
+- `new-os-repo.sh` stamps `PROVISIONER` and `PKG_APPLY` into its capability stub as
+  commented examples, and its starter `bootstrap_provision` hook shows the staging shape.
+- `bootstrap-test.yml`'s new input and the register's new gate are additive; a caller
+  that declares neither is unchanged.
+- The two variant repos exit their bootstrap **twice** on a fresh atomic or transactional
+  box (stage, reboot, re-run), and the second run builds the cargo tools — the measured
+  cost that filled a 20 GB research disk. `README`s say so.
+
+Risks the research measured and the runbook carries: `bootc upgrade` refuses a host with
+a layered package (the atomic declaration's `PKG_UPGRADE` is `rpm-ostree upgrade`, and
+stays so); a `nix flake metadata` fetch costs 140 s (no flake-lock check in the nudge);
+the atuin installer exited 1 on both staged guests, unpatched runs included (an upstream
+question, tracked separately).
+
+### 4.6 The runbook
+
+Order matters only where the ledger meets the siblings: Core's consumer and CI changes
+ship first, as minors, because a variant repo's `provisioner:` caller needs the input to
+exist on `@v7`.
+
+1. **Core — consumers** (§4.2): `60-update.zsh`, `maint/dotfiles-maint.sh`, `core-doctor`,
+   with the R5 shim replay as the unit test (the fragments are pure shell over stdout and
+   exit status). One PR, one minor.
+2. **Core — CI** (§4.4): `bootstrap-test.yml`'s `provisioner:` input and its own
+   container, `fleet-bootstrap-matrix.py`, `fleet-coverage.sh`'s `real-bootstrap` gate,
+   `new-os-repo.sh`'s stamps. One PR; the reusable workflow rides `@v7`.
+3. **`dotfiles-Fedora`** — the atomic variant from `r4/dotfiles-Fedora.patch`: the
+   declaration with the R5 keys, the hooks, `test/check-flavors.sh`, `dnfi` fixed,
+   `bootstrap.yml` gaining `provisioner: atomic` on a `fedora-bootc:42` leg beside the
+   `fedora:latest` one, `.github/core-gates.txt` declaring `real-bootstrap none …`. Then
+   Core's `gen-porting-matrix.sh` registry line and a regenerated `PORTING-MATRIX.md`.
+4. **`dotfiles-openSUSE`** — the same from `r4/dotfiles-openSUSE.patch`, on a Tumbleweed
+   leg with `provisioner: transactional`; `check-flavors.sh` grows from a pair to a
+   triple.
+5. **`dotfiles-NixOS`** — `new-os-repo.sh`, the R2 declaration, a `nix/` directory with
+   `configuration.nix` fragments and a `home.nix` that declares no files, the
+   `blib_set_login_shell` arm, `bootstrap.yml` on `nixos/nix` with links-only and a
+   stubbed provision; then `scripts/os-repos.txt` +1 and the first `make sync`.
+6. **A Core release** after each of 1–2 (the siblings pin `@v7`, so the reusable input
+   must be tagged before a caller uses it), and one after 5 (the fan-out audits the new
+   repo).
+
+Each step is an issue filed from this document; #1004 closes when this section lands.
+
+### 4.7 The open questions, answered
+
+1. *Does the escalator model survive `declarative`?* Yes, as Offense's shape:
+   `BOOTSTRAP_SU=lazy`, a provision hook that never escalates because packages are
+   declared, and `chsh` replaced by the printed declaration (R1: `chsh` takes under
+   `mutableUsers` and is the wrong tool anyway).
+2. *Is "reboot to apply" a bootstrap concern or an `up` concern?* Both, and the maint
+   runner's — the same sentence in three places (§4.2). The second bootstrap phase is
+   "just re-run" (R4, measured): the guards the repos already have skip and then pick up.
+3. *Homebrew-on-Linux as the atomic CLI answer?* Not measured, and no longer needed: the
+   atomic edition's packages are Fedora's packages, layered, and every one of them
+   resolved. Homebrew stays MacBook's row.
+4. *Which Fedora?* The research ran on `fedora-bootc:42`, whose marker and verbs are
+   Silverblue's and Kinoite's; the variant detects the marker, not the spin, so the
+   package list is the one Fedora question it always was.
 
 ## 5. The research phase
 
@@ -1067,9 +1213,10 @@ one lib arm the research named — `blib_set_login_shell` printing the NixOS dec
 instead of running `chsh` — belongs to the NixOS repo's first PR, not to the variant.
 (4) R4: variant for Fedora and openSUSE, a new repo for NixOS; R3: coexist.
 
-## 6. What breaks — if it is the major
+## 6. What breaks — if it had been the major
 
-Recorded now so the cost is visible before the research decides whether to pay it.
+Recorded when the research opened, so the cost was visible before it decided; **not
+paid**: R2 found the schema additive, and §4.5 is the list that applies.
 
 - **Every OS repo re-authors `os/*.capabilities`** under a versioned schema; the
   fan-out's audit (`§9c`) is red fleet-wide until they do — the same coordinated event
@@ -1096,6 +1243,8 @@ Recorded now so the cost is visible before the research decides whether to pay i
 - **The nvim split.** Its own document, `NVIM-SPLIT-PROPOSAL.md`.
 
 ## 8. Open questions
+
+Answered in §4.7 from the measurements; kept here as they were asked.
 
 1. **Does the escalator model survive `declarative`?** If nothing needs root on NixOS,
    `BOOTSTRAP_SU=lazy` (Offense's shape) may already be the answer — a repo whose hook
