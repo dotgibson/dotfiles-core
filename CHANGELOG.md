@@ -10,8 +10,10 @@
   transactional-update dup` / `-n pkg in` / `-n pkg rm` beside the two zypper flavours;
   every other cell is unchanged (the transactional edition is a Tumbleweed base and reads
   its archive). Registry order is render order, and the section comment says so. The
-  Fedora atomic column follows once dotgibson/dotfiles-Fedora#189 lands.
-  (`scripts/gen-porting-matrix.sh`, `PORTING-MATRIX.md`)
+  Fedora atomic column follows once dotgibson/dotfiles-Fedora#189 lands. The generator's
+  fixture fleet carries the third declaration too, so the parity suite pins a
+  three-label cell beside the one-value cell.
+  (`scripts/gen-porting-matrix.sh`, `PORTING-MATRIX.md`, `scripts/test/41-gen-matrix-parity.sh`)
 
 ## [v7.7.0] - 2026-09-15
 
