@@ -887,7 +887,7 @@ then re-run ./bootstrap.sh once"*), `up`'s closing line (*"staged — reboot to 
 `sudo systemctl reboot`"*), and the shell-start nudge (*"󰚰 update staged — reboot to
 apply"*). The only thing that runs it is the operator.
 
-### R6 findings — what CI can hold (2026-09-15, runs 34933037546 and R6_RUN2)
+### R6 findings — what CI can hold (2026-09-15, runs 34933037546 and 34945498882)
 
 The reusable legs a target repo is born with are `bootstrap-test.yml`'s (lint,
 links-only, the opt-in provision-stub and packages-check), the weekly unstubbed
@@ -917,7 +917,7 @@ staging path and its closing line in a container.
 | `links-only` + the job's assertions | exit 0, 34 linked, assertions hold | exit 0, 34 linked, assertions hold | exit 0, 28 linked, assertions hold |
 | `provision-stub`, the job's shims as they are | exit 0; intercepted `dnf`×6, `cargo`×7, `curl`×5, `go`×3 — **the dnf path** | exit 2 (the repo's strict default over stubbed optional tools); intercepted `zypper`×5 — **the zypper path** | exit 0; intercepted nothing (the starter's provision hook has nothing to stub yet) |
 | `provision-stub` + **`BOOTSTRAP_PROVISIONER`** forced + the staging verbs shimmed | exit 0; intercepted `rpm-ostree`×2, `rpm`×39; closing line *"1 package(s) layered into the next deployment — reboot to apply"* — **the staging path, in a container** | exit 2; intercepted `transactional-update`×2, `rpm`×47; closing line *"1 package(s) transacted into the next snapshot — reboot to apply"* | n/a |
-| `packages_check` with the caller's own verb | R6_PKGCHECK | `zypper --non-interactive install --dry-run --allow-downgrade`: 47 asked, 1 unresolved (`gawk`, already in the image — the verb's known false negative), 27 s | no per-name resolver exists |
+| `packages_check` with the caller's own verb | `dnf -q provides`: 38 asked, **0 unresolved**, 89 s — the same archive, the same verb, the same answer as `fedora:latest` (run 34945498882, once the resolver ran ahead of the stubbed legs) | `zypper --non-interactive install --dry-run --allow-downgrade`: 47 asked, 1 unresolved (`gawk`, already in the image — the verb's known false negative), 27 s | no per-name resolver exists |
 
 One thing the forced run measured about the *stub*, not the host: the reusable shim set
 answers `rpm -q` with exit 0, so the variant's "already in the base image" filter (R4)
