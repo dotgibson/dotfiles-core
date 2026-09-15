@@ -29,6 +29,10 @@ on:
         description: "Fleet repo ref to run (dotfiles-Fedora / dotfiles-openSUSE)"
         required: false
         default: "main"
+      r6:
+        description: "R6: inside each container, run the reusable bootstrap-test legs (lint, links-only, provision-stub, provision-stub with a forced provisioner, packages_check) against the sibling with the R4 variant applied"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -154,6 +158,7 @@ jobs:
           PREP: ${{ matrix.prep }}
           TARGET: ${{ matrix.target }}
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
+          R6: ${{ github.event.inputs.r6 || 'false' }}
         run: |
           set -euo pipefail
           mkdir -p research-out
@@ -165,6 +170,34 @@ jobs:
             command -v bash >/dev/null 2>&1 || { echo "no bash after prep — cannot run the probe" >&2; exit 0; }
             bash scripts/research/nonmutable-host.sh "$1" --out "/w/research-out/$1.md" --repo-ref "$2"
           ' "$PREP" "$TARGET" "$REPO_REF" || true
+          if [ "$R6" = "true" ]; then
+            # R6: the reusable legs' recipes, inside the same image, against the sibling
+            # with the R4 variant applied (the NixOS repo is scaffolded, as R1 does it).
+            case "$TARGET" in
+              bootc)   repo=dotfiles-Fedora;   resolve='dnf -q provides' ;;
+              microos) repo=dotfiles-openSUSE; resolve='zypper --non-interactive install --dry-run --allow-downgrade' ;;
+              nixos)   repo=''; resolve='' ;;
+            esac
+            docker run --rm -v "$PWD:/w" -w /w -e HOME=/root "$IMAGE" sh -c '
+              set -u
+              n=0; until sh -c "$0"; do n=$((n+1)); [ "$n" -ge 3 ] && break; sleep $((n*10)); done
+              command -v bash >/dev/null 2>&1 || { echo "no bash after prep" >&2; exit 0; }
+              t="$1"; repo="$2"; ref="$3"; resolve="$4"
+              if [ -n "$repo" ]; then
+                git clone -q --depth=1 --branch "$ref" "https://github.com/dotgibson/$repo.git" /tmp/r6-repo
+                patch="/w/scripts/research/nonmutable/r4/$repo.patch"
+              else
+                env -u CORE_JSON bash scripts/new-os-repo.sh --no-vendor NixOS /tmp/r6-repo >/dev/null 2>&1
+                mkdir -p /tmp/r6-repo/core/scripts/lib
+                for d in zsh tmux starship nvim git mise lib bin; do [ -d "$d" ] && cp -r "$d" /tmp/r6-repo/core/; done
+                cp scripts/lib/common.sh /tmp/r6-repo/core/scripts/lib/; cp core.version /tmp/r6-repo/core/
+                cp scripts/research/nonmutable/nixos.capabilities /tmp/r6-repo/os/nixos.capabilities
+                (cd /tmp/r6-repo && git init -q && git add -A >/dev/null && git -c user.email=r@x -c user.name=r commit -q -m seed)
+                patch=""
+              fi
+              bash scripts/research/nonmutable-r6.sh "$t" --repo-dir /tmp/r6-repo ${patch:+--patch "$patch"} ${resolve:+--resolve "$resolve"} --out "/w/research-out/r6-$t.md"
+            ' "$PREP" "$TARGET" "$REPO_REF" "$repo" "$resolve" || true
+          fi
           ls -la research-out
           [ -s "research-out/$TARGET.md" ] || { echo "# R1 — $TARGET" > "research-out/$TARGET.md"; echo "" >> "research-out/$TARGET.md"; echo "**No report: the probe did not run in $IMAGE** (prep or bash missing — see the job log)." >> "research-out/$TARGET.md"; }
 
@@ -179,5 +212,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: r1-${{ matrix.target }}
-          path: research-out/${{ matrix.target }}.md
+          path: |
+            research-out/${{ matrix.target }}.md
+            research-out/r6-${{ matrix.target }}.md
           retention-days: 30
