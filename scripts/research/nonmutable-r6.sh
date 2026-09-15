@@ -106,8 +106,25 @@ resolve_all() { # the reusable resolver loop, as bootstrap-test.yml runs it
   . core/lib/bootstrap-lib.sh
   blib_read_pkgs_into pkgs install/packages.txt || return 1
   echo ":: resolving ${#pkgs[@]} names with: $resolve"
-  for p in "${pkgs[@]}"; do n=$((n + 1)); if ! $resolve "$p" >/dev/null 2>&1; then echo "  UNRESOLVED: $p"; unresolved="$unresolved $p"; fi; done
+  local first_out=""
+  for p in "${pkgs[@]}"; do
+    n=$((n + 1))
+    if ! out="$($resolve "$p" 2>&1)"; then
+      echo "  UNRESOLVED: $p"; unresolved="$unresolved $p"
+      [[ -n "$first_out" ]] || first_out="$(printf '%s' "$out" | tail -n 6)"
+    fi
+  done
   echo ":: $n asked, $(echo "$unresolved" | wc -w | tr -d ' ') unresolved:$unresolved"
+  if [[ -n "$unresolved" ]]; then
+    # the reusable job prints the tail of the failing output; so do we, plus the
+    # resolver's version and the two neighbouring verbs, for the first miss
+    local p1; read -r p1 _ <<<"${unresolved# }"
+    echo ":: first miss ($p1), tail of its output:"; printf '%s\n' "$first_out" | sed 's/^/      | /'
+    echo ":: resolver version: $($(printf '%s' "$resolve" | cut -d' ' -f1) --version 2>&1 | head -1)"
+    case "$resolve" in
+    dnf*) echo ":: dnf repoquery $p1 → exit $(dnf -q repoquery "$p1" >/dev/null 2>&1; echo $?); dnf repoquery --whatprovides $p1 → exit $(dnf -q repoquery --whatprovides "$p1" >/dev/null 2>&1; echo $?); dnf provides $p1 (no -q) → exit $(dnf provides "$p1" >/dev/null 2>&1; echo $?)" ;;
+    esac
+  fi
   [[ -z "$unresolved" ]]
 }
 if [[ -n "$resolve" ]]; then
