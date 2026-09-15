@@ -70,7 +70,7 @@ leg "links-only + the reusable job's assertions" "$rc" "$( ((rc == 0)) && [[ -z 
 # ── packages_check ──────────────────────────────────────────────────────────
 resolve_all() { # the reusable resolver loop, as bootstrap-test.yml runs it
   local -a pkgs=()
-  local p n=0 unresolved=""
+  local p n=0 unresolved="" out=""   # `out` is the REPORT PATH globally — keep the verb's output local
   # shellcheck disable=SC1091
   . core/lib/bootstrap-lib.sh
   blib_read_pkgs_into pkgs install/packages.txt || return 1
