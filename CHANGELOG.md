@@ -23,6 +23,15 @@
   bootc origin). (`scripts/check-capabilities.sh`, `examples/os.capabilities.example`,
   `scripts/test/55-capabilities.sh`)
 
+- **The R6 harness for the non-mutable host research, and the research phase's close**
+  (#1004). `scripts/research/nonmutable-r6.sh` runs the reusable `bootstrap-test.yml` legs'
+  own recipes inside the three container images against the R4 variant, plus the same
+  stubbed run with `BOOTSTRAP_PROVISIONER` forced — the seam the variant patches carry so
+  a container can reach the staging path at all; `research-nonmutable.yml`'s `r6=true`
+  drives it. `NON-MUTABLE-HOST-PROPOSAL.md` §5 carries the CI matrix a target is born
+  with, the VM-only gap list, and the note that every exit criterion is met — the next
+  step is the §4 rewrite to PROPOSED.
+
 ### Fixed
 
 - **The `~/.zshrc` loader's backup is counted** (#1026). `blib_write_zshrc_loader` backed up
