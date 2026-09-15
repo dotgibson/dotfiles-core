@@ -62,42 +62,11 @@ grep -q 'dotfiles-managed v4' "$h1/.zshrc" 2>/dev/null || miss="$miss zshrc-unma
 [[ -f core/mise/config.toml ]] && { [[ -f "$h1/.config/mise/config.toml" && ! -L "$h1/.config/mise/config.toml" ]] || miss="$miss mise-not-adopted"; }
 leg "links-only + the reusable job's assertions" "$rc" "$( ((rc == 0)) && [[ -z "$miss" ]] && echo "pass — $(grep -o '[0-9]* linked' "$l" | tail -1), assertions hold" || echo "FAILED —${miss:- see log}")"
 
-# ── the reusable provision-stub shim set, verbatim in spirit ────────────────
-# shellcheck disable=SC2016  # the shim bodies are written to files; they expand when run
-mkshims() { # <dir> <log> [extra cmds…]
-  local d="$1" log="$2"; shift 2
-  mkdir -p "$d"; : >"$log"
-  for c in curl wget gpg gpg2; do
-    printf '#!/bin/sh\necho "%s $*" >>%s\nout=\nwhile [ $# -gt 0 ]; do case $1 in -o|--output) out=$2; shift 2 ;; --output=*) out=${1#--output=}; shift ;; *) shift ;; esac; done\n[ -n "$out" ] && { mkdir -p "$(dirname "$out")" 2>/dev/null; printf shim >"$out" 2>/dev/null; }\nexit 0\n' "$c" "$log" >"$d/$c"
-  done
-  for c in apt-get apt apt-key add-apt-repository dpkg debconf-set-selections dnf yum rpm pacman paru yay zypper apk emerge eselect layman brew snap flatpak gpgconf systemctl update-alternatives unattended-upgrade pipx go cargo npm "$@"; do
-    printf '#!/bin/sh\necho "%s $*" >>%s\nexit 0\n' "$c" "$log" >"$d/$c"
-  done
-  for c in sudo doas; do
-    printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do case $1 in -n|-E|-H|-k) shift ;; -u) shift 2 ;; --) shift; break ;; *) break ;; esac; done\n[ $# -eq 0 ] && exit 0\nexec "$@"\n' >"$d/$c"
-  done
-  chmod +x "$d"/*
-}
-stubbed() { # <label> <force-provisioner|""> [extra shims…] — full bootstrap under the shims
-  local label="$1" force="$2"; shift 2
-  local h="$work/home-$RANDOM" d="$work/shim-$RANDOM" log l rc
-  mkdir -p "$h/.config/tmux/plugins/tpm"; log="$d.log"; l="$work/run-$RANDOM.log"
-  mkshims "$d" "$log" "$@"
-  env HOME="$h" XDG_CONFIG_HOME="$h/.config" BLIB_SU= PATH="$d:$PATH" ${force:+BOOTSTRAP_PROVISIONER="$force"} ./bootstrap.sh >"$l" 2>&1; rc=$?
-  local links="" ; for link in "$h/.config/zsh/loader.zsh" "$h/.gitconfig"; do [[ -L "$link" ]] || links="$links ${link#"$h"/}"; done
-  local verbs; verbs="$(cut -d' ' -f1 "$log" | sort | uniq -c | sort -rn | head -6 | awk '{printf "%s×%s ", $2, $1}')"
-  local staged; staged="$(grep -E 'reboot to apply|layered into|transacted into|would rpm-ostree|would transactional' "$l" | head -2 | tr '\n' ' ' | cut -c1-160)"
-  leg "$label" "$rc" "links $( [[ -z "$links" ]] && echo ok || echo "MISSING$links"); intercepted: ${verbs:-nothing}; staging line: ${staged:-none}"
-  say ""; say "<details><summary>$label — what the shims intercepted (head)</summary>"; say ""; excerpt "$log" 12; say ""; say "</details>"; say ""
-  say "| leg | exit | what happened |"; say "| --- | --- | --- |"
-}
-stubbed "provision-stub (the reusable job's shims; marker absent → mutable path)" ""
-case "$target" in
-bootc)   stubbed "provision-stub, BOOTSTRAP_PROVISIONER=atomic (+ rpm-ostree, bootc shims)" atomic rpm-ostree bootc ;;
-microos) stubbed "provision-stub, BOOTSTRAP_PROVISIONER=transactional (+ transactional-update, snapper shims)" transactional transactional-update snapper btrfs ;;
-nixos)   stubbed "provision-stub (+ nix-env, nix-channel, nixos-rebuild shims)" "" nix-env nix-channel nixos-rebuild nix ;;
-esac
-
+# packages_check runs BEFORE the stubbed legs: under the forced atomic path the variant
+# writes a COPR repo file through the reusable curl shim, which drops the literal word
+# "shim" into any -o path — /etc/yum.repos.d then holds a malformed file and every later
+# dnf call fails with "Error in configuration file" (measured, run 34938554648). The
+# reusable job never notices because nothing runs dnf after its stubbed bootstrap.
 # ── packages_check ──────────────────────────────────────────────────────────
 resolve_all() { # the reusable resolver loop, as bootstrap-test.yml runs it
   local -a pkgs=()
@@ -138,6 +107,43 @@ if [[ -n "$resolve" ]]; then
 else
   leg "packages_check" "-" "no --resolve given for this target (the repo does not exist yet, or the archive has no per-name resolver)"
 fi
+
+
+# ── the reusable provision-stub shim set, verbatim in spirit ────────────────
+# shellcheck disable=SC2016  # the shim bodies are written to files; they expand when run
+mkshims() { # <dir> <log> [extra cmds…]
+  local d="$1" log="$2"; shift 2
+  mkdir -p "$d"; : >"$log"
+  for c in curl wget gpg gpg2; do
+    printf '#!/bin/sh\necho "%s $*" >>%s\nout=\nwhile [ $# -gt 0 ]; do case $1 in -o|--output) out=$2; shift 2 ;; --output=*) out=${1#--output=}; shift ;; *) shift ;; esac; done\n[ -n "$out" ] && { mkdir -p "$(dirname "$out")" 2>/dev/null; printf shim >"$out" 2>/dev/null; }\nexit 0\n' "$c" "$log" >"$d/$c"
+  done
+  for c in apt-get apt apt-key add-apt-repository dpkg debconf-set-selections dnf yum rpm pacman paru yay zypper apk emerge eselect layman brew snap flatpak gpgconf systemctl update-alternatives unattended-upgrade pipx go cargo npm "$@"; do
+    printf '#!/bin/sh\necho "%s $*" >>%s\nexit 0\n' "$c" "$log" >"$d/$c"
+  done
+  for c in sudo doas; do
+    printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do case $1 in -n|-E|-H|-k) shift ;; -u) shift 2 ;; --) shift; break ;; *) break ;; esac; done\n[ $# -eq 0 ] && exit 0\nexec "$@"\n' >"$d/$c"
+  done
+  chmod +x "$d"/*
+}
+stubbed() { # <label> <force-provisioner|""> [extra shims…] — full bootstrap under the shims
+  local label="$1" force="$2"; shift 2
+  local h="$work/home-$RANDOM" d="$work/shim-$RANDOM" log l rc
+  mkdir -p "$h/.config/tmux/plugins/tpm"; log="$d.log"; l="$work/run-$RANDOM.log"
+  mkshims "$d" "$log" "$@"
+  env HOME="$h" XDG_CONFIG_HOME="$h/.config" BLIB_SU= PATH="$d:$PATH" ${force:+BOOTSTRAP_PROVISIONER="$force"} ./bootstrap.sh >"$l" 2>&1; rc=$?
+  local links="" ; for link in "$h/.config/zsh/loader.zsh" "$h/.gitconfig"; do [[ -L "$link" ]] || links="$links ${link#"$h"/}"; done
+  local verbs; verbs="$(cut -d' ' -f1 "$log" | sort | uniq -c | sort -rn | head -6 | awk '{printf "%s×%s ", $2, $1}')"
+  local staged; staged="$(grep -E 'reboot to apply|layered into|transacted into|would rpm-ostree|would transactional' "$l" | head -2 | tr '\n' ' ' | cut -c1-160)"
+  leg "$label" "$rc" "links $( [[ -z "$links" ]] && echo ok || echo "MISSING$links"); intercepted: ${verbs:-nothing}; staging line: ${staged:-none}"
+  say ""; say "<details><summary>$label — what the shims intercepted (head)</summary>"; say ""; excerpt "$log" 12; say ""; say "</details>"; say ""
+  say "| leg | exit | what happened |"; say "| --- | --- | --- |"
+}
+stubbed "provision-stub (the reusable job's shims; marker absent → mutable path)" ""
+case "$target" in
+bootc)   stubbed "provision-stub, BOOTSTRAP_PROVISIONER=atomic (+ rpm-ostree, bootc shims)" atomic rpm-ostree bootc ;;
+microos) stubbed "provision-stub, BOOTSTRAP_PROVISIONER=transactional (+ transactional-update, snapper shims)" transactional transactional-update snapper btrfs ;;
+nixos)   stubbed "provision-stub (+ nix-env, nix-channel, nixos-rebuild shims)" "" nix-env nix-channel nixos-rebuild nix ;;
+esac
 
 h2 "Reading it"
 say "Per leg: green in a container, green only with a forced provisioner + shims, or VM-only. The R1 rung-one reports already hold the UNSTUBBED container run for each image (the package manager works in the image-build context — that is the mutable path, not the host's)."
