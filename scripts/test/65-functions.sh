@@ -844,6 +844,34 @@ check "core-doctor's install hint offers a per-tool template, not a paste-ready 
      && [[ $out == *"sudo apt install <pkg>"* ]] \
      && [[ $out != *"sudo apt install eza"* ]] \
      && [[ $out == *"command names"* ]]'
+# THE STAGED HOST (#1049, NON-MUTABLE-HOST-PROPOSAL.md §4.2). Two declared facts change the
+# hint, both read through the same _core_cap seam. On bootc/MicroOS a change already STAGED
+# means a tool the operator layered is on no PATH until the reboot — "install with" would
+# have them install it twice; _core_cap_staged (band 02, absent from this harness, so
+# stubbed like _core_cap) is the question. On NixOS `nix-env -i` is imperative and the
+# durable fix is the declaration, so the hint says where it goes.
+check "core-doctor says 'reboot to use' when PKG_APPLY_PENDING reports a staged change" \
+  '_core_cap() { case $1 in PKG_INSTALL) print -r -- "sudo rpm-ostree install --idempotent";; PKG_APPLY) print -r -- "sudo systemctl reboot";; esac }
+   _core_cap_staged() { return 0; }
+   _core_have() { return 1; }
+   _core_doctor_present() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out == *"an update is staged"*"reboot"*"sudo systemctl reboot"* ]] \
+     && [[ $out == *"sudo rpm-ostree install --idempotent <pkg>"* ]]'
+check "core-doctor's install hint stays plain when nothing is staged (an idle probe adds no line)" \
+  '_core_cap() { case $1 in PKG_INSTALL) print -r -- "sudo rpm-ostree install --idempotent";; PKG_APPLY) print -r -- "sudo systemctl reboot";; esac }
+   _core_cap_staged() { return 1; }
+   _core_have() { return 1; }
+   _core_doctor_present() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out != *"an update is staged"* && $out != *"systemctl reboot"* ]]'
+check "core-doctor on a declarative host points at home.packages / environment.systemPackages" \
+  '_core_cap() { case $1 in PKG_INSTALL) print -r -- "nix-env -i";; PROVISIONER) print -r -- declarative;; esac }
+   _core_have() { return 1; }
+   _core_doctor_present() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out == *"home.packages"*"environment.systemPackages"*"nix-env -i <pkg>"* ]] \
+     && [[ $out != *"so install per tool"* ]]'
 # _core_wired (U1): presence != wired. The probe is true ONLY when the integration's hook
 # function is actually defined in this shell, and false for an idle/unknown one — that gap
 # is exactly what the doctor's "integrations wired" line surfaces.

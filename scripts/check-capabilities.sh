@@ -146,10 +146,11 @@ CAP_OPTIONAL=(
 #   truth. Every existing declaration keeps validating unchanged; that is the point.
 #   PROVISIONER          mutable (the default when absent) | atomic (image-based: bootc,
 #                        Silverblue) | transactional (snapshot-based: MicroOS, Aeon) |
-#                        declarative (NixOS). What a consumer WOULD branch on: `up`
-#                        printing "staged — <PKG_APPLY> to apply" after an atomic upgrade,
-#                        core-doctor phrasing an install hint the host's way, the driver
-#                        skipping the login-shell step on declarative.
+#                        declarative (NixOS). What a consumer branches on (#1049): `up`
+#                        printing "staged — reboot to apply: <PKG_APPLY>" after an atomic
+#                        or transactional upgrade, the maint runner staging only,
+#                        core-doctor phrasing an install hint the host's way, `_pkgup_mgr`
+#                        answering this token when no manager is on PATH.
 #   PKG_APPLY            the verb that makes a STAGED change live — a reboot on atomic and
 #                        transactional hosts (`sudo systemctl reboot`), absent where
 #                        PKG_UPGRADE already activates (mutable, `nixos-rebuild switch`).
@@ -171,9 +172,11 @@ CAP_OPTIONAL=(
 #                        its exit status — `rpm-ostree status --pending-exit-77` (user-
 #                        runnable, 0.2 s; EXIT=77), `test -e /run/reboot-needed` on MicroOS
 #                        (EXIT absent = 0). It needs PKG_APPLY beside it (nothing to apply
-#                        otherwise), is cheap enough to ask on every shell start, and the
-#                        nudge prints "update staged — reboot to apply" from it instead of
-#                        a count. Declaring it is the second way PKG_COUNT_PENDING may be
+#                        otherwise), is asked by the once-a-day refresh and the maint
+#                        runner (#1049: cached with the boot id, so the per-shell path
+#                        stays fork-free), and the nudge prints "update staged — reboot
+#                        to apply" from it instead of a count. Declaring it is the second
+#                        way PKG_COUNT_PENDING may be
 #                        absent: on an atomic host the AVAILABLE verb is root-only
 #                        (`rpm-ostree upgrade --check` → "AutomaticUpdateTrigger not
 #                        allowed for user", measured), so the runner's unattended staging
