@@ -15,6 +15,13 @@
 #              git, zsh), run the VM it produces, ship a scaffolded dotfiles-NixOS in, run
 #              the script with --repo-dir.
 #
+# The `r4`, `r5` and `r1cells` inputs add a second script to the guests that are already
+# booted. `r1cells` (#1052) closes R1's last three cells with
+# scripts/research/nonmutable-r1-cells.sh: `dnf search` on the bootc guest BEFORE anything
+# runs a bootstrap, `chsh` across a second NixOS generation built here and activated over
+# the shared /nix/store, and an `/etc` edit across a real `transactional-update dup` —
+# which costs the microos leg a dup and a reboot, so it runs last there.
+#
 # Each leg is `continue-on-error`: a leg that cannot boot is a finding about the harness,
 # not about the target, and the other two must still report. Manual only; never a gate.
 name: research-nonmutable-vm
@@ -36,6 +43,10 @@ on:
         default: "false"
       r5:
         description: "R5: measure the AVAILABLE / STAGED verbs, stage something small, and run Core's consumers against the variant declaration (all three guests; bootc gets a registry-backed image)"
+        required: false
+        default: "false"
+      r1cells:
+        description: "R1's three remaining cells (#1052): dnf search on a booted bootc host, chsh across a real NixOS switch, an /etc edit across transactional-update dup (adds a dup + reboot to the microos leg)"
         required: false
         default: "false"
 
@@ -117,6 +128,7 @@ jobs:
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
           R4: ${{ github.event.inputs.r4 || 'false' }}
           R5: ${{ github.event.inputs.r5 || 'false' }}
+          R1CELLS: ${{ github.event.inputs.r1cells || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
@@ -145,6 +157,16 @@ jobs:
             sshr -p 2222 research@localhost 'echo research | sudo -S -l 2>&1 | tail -8; echo "--- sudoers.d:"; echo research | sudo -S ls -la /etc/sudoers.d 2>&1; echo research | sudo -S cat /etc/sudoers.d/99-research 2>&1; echo "--- sudo -n true:"; sudo -n true 2>&1 && echo ok' || true
             echo '```'
           } >research-out/bootc-vm-sudo.md
+          if [ "$R1CELLS" = "true" ]; then
+            # #1052: PKG_SEARCH on a booted bootc host, asked BEFORE the two bootstrap
+            # passes below — deliberately. R6 found that a provision run writes a COPR repo
+            # file and breaks every later dnf, so the read-only search verb has to be asked
+            # of the stock repo set or the answer is about the harness. It runs AS THE USER,
+            # because fedora.atomic.capabilities declares PKG_SEARCH with no escalator.
+            scpr -P 2222 scripts/research/nonmutable-r1-cells.sh research@localhost:/tmp/nonmutable-r1-cells.sh
+            sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /tmp/nonmutable-r1-cells.sh bootc --user research --out /tmp/r1cells-bootc.md" || true
+            scpr -P 2222 research@localhost:/tmp/r1cells-bootc.md research-out/r1cells-bootc.md || true
+          fi
           # Two passes: as the user with sudo resolved (the realistic one), then as root.
           sshr -p 2222 research@localhost "echo research | sudo -S -v 2>/dev/null; bash /tmp/nonmutable-host.sh bootc --as-user --repo-ref '$REPO_REF' --out /tmp/bootc-user.md" || true
           sshr -p 2222 research@localhost "sudo bash /tmp/nonmutable-host.sh bootc --repo-ref '$REPO_REF' --out /tmp/bootc-root.md" || true
@@ -239,6 +261,7 @@ jobs:
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
           R4: ${{ github.event.inputs.r4 || 'false' }}
           R5: ${{ github.event.inputs.r5 || 'false' }}
+          R1CELLS: ${{ github.event.inputs.r1cells || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
@@ -285,6 +308,30 @@ jobs:
             sshr -p 2223 root@localhost "bash /root/nonmutable-r5.sh microos --user research --repo-dir /root/dotfiles-openSUSE-r5 --patch /root/dotfiles-openSUSE.patch --out /root/r5-microos.md" || true
             scpr -P 2223 root@localhost:/root/r5-microos.md research-out/r5-microos.md || true
           fi
+          if [ "$R1CELLS" = "true" ]; then
+            # #1052: an /etc edit across `transactional-update dup`. LAST in the leg, on
+            # purpose: it disables the distro's own transactional-update.timer and reboot
+            # manager (either would open a competing snapshot or reboot mid-experiment) and
+            # it moves the booted snapshot, both of which would perturb R4/R5 if it ran
+            # first. Phase 1 opens a snapshot, writes both halves of the documented
+            # collision and closes it with a real `dup`; the guest reboots onto the new
+            # snapshot; phase 2 reads /etc back. Files in /root, not /tmp — the reboot
+            # empties /tmp.
+            scpr -P 2223 scripts/research/nonmutable-r1-cells.sh root@localhost:/root/
+            timeout 60m ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR -i /tmp/research_key -p 2223 root@localhost "bash /root/nonmutable-r1-cells.sh microos --phase 1 --out /root/r1cells-microos.md" || echo "phase 1 exit=$?"
+            scpr -P 2223 root@localhost:/root/r1cells-microos.md research-out/r1cells-microos.md || true
+            # Never reboot into an OPEN transaction: if the cap killed our ssh, the dup is
+            # still running on the guest and rebooting would discard the snapshot under it.
+            # shellcheck disable=SC2016  # the $(seq …) is the GUEST's, expanded there
+            if sshr -p 2223 root@localhost 'for _ in $(seq 1 60); do pgrep -x transactional-update >/dev/null || exit 0; sleep 10; done; exit 1'; then
+              sshr -p 2223 root@localhost 'systemctl reboot' 2>/dev/null || true
+              sleep 30; wait_ssh || { echo "no ssh after the dup reboot"; tail -40 microos-serial.log; }
+              sshr -p 2223 root@localhost "bash /root/nonmutable-r1-cells.sh microos --phase 2 --out /root/r1cells-microos.md" || true
+              scpr -P 2223 root@localhost:/root/r1cells-microos.md research-out/r1cells-microos.md || true
+            else
+              echo "transactional-update still running past the cap — phase 2 abandoned, phase 1's report stands"
+            fi
+          fi
           ls -la research-out
       - name: Summary + artifact
         if: always()
@@ -322,6 +369,8 @@ jobs:
           sudo systemctl is-active nix-daemon.socket nix-daemon.service || true
           ssh-keygen -t ed25519 -N '' -f /tmp/research_key -q
       - name: Build the NixOS VM (sshd + key, git, zsh) and scaffold dotfiles-NixOS on the runner
+        env:
+          R1CELLS: ${{ github.event.inputs.r1cells || 'false' }}
         run: |
           set -euo pipefail
           . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
@@ -354,9 +403,31 @@ jobs:
               -I home-manager=https://github.com/nix-community/home-manager/archive/release-25.05.tar.gz \
               -o nixos-vm 2>&1 | tail -15
           ls nixos-vm/bin
+          if [ "$R1CELLS" = "true" ]; then
+            # #1052: the chsh-across-a-switch cell needs a REAL switch, and a `build-vm`
+            # guest carries no /etc/nixos/configuration.nix — which is exactly why that cell
+            # was still open (the proposal records `nixos-rebuild dry-build` exiting 1 there
+            # as a harness fact, not a target one). So build a SECOND generation HERE, on the
+            # runner, and hand the guest its store path: the VM shares this /nix/store, so it
+            # activates without evaluating, fetching or building anything of its own.
+            #
+            # It is the same configuration plus one environment.etc entry — imported, not
+            # copied, so the authorized key and sshd cannot drift out of it. sshd's unit is
+            # therefore byte-identical and activation does not restart it, which is what
+            # keeps the guest's ssh session alive across the switch.
+            printf '{ ... }: {\n  imports = [ ./configuration.nix ];\n  environment.etc."research-generation".text = "2";\n}\n' >configuration-next.nix
+            DOTFILES_REPO=/root/dotfiles-NixOS DOTFILES_BUILD=/tmp/dotfiles-NixOS DOTFILES_OS=nixos \
+              nix-build '<nixpkgs/nixos>' -A system -I nixos-config=./configuration-next.nix \
+                -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz \
+                -I home-manager=https://github.com/nix-community/home-manager/archive/release-25.05.tar.gz \
+                -o nixos-next 2>&1 | tail -5
+            readlink -f nixos-next >nixos-next-path
+            cat nixos-next-path
+          fi
       - name: Boot it and run the probe over ssh
         env:
           R5: ${{ github.event.inputs.r5 || 'false' }}
+          R1CELLS: ${{ github.event.inputs.r1cells || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
@@ -381,6 +452,19 @@ jobs:
             scpr -P 2224 scripts/research/nonmutable-r5.sh scripts/research/nonmutable/nixos.capabilities root@localhost:/root/
             sshr -p 2224 root@localhost "useradd -m research 2>/dev/null || true; cp /root/nixos.capabilities /root/dotfiles-NixOS/os/nixos.capabilities; bash /root/nonmutable-r5.sh nixos --user research --repo-dir /root/dotfiles-NixOS --out /root/r5-nixos.md" || true
             scpr -P 2224 root@localhost:/root/r5-nixos.md research-out/r5-nixos.md || true
+          fi
+          if [ "$R1CELLS" = "true" ]; then
+            # #1052: chsh across a real switch. The second generation was built in the
+            # previous step; the guest reaches it over the shared /nix/store, so `--next-
+            # system` is a path, not a payload. Without it the script still answers, by
+            # replaying this generation's activation — and says in the report that that is
+            # a stand-in.
+            # A store path never contains a space, so it needs no quoting on the guest side.
+            next_arg=""
+            if [ -s nixos-next-path ]; then next_arg="--next-system $(cat nixos-next-path)"; fi
+            scpr -P 2224 scripts/research/nonmutable-r1-cells.sh root@localhost:/root/
+            sshr -p 2224 root@localhost "bash /root/nonmutable-r1-cells.sh nixos --user research $next_arg --out /root/r1cells-nixos.md" || true
+            scpr -P 2224 root@localhost:/root/r1cells-nixos.md research-out/r1cells-nixos.md || true
           fi
           ls -la research-out
       - name: Summary + artifact
