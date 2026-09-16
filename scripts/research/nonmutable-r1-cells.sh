@@ -433,7 +433,17 @@ microos_phase2() {
   say "| \`/etc/research-before\` | running, before the snapshot (the baseline — it was already inside the snapshot when that was made) | \`$(cat /etc/research-before 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-before 2>/dev/null)" == running-before ]] && echo "**carried**, as it must be — the marker mechanism works" || echo "**LOST — even the baseline did not survive; nothing below is readable**") |"
   say "| \`/etc/research-snapshot\` | the snapshot only | \`$(cat /etc/research-snapshot 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-snapshot 2>/dev/null)" == snapshot ]] && echo "**live** — the guest really booted the snapshot this run wrote" || echo "**ABSENT — the guest did not boot that snapshot**") |"
   say "| \`/etc/research-after\` | running, after the snapshot opened — **this is the documented claim** | \`$(cat /etc/research-after 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-after 2>/dev/null)" == running-after ]] && echo "**carried** — *\"changes applied to the currently running system will be visible in the new system\"*, measured" || echo "**LOST — the documented claim does not hold**, which is a larger finding than the collision below") |"
-  say "| \`/etc/research-collide\` | all three moments | \`$collide\` | $(case "$collide" in snapshot) echo "**the loss case, confirmed** — the snapshot's copy won and the later running edit is gone" ;; running-after) echo "the running edit won — the documented loss case did NOT fire here" ;; running-before) echo "**neither later write survived**" ;; *) echo "**absent** — never reached the new \`/etc\`" ;; esac) |"
+  # Hoisted out of the `say` string rather than inlined as $(case …): macOS ships bash 3.2
+  # (PORTABILITY.md §1, and the audit matrix runs it), whose parser cannot read a `case`
+  # inside a command substitution inside double quotes. `bash -n` on that leg is the gate.
+  local collide_verdict
+  case "$collide" in
+  snapshot) collide_verdict="**the loss case, confirmed** — the snapshot's copy won and the later running edit is gone" ;;
+  running-after) collide_verdict="the running edit won — the documented loss case did NOT fire here" ;;
+  running-before) collide_verdict="**neither later write survived**" ;;
+  *) collide_verdict="**absent** — never reached the new \`/etc\`" ;;
+  esac
+  say "| \`/etc/research-collide\` | all three moments | \`$collide\` | $collide_verdict |"
   say "| \`/etc/shells\` | all three moments | before: **$before_marker**; snapshot: **$snap_marker**; after: **$after_marker** | $shells_verdict |"
   local shell_verdict
   if [[ -z "$zsh_path" ]]; then
