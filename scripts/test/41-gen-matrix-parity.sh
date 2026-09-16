@@ -81,7 +81,7 @@ if have git; then
       done
       printf 'hand-authored below the last block\n'
     } >"$GPR/PORTING-MATRIX.md"
-    for r in MacBook Fedora Arch openSUSE Alpine Gentoo Debian; do
+    for r in MacBook Fedora Arch openSUSE Alpine Gentoo NixOS Debian; do
       mkdir -p "$GPF/dotfiles-$r/.git" "$GPF/dotfiles-$r/os" "$GPF/dotfiles-$r/install" "$GPF/dotfiles-$r/scripts"
     done
     _gp_caps "$GPF/dotfiles-MacBook/os/macos.capabilities" brew
@@ -104,6 +104,24 @@ if have git; then
       -e 's/^PKG_REMOVE=zypper remove$/PKG_REMOVE=transactional-update -n pkg rm/' \
       "$GPF/dotfiles-openSUSE/os/opensuse.microos.capabilities" && rm -f "$GPF/dotfiles-openSUSE/os/opensuse.microos.capabilities.bak"
     sed -i.bak 's/^PKG_SEARCH=apk search$/PKG_SEARCH=apk search -v|cat/' "$GPF/dotfiles-Alpine/os/alpine.capabilities" && rm -f "$GPF/dotfiles-Alpine/os/alpine.capabilities.bak"
+    # ── the two declarations with NO PKG_COUNT_PENDING ───────────────────────────────
+    # Both are legal: scripts/check-capabilities.sh relaxes that key under
+    # PROVISIONER=declarative and whenever PKG_APPLY_PENDING is declared beside it. Before
+    # #1065 the generator refused both with `<col> declares no PKG_COUNT_PENDING` and
+    # exit 2, which is why the Fedora atomic column could not be registered at all.
+    #
+    # ATOMIC (dotfiles-Fedora#189): drops the count verb, declares the staged probe. Its
+    # column therefore renders TWO labels, and the atomic half is a verb plus a tail.
+    _gp_caps "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities" rpm-ostree
+    sed -i.bak -e '/^PKG_COUNT_PENDING=/d' \
+      -e 's/^SCHEDULER=none$/PROVISIONER=atomic\nPKG_APPLY=rpm-ostree apply\nPKG_APPLY_PENDING=rpm-ostree staged\nSCHEDULER=none/' \
+      "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities" && rm -f "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities.bak"
+    # DECLARATIVE (dotfiles-NixOS): drops the count verb and declares NO probe either —
+    # packages-pending is not a thing the host knows, so the cell is a bare dash.
+    _gp_caps "$GPF/dotfiles-NixOS/os/nixos.capabilities" nix
+    sed -i.bak -e '/^PKG_COUNT_PENDING=/d' \
+      -e 's/^SCHEDULER=none$/PROVISIONER=declarative\nSCHEDULER=none/' \
+      "$GPF/dotfiles-NixOS/os/nixos.capabilities" && rm -f "$GPF/dotfiles-NixOS/os/nixos.capabilities.bak"
     # The tier filter the generator sources: the same function dotfiles-Debian ships.
     cat >"$GPF/dotfiles-Debian/scripts/pkg-filter.sh" <<'PF'
 pkg_filter_lines() {
@@ -358,6 +376,53 @@ EOF
   else
     fail "gen-porting-matrix: a missing PKG_* key was not caught as 2"
   fi
+
+  # ── THE ABSENT COUNT VERB, all four arms (#1065 follow-up; the atomic + NixOS columns) ──
+  # scripts/check-capabilities.sh permits PKG_COUNT_PENDING to be missing in exactly two
+  # cases, and the generator renders a cell in exactly those two. The assertion ABOVE is the
+  # other half and the more important one: it must keep failing, because the whole risk of
+  # this relaxation is that it turns "a declaration lost a verb" into a dash in a green
+  # table. Do not weaken it — the four arms below only have value while it holds.
+  _gp_fixture && _gp_run >/dev/null
+  _gp_abs_out="$(_gp_out)"
+  # (1) STAGED: the count verb is gone but PKG_APPLY_PENDING is declared, so the cell shows
+  # the verb the host DOES have, with the question it answers outside the code span.
+  if grep -qE '^\| count-pending .*Atomic: `rpm-ostree staged` \(staged\?\)' "$GPR/PORTING-MATRIX.md"; then
+    pass "gen-porting-matrix: an atomic declaration with no count verb renders its staged probe, tailed"
+  else
+    fail "gen-porting-matrix: the atomic count-pending cell is not the staged probe — got: $(grep -m1 '^| count-pending' "$GPR/PORTING-MATRIX.md")"
+  fi
+  # (2) DECLARATIVE: no count verb and no probe either — a bare dash, and NOT a code span,
+  # because there is no verb to put in one.
+  if grep -qE '^\| count-pending .*\| — +\|' "$GPR/PORTING-MATRIX.md" &&
+    ! grep -qE '^\| count-pending .*`—`' "$GPR/PORTING-MATRIX.md"; then
+    pass "gen-porting-matrix: a declarative declaration with no count verb renders a bare dash, not a code span"
+  else
+    fail "gen-porting-matrix: the declarative count-pending cell is not a bare dash — got: $(grep -m1 '^| count-pending' "$GPR/PORTING-MATRIX.md")"
+  fi
+  # (3) THE BOUNDARY. Drop the probe from the atomic declaration too and NEITHER relaxation
+  # applies: that is an incomplete mutable declaration, and it must fail exactly as Arch
+  # does above — named, with the reason, never a dash.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak '/^PKG_APPLY_PENDING=/d' "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities" && rm -f "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities.bak"
+  _gp_nrelax_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] &&
+    grep -q 'fedora (Atomic) declares no PKG_COUNT_PENDING and nothing that permits its absence' <<<"$_gp_nrelax_out"; then
+    pass "gen-porting-matrix: no count verb AND no probe is still 2, naming the column and its label"
+  else
+    fail "gen-porting-matrix: a declaration with neither the count verb nor a probe was rendered instead of refused (out: $(head -n 1 <<<"$_gp_nrelax_out"))"
+  fi
+  # (4) THE RELAXATION IS ONE KEY WIDE. PROVISIONER=declarative excuses PKG_COUNT_PENDING
+  # and nothing else: a declarative host that also loses PKG_SEARCH is still a refusal.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak '/^PKG_SEARCH=/d' "$GPF/dotfiles-NixOS/os/nixos.capabilities" && rm -f "$GPF/dotfiles-NixOS/os/nixos.capabilities.bak"
+  _gp_wide_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'nixos declares no PKG_SEARCH' <<<"$_gp_wide_out"; then
+    pass "gen-porting-matrix: PROVISIONER=declarative excuses the count verb and nothing else"
+  else
+    fail "gen-porting-matrix: a declarative declaration missing PKG_SEARCH was not refused (out: $(head -n 1 <<<"$_gp_wide_out"))"
+  fi
+  unset _gp_abs_out _gp_nrelax_out _gp_wide_out
 
   # UNCOVERED — a sibling not checked out is 3, names the repo, and writes nothing.
   _gp_fixture && _gp_run >/dev/null
