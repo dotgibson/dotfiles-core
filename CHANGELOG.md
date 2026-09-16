@@ -1,5 +1,45 @@
 ## [Unreleased]
 
+### Changed
+
+- **nvim plugin pins move forward for five plugins.** `fzf-lua`, `gitsigns.nvim`,
+  `nvim-tree.lua`, `render-markdown.nvim` and `schemastore.nvim` advance to upstream HEAD —
+  the set a 2026-09-16 re-run of the fleet health board's signals (#794) found stale, four
+  days after #965 rolled the previous one. The other three signals were green on the same
+  run: all **ten** vendored `core/` trees pristine at `v7.9.0` (the tables count
+  `dotfiles-NixOS` for the first time, #1064); every repo current except `dotfiles-Windows`,
+  whose 28-commit gap is its Tuesday `nvim-sync` cron rather than drift — the one Core
+  commit in the range that touches `nvim/` landed after this week's run; and all eight zsh
+  plugin pins current.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`,
+  `behind_by=0` in all five), and each range was read before promotion:
+
+  - **`fzf-lua`** `05e44d3` → `02bc882`, 3 commits: a `keymap_edit` action fix in
+    `path.lua`, emmylua 0.25.1 type-lint fixes, CI vimdoc autogen. The fix lands on a
+    picker Core binds (`require("fzf-lua").keymaps`) — editing a mapping from that picker
+    now resolves its source location.
+  - **`gitsigns.nvim`** `f2421c5` → `8d79f24`, 9 commits: a unified diff panel (staging,
+    cursor preservation, `--diff=none`), `nowait` blame bindings, and
+    `refactor(compat)!: drop support for Neovim 0.10`. The breaking commit is inert here —
+    the fleet floor is Neovim 0.12.0 (`scripts/tool-versions.env`, `PORTING-MATRIX.md`).
+    `M.diff` gained an `opts` parameter ahead of its callback, with an `@overload` for the
+    old arity; Core does not call it. All eight entry points Core does bind are
+    **byte-identical** across the range: `nav_hunk`, `stage_hunk`, `reset_hunk`,
+    `stage_buffer`, `preview_hunk`, `blame_line`, `diffthis` and `:Gitsigns select_hunk`.
+  - **`nvim-tree.lua`** `882c54f` → `8d81449`, 1 commit: `experimental.session_restore_nvim`
+    flips to `true` by default. It requires Neovim 0.13+, so it is inert at the fleet's
+    floor; when the floor crosses it, it restores tree buffers for the sessions
+    `persistence.nvim` already saves rather than competing with them. Core sets no
+    `experimental` key, so it takes the default either way.
+  - **`render-markdown.nvim`** `a778444` → `640a3ec`, 1 commit: the 8.14.0 release commit
+    alone — changelog, doc date, `M.version` string, tests. Its headline feature
+    (multiline table cells) was already at the pin this replaces.
+  - **`schemastore.nvim`** `72d144a` → `71cd030`, 3 commits: two catalog refreshes plus a
+    workflow change that drops a PAT. Data and `.github/` only.
+
+  Nothing renames or removes an API Core calls.
+
 ## [v7.9.0] - 2026-09-16
 
 ### Added
