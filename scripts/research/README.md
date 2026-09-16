@@ -1,4 +1,4 @@
-# scripts/research/ — research apparatus: the atuin daemon guard (archived, #687) and the non-mutable host (R1, #1004)
+# scripts/research/ — research apparatus: the atuin daemon guard (archived, #687) and the non-mutable host (archived, R1–R6, #1004)
 
 These scripts answered a question once, and the answer is recorded. They are kept so the
 question can be **re-asked on purpose**, not so it is re-asked on a clock.
@@ -14,7 +14,13 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
 - **`lib/atuin-db.sh`** — the one row-count SQL and WAL checkpoint both scripts read atuin's
   history DB with. Sourced, mode 100644, never run.
 
-## The non-mutable host (R1, `NON-MUTABLE-HOST-PROPOSAL.md` §5, #1004)
+## The non-mutable host (archived, R1–R6, `NON-MUTABLE-HOST-PROPOSAL.md` §5, #1004)
+
+**The phase is closed.** Every item R1–R6 asked is measured, R1's last three cells closed
+on 2026-09-16 (#1052), the §4.6 runbook landed, and the proposal is now a SHIPPED record.
+These scripts stay for the same reason `verify-atuin-guard.sh` does — so the question can
+be **re-asked on purpose**. Nothing schedules them: both `research-nonmutable.yml` and
+`research-nonmutable-vm.yml` are `workflow_dispatch` only, and neither is a gate.
 
 - **`nonmutable-host.sh <bootc|microos|nixos>`** — runs a fleet repo's bootstrap
   **unchanged** on a non-mutable target and writes a Markdown report: what the host is
@@ -28,9 +34,12 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   findings are read by a person and recorded in the proposal.
 
 - **`nonmutable/*.capabilities`** — R2's three prototype declarations (bootc, MicroOS,
-  NixOS), each validated by `scripts/check-capabilities.sh` with the four prototype keys
-  it now accepts; `nonmutable/README.md` carries the R2 verdict (additive) and what each
-  file still marks "to verify". Not fleet declarations; nothing links them.
+  NixOS), each validated by `scripts/check-capabilities.sh` with the six optional keys it
+  accepts; `nonmutable/README.md` carries the R2 verdict (additive) and what each file
+  still marks "to verify". Not fleet declarations; nothing links them — the three that
+  ship are `dotfiles-Fedora/os/fedora.atomic.capabilities`,
+  `dotfiles-openSUSE/os/opensuse.microos.capabilities` and
+  `dotfiles-NixOS/os/nixos.capabilities`.
 
 - **`nonmutable/home.nix`** + **`nonmutable-home-manager.sh`** — R3's probe: a
   home-manager module that tries to own what a fleet bootstrap wires (out-of-store links
