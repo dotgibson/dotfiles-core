@@ -86,6 +86,7 @@ if have git; then
     done
     _gp_caps "$GPF/dotfiles-MacBook/os/macos.capabilities" brew
     _gp_caps "$GPF/dotfiles-Fedora/os/fedora.capabilities" dnf
+    _gp_caps "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities" rpm-ostree
     _gp_caps "$GPF/dotfiles-Arch/os/arch.capabilities" pacman
     _gp_caps "$GPF/dotfiles-openSUSE/os/opensuse.capabilities" zypper
     _gp_caps "$GPF/dotfiles-openSUSE/os/opensuse.leap.capabilities" zypper
@@ -96,6 +97,11 @@ if have git; then
     _gp_caps "$GPF/dotfiles-Debian/os/debian.kali.capabilities" apt
     # The Leap/Tumbleweed pair disagrees on exactly one verb; one value carries a pipe.
     sed -i.bak 's/^PKG_UPGRADE=zypper upgrade$/PKG_UPGRADE=zypper dup/' "$GPF/dotfiles-openSUSE/os/opensuse.capabilities" && rm -f "$GPF/dotfiles-openSUSE/os/opensuse.capabilities.bak"
+    # Fedora's atomic second (dotfiles-Fedora#186): staged verbs, and NO count verb — the
+    # schema lets PKG_APPLY_PENDING stand in for it, so the count-pending cell must render
+    # the staged probe, not refuse.
+    sed -i.bak -e '/^PKG_COUNT_PENDING=/d' "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities" && rm -f "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities.bak"
+    printf 'PROVISIONER=atomic\nPKG_APPLY=systemctl reboot\nPKG_APPLY_PENDING=rpm-ostree status --pending-exit-77\nPKG_APPLY_PENDING_EXIT=77\n' >>"$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities"
     # The transactional third (dotfiles-openSUSE#191) differs on the three mutating verbs
     # and agrees on the rest — the shape the real declaration has, so the column renders
     # three labels on upgrade and still one unlabelled cell on refresh.
@@ -254,6 +260,11 @@ EOF
   else
     fail "gen-porting-matrix: an agreed value was rendered twice or labelled"
   fi
+  if _gp_row 'Workstation: `dnf pending` · Atomic: `rpm-ostree status --pending-exit-77` (staged?)' && _gp_row 'Workstation: `dnf upgrade` · Atomic: `rpm-ostree upgrade`'; then
+    pass "gen-porting-matrix: a declaration with no count verb but a PKG_APPLY_PENDING renders the staged probe, tailed (staged?)"
+  else
+    fail "gen-porting-matrix: the atomic count-pending cell did not render PKG_APPLY_PENDING with the (staged?) tail (or the upgrade cell lost its labels)"
+  fi
   if _gp_row '`emerge install <atom>`' && _gp_row '`apt install <pkg>`' && _gp_row '`brew owns <path>`³⁸'; then
     pass "gen-porting-matrix: placeholders follow the column's unit and the footnote marks follow the cell"
   else
@@ -357,6 +368,16 @@ EOF
     pass "gen-porting-matrix: a declaration missing a verb is a structural failure (2), named"
   else
     fail "gen-porting-matrix: a missing PKG_* key was not caught as 2"
+  fi
+  # The relaxation has a boundary: no count verb AND no staged probe (on a non-declarative
+  # host) is the same structural failure, named — the tail above is not a blanket pass.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak '/^PKG_APPLY_PENDING=/d' "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities" && rm -f "$GPF/dotfiles-Fedora/os/fedora.atomic.capabilities.bak"
+  _gp_key_out="$(_gp_out --check)"
+  if [[ "$(_gp_run --check)" == 2 ]] && grep -q 'fedora declares no PKG_COUNT_PENDING' <<<"$_gp_key_out"; then
+    pass "gen-porting-matrix: a missing count verb with no PKG_APPLY_PENDING beside it is still 2, named"
+  else
+    fail "gen-porting-matrix: dropping both the count verb and the staged probe was not caught as 2"
   fi
 
   # UNCOVERED — a sibling not checked out is 3, names the repo, and writes nothing.

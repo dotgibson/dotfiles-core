@@ -128,10 +128,16 @@ BLOCK_IDS="commands packages fleet-versions"
 #   `Label=path`; a column with more than one renders differing values as
 #   `Label: `v` · Label: `v``, identical values once. Registry order is render order:
 #   openSUSE lists the two zypper flavours first and the transactional edition (a
-#   Tumbleweed base that stages through transactional-update) last.
+#   Tumbleweed base that stages through transactional-update) last; Fedora's `Workstation`
+#   is the dnf file every mutable edition (Workstation, Server, WSL) links and `Atomic` is
+#   Silverblue / Kinoite / bootc — Fedora's own names for the two families.
+#   ONE KEY MAY BE ABSENT: PKG_COUNT_PENDING, where scripts/check-capabilities.sh relaxes
+#   it — a declaration carrying PKG_APPLY_PENDING (the count verb is root-only on an atomic
+#   host) renders that probe with a "(staged?)" tail, and a declarative one renders `—`.
+#   Any other missing key is still exit 2, named.
 #   unit: the word inside the install/remove placeholder — <pkg>, or <atom> on Gentoo.
 CMD_COLUMNS="macos	macOS (brew)	dotfiles-MacBook	os/macos.capabilities	pkg
-fedora	Fedora (dnf)	dotfiles-Fedora	os/fedora.capabilities	pkg
+fedora	Fedora (dnf)	dotfiles-Fedora	Workstation=os/fedora.capabilities Atomic=os/fedora.atomic.capabilities	pkg
 arch	Arch	dotfiles-Arch	os/arch.capabilities	pkg
 opensuse	openSUSE	dotfiles-openSUSE	Leap=os/opensuse.leap.capabilities Tumbleweed=os/opensuse.capabilities Transactional=os/opensuse.microos.capabilities	pkg
 alpine	Alpine	dotfiles-Alpine	os/alpine.capabilities	pkg
@@ -350,16 +356,29 @@ render_commands() {
             if ((k = index(path, "=")) > 0) { label = substr(path, 1, k - 1); path = substr(path, k + 1) }
             src = src (i > 1 ? " " : "") crepo[c] "/" path
             key = cid[c] SUBSEP label SUBSEP akey[a]
-            if (!(key in has)) { err(cid[c] " declares no " akey[a]); exit 2 }
-            v = val[key]
+            tail = ""; bare = 0
+            if (!(key in has)) {
+              # The one relaxation the schema allows (check-capabilities.sh): a declaration
+              # that carries PKG_APPLY_PENDING may omit the count verb — on an atomic host
+              # "is there something newer" is root-only, so the nudge asks the STAGED
+              # question instead; a declarative host has no truthful unprivileged count at
+              # all. Render what the host actually answers with, never a blank. (No
+              # apostrophes in here: this whole awk program is one single-quoted string.)
+              pkey = cid[c] SUBSEP label SUBSEP "PKG_APPLY_PENDING"
+              if (akey[a] == "PKG_COUNT_PENDING" && (pkey in has) && val[pkey] != "") { key = pkey; tail = " (staged?)" }
+              else if (akey[a] == "PKG_COUNT_PENDING" && val[cid[c] SUBSEP label SUBSEP "PROVISIONER"] == "declarative") { bare = 1 }
+              else { err(cid[c] " declares no " akey[a]); exit 2 }
+            }
+            v = bare ? "—" : val[key]
             if (v == "") { err(cid[c] ": " akey[a] " is empty"); exit 2 }
             if (index(v, "`")) { err(cid[c] ": " akey[a] " contains a backtick, which cannot sit inside a code span"); exit 2 }
-            if (i == 1) first = v; else if (v != first) same = 0
-            if (ph != "") v = v " " ph
-            cell = cell (i > 1 ? " · " : "") (label != "" ? label ": " : "") "`" esc(v) "`"
+            if (i == 1) first = v tail; else if (v tail != first) same = 0
+            if (ph != "" && !bare) v = v " " ph
+            cell = cell (i > 1 ? " · " : "") (label != "" ? label ": " : "") (bare ? v : "`" esc(v) "`" tail)
+            if (i == 1) firstcell = (bare ? v : "`" esc(first (ph != "" ? " " ph : "")) "`" tail)
           }
           # Every declaration agrees: one cell, no labels.
-          if (nf > 1 && same) cell = "`" esc(first (ph != "" ? " " ph : "")) "`"
+          if (nf > 1 && same) cell = firstcell
           line = line "\t" cell mark[cid[c] "/" act[a]]
           printf "commands\t%s\t%s\tderived\t%s\n", act[a], cid[c], src >> listfile
         }

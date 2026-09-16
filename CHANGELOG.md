@@ -2,17 +2,26 @@
 
 ### Changed
 
-- **`PORTING-MATRIX.md`'s openSUSE column renders the transactional edition** (runbook step
-  4 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6, dotgibson/dotfiles-openSUSE#191 / #195).
-  `scripts/gen-porting-matrix.sh`'s registry names the third declaration,
-  `Transactional=os/opensuse.microos.capabilities`, in the Leap idiom, so the commands
-  table's upgrade / install / remove cells now carry `Transactional: sudo
-  transactional-update dup` / `-n pkg in` / `-n pkg rm` beside the two zypper flavours;
-  every other cell is unchanged (the transactional edition is a Tumbleweed base and reads
-  its archive). Registry order is render order, and the section comment says so. The
-  Fedora atomic column follows once dotgibson/dotfiles-Fedora#189 lands. The generator's
-  fixture fleet carries the third declaration too, so the parity suite pins a
-  three-label cell beside the one-value cell.
+- **`PORTING-MATRIX.md` renders the staged editions — Fedora Atomic and openSUSE's
+  transactional MicroOS** (runbook steps 3–4 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6,
+  dotgibson/dotfiles-Fedora#186 / #189 and dotgibson/dotfiles-openSUSE#191 / #195).
+  `scripts/gen-porting-matrix.sh`'s registry names both variant declarations in the Leap
+  idiom — `Workstation=os/fedora.capabilities Atomic=os/fedora.atomic.capabilities`
+  (Fedora's own names for its two families; Server and WSL link the Workstation file) and
+  `Transactional=os/opensuse.microos.capabilities` after Leap and Tumbleweed — so the
+  commands table's Fedora cells carry `Atomic: sudo rpm-ostree …` on every row and the
+  openSUSE upgrade / install / remove cells carry `Transactional: sudo transactional-update
+  …`; cells every declaration agrees on still render once. The package table is
+  unchanged: both editions read their mutable sibling's archive. Registry order is render
+  order, and the section comment says so.
+- **The generator honours the schema's one relaxation.** A declaration carrying
+  `PKG_APPLY_PENDING` may omit `PKG_COUNT_PENDING` (`scripts/check-capabilities.sh`,
+  v7.6.0: the count verb is root-only on an atomic host), which used to be exit 2
+  ("declares no PKG_COUNT_PENDING") the moment such a file entered the registry. The
+  count-pending cell now renders that staged probe with a `(staged?)` tail — what the
+  nudge actually asks there — and a declarative declaration renders `—`; a missing
+  count verb with no probe beside it is still exit 2, named, and the parity suite pins
+  that boundary. The fixture fleet carries both variant declarations.
   (`scripts/gen-porting-matrix.sh`, `PORTING-MATRIX.md`, `scripts/test/41-gen-matrix-parity.sh`)
 
 ## [v7.7.0] - 2026-09-15
