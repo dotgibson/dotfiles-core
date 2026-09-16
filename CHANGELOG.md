@@ -93,6 +93,37 @@
 
 ### Changed
 
+- **Two of R1's three remaining cells are measured** (`NON-MUTABLE-HOST-PROPOSAL.md` §5,
+  #1052, run 35130669056). Both were claims a _shipped_ declaration already made.
+
+  **`dnf search` on a booted bootc host holds as declared.** A hit is exit 0 in 1.2 s **as
+  the user**, and an unprivileged `dnf -q makecache` populates the cache first — so
+  `dotfiles-Fedora/os/fedora.atomic.capabilities`'s `PKG_SEARCH=dnf search` needs no
+  escalator on an atomic host any more than on a mutable one. The read-only half of `dnf`
+  is untouched by the read-only root; only the transaction is refused. The new fact is that
+  a **miss is also exit 0**, so hit and miss are indistinguishable by status on dnf5 and a
+  consumer has to read the output. Nothing reads that status today, which is why this
+  changes no code — but it is what a future "is it available?" reader would get wrong.
+
+  **The `/etc` loss case on a transactional host is confirmed, and it lands on the driver's
+  own writes.** A file changed both inside a staged snapshot and afterwards in the running
+  system keeps only the snapshot's copy on the next boot; a running-only edit made after the
+  snapshot opened does carry forward, exactly as transactional-update(8) documents. Measured
+  with markers written at three distinguishable moments, plus the real pair: **`/etc/shells`
+  lost its post-snapshot append, and the `chsh`'d login shell kept the snapshot's value.**
+  That matters because `PKG_INSTALL` on that host _is_ a staging verb, so every provisioning
+  run leaves a snapshot open behind it and `blib_set_login_shell` writes into a copy of
+  `/etc` the next boot discards, silently. The remedy belongs in `dotfiles-openSUSE`'s
+  transactional arm, not in a declaration key, and is filed there.
+
+  Two `transactional-update` facts fell out of the same run: `dup` refuses outright when any
+  enabled repo fails to refresh (zypper exit 4) and deletes its own snapshot on the way out.
+  So the transition those markers crossed was the preceding `run` snapshot rather than a
+  completed `dup` — recorded as the weaker claim it is. Opening the snapshot _before_ the
+  update is the only reason the experiment survived the failure.
+
+  The NixOS cell (`chsh` across an activation) is still open; its leg was lost to a harness
+
 - **§3 keeps the parser's message instead of discarding it.** `bash -n` and `zsh -n` ran
   under `2>/dev/null`, so a syntax failure reported `bash syntax error: <file>` and nothing
   else — no line, no reason. When the only leg that disagrees is macOS's bash 3.2, that is

@@ -59,15 +59,19 @@ The major this proposal was written to plan does not come from the schema.
 
 ## What is still marked "to verify" inside the files
 
-All three of the cells below are what `../nonmutable-r1-cells.sh` asks (#1052), on the VM
-legs with `r1cells=true`. Until a dispatch answers them they stay "to verify" here.
+`../nonmutable-r1-cells.sh` asks these (#1052), on the VM legs with `r1cells=true`. Run
+35130669056 answered two of the three; **only the NixOS cell is still open**.
 
-- bootc: `dnf search` on a booted host (only `dnf install` was probed); `rpm-ostree
-  upgrade --check` against a registry-backed image (the research disk's origin is local).
-  `rpm-ostree install --dry-run` as root is measured (exit 0, run 34852611338).
-- MicroOS: `zypper -q list-updates` is measured on the guest (exit 0, run 34852611338);
-  what remains is whether an `/etc` edit survives `transactional-update dup`.
-- NixOS: whether `chsh` survives `nixos-rebuild switch`; `nix-locate` needs `nix-index`.
+- bootc: `dnf search` on a booted host — **measured** (exit 0 in 1.2 s as the user; a MISS
+  is also exit 0, so status cannot distinguish the two). `rpm-ostree upgrade --check`
+  against a registry-backed image — measured in R5. `rpm-ostree install --dry-run` as root
+  is measured (exit 0, run 34852611338).
+- MicroOS: `zypper -q list-updates` is measured on the guest (exit 0, run 34852611338).
+  Whether an `/etc` edit survives a staged snapshot is **measured**: it does not, when the
+  snapshot touched the same file — and the driver's own `/etc/shells` and `chsh` writes
+  are exposed to it. See the `/etc` block in `microos.capabilities`.
+- NixOS: whether `chsh` survives `nixos-rebuild switch` — **still open**; the first
+  dispatch lost the leg to a harness defect (#1078). `nix-locate` needs `nix-index`.
 
 ## What R2 hands to the next items
 

@@ -35,8 +35,13 @@ PKG_UPGRADE=sudo rpm-ostree upgrade
 PKG_INSTALL=sudo rpm-ostree install --idempotent
 PKG_REMOVE=sudo rpm-ostree uninstall
 # Read-only metadata queries work on the deployed host (dnf is present; only the
-# transaction is refused). TO VERIFY: `dnf search` on a booted host — the harness probed
-# only `dnf install`.
+# transaction is refused). MEASURED on a booted bootc guest (run 35130669056): a hit is
+# exit 0 in 1.2 s AS THE USER, and an unprivileged `dnf -q makecache` populates the cache
+# first, so the verb needs no escalator here any more than on a mutable host.
+# THE CATCH: a MISS is also exit 0 (three lines, "no matches"). Hit and miss are
+# indistinguishable by exit status on dnf5, so a consumer must read the output. No consumer
+# reads this key's status today — it renders into PORTING-MATRIX.md's verb table — but a
+# future "is it available?" reader would get it wrong by assuming the shell convention.
 PKG_SEARCH=dnf search
 PKG_OWNS=rpm -qf
 # R5 (measured): the AVAILABLE question — is a newer image upstream? — has no

@@ -69,5 +69,20 @@ TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping 
 
 # ── `/etc` on this host (measured, for the driver's arm) ──────────────────────
 # `/etc` is a per-snapshot overlay and IS writable in the running system: `chsh` took,
-# `/etc/shells` accepted an entry. Documented caveat, unmeasured: a file changed both
-# during an update and afterwards in the running system keeps only the snapshot's copy.
+# `/etc/shells` accepted an entry. The documented caveat is now MEASURED (run 35130669056)
+# and it is worse than a footnote for this fleet: a file changed both inside a staged
+# snapshot and afterwards in the running system keeps ONLY the snapshot's copy, silently,
+# on the next boot. A running-only edit made after the snapshot opened does carry forward,
+# so the asymmetry is exactly as documented.
+#
+# THE DRIVER IS EXPOSED TO IT. `PKG_INSTALL` here is a STAGING verb, so every provisioning
+# run leaves a snapshot open behind it — and `blib_set_login_shell` then appends to
+# `/etc/shells` and runs `chsh` into a copy of `/etc` the next boot discards. Both writes
+# were measured lost that way. The remedy belongs in dotfiles-openSUSE's transactional arm
+# (order the writes before the staging verb, or re-apply after PKG_APPLY), not in a
+# declaration key.
+#
+# Two `transactional-update` facts from the same run: `dup` REFUSES outright when any
+# enabled repo fails to refresh (zypper exit 4) and DELETES its own snapshot on the way
+# out — so the transition those markers crossed was the preceding `run` snapshot, not a
+# completed `dup`. The overlay mechanism does not depend on which verb opened the snapshot.
