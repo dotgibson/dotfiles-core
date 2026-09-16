@@ -734,6 +734,22 @@ This is the same overclaim already corrected once for openSUSE (`ouch`/`ast-grep
 "bootstrap.sh installs it best-effort", so a ³ with no installer behind it reads as "you
 have this" when you do not.
 
+**`ouch` changed its default unpack LOCATION in 0.8.0, and the spread in this table is what
+makes that Core's problem.** Since 0.8.0 (`ouch-org/ouch#962`) `ouch decompress foo.tar.gz`
+unpacks into `./foo/` rather than into the CWD, with a new `--here` for the old behaviour. The
+rows above are not level: openSUSE Leap ships **0.5.1**, Alpine's index **0.6.1**, GURU
+**0.8.2**, Arch **0.8.3** — so the same `extract foo.tar.gz` built two different trees on two
+supported boxes, silently and with no error on either. Core's `extract`
+(`zsh/30-functions.zsh`) pins the old semantics by **probing** `ouch decompress --help` for
+`--here` and passing it where it exists — the ²² rule below, not a version compare, and here
+the probe is also fail-safe: a build without the flag is a build that already extracts into the
+CWD. This is a Core fix, not a matrix one; the rows stay as they are. Two things it keeps
+honest — the hand-rolled `tar`/`unzip` fallback for a box with no `ouch` at all, and `extract`'s
+own tarbomb and clobber guards, both of which are written against the CWD. Separately and
+_not_ a 0.8.0 change: `ouch` writes a single decompressed `.gz`/`.bz2` into the CWD on every
+version, where `gunzip` writes next to the archive, so Core runs it from the archive's
+directory for those two formats.
+
 ²² sd **changed its default in 1.1.0**: it now processes input **line by line**, and the old
 whole-file behaviour moved behind `--across` / `-A`. The failure mode is **silent** — a pattern
 that spans a newline (`sd 'foo\nbar' baz`) matches nothing, leaves the input unchanged, and
