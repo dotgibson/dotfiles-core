@@ -68,6 +68,18 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   verbs shimmed, the seam a container needs to reach the staging path at all. The report
   is the CI matrix a target is born with and the list of what only a VM can test.
 
+- **`nonmutable-r1-cells.sh`** — the three cells R1 left unmeasured (#1052), on the VM legs
+  with `r1cells=true`: `PKG_SEARCH=dnf search` asked of a booted bootc host *before* any
+  bootstrap has touched `/etc/yum.repos.d` (R1 probed only `dnf install`, a refusal, and
+  only `dnf -q provides` in a container); `chsh` across a **second NixOS generation** built
+  on the runner and activated over the shared `/nix/store`, because a `build-vm` guest
+  carries no `configuration.nix` and that is why the cell was open; and an `/etc` edit
+  across a real `transactional-update dup`, where the collision transactional-update(8)
+  documents is forced by hand — a snapshot opened first, both halves written, then closed
+  by the `dup` — so a no-op `dup` cannot empty the experiment. Two-phase on MicroOS (the
+  reboot is the measurement); phase 2 fills in its own verdict table, including the guard
+  that says **this round measured nothing** when the booted snapshot did not move.
+
 ## The rules
 
 - **Never vendored.** None of this is in `core.manifest` or `core.vendor`, so no OS repo
