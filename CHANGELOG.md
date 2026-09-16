@@ -38,6 +38,24 @@
   subject holds parentheses — the latter excluded deliberately, because without that clamp
   a prose arm reading `echo "built in place"` supplies a second ` in ` and the rule fires
   on correct code.
+- **`sync-fanout` checks that the fleet App installation covers every target before it
+  clones anything** (#1071). The fan-out's write scope is the GitHub App's _installation_,
+  deliberately — hardcoding a repository list on the mint would be a second copy of
+  `scripts/os-repos.txt` that could drift. But that installation is
+  `repository_selection=selected` and nothing compared the two lists, so registering a repo
+  in `os-repos.txt` left half the registration undone with no gate to say so.
+
+  It shipped exactly once. `dotfiles-NixOS` joined the fleet in #1064; the v7.9.0 fan-out
+  cloned, audited and synced all ten repos and then failed on the tenth push —
+  `Permission to dotgibson/dotfiles-NixOS.git denied to dotgibson-fleet-sync[bot]` — after
+  every expensive step had already run (#1070).
+
+  A pre-flight now reads `GET /installation/repositories` with the token it has just minted
+  and fails **before the first clone**, naming each missing repo and the Organization-Owner
+  fix. The check can only live there: that endpoint refuses a user PAT, so neither a local
+  script nor a scheduled sweep can ask the question. A `check_only: true` dispatch runs the
+  two pre-flights and stops, so the scope can be checked _before_ a release instead of
+  discovered at the end of one.
 
 ### Changed
 
