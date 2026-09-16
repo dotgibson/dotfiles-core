@@ -145,6 +145,15 @@ bootc)
   probe "dnf install --assumeno tmux (the mutable verb, refused how?)" dnf install --assumeno tmux
   # And the layering verb the schema would need instead (dry: no download).
   probe "rpm-ostree install --dry-run tmux" rpm-ostree install --dry-run tmux
+  # PKG_SEARCH, which the atomic declaration still names as `dnf search`. Only the
+  # TRANSACTION is refused on a booted host ("this bootc system is configured to be
+  # read-only") — a metadata query writes nothing, so it should hold where install does
+  # not. The harness had only ever probed `dnf install` and `dnf -q provides`, which is why
+  # the cell sat "to verify" (#1052). The two bootc passes run this as the user AND as
+  # root: whether an unprivileged search can refresh the repo cache is the half that
+  # matters, because `have`/PKG_SEARCH runs as the person.
+  probe "dnf search tmux (PKG_SEARCH, the read-only half)" dnf search tmux
+  probe "dnf -q list --available tmux (search's stricter neighbour)" dnf -q list --available tmux
   ;;
 microos)
   probe "transactional-update --version" transactional-update --version
@@ -171,6 +180,19 @@ nixos)
   probe "nixos-rebuild dry-build (needs /etc/nixos/configuration.nix — a build-vm guest has none)" nixos-rebuild dry-build
   # shellcheck disable=SC2016  # the $(…) are for the guest's sh, on purpose
   probe "chsh -s zsh (mutableUsers default: does it take?)" sh -c 'chsh -s "$(command -v zsh)" "$(id -un)" && getent passwd "$(id -un)" | cut -d: -f7'
+  # … and does it SURVIVE? `users.mutableUsers` (default true) merges /etc/passwd with
+  # the generated one, and that merge is `update-users-groups.pl`, which runs from the
+  # system's ACTIVATION script and nowhere else. The build half of `nixos-rebuild switch`
+  # cannot touch /etc/passwd; the activation half is the whole question, and it is runnable
+  # against the current system in ~2 s — which is what closes the cell here, because a
+  # build-vm guest has no /etc/nixos/configuration.nix to rebuild FROM (the line above) and
+  # its store is the runner's. Re-activating an identical configuration restarts no unit,
+  # so this does not take the ssh session down with it.
+  run "switch-to-configuration test (the activation half of nixos-rebuild switch)" \
+    sh -c 'exec /run/current-system/bin/switch-to-configuration test'
+  # shellcheck disable=SC2016  # the $(…) is for the guest's sh, on purpose
+  probe "login shell AFTER activation (did the mutableUsers merge revert chsh?)" sh -c 'getent passwd "$(id -un)" | cut -d: -f7'
+  probe "users.mutableUsers as the built system declares it" sh -c 'grep -om1 "mutableUsers[^,}]*" /run/current-system/activate 2>/dev/null || echo "(not spelled in the activation script)"'
   ;;
 esac
 

@@ -68,6 +68,19 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   verbs shimmed, the seam a container needs to reach the staging path at all. The report
   is the CI matrix a target is born with and the list of what only a VM can test.
 
+- **`nonmutable-etc-dup.sh microos --phase 1|2`** — R1's last MicroOS cell, on the microos
+  guest with `etc_dup=true`: does an `/etc` edit survive a transaction? `/etc` there is a
+  per-snapshot overlay, so the transaction clones the current one into the new snapshot
+  while the running system keeps writing to the booted one — and SUSE documents the loss
+  case (a file changed on both sides keeps only the snapshot's copy) in prose that nobody
+  had measured. Phase 1 plants four sentinels around ONE transaction — written before it,
+  written before *and* after it, created only after it, plus the driver's own two writes
+  (`/etc/shells` and `chsh`) — the workflow reboots, and phase 2 reads every one back. The
+  verb is `transactional-update dup`, with a `pkg install` fallback for when the dup has
+  nothing to do and discards its snapshot; the report names whichever one it ran, because
+  a report that claims `dup` when it ran something else is how a cell gets closed wrong.
+  Phase 1 refuses a host with no `transactional-update`: it writes `/etc` and runs `chsh`.
+
 ## The rules
 
 - **Never vendored.** None of this is in `core.manifest` or `core.vendor`, so no OS repo

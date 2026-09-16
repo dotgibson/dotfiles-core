@@ -38,6 +38,10 @@ on:
         description: "R5: measure the AVAILABLE / STAGED verbs, stage something small, and run Core's consumers against the variant declaration (all three guests; bootc gets a registry-backed image)"
         required: false
         default: "false"
+      etc_dup:
+        description: "R1 leftover: does an /etc edit survive a transaction? Plants sentinels around `transactional-update dup` on the microos guest, reboots, reads them back (#1052)"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -239,6 +243,7 @@ jobs:
           REPO_REF: ${{ github.event.inputs.repo_ref || 'main' }}
           R4: ${{ github.event.inputs.r4 || 'false' }}
           R5: ${{ github.event.inputs.r5 || 'false' }}
+          ETC_DUP: ${{ github.event.inputs.etc_dup || 'false' }}
         run: |
           set -euo pipefail
           # ssh/scp to the guest: throwaway key, no known-hosts, short timeouts.
@@ -284,6 +289,28 @@ jobs:
             sshr -p 2223 root@localhost "useradd -m research 2>/dev/null || true; git clone -q --depth=1 --branch '$REPO_REF' https://github.com/dotgibson/dotfiles-openSUSE.git /root/dotfiles-openSUSE-r5" || true
             sshr -p 2223 root@localhost "bash /root/nonmutable-r5.sh microos --user research --repo-dir /root/dotfiles-openSUSE-r5 --patch /root/dotfiles-openSUSE.patch --out /root/r5-microos.md" || true
             scpr -P 2223 root@localhost:/root/r5-microos.md research-out/r5-microos.md || true
+          fi
+          if [ "$ETC_DUP" = "true" ]; then
+            # R1's last MicroOS cell (#1052): /etc is a per-snapshot overlay, and whether a
+            # write made in the RUNNING system survives the next transaction was documented
+            # in prose and never measured. Phase 1 plants sentinels on both sides of one
+            # transaction, the reboot is the measurement, phase 2 reads them back.
+            #
+            # LAST in this leg on purpose: a `dup` re-bases the whole guest, so anything
+            # after it would be measuring a different host than it thinks.
+            scpr -P 2223 scripts/research/nonmutable-etc-dup.sh root@localhost:/root/
+            # Bounded and kept alive by hand rather than through sshr: the dup inside is
+            # capped at 45 minutes by the script, and a channel that silent for that long
+            # is the one the r4 block also spells out in full.
+            timeout 50m ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 -o ServerAliveInterval=60 -o LogLevel=ERROR -i /tmp/research_key \
+              -p 2223 root@localhost "bash /root/nonmutable-etc-dup.sh microos --phase 1 --out /root/etc-dup-microos.md" \
+              || echo "phase 1 exit=$?"
+            scpr -P 2223 root@localhost:/root/etc-dup-microos.md research-out/etc-dup-microos.md || true
+            sshr -p 2223 root@localhost 'systemctl reboot' 2>/dev/null || true
+            sleep 30; wait_ssh || { echo "no ssh after the /etc-dup reboot"; tail -40 microos-serial.log; }
+            sshr -p 2223 root@localhost "bash /root/nonmutable-etc-dup.sh microos --phase 2 --out /root/etc-dup-microos.md" || echo "phase 2 exit=$?"
+            scpr -P 2223 root@localhost:/root/etc-dup-microos.md research-out/etc-dup-microos.md || true
           fi
           ls -la research-out
       - name: Summary + artifact
