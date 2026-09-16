@@ -415,14 +415,42 @@ jobs:
             # copied, so the authorized key and sshd cannot drift out of it. sshd's unit is
             # therefore byte-identical and activation does not restart it, which is what
             # keeps the guest's ssh session alive across the switch.
+            # BUILT AS `-A vm`, NOT `-A system`, and the whole block is best-effort.
+            #
+            # The first attempt used `-A system` and the leg died on it: that attribute
+            # builds a REAL machine and asserts a root filesystem and a bootloader, which
+            # this configuration never declares because `-A vm`'s vmVariant supplies both
+            # implicitly. Hand-declaring them would also make gen2's fstab disagree with the
+            # machine actually running, and `switch-to-configuration` acts on mount units.
+            # Building the vm variant and reading its system back out of the runner script
+            # gives a gen2 that matches the booted machine in every respect except the one
+            # `environment.etc` entry — which is the point of the comparison.
+            #
+            # And it is `|| true` throughout with the probe outside it, because the first
+            # run proved the failure mode: this OPTIONAL fidelity upgrade ran under `set -e`
+            # and skipped the REQUIRED measurement. Without a store path the script replays
+            # the current generation's activation instead and says so in the report.
             printf '{ ... }: {\n  imports = [ ./configuration.nix ];\n  environment.etc."research-generation".text = "2";\n}\n' >configuration-next.nix
-            DOTFILES_REPO=/root/dotfiles-NixOS DOTFILES_BUILD=/tmp/dotfiles-NixOS DOTFILES_OS=nixos \
-              nix-build '<nixpkgs/nixos>' -A system -I nixos-config=./configuration-next.nix \
+            if DOTFILES_REPO=/root/dotfiles-NixOS DOTFILES_BUILD=/tmp/dotfiles-NixOS DOTFILES_OS=nixos \
+              nix-build '<nixpkgs/nixos>' -A vm -I nixos-config=./configuration-next.nix \
                 -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz \
                 -I home-manager=https://github.com/nix-community/home-manager/archive/release-25.05.tar.gz \
-                -o nixos-next 2>&1 | tail -5
-            readlink -f nixos-next >nixos-next-path
-            cat nixos-next-path
+                -o nixos-next-vm 2>&1 | tail -5; then
+              # The runner script names the system closure it boots; that is the generation
+              # the guest must activate, and it carries bin/switch-to-configuration.
+              # `|| true` inside the substitution: with pipefail a grep that matches nothing
+              # would fail the assignment, and `set -e` would kill the step — the exact
+              # shape of defect this block is being rewritten to stop causing.
+              next_sys="$(grep -ho '/nix/store/[a-z0-9]\{32\}-nixos-system-[^/ "]*' nixos-next-vm/bin/run-*-vm 2>/dev/null | head -1 || true)"
+              if [ -n "$next_sys" ] && [ -x "$next_sys/bin/switch-to-configuration" ]; then
+                printf '%s\n' "$next_sys" >nixos-next-path
+                echo "gen2 system: $next_sys"
+              else
+                echo "gen2 built but its system closure was not readable from the runner script — the probe will replay the current generation instead"
+              fi
+            else
+              echo "gen2 build failed — the probe will replay the current generation instead"
+            fi
           fi
       - name: Boot it and run the probe over ssh
         env:
