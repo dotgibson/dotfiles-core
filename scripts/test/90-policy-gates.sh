@@ -822,3 +822,134 @@ else
   unset _fp_have _fp_want _fp_missing _fp_extra
 fi
 unset _fp_file
+
+# ── the App-installation register (scripts/fleet-app-scope.sh, #1071) ────────────────
+# The THIRD fleet list problem, and the one that had no list at all: the repos the fan-out's
+# GitHub App is installed on. `sync-fanout.yml` passes no `repositories:` when it mints, so
+# the token's reach IS the installation — a fact that lives on github.com, in no checkout,
+# and was compared to scripts/os-repos.txt by nothing. dotfiles-NixOS was registered as the
+# tenth repo (#1064) and never added to the installation, so v7.9.0 synced all ten targets
+# and 403'd on the tenth push.
+#
+# scripts/fleet-app-scope.sh now asks GitHub that question. What CAN be asserted offline is
+# the derivation it asks with — which is exactly the part that rotted last time.
+hdr "fleet-app-scope.sh (the App-installation register)"
+_fas="$HERE/scripts/fleet-app-scope.sh"
+if [[ ! -r "$_fas" ]]; then
+  fail "fleet-app-scope: $_fas is unreadable — the App installation's scope is checked by nothing"
+else
+  # 1. It reads the fleet through the ONE reader and keeps no second copy of the list —
+  # the #669 property, asserted because a register that hardcoded the fleet would drift
+  # into the very failure it exists to catch. Matched on the ASSIGNMENT sigil, not the bare
+  # word: a `dotfiles-…` in a comment is prose, and this file's header is full of it.
+  if grep -q 'load_os_repos' "$_fas"; then
+    pass "fleet-app-scope: enumerates the fleet through load_os_repos (#669)"
+  else
+    fail "fleet-app-scope: does not call load_os_repos — it must not keep its own copy of the fleet list"
+  fi
+  _fas_arrays="$(grep -cE '^[A-Za-z_]*REPOS=\(' "$_fas")"
+  if [[ "$_fas_arrays" == 1 ]]; then
+    pass "fleet-app-scope: exactly one repo array (EXTRA_REPOS) — no second fleet list"
+  else
+    fail "fleet-app-scope: $_fas_arrays repo array(s) declared; only EXTRA_REPOS may exist, or the fleet list has been copied"
+  fi
+
+  # 2. The two exceptions beside the fan-out targets are the ones GITHUB-APP-AUTH.md names.
+  # ONE DIRECTION, deliberately: every repo the script expects must be documented, because
+  # an undocumented expectation is how the next reader "fixes" the script. The reverse — the
+  # doc naming a repo the script does not expect — is caught at RUNTIME by the register's own
+  # EXTRA finding, loudly, against the live installation. Asserting it here would mean
+  # parsing English prose, which fails the day someone rewords a sentence.
+  _fas_extra="$(sed -n '/^EXTRA_REPOS=(/,/)/p' "$_fas" | grep -o 'dotfiles-[A-Za-z]*' | sort -u)"
+  _fas_doc="$HERE/GITHUB-APP-AUTH.md"
+  if [[ ! -r "$_fas_doc" ]]; then
+    fail "fleet-app-scope: GITHUB-APP-AUTH.md is unreadable — cannot check the expected install set against its install list"
+  elif [[ -z "$_fas_extra" ]]; then
+    fail "fleet-app-scope: EXTRA_REPOS parsed empty — the expected install set is the fan-out targets alone, which omits dotfiles-core and dotfiles-web"
+  else
+    # The install list lives in one section; read only that, so an unrelated mention of a
+    # repo elsewhere in the doc cannot satisfy this.
+    _fas_sec="$(sed -n '/^## Where the App is installed/,/^## /p' "$_fas_doc")"
+    _fas_undoc=''
+    for _fas_r in $_fas_extra; do
+      grep -qF "$_fas_r" <<<"$_fas_sec" || _fas_undoc="$_fas_undoc $_fas_r"
+    done
+    if [[ -z "$_fas_undoc" ]]; then
+      pass "fleet-app-scope: every EXTRA_REPOS entry is named in GITHUB-APP-AUTH.md's install list"
+    else
+      fail "fleet-app-scope: EXTRA_REPOS expects$_fas_undoc, which GITHUB-APP-AUTH.md's \"Where the App is installed\" does not name — document it there or stop expecting it"
+    fi
+    # The two repos the doc says must NOT be reachable. A token minted for this
+    # installation carries contents+workflows:write, so an expected-set entry here would
+    # make the register bless reach the fleet deliberately withheld.
+    _fas_forbidden=''
+    for _fas_r in htpx dotfiles-Windows; do
+      grep -qx "$_fas_r" <<<"$_fas_extra" && _fas_forbidden="$_fas_forbidden $_fas_r"
+    done
+    if [[ -z "$_fas_forbidden" ]]; then
+      pass "fleet-app-scope: expects no install on htpx or dotfiles-Windows (GITHUB-APP-AUTH.md withholds both)"
+    else
+      fail "fleet-app-scope: EXTRA_REPOS expects$_fas_forbidden installed, which GITHUB-APP-AUTH.md deliberately withholds"
+    fi
+    unset _fas_sec _fas_undoc _fas_r _fas_forbidden
+  fi
+
+  # 3. The CLI contract, run for real — both arms exit before the script touches gh, so
+  # this is hermetic. --help's flags are the ones sync-fanout.yml and fleet-app-scope.yml
+  # actually pass; a rename that misses a caller is the failure this catches.
+  if _fas_help="$("$_fas" --help 2>&1)"; then
+    _fas_missing_flag=''
+    for _fas_f in --check --reach-only --require; do
+      grep -qF -- "$_fas_f" <<<"$_fas_help" || _fas_missing_flag="$_fas_missing_flag $_fas_f"
+    done
+    if [[ -z "$_fas_missing_flag" ]]; then
+      pass "fleet-app-scope: --help exits 0 and documents --check/--reach-only/--require"
+    else
+      fail "fleet-app-scope: --help does not document$_fas_missing_flag"
+    fi
+    unset _fas_missing_flag _fas_f
+  else
+    fail "fleet-app-scope: --help exited non-zero ($?) — the register family's help contract"
+  fi
+  "$_fas" --no-such-flag >/dev/null 2>&1
+  _fas_rc=$?
+  if ((_fas_rc == 2)); then
+    pass "fleet-app-scope: an unknown flag exits 2 (usage), not 1 (finding) or 3 (unread)"
+  else
+    fail "fleet-app-scope: an unknown flag exited $_fas_rc; 2 is usage, and 1/3 are verdicts a CI caller acts on"
+  fi
+  unset _fas_help _fas_rc _fas_arrays _fas_extra _fas_doc
+fi
+
+# 4. THE WIRING, not just the script. A register nothing calls is a register nobody runs,
+# and the release-path caller is the one that matters: sync-fanout.yml checks the install
+# reach BEFORE it clones, with the targets of the run in hand (`--require`), so a subset
+# backfill is not failed over a repo it will never push to.
+_fas_fanout="$HERE/.github/workflows/sync-fanout.yml"
+_fas_wf="$HERE/.github/workflows/fleet-app-scope.yml"
+if [[ ! -r "$_fas_fanout" ]]; then
+  fail "fleet-app-scope: $_fas_fanout is unreadable — cannot check that the fan-out preflights the App's reach"
+elif ! grep -qE 'fleet-app-scope\.sh.*--reach-only.*--check.*--require' "$_fas_fanout"; then
+  fail "fleet-app-scope: sync-fanout.yml no longer preflights the install reach with --reach-only --check --require — a missing target is back to 403ing on the push (#1071)"
+else
+  pass "fleet-app-scope: sync-fanout.yml preflights the install reach against this run's targets"
+fi
+# NOT asserted on sync-fanout.yml, deliberately. The verb its preflight spends is metadata,
+# and the first instinct was to gate on the mint naming it — but run 35130825192 read
+# /installation/repositories with a token minted for contents+pull-requests+workflows and no
+# metadata line, so narrowing keeps the mandatory grant. Gating on the line would red the
+# suite over a removal that breaks nothing, which is how a gate teaches people to ignore it.
+# The line stays in the workflow for legibility; fleet-app-scope.yml's mint IS asserted below,
+# because metadata is the only verb it asks for and an empty `with:` there is a real defect.
+# The weekly register's own mint must cover the WHOLE installation: a `repositories:` list
+# would scope the token to the repos we asked about, which is the question answering itself.
+if [[ ! -r "$_fas_wf" ]]; then
+  fail "fleet-app-scope: .github/workflows/fleet-app-scope.yml is missing — nothing checks the App's reach on a schedule"
+elif grep -qE '^ *repositories:' "$_fas_wf"; then
+  fail "fleet-app-scope: fleet-app-scope.yml's mint passes repositories: — a scoped token reports only the repos it was scoped to, so the check would confirm itself"
+elif ! grep -q 'permission-metadata: read' "$_fas_wf"; then
+  fail "fleet-app-scope: fleet-app-scope.yml's mint does not request metadata: read — the reach read needs it"
+else
+  pass "fleet-app-scope: the weekly mint covers the whole installation (no repositories:) with metadata: read alone"
+fi
+unset _fas_fanout _fas_wf _fas

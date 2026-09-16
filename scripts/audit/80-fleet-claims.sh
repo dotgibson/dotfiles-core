@@ -16,8 +16,8 @@
 # §9l is the hero-tape render-date check (#877), so this takes 9m.
 #
 # THE SAME SHAPE AS EVERY OTHER §9: one source of truth, many copies, and nothing reading
-# the two together. Here the truth is scripts/os-repos.txt — whose own header says "THIS
-# FILE IS THE ONLY EDIT" — and the copies are the sentences that say how many repos a Core
+# the two together. Here the truth is scripts/os-repos.txt — the one line every reader in
+# every repo goes through — and the copies are the sentences that say how many repos a Core
 # change reaches. #770 found five saying EIGHT against ~20 saying nine, two of them in Core
 # files, so the wrong number was replicated nine ways on every sync. #668 had found one of
 # the five a year earlier and deliberately left it: correcting one of several inconsistent
