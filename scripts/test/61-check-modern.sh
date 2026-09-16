@@ -325,7 +325,7 @@ jobs:
   fi
 
   # THE FALSE-FIRE THIS RULE IS SHAPED AROUND. A job that calls a reusable workflow (`uses:`
-  # at job level) CANNOT legally carry timeout-minutes — GitHub rejects the workflow. Ten
+  # at job level) CANNOT legally carry timeout-minutes — GitHub rejects the workflow. Eleven
   # jobs in this repo are exactly that shape, every one a notify-failure-call/notify-web-call.
   # Keying on `runs-on:` rather than "every job" is the whole reason the rule is written the
   # way it is, and this is the assertion that keeps it that way.

@@ -128,6 +128,24 @@
   live defect — a narrowed mint turns out to keep the mandatory grant, verified against the
   live API — but a mint that does not say what it spends is one nobody can audit.
 
+- **A repo that loses the ruleset binding `main` now pages a human**
+  ([#1081](https://github.com/dotgibson/dotfiles-core/issues/1081)). `fleet-protection.yml` was
+  the last weekly fleet sweep whose only output was a red run: it wrote a job summary, exited
+  non-zero, and stopped there, while `fleet-drift.yml` and `fleet-app-scope.yml` both filed a
+  deduplicated issue through `notify-failure-call.yml`. It now does too.
+
+  The asymmetry mattered more here than anywhere, because this sweep is the one whose _own_
+  origin story is a blind spot: it exists because a Core fan-out was pushed straight to `main`
+  on two repos — one with no ruleset at all, one carrying an admin bypass
+  (`dotgibson/dotfiles-Alpine#146`) — and nobody noticed. A check that catches the recurrence
+  into a tab nobody watches reproduces the defect it was written to close.
+
+  The `details` string names the fix path, which is local and needs admin credentials
+  (`make fleet-protection`, then `--migrate`), and says that the job runs `--rulesets-only` so
+  classic protection is unread by design. It also warns not to assume _which_ finding fired:
+  no ruleset, a bypass actor and _could not read_ are three different verdicts the script
+  keeps distinguishable, and all three are rc=1.
+
 ### Changed
 
 - **R1's three remaining cells are measured, and the research phase's last open question is

@@ -153,7 +153,7 @@ banned_run_interpolation_contexts:
 #    fan out to the fleet.
 #
 #    Keyed on `runs-on:`, NOT on "every job": a job that calls a reusable workflow (`uses:`
-#    at job level — there are 10, every one a notify-failure-call/notify-web-call) cannot
+#    at job level — there are 11, every one a notify-failure-call/notify-web-call) cannot
 #    legally carry timeout-minutes, so requiring it there would be a guaranteed false fire.
 #
 #    Unlike the rest of this file, this rule is NOT driven by a dated upstream deprecation,
