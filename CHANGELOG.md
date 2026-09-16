@@ -44,6 +44,45 @@
   typo but not an omission — and an omission is what the next `os-repos.txt +1` produces).
   (`scripts/test/90-policy-gates.sh`, `scripts/fleet-protection.sh`)
 
+### Fixed
+
+- **`new-os-repo.sh` stamped the annotated TAG OBJECT as vendoring provenance, not the
+  peeled commit** (#1065). Its default `CORE_BRANCH` is `refs/tags/v7`, and it resolved
+  that with `git ls-remote <remote> <ref> | awk 'NR==1'` — which for an annotated tag
+  returns the tag object. Not "the first of two lines": asked plainly, that is the _only_
+  line there is, so the peeled ref has to be requested explicitly. Measured at v7.8.0 —
+  `refs/tags/v7` → `a96cf64c58b5` (a tag object), `refs/tags/v7^{}` → `a4907d555d9f` (the
+  commit every `core.lock` in the fleet records). Every scaffolded repo therefore committed
+  `chore(core): vendor Core at <tag object>`, contradicting the rule `ARCHITECTURE.md` and
+  `VENDORING.md` both state outright and the block's own comment ("the provenance must name
+  one commit").
+
+  **The tree was never wrong** — `core_vendor_materialize` hands the SHA to `git read-tree`,
+  which peels — so this was a false claim rather than a broken vendor. Confirmed on the
+  repo that found it: `dotfiles-NixOS`'s `core/` tree is `760df33cf00e`, byte-identical to
+  `dotfiles-Alpine`'s at v7.8.0.
+
+  **The same read was in `sync-core.sh`, one step from `core.lock`.** It defaults to a
+  branch and the fan-out passes a SHA, so no live path reached it — but that script's own
+  usage text says _"pass a released tag"_, and there the tag object would have been written
+  into `core.lock` as `core_sha`, where all ten siblings record the commit. Both callers now
+  go through one resolver, `core_vendor_remote_commit` in `scripts/lib/core-vendor.sh`
+  (Core-only, already sourced by both), which asks for the bare **and** peeled ref in one
+  network call and prefers the peeled one **by shape rather than by position**.
+
+  Deliberately **not** changed: `tag-release.sh`'s read of `refs/tags/$MAJOR`. That one
+  wants the raw ref value, because `--force-with-lease` compares the _ref's_ value — which
+  for an annotated tag _is_ the tag object — and it peels separately for its ancestry
+  check. Peeling there would break the lease.
+
+  Pinned by six assertions against a local fixture remote with a real annotated tag (no
+  network): the peel, the object type, the lightweight-tag and branch cases, and that a bare
+  SHA stays **unresolvable** so the fan-out's local `rev-parse` fallback is untouched. The
+  fixture asserts its own premise first — that the tag object and the commit actually differ
+  — because the whole test would pass vacuously on a lightweight tag.
+  (`scripts/lib/core-vendor.sh`, `scripts/new-os-repo.sh`, `scripts/sync-core.sh`,
+  `scripts/test/32-sync-core.sh`)
+
 ## [v7.8.0] - 2026-09-15
 
 ### Changed

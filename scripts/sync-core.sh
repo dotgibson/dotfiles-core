@@ -173,7 +173,13 @@ blib_ok() { ok "$@"; }
 # NO output at all, because ls-remote's stderr is deliberately suppressed. Swallowing it
 # lets the local rev-parse fallback run and, failing that, delivers the explicit
 # unresolvable-Core refusal below instead of a bare, silent 128.
-CORE_SHA_FULL="$(git ls-remote "$CORE_REMOTE" "$CORE_BRANCH" 2>/dev/null | awk 'NR==1{print $1}')" || CORE_SHA_FULL=""
+# core_vendor_remote_commit, not a bare ls-remote: it asks for the PEELED ref too, so an
+# annotated tag resolves to its commit. This path defaults to `main` and the fan-out passes
+# a SHA, so neither reaches the tag case — but this script's own usage text says "pass a
+# released tag", and every release tag in this repo is annotated. Taking the tag object
+# there would stamp a non-commit into core.lock, which every other repo's lock records as
+# the commit (#1065).
+CORE_SHA_FULL="$(core_vendor_remote_commit "$CORE_REMOTE" "$CORE_BRANCH")" || CORE_SHA_FULL=""
 # --verify --quiet, not a bare rev-parse: on an unresolvable ref `git rev-parse foo` prints
 # "foo" TO STDOUT and exits 128, so the `|| echo unknown` appended to it produced the
 # literal "foo\nunknown" — and CORE_SHA then took a 12-char slice of that. The `unknown`

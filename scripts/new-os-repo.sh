@@ -309,7 +309,13 @@ else
   # Resolve the ref to a SHA and address the tree by it, for the same reason sync-core.sh
   # does (#556): the filter and the provenance must name one commit, not "whatever this ref
   # meant during whichever fetch".
-  _core_sha="$(git ls-remote "$CORE_REMOTE" "$CORE_BRANCH" 2>/dev/null | awk 'NR==1{print $1}')"
+  #
+  # THE PEELED COMMIT, which is why this is a helper and not an ls-remote pipeline. This
+  # script defaults CORE_BRANCH to refs/tags/v7 — an ANNOTATED tag — and `ls-remote <remote>
+  # <tag>` returns the tag OBJECT, so the old `awk NR==1` here stamped
+  # "vendor Core at <tag object>" into the scaffold's own provenance commit. The tree was
+  # right (read-tree peels), the claim was not (#1065).
+  _core_sha="$(core_vendor_remote_commit "$CORE_REMOTE" "$CORE_BRANCH")"
   if [[ -z "$_core_sha" ]]; then
     fail "could not resolve $CORE_BRANCH on $CORE_REMOTE (offline/unreachable?) — files scaffolded; vendor later with: $_vendor_hint"
   elif ! git -C "$TARGET" fetch -q --no-tags "$CORE_REMOTE" "$_core_sha" >/dev/null 2>&1 &&
