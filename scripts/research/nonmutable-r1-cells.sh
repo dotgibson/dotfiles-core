@@ -45,6 +45,9 @@
 #     given, silently dropping the pending one (R4).
 #   - a reboot empties /tmp on these guests: phase state lives in $HOME (R4).
 #   - never name a function-local `out` when `out` is the report path (R6).
+#   - no `case` inside a command substitution with bare patterns: macOS's bash 3.2 cannot
+#     parse it, and inside double quotes it fails only once an arm contains an apostrophe —
+#     which is to say, once a verdict string is written in English (#1075).
 #
 # Deliberately tolerant: a failing probe IS the measurement. Non-zero only if the report
 # cannot be written.
@@ -433,9 +436,13 @@ microos_phase2() {
   say "| \`/etc/research-before\` | running, before the snapshot (the baseline — it was already inside the snapshot when that was made) | \`$(cat /etc/research-before 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-before 2>/dev/null)" == running-before ]] && echo "**carried**, as it must be — the marker mechanism works" || echo "**LOST — even the baseline did not survive; nothing below is readable**") |"
   say "| \`/etc/research-snapshot\` | the snapshot only | \`$(cat /etc/research-snapshot 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-snapshot 2>/dev/null)" == snapshot ]] && echo "**live** — the guest really booted the snapshot this run wrote" || echo "**ABSENT — the guest did not boot that snapshot**") |"
   say "| \`/etc/research-after\` | running, after the snapshot opened — **this is the documented claim** | \`$(cat /etc/research-after 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-after 2>/dev/null)" == running-after ]] && echo "**carried** — *\"changes applied to the currently running system will be visible in the new system\"*, measured" || echo "**LOST — the documented claim does not hold**, which is a larger finding than the collision below") |"
-  # Hoisted out of the `say` string rather than inlined as $(case …): macOS ships bash 3.2
-  # (PORTABILITY.md §1, and the audit matrix runs it), whose parser cannot read a `case`
-  # inside a command substitution inside double quotes. `bash -n` on that leg is the gate.
+  # Hoisted out of the `say` string rather than inlined as a case inside a command
+  # substitution. macOS ships bash 3.2 (PORTABILITY.md §1, and the audit matrix runs it),
+  # and 3.2 cannot parse such a case when the patterns are written BARE: unquoted it is a
+  # syntax error outright, and inside double quotes it parses only until an arm contains an
+  # apostrophe — "the snapshot's copy" below is what made `bash -n` report `unexpected EOF
+  # while looking for matching "'"`. Measured against a built bash 3.2.0, not inferred; a
+  # leading `(` on every pattern also fixes it, and an if-chain needs no such footnote.
   local collide_verdict
   case "$collide" in
   snapshot) collide_verdict="**the loss case, confirmed** — the snapshot's copy won and the later running edit is gone" ;;
