@@ -59,6 +59,9 @@ The major this proposal was written to plan does not come from the schema.
 
 ## What is still marked "to verify" inside the files
 
+All three of the cells below are what `../nonmutable-r1-cells.sh` asks (#1052), on the VM
+legs with `r1cells=true`. Until a dispatch answers them they stay "to verify" here.
+
 - bootc: `dnf search` on a booted host (only `dnf install` was probed); `rpm-ostree
   upgrade --check` against a registry-backed image (the research disk's origin is local).
   `rpm-ostree install --dry-run` as root is measured (exit 0, run 34852611338).

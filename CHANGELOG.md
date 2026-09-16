@@ -2,6 +2,40 @@
 
 ### Added
 
+- **A harness for R1's last three unmeasured cells** (`NON-MUTABLE-HOST-PROPOSAL.md` §5,
+  #1052). `scripts/research/nonmutable-r1-cells.sh`, behind a new `r1cells` input on
+  `research-nonmutable-vm.yml`. Two of the three are claims a **shipped** declaration
+  already makes, which no run has asked a host to confirm.
+
+  **`dnf search` on a booted bootc host** — `dotfiles-Fedora/os/fedora.atomic.capabilities`
+  declares `PKG_SEARCH=dnf search`; R1 probed only `dnf install` there (a refusal that
+  arrives after resolving 317 packages) and only `dnf -q provides` in a container. It is
+  asked **before** the leg's bootstrap passes, because R6 measured that a provision run
+  writes a COPR repo file and breaks every later `dnf`, and **as the user**, because the
+  key is declared with no escalator. `makecache` goes first: against a cold cache every
+  query is a false miss, which is a fact about the harness, not the target.
+
+  **`chsh` across a NixOS switch** — the cell was open because a `build-vm` guest carries
+  no `/etc/nixos/configuration.nix`. So the workflow builds a **second generation** on the
+  runner and the guest activates it over the shared `/nix/store` — no evaluation, no
+  network, no store write of its own. The action is `test`, not `switch`: `switch` also
+  installs a boot loader, which a guest booted from QEMU's `-kernel` has none of, and the
+  activation half is where `users-groups` runs. The full verb runs afterwards anyway, so
+  the run records _why_ it fails rather than the bare exit status. Both a declared user
+  (root) and an imperative one (`useradd`, which `users.mutableUsers` permits) are chsh'd,
+  because reverting only the declared one would be a narrower boundary than
+  `dotfiles-NixOS/bootstrap.sh` claims.
+
+  **An `/etc` edit across `transactional-update dup`** — the loss case transactional-update(8)
+  documents (a file changed both during the update and afterwards in the running system)
+  cannot be waited for, so it is forced: the snapshot is opened **first** with `run`, both
+  halves are written, and the `dup` closes it with `--continue`. Opening first is what
+  makes a no-op `dup` harmless — there is already a dirty snapshot to close. Four markers
+  separate carried from shadowed from absent, and the payload rides beside them: the two
+  writes `blib_set_login_shell` makes. Phase 2 fills in its own table and leads with the
+  guard that matters — **the booted subvolume did not change, so this round measured
+  nothing** — because a failed transaction deletes its own snapshot and every row would
+  otherwise read as "carried".
 - **`sync-fanout` checks that the fleet App installation covers every target before it
   clones anything** (#1071). The fan-out's write scope is the GitHub App's _installation_,
   deliberately — hardcoding a repository list on the mint would be a second copy of
