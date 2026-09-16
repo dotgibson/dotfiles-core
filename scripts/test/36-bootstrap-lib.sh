@@ -63,6 +63,42 @@ else
 fi
 unset _zl_home _zl_out
 
+# The DRY twin of the case above (#1057). #1026 fixed the real run's tally and left the dry
+# branch reporting "0 backed up" over the same pre-existing ~/.zshrc — hiding, in the plan a
+# migrating operator reads BEFORE consenting, the one action in the wiring pass that touches
+# a file they own. Asserted on BLIB_BACKED and on the absence of a backup FILE, not on a whole
+# tally string: _blib_seed_zdotdir_rc runs inside the dry branch too and bumps BLIB_LINKED on
+# its own, so pinning the tally here would couple this case to that helper's accounting.
+_zd_home="$(mktemp -d "$SANDBOX/zdhome.XXXXXX")"
+printf '# skeleton zshrc\n' >"$_zd_home/.zshrc"
+_zd_out="$(HOME="$_zd_home" XDG_CONFIG_HOME="$_zd_home/.config" BLIB_DRY=1 BLIB_ONLY="" BLIB_SKIP="" bash -c '
+  set -u
+  . "'"$HERE/lib/bootstrap-lib.sh"'"
+  blib_write_zshrc_loader
+  printf -- "--\n%s %s\n" "$BLIB_BACKED" "$(find "$HOME" -maxdepth 1 -name ".zshrc.pre-dotfiles.*" | wc -l | tr -d " ")"
+' 2>&1)"
+if [[ "$(_bl_tally "$_zd_out")" == "1 0" ]] && [[ "$_zd_out" == *"would back up + write"* ]] &&
+  ! grep -q 'dotfiles-managed v4' "$_zd_home/.zshrc"; then
+  pass "blib_write_zshrc_loader: BLIB_DRY announces AND counts the backup, and writes nothing (#1057)"
+else
+  fail "blib_write_zshrc_loader: dry run hid the ~/.zshrc displacement or mutated it (got: $_zd_out)"
+fi
+# The two branches that must NOT count one: no ~/.zshrc to displace, and one this repo already
+# manages (which returns before the dry branch is even reached).
+_zd_fresh="$(mktemp -d "$SANDBOX/zdfresh.XXXXXX")"
+_zd_out2="$(HOME="$_zd_fresh" XDG_CONFIG_HOME="$_zd_fresh/.config" BLIB_DRY=1 BLIB_ONLY="" BLIB_SKIP="" bash -c '
+  set -u
+  . "'"$HERE/lib/bootstrap-lib.sh"'"
+  blib_write_zshrc_loader
+  printf -- "--\n%s\n" "$BLIB_BACKED"
+' 2>&1)"
+if [[ "$(_bl_tally "$_zd_out2")" == "0" ]] && [[ "$_zd_out2" != *"would back up"* ]]; then
+  pass "blib_write_zshrc_loader: BLIB_DRY counts no backup when there is no ~/.zshrc to displace"
+else
+  fail "blib_write_zshrc_loader: dry run invented a backup on a fresh box (got: $_zd_out2)"
+fi
+unset _zd_home _zd_out _zd_fresh _zd_out2
+
 # 1) a symlink pointing ELSEWHERE: repointed, its old target NAMED, counted as relinked
 #    and NOT as backed up, and no stray .pre-dotfiles.* left behind.
 ln -sfn "$_bl/other" "$_bl/dst1"

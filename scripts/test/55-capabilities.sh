@@ -217,17 +217,50 @@ else
   { cat "$CAPEX"; printf 'PROVISIONER=atomic\nPKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=rpm-ostree status --pending-exit-77\nPKG_APPLY_PENDING_EXIT=77\n'; } >"$CAPV/r5-pending"
   _cap_accepts "PKG_APPLY_PENDING with an _EXIT beside PKG_APPLY" "$CAPV/r5-pending"
   { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=atomic\nPKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=rpm-ostree status --pending-exit-77\nPKG_APPLY_PENDING_EXIT=77\n'; } >"$CAPV/r5-nocount"
-  _cap_accepts "no PKG_COUNT_PENDING when PKG_APPLY_PENDING is declared (the nudge reports the staged state)" "$CAPV/r5-nocount"
+  _cap_accepts "no PKG_COUNT_PENDING under PROVISIONER=atomic when PKG_APPLY_PENDING is declared (the nudge reports the staged state)" "$CAPV/r5-nocount"
+  # …and the SAME shape buys nothing on any other provisioner (#1057). The relaxation is
+  # earned by the measured root-only refusal on an atomic host, not by owning a reboot
+  # probe: PKG_APPLY=sudo systemctl reboot with PKG_APPLY_PENDING=test -e
+  # /var/run/reboot-required is entirely truthful on Debian and Ubuntu, and ungated it let
+  # a mutable repo drop a count verb it actually has — after which `up` reads the -1
+  # sentinel and goes silent about available updates, with this gate calling the
+  # declaration complete. Both the default (absent PROVISIONER = mutable) and the one
+  # other staged family are pinned, because the fleet's transactional host answers
+  # `zypper -q list-updates` unprivileged and declares it.
+  { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=test -e /var/run/reboot-required\n'; } >"$CAPV/r5-nocount-mutable"
+  _cap_rejects "no PKG_COUNT_PENDING on a MUTABLE host that declares PKG_APPLY_PENDING (the relaxation is atomic-only)" "$CAPV/r5-nocount-mutable"
+  { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=transactional\nPKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=test -e /run/reboot-needed\n'; } >"$CAPV/r5-nocount-trans"
+  _cap_rejects "no PKG_COUNT_PENDING under PROVISIONER=transactional (MicroOS answers the count verb as the user)" "$CAPV/r5-nocount-trans"
   { cat "$CAPEX"; printf 'PKG_APPLY_PENDING=test -e /run/reboot-needed\n'; } >"$CAPV/r5-noapply"
   _cap_rejects "PKG_APPLY_PENDING with no PKG_APPLY to wait for" "$CAPV/r5-noapply"
   { cat "$CAPEX"; printf 'PKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING_EXIT=77\n'; } >"$CAPV/r5-exit-orphan"
   _cap_rejects "PKG_APPLY_PENDING_EXIT with no PKG_APPLY_PENDING to describe" "$CAPV/r5-exit-orphan"
   { cat "$CAPEX"; printf 'PKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=rpm-ostree status --pending-exit-77\nPKG_APPLY_PENDING_EXIT=0\n'; } >"$CAPV/r5-exit-zero"
   _cap_rejects "PKG_APPLY_PENDING_EXIT=0 (omit it to mean exit 0)" "$CAPV/r5-exit-zero"
+  # A LEADING ZERO IS NOT A DECIMAL EXIT STATUS (#1057). `(( ))` re-expands a named
+  # variable as arithmetic, where an all-digit string starting with 0 is OCTAL — so 077
+  # validated AS 63, a declaration meaning one status and getting another, and 099 was an
+  # invalid-octal-digit error that `(( ))` signalled by returning false into a script with
+  # no `set -e`. 00 and 000 slipped past the "omit it to mean zero" rule too, which only
+  # ever matched the literal 0. Every form is pinned on BOTH keys, because they are two
+  # copies of one check and a fix to either alone would leave the other lying.
+  for _cap_z in 077 099 00 000; do
+    { cat "$CAPEX"; printf 'PKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=rpm-ostree status --pending-exit-77\nPKG_APPLY_PENDING_EXIT=%s\n' "$_cap_z"; } >"$CAPV/r5-exit-lz"
+    _cap_rejects "PKG_APPLY_PENDING_EXIT=$_cap_z (a leading zero is octal to (( )), not an exit status)" "$CAPV/r5-exit-lz"
+    { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=%s\n' "$_cap_z"; } >"$CAPV/proto-exit-lz"
+    _cap_rejects "PKG_PENDING_EXIT_SOME=$_cap_z (same check, same octal trap)" "$CAPV/proto-exit-lz"
+  done
+  unset _cap_z
+  # The value the trap disguised must still pass: 77 is what both atomic declarations use.
+  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-exit-ok"
+  _cap_accepts "PKG_PENDING_EXIT_SOME=77 (the rule refuses leading zeros, not the status)" "$CAPV/proto-exit-ok"
   { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=declarative\n'; } >"$CAPV/proto-decl"
   _cap_accepts "PROVISIONER=declarative with no PKG_COUNT_PENDING (the one relaxation)" "$CAPV/proto-decl"
   { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=atomic\n'; } >"$CAPV/proto-decl-not"
-  _cap_rejects "PROVISIONER=atomic with no PKG_COUNT_PENDING (the relaxation is declarative-only)" "$CAPV/proto-decl-not"
+  # The label used to say "declarative-only", which stopped being true when R5 added the
+  # second arm. What this fixture actually pins is that PROVISIONER=atomic ALONE buys
+  # nothing — the atomic arm needs PKG_APPLY_PENDING beside it, which this file omits.
+  _cap_rejects "PROVISIONER=atomic with no PKG_COUNT_PENDING and no PKG_APPLY_PENDING (the provisioner alone is not the relaxation)" "$CAPV/proto-decl-not"
   { grep -v '^PKG_INSTALL=' "$CAPEX"; printf 'PROVISIONER=declarative\n'; } >"$CAPV/proto-decl-install"
   _cap_rejects "PROVISIONER=declarative with no PKG_INSTALL (the relaxation is one key wide)" "$CAPV/proto-decl-install"
   # And the three prototype declarations themselves validate — the files R2 wrote to answer
@@ -255,6 +288,25 @@ else
   *)
     pass "validator: --packages skips the PKG_PENDING_* keys (they are awk data, not verbs)" ;;
   esac
+  # …and it does not name a SHELL BUILTIN either (#1057). MicroOS answers the staged
+  # question with `test -e /run/reboot-needed`, so the leading token is `test` — which no
+  # distro packages, so no edit to any install/packages.txt could ever silence the advice.
+  # This is the one narrowing the cross-check can make portably: it runs on a CI Ubuntu
+  # box against Fedora, Arch and Alpine declarations, so asking whether `zypper` is present
+  # HERE would answer about the wrong machine, while a builtin is a builtin everywhere.
+  # The same fixture pins the other half — a REAL binary that is genuinely missing from the
+  # list must still warn, or the skip would have bought silence by going blind.
+  { cat "$CAPEX"; printf 'PKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=test -e /run/reboot-needed\n'; } >"$CAPV/builtin-verb"
+  _cap_btwarn="$("$CAPCHK" "$CAPV/builtin-verb" --packages "$CAPV/pkgs.txt" 2>&1 >/dev/null)"
+  case "$_cap_btwarn" in
+  *PKG_APPLY_PENDING*)
+    fail "validator: --packages told the author to install the shell builtin 'test'" ;;
+  *systemctl*)
+    pass "validator: --packages skips a builtin verb and still warns about a real absent binary" ;;
+  *)
+    fail "validator: --packages went silent entirely — the builtin skip is over-broad (got: ${_cap_btwarn:-no output})" ;;
+  esac
+  unset _cap_btwarn
 fi
 
 # The vocabulary register (scripts/test/56-fleet-vocabulary.sh) sits ABOVE the zsh gate on
