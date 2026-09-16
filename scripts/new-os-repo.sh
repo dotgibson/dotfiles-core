@@ -1218,6 +1218,13 @@ else
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
     echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted
+
+  AND REGISTER IT WITH THE FAN-OUT APP, which is not in any checkout — a repo listed above
+  but missing from the App's installation is synced and then REFUSED at the push, 403, at
+  the end of a release (#1071). Needs an Organization Owner:
+    Organization settings -> GitHub Apps -> dotgibson-fleet-sync -> Configure ->
+    Repository access -> add dotfiles-$OS
+    make fleet-app-scope        # reports that installation (VENDORING.md, GITHUB-APP-AUTH.md)
     $_reg_sync   # the PINNED sync (a throwaway worktree at the release ref; its summary line is the verdict): stamps core.lock — a custom name gets the guarded symlink first, and a refusal stops it
 EOF
 fi

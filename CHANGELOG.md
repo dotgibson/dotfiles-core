@@ -1,5 +1,59 @@
 ## [Unreleased]
 
+### Added
+
+- **The App-installation register — `make fleet-app-scope`** ([#1071](https://github.com/dotgibson/dotfiles-core/issues/1071)).
+  The v7.9.0 fan-out synced all ten targets and **failed to push to one**:
+  `dotfiles-NixOS` had been registered in `scripts/os-repos.txt` (#1064) but never added to
+  the `dotgibson-fleet-sync` App's installation, which is `repository_selection=selected`,
+  so the minted token answered 403 on the tenth push — after nine PRs had already opened.
+  Adding a fleet target is **two facts in two systems**, and only the one in git had a gate.
+
+  `scripts/fleet-app-scope.sh` asks GitHub the other one. It derives what the installation
+  must cover the way every fleet gate derives the fleet (`os-repos.txt` through
+  `load_os_repos`, plus the two exceptions `GITHUB-APP-AUTH.md` names — no second copy of
+  the list) and reports **both** directions: a repo the fan-out pushes to that the App
+  cannot reach, and a repo installed that nothing writes to.
+
+  **The two halves of that question are readable from opposite environments**, which is the
+  shape of the whole change. The _grant_ half (is the installation there, un-suspended,
+  holding exactly the documented verbs?) needs an org-admin token, so it runs on a
+  maintainer box; the _reach_ half (which repos does it cover?) needs an installation token
+  no local environment can mint, so it runs in CI. Each half reports its own coverage and an
+  unread half is never a pass — `fleet-protection.sh`'s doctrine, and the reason
+  `make fleet-app-scope` stays green locally while `--check` exits 3 there.
+
+  Wired in two places: `.github/workflows/fleet-app-scope.yml` (Mondays 06:45 UTC, red +
+  a deduplicated issue) and a preflight inside `sync-fanout.yml` that checks the run's own
+  targets **before the first clone**, so an unreachable repo is named up front instead of
+  403ing on the last push. The preflight _warns_ rather than blocking when it cannot read —
+  a blind check must not deny every repo its PR, which is the failure the fan-out loop is
+  already built to avoid.
+
+### Changed
+
+- **`scripts/os-repos.txt` no longer claims to be the only step.** Its header said "THIS
+  FILE IS THE ONLY EDIT", which is why #1064 stopped there; it now names the App
+  installation as the second registration, with the Organization-Owner path to add it.
+  The same correction lands in `VENDORING.md`'s onboarding section (with why this is _not_
+  a return of the four-copies problem #669 removed: those were four copies of one fact,
+  this is one fact in each of two systems that cannot read each other) and in the guidance
+  `scripts/new-os-repo.sh` prints after scaffolding a repo.
+- **`GITHUB-APP-AUTH.md` documents `Metadata: read`**, the fourth permission the
+  installation API actually returns. GitHub grants it mandatorily and offers no way to
+  switch it off, so a doc naming three verbs against an API returning four is how the new
+  grant assertion would have been "corrected" into permanent red. `sync-fanout.yml`'s mint
+  now names it explicitly, because `permission-*` mints an explicit set and its preflight
+  spends exactly that verb. Also: the install list is documented as checked rather than
+  asserted, `fleet-app-scope.yml` joins the per-mint consumer table, and `freshness.yml`'s
+  row said ×2 for three mint steps.
+- **`RELEASE-RUNBOOK.md`** stops asserting the App is "installed on every target repo" and
+  says what now checks it, plus a troubleshooting row for the symptom itself — nine pushes
+  and a 403 on the tenth.
+- **`scripts/freshness-dashboard.sh`** said of the fleet App that there is "nothing to
+  probe here". There was: its reach. The board now links the register that probes it
+  rather than recomputing it (it holds no App mint, deliberately).
+
 ## [v7.9.0] - 2026-09-16
 
 ### Added

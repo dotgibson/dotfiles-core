@@ -147,6 +147,12 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
+          # metadata, the fourth verb, is what the install-reach preflight below spends
+          # (GET /installation/repositories). GitHub grants Metadata: read mandatorily to
+          # any App holding a repository permission and offers no way to turn it off — but
+          # `permission-*` mints an EXPLICIT permission set, so a verb this list omits is a
+          # verb the token does not carry. Named here rather than assumed.
+          permission-metadata: read
 
       # ── Fail early and legibly if the mint above was SKIPPED (no FLEET_APP_CLIENT_ID variable
       # or no FLEET_APP_PRIVATE_KEY secret) — otherwise the first clone/push would fail with
@@ -179,6 +185,54 @@ jobs:
           ref: ${{ steps.resolve.outputs.tag }}
           fetch-depth: 0
           path: fleet/dotfiles-core
+
+      # ── Can the token minted above actually REACH the repos this run will push to?
+      # On v7.9.0 it could not: dotfiles-NixOS was in scripts/os-repos.txt but not in the
+      # App's installation (which is `repository_selection=selected`), so this job synced
+      # all ten targets, opened nine PRs and 403'd on the tenth push — the whole cost paid
+      # before the answer arrived (#1071). Asked here, it costs one API call before the
+      # first clone, and names the repo.
+      #
+      # `--require` gets THIS RUN's targets, not the whole expected set: the `repos:` input
+      # narrows a fan-out to a subset, and a backfill of one repo must not be failed over
+      # an unrelated repo nobody can add mid-release.
+      #
+      # A BLIND CHECK WARNS, IT DOES NOT BLOCK (rc 3). Everywhere else in the fleet
+      # "cannot read is never a pass" — but the weekly register is where that has to be
+      # loud, because a preflight that reds on its own blindness denies all ten repos
+      # their PR, which is a worse outcome than the one-repo failure the loop below is
+      # built to tolerate (see its "NEVER let one repo's failure deny the others" note).
+      # An unreachable TARGET (rc 1) is different: that push cannot succeed, so it is fatal
+      # here.
+      - name: Preflight — the App installation reaches this run's targets
+        if: steps.resolve.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          REPOS_INPUT: ${{ github.event.inputs.repos }}
+        run: |
+          set -euo pipefail
+          core="$GITHUB_WORKSPACE/fleet/dotfiles-core"
+          # The checkout above is at the RELEASED TAG while this workflow runs from main,
+          # and RELEASE-RUNBOOK.md §5 has you dry-run this job against a PAST tag — where
+          # this script does not exist. Guarded, or that dry-run kills the fan-out.
+          if [ ! -x "$core/scripts/fleet-app-scope.sh" ]; then
+            echo "::warning::Core $TAG predates scripts/fleet-app-scope.sh — the App's install reach is unchecked for this fan-out (#1071)"
+            exit 0
+          fi
+          # The same derivation the fan-out step below makes, for the same reason: the
+          # targets are os-repos.txt, or the dispatch subset.
+          mapfile -t repos < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$core/scripts/os-repos.txt")
+          if [ -n "${REPOS_INPUT:-}" ]; then read -r -a repos <<< "$REPOS_INPUT"; fi
+          rc=0
+          "$core/scripts/fleet-app-scope.sh" --reach-only --check --require "${repos[*]}" || rc=$?
+          case "$rc" in
+            0) echo ":: the installation reaches every target of this run" ;;
+            3) echo "::warning::could not read the App installation's reach — continuing, because a blind preflight must not deny every repo its PR. .github/workflows/fleet-app-scope.yml is the gate that reds on this." ;;
+            *) echo "::error::The App installation cannot reach a repo this fan-out pushes to — the push would 403 (#1071). Add it: Organization settings → GitHub Apps → dotgibson-fleet-sync → Configure → Repository access (needs an Organization Owner)."
+               exit 1 ;;
+          esac
 
       # The audit gate inside sync-core.sh runs scripts/audit-core.sh --quiet (NOT
       # --strict), so a missing linter SKIPs rather than fails. We install the cheap,

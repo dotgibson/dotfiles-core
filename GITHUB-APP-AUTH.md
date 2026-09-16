@@ -26,12 +26,20 @@ the App.**
 
 - Most jobs pass `repositories:` and get a token good for **only that target** — the
   `notify-web` dispatch is scoped to `dotfiles-web`, and nothing else.
-- **`sync-fanout.yml` deliberately omits it**, so its token covers the App's **entire
-  installation** — every OS repo, `dotfiles-Offense`, `dotfiles-web` and `dotfiles-core`.
-  That is intentional: hardcoding the fleet there would be a second copy of
-  `scripts/os-repos.txt` that could drift and 403 a newly-added repo, so the installation
-  list stays the one place scope lives. The trade is a broader token for that one job, and
-  it is why the install list should stay minimal.
+- **`sync-fanout.yml` and `fleet-app-scope.yml` deliberately omit it**, so their tokens
+  cover the App's **entire installation** — every OS repo, `dotfiles-Offense`,
+  `dotfiles-web` and `dotfiles-core`. That is intentional: hardcoding the fleet in the
+  fan-out would be a second copy of `scripts/os-repos.txt` that could drift and 403 a
+  newly-added repo, so the installation list stays the one place scope lives. The trade is
+  a broader token for those jobs, and it is why the install list should stay minimal.
+  (`fleet-app-scope.yml` omits it for a second reason: a token scoped to the repos it was
+  about to ask about would be the question answering itself.)
+
+  **Making the install list authoritative did not make it correct.** That reasoning holds —
+  and the 403 it set out to prevent happened anyway, on v7.9.0, because nothing compared
+  the list to `scripts/os-repos.txt`
+  ([#1071](https://github.com/dotgibson/dotfiles-core/issues/1071)). One place for scope is
+  the right design; it just needs a gate, which is the section below.
 
 **Both shapes now scope *verbs* too, and they are independent axes.** `repositories:`
 bounds **where** a token works; `permission-*` bounds **what** it may do there. Until #830
@@ -44,8 +52,9 @@ section to answer. It is now narrowed, per mint:
 | Consumer | Reach | Verbs |
 | --- | --- | --- |
 | `notify-web-call.yml`, `notify-web.yml` | `dotfiles-web` | `contents: write` — all `POST /repos/…/dispatches` needs |
-| `sync-fanout.yml` | the whole installation, deliberately | `contents` + `pull-requests` + `workflows: write` |
-| `freshness.yml` (×2) | this repository (no `owner:`/`repositories:`) | `contents` + `pull-requests: write` |
+| `sync-fanout.yml` | the whole installation, deliberately | `contents` + `pull-requests` + `workflows: write`, + `metadata: read` for its install-reach preflight |
+| `fleet-app-scope.yml` | the whole installation, deliberately | `metadata: read` — it reads a repository list and must hold no write verb to do it |
+| `freshness.yml` (×3) | this repository (no `owner:`/`repositories:`) | `contents` + `pull-requests: write` |
 
 `sync-fanout.yml` is the one that keeps **Workflows: write**, and it is load-bearing rather
 than cautious: a sync branch can carry `.github/workflows/*` pin moves, and GitHub refuses
@@ -110,6 +119,15 @@ Least privilege — grant only these, and nothing else:
   an App that touches a workflow file without this grant — `Contents: write` is not
   enough — and it refuses the whole push, not just that file.
 - Everything else: **No access**.
+
+**Plus `Metadata: read` — which is not a choice and not an oversight above.** GitHub grants
+it mandatorily to any App holding a repository permission and offers no way to switch it
+off, so the installation API answers with **four** permissions where this list names three.
+It is load-bearing twice: `scripts/fleet-app-scope.sh` asserts the grant set *exactly*, and
+`GET /installation/repositories` — the call that reads which repos the App can reach — spends
+precisely this verb. Because `permission-*` mints an **explicit** set rather than a subset of
+what the installation holds, a consumer that needs that read has to name
+`permission-metadata: read` itself; `sync-fanout.yml` does, for its preflight.
 
 > **Workflows: write is not optional, even though only some repos need it.** Only repos
 > that SHA-pin a Core caller (`dotfiles-MacBook`, `dotfiles-Defense`) ever have a workflow
@@ -182,6 +200,33 @@ The App does **not** need installing on the *source* repos that only mint (`htpx
 `dotfiles-core` for its *fan-out* minting) — a minted token's reach is decided by the
 installation on the *other* repos. `htpx` in particular is read with the built-in token,
 so do not add it.
+
+**This list is checked, not just asserted** — `scripts/fleet-app-scope.sh`, the
+App-installation register. It derives the expected set the same way every other fleet gate
+derives the fleet (`scripts/os-repos.txt` through `load_os_repos`, plus the two exceptions
+named above, which `scripts/test/90-policy-gates.sh` holds to this section), then asks
+GitHub what the installation actually covers and reports both directions: a repo the
+fan-out pushes to that the App cannot reach, and a repo installed that nothing writes to.
+Twelve repos, at the time of writing.
+
+It runs in three places, because the two halves of the question are readable from opposite
+environments:
+
+| Where | Half it can read | Why not the other |
+| --- | --- | --- |
+| `make fleet-app-scope` (a maintainer box) | **grant** — is the installation there, un-suspended, holding exactly the verbs above? | no local environment can mint an installation token, so it cannot enumerate `selected` |
+| `.github/workflows/fleet-app-scope.yml` (weekly) | **reach** — which repos does it cover? | `GET /orgs/<org>/installations` needs an org-admin user token; `GITHUB_TOKEN` cannot read it, an installation token cannot read it, and there is no PAT |
+| `sync-fanout.yml` (preflight, per release) | **reach**, against that run's targets | same, and a blind preflight there warns rather than denying every repo its PR |
+
+So the **grant** half — the assertion that would catch the App quietly gaining
+`Administration: write` — runs only when a human runs it. That is a documented blind spot,
+not a covered one; closing it in CI would mean signing the App JWT from
+`FLEET_APP_PRIVATE_KEY` by hand, since `create-github-app-token` does not expose it.
+
+**Fixing a mismatch needs an Organization Owner.** Organization settings → GitHub Apps →
+`dotgibson-fleet-sync` → Configure → Repository access. The REST equivalent is
+`PUT /user/installations/<installation id>/repositories/<repo id>`, which refuses for
+anyone without owner rights — so no token in this repo, and no CI job, can do it.
 
 ## Adding a new consumer
 

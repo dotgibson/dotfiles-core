@@ -1,0 +1,150 @@
+name: fleet-app-scope
+
+# Can the fan-out's credential REACH the repos it pushes to? `sync-fanout.yml` mints a
+# token from the `dotgibson-fleet-sync` App and deliberately passes no `repositories:`
+# list, so the token's reach IS the App's installation (GITHUB-APP-AUTH.md) — the one
+# piece of the release path that lives outside every checkout, and was checked by nothing.
+#
+# It bit on v7.9.0: `dotfiles-NixOS` was registered in scripts/os-repos.txt (#1064) but
+# never added to the installation, which is `repository_selection=selected`, so the
+# fan-out synced all ten targets and 403'd on the tenth push — at the end of a release,
+# after nine PRs had opened (dotgibson/dotfiles-core#1071). This asks the question weekly
+# instead, so the answer arrives before a release rather than during one.
+#
+# Read-only: it never touches the installation — fixing one needs an Organization Owner in
+# the GitHub UI, which no token here has. The job only reports.
+#
+# --reach-only, deliberately: the register's OTHER half (does the App hold exactly the
+# verbs GITHUB-APP-AUTH.md grants it?) reads /orgs/<org>/installations, which needs an
+# org-admin user token. GITHUB_TOKEN cannot read it, an App installation token cannot read
+# it, and the fleet keeps no PAT — so that half runs only on a maintainer box
+# (`make fleet-app-scope`) and this job says so in its summary rather than letting a green
+# run imply it proved both.
+
+on:
+  schedule:
+    - cron: "45 6 * * 1" # Mondays 06:45 UTC — after core-integrity/fleet-protection's 06:30
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-app-scope
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    if: github.repository_owner == 'dotgibson'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Presence flag for the App private key (value is 'true'/'false', never the key):
+      # secrets cannot be tested in a step `if:`, but an env derived from a secret
+      # comparison can. Same idiom, same reason, as sync-fanout.yml's.
+      HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # ── The token whose REACH is the subject of the check. Two properties are
+      # load-bearing and neither is incidental:
+      #   • NO `repositories:` — a scoped token would report only the repos we asked for,
+      #     which is the question answering itself. It has to cover the whole installation.
+      #   • `permission-metadata: read` and nothing else — GET /installation/repositories
+      #     needs metadata and no more, and this job must never hold a write verb to read
+      #     a list (#830's verb-scoping, at its minimum). ──
+      - name: Mint an installation token (if the App is configured)
+        id: app
+        if: vars.FLEET_APP_CLIENT_ID != '' && env.HAS_APP_KEY == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.FLEET_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-metadata: read
+
+      # A SKIPPED mint is the one failure that would otherwise look like a pass: the
+      # register would report "reach: NOT READ" and exit 3, which every other consumer of
+      # that code treats as an environment skip. Here it is not — this job exists to read
+      # that half, so no token means the job is broken, not blind.
+      - name: Preflight — an installation token was minted
+        env:
+          FLEET_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FLEET_TOKEN:-}" ]; then
+            echo "::error::No installation token was minted, so the App's reach cannot be read."
+            echo "::error::Set the FLEET_APP_CLIENT_ID variable + FLEET_APP_PRIVATE_KEY secret"
+            echo "::error::(GITHUB-APP-AUTH.md). An attempted-but-failed mint errors inside"
+            echo "::error::create-github-app-token and never reaches here, so an empty token"
+            echo "::error::here has exactly one cause: the mint was skipped."
+            exit 1
+          fi
+
+      - name: Does the installation reach every fan-out target?
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -o pipefail
+          ./scripts/fleet-app-scope.sh --reach-only --check 2>&1 \
+            | tee "$RUNNER_TEMP/scope.txt"
+        # Capture the verdict for the summary; the re-assert step below is the red.
+        continue-on-error: true
+
+      - name: Job summary
+        if: always()
+        env:
+          # Through `env:`, not spliced into the script — the house rule for every context
+          # value a run block reads (modern-baseline rule 7).
+          OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          {
+            echo "## fleet-app-scope"
+            echo
+            case "$OUTCOME" in
+              success)
+                echo "The App installation covers every repo the fan-out pushes to."
+                ;;
+              *)
+                echo "**The installation does not match the fleet.** A repo the fan-out"
+                echo "pushes to may be unreachable — the next release would 403 on it."
+                echo
+                echo "Fixing this needs an **Organization Owner**: Organization settings →"
+                echo "GitHub Apps → \`dotgibson-fleet-sync\` → Configure → Repository access."
+                ;;
+            esac
+            echo
+            echo "_Proved REACH only._ The register's grant half (does the App hold exactly"
+            echo "the verbs GITHUB-APP-AUTH.md grants it?) needs an org-admin token that no CI"
+            echo "job has, so it is **unproven here** — run \`make fleet-app-scope\` locally for it."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/scope.txt" 2>/dev/null || echo "(no output captured)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Re-assert the verdict so a mismatched installation shows a red run.
+      - name: Fail on a mismatch
+        if: steps.check.outcome != 'success'
+        run: |
+          echo "The fleet App installation does not cover every fan-out target — see the job summary." >&2
+          exit 1
+
+  # Turn a red run into a deduplicated issue (G1). An installation that cannot reach a
+  # target repo breaks the NEXT release, and a tab nobody watches is how v7.9.0 found out
+  # the expensive way.
+  notify-failure:
+    needs: scope
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: fleet-app-scope
+      title: "ci-failure: the fleet App installation does not cover the fleet"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly App-installation check is red: a repo the fan-out pushes to may not be in the `dotgibson-fleet-sync` installation, which would 403 the next release's fan-out (#1071). Fixing it needs an Organization Owner — Organization settings → GitHub Apps → `dotgibson-fleet-sync` → Configure → Repository access. Or the check itself may be broken."

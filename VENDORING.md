@@ -761,6 +761,37 @@ situation you were least able to spot it. Those arrays are gone (#669); every fl
 now reads the file through `load_os_repos` in `scripts/lib/common.sh`, and an unreadable or
 empty file stops those three gates outright rather than substituting a stale list.
 
+### …and one edit that is not in git
+
+**Add the repo to the fan-out App's installation, or the fan-out cannot push to it.**
+`sync-fanout.yml` pushes with a token minted from the `dotgibson-fleet-sync` App, and the
+App's installation carries its own repository list
+([`GITHUB-APP-AUTH.md`](GITHUB-APP-AUTH.md)). A repo in `os-repos.txt` but not in that list
+is synced, committed and then refused at the push with a 403 — at the _end_ of a release,
+after the rest of the fleet already has its PRs. That is exactly how `dotfiles-NixOS`
+landed as the tenth repo
+([#1071](https://github.com/dotgibson/dotfiles-core/issues/1071)).
+
+**Organization settings → GitHub Apps → `dotgibson-fleet-sync` → Configure → Repository
+access → add the repo.** It needs an **Organization Owner**; no token in this repo can do
+it, and the REST equivalent (`PUT /user/installations/<id>/repositories/<repo id>`) refuses
+for anyone without owner rights.
+
+This is **not** a return of the four-copies problem #669 removed. Those were four copies of
+_one fact_ — the fleet list — which is why they could disagree. This is _one_ fact in each
+of two systems that cannot read each other: git does not own the App's repository access,
+and the App does not read `os-repos.txt`. What #669's lesson demands is that the
+disagreement be checkable rather than remembered, so it is:
+
+```bash
+make fleet-app-scope
+```
+
+reports the installation (`scripts/fleet-app-scope.sh`), and
+`.github/workflows/fleet-app-scope.yml` reds weekly — plus a preflight inside the fan-out
+itself, which now names an unreachable target before the first clone instead of 403ing on
+the last push.
+
 `dotfiles-Windows` is deliberately absent from the file: it replicates the host config
 natively in PowerShell and vendors no `core/` at all.
 

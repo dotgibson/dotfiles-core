@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-release-triggers fleet-vendor-guidance fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-fleet-versions check-fleet-versions update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity gen-hero-tape gen-hero-tape-fleet check-hero-tape check-hero-size check-hero-render changelog-recent release tag publish release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-release-triggers fleet-vendor-guidance fleet-drift fleet-app-scope core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-fleet-versions check-fleet-versions update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity gen-hero-tape gen-hero-tape-fleet check-hero-tape check-hero-size check-hero-render changelog-recent release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -75,6 +75,9 @@ fleet-drift: ## Report which OS repos (+ Windows) lag the latest RELEASED Core t
 
 fleet-protection: ## Does a RULESET actually bind main in every repo? (--migrate/--retire to fix)
 	@./scripts/fleet-protection.sh
+
+fleet-app-scope: ## Can the fan-out App reach every repo it pushes to, with exactly the documented verbs? (the install-scope register; the reach half needs CI, see fleet-app-scope.yml)
+	@./scripts/fleet-app-scope.sh
 
 core-integrity: ## Verify every OS repo's vendored core/ is pristine (not hand-edited) vs its core.lock
 	@./scripts/core-integrity.sh
