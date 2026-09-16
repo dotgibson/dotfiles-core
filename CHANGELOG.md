@@ -2,33 +2,45 @@
 
 ### Added
 
-- **The App-installation register — `make fleet-app-scope`** ([#1071](https://github.com/dotgibson/dotfiles-core/issues/1071)).
-  The v7.9.0 fan-out synced all ten targets and **failed to push to one**:
-  `dotfiles-NixOS` had been registered in `scripts/os-repos.txt` (#1064) but never added to
-  the `dotgibson-fleet-sync` App's installation, which is `repository_selection=selected`,
-  so the minted token answered 403 on the tenth push — after nine PRs had already opened.
-  Adding a fleet target is **two facts in two systems**, and only the one in git had a gate.
+- **The fan-out proves the App installation covers its targets, and a register asks the same
+  question between releases** ([#1071](https://github.com/dotgibson/dotfiles-core/issues/1071)).
+  The fan-out's write scope is the GitHub App's _installation_, deliberately — hardcoding a
+  repository list on the mint would be a second copy of `scripts/os-repos.txt` that could
+  drift. But that installation is `repository_selection=selected` and nothing compared the two
+  lists, so registering a repo in `os-repos.txt` left half the registration undone with no gate
+  to say so.
 
-  `scripts/fleet-app-scope.sh` asks GitHub the other one. It derives what the installation
-  must cover the way every fleet gate derives the fleet (`os-repos.txt` through
-  `load_os_repos`, plus the two exceptions `GITHUB-APP-AUTH.md` names — no second copy of
-  the list) and reports **both** directions: a repo the fan-out pushes to that the App
-  cannot reach, and a repo installed that nothing writes to.
+  It shipped exactly once. `dotfiles-NixOS` joined the fleet in #1064; the v7.9.0 fan-out
+  cloned, audited and synced all ten repos and then failed on the tenth push —
+  `Permission to dotgibson/dotfiles-NixOS.git denied to dotgibson-fleet-sync[bot]` — after
+  every expensive step had already run (#1070).
 
-  **The two halves of that question are readable from opposite environments**, which is the
-  shape of the whole change. The _grant_ half (is the installation there, un-suspended,
-  holding exactly the documented verbs?) needs an org-admin token, so it runs on a
-  maintainer box; the _reach_ half (which repos does it cover?) needs an installation token
-  no local environment can mint, so it runs in CI. Each half reports its own coverage and an
-  unread half is never a pass — `fleet-protection.sh`'s doctrine, and the reason
-  `make fleet-app-scope` stays green locally while `--check` exits 3 there.
+  A pre-flight in `sync-fanout.yml` now reads the installation with the token it has just
+  minted and fails **before the first clone**, naming the repo and the Organization-Owner fix.
+  A `check_only: true` dispatch runs the pre-flights and stops, so the scope can be checked
+  _before_ a release instead of discovered at the end of one.
 
-  Wired in two places: `.github/workflows/fleet-app-scope.yml` (Mondays 06:45 UTC, red +
-  a deduplicated issue) and a preflight inside `sync-fanout.yml` that checks the run's own
-  targets **before the first clone**, so an unreachable repo is named up front instead of
-  403ing on the last push. The preflight _warns_ rather than blocking when it cannot read —
-  a blind check must not deny every repo its PR, which is the failure the fan-out loop is
-  already built to avoid.
+  **The comparison itself lives in `scripts/fleet-app-scope.sh`**, the App-installation
+  register, rather than inline in the workflow: the same question is worth asking on a
+  schedule, and a second spelling of it is how a gate ends up covering a different list than
+  the thing it gates. The register derives the expected set the way every fleet gate derives
+  the fleet (`os-repos.txt` through `load_os_repos`, plus the two exceptions
+  `GITHUB-APP-AUTH.md` names — no second copy of the list) and reports **both** directions: a
+  push target the App cannot reach, and a repo installed that nothing writes to.
+
+  **The two halves of the question are readable from opposite environments**, which shapes the
+  whole change. The _grant_ half (installation present, un-suspended, holding exactly the
+  documented verbs) needs an org-admin token, so it runs on a maintainer box via
+  `make fleet-app-scope`. The _reach_ half (which repos does it cover?) needs an installation
+  token no local environment can mint, so it runs in CI — which a **scheduled** job can do,
+  and `.github/workflows/fleet-app-scope.yml` now does every Monday, red plus a deduplicated
+  issue. Each half reports its own coverage, an unread half is never a pass, and a real finding
+  outranks one, so the bare reporter stays green locally while `--check` exits 3 there.
+
+  The fan-out's pre-flight _warns_ rather than blocking when it cannot read: a blind check must
+  not deny every repo its PR, which is the failure the fan-out loop already exists to avoid.
+  Its mint now names `permission-metadata: read`, the verb that read spends — `permission-*`
+  mints an explicit set, so an omitted verb is one the token does not carry.
 
 ### Changed
 
@@ -42,17 +54,51 @@
 - **`GITHUB-APP-AUTH.md` documents `Metadata: read`**, the fourth permission the
   installation API actually returns. GitHub grants it mandatorily and offers no way to
   switch it off, so a doc naming three verbs against an API returning four is how the new
-  grant assertion would have been "corrected" into permanent red. `sync-fanout.yml`'s mint
-  now names it explicitly, because `permission-*` mints an explicit set and its preflight
-  spends exactly that verb. Also: the install list is documented as checked rather than
-  asserted, `fleet-app-scope.yml` joins the per-mint consumer table, and `freshness.yml`'s
-  row said ×2 for three mint steps.
+  grant assertion would have been "corrected" into permanent red. Also: `fleet-app-scope.yml`
+  joins the per-mint consumer table, and `freshness.yml`'s row said ×2 for three mint steps.
 - **`RELEASE-RUNBOOK.md`** stops asserting the App is "installed on every target repo" and
   says what now checks it, plus a troubleshooting row for the symptom itself — nine pushes
   and a 403 on the tenth.
 - **`scripts/freshness-dashboard.sh`** said of the fleet App that there is "nothing to
   probe here". There was: its reach. The board now links the register that probes it
   rather than recomputing it (it holds no App mint, deliberately).
+- **nvim plugin pins move forward for five plugins.** `fzf-lua`, `gitsigns.nvim`,
+  `nvim-tree.lua`, `render-markdown.nvim` and `schemastore.nvim` advance to upstream HEAD —
+  the set a 2026-09-16 re-run of the fleet health board's signals (#794) found stale, four
+  days after #965 rolled the previous one. The other three signals were green on the same
+  run: all **ten** vendored `core/` trees pristine at `v7.9.0` (the tables count
+  `dotfiles-NixOS` for the first time, #1064); every repo current except `dotfiles-Windows`,
+  whose 28-commit gap is its Tuesday `nvim-sync` cron rather than drift — the one Core
+  commit in the range that touches `nvim/` landed after this week's run; and all eight zsh
+  plugin pins current.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`,
+  `behind_by=0` in all five), and each range was read before promotion:
+
+  - **`fzf-lua`** `05e44d3` → `02bc882`, 3 commits: a `keymap_edit` action fix in
+    `path.lua`, emmylua 0.25.1 type-lint fixes, CI vimdoc autogen. The fix lands on a
+    picker Core binds (`require("fzf-lua").keymaps`) — editing a mapping from that picker
+    now resolves its source location.
+  - **`gitsigns.nvim`** `f2421c5` → `8d79f24`, 9 commits: a unified diff panel (staging,
+    cursor preservation, `--diff=none`), `nowait` blame bindings, and
+    `refactor(compat)!: drop support for Neovim 0.10`. The breaking commit is inert here —
+    the fleet floor is Neovim 0.12.0 (`scripts/tool-versions.env`, `PORTING-MATRIX.md`).
+    `M.diff` gained an `opts` parameter ahead of its callback, with an `@overload` for the
+    old arity; Core does not call it. All eight entry points Core does bind are
+    **byte-identical** across the range: `nav_hunk`, `stage_hunk`, `reset_hunk`,
+    `stage_buffer`, `preview_hunk`, `blame_line`, `diffthis` and `:Gitsigns select_hunk`.
+  - **`nvim-tree.lua`** `882c54f` → `8d81449`, 1 commit: `experimental.session_restore_nvim`
+    flips to `true` by default. It requires Neovim 0.13+, so it is inert at the fleet's
+    floor; when the floor crosses it, it restores tree buffers for the sessions
+    `persistence.nvim` already saves rather than competing with them. Core sets no
+    `experimental` key, so it takes the default either way.
+  - **`render-markdown.nvim`** `a778444` → `640a3ec`, 1 commit: the 8.14.0 release commit
+    alone — changelog, doc date, `M.version` string, tests. Its headline feature
+    (multiline table cells) was already at the pin this replaces.
+  - **`schemastore.nvim`** `72d144a` → `71cd030`, 3 commits: two catalog refreshes plus a
+    workflow change that drops a PAT. Data and `.github/` only.
+
+  Nothing renames or removes an API Core calls.
 
 ## [v7.9.0] - 2026-09-16
 

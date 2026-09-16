@@ -201,7 +201,19 @@ The App does **not** need installing on the *source* repos that only mint (`htpx
 installation on the *other* repos. `htpx` in particular is read with the built-in token,
 so do not add it.
 
-**This list is checked, not just asserted** — `scripts/fleet-app-scope.sh`, the
+### A new fleet repo is TWO registrations, and only one of them is in git
+
+The installation is `repository_selection=selected`, so adding a repo to
+`scripts/os-repos.txt` registers it with every fleet gate **except this one**. Its list
+cannot be read with an ordinary credential — `GET /installation/repositories` refuses a user
+PAT outright ("You must authenticate with an access token authorized to a GitHub App") — so
+only a job that has already minted the App token can ask. Two now do.
+
+That gap shipped once: `dotfiles-NixOS` joined the fleet in #1064, and the v7.9.0 fan-out
+cloned, audited and synced all ten repos before failing on the tenth push with
+`Permission to dotgibson/dotfiles-NixOS.git denied to dotgibson-fleet-sync[bot]` (#1071).
+
+**So this list is checked, not just asserted** — `scripts/fleet-app-scope.sh`, the
 App-installation register. It derives the expected set the same way every other fleet gate
 derives the fleet (`scripts/os-repos.txt` through `load_os_repos`, plus the two exceptions
 named above, which `scripts/test/90-policy-gates.sh` holds to this section), then asks
@@ -218,15 +230,23 @@ environments:
 | `.github/workflows/fleet-app-scope.yml` (weekly) | **reach** — which repos does it cover? | `GET /orgs/<org>/installations` needs an org-admin user token; `GITHUB_TOKEN` cannot read it, an installation token cannot read it, and there is no PAT |
 | `sync-fanout.yml` (preflight, per release) | **reach**, against that run's targets | same, and a blind preflight there warns rather than denying every repo its PR |
 
+To check the scope without waiting for the Monday sweep — before cutting a release, or right
+after adding a repo — either dispatch the register, or run the fan-out's preflights alone:
+
+```sh
+gh workflow run fleet-app-scope.yml
+gh workflow run sync-fanout.yml -f tag=v7.9.0 -f check_only=true
+```
+
 So the **grant** half — the assertion that would catch the App quietly gaining
 `Administration: write` — runs only when a human runs it. That is a documented blind spot,
 not a covered one; closing it in CI would mean signing the App JWT from
 `FLEET_APP_PRIVATE_KEY` by hand, since `create-github-app-token` does not expose it.
 
-**Fixing a mismatch needs an Organization Owner.** Organization settings → GitHub Apps →
-`dotgibson-fleet-sync` → Configure → Repository access. The REST equivalent is
-`PUT /user/installations/<installation id>/repositories/<repo id>`, which refuses for
-anyone without owner rights — so no token in this repo, and no CI job, can do it.
+**Fixing a mismatch is an Organization Owner action.** Organization settings → GitHub Apps →
+`dotgibson-fleet-sync` → Configure → Repository access. The REST equivalent
+(`PUT /user/installations/{installation_id}/repositories/{repository_id}`) refuses for anyone
+without owner rights — so no token in this repo, and no CI job, can do it.
 
 ## Adding a new consumer
 

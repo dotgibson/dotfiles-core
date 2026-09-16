@@ -25,8 +25,10 @@
 # because a sync branch can carry .github/workflows/* pin moves) from the fleet App —
 # the FLEET_APP_CLIENT_ID variable + FLEET_APP_PRIVATE_KEY secret, see GITHUB-APP-AUTH.md. The
 # App is the ONLY auth here: the legacy FLEET_SYNC_TOKEN PAT was deleted when G2 finished
-# (#683), so there is nothing behind it. The preflight fails loudly, before the first
-# clone, if the mint did not happen.
+# (#683), so there is nothing behind it. Two preflights fail loudly, before the first clone:
+# one if the mint did not happen, and one if the App's INSTALLATION does not cover every
+# repo in scripts/os-repos.txt — the scope mismatch that let the v7.9.0 fan-out sync all ten
+# repos and 403 pushing to the tenth (#1071). `check_only: true` runs just those and stops.
 #
 # NB: workflow_run + workflow_dispatch triggers only take effect once this file is on
 # the default branch (GitHub reads both from main, never from a feature branch). After
@@ -53,6 +55,11 @@ on:
         description: "Optional subset of OS repos (space-separated); blank = whole fleet"
         required: false
         default: ""
+      check_only:
+        description: "Only check that the fleet App installation covers every target, then stop — no clone, no sync, no PR"
+        type: boolean
+        required: false
+        default: false
 
 # Only the default token is requested (read access to check out Core). All cross-repo
 # writes go through the minted App token — there is no PAT fallback any more (#683) —
@@ -186,53 +193,72 @@ jobs:
           fetch-depth: 0
           path: fleet/dotfiles-core
 
-      # ── Can the token minted above actually REACH the repos this run will push to?
-      # On v7.9.0 it could not: dotfiles-NixOS was in scripts/os-repos.txt but not in the
-      # App's installation (which is `repository_selection=selected`), so this job synced
-      # all ten targets, opened nine PRs and 403'd on the tenth push — the whole cost paid
-      # before the answer arrived (#1071). Asked here, it costs one API call before the
-      # first clone, and names the repo.
+      # ── Pre-flight: does the App installation actually COVER the repos this run is about
+      # to push to? The fan-out's write scope IS the installation (no `repositories:` on the
+      # mint, deliberately — see the note above), and this org's is
+      # `repository_selection=selected`. So a repo added to scripts/os-repos.txt is registered
+      # with every fleet gate EXCEPT this one, and the mismatch surfaces at the very END of a
+      # release, as a push 403, after every repo has already been cloned, audited and synced:
+      # the v7.9.0 fan-out synced the whole list and then 403'd pushing to `dotfiles-NixOS`,
+      # which #1064 had registered days earlier (#1071).
       #
-      # `--require` gets THIS RUN's targets, not the whole expected set: the `repos:` input
-      # narrows a fan-out to a subset, and a backfill of one repo must not be failed over
-      # an unrelated repo nobody can add mid-release.
+      # Comparing the two lists costs one API call and moves the failure to before the first
+      # clone, naming the repo and the fix.
       #
-      # A BLIND CHECK WARNS, IT DOES NOT BLOCK (rc 3). Everywhere else in the fleet
-      # "cannot read is never a pass" — but the weekly register is where that has to be
-      # loud, because a preflight that reds on its own blindness denies all ten repos
-      # their PR, which is a worse outcome than the one-repo failure the loop below is
-      # built to tolerate (see its "NEVER let one repo's failure deny the others" note).
-      # An unreachable TARGET (rc 1) is different: that push cannot succeed, so it is fatal
-      # here.
-      - name: Preflight — the App installation reaches this run's targets
+      # THROUGH scripts/fleet-app-scope.sh, not inline (#1076): the same question is worth
+      # asking between releases, and a second spelling of it here is how a gate ends up
+      # covering a different list than the thing it gates. That register also compares the
+      # other direction (a repo installed that nothing writes to) and knows about the two
+      # repos the installation needs beyond the fan-out targets — `dotfiles-core` and
+      # `dotfiles-web` — which a comparison against os-repos.txt alone cannot see.
+      #
+      # `--require` gets THIS RUN's targets rather than the register's full expected set: the
+      # `repos:` input narrows a fan-out to a subset, and a backfill of one repo must not be
+      # failed over an unrelated repo nobody can add mid-release.
+      #
+      # A BLIND CHECK WARNS, IT DOES NOT BLOCK (rc 3). Everywhere else in the fleet "cannot
+      # read is never a pass" — but .github/workflows/fleet-app-scope.yml is where that has to
+      # be loud, because a preflight that reds on its own blindness denies all ten repos their
+      # PR, which is worse than the one-repo failure the loop below is built to tolerate (see
+      # its "NEVER let one repo's failure deny the others" note). An unreachable TARGET (rc 1)
+      # is different: that push cannot succeed, so it is fatal here.
+      #
+      # `check_only: true` runs exactly this much and stops, so the scope can be checked
+      # BEFORE a release rather than discovered at the end of one. ──
+      - name: Preflight — the App installation covers this run's targets
         if: steps.resolve.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           TAG: ${{ steps.resolve.outputs.tag }}
           REPOS_INPUT: ${{ github.event.inputs.repos }}
+          CHECK_ONLY: ${{ inputs.check_only }}
         run: |
           set -euo pipefail
           core="$GITHUB_WORKSPACE/fleet/dotfiles-core"
-          # The checkout above is at the RELEASED TAG while this workflow runs from main,
-          # and RELEASE-RUNBOOK.md §5 has you dry-run this job against a PAST tag — where
-          # this script does not exist. Guarded, or that dry-run kills the fan-out.
+          # The checkout above is at the RELEASED TAG while this workflow runs from main, and
+          # RELEASE-RUNBOOK.md §5 has you dry-run this job against a PAST tag — where the
+          # register does not exist yet. Guarded, or that dry-run kills the fan-out. Between
+          # releases, `gh workflow run fleet-app-scope.yml` asks the same question off main.
           if [ ! -x "$core/scripts/fleet-app-scope.sh" ]; then
-            echo "::warning::Core $TAG predates scripts/fleet-app-scope.sh — the App's install reach is unchecked for this fan-out (#1071)"
+            echo "::warning::Core $TAG predates scripts/fleet-app-scope.sh — the App's install reach is unchecked for this fan-out. Run \`gh workflow run fleet-app-scope.yml\` to check it off main (#1071)."
             exit 0
           fi
-          # The same derivation the fan-out step below makes, for the same reason: the
-          # targets are os-repos.txt, or the dispatch subset.
+          # The SAME parse as the fan-out step below, deliberately — two spellings of "the
+          # fleet" is how a gate ends up covering a different list than the thing it gates.
           mapfile -t repos < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$core/scripts/os-repos.txt")
           if [ -n "${REPOS_INPUT:-}" ]; then read -r -a repos <<< "$REPOS_INPUT"; fi
           rc=0
           "$core/scripts/fleet-app-scope.sh" --reach-only --check --require "${repos[*]}" || rc=$?
           case "$rc" in
-            0) echo ":: the installation reaches every target of this run" ;;
+            0) echo ":: every target is inside the installation: ${repos[*]}" ;;
             3) echo "::warning::could not read the App installation's reach — continuing, because a blind preflight must not deny every repo its PR. .github/workflows/fleet-app-scope.yml is the gate that reds on this." ;;
-            *) echo "::error::The App installation cannot reach a repo this fan-out pushes to — the push would 403 (#1071). Add it: Organization settings → GitHub Apps → dotgibson-fleet-sync → Configure → Repository access (needs an Organization Owner)."
+            *) echo "::error::A repo this fan-out pushes to is NOT in the fleet App installation — its push would 403 at the END of the fan-out (#1071). Fix (Organization Owner only): Organization settings → GitHub Apps → dotgibson-fleet-sync → Configure → Repository access. See GITHUB-APP-AUTH.md."
                exit 1 ;;
           esac
+          if [ "${CHECK_ONLY:-}" = "true" ]; then
+            echo "::notice::check_only — the installation scope is all this run checked; nothing was cloned, synced or opened"
+          fi
 
       # The audit gate inside sync-core.sh runs scripts/audit-core.sh --quiet (NOT
       # --strict), so a missing linter SKIPs rather than fails. We install the cheap,
@@ -240,7 +266,7 @@ jobs:
       # gate); luacheck/markdownlint/actionlint/nvim skip gracefully and were already
       # enforced on the tagged commit by ci.yml before the tag could exist.
       - name: Install the audit toolchain
-        if: steps.resolve.outputs.skip != 'true'
+        if: steps.resolve.outputs.skip != 'true' && inputs.check_only != true
         run: |
           set -euxo pipefail
           # `apt-get update`, BOUNDED — a wedged mirror otherwise hangs to the job
@@ -256,7 +282,7 @@ jobs:
           sudo timeout -k 10 180 apt-get install -y --no-install-recommends shellcheck zsh python3-yaml
 
       - name: Configure git + fleet auth
-        if: steps.resolve.outputs.skip != 'true'
+        if: steps.resolve.outputs.skip != 'true' && inputs.check_only != true
         env:
           # The token minted above — the fleet's only cross-repo write credential.
           FLEET_TOKEN: ${{ steps.app.outputs.token }}
@@ -270,7 +296,7 @@ jobs:
             "https://github.com/"
 
       - name: Fan out Core and open PRs
-        if: steps.resolve.outputs.skip != 'true'
+        if: steps.resolve.outputs.skip != 'true' && inputs.check_only != true
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           OWNER: ${{ github.repository_owner }}
