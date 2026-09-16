@@ -288,6 +288,15 @@ done
 printf '\n## Fleet auth\n\n'
 printf "Cross-repo automation authenticates via a GitHub App that mints short-lived, scoped "
 printf 'installation tokens at run time (GITHUB-APP-AUTH.md) — there are no long-lived PATs to '
-printf 'expire, so nothing to probe here.\n'
+printf 'expire, so no credential here can go stale.\n\n'
+# ONE thing about that App does need probing, and this board is not where it happens: the
+# installation's REACH. Its repository list is `selected`, lives on github.com rather than in
+# any checkout, and a fan-out target missing from it 403s at the end of a release (#1071).
+# Reported by scripts/fleet-app-scope.sh — weekly in .github/workflows/fleet-app-scope.yml,
+# which needs an App mint this read-only board deliberately does not hold. Linked, not
+# recomputed, exactly like the judgment-layer rows above.
+printf 'Its **reach** is a different question, and one that does bite: the App is installed on '
+printf 'selected repos, so a fan-out target missing from that list fails at push time. '
+printf "\`fleet-app-scope.yml\` checks it weekly; \`make fleet-app-scope\` reports it on demand.\n"
 
 exit 0

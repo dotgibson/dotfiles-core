@@ -154,6 +154,14 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
+          # metadata, the fourth verb, is what the install-reach preflight below spends
+          # (GET /installation/repositories). NOT load-bearing: run 35130825192 read that
+          # endpoint fine with the three verbs above and no metadata line, so a narrowed
+          # mint does retain the mandatory Metadata: read rather than dropping it. Named
+          # anyway, because "the token happens to carry a verb we never asked for" is a
+          # property of create-github-app-token's narrowing, not a promise to us — and
+          # GITHUB-APP-AUTH.md asks every mint to say what it spends.
+          permission-metadata: read
 
       # ── Fail early and legibly if the mint above was SKIPPED (no FLEET_APP_CLIENT_ID variable
       # or no FLEET_APP_PRIVATE_KEY secret) — otherwise the first clone/push would fail with
@@ -187,7 +195,7 @@ jobs:
           fetch-depth: 0
           path: fleet/dotfiles-core
 
-      # ── Pre-flight: does the App installation actually COVER every repo this run is about
+      # ── Pre-flight: does the App installation actually COVER the repos this run is about
       # to push to? The fan-out's write scope IS the installation (no `repositories:` on the
       # mint, deliberately — see the note above), and this org's is
       # `repository_selection=selected`. So a repo added to scripts/os-repos.txt is registered
@@ -197,49 +205,59 @@ jobs:
       # which #1064 had registered days earlier (#1071).
       #
       # Comparing the two lists costs one API call and moves the failure to before the first
-      # clone, naming the repo and the fix. It has to live HERE: `GET /installation/repositories`
-      # is an installation-token endpoint ("You must authenticate with an access token
-      # authorized to a GitHub App"), so no PAT-driven sweep and no local script can ask it —
-      # only a job that has already minted the App token, which is this one.
+      # clone, naming the repo and the fix.
+      #
+      # THROUGH scripts/fleet-app-scope.sh, not inline (#1076): the same question is worth
+      # asking between releases, and a second spelling of it here is how a gate ends up
+      # covering a different list than the thing it gates. That register also compares the
+      # other direction (a repo installed that nothing writes to) and knows about the two
+      # repos the installation needs beyond the fan-out targets — `dotfiles-core` and
+      # `dotfiles-web` — which a comparison against os-repos.txt alone cannot see.
+      #
+      # `--require` gets THIS RUN's targets rather than the register's full expected set: the
+      # `repos:` input narrows a fan-out to a subset, and a backfill of one repo must not be
+      # failed over an unrelated repo nobody can add mid-release.
+      #
+      # A BLIND CHECK WARNS, IT DOES NOT BLOCK (rc 3). Everywhere else in the fleet "cannot
+      # read is never a pass" — but .github/workflows/fleet-app-scope.yml is where that has to
+      # be loud, because a preflight that reds on its own blindness denies all ten repos their
+      # PR, which is worse than the one-repo failure the loop below is built to tolerate (see
+      # its "NEVER let one repo's failure deny the others" note). An unreachable TARGET (rc 1)
+      # is different: that push cannot succeed, so it is fatal here.
       #
       # `check_only: true` runs exactly this much and stops, so the scope can be checked
       # BEFORE a release rather than discovered at the end of one. ──
-      - name: Preflight — the App installation covers every fan-out target
+      - name: Preflight — the App installation covers this run's targets
         if: steps.resolve.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TAG: ${{ steps.resolve.outputs.tag }}
           REPOS_INPUT: ${{ github.event.inputs.repos }}
           CHECK_ONLY: ${{ inputs.check_only }}
         run: |
           set -euo pipefail
           core="$GITHUB_WORKSPACE/fleet/dotfiles-core"
+          # The checkout above is at the RELEASED TAG while this workflow runs from main, and
+          # RELEASE-RUNBOOK.md §5 has you dry-run this job against a PAST tag — where the
+          # register does not exist yet. Guarded, or that dry-run kills the fan-out. Between
+          # releases, `gh workflow run fleet-app-scope.yml` asks the same question off main.
+          if [ ! -x "$core/scripts/fleet-app-scope.sh" ]; then
+            echo "::warning::Core $TAG predates scripts/fleet-app-scope.sh — the App's install reach is unchecked for this fan-out. Run \`gh workflow run fleet-app-scope.yml\` to check it off main (#1071)."
+            exit 0
+          fi
           # The SAME parse as the fan-out step below, deliberately — two spellings of "the
           # fleet" is how a gate ends up covering a different list than the thing it gates.
           mapfile -t repos < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$core/scripts/os-repos.txt")
           if [ -n "${REPOS_INPUT:-}" ]; then read -r -a repos <<< "$REPOS_INPUT"; fi
-
-          # An installation scoped to ALL repositories cannot exclude anything, so there is
-          # nothing to compare — and saying so beats a green tick that looks like a real check.
-          selection="$(gh api /installation/repositories --jq '.repository_selection')"
-          if [ "$selection" = all ]; then
-            echo "::notice::the fleet App installation covers ALL repositories — no scope to compare"
-          else
-            gh api /installation/repositories --paginate --jq '.repositories[].name' \
-              | sort >"$RUNNER_TEMP/installed.txt"
-            echo ":: installation scope=$selection; $(wc -l <"$RUNNER_TEMP/installed.txt") repositories"
-            missing=()
-            for r in "${repos[@]}"; do
-              grep -qxF "$r" "$RUNNER_TEMP/installed.txt" || missing+=("$r")
-            done
-            if [ ${#missing[@]} -ne 0 ]; then
-              for r in "${missing[@]}"; do
-                echo "::error::$r is a fan-out target (scripts/os-repos.txt) but is NOT in the fleet App installation — its push would 403 at the END of the fan-out (#1071)"
-              done
-              echo "::error::Fix (Organization Owner only): Organization settings → GitHub Apps → dotgibson-fleet-sync → Configure → Repository access → add ${missing[*]}. See GITHUB-APP-AUTH.md."
-              exit 1
-            fi
-            echo ":: every target is inside the installation: ${repos[*]}"
-          fi
+          rc=0
+          "$core/scripts/fleet-app-scope.sh" --reach-only --check --require "${repos[*]}" || rc=$?
+          case "$rc" in
+            0) echo ":: every target is inside the installation: ${repos[*]}" ;;
+            3) echo "::warning::could not read the App installation's reach — continuing, because a blind preflight must not deny every repo its PR. .github/workflows/fleet-app-scope.yml is the gate that reds on this." ;;
+            *) echo "::error::A repo this fan-out pushes to is NOT in the fleet App installation — its push would 403 at the END of the fan-out (#1071). Fix (Organization Owner only): Organization settings → GitHub Apps → dotgibson-fleet-sync → Configure → Repository access. See GITHUB-APP-AUTH.md."
+               exit 1 ;;
+          esac
           if [ "${CHECK_ONLY:-}" = "true" ]; then
             echo "::notice::check_only — the installation scope is all this run checked; nothing was cloned, synced or opened"
           fi

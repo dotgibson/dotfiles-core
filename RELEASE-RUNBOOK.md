@@ -269,7 +269,11 @@ What you do with the alias depends on the bump you chose in §1.0
    each vendoring `vX.Y.Z` by materializing `core/` at that commit (#587). **It opens PRs, never merges.**
    (Requires the fleet GitHub App — the `FLEET_APP_CLIENT_ID` variable + `FLEET_APP_PRIVATE_KEY`
    secret, both org-level — installed on every target repo. There is no PAT fallback;
-   see `GITHUB-APP-AUTH.md`.)
+   see `GITHUB-APP-AUTH.md`. "Installed on every target repo" is now *checked* rather than
+   assumed: the job preflights the App's reach against this run's targets before the first
+   clone, and `make fleet-app-scope` / the weekly `fleet-app-scope.yml` ask the same question
+   between releases. It was assumed once, and v7.9.0 403'd on the tenth push
+   ([#1071](https://github.com/dotgibson/dotfiles-core/issues/1071)).)
 
 Then continue to section 2 to roll it out.
 
@@ -609,6 +613,7 @@ This catches the auth-scope, argument, and resolve-path bugs that PR CI cannot s
 | `sync-fanout` skips with `'' is not a clean vX.Y.Z release tag` | triggered from a commit with no tag on it | use the manual backfill (section 4) with `tag: vX.Y.Z` |
 | fan-out fails `could not read Username for 'https://github.com'` | a git op reading a private repo without auth | the read must be authenticated (built-in token for own repo, the minted App token for cross-repo) |
 | fan-out aborts `core.lock differs ...` | an htpx sync touched Core | by design — htpx fan-out must never change `core.lock`; investigate the sync |
+| fan-out pushed 9 of 10 and failed `Permission to dotgibson/<repo>.git denied to dotgibson-fleet-sync[bot]` / `403` | that repo is in `scripts/os-repos.txt` but **not** in the App's installation, whose `repository_selection` is `selected` (#1071) | Organization settings → GitHub Apps → `dotgibson-fleet-sync` → Configure → Repository access → add the repo (needs an **Organization Owner**). Confirm with `make fleet-app-scope`, then re-run the fan-out for that repo alone via `repos:`. Since #1071 the job preflights this and names the repo before cloning |
 | `make tag` refuses: `no '## [vX.Y.Z]' heading` | `make release` wasn't run | run `make release VERSION=X.Y.Z` first |
 | staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, use §1.1 ["Abandoning a cut"](#abandoning-a-cut) — dropping the branch is the whole recipe now, since phase 1 creates no tag |
 

@@ -2,6 +2,13 @@
 
 ### Added
 
+- **The fan-out proves the App installation covers its targets, and a register asks the same
+  question between releases** ([#1071](https://github.com/dotgibson/dotfiles-core/issues/1071)).
+  The fan-out's write scope is the GitHub App's _installation_, deliberately — hardcoding a
+  repository list on the mint would be a second copy of `scripts/os-repos.txt` that could
+  drift. But that installation is `repository_selection=selected` and nothing compared the two
+  lists, so registering a repo in `os-repos.txt` left half the registration undone with no gate
+  to say so.
 - **The bash 3.2 floor gate learns the half that never runs at all.** §5k has covered the
   features 3.2 does not _have_ since #874 — they parse, then fail at run time. #1075 found
   the other half: syntax 3.2's parser _refuses_, where `bash -n` rejects the file and
@@ -93,12 +100,33 @@
   `Permission to dotgibson/dotfiles-NixOS.git denied to dotgibson-fleet-sync[bot]` — after
   every expensive step had already run (#1070).
 
-  A pre-flight now reads `GET /installation/repositories` with the token it has just minted
-  and fails **before the first clone**, naming each missing repo and the Organization-Owner
-  fix. The check can only live there: that endpoint refuses a user PAT, so neither a local
-  script nor a scheduled sweep can ask the question. A `check_only: true` dispatch runs the
-  two pre-flights and stops, so the scope can be checked _before_ a release instead of
-  discovered at the end of one.
+  A pre-flight in `sync-fanout.yml` now reads the installation with the token it has just
+  minted and fails **before the first clone**, naming the repo and the Organization-Owner fix.
+  A `check_only: true` dispatch runs the pre-flights and stops, so the scope can be checked
+  _before_ a release instead of discovered at the end of one.
+
+  **The comparison itself lives in `scripts/fleet-app-scope.sh`**, the App-installation
+  register, rather than inline in the workflow: the same question is worth asking on a
+  schedule, and a second spelling of it is how a gate ends up covering a different list than
+  the thing it gates. The register derives the expected set the way every fleet gate derives
+  the fleet (`os-repos.txt` through `load_os_repos`, plus the two exceptions
+  `GITHUB-APP-AUTH.md` names — no second copy of the list) and reports **both** directions: a
+  push target the App cannot reach, and a repo installed that nothing writes to.
+
+  **The two halves of the question are readable from opposite environments**, which shapes the
+  whole change. The _grant_ half (installation present, un-suspended, holding exactly the
+  documented verbs) needs an org-admin token, so it runs on a maintainer box via
+  `make fleet-app-scope`. The _reach_ half (which repos does it cover?) needs an installation
+  token no local environment can mint, so it runs in CI — which a **scheduled** job can do,
+  and `.github/workflows/fleet-app-scope.yml` now does every Monday, red plus a deduplicated
+  issue. Each half reports its own coverage, an unread half is never a pass, and a real finding
+  outranks one, so the bare reporter stays green locally while `--check` exits 3 there.
+
+  The fan-out's pre-flight _warns_ rather than blocking when it cannot read: a blind check must
+  not deny every repo its PR, which is the failure the fan-out loop already exists to avoid.
+  Its mint now names `permission-metadata: read`, the verb that read spends. Not a fix for a
+  live defect — a narrowed mint turns out to keep the mandatory grant, verified against the
+  live API — but a mint that does not say what it spends is one nobody can audit.
 
 ### Changed
 
@@ -155,6 +183,24 @@
   activated but never switched; no future harness should read a `switch` failure there as a
   fact about NixOS.
 
+- **`scripts/os-repos.txt` no longer claims to be the only step.** Its header said "THIS
+  FILE IS THE ONLY EDIT", which is why #1064 stopped there; it now names the App
+  installation as the second registration, with the Organization-Owner path to add it.
+  The same correction lands in `VENDORING.md`'s onboarding section (with why this is _not_
+  a return of the four-copies problem #669 removed: those were four copies of one fact,
+  this is one fact in each of two systems that cannot read each other) and in the guidance
+  `scripts/new-os-repo.sh` prints after scaffolding a repo.
+- **`GITHUB-APP-AUTH.md` documents `Metadata: read`**, the fourth permission the
+  installation API actually returns. GitHub grants it mandatorily and offers no way to
+  switch it off, so a doc naming three verbs against an API returning four is how the new
+  grant assertion would have been "corrected" into permanent red. Also: `fleet-app-scope.yml`
+  joins the per-mint consumer table, and `freshness.yml`'s row said ×2 for three mint steps.
+- **`RELEASE-RUNBOOK.md`** stops asserting the App is "installed on every target repo" and
+  says what now checks it, plus a troubleshooting row for the symptom itself — nine pushes
+  and a 403 on the tenth.
+- **`scripts/freshness-dashboard.sh`** said of the fleet App that there is "nothing to
+  probe here". There was: its reach. The board now links the register that probes it
+  rather than recomputing it (it holds no App mint, deliberately).
 - **§3 keeps the parser's message instead of discarding it.** `bash -n` and `zsh -n` ran
   under `2>/dev/null`, so a syntax failure reported `bash syntax error: <file>` and nothing
   else — no line, no reason. When the only leg that disagrees is macOS's bash 3.2, that is
@@ -162,7 +208,6 @@
   a line number that was sitting in the stderr the check was throwing away. Both now pass
   the message to `fail_detail`. §5k's new rule above catches one construct locally; this
   covers every other way a parser can refuse, including the gaps that rule names.
-
 - **nvim plugin pins move forward for five plugins.** `fzf-lua`, `gitsigns.nvim`,
   `nvim-tree.lua`, `render-markdown.nvim` and `schemastore.nvim` advance to upstream HEAD —
   the set a 2026-09-16 re-run of the fleet health board's signals (#794) found stale, four
