@@ -205,6 +205,13 @@ The App does **not** need installing on the *source* repos that only mint (`htpx
 installation on the *other* repos. `htpx` in particular is read with the built-in token,
 so do not add it.
 
+**Nor `dotfiles-Windows`**, which was left unsaid until the register went looking and found
+both installed anyway. It vendors no `core/`, is absent from `scripts/os-repos.txt`, and is
+not a fan-out target: its nvim mirror is `nvim-sync.ps1`, run on the host
+(`RELEASE-RUNBOOK.md` §3b). So the twelve repos above are the whole list, and a token minted
+for this installation carries `contents` + `workflows: write` — which is the cost of every
+repo added to it that nothing writes to.
+
 ### A new fleet repo is TWO registrations, and only one of them is in git
 
 The installation is `repository_selection=selected`, so adding a repo to
