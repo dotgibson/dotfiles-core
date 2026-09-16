@@ -37,6 +37,46 @@
 # Callers run under different `set` options (sync-core.sh `set -euo pipefail`,
 # core-integrity.sh `set -uo pipefail`), so nothing here may depend on either.
 
+# THE PEELED COMMIT BEHIND A REMOTE REF — the provenance half of "what does a vendored
+# core/ record", and the reason it lives beside the path filter rather than in either
+# caller: sync-core.sh and new-os-repo.sh both resolve a ref to a SHA before anything else
+# happens, and two implementations of that would drift exactly the way this file's header
+# says two filters would.
+#
+# WHY IT IS NOT `ls-remote <remote> <ref> | awk NR==1`, which is what both callers used.
+# The release tags are ANNOTATED, and for an annotated tag that command returns the TAG
+# OBJECT — not one line of two, but the only line there is (measured against
+# refs/tags/v7 at v7.8.0):
+#
+#   $ git ls-remote <remote> refs/tags/v7
+#   a96cf64c58b5…  refs/tags/v7                 <- a tag object, NOT a commit
+#   $ git ls-remote <remote> refs/tags/v7 'refs/tags/v7^{}'
+#   a96cf64c58b5…  refs/tags/v7
+#   a4907d555d9f…  refs/tags/v7^{}              <- the commit every core.lock records
+#
+# So the peeled ref has to be ASKED FOR. That is the rule ARCHITECTURE.md and VENDORING.md
+# both state — "the pin must be the peeled commit … refs/tags/v7 resolves to the tag
+# object, which is never that HEAD" — and the one new-os-repo.sh broke by defaulting
+# CORE_BRANCH to a tag while resolving it like a branch (dotgibson/dotfiles-core#1065).
+#
+# PRINTS NOTHING and returns non-zero when the ref does not resolve. A 40-hex SHA is not a
+# ref and matches no pattern, so the fan-out's `CORE_BRANCH=<sha>` falls through here to
+# each caller's local rev-parse fallback exactly as it did before — that path is unchanged
+# and must stay that way, because it is the one the release fan-out actually takes.
+core_vendor_remote_commit() { # core_vendor_remote_commit <remote> <ref>
+  local out
+  # Both patterns in ONE network call: the bare ref for a branch or a lightweight tag, the
+  # peeled one for an annotated tag. Order in the output is git's, not ours, so the reader
+  # below picks by SHAPE rather than by position.
+  out="$(git ls-remote "$1" "$2" "${2}^{}" 2>/dev/null)" || return 1
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out" | awk '
+    $2 ~ /\^\{\}$/ { peeled = $1; next }   # an annotated tag, peeled — always wins
+    !bare            { bare = $1 }           # a branch, or a lightweight tag
+    END { if (peeled != "") print peeled; else if (bare != "") print bare }
+  '
+}
+
 # Does this commit carry the vendoring allowlist — i.e. does it postdate #676?
 core_vendor_is_filtered() { # core_vendor_is_filtered <repo-dir> <sha>
   git -C "$1" cat-file -e "${2}:core.vendor" 2>/dev/null

@@ -1226,6 +1226,58 @@ if have git; then
   else
     skip "vendoring filter end-to-end (could not build the consumer fixture — out of scope)"
   fi
+  # (g) THE PEELED COMMIT (core_vendor_remote_commit, #1065). Both vendoring producers
+  # resolve a ref to a SHA before anything else happens, and both used
+  # `ls-remote <remote> <ref> | awk NR==1`. For an ANNOTATED tag that returns the TAG
+  # OBJECT — and not as one line of two: asked plainly, it is the only line there is, so
+  # the peeled ref has to be requested explicitly. new-os-repo.sh defaults CORE_BRANCH to
+  # refs/tags/v7 and stamped "vendor Core at <tag object>" into its own provenance commit;
+  # sync-core.sh defaults to a branch but its usage text says "pass a released tag", where
+  # the same read would have put a non-commit into core.lock.
+  #
+  # LOCAL fixture remote, no network: ls-remote takes a path, so $VF/core is a remote.
+  _vf tag -a vfix -m "annotated, like every release tag here"
+  _vf tag vfix-light
+  vf_tag_obj="$(git ls-remote "$VF/core" refs/tags/vfix | awk 'NR==1{print $1}')"
+  vf_peeled="$(core_vendor_remote_commit "$VF/core" refs/tags/vfix)"
+  # The fixture is only worth anything if the tag object and the commit actually differ —
+  # they do for an annotated tag, and this would silently pass on a lightweight one.
+  if [[ -n "$vf_tag_obj" && "$vf_tag_obj" != "$vf_new" ]]; then
+    pass "fixture: an annotated tag's ref value is the tag object, not the commit"
+  else
+    fail "fixture is not exercising the defect — refs/tags/vfix resolved straight to the commit"
+  fi
+  if [[ "$vf_peeled" == "$vf_new" ]]; then
+    pass "core_vendor_remote_commit peels an annotated tag to its commit"
+  else
+    fail "core_vendor_remote_commit returned '$vf_peeled' for an annotated tag, want the commit '$vf_new' — provenance would name a tag object"
+  fi
+  if [[ "$(git -C "$VF/core" cat-file -t "$vf_peeled" 2>/dev/null)" == commit ]]; then
+    pass "core_vendor_remote_commit returns an object of type commit"
+  else
+    fail "core_vendor_remote_commit returned a $(git -C "$VF/core" cat-file -t "$vf_peeled" 2>/dev/null), not a commit"
+  fi
+  # A lightweight tag and a branch have no peeled line; the bare ref IS the commit.
+  if [[ "$(core_vendor_remote_commit "$VF/core" refs/tags/vfix-light)" == "$vf_new" ]]; then
+    pass "core_vendor_remote_commit resolves a LIGHTWEIGHT tag (no peeled line to prefer)"
+  else
+    fail "core_vendor_remote_commit broke the lightweight-tag case — the bare ref is the commit there"
+  fi
+  if [[ "$(core_vendor_remote_commit "$VF/core" "$(git -C "$VF/core" symbolic-ref --short HEAD)")" == "$vf_new" ]]; then
+    pass "core_vendor_remote_commit resolves a branch"
+  else
+    fail "core_vendor_remote_commit broke the branch case, which is sync-core.sh's default"
+  fi
+  # A 40-hex SHA is not a ref and matches no pattern. It MUST stay unresolvable here, so
+  # each caller falls through to its local rev-parse — that is the path the release
+  # fan-out takes (sync-fanout.yml passes CORE_BRANCH=<sha>).
+  if core_vendor_remote_commit "$VF/core" "$vf_new" >/dev/null 2>&1; then
+    fail "core_vendor_remote_commit resolved a bare SHA — the fan-out's local rev-parse fallback would be bypassed"
+  else
+    pass "core_vendor_remote_commit leaves a bare SHA unresolved (the fan-out's fallback path is untouched)"
+  fi
+  unset vf_tag_obj vf_peeled
+
   unset -f _vf
 else
   skip "vendoring filter (git unavailable)"
