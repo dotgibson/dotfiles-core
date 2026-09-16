@@ -290,13 +290,16 @@ nixos_cells() {
 # guessing from one file:
 #
 #   research-before    running /etc, BEFORE the snapshot opened, never touched again
-#                      → the documented "visible in the new system" half. If THIS is lost,
-#                        nothing else in the report is readable.
+#                      → the BASELINE, and a weaker claim than it looks: the snapshot is
+#                        made from the running root, so this file is already inside it. It
+#                        proves only that the marker mechanism works end to end. If THIS is
+#                        lost, nothing else in the report is readable.
 #   research-snapshot  inside the snapshot only
 #                      → proves the guest really booted the snapshot we wrote (otherwise
 #                        every "shadowed" is really "wrong snapshot").
 #   research-after     running /etc, only AFTER the snapshot opened, no collision
-#                      → the "but not vice versa" half.
+#                      → the documented half: "configuration file changes applied to the
+#                        currently running system will be visible in the new system".
 #   research-collide   all three moments
 #                      → the documented LOSS CASE itself.
 #
@@ -421,9 +424,9 @@ microos_phase2() {
   fi
   say "| file | written where | after the reboot | verdict |"
   say "| --- | --- | --- | --- |"
-  say "| \`/etc/research-before\` | running, before the snapshot | \`$(cat /etc/research-before 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-before 2>/dev/null)" == running-before ]] && echo "**carried** — the documented \"visible in the new system\" half holds" || echo "**LOST — the documented half does NOT hold; nothing below is readable**") |"
+  say "| \`/etc/research-before\` | running, before the snapshot (the baseline — it was already inside the snapshot when that was made) | \`$(cat /etc/research-before 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-before 2>/dev/null)" == running-before ]] && echo "**carried**, as it must be — the marker mechanism works" || echo "**LOST — even the baseline did not survive; nothing below is readable**") |"
   say "| \`/etc/research-snapshot\` | the snapshot only | \`$(cat /etc/research-snapshot 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-snapshot 2>/dev/null)" == snapshot ]] && echo "**live** — the guest really booted the snapshot this run wrote" || echo "**ABSENT — the guest did not boot that snapshot**") |"
-  say "| \`/etc/research-after\` | running, after the snapshot opened | \`$(cat /etc/research-after 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-after 2>/dev/null)" == running-after ]] && echo "**carried** — a post-snapshot running edit still reaches the new \`/etc\`" || echo "**LOST** — \"but not vice versa\", measured") |"
+  say "| \`/etc/research-after\` | running, after the snapshot opened — **this is the documented claim** | \`$(cat /etc/research-after 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-after 2>/dev/null)" == running-after ]] && echo "**carried** — *\"changes applied to the currently running system will be visible in the new system\"*, measured" || echo "**LOST — the documented claim does not hold**, which is a larger finding than the collision below") |"
   say "| \`/etc/research-collide\` | all three moments | \`$collide\` | $(case "$collide" in snapshot) echo "**the loss case, confirmed** — the snapshot's copy won and the later running edit is gone" ;; running-after) echo "the running edit won — the documented loss case did NOT fire here" ;; running-before) echo "**neither later write survived**" ;; *) echo "**absent** — never reached the new \`/etc\`" ;; esac) |"
   say "| \`/etc/shells\` | all three moments | before: **$before_marker**; snapshot: **$snap_marker**; after: **$after_marker** | $shells_verdict |"
   say "| \`$asuser\`'s login shell | \`$zsh_path\` → \`/bin/bash\` (snapshot) → \`$zsh_path\` | \`$user_now\` | $(case "$user_now" in "$zsh_path") echo "**carried** — the driver's \`chsh\` survived" ;; /bin/bash) echo "**shadowed** — the snapshot's \`chsh\` won; the driver's later one is gone" ;; *) echo "neither — \`$user_now\`" ;; esac) |"
