@@ -38,7 +38,8 @@
 # installs is exit 2, naming the cell and the packages.txt line — so "flip it to `=`"
 # is a gate failure, never a quiet omission. The commands table is simpler: every
 # cell is the declared PKG_* value, verbatim, plus a placeholder; a column backed by
-# two declarations (openSUSE Leap/Tumbleweed) renders both, labelled.
+# more than one declaration (openSUSE Leap/Tumbleweed/Transactional — the MicroOS edition,
+# dotfiles-openSUSE#191) renders each differing value, labelled, in registry order.
 #
 #   gen-porting-matrix.sh              # rewrite both marked regions in PORTING-MATRIX.md
 #   gen-porting-matrix.sh --check      # exit 1 (with a diff) if a region is stale — THE GATE
@@ -125,12 +126,14 @@ BLOCK_IDS="commands packages fleet-versions"
 # The commands table. id<TAB>header<TAB>repo<TAB>declaration(s)<TAB>unit
 #   declaration(s): space-separated `os/<os>.capabilities` paths, each optionally
 #   `Label=path`; a column with more than one renders differing values as
-#   `Label: `v` · Label: `v``, identical values once.
+#   `Label: `v` · Label: `v``, identical values once. Registry order is render order:
+#   openSUSE lists the two zypper flavours first and the transactional edition (a
+#   Tumbleweed base that stages through transactional-update) last.
 #   unit: the word inside the install/remove placeholder — <pkg>, or <atom> on Gentoo.
 CMD_COLUMNS="macos	macOS (brew)	dotfiles-MacBook	os/macos.capabilities	pkg
 fedora	Fedora (dnf)	dotfiles-Fedora	os/fedora.capabilities	pkg
 arch	Arch	dotfiles-Arch	os/arch.capabilities	pkg
-opensuse	openSUSE	dotfiles-openSUSE	Leap=os/opensuse.leap.capabilities Tumbleweed=os/opensuse.capabilities	pkg
+opensuse	openSUSE	dotfiles-openSUSE	Leap=os/opensuse.leap.capabilities Tumbleweed=os/opensuse.capabilities Transactional=os/opensuse.microos.capabilities	pkg
 alpine	Alpine	dotfiles-Alpine	os/alpine.capabilities	pkg
 gentoo	Gentoo	dotfiles-Gentoo	os/gentoo.capabilities	atom
 kali	Kali (apt)	dotfiles-Debian	os/debian.kali.capabilities	pkg

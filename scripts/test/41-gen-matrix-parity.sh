@@ -89,12 +89,20 @@ if have git; then
     _gp_caps "$GPF/dotfiles-Arch/os/arch.capabilities" pacman
     _gp_caps "$GPF/dotfiles-openSUSE/os/opensuse.capabilities" zypper
     _gp_caps "$GPF/dotfiles-openSUSE/os/opensuse.leap.capabilities" zypper
+    _gp_caps "$GPF/dotfiles-openSUSE/os/opensuse.microos.capabilities" zypper
     _gp_caps "$GPF/dotfiles-Alpine/os/alpine.capabilities" apk
     _gp_caps "$GPF/dotfiles-Gentoo/os/gentoo.capabilities" emerge
     _gp_caps "$GPF/dotfiles-Debian/os/debian.capabilities" apt
     _gp_caps "$GPF/dotfiles-Debian/os/debian.kali.capabilities" apt
     # The Leap/Tumbleweed pair disagrees on exactly one verb; one value carries a pipe.
     sed -i.bak 's/^PKG_UPGRADE=zypper upgrade$/PKG_UPGRADE=zypper dup/' "$GPF/dotfiles-openSUSE/os/opensuse.capabilities" && rm -f "$GPF/dotfiles-openSUSE/os/opensuse.capabilities.bak"
+    # The transactional third (dotfiles-openSUSE#191) differs on the three mutating verbs
+    # and agrees on the rest — the shape the real declaration has, so the column renders
+    # three labels on upgrade and still one unlabelled cell on refresh.
+    sed -i.bak -e 's/^PKG_UPGRADE=zypper upgrade$/PKG_UPGRADE=transactional-update dup/' \
+      -e 's/^PKG_INSTALL=zypper install$/PKG_INSTALL=transactional-update -n pkg in/' \
+      -e 's/^PKG_REMOVE=zypper remove$/PKG_REMOVE=transactional-update -n pkg rm/' \
+      "$GPF/dotfiles-openSUSE/os/opensuse.microos.capabilities" && rm -f "$GPF/dotfiles-openSUSE/os/opensuse.microos.capabilities.bak"
     sed -i.bak 's/^PKG_SEARCH=apk search$/PKG_SEARCH=apk search -v|cat/' "$GPF/dotfiles-Alpine/os/alpine.capabilities" && rm -f "$GPF/dotfiles-Alpine/os/alpine.capabilities.bak"
     # The tier filter the generator sources: the same function dotfiles-Debian ships.
     cat >"$GPF/dotfiles-Debian/scripts/pkg-filter.sh" <<'PF'
@@ -236,13 +244,13 @@ EOF
   else
     fail "gen-porting-matrix: the neovim row's Debian cell is not the registry's asserted asset²⁸"
   fi
-  if _gp_row 'Leap: `zypper upgrade` · Tumbleweed: `zypper dup`'; then
-    pass "gen-porting-matrix: a two-declaration column renders both values, labelled"
+  if _gp_row 'Leap: `zypper upgrade` · Tumbleweed: `zypper dup` · Transactional: `transactional-update dup`'; then
+    pass "gen-porting-matrix: a multi-declaration column renders every value, labelled, in registry order"
   else
-    fail "gen-porting-matrix: the openSUSE upgrade cell did not render both declarations"
+    fail "gen-porting-matrix: the openSUSE upgrade cell did not render all three declarations in registry order"
   fi
   if _gp_row '`zypper refresh`' && ! _gp_row 'Leap: `zypper refresh`'; then
-    pass "gen-porting-matrix: a two-declaration column renders an agreed value once, unlabelled"
+    pass "gen-porting-matrix: a multi-declaration column renders an agreed value once, unlabelled"
   else
     fail "gen-porting-matrix: an agreed value was rendered twice or labelled"
   fi
@@ -265,8 +273,8 @@ EOF
   _gp_list_out="$(_gp_out --list)"
   if grep -q "^packages	neovim	kali	derived	dotfiles-Debian/install/packages.txt:[0-9]" <<<"$_gp_list_out" &&
     grep -q '^packages	neovim	debian	asserted	' <<<"$_gp_list_out" && grep -q '^commands	install	gentoo	derived	' <<<"$_gp_list_out" &&
-    grep -q '^commands	upgrade	opensuse	derived	dotfiles-openSUSE/os/opensuse.leap.capabilities dotfiles-openSUSE/os/opensuse.capabilities$' <<<"$_gp_list_out"; then
-    pass "gen-porting-matrix: --list names each cell's provenance, derived cells by file:line, both declarations of a two-file column"
+    grep -q '^commands	upgrade	opensuse	derived	dotfiles-openSUSE/os/opensuse.leap.capabilities dotfiles-openSUSE/os/opensuse.capabilities dotfiles-openSUSE/os/opensuse.microos.capabilities$' <<<"$_gp_list_out"; then
+    pass "gen-porting-matrix: --list names each cell's provenance, derived cells by file:line, every declaration of a multi-file column"
   else
     fail "gen-porting-matrix: --list is missing a derived, an asserted or a commands row"
   fi
