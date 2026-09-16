@@ -20,7 +20,7 @@
 # ── 5c. Core⇄OS boundary (portable shell modules carry no OS-absolute paths) ──
 # README's contract: "if it changes when the OS changes, it does NOT belong in Core."
 # That rule is documented but was ungated — a hard-coded /opt/homebrew, /home/linuxbrew,
-# or macOS ~/Library path could slip into a portable shell module and fan out to nine repos
+# or macOS ~/Library path could slip into a portable shell module and fan out to ten repos
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic.
 #
 # THERE ARE NO PER-FILE EXCEPTIONS ANY MORE (#763). zsh/55-maint.zsh used to have one, for

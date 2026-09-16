@@ -33,7 +33,7 @@
 # gate is never read as a stale tape.
 #
 # NO ENVIRONMENT SKIP, unlike §9h and §9i, and that is the point of the default scope: the
-# nine SIBLING tapes are #698's follow-up (sequenced after #667) and are reached only under
+# ten SIBLING tapes are #698's follow-up (sequenced after #667) and are reached only under
 # --fleet, so this run's inputs are all this repo's own files. It can always answer.
 #
 # ALWAYS ON and NOT SCOPE-GUARDED, for §9d's reasons: pure bash + awk, so it can never SKIP;
@@ -55,14 +55,14 @@ unset _gh_out _gh_rc
 # ── 9k. README hero byte ceiling (the rendered gif) ──────────────────────────
 # assets/demo.gif was 1.8 MB for a ~25-second clip, and assets/README.md documented the
 # remedy — `gifsicle -O3 --lossy=80` — that nothing applied (#698). ONE heavy gif is a
-# preference; ten, once every public repo has a hero, is a policy, so the number is asserted
+# preference; eleven, once every public repo has a hero, is a policy, so the number is asserted
 # rather than described in prose no gate reads.
 #
 # THE CEILING FOLLOWS THE TAPE. gen-hero-tape.sh --check-size reads `Output <path>` out of
 # each in-scope tape and weighs THAT file, so a tape that renames its output cannot slip a
 # heavy gif past a hardcoded assets/demo.gif. A tape naming no output is exit 2, not a pass.
 #
-# A GIF THAT IS NOT RENDERED YET IS A NOTE SKIP, NOT A PASS. #698 sequences the nine sibling
+# A GIF THAT IS NOT RENDERED YET IS A NOTE SKIP, NOT A PASS. #698 sequences the ten sibling
 # heroes after #667; under the default scope only this repo is weighed, and this repo's tape
 # and gif are both mandatory — README.md's [product-screenshot] points at the latter, so an
 # absent file is a broken front page. Separate from §9j because the two fail for unrelated

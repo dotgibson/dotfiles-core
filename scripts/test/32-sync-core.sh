@@ -384,7 +384,7 @@ if ((_sc_subtree)); then
 
   # --- a sync must NOT depend on the subtree trailer surviving (#587) ------------
   # THE REGRESSION THIS EXISTS FOR, and it is not hypothetical: it took the v4.15.0
-  # fan-out down in 9 repos out of 9, simultaneously.
+  # fan-out down in 10 repos out of 10, simultaneously.
   #
   # `git subtree pull --squash` finds its base by grepping history for the previous sync
   # commit's `git-subtree-split:` trailer. Every fleet repo SQUASH-merges its fan-out PR

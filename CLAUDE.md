@@ -8,16 +8,16 @@ rule here drifts from `README.md` / `CONTRIBUTING.md`, those win — fix this.
 ## What this repo is
 
 `dotfiles-core` is the **single source of truth** for the Core layer of a
-**eleven-repo dotfiles system** built on a three-layer model. Core is authored
+**twelve-repo dotfiles system** built on a three-layer model. Core is authored
 **once here** and vendored into each OS repo's `core/` — so a
 defect here fans out N-way. Treat every change as if it ships to all of them,
 because it does.
 
-| Layer         | Lives in                                                               | Examples                                                           |
-| ------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Core**      | **this repo**, vendored into each OS repo's `core/`                    | zsh modules, tmux, nvim, git, starship                             |
-| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}` | package manager, clipboard, paths                                  |
-| **Role**      | `dotfiles-Offense` (offensive), `dotfiles-Defense` (defensive)         | offensive engagement + defensive detection tooling on the OS layer |
+| Layer         | Lives in                                                                     | Examples                                                           |
+| ------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **Core**      | **this repo**, vendored into each OS repo's `core/`                          | zsh modules, tmux, nvim, git, starship                             |
+| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo,NixOS}` | package manager, clipboard, paths                                  |
+| **Role**      | `dotfiles-Offense` (offensive), `dotfiles-Defense` (defensive)               | offensive engagement + defensive detection tooling on the OS layer |
 
 Plus `dotfiles-web` — the public Astro showcase/docs site (the system's public
 face, **not** a config layer). The canonical Core-vendoring fleet is
@@ -85,10 +85,11 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   red, and re-rendering needs `vhs` plus a Nerd Font on a host matching the row (`assets/README.md`
   has the exact commands). The tape exports `DOTFILES_NO_AUTOTMUX=1` before sourcing the zshrc,
   and the generator refuses a row whose OS layer auto-attaches tmux without honouring it — every
-  OS layer's guard must read that knob. The nine OS/role repos are registered and
-  `make gen-hero-tape-fleet` writes their tapes, and all nine gifs are committed in their
-  repos (#948: eight filmed on rootless chroots — `assets/README.md`, "Filming a sibling hero
-  without its box" — and MacBook's on a Mac).
+  OS layer's guard must read that knob. The ten OS/role repos are registered and
+  `make gen-hero-tape-fleet` writes their tapes; **nine of the ten gifs are committed** in
+  their repos (#948: eight filmed on rootless chroots — `assets/README.md`, "Filming a
+  sibling hero without its box" — and MacBook's on a Mac). `dotfiles-NixOS` is the tenth
+  and its gif is still to be filmed — a registered tape with no gif is a skip, not a red.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
 - **A user-visible change lands in `CHANGELOG.md` under `[Unreleased]`** in the

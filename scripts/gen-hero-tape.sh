@@ -81,7 +81,7 @@ FLEET=0
 ROOT=""
 FLEET_ROOT=""
 # The hero ceiling, in bytes: 1.5 MiB. A CEILING, not a target. One heavy gif is a
-# preference; TEN is a policy — assets/hero-repos.txt registers ten heroes and this gate
+# preference; ELEVEN is a policy — assets/hero-repos.txt registers eleven heroes and this gate
 # weighs every one that is rendered — so the number is asserted here rather than described
 # in prose nothing reads.
 #
@@ -703,7 +703,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature sigwait; do
       if [[ "$repo" == "." ]]; then
         fail "$out is missing — this repo's tape must exist"; _bump 1
       else
-        skip_note "$label has no $out yet (the nine renders are #698's follow-up)"
+        skip_note "$label has no $out yet (filming a sibling hero needs a matching host — assets/README.md)"
         UNWEIGHED=$((UNWEIGHED + 1))
       fi
       continue
@@ -760,7 +760,7 @@ while IFS="$TAB" read -r repo out checkout sigcmd proof signature sigwait; do
       if [[ "$repo" == "." ]]; then
         fail "$out is missing — this repo's tape must exist"; _bump 1
       else
-        skip_note "$label has no $out yet (the nine renders are #698's follow-up)"
+        skip_note "$label has no $out yet (filming a sibling hero needs a matching host — assets/README.md)"
         UNDATED=$((UNDATED + 1))
       fi
       continue

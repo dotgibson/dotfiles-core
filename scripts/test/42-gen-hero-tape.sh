@@ -335,7 +335,8 @@ fi
 # A MISSING LOCAL HERO IS A FAILURE, NOT A SKIP. README.md's [product-screenshot] points
 # at it, so an absent gif is a broken front page — and a size gate that weighs nothing and
 # reports green is the shape this section exists to prevent (#862 review). A SIBLING's is
-# the opposite case: those nine are #698's follow-up and are un-rendered on purpose.
+# the opposite case: a sibling's is filmed on a matching host, and one may legitimately be
+# un-rendered (dotfiles-NixOS's, as the tenth repo arrives) without reddening this gate.
 rm -f "$GHR/assets/demo.gif"
 if [[ "$(_gh_run --check-size)" == 1 ]]; then
   pass "gen-hero-tape: a missing LOCAL hero fails (README points at it), never skips"

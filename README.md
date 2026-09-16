@@ -178,7 +178,7 @@ essentials:
    ./bootstrap.sh --links-only --dry-run
    ```
 
-   All nine bootstraps implement `--dry-run`.
+   All ten bootstraps implement `--dry-run`.
 
 3. Provision + Wire
 

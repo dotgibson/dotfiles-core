@@ -534,7 +534,7 @@ escape hatch does not cover for it. The `Windows` row is neither wired nor pendi
 it is out of scope, vendoring no `core/` at all. **Neither role repo has a row here, both
 by the same design** — `Defense` and `Offense` are distro-agnostic and carry no `os/`
 layer, so their atuin exports come from whichever OS repo is underneath them (see "Repo
-status"). Seven machines + `Offense` + `Defense` = the nine Core-vendoring repos in
+status"). Eight machines + `Offense` + `Defense` = the ten Core-vendoring repos in
 `scripts/os-repos.txt`.
 
 That used to read "eight machines + `Defense`", which counted `Offense` as a machine. The
@@ -1508,7 +1508,7 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
 ### Repo status
 
 - **Built:** `core`, `Fedora` (template), `MacBook`, `Arch`, `Debian`, `openSUSE`,
-  `Alpine`, `Gentoo`, `Offense`, `Defense`. That is the nine Core-vendoring repos
+  `Alpine`, `Gentoo`, `NixOS`, `Offense`, `Defense`. That is the ten Core-vendoring repos
   (`scripts/os-repos.txt`) plus `core` itself; `Windows` vendors no `core/` and is
   tracked separately.
 - **Stamp-pending (this doc):** none — all five template stamps are complete.

@@ -1,5 +1,49 @@
 ## [Unreleased]
 
+### Added
+
+- **`dotfiles-NixOS` is the fleet's tenth Core-vendoring repo** (runbook step 5 of
+  `NON-MUTABLE-HOST-PROPOSAL.md` §4.6, #1051). NixOS is the one non-mutable target that
+  could not be a variant of an existing repo — R4 measured it as _"no package list in
+  Fedora's format, no `dnf`-shaped verbs, and a different owner for packages and the shell
+  declaration"_ — so `scripts/os-repos.txt` grows by one and every register that counts the
+  fleet grows with it.
+
+  **The boundary the new repo ships is R3's measurement, not a preference.**
+  `nix/` owns packages, `PATH`, tpm and the login-shell declaration; the bootstrap driver
+  owns every link and the zsh entry, and `home.nix` declares no `home.file` and no
+  `programs.zsh`. The driver relinks whatever home-manager links, silently and without a
+  backup (a differing symlink is a relink, not a foreign file); home-manager tolerates that
+  for every path whose content matches and refuses to activate **at all** over the one whose
+  bytes differ — `$ZDOTDIR/.zshrc`, where `-b` cannot help because it backs up only a
+  _regular_ foreign file, never a foreign symlink. One file, total deadlock. The repo's
+  `blib_set_login_shell` arm prints `users.users.<name>.shell = pkgs.zsh;` instead of running
+  `chsh`, because a hand-set login shell is exactly the state `nixos-rebuild switch` does not
+  reproduce — the repo's own arm, not a lib change.
+
+  Core's side is the registration and the sweep it forces: the §5f helper ledger gains
+  `dotfiles-NixOS` on **all nine** rows (§5f credits the whole `blib_main` contract to a
+  driver adopter, so a partial ledger is `advanced` → fail, once per missed row), §9m's
+  fan-out count moves 32 tracked claims from nine to ten, and `assets/hero-repos.txt` gains
+  its row — with the tape rendered and the **gif deliberately pending**, which §9k weighs as
+  a skip rather than a red.
+  (`scripts/os-repos.txt`, `scripts/audit/40-fleet-registers.sh`, `scripts/lib/common.sh`,
+  `assets/hero-repos.txt`, `ARCHITECTURE.md`, `CLAUDE.md`, `PORTABILITY.md`,
+  `PORTING-MATRIX.md`, `RELEASE-STRATEGY.md`, `RELEASE-RUNBOOK.md`, `VENDORING.md`,
+  `SECURITY.md`, `README.md`, `core.vendor`)
+
+- **`scripts/fleet-protection.sh`'s `REPOS` array is now gated against `scripts/os-repos.txt`**
+  — the second fleet list, and the one nothing compared. #669 deleted three hardcoded
+  fallback arrays precisely so a registered repo could not vanish from a gate;
+  `fleet-protection.sh` kept one for a real reason (it also audits `dotfiles-core`, and asks
+  GitHub rather than the disk), and nothing checked it. Verified while adding the tenth repo:
+  no audit fragment, no test fragment and no workflow referenced it. The failure mode is the
+  quiet one — a repo missing from the array is not a red gate, it is branch protection nobody
+  is auditing on a repo that looks covered because every other register lists it. The new
+  assertion is **bidirectional**, unlike the §5f ledger's own integrity check (which catches a
+  typo but not an omission — and an omission is what the next `os-repos.txt +1` produces).
+  (`scripts/test/90-policy-gates.sh`, `scripts/fleet-protection.sh`)
+
 ## [v7.8.0] - 2026-09-15
 
 ### Changed

@@ -15,7 +15,7 @@
 # nvim/ is the largest body of code in Core yet was validated only by luacheck
 # (static). Lua that is luacheck-clean can still be a BROKEN config — a bad vim API
 # call, a malformed lazy spec — that surfaces only when nvim actually starts, and it
-# fans out to nine repos. This loads the AUTHORED Lua headlessly: the pure config layer
+# fans out to ten repos. This loads the AUTHORED Lua headlessly: the pure config layer
 # (globals/options/keymaps/autocmds/clipboard/providers) AND every plugin SPEC file
 # (require evaluates the spec TABLE; lazy's deferred config/keys callbacks do NOT run,
 # so no plugin needs to be installed — every plugin `require` in this tree is inside
@@ -542,7 +542,7 @@ fi
 # autocmds load and don't throw — it would still pass if FilePost never fired at all
 # (every deferred plugin silently dead: no LSP, no linting, no git signs) or fired
 # repeatedly (every later buffer re-emitting it). Neither shows up as an error, which
-# is exactly the kind of silent breakage that fans out to nine repos.
+# is exactly the kind of silent breakage that fans out to ten repos.
 #
 # So assert the CONTRACT, not just the absence of errors — fires EXACTLY ONCE, in both
 # startup shapes:
@@ -655,7 +655,7 @@ fi
 # untested: the "*" wildcard capability registration, the per-server vim.lsp.config calls,
 # the failed-module isolation, and which names actually get enabled could all regress while
 # the leaf probe stayed green. It is the file that decides whether you have LSP at all, and
-# it fans out to nine repos.
+# it fans out to ten repos.
 #
 # Close it by stubbing the two things that made it untestable — blink.cmp (via package.preload)
 # and the vim.lsp surface — then require the real module and assert what it registered. No
