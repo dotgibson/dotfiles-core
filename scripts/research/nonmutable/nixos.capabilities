@@ -62,6 +62,13 @@ SCHEDULER_UNIT_DIR=~/.config/systemd/user
 # second one beside it.
 
 # ── the login shell on this host (measured, for the driver's arm) ─────────────
-# `chsh -s zsh` TOOK on the guest (users.mutableUsers defaults to true); whether the next
-# `nixos-rebuild switch` keeps it is unmeasured. The declaration the driver should print
-# instead of running chsh:  users.users.<name>.shell = pkgs.zsh;  programs.zsh.enable = true;
+# `chsh -s zsh` TOOK on the guest (users.mutableUsers defaults to true), and the next
+# activation REVERTS it — measured, run 35133704599, across a real second generation.
+# The nuance is what makes the rule worth stating: `mutableUsers` leaves UNDECLARED users
+# alone (an imperative `useradd` account kept its chsh'd shell) while rewriting the shell of
+# every DECLARED user back to the declared value on each activation. So the hand edit
+# survives exactly where nobody needs it to, and is reverted on the operator's own account.
+# `/etc/shells` is not regenerated to include the new shell either, and `chsh` warns
+# "invalid shell" for a path outside it while still returning 0 — a warning, not a refusal.
+# The declaration the driver should print instead of running chsh:
+#   users.users.<name>.shell = pkgs.zsh;  programs.zsh.enable = true;

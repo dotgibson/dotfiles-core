@@ -130,6 +130,59 @@
 
 ### Changed
 
+- **R1's three remaining cells are measured, and the research phase's last open question is
+  closed** (`NON-MUTABLE-HOST-PROPOSAL.md` §5, #1052, runs 35130669056 and 35133704599).
+  Two of the three were claims a _shipped_ declaration already made.
+
+  **`dnf search` on a booted bootc host holds as declared.** A hit is exit 0 in 1.2 s **as
+  the user**, and an unprivileged `dnf -q makecache` populates the cache first — so
+  `dotfiles-Fedora/os/fedora.atomic.capabilities`'s `PKG_SEARCH=dnf search` needs no
+  escalator on an atomic host any more than on a mutable one. The read-only half of `dnf`
+  is untouched by the read-only root; only the transaction is refused. The new fact is that
+  a **miss is also exit 0**, so hit and miss are indistinguishable by status on dnf5 and a
+  consumer has to read the output. Nothing reads that status today, which is why this
+  changes no code — but it is what a future "is it available?" reader would get wrong.
+
+  **The `/etc` loss case on a transactional host is confirmed, and it lands on the driver's
+  own writes.** A file changed both inside a staged snapshot and afterwards in the running
+  system keeps only the snapshot's copy on the next boot; a running-only edit made after the
+  snapshot opened does carry forward, exactly as transactional-update(8) documents. Measured
+  with markers written at three distinguishable moments, plus the real pair: **`/etc/shells`
+  lost its post-snapshot append, and the `chsh`'d login shell kept the snapshot's value.**
+  That matters because `PKG_INSTALL` on that host _is_ a staging verb, so every provisioning
+  run leaves a snapshot open behind it and `blib_set_login_shell` writes into a copy of
+  `/etc` the next boot discards, silently. The remedy belongs in `dotfiles-openSUSE`'s
+  transactional arm, not in a declaration key, and is tracked as
+  dotgibson/dotfiles-openSUSE#199.
+
+  Two `transactional-update` facts fell out of the same run: `dup` refuses outright when any
+  enabled repo fails to refresh (zypper exit 4) and deletes its own snapshot on the way out.
+  So the transition those markers crossed was the preceding `run` snapshot rather than a
+  completed `dup` — recorded as the weaker claim it is. Opening the snapshot _before_ the
+  update is the only reason the experiment survived the failure.
+
+  **`chsh` across a NixOS activation reverts — but only for a user the configuration
+  declares.** Measured across a _real_ second generation, with two users chsh'd to the same
+  path: `root`, which `users.users.root.shell` declares, came back with the declared shell;
+  an imperative `useradd` account kept its hand-set one. So `users.mutableUsers = true` does
+  not mean hand edits stick — it means the merge leaves undeclared users alone while
+  rewriting every declared user's shell on each activation. The hand edit survives exactly
+  where nobody needs it to, and is reverted on the operator's own account, which is the
+  measurement `dotfiles-NixOS/bootstrap.sh`'s _"would work here … and is still wrong"_ has
+  been asserting without. `/etc/shells` is not regenerated to include the new shell either.
+
+  Two things that would mislead a future reader, recorded with it: `chsh` warns _"invalid
+  shell"_ for a path outside `/etc/shells` and **takes anyway** (exit 0, a warning not a
+  refusal); and `switch-to-configuration test` exited **4** while activation ran normally —
+  the non-zero was `home-manager-root.service` failing, not the activation.
+
+  And R1's oldest loose end is tied off: `nixos-rebuild` has exited 1 on these guests since
+  iteration 3 with no recorded cause. Running the full `switch` after the verdict names it —
+  the **bootloader** half, `grub-install` refusing an ext2 VM disk (_"will not proceed with
+  blocklists"_). The activation half had already completed, so a `build-vm` guest can be
+  activated but never switched; no future harness should read a `switch` failure there as a
+  fact about NixOS.
+
 - **`scripts/os-repos.txt` no longer claims to be the only step.** Its header said "THIS
   FILE IS THE ONLY EDIT", which is why #1064 stopped there; it now names the App
   installation as the second registration, with the Organization-Owner path to add it.

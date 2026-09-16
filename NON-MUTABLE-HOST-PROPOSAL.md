@@ -650,7 +650,7 @@ worked everywhere it was tried, as a user, without an escalator.
 | `PKG_INSTALL` is synchronous | **Refused** — `dnf` resolves 317 pkgs, then *"configured to be read-only"* (root); `rpm-ostree install` needs polkit (user) | **Refused** — *"Transactional system detected"*, rc 5, every package; `transactional-update pkg in` = 21 s + reboot | Not a verb — the starter provisions nothing; `nix profile install` exists (no dry-run) |
 | `PKG_UPGRADE` returns with the box updated | unmeasured (`upgrade --check` needs a registry-backed origin) | measured in the prep: staged, reboot to apply | unmeasured (`switch` needs a config the VM lacks) |
 | `PKG_COUNT_PENDING` lists packages | `rpm-ostree status --pending-exit-77` user-runnable, exit 0/77 (a deployment, not N packages) | `zypper lu` — unmeasured (SIGPIPE artifact) | unmeasured |
-| `/etc` writable: `chsh`, `/etc/shells`, system files | user: `/etc` **not** writable, `chsh` **works** (setuid); root: `/etc` `/var` writable, `/usr` not | root: `/etc` writable (overlay), `chsh` works, `/usr` not | root: everything writable, `chsh` takes; regenerated on `switch` (per docs) |
+| `/etc` writable: `chsh`, `/etc/shells`, system files | user: `/etc` **not** writable, `chsh` **works** (setuid); root: `/etc` `/var` writable, `/usr` not | root: `/etc` writable (overlay), `chsh` works, `/usr` not — but a write made while a snapshot is staged is **discarded on reboot** if the snapshot touched the same file (measured, run 35130669056) | root: everything writable, `chsh` takes; the login shell is **REVERTED** by the next activation for a user the configuration DECLARES, and kept for an imperative one (measured, run 35133704599) |
 | Escalator + keepalive | `sudo` present; **keepalive needs a TTY or askpass** | `sudo` present | `sudo` under `/run/wrappers` |
 | Tools on `PATH` by package | layered → `/usr/bin` after reboot (unmeasured); `$HOME` installers land | `$HOME` installers land (starship); packages after reboot | declared → `/run/current-system/sw/bin` (855 entries) |
 | `--links-only` holds unchanged | **yes** (34 links, user and root) | **yes** (34) | **yes** (28) |
@@ -709,6 +709,11 @@ shape, and R4 still diffs the bootstrap hooks before deciding.
 `rpm-ostree upgrade --check` against a registry-backed image; `zypper -q list-updates` on
 the MicroOS guest; `chsh` across `nixos-rebuild switch`.
 
+> All but the last are now measured — `zypper -q list-updates` in iteration 4,
+> `rpm-ostree upgrade --check` in R5, `dnf search` in run 35130669056. The declarations
+> carry the measured values. The NixOS `chsh` cell closed on 2026-09-16 (run 35133704599):
+> it reverts for a declared user, and is kept for an imperative one.
+
 ### R1 findings — rung two, iteration 4 (2026-09-14, run 34852611338): the tainted cells, and the keepalive explained
 
 - **The keepalive, explained — a driver defect (#1018).** With the harness recording
@@ -735,6 +740,11 @@ the MicroOS guest; `chsh` across `nixos-rebuild switch`.
 upgrade --check` against a registry-backed image; `chsh` across `nixos-rebuild switch`;
 `/etc` edits across `transactional-update dup`. None changes R2's verdict; each is a
 value inside a prototype marked "to verify".
+
+> Since resolved. The registry-backed `bootc upgrade --check` closed in R5 (run
+> 34912321933). `dnf search` and the `/etc` edit closed on 2026-09-16 (run 35130669056),
+> and `chsh` across a NixOS activation on run 35133704599 — see "R1 findings — the
+> remaining cells" below. **All four are now measured**; #1052 is closed.
 
 ### R3 findings — the Nix answer, measured (2026-09-14, runs 34861743072 and 34866897223)
 
@@ -1113,6 +1123,131 @@ and the sweep's summary names it as VM-only; `fleet-coverage.sh` learns the
 (`research-nonmutable-vm.yml`) stays a research tool, not a gate: 60–150 minutes a leg
 on a `ubuntu-latest` runner with KVM is a weekly measurement at most.
 
+### R1 findings — the remaining cells (2026-09-16, runs 35130669056 and 35133704599)
+
+The harness is `scripts/research/nonmutable-r1-cells.sh` behind `r1cells=true`
+(#1052, landed in #1075). bootc and MicroOS answered on the first dispatch; the NixOS leg
+was lost to a harness defect and answered on a second (#1078). Two of the three cells
+were, by this point, claims a
+**shipped** declaration already made — not prototype values.
+
+**`dnf search` on a booted bootc host — the declaration is true, and the miss is the
+finding.** Asked of a stock repo set before any bootstrap had run (R6's lesson: a forced
+provision run writes a COPR repo file and breaks every later `dnf`), and asked **as the
+user**, because `PKG_SEARCH` is declared with no escalator:
+
+| verb | as | exit | cost | lines |
+| --- | --- | --- | --- | --- |
+| `dnf -q makecache` | user | 0 | 19.3 s | 1 |
+| `dnf search zsh` (hit) | user | **0** | 1.2 s | 33 |
+| `dnf search dotgibson-no-such-package` (miss) | user | **0** | 1.4 s | 3 |
+| `dnf search --refresh zsh` | user | 0 | 2.5 s | 37 |
+| `dnf -q provides $(command -v zsh)` | user | 0 | **59.4 s** | 25 |
+| `rpm -qf $(command -v zsh)` (`PKG_OWNS`) | user | 0 | 0.0 s | 1 |
+
+So the read-only half of `dnf` is untouched by the read-only root — only the *transaction*
+is refused, and `dotfiles-Fedora/os/fedora.atomic.capabilities`'s `PKG_SEARCH=dnf search`
+is honest as shipped. An unprivileged user can also populate the metadata cache, so the
+verb needs no escalator on an atomic host any more than on a mutable one.
+
+**The new fact is that a miss also exits 0.** Hit and miss are indistinguishable by exit
+status on dnf5; a consumer must read the output. Nothing in Core reads `PKG_SEARCH`'s
+status today — it is rendered into `PORTING-MATRIX.md`'s verb table and otherwise
+documentation — so this changes no code, but it is the kind of thing a future "is it
+available?" consumer would get wrong by assuming the shell convention.
+
+**An `/etc` edit across a transactional update — the documented loss case, confirmed, and
+it lands on the driver's own two writes.** The collision was forced rather than waited for:
+a snapshot opened first with `transactional-update run`, both halves written, the update
+run with `--continue`, then a reboot. Measured on the booted snapshot afterwards:
+
+| written | after the reboot | verdict |
+| --- | --- | --- |
+| running `/etc`, before the snapshot | `running-before` | carried (the baseline — it was already inside the snapshot) |
+| the snapshot only | `snapshot` | live — the guest really booted the snapshot this run wrote |
+| running `/etc`, **after** the snapshot opened | `running-after` | **carried** — *"changes applied to the currently running system will be visible in the new system"*, measured |
+| **both** the snapshot and the running `/etc` | `snapshot` | **the loss case, confirmed** — the later running edit is gone |
+| `/etc/shells`, all three moments | pre-snapshot line and snapshot line survive; **post-snapshot append gone** | the loss case, on `blib_set_login_shell`'s own write |
+| the `chsh`'d login shell | `/bin/bash` (the snapshot's) | **shadowed** — the driver's later `chsh` is gone |
+
+**Why this matters beyond the cell.** On a transactional host `PKG_INSTALL` *is* a staging
+verb, so every provisioning run leaves a snapshot open behind it — and the driver then
+writes `/etc/shells` and runs `chsh` into a copy of `/etc` that the next boot discards,
+with no error anywhere. The `/etc` overlay's documented asymmetry is not a footnote for
+this fleet; it is the shape of a silent bootstrap failure on the transactional edition.
+Filed as **[dotfiles-openSUSE#199][os199]** rather than fixed here, because the remedy
+belongs in that repo's transactional arm — order the writes before the staging verb,
+re-apply them after `PKG_APPLY`, do them inside the transaction (`transactional-update run
+chsh …`), or print the declaration the way `dotfiles-NixOS` does. Whichever it picks, the
+arm has to say out loud that an `/etc` write made while a snapshot is staged is not
+durable; that is the part no reader can infer from the code.
+
+[os199]: https://github.com/dotgibson/dotfiles-openSUSE/issues/199
+
+**Two facts about `transactional-update` fell out of the same run.** `dup` **refuses
+entirely when any enabled repo fails to refresh** — zypper exit 4, *"dist-upgrade … must
+not continue if enabled repositories fail to refresh"* — and it **deletes its own snapshot
+on the way out** (`Removing snapshot #7`). So on this guest the `dup` never completed, and
+the transition the `/etc` markers actually crossed was the `run` snapshot. That is a
+weaker claim than "across a `dup`" and is recorded as such; the `/etc` overlay mechanism
+does not depend on which verb opened the snapshot, but the run does not prove a `dup`
+specifically. Opening the snapshot *before* the update is the only reason the experiment
+survived the failure at all.
+
+**What the NixOS leg cost, and why.** The second generation was built with `-A system`,
+which builds a real machine and asserts a root filesystem and a bootloader this
+configuration never declares — `-A vm`'s `vmVariant` supplies both implicitly. Worse, that
+*optional* fidelity step ran under `set -e` and took the *required* probe down with it.
+Both fixed in #1078 (`-A vm`, system read back out of the runner script; the block
+best-effort with the probe outside it), and the cell answered on the re-dispatch below.
+
+**`chsh` across a NixOS activation — it reverts, but only for a user the configuration
+DECLARES.** Measured on run 35133704599, across a *real* second generation (the booted
+system moved from `kc86xh82…` to `vc05czvb…`, one `environment.etc` entry apart), not a
+replay. Both users were `chsh`'d to the same path and then the generation was activated:
+
+| who | declared? | after `chsh` | after the activation | verdict |
+| --- | --- | --- | --- | --- |
+| `root` | declared (`users.users.root.shell`) | `/root/.nix-profile/bin/zsh` | `/run/current-system/sw/bin/bash` | **REVERTED** |
+| `research` | imperative (`useradd`; `users.mutableUsers`) | `/root/.nix-profile/bin/zsh` | `/root/.nix-profile/bin/zsh` | **kept** |
+
+So `users.mutableUsers = true` does not mean "hand edits stick". It means the merge
+*leaves undeclared users alone* while **rewriting the shell of every declared user to the
+declared value on each activation** — and the imperative user survived the activation
+intact, so this is the users-groups merge doing its job, not a blunt reset.
+
+**That is the measurement `dotfiles-NixOS/bootstrap.sh` was missing**, and it is sharper
+than the comment it validates. `chsh` "would work here … and is still wrong" is true, but
+the *wrong* half applies precisely to the accounts a NixOS configuration declares — which
+on any real box is the operator's own. An undeclared user would keep a `chsh`, which is
+exactly the case that would have made the repo's rule look like superstition if anyone had
+tested only that one. `/etc/shells` was not regenerated to include the new shell either,
+so the §3 guess *"`/etc` is generated … a hand edit does not survive a rebuild"* is
+confirmed for the login shell specifically.
+
+Two side notes. `chsh` warned *"is an invalid shell"* (the target is not in `/etc/shells`)
+and **took anyway**, exit 0 — a warning, not a refusal. And `switch-to-configuration test`
+exited **4** while activation itself ran normally: the non-zero came from
+`home-manager-root.service` failing, R3's module, not from the activation. A reader
+checking that verb's status on a home-manager box should not read 4 as "activation failed".
+
+**Why `nixos-rebuild` has always exited 1 on these guests, finally recorded.** R1 has
+carried *"`nixos-rebuild dry-build` exits 1 — harness, not target"* since iteration 3
+without a cause. Running the full `switch` after the verdict gives it: the **bootloader**
+half, exactly as predicted, and for a specific reason —
+
+```text
+installing the GRUB 2 boot loader on /dev/disk/by-id/virtio-root...
+grub-install: warning: File system `ext2' doesn't support embedding.
+grub-install: error: will not proceed with blocklists.
+Failed to install bootloader
+```
+
+The activation half had already completed; the login shells were unchanged afterwards, so
+the failed half ran no second activation. A `build-vm` guest can therefore be *activated*
+but never *switched*, which is why `test` is the honest verb for this measurement and why
+no future harness should read a `switch` failure here as a fact about NixOS.
+
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 
 Read off the upstream manuals while the first R1 harness run was in flight (the harness
@@ -1213,6 +1348,23 @@ the maint runner, `core-doctor` (R5's list), `bootstrap-test.yml`'s `provisioner
 one lib arm the research named — `blib_set_login_shell` printing the NixOS declaration
 instead of running `chsh` — belongs to the NixOS repo's first PR, not to the variant.
 (4) R4: variant for Fedora and openSUSE, a new repo for NixOS; R3: coexist.
+
+**R1's last cells closed 2026-09-16** (runs 35130669056 and 35133704599, #1052), and with
+them the research phase has no unmeasured value left in it. Two consequences outlive the
+phase and are tracked outside this file, so that a reader finishing here does not mistake
+"all measured" for "nothing outstanding":
+
+- **[dotfiles-openSUSE#199][os199]** — the `/etc` loss case is not just a documented
+  caveat: `blib_set_login_shell`'s two writes are measurably discarded when a snapshot is
+  staged, which a provisioning run on that host always leaves behind. A repo-side fix, and
+  the one defect the research turned up that the schema cannot express.
+- **The `blib_set_login_shell` NixOS arm** named in (3) above now has its measurement
+  rather than its documentation: `chsh` is reverted by the next activation for a user the
+  configuration *declares*, and kept for one it does not. Still the NixOS repo's PR, but
+  no longer on the strength of the manual alone.
+
+Neither reopens the verdict. Both are consumer- or repo-side, which is what *additive*
+predicted.
 
 ## 6. What breaks — if it had been the major
 
