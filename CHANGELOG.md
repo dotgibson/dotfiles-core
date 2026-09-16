@@ -124,7 +124,8 @@
   That matters because `PKG_INSTALL` on that host _is_ a staging verb, so every provisioning
   run leaves a snapshot open behind it and `blib_set_login_shell` writes into a copy of
   `/etc` the next boot discards, silently. The remedy belongs in `dotfiles-openSUSE`'s
-  transactional arm, not in a declaration key, and is filed there.
+  transactional arm, not in a declaration key, and is tracked as
+  dotgibson/dotfiles-openSUSE#199.
 
   Two `transactional-update` facts fell out of the same run: `dup` refuses outright when any
   enabled repo fails to refresh (zypper exit 4) and deletes its own snapshot on the way out.

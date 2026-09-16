@@ -80,7 +80,7 @@ TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping 
 # `/etc/shells` and runs `chsh` into a copy of `/etc` the next boot discards. Both writes
 # were measured lost that way. The remedy belongs in dotfiles-openSUSE's transactional arm
 # (order the writes before the staging verb, or re-apply after PKG_APPLY), not in a
-# declaration key.
+# declaration key — tracked as dotfiles-openSUSE#199.
 #
 # Two `transactional-update` facts from the same run: `dup` REFUSES outright when any
 # enabled repo fails to refresh (zypper exit 4) and DELETES its own snapshot on the way

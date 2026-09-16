@@ -1175,9 +1175,14 @@ verb, so every provisioning run leaves a snapshot open behind it — and the dri
 writes `/etc/shells` and runs `chsh` into a copy of `/etc` that the next boot discards,
 with no error anywhere. The `/etc` overlay's documented asymmetry is not a footnote for
 this fleet; it is the shape of a silent bootstrap failure on the transactional edition.
-Filed against `dotfiles-openSUSE` rather than fixed here, because the remedy belongs in
-that repo's transactional arm (order the writes before the staging verb, or re-apply them
-after `PKG_APPLY`).
+Filed as **[dotfiles-openSUSE#199][os199]** rather than fixed here, because the remedy
+belongs in that repo's transactional arm — order the writes before the staging verb,
+re-apply them after `PKG_APPLY`, do them inside the transaction (`transactional-update run
+chsh …`), or print the declaration the way `dotfiles-NixOS` does. Whichever it picks, the
+arm has to say out loud that an `/etc` write made while a snapshot is staged is not
+durable; that is the part no reader can infer from the code.
+
+[os199]: https://github.com/dotgibson/dotfiles-openSUSE/issues/199
 
 **Two facts about `transactional-update` fell out of the same run.** `dup` **refuses
 entirely when any enabled repo fails to refresh** — zypper exit 4, *"dist-upgrade … must
@@ -1343,6 +1348,23 @@ the maint runner, `core-doctor` (R5's list), `bootstrap-test.yml`'s `provisioner
 one lib arm the research named — `blib_set_login_shell` printing the NixOS declaration
 instead of running `chsh` — belongs to the NixOS repo's first PR, not to the variant.
 (4) R4: variant for Fedora and openSUSE, a new repo for NixOS; R3: coexist.
+
+**R1's last cells closed 2026-09-16** (runs 35130669056 and 35133704599, #1052), and with
+them the research phase has no unmeasured value left in it. Two consequences outlive the
+phase and are tracked outside this file, so that a reader finishing here does not mistake
+"all measured" for "nothing outstanding":
+
+- **[dotfiles-openSUSE#199][os199]** — the `/etc` loss case is not just a documented
+  caveat: `blib_set_login_shell`'s two writes are measurably discarded when a snapshot is
+  staged, which a provisioning run on that host always leaves behind. A repo-side fix, and
+  the one defect the research turned up that the schema cannot express.
+- **The `blib_set_login_shell` NixOS arm** named in (3) above now has its measurement
+  rather than its documentation: `chsh` is reverted by the next activation for a user the
+  configuration *declares*, and kept for one it does not. Still the NixOS repo's PR, but
+  no longer on the strength of the manual alone.
+
+Neither reopens the verdict. Both are consumer- or repo-side, which is what *additive*
+predicted.
 
 ## 6. What breaks — if it had been the major
 
