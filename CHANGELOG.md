@@ -2,6 +2,48 @@
 
 ### Added
 
+- **`PORTING-MATRIX.md` renders the atomic and declarative editions** — the two columns
+  #1062 could not add (runbook step 5 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6, #1051).
+  `dotfiles-Fedora` gains `Atomic=os/fedora.atomic.capabilities` as a second label beside
+  `Workstation` (the idiom openSUSE already uses for three), and `dotfiles-NixOS` gets a
+  column of its own.
+
+  **What blocked them was one line.** `scripts/gen-porting-matrix.sh` refused any
+  declaration missing a key `CMD_ROWS` names — and both of these legally omit
+  `PKG_COUNT_PENDING`, which `scripts/check-capabilities.sh` permits under
+  `PROVISIONER=declarative` and whenever `PKG_APPLY_PENDING` is declared beside it. That is
+  why #1062 shipped openSUSE's transactional column, which declares the count verb, and
+  deferred Fedora's, which does not.
+
+  The generator now renders an absent key **only where the validator would accept its
+  absence**, keyed to the same two conditions so one rule has two readers. A **staged** host
+  shows the verb it does have with the question it answers outside the code span —
+  `` `rpm-ostree status --pending-exit-77` (staged?) `` — because it cannot cheaply say how
+  many packages are pending (that verb is root-only there) but can say whether a change is
+  already staged, which is what the nudge runs. A **declarative** host shows `—`:
+  packages-pending is not a thing NixOS knows, and the nearest question needs root and
+  lists derivations. Anywhere else a missing verb is still `exit 2`, which is what keeps
+  the gate honest for the eight mutable declarations.
+
+  The cell builder now compares **rendered** strings rather than raw values when collapsing
+  a multi-label column to one — the old code rebuilt the code span from a raw value plus
+  whatever placeholder the last loop pass left behind, which is wrong the moment one
+  declaration renders something that is not a code span.
+
+  Pinned by four arms in the parity suite (the staged tail, the bare dash, neither
+  relaxation → 2 naming the column _and_ its label, and that `declarative` excuses the
+  count verb and nothing else) over a fixture fleet that grew `dotfiles-NixOS` and the two
+  relaxed declarations. The pre-existing "a declaration missing a verb is a structural
+  failure" assertion is the load-bearing one and is untouched: widening the relaxation to
+  any absent key fails it, plus two of the four new arms.
+
+  `PKG_COLUMNS` is deliberately unchanged — `dotfiles-NixOS` ships no `install/packages.txt`
+  (`nix/home.nix` owns the package set), so the packages table, its 8-field row assertion
+  and §9p's five-repo `TOOLS_OPTIN` list are all untouched. Footnote ³⁵ is now scoped to the
+  Workstation half, since the atomic edition genuinely does have a standalone index refresh.
+  (`scripts/gen-porting-matrix.sh`, `PORTING-MATRIX.md`,
+  `scripts/test/41-gen-matrix-parity.sh`)
+
 - **`dotfiles-NixOS` is the fleet's tenth Core-vendoring repo** (runbook step 5 of
   `NON-MUTABLE-HOST-PROPOSAL.md` §4.6, #1051). NixOS is the one non-mutable target that
   could not be a variant of an existing repo — R4 measured it as _"no package list in

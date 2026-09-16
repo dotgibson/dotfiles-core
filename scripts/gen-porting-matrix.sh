@@ -131,11 +131,12 @@ BLOCK_IDS="commands packages fleet-versions"
 #   Tumbleweed base that stages through transactional-update) last.
 #   unit: the word inside the install/remove placeholder — <pkg>, or <atom> on Gentoo.
 CMD_COLUMNS="macos	macOS (brew)	dotfiles-MacBook	os/macos.capabilities	pkg
-fedora	Fedora (dnf)	dotfiles-Fedora	os/fedora.capabilities	pkg
+fedora	Fedora (dnf)	dotfiles-Fedora	Workstation=os/fedora.capabilities Atomic=os/fedora.atomic.capabilities	pkg
 arch	Arch	dotfiles-Arch	os/arch.capabilities	pkg
 opensuse	openSUSE	dotfiles-openSUSE	Leap=os/opensuse.leap.capabilities Tumbleweed=os/opensuse.capabilities Transactional=os/opensuse.microos.capabilities	pkg
 alpine	Alpine	dotfiles-Alpine	os/alpine.capabilities	pkg
 gentoo	Gentoo	dotfiles-Gentoo	os/gentoo.capabilities	atom
+nixos	NixOS	dotfiles-NixOS	os/nixos.capabilities	pkg
 kali	Kali (apt)	dotfiles-Debian	os/debian.kali.capabilities	pkg
 debian	Debian/Ubuntu (apt)	dotfiles-Debian	os/debian.capabilities	pkg"
 
@@ -350,16 +351,61 @@ render_commands() {
             if ((k = index(path, "=")) > 0) { label = substr(path, 1, k - 1); path = substr(path, k + 1) }
             src = src (i > 1 ? " " : "") crepo[c] "/" path
             key = cid[c] SUBSEP label SUBSEP akey[a]
-            if (!(key in has)) { err(cid[c] " declares no " akey[a]); exit 2 }
-            v = val[key]
-            if (v == "") { err(cid[c] ": " akey[a] " is empty"); exit 2 }
-            if (index(v, "`")) { err(cid[c] ": " akey[a] " contains a backtick, which cannot sit inside a code span"); exit 2 }
-            if (i == 1) first = v; else if (v != first) same = 0
-            if (ph != "") v = v " " ph
-            cell = cell (i > 1 ? " · " : "") (label != "" ? label ": " : "") "`" esc(v) "`"
+            # disp is the FULLY RENDERED cell for this one declaration — code span,
+            # placeholder and any tail. The collapse below compares THESE, not raw values:
+            # a rendered dash and a rendered verb are not the same cell even when one of
+            # them has no value to compare, and rebuilding the span from a raw value plus
+            # whatever placeholder the LAST loop pass left behind (what this did before) is
+            # wrong the moment a declaration renders something that is not a code span.
+            disp = ""
+            if (key in has) {
+              v = val[key]
+              if (v == "") { err(cid[c] (label != "" ? " (" label ")" : "") ": " akey[a] " is empty"); exit 2 }
+              if (index(v, "`")) { err(cid[c] ": " akey[a] " contains a backtick, which cannot sit inside a code span"); exit 2 }
+              disp = "`" esc(v (ph != "" ? " " ph : "")) "`"
+            } else {
+              # AN ABSENT KEY IS RENDERABLE ONLY WHERE THE VALIDATOR ACCEPTS ITS ABSENCE.
+              # scripts/check-capabilities.sh relaxes PKG_COUNT_PENDING in exactly two
+              # cases — under PROVISIONER=declarative, and when PKG_APPLY_PENDING is
+              # declared beside it — so those are the only two cases here. Anything else
+              # stays exit 2, which is what keeps this gate strict for the eight mutable
+              # declarations: a Fedora file that lost PKG_SEARCH must still fail, not
+              # render a dash into a green table.
+              #
+              # ONE RULE, TWO READERS. If that relaxation ever moves, both sides follow
+              # from the same sentence rather than from a policy restated here.
+              pk = cid[c] SUBSEP label SUBSEP "PROVISIONER"
+              ak = cid[c] SUBSEP label SUBSEP "PKG_APPLY_PENDING"
+              prov  = (pk in has) ? val[pk] : ""
+              probe = (ak in has) ? val[ak] : ""
+              if (akey[a] != "PKG_COUNT_PENDING" || (prov != "declarative" && probe == "")) {
+                err(cid[c] (label != "" ? " (" label ")" : "") " declares no " akey[a] \
+                    (akey[a] == "PKG_COUNT_PENDING" \
+                       ? " and nothing that permits its absence — declare the verb, or PKG_APPLY_PENDING beside it (scripts/check-capabilities.sh)" \
+                       : ""))
+                exit 2
+              }
+              if (probe != "") {
+                # A STAGED host CAN answer, just not this question. The count verb asks
+                # how many packages are pending; PKG_APPLY_PENDING asks whether a change
+                # is staged, which is what the nudge actually runs there. Render the verb
+                # it does have and say which question it answers — the tail sits OUTSIDE
+                # the span, because the span holds exactly what runs.
+                if (index(probe, "`")) { err(cid[c] ": PKG_APPLY_PENDING contains a backtick, which cannot sit inside a code span"); exit 2 }
+                disp = "`" esc(probe) "` (staged?)"
+              } else {
+                # A DECLARATIVE host cannot answer it at all: packages-pending is not a
+                # thing it knows, and the nearest question needs root and lists
+                # derivations rather than packages. A dash is the honest cell, and it is
+                # the mark this file already uses for nothing-here in the package table.
+                disp = "—"
+              }
+            }
+            if (i == 1) first = disp; else if (disp != first) same = 0
+            cell = cell (i > 1 ? " · " : "") (label != "" ? label ": " : "") disp
           }
           # Every declaration agrees: one cell, no labels.
-          if (nf > 1 && same) cell = "`" esc(first (ph != "" ? " " ph : "")) "`"
+          if (nf > 1 && same) cell = first
           line = line "\t" cell mark[cid[c] "/" act[a]]
           printf "commands\t%s\t%s\tderived\t%s\n", act[a], cid[c], src >> listfile
         }
