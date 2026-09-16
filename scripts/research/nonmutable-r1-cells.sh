@@ -398,10 +398,16 @@ microos_phase2() {
   case " $shells_now " in *" /running/after/marker "*) after_marker=yes ;; *) after_marker=no ;; esac
 
   h2 "7. After the reboot — is there anything to read?"
-  say "- booted subvolume: \`$booted_before\` → \`$booted_now\`"
+  say "- booted subvolume: \`${booted_before:-?}\` → \`$booted_now\`"
   say "- default subvolume: \`$(btrfs subvolume get-default / 2>&1 | tr -d '\n')\`"
   say "- phase 1: the snapshot opened with exit $open_rc, \`dup\` exited $dup_rc, snapshots $snaps_before → $snaps_after"
-  if [[ -n "$booted_before" && "$booted_now" == "$booted_before" ]]; then
+  if [[ ! -f "$state" ]]; then
+    say ""
+    say "> **No phase-1 state at \`$state\` — this round measured NOTHING.** Phase 2 judges"
+    say "> against what phase 1 wrote down; without it the table below is comparing the"
+    say "> guest's \`/etc\` against nothing. Either phase 1 never ran, or it ran as a"
+    say "> different user (the state lives in \`\$HOME\`), or the guest was reimaged."
+  elif [[ -n "$booted_before" && "$booted_now" == "$booted_before" ]]; then
     say ""
     say "> **The booted subvolume did not change — this round measured NOTHING.** A failed"
     say "> transaction deletes its own snapshot (\`transactional-update\` exit 1), and so can a"
@@ -429,7 +435,17 @@ microos_phase2() {
   say "| \`/etc/research-after\` | running, after the snapshot opened — **this is the documented claim** | \`$(cat /etc/research-after 2>/dev/null || echo absent)\` | $([[ "$(cat /etc/research-after 2>/dev/null)" == running-after ]] && echo "**carried** — *\"changes applied to the currently running system will be visible in the new system\"*, measured" || echo "**LOST — the documented claim does not hold**, which is a larger finding than the collision below") |"
   say "| \`/etc/research-collide\` | all three moments | \`$collide\` | $(case "$collide" in snapshot) echo "**the loss case, confirmed** — the snapshot's copy won and the later running edit is gone" ;; running-after) echo "the running edit won — the documented loss case did NOT fire here" ;; running-before) echo "**neither later write survived**" ;; *) echo "**absent** — never reached the new \`/etc\`" ;; esac) |"
   say "| \`/etc/shells\` | all three moments | before: **$before_marker**; snapshot: **$snap_marker**; after: **$after_marker** | $shells_verdict |"
-  say "| \`$asuser\`'s login shell | \`$zsh_path\` → \`/bin/bash\` (snapshot) → \`$zsh_path\` | \`$user_now\` | $(case "$user_now" in "$zsh_path") echo "**carried** — the driver's \`chsh\` survived" ;; /bin/bash) echo "**shadowed** — the snapshot's \`chsh\` won; the driver's later one is gone" ;; *) echo "neither — \`$user_now\`" ;; esac) |"
+  local shell_verdict
+  if [[ -z "$zsh_path" ]]; then
+    shell_verdict="unreadable — phase 1 recorded no \`zsh\` path"
+  elif [[ "$user_now" == "$zsh_path" ]]; then
+    shell_verdict="**carried** — the driver's \`chsh\` survived"
+  elif [[ "$user_now" == /bin/bash ]]; then
+    shell_verdict="**shadowed** — the snapshot's \`chsh\` won; the driver's later one is gone"
+  else
+    shell_verdict="neither — \`${user_now:-absent}\`"
+  fi
+  say "| \`$asuser\`'s login shell | \`${zsh_path:-?}\` → \`/bin/bash\` (snapshot) → \`${zsh_path:-?}\` | \`${user_now:-absent}\` | $shell_verdict |"
   say ""
   say "- \`/etc/shells\` now: \`$shells_now\`"
   say "- \`.rpmnew\` / \`.rpmsave\` the update left under \`/etc\`: \`$(find /etc -maxdepth 2 \( -name '*.rpmnew' -o -name '*.rpmsave' \) 2>/dev/null | tr '\n' ' ')\`"
