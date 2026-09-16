@@ -650,7 +650,7 @@ worked everywhere it was tried, as a user, without an escalator.
 | `PKG_INSTALL` is synchronous | **Refused** — `dnf` resolves 317 pkgs, then *"configured to be read-only"* (root); `rpm-ostree install` needs polkit (user) | **Refused** — *"Transactional system detected"*, rc 5, every package; `transactional-update pkg in` = 21 s + reboot | Not a verb — the starter provisions nothing; `nix profile install` exists (no dry-run) |
 | `PKG_UPGRADE` returns with the box updated | unmeasured (`upgrade --check` needs a registry-backed origin) | measured in the prep: staged, reboot to apply | unmeasured (`switch` needs a config the VM lacks) |
 | `PKG_COUNT_PENDING` lists packages | `rpm-ostree status --pending-exit-77` user-runnable, exit 0/77 (a deployment, not N packages) | `zypper lu` — unmeasured (SIGPIPE artifact) | unmeasured |
-| `/etc` writable: `chsh`, `/etc/shells`, system files | user: `/etc` **not** writable, `chsh` **works** (setuid); root: `/etc` `/var` writable, `/usr` not | root: `/etc` writable (overlay), `chsh` works, `/usr` not — but a write made while a snapshot is staged is **discarded on reboot** if the snapshot touched the same file (measured, run 35130669056) | root: everything writable, `chsh` takes; regenerated on `switch` (per docs — still the one unmeasured cell) |
+| `/etc` writable: `chsh`, `/etc/shells`, system files | user: `/etc` **not** writable, `chsh` **works** (setuid); root: `/etc` `/var` writable, `/usr` not | root: `/etc` writable (overlay), `chsh` works, `/usr` not — but a write made while a snapshot is staged is **discarded on reboot** if the snapshot touched the same file (measured, run 35130669056) | root: everything writable, `chsh` takes; the login shell is **REVERTED** by the next activation for a user the configuration DECLARES, and kept for an imperative one (measured, run 35133704599) |
 | Escalator + keepalive | `sudo` present; **keepalive needs a TTY or askpass** | `sudo` present | `sudo` under `/run/wrappers` |
 | Tools on `PATH` by package | layered → `/usr/bin` after reboot (unmeasured); `$HOME` installers land | `$HOME` installers land (starship); packages after reboot | declared → `/run/current-system/sw/bin` (855 entries) |
 | `--links-only` holds unchanged | **yes** (34 links, user and root) | **yes** (34) | **yes** (28) |
@@ -711,7 +711,8 @@ the MicroOS guest; `chsh` across `nixos-rebuild switch`.
 
 > All but the last are now measured — `zypper -q list-updates` in iteration 4,
 > `rpm-ostree upgrade --check` in R5, `dnf search` in run 35130669056. The declarations
-> carry the measured values; only the NixOS `chsh` cell is still open (#1052).
+> carry the measured values. The NixOS `chsh` cell closed on 2026-09-16 (run 35133704599):
+> it reverts for a declared user, and is kept for an imperative one.
 
 ### R1 findings — rung two, iteration 4 (2026-09-14, run 34852611338): the tainted cells, and the keepalive explained
 
@@ -741,9 +742,9 @@ upgrade --check` against a registry-backed image; `chsh` across `nixos-rebuild s
 value inside a prototype marked "to verify".
 
 > Since resolved. The registry-backed `bootc upgrade --check` closed in R5 (run
-> 34912321933). `dnf search` and the `/etc` edit closed on 2026-09-16 (run 35130669056) —
-> see "R1 findings — the remaining cells" below. **`chsh` across a NixOS activation is the
-> one still open**, tracked by #1052.
+> 34912321933). `dnf search` and the `/etc` edit closed on 2026-09-16 (run 35130669056),
+> and `chsh` across a NixOS activation on run 35133704599 — see "R1 findings — the
+> remaining cells" below. **All four are now measured**; #1052 is closed.
 
 ### R3 findings — the Nix answer, measured (2026-09-14, runs 34861743072 and 34866897223)
 
@@ -1122,12 +1123,12 @@ and the sweep's summary names it as VM-only; `fleet-coverage.sh` learns the
 (`research-nonmutable-vm.yml`) stays a research tool, not a gate: 60–150 minutes a leg
 on a `ubuntu-latest` runner with KVM is a weekly measurement at most.
 
-### R1 findings — the remaining cells (2026-09-16, run 35130669056): two of three
+### R1 findings — the remaining cells (2026-09-16, runs 35130669056 and 35133704599)
 
 The harness is `scripts/research/nonmutable-r1-cells.sh` behind `r1cells=true`
-(#1052, landed in #1075). bootc and MicroOS answered; the NixOS leg was lost to a harness
-defect and is re-dispatched separately (below). Two of the three cells were, by this point,
-claims a
+(#1052, landed in #1075). bootc and MicroOS answered on the first dispatch; the NixOS leg
+was lost to a harness defect and answered on a second (#1078). Two of the three cells
+were, by this point, claims a
 **shipped** declaration already made — not prototype values.
 
 **`dnf search` on a booted bootc host — the declaration is true, and the miss is the
@@ -1193,7 +1194,54 @@ which builds a real machine and asserts a root filesystem and a bootloader this
 configuration never declares — `-A vm`'s `vmVariant` supplies both implicitly. Worse, that
 *optional* fidelity step ran under `set -e` and took the *required* probe down with it.
 Both fixed in #1078 (`-A vm`, system read back out of the runner script; the block
-best-effort with the probe outside it). The cell is still open.
+best-effort with the probe outside it), and the cell answered on the re-dispatch below.
+
+**`chsh` across a NixOS activation — it reverts, but only for a user the configuration
+DECLARES.** Measured on run 35133704599, across a *real* second generation (the booted
+system moved from `kc86xh82…` to `vc05czvb…`, one `environment.etc` entry apart), not a
+replay. Both users were `chsh`'d to the same path and then the generation was activated:
+
+| who | declared? | after `chsh` | after the activation | verdict |
+| --- | --- | --- | --- | --- |
+| `root` | declared (`users.users.root.shell`) | `/root/.nix-profile/bin/zsh` | `/run/current-system/sw/bin/bash` | **REVERTED** |
+| `research` | imperative (`useradd`; `users.mutableUsers`) | `/root/.nix-profile/bin/zsh` | `/root/.nix-profile/bin/zsh` | **kept** |
+
+So `users.mutableUsers = true` does not mean "hand edits stick". It means the merge
+*leaves undeclared users alone* while **rewriting the shell of every declared user to the
+declared value on each activation** — and the imperative user survived the activation
+intact, so this is the users-groups merge doing its job, not a blunt reset.
+
+**That is the measurement `dotfiles-NixOS/bootstrap.sh` was missing**, and it is sharper
+than the comment it validates. `chsh` "would work here … and is still wrong" is true, but
+the *wrong* half applies precisely to the accounts a NixOS configuration declares — which
+on any real box is the operator's own. An undeclared user would keep a `chsh`, which is
+exactly the case that would have made the repo's rule look like superstition if anyone had
+tested only that one. `/etc/shells` was not regenerated to include the new shell either,
+so the §3 guess *"`/etc` is generated … a hand edit does not survive a rebuild"* is
+confirmed for the login shell specifically.
+
+Two side notes. `chsh` warned *"is an invalid shell"* (the target is not in `/etc/shells`)
+and **took anyway**, exit 0 — a warning, not a refusal. And `switch-to-configuration test`
+exited **4** while activation itself ran normally: the non-zero came from
+`home-manager-root.service` failing, R3's module, not from the activation. A reader
+checking that verb's status on a home-manager box should not read 4 as "activation failed".
+
+**Why `nixos-rebuild` has always exited 1 on these guests, finally recorded.** R1 has
+carried *"`nixos-rebuild dry-build` exits 1 — harness, not target"* since iteration 3
+without a cause. Running the full `switch` after the verdict gives it: the **bootloader**
+half, exactly as predicted, and for a specific reason —
+
+```text
+installing the GRUB 2 boot loader on /dev/disk/by-id/virtio-root...
+grub-install: warning: File system `ext2' doesn't support embedding.
+grub-install: error: will not proceed with blocklists.
+Failed to install bootloader
+```
+
+The activation half had already completed; the login shells were unchanged afterwards, so
+the failed half ran no second activation. A `build-vm` guest can therefore be *activated*
+but never *switched*, which is why `test` is the honest verb for this measurement and why
+no future harness should read a `switch` failure here as a fact about NixOS.
 
 ### Findings so far — documentation, 2026-09-14 (before any host was measured)
 

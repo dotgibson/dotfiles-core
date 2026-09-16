@@ -93,8 +93,9 @@
 
 ### Changed
 
-- **Two of R1's three remaining cells are measured** (`NON-MUTABLE-HOST-PROPOSAL.md` §5,
-  #1052, run 35130669056). Both were claims a _shipped_ declaration already made.
+- **R1's three remaining cells are measured, and the research phase's last open question is
+  closed** (`NON-MUTABLE-HOST-PROPOSAL.md` §5, #1052, runs 35130669056 and 35133704599).
+  Two of the three were claims a _shipped_ declaration already made.
 
   **`dnf search` on a booted bootc host holds as declared.** A hit is exit 0 in 1.2 s **as
   the user**, and an unprivileged `dnf -q makecache` populates the cache first — so
@@ -122,7 +123,27 @@
   completed `dup` — recorded as the weaker claim it is. Opening the snapshot _before_ the
   update is the only reason the experiment survived the failure.
 
-  The NixOS cell (`chsh` across an activation) is still open; its leg was lost to a harness
+  **`chsh` across a NixOS activation reverts — but only for a user the configuration
+  declares.** Measured across a _real_ second generation, with two users chsh'd to the same
+  path: `root`, which `users.users.root.shell` declares, came back with the declared shell;
+  an imperative `useradd` account kept its hand-set one. So `users.mutableUsers = true` does
+  not mean hand edits stick — it means the merge leaves undeclared users alone while
+  rewriting every declared user's shell on each activation. The hand edit survives exactly
+  where nobody needs it to, and is reverted on the operator's own account, which is the
+  measurement `dotfiles-NixOS/bootstrap.sh`'s _"would work here … and is still wrong"_ has
+  been asserting without. `/etc/shells` is not regenerated to include the new shell either.
+
+  Two things that would mislead a future reader, recorded with it: `chsh` warns _"invalid
+  shell"_ for a path outside `/etc/shells` and **takes anyway** (exit 0, a warning not a
+  refusal); and `switch-to-configuration test` exited **4** while activation ran normally —
+  the non-zero was `home-manager-root.service` failing, not the activation.
+
+  And R1's oldest loose end is tied off: `nixos-rebuild` has exited 1 on these guests since
+  iteration 3 with no recorded cause. Running the full `switch` after the verdict names it —
+  the **bootloader** half, `grub-install` refusing an ext2 VM disk (_"will not proceed with
+  blocklists"_). The activation half had already completed, so a `build-vm` guest can be
+  activated but never switched; no future harness should read a `switch` failure there as a
+  fact about NixOS.
 
 - **§3 keeps the parser's message instead of discarding it.** `bash -n` and `zsh -n` ran
   under `2>/dev/null`, so a syntax failure reported `bash syntax error: <file>` and nothing
