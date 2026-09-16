@@ -472,7 +472,19 @@ say is itself the first finding.
   run. Worth a `BOOTSTRAP_LOGIN_SHELL` re-read for the atomic/declarative arm (§4(3)).
   (2) Fedora 42's repos installed **`neovim` 0.11.5** and **`tree-sitter-cli` 0.25.10** —
   both *below* the fleet's floors (≥ 0.12.0, ≥ 0.26.1; `PORTING-MATRIX.md` ³³ and ⁵). A
-  side finding for the matrix, not for this proposal, filed separately.
+  side finding for the matrix, not for this proposal, filed separately as #1010 — and
+  **answered against the wrong release**. Fedora 42 went EOL on 2026-05-13 and the quay tag
+  has been frozen since; it is not one of `dotfiles-Fedora`'s lanes, which that repo's
+  `packages.yml` declares as F43/F44 blocking and F45/rawhide advisory. Re-measured
+  2026-09-16, the shortfall is real on **F43** (`neovim` 0.11.6, `tree-sitter-cli`
+  0.25.10) and absent on F44/F45/rawhide (0.12.5, 0.26.11); footnote ³³ now carries the
+  lanes and dotfiles-Fedora#192 the remedy. **The transferable lesson is about this
+  harness, not about Fedora:** an image pinned for a *host-shape* question was read for
+  *package-version* answers about a release nobody runs. R1–R6's verb findings stand as
+  measured on `:42` — that is what the reports say and they should keep saying it — but
+  their package versions are not evidence about the fleet. Both research workflows now
+  pin `:44`, a blocking lane, so the next run's side findings are about a release
+  somebody is on.
 
 **NixOS (`nixos/nix:latest`, a scaffolded `dotfiles-NixOS`).**
 

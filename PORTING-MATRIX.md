@@ -217,7 +217,15 @@ probes the RESOLVED binary — it reports `✓` for a renamed tool rather than t
 that once contradicted the `resolved` line in the same report.
 ⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. **Mac:**
 `tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
-**Fedora:** `tree-sitter-cli` via dnf (verify ≥ 0.26.1, else mise/cargo).
+**Fedora:** `tree-sitter-cli` via dnf, and it clears the floor on three of its four
+lanes: F44 (**0.26.11-1.fc44**, reached in `updates`), F45 and rawhide (**0.26.11**) —
+but **F43 carries 0.25.10-2.fc43 and does not**, and F43 is a _blocking_ lane in that
+repo's CI. On F43 reach past it with `mise use -g tree-sitter` or
+`cargo install tree-sitter-cli`. `dotfiles-Fedora`'s own `install/packages.txt` already
+says this in prose; dotfiles-Fedora#192 is the `# min:` and the warn-only probe that
+would make it checkable, neither of which that repo has. Footnote ³³ carries the matching
+neovim spread — same distro, same lane, **both halves of the one requirement below the
+floor on F43**, which is the shape this footnote and ³³ each caught on Alpine alone.
 **Arch:** `extra` carries 0.26.9 (clears the floor).
 **openSUSE:** the CLI is in the **base `tree-sitter` package** (0.26.8 on Tumbleweed,
 Leap 16.1 and Leap 16.0 — clears the floor); what got split off there is the shared
@@ -1240,8 +1248,8 @@ output. Every target above clears that floor except `dotfiles-Debian`'s two lane
 2.32.1. It degrades rather than breaks, which is why that repo's `install/packages.txt`
 declares no `# min:` floor for it.
 
-³³ **neovim — "the package exists" is not "the package is usable", and it bites on FOUR
-targets, by three different mechanisms.** Core's nvim pins nvim-treesitter to `main`
+³³ **neovim — "the package exists" is not "the package is usable", and it bites on FIVE
+targets, by four different mechanisms.** Core's nvim pins nvim-treesitter to `main`
 (`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Several cells in the neovim
 row above resolve perfectly and give you something Core's config will not load on:
 
@@ -1258,8 +1266,12 @@ row above resolve perfectly and give you something Core's config will not load o
 | **openSUSE** Leap 16.0 | `neovim` **0.11.3-bp160.2.1**         | no           |
 | openSUSE Leap 16.1     | `neovim` **0.12.4-bp161.1.1**         | yes          |
 | openSUSE Tumbleweed    | `neovim` **0.12.5-1.1**               | yes          |
+| **Fedora** 43          | `neovim` **0.11.6-1.fc43**            | no           |
+| Fedora 44              | `neovim` **0.12.5-1.fc44**            | yes          |
+| Fedora 45              | `neovim` **0.12.5-1.fc45**            | yes          |
+| Fedora Rawhide         | `neovim` **0.12.5-1.fc46**            | yes          |
 
-They get there by three different mechanisms and only one of them looks like a problem.
+They get there by four different mechanisms and only one of them looks like a problem.
 Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
 `dotfiles-Debian` declares a `# min:0.12.0` floor its CI enforces. Gentoo's is
 **keywords**: 0.12.0–0.12.3 are all in `::gentoo` right now, all `~arch`, so a stable
@@ -1282,6 +1294,19 @@ load Core's config. Neither Debian's nor Gentoo's lever exists there: no newer b
 16.0's OSS or Backports repos, and no keyword to reach past. An earlier revision of this
 footnote exempted openSUSE by name — "though its neovim row is not currently affected" —
 which was true of 15.6 and stopped being true the day 16.0 shipped.
+
+Fedora is the fourth mechanism, and the only one that moves in the fleet's favour on its
+own. It is neither frozen nor keyworded nor branch-spread: Fedora **rebases inside a
+release**, for some packages and not others, at the maintainer's discretion. `neovim`
+crossed 0.11 → 0.12 in F44's `updates`, so a box that installed 0.11 at GA is on 0.12.5
+today without changing release — while F43 stayed on the 0.11 branch and ends its life
+there, at 0.11.6. F43 therefore clears the floor only by **upgrading release**, which is
+the mechanic footnote ³⁴ records for jq on this same distro and the exact inverse of
+Alpine's in-place backport — same floor, opposite levers, one distro apart. Two things
+follow. A check run on F44, F45 or rawhide sees 0.12.5 and reports the Fedora column
+healthy, exactly as sampling Tumbleweed does for openSUSE. And F43 is a **blocking** lane
+in `dotfiles-Fedora`'s `.github/workflows/packages.yml`, so this is a shortfall on a
+release that repo's own CI treats as supported.
 
 `dotfiles-Gentoo` therefore borrows Debian's contract and pairs it with the Portage-native
 fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-restricted**
@@ -1306,13 +1331,31 @@ gate in `test/check-packages.sh` that fails a Tumbleweed shortfall (that would m
 pin outran the fleet) and reports a Leap one. Filed as dotfiles-openSUSE#178, verified
 2026-09-12.
 
-**If you stamp a new source-based or stable/testing-split target, ask the keyword question
-and the branch question, not just the name question.** This trap only shows up on the
-fleet's non-rolling lanes — and "non-rolling" covers three shapes, not one: a frozen archive
-(Debian), a stable/testing keyword split (Gentoo), and a set of concurrently supported
-release branches (Alpine, and openSUSE Leap). A rolling column can be answered once. Each
-of these has to be answered per lane, and a check that samples only the newest lane will
-report all of them healthy.
+`dotfiles-Fedora` has neither guard yet, and it repeats Alpine's asymmetry exactly:
+`install/packages.txt` carries the floor for `tree-sitter-cli` — in prose, already
+naming F43's 0.25.10 as below it — while the `neovim` line beside it is bare, with no
+floor recorded anywhere and no version check in `bootstrap.sh`. It is the last
+**non-rolling** target in the fleet without one — Arch and Homebrew declare no floor
+either, but that is the rolling column answered once, which is the distinction this
+footnote closes on. That prose floor is also invisible to `gen-porting-matrix.sh`, which reads
+`# min:`; it costs nothing here only because the package table above has no Fedora column
+to derive, so the remedy moves no cell. Filed as dotfiles-Fedora#192 — Alpine's
+warn-only probe, the `# min:` pair, and the floor-agreement gate `test/check-packages.sh`
+still lacks. Verified 2026-09-16 against `packages.fedoraproject.org` and
+`mdapi.fedoraproject.org`, after #1010 reported the same shortfall from a
+`fedora-bootc:42` container — a release EOL since 2026-05-13, and not one of this
+fleet's Fedora lanes. **Measure the lanes the repo declares, not the image that happened
+to be handy**: that container was pinned for a research harness's reasons, and its package
+versions were read as if they were the distro's.
+
+**If you stamp a new target that is not rolling, ask the keyword question, the branch
+question and the rebase question, not just the name question.** This trap only shows up on
+the fleet's non-rolling lanes — and "non-rolling" covers four shapes, not one: a frozen
+archive (Debian), a stable/testing keyword split (Gentoo), a set of concurrently supported
+release branches (Alpine, and openSUSE Leap), and a versioned release train that rebases
+inside a release for some packages and not others (Fedora). A rolling column can be
+answered once. Each of these has to be answered per lane, and a check that samples only
+the newest lane will report all of them healthy.
 
 ³⁴ **jq — a recorded security floor of ≥ 1.8.2, and deliberately NOT a version gate.**
 1.8.2 (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an

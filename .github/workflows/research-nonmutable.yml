@@ -54,7 +54,7 @@ jobs:
           for t in $want; do
             [ "$t" = homemanager ] && continue   # the R3 leg is its own job, not a container probe
             case "$t" in
-              bootc)   img='quay.io/fedora/fedora-bootc:42';               prep='dnf install -y --setopt=install_weak_deps=False bash zsh git findutils util-linux shadow-utils || true' ;;
+              bootc)   img='quay.io/fedora/fedora-bootc:44';               prep='dnf install -y --setopt=install_weak_deps=False bash zsh git findutils util-linux shadow-utils || true' ;;
               # There is NO MicroOS container image (registry.opensuse.org has opensuse/tumbleweed,
               # opensuse/leap and the BCI set; nothing under opensuse/microos — measured 2026-09-14,
               # HTTP 404 on every plausible name). MicroOS is a booted-host product: its whole
@@ -93,9 +93,12 @@ jobs:
           # its report into this bind mount, which the runner (uid 1001) owns — run 34861740026
           # finished the probe and then lost the report to "Permission denied" on that cp.
           mkdir -p research-out && chmod 1777 research-out
-          # fedora:42, digest-pinned as the modern baseline requires (the matrix legs pin by variable)
-          docker pull registry.fedoraproject.org/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c >/dev/null
-          docker run --rm -v "$PWD:/w" -w /w registry.fedoraproject.org/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c bash -c '
+          # fedora:44, digest-pinned as the modern baseline requires (the matrix legs pin by variable).
+          # F44 because that is a lane dotfiles-Fedora's packages.yml treats as BLOCKING; the :42 this
+          # used to pin went EOL on 2026-05-13 and has been frozen since (#1010 read its package
+          # versions as if they were the distro's — see PORTING-MATRIX.md footnote 33).
+          docker pull registry.fedoraproject.org/fedora:44@sha256:61beafd34111e1cb85fb49377ceadeee0a53622dbc20670ed8ca303f0e17ed9c >/dev/null
+          docker run --rm -v "$PWD:/w" -w /w registry.fedoraproject.org/fedora:44@sha256:61beafd34111e1cb85fb49377ceadeee0a53622dbc20670ed8ca303f0e17ed9c bash -c '
             set -u
             dnf -y install --setopt=install_weak_deps=False bash zsh git curl xz findutils util-linux shadow-utils >/dev/null 2>&1 || true
             useradd -m research

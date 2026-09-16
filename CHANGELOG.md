@@ -246,6 +246,49 @@
 
   Nothing renames or removes an API Core calls.
 
+### Fixed
+
+- **`PORTING-MATRIX.md` was silent about Fedora on both halves of the nvim-treesitter
+  requirement, and the report that noticed named the wrong release**
+  ([#1010](https://github.com/dotgibson/dotfiles-core/issues/1010)). The non-mutable-host
+  harness measured `neovim` 0.11.5 and `tree-sitter-cli` 0.25.10 on a `fedora-bootc:42`
+  container and read them as Fedora's answer. Fedora 42 went **EOL on 2026-05-13** and that
+  quay tag has been frozen since; `dotfiles-Fedora`'s own `packages.yml` declares the lanes
+  as **F43/F44 blocking**, F45 and rawhide advisory. Re-measured 2026-09-16 against
+  `packages.fedoraproject.org` and `mdapi.fedoraproject.org`, and the finding survives on a
+  release somebody is actually on: **F43 carries `neovim` 0.11.6-1.fc43 and
+  `tree-sitter-cli` 0.25.10-2.fc43, below both floors** (≥ 0.12.0, ≥ 0.26.1), while F44, F45
+  and rawhide clear both at 0.12.5 and 0.26.11.
+
+  Footnote ³³ therefore names **five** targets rather than four, and a **fourth mechanism**.
+  Fedora is neither a frozen archive (Debian), nor a keyword split (Gentoo), nor frozen
+  concurrent branches (Alpine, openSUSE Leap): it **rebases inside a release for some
+  packages and not others**, so F44 crossed 0.11 → 0.12 in `updates` while F43 ends its life
+  on the 0.11 branch. That makes upgrading release the only lever on F43 — the mechanic ³⁴
+  already records for jq on this same distro, and the exact inverse of Alpine's in-place
+  backport. Footnote ⁵'s Fedora line, which said only _verify ≥ 0.26.1, else mise/cargo_,
+  gains the same per-lane spread it already gave Alpine.
+
+  `dotfiles-Fedora` repeats Alpine's asymmetry precisely: a floor recorded in prose for
+  nvim-treesitter's _dependency_ and nothing at all for its _host_, which leaves it the last
+  repo in the fleet with no floor guard. Filed as dotfiles-Fedora#192; it moves no matrix
+  cell, because the package table has no Fedora column to derive.
+
+  **The harness pin is the part that generalises.** Both research workflows pinned
+  `fedora-bootc:42` (and a digest-pinned `fedora:42`) for a question about _host shape_, and
+  its package versions were then read as the distro's. Both now pin **`:44`**, a blocking
+  lane. R1–R6's verb findings stand as measured on `:42` and
+  `NON-MUTABLE-HOST-PROPOSAL.md` keeps saying so — what it now also says is that their
+  package versions are not evidence about the fleet. Footnote ³³'s closing rule widens with
+  it: ask the keyword question, the branch question **and the rebase question**.
+
+  Not fixed here, and filed as
+  [#1082](https://github.com/dotgibson/dotfiles-core/issues/1082): ³³'s table is
+  hand-written prose that has now gone stale four times (dotfiles-Gentoo#116,
+  dotfiles-Alpine#170, dotfiles-openSUSE#178, this), while
+  `scripts/fleet-package-versions.tsv` — dated rows, a derived verdict, a weekly bot —
+  exists for exactly that and holds only `jq`.
+
 ## [v7.9.0] - 2026-09-16
 
 ### Added
