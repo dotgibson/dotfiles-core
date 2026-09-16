@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.9.0] - 2026-09-16
+
 ### Added
 
 - **`PORTING-MATRIX.md` renders the atomic and declarative editions** — the two columns
