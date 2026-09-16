@@ -61,7 +61,16 @@
   **`chsh` across a NixOS switch** — the cell was open because a `build-vm` guest carries
   no `/etc/nixos/configuration.nix`. So the workflow builds a **second generation** on the
   runner and the guest activates it over the shared `/nix/store` — no evaluation, no
-  network, no store write of its own. The action is `test`, not `switch`: `switch` also
+  network, no store write of its own. It is built as `-A vm` and its system closure read
+  back out of the runner script, not as `-A system`: that attribute builds a real machine
+  and asserts a root filesystem and a bootloader this configuration never declares, because
+  the vm variant supplies both implicitly — and hand-declaring them would leave gen2's
+  fstab disagreeing with the machine actually running, which `switch-to-configuration` acts
+  on. The whole gen2 step is best-effort with the probe outside it, after the first dispatch
+  showed the failure mode that matters: an _optional_ fidelity upgrade running under
+  `set -e` took the _required_ measurement down with it. Without a store path the script
+  replays the current generation's activation and says so in the report. The action is
+  `test`, not `switch`: `switch` also
   installs a boot loader, which a guest booted from QEMU's `-kernel` has none of, and the
   activation half is where `users-groups` runs. The full verb runs afterwards anyway, so
   the run records _why_ it fails rather than the bare exit status. Both a declared user
