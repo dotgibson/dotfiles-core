@@ -2,6 +2,42 @@
 
 ### Added
 
+- **The bash 3.2 floor gate learns the half that never runs at all.** §5k has covered the
+  features 3.2 does not _have_ since #874 — they parse, then fail at run time. #1075 found
+  the other half: syntax 3.2's parser _refuses_, where `bash -n` rejects the file and
+  nothing in it executes. `scripts/lib/common.sh :: _core_bash32_parse_hits` is the new
+  scanner, called from §5k beside `_core_bash4_hits` over the same files, and kept a
+  separate helper because the older one's contract explicitly promises "a builtin or a
+  syntax bash 3.2 does not have", which this is not.
+
+  **The entry is a `case` opening a command substitution with bare patterns**, and it is a
+  trap rather than a hazard. Measured against a bash 3.2.0 built for the purpose, not
+  inferred from the CI red — all four parse on bash 5:
+
+  ```text
+  x=$(case $v in a) echo A;; esac)             3.2: syntax error near `;;', ALWAYS
+  x="$(case $v in a) echo A;; esac)"           3.2: fine — until an arm contains a '
+  x="$(case $v in a) echo "it's";; esac)"      3.2: unexpected EOF looking for matching '
+  x="$(case $v in (a) echo "it's";; esac)"     3.2: FINE — the leading ( is the fix
+  ```
+
+  So the double quotes are what make it _work_, and the construct can sit in the tree
+  parsing perfectly until somebody edits English prose in a case arm. That is how it
+  arrived: a research script's verdict string came to read _the snapshot's copy won_, went
+  green on bash 5 through `bash -n`, ShellCheck and three Linux legs, and reddened only on
+  `macos-latest`, eleven minutes in. The needle is therefore the bare pattern and not the
+  apostrophe — a leading `(` on every pattern fixes both shapes, so the rule has one fix
+  and no judgement call. `while`, `if` and `until` bodies inside a substitution are
+  unaffected, and so are backticks; it is `case` alone.
+
+  Green on arrival over all 121 tracked shell files, which is the property #748's ledger
+  asks of a new gate. Seven arms in the scanner suite pin it, and the two fixtures the
+  scanner flags are exactly the two a real 3.2 refuses while the three it passes are
+  exactly the three a real 3.2 accepts. Both documented gaps are named in the helper: a
+  `case` appearing later inside a multi-command substitution, and a substitution whose
+  subject holds parentheses — the latter excluded deliberately, because without that clamp
+  a prose arm reading `echo "built in place"` supplies a second ` in ` and the rule fires
+  on correct code.
 - **A harness for R1's last three unmeasured cells** (`NON-MUTABLE-HOST-PROPOSAL.md` §5,
   #1052). `scripts/research/nonmutable-r1-cells.sh`, behind a new `r1cells` input on
   `research-nonmutable-vm.yml`. Two of the three are claims a **shipped** declaration
@@ -56,6 +92,14 @@
   discovered at the end of one.
 
 ### Changed
+
+- **§3 keeps the parser's message instead of discarding it.** `bash -n` and `zsh -n` ran
+  under `2>/dev/null`, so a syntax failure reported `bash syntax error: <file>` and nothing
+  else — no line, no reason. When the only leg that disagrees is macOS's bash 3.2, that is
+  the entire question, and #1075 spent a CI round trip bisecting a file by hand for want of
+  a line number that was sitting in the stderr the check was throwing away. Both now pass
+  the message to `fail_detail`. §5k's new rule above catches one construct locally; this
+  covers every other way a parser can refuse, including the gaps that rule names.
 
 - **nvim plugin pins move forward for five plugins.** `fzf-lua`, `gitsigns.nvim`,
   `nvim-tree.lua`, `render-markdown.nvim` and `schemastore.nvim` advance to upstream HEAD —

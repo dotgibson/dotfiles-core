@@ -122,6 +122,13 @@ fi
 # the zsh spelling that the embedded-zsh test fragments legitimately use). Scope matches §5d
 # and §5e: repo-owned bash, including the extensionless bin/clip helpers. The zsh modules are
 # excluded because the floor is a BASH floor — zsh has all five constructs.
+#
+# _core_bash32_parse_hits runs beside it over the same files, for the OTHER half of the
+# floor: syntax 3.2's parser refuses outright, where `bash -n` rejects the file and nothing
+# in it runs. #1075 is that case — a `case` opening a command substitution with bare
+# patterns, which parses on bash 5 and, inside double quotes, on 3.2 too, right up until an
+# arm contains an apostrophe. It reached CI the same way #871 did and was reported as
+# nothing more than `✗ bash syntax error: <file>` by §3, on one leg, eleven minutes in.
 hdr "bash 3.2 floor (PORTABILITY.md §1)"
 if ! ((SCOPE_SHELL)); then
   skip "bash 3.2 floor (out of scope)"
@@ -134,10 +141,10 @@ else
       fail "bash 3.2 floor: $b4_f:${b4_hit%%:*} — ${b4_hit#*:}; macOS ships bash 3.2 and the audit matrix runs it (PORTABILITY.md §1)"
       b4_fail=1
     done <<EOF
-$(_core_bash4_hits "$b4_f")
+$(_core_bash4_hits "$b4_f"; _core_bash32_parse_hits "$b4_f")
 EOF
   done <<EOF
 $(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 EOF
-  ((b4_fail)) || pass "bash 3.2 floor (no bash 4+ construct in repo-owned bash)"
+  ((b4_fail)) || pass "bash 3.2 floor (no bash 4+ construct, and nothing 3.2 cannot parse)"
 fi

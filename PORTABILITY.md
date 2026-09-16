@@ -26,6 +26,7 @@ this repo — including the dev tooling in `scripts/` — must parse and run on 
 | `${var^^}` / `${var,,}` | bash 4.0 | `tr '[:lower:]' '[:upper:]'` |
 | `wait -n` | bash 4.3 | batched `wait` over collected PIDs |
 | `&>>`, `\|&` | bash 4.0 | `>>file 2>&1`, `2>&1 \|` |
+| `$(case … in pat) …)` — bare patterns | bash 4.0 | `$(case … in (pat) …)`, or hoist the `case` into an if-chain |
 
 Live examples of the workaround, all load-bearing: `scripts/audit-core.sh` uses a read
 loop rather than `mapfile` for the manifest scan; `scripts/sync-core.sh` uses batched
@@ -35,12 +36,29 @@ both state the constraint at the top.
 `set -u` on bash 3.2 also treats an **empty array expansion as unset**, which is why you
 will see `"${arr[@]+"${arr[@]}"}"` rather than a bare `"${arr[@]}"`.
 
-**This table is a gate, not advice.** `audit-core.sh` §5k
-(`scripts/lib/common.sh :: _core_bash4_hits`) scans every repo-owned bash file for each row
-above and fails the audit on a hit, so the rule reds on your machine in seconds instead of on
-the `macos-latest` leg a quarter of an hour later. It was added after exactly that happened:
-a `mapfile` reached CI green through `bash -n`, ShellCheck and the whole behavioural suite,
-because none of them models a bash version, and only macOS could see it.
+The last row is the odd one out and worth reading twice, because it is a **trap rather
+than a hazard**: the others fail the moment they run, but a bare-pattern `case` inside a
+command substitution _parses_ on 3.2 as long as it is inside double quotes — right up until
+an arm contains an apostrophe, at which point 3.2 reports `unexpected EOF while looking for
+matching '`. So the construct can sit in the tree working perfectly and be broken later by
+someone editing English prose in a case arm, which is exactly what happened (#1075: a
+verdict string that came to read _the snapshot's copy won_). Unquoted it is a syntax error
+outright, apostrophe or not. A leading `(` on every pattern fixes both shapes, and is what
+the gate asks for.
+
+**This table is a gate, not advice.** `audit-core.sh` §5k scans every repo-owned bash file
+for each row above and fails the audit on a hit, so the rule reds on your machine in seconds
+instead of on the `macos-latest` leg a quarter of an hour later. It was added after exactly
+that happened: a `mapfile` reached CI green through `bash -n`, ShellCheck and the whole
+behavioural suite, because none of them models a bash version, and only macOS could see it.
+
+Two helpers split the work, because the rows fail in two different ways.
+`scripts/lib/common.sh :: _core_bash4_hits` covers the features 3.2 does not **have** —
+those parse and then fail at run time, or silently do the wrong thing.
+`_core_bash32_parse_hits` covers the last row, which 3.2's parser refuses outright: `bash -n`
+rejects the file and nothing in it runs at all. The second was added after that happened too
+(#1075), on the same leg, with §3 reporting nothing more useful than
+`✗ bash syntax error: <file>`.
 
 Two rows the gate deliberately under-checks, both because the alternative is a false positive
 on working code — the empty-array rule just above (the same expansion is correct wherever the
