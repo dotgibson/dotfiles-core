@@ -224,7 +224,7 @@ bootc_cells() {
 # ── nixos: chsh across an activation ─────────────────────────────────────────
 nixos_cells() {
   ensure_user
-  local zsh_path root_before user_before root_after user_after marker=/etc/research-generation
+  local zsh_path root_before user_before root_after user_after used_gen2=0 marker=/etc/research-generation
   zsh_path="$(command -v zsh || echo /run/current-system/sw/bin/zsh)"
 
   h2 "1. Before: the generation, the users, \`/etc/shells\`"
@@ -254,10 +254,7 @@ nixos_cells() {
     say ""
     run root "gen2 switch-to-configuration test" "$next_system/bin/switch-to-configuration" test || true
     say "- generation marker \`$marker\` now: $([[ -f "$marker" ]] && echo "present (\`$(cat "$marker")\`) — **the second generation really activated**, so the rows below are a switch's activation" || echo "**ABSENT — the activation did not take**; read the rows below as inconclusive, not as a switch")"
-    say ""
-    say "And then the full verb, **expected to fail**, so this run finally records *why* rather than the bare exit status R1 has been carrying since iteration 3:"
-    say ""
-    run root "gen2 switch-to-configuration switch (the bootloader half)" "$next_system/bin/switch-to-configuration" switch || true
+    used_gen2=1
   else
     say "**No \`--next-system\` was handed in**, so this replays the CURRENT system's activation with \`switch-to-configuration test\`. That runs the very \`users-groups\` activation script a real \`nixos-rebuild switch\` runs — but it is a **stand-in for a switch, not a switch**, and the finding must say so."
     say ""
@@ -277,6 +274,14 @@ nixos_cells() {
   say "- current system now: \`$(readlink -f /run/current-system 2>/dev/null)\`"
   say ""
   say "Read it against \`dotfiles-NixOS/bootstrap.sh\`, which says \`chsh\` *\"would work here (users.mutableUsers defaults to true) and is still wrong\"*: a **REVERTED** row is the measurement that sentence has been missing."
+
+  if ((used_gen2)); then
+    h2 "5. The full verb, expected to fail"
+    say "Last, and deliberately after the verdict above so it cannot perturb it: \`switch\` rather than \`test\`. R1 has been carrying *\"\`nixos-rebuild dry-build\` exits 1 on a \`build-vm\` guest\"* as a bare status since iteration 3. This records **why** — and whether the failure is the bootloader half, which no guest booted from \`-kernel\` can satisfy, or something about the target."
+    say ""
+    run root "gen2 switch-to-configuration switch" "$next_system/bin/switch-to-configuration" switch || true
+    say "- login shells after it — root: \`$(shell_of root)\`; \`$asuser\`: \`$(shell_of "$asuser")\` (unchanged from §4 means the failed half ran no second activation)"
+  fi
 }
 
 # ── microos: an /etc edit across an update ───────────────────────────────────
