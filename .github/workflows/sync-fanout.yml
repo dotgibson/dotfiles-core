@@ -155,10 +155,12 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
           # metadata, the fourth verb, is what the install-reach preflight below spends
-          # (GET /installation/repositories). GitHub grants Metadata: read mandatorily to
-          # any App holding a repository permission and offers no way to turn it off — but
-          # `permission-*` mints an EXPLICIT permission set, so a verb this list omits is a
-          # verb the token does not carry. Named here rather than assumed.
+          # (GET /installation/repositories). NOT load-bearing: run 35130825192 read that
+          # endpoint fine with the three verbs above and no metadata line, so a narrowed
+          # mint does retain the mandatory Metadata: read rather than dropping it. Named
+          # anyway, because "the token happens to carry a verb we never asked for" is a
+          # property of create-github-app-token's narrowing, not a promise to us — and
+          # GITHUB-APP-AUTH.md asks every mint to say what it spends.
           permission-metadata: read
 
       # ── Fail early and legibly if the mint above was SKIPPED (no FLEET_APP_CLIENT_ID variable

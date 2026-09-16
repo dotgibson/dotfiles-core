@@ -39,8 +39,9 @@
 
   The fan-out's pre-flight _warns_ rather than blocking when it cannot read: a blind check must
   not deny every repo its PR, which is the failure the fan-out loop already exists to avoid.
-  Its mint now names `permission-metadata: read`, the verb that read spends — `permission-*`
-  mints an explicit set, so an omitted verb is one the token does not carry.
+  Its mint now names `permission-metadata: read`, the verb that read spends. Not a fix for a
+  live defect — a narrowed mint turns out to keep the mandatory grant, verified against the
+  live API — but a mint that does not say what it spends is one nobody can audit.
 
 ### Changed
 

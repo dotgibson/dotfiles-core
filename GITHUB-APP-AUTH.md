@@ -123,11 +123,15 @@ Least privilege — grant only these, and nothing else:
 **Plus `Metadata: read` — which is not a choice and not an oversight above.** GitHub grants
 it mandatorily to any App holding a repository permission and offers no way to switch it
 off, so the installation API answers with **four** permissions where this list names three.
-It is load-bearing twice: `scripts/fleet-app-scope.sh` asserts the grant set *exactly*, and
+It matters twice: `scripts/fleet-app-scope.sh` asserts the grant set *exactly*, and
 `GET /installation/repositories` — the call that reads which repos the App can reach — spends
-precisely this verb. Because `permission-*` mints an **explicit** set rather than a subset of
-what the installation holds, a consumer that needs that read has to name
-`permission-metadata: read` itself; `sync-fanout.yml` does, for its preflight.
+precisely this verb.
+
+A narrowed mint **keeps** it: run 35130825192 read that endpoint with a token minted for
+`contents` + `pull-requests` + `workflows` alone, so `permission-*` narrowing does not strip
+the mandatory grant. `sync-fanout.yml` and `fleet-app-scope.yml` name
+`permission-metadata: read` regardless — a verb a token happens to carry because of how the
+action narrows is not a promise, and this file asks every mint to say what it spends.
 
 > **Workflows: write is not optional, even though only some repos need it.** Only repos
 > that SHA-pin a Core caller (`dotfiles-MacBook`, `dotfiles-Defense`) ever have a workflow

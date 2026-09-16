@@ -934,14 +934,13 @@ elif ! grep -qE 'fleet-app-scope\.sh.*--reach-only.*--check.*--require' "$_fas_f
 else
   pass "fleet-app-scope: sync-fanout.yml preflights the install reach against this run's targets"
 fi
-# The mint the preflight spends: GET /installation/repositories needs metadata, and
-# `permission-*` mints an EXPLICIT set, so dropping this line 403s the preflight on every
-# fan-out rather than failing visibly once.
-if [[ -r "$_fas_fanout" ]] && ! grep -q 'permission-metadata: read' "$_fas_fanout"; then
-  fail "fleet-app-scope: sync-fanout.yml's mint dropped permission-metadata: read — the install-reach preflight cannot read /installation/repositories without it"
-elif [[ -r "$_fas_fanout" ]]; then
-  pass "fleet-app-scope: sync-fanout.yml's mint still carries permission-metadata: read"
-fi
+# NOT asserted on sync-fanout.yml, deliberately. The verb its preflight spends is metadata,
+# and the first instinct was to gate on the mint naming it — but run 35130825192 read
+# /installation/repositories with a token minted for contents+pull-requests+workflows and no
+# metadata line, so narrowing keeps the mandatory grant. Gating on the line would red the
+# suite over a removal that breaks nothing, which is how a gate teaches people to ignore it.
+# The line stays in the workflow for legibility; fleet-app-scope.yml's mint IS asserted below,
+# because metadata is the only verb it asks for and an empty `with:` there is a real defect.
 # The weekly register's own mint must cover the WHOLE installation: a `repositories:` list
 # would scope the token to the repos we asked about, which is the question answering itself.
 if [[ ! -r "$_fas_wf" ]]; then
