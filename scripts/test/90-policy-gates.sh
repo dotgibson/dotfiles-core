@@ -374,8 +374,8 @@ unset _rc_doc _rc_wf _rc_local _rc_pats _rc_n _rc_pat _rc_i
 # properties that decide whether it is a USEFUL one.
 #
 # BOTH DIRECTIONS, deliberately. The negative cases carry as much weight as the positive:
-# three different numbers are correct here about three different sets (9 Core-vendoring,
-# 8 OS-native, 11 total), and a gate that reds on the legitimate ones is noise — which is
+# three different numbers are correct here about three different sets (10 Core-vendoring,
+# 9 OS-native, 12 total), and a gate that reds on the legitimate ones is noise — which is
 # how a check teaches the fleet to ignore it. Those lines are verbatim from the tree.
 hdr "fan-out count guard (_core_fanout_count_hits)"
 _fc_="$SANDBOX/fanout"
@@ -388,7 +388,7 @@ _fc_setup() { # _fc_setup <file-content...> — a throwaway git repo holding one
 }
 _fc_count() { # _fc_count <label> <want-findings>
   local got n=0
-  got="$(_core_fanout_count_hits "$_fc_" 9)"
+  got="$(_core_fanout_count_hits "$_fc_" 10)"
   [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
   if [[ "$n" == "$2" ]]; then pass "fan-out count: $1"; else fail "fan-out count: $1 (got $n finding(s), want $2)"; fi
 }
@@ -411,18 +411,23 @@ else
     "  # or a shebang script that isn't +x sails through green and vendors into all" \
     '  # 8 repos. The audit job deliberately does NOT replicate these file-hygiene hooks' # core:fanout-fixture
   _fc_count "a claim wrapped across two comment lines is still a claim" 1
-  if [[ "$(_core_fanout_count_hits "$_fc_" 9)" == claims.md:2:* ]]; then
+  if [[ "$(_core_fanout_count_hits "$_fc_" 10)" == claims.md:2:* ]]; then
     pass "fan-out count: a wrapped claim is reported against the line holding the number"
   else
     fail "fan-out count: a wrapped claim was reported against the verb's line, which is not the line to edit"
   fi
 
   # ── the legitimate other-set usages, all verbatim from the tree ─────────────
-  # 8, correctly: the nine vendoring repos minus dotfiles-Alpine, which uses doas.
+  # 8, correctly: the vendoring repos that escalate at all, minus dotfiles-Alpine (doas).
+  # The arithmetic moved when dotfiles-NixOS arrived and the answer did not: it is ten minus
+  # Alpine minus NixOS, which never resolves an escalator at all (no provision hook,
+  # BOOTSTRAP_LOGIN_SHELL=0).
   _fc_setup '# sudo-first is right for eight repos and WRONG for dotfiles-Alpine, whose'
   _fc_count "eight repos relying on sudo-first is not a fan-out claim" 0
 
-  # 8, correctly again, and a DIFFERENT eight: the lint-call.yml callers (nine minus MacBook).
+  # 8, correctly again, and a DIFFERENT eight: the lint-call.yml callers as #775 swept them
+  # (nine minus MacBook, at the time — the fleet is ten now, which is exactly why a gate keyed
+  # on the bare number would red on this line).
   _fc_setup '  # by hand and found ELEVEN defects across eight repos in three shapes:'
   _fc_count "#775's eleven-defects-across-eight-repos sweep is not a fan-out claim" 0
 
@@ -431,17 +436,17 @@ else
   _fc_count "the eleven-repo system count is not a fan-out claim" 0
 
   # A number that is not a count of repos at all.
-  _fc_setup 'Core fans out to all nine OS repos, and 8 of them ship a Makefile.'
+  _fc_setup 'Core fans out to all ten OS repos, and 8 of them ship a Makefile.'
   _fc_count "a correct claim followed by an unrelated number stays clean" 0
 
   # THE POSITIVE CONTROL. A gate whose clean cases all pass because it matches nothing is
   # the failure mode these fixtures exist to rule out.
-  _fc_setup 'A change here fans out to all nine OS repos, so the bar is high.'
+  _fc_setup 'A change here fans out to all ten OS repos, so the bar is high.'
   _fc_count "a correct claim is clean" 0
-  if [[ -n "$(_core_fanout_count_hits "$_fc_" 8)" ]]; then
-    pass "fan-out count: the same correct-at-9 claim IS a finding when the fleet lists 8 (the check reads the list, not a constant)"
+  if [[ -n "$(_core_fanout_count_hits "$_fc_" 9)" ]]; then
+    pass "fan-out count: the same correct-at-10 claim IS a finding when the fleet lists 9 (the check reads the list, not a constant)"
   else
-    fail "fan-out count: a nine-repo claim went clean against a fleet of 8 — the number is hardcoded, so the gate cannot follow os-repos.txt"
+    fail "fan-out count: a ten-repo claim went clean against a fleet of 9 — the number is hardcoded, so the gate cannot follow os-repos.txt"
   fi
 
   # CHANGELOG IS EXCLUDED: it records what was true when written, and rewriting old entries
@@ -773,3 +778,47 @@ else
 fi
 unset -f _vc_is
 unset _vcf _vc_is_other
+
+# ── the SECOND fleet list: scripts/fleet-protection.sh's REPOS array ─────────────────
+# Every other fleet script reads scripts/os-repos.txt through load_os_repos, and #669
+# deleted the three hardcoded fallback arrays precisely so a repo registered in the file
+# could not silently vanish from a gate. fleet-protection.sh kept an array anyway, and for
+# a real reason: it also audits dotfiles-core itself, and it asks GitHub rather than the
+# disk, so it needs no checkout and cannot be driven by a list of vendoring targets alone.
+#
+# That left it as the one fleet list NOTHING compared to os-repos.txt — verified when
+# dotfiles-NixOS was added as the tenth repo: no audit fragment, no test fragment and no
+# workflow referenced it. The failure mode is the quiet one. A repo missing from this
+# array is not a red gate; it is branch protection that nobody is auditing, on a repo that
+# looks covered because every OTHER register lists it.
+#
+# BIDIRECTIONAL, deliberately. The §5f ledger's own integrity check
+# (scripts/test/36-bootstrap-lib.sh) only asserts ledger ⊆ os-repos.txt, which catches a
+# typo but NOT an omission — and an omission is exactly what the next `os-repos.txt +1`
+# produces. Both directions, so adding the eleventh repo cannot repeat this.
+hdr "fleet-protection.sh's REPOS array (the second fleet list)"
+_fp_file="$HERE/scripts/fleet-protection.sh"
+if [[ ! -r "$_fp_file" ]]; then
+  fail "fleet-protection: $_fp_file is unreadable — the branch-protection audit's scope cannot be checked"
+elif ! load_os_repos; then
+  skip_env "fleet-protection REPOS array ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+else
+  # The array as the script declares it, spanning its continuation lines: everything
+  # between `REPOS=(` and the closing paren.
+  _fp_have="$(sed -n '/^REPOS=(/,/)/p' "$_fp_file" | grep -o 'dotfiles-[A-Za-z]*' | sort -u)"
+  # What it must equal: the vendoring fleet plus Core itself, which is a row here and in
+  # no other register (it is the repo the others vendor FROM).
+  _fp_want="$(printf '%s\ndotfiles-core\n' "${CORE_OS_REPOS[@]}" | sort -u)"
+  if [[ "$_fp_have" == "$_fp_want" ]]; then
+    pass "fleet-protection: REPOS == scripts/os-repos.txt + dotfiles-core ($(printf '%s\n' "$_fp_have" | grep -c .) repos)"
+  else
+    _fp_missing="$(comm -13 <(printf '%s\n' "$_fp_have") <(printf '%s\n' "$_fp_want") | paste -sd' ' -)"
+    _fp_extra="$(comm -23 <(printf '%s\n' "$_fp_have") <(printf '%s\n' "$_fp_want") | paste -sd' ' -)"
+    [[ -n "$_fp_missing" ]] &&
+      fail "fleet-protection: REPOS is MISSING $_fp_missing — that repo's branch protection is audited by nothing; add it to the array in scripts/fleet-protection.sh"
+    [[ -n "$_fp_extra" ]] &&
+      fail "fleet-protection: REPOS names $_fp_extra, which scripts/os-repos.txt does not — a retired repo left in the array reports a ruleset nobody owns"
+  fi
+  unset _fp_have _fp_want _fp_missing _fp_extra
+fi
+unset _fp_file

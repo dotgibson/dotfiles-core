@@ -470,7 +470,7 @@ jobs:
   # contributors who ran `pre-commit install`; without this job a push carrying
   # trailing whitespace, a missing final newline, a stray `<<<<<<<` conflict marker,
   # or a shebang script that isn't +x sails through green and vendors into all
-  # nine Core-vendoring repos. The audit job deliberately does NOT replicate these
+  # ten Core-vendoring repos. The audit job deliberately does NOT replicate these
   # file-hygiene hooks (audit-core.sh owns manifest/lint/behavioral), so run the
   # SAME config here —
   # author-time == CI, one source of truth, zero drift. SKIP the three hooks the
@@ -505,7 +505,7 @@ jobs:
   # Startup-perf REGRESSION GATE. Core invests in startup speed (cached tool-init in
   # 00-tools.zsh, deferred plugins in 45-plugins.zsh); a gross regression — re-introducing a
   # per-shell subprocess, un-deferring heavy work, an uncached eval — would fan out to
-  # all nine repos silently. bench-core.sh --gate fails the build when the canonical-chain
+  # all ten repos silently. bench-core.sh --gate fails the build when the canonical-chain
   # MEAN exceeds the budget COMMITTED in scripts/bench-baseline.env (#688) — the number lives
   # next to the script it governs, not here, so there is nothing in this YAML to drift from
   # it. Calibration: 194 runs of this job measured 11.8–31.9 ms (bimodal by runner host,

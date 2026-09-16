@@ -55,7 +55,7 @@ done < <(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 if ((SCOPE_SHELL)); then
   if have zsh; then
     # The sourced modules AND the autoloaded completion functions (zsh/completions/_*,
-    # no .zsh extension) — both are zsh that fans out to nine repos; both must parse.
+    # no .zsh extension) — both are zsh that fans out to ten repos; both must parse.
     while IFS= read -r f; do
       if zsh -n "$f" 2>/dev/null; then pass "zsh -n  $f"; else fail "zsh syntax error: $f"; fi
     done < <(_audit_ls 'zsh/*.zsh' 'zsh/completions/*')

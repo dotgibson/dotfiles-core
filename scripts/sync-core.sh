@@ -246,7 +246,7 @@ echo
 # (#622, observed on the 2026-08-23 sync with all nine between 1 and 5 commits behind).
 #
 # WHY THIS IS PRE-FLIGHT AND NOT PER-REPO: the whole complaint is learning about it after the
-# fan-out has written to nine repos. Checked here, nothing has been mutated yet.
+# fan-out has written to ten repos. Checked here, nothing has been mutated yet.
 #
 # WHY THE OBVIOUS RECOVERY IS WRONG, and this is the part worth stating in the error. Rebasing
 # the sync commit onto the updated remote is NOT always correct. Materializing core/ is safe to

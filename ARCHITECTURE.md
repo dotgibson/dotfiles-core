@@ -143,8 +143,8 @@ emerge` probe standing in for "is this a rolling distro" — a probe for a BINAR
 
 ## The fleet
 
-Eleven repositories make up the configuration system (one Core plus ten machine
-repos), with `dotfiles-web` as a twelfth public repo that documents the system
+Twelve repositories make up the configuration system (one Core plus eleven machine
+repos), with `dotfiles-web` as a thirteenth public repo that documents the system
 rather than configuring a machine.
 
 | Repository          | Layer            | Vendors `core/`? | Notes                                                             |
@@ -157,12 +157,13 @@ rather than configuring a machine.
 | `dotfiles-openSUSE` | OS-native        | yes              | zypper; Tumbleweed (`dup`) + Leap (`up`) aware.                   |
 | `dotfiles-Alpine`   | OS-native        | yes              | musl + busybox + doas; the lean outlier.                          |
 | `dotfiles-Gentoo`   | OS-native        | yes              | emerge from source; USE flags, full atoms.                        |
+| `dotfiles-NixOS`    | OS-native        | yes              | nix + home-manager; the one declarative host.                     |
 | `dotfiles-Offense`  | Role / offensive | yes              | Core + the offensive role layer (OS band from `dotfiles-Debian`). |
 | `dotfiles-Defense`  | Role / defensive | yes              | Core + OS layer + the defensive detection/hunt role layer.        |
 | `dotfiles-Windows`  | Native host      | no               | pwsh / scoop / winget; Core is reimplemented, not ported.         |
 | `dotfiles-web`      | Showcase (none)  | no               | Astro docs site; the system's public face.                        |
 
-The canonical Core-vendoring fleet is `scripts/os-repos.txt` — nine repos.
+The canonical Core-vendoring fleet is `scripts/os-repos.txt` — ten repos.
 `dotfiles-Windows` is deliberately absent from it: its host layer is replicated
 from scratch in PowerShell rather than ported one-to-one from the Unix Core, so
 it carries no vendored `core/` subtree and `sync-core.sh` must never fan out into

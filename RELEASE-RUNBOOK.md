@@ -11,7 +11,7 @@ each repo tags itself for it, and for its own work, without a cadence of its own
 
 | Flow | Versioned thing | Trigger | Fans out to | Section |
 | --- | --- | --- | --- | --- |
-| **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 9 OS repos' `core/` | [1](#1-cut-a-core-release) |
+| **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 10 OS repos' `core/` | [1](#1-cut-a-core-release) |
 | **OS-repo rollout** | each repo's own `vX.Y.Z` (Core stamped in `core.lock`) | merging the fan-out PRs — or any push touching that repo's installable surface; `bump` by dispatch | the live hosts (on bootstrap) | [2](#2-roll-a-core-release-out-to-the-os-repos) |
 | **dotfiles-Windows** | `dotfiles-Windows` (own `vX.Y.Z`) | mirror-sync `nvim/`+`starship/` (auto-patch) **or** a manual CHANGELOG promotion + tag (minor/major) | the Windows host (on bootstrap) | [3](#3-cut-a-dotfiles-windows-release) |
 | **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Offense` (`companion.lock`) | [4](#4-cut-an-htpx-release) |
@@ -399,7 +399,7 @@ on the promotion. If you want the bump on the code commit itself, the push run w
 to receive it, and nothing wires that today — say so in the release notes rather than
 pretending the tag landed somewhere it did not.
 
-For a fleet-wide bump, that is nine dispatches. There is no fan-out button for it, on
+For a fleet-wide bump, that is ten dispatches. There is no fan-out button for it, on
 purpose: a deliberate release is a judgment per repo, and the repos do not always deserve
 the same one.
 

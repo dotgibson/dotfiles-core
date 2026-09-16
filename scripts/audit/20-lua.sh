@@ -76,7 +76,7 @@ fi
 # ── 4b. nvim module reachability (the orphan backstop) ───────────────────────
 # core.manifest lists `nvim/` as a DIRECTORY, so §1's manifest⇄fs drift check auto-lists
 # every new path under it and cannot see an orphan — a lua module nothing loads would sit
-# in the tree and fan out to all nine Core-vendoring repos silently. core.manifest said that gap was
+# in the tree and fan out to all ten Core-vendoring repos silently. core.manifest said that gap was
 # covered "by verify-core.sh instead"; that script has never existed here (#454). The real
 # logic — a graph walk from nvim/init.lua, not a "is this name mentioned" scan — lives in
 # the script below, along with the rationale for its roots and its two resolved edges. It

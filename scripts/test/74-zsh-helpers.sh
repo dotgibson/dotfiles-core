@@ -51,7 +51,7 @@ _subs_mirror maint_subs _CORE_MAINT_SUBCMDS
 # ── git helper unit tests (git.zsh) ───────────────────────────────────────────
 # git.zsh's trunk/branch resolution (git_main_branch's 6-way ref search, git_current_branch's
 # detached-HEAD fallback) is real logic that branch-aware aliases (gcom/grbm/gpu) ride on and
-# that fans out to nine repos — yet it was the ONE shell module with no behavioral coverage (only
+# that fans out to ten repos — yet it was the ONE shell module with no behavioral coverage (only
 # `zsh -n`). Drive each helper against throwaway repos, hermetic: HOME → sandbox and git config
 # pinned to /dev/null so the host's init.defaultBranch can't skew the result. Skips without git.
 hdr "git helper unit tests (git.zsh)"
@@ -573,7 +573,7 @@ _stgcheck "staged: _core_cap_staged is 0 staged / 1 idle / 2 undeclared" \
 rm -rf "$PMBIN"
 
 # ── op.zsh 1Password helpers ──────────────────────────────────────────────────
-# op.zsh fans out to nine repos and handles SECRETS, yet had zero behavioral coverage. The
+# op.zsh fans out to ten repos and handles SECRETS, yet had zero behavioral coverage. The
 # module short-circuits (returns) unless `op` is on PATH, so we stub a fake `op` (echoes
 # its args) + a fake `clip` (captures stdin) on an isolated PATH — the same hermetic
 # technique as the clip ladder — and assert the verbs' input-guards, the op:// path

@@ -46,8 +46,15 @@
 #
 set -uo pipefail
 
+# THE ONE FLEET LIST THIS SCRIPT CANNOT READ. Every other fleet script goes through
+# load_os_repos (scripts/os-repos.txt), but this one also audits dotfiles-core itself and
+# needs no checkout to do it — it asks GitHub, not the disk. So the list is spelled out
+# here, and scripts/test/90-policy-gates.sh asserts it stays equal to
+# `os-repos.txt + dotfiles-core`: a repo missing from this array is not a loud failure,
+# it is branch protection nobody is auditing.
 REPOS=(dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Defense
-       dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense dotfiles-openSUSE dotfiles-core)
+       dotfiles-Fedora dotfiles-Gentoo dotfiles-NixOS dotfiles-Offense dotfiles-openSUSE
+       dotfiles-core)
 ORG=dotgibson
 ACTIONS_APP_ID=15368   # GitHub Actions — the app that reports every check in this fleet
 

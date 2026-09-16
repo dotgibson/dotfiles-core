@@ -12,7 +12,7 @@
 # shellcheck disable=SC2016
 
 # ── tmux status/popup scripts ─────────────────────────────────────────────────
-# The tmux helper scripts fan out to nine repos and were covered only by bash -n + shellcheck
+# The tmux helper scripts fan out to ten repos and were covered only by bash -n + shellcheck
 # (static). Their PORTABILITY CONTRACT — "emit a styled pill when there's something to show,
 # emit NOTHING (segment vanishes) otherwise" — is pure logic that a bad edit could break
 # silently (a status helper that errors blanks the whole bar). Drive the two data-driven

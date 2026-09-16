@@ -233,7 +233,7 @@ So Offense now takes the fan-out like every other repo, and there is **one** pro
 `core/` cannot disagree with anyone else's. Any repo growing a writer is a regression to the
 state above, not a new exception.
 
-**`core_branch` is gone as of v5.** No `core.lock` in the fleet carries it; all nine are
+**`core_branch` is gone as of v5.** No `core.lock` in the fleet carries it; all ten are
 Core-stamped with `core_ref`. The last reader of the old name is Offense's `sync-core.sh`,
 which falls back to it and migrates it on write — dead against every lock that exists, kept
 only for one predating #453 that no repo has. A lock that somehow still says `core_branch` is

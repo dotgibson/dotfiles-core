@@ -147,7 +147,7 @@ check-desktop-parity: ## Report whether either desktop repo's PARITY.md has drif
 gen-hero-tape: ## Regenerate this repo's README hero tape from assets/hero.tape.in (edit the template, not the tape)
 	@./scripts/gen-hero-tape.sh
 
-gen-hero-tape-fleet: ## Also render the nine OS/role repos' hero tapes into their checkouts (#698's follow-up; needs the fleet beside this repo)
+gen-hero-tape-fleet: ## Also render the ten OS/role repos' hero tapes into their checkouts (#698's follow-up; needs the fleet beside this repo)
 	@./scripts/gen-hero-tape.sh --fleet
 
 check-hero-tape: ## Report whether assets/demo.tape has drifted from its template — also run inside `make audit`

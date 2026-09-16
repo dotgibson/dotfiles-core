@@ -22,4 +22,4 @@ tooling. Confirm it passes the three-layer test (see ARCHITECTURE.md):
 ## Why
 
 What this enables, or what pain it removes. Since a change here fans out to all
-nine OS repos, note any blast radius worth weighing.
+ten OS repos, note any blast radius worth weighing.

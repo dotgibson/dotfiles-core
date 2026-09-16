@@ -1,6 +1,6 @@
 # Release Strategy
 
-How and when changes ship across the eleven-repo fleet. This is the **policy
+How and when changes ship across the twelve-repo fleet. This is the **policy
 layer** that ties together the machinery already in the tree — `core.version`,
 `scripts/release.sh`, `scripts/sync-core.sh`, the `core.lock` provenance stamp,
 `scripts/fleet-drift.sh`, and the weekly bots — into one cadence, one tagging
@@ -124,7 +124,7 @@ showed one. From `v1.0.0` on 2026-06-18 to `v7.3.0` on 2026-09-09, Core cut **78
 last three (`v5.0.0`, `v6.0.0`, `v7.0.0`) within ten days of each other.
 `V8-PROPOSAL.md` §6 recorded the gap; this rewrite closed it.
 
-Why on-demand is the right cadence for a nine-repo fleet (`scripts/os-repos.txt`), and
+Why on-demand is the right cadence for a ten-repo fleet (`scripts/os-repos.txt`), and
 not the churn the old text feared:
 
 - **Each release is small, so each sync is small and boring.** The risk a calendar was
@@ -133,7 +133,7 @@ not the churn the old text feared:
   with three entries is reasoned about and rolled back in minutes.
 - **The fan-out cost the monthly argument assumed never materialised.** *"Every OS repo
   re-syncs, every host re-bootstraps"* was the fear. In practice `sync-fanout.yml` opens
-  the nine PRs unattended, `fleet-drift.yml` reports who lagged, and a host re-bootstraps
+  the ten PRs unattended, `fleet-drift.yml` reports who lagged, and a host re-bootstraps
   only when a **major** says so — most releases change nothing a box has to relink. What
   is left is a PR review per repo per release, and that is the cost of a fleet.
 - **Batching is still real, at the major.** The discipline §2 is built around — one
@@ -340,7 +340,7 @@ so a CI-cut tag can't rely on a separate `on: push: tags` workflow:
 | Repo | Tag cut by | Release created by | Notes source |
 | ---- | ---------- | ------------------ | ------------ |
 | **dotfiles-core** | you (`make publish`, after the PR merges) | `release.yml` (`on: push: tags`) — fires because *you* pushed the tag | curated `CHANGELOG.md` section |
-| **Core-vendoring consumers** (×9 — seven OS-native plus `dotfiles-Offense`/`-Defense`; `scripts/os-repos.txt` is the list) | `auto-tag.sh` in CI when the repo's **installable surface** moves — a Core fan-out or its own work (#696) — or on a `workflow_dispatch` naming `bump` | `auto-tag.sh --release`, **in the same job** (the token-pushed tag can't trigger `release.yml`) | grouped Conventional-Commit notes (`auto-tag.sh` → `--notes-file`; `--generate-notes` only as the empty-range fallback) |
+| **Core-vendoring consumers** (×10 — eight OS-native plus `dotfiles-Offense`/`-Defense`; `scripts/os-repos.txt` is the list) | `auto-tag.sh` in CI when the repo's **installable surface** moves — a Core fan-out or its own work (#696) — or on a `workflow_dispatch` naming `bump` | `auto-tag.sh --release`, **in the same job** (the token-pushed tag can't trigger `release.yml`) | grouped Conventional-Commit notes (`auto-tag.sh` → `--notes-file`; `--generate-notes` only as the empty-range fallback) |
 | **dotfiles-Windows** — auto patch | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos, but SHA-pinned (calls `auto-tag-call.yml` at a commit, not the moving `@vN` alias) | grouped Conventional-Commit notes (same `auto-tag.sh` `--notes-file` path) |
 | **dotfiles-Windows** — deliberate minor/major | **you**, by hand for host work (`git tag` → push) | **you** (`gh release create --notes-file`) — Windows' caller is push-only, so its auto-tag never fires on a CHANGELOG commit or a tag push, and only ever patches | curated `CHANGELOG.md` section |
 

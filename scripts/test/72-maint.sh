@@ -102,7 +102,7 @@ ucheck "maint: maint-log rejects a non-numeric N in Core's voice" \
 # ── maint scheduler artifacts (systemd unit / launchd plist / cron line) ──────
 # maint-install GENERATES a systemd unit+timer, a launchd plist (XML), and a cron line —
 # fan-out artifacts that, until now, had NO gate: a malformed OnCalendar, a broken plist,
-# or a bad cron field only fails on the user's box, then fans out to nine repos. Every OTHER
+# or a bad cron field only fails on the user's box, then fans out to ten repos. Every OTHER
 # fan-out artifact class is gated (toml/yaml/json §6, workflows actionlint §8); this closes
 # the maint hole the same way. Hermetic: override _maint_scheduler to pick the branch,
 # stub systemctl/launchctl/crontab to no-ops (so nothing touches the real system), sandbox
