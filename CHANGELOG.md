@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.8.0] - 2026-09-15
+
 ### Changed
 
 - **`PORTING-MATRIX.md`'s openSUSE column renders the transactional edition** (runbook step
