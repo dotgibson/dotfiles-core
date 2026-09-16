@@ -1296,8 +1296,59 @@ wait \"\$pid\""
   done
   if [[ -z "$_b4_self" ]]; then pass "bash 3.2 scan: does not flag the gate that calls it (dispatcher + every scripts/audit/ fragment)"; else fail "bash 3.2 scan: flagged the audit's own source: $_b4_self — §5k will red the whole audit on the next run"; fi
 
-  unset -f _b4_write _b4_line
-  unset _b4d _b4_mf _b4_ra _b4_at _b4_amp _b4_ff _b4_lc _b4_pipe _b4_wn _b4_f _b4_self
+  # ── the OTHER half of the floor: syntax 3.2's PARSER refuses ──
+  # _core_bash32_parse_hits, not _core_bash4_hits: nothing here is a bash-4 construct. A
+  # `case` opening a command substitution with BARE patterns is a syntax error on 3.2 when
+  # unquoted, and inside double quotes parses right up until an arm contains an apostrophe
+  # — which is how #1075 shipped a verdict string reading "the snapshot's copy won". The
+  # fix, and so the needle, is the leading `(` on every pattern.
+  # Assembled from fragments like the needles themselves: §5k scans THIS file too.
+  _b32_open='$''(case'                               # a substitution opening with case
+  _b32_line() { _core_bash32_parse_hits "$1" | cut -d: -f1 | tr '\n' ' ' | sed 's/ $//'; }
+
+  # ── the two shapes it must catch ──
+  # The arm carries an apostrophe, so this fixture is a REAL 3.2 parse failure rather than
+  # the latent form — it is #1075's line in miniature. The needle does not key on the
+  # apostrophe (the next fixture has none and is caught too); the fixture does, so that a
+  # reader who pipes it through a 3.2 sees the error the rule exists to prevent.
+  _b4_write b32quoted.sh "#!/usr/bin/env bash
+x=\"$_b32_open \$v in a) echo \"it's A\";; esac)\""
+  if [[ "$(_b32_line "$_b4d/b32quoted.sh")" == 2 ]]; then pass "bash 3.2 parse: catches a bare-pattern case in a QUOTED substitution (the #1075 shape)"; else fail "bash 3.2 parse: missed the quoted bare-pattern case"; fi
+
+  _b4_write b32bare.sh "#!/usr/bin/env bash
+x=$_b32_open \$v in a) echo A;; esac)"
+  if [[ "$(_b32_line "$_b4d/b32bare.sh")" == 2 ]]; then pass "bash 3.2 parse: catches it unquoted too (where 3.2 fails with no apostrophe needed)"; else fail "bash 3.2 parse: missed the unquoted bare-pattern case"; fi
+
+  # ── what it must NOT flag ──
+  # The fix itself. A leading ( on every pattern parses on 3.2 (measured), so flagging it
+  # would make the gate fire on correct code — and on the very thing it tells you to write.
+  _b4_write b32lparen.sh "#!/usr/bin/env bash
+x=\"$_b32_open \$v in (a) echo A;; (*) echo B;; esac)\""
+  if [[ -z "$(_core_bash32_parse_hits "$_b4d/b32lparen.sh")" ]]; then pass "bash 3.2 parse: the leading-( form is clean — the gate does not flag its own fix"; else fail "bash 3.2 parse: flagged the leading-( form, which 3.2 parses"; fi
+
+  # Prose in an arm supplying a second ` in `. Without the no-parens clamp in the needle
+  # this reads as a hit on code that is already correct.
+  _b4_write b32prose.sh "#!/usr/bin/env bash
+x=\"$_b32_open \$v in (a) echo \"built in place\";; esac)\""
+  if [[ -z "$(_core_bash32_parse_hits "$_b4d/b32prose.sh")" ]]; then pass "bash 3.2 parse: a prose ' in ' inside a fixed arm is not a second pattern list"; else fail "bash 3.2 parse: flagged a correct arm whose text contains ' in '"; fi
+
+  # A plain top-level case, and a substitution with no case in it at all.
+  _b4_write b32plain.sh "#!/usr/bin/env bash
+case \$x in a) : ;; b) : ;; esac
+y=\"\$(echo hi)\""
+  if [[ -z "$(_core_bash32_parse_hits "$_b4d/b32plain.sh")" ]]; then pass "bash 3.2 parse: a top-level case and a case-free substitution are not findings"; else fail "bash 3.2 parse: flagged a plain case or a case-free substitution"; fi
+
+  # And the files that define and run it, as above — both necessarily discuss it.
+  if [[ -z "$(_core_bash32_parse_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "bash 3.2 parse: does not flag its own definition"; else fail "bash 3.2 parse: flagged common.sh itself"; fi
+  _b32_self=""
+  # shellcheck disable=SC2154  # cross-fragment: assembled in scripts/test-core.sh
+  for _b4_f in "${_audit_src[@]}"; do
+    [[ -n "$(_core_bash32_parse_hits "$_b4_f")" ]] && _b32_self="${_b32_self:+$_b32_self }${_b4_f#"$HERE/"}"
+  done
+  if [[ -z "$_b32_self" ]]; then pass "bash 3.2 parse: does not flag the gate that calls it"; else fail "bash 3.2 parse: flagged the audit's own source: $_b32_self"; fi
+
+  unset -f _b4_write _b4_line _b32_line
+  unset _b4d _b4_mf _b4_ra _b4_at _b4_amp _b4_ff _b4_lc _b4_pipe _b4_wn _b4_f _b4_self _b32_open _b32_self
 else
   skip "bash 3.2 floor scanner (not a git checkout)"
 fi

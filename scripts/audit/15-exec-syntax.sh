@@ -48,16 +48,32 @@ else
 fi
 
 # ── 3. shell syntax ──────────────────────────────────────────────────────────
+# The parser's MESSAGE is kept, not discarded. This used to be `2>/dev/null` with a bare
+# "bash syntax error: <file>", which is the whole finding a reader got — and when the only
+# leg that disagrees is macOS's bash 3.2, "which line, and why" is the entire question.
+# #1075 spent a CI round trip bisecting a file by hand for want of the line number that was
+# sitting in the stderr this check was throwing away. §5k now catches that particular
+# construct locally, but it covers one shape and names its gaps; this covers the rest.
 hdr "shell syntax (bash -n / zsh -n)"
 while IFS= read -r f; do
-  if bash -n "$f" 2>/dev/null; then pass "bash -n $f"; else fail "bash syntax error: $f"; fi
+  if syn_out="$(bash -n "$f" 2>&1)"; then
+    pass "bash -n $f"
+  else
+    fail "bash syntax error: $f"
+    [ -n "$syn_out" ] && fail_detail "$syn_out"
+  fi
 done < <(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 if ((SCOPE_SHELL)); then
   if have zsh; then
     # The sourced modules AND the autoloaded completion functions (zsh/completions/_*,
     # no .zsh extension) — both are zsh that fans out to ten repos; both must parse.
     while IFS= read -r f; do
-      if zsh -n "$f" 2>/dev/null; then pass "zsh -n  $f"; else fail "zsh syntax error: $f"; fi
+      if syn_out="$(zsh -n "$f" 2>&1)"; then
+        pass "zsh -n  $f"
+      else
+        fail "zsh syntax error: $f"
+        [ -n "$syn_out" ] && fail_detail "$syn_out"
+      fi
     done < <(_audit_ls 'zsh/*.zsh' 'zsh/completions/*')
   else
     skip "zsh -n (zsh not installed)"
