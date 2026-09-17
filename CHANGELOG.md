@@ -130,6 +130,51 @@
 
 ### Changed
 
+- **`NON-MUTABLE-HOST-PROPOSAL.md` is SHIPPED, and the milestone closes without a major**
+  (#1053, the §4.6 rollout tracker). Its header still read _PROPOSED — a minor, not a
+  major_, describing §4 as the thing still to do, after every step of §4.6 had landed and
+  every issue filed from it had closed. Those steps, and the release each shipped in: `up`,
+  the shell-start nudge, the maint runner and `core-doctor` learning the staged host
+  (#1049, `v7.6.0`); `bootstrap-test.yml`'s
+  `provisioner:` input, the sweep's VM-only skip and the register's `real-bootstrap` gate
+  (#1050, `v7.7.0`); the **atomic** variant in `dotfiles-Fedora`
+  (dotgibson/dotfiles-Fedora#186) and the **transactional** variant in `dotfiles-openSUSE`
+  (dotgibson/dotfiles-openSUSE#191), whose matrix columns rendered in `v7.8.0` and
+  `v7.9.0`; and `dotfiles-NixOS`, the **declarative** target and the tenth repo, with the
+  home-manager boundary R3 measured (#1051, `v7.9.0`). Every repo Core vendors into is
+  pinned at `v7.9.0`. So the status line becomes _SHIPPED — a closed record_, the way
+  `V5-PROPOSAL.md`'s did, each runbook step carries the issue and release that discharged
+  it, and §5's exit criteria record that **both** consequences the research flagged as
+  outliving it are discharged too — dotgibson/dotfiles-openSUSE#201 moved the login-shell
+  writes _inside_ the pending snapshot (the `/etc` loss case #1052 measured), and the
+  `blib_set_login_shell` declarative arm shipped with the NixOS repo itself, printing the
+  `users.users.<you>.shell` declaration instead of running `chsh`.
+
+  **`V8-PROPOSAL.md` is corrected in the same pass**, because it is where this repo keeps
+  its roadmap findings and it was carrying a claim measurement disproved: the non-mutable
+  host as _"the right **next** major"_ whose schema break makes every vendoring repo
+  re-author its declaration. R2 measured it **additive** — six _optional_ keys, zero
+  re-authors — so §10 gains a second `*Closed.*` finding beside the "one source, generated
+  outward" one it already carries, in the same voice: right about the destination, wrong
+  about the bump class. That is twice in a row a roadmap theme's predicted major dissolved
+  under measurement, and with it the next major's content is again unwritten.
+
+  **Three comment blocks stopped being true when the keys shipped**, and are fixed here
+  rather than left for a reader to trip over. `scripts/check-capabilities.sh`'s
+  `CAP_OPTIONAL` note called them _"Four OPTIONAL keys … READ BY NO CONSUMER YET"_ while
+  citing #1049 as a reader two lines below itself — there are six, four are read, and three
+  fleet repos declare against them. `scripts/test/55-capabilities.sh` said the same, plus
+  _"the relaxation stays exactly one key wide, on exactly one provisioner"_ when the
+  validator has had **two** relaxations of `PKG_COUNT_PENDING` since R5 (declarative, and
+  any host declaring `PKG_APPLY_PENDING`) — both already pinned by cases, only the prose was
+  stale. And `scripts/research/README.md` was still titled for R1 alone; the phase is
+  closed through R6 and is now marked **archived**, the way the atuin guard beside it is.
+  No logic changed in any of the three. `examples/os.capabilities.example` now points a new
+  declaration at the three that _ship_ rather than at R2's prototypes.
+  (`NON-MUTABLE-HOST-PROPOSAL.md`, `V8-PROPOSAL.md`, `scripts/check-capabilities.sh`,
+  `scripts/test/55-capabilities.sh`, `scripts/research/README.md`,
+  `examples/os.capabilities.example`)
+
 - **One pin bumped on the weekly freshness review, one re-held, and the routine that could
   not tell them apart given its history back** ([#1047](https://github.com/dotgibson/dotfiles-core/issues/1047)).
   `scripts/tool-versions.env` is the class no bot covers, so the routine re-audits all ten

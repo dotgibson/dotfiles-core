@@ -1,27 +1,50 @@
 # Non-mutable host proposal — the fleet on a box it cannot write to
 
-> **Status: PROPOSED (research 2026-09-14 → 2026-09-15; proposed 2026-09-15). A minor, not
-> a major: six optional capability keys (shipped), three consumer changes, one CI input,
-> two sibling variants and one new repo — §4 is the proposal, §4.6 the runbook, §5 the
-> measurements every line of it cites.** This is the planning document for the
-> roadmap milestone *"the non-mutable host"* — the one theme on the roadmap with an
-> external forcing function rather than an internal cleanup. `V8-PROPOSAL.md` §10 named it
-> the right **next** major and put it out of scope *"because no work has started and the
-> design needs research first."* This file is where that research is planned, and later
-> where its findings are recorded. It is written in the "Current → Proposed → What breaks"
-> voice the v4, v5 and v8 proposals established, with one deliberate difference: **§4 is a
-> candidate shape, not a proposal**, and §5 exists to find out whether it survives contact
-> with three real hosts. The v8 proposal's lesson applies with full force here — *"the
-> content did not survive measurement, which is a result"* — so every claim below that is
-> not measured is marked as an expectation.
+> **Status: SHIPPED — a closed record.** Research 2026-09-14 → 2026-09-15; PROPOSED
+> 2026-09-15; the §4.6 runbook landed 2026-09-15 → 2026-09-16. A minor, not a major — and
+> measurement is why: R2 found the schema **additive**, so not one repo re-authored its
+> declaration. What shipped, in runbook order: `up`, the shell-start nudge, the maint
+> runner and `core-doctor` learning the staged host ([#1049][i1049], `v7.6.0`);
+> `bootstrap-test.yml`'s `provisioner:` input, the sweep's VM-only skip and the register's
+> `real-bootstrap` gate ([#1050][i1050], `v7.7.0`); the **atomic** variant in
+> `dotfiles-Fedora` ([dotfiles-Fedora#186][f186]) and the **transactional** variant in
+> `dotfiles-openSUSE` ([dotfiles-openSUSE#191][o191]), whose matrix columns rendered in
+> `v7.8.0` and `v7.9.0`; and `dotfiles-NixOS`, the **declarative** target and the tenth
+> repo, with the home-manager boundary R3 measured ([#1051][i1051], `v7.9.0`). The six
+> optional capability keys were already in the tree when this file flipped to PROPOSED.
+> Every repo Core vendors into is pinned at `v7.9.0`. **Nothing here is open and nothing is
+> awaiting a verdict**: [#1004][i1004] closed with the research phase, [#1052][i1052]
+> closed R1's last three cells on 2026-09-16, and [#1053][i1053] — the rollout tracker —
+> closes with this status line.
+>
+> This is the planning document for the roadmap milestone *"the non-mutable host"* — the
+> one theme on the roadmap with an external forcing function rather than an internal
+> cleanup. `V8-PROPOSAL.md` §10 named it the right **next** major and put it out of scope
+> *"because no work has started and the design needs research first."* The research
+> happened, and it took the major away: §4 is the proposal it produced, §4.6 the runbook,
+> §5 the measurements every line of it cites. It is written in the "Current → Proposed →
+> What breaks" voice the v4, v5 and v8 proposals established, and is kept in that tense —
+> §2 describes the tree as it was at `v7.4.3`, not as it is. The v8 proposal's lesson
+> applied with full force — *"the content did not survive measurement, which is a result"*
+> — and while §4 was still a candidate shape, every claim below that was not measured was
+> marked as an expectation.
 >
 > When a claim here drifts from `RELEASE-STRATEGY.md`, `PORTABILITY.md`, `VENDORING.md` or
 > `examples/os.capabilities.example`, **those win** — fix this.
 >
-> **Whatever major this ships as is unnumbered.** The v8 proposal produced no major, so the
-> next one is still `v8.0.0` by count; per the Additive Backlog's standing rule the milestone
-> stays unnumbered and this file never names a version. If it turns out (§5 R2) that the
-> work is additive after all, the milestone closes without a major, as the last two did.
+> **No major came out of it, and none was numbered.** The v8 proposal produced none either,
+> so the next one is still `v8.0.0` by count; per the Additive Backlog's standing rule the
+> milestone stayed unnumbered and this file never names a version. §5 R2's verdict was
+> additive, so the milestone closed without a major — as the last two did.
+
+[i1004]: https://github.com/dotgibson/dotfiles-core/issues/1004
+[i1049]: https://github.com/dotgibson/dotfiles-core/issues/1049
+[i1050]: https://github.com/dotgibson/dotfiles-core/issues/1050
+[i1051]: https://github.com/dotgibson/dotfiles-core/issues/1051
+[i1052]: https://github.com/dotgibson/dotfiles-core/issues/1052
+[i1053]: https://github.com/dotgibson/dotfiles-core/issues/1053
+[f186]: https://github.com/dotgibson/dotfiles-Fedora/issues/186
+[o191]: https://github.com/dotgibson/dotfiles-openSUSE/issues/191
 
 ## 1. Summary
 
@@ -316,27 +339,34 @@ exist on `@v7`.
 
 1. **Core — consumers** (§4.2): `60-update.zsh`, `maint/dotfiles-maint.sh`, `core-doctor`,
    with the R5 shim replay as the unit test (the fragments are pure shell over stdout and
-   exit status). One PR, one minor. — **#1049.**
+   exit status). One PR, one minor. — **[#1049][i1049], shipped `v7.6.0`.**
 2. **Core — CI** (§4.4): `bootstrap-test.yml`'s `provisioner:` input and its own
    container, `fleet-bootstrap-matrix.py`, `fleet-coverage.sh`'s `real-bootstrap` gate,
-   `new-os-repo.sh`'s stamps. One PR; the reusable workflow rides `@v7`. — **#1050.**
+   `new-os-repo.sh`'s stamps. One PR; the reusable workflow rides `@v7`. —
+   **[#1050][i1050], shipped `v7.7.0`.**
 3. **`dotfiles-Fedora`** — the atomic variant from `r4/dotfiles-Fedora.patch`: the
    declaration with the R5 keys, the hooks, `test/check-flavors.sh`, `dnfi` fixed,
    `bootstrap.yml` gaining `provisioner: atomic` on a `fedora-bootc:42` leg beside the
    `fedora:latest` one, `.github/core-gates.txt` declaring `real-bootstrap none …`. Then
-   Core's `gen-porting-matrix.sh` registry line and a regenerated `PORTING-MATRIX.md`.
+   Core's `gen-porting-matrix.sh` registry line and a regenerated `PORTING-MATRIX.md`. —
+   **[dotfiles-Fedora#186][f186]; the matrix column shipped in Core `v7.9.0` (#1068).**
 4. **`dotfiles-openSUSE`** — the same from `r4/dotfiles-openSUSE.patch`, on a Tumbleweed
    leg with `provisioner: transactional`; `check-flavors.sh` grows from a pair to a
-   triple.
+   triple. — **[dotfiles-openSUSE#191][o191]; the matrix column shipped in Core `v7.8.0`
+   (#1062).**
 5. **`dotfiles-NixOS`** — `new-os-repo.sh`, the R2 declaration, a `nix/` directory with
    `configuration.nix` fragments and a `home.nix` that declares no files, the
    `blib_set_login_shell` arm, `bootstrap.yml` on `nixos/nix` with links-only and a
-   stubbed provision; then `scripts/os-repos.txt` +1 and the first `make sync`.
+   stubbed provision; then `scripts/os-repos.txt` +1 and the first `make sync`. —
+   **[#1051][i1051], shipped `v7.9.0` (#1064).**
 6. **A Core release** after each of 1–2 (the siblings pin `@v7`, so the reusable input
    must be tagged before a caller uses it), and one after 5 (the fan-out audits the new
-   repo).
+   repo). — **`v7.6.0`, `v7.7.0` and `v7.9.0`; each fanned out, and every repo Core
+   vendors into is pinned at `v7.9.0`.**
 
-Each step is an issue filed from this document; #1004 closes when this section lands.
+Each step is an issue filed from this document; [#1004][i1004] closed when this section
+landed, and [#1053][i1053] — the tracker those issues hung off — closed when the last of
+them did, on 2026-09-16.
 
 ### 4.7 The open questions, answered
 
@@ -1183,6 +1213,7 @@ arm has to say out loud that an `/etc` write made while a snapshot is staged is 
 durable; that is the part no reader can infer from the code.
 
 [os199]: https://github.com/dotgibson/dotfiles-openSUSE/issues/199
+[os201]: https://github.com/dotgibson/dotfiles-openSUSE/pull/201
 
 **Two facts about `transactional-update` fell out of the same run.** `dup` **refuses
 entirely when any enabled repo fails to refresh** — zypper exit 4, *"dist-upgrade … must
@@ -1365,6 +1396,19 @@ phase and are tracked outside this file, so that a reader finishing here does no
 
 Neither reopens the verdict. Both are consumer- or repo-side, which is what *additive*
 predicted.
+
+**Both discharged, 2026-09-16 — and with them this file.** dotfiles-openSUSE#199 was fixed
+in [dotfiles-openSUSE#201][os201]: the transactional arm resolves zsh, appends
+`/etc/shells` and `chsh`'s **inside** the pending snapshot (one
+`transactional-update … --continue run sh -c`, the shape the 1Password key import there
+already used for the same reason), and its `bootstrap_wire_post_loader` sets
+`BOOTSTRAP_LOGIN_SHELL=0` so Core's host-side step does not follow with the write the next
+boot would discard. The `blib_set_login_shell` NixOS arm shipped with the repo itself
+([#1051][i1051], `v7.9.0`): `dotfiles-NixOS/bootstrap.sh` sets `BOOTSTRAP_LOGIN_SHELL=0`
+and its closing hook prints the `users.users.<you>.shell` declaration instead — which is
+what the measurement asked for, `chsh` being reverted by the next activation for a user
+the configuration declares. Two repo-side fixes for two repo-side findings; the schema
+never moved.
 
 ## 6. What breaks — if it had been the major
 
