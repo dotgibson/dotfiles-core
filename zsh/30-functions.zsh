@@ -1996,7 +1996,41 @@ cdup() {
 # recurse forever). ouch (if installed) handles every format from one binary; the
 # hand-rolled case is the bare-box fallback.
 _extract_dispatch() {
-  [[ -n ${HAVE_OUCH:-} ]] && { ouch decompress "$1"; return; }
+  if [[ -n ${HAVE_OUCH:-} ]]; then
+    # ouch 0.8.0 changed its default: an ARCHIVE now unpacks into ./<basename>/ rather than
+    # into the CWD, with --here restoring the old shape (ouch-org/ouch#962). Everything around
+    # this line still assumes the CWD — extract()'s tarbomb guard mkdir's its own containment
+    # directory and cd's into it, its clobber guard tests CWD-relative names, and the fallback
+    # below is plain `tar xzf` — so Core pins the old semantics rather than letting the same
+    # `extract foo.tar.gz` build two different trees depending on which ouch a box happens to
+    # carry. openSUSE Leap ships 0.5.1 and Arch ships 0.8.3 TODAY; this is live, not theoretical.
+    #
+    # PROBED, never version-gated. That is PORTING-MATRIX.md's sd rule (footnote 22): sniff a
+    # version only where the version is honest, otherwise ask the CLI what it can do. Probing is
+    # also fail-safe here in a way a version compare is not — a build with no --here is a build
+    # that already extracts into the CWD, so the flag comes out absent exactly where passing it
+    # would have been wrong. One fork, paid only by an interactive `extract`, never at startup.
+    local -a here=()
+    [[ "$(ouch decompress --help 2>/dev/null)" == *--here* ]] && here=(--here)
+    # gz/bz2 are the exception, and NOT because of 0.8.0 — this one predates it. ouch writes a
+    # single decompressed file into the CWD on every version, while gunzip/bunzip2 below write
+    # NEXT TO the archive, which is the target extract()'s clobber guard checks (${abs:r}). On an
+    # ouch box the guard therefore vetoed a collision that could not happen and missed the one
+    # that could. Run ouch from the archive's own directory so the guard and the unpack agree
+    # about where the file lands. (Single files never get 0.8.0's subdirectory, measured — so
+    # --here is merely harmless here, not the fix.)
+    local dir=
+    case "$1" in
+    *.tar.gz | *.tgz | *.tar.bz2 | *.tbz2) ;; # real archives: the --here path above
+    *.gz | *.bz2) dir="${1:h}" ;;
+    esac
+    if [[ -n "$dir" ]]; then
+      (cd -- "$dir" && ouch decompress "${here[@]}" "$1")
+    else
+      ouch decompress "${here[@]}" "$1"
+    fi
+    return
+  fi
   case "$1" in
   *.tar.bz2 | *.tbz2) tar xjf "$1" ;;
   *.tar.gz | *.tgz) tar xzf "$1" ;;

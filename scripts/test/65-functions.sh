@@ -52,6 +52,26 @@ check_dep() { # check_dep <label> <dep> <zsh-body>
   fi
 }
 
+# Like check_dep, but for the OUCH arm specifically — the one branch every assertion in
+# this file used to miss. check/check_dep run `zsh -fc` with HAVE_OUCH unset, so extract's
+# first branch (`ouch decompress`) was never once executed here, which is how ouch 0.8.0's
+# change of default unpack location — into ./<basename>/ instead of the CWD — reached the
+# fleet without a red test. Sets the flag the real loader would set and needs a real ouch,
+# because the point is what THIS box's build actually does, not what a stub says it does.
+check_ouch() { # check_ouch <label> <zsh-body>
+  if ! have ouch; then
+    skip "$1 (ouch not installed)"
+    return
+  fi
+  local out
+  if out="$(HOME="$SANDBOX" HAVE_OUCH=1 zsh -fc "source '$UI' || exit 1; source '$FN' || exit 1; HAVE_OUCH=1; $2" 2>&1)"; then
+    pass "$1"
+  else
+    fail "$1"
+    [[ -n "$out" ]] && printf '%s\n' "$out" | sed 's/^/    /' >&2
+  fi
+}
+
 check "mkcd creates and enters a nested dir" \
   'd=$(mktemp -d); cd "$d"; mkcd a/b/c; [[ ${PWD:t} == c && -d "$d/a/b/c" ]]'
 check "cdup climbs N directories" \
@@ -1190,6 +1210,26 @@ check_dep "extract refuses to clobber an existing entry (no TTY)" tar \
 # clobber and overwrite (the bug this asserts against).
 check_dep "extract guards the gz output at the archive's path, not \$PWD" gzip \
   'd=$(mktemp -d); sub="$d/sub"; mkdir -p "$sub"; print new > "$sub/f.txt"; gzip "$sub/f.txt"; print OLD > "$sub/f.txt"; cd "$d"; extract "$sub/f.txt.gz" </dev/null; rc=$?; [[ "$(cat -- "$sub/f.txt")" == OLD && $rc -ne 0 ]]'
+
+# The OUCH arm, which nothing above reaches. These assert that `extract` lands the same
+# tree whether or not ouch is installed — the property ouch 0.8.0 broke by unpacking into
+# ./<archive-name>/ instead of the CWD, and the one every guard in extract() is written
+# against. Each case below is the ouch twin of a check_dep case above, and must agree with
+# it. They exercise whatever ouch THIS box carries: pre-0.8.0 builds pass because their
+# default is already the asserted one, which is the whole point of probing --here rather
+# than gating on a version.
+check_ouch "extract via ouch unpacks into the CWD, not ./<archive-name>/" \
+  'd=$(mktemp -d); cd "$d"; mkdir src; print -r -- hi > src/a.txt; tar czf a.tgz src; rm -rf src; extract a.tgz </dev/null; [[ -f src/a.txt && ! -e a/src/a.txt ]]'
+check_ouch "extract via ouch contains a tarbomb in ONE directory, not two" \
+  'd=$(mktemp -d); cd "$d"; print x > one; print y > two; tar czf bomb.tgz one two; rm one two; mkdir bomb; (cd bomb && _extract_run "$d/bomb.tgz"); [[ -f bomb/one && -f bomb/two && ! -e bomb/bomb ]]'
+check_ouch "extract via ouch still refuses to clobber an existing entry (no TTY)" \
+  'd=$(mktemp -d); cd "$d"; mkdir src; print new > src/a.txt; tar czf a.tgz src; print OLD > src/a.txt; extract a.tgz </dev/null; rc=$?; [[ "$(cat -- src/a.txt)" == OLD && $rc -ne 0 ]]'
+# The one that is NOT about 0.8.0: ouch writes a single decompressed file into the CWD on
+# every version, while gunzip writes next to the archive — so on an ouch box `extract
+# /sub/f.gz` used to overwrite ./f, a target the clobber guard never looked at. Assert the
+# guard and the unpack agree: the output lands beside the archive and $PWD is untouched.
+check_ouch "extract via ouch writes a .gz beside the archive, leaving \$PWD alone" \
+  'd=$(mktemp -d); sub="$d/sub"; cwd="$d/cwd"; mkdir -p "$sub" "$cwd"; print payload > "$sub/f.txt"; gzip "$sub/f.txt"; print PRECIOUS > "$cwd/f.txt"; cd "$cwd"; extract "$sub/f.txt.gz" </dev/null; [[ "$(cat -- "$cwd/f.txt")" == PRECIOUS && "$(cat -- "$sub/f.txt")" == payload ]]'
 
 # ── core status --deep (#797) ────────────────────────────────────────────────
 # The shallow Integrity row compares the WORKTREE against HEAD. --deep answers the other
