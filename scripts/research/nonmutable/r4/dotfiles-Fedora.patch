@@ -2,7 +2,7 @@
 # Base: abf4e6a977d496becc52bc5a0f7d72e6f90fd3e2 (origin/main on 2026-09-14). Applied by scripts/research/nonmutable-variant.sh on a booted guest.
 # Iteration 2 (R4) + the R5 keys in the declaration + the R6 CI seam (BOOTSTRAP_PROVISIONER forces the host marker).
 diff --git i/bootstrap.sh w/bootstrap.sh
-index f9a25d65..a87dfd47 100755
+index f9a25d65..eda0f9e5 100755
 --- i/bootstrap.sh
 +++ w/bootstrap.sh
 @@ -122,6 +122,20 @@ os_guard() {
@@ -130,19 +130,52 @@ index f9a25d65..a87dfd47 100755
      priv dnf -y install --skip-unavailable "${pkgs[@]}"
      blib_ok "dnf packages installed (${#pkgs[@]} requested)"
    else
-@@ -405,10 +468,21 @@ bootstrap_provision() {
+@@ -405,10 +468,54 @@ bootstrap_provision() {
      # stderr stays VISIBLE on every privileged call from here down (only stdout is
      # silenced). Hiding it is what made a mid-run sudo prompt invisible; it also hid the
      # reason a COPR install failed.
 +    if ((IS_ATOMIC)); then
 +      # `dnf copr enable` needs the dnf5-plugins layer, which is not live until a reboot;
 +      # the COPR repo file is one curl into the writable /etc, then lazygit layers.
-+      priv sh -c "curl -fsSL 'https://copr.fedorainfracloud.org/coprs/atim/lazygit/repo/fedora-${rel}/atim-lazygit-fedora-${rel}.repo' -o /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:atim:lazygit.repo" >/dev/null 2>&1 || true
-+      if priv rpm-ostree install --idempotent lazygit >/dev/null; then
-+        ATOMIC_STAGED=$((ATOMIC_STAGED + 1))
++      #
++      # DOWNLOADED TO A TEMP FILE AND ONLY THEN INSTALLED, never curled straight into
++      # /etc/yum.repos.d. `curl -o` creates and fills its target as the body streams, and
++      # nothing removes what it already wrote when the transfer then fails. Measured
++      # against curl 8.18.0: an HTTP 404 writes nothing (that is `-f` doing its job, and it
++      # is the case people test), but a connection DROPPED MID-BODY — a 200 whose stream
++      # ends early — exits 18 and leaves the partial bytes on disk. A 197-byte
++      # `[copr]\nbaseurl=…` fragment is a syntactically broken .repo file, and dnf parses
++      # every file in that directory, so one bad line breaks EVERY later dnf call with
++      # "Error in configuration file": not just lazygit, the rest of the bootstrap and the
++      # box afterwards. R6 measured that downstream shape from the other direction — the
++      # reusable job's curl shim wrote the literal word `shim` to an `-o` path and nothing
++      # could use dnf again (run 34938554648). On a real box there is no shim to blame.
++      #
++      # `install` is atomic in the sense that matters here: /etc/yum.repos.d either has the
++      # complete file or does not have one. curl also runs UNPRIVILEGED now, since the temp
++      # file is the user's; only the move into /etc needs priv.
++      #
++      # AND THE FAILURE IS REPORTED. The old form ended `>/dev/null 2>&1 || true`, which
++      # swallowed the reason twice over, so "no repo file" and "repo file written" reached
++      # the rpm-ostree call indistinguishable — the operator learned only that lazygit was
++      # missing, with nothing pointing at the download.
++      local _lg_repo=""
++      _lg_repo="$(mktemp)" || _lg_repo=""
++      if [[ -n "$_lg_repo" ]] &&
++        curl -fsSL --max-time 30 \
++          "https://copr.fedorainfracloud.org/coprs/atim/lazygit/repo/fedora-${rel}/atim-lazygit-fedora-${rel}.repo" \
++          -o "$_lg_repo" 2>/dev/null &&
++        [[ -s "$_lg_repo" ]] &&
++        priv install -m 0644 "$_lg_repo" /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:atim:lazygit.repo; then
++        if priv rpm-ostree install --idempotent lazygit >/dev/null; then
++          ATOMIC_STAGED=$((ATOMIC_STAGED + 1))
++        else
++          note_fail "lazygit: COPR layer failed — retry later: ${BLIB_SU:+$BLIB_SU }rpm-ostree install lazygit"
++        fi
 +      else
-+        note_fail "lazygit: COPR layer failed — retry later: ${BLIB_SU:+$BLIB_SU }rpm-ostree install lazygit"
++        note_fail "lazygit: could not fetch the atim/lazygit COPR repo file for fedora-${rel} (offline, or no COPR build for this release yet) — nothing was written to /etc/yum.repos.d; retry later: ${BLIB_SU:+$BLIB_SU }rpm-ostree install lazygit"
 +      fi
++      rm -f "$_lg_repo"
 +    else
      priv dnf -y install dnf5-plugins >/dev/null || true
      priv dnf -y copr enable atim/lazygit >/dev/null || true
@@ -152,7 +185,7 @@ index f9a25d65..a87dfd47 100755
    fi
  
    # ── doctor-probed tools not (reliably) in Fedora repos ─────────────────────
-@@ -531,8 +605,16 @@ bootstrap_provision() {
+@@ -531,8 +638,16 @@ bootstrap_provision() {
          grep -o "\"browser_download_url\": *\"[^\"]*linux_${_cara_arch}\.rpm\"" |
          cut -d'"' -f4 | head -1)" || true
        if [[ -n "$_cara_url" ]]; then
@@ -171,7 +204,7 @@ index f9a25d65..a87dfd47 100755
        else
          note_fail "carapace: could not resolve the latest linux_${_cara_arch} RPM (offline? API rate-limited?) — see github.com/carapace-sh/carapace-bin/releases"
        fi
-@@ -596,19 +678,38 @@ bootstrap_provision() {
+@@ -596,19 +711,38 @@ bootstrap_provision() {
        rm -f "$_op_key"
        _op_key=""
      fi
@@ -216,7 +249,7 @@ index f9a25d65..a87dfd47 100755
      else
        rm -f "$_op_key"
        note_fail "op: signing key not imported — skipping the repo (an unverifiable repo breaks every later dnf transaction); see developer.1password.com/docs/cli/get-started"
-@@ -657,4 +758,28 @@ REPO
+@@ -657,4 +791,28 @@ REPO
    fi
  }
  
