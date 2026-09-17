@@ -21,7 +21,9 @@
 # rather than a fault. That covers Alpine and macOS, two of the eight machines, and on those
 # two it is the ONLY mitigation. `--premise autostart` measures it.
 #
-# It is a separate MODE rather than four more arms bolted onto the matrix, for four reasons:
+# It is a separate MODE rather than more arms bolted onto the discard matrix, for four reasons
+# (and it has since grown arms of its own that the discard matrix could not host at all — the
+# `wedged` pair below has to START a daemon in order to leave one alive and not serving):
 #
 #   1. Different remedy, different title. A discard finding says "retire, version-gate or
 #      reshape the guard". An autostart finding says something else entirely — and the naive
@@ -287,7 +289,9 @@ script is about to delete. If a stop cannot be proven even after escalating to a
 sandbox is PRESERVED and its path printed.
 
 VERDICTS AND EXIT CODES. The codes are shared; what `holds` REQUIRES is not, because the two
-premises assert opposite things about the same four arms:
+premises assert opposite things, over arm sets that are no longer even the same size —
+`discard` measures four ({absent,stale} x {hook,plain}); `autostart` measures those four plus
+two `wedged` arms, which only it can manufacture because only it spawns daemons:
   0  holds         --premise discard:   controls wrote 1 each; every arm rc 0, id printed,
                                         empty stderr, and a row delta of 0 (it discarded).
                    --premise autostart: both controls passed; every arm rc 0, id printed, a
@@ -389,7 +393,7 @@ CTL_DELTA=-1
 # report table and the JSON `arms` object both mean "an unreachable shape we measured".
 DRAIN_DELTA=-1
 # Parallel indexed arrays, one entry per measured arm — bash 3.2 has no associative arrays
-# (scripts/lib/common.sh pins that constraint), and four arms x five facts as flat scalars
+# (scripts/lib/common.sh pins that constraint), and six arms x five facts as flat scalars
 # was twenty names to keep in step. The index is the arm; ARM_NAME[i] is "shape_hookmode".
 ARM_NAME=() ARM_RC=() ARM_DELTA=() ARM_IDOK=() ARM_ERR=()
 # The delta each arm was REQUIRED to produce — 0 under `discard` (the entry is thrown away),
@@ -412,6 +416,10 @@ DAEMON_MAYBE_UP=0         # 1 from the instant a spawn is attempted until a stop
 MANUAL_DAEMON_PID=""      # set only for daemons WE start; an autostart one has no PID for us
 LAST_OWNER_PID=""         # who owned the socket BEFORE the last stop — the only handle on a
                           # detached daemon, and resolvable only while the socket still exists
+WEDGED_PID=""             # the ALIVE-but-not-serving daemon a wedged arm deliberately leaves
+                          # running. Its socket is gone, so it is unreachable by every
+                          # socket-scoped teardown path in this file — this pid is the only
+                          # thing that can ever name it, and cleanup() reaps it by hand.
 CLEANED=0                 # cleanup() idempotence — INT and EXIT both reach it on a Ctrl-C
 _label=""                 # premise name for the one-line human verdict at the very bottom
 TRACKED_PGIDS=""          # every process group we started; reaped by cleanup()
@@ -483,7 +491,7 @@ reap_tracked_groups() {
 cleanup() {
   ((CLEANED)) && return 0
   CLEANED=1
-  local stopped=1
+  local stopped=1 wedged_left=0
   # STOP BEFORE REMOVE, and only remove once the stop is proven. Under --premise autostart a
   # daemon may still hold this tree open, and `rm -rf` on a directory a live process is
   # committing SQLite into leaves it writing to unlinked inodes — a corrupted DB and a
@@ -496,6 +504,16 @@ cleanup() {
   # forked-but-never-bound children the socket-based teardown cannot see, and it must still
   # run on the preserve path below — a tree we are keeping is no reason to keep processes.
   reap_tracked_groups
+  # ...and the wedged daemon, which NEITHER of the two above can reach. Its socket was
+  # unlinked on purpose, so the socket-scoped stop has nothing to resolve it by, and it
+  # setsid()s out of every group we hold the way any real atuin daemon does. A run killed
+  # between make_wedged and the arm's own reap_wedged is the case this exists for.
+  #
+  # TRACKED SEPARATELY FROM `stopped`, not folded into it. The re-prove below asks the SOCKET
+  # whether anything settled, and a wedged daemon has no socket — so routing this through
+  # `stopped` would let that check clear the flag and delete the sandbox around the one
+  # process in this file that is unreachable by every socket-scoped path there is.
+  reap_wedged || wedged_left=1
   # RE-PROVE AFTER REAPING. The daemon is in the arm's process group, so reap_tracked_groups can
   # be the step that finally kills what the socket-scoped stop could not — and without this
   # re-check cleanup would keep the sandbox and print a "STILL answering" warning about a
@@ -504,13 +522,22 @@ cleanup() {
   if ((stopped == 0)) && [[ -n "$SOCK" ]] && stop_settled "$SOCK" "$((POLL_N < 30 ? POLL_N : 30))"; then
     stopped=1
   fi
-  if ((stopped == 0)); then
+  if ((stopped == 0 || wedged_left)); then
     # The one path that leaves state behind, so it must never be quiet. Refusing to delete is
     # NOT the first response — daemon_stop_proven has already asked, signalled and SIGKILLed,
     # and reap_tracked_groups has had its turn, by the time we get here. Keeping the tree is the
     # least-bad end state: an orphaned daemon still holding the files it believes it owns
     # beats an orphaned daemon plus a half-deleted tree.
-    printf 'verify-atuin-guard.sh: a daemon is STILL answering on %s after `atuin daemon stop`, SIGTERM and SIGKILL.\n' "$SOCK" >&2
+    #
+    # The two survivors get DIFFERENT sentences, because they are different processes to go
+    # looking for: one is answering a socket you can name, the other is a pid with no socket
+    # at all — and telling someone to look at a socket that was deliberately unlinked is how
+    # a true warning becomes an unactionable one.
+    if ((wedged_left)); then
+      printf 'verify-atuin-guard.sh: the WEDGED daemon (pid %s) survived SIGTERM and SIGKILL. It has no socket — it was unlinked on purpose — so there is nothing to probe: check the pid directly.\n' "$WEDGED_PID" >&2
+    fi
+    ((stopped == 0)) &&
+      printf 'verify-atuin-guard.sh: a daemon is STILL answering on %s after `atuin daemon stop`, SIGTERM and SIGKILL.\n' "$SOCK" >&2
     printf 'verify-atuin-guard.sh: the sandbox has been PRESERVED rather than deleted, because removing a tree a live daemon is writing into would corrupt it.\n' >&2
     printf 'verify-atuin-guard.sh: stop that process, then: rm -rf %s\n' "$LOCALDIR" >&2
     return 0
@@ -674,6 +701,35 @@ s.listen(1)
 os._exit(0)              # no unlink, no close: the socket file stays behind
 PY
   [[ -S "$1" ]]
+}
+
+# reap_wedged — kill the alive-but-not-serving daemon a wedged arm left behind.
+#
+# Separate from reap_manual, and not foldable into it. reap_manual signals MANUAL_DAEMON_PID,
+# which is the pid of the process this script BACKGROUNDED — and a real `atuin daemon start`
+# may fork, detach and let that parent exit, leaving MANUAL_DAEMON_PID naming a corpse while
+# the daemon serves from somewhere else entirely. For every other arm socket_owner_pid can be
+# re-run at teardown to find it; for this one the socket is deliberately gone, so the pid
+# captured at wedge time is the only handle that will ever exist.
+#
+# TERM then KILL, with a settle between: this is a process that was serving a SQLite file a
+# moment ago, so it is given the chance to close it before being shot.
+reap_wedged() {
+  local i
+  [[ -n "$WEDGED_PID" ]] || return 0
+  if kill -0 "$WEDGED_PID" 2>/dev/null; then
+    kill -TERM "$WEDGED_PID" 2>/dev/null
+    for ((i = 0; i < 20; i++)); do
+      kill -0 "$WEDGED_PID" 2>/dev/null || break
+      sleep 0.1
+    done
+    kill -KILL "$WEDGED_PID" 2>/dev/null
+  fi
+  # Only clear it once it is CONFIRMED gone. Same rule as owner_gone: a pid that might still
+  # be alive is the one piece of state a later cleanup pass must not have forgotten.
+  kill -0 "$WEDGED_PID" 2>/dev/null && return 1
+  WEDGED_PID=""
+  return 0
 }
 
 # ── daemon lifecycle (only --premise autostart reaches any of this) ───────────
@@ -892,7 +948,7 @@ daemon_start_manual() {
 # PROOF, not a stop command's exit status. `atuin daemon stop` returning 0 says the request was
 # accepted, not that the process is gone — and every later arm's "the socket was unreachable
 # before I wrote" gate, plus the EXIT trap's licence to rm -rf, both rest on this having really
-# worked. An unproven stop is how the four arms silently stop being independent.
+# worked. An unproven stop is how the arms silently stop being independent.
 #
 # ESCALATION, not refusal. Ask through the socket; then, for a daemon we started, use the PID
 # we have; then, for an autostart daemon we were never told about, resolve the owner from the
@@ -969,6 +1025,83 @@ daemon_stop_proven() {
     done
   fi
   return 1
+}
+
+# make_wedged <sock> — manufacture the atuin#4114 shape: a daemon that is ALIVE and NOT
+# SERVING. Returns 0 on success, and a distinct non-zero per failure so the caller can say
+# which half of the apparatus declined (each is an `unmeasurable` with its own sentence,
+# never a finding about upstream).
+#
+# THE SHAPE, AND WHY IT IS NOT `stale`. make_stale leaves an INODE with no process; this
+# leaves a PROCESS with no inode, and it is the process that does the damage. atuin decides
+# whether to autostart from the PIDFILE alone — if the recorded pid is alive it assumes a
+# healthy daemon and spawns nothing — so a live-but-unreachable daemon blocks its own
+# replacement indefinitely while every command keeps hitting a socket nobody serves. The two
+# shapes are therefore opposite tests of the same claim, and a run that measured only `stale`
+# would report the recovery mechanism working in exactly the case it cannot reach.
+#
+# Manufactured by unlinking a REAL daemon's socket out from under it, rather than by wedging
+# the process with a signal. "Alive but not serving" is the whole premise, and an unlink
+# reaches it with no debugger, no SIGSTOP (which would also freeze the pidfile write we are
+# relying on) and no dependence on what the daemon does internally when it misbehaves.
+#
+# THE PID IS CAPTURED BEFORE THE UNLINK, and that ordering is not stylistic. Afterwards there
+# is no inode left for socket_owner_pid to resolve an owner from — the same closing window
+# daemon_stop_proven captures in, for the same reason — so a pid taken one line later would
+# be empty and the process would be unreapable for the rest of the run.
+make_wedged() {
+  local sock="$1"
+  WEDGED_PID=""
+  daemon_start_manual "$sock" || return 1
+  WEDGED_PID="$(socket_owner_pid "$sock")" || WEDGED_PID=""
+  [[ -n "$WEDGED_PID" ]] || return 2
+  rm -f "$sock"
+  # It must still be ALIVE, or this is not the shape at all. A daemon that exits when its
+  # socket disappears is one autostart could legitimately replace, and measuring the arm
+  # anyway would report a build that self-heals as a build that wedges — a manufactured
+  # finding, which is the one outcome this file exists to refuse.
+  #
+  # SETTLED, NOT SAMPLED, and this is the difference between a correct arm and a plausible
+  # one. A daemon notices its socket is gone on its own schedule — the next accept timeout,
+  # the next poll — so an immediate `kill -0` answers "alive" for one that is already on its
+  # way out, and the arm would then measure a shape that stopped existing between two lines.
+  # One second, fixed, and deliberately not POLL_N-derived: this bound is not "how long may a
+  # daemon take to come up" (which a caller may legitimately shorten) but "how long is long
+  # enough to call a process a survivor", and lowering THAT is how a self-healing build gets
+  # reported as a wedged one.
+  local i
+  for ((i = 0; i < 10; i++)); do
+    kill -0 "$WEDGED_PID" 2>/dev/null || return 3
+    sleep 0.1
+  done
+  kill -0 "$WEDGED_PID" 2>/dev/null || return 3
+  # ...and nothing may be answering, or the unlink did not take and the arm below would be
+  # measuring a perfectly healthy daemon.
+  #
+  # NOT prove_unreachable, and this is the one place in the file where that function gives the
+  # wrong answer. Its first branch reads /proc/net/unix for a LISTEN row on this path — and a
+  # wedged daemon STILL HAS ONE. The kernel keeps the bound name on the socket object for as
+  # long as the process holds it, whether or not the directory entry survives, so the row that
+  # function reads as "something is listening here" IS the state being manufactured. Asking it
+  # would make the shape unconstructable by definition.
+  #
+  # What has to be true is narrower and entirely checkable: a client cannot get through. That
+  # is two facts. The NAME is gone, which is a filesystem question and the reason no connect
+  # can ever resolve to that socket again...
+  [[ -e "$sock" ]] && return 4
+  # ...and nothing answers it, which only a connect can settle. prove_reachable is the right
+  # predicate for that and needs no /proc branch, by its own documented design.
+  prove_reachable "$sock" && return 4
+  # DELIBERATELY NOT handed to LAST_OWNER_PID. That variable, MANUAL_DAEMON_PID and the whole
+  # stop_settled escalation are built around there being ONE daemon at a time — the arm's — and
+  # this is the only place in the file where two are alive at once: the wedged one, and
+  # whatever autostart spawns next to it. Pointing the single-daemon machinery at the wedged
+  # pid makes it believe the stop it just proved was about that process, and the daemon
+  # autostart really did spawn is then never stopped at all. The caller reaps this one by pid
+  # FIRST and only then runs the socket-scoped teardown, which restores the invariant every
+  # path below depends on. cleanup() does the same for a run that dies mid-arm.
+  DAEMON_MAYBE_UP=1
+  return 0
 }
 
 # ── the measurement ───────────────────────────────────────────────────────────
@@ -1130,7 +1263,8 @@ run_one() {
   #
   # Not done for the `sock` (unreachable) or `off` arms. `off` needs no partner — the row is
   # already in — and the discard premise has measured start-only since #366; changing what
-  # those four arms issue would silently redefine the record they are compared against.
+  # the discard premise's four arms issue would silently redefine the record they are
+  # compared against.
   if [[ "$dmode" == on || "$dmode" == auto ]] && is_history_id "$id"; then
     _end_call() {
       "${AT_ENV[@]}" "${env_extra[@]}" \
@@ -1331,7 +1465,7 @@ arms_autostart() {
     reap_tracked_groups
     DAEMON_MAYBE_UP=0
     rm -f "$SOCK"
-    unmeasurable "a daemon is answering on ${SOCK} and this box cannot say which process owns it (no lsof, or an unreadable /proc) — an autostart daemon DETACHES, so that pid is the only way a stop could ever be proven, and spawning four of them here would leave daemons this run could not reap"
+    unmeasurable "a daemon is answering on ${SOCK} and this box cannot say which process owns it (no lsof, or an unreadable /proc) — an autostart daemon DETACHES, so that pid is the only way a stop could ever be proven, and spawning one per arm here would leave daemons this run could not reap"
     return 1
   fi
   run_one spawnctl "$SOCK" no 1 "$POLL_N" on
@@ -1413,6 +1547,90 @@ arms_autostart() {
         record_arm "${shape}_${hook}" 1 no
       fi
     done
+  done
+
+  # ── the WEDGED arms: alive-but-not-serving (atuinsh/atuin#4114) ─────────────
+  # LAST, and deliberately so. These are the only arms that leave a live process behind on
+  # purpose, so they run after everything whose starting state could be spoiled by one.
+  #
+  # They also invert this section's teardown-first discipline: every arm above begins from a
+  # PROVEN-DEAD daemon, and these two begin from a proven-LIVE one. That is the shape — the
+  # premise is not "does autostart spawn onto an empty path" (the four arms above answer that)
+  # but "does autostart notice that the daemon it is deferring to has stopped serving". Core's
+  # stand-down unhooks the guard entirely under AUTOSTART on the strength of the second claim,
+  # and Alpine and macOS have nothing else.
+  for hook in hook plain; do
+    daemon_stop_proven "$SOCK" || {
+      unmeasurable "the daemon from the previous arm is still answering on ${SOCK} — the wedged arm has to start from a daemon THIS arm started, or the process it leaves alive is not one it can account for"
+      return 1
+    }
+    rm -f "$SOCK"
+    make_wedged "$SOCK"
+    rc=$?
+    case "$rc" in
+    0) ;;
+    1)
+      unmeasurable "the wedged/${hook} arm could not start a daemon to wedge, although the manual-spawn control started one earlier in this same run — the sandbox stopped being able to host a daemon partway through, which is an apparatus failure and says nothing about upstream"
+      return 1
+      ;;
+    2)
+      unmeasurable "the wedged/${hook} arm started a daemon and could not resolve which process owns ${SOCK} — that pid is the ONLY handle on a daemon whose socket is about to be unlinked, and wedging one this run could never reap is worse than leaving the shape unmeasured"
+      return 1
+      ;;
+    3)
+      # NOT a finding, and the distinction matters: a build that dies with its socket cannot
+      # exhibit #4114 at all, because there is no live pid left to block the respawn.
+      unmeasurable "the daemon exited when its socket was unlinked, so the alive-but-not-serving shape could not be manufactured on this build — this arm measures nothing here, and that is a fact about the daemon's own lifecycle rather than about autostart"
+      return 1
+      ;;
+    4)
+      unmeasurable "something was still answering on ${SOCK} after the wedged/${hook} arm unlinked it — the socket was not actually taken away, so anything measured afterwards would be a healthy daemon reported as a wedged one"
+      return 1
+      ;;
+    *)
+      unmeasurable "make_wedged returned an undocumented ${rc} for the wedged/${hook} arm"
+      return 1
+      ;;
+    esac
+    h=no
+    [[ "$hook" == hook ]] && h=yes
+    DAEMON_MAYBE_UP=1
+    run_one "auto-wedged-${hook}" "$SOCK" "$h" 1 "$POLL_N" auto
+    IFS='|' read -r _ok _rc _delta _idok _err <<<"$RUN_REC"
+    [[ "$_ok" == 1 ]] || {
+      reap_wedged
+      unmeasurable "the wedged/${hook} arm could not read the history DB (row count -1) — an unreadable DB is an apparatus failure, not evidence about upstream"
+      return 1
+    }
+    if wait_reachable "$SOCK" "$((POLL_N < 30 ? POLL_N : 30))"; then
+      record_arm "wedged_${hook}" 1 yes
+    else
+      record_arm "wedged_${hook}" 1 no
+    fi
+    # TEARDOWN, AND THE ORDER IS THE WHOLE THING. This is the only point in the run where TWO
+    # daemons can be alive at once — the wedged one, and whatever autostart spawned beside it —
+    # and every teardown path in this file is written for one. daemon_stop_proven resolves the
+    # socket's owner, stops it, and proves the stop through LAST_OWNER_PID; run it while a
+    # second, socket-less daemon is also alive and the two become impossible to tell apart.
+    #
+    # So the wedged one goes FIRST, by the pid captured at wedge time, which is the only handle
+    # that will ever name it. That restores the single-daemon invariant, and daemon_stop_proven
+    # then deals with exactly the case it was written for. reap_manual between them clears the
+    # now-dead manual handle so the escalation cannot spend its two signals on a corpse.
+    #
+    # Reversing these two is not a style choice: it leaves a real autostart daemon running past
+    # the end of the run, where it keeps committing into the closing drain control — measured,
+    # and it turned a clean `holds` into a `moved` about rows nothing upstream wrote.
+    reap_wedged || {
+      unmeasurable "the wedged daemon (pid ${WEDGED_PID}) survived SIGTERM and SIGKILL — refusing to continue, because the sandbox is about to be deleted around a process that is still holding the history DB open"
+      return 1
+    }
+    reap_manual
+    daemon_stop_proven "$SOCK" || {
+      unmeasurable "a daemon was still answering on ${SOCK} after the wedged/${hook} arm, and could not be stopped even after SIGKILL — the next arm needs a starting state this run can claim"
+      return 1
+    }
+    rm -f "$SOCK"
   done
 
   daemon_stop_proven "$SOCK" || {
@@ -1626,7 +1844,7 @@ measure() {
   run_one drain "" no 1 20 off
   IFS='|' read -r _ok _rc DRAIN_DELTA _idok _err <<<"$RUN_REC"
   if [[ "$_ok" != 1 ]] || ((DRAIN_DELTA < 1)); then
-    unmeasurable "the CLOSING daemon-off control arm wrote ${DRAIN_DELTA} rows, not 1 — the apparatus stopped writing partway through this run, so the zeros the four arms reported are not evidence about upstream (readok=${_ok}: 0 means the history DB could not be read at all)"
+    unmeasurable "the CLOSING daemon-off control arm wrote ${DRAIN_DELTA} rows, not 1 — the apparatus stopped writing partway through this run, so the deltas the arms reported are not evidence about upstream (readok=${_ok}: 0 means the history DB could not be read at all)"
     return
   fi
 
@@ -1663,8 +1881,18 @@ measure() {
       # observation: a delta of 0 is what "no daemon came up" and "a daemon came up and threw
       # the entry away" both look like, and those are different upstream bugs. Naming the
       # spawn first means the report says which one happened.
-      [[ "${ARM_SPAWN[n]}" == yes ]] ||
-        diffs+=("${a}: no daemon became reachable on the socket — atuin did NOT start one, so an absent socket is now a fault rather than a cue, and the guard's stand-down leaves this shape unprotected")
+      # The sentence is shape-aware, because the two shapes fail for different upstream
+      # reasons and a reader who acts on the wrong one fixes nothing. absent/stale say "a
+      # missing socket no longer prompts a spawn"; wedged says "a LIVE daemon that stopped
+      # serving blocks its own replacement", which is a pidfile-liveness bug (atuin#4114) and
+      # not a socket one.
+      if [[ "${ARM_NAME[n]}" == wedged_* ]]; then
+        [[ "${ARM_SPAWN[n]}" == yes ]] ||
+          diffs+=("${a}: the daemon was alive but not serving, and atuin did NOT replace it — autostart judges liveness by the pidfile rather than by reachability (atuinsh/atuin#4114), so a wedged daemon blocks its own respawn indefinitely and the guard's stand-down leaves this shape unprotected")
+      else
+        [[ "${ARM_SPAWN[n]}" == yes ]] ||
+          diffs+=("${a}: no daemon became reachable on the socket — atuin did NOT start one, so an absent socket is now a fault rather than a cue, and the guard's stand-down leaves this shape unprotected")
+      fi
       [[ "${ARM_DELTA[n]}" == "${ARM_EXPECT[n]}" ]] ||
         diffs+=("${a}: the row count changed by ${ARM_DELTA[n]}, expected ${ARM_EXPECT[n]} — the entry issued while the socket was unreachable did not land")
       # NO stderr rule here, deliberately. The daemon atuin spawns INHERITS this process's
@@ -1703,7 +1931,7 @@ measure() {
       # process per command, so "does a fresh client spawn a daemon when the socket is
       # unreachable" IS the self-healing mechanism, not a proxy for it. Scoped to what ran —
       # a shell whose daemon dies mid-session is still out of reach here.
-      REASON="all ${#ARM_NAME[@]} arms ($(arms_sentence)) started a daemon that answered on the socket and landed exactly 1 row from an unreachable start — including the stale-socket shape a crashed daemon leaves behind. Every \`atuin history start\` is a fresh process, so per-command spawn IS the self-healing mechanism, and the stand-down in zsh/00-tools.zsh still has something behind it on Alpine and macOS"
+      REASON="all ${#ARM_NAME[@]} arms ($(arms_sentence)) started a daemon that answered on the socket and landed exactly 1 row from an unreachable start — including the stale-socket shape a crashed daemon leaves behind, and the WEDGED shape where the previous daemon is still ALIVE and merely not serving (atuinsh/atuin#4114), which is the one shape a pidfile-liveness check cannot see. Every \`atuin history start\` is a fresh process, so per-command spawn IS the self-healing mechanism, and the stand-down in zsh/00-tools.zsh still has something behind it on Alpine and macOS"
     else
       # Scoped to what the closing arm actually established. "Nothing was spooled" would be the
       # same overclaim this run's scope paragraph exists to prevent: a delta of 1 rules out a
@@ -1808,6 +2036,22 @@ emit_report() {
       # premise is about, and a report that let a reader reach for it would do more damage
       # than the finding it is reporting.
       printf 'Do **not** reach for "make the guard stop standing down" as a reflex. Its degrade path exports `ATUIN_DAEMON__ENABLED=false`, and under `autostart` that removes the spawn itself — permanently defeating the only launcher Alpine and macOS have, which is the very outcome the stand-down exists to avoid. The remedies that do not cost those machines their history are: **probe but warn instead of disabling**; **stand down only after N consecutive failed spawns**; or **unlink a stale socket before deferring to autostart**. Re-measure by hand before deciding; do not act on this report alone.\n\n'
+      # Only when a WEDGED arm is among the failures, because its remedy is the one that
+      # differs: none of the three above reaches a daemon that is alive and not serving.
+      # Unlinking a stale socket does nothing when there is no inode; waiting N spawns does
+      # nothing when no spawn is ever attempted.
+      case " ${ARM_NAME[*]} " in
+      *" wedged_"*)
+        local w n2
+        for ((n2 = 0; n2 < ${#ARM_NAME[@]}; n2++)); do
+          [[ "${ARM_NAME[n2]}" == wedged_* && "${ARM_SPAWN[n2]}" != yes ]] || continue
+          w=1
+          break
+        done
+        [[ -n "${w:-}" ]] &&
+          printf 'A **wedged** arm is among the failures, and its remedy is not on that list. A daemon that is alive and not serving leaves nothing to unlink and prompts no spawn to count, so "unlink the stale socket" and "stand down after N failed spawns" both reach it zero times. What reaches it is the guard **not standing down at all** under `autostart` — probing, and on failure warning rather than exporting `ATUIN_DAEMON__ENABLED=false`. That is the one variant of "stop standing down" the paragraph above is not warning you off, because it keeps the launcher intact. Upstream this is `atuinsh/atuin#4114`; a fix there (health-check the socket, not the pidfile) removes the need entirely.\n\n'
+        ;;
+      esac
       ;;
     autostart/unmeasurable)
       printf 'This is **not** good news and must not be read as one. Nothing was established, so the `autostart` stand-down is currently unverified rather than confirmed. Note in particular that a failure of the **manual-spawn control** means *this box could not host a daemon at all* — an apparatus limit, never a finding about upstream. Repair the detector (`scripts/research/verify-atuin-guard.sh`), then re-run `make verify-atuin-guard-autostart`.\n\n'
@@ -1826,7 +2070,7 @@ emit_report() {
     esac
     printf -- '**Measured here:** %s.\n\n' "$(arms_sentence)"
     if [[ "$PREMISE" == autostart ]]; then
-      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`, and the two machines this premise protects are **Alpine/musl and macOS** — so weigh it accordingly: a run on one of those two is direct evidence for that row and still says nothing about the other, while a run on glibc Linux (what the scheduled job uses) is the *weakest* evidence in this whole arrangement for either of them. It measures a **fresh client** spawning a daemon from an unreachable socket; a long-lived shell whose daemon dies mid-session is not exercised. Teardown is proven two ways — the pid that owned the socket before the stop, and the process group each arm ran in — which between them cover a daemon that detached after binding and a child that hung before it. A child that did **both** (detached, then never bound) is detected by **neither**, and this run does not notice it: it is left running and its sandbox is deleted underneath it. That is an undetected leak, not a guarded one — the preserved-sandbox path covers a stop that failed, not a process nothing ever looked for. A daemon that wedges (`atuinsh/atuin#3382`) escapes only if it wedges **after** completing the measured pair: one that wedges during it shows up here as an expired bound (`unmeasurable`) or a row that never landed (`moved`), because every arm must also exit 0 and land exactly one row. The **silent-discard** premise is a separate mode (`--premise discard`) and is not measured by this run. stderr is recorded but never judged: the spawned daemon inherits this process'"'"'s descriptor, so its tracing and the client'"'"'s are not separable.\n' "$HOST_KIND"
+      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`, and the two machines this premise protects are **Alpine/musl and macOS** — so weigh it accordingly: a run on one of those two is direct evidence for that row and still says nothing about the other, while a run on glibc Linux (what the scheduled job uses) is the *weakest* evidence in this whole arrangement for either of them. It measures a **fresh client** spawning a daemon from an unreachable socket; a long-lived shell whose daemon dies mid-session is not exercised. Teardown is proven two ways — the pid that owned the socket before the stop, and the process group each arm ran in — which between them cover a daemon that detached after binding and a child that hung before it. A child that did **both** (detached, then never bound) is detected by **neither**, and this run does not notice it: it is left running and its sandbox is deleted underneath it. That is an undetected leak, not a guarded one — the preserved-sandbox path covers a stop that failed, not a process nothing ever looked for. Two different wedges, and only one of them is measured. The **alive-but-not-serving** shape (`atuinsh/atuin#4114`) IS exercised, by the `wedged` arms: a real daemon is started, its socket is unlinked out from under it, and the arm asks whether autostart replaces a process it can still see in the pidfile. The **accept-but-silent** shape (`atuinsh/atuin#3382`) is not, and cannot be from here: that socket answers, so every reachability check in this file — including the one the arms use to decide a daemon came up — passes against a daemon that will never reply. A daemon that wedges in *that* way escapes only if it does so **after** completing the measured pair: one that wedges during it shows up as an expired bound (`unmeasurable`) or a row that never landed (`moved`), because every arm must also exit 0 and land exactly one row. The **silent-discard** premise is a separate mode (`--premise discard`) and is not measured by this run. stderr is recorded but never judged: the spawned daemon inherits this process'"'"'s descriptor, so its tracing and the client'"'"'s are not separable.\n' "$HOST_KIND"
     else
       printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`; the scheduled job runs it on Linux x86_64 glibc, and the Alpine/musl half of the fleet is unmeasured either way. The **`autostart` stand-down** is not measured by *this* run: it is a separate premise with its own mode (`--premise autostart`, `make verify-atuin-guard-autostart`), its own anchor and its own verdict, because measuring it means spawning a real daemon and owning its teardown — so a green run here says nothing about it in either direction. **Buffer-and-replay** is probed only by the closing daemon-off control arm above; a spool that only a live daemon would drain is out of reach for the same reason. The accept-but-silent socket (`atuinsh/atuin#3382`) is structurally out of scope: this measures *unreachable*, and that shape is *reachable and lying*.\n' "$HOST_KIND"
     fi
