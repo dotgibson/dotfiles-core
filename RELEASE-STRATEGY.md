@@ -151,6 +151,35 @@ The bump table itself lives in **`RELEASE-RUNBOOK.md` §1.0** — one copy, besi
 commands that act on it, with the three tiebreakers for the ambiguous cases and the note
 that `tag-release.sh` now *enforces* the MAJOR rule rather than merely advising it.
 
+### The next major is triggered, not planned
+
+A major is cut **when the Breaking Backlog milestone is non-empty and a release is due** —
+never scheduled, and never derived from a roadmap theme. That milestone is the queue: work
+that needs a host to *adapt* waits in it, and the batching this section describes happens
+when it fills, not when a version number comes round.
+
+**An empty Breaking Backlog means there is no major to scope.** That is a healthy state,
+not a gap, and it is the state Core has been in since `v7.0.0` discharged the last item
+that had been waiting for one. Three roadmap themes have now predicted a major and
+measured as minors once they were written down and costed:
+
+- *"one source, generated outward"* — shipped as minors; the milestone's own closing note
+  is *"a milestone can be right about the destination and wrong about the vehicle."*
+- *"the non-mutable host"* (`NON-MUTABLE-HOST-PROPOSAL.md`) — named the right next major,
+  then R2 measured the `os.capabilities` schema **additive**: six optional keys, and not
+  one repo re-authored its declaration. Shipped as four minors, `v7.6.0`–`v7.9.0`.
+- `V8-PROPOSAL.md`'s own bundle — closed `DECIDED — no major comes out of this proposal`
+  after all three of its changes shipped as minors.
+
+The tiebreaker that did the work every time is the second one in `RELEASE-RUNBOOK.md`
+§1.0: *if nothing a host already uses changes meaning, it is at most a MINOR — even if the
+diff is large.* Applied honestly, it dissolves most candidates, and a candidate that
+dissolves under it was never major content.
+
+Those proposals are **closed records**. Read them for the reasoning; do not reopen them
+hunting for content. When a break does arrive, `RELEASE-RUNBOOK.md` §1.1 carries the cost
+list for cutting it.
+
 ## 3. Safe deployment: testing Arch without breaking Alpine or macOS
 
 This is the core safety question, and the three-layer model (`ARCHITECTURE.md`) answers

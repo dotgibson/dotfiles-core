@@ -259,6 +259,58 @@ What you do with the alias depends on the bump you chose in §1.0
 > **not**, however, bump the fleet's callers from `@vN` to `@vN+1` — that hand edit is still
 > yours on a MAJOR.
 
+#### Cutting a MAJOR — the full cost list
+
+The alias handling above is the *mechanical* difference between a major and a minor. It is
+not the whole cost, and the rest is easy to discover one item at a time, late. This is the
+one place they are gathered. The list came out of `V8-PROPOSAL.md` §7 — written for a major
+that never happened, and kept because, in its own words, the costs *"belong to **any**
+major, and the next one will need exactly this list."* Work it top to bottom.
+
+1. **The `@vN` → `@vN+1` caller sweep — and it goes FIRST.** Bump every repo's `uses:` and
+   merge that sweep **before** that repo's `core.lock` fan-out PR. §9n
+   (`scripts/audit/80-fleet-claims.sh`) reads each sibling's live `uses:` and reds
+   `make audit` until the sweep completes, so this one reports itself — but only where the
+   fleet is cloned beside Core. Otherwise it records an environment SKIP and you are on
+   your own. The two SHA-pinned-inside-the-fan-out repos need no hand bump (above).
+2. **`dotfiles-Windows` is the one hand bump no gate catches.** It vendors no `core/`, is
+   deliberately absent from `scripts/os-repos.txt`, and SHA-pins its `auto-tag` caller, so
+   nothing advances it automatically and no audit section can see it. The cost of
+   forgetting is recorded in [#805](https://github.com/dotgibson/dotfiles-core/issues/805):
+   a full major behind, for five releases. Here "checked" has to mean a person looked.
+3. **Core's own in-tree `vN` strings.** Three always-on gates key off `core.version`'s
+   major, and all three go red the moment it bumps — **§8a** (`ref:` keys in Core's own
+   workflows), **§8a-bis** (the copyable `@vN` caller examples in workflow headers) and
+   **§8a-ter** (the first-vendor pin recipes in `ARCHITECTURE.md`, `VENDORING.md`,
+   `PORTING-MATRIX.md`, `sync-core.sh` and `new-os-repo.sh`). Count them before you start,
+   rather than trusting a number frozen into this doc — `V8-PROPOSAL.md` §7 said *"roughly
+   thirty"* and was stale within a fortnight:
+
+   ```bash
+   # in-tree strings carrying the OUTGOING major (CHANGELOG excluded — it is history)
+   N="$(cut -d. -f1 core.version)"
+   grep -rnE "@v$N\b|ref: v$N\b" \
+     --include='*.yml' --include='*.yaml' --include='*.md' --include='*.sh' . \
+     | grep -v CHANGELOG | wc -l
+   ```
+
+4. **The ordering rule, when the vendored tree changes shape.** If the major changes what
+   `core_lock_expected_tree` returns, the caller bump **must** precede the fan-out merge —
+   otherwise the *outgoing* major's integrity verifier reports `TAMPERED` against an
+   untouched tree and the fan-out PR cannot merge. That is not hypothetical; it is what
+   `v6.0.0` did, and §2 writes it up in full. Item 1 already puts the sweep first, which is
+   safe in both directions — this is why it is not optional.
+5. **The fleet App's installation list is not in git.** A repo in `scripts/os-repos.txt`
+   that the `dotgibson-fleet-sync` App cannot reach 403s at the *end* of a release, once
+   the tag is already immutable — measured at `v7.9.0`, in
+   [#1071](https://github.com/dotgibson/dotfiles-core/issues/1071). `make fleet-app-scope`
+   is the probe; run it **before** the cut, not after.
+
+Two costs this list deliberately does **not** carry, because they are conditional:
+a **host re-bootstrap** is required only if the major adds or moves a linked overlay
+(`v5.0.0` needed one; `v6.0.0` and `v7.0.0` did not), and the ten fan-out PRs land as a
+consumer **minor** in each repo, reachable only by dispatch — §2 has both.
+
 ### What happens automatically after the tag
 
 1. `release.yml` publishes the GitHub Release — the body is the curated `CHANGELOG.md`
