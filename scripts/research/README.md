@@ -8,6 +8,14 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   self-healing. Three-way verdict, `0` holds / `1` moved / `3` unmeasurable. Run it with
   `make verify-atuin-guard` or `make verify-atuin-guard-autostart`; `gh workflow run
   atuin-guard-verify` is the live-upstream, checksum-verified form.
+  The two premises no longer measure the same arms. `discard` runs four —
+  `{absent, stale} × {hook, plain}`. `autostart` runs those four plus a **`wedged`** pair,
+  which only it can build because only it spawns daemons: a real daemon is started, its socket
+  is unlinked out from under it, and the arm asks whether autostart replaces a process that is
+  **alive and not serving**. That is upstream `atuinsh/atuin#4114` — autostart judges liveness
+  by the pidfile, so the one process that cannot serve is also the one blocking its own
+  replacement — and it is the single shape where the guard's stand-down is wrong rather than
+  merely unhelpful (#1091).
 - **`bench-atuin-daemon.sh`** — atuin write latency under contention, daemon off vs on,
   optionally through a transient systemd user unit. `make bench-atuin`,
   `make bench-atuin-systemd`.
