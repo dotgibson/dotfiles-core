@@ -228,6 +228,47 @@
   _symlinked_ to `~/.config/mise/config.toml`, which the file's own header has contradicted at
   length since bootstrap started adopting it instead.
 
+- **One pin bumped on the weekly freshness review, one re-held, and the routine that could
+  not tell them apart given its history back** ([#1047](https://github.com/dotgibson/dotfiles-core/issues/1047)).
+  `scripts/tool-versions.env` is the class no bot covers, so the routine re-audits all ten
+  against upstream by hand each week. Eight were still current; the two that were not split:
+
+  | Pin | Was | Now | |
+  | --- | --- | --- | --- |
+  | `CLAUDE_CODE_VERSION` | 2.1.265 | **2.1.273** | the routine bots' own CLI |
+  | `SHFMT_VERSION` | 3.13.1 | 3.13.1 | **held again** — see below |
+
+  claude-code is patch-only drift in the CLI eight `claude-routines.yml` jobs install, with no
+  security fix and no forcing function; it rides along with the review that noticed it. No
+  checksum step: claude-code is an npm registry install, deliberately outside the `*_SHA256`
+  block, `update-tool-checksums.sh`'s five-asset table and §9b's `_check_sha` list. Nothing
+  in `.pre-commit-config.yaml` moves either, so §9 stays green untouched.
+
+  **shfmt stays at 3.13.1, and 3.14.1 does not reopen the question.** The hold was decided
+  in #813 because 3.14.0 changed shfmt's _output_, not just its behaviour, and the pin exists
+  only so `setup-core-tools` installs one verified shfmt for MacBook and the distro/role lint
+  workflows — where the step is advisory (`::warning::`, not red), so a bump would not break
+  them, it would nag on every run until each repo reformats, with no diff in this repo to warn
+  you. 3.14.1 _adds_ output changes on top of that (literal tabs kept in `<<-` heredoc bodies,
+  heredoc indentation corrected inside command substitutions), so it moves the cost up, not
+  down. The condition is unchanged: bump it alongside a reformat pass across the consumers.
+
+  **The report proposed merging it anyway, and the reason is the interesting part.** The
+  routine said so itself in its method caveat — _"this checkout is a shallow clone (single
+  commit), so I couldn't read local bump history"_. Its `--allowedTools` have granted
+  `Bash(git log:*)` and `Bash(git diff:*)` all along; the checkout simply left nothing for
+  them to read, so a deliberate park was indistinguishable from an overlooked pin. Two fixes,
+  because either alone leaves a hole:
+
+  - `freshness-triage`'s checkout takes `fetch-depth: 0`, joining `release-readiness`,
+    `release-notes`, `shell-review` and `drift-triage`, which each already carry it with a
+    comment saying which `git log` a shallow clone would starve.
+  - The reason moves to where clone depth cannot hide it: a `# held:` comment above
+    `SHFMT_VERSION` in the pin file the routine reads every week regardless, and a paragraph
+    in `.claude/commands/freshness-triage.md` making the convention a rule — a pin carrying
+    a `# held:` note is reported as **Hold** restating the standing reason, and only a newer
+    release that removes the cost (or adds a security fix) reopens it.
+
 - **R1's three remaining cells are measured, and the research phase's last open question is
   closed** (`NON-MUTABLE-HOST-PROPOSAL.md` §5, #1052, runs 35130669056 and 35133704599).
   Two of the three were claims a _shipped_ declaration already made.
@@ -384,6 +425,48 @@
 
 ### Fixed
 
+
+- **`PORTING-MATRIX.md` was silent about Fedora on both halves of the nvim-treesitter
+  requirement, and the report that noticed named the wrong release**
+  ([#1010](https://github.com/dotgibson/dotfiles-core/issues/1010)). The non-mutable-host
+  harness measured `neovim` 0.11.5 and `tree-sitter-cli` 0.25.10 on a `fedora-bootc:42`
+  container and read them as Fedora's answer. Fedora 42 went **EOL on 2026-05-13** and that
+  quay tag has been frozen since; `dotfiles-Fedora`'s own `packages.yml` declares the lanes
+  as **F43/F44 blocking**, F45 and rawhide advisory. Re-measured 2026-09-16 against
+  `packages.fedoraproject.org` and `mdapi.fedoraproject.org`, and the finding survives on a
+  release somebody is actually on: **F43 carries `neovim` 0.11.6-1.fc43 and
+  `tree-sitter-cli` 0.25.10-2.fc43, below both floors** (≥ 0.12.0, ≥ 0.26.1), while F44, F45
+  and rawhide clear both at 0.12.5 and 0.26.11.
+
+  Footnote ³³ therefore names **five** targets rather than four, and a **fourth mechanism**.
+  Fedora is neither a frozen archive (Debian), nor a keyword split (Gentoo), nor frozen
+  concurrent branches (Alpine, openSUSE Leap): it **rebases inside a release for some
+  packages and not others**, so F44 crossed 0.11 → 0.12 in `updates` while F43 ends its life
+  on the 0.11 branch. That makes upgrading release the only lever on F43 — the mechanic ³⁴
+  already records for jq on this same distro, and the exact inverse of Alpine's in-place
+  backport. Footnote ⁵'s Fedora line, which said only _verify ≥ 0.26.1, else mise/cargo_,
+  gains the same per-lane spread it already gave Alpine.
+
+  `dotfiles-Fedora` repeats Alpine's asymmetry precisely: a floor recorded in prose for
+  nvim-treesitter's _dependency_ and nothing at all for its _host_, which leaves it the last
+  repo in the fleet with no floor guard. Filed as dotfiles-Fedora#192; it moves no matrix
+  cell, because the package table has no Fedora column to derive.
+
+  **The harness pin is the part that generalises.** Both research workflows pinned
+  `fedora-bootc:42` (and a digest-pinned `fedora:42`) for a question about _host shape_, and
+  its package versions were then read as the distro's. Both now pin **`:44`**, a blocking
+  lane. R1–R6's verb findings stand as measured on `:42` and
+  `NON-MUTABLE-HOST-PROPOSAL.md` keeps saying so — what it now also says is that their
+  package versions are not evidence about the fleet. Footnote ³³'s closing rule widens with
+  it: ask the keyword question, the branch question **and the rebase question**.
+
+  Not fixed here, and filed as
+  [#1082](https://github.com/dotgibson/dotfiles-core/issues/1082): ³³'s table is
+  hand-written prose that has now gone stale four times (dotfiles-Gentoo#116,
+  dotfiles-Alpine#170, dotfiles-openSUSE#178, this), while
+  `scripts/fleet-package-versions.tsv` — dated rows, a derived verdict, a weekly bot —
+  exists for exactly that and holds only `jq`.
+
 - **The `fleet-versions` block went unchecked on every lone clone — including all of CI**
   ([#1046](https://github.com/dotgibson/dotfiles-core/issues/1046)).
   `PORTING-MATRIX.md` has three generated blocks, and only two of them read the sibling OS
@@ -439,6 +522,7 @@
   `--no-extras`**, both real, and `.claude/agents/doc-consistency.md` still called this an
   _eleven_-repo system — the auditor's own charter, stale since `dotfiles-NixOS` made the
   whole system twelve.
+
 
 ## [v7.9.0] - 2026-09-16
 
