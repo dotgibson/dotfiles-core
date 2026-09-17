@@ -130,6 +130,37 @@
 
 ### Changed
 
+- **`extract` pins `ouch`'s pre-0.8.0 unpack location, so one archive gives one tree on every
+  box** ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045)). ouch 0.8.0
+  (`ouch-org/ouch#962`) changed its default: an archive now unpacks into `./<basename>/` instead
+  of the CWD, with a new `--here` restoring the old shape. `zsh/30-functions.zsh` still called
+  `ouch decompress` bare, and the fleet is split _today_ — openSUSE Leap ships 0.5.1, Alpine's
+  index 0.6.1, GURU 0.8.2, Arch 0.8.3 — so the same `extract foo.tar.gz` scattered into `$PWD`
+  on one supported box and nested into `./foo/` on another, with no error on either. Everything
+  around that call assumed the CWD: the tarbomb guard `mkdir`s its own containment directory and
+  cd's into it (ouch then nested a second one inside), the clobber guard tests CWD-relative names
+  (so it could veto a collision that could not happen while missing one that could), and the
+  hand-rolled `tar`/`unzip` fallback for a box with no ouch never moved at all.
+
+  `extract` now **probes** `ouch decompress --help` for `--here` and passes it where it exists.
+  That is `PORTING-MATRIX.md`'s `sd` rule (footnote ²²) — sniff a version only where the version
+  is honest, otherwise ask the CLI what it can do — and it is fail-safe in a way a version
+  compare is not: a build without `--here` is a build that already extracts into the CWD, so the
+  flag comes out absent exactly where passing it would have been wrong. One fork, paid only by an
+  interactive `extract`, never on the startup path.
+
+  **A second, older divergence came out of measuring the first.** ouch writes a single
+  decompressed `.gz`/`.bz2` into the CWD on _every_ version, while `gunzip`/`bunzip2` write next
+  to the archive — which is the target the clobber guard checks (`${abs:r}`). On an ouch box
+  `extract /sub/f.gz` therefore overwrote `./f`, a path the guard never looked at: measured here,
+  a file in `$PWD` was destroyed with no warning and nothing landed beside the archive. ouch now
+  runs from the archive's own directory for those two formats, so the guard and the unpack agree.
+
+  Four behavioural cases cover the ouch arm in `scripts/test/65-functions.sh`, on a new
+  `check_ouch` helper. Nothing in the suite had ever executed that branch — `check`/`check_dep`
+  run `zsh -fc`, where `HAVE_OUCH` is unset — which is how a change of default reached the fleet
+  without a red test. Three of the four go red against the previous code.
+
 - **`NON-MUTABLE-HOST-PROPOSAL.md` is SHIPPED, and the milestone closes without a major**
   (#1053, the §4.6 rollout tracker). Its header still read _PROPOSED — a minor, not a
   major_, describing §4 as the thing still to do, after every step of §4.6 had landed and
