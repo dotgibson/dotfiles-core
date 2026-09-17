@@ -609,7 +609,7 @@ _core_status_json() {
 #   core update [-y|-n]             → up
 #   core update check               → update-check
 #   core whatsnew [--full] [--all]  → core-whatsnew
-#   core status [--json]            → core-status
+#   core status [--json] [--deep]   → core-status
 #   core maint <verb>               → maint-install|run|log|status|uninstall  (bare `core maint` lists them)
 #   core sync                       → gsync
 # The subcommand lists are the single source the completion (_core), the

@@ -12,14 +12,16 @@
 # shellcheck disable=SC2016
 
 # ── porting-matrix generation (scripts/gen-porting-matrix.sh) ────────────────
-# PORTING-MATRIX.md's two data tables are rendered from the sibling OS repos and
-# audit-core.sh §9h gates the result — as an ENVIRONMENT skip when the siblings are not
-# checked out, which is what CI's lone checkout looks like, so nothing in the real gate
-# ever exercises a red. Everything worth pinning therefore lives here: the drift
-# direction (1), the cannot-answer direction (2), and the uncovered direction (3), told
-# apart on purpose because the audit maps each to a different verdict.
+# PORTING-MATRIX.md's THREE generated blocks — two data tables rendered from the sibling
+# OS repos, plus `fleet-versions` from this repo's own TSV — are gated by audit-core.sh
+# §9h. The fleet-fed half is an ENVIRONMENT skip when the siblings are not checked out,
+# which is what CI's lone checkout looks like, so nothing in the real gate ever exercises
+# a red there. Everything worth pinning therefore lives here: the drift direction (1), the
+# cannot-answer direction (2), and the uncovered direction (3), told apart on purpose
+# because the audit maps each to a different verdict — plus the --local seam (#1046),
+# which is the in-repo block's gate and the one direction a lone clone CAN red.
 #
-# The fixture is a stub Core tree (the two marker pairs, hand-authored lines either
+# The fixture is a stub Core tree (one marker pair per BLOCK_IDS id, hand-authored lines either
 # side) and a fake FLEET: seven sibling directories, each with a .git so it resolves
 # like a checkout, minimal os/*.capabilities, and install/packages.txt files
 # SYNTHESISED FROM THE SCRIPT'S OWN PKG_ROWS — the first candidate of every derived cell,
@@ -180,6 +182,11 @@ EOF
   # Run from $SANDBOX, not from $GPR or the repo: proves --root/--fleet, not the cwd, pick the trees.
   _gp_run() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$GPF" "$@" >/dev/null 2>&1; echo $?); }
   _gp_out() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$GPF" "$@" 2>&1); }
+  # A LONE CLONE: the fixture Core tree with NO fleet beside it — every CI leg, and every
+  # worktree run, where $HERE/.. is .claude/worktrees/. $GPR/scripts/fleet-package-versions.tsv
+  # is still right there, which is the whole point: one block's input never left the repo.
+  _gp_run_lone() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" "$@" >/dev/null 2>&1; echo $?); }
+  _gp_out_lone() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-porting-matrix.sh" --root "$GPR" --fleet "$SANDBOX/nowhere" "$@" 2>&1); }
   _gp_row() { grep -qF -- "$1" "$GPR/PORTING-MATRIX.md"; }
   # _gp_cells <cell> [cell ...] — a row match that is BLIND TO COLUMN PADDING. The tables
   # are emitted through _table in prettier's aligned form, so every cell is padded to its
@@ -249,7 +256,6 @@ EOF
   else
     fail "gen-porting-matrix: fleet-versions rows have $(_gp_widths fleet-versions) distinct widths — the block is not aligned, so prettierd will re-pad it and --check will call that drift (#836)"
   fi
-  unset -f _gp_widths
 
   # The RENDERED BYTES, one row per rule.
   if _gp_row '`neovim` ≥ 0.12.0' && _gp_row '`fx-cat/neovim` ≥ 0.12.0'; then
@@ -452,6 +458,109 @@ EOF
   else
     fail "gen-porting-matrix: a broken marker on a lone checkout was filed as uncovered (3) instead of structural (2)"
   fi
+
+  # ── --local: THE HALF OF THE DOCUMENT A LONE CLONE CAN STILL GATE (#1046) ───
+  # The fleet-versions block's only input is scripts/fleet-package-versions.tsv, in this
+  # repo — but the whole of --check used to sit behind the fleet resolve, so on every CI
+  # leg and in every worktree that block went uncompared while §9h filed an environment
+  # skip over an input it was holding. These cases pin the seam that closed it.
+
+  # THE REGISTRY FIRST: read the same way line 51 reads BLOCK_IDS, so both are one grammar.
+  # An empty LOCAL_BLOCKS, or one naming an unregistered id, is a gate that cannot fail.
+  _gp_local_ids="$(awk -F'"' '/^LOCAL_BLOCKS=/ { print $2 }' "$HERE/scripts/gen-porting-matrix.sh")"
+  _gp_reg_ok=1
+  [[ -n "$_gp_local_ids" ]] || _gp_reg_ok=0
+  for _id in $_gp_local_ids; do
+    [[ " $_gp_ids " == *" $_id "* ]] || _gp_reg_ok=0
+  done
+  if ((_gp_reg_ok == 1)); then
+    pass "gen-porting-matrix: LOCAL_BLOCKS is a non-empty subset of BLOCK_IDS ($_gp_local_ids)"
+  else
+    fail "gen-porting-matrix: LOCAL_BLOCKS is empty or names an unregistered block ('$_gp_local_ids' vs '$_gp_ids') — --local would gate nothing and report success"
+  fi
+
+  # Clean on a lone clone: 0, not the 3 the fleet-fed half gets.
+  _gp_fixture && _gp_run >/dev/null
+  if [[ "$(_gp_run_lone --check --local)" == 0 ]]; then
+    pass "gen-porting-matrix: --check --local is 0 on a lone clone — the fleet-versions input never left this repo"
+  else
+    fail "gen-porting-matrix: --check --local could not answer without a fleet, though its only input is in-repo"
+  fi
+
+  # THE DEFECT ITSELF. Flip the DERIVED status word so the row contradicts its own version
+  # — the exact shape footnote 34 was corrected for twice, and what generation exists to
+  # prevent. One tree, two questions, two different answers.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/\*\*below\*\*/at or above/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  _gp_loc_out="$(_gp_out_lone --check --local)"
+  if [[ "$(_gp_run_lone --check --local)" == 1 ]] && grep -q 'PORTING-MATRIX.md' <<<"$_gp_loc_out"; then
+    pass "gen-porting-matrix: a hand-edited fleet-versions row is drift (1) on a LONE clone — the gate §9h was blind to"
+  else
+    fail "gen-porting-matrix: a hand-edited fleet-versions row went unreported on a lone clone — default CI cannot see it (#1046)"
+  fi
+  if [[ "$(_gp_run_lone --check)" == 3 ]]; then
+    pass "gen-porting-matrix: plain --check on that same tree is still 3 — the fleet-fed tables are genuinely uncovered, which is what §9h records as the scoped skip"
+  else
+    fail "gen-porting-matrix: --check stopped reporting an absent fleet as uncovered"
+  fi
+
+  # --local is NOT a whole-file check in disguise: it must leave the fleet-derived regions
+  # exactly as found, or §9h's lone-clone arm would red on tables it cannot render.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/`eza`/`exa`/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  if [[ "$(_gp_run_lone --check --local)" == 0 && "$(_gp_run --check)" == 1 ]]; then
+    pass "gen-porting-matrix: --local passes the fleet-derived regions through — a packages edit is drift to --check and invisible to --check --local"
+  else
+    fail "gen-porting-matrix: --check --local judged a block it does not render, or --check stopped seeing a packages edit"
+  fi
+
+  # THE REPAIR RUNS WHERE THE FAILURE IS DETECTED. A gate that reds on a box whose only fix
+  # needs a fleet that box does not have is the shape this seam exists to avoid — so --local
+  # is a write mode too, and what it writes must be what the full render would write.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak 's/\*\*below\*\*/at or above/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  _gp_pkg_before="$(sed -n '/core:porting-matrix:gen packages/,/core:porting-matrix:end packages/p' "$GPR/PORTING-MATRIX.md")"
+  if [[ "$(_gp_run_lone --local)" == 0 ]] &&
+    [[ "$(sed -n '/core:porting-matrix:gen packages/,/core:porting-matrix:end packages/p' "$GPR/PORTING-MATRIX.md")" == "$_gp_pkg_before" ]] &&
+    [[ "$(_gp_widths fleet-versions)" == 1 ]] &&
+    [[ "$(_gp_run --check)" == 0 ]]; then
+    pass "gen-porting-matrix: --local repairs the in-repo block with no fleet, leaves the fleet-derived regions byte-identical, stays column-aligned, and the full --check then agrees"
+  else
+    fail "gen-porting-matrix: --local's write did not round-trip — it touched a fleet region, broke the alignment, or disagrees with the full render"
+  fi
+
+  # STRUCTURE STILL BEATS COVERAGE through the new path: a broken pair in a region --local
+  # does not render is still the structural 2, not a clean partial answer.
+  _gp_fixture && _gp_run >/dev/null
+  sed -i.bak '/^<!-- core:porting-matrix:end packages -->$/d' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  _gp_lloc_out="$(_gp_out_lone --check --local)"
+  if [[ "$(_gp_run_lone --check --local)" == 2 ]] &&
+    grep -q 'packages has 1 gen marker(s) but 0 end marker(s)' <<<"$_gp_lloc_out"; then
+    pass "gen-porting-matrix: --check --local still validates EVERY marker pair — a broken pair in a region it does not render is the structural 2"
+  else
+    fail "gen-porting-matrix: --check --local reported a clean or uncovered answer over a broken marker"
+  fi
+
+  # 3 IS UNREACHABLE UNDER --local, whatever the fleet is doing. This is the property §9h
+  # classifies on, so assert it rather than trust it.
+  _gp_fixture && _gp_run >/dev/null
+  rm -rf "$GPF"
+  if [[ "$(_gp_run --check --local)" != 3 && "$(_gp_run_lone --check --local)" != 3 ]]; then
+    pass "gen-porting-matrix: --local can never answer 'uncovered' — every block it selects has its input in this repo"
+  else
+    fail "gen-porting-matrix: --local returned 3, so §9h cannot treat its exit code as fleet-independent"
+  fi
+
+  # --list needs the fleet (it prints derived cells as file:line), so scoping it is a usage
+  # error rather than a listing that quietly covers a third of the document.
+  _gp_fixture && _gp_run >/dev/null
+  if [[ "$(_gp_run --list --local)" == 2 ]]; then
+    pass "gen-porting-matrix: --list --local is a usage error, not a partial listing"
+  else
+    fail "gen-porting-matrix: --list --local was accepted"
+  fi
+  unset _gp_local_ids _gp_reg_ok _gp_loc_out _gp_pkg_before _gp_lloc_out
+  unset -f _gp_widths
 
   # An edit OUTSIDE the markers is not drift and survives regeneration.
   _gp_fixture && _gp_run >/dev/null

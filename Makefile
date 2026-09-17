@@ -135,7 +135,7 @@ gen-have-api: ## Regenerate zsh/have-api.txt from PORTABILITY.md §5's declared 
 check-have-api: ## Report whether zsh/have-api.txt has drifted from PORTABILITY.md §5 — also run inside `make audit`
 	@./scripts/gen-have-api.sh --check
 
-gen-porting-matrix: ## Regenerate PORTING-MATRIX.md's two tables from the sibling OS repos (edit the repo, not the table)
+gen-porting-matrix: ## Regenerate PORTING-MATRIX.md's three generated blocks from the OS repos + the fleet-version TSV (edit the source, not the table)
 	@./scripts/gen-porting-matrix.sh
 
 check-porting-matrix: ## Report whether PORTING-MATRIX.md's tables have drifted from the OS repos — also run inside `make audit`
