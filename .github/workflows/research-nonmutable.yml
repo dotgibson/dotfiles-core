@@ -53,8 +53,19 @@ jobs:
           json='['
           for t in $want; do
             [ "$t" = homemanager ] && continue   # the R3 leg is its own job, not a container probe
+            # THE THREE IMAGES BELOW ARE DIGEST-PINNED, and pinning a ROLLING image is a
+            # deliberate trade, not a formality: tumbleweed and nixos/nix move continuously, so
+            # a digest freezes what this harness measures. That is the right default for a
+            # research run (a measurement nobody can reproduce is not a measurement), but it
+            # means THESE DIGESTS MUST BE REFRESHED WHENEVER THE RESEARCH IS RE-RUN — otherwise
+            # a 2027 run reports a 2026-09 image as if it were current. Resolve with:
+            #   skopeo inspect --format '{{.Digest}}' docker://<ref>
+            # Two of them were bare `:latest` until #1099. They are invisible to check-modern
+            # rule 4, which reads command lines and `FROM`, not shell assignments — the literal
+            # never reaches a `docker run`, only "$IMAGE" does. #1099's other half teaches the
+            # rule that surface; until it does, this comment is the only thing holding them.
             case "$t" in
-              bootc)   img='quay.io/fedora/fedora-bootc:44';               prep='dnf install -y --setopt=install_weak_deps=False bash zsh git findutils util-linux shadow-utils || true' ;;
+              bootc)   img='quay.io/fedora/fedora-bootc:44@sha256:38ef702a1366d4ae6645dbe77192fe50f91dce487e6c6fffc046f9ad7e9ffa74'; prep='dnf install -y --setopt=install_weak_deps=False bash zsh git findutils util-linux shadow-utils || true' ;;
               # There is NO MicroOS container image (registry.opensuse.org has opensuse/tumbleweed,
               # opensuse/leap and the BCI set; nothing under opensuse/microos — measured 2026-09-14,
               # HTTP 404 on every plausible name). MicroOS is a booted-host product: its whole
@@ -62,8 +73,8 @@ jobs:
               # this leg runs TUMBLEWEED with transactional-update installed — a stand-in that
               # measures the package's presence and its refusal to transact without snapper, and
               # nothing more. The report says so. The real MicroOS/Aeon leg is the qcow2 VM.
-              microos) img='registry.opensuse.org/opensuse/tumbleweed:latest';  prep='zypper --non-interactive install bash zsh git findutils util-linux shadow transactional-update snapper || true' ;;
-              nixos)   img='nixos/nix:latest';                              prep='nix-env -iA nixpkgs.bash nixpkgs.zsh nixpkgs.git nixpkgs.findutils nixpkgs.shadow nixpkgs.coreutils nixpkgs.gnugrep nixpkgs.gawk || true' ;;
+              microos) img='registry.opensuse.org/opensuse/tumbleweed:latest@sha256:a0d213729eba726924d53b2903428e4d71229ae1488456fe8feea6ceeb923c6e'; prep='zypper --non-interactive install bash zsh git findutils util-linux shadow transactional-update snapper || true' ;;
+              nixos)   img='nixos/nix:latest@sha256:7a007c766426c1877758ddc5cb87a965ac131fc78c582ce0083d922d51ae945c'; prep='nix-env -iA nixpkgs.bash nixpkgs.zsh nixpkgs.git nixpkgs.findutils nixpkgs.shadow nixpkgs.coreutils nixpkgs.gnugrep nixpkgs.gawk || true' ;;
               *) echo "unknown target: $t" >&2; exit 2 ;;
             esac
             json="$json{\"target\":\"$t\",\"image\":\"$img\",\"prep\":\"$prep\"},"
@@ -93,7 +104,8 @@ jobs:
           # its report into this bind mount, which the runner (uid 1001) owns — run 34861740026
           # finished the probe and then lost the report to "Permission denied" on that cp.
           mkdir -p research-out && chmod 1777 research-out
-          # fedora:44, digest-pinned as the modern baseline requires (the matrix legs pin by variable).
+          # fedora:44, digest-pinned as the modern baseline requires (the matrix legs are pinned
+          # too, in the plan job's `case` above, and reach here through `matrix.image`).
           # F44 because that is a lane dotfiles-Fedora's packages.yml treats as BLOCKING; the :42 this
           # used to pin went EOL on 2026-05-13 and has been frozen since (#1010 read its package
           # versions as if they were the distro's — see PORTING-MATRIX.md footnote 33).
@@ -144,7 +156,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Pull ${{ matrix.image }}
+      - name: Pull the ${{ matrix.target }} image
         env:
           IMAGE: ${{ matrix.image }}
         run: |

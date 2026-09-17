@@ -218,9 +218,13 @@ essentials:
    # Gentoo
    # --no-sync
    # skips the slow emerge --sync on re-runs
+   # --no-extras
+   # skips the opt-in source builds
 
    # Arch
    # Stage-0 prep in SETUP.md should be run first
+   # --no-flatpak
+   # skips Flathub/GUI apps (recommended on WSL)
 
    # Alpine
    # run as root or with doas
@@ -259,11 +263,13 @@ maintenance commands (`up`, `update-check`, `maint-*`, `op*`). The
 `zsh/20-aliases.zsh` and the full OMZ-compatible git suite in `zsh/25-git.zsh` (`gst`,
 `gcb`, `glog`, `gpf`, …), plus the function one-liners. Its tables are generated from
 those files (`make gen-aliases`) and `make audit` fails when they drift. The same holds for
-`PORTING-MATRIX.md`'s two data tables, rendered from the sibling OS repos' `os/*.capabilities`
-and `install/packages.txt` by `make gen-porting-matrix` — with one qualification: that gate
-needs the siblings checked out beside this repo, so on a lone clone (CI included) it records an
-environment skip rather than a verdict, and `scripts/audit-core.sh --require-siblings` is what makes the
-absence red. The updater and
+`PORTING-MATRIX.md`'s three generated blocks: two data tables rendered from the sibling OS
+repos' `os/*.capabilities` and `install/packages.txt`, plus a fleet-version table rendered from
+this repo's own `scripts/fleet-package-versions.tsv`, all by `make gen-porting-matrix` — with one
+qualification: only the two fleet-fed tables need the siblings checked out beside this repo, so on
+a lone clone (CI included) those record an environment skip rather than a verdict, and
+`scripts/audit-core.sh --require-siblings` is what makes the absence red. The in-repo block is
+gated everywhere. The updater and
 maintenance verbs (`up`, `update-check`, `maint-*`) are also reachable through the front
 door as `core update [check]` and `core maint <verb>`.
 
