@@ -93,8 +93,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p bib && cd bib
+          # EVERY EXTERNAL IMAGE BELOW IS DIGEST-PINNED, including the two podman drives and
+          # this heredoc's FROM. They were not, and check-modern.sh rule 4 could not see them:
+          # it was keyed on the name `docker`, so a podman command, a Containerfile FROM and an
+          # image parked behind a `\` continuation all walked past the pinning contract. The
+          # gate now covers those surfaces; these are the refs it was written for.
+          # bootc-image-builder has no semver tag upstream — only `latest` and raw git SHAs —
+          # so `latest@sha256:` IS its pinned form, and the digest is what makes it immutable.
           cat >Containerfile <<'EOF'
-          FROM quay.io/fedora/fedora-bootc:44
+          FROM quay.io/fedora/fedora-bootc:44@sha256:38ef702a1366d4ae6645dbe77192fe50f91dce487e6c6fffc046f9ad7e9ffa74
           RUN dnf -y install --setopt=install_weak_deps=False git zsh findutils util-linux shadow-utils && dnf clean all
           RUN echo '%wheel ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/wheel-nopasswd && chmod 0440 /etc/sudoers.d/wheel-nopasswd
           EOF
@@ -111,14 +118,14 @@ jobs:
           # `bootc switch`ed to a registry-backed origin and `bootc upgrade --check` /
           # `rpm-ostree upgrade --check` are asked a real question, twice: once with nothing
           # newer, once after a v2 image is pushed under the same tag.
-          sudo podman run -d --name registry -p 5000:5000 docker.io/library/registry:2 >/dev/null
+          sudo podman run -d --name registry -p 5000:5000 docker.io/library/registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373 >/dev/null
           sleep 3
           sudo podman push -q --tls-verify=false localhost/research-bootc:latest localhost:5000/research-bootc:latest
           mkdir -p output
-          sudo podman run --rm --privileged --pull=newer --security-opt label=type:unconfined_t \
+          sudo podman run --rm --privileged --security-opt label=type:unconfined_t \
             -v "$PWD/config.toml:/config.toml:ro" -v "$PWD/output:/output" \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
-            quay.io/centos-bootc/bootc-image-builder:latest --type qcow2 --rootfs xfs --local localhost/research-bootc:latest
+            quay.io/centos-bootc/bootc-image-builder:latest@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b --type qcow2 --rootfs xfs --local localhost/research-bootc:latest
           # --rootfs: the Fedora bootc base carries no default root filesystem metadata
           # ("missing required info: DefaultRootFs", first run) — say xfs, Fedora's default.
           sudo chown -R "$(id -u):$(id -g)" output
