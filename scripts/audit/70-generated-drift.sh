@@ -1,5 +1,5 @@
 # scripts/audit/70-generated-drift.sh
-# six generated artifacts still match their source: theme blocks, the changelog digest, cross-shell parity, aliases.md, PORTING-MATRIX.md, the desktop PARITY pair
+# seven generated artifacts still match their source: theme blocks, the changelog digest, cross-shell parity, aliases.md, PORTING-MATRIX.md, the desktop PARITY pair, the vendored nvim tree
 #
 # A SOURCED FRAGMENT of scripts/audit-core.sh — not a standalone script. It runs in the
 # dispatcher's shell and uses its state: the PASS/SKIP/FAIL counters, $HERE (already cd'd
@@ -307,3 +307,60 @@ else
   fail_detail "$_dp_out"
 fi
 unset _dp_out _dp_rc
+
+# ── 9q. the vendored nvim tree matches its pin (nvim/ ↔ nvim.lock) ───────────
+# Since #1123 Core does not AUTHOR the editor: nvim/ is a vendored copy of
+# dotgibson/dotfiles-nvim, pinned by nvim.lock. That makes it generated payload in exactly
+# CHANGELOG.recent.md's sense — present, tracked, and not hand-edited — so it needs §9e's
+# kind of proof, and for §9e's reason: §1 proves only that the PATH exists (core.manifest
+# lists `nvim/` as a directory, so any tree at all satisfies it), §1e never walks it, and
+# §4/§4b check that the lua is CLEAN and REACHABLE, not that it is the lua upstream shipped.
+# A hand-edit here passes every one of them.
+#
+# WHY A RECORDED HASH AND NOT A DERIVED ONE. core-integrity.sh answers the same question
+# for an OS repo's core/ by resolving the pinned commit to a tree — which it can, because
+# the consumer fetched that commit and holds the objects. Core holds NO dotfiles-nvim
+# objects, so deriving the expectation here would mean a network fetch, and a gate that
+# self-skips offline is green-because-absent in precisely the clone where a corrupt sync
+# landed. nvim.lock records nvim_tree instead, so this is a two-file comparison: the same
+# tree-hash integrity model, not a second one (NVIM-SPLIT-PROPOSAL.md §5), made ALWAYS-ON.
+#
+# READ FROM THE COMMIT, NOT THE WORKTREE — core-vendor.sh's rule. `HEAD:nvim` is what a
+# sync produced and what the fleet will vendor; an untracked scratch file under nvim/ is
+# not part of it and must not red this gate (§1's reverse-drift scan is what catches those).
+#
+# NOT SCOPE-GUARDED, for §9d's reason: it reads two files, and a narrowed run must never be
+# able to skip a contract check. A missing or malformed nvim.lock is a FAIL, not a skip —
+# the file is tracked, so its absence is real drift, and the whole point of the lock is
+# that the tree cannot be trusted without it.
+hdr "vendored nvim tree (nvim/ ↔ nvim.lock)"
+_nv_lock="nvim.lock"
+if [[ ! -r "$_nv_lock" ]]; then
+  fail "$_nv_lock missing or unreadable — nvim/ is a vendored copy of dotgibson/dotfiles-nvim and nothing else records which revision it is. Run: make sync-nvim"
+else
+  _nv_want="$(sed -n 's/^[[:space:]]*nvim_tree[[:space:]]*=[[:space:]]*//p' "$_nv_lock" 2>/dev/null | head -n1)"
+  _nv_have="$(git rev-parse --verify --quiet 'HEAD:nvim' 2>/dev/null || echo '')"
+  if [[ -z "$_nv_want" ]]; then
+    fail "$_nv_lock has no nvim_tree — the pin cannot be verified offline, which is the one thing it exists to do. Run: make sync-nvim"
+  elif [[ ! "$_nv_want" =~ ^[0-9a-f]{40}$ ]]; then
+    fail "$_nv_lock has an invalid nvim_tree ($_nv_want) — expected a 40-char hex tree object"
+  elif [[ -z "$_nv_have" ]]; then
+    # No HEAD:nvim at all. In a normal checkout that is a deleted tree; in a fresh repo with
+    # no commits it is simply unanswerable. Distinguish them, because the second is not drift.
+    if git rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
+      fail "nvim/ is not present at HEAD but $_nv_lock pins tree ${_nv_want:0:12} — the vendored editor is gone. Run: make sync-nvim"
+    else
+      skip "vendored nvim tree (no commits yet — nothing to compare)"
+    fi
+  elif [[ "$_nv_have" == "$_nv_want" ]]; then
+    pass "nvim/ matches nvim.lock (tree ${_nv_want:0:12}, $(sed -n 's/^[[:space:]]*nvim_tag[[:space:]]*=[[:space:]]*//p' "$_nv_lock" | head -n1))"
+  else
+    # NAME THE FIX IN THE FAIL LINE (§9e's rule): the operator has the answer here, not
+    # after a round trip. The two likely causes read very differently, so say both.
+    fail "nvim/ does NOT match $_nv_lock — the vendored editor was hand-edited, or the lock was not committed with the tree. Edit upstream in dotgibson/dotfiles-nvim, then run: make sync-nvim"
+    fail_detail "  nvim.lock nvim_tree: $_nv_want
+  HEAD:nvim          : $_nv_have"
+  fi
+  unset _nv_want _nv_have
+fi
+unset _nv_lock

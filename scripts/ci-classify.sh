@@ -107,7 +107,11 @@ while IFS= read -r f; do
     shell=true
     nvim=true
     ;;
-  nvim/*) nvim=true ;;
+  # nvim.lock rides with nvim/: it pins the vendored editor, and audit §9q compares the two.
+  # A change to either alone is precisely the drift that gate exists to catch, so both must
+  # reach it. Without this line the lock hits the fail-closed arm below and forces a FULL
+  # run — correct, but it reads as a bug rather than a one-line bucket.
+  nvim/* | nvim.lock) nvim=true ;;
   # The guard's own module and the atuin config tree — the only non-infra paths that can
   # change what the premise detector's self-test observes. Matched BEFORE the general
   # `zsh/*` arm below, which would otherwise swallow 00-tools.zsh as plain shell.

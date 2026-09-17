@@ -60,6 +60,51 @@
   vendors _from_, not one Core fans out _to_, so it does not belong in
   `scripts/os-repos.txt`.
 
+- **Core vendors the editor instead of authoring it: `nvim/` is now a pinned copy of
+  `dotfiles-nvim`, behind `nvim.lock`**
+  ([#1123](https://github.com/dotgibson/dotfiles-core/issues/1123)).
+  Step 2 of `NVIM-SPLIT-PROPOSAL.md` §3.5, and the one that actually moves the boundary.
+  `nvim.lock` records which `dotgibson/dotfiles-nvim` revision this Core carries;
+  `scripts/sync-nvim.sh` refreshes the pair. The direction is the whole point: `core.lock`
+  is written **by** this repo **into** each OS repo, this one is written **into** this repo
+  by a source it does not control — `dotfiles-Offense`'s `companion.lock` is the same shape
+  for the same reason, which is why it carries `nvim_repo` and `nvim_branch` that
+  `core.lock` has no need of.
+
+  **The first sync moved nothing, and that was the requirement.** Core's `nvim/` tree object
+  and `dotfiles-nvim`'s were already the same `60fe8d8`, so `git diff --stat -- nvim/`
+  across the first `sync-nvim.sh` is empty — which is what keeps the fleet's next `core.lock`
+  bump free of editor content, so the extraction reaches every host invisibly. Nothing an OS
+  repo consumes changed: `core/nvim` keeps its path, `core.manifest` keeps its single
+  directory entry, `blib_link_core` is untouched.
+
+  The transport is `git read-tree --prefix=nvim/`, not `git subtree` and not a copy loop.
+  `dotfiles-nvim`'s history was rewritten by `filter-repo` at extraction, so it shares no
+  commit with this repo and there is no subtree to pull; staging the upstream tree _object_
+  is also the only transport that cannot perturb bytes or modes, without which the
+  byte-identical assertion would not mean anything.
+
+  **The drift gate is §9q**, and it needs no network, no tool and no object store: the lock
+  records `nvim_tree` — the tree hash itself — so the check is `git rev-parse HEAD:nvim`
+  against one line of a file. `core-integrity.sh` answers the same question for an OS repo's
+  `core/` by resolving the pinned commit, which it can because that repo fetched it; Core
+  holds no `dotfiles-nvim` objects, and a gate that self-skips offline would be
+  green-because-absent in exactly the clone where a corrupt sync landed. So it is the same
+  tree-hash integrity model §5 asked for rather than a second one — made always-on. luacheck
+  **stays** over the vendored copy (§7(2)): it is the cheapest leg in the gate, and a corrupt
+  sync is a failure a vendored tree has and a source tree cannot.
+
+  **The freshness job traded a leg for a nudge.** Rolling the editor's plugin pins moved to
+  `dotfiles-nvim`, which has a real Neovim to test a bump against; `scripts/update-nvim-plugins.sh`
+  and its `nvim-plugins` job are gone from here. In their place `scripts/check-nvim-freshness.sh`
+  reports how many editor _releases_ `nvim.lock` is behind — releases, because that is the unit
+  §7(3) decided in: Core adopts the editor **with a Core release**, never on every nvim release,
+  and without something measuring the lag _"at Core's pace"_ decays into _"never"_. It opens no
+  PR by design. Two things fall out: the freshness dashboard no longer installs a Neovim it
+  had stopped needing, and `freshness-triage` may now run the check itself — the old script was
+  denied a token-bearing job because `:Lazy! sync` executes upstream build hooks, and the new
+  one only `git ls-remote`s.
+
 ### Fixed
 
 - **`V8-PROPOSAL.md` §7 said where its cost list went, instead of quietly disagreeing with it**

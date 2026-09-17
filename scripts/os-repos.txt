@@ -47,6 +47,19 @@
 #   dotfiles-Windows — the native Windows host layer is replicated from scratch
 #     (PowerShell; not a one-to-one port of the Unix Core), so it carries no
 #     vendored core/ subtree and sync-core.sh must never fan out into it.
+#   dotfiles-nvim — absent for the OPPOSITE reason, and it is worth stating plainly
+#     because the name looks like it belongs here. Every entry above is a repo Core
+#     writes INTO. dotfiles-nvim is the one Core READS FROM: it owns the editor, and
+#     Core's nvim/ is a vendored copy of it pinned by nvim.lock (#1123). Adding it
+#     would point sync-core.sh, fleet-drift.sh and core-integrity.sh — all three of
+#     which read this file through the one parser — at a repo that has no core/ to
+#     verify and must never be pushed to. Its provenance lives in nvim.lock, its
+#     staleness is reported by scripts/check-nvim-freshness.sh, and it is refreshed
+#     by scripts/sync-nvim.sh. Nothing about it belongs in this list.
+#
+#     One consequence, since this file's header sends you to the App installation for
+#     anything added here: dotfiles-nvim needs NO entry there either. Core only ever
+#     clones and reads it over a public URL — it mints no token against it.
 # ──────────────────────────────────────────────────────────────────────────────
 dotfiles-MacBook
 dotfiles-Alpine

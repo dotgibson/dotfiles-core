@@ -1,7 +1,7 @@
 ---
 description: Review open dependency-bump PRs against upstream changelogs
 argument-hint: "[PR number, optional — defaults to all open bot PRs]"
-allowed-tools: Task, Read, Grep, Glob, WebSearch, WebFetch, Bash(./scripts/update-plugins.sh --check), Bash(git log:*), Bash(git diff:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Bash(gh issue list:*), Bash(gh run list:*)
+allowed-tools: Task, Read, Grep, Glob, WebSearch, WebFetch, Bash(./scripts/update-plugins.sh --check), Bash(./scripts/check-nvim-freshness.sh), Bash(git log:*), Bash(git diff:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Bash(gh issue list:*), Bash(gh run list:*)
 ---
 
 # /freshness-triage
@@ -42,11 +42,23 @@ For the zsh pins, `--check` is the source of truth for "is it behind" and is saf
 ./scripts/update-plugins.sh --check
 ```
 
-For the **nvim** pins, do NOT run `update-nvim-plugins.sh --check` here — it runs
-`nvim --headless +Lazy! sync`, which executes upstream plugin _build hooks_ inside this
-token-bearing job (a supply-chain path to `CLAUDE_CODE_OAUTH_TOKEN`). Read the staleness
-from the open `automation/freshness-nvim-plugins` PR the bot already opened — `gh pr diff`
-/ `gh pr view` show exactly which pins moved.
+For the **editor**, the pin to triage is no longer a plugin lockfile. Since #1123 Core
+vendors `dotgibson/dotfiles-nvim` and `nvim.lock` names the revision, so the question is how
+many editor releases behind that pin is:
+
+```bash
+./scripts/check-nvim-freshness.sh
+```
+
+This is safe to run here, and the reason is worth knowing because its predecessor was not:
+`update-nvim-plugins.sh --check` drove `nvim --headless +Lazy! sync`, which executes upstream
+plugin _build hooks_ inside this token-bearing job — a supply-chain path to
+`CLAUDE_CODE_OAUTH_TOKEN`. That script now lives in `dotfiles-nvim`, which has a Neovim to run
+it against and no token to lose. What is left here only `git ls-remote`s tags.
+
+Exit 2 means behind; the remedy is **not** a PR from this routine. Core adopts the editor with
+a Core release (`NVIM-SPLIT-PROPOSAL.md` §7(3)), so report the lag and let the release take it.
+The editor's own plugin-bump PRs are in `dotfiles-nvim` — triage them there.
 
 ## Is the bot even alive?
 

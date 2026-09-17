@@ -349,8 +349,8 @@ fi
 # a 404 body rendered as dotfiles-web's release tag, a 403 body as htpx's issue count).
 # Shellcheck cannot see any of that, so drive it hermetically: a programmable `gh` stub
 # reproducing gh's real error shape (body on stdout, `(HTTP NNN)` on stderr, non-zero rc),
-# in a throwaway repo root whose four sub-check scripts are stubs — the real
-# update-nvim-plugins.sh --check drives a full `:Lazy! sync` (minutes, network).
+# in a throwaway repo root whose four sub-check scripts are stubs — the real ones reach
+# the network (check-nvim-freshness.sh ls-remotes dotfiles-nvim; fleet-drift wants clones).
 hdr "dashboard live-signal error handling (scripts/freshness-dashboard.sh)"
 FDR="$SANDBOX/fdrepo"
 FDBIN="$SANDBOX/fdbin"
@@ -361,7 +361,7 @@ cp "$HERE/scripts/freshness-dashboard.sh" "$FDR/scripts/"
 # ../../lib/ux.sh — same two libs the fleet-drift fixture below carries, for the same reason.
 cp "$HERE/scripts/lib/common.sh" "$FDR/scripts/lib/"
 cp "$HERE/lib/ux.sh" "$FDR/lib/"
-for _fd_s in fleet-drift core-integrity update-plugins update-nvim-plugins; do
+for _fd_s in fleet-drift core-integrity update-plugins check-nvim-freshness; do
   printf '#!/bin/sh\nexit 0\n' >"$FDR/scripts/$_fd_s.sh"
   chmod +x "$FDR/scripts/$_fd_s.sh"
 done

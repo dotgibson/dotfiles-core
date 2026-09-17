@@ -49,8 +49,9 @@ name: atuin-guard-verify
 # ── THE SECURITY SPLIT, AND WHY IT IS SPLIT AT ALL ───────────────────────────────────
 # .github/workflows/claude-routines.yml states this repo's own rule: a job that fetches or
 # executes untrusted upstream content must NOT also hold a token, because that is a
-# supply-chain path to the secret. It is the same reason freshness-triage is denied
-# `update-nvim-plugins.sh --check`, which runs upstream plugin build hooks. This workflow
+# supply-chain path to the secret. It is the same reason freshness-triage was denied the old
+# `update-nvim-plugins.sh --check`, which ran upstream plugin build hooks (that script now
+# lives in dotgibson/dotfiles-nvim, where no token is in reach — #1123). This workflow
 # is the sharpest case of that rule, so it is obeyed by construction:
 #
 #   resolve   holds a token (contents: read) and VERIFIES the download — the published

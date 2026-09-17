@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-vocabulary fleet-release-triggers fleet-vendor-guidance fleet-drift fleet-app-scope core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-fleet-versions check-fleet-versions update-nvim-plugins update-tool-checksums check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity gen-hero-tape gen-hero-tape-fleet check-hero-tape check-hero-size check-hero-render changelog-recent release tag publish release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-gate bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry sync-nvim fleet-vocabulary fleet-release-triggers fleet-vendor-guidance fleet-drift fleet-app-scope core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-fleet-versions check-fleet-versions update-tool-checksums check-nvim check-pins check-modern gen-theme check-theme gen-aliases check-aliases gen-porting-matrix check-porting-matrix gen-desktop-parity check-desktop-parity gen-hero-tape gen-hero-tape-fleet check-hero-tape check-hero-size check-hero-render changelog-recent release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -58,6 +58,9 @@ sync: ## Vendor Core into every OS repo (THE maintain button) — writes to sibl
 sync-dry: ## Show what `sync` would do, touching nothing
 	@./scripts/sync-core.sh --dry-run
 
+sync-nvim: ## Re-vendor nvim/ from dotgibson/dotfiles-nvim and bump nvim.lock (the INBOUND sync)
+	@./scripts/sync-nvim.sh
+
 fleet-coverage: ## Which repo satisfies which reusable gate, and how (the coverage register)
 	@./scripts/fleet-coverage.sh
 
@@ -105,14 +108,14 @@ update-fleet-versions: ## Re-read the fleet package versions from upstream and r
 check-fleet-versions: ## Report whether any recorded fleet package version is behind upstream (no writes)
 	@./scripts/update-fleet-versions.sh --check
 
-update-nvim-plugins: ## Roll the pinned nvim plugin commits in nvim/lazy-lock.json forward (deliberate bump)
-	@./scripts/update-nvim-plugins.sh
-
 update-tool-checksums: ## Recompute the pinned CI tool SHA-256s in tool-versions.env after a version bump
 	@./scripts/update-tool-checksums.sh
 
+check-nvim: ## Report how many dotfiles-nvim releases nvim.lock is behind (no writes, no PR)
+	@./scripts/check-nvim-freshness.sh
+
 check-pins: ## Report whether the zsh-plugin, nvim and theme pins are behind upstream (the weekly freshness gate)
-	@./scripts/update-plugins.sh --check && ./scripts/update-nvim-plugins.sh --check && ./scripts/gen-theme.sh --refresh --check
+	@./scripts/update-plugins.sh --check && ./scripts/check-nvim-freshness.sh && ./scripts/gen-theme.sh --refresh --check
 
 check-modern: ## Check CI meets the modern floor (scripts/modern-baseline.yml) — also run inside `make audit`
 	@./scripts/check-modern.sh
