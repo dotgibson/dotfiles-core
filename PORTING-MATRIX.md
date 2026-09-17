@@ -660,17 +660,20 @@ binary), so a shell started _from_ a degraded shell inherits `ATUIN_DAEMON__ENAB
 stands down as "never opted in" — harmless, since it also writes directly, but it will not pick
 the daemon back up until you start a shell from a clean parent.
 
-**Under `autostart` the probe deliberately does not run** — and that is the Alpine and macOS
-rows above, so on two of the eight machines this safety net is not the thing keeping you out
-of trouble. It stands down because an absent socket is then the client's _cue to start one_,
-not a fault; disabling the daemon there would permanently defeat the only launcher those
-machines have. atuin's own health-checking is what covers them — and that is now **measured
-rather than assumed** (`dotgibson/dotfiles-core#402`). It is a second premise with its own
-mode, its own anchor line in `zsh/00-tools.zsh` and its own issue title:
+**Under `autostart` the probe runs but the degrade does not** — and that is the Alpine and
+macOS rows above. The probe used to be skipped there entirely, because an absent socket is the
+client's _cue to start one_ rather than a fault; what has never been available on those two
+rows is the degrade, since disabling the daemon would permanently defeat the only launcher
+they have. The paragraph above records what changed and why. atuin's own health-checking is
+what covers them, and that is **measured rather than assumed**
+(`dotgibson/dotfiles-core#402`). It is a second premise with its own mode, its own anchor line
+in `zsh/00-tools.zsh` and its own issue title:
 `scripts/research/verify-atuin-guard.sh --premise autostart` (or `make verify-atuin-guard-autostart`)
 spawns a real daemon, checks that one appears and that the entry lands from each unreachable
 shape, and proves the teardown before deleting anything. The `atuin-guard-verify` workflow
-(manual dispatch since #687) runs it as a separate job from the silent-discard one.
+(manual dispatch since #687) runs it as a separate job from the silent-discard one. **It
+reports `moved` today and will keep doing so** while `atuinsh/atuin#4114` is open: the verdict
+is computed from what upstream did, not from what Core does about it.
 
 Two things that measurement established on 18.19.0, both worth knowing before you touch these
 rows. The **stale-socket shape is the load-bearing one** — every `atuin history start` is a
@@ -683,12 +686,16 @@ lives in the **client**: `atuin daemon start` on its own refuses over a stale in
 still open and unreviewed, it makes the **daemon** unlink a stale socket on bind failure. The
 "healing lives in the client" finding is the measured basis of `--premise autostart` and of
 `CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST` in `zsh/00-tools.zsh`; if #3957 merges, the daemon
-heals itself and the premise the stand-down rests on no longer holds. **No action while it is
-unmerged** — and in particular do not edit that anchor, which is a claim the premise was
-re-measured, not a version bump. Re-run `make verify-atuin-guard-autostart` if it lands.
+heals itself and the `stale` arms stop measuring what they were built to measure. That is a
+narrower consequence than it once was: the premise no longer holds a stand-down up, because
+there is no longer a stand-down. **No action while it is unmerged** — and in particular do not
+edit that anchor, which is a claim the premise was re-measured, not a version bump. Re-run
+`make verify-atuin-guard-autostart` if it lands. The one that would change the **guard** is
+`atuinsh/atuin#4114`: health-checking the socket instead of the pidfile is what would leave
+the wedged-daemon warning with nothing to fire on.
 
 Still not covered, so the default `--premise discard` caveats are not the only ones: the
-dispatched job runs on glibc Linux, which is neither of the two machines this premise protects,
+dispatched job runs on glibc Linux, which is neither of the two machines this premise is load-bearing for,
 and a run that is green there is the weakest evidence in the whole arrangement for these rows.
 Running `make verify-atuin-guard-autostart` on the Alpine or macOS box itself is what actually
 speaks for it.

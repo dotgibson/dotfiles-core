@@ -14,8 +14,10 @@ question can be **re-asked on purpose**, not so it is re-asked on a clock.
   is unlinked out from under it, and the arm asks whether autostart replaces a process that is
   **alive and not serving**. That is upstream `atuinsh/atuin#4114` — autostart judges liveness
   by the pidfile, so the one process that cannot serve is also the one blocking its own
-  replacement — and it is the single shape where the guard's stand-down is wrong rather than
-  merely unhelpful (#1091).
+  replacement — and it is the single shape that made the guard's old `autostart` stand-down
+  wrong rather than merely unhelpful (#1091). Measuring it is what retired that stand-down:
+  since #1102 the guard probes under `autostart` and warns without disabling anything, so a
+  `moved` verdict from this mode now names an upstream fact, not an unguarded fleet.
 - **`bench-atuin-daemon.sh`** — atuin write latency under contention, daemon off vs on,
   optionally through a transient systemd user unit. `make bench-atuin`,
   `make bench-atuin-systemd`.

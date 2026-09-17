@@ -12,10 +12,12 @@
 # shellcheck disable=SC2016
 
 # ── the AUTOSTART premise of the same detector (--premise autostart) ──────────
-# The other premise _core_atuin_daemon_guard rests on: under ATUIN_DAEMON__AUTOSTART the guard
-# stands DOWN entirely — unhooks itself, never probes — because atuin is supposed to supervise
-# its own daemon. That covers Alpine and macOS, and on those two it is the ONLY mitigation
-# (dotgibson/dotfiles-core#402).
+# The other premise _core_atuin_daemon_guard rests on: under ATUIN_DAEMON__AUTOSTART, atuin is
+# supposed to supervise its own daemon, which is what Alpine and macOS run on
+# (dotgibson/dotfiles-core#402). The guard used to stand DOWN entirely there — unhook itself,
+# never probe — on the strength of that. The `wedged` pair below is what retired it: since
+# #1102 the guard probes under AUTOSTART and warns without disabling anything, so this
+# detector's verdict is a statement about UPSTREAM rather than about Core's coverage.
 #
 # WHAT THIS FRAGMENT IS REALLY FOR. The premise detector's own assertions (scripts/test/
 # 51-atuin-guard.sh) are mostly about the third verdict, and so
@@ -901,8 +903,8 @@ for name, arm in a.items():
     #     That is not a hypothetical distribution of behaviour — it is what upstream describes.
     #     autostart asks "is the recorded pid alive", the wedged daemon's pid IS alive, and so
     #     the one process that cannot serve is also the one blocking its own replacement. On
-    #     Alpine and macOS, where the stand-down means the guard has already unhooked itself,
-    #     nothing else is watching.
+    #     Alpine and macOS that used to be the end of it, because the guard had already
+    #     unhooked itself; since #1102 it stays hooked and warns, naming the pid to kill.
     _mkdstub atuin-wedged pidfile-blocks-respawn
     _d_run atuin-wedged --premise autostart --json
     _dreap
