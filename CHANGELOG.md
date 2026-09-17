@@ -96,6 +96,42 @@
   vendors _from_, not one Core fans out _to_, so it does not belong in
   `scripts/os-repos.txt`.
 
+- **`dotfiles-Windows` vendors the editor from `dotfiles-nvim` directly, and the fleet-drift
+  row that judged it became a two-lock compare** ([#1124](https://github.com/dotgibson/dotfiles-core/issues/1124),
+  [dotfiles-Windows#271](https://github.com/dotgibson/dotfiles-Windows/pull/271)).
+  `NVIM-SPLIT-PROPOSAL.md` §3.5 step 3. Windows vendors no `core/`, but it always consumed
+  the editor alone through a bespoke mirror pinned to a Core ref that had nothing to do with
+  when the editor changed — §3.1 called that the tell. It now pins `dotgibson/dotfiles-nvim`
+  releases in a root-level `nvim.lock` wearing _this_ repo's field names, so the two are peers
+  on one release line rather than a mirror and its source. That sync moved **no editor bytes**:
+  the same byte-identical guarantee step 2 met, now observed on the second consumer.
+
+  **The Core-side change was forced, not cosmetic.** `fleet-drift.sh`'s Windows row ran
+  `_classify_subtree`, which asked — inside _Core's_ object store — whether the recorded sha
+  contained Core's latest `nvim/` change. A `dotfiles-nvim` sha is not in Core's history at
+  all, so the moment Windows re-pinned, that check would have fallen through to `_classify`
+  and reported `DIFFERS (sha not in local history)` on a perfectly healthy repo: red forever,
+  with remediation advice that could not help. The ancestry question also stopped being the
+  right one — both sides now pin the same upstream, so `_classify_nvim_pin` compares the two
+  recorded releases instead. Offline: no `dotfiles-nvim` objects, no network, no clone.
+
+  **Ahead is a note, not drift**, for the reason [#371](https://github.com/dotgibson/dotfiles-core/issues/371)
+  established on the Unix side. Windows' bot syncs weekly; Core adopts an editor release only
+  with a Core release (§7(3)). Windows carrying a _newer_ editor than `nvim.lock` is therefore
+  the ordinary between-releases state, and reddening it would make the dashboard cry wolf most
+  weeks. `BEHIND` is the signal that the weekly bot stopped. Ordering is a three-field numeric
+  compare — `v1.9.0` sorts after `v1.10.0` lexically, and a string compare would call a
+  genuinely newer editor stale, then advise a re-sync that changes nothing.
+
+  `_classify_subtree` is **deleted**: Windows was its only caller, and its whole rationale
+  (_"a release that changed no `nvim/` files"_) evaporated once the two sides stopped being
+  measured against each other's history. Seven new legs in `scripts/test/31-fleet-drift.sh`
+  cover the replacement, added deliberately **after** the `--strict` legs, which assert on the
+  row rather than the exit code precisely because the fixture root had no `dotfiles-Windows`
+  clone. (`scripts/fleet-drift.sh`, `scripts/test/31-fleet-drift.sh`,
+  `.github/workflows/fleet-drift.yml`, `.github/workflows/freshness-dashboard.yml`,
+  `RELEASE-RUNBOOK.md`, `.claude/commands/drift-triage.md`, `NVIM-SPLIT-PROPOSAL.md`)
+
 - **Core vendors the editor instead of authoring it: `nvim/` is now a pinned copy of
   `dotfiles-nvim`, behind `nvim.lock`**
   ([#1123](https://github.com/dotgibson/dotfiles-core/issues/1123)).

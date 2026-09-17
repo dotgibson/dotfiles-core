@@ -252,6 +252,53 @@ if have git; then
   _fdg branch -D main >/dev/null 2>&1
   _fdd_lock "core_sha=$FD_TIP"
   _fdd_is "drift: ahead with no mainline ref fails closed" 1 'no mainline ref'
+
+  # ── the dotfiles-Windows row: a two-lock compare, not a subtree walk (#1124) ──────────
+  # Windows vendors no core/ and, since #1124, vendors the EDITOR from dotgibson/dotfiles-nvim
+  # rather than from here — so its pin is a dotfiles-nvim sha that is NOT in Core's object
+  # store. The old _classify_subtree asked whether it contained Core's latest nvim/ change,
+  # which for a foreign sha falls through to `DIFFERS (sha not in local history)`: permanently
+  # red on a healthy repo. _classify_nvim_pin compares the two recorded RELEASES instead.
+  #
+  # DELIBERATELY LAST, after the renamed-clone and --strict legs above: those assert on the
+  # ROW rather than the exit code precisely because this fixture root had no dotfiles-Windows
+  # clone, so --strict exited 1 regardless. Creating one here would invalidate that reasoning
+  # if it happened first. Don't move this block up.
+  mkdir -p "$FDF/dotfiles-Windows"
+  _fdd_wlock() { printf 'nvim_repo=dotgibson/dotfiles-nvim\nnvim_sha=%s\nnvim_tag=%s\n' "${2:-$FD_NVSHA}" "$1" >"$FDF/dotfiles-Windows/nvim.lock"; }
+  FD_NVSHA=7ba9457f0a1b795d9fe67870ba4fc7cab779f64e
+  # Core's own pin — read by _classify_nvim_pin. $REF carries no nvim.lock in this fixture, so
+  # this also exercises the worktree fallback, which is the live state until the next release.
+  printf 'nvim_tag=v1.0.0\nnvim_sha=%s\n' "$FD_NVSHA" >"$FDC/nvim.lock"
+  _fdd_wis() { # _fdd_wis <label> <status-regex>
+    local row
+    row="$(_fdd_run | grep 'dotfiles-Windows' | head -n1)"
+    if grep -qE "$2" <<<"$row"; then pass "$1"; else fail "$1 (row='$row')"; fi
+  }
+  _fdd_wlock v1.0.0
+  _fdd_wis "drift: Windows in step with nvim.lock is current" 'current \(nvim v1\.0\.0, in step'
+  # AHEAD IS NOT DRIFT (#371's rule, same reason): the Windows bot syncs weekly while Core
+  # adopts an editor release only with a Core release (NVIM-SPLIT-PROPOSAL.md §7(3)), so a
+  # newer editor there is the ORDINARY between-releases state. Reddening it would make the
+  # dashboard cry wolf most weeks.
+  _fdd_wlock v1.1.0
+  _fdd_wis "drift: Windows ahead of nvim.lock is a note, not drift" 'current \(ahead of nvim.lock'
+  # ...and BEHIND is the signal that the weekly bot stopped.
+  _fdd_wlock v0.9.0
+  _fdd_wis "drift: Windows behind nvim.lock FAILS" 'BEHIND \(nvim v0\.9\.0'
+  # NUMERIC ordering, not string: v1.9.0 sorts AFTER v1.10.0 lexically, so a string compare
+  # would call a genuinely newer editor stale — and then advise a re-sync that changes nothing.
+  _fdd_wlock v1.10.0
+  _fdd_wis "drift: Windows pin ordering is numeric (v1.10.0 > v1.9.0)" 'current \(ahead of nvim.lock: v1\.10\.0'
+  # An untagged pin (a -FollowBranch sync) still resolves when the commit matches Core's.
+  _fdd_wlock "" "$FD_NVSHA"
+  _fdd_wis "drift: an untagged Windows pin on Core's own commit is current" 'same commit as nvim.lock'
+  # ...and declines to guess when it does not. Reporting DIFFERS beats inventing an ordering.
+  _fdd_wlock "" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+  _fdd_wis "drift: an unorderable Windows pin reports DIFFERS, not a guess" 'DIFFERS \(cannot order nvim pins'
+  # The marker itself missing is its own verdict, and `make sync` cannot repair it.
+  rm -f "$FDF/dotfiles-Windows/nvim.lock"
+  _fdd_wis "drift: a Windows clone with no nvim.lock reports the missing marker" 'missing nvim.lock'
 else
   skip "fleet drift classifier (git unavailable)"
 fi

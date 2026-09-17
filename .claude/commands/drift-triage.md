@@ -86,25 +86,30 @@ so stopping on exit 1 would refuse exactly the job this routine was written to d
    `•` row, the gap that matters is the two numbers in the row itself: commits ahead
    of the tag (a release is owed) and `behind its tip` (a sync is owed).
 
-   **dotfiles-Windows is not measured that way.** It vendors only the `nvim/`
-   subtree, and `_classify_subtree` deliberately calls an *older* `.core-ref`
-   **current** when no later release touched `nvim/` — the marker is only re-stamped
-   when that subtree actually changes. Subtracting its marker tag from the latest
-   Core tag therefore manufactures a "N releases behind" that isn't real; that is
-   exactly the false diagnosis `#381` reached. **Trust the row's verdict**, and if you
-   need to quantify, count only releases that actually changed the subtree:
+   **dotfiles-Windows is not measured against Core at all** (#1124). It vendors no
+   `core/`; its one vendored asset is the editor, and it takes that from
+   `dotgibson/dotfiles-nvim` — the same repo Core vendors `nvim/` from. Its row is a
+   **two-lock compare**: the `nvim_tag` in its own `nvim.lock` against the `nvim_tag`
+   in Core's. So its RECORDED column shows an EDITOR release (`v1.0.0`), not a Core
+   one, and subtracting it from the latest Core tag is a category error that
+   manufactures a "N releases behind" that isn't real — the same false diagnosis
+   `#381` reached by a different route. **Trust the row's verdict.**
+
+   `current (ahead of nvim.lock: …)` is expected, not a finding: the Windows bot syncs
+   weekly while Core adopts an editor release only with a Core release
+   (`NVIM-SPLIT-PROPOSAL.md` §7(3)). `BEHIND (nvim …)` is the real signal — the weekly
+   bot stopped. To quantify either, count editor releases, not Core ones:
 
    ```bash
-   git log --oneline <marker-commit>..<latest-tag> -- nvim/
+   git -C <a dotfiles-nvim clone> tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=v:refname
    ```
 
-   Empty output means the vendored tree is byte-identical to the release's — current,
-   with nothing owed.
 3. **Weigh what it's missing:** read `CHANGELOG.md` across the skipped range. A
    security / hardening fix outranks a docs-only bump — rank by that, not just by
    count-behind.
 4. **Give the exact remediation** per repo, matched to its state: `make sync` for a
-   repo that genuinely **lags**; `nvim-sync.ps1` + `starship-sync.ps1` (Windows); a
+   repo that genuinely **lags**; for Windows, `nvim-sync.ps1` (which re-pins `nvim.lock`
+   from `dotfiles-nvim`) and/or `starship-sync.ps1`, matched to which row is red; a
    **release cut** for `•` unreleased rows, followed by `make sync` only if the row
    also reported `behind its tip` — in that order, per the table above. Flag any repo
    that would need manual conflict resolution.
@@ -122,8 +127,9 @@ Ranked, most-stale / highest-risk first:
   **1** and still prints the unreleased tally. Report the exit code you actually
   observed, never one deduced from the row types.
 - **Current** — the repos with nothing owed, so a green run is trustworthy. Report
-  Windows from its subtree verdict, not from its marker's tag: `✓ current (nvim up
-  to date)` means done, even when `.core-ref` names an older release.
+  Windows from its verdict, not by comparing its tag to a Core release: the tag in
+  that row is an EDITOR version, and `current (nvim vX.Y.Z, in step with nvim.lock)`
+  means done. `current (ahead of nvim.lock: …)` is also done — see step 2.
 
 If the sweep exited 0 with no `•` rows, say so in one line — a fully-pinned fleet is
 the whole point, and a routine that manufactures concern from a green run is worse

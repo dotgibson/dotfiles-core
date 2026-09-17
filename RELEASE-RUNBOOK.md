@@ -361,8 +361,9 @@ otherwise, and `--require-siblings` reds that). A SHA pin is deliberately **not*
 see below.
 
 `make fleet-drift` still won't surface stragglers, and it is worth knowing why so the two
-are not confused: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance
-against Core, not its workflow `uses:` pins. Different axis, different gate.
+are not confused: it compares each repo's recorded `core.lock` provenance against Core
+(and `dotfiles-Windows`' `nvim.lock` against Core's own `nvim.lock`), not its workflow
+`uses:` pins. Different axis, different gate.
 
 §9n's scope has a blind spot worth knowing, and it is deliberate: **`dotfiles-Windows` is not
 in `os-repos.txt`** (it
@@ -485,14 +486,16 @@ promotes it — recognizing that moment, and reconciling the two lines, is what 
 Run in a clean `dotfiles-Windows` checkout (PowerShell):
 
 ```powershell
-# 1. Mirror the shared Core assets. Pin an exact Core release for a reproducible sync
-#    (recommended when rolling a Core release onto the host); omit -Ref to track main.
-.\nvim-sync.ps1     -Ref vX.Y.Z      # nvim/ (includes lazy-lock.json)
-.\starship-sync.ps1 -Ref vX.Y.Z      # starship/starship.toml
+# 1. Vendor the shared assets. NOTE the two sources: since #1124 nvim/ comes from
+#    dotgibson/dotfiles-nvim (a bare run pins that repo's newest release, and -Ref
+#    takes an NVIM version), while starship/ still comes from Core.
+.\nvim-sync.ps1                      # nvim/ @ dotfiles-nvim's newest release
+.\starship-sync.ps1 -Ref vX.Y.Z      # starship/starship.toml @ Core vX.Y.Z
 
-# 2. Review, then commit only if content actually moved.
-git diff nvim/ starship/
-git add nvim/ starship/ ; git commit -m "sync nvim/starship from Core vX.Y.Z"
+# 2. Review, then commit only if content actually moved. nvim/ and nvim.lock go in
+#    ONE commit — a window where the tree moved and the pin did not reads as drift.
+git diff nvim/ nvim.lock starship/
+git add nvim nvim.lock starship/ ; git commit -m "sync vendored assets"
 
 # 3. Land on main (PR -> merge if protected) — the push triggers auto-tag.yml.
 ```
@@ -501,11 +504,14 @@ After the push, `auto-tag.yml` sees the new `nvim/`/`starship/` content and PATC
 Windows' own tag + Release (delegating to Core's reusable `auto-tag-call.yml`, SHA-pinned
 there rather than tracking the moving `@vN` alias — see the callout in §1.1 step 5). It is
 idempotent (a no-op if HEAD is already tagged) and deliberately **skips** a
-`.core-ref`-marker-only change, so a timestamp-only re-sync never cuts a spurious tag.
+marker-only change, so a timestamp-only re-sync never cuts a spurious tag. For
+`starship/` that is an explicit `!**/.core-ref` exclusion; for the editor it falls out
+of the layout, since `nvim.lock` sits at the repo root and the trigger only watches
+`nvim/**`.
 
 You usually don't run the sync by hand: the **`nvim-sync` and `starship-sync` bots**
-(weekly, Tuesdays 08:00 UTC, plus `workflow_dispatch`) open a PR when Core's `nvim/` or
-`starship/` actually changed — merging that PR is the whole release. Run the scripts
+(weekly, Tuesdays 08:00 UTC, plus `workflow_dispatch`) open a PR when the editor's
+release line or Core's `starship/` actually moved — merging that PR is the whole release. Run the scripts
 manually only to pull a specific Core release immediately (e.g. right after cutting one).
 
 ### 3b. Deliberate minor/major (host work)
