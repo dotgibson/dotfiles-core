@@ -3,11 +3,16 @@
 # WHAT THIS IS FOR. PORTING-MATRIX.md's footnotes state where the fleet sits relative to
 # a recorded floor. Those sentences enumerated a dozen distro versions in prose, and prose
 # goes stale silently: footnote 34's jq line was corrected twice in one day — once for
-# Alpine (#902) and once for Fedora (#904) — because nothing could disagree with it.
+# Alpine (#902) and once for Fedora (#904) — because nothing could disagree with it. Footnote
+# 33's neovim table went wrong FOUR times in four months on the same mechanism, which is why
+# it is here too (#1082), and footnote 5's per-platform prose with it.
 #
 # This file is the data those sentences assert. gen-porting-matrix.sh renders it into the
-# marked block in that footnote, and check-porting-matrix fails when the two diverge. The
-# REASONING stays hand-written prose beside the block; only the enumeration is generated.
+# marked block in each of those footnotes — one block per TOOL, registered in that script's
+# FV_TOOLS — and check-porting-matrix fails when the two diverge. The REASONING stays
+# hand-written prose beside each block; only the enumeration is generated. A tool with a
+# floor here and no block there is a hard failure, not a quiet one: data nobody renders is
+# an enumeration back to being prose nothing can contradict, which is the whole defect.
 #
 # WHAT IT DOES NOT DO. It cannot notice that a distro shipped a new version — nothing here
 # reaches the network, deliberately, because this generator runs inside an offline audit.
@@ -34,6 +39,24 @@
 #       though the bot re-checks it through Repology, because collapsing the two would
 #       silently downgrade the recorded evidence to the weaker source.
 #
+# TWO RULES THE ROWS FOLLOW, stated because both are load-bearing rather than tidy:
+#
+#   1. <version> IS THE UPSTREAM TRIPLE, not the distro's build string. `0.12.2`, never
+#      `0.12.2-r0`; `0.11.6`, never `0.11.6-1.fc43`. The floor comparison truncates at the
+#      first `-` either way, so the verdict is identical — but update-fleet-versions.sh
+#      compares the recorded string to what the probe returns, and a row carrying a build
+#      suffix reads as DRIFT on the first bot run and gets rewritten. The build string, when
+#      it is part of an argument, belongs in the prose beside the block.
+#
+#   2. <probe> IS `-` WHENEVER THE PROBE WOULD ANSWER A DIFFERENT QUESTION. Two shapes here,
+#      both silent if you get them wrong. A KEYWORD split: the Gentoo rows record the newest
+#      STABLE-keyworded ebuild, and Repology reports the newest ebuild in ::gentoo regardless
+#      of keyword — probing them would overwrite the exact number footnotes 5 and 33 argue
+#      about. A PROJECT split: openSUSE ships the tree-sitter CLI in a package called
+#      `tree-sitter`, a different Repology project, and dotfiles-Alpine#170 is the precedent
+#      for what a split project reports (a false absence). Neither is caught by any gate:
+#      a wrong <probe> produces a green audit and a bot PR that quietly deletes the finding.
+#
 # RE-VERIFYING. `make update-fleet-versions` re-reads every probeable row and rewrites
 # <version> and <verified>; `--check` reports without writing, and the freshness bot runs
 # it weekly. A row the probe cannot answer keeps its old date and is reported as needing a
@@ -59,3 +82,41 @@ ver	jq	Alpine 3.21	1.7.1	2026-09-09	pkgs.alpinelinux.org	alpine_3_21
 ver	jq	Debian 13	1.7.1	2026-09-09	repology:debian_13	debian_13
 ver	jq	Ubuntu 24.04	1.7.1	2026-09-09	repology:ubuntu_24_04	ubuntu_24_04
 ver	jq	openSUSE Leap 16.0	1.7.1	2026-09-12	download.opensuse.org	-
+
+floor	neovim	0.12.0
+
+ver	neovim	Arch	0.12.5	2026-09-17	archlinux.org/packages	arch
+ver	neovim	openSUSE Tumbleweed	0.12.5	2026-09-17	download.opensuse.org	opensuse_tumbleweed
+ver	neovim	Fedora Rawhide	0.12.5	2026-09-17	dl.fedoraproject.org	fedora_rawhide
+ver	neovim	Fedora 45	0.12.5	2026-09-17	dl.fedoraproject.org (development/45)	fedora_45
+ver	neovim	Fedora 44	0.12.5	2026-09-17	mdapi.fedoraproject.org	fedora_44
+ver	neovim	Homebrew	0.12.5	2026-09-17	formulae.brew.sh	homebrew
+ver	neovim	openSUSE Leap 16.1	0.12.4	2026-09-17	download.opensuse.org (bp161)	-
+ver	neovim	Alpine edge	0.12.2	2026-09-17	pkgs.alpinelinux.org	alpine_edge
+ver	neovim	Alpine 3.24	0.12.2	2026-09-17	pkgs.alpinelinux.org	alpine_3_24
+ver	neovim	Gentoo stable	0.11.7	2026-09-17	packages.gentoo.org (newest STABLE keyword)	-
+ver	neovim	Alpine 3.23	0.11.7	2026-09-17	pkgs.alpinelinux.org	alpine_3_23
+ver	neovim	Fedora 43	0.11.6	2026-09-17	mdapi.fedoraproject.org	fedora_43
+ver	neovim	openSUSE Leap 16.0	0.11.3	2026-09-17	download.opensuse.org (bp160)	-
+ver	neovim	Alpine 3.22	0.11.1	2026-09-17	pkgs.alpinelinux.org	alpine_3_22
+ver	neovim	Debian 13	0.10.4	2026-09-17	sources.debian.org	debian_13
+ver	neovim	Alpine 3.21	0.10.4	2026-09-17	pkgs.alpinelinux.org	alpine_3_21
+ver	neovim	Ubuntu 24.04	0.9.5	2026-09-17	api.launchpad.net	ubuntu_24_04
+
+floor	tree-sitter-cli	0.26.1
+
+ver	tree-sitter-cli	Homebrew	0.27.0	2026-09-17	formulae.brew.sh	homebrew
+ver	tree-sitter-cli	Gentoo stable	0.26.12	2026-09-17	packages.gentoo.org (newest STABLE keyword)	-
+ver	tree-sitter-cli	Fedora Rawhide	0.26.11	2026-09-17	dl.fedoraproject.org	fedora_rawhide
+ver	tree-sitter-cli	Fedora 45	0.26.11	2026-09-17	dl.fedoraproject.org (development/45)	fedora_45
+ver	tree-sitter-cli	Fedora 44	0.26.11	2026-09-17	mdapi.fedoraproject.org	fedora_44
+ver	tree-sitter-cli	Arch	0.26.9	2026-09-17	archlinux.org/packages	arch
+ver	tree-sitter-cli	openSUSE Tumbleweed	0.26.8	2026-09-17	download.opensuse.org (package: tree-sitter)	-
+ver	tree-sitter-cli	openSUSE Leap 16.1	0.26.8	2026-09-17	download.opensuse.org (package: tree-sitter)	-
+ver	tree-sitter-cli	openSUSE Leap 16.0	0.26.8	2026-09-17	download.opensuse.org (package: tree-sitter)	-
+ver	tree-sitter-cli	Alpine edge	0.26.7	2026-09-17	pkgs.alpinelinux.org	alpine_edge
+ver	tree-sitter-cli	Alpine 3.24	0.26.7	2026-09-17	pkgs.alpinelinux.org	alpine_3_24
+ver	tree-sitter-cli	Fedora 43	0.25.10	2026-09-17	mdapi.fedoraproject.org	fedora_43
+ver	tree-sitter-cli	Alpine 3.23	0.25.10	2026-09-17	pkgs.alpinelinux.org	alpine_3_23
+ver	tree-sitter-cli	Alpine 3.22	0.25.10	2026-09-17	pkgs.alpinelinux.org	alpine_3_22
+ver	tree-sitter-cli	Alpine 3.21	0.24.4	2026-09-17	pkgs.alpinelinux.org	alpine_3_21

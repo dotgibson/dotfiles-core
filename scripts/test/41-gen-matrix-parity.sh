@@ -12,14 +12,15 @@
 # shellcheck disable=SC2016
 
 # ── porting-matrix generation (scripts/gen-porting-matrix.sh) ────────────────
-# PORTING-MATRIX.md's THREE generated blocks — two data tables rendered from the sibling
-# OS repos, plus `fleet-versions` from this repo's own TSV — are gated by audit-core.sh
+# PORTING-MATRIX.md's generated blocks — two data tables rendered from the sibling OS
+# repos, plus one fleet-version enumeration per tool from this repo's own TSV, all
+# registered in BLOCK_IDS — are gated by audit-core.sh
 # §9h. The fleet-fed half is an ENVIRONMENT skip when the siblings are not checked out,
 # which is what CI's lone checkout looks like, so nothing in the real gate ever exercises
 # a red there. Everything worth pinning therefore lives here: the drift direction (1), the
 # cannot-answer direction (2), and the uncovered direction (3), told apart on purpose
 # because the audit maps each to a different verdict — plus the --local seam (#1046),
-# which is the in-repo block's gate and the one direction a lone clone CAN red.
+# which is the in-repo blocks' gate and the one direction a lone clone CAN red.
 #
 # The fixture is a stub Core tree (one marker pair per BLOCK_IDS id, hand-authored lines either
 # side) and a fake FLEET: seven sibling directories, each with a .git so it resolves
@@ -54,6 +55,11 @@ if have git; then
   # The closing quote is the terminator: test for it BEFORE stripping it, or the read runs
   # on into the rest of the generator and any later tab-separated line becomes a row.
   _gp_rows="$(awk '/^PKG_ROWS="/ { f = 1; sub(/^PKG_ROWS="/, "") } f { if (/"$/) { sub(/"$/, ""); print; f = 0 } else print }' "$HERE/scripts/gen-porting-matrix.sh")"
+  # The block -> tool map, same multi-line idiom and for the same reason. Every fleet-version
+  # assertion below is driven from THIS rather than from a hand-written list of three tools,
+  # so a fourth tool costs a registry line and no test edit — which is the property the
+  # fixture document already has and the fixture DATA did not (#1082).
+  _gp_fv="$(awk '/^FV_TOOLS="/ { f = 1; sub(/^FV_TOOLS="/, "") } f { if (/"$/) { sub(/"$/, ""); print; f = 0 } else print }' "$HERE/scripts/gen-porting-matrix.sh")"
 
   _gp_caps() { # _gp_caps <file> <prefix> — a minimal declaration whose verbs all start with <prefix>
     printf 'PKG_REFRESH=%s refresh\nPKG_UPGRADE=%s upgrade\nPKG_INSTALL=%s install\nPKG_REMOVE=%s remove\nPKG_SEARCH=%s search\nPKG_OWNS=%s owns\nPKG_COUNT_PENDING=%s pending\nSCHEDULER=none\n' \
@@ -70,12 +76,22 @@ if have git; then
     # The dates are far-future on purpose: the staleness reporter writes to stderr, and a
     # fixture that started emitting "not re-verified in 90 days" the moment the calendar
     # rolled past it would make this suite noisier every year for no signal.
-    printf '%b\n' \
-      'floor\tjq\t1.8.2' \
-      'ver\tjq\tFixture Above\t1.10.0\t2099-01-01\tfixture' \
-      'ver\tjq\tFixture Equal\t1.8.2\t2099-01-01\tfixture' \
-      'ver\tjq\tFixture Below\t1.7.1\t2099-01-01\tfixture' \
-      >"$GPR/scripts/fleet-package-versions.tsv"
+    # ONE floor value reused for every registered tool: the fixture is hermetic, so the real
+    # floors are irrelevant and copying them here would only give them a second home. Targets
+    # are namespaced BY TOOL, because the defect this suite has to catch is a block rendering
+    # another tool's rows — and it cannot see that if the target names collide.
+    : >"$GPR/scripts/fleet-package-versions.tsv"
+    while IFS="$(printf '\t')" read -r _fv_id _fv_tool; do
+      [[ -n "$_fv_tool" ]] || continue
+      printf '%b\n' \
+        "floor\t$_fv_tool\t1.8.2" \
+        "ver\t$_fv_tool\tFixture $_fv_tool Above\t1.10.0\t2099-01-01\tfixture" \
+        "ver\t$_fv_tool\tFixture $_fv_tool Equal\t1.8.2\t2099-01-01\tfixture" \
+        "ver\t$_fv_tool\tFixture $_fv_tool Below\t1.7.1\t2099-01-01\tfixture" \
+        >>"$GPR/scripts/fleet-package-versions.tsv"
+    done <<EOF
+$_gp_fv
+EOF
     {
       printf '# fixture matrix\n\nhand-authored above the first block\n\n'
       for _id in $_gp_ids; do
@@ -219,12 +235,20 @@ EOF
   # the whole point of the block — footnote 34 was corrected twice because a version and the
   # verdict filed beside it disagreed. 1.10.0 is the row that matters: a string compare ranks
   # it BELOW 1.8.2 and would mark it below the floor.
-  if _gp_cells 'Fixture Above' '1.10.0' 'at or above' &&
-    _gp_cells 'Fixture Equal' '1.8.2' 'at or above' &&
-    _gp_cells 'Fixture Below' '1.7.1' '**below**'; then
-    pass "gen-porting-matrix: fleet-versions derives at/below from the version, field-wise (1.10.0 outranks 1.8.2)"
+  _gp_derive_bad=""
+  while IFS="$(printf '\t')" read -r _fv_id _fv_tool; do
+    [[ -n "$_fv_tool" ]] || continue
+    _gp_cells "Fixture $_fv_tool Above" '1.10.0' 'at or above' &&
+      _gp_cells "Fixture $_fv_tool Equal" '1.8.2' 'at or above' &&
+      _gp_cells "Fixture $_fv_tool Below" '1.7.1' '**below**' ||
+      _gp_derive_bad="$_gp_derive_bad $_fv_tool"
+  done <<EOF
+$_gp_fv
+EOF
+  if [[ -z "$_gp_derive_bad" ]]; then
+    pass "gen-porting-matrix: every fleet-version block derives at/below from the version, field-wise (1.10.0 outranks 1.8.2)"
   else
-    fail "gen-porting-matrix: the fleet-versions block did not derive the floor comparison correctly"
+    fail "gen-porting-matrix: the floor comparison is wrong for:$_gp_derive_bad"
   fi
 
   # EVERY generated table is emitted in prettier's aligned form, and that is a contract with
@@ -251,10 +275,17 @@ EOF
       END { n = 0; for (w in seen) n++; print n }
     ' "$GPR/PORTING-MATRIX.md"
   }
-  if [[ "$(_gp_widths fleet-versions)" == 1 ]]; then
-    pass "gen-porting-matrix: the fleet-versions rows are column-aligned (a prettier fixed point)"
+  _gp_width_bad=""
+  while IFS="$(printf '\t')" read -r _fv_id _fv_tool; do
+    [[ -n "$_fv_id" ]] || continue
+    [[ "$(_gp_widths "$_fv_id")" == 1 ]] || _gp_width_bad="$_gp_width_bad $_fv_id($(_gp_widths "$_fv_id"))"
+  done <<EOF
+$_gp_fv
+EOF
+  if [[ -z "$_gp_width_bad" ]]; then
+    pass "gen-porting-matrix: every fleet-version block's rows are column-aligned (a prettier fixed point)"
   else
-    fail "gen-porting-matrix: fleet-versions rows have $(_gp_widths fleet-versions) distinct widths — the block is not aligned, so prettierd will re-pad it and --check will call that drift (#836)"
+    fail "gen-porting-matrix: distinct row widths in:$_gp_width_bad — the block is not aligned, so prettierd will re-pad it and --check will call that drift (#836)"
   fi
 
   # The RENDERED BYTES, one row per rule.
@@ -322,12 +353,23 @@ EOF
   # The fleet-versions rows specifically: three cells per target, and the COMPUTED one
   # names both lines that decided it. A status cell citing only the version row would hide
   # the floor it was compared against, which is the half that moves on a floor bump.
-  if grep -qE '^fleet-versions	Fixture Above	version	derived	scripts/fleet-package-versions\.tsv:[0-9]+$' <<<"$_gp_list_out" &&
-    grep -qE '^fleet-versions	Fixture Below	vs-floor	derived	scripts/fleet-package-versions\.tsv:[0-9]+ vs scripts/fleet-package-versions\.tsv:[0-9]+$' <<<"$_gp_list_out" &&
-    grep -qE '^fleet-versions	Fixture Equal	verified	derived	scripts/fleet-package-versions\.tsv:[0-9]+$' <<<"$_gp_list_out"; then
-    pass "gen-porting-matrix: fleet-versions provenance is repo-relative file:line, and the derived verdict cites the floor row too"
+  # The block id AND its tool in ONE pattern, per registered block. That pairing is what
+  # catches a renderer filing every block's provenance under one hard-coded id — which the
+  # coverage loop above cannot see, because the id it looks for IS present.
+  _gp_prov_bad=""
+  while IFS="$(printf '\t')" read -r _fv_id _fv_tool; do
+    [[ -n "$_fv_tool" ]] || continue
+    grep -qE "^$_fv_id	Fixture $_fv_tool Above	version	derived	scripts/fleet-package-versions\.tsv:[0-9]+$" <<<"$_gp_list_out" &&
+      grep -qE "^$_fv_id	Fixture $_fv_tool Below	vs-floor	derived	scripts/fleet-package-versions\.tsv:[0-9]+ vs scripts/fleet-package-versions\.tsv:[0-9]+$" <<<"$_gp_list_out" &&
+      grep -qE "^$_fv_id	Fixture $_fv_tool Equal	verified	derived	scripts/fleet-package-versions\.tsv:[0-9]+$" <<<"$_gp_list_out" ||
+      _gp_prov_bad="$_gp_prov_bad $_fv_id"
+  done <<EOF
+$_gp_fv
+EOF
+  if [[ -z "$_gp_prov_bad" ]]; then
+    pass "gen-porting-matrix: every fleet-version block files ITS tool's provenance under ITS id, repo-relative, the derived verdict citing the floor row too"
   else
-    fail "gen-porting-matrix: the fleet-versions provenance rows are missing, absolute, or cite only one line for the computed cell"
+    fail "gen-porting-matrix: provenance missing, absolute, filed under the wrong block id, or citing one line for the computed cell:$_gp_prov_bad"
   fi
 
   # NEGATIVE — drift INSIDE a block exits 1, names the file and the fix, and writes nothing.
@@ -518,7 +560,10 @@ EOF
   # — the exact shape footnote 34 was corrected for twice, and what generation exists to
   # prevent. One tree, two questions, two different answers.
   _gp_fixture && _gp_run >/dev/null
-  sed -i.bak 's/\*\*below\*\*/at or above/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  # SCOPED to one block. There are three fleet-version blocks now, and an unscoped flip
+  # would corrupt all of them at once — which still reds, but proves less: a gate that only
+  # notices when every block is wrong is not the gate this case is about.
+  sed -i.bak '/core:porting-matrix:gen fleet-versions -->/,/core:porting-matrix:end fleet-versions -->/ s/\*\*below\*\*/at or above/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
   _gp_loc_out="$(_gp_out_lone --check --local)"
   if [[ "$(_gp_run_lone --check --local)" == 1 ]] && grep -q 'PORTING-MATRIX.md' <<<"$_gp_loc_out"; then
     pass "gen-porting-matrix: a hand-edited fleet-versions row is drift (1) on a LONE clone — the gate §9h was blind to"
@@ -545,7 +590,10 @@ EOF
   # needs a fleet that box does not have is the shape this seam exists to avoid — so --local
   # is a write mode too, and what it writes must be what the full render would write.
   _gp_fixture && _gp_run >/dev/null
-  sed -i.bak 's/\*\*below\*\*/at or above/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  # SCOPED to one block. There are three fleet-version blocks now, and an unscoped flip
+  # would corrupt all of them at once — which still reds, but proves less: a gate that only
+  # notices when every block is wrong is not the gate this case is about.
+  sed -i.bak '/core:porting-matrix:gen fleet-versions -->/,/core:porting-matrix:end fleet-versions -->/ s/\*\*below\*\*/at or above/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
   _gp_pkg_before="$(sed -n '/core:porting-matrix:gen packages/,/core:porting-matrix:end packages/p' "$GPR/PORTING-MATRIX.md")"
   if [[ "$(_gp_run_lone --local)" == 0 ]] &&
     [[ "$(sed -n '/core:porting-matrix:gen packages/,/core:porting-matrix:end packages/p' "$GPR/PORTING-MATRIX.md")" == "$_gp_pkg_before" ]] &&
@@ -581,19 +629,96 @@ EOF
   # --list --local IS a listing now (#1096). It was a usage error only while fleet-versions
   # wrote no provenance, which would have made it an empty listing that exited 0 — worse
   # than a refusal. It must cover exactly the in-repo blocks and name no sibling clone.
+  #
+  # SET MEMBERSHIP IS THE CLAIM, not order — so both sides are sorted. BLOCK_IDS is declared
+  # in the DOCUMENT's order and LOCAL_BLOCKS follows it, which since #1082 is not the same as
+  # sorted order (footnote 5's block comes first in the file and last in a sort). Comparing a
+  # sorted listing against the raw declaration would force a declaration order no reader could
+  # derive from the comment above it.
   _gp_fixture && _gp_run >/dev/null
   _gp_lloc_list="$(_gp_out_lone --list --local)"
   if [[ "$(_gp_run_lone --list --local)" == 0 ]] &&
     [[ -n "$_gp_lloc_list" ]] &&
-    [[ "$(cut -f1 <<<"$_gp_lloc_list" | sort -u | tr '\n' ' ')" == "$_gp_local_ids " ]] &&
+    [[ "$(cut -f1 <<<"$_gp_lloc_list" | sort -u | tr '\n' ' ')" == "$(tr ' ' '\n' <<<"$_gp_local_ids" | grep -v '^$' | sort -u | tr '\n' ' ')" ]] &&
     ! grep -q 'dotfiles-' <<<"$_gp_lloc_list"; then
     pass "gen-porting-matrix: --list --local lists exactly the in-repo blocks ($_gp_local_ids) with no fleet, naming no sibling clone"
   else
     fail "gen-porting-matrix: --list --local did not narrow to LOCAL_BLOCKS — empty, refused, or citing a sibling repo"
   fi
+  # ── THE THREE-TOOL REGISTRY (#1082) ───────────────────────────────────────────────
+  # One renderer, N blocks, one tool each. Every assertion below is driven from FV_TOOLS,
+  # so a fourth tool costs a registry line and no test edit.
+
+  # 1. EACH BLOCK RENDERS ITS OWN TOOL. This is #1082's defect one layer down, and it is the
+  #    reason this case exists: a renderer still keyed to a hard-coded tool would print jq's
+  #    rows into all three regions and file every row's provenance under one id — and every
+  #    assertion above would STILL pass. The coverage loop sees the id in the listing, the
+  #    widths are uniform, the verdicts derive correctly. Only "the neovim block contains
+  #    neovim rows and no other tool's" says it.
+  _gp_region() { # <block id> -> that block's region of the fixture document
+    sed -n "/core:porting-matrix:gen $1 -->/,/core:porting-matrix:end $1 -->/p" "$GPR/PORTING-MATRIX.md"
+  }
+  _gp_fixture && _gp_run >/dev/null
+  _gp_list_out="$(_gp_out --list)"
+  _gp_iso_bad=""
+  while IFS="$(printf '\t')" read -r _fv_id _fv_tool; do
+    [[ -n "$_fv_tool" ]] || continue
+    _gp_region "$_fv_id" | grep -q "Fixture $_fv_tool Above" ||
+      _gp_iso_bad="$_gp_iso_bad $_fv_id(no-own-rows)"
+    _gp_region "$_fv_id" | grep -qE "^\| Target +\| \`$_fv_tool\`" ||
+      _gp_iso_bad="$_gp_iso_bad $_fv_id(wrong-header)"
+    while IFS="$(printf '\t')" read -r _fv_oid _fv_otool; do
+      [[ -n "$_fv_otool" && "$_fv_otool" != "$_fv_tool" ]] || continue
+      _gp_region "$_fv_id" | grep -q "Fixture $_fv_otool " &&
+        _gp_iso_bad="$_gp_iso_bad $_fv_id(leaked-$_fv_otool)"
+    done <<EOF
+$_gp_fv
+EOF
+  done <<EOF
+$_gp_fv
+EOF
+  if [[ -z "$_gp_iso_bad" ]]; then
+    pass "gen-porting-matrix: each fleet-version block renders ITS tool's rows and names ITS tool in the header"
+  else
+    fail "gen-porting-matrix: a fleet-version block rendered another tool's rows or named the wrong tool:$_gp_iso_bad"
+  fi
+
+  # 2. A REGISTERED BLOCK WHOSE TOOL HAS NO FLOOR IS 2, AND THE REFUSAL NAMES THAT TOOL. The
+  #    status column is DERIVED against the floor, so a missing one is not a thin table but a
+  #    table that cannot be rendered at all. A renderer still keyed to jq would find jq's
+  #    floor and report success for a block that has no data of its own.
+  _gp_fixture
+  _gp_victim="$(awk -F"$(printf '\t')" 'NR == 1 { print $2 }' <<<"$_gp_fv")"
+  sed -i.bak "/^floor	$_gp_victim	/d" "$GPR/scripts/fleet-package-versions.tsv" &&
+    rm -f "$GPR/scripts/fleet-package-versions.tsv.bak"
+  _gp_nofloor_out="$(_gp_out_lone --check --local)"
+  if [[ "$(_gp_run_lone --check --local)" == 2 ]] &&
+    grep -q 'no floor' <<<"$_gp_nofloor_out" && grep -q "$_gp_victim" <<<"$_gp_nofloor_out"; then
+    pass "gen-porting-matrix: a registered block whose tool records no floor is 2, naming that tool"
+  else
+    fail "gen-porting-matrix: a floorless tool rendered anyway, or the refusal did not name it — the verdict column is derived against a floor that is not there"
+  fi
+
+  # 3. A TOOL IN THE TSV THAT NO BLOCK RENDERS IS 2. #1082's own defect class at the registry
+  #    layer: rows recorded, nothing rendering them, so the footnote they were recorded for
+  #    stays the unchecked prose this file exists to replace. Silent by construction —
+  #    nothing else in this suite looks for data that produced no output.
+  _gp_fixture
+  printf '%b\n' 'floor\tfixture-orphan\t1.0.0' \
+    'ver\tfixture-orphan\tNowhere\t1.0.0\t2099-01-01\tfixture' \
+    >>"$GPR/scripts/fleet-package-versions.tsv"
+  _gp_orphan_out="$(_gp_out_lone --check --local)"
+  if [[ "$(_gp_run_lone --check --local)" == 2 ]] && grep -q 'fixture-orphan' <<<"$_gp_orphan_out"; then
+    pass "gen-porting-matrix: a tool recorded in the TSV that no block renders is 2, naming it"
+  else
+    fail "gen-porting-matrix: a tool with rows and no block went unreported — its enumeration is back to prose nothing can contradict (#1082)"
+  fi
+
   unset _gp_local_ids _gp_reg_ok _gp_loc_out _gp_pkg_before _gp_lloc_out
   unset _gp_cov_missing _gp_lloc_list
-  unset -f _gp_widths
+  unset _gp_derive_bad _gp_width_bad _gp_prov_bad _gp_iso_bad _gp_victim
+  unset _gp_nofloor_out _gp_orphan_out _fv_id _fv_tool _fv_oid _fv_otool
+  unset -f _gp_widths _gp_region
 
   # An edit OUTSIDE the markers is not drift and survives regeneration.
   _gp_fixture && _gp_run >/dev/null

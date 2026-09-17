@@ -30,19 +30,20 @@ truth and compare:
   `aliases.md` is still hand-kept ↔ its own source (`dotfiles-Offense/aliases.md` ↔
   `offensive/offensive.zsh`, `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`):
   documented entries must exist; notable source aliases/helpers should be documented.
-- **`PORTING-MATRIX.md` ↔ each OS repo.** THREE blocks are GENERATED — the script's
-  `BLOCK_IDS` is the registry, so read it rather than assuming a count. Two are the data
+- **`PORTING-MATRIX.md` ↔ each OS repo.** Several blocks are GENERATED — the script's
+  `BLOCK_IDS` is the registry, so read it rather than assuming a count, and `FV_TOOLS` says
+  which tool each fleet-version block enumerates. Two are the data
   tables (`scripts/gen-porting-matrix.sh` from each repo's `os/*.capabilities` and
-  `install/packages.txt`); the third is `fleet-versions`, from this repo's own
+  `install/packages.txt`); the rest are fleet-version enumerations, from this repo's own
   `scripts/fleet-package-versions.tsv`. All are gated by `make audit` §9h, so do not
   re-audit them cell by cell; `scripts/gen-porting-matrix.sh --fleet <fleet-root> --list`
-  prints each cell's provenance — all three blocks, `fleet-versions` included since #1096
-  (`--list --local` narrows it to the in-repo block and needs no sibling clone). What can drift is the hand-written half: the ~38 numbered
+  prints each cell's provenance — every block, the fleet-version ones included since #1096
+  (`--list --local` narrows to the in-repo blocks and needs no sibling clone). What can drift is the hand-written half: the ~38 numbered
   footnotes and the quirks prose against the repos they describe, and the _asserted_ cells
   (footnote ²¹ names, `asset`/`cargo`/`AUR`/`GURU` routes) against what that repo's
-  `bootstrap.sh` actually does out-of-band. **Mind the one overlap**: the `fleet-versions`
-  block sits INSIDE footnote ³⁴, so that footnote is authored prose wrapped around
-  generated rows — audit the argument, not the numbers.
+  `bootstrap.sh` actually does out-of-band. **Mind the overlap**: the fleet-version blocks
+  sit INSIDE footnotes — ⁵ (tree-sitter-cli), ³³ (neovim) and ³⁴ (jq) — so each of those is
+  authored prose wrapped around generated rows. Audit the argument, not the numbers.
 - **Vendored `core/` freshness.** Each OS repo's `core.lock` (`core_sha`,
   `core_version`) vs this repo's `core.version` and HEAD.
 - **`CHANGELOG.md` `[Unreleased]` ↔ recent commits** (`git log`).
