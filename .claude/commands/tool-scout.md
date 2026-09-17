@@ -90,14 +90,18 @@ one a workaround was verified against is a finding in its own right, not a footn
   | discard | `moved` | anything else — `zsh/00-tools.zsh`'s rationale is now overclaiming | `atuin-guard-verify: the silent-discard premise has MOVED` |
   | discard | `unmeasurable` | the apparatus could not be trusted — **never** reported as `holds` | `atuin-guard-verify: the premise could not be measured` |
   | autostart | `holds` | every arm spawned a daemon and landed exactly one row, from both unreachable shapes | nothing (job summary only) |
-  | autostart | `moved` | no daemon appeared, or the entry did not land — the stand-down is now unbacked | `atuin-guard-verify: the autostart self-healing premise has MOVED` |
+  | autostart | `moved` | no daemon appeared, or the entry did not land — an upstream fact, not a Core gap | `atuin-guard-verify: the autostart self-healing premise has MOVED` |
   | autostart | `unmeasurable` | including the manual-spawn control failing, i.e. the runner could not host a daemon at all | `atuin-guard-verify: the autostart premise could not be measured` |
 
   The `autostart` leg (`--premise autostart`, `make verify-atuin-guard-autostart`) spawns a
-  real daemon and owns its teardown, so it runs as its own job. If it reports `moved`, read
-  the report's remedy paragraph before proposing anything: the obvious fix — make the guard
-  stop standing down — is the one that breaks Alpine and macOS, because the degrade path sets
-  `ATUIN_DAEMON__ENABLED=false` and under autostart that deletes the spawn itself.
+  real daemon and owns its teardown, so it runs as its own job. **It reports `moved` today and
+  will keep doing so**: the verdict is computed from what upstream did, and `atuinsh/atuin#4114`
+  is open. Core already acted on it — since #1102 the guard probes under `autostart` and warns
+  without disabling anything (#1109 was filed two minutes after that landed, and is the misread
+  this paragraph exists to prevent). So read the report's own paragraphs before proposing
+  anything, and in particular do not reach for the degrade path: it sets
+  `ATUIN_DAEMON__ENABLED=false`, and under autostart that deletes the spawn itself, which is
+  the one launcher Alpine and macOS have.
 
   There used to be a copy of the recipe here. It is gone on purpose, and the reason is the
   point of the third verdict: it seeded its DB through the unreachable-daemon path, so on a

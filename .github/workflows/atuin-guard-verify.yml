@@ -33,11 +33,14 @@ name: atuin-guard-verify
 #   measure  / report             the SILENT-DISCARD premise. Starts no daemon.
 #   measure-autostart / report-autostart
 #                                 the AUTOSTART SELF-HEALING premise — does atuin start its
-#                                 own daemon when the socket is unreachable? The guard stands
-#                                 DOWN entirely under ATUIN_DAEMON__AUTOSTART on that
-#                                 assumption, and on Alpine and macOS it is the only
-#                                 mitigation those machines have. This leg spawns a real
-#                                 daemon and owns its teardown.
+#                                 own daemon when the socket is unreachable? That is the
+#                                 assumption Alpine and macOS run on, since atuin's own
+#                                 spawn is the only launcher they have. The guard used to
+#                                 stand DOWN entirely under ATUIN_DAEMON__AUTOSTART on the
+#                                 strength of it; since #1102 it probes and warns instead,
+#                                 so a finding here points UPSTREAM (atuinsh/atuin#4114)
+#                                 rather than at Core. This leg spawns a real daemon and
+#                                 owns its teardown.
 #
 # They are separate jobs rather than a matrix because a matrix cannot give the two legs
 # distinct outputs for the two report jobs to file under, and because the spawning leg must
