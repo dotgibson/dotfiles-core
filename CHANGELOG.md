@@ -2,8 +2,8 @@
 
 ### Added
 
-- **The autostart premise now measures a wedged daemon — the one shape where the guard's
-  stand-down is wrong rather than merely unhelpful**
+- **The autostart premise now measures a wedged daemon — the one shape that made the guard's
+  old `autostart` stand-down wrong rather than merely unhelpful**
   ([#1091](https://github.com/dotgibson/dotfiles-core/issues/1091)).
   `scripts/research/verify-atuin-guard.sh --premise autostart` measured four arms,
   `{absent, stale} × {hook, plain}`: a socket that is gone, and a socket file whose listener
@@ -934,6 +934,38 @@
   than naming a count, and flag the one overlap. Also corrected: `Makefile`'s `make help`
   line, `PORTING-MATRIX.md`'s size (~1,350 → ~1,570 lines) and its hand-written footnote
   count (~1,100 → ~1,230).
+- **`atuin-guard-verify`'s report still described the stand-down #1102 removed, and filed an
+  issue recommending the fix that had just shipped**
+  ([#1112](https://github.com/dotgibson/dotfiles-core/issues/1112)). The detector measures
+  **upstream** — nothing in it sources `zsh/00-tools.zsh` except a `grep` for the anchor, and
+  the verdict is computed from `ARM_SPAWN` alone. That is right, and is unchanged here: `moved`
+  is the honest answer while `atuinsh/atuin#4114` is open. What was wrong is everything the run
+  then _said_. The finding string ended _"and the guard's stand-down leaves this shape
+  unprotected"_, and the remedy paragraph still listed **"probe but warn instead of disabling"**
+  as something to consider — which shipped in #1102.
+
+  The cost is measurable rather than theoretical: the weekly routine filed
+  [#1109](https://github.com/dotgibson/dotfiles-core/issues/1109) at `04:01Z`, **two minutes
+  after #1106 merged at `03:59Z`**, recommending the change that had just landed. The report is
+  the issue body, so it would have recurred every run.
+
+  Re-measured before touching anything — `--premise autostart` against atuin **18.22.0** (the
+  anchor, `same`) on `Linux x86_64 glibc`: `moved`, with `absent` and `stale` × `{hook, plain}`
+  all spawning and landing their row, and both `wedged` arms spawning **no** at delta 0, rc 1.
+  Identical to the run #1109 reports. The upstream fact has not moved; Core's answer to it
+  already had.
+
+  So the report now leads with what Core already does, and asks what is **left**: a socket
+  health check upstream (`atuinsh/atuin#4114`), or a shape the guard's warning does not
+  recognise. The trap paragraph stays, narrowed to the thing that is still wrong — the degrade
+  path, which under `autostart` deletes the spawn Alpine and macOS depend on. The same
+  correction lands in `.github/workflows/atuin-guard-verify.yml`, `scripts/research/README.md`,
+  `scripts/test/52-atuin-autostart.sh`'s comments, `PORTING-MATRIX.md` (whose §autostart
+  paragraphs contradicted the one #1106 added, in the same document), and
+  `.claude/commands/tool-scout.md` — that last one being the guidance a future `/tool-scout`
+  follows on _seeing_ a `moved` verdict, which until now warned the reader off the fix that
+  shipped.
+
 - **Footnote ³¹ listed six `go install` rows while its own prose counted seven** — `duf`
   was missing, though `dotfiles-Alpine/bootstrap.sh:493` go-installs it. The prose was the
   correct half: with `duf` the set is seven and exactly five need a major-version suffix, a

@@ -15,11 +15,19 @@
 # compare version NUMBERS and never measure. This measures.
 #
 # TWO PREMISES, ONE PER RUN (dotgibson/dotfiles-core#402). The guard rests on a second
-# upstream fact that the paragraphs above do not describe: under ATUIN_DAEMON__AUTOSTART it
-# STANDS DOWN ENTIRELY — unhooks itself from precmd_functions and never probes — because atuin
-# is supposed to supervise its own daemon there, making an absent socket a cue to start one
-# rather than a fault. That covers Alpine and macOS, two of the eight machines, and on those
-# two it is the ONLY mitigation. `--premise autostart` measures it.
+# upstream fact that the paragraphs above do not describe: under ATUIN_DAEMON__AUTOSTART,
+# atuin is supposed to supervise its own daemon, which makes an absent socket a cue to start
+# one rather than a fault. That covers Alpine and macOS, two of the eight machines.
+# `--premise autostart` measures it.
+#
+# THAT PREMISE HAS SINCE MOVED, AND THE GUARD MOVED WITH IT (#1102, measured 2026-09-17).
+# The guard used to STAND DOWN ENTIRELY there — unhook itself from precmd_functions and never
+# probe — on the strength of the premise holding. It no longer does: it probes, stays silent
+# for a socket that is merely waiting to be spawned onto, and warns (disabling nothing) when
+# it finds a daemon that is alive and not serving. So a `moved` verdict from this mode is a
+# statement about UPSTREAM, not a report that Core is unprotected — read the finding text and
+# the report, which say so. The mode keeps measuring because the premise is what upstream
+# does, and a fix there (atuinsh/atuin#4114) is what would let the guard go quiet again.
 #
 # It is a separate MODE rather than more arms bolted onto the discard matrix, for four reasons
 # (and it has since grown arms of its own that the discard matrix could not host at all — the
@@ -27,9 +35,11 @@
 #
 #   1. Different remedy, different title. A discard finding says "retire, version-gate or
 #      reshape the guard". An autostart finding says something else entirely — and the naive
-#      reading of it ("stop standing down") is actively harmful, because the degrade path
-#      exports ATUIN_DAEMON__ENABLED=false, which under autostart deletes the spawn and
-#      permanently defeats the only launcher those two machines have. One premise, one
+#      reading of it once was ("make the guard stop standing down") actively harmful, because
+#      the degrade path exports ATUIN_DAEMON__ENABLED=false, which under autostart deletes the
+#      spawn and permanently defeats the only launcher those two machines have. #1102 took the
+#      ONE variant of that which keeps the launcher intact — probe, and warn without disabling
+#      — so the remedy an autostart finding now points at is upstream. One premise, one
 #      verdict, one issue title, or a reader acts on prose written for the other one.
 #   2. No control arm for a spawn. Every other arm here observes; this one has to CAUSE
 #      something. "autostart did not spawn a daemon" and "this box cannot host a daemon" are
@@ -248,9 +258,10 @@ TWO premises, one per run, selected with --premise:
              `atuin history start` still exit 0, print an id, stay silent on stderr, and
              DISCARD the entry (atuinsh/atuin#3561)? Starts no background process.
   autostart  With ATUIN_DAEMON__AUTOSTART set and the socket unreachable, does atuin
-             SPAWN a daemon and land the entry? The guard stands down entirely under that
-             variable, on exactly this assumption, and that stand-down is the ONLY
-             mitigation on Alpine and macOS. SPAWNS A REAL DAEMON (see teardown below).
+             SPAWN a daemon and land the entry? That is the assumption Alpine and macOS
+             run on. The guard used to stand down entirely under that variable on the
+             strength of it; since #1102 it probes and warns instead, so a finding here
+             points UPSTREAM rather than at Core. SPAWNS A REAL DAEMON (teardown below).
 
 Hermetic: a throwaway HOME/XDG under env -i, Core's own atuin/config.toml, and a DB this
 run creates and deletes. It never touches your real history.
@@ -382,8 +393,8 @@ AT_VER_PRE=0 # 1 when `--version` carried a pre-release suffix (18.20.0-beta.3)
 ANCHOR="unknown"
 ANCHOR_REL="unknown" # same | newer | older | unanchored | unknown
 # WHERE this ran, because for the autostart premise that is half the verdict's worth. The two
-# machines the stand-down protects are Alpine/musl and macOS; a green run ON one of them is
-# direct evidence for that row, and a green run on glibc Linux — the CI default — is the
+# machines this premise is load-bearing for are Alpine/musl and macOS; a green run ON one of
+# them is direct evidence for that row, and a green run on glibc Linux — the CI default — is the
 # weakest evidence in the whole arrangement. A hardcoded "glibc only" caveat was wrong the
 # first time this was run by hand on a Mac, which is exactly the machine it most wanted.
 HOST_KIND="unknown"
@@ -1393,8 +1404,9 @@ arms_discard() {
 }
 
 # ── premise: autostart — the same two shapes, but a daemon MUST appear ────────
-# The guard stands down entirely under ATUIN_DAEMON__AUTOSTART on the premise that atuin
-# supervises its own daemon. This measures that. `stale` is the load-bearing shape: every
+# Under ATUIN_DAEMON__AUTOSTART, atuin is supposed to supervise its own daemon. This measures
+# that, and nothing about Core: the guard used to stand down entirely on the strength of it,
+# and since #1102 does not. `stale` is the load-bearing shape: every
 # `atuin history start` is a fresh process, so "fire-and-forget" cannot mean "the client stops
 # checking" — it can only mean that a dead daemon's leftover socket inode defeats the spawn,
 # which is precisely what a crashed daemon leaves behind on Alpine and macOS.
@@ -1557,8 +1569,9 @@ arms_autostart() {
   # PROVEN-DEAD daemon, and these two begin from a proven-LIVE one. That is the shape — the
   # premise is not "does autostart spawn onto an empty path" (the four arms above answer that)
   # but "does autostart notice that the daemon it is deferring to has stopped serving". Core's
-  # stand-down unhooks the guard entirely under AUTOSTART on the strength of the second claim,
-  # and Alpine and macOS have nothing else.
+  # guard used to unhook itself entirely under AUTOSTART on the strength of the second claim;
+  # #1102 is what these arms bought — it now probes and warns, naming the pid to kill, because
+  # this pair measured that the second claim is false on 18.22.0.
   for hook in hook plain; do
     daemon_stop_proven "$SOCK" || {
       unmeasurable "the daemon from the previous arm is still answering on ${SOCK} — the wedged arm has to start from a daemon THIS arm started, or the process it leaves alive is not one it can account for"
@@ -1888,10 +1901,10 @@ measure() {
       # not a socket one.
       if [[ "${ARM_NAME[n]}" == wedged_* ]]; then
         [[ "${ARM_SPAWN[n]}" == yes ]] ||
-          diffs+=("${a}: the daemon was alive but not serving, and atuin did NOT replace it — autostart judges liveness by the pidfile rather than by reachability (atuinsh/atuin#4114), so a wedged daemon blocks its own respawn indefinitely and the guard's stand-down leaves this shape unprotected")
+          diffs+=("${a}: the daemon was alive but not serving, and atuin did NOT replace it — autostart judges liveness by the pidfile rather than by reachability (atuinsh/atuin#4114), so a wedged daemon blocks its own respawn indefinitely. Core no longer stands down here — since #1102 the guard probes and warns, naming the pid to kill — so the remedy is UPSTREAM, not a Core change")
       else
         [[ "${ARM_SPAWN[n]}" == yes ]] ||
-          diffs+=("${a}: no daemon became reachable on the socket — atuin did NOT start one, so an absent socket is now a fault rather than a cue, and the guard's stand-down leaves this shape unprotected")
+          diffs+=("${a}: no daemon became reachable on the socket — atuin did NOT start one, so an absent socket is now a fault rather than a cue. That is a change in the launcher Alpine and macOS depend on, and Core's guard cannot spawn one for them — the remedy is UPSTREAM")
       fi
       [[ "${ARM_DELTA[n]}" == "${ARM_EXPECT[n]}" ]] ||
         diffs+=("${a}: the row count changed by ${ARM_DELTA[n]}, expected ${ARM_EXPECT[n]} — the entry issued while the socket was unreachable did not land")
@@ -1931,7 +1944,7 @@ measure() {
       # process per command, so "does a fresh client spawn a daemon when the socket is
       # unreachable" IS the self-healing mechanism, not a proxy for it. Scoped to what ran —
       # a shell whose daemon dies mid-session is still out of reach here.
-      REASON="all ${#ARM_NAME[@]} arms ($(arms_sentence)) started a daemon that answered on the socket and landed exactly 1 row from an unreachable start — including the stale-socket shape a crashed daemon leaves behind, and the WEDGED shape where the previous daemon is still ALIVE and merely not serving (atuinsh/atuin#4114), which is the one shape a pidfile-liveness check cannot see. Every \`atuin history start\` is a fresh process, so per-command spawn IS the self-healing mechanism, and the stand-down in zsh/00-tools.zsh still has something behind it on Alpine and macOS"
+      REASON="all ${#ARM_NAME[@]} arms ($(arms_sentence)) started a daemon that answered on the socket and landed exactly 1 row from an unreachable start — including the stale-socket shape a crashed daemon leaves behind, and the WEDGED shape where the previous daemon is still ALIVE and merely not serving (atuinsh/atuin#4114), which is the one shape a pidfile-liveness check cannot see. Every \`atuin history start\` is a fresh process, so per-command spawn IS the self-healing mechanism, and the warning _core_atuin_daemon_guard prints for the wedged shape (#1102) has nothing left to fire on"
     else
       # Scoped to what the closing arm actually established. "Nothing was spooled" would be the
       # same overclaim this run's scope paragraph exists to prevent: a delta of 1 rules out a
@@ -2029,13 +2042,23 @@ emit_report() {
       printf 'If the premise is genuinely gone, the anchor line `# CORE_ATUIN_GUARD_VERIFIED_AGAINST=` in `zsh/00-tools.zsh` should only move as part of that decision — editing it is a claim that the premise was re-measured, not a version bump.\n\n'
       ;;
     autostart/moved)
-      printf 'The premise the `ATUIN_DAEMON__AUTOSTART` stand-down rests on did not hold in this run. That stand-down covers **Alpine and macOS**, and on those two machines it is the **only** mitigation: `_core_atuin_daemon_guard` unhooks itself from `precmd_functions` and never probes at all.\n\n'
+      printf 'The premise `ATUIN_DAEMON__AUTOSTART` rests on did not hold in this run. That premise is what **Alpine and macOS** run on: those two rows set the variable, and atuin spawning its own daemon is the only launcher they have.\n\n'
+      # WHAT CORE ALREADY DOES, FIRST. This mode reported `moved` before #1102 and reports it
+      # again after, because the verdict is computed from what UPSTREAM did — nothing here
+      # reads zsh/00-tools.zsh except to grep the anchor. A reader who is not told that reads
+      # a repeat finding as an unactioned one and reaches for a Core change that already
+      # shipped (#1109 is exactly that misread, filed two minutes after #1106 merged).
+      printf '**Core is not standing still on this, and this report is not saying it is.** `_core_atuin_daemon_guard` used to unhook itself from `precmd_functions` under `autostart` and never probe, on the strength of this premise. Since #1102 it does not: it probes, stays silent for a socket that is merely waiting to be spawned onto, and prints one warning naming the pid to kill when it finds a daemon that is alive and not serving. Nothing is disabled. This mode measures **upstream**, not that guard — so a `moved` verdict repeats for as long as upstream is unfixed, and repeating is not the same as unactioned.\n\n'
       [[ "$ANCHOR_REL" == unanchored ]] &&
         printf 'There is no `# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=` line in `zsh/00-tools.zsh`, so this may be the **first measurement of this premise rather than a change in it**. If so the finding is that those two machines have been unprotected all along — a different thing from an upstream regression, with a different urgency. Weigh it as that before reaching for a version gate.\n\n'
       # THE TRAP, NAMED. The obvious remedy is the one that breaks the two machines this
       # premise is about, and a report that let a reader reach for it would do more damage
       # than the finding it is reporting.
-      printf 'Do **not** reach for "make the guard stop standing down" as a reflex. Its degrade path exports `ATUIN_DAEMON__ENABLED=false`, and under `autostart` that removes the spawn itself — permanently defeating the only launcher Alpine and macOS have, which is the very outcome the stand-down exists to avoid. The remedies that do not cost those machines their history are: **probe but warn instead of disabling**; **stand down only after N consecutive failed spawns**; or **unlink a stale socket before deferring to autostart**. Re-measure by hand before deciding; do not act on this report alone.\n\n'
+      printf 'So the question this report puts is **what is left**, not what to do about an unguarded fleet. Two things still are. Upstream is one: a health check on the socket rather than the pidfile (`atuinsh/atuin#4114`) is what would let the guard go quiet again, and nothing in Core substitutes for it. A **new** shape is the other: if the arms that failed here are ones the guard'"'"'s warning does not recognise, that is a Core change, and it is worth reading `_core_atuin_daemon_guard` before assuming otherwise.\n\n'
+      # THE TRAP, STILL NAMED. #1102 took the one safe variant; the unsafe ones are unsafe for
+      # the same reason they always were, and a reader reaching for the degrade path would do
+      # more damage than the finding being reported.
+      printf 'What is still **not** available is the degrade path. It exports `ATUIN_DAEMON__ENABLED=false`, and under `autostart` that removes the spawn itself — permanently defeating the only launcher Alpine and macOS have. That is why #1102 warns instead of disabling, and why "just turn the daemon off here" stays wrong however the premise moves. Re-measure by hand before deciding; do not act on this report alone.\n\n'
       # Only when a WEDGED arm is among the failures, because its remedy is the one that
       # differs: none of the three above reaches a daemon that is alive and not serving.
       # Unlinking a stale socket does nothing when there is no inode; waiting N spawns does
@@ -2049,20 +2072,20 @@ emit_report() {
           break
         done
         [[ -n "${w:-}" ]] &&
-          printf 'A **wedged** arm is among the failures, and its remedy is not on that list. A daemon that is alive and not serving leaves nothing to unlink and prompts no spawn to count, so "unlink the stale socket" and "stand down after N failed spawns" both reach it zero times. What reaches it is the guard **not standing down at all** under `autostart` — probing, and on failure warning rather than exporting `ATUIN_DAEMON__ENABLED=false`. That is the one variant of "stop standing down" the paragraph above is not warning you off, because it keeps the launcher intact. Upstream this is `atuinsh/atuin#4114`; a fix there (health-check the socket, not the pidfile) removes the need entirely.\n\n'
+          printf 'A **wedged** arm is among the failures — a daemon alive in the pidfile and not serving its socket — and that is the shape #1102 was written for. It leaves nothing to unlink and prompts no spawn to count, so "unlink the stale socket" and "stand down after N failed spawns" reach it zero times; what reaches it is the guard probing and warning, which is what ships today. **On this shape there is nothing further to do in Core.** Upstream this is `atuinsh/atuin#4114` (health-check the socket, not the pidfile); a fix there removes the warning'"'"'s reason to exist. `core doctor` reports the wedged pid as its own state, so an operator who hits it is told which process to kill.\n\n'
         ;;
       esac
       ;;
     autostart/unmeasurable)
-      printf 'This is **not** good news and must not be read as one. Nothing was established, so the `autostart` stand-down is currently unverified rather than confirmed. Note in particular that a failure of the **manual-spawn control** means *this box could not host a daemon at all* — an apparatus limit, never a finding about upstream. Repair the detector (`scripts/research/verify-atuin-guard.sh`), then re-run `make verify-atuin-guard-autostart`.\n\n'
+      printf 'This is **not** good news and must not be read as one. Nothing was established, so the `autostart` premise is currently unverified rather than confirmed. Note in particular that a failure of the **manual-spawn control** means *this box could not host a daemon at all* — an apparatus limit, never a finding about upstream. Repair the detector (`scripts/research/verify-atuin-guard.sh`), then re-run `make verify-atuin-guard-autostart`.\n\n'
       ;;
     */unmeasurable)
       printf 'This is **not** good news and must not be read as one. The check could not establish anything, so the guard'"'"'s justification is currently unverified rather than confirmed. Repair the detector (`scripts/research/verify-atuin-guard.sh`), then re-run.\n\n'
       ;;
     autostart/holds)
-      printf 'No action needed on this premise. Read the scope note below before treating it as fleet coverage, though: the two machines that depend on this stand-down are the two least like the box that just measured it.\n\n'
+      printf 'No action needed on this premise. Read the scope note below before treating it as fleet coverage, though: the two machines that depend on it are the two least like the box that just measured it. A `holds` here also means `_core_atuin_daemon_guard`'"'"'s wedged-daemon warning (#1102) had nothing to fire on — the guard stays hooked and silent either way, so this is not a cue to remove it.\n\n'
       [[ "$ANCHOR_REL" == unanchored ]] &&
-        printf 'This premise has no anchor yet. If you are satisfied with this run, record it by writing `# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=%s` into `zsh/00-tools.zsh` beside the stand-down block — that line is a human'"'"'s claim to have measured it, which is why nothing writes it automatically.\n\n' "$AT_VER"
+        printf 'This premise has no anchor yet. If you are satisfied with this run, record it by writing `# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=%s` into `zsh/00-tools.zsh` beside the guard'"'"'s autostart branch — that line is a human'"'"'s claim to have measured it, which is why nothing writes it automatically.\n\n' "$AT_VER"
       ;;
     */holds)
       printf 'No action needed. The guard still earns its place.\n\n'
@@ -2070,9 +2093,9 @@ emit_report() {
     esac
     printf -- '**Measured here:** %s.\n\n' "$(arms_sentence)"
     if [[ "$PREMISE" == autostart ]]; then
-      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`, and the two machines this premise protects are **Alpine/musl and macOS** — so weigh it accordingly: a run on one of those two is direct evidence for that row and still says nothing about the other, while a run on glibc Linux (what the scheduled job uses) is the *weakest* evidence in this whole arrangement for either of them. It measures a **fresh client** spawning a daemon from an unreachable socket; a long-lived shell whose daemon dies mid-session is not exercised. Teardown is proven two ways — the pid that owned the socket before the stop, and the process group each arm ran in — which between them cover a daemon that detached after binding and a child that hung before it. A child that did **both** (detached, then never bound) is detected by **neither**, and this run does not notice it: it is left running and its sandbox is deleted underneath it. That is an undetected leak, not a guarded one — the preserved-sandbox path covers a stop that failed, not a process nothing ever looked for. Two different wedges, and only one of them is measured. The **alive-but-not-serving** shape (`atuinsh/atuin#4114`) IS exercised, by the `wedged` arms: a real daemon is started, its socket is unlinked out from under it, and the arm asks whether autostart replaces a process it can still see in the pidfile. The **accept-but-silent** shape (`atuinsh/atuin#3382`) is not, and cannot be from here: that socket answers, so every reachability check in this file — including the one the arms use to decide a daemon came up — passes against a daemon that will never reply. A daemon that wedges in *that* way escapes only if it does so **after** completing the measured pair: one that wedges during it shows up as an expired bound (`unmeasurable`) or a row that never landed (`moved`), because every arm must also exit 0 and land exactly one row. The **silent-discard** premise is a separate mode (`--premise discard`) and is not measured by this run. stderr is recorded but never judged: the spawned daemon inherits this process'"'"'s descriptor, so its tracing and the client'"'"'s are not separable.\n' "$HOST_KIND"
+      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`, and the two machines this premise is load-bearing for are **Alpine/musl and macOS** — so weigh it accordingly: a run on one of those two is direct evidence for that row and still says nothing about the other, while a run on glibc Linux (what the scheduled job uses) is the *weakest* evidence in this whole arrangement for either of them. It measures a **fresh client** spawning a daemon from an unreachable socket; a long-lived shell whose daemon dies mid-session is not exercised. Teardown is proven two ways — the pid that owned the socket before the stop, and the process group each arm ran in — which between them cover a daemon that detached after binding and a child that hung before it. A child that did **both** (detached, then never bound) is detected by **neither**, and this run does not notice it: it is left running and its sandbox is deleted underneath it. That is an undetected leak, not a guarded one — the preserved-sandbox path covers a stop that failed, not a process nothing ever looked for. Two different wedges, and only one of them is measured. The **alive-but-not-serving** shape (`atuinsh/atuin#4114`) IS exercised, by the `wedged` arms: a real daemon is started, its socket is unlinked out from under it, and the arm asks whether autostart replaces a process it can still see in the pidfile. The **accept-but-silent** shape (`atuinsh/atuin#3382`) is not, and cannot be from here: that socket answers, so every reachability check in this file — including the one the arms use to decide a daemon came up — passes against a daemon that will never reply. A daemon that wedges in *that* way escapes only if it does so **after** completing the measured pair: one that wedges during it shows up as an expired bound (`unmeasurable`) or a row that never landed (`moved`), because every arm must also exit 0 and land exactly one row. The **silent-discard** premise is a separate mode (`--premise discard`) and is not measured by this run. stderr is recorded but never judged: the spawned daemon inherits this process'"'"'s descriptor, so its tracing and the client'"'"'s are not separable.\n' "$HOST_KIND"
     else
-      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`; the scheduled job runs it on Linux x86_64 glibc, and the Alpine/musl half of the fleet is unmeasured either way. The **`autostart` stand-down** is not measured by *this* run: it is a separate premise with its own mode (`--premise autostart`, `make verify-atuin-guard-autostart`), its own anchor and its own verdict, because measuring it means spawning a real daemon and owning its teardown — so a green run here says nothing about it in either direction. **Buffer-and-replay** is probed only by the closing daemon-off control arm above; a spool that only a live daemon would drain is out of reach for the same reason. The accept-but-silent socket (`atuinsh/atuin#3382`) is structurally out of scope: this measures *unreachable*, and that shape is *reachable and lying*.\n' "$HOST_KIND"
+      printf -- '---\n\n**Scope this does not cover**, stated so it is not mistaken for coverage. This ran on `%s`; the scheduled job runs it on Linux x86_64 glibc, and the Alpine/musl half of the fleet is unmeasured either way. The **`autostart` premise** is not measured by *this* run: it is a separate premise with its own mode (`--premise autostart`, `make verify-atuin-guard-autostart`), its own anchor and its own verdict, because measuring it means spawning a real daemon and owning its teardown — so a green run here says nothing about it in either direction. **Buffer-and-replay** is probed only by the closing daemon-off control arm above; a spool that only a live daemon would drain is out of reach for the same reason. The accept-but-silent socket (`atuinsh/atuin#3382`) is structurally out of scope: this measures *unreachable*, and that shape is *reachable and lying*.\n' "$HOST_KIND"
     fi
   } >"$REPORT"
 }
