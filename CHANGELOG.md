@@ -206,6 +206,28 @@
   `scripts/test/55-capabilities.sh`, `scripts/research/README.md`,
   `examples/os.capabilities.example`)
 
+- **`mise/config.toml` stopped asserting an impossibility mise never had**
+  ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045)). The `lockfile = true`
+  block concluded that mise _"does not lock a GLOBAL config's tools"_, from a measurement of a
+  bare `mise lock` returning `! No tools configured to lock`. The measurement was right and the
+  conclusion was not — `mise lock` targets only the active **project** config root by design,
+  and `mise lock --global` is the form that locks this file. Re-measured on the _same_ mise
+  2026.5.16 the comment cites: `mise lock --global --dry-run` resolves all 11 declared tools
+  across all 7 platforms into `~/.config/mise/mise.lock`. So the flag was never the obstacle,
+  and the block's own stated goal — floating `lts`/`latest`/`stable` that still resolve
+  identically on boxes provisioned a month apart — is reachable.
+
+  What survives the correction is the reason it is not reached _yet_: that lockfile is written
+  **per box**, and this file is copied rather than symlinked, so a lock generated on one machine
+  reaches no other. Shipping one fleet-wide has to answer the header's trade — "your local copy
+  always wins" and "this is the pinned toolchain everywhere" cannot both be true of the same
+  file — which is a design decision and belongs to `/runtime-freshness`, the routine `CLAUDE.md`
+  gives this file to. No behaviour changed here and no lockfile was generated.
+
+  Also corrected three lines below: the global-only-settings note still said this file is
+  _symlinked_ to `~/.config/mise/config.toml`, which the file's own header has contradicted at
+  length since bootstrap started adopting it instead.
+
 - **R1's three remaining cells are measured, and the research phase's last open question is
   closed** (`NON-MUTABLE-HOST-PROPOSAL.md` §5, #1052, runs 35130669056 and 35133704599).
   Two of the three were claims a _shipped_ declaration already made.
