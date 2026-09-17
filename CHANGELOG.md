@@ -532,6 +532,29 @@
   the ratios drifted — the issue reference says everything the number did, and cannot go
   stale.
 
+- **Rule 4 can see an image bound to a shell variable** — the surface that hid three
+  unpinned refs from it ([#1099](https://github.com/dotgibson/dotfiles-core/issues/1099)).
+  This is #1055's finding one level up, and worth naming as a pattern: that one was rule 4
+  keyed on a _tool name_ (`docker`), so podman walked past it; this one is the same rule
+  keyed on a _command_, so `img='nixos/nix:latest'` fed through a matrix and run as
+  `"$IMAGE"` walked past it too. A gate keyed on where a hazard usually appears misses it
+  wherever it appears next.
+
+  The new scan is **deliberately narrower than the command scan, and has to be**. A command
+  line supplies the context that says "this argument is an image"; an assignment supplies
+  none, so the value has to carry that evidence itself. It therefore requires a registry- or
+  namespace-qualified reference — `quay.io/fedora/x:44`, `nixos/nix:latest` — and skips a
+  bare `img=alpine:3.21`, which nothing in the token distinguishes from `START=12:30`. That
+  is the same bare-name gap the command scan already documents, reached from the other side,
+  and it is now the only one left in the rule.
+
+  Held by a third rule-4 assertion carrying both halves in one fixture, because the
+  narrowness _is_ the rule: the two qualified refs fire, while a pinned ref, a
+  `localhost:5000/…` build, a bare `alpine:3.21`, a `START=12:30` and an
+  `URL=https://example.com:8080/x` all stay silent. Red against the previous script, green
+  against this one, and green on a tree where the three refs are pinned — so it distinguishes
+  a rule that passes from one that never matches.
+
 - **The research matrix's three container images were unpinned, two of them mutable
   `:latest`** ([#1099](https://github.com/dotgibson/dotfiles-core/issues/1099)).
   `research-nonmutable.yml` picks its image in the plan job's `case` and hands it to the
@@ -551,11 +574,56 @@
   The pull step's name carried the whole reference, which a digest turns into an unreadable
   hundred-character title, so it names `matrix.target` instead.
 
-  What this does _not_ do is teach rule 4 the assignment surface. A `name:tag` literal in a
-  shell assignment is a materially harder scan than a command line — every `=`-bearing token
-  becomes a candidate — and it wants its own false-positive filter and its own tests rather
-  than a bolt-on. That half stays open on #1099, and the gap stays named in rule 4's comment
-  block.
+  Pinning the three was only half of
+  [#1099](https://github.com/dotgibson/dotfiles-core/issues/1099); the entry above is the
+  other half, which teaches the rule to see the surface that hid them.
+- **Three external container images ran unpinned, and the gate that forbids exactly that
+  could not see them**
+  ([#1055](https://github.com/dotgibson/dotfiles-core/issues/1055)). `check-modern.sh`
+  rule 4 requires an `@sha256:` digest on every container image. It was keyed on the tool
+  name `docker` and read one physical line at a time — so `research-nonmutable-vm.yml`,
+  which drives containers with _podman_, builds one from a heredoc `Containerfile`, and
+  wraps a long command across `\` continuations, reached three images with no digest at
+  all while the floor reported zero violations:
+
+  ```text
+  FROM quay.io/fedora/fedora-bootc:42               a Containerfile FROM — no surface matched it
+  docker.io/library/registry:2                      `sudo podman run` — podman was not in the verb scan
+  quay.io/centos-bootc/bootc-image-builder:latest   podman, AND behind three `\` continuations
+  ```
+
+  The third is the one to lead with: a `:latest` tag, re-resolved every run by
+  `--pull=newer`, executed `--privileged`. All three are now digest-pinned, and
+  `--pull=newer` is gone — chasing a moving tag is its whole job, and against a digest it
+  does nothing but mislead the next reader. bootc-image-builder publishes no semver tag
+  upstream, only `latest` and raw git SHAs, so `latest@sha256:…` _is_ its pinned form.
+
+  **Rule 4 now covers the surfaces that hid them.** The command scan is engine-agnostic
+  (`docker|podman`, with `create` beside `run|build|pull`), joins `\` continuations into
+  one logical line, and reads a Containerfile `FROM`. Widening a tolerant `name:tag` scan
+  that way drags in tokens that merely _look_ like images, so it now tests each whitespace
+  token **anchored** and skips what cannot be pinned: a port map (`-p 5000:5000`), a `:ro`
+  mount, a `--flag=value`, a `"$IMAGE"` variable, the image being built by `-t`, and a local
+  registry or a `localhost/…` image built in the same job. Without that filter the rule
+  reds on the very file it was widened for, over work nobody can fix.
+
+  Rule 4 had no behavioural coverage before this — it was "green on this tree", which cannot
+  tell a rule that passes from one that never matches. Two assertions now hold it, one per
+  half, and the positive one asserts the continuation hit at the _chain head_ line, which a
+  per-line scan cannot produce. Two LATENT gaps stay open deliberately, named in the code: a
+  bare `docker run alpine` with no tag — that same tag requirement is what stops a
+  multi-stage `FROM builder` from ever false-firing — and a `FROM` buried mid-line.
+
+  The generalisable lesson is in the shape of the old rule, not in the images: it was keyed
+  on a tool name rather than on the hazard, so a workflow reaching for a different container
+  runtime walked straight past it. A third gap, named beside those two, is that lesson
+  recurring one level up: keying on a _surface_ leaves an ASSIGNMENT hiding the literal just
+  as well as a different runtime did. `research-nonmutable.yml` picks its image in a `case`
+  and runs `docker run … "$IMAGE"`, so three refs — two of them mutable `:latest` — never
+  reach a command line at all. Scanning shell assignments wants its own filter and its own
+  tests rather than a bolt-on here, so it is filed as
+  [#1099](https://github.com/dotgibson/dotfiles-core/issues/1099) and documented in the rule,
+  which is the only honest way to hold a known miss.
 
 - **`PORTING-MATRIX.md` was silent about Fedora on both halves of the nvim-treesitter
   requirement, and the report that noticed named the wrong release**
