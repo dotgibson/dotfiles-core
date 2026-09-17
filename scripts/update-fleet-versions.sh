@@ -74,7 +74,9 @@ say() { printf ':: %s\n' "$*"; }
 today="$(date -u +%Y-%m-%d)"
 
 # One request per TOOL, not per row: Repology answers every repository in a single
-# document, so 16 rows cost one call. Cached in a temp dir for the life of the run.
+# document, so every row for a tool costs one call, however many lanes it has. Cached in a
+# temp dir for the life of the run. (No count stated here on purpose — the last one said 16
+# and was wrong within a release.)
 CACHE="$(mktemp -d)" || exit 2
 trap 'rm -rf "$CACHE"' EXIT
 
@@ -115,6 +117,13 @@ PY
 
 drift=0 confirmed=0 unconfirmed=0
 declare -a NEW_LINES=() REPORT=()
+# Tools whose PROJECT SLUG answered nothing at all, as opposed to a repo id that did. The
+# per-row `?` lines cannot tell those apart: fifteen of them read as fifteen unlucky lanes
+# rather than one wrong name. The tool name is used verbatim as the Repology project slug,
+# and Repology splits some projects across version-named entries and reports false ABSENCES
+# (dotfiles-Alpine#170) — so a slug that does not resolve is an expected shape, not an
+# exotic one. It just has to be VISIBLE, which is what this list is for (#1082).
+DEAD_SLUGS=""
 
 while IFS= read -r line; do
   if [[ "$line" =~ ^[[:space:]]*# || -z "${line// /}" ]]; then
@@ -129,7 +138,12 @@ while IFS= read -r line; do
     NEW_LINES+=("$line"); continue
   fi
 
-  fetch_tool "$tool" || true
+  if ! fetch_tool "$tool"; then
+    case " $DEAD_SLUGS " in
+    *" $tool "*) ;;
+    *) DEAD_SLUGS="$DEAD_SLUGS $tool" ;;
+    esac
+  fi
   if ! upstream="$(probe_version "$tool" "$probe")"; then
     unconfirmed=$((unconfirmed + 1))
     REPORT+=("  ?  $tool/$target — probe '$probe' returned nothing; NOT stamped (recorded $ver, $vdate)")
@@ -149,6 +163,15 @@ done <"$TSV"
 
 printf '%s\n' "${REPORT[@]}"
 say "confirmed=$confirmed drifted=$drift unconfirmed=$unconfirmed"
+
+# A DEAD SLUG IS REPORTED, NEVER FAILED. A permanently wrong project name should not red the
+# weekly bot — that teaches people to ignore it — and a transient one-tool network failure
+# certainly should not. What catches a slug nobody fixes is the gate that already exists:
+# gen-porting-matrix.sh names every row past FRESH_DAYS on stderr, on every `make audit`.
+for _t in $DEAD_SLUGS; do
+  printf '!! no Repology project answered to the slug %s — every probeable row for it was SKIPPED, not confirmed.\n' "$_t" >&2
+  printf "   check https://repology.org/project/%s/versions; if the project is named differently there, set those rows' <probe> to - and record a human source instead.\n" "$_t" >&2
+done
 
 # Nothing was reachable at all — a network or API failure, not a fleet finding. Say so
 # rather than reporting "all current", which is what an empty drift count would imply.

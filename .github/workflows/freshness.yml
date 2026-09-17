@@ -205,8 +205,9 @@ jobs:
           fi
           echo "📦 opened/updated PR on \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
 
-  # scripts/fleet-package-versions.tsv feeds PORTING-MATRIX.md's generated fleet-versions
-  # block. gen-porting-matrix.sh never reaches the network (it runs inside an offline
+  # scripts/fleet-package-versions.tsv feeds PORTING-MATRIX.md's generated fleet-version
+  # blocks — one per tool, registered in gen-porting-matrix.sh's FV_TOOLS (#1082).
+  # gen-porting-matrix.sh never reaches the network (it runs inside an offline
   # audit), so it can only say a row has not been re-checked lately — it cannot check.
   # This is the half that looks. Same shape as the pin jobs above, and for the same reason:
   # a nudge a human has to action by hand is one nobody actions.
@@ -263,8 +264,10 @@ jobs:
       # APPLY MODE CANNOT FINISH WITHOUT THE FLEET (#917). The TSV feeds PORTING-MATRIX.md's
       # generated block, so the updater regenerates the matrix straight after writing it —
       # and gen-porting-matrix.sh reads the SIBLING checkouts, defaulting to this repo's
-      # parent, which on a runner is empty. The job's first scheduled run probed all 16 rows
-      # successfully, wrote the TSV, then died on `!! regeneration failed`.
+      # parent, which on a runner is empty. The job's first scheduled run probed every row
+      # successfully, wrote the TSV, then died on `!! regeneration failed`. (No count here:
+      # this comment said "all 16 rows" until #1082 made it 49, which is exactly the class
+      # of stale assertion the TSV itself exists to end.)
       #
       # Cloned public, anonymous and shallow, the idiom parity-check.yml already uses. The
       # list comes from scripts/os-repos.txt rather than being spelled here: that file is
@@ -324,9 +327,11 @@ jobs:
           if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
             gh pr create --head "$BRANCH" --base "$DEFAULT_BRANCH" \
               --title "chore(matrix): re-verify fleet package versions" \
-              --body "Automated by the freshness bot. Re-read every probeable row in \`scripts/fleet-package-versions.tsv\` from upstream and regenerated PORTING-MATRIX.md's fleet-versions block.
+              --body "Automated by the freshness bot. Re-read every probeable row in \`scripts/fleet-package-versions.tsv\` from upstream and regenerated PORTING-MATRIX.md's fleet-version blocks.
 
-          A changed version means a distro moved. An unchanged version with a newer \`verified\` date means the row was confirmed — that is the point: it proves somebody looked, so a stable row does not read as stale. Rows the probe could not answer keep their old date and are listed in the run log as needing a human.
+          A changed version means a distro moved. An unchanged version with a newer \`verified\` date means the row was confirmed — that is the point: it proves somebody looked, so a stable row does not read as stale. Rows the probe could not answer keep their old date and are listed in the run log as needing a human, and a whole TOOL whose project slug answered nothing is called out separately — fifteen \`?\` lines are one wrong name, not fifteen unlucky lanes.
+
+          **Read the \`<probe>\` column before accepting a drift row.** A \`-\` there is deliberate: the Gentoo rows record the newest STABLE-keyworded ebuild and the openSUSE tree-sitter rows come from a differently-named package, so an automated re-read would answer a different question from the one the footnote asks.
 
           Review the diff, let CI run, then merge.
 

@@ -201,15 +201,17 @@ else
 fi
 unset _ga_out _ga_rc
 
-# ── 9h. PORTING-MATRIX.md drift (the sources ↔ all three generated blocks) ───
-# PORTING-MATRIX.md has THREE generated blocks (scripts/gen-porting-matrix.sh's BLOCK_IDS
-# is the registry): the package-manager and package-name tables, rendered from the sibling
-# OS repos' os/*.capabilities and install/packages.txt (#686) — the same answer §9d gives
-# colour and §9g gives the alias cheat sheet — plus `fleet-versions`, rendered from
-# scripts/fleet-package-versions.tsv in THIS repo. The ~1,230 hand-written lines of
-# footnotes around them are untouched, with one exception worth knowing: the
-# fleet-versions block sits inside footnote 34, so that footnote is authored prose around
-# generated facts.
+# ── 9h. PORTING-MATRIX.md drift (the sources ↔ every generated block) ────────
+# PORTING-MATRIX.md's generated blocks are registered in scripts/gen-porting-matrix.sh's
+# BLOCK_IDS — READ IT rather than assuming a count, which is why no number appears here
+# (#1082 added two and every count in this file was a lie for an afternoon). Two of them are
+# the package-manager and package-name tables, rendered from the sibling OS repos'
+# os/*.capabilities and install/packages.txt (#686) — the same answer §9d gives colour and
+# §9g gives the alias cheat sheet. The rest are fleet-version enumerations, one per tool,
+# rendered from scripts/fleet-package-versions.tsv in THIS repo. The ~1,230 hand-written
+# lines of footnotes around them are untouched, with one exception worth knowing: those
+# fleet-version blocks sit INSIDE footnotes (5, 33, 34), so each of those footnotes is
+# authored prose around generated facts.
 #
 # THE GATE IS THREE FACTS, one more than §9g. --check exits 1 on drift (a repo renamed a
 # package, bumped a `# min:` floor or changed a verb without regenerating; or a table was
@@ -227,8 +229,8 @@ unset _ga_out _ga_rc
 # $HERE/.. is .claude/worktrees/, so the fleet half skips there too; pass --fleet DIR to
 # gate it from a worktree.
 #
-# WHAT #1046 FOUND, and why there is a second call below. `fleet-versions`' only input is
-# in this repo and is therefore present on EVERY leg — but the whole of --check used to
+# WHAT #1046 FOUND, and why there is a second call below. The fleet-version blocks' only
+# input is in this repo and is therefore present on EVERY leg — but the whole of --check used to
 # sit behind the fleet resolve, so this section skipped as a unit and reported "not
 # covered" over an input it was holding. A hand-edit to that table was invisible to
 # default CI. --check --local compares exactly the in-repo blocks, resolves no fleet and
@@ -240,19 +242,19 @@ unset _ga_out _ga_rc
 hdr "PORTING-MATRIX.md drift (gen-porting-matrix.sh --check)"
 _gp_out="$("$HERE/scripts/gen-porting-matrix.sh" --check 2>&1)" && _gp_rc=0 || _gp_rc=$?
 if ((_gp_rc == 0)); then
-  pass "gen-porting-matrix (all three generated blocks in PORTING-MATRIX.md match their sources)"
+  pass "gen-porting-matrix (every generated block in PORTING-MATRIX.md matches its source)"
 elif ((_gp_rc == 1)); then
   fail "PORTING-MATRIX.md drift — a generated block no longer matches its source; run: make gen-porting-matrix"
   fail_detail "$_gp_out"
 elif ((_gp_rc == 3)); then
-  # The fleet is absent — but only two of the three blocks needed it. Gate the third here
-  # rather than filing it under the same skip.
+  # The fleet is absent — but only `commands` and `packages` needed it. Gate the in-repo
+  # blocks here rather than filing them under the same skip.
   _gp_missing="${_gp_out#*not checked out under }"
   _gp_loc_out="$("$HERE/scripts/gen-porting-matrix.sh" --check --local 2>&1)" && _gp_loc_rc=0 || _gp_loc_rc=$?
   if ((_gp_loc_rc == 0)); then
-    pass "gen-porting-matrix (the in-repo block — fleet-versions — matches scripts/fleet-package-versions.tsv)"
+    pass "gen-porting-matrix (the in-repo blocks — the fleet-version enumerations — match scripts/fleet-package-versions.tsv)"
   elif ((_gp_loc_rc == 1)); then
-    fail "PORTING-MATRIX.md drift — the fleet-versions block no longer matches scripts/fleet-package-versions.tsv; run: scripts/gen-porting-matrix.sh --local (no sibling clone needed)"
+    fail "PORTING-MATRIX.md drift — a fleet-version block no longer matches scripts/fleet-package-versions.tsv; run: scripts/gen-porting-matrix.sh --local (no sibling clone needed)"
     fail_detail "$_gp_loc_out"
   else
     fail "gen-porting-matrix.sh --check --local could not run (exit $_gp_loc_rc) — the in-repo half of the drift gate checked NOTHING this run"

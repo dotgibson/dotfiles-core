@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # scripts/gen-porting-matrix.sh
 # ──────────────────────────────────────────────────────────────────────────────
-# Render PORTING-MATRIX.md's three generated blocks: two data tables FROM the OS repos
-# that own the data, plus the fleet-version enumeration from this repo's own TSV.
+# Render PORTING-MATRIX.md's generated blocks: two data tables FROM the OS repos that own
+# the data, plus one fleet-version enumeration per tool from this repo's own TSV. BLOCK_IDS
+# is the registry and the count; no comment here states one, because the last one that did
+# went stale the day a tool was added (#1082).
 #
 # THE DEFECT THIS CLOSES (#686). PORTING-MATRIX.md is ~1,570 lines. Its two data tables
 # (~70 lines) restate data the OS repos already hold and already enforce: the
@@ -16,7 +18,7 @@
 # gen-aliases.sh, applied to the matrix: the repos are authoritative, the tables are
 # rendered, and `make audit` fails when either moves without the other.
 #
-# WHAT IS GENERATED, AND WHAT DELIBERATELY IS NOT. Only the THREE regions between marker
+# WHAT IS GENERATED, AND WHAT DELIBERATELY IS NOT. Only the regions between marker
 # pairs (the shape gen-aliases.sh uses) — see BLOCK_IDS below, which is the registry:
 #
 #     <!-- core:porting-matrix:gen packages -->
@@ -28,10 +30,12 @@
 # and is never touched. The footnotes are the reason the file exists;
 # `/os-package-availability` is the routine that refreshes them, not this script.
 #
-# ONE EXCEPTION, and it is worth knowing: the `fleet-versions` block sits INSIDE footnote
-# 34, which enumerates the fleet's jq versions. So the footnote region is hand-written
-# APART FROM those marker-delimited lines — the argument around them stays authored, the
-# version facts inside them are rendered from scripts/fleet-package-versions.tsv.
+# ONE EXCEPTION, and it is worth knowing: the fleet-version blocks sit INSIDE footnotes —
+# 5 (tree-sitter-cli), 33 (neovim) and 34 (jq), each enumerating where the fleet sits against
+# that tool's recorded floor. So those footnote regions are hand-written APART FROM their
+# marker-delimited lines: the argument around them stays authored, the version facts inside
+# them are rendered from scripts/fleet-package-versions.tsv. FV_TOOLS below says which block
+# renders which tool — one block per tool, declared rather than derived from the id.
 #
 # THE TABLE IS A HYBRID, AND THE REGISTRY SAYS WHICH HALF EACH CELL IS. About half of
 # the package cells name a package the repo INSTALLS: those are DERIVED (`=` in
@@ -59,17 +63,18 @@
 #   gen-porting-matrix.sh --check --local  #   …and gate them — needs no sibling clone
 #   gen-porting-matrix.sh --list --local   #   …and list their provenance — likewise
 #
-# NEEDS THE SIBLING CLONES FOR TWO OF THE THREE BLOCKS, so unlike gen-aliases.sh it CAN
+# NEEDS THE SIBLING CLONES FOR TWO OF ITS BLOCKS — `commands` and `packages` — so unlike
+# gen-aliases.sh it CAN
 # be unable to answer: with a required repo not checked out it exits 3 and writes nothing.
 # audit-core.sh §9h records that as an environment SKIP (the posture §9c and fleet-drift.sh
 # take) — a lone CI checkout of this repo is not a gate failure, and --require-siblings is
 # what reds it. Nothing is generated from a partial fleet: a table with one column stale
 # reads as health.
 #
-# BUT THE THIRD BLOCK NEVER NEEDED THEM, and for a long time nobody checked it. The
-# `fleet-versions` block reads scripts/fleet-package-versions.tsv, in this repo, and the
+# BUT THE FLEET-VERSION BLOCKS NEVER NEEDED THEM, and for a long time nobody checked them.
+# They read scripts/fleet-package-versions.tsv, in this repo, and the
 # whole of --check used to sit behind the fleet resolve — so on every CI leg and in every
-# git worktree that block went uncompared and §9h filed an environment skip over an input
+# git worktree they went uncompared and §9h filed an environment skip over an input
 # it was holding (#1046). --local is the scoped half: it selects LOCAL_BLOCKS, resolves no
 # fleet, and passes every other region through exactly as found on disk. It is also a
 # WRITE mode, deliberately, so the repair for the drift it reports can be run on the same
@@ -150,7 +155,7 @@ trap 'rm -f "$LISTFILE"' EXIT
 
 # ── the registry ──────────────────────────────────────────────────────────────
 # Block ids, in the doc's order. Each has exactly one marker pair in $TARGET.
-BLOCK_IDS="commands packages fleet-versions"
+BLOCK_IDS="commands packages fleet-versions-tree-sitter-cli fleet-versions-neovim fleet-versions"
 
 # WHICH BLOCKS ARE ANSWERABLE WITHOUT THE FLEET. A subset of BLOCK_IDS whose inputs are
 # THIS repo's own files, so --check can compare them on a lone clone — which is every CI
@@ -159,7 +164,36 @@ BLOCK_IDS="commands packages fleet-versions"
 # #1046 found. Deliberately NOT named *BLOCK_IDS: scripts/test/41-gen-matrix-parity.sh
 # parses `^BLOCK_IDS=` out of this file, and a second name ending the same way is one
 # unanchored regex away from being swept into that list.
-LOCAL_BLOCKS="fleet-versions"
+LOCAL_BLOCKS="fleet-versions-tree-sitter-cli fleet-versions-neovim fleet-versions"
+
+# WHICH TOOL EACH fleet-version BLOCK ENUMERATES. id<TAB>tool, one line each, in the doc's
+# order. One block per tool and one tool per block: two blocks on one tool would print the
+# same table into two footnotes and --check would then police a copy, which is the thing
+# generation exists to remove.
+#
+# DECLARED, not derived from the id — the same rule, and the same reason, as LOCAL_BLOCKS
+# above. `fleet-versions` is jq's and says so nowhere in its name: it predates the suffix,
+# and renaming it would move bytes the gate compares for no gain (#1082). Deriving would
+# also forbid any tool whose name is not a legal marker id, and that grammar is
+# [a-z0-9-]+ while a tool name is whatever the distro calls it.
+#
+# THE TOOL IS NOT THE PACKAGE NAME. `tree-sitter-cli` is the tool; on openSUSE the package
+# carrying it is `tree-sitter`, and on Homebrew `tree-sitter` is the lib-only formula
+# (footnote 5). The table's header names the TOOL; each row's <source> in the TSV names
+# where that row's value was actually read.
+FV_TOOLS="fleet-versions-tree-sitter-cli	tree-sitter-cli
+fleet-versions-neovim	neovim
+fleet-versions	jq"
+
+# The TSV both the renderer and preflight read. REGISTRY data, so it lives up here rather
+# than beside the renderer: preflight validates FV_TOOLS against this file's `floor` lines,
+# and preflight runs before anything else. $HERE is already final at this point (--root is
+# applied above).
+FLEET_VERSIONS="$HERE/scripts/fleet-package-versions.tsv"
+# The same path, repo-relative, for --list's `source` field: the other two blocks name a
+# sibling file as <repo>/install/packages.txt, so an absolute one here would be the only
+# provenance a reader could not paste at a `git` command.
+FV_REL="scripts/fleet-package-versions.tsv"
 
 # The commands table. id<TAB>header<TAB>repo<TAB>declaration(s)<TAB>unit
 #   declaration(s): space-separated `os/<os>.capabilities` paths, each optionally
@@ -583,6 +617,16 @@ render_packages() {
     }' | _table
 }
 
+block_tool() { # $1 = block id -> the tool whose rows it renders; empty + rc 1 if unregistered
+  local _bt
+  _bt="$(awk -F'\t' -v id="$1" '$1 == id { print $2; exit }' <<EOF
+$FV_TOOLS
+EOF
+  )"
+  [[ -n "$_bt" ]] || return 1
+  printf '%s' "$_bt"
+}
+
 # ── the block walker (gen-aliases.sh's, HTML-comment markers) ─────────────────
 marker_id() { # $1 = gen|end, $2 = line; prints the id, or returns 1
   local kind="$1" line="$2"
@@ -594,13 +638,38 @@ _markers() { # every marker in $TARGET as "kind id", ONE grammar shared with mar
   sed -nE 's/^[[:space:]]*<!--[[:space:]]core:porting-matrix:(gen|end)[[:space:]]([a-z0-9-]+)[[:space:]]-->[[:space:]]*$/\1 \2/p' "$TARGET"
 }
 
-render_for() { # $1 = id — the pre-rendered block, blank-line padded
+render_block() { # $1 = block id -> that block's markdown table on stdout
+  #   LAZY, and dispatched from ONE place. The fleet-fed tables are still pre-rendered into
+  #   CMD_TABLE/PKG_TABLE by the driver, because reading the fleet twice would be the
+  #   expensive half; the fleet-version tables read one in-repo file and are cheap, so they
+  #   render on demand and need no per-tool variable — which bash 3.2 could not key by id
+  #   anyway (no associative arrays, PORTABILITY.md §1).
+  #
+  #   The `*` arm is the self-policing half that used to live only on the --local path: a
+  #   block registered in BLOCK_IDS with nothing behind it is now a loud 2 on EVERY path,
+  #   not a region that quietly compares clean against itself.
+  local _tool
   case "$1" in
-  commands) printf '\n%s\n\n' "$CMD_TABLE" ;;
-  packages) printf '\n%s\n\n' "$PKG_TABLE" ;;
-  fleet-versions) printf '\n%s\n\n' "$FLEET_TABLE" ;;
-  *) printf 'gen-porting-matrix: unknown block id: %s\n' "$1" >&2; return 2 ;;
+  (commands) printf '%s' "$CMD_TABLE" ;;
+  (packages) printf '%s' "$PKG_TABLE" ;;
+  (fleet-versions | fleet-versions-*)
+    _tool="$(block_tool "$1")" || {
+      printf 'gen-porting-matrix: %s renders a fleet-version table but names no tool in FV_TOOLS\n' "$1" >&2
+      return 2
+    }
+    render_fleet_versions "$_tool" "$1" || return 2
+    ;;
+  (*)
+    printf 'gen-porting-matrix: %s is registered in BLOCK_IDS but nothing renders it — name its tool in FV_TOOLS, or add an arm to render_block\n' "$1" >&2
+    return 2
+    ;;
   esac
+}
+
+render_for() { # $1 = id — the rendered block, blank-line padded
+  local _body
+  _body="$(render_block "$1")" || return 2
+  printf '\n%s\n\n' "$_body"
 }
 
 build_file() { # build_file <file> [ids] — emit <file> with the marked blocks re-rendered
@@ -707,6 +776,66 @@ EOF
       rc=2
     }
   done
+
+  # THE BLOCK -> TOOL MAP, checked the way LOCAL_BLOCKS just was: a registry is only worth
+  # declaring if a typo in it is a loud 2 rather than a quiet green.
+  local fv_ids="" fv_tools="" tool
+  while IFS="$TAB" read -r id tool; do
+    [[ -n "$id" ]] || continue
+    [[ " $BLOCK_IDS " == *" $id "* ]] || {
+      printf 'gen-porting-matrix: FV_TOOLS names %s, which is not a registered block — add it to BLOCK_IDS or fix the typo\n' "$id" >&2
+      rc=2
+    }
+    [[ -n "$tool" ]] || {
+      printf 'gen-porting-matrix: FV_TOOLS gives %s no tool\n' "$id" >&2
+      rc=2
+    }
+    [[ " $fv_ids " == *" $id "* ]] && {
+      printf 'gen-porting-matrix: FV_TOOLS maps %s twice\n' "$id" >&2
+      rc=2
+    }
+    [[ " $fv_tools " == *" $tool "* ]] && {
+      printf 'gen-porting-matrix: FV_TOOLS maps %s to two blocks — one tool would render the same table into two footnotes, and --check would then police a copy\n' "$tool" >&2
+      rc=2
+    }
+    fv_ids="$fv_ids $id"
+    fv_tools="$fv_tools $tool"
+  done <<EOF
+$FV_TOOLS
+EOF
+
+  # EVERY REGISTERED BLOCK HAS A RENDERER. `commands` and `packages` are render_block's
+  # built-in arms; everything else has to come from FV_TOOLS, or its region is walked,
+  # re-rendered from nothing, and compared clean against itself.
+  for id in $BLOCK_IDS; do
+    case "$id" in (commands | packages) continue ;; esac
+    [[ " $fv_ids " == *" $id "* ]] || {
+      printf 'gen-porting-matrix: %s is registered in BLOCK_IDS but nothing renders it — name its tool in FV_TOOLS\n' "$id" >&2
+      rc=2
+    }
+  done
+
+  # THE SET CHECK, BOTH DIRECTIONS — and this is the one that closes #1082's defect class
+  # rather than only its instance. A tool with a floor and rows in the TSV that NO block
+  # renders is data nobody can see: the enumeration it was recorded for stays the unchecked
+  # prose the TSV exists to end, and nothing else in this repo would say so. The reverse — a
+  # block whose tool has no floor — the renderer reports as "no floor recorded", which is
+  # true but reads as a data gap when it is a registry one.
+  if [[ -r "$FLEET_VERSIONS" ]]; then
+    while IFS= read -r tool; do
+      [[ -n "$tool" ]] || continue
+      [[ " $fv_tools " == *" $tool "* ]] || {
+        printf 'gen-porting-matrix: %s records a floor for %s, but no block renders it — add a block id and an FV_TOOLS entry (and its marker pair in %s), or drop the rows\n' "$FV_REL" "$tool" "$TARGET" >&2
+        rc=2
+      }
+    done < <(awk -F"$TAB" '$1 == "floor" && $2 ~ /^[A-Za-z0-9._+-]+$/ { print $2 }' "$FLEET_VERSIONS")
+    for tool in $fv_tools; do
+      grep -q "^floor$TAB$tool$TAB" "$FLEET_VERSIONS" || {
+        printf 'gen-porting-matrix: FV_TOOLS maps a block to %s, but %s records no floor for it — the status column is DERIVED against that floor and cannot be rendered without one\n' "$tool" "$FV_REL" >&2
+        rc=2
+      }
+    done
+  fi
   return $rc
 }
 
@@ -745,11 +874,6 @@ fi
 # version contradicts. That was the actual defect both times: the version and the side of
 # the line it was filed under disagreed, and only a human re-reading the sentence could
 # notice.
-FLEET_VERSIONS="$HERE/scripts/fleet-package-versions.tsv"
-# The same path, repo-relative, for --list's `source` field: the other two blocks name a
-# sibling file as <repo>/install/packages.txt, so an absolute one here would be the only
-# provenance a reader could not paste at a `git` command.
-FV_REL="scripts/fleet-package-versions.tsv"
 FRESH_DAYS="${FRESH_DAYS:-90}"
 
 # Field-wise numeric compare, the same shape used across the fleet's floor guards: a
@@ -771,18 +895,29 @@ _fv_lt() { # <a> <b> — true when a sorts below b
   return 1 # equal is NOT below a >= floor
 }
 
-render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
-  [[ -r "$FLEET_VERSIONS" ]] || {
-    printf 'gen-porting-matrix: cannot read %s\n' "$FLEET_VERSIONS" >&2
+render_fleet_versions() { # <tool> <block-id> -> the markdown table for that block
+  #   BOTH parameters, not one. The tool selects the rows and names the column; the block id
+  #   is what --list files the provenance under, and it is a DIFFERENT string — the block
+  #   called `fleet-versions` renders jq. Deriving either from the other is what kept this
+  #   renderer jq-only (#1082), and hard-coding the id in the $LISTFILE lines below would
+  #   have filed all three blocks' provenance under one id while every existing assertion
+  #   still passed.
+  local tool="$1" id="$2"
+  [[ -n "$tool" && -n "$id" ]] || {
+    printf 'gen-porting-matrix: render_fleet_versions needs <tool> <block-id>\n' >&2
     return 2
   }
-  local tool="jq" floor="" floor_line="" lno rt t target ver vdate status
+  [[ -r "$FLEET_VERSIONS" ]] || {
+    printf 'gen-porting-matrix: %s: cannot read %s\n' "$id" "$FLEET_VERSIONS" >&2
+    return 2
+  }
+  local floor="" floor_line="" lno rt t target ver vdate status
   floor="$(awk -F'\t' -v tool="$tool" '$1 == "floor" && $2 == tool { print $3; exit }' "$FLEET_VERSIONS")"
   # The floor's own line, because the status cell is COMPUTED against it — provenance that
   # named only the version row would hide half of what decided the verdict.
   floor_line="$(awk -F'\t' -v tool="$tool" '$1 == "floor" && $2 == tool { print NR; exit }' "$FLEET_VERSIONS")"
   [[ -n "$floor" ]] || {
-    printf 'gen-porting-matrix: no floor recorded for %s in %s\n' "$tool" "$FLEET_VERSIONS" >&2
+    printf 'gen-porting-matrix: %s: no floor recorded for %s in %s\n' "$id" "$tool" "$FLEET_VERSIONS" >&2
     return 2
   }
 
@@ -807,9 +942,9 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
     # the date are RECORDED in the TSV, the floor comparison is COMPUTED from the version
     # against the floor row — so that cell names both lines it depends on.
     {
-      printf 'fleet-versions\t%s\tversion\tderived\t%s:%s\n' "$target" "$FV_REL" "$lno"
-      printf 'fleet-versions\t%s\tvs-floor\tderived\t%s:%s vs %s:%s\n' "$target" "$FV_REL" "$lno" "$FV_REL" "$floor_line"
-      printf 'fleet-versions\t%s\tverified\tderived\t%s:%s\n' "$target" "$FV_REL" "$lno"
+      printf '%s\t%s\tversion\tderived\t%s:%s\n' "$id" "$target" "$FV_REL" "$lno"
+      printf '%s\t%s\tvs-floor\tderived\t%s:%s vs %s:%s\n' "$id" "$target" "$FV_REL" "$lno" "$FV_REL" "$floor_line"
+      printf '%s\t%s\tverified\tderived\t%s:%s\n' "$id" "$target" "$FV_REL" "$lno"
     } >>"$LISTFILE"
     # A real TAB, via the $TAB the file already defines, and `%s` below: the first cut wrote
     # a literal `\t` and emitted with `%b`, which reinterprets escapes in the DATA too — a
@@ -825,7 +960,7 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
   done < <(awk '{ print NR "\t" $0 }' "$FLEET_VERSIONS")
 
   ((rows)) || {
-    printf 'gen-porting-matrix: no version rows for %s in %s\n' "$tool" "$FLEET_VERSIONS" >&2
+    printf 'gen-porting-matrix: %s: no version rows for %s in %s\n' "$id" "$tool" "$FLEET_VERSIONS" >&2
     return 2
   }
 
@@ -874,25 +1009,23 @@ warn_stale_versions() {
     ' >&2
 }
 
-# render_for emits PRE-rendered tables, so only the selected blocks' variables are filled
-# — the others are never reached, because build_file passes their regions through. The
-# per-id loop is self-policing: a block added to LOCAL_BLOCKS with no arm here is a loud
-# 2, not a region that quietly compares clean against itself.
-if ((LOCAL)); then
-  for _id in $LOCAL_BLOCKS; do
-    case "$_id" in
-    fleet-versions) FLEET_TABLE="$(render_fleet_versions)" || exit 2 ;;
-    *) die "$_id is in LOCAL_BLOCKS but nothing renders it without the fleet — add an arm beside render_fleet_versions here" ;;
-    esac
-  done
-else
+# The two FLEET-fed tables are pre-rendered here because reading the fleet is the expensive
+# half and build_file would otherwise reach for them mid-walk. The fleet-version tables read
+# one in-repo file, so render_block builds them on demand — which is what lets the registry
+# carry N tools without N variables a bash 3.2 script cannot key by id.
+if ! ((LOCAL)); then
   CMD_TABLE="$(render_commands)" || exit 2
   PKG_TABLE="$(render_packages)" || exit 2
-  FLEET_TABLE="$(render_fleet_versions)" || exit 2
 fi
 warn_stale_versions # reads only the TSV, so it is right in both paths
 
 if [[ "$MODE" == list ]]; then
+  # --list never walks the document, so the renderers must be driven here: their $LISTFILE
+  # writes ARE the listing. Output discarded — the provenance is the product. RENDER_BLOCKS
+  # is already narrowed to LOCAL_BLOCKS under --local, so --list --local narrows for free.
+  for _id in $RENDER_BLOCKS; do
+    render_block "$_id" >/dev/null || exit 2
+  done
   cat "$LISTFILE"
   exit 0
 fi
