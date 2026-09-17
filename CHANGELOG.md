@@ -299,6 +299,33 @@
   a return of the four-copies problem #669 removed: those were four copies of one fact,
   this is one fact in each of two systems that cannot read each other) and in the guidance
   `scripts/new-os-repo.sh` prints after scaffolding a repo.
+- **Both atuin guard premises re-measured against 18.22.0; both `VERIFIED_AGAINST` anchors move**
+  ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045), run 35163334747). Upstream
+  released 18.22.0 on 2026-09-09, one minor past the 18.21.0 the anchors in `zsh/00-tools.zsh`
+  carried — which `scripts/research/README.md` names as the cue to re-measure. One
+  `atuin-guard-verify` dispatch, checksum and build-provenance verified: `holds` on the
+  silent-discard premise and `holds` on autostart self-healing, with the hermetic detector
+  self-test green beside them. Both report jobs skipped, which is how that workflow says
+  `holds`. Editing an anchor is a claim that the premise was re-measured at that version, so
+  this is that claim and not a version bump.
+
+  **18.22.0 raises the guard's stakes rather than lowering them**, and the block now says so:
+  the release moves history deletion (atuin #4045) and sync (#4055) into the daemon and adds
+  command-output capture with a periodic flush (#4070), so a dead-socket window costs more than
+  the single history row it cost on 18.19.0. It also adds a _second_ socket under
+  `/tmp/atuin-$UID` for the pty-proxy — the same directory as the guard's first candidate, which
+  is not a collision because the candidate list names `atuin.sock` explicitly. Recorded so the
+  next reader does not have to re-derive it.
+
+  **And a gap the four arms have always had is now written down where the stand-down lives.**
+  `absent` has no socket, `stale` has a socket file with no process — neither is a daemon whose
+  PID is _alive_ but which is not serving. atuin autostarts from the pidfile alone, so a wedged
+  PID blocks the respawn indefinitely (upstream `atuinsh/atuin#4114`, open against 18.22.0), and
+  that is the one arm where standing down is wrong — on Alpine and macOS, where autostart is the
+  only mitigation there is. Tracked as a new harness arm in #1091, deliberately not bundled
+  here: adding an arm inside a re-measurement would conflate "upstream moved" with "we started
+  measuring more".
+
 - **`GITHUB-APP-AUTH.md` documents `Metadata: read`**, the fourth permission the
   installation API actually returns. GitHub grants it mandatorily and offers no way to
   switch it off, so a doc naming three verbs against an API returning four is how the new
