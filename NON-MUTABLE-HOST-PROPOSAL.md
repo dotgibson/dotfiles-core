@@ -264,6 +264,20 @@ the operator.
   carapace RPM and 1Password through the same verbs; `rpm --import` cannot lock a
   read-only rpmdb, so the key goes to `/etc/pki/rpm-gpg` with `gpgkey=file://` on Fedora
   and through `transactional-update run` on openSUSE.
+
+  Two rules the patches learned the hard way, both worth carrying into the repo PRs
+  ([#1090](https://github.com/dotgibson/dotfiles-core/issues/1090)). **A per-tool "it is
+  staged" hint must ask about that tool**, not about the run's tally: `zypper_install`
+  drops names `zypper se` cannot find, so keying yazi's hint on a global counter announced
+  it as staged whenever any of the other ~40 packages were — and skipped the advice that
+  says what to do instead. The openSUSE patch records the staged names and tests
+  membership. **And a repo file is downloaded to a temp path, then installed**, never
+  curled straight into `/etc/yum.repos.d`: measured against curl 8.18.0, a 404 writes
+  nothing, but a connection dropped mid-body exits 18 and leaves the partial bytes behind
+  — and dnf parses every file in that directory, so one broken fragment fails **every
+  later dnf call** with *Error in configuration file*. R6 measured that downstream cost
+  from the other end (run 34938554648). The old form also ended `|| true`, which swallowed
+  the reason twice.
 - a **closing line** that says "reboot to apply, then re-run once", because the cargo/go
   tools behind `command -v cargo` guards are skipped on the first run by guards the repos
   already have and picked up on the re-run.
