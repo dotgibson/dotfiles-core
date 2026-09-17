@@ -5,8 +5,19 @@
 > picked. §5's recommendation stands unchanged: none of the three conditions it named as
 > recommendation-flipping has fired, and §7's four open questions are answered below and
 > in full at §7. §3.5 is now the **runbook**, and the milestone's issues are filed from it.
-> Deciding is not shipping — nothing has moved yet, and this file flips to SHIPPED when
-> §3.5 has.
+> Deciding is not shipping, and this file flips to SHIPPED when §3.5 has.
+>
+> **§3.5 step 1 is done (2026-09-17, [#1122](https://github.com/dotgibson/dotfiles-core/issues/1122)).**
+> [`dotgibson/dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) exists with the
+> editor's history preserved — the `nvim/` tree object is identical on both sides, which is
+> what makes step 2's byte-identical first sync true by construction rather than by
+> inspection. Its gate starts the editor. Steps 2–5 have not moved: Core still **authors**
+> `nvim/`, and nothing here is vendored yet.
+>
+> One answer was **corrected while shipping it**: §7(1) was written against a generated
+> `# core:theme:gen` block in the nvim colours that does not exist and never did. The
+> coupling it was reaching for is real and runs the other way; §7(1) says what it is and
+> what was built instead. Steps 2–5 are unaffected.
 >
 > This is the planning document for the roadmap milestone *"Core stops being a shell
 > config"*: the editor tree that had been deferred three times — v4, `V5-PROPOSAL.md` §11
@@ -19,7 +30,9 @@
 > tree as it was at `v7.4.3`, not as it is.
 >
 > **The §7 answers, in short.** (1) `dotfiles-nvim` vendors `theme/palette.toml` and runs
-> its own generator, so *"colour is generated, not typed"* stays true in **both** repos.
+> the *assertion* half of `gen-theme.sh --refresh`, so *"colour is generated, not typed"*
+> stays true in **both** repos — **corrected during §3.5 step 1**, because the generated
+> block this originally described has never existed; §7(1) has the detail.
 > (2) luacheck stays in Core's audit over the vendored copy, as an integrity check.
 > (3) Core bumps `nvim.lock` **with the next Core release**, never on every nvim release.
 > (4) The repo is `dotgibson/dotfiles-nvim`; the vendored path in Core stays `nvim/`.
@@ -86,9 +99,12 @@ Windows becomes a first-class consumer instead of a side channel.
    `nvim/`, records the commit in `nvim/.core-ref`, and `fleet-drift.yml` reads that pin
    beside the Unix repos' `core.lock`. `tests/NvimParity.Tests.ps1` and
    `Assert-NvimParity.ps1` hold the copy to the source.
-5. Gates: luacheck (audit `§2`), the two test fragments, `scripts/nvim-reachability.sh`;
-   `gen-theme.sh` writes the palette's `# core:theme:gen` block into the nvim colours, so
-   the theme gate (`§9d`) reaches into the tree too.
+5. Gates: luacheck (audit `§2`), the two test fragments, `scripts/nvim-reachability.sh`.
+   The theme gate (`§9d`) does **not** reach into the tree — `nvim/` carries no
+   `# core:theme:gen` block and never has, because it holds zero hex literals and asks the
+   plugin (`nvim/lua/gerrrt/utils/palette.lua`). The coupling runs the other way:
+   `gen-theme.sh --refresh` *reads* the tokyonight pin out of `nvim/lazy-lock.json` and
+   the style out of `palette.lua`. See §7(1).
 
 ### 2.2 The cost, measured
 
@@ -114,8 +130,9 @@ surfacing as OS-repo provisioning code.
 ### 2.3 What is not a cost
 
 - **No public contract.** Nothing outside `nvim/` reads it except the theme generator
-  (which writes into it) and the link. `PORTABILITY.md`'s `HAVE_*` surface has nothing
-  editor-specific. This is why v5 deferred it: extraction breaks no consumer.
+  (which reads two values out of it — §7(1)) and the link. `PORTABILITY.md`'s `HAVE_*`
+  surface has nothing editor-specific. This is why v5 deferred it: extraction breaks no
+  consumer.
 - **The vendor mechanism is proven twice** — Core into nine repos, htpx into Offense.
 
 ## 3. Option A — EXTRACT into `dotfiles-nvim`
@@ -148,7 +165,7 @@ A2 it copies from `dotfiles-nvim` at an nvim ref — the same script, one URL, a
 | `nvim/` (the tree), `lazy-lock.json` | the vendored copy under `nvim/` + `nvim.lock` |
 | `scripts/update-nvim-plugins.sh`, the freshness job's nvim leg | the freshness job's zsh leg; a new "nvim pin behind" nudge |
 | `scripts/nvim-reachability.sh`, `scripts/test/15-nvim.sh`, `80-nvim-reachability.sh` | `audit-core.sh`'s luacheck leg as a *vendored-tree* check (or dropped — the source repo gates it) |
-| the `# core:theme:gen` block in the nvim colours — **open question §7(1)** | `theme/palette.toml`, `gen-theme.sh` |
+| a vendored `theme/palette.toml` + the pin/style assertion — §7(1), corrected | `theme/palette.toml` (authored), `gen-theme.sh` |
 | a headless startup + `:checkhealth` gate (new) | — |
 | the Neovim floor and its `PORTING-MATRIX.md` footnotes (the *fact*); the matrix keeps rendering it | `gen-porting-matrix.sh` |
 
@@ -174,9 +191,10 @@ A2 it copies from `dotfiles-nvim` at an nvim ref — the same script, one URL, a
   hash as the drift check, the way `core-integrity.sh` checks a repo's `core/`.
 - **The freshness job** loses its nvim leg (moves) and gains a "nvim.lock is N releases
   behind" nudge, the way `fleet-drift.yml` reports `core.lock`.
-- **The theme generator** either keeps writing into the vendored copy (and the source repo
-  carries the palette block by another route) or the palette becomes an input the nvim
-  repo reads — §7(1).
+- **The theme generator** keeps `theme/palette.toml` as its input and keeps rendering
+  Core's own consumers from it. What moves is the pair of values `--refresh` asserts
+  against — the tokyonight pin and the style — which are now authored in the nvim repo,
+  so that repo vendors the palette and carries the assertion. §7(1).
 - **Windows' parity tests** re-point at the nvim repo; `fleet-drift.yml`'s Windows row
   reads the new pin.
 - **Docs:** `VENDORING.md` gains the second vendored line (htpx already documents the
@@ -234,7 +252,7 @@ fresh-bootstrap failure mode armed.
 - If A2's manifest/vendor-tree drift check turns out to need more than the
   `core-integrity.sh` shape already provides (a second integrity model), the "minor"
   claim in §3.4 is wrong → re-evaluate against B.
-- If the theme block (§7(1)) cannot be moved cleanly, the two repos share a generated
+- If the theme coupling (§7(1)) cannot be moved cleanly, the two repos share a generated
   file across a vendor boundary — the exact drift class `§9d` exists to prevent → design
   that first, or B.
 
@@ -263,17 +281,42 @@ because it is what keeps the fleet's next `core.lock` bump free of editor conten
 All four are decided. They were the conditions on §5's recommendation, so they are settled
 here rather than during §3.5.
 
-1. **The theme block — the nvim repo vendors `palette.toml` and runs its own generator.**
-   `gen-theme.sh` writes `# core:theme:gen` into the nvim colours from `theme/palette.toml`;
-   under A2 the palette is Core's and the file is the nvim repo's. The alternative —
-   generate into the *vendored copy* only, at sync time, and keep the source repo
-   palette-free — was rejected: it leaves the source tree's colours **hand-typed**, which
-   is precisely the state `§9d` exists to prevent, and it makes the vendored copy differ
-   from its source by construction, so the byte-identical check in §3.5 step 2 could never
-   hold again after the first sync. Vendoring the palette costs one small vendor line in a
-   repo that already carries an `nvim.lock`-shaped pin, and it keeps *"colour is generated,
-   not typed"* true on **both** sides of the boundary. §5 named this the condition most
-   likely to flip the recommendation back to B; it resolves in A2's favour.
+1. **The theme coupling — the nvim repo vendors `palette.toml` and carries the assertion.**
+
+   **Corrected 2026-09-17, during §3.5 step 1.** This answer was written against a premise
+   that does not hold: that `gen-theme.sh` writes a `# core:theme:gen` block into the nvim
+   colours. **There is no such block, and there never was.** `nvim/` carries zero generated
+   theme blocks — `scripts/gen-theme.sh:11` and `theme/palette.toml:9` both say why, in the
+   same words: *"nvim never had the problem: it holds zero hex literals and asks the plugin
+   (`nvim/lua/gerrrt/utils/palette.lua`)."* The editor was the exception that proved the
+   rule, not a consumer of it.
+
+   The coupling that **does** exist runs the other way, and it is real. `gen-theme.sh
+   --refresh` resolves the palette *from* the tokyonight revision pinned in
+   `nvim/lazy-lock.json`, at the style named in `palette.lua`, and refuses unless
+   `palette.toml`'s `source_commit` and `style` agree with those two
+   (`scripts/gen-theme.sh:830` and `:840`). That is the only machine check tying the palette
+   to the editor — and it is maintainer-only, needs a live nvim with the plugin installed,
+   and deliberately never runs on the `--check` path, so across the whole fleet it ran
+   **nowhere**.
+
+   Before the split that was survivable: one repo, one commit, one reviewer. After it the
+   freshness bot moves the tokyonight pin in `dotfiles-nvim` while `palette.toml` stays in
+   Core, and Core's rendered colours go quietly stale against a plugin revision no longer
+   installed anywhere. So the answer survives its own premise: **`dotfiles-nvim` vendors
+   `palette.toml`** (beside a `theme/.core-ref`, the way `dotfiles-Windows` already does —
+   that repo has no `core/` at all and hash-gates the pair in its own CI) **and its gate
+   carries the assertion half of `--refresh`**, in pure bash, in the repo where the pin now
+   moves. An empty parse is its own failure there, because two empty strings compare equal.
+
+   The alternative — keep the palette out of the nvim repo and let Core's `--refresh` read
+   the *vendored* copy — still works mechanically, and is rejected for the reason it was
+   rejected before: it leaves the assertion running nowhere on any CI path, on a fact that
+   now changes in a different repo from the one that records it.
+
+   §5 named this the condition most likely to flip the recommendation back to B. It does
+   not: the check is cheaper than the generated-block version would have been, and it turns
+   an assertion nothing was running into one that runs on every pin bump.
 2. **luacheck stays in Core's audit, over the vendored copy.** It is the cheapest leg in
    the gate and it catches a corrupt sync, which is exactly the failure a vendored tree
    has and a source tree does not. It is a duplicate of the source repo's own luacheck
