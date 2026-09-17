@@ -246,11 +246,34 @@ else
     # targets of the run in hand precisely so a one-repo backfill is not failed over a
     # repo it will never touch — and so a release is never denied for a reason nobody
     # can act on mid-fan-out.
+    #
+    # WHICH KIND of install is missing decides the CONSEQUENCE, and the two are not the
+    # same failure, so the row names its own rather than asserting the fan-out's. A
+    # fan-out target 403s on a PUSH, at the end of a release. A self-PR exception
+    # (EXTRA_REPOS) never reaches a push at all: the mint INSIDE that repo 404s on
+    # /repos/<owner>/<repo>/installation, its bots fall back to GITHUB_TOKEN, and the
+    # jobs stay green while degrading. Until #1116 this loop printed the fan-out sentence
+    # over both — `dotfiles-Windows` went missing and the register sent its reader looking
+    # for a release that was never going to break, while three sync bots quietly lost
+    # their App authorship. Membership by ` x ` inside ` ${arr[*]} `, not an associative
+    # array (the bash 3.2 floor, §5k).
     for _r in $_missing; do
+      case " ${CORE_OS_REPOS[*]} " in
+      *" $_r "*)
+        _class='fan-out target'
+        _harm="the next release 403s on its push, at the END of the fan-out (v7.9.0, #1071)"
+        ;;
+      *)
+        _class='self-PR install'
+        _harm="every mint in that repo 404s and falls back to GITHUB_TOKEN, so its own
+           bots' PRs open unauthored and sit BLOCKED — and stay GREEN while doing it"
+        ;;
+      esac
       case " $REQUIRE " in
       *" $_r "*)
         _detail="$_detail
-✗   MISSING: $_r is a push target and the App cannot reach it — this is the v7.9.0 403
+✗   MISSING: $_r is a $_class the App cannot reach —
+           $_harm
       Fix: Organization settings → GitHub Apps → $APP_SLUG → Configure →
            Repository access → add $_r. Needs an Organization Owner.
       REST: gh api -X PUT /user/installations/<installation id>/repositories/<repo id>
@@ -260,7 +283,7 @@ else
         ;;
       *)
         _detail="$_detail
-!   MISSING: $_r is expected in the installation but is not a target of this run"
+!   MISSING: $_r ($_class) is expected in the installation but is not a target of this run"
         _warn=1
         ;;
       esac
@@ -292,7 +315,7 @@ else
     fi
     [ -n "$_detail" ] && printf '%s\n' "${_detail#
 }"
-    unset _missing _extra _r _detail _fatal _warn
+    unset _missing _extra _r _class _harm _detail _fatal _warn
   fi
   unset reach_raw installed n_installed
 fi
