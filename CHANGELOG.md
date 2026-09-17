@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.10.0] - 2026-09-17
+
 ### Added
 
 - **The autostart premise now measures a wedged daemon — the one shape that made the guard's
