@@ -459,6 +459,13 @@ a major was needed as the occasion. Each bullet carries its outcome.
 > are kept because the costs they enumerate — the caller sweep, the Windows hand bump, the
 > in-tree `v7` strings, the ordering rule — belong to *any* major, and the next one
 > (§10, the non-mutable host) will need exactly this list.
+>
+> **That list now lives in `RELEASE-RUNBOOK.md` §1.1, under "Cutting a MAJOR — the full cost
+> list", and the runbook copy is the one to work from.** This section is frozen at the day it
+> was written and has already drifted: the *"roughly thirty"* in-tree `v7` strings below were
+> **52 across 13 files** by `v7.10.0`, which is why the runbook counts them with a snippet
+> instead of a number. The runbook also carries a fifth cost this section predates — the
+> fleet App's installation list, which is not in git and 403s at the *end* of a release.
 
 A host reaches `v8` only through the three independent opt-in gates
 `RELEASE-STRATEGY.md` §"Safe deployment" defines — nothing is pushed:

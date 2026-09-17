@@ -62,6 +62,16 @@
 
 ### Fixed
 
+- **`V8-PROPOSAL.md` §7 said where its cost list went, instead of quietly disagreeing with it**
+  ([#1130](https://github.com/dotgibson/dotfiles-core/issues/1130)).
+  Promoting the MAJOR cost list into `RELEASE-RUNBOOK.md` §1.1 left §7 a frozen duplicate of a
+  living checklist — the worse failure mode, because a reader who finds §7 first gets numbers
+  that were already wrong. It had drifted twice over: _"roughly thirty"_ in-tree `v7` strings
+  were **52 across 13 files** by `v7.10.0`, and it predates the fleet App installation cost
+  altogether. §7's status note now points at the runbook and names its own drift, rather than
+  promising a sync a closed record cannot keep — the lesson `GITHUB-APP-MIGRATION.md` already
+  draws about frozen files that track live state.
+
 - **The App-installation register named the wrong failure for a missing self-PR install**
   ([#1116](https://github.com/dotgibson/dotfiles-core/issues/1116)).
   `scripts/fleet-app-scope.sh` printed one sentence over every fatal `MISSING` row —
