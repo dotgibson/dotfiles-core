@@ -425,6 +425,101 @@
 
 ### Fixed
 
+- **`PORTING-MATRIX.md` was silent about Fedora on both halves of the nvim-treesitter
+  requirement, and the report that noticed named the wrong release**
+  ([#1010](https://github.com/dotgibson/dotfiles-core/issues/1010)). The non-mutable-host
+  harness measured `neovim` 0.11.5 and `tree-sitter-cli` 0.25.10 on a `fedora-bootc:42`
+  container and read them as Fedora's answer. Fedora 42 went **EOL on 2026-05-13** and that
+  quay tag has been frozen since; `dotfiles-Fedora`'s own `packages.yml` declares the lanes
+  as **F43/F44 blocking**, F45 and rawhide advisory. Re-measured 2026-09-16 against
+  `packages.fedoraproject.org` and `mdapi.fedoraproject.org`, and the finding survives on a
+  release somebody is actually on: **F43 carries `neovim` 0.11.6-1.fc43 and
+  `tree-sitter-cli` 0.25.10-2.fc43, below both floors** (≥ 0.12.0, ≥ 0.26.1), while F44, F45
+  and rawhide clear both at 0.12.5 and 0.26.11.
+
+  Footnote ³³ therefore names **five** targets rather than four, and a **fourth mechanism**.
+  Fedora is neither a frozen archive (Debian), nor a keyword split (Gentoo), nor frozen
+  concurrent branches (Alpine, openSUSE Leap): it **rebases inside a release for some
+  packages and not others**, so F44 crossed 0.11 → 0.12 in `updates` while F43 ends its life
+  on the 0.11 branch. That makes upgrading release the only lever on F43 — the mechanic ³⁴
+  already records for jq on this same distro, and the exact inverse of Alpine's in-place
+  backport. Footnote ⁵'s Fedora line, which said only _verify ≥ 0.26.1, else mise/cargo_,
+  gains the same per-lane spread it already gave Alpine.
+
+  `dotfiles-Fedora` repeats Alpine's asymmetry precisely: a floor recorded in prose for
+  nvim-treesitter's _dependency_ and nothing at all for its _host_, which leaves it the last
+  repo in the fleet with no floor guard. Filed as dotfiles-Fedora#192; it moves no matrix
+  cell, because the package table has no Fedora column to derive.
+
+  **The harness pin is the part that generalises.** Both research workflows pinned
+  `fedora-bootc:42` (and a digest-pinned `fedora:42`) for a question about _host shape_, and
+  its package versions were then read as the distro's. Both now pin **`:44`**, a blocking
+  lane. R1–R6's verb findings stand as measured on `:42` and
+  `NON-MUTABLE-HOST-PROPOSAL.md` keeps saying so — what it now also says is that their
+  package versions are not evidence about the fleet. Footnote ³³'s closing rule widens with
+  it: ask the keyword question, the branch question **and the rebase question**.
+
+  Not fixed here, and filed as
+  [#1082](https://github.com/dotgibson/dotfiles-core/issues/1082): ³³'s table is
+  hand-written prose that has now gone stale four times (dotfiles-Gentoo#116,
+  dotfiles-Alpine#170, dotfiles-openSUSE#178, this), while
+  `scripts/fleet-package-versions.tsv` — dated rows, a derived verdict, a weekly bot —
+  exists for exactly that and holds only `jq`.
+- **`--dry-run` hid the only thing it had to say: that it would displace your `~/.zshrc`**
+  ([#1057](https://github.com/dotgibson/dotfiles-core/issues/1057)). `blib_write_zshrc_loader`'s
+  `BLIB_DRY` branch announced _would write managed ~/.zshrc loader_ and returned — it never
+  tested `[[ -f "$rc" ]]`, so `blib_wire_summary` closed the plan with `0 backed up` and the
+  real run then warned `backed up existing ~/.zshrc -> ~/.zshrc.pre-dotfiles.…`. Wiring is
+  otherwise all symlinks into paths Core owns; this is the **one** action in the pass that
+  touches a file the user wrote, on exactly the box where it matters — a migrating machine
+  with a hand-written zshrc — and the dry run is what they read _before_ consenting.
+  `#1026` fixed the real run's tally and left this half behind, which made it the only
+  backup site in the library that did not preview: `blib_link` has said _would back up +
+  link_ and `blib_install_system_file` _would back up + write_ all along. The phrase here is
+  deliberately the latter's, so the library has one grep for "a backup was planned", and it
+  is emitted **after** the "would write" line because that is the order the real run acts
+  in. A `BLIB_DRY` twin of `#1026`'s test pins the count, the absent backup file and the
+  untouched skeleton; a second case pins the fresh box, where nothing is displaced and
+  nothing is counted.
+- **Any host could buy its way out of a required package verb by declaring a reboot probe**
+  ([#1057](https://github.com/dotgibson/dotfiles-core/issues/1057)). `scripts/check-capabilities.sh`
+  relaxes `PKG_COUNT_PENDING` in two cases, and only the `PROVISIONER=declarative` one was
+  gated on the provisioner. The other accepted `PKG_APPLY_PENDING` from anybody — so a
+  mutable repo declaring the entirely truthful `PKG_APPLY=sudo systemctl reboot` beside
+  `PKG_APPLY_PENDING=test -e /var/run/reboot-required` (Debian and Ubuntu both have that
+  file) could drop the count verb and stay green. `up` then reads the absent verb as the
+  `-1` sentinel and goes permanently silent about available updates, on a host with a
+  perfectly good unprivileged count verb, with the gate asserting the declaration is
+  complete. The arm is now **`atomic` only**, which is what was measured: the root-only
+  refusal is rpm-ostree's (_AutomaticUpdateTrigger not allowed for user_). The fleet's one
+  transactional host answers `zypper -q list-updates` as the user and declares it, so it
+  never needed the exemption — all twelve declarations still validate unchanged.
+  `scripts/gen-porting-matrix.sh` carries the same rule in awk under a comment reading
+  _ONE RULE, TWO READERS_, and moved with it; no rendered cell changes.
+- **A leading zero made an exit status mean something else, silently**
+  ([#1057](https://github.com/dotgibson/dotfiles-core/issues/1057)). `(( ))` re-expands a
+  named variable as an arithmetic expression, so an all-digit string starting with `0` is
+  **octal**: `PKG_APPLY_PENDING_EXIT=077` validated as 63, and `099` was an invalid-octal-digit
+  error that `(( ))` reported by returning false — into a script deliberately running
+  without `set -e`, which discarded it. `00` and `000` walked past the "omit it to mean
+  zero" rule as well, because the reject arm only ever matched the literal `0`. Two copies
+  of the check had it (`PKG_PENDING_EXIT_NONE`/`_SOME` and `PKG_APPLY_PENDING_EXIT`) and
+  both are fixed together, since a fix to one would have left the other lying. An exit
+  status is written `77`, never `077`, so the class is refused rather than decoded; `10#`
+  keeps the surviving comparison decimal regardless. Ten cases pin it. This was in the
+  weekly review's _Clean_ list — correctly, as to control flow, and the arithmetic was the
+  part nobody had run.
+- **The capability cross-check told openSUSE to install the shell builtin `test`**
+  ([#1057](https://github.com/dotgibson/dotfiles-core/issues/1057)). `--packages` warns when
+  a verb's leading token is absent from `install/packages.txt`; MicroOS answers the staged
+  question with `test -e /run/reboot-needed`, and no distro packages `test`, so no edit to
+  any list could ever silence it. Builtins are skipped now. This is the one narrowing the
+  check can make portably — it runs on a CI Ubuntu box against Fedora, Arch and Alpine
+  declarations, so asking whether `zypper` exists _there_ would answer about the wrong
+  machine, while a builtin is a builtin everywhere. It is a small correction to a noisy
+  check: measured across the fleet, every mutable declaration already draws 7–10 of these
+  warnings (Debian 10, all of them `apt-get`/`apt-cache`/`dpkg`), which the code comment
+  has always anticipated and which is now tracked separately.
 - **The R4 prototype patches promised a package the package manager had dropped**
   ([#1090](https://github.com/dotgibson/dotfiles-core/issues/1090)). `dotfiles-openSUSE`'s
   `zypper_install` silently drops names `zypper se --match-exact` cannot find on that
