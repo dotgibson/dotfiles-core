@@ -1233,6 +1233,9 @@ _core_doctor_json() {
   if [[ -n ${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]; then print -rn -- true; else print -rn -- false; fi
   print -rn -- ",\"was_up\":"
   if [[ -n ${_CORE_ATUIN_DAEMON_WAS_UP:-} ]]; then print -rn -- true; else print -rn -- false; fi
+  # The wedged pid, or 0. A NUMBER rather than a boolean because the pid is the actionable part
+  # — "wedged" tells you to go looking, the pid tells you what to kill.
+  print -rn -- ",\"wedged_pid\":${_CORE_ATUIN_DAEMON_WEDGED:-0}"
   print -rn -- "},\"resolved\":{\"fd\":\"${FD_BIN:-}\",\"bat\":\"${BAT_BIN:-}\""
   (($+functions[_pkgup_mgr])) && print -rn -- ",\"pkg_manager\":\"$(_pkgup_mgr)\""
   print -r -- "}}"
@@ -1507,6 +1510,12 @@ _core_doctor_render() {
         else
           wline+=" ${d}(daemon socket unreachable at startup → direct writes)${r}"
         fi
+      # A THIRD state, and deliberately not folded into the two above: under autostart the
+      # guard warns and changes NOTHING, so this shell is neither healthy nor degraded — the
+      # daemon is still enabled, still the launcher, and still wedged. The pid is carried in
+      # the flag because it is the whole remedy: killing it is what lets autostart work again.
+      elif [[ $w == atuin && -n ${_CORE_ATUIN_DAEMON_WEDGED:-} ]]; then
+        wline+=" ${d}(daemon WEDGED at pid ${_CORE_ATUIN_DAEMON_WEDGED} — alive, not serving; kill it)${r}"
       fi
     else wline+="  ${d}○ ${w} (idle)${r}"; fi
   done

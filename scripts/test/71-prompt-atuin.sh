@@ -266,13 +266,65 @@ ucheck "atuin daemon: an explicit socket path wins outright (candidates are not 
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock" \
   TMPDIR="$ATSOCKTMP" XDG_RUNTIME_DIR="$ATSOCKTMP/xdgrun" XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
 
-# (e) AUTOSTART — atuin supervises its own daemon there (the no-systemd answer for
-#     Alpine/macOS), so an absent socket is EXPECTED, not a fault. Don't disable it — and don't
-#     keep re-probing for the life of the shell either: stand down means UNHOOK.
-ucheck "atuin daemon: autostart owns the lifecycle, so the guard stands down and unhooks" \
-  "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -z \${precmd_functions[(r)_core_atuin_daemon_guard]} ]]" \
+# (e) AUTOSTART, ABSENT SOCKET — atuin supervises its own daemon there (the no-systemd answer
+#     for Alpine/macOS), and precmd runs BEFORE the first command, so an unreachable socket at
+#     this moment is expected rather than a fault: autostart creates it on the first
+#     `history start`. Measured healthy by the `absent` arms. So: stay enabled, stay SILENT,
+#     stay HOOKED — and arm the throttle, or the branch that keeps the hook would pay a full
+#     candidate sweep on every prompt.
+#
+#     The guard used to UNHOOK here, unconditionally. That stand-down is what left the wedged
+#     shape unwatched on the only two machines it can happen to (#1102).
+ucheck "atuin daemon: autostart with a merely-absent socket stays enabled, silent, hooked and throttled" \
+  "source '$TOOLS_FILE'; _core_atuin_daemon_guard
+   [[ \$ATUIN_DAEMON__ENABLED == true ]] || exit 1
+   [[ -z \${_CORE_ATUIN_DAEMON_WEDGED:-} && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]] || exit 1
+   [[ -n \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] || exit 1
+   (( _CORE_ATUIN_DAEMON_NEXT > 0 ))" \
   PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__AUTOSTART=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (e2) AUTOSTART, WEDGED — a live pid in the pidfile while nothing answers the socket. This is
+#      the shape autostart will NOT recover from, because it reads that pid as health
+#      (atuinsh/atuin#4114, measured on 18.22.0 in #1102). The guard must WARN and unhook, and
+#      must NOT export ATUIN_DAEMON__ENABLED=false: under autostart that deletes the spawn
+#      itself and permanently defeats the only launcher these machines have.
+#
+#      $$ is this test shell — a pid that is certainly alive, which is the whole condition.
+ucheck "atuin daemon: autostart + a LIVE pidfile holder and no socket is WEDGED — warns, keeps the daemon enabled" \
+  "mkdir -p '$SANDBOX/wedged/atuin'; print -r -- \$\$ > '$SANDBOX/wedged/atuin/atuin-daemon.pid'
+   source '$TOOLS_FILE'
+   # REDIRECT TO A FILE, never \$( ). The guard's whole observable effect is typeset -g state
+   # and a precmd_functions edit, and a command substitution runs it in a SUBSHELL where both
+   # are discarded — every assertion below would then pass vacuously against the parent's
+   # untouched state, which is the one way this case could go green while the guard did nothing.
+   _core_atuin_daemon_guard 2>'$SANDBOX/wedged.err'
+   out=\$(<'$SANDBOX/wedged.err')
+   [[ \$ATUIN_DAEMON__ENABLED == true ]] || exit 1
+   [[ -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]] || exit 1
+   [[ \$_CORE_ATUIN_DAEMON_WEDGED == \$\$ ]] || exit 1
+   [[ -z \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] || exit 1
+   [[ \$out == *WEDGED* ]]" \
+  PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE" XDG_DATA_HOME="$SANDBOX/wedged" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__AUTOSTART=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (e3) …and a pidfile naming a DEAD pid is not a wedge. This is the difference between a useful
+#      warning and one that fires on every fresh shell on a box that merely rebooted: the file
+#      outlives the process it named, so its mere existence proves nothing. A garbage or empty
+#      pidfile takes the same path — and `kill -0 0` signals the whole PROCESS GROUP and always
+#      succeeds, so a pid of 0 reaching that check would read as wedged on every box alive.
+for _at_badpid in 0 '' 'not-a-pid' 2147483646; do
+  ucheck "atuin daemon: autostart + a pidfile holding '${_at_badpid:-<empty>}' is NOT a wedge (stays silent and hooked)" \
+    "mkdir -p '$SANDBOX/wedged2/atuin'; print -r -- '$_at_badpid' > '$SANDBOX/wedged2/atuin/atuin-daemon.pid'
+     source '$TOOLS_FILE'
+     # Same subshell trap as (e2), and it bites harder here: these assertions are all NEGATIVE,
+     # so a subshell that threw the state away would satisfy every one of them for free.
+     _core_atuin_daemon_guard 2>'$SANDBOX/wedged2.err'
+     out=\$(<'$SANDBOX/wedged2.err')
+     [[ -z \${_CORE_ATUIN_DAEMON_WEDGED:-} ]] || exit 1
+     [[ -n \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] || exit 1
+     [[ -z \$out ]]" \
+    PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE" XDG_DATA_HOME="$SANDBOX/wedged2" \
+    ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__AUTOSTART=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+done
 # (f) NOT OPTED IN → the guard unhooks PERMANENTLY. The machines that never asked for the daemon
 #     must not carry even the throttle's integer compare for the life of the shell. This is a
 #     STAND-DOWN, not the one-shot the guard used to be — an opted-in shell now stays hooked on
