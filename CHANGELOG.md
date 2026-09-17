@@ -1,5 +1,38 @@
 ## [Unreleased]
 
+### Changed
+
+- **The next major is policy now: triggered by a non-empty Breaking Backlog, never
+  scheduled — and the cost of cutting one lives beside the commands that cut it**
+  ([#1118](https://github.com/dotgibson/dotfiles-core/issues/1118)).
+  Scoping `v8.0.0` at `v7.10.0` found nothing to scope: no open PRs, nothing **breaking**
+  under `[Unreleased]`, and every milestone at `open_issues = 0` — the **Breaking Backlog**
+  included. That is the third time. `V8-PROPOSAL.md` was written in exactly this state at `7.3.0` and closed
+  _DECIDED — no major comes out of this proposal_; `NON-MUTABLE-HOST-PROPOSAL.md` was then
+  named the right next major until R2 measured the `os.capabilities` schema **additive**,
+  and shipped as four minors instead. Each time the answer was re-derived from scratch,
+  because it was recorded in a closed proposal rather than in policy.
+
+  `RELEASE-STRATEGY.md` now states the rule the repo has been following without saying so:
+  a major is cut **when the Breaking Backlog is non-empty and a release is due**, and an
+  empty backlog means there is no major to scope — a healthy state, not a gap. The three
+  dissolved themes are cited as the record. What settles it every time is the second
+  tiebreaker in `RELEASE-RUNBOOK.md` §1.0 — _if nothing a host already uses changes
+  meaning, it is at most a MINOR_ — and a candidate that dissolves under it was never major
+  content.
+
+  `RELEASE-RUNBOOK.md` gains the other half: the five costs of actually cutting one,
+  promoted out of `V8-PROPOSAL.md` §7, which says outright that they _belong to **any**
+  major_ and which has been stranded inside a closed record for a release that never
+  happened. The `@vN` sweep and why it goes first; the `dotfiles-Windows` hand bump no gate
+  catches, where forgetting cost a full major behind for five releases; Core's own in-tree
+  `vN` strings behind §8a, §8a-bis and §8a-ter — the entry counts them with a snippet rather
+  than a frozen number, because §7's _"roughly thirty"_ is **52 across 13 files** today; the
+  `core_lock_expected_tree` ordering rule measured at `v6.0.0`; and the fleet App
+  installation list that is not in git, which 403'd at the end of `v7.9.0`.
+
+  Neither file is in `core.manifest` or `core.vendor`, so none of this ships to a host.
+
 ### Fixed
 
 - **The App-installation register named the wrong failure for a missing self-PR install**
