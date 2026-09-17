@@ -5,7 +5,7 @@
 # system and that MicroOS has no container image at all — so the measurement that
 # matters happens here, in a VM per target family, on `ubuntu-latest`'s KVM:
 #
-#   bootc    — build a bootc disk image from quay.io/fedora/fedora-bootc:42 with
+#   bootc    — build a bootc disk image from quay.io/fedora/fedora-bootc:44 with
 #              bootc-image-builder (git, zsh and a NOPASSWD wheel user layered in), boot
 #              it under QEMU/KVM, ssh in, run scripts/research/nonmutable-host.sh bootc.
 #   microos  — boot openSUSE MicroOS's OpenStack-Cloud qcow2 with a cloud-init seed, ssh
@@ -94,7 +94,7 @@ jobs:
           set -euo pipefail
           mkdir -p bib && cd bib
           cat >Containerfile <<'EOF'
-          FROM quay.io/fedora/fedora-bootc:42
+          FROM quay.io/fedora/fedora-bootc:44
           RUN dnf -y install --setopt=install_weak_deps=False git zsh findutils util-linux shadow-utils && dnf clean all
           RUN echo '%wheel ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/wheel-nopasswd && chmod 0440 /etc/sudoers.d/wheel-nopasswd
           EOF
