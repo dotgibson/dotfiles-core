@@ -170,6 +170,44 @@
   Its mint now names `permission-metadata: read`, the verb that read spends. Not a fix for a
   live defect — a narrowed mint turns out to keep the mandatory grant, verified against the
   live API — but a mint that does not say what it spends is one nobody can audit.
+- **`PKG_UNLISTED_TOOLS` — a declaration says which verb binaries its package list
+  deliberately does not name** ([#1087](https://github.com/dotgibson/dotfiles-core/issues/1087)).
+  A new optional capability key, read only by `check-capabilities.sh --packages`.
+
+  That cross-check warns when a `PKG_*` verb's leading binary is absent from the repo's
+  `install/packages.txt`, to catch a verb naming a tool nothing installs — `paru`, `nala`.
+  Measured across all twelve fleet declarations on 2026-09-16, it fired on **essentially
+  every verb the fleet declares**: Debian 10 warnings, openSUSE and Fedora and Alpine and
+  Gentoo 8 each, Arch 7, and `capabilities` is a prerequisite of `lint` in each repo's
+  Makefile — so eight repos printed that wall on every run. The signal it was built for was
+  buried in it, and a gate that is ~100% false-positive teaches people to skim past it.
+
+  The cause is that **three unrelated things** make a binary absent from a package list,
+  and only the repo knows which applies: the base system ships it (`apt-get`, `dnf`,
+  `zypper`, `rpm`, `systemctl`), a package the repo _does_ list provides it under another
+  name (`checkupdates` from `pacman-contrib`, `equery` from `gentoolkit`), or the repo
+  ships it itself (`gentoo-pkg-pending`, symlinked onto PATH by its own bootstrap). Core
+  cannot tell them apart, and a hardcoded table of package-manager binaries here would be
+  exactly the per-manager knowledge #763 deleted from Core — so the declaration says so.
+
+  Measured with the key declared, all ten noisy declarations go to **zero**. The first
+  attempt at the narrower fix is recorded because it is the tempting one: skipping only
+  `PKG_INSTALL`'s own binary zeroes six declarations and cuts Debian 10 → 2, but leaves
+  `fedora.atomic` at 3 and `opensuse.microos` at 5 — the staged hosts run four base
+  binaries across their verbs, not one manager, so "the package manager" was never the
+  right category.
+
+  **Kept honest from both ends**, so an exemption list cannot rot into a blanket silencer:
+  a name no declared verb runs is a **failure** (a stale entry silences a future verb
+  nobody vetted), and a name the repo's own `packages.txt` installs is a **failure** (the
+  exemption is simply false). Entries match as whole tokens, so `rpm` does not cover
+  `rpm-ostree`. The contradiction is reported once per tool rather than once per verb —
+  `dnf` leads six of Fedora's verbs, and the first draft printed the same line six times,
+  which is the noise this key exists to remove.
+
+  **Additive**: omitting the key is exactly the old behaviour, verified against all twelve
+  declarations, so nothing in the fleet changes until a repo opts in. The sibling repos
+  adopt it one PR each; this is the half that lets them.
 
 - **A repo that loses the ruleset binding `main` now pages a human**
   ([#1081](https://github.com/dotgibson/dotfiles-core/issues/1081)). `fleet-protection.yml` was

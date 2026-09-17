@@ -88,6 +88,31 @@ PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]
 # because most archives overload that status: dnf exits 100 when updates EXIST, and
 # `pacman -Qu` / `checkupdates` exit non-zero when there are NONE.
 
+# ── what --packages must not nag about (optional, #1087) ──────────────────────
+# PKG_UNLISTED_TOOLS — space-separated BINARY names the verbs above run that
+# install/packages.txt deliberately does not name. `check-capabilities.sh --packages`
+# (your `make lint` runs it) warns about every verb whose leading binary is absent from
+# that list; three different things make a binary absent, and only this repo knows which:
+#
+#   the base system ships it     apt-get, dnf, zypper, pacman, apk, rpm, systemctl
+#   a listed package provides it under another name
+#                                checkupdates (from pacman-contrib), equery (gentoolkit)
+#   this repo ships it itself    a helper its own bootstrap symlinks onto PATH
+#
+# Without it the check fired on essentially EVERY verb — Debian 10 warnings, most repos
+# 7-8 — so the one case it exists to catch (a verb naming a tool nothing installs: paru,
+# nala) was buried. Declare the exceptions and the rest mean something.
+#
+# Kept honest from both ends, so it cannot rot into a blanket silencer: a name no declared
+# verb runs is a FAILURE, and so is a name this repo's packages.txt actually installs.
+# Fedora's declaration would read:
+#
+#   PKG_UNLISTED_TOOLS=dnf
+#
+# and the atomic edition's, which runs four base binaries across its verbs:
+#
+#   PKG_UNLISTED_TOOLS=rpm-ostree dnf rpm systemctl
+
 # ── the scheduled runner (optional, #665) ─────────────────────────────────────
 # Set to 1 to permit the daily maint run to apply SYSTEM package upgrades on this box.
 # OMITTING IT REFUSES, and that direction is the point: a fail-open here silently enables
