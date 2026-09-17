@@ -394,10 +394,11 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # core-doctor --json: a machine-readable object on stdout that actually parses and
 # carries the tools/wired/atuin_daemon/resolved keys — so a statusline/editor/CI can consume
 # health. atuin_daemon's shape is asserted exactly (not just present): it is the one field here
-# describing state that can change under a LIVE shell, so a consumer polling it needs both
-# booleans to keep meaning what they say.
+# describing state that can change under a LIVE shell, so a consumer polling it needs every
+# field to keep meaning what it says. `wedged_pid` is an int, not a bool, and deliberately: the
+# pid IS the remedy, so a consumer that only learned "wedged" would still have to go looking.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
-  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"detection\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"]); assert set(d[\"detection\"]) == set([\"ran\",\"missed\",\"stale\"]); assert isinstance(d[\"detection\"][\"ran\"], bool) and isinstance(d[\"detection\"][\"missed\"], list) and isinstance(d[\"detection\"][\"stale\"], list)"'
+  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"detection\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\",\"wedged_pid\"]); assert isinstance(d[\"atuin_daemon\"][\"wedged_pid\"], int); assert set(d[\"detection\"]) == set([\"ran\",\"missed\",\"stale\"]); assert isinstance(d[\"detection\"][\"ran\"], bool) and isinstance(d[\"detection\"][\"missed\"], list) and isinstance(d[\"detection\"][\"stale\"], list)"'
 # The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
 # construction and this assertion should be tautological. It is kept precisely for that
 # reason: it is the guard that stays red if someone reintroduces a second literal — which is
