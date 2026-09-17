@@ -957,3 +957,82 @@ else
   pass "fleet-app-scope: the weekly mint covers the whole installation (no repositories:) with metadata: read alone"
 fi
 unset _fas_fanout _fas_wf _fas
+
+# ── rule 8's job counts (modern-baseline.yml's prose ↔ the walk that enforces it) ────
+# THE §9m SHAPE, on a different source of truth. One truth — the job walk inside
+# scripts/check-modern.sh — several sentences quoting it, and nothing reading the two
+# together. modern-baseline.yml's rule 8 claimed "all 47 runner jobs here already set one"
+# and "cheap while the fleet is at 47/47" against a tree holding 58: eleven runner jobs had
+# been added over time and the rationale was never touched (#1083).
+#
+# A stale number here is not cosmetic. Rule 8's whole argument is that the property is held
+# UNIVERSALLY today and the floor is therefore cheap to encode — "58/58" IS the evidence for
+# "cheap", so "47/47" over a tree of 58 quietly withdraws the argument while looking like it
+# still makes it.
+#
+# KEYED ON THE CLAIM, NOT THE NUMBER — §9m's rule, for §9m's reason. Three different numbers
+# are correct in this one comment about three different sets: runner jobs, reusable-call
+# jobs, and the six *-call.yml@vN workflows Core owns. A check on bare integers would red on
+# legitimate lines, so each claim is matched by the sentence that commits it to a set, and a
+# claim the gate can no longer FIND is a finding too — otherwise rewording the prose silently
+# retires the check.
+#
+# The counts come from `check-modern.sh --job-census`, which is the same walk rule 8 filters.
+# A second walk here would be a second definition of "runner job" — the drift class this
+# gate exists to close.
+hdr "check-modern rule 8's job counts (the prose ↔ the walk)"
+_jc_mb="$HERE/scripts/modern-baseline.yml"
+_jc_tf="$HERE/scripts/test/61-check-modern.sh"
+_jc_cm="$HERE/scripts/check-modern.sh"
+if [[ ! -r "$_jc_mb" || ! -r "$_jc_tf" || ! -x "$_jc_cm" ]]; then
+  fail "rule 8 job counts: check-modern.sh, modern-baseline.yml or 61-check-modern.sh is missing — the counts are gated by nothing"
+# `env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_SYSTEM`, and it is load-bearing. This suite
+# exports both as /dev/null from scripts/test/30-release-tooling.sh so a developer's real
+# signing config cannot reach the fixtures — an EXPORT out of a sourced fragment, so every
+# later fragment inherits it, this one included. The census is not a fixture: it reads the
+# REAL tree through `git ls-files`, and on the Alpine and Arch legs the repo is owned by
+# the host uid while the audit runs as root in the container, so git needs the
+# `safe.directory` those legs set in the GLOBAL config. Hidden behind /dev/null, git
+# refuses the repo, _audit_ls swallows the error, and the inventory comes back empty —
+# which is how this gate first went red on exactly those two legs and nowhere else.
+elif ! _jc_census="$(env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_SYSTEM "$_jc_cm" --job-census 2>&1)"; then
+  fail "rule 8 job counts: check-modern.sh --job-census failed — $_jc_census"
+elif [[ ! "$_jc_census" =~ ^workflows=([0-9]+)[[:space:]]runner=([0-9]+)[[:space:]]call=([0-9]+)$ ]]; then
+  fail "rule 8 job counts: --job-census answered '$_jc_census', not 'workflows=N runner=X call=Y'"
+elif [[ "${BASH_REMATCH[1]}" == 0 ]]; then
+  # CANNOT READ IS NEVER A PASS, and it is never a FAIL either: an inventory of nothing
+  # cannot judge a claim about 58 runner jobs, and saying "the tree holds 0" would be this
+  # gate inventing a finding out of its own blindness.
+  skip_env "rule 8 job counts (the workflow inventory is empty — git enumerated nothing here, so the counts cannot be taken)"
+else
+  _jc_runner="${BASH_REMATCH[2]}"
+  _jc_call="${BASH_REMATCH[3]}"
+  _jc_bad=""
+  # $1 file, $2 extractor with ONE capture, $3 the number the walk produces, $4 the claim.
+  # `s|…|` and not `s/…/`: two of the patterns match a fraction and carry a literal slash.
+  _jc_claim() {
+    _jc_got="$(sed -nE "s|.*$2.*|\1|p" "$1" | head -n1)"
+    if [[ -z "$_jc_got" ]]; then
+      _jc_bad="$_jc_bad
+  ${1##*/}: no line makes the \"$4\" claim any more — restore the sentence, or teach this check its new wording"
+    elif [[ "$_jc_got" != "$3" ]]; then
+      _jc_bad="$_jc_bad
+  ${1##*/}: \"$4\" says $_jc_got, the walk counts $3"
+    fi
+  }
+  _jc_claim "$_jc_mb" 'All ([0-9]+) runner' "$_jc_runner" 'all N runner jobs already set one'
+  _jc_claim "$_jc_mb" 'fleet is at ([0-9]+)/[0-9]+' "$_jc_runner" 'the fleet is at N/N'
+  _jc_claim "$_jc_mb" 'fleet is at [0-9]+/([0-9]+)' "$_jc_runner" 'the fleet is at N/N (the denominator)'
+  _jc_claim "$_jc_mb" 'lands job ([0-9]+) without' "$((_jc_runner + 1))" 'expensive once someone lands job N+1'
+  _jc_claim "$_jc_mb" 'there are ([0-9]+), every one a notify' "$_jc_call" 'there are N reusable-call jobs'
+  _jc_claim "$_jc_tf" '# ([0-9]+) jobs in this repo are exactly' "$_jc_call" 'N jobs are exactly that shape'
+  if [[ -z "$_jc_bad" ]]; then
+    pass "rule 8's counts match the walk ($_jc_runner runner jobs, $_jc_call reusable-call jobs)"
+  else
+    fail "rule 8's rationale quotes a job count the walk does not produce — fix the prose; ./scripts/check-modern.sh --job-census prints both numbers"
+    fail_detail "${_jc_bad#$'\n'}"
+  fi
+  unset -f _jc_claim
+  unset _jc_runner _jc_call _jc_bad _jc_got
+fi
+unset _jc_mb _jc_tf _jc_cm _jc_census
