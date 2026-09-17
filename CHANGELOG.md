@@ -961,6 +961,35 @@
   render is still the structural 2. §9h's exit-3 arm now reports a pass for the in-repo
   block beside a **scoped** skip naming the two tables that genuinely were not covered;
   `--strict` and `--require-siblings` keep their meanings.
+- **The fleet App register called `dotfiles-Windows` surplus, and the doc told an Org Owner
+  to remove it** ([#1110](https://github.com/dotgibson/dotfiles-core/issues/1110)).
+  `GITHUB-APP-AUTH.md`'s install list withheld that repo on the grounds that it vendors no
+  `core/`, is absent from `scripts/os-repos.txt` and is not a fan-out target. All three are
+  still true, and none of them is why the install is there any more. Its three weekly sync
+  bots — `nvim-sync.yml`, `starship-sync.yml`, `theme-sync.yml` — opened their PRs with
+  `GITHUB_TOKEN`, so GitHub's recursion guard meant `ci.yml` never fired, no required context
+  ever arrived, and every sync PR sat `BLOCKED` until a human closed and reopened it
+  (dotgibson/dotfiles-Windows#265). They now mint the App token in the shape `freshness.yml`
+  uses (dotgibson/dotfiles-Windows#268), which is the **self-PR** justification `dotfiles-core`
+  has held since #1071 — so the same reasoning that puts Core on the list puts Windows on it.
+
+  The install already existed, so nothing was broken; the risk ran the other way.
+  `scripts/fleet-app-scope.sh` reported it under _"installed but nothing writes to it"_ — a
+  `_fatal` row, so the weekly register was **red** — and acting on either that or the doc would
+  have taken those three bots back to weekly manual reopens. Because they degrade rather than
+  fail, the only symptom would have been sync PRs quietly going `BLOCKED` again. The expected
+  set is now thirteen repos, the consumer table carries the three bots as its own row, and the
+  grant half is untouched: they take a strict subset of the verbs the App holds and
+  deliberately not `Workflows: write`.
+
+  **One gate moved with it, and was found dead on the way.**
+  `scripts/test/90-policy-gates.sh` holds the script's expected set to the doc section, and its
+  forbidden-pair check read `EXTRA_REPOS` through `grep -o 'dotfiles-[A-Za-z]*'` — which can
+  never match `htpx`, the only name it still forbids. That was survivable only while
+  `dotfiles-Windows` was also forbidden and _did_ match; reducing the list to `htpx` alone would
+  have left the assertion vacuous and passing. It now parses every token in the declaration,
+  and asserts the declaration is still the single line that parse assumes.
+
 - **Three Core docs said `dotfiles-Defense` still hand-rolls its band-85 role stage.** It
   shipped `blib_link_role_layer` in #976 (its own dotfiles-Defense#292, 2026-09-13), and
   `wire_defense_stage` exists nowhere in that repo outside its vendored `core/` copies of
