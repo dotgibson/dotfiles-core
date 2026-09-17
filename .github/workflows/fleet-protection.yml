@@ -8,7 +8,8 @@ name: fleet-protection
 # no ruleset at all, one carrying an admin bypass (dotgibson/dotfiles-Alpine#146).
 #
 # Weekly (and on demand) this re-asks the question, failing red + writing a job summary
-# when any repo loses its ruleset, gains a bypass actor, or falls behind on checks.
+# when any repo loses its ruleset, gains a bypass actor, or falls behind on checks — and
+# filing a deduplicated issue for it, because the answer has to reach a human (#1081).
 #
 # Read-only: it never writes a ruleset — the fix is a human running `make fleet-protection`
 # with --migrate/--retire. Rulesets are PUBLICLY readable, so the job's own GITHUB_TOKEN
@@ -69,3 +70,21 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+  # Turn a red run into a deduplicated issue (G1). A repo that loses the ruleset binding
+  # `main` is unprotected until somebody notices, and this sweep exists BECAUSE nobody did:
+  # a Core fan-out went straight to main on two repos, one with no ruleset and one carrying
+  # an admin bypass (dotgibson/dotfiles-Alpine#146). Leaving its only output a red tab would
+  # rebuild the very blind spot it was written to close (#1081).
+  notify-failure:
+    needs: protection
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: fleet-protection
+      title: "ci-failure: a fleet repo's main branch is not bound by a ruleset"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly ruleset sweep is red: a repo has no ruleset governing `main`, gained a `bypass_actors` entry, or could not be read at all — the script keeps those distinguishable and all three are rc=1, so read the job summary before assuming which. Fixing it is local and needs admin credentials: `make fleet-protection` to report, `./scripts/fleet-protection.sh --migrate` to copy classic-only required checks into the ruleset. Note the job runs `--rulesets-only`, so CLASSIC branch protection is unread here by design. Or the check itself may be broken."
