@@ -1,22 +1,36 @@
 # nvim split proposal — Core stops being a shell config
 
-> **Status: DECISION PENDING (opened 2026-09-14) — extract or freeze.** This is the
-> planning document for the roadmap milestone *"Core stops being a shell config"*: the
-> editor tree that has been deferred three times — v4, `V5-PROPOSAL.md` §11 (*"6,346 LOC
-> and 61 plugins, but it breaks no public contract and re-vendors with zero migration"*),
-> and `V8-PROPOSAL.md` §10 (*"three deferrals is the signal that it needs its own release,
-> not a fourth ride-along slot"*). The milestone exists to pick one of two ways out, and
-> so does this file. It measures first (§2), lays out both options with what each breaks
-> (§3, §4), and **recommends one** (§5) — with the numbers that would change the
-> recommendation named. Written in the "Current → Proposed → What breaks" voice of the v4,
-> v5 and v8 proposals.
+> **Status: DECIDED (2026-09-17) — A2: extract into `dotfiles-nvim`, Core keeps vendoring
+> it.** §5's decision gate asked the author to pick A2 or B *on this file*, and A2 is
+> picked. §5's recommendation stands unchanged: none of the three conditions it named as
+> recommendation-flipping has fired, and §7's four open questions are answered below and
+> in full at §7. §3.5 is now the **runbook**, and the milestone's issues are filed from it.
+> Deciding is not shipping — nothing has moved yet, and this file flips to SHIPPED when
+> §3.5 has.
+>
+> This is the planning document for the roadmap milestone *"Core stops being a shell
+> config"*: the editor tree that had been deferred three times — v4, `V5-PROPOSAL.md` §11
+> (*"6,346 LOC and 61 plugins, but it breaks no public contract and re-vendors with zero
+> migration"*), and `V8-PROPOSAL.md` §10 (*"three deferrals is the signal that it needs its
+> own release, not a fourth ride-along slot"*). It measures first (§2), lays out both
+> options with what each breaks (§3, §4), and **recommends one** (§5) — with the numbers
+> that would change the recommendation named. Written in the "Current → Proposed → What
+> breaks" voice of the v4, v5 and v8 proposals, and kept in that tense: §2 describes the
+> tree as it was at `v7.4.3`, not as it is.
+>
+> **The §7 answers, in short.** (1) `dotfiles-nvim` vendors `theme/palette.toml` and runs
+> its own generator, so *"colour is generated, not typed"* stays true in **both** repos.
+> (2) luacheck stays in Core's audit over the vendored copy, as an integrity check.
+> (3) Core bumps `nvim.lock` **with the next Core release**, never on every nvim release.
+> (4) The repo is `dotgibson/dotfiles-nvim`; the vendored path in Core stays `nvim/`.
 >
 > When a claim here drifts from `VENDORING.md`, `ARCHITECTURE.md` or `core.manifest`,
 > **those win** — fix this.
 >
-> **No version.** Whichever option is chosen, the milestone stays unnumbered per the
-> Additive Backlog's rule. Extraction is expected to be a **minor** in Core (nothing an
-> OS repo consumes changes shape — see §3.4); freezing is not a release at all.
+> **No version.** The milestone stays unnumbered per the Additive Backlog's rule, and this
+> file never names one. A2 is expected to be a **minor** in Core — nothing an OS repo
+> consumes changes shape (§3.4). Per `RELEASE-STRATEGY.md`, that is the whole test, and it
+> is why this decision does not produce a major however large the diff is.
 
 ## 1. Summary
 
@@ -224,9 +238,14 @@ fresh-bootstrap failure mode armed.
   file across a vendor boundary — the exact drift class `§9d` exists to prevent → design
   that first, or B.
 
-**Decision gate:** the author picks A2 or B on this file. If A2, §3.5 becomes the
-runbook and the milestone's issues are filed from it; the first sync must be
-byte-identical, measured by `git diff --stat` between Core's `nvim/` before and after.
+**Decision gate — closed 2026-09-17, A2.** None of the three conditions above fired:
+the editor has not settled (the quarter is not up, and the measured rate is unchanged),
+§7(1) resolves cleanly in the direction that keeps both repos generated rather than typed,
+and the drift check needs no second integrity model — the vendored tree is checked the way
+`CHANGELOG.recent.md` already is. §3.5 is therefore the runbook, and the milestone's issues
+are filed from it. **The first sync must be byte-identical**, measured by `git diff --stat`
+between Core's `nvim/` before and after; that assertion is the one non-negotiable in §3.5,
+because it is what keeps the fleet's next `core.lock` bump free of editor content.
 
 ## 6. Non-goals
 
@@ -239,21 +258,38 @@ byte-identical, measured by `git diff --stat` between Core's `nvim/` before and 
 - **Windows adopting `core/`.** It still cannot consume the shell layers; it consumes the
   editor, which is the point.
 
-## 7. Open questions
+## 7. Open questions — answered (2026-09-17)
 
-1. **The theme block.** `gen-theme.sh` writes `# core:theme:gen` into the nvim colours from
-   `theme/palette.toml`. Under A2 the palette is Core's and the file is the nvim repo's.
-   Options: the nvim repo vendors `palette.toml` (a second small vendor line) and runs its
-   own generator; or the block is generated into the *vendored copy* only, at sync time,
-   and the source repo carries a neutral palette. The first keeps "colour is generated,
-   not typed" true in both repos; the second keeps the source repo palette-free. Decide
-   before step 1 of §3.5.
-2. **Does luacheck stay in Core's audit over the vendored copy?** It is cheap and it
-   catches a corrupt sync; it is also a duplicate gate. Lean: keep, as a vendored-tree
-   integrity check, the way `check-links.sh` is vendored and gated.
-3. **Who cuts nvim releases, and how often?** The freshness job moving pins into a PR in
-   the nvim repo, and a release on merge (`auto-tag.yml`'s shape), makes every bump a
-   release; Core then bumps `nvim.lock` at its own pace. Confirm that pace is "with the
-   next Core release" and not "immediately", or the churn comes back through the lock.
-4. **Naming.** `dotfiles-nvim` matches the fleet; the milestone text uses it. The vendored
-   path in Core stays `nvim/` so nothing downstream changes.
+All four are decided. They were the conditions on §5's recommendation, so they are settled
+here rather than during §3.5.
+
+1. **The theme block — the nvim repo vendors `palette.toml` and runs its own generator.**
+   `gen-theme.sh` writes `# core:theme:gen` into the nvim colours from `theme/palette.toml`;
+   under A2 the palette is Core's and the file is the nvim repo's. The alternative —
+   generate into the *vendored copy* only, at sync time, and keep the source repo
+   palette-free — was rejected: it leaves the source tree's colours **hand-typed**, which
+   is precisely the state `§9d` exists to prevent, and it makes the vendored copy differ
+   from its source by construction, so the byte-identical check in §3.5 step 2 could never
+   hold again after the first sync. Vendoring the palette costs one small vendor line in a
+   repo that already carries an `nvim.lock`-shaped pin, and it keeps *"colour is generated,
+   not typed"* true on **both** sides of the boundary. §5 named this the condition most
+   likely to flip the recommendation back to B; it resolves in A2's favour.
+2. **luacheck stays in Core's audit, over the vendored copy.** It is the cheapest leg in
+   the gate and it catches a corrupt sync, which is exactly the failure a vendored tree
+   has and a source tree does not. It is a duplicate of the source repo's own luacheck
+   only in the sense that `check-links.sh` is — vendored, and gated where it lands.
+3. **Core bumps `nvim.lock` with the next Core release, never on every nvim release.**
+   The freshness job moves pins into a PR in the nvim repo and a release follows on merge
+   (`auto-tag.yml`'s shape), so every bump is an nvim release — but Core adopting each one
+   as it lands would reimport the churn through the lock and leave the 36-of-82 number
+   where it is. The pin moves when Core is cutting anyway. A "`nvim.lock` is N releases
+   behind" nudge (§3.4) makes the lag visible so that "at Core's pace" does not decay into
+   "never".
+4. **Naming: `dotgibson/dotfiles-nvim`.** It matches the fleet and the milestone text. The
+   vendored path in Core stays `nvim/`, so nothing downstream changes — `core.manifest`
+   keeps its one entry and `blib_link_core` is untouched.
+
+One consequence worth stating, since it is not in `scripts/os-repos.txt`'s shape:
+`dotfiles-nvim` is a repo Core vendors **from**, not one Core fans out **to**. It does not
+belong in `scripts/os-repos.txt`, and the fleet App's installation list needs checking
+against it separately (`make fleet-app-scope`).

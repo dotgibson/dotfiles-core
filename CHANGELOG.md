@@ -33,6 +33,33 @@
 
   Neither file is in `core.manifest` or `core.vendor`, so none of this ships to a host.
 
+- **The nvim split is decided: A2 — extract into `dotfiles-nvim`, Core keeps vendoring it**
+  ([#1120](https://github.com/dotgibson/dotfiles-core/issues/1120)).
+  `NVIM-SPLIT-PROPOSAL.md` had sat at `DECISION PENDING` since 2026-09-14, after three
+  earlier deferrals (v4, `V5-PROPOSAL.md` §11, `V8-PROPOSAL.md` §10), and its own gate said
+  the author picks A2 or B _on the file_. Nothing downstream could be filed until that
+  happened — the milestone's issue queue did not exist yet, by design. A2 is picked, and
+  **none of the three conditions §5 named as recommendation-flipping fired**: the editor has
+  not settled, the drift check needs no second integrity model, and §7(1) resolves cleanly.
+
+  The four open questions are answered rather than left to the migration, because they were
+  the conditions on the recommendation. The theme block is the one that mattered:
+  `dotfiles-nvim` **vendors `theme/palette.toml` and runs its own generator**, so _"colour
+  is generated, not typed"_ stays true on both sides of the vendor boundary. Generating into
+  the vendored copy only was rejected twice over — it leaves the source tree's colours
+  hand-typed, the exact state §9d exists to prevent, and it makes the copy differ from its
+  source by construction, so the byte-identical assertion in §3.5 could never hold again
+  after the first sync. luacheck stays in Core over the vendored copy as an integrity check;
+  Core bumps `nvim.lock` **with the next Core release**, never on every nvim release, or the
+  churn returns through the lock.
+
+  Deciding is not shipping: nothing has moved, §3.5 is now the runbook, and the file flips
+  to SHIPPED when it has. A2 is a **minor** — `core/nvim` keeps its path, `core.manifest`
+  keeps its entry and `blib_link_core` is untouched (§3.4), which per `RELEASE-STRATEGY.md`
+  is the whole test. One consequence recorded up front: `dotfiles-nvim` is a repo Core
+  vendors _from_, not one Core fans out _to_, so it does not belong in
+  `scripts/os-repos.txt`.
+
 ### Fixed
 
 - **The App-installation register named the wrong failure for a missing self-PR install**
