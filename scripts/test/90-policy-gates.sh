@@ -858,18 +858,36 @@ else
     fail "fleet-app-scope: $_fas_arrays repo array(s) declared; only EXTRA_REPOS may exist, or the fleet list has been copied"
   fi
 
-  # 2. The two exceptions beside the fan-out targets are the ones GITHUB-APP-AUTH.md names.
+  # 2. The three exceptions beside the fan-out targets are the ones GITHUB-APP-AUTH.md names.
   # ONE DIRECTION, deliberately: every repo the script expects must be documented, because
   # an undocumented expectation is how the next reader "fixes" the script. The reverse — the
   # doc naming a repo the script does not expect — is caught at RUNTIME by the register's own
   # EXTRA finding, loudly, against the live installation. Asserting it here would mean
   # parsing English prose, which fails the day someone rewords a sentence.
-  _fas_extra="$(sed -n '/^EXTRA_REPOS=(/,/)/p' "$_fas" | grep -o 'dotfiles-[A-Za-z]*' | sort -u)"
+  #
+  # PARSE EVERY token in the array, not just the `dotfiles-` ones. The old parse was
+  # `grep -o 'dotfiles-[A-Za-z]*'`, which cannot match `htpx` — so the forbidden check below
+  # was reading a list the one name it forbids could never appear in. That was harmless only
+  # while dotfiles-Windows was ALSO forbidden and did match; with Windows now expected
+  # (#1110), the narrow parse would have left the whole assertion vacuous.
+  #
+  # One line, bounded by its own `)`: the declaration is single-line today, and a parse that
+  # quietly read half a multi-line one would under-report exactly the way the old one did.
+  # _fas_singleline says whether that assumption still holds, and is asserted, not assumed.
+  _fas_singleline="$(awk '/^EXTRA_REPOS=\(/ { print ($0 ~ /\)/) ? "yes" : "no"; exit }' "$_fas")"
+  _fas_extra="$(awk '/^EXTRA_REPOS=\(/ {
+      sub(/^EXTRA_REPOS=\(/, ""); sub(/\).*$/, "")
+      n = split($0, a, /[ \t]+/)
+      for (i = 1; i <= n; i++) if (a[i] != "") print a[i]
+      exit
+    }' "$_fas" | sort -u)"
   _fas_doc="$HERE/GITHUB-APP-AUTH.md"
-  if [[ ! -r "$_fas_doc" ]]; then
+  if [[ "$_fas_singleline" != yes ]]; then
+    fail "fleet-app-scope: EXTRA_REPOS is no longer a single-line declaration — the parse below reads one line, so a name on any other line would go unchecked by both assertions here"
+  elif [[ ! -r "$_fas_doc" ]]; then
     fail "fleet-app-scope: GITHUB-APP-AUTH.md is unreadable — cannot check the expected install set against its install list"
   elif [[ -z "$_fas_extra" ]]; then
-    fail "fleet-app-scope: EXTRA_REPOS parsed empty — the expected install set is the fan-out targets alone, which omits dotfiles-core and dotfiles-web"
+    fail "fleet-app-scope: EXTRA_REPOS parsed empty — the expected install set is the fan-out targets alone, which omits dotfiles-core, dotfiles-web and dotfiles-Windows"
   else
     # The install list lives in one section; read only that, so an unrelated mention of a
     # repo elsewhere in the doc cannot satisfy this.
@@ -883,19 +901,24 @@ else
     else
       fail "fleet-app-scope: EXTRA_REPOS expects$_fas_undoc, which GITHUB-APP-AUTH.md's \"Where the App is installed\" does not name — document it there or stop expecting it"
     fi
-    # The two repos the doc says must NOT be reachable. A token minted for this
-    # installation carries contents+workflows:write, so an expected-set entry here would
-    # make the register bless reach the fleet deliberately withheld.
+    # The repo the doc says must NOT be reachable. A token minted for this installation
+    # carries contents+workflows:write, so an expected-set entry here would make the
+    # register bless reach the fleet deliberately withheld. `dotfiles-Windows` was on this
+    # list until #1110: its three sync bots now open App-authored self-PRs
+    # (dotgibson/dotfiles-Windows#268), which is the same justification dotfiles-core holds,
+    # so the doc moved it from withheld to expected and this list moved with it. htpx only
+    # MINTS; a minted token's reach is decided by the installation on the other repos.
+    _fas_withheld='htpx' # a LIST, because it has held two names and may again
     _fas_forbidden=''
-    for _fas_r in htpx dotfiles-Windows; do
+    for _fas_r in $_fas_withheld; do
       grep -qx "$_fas_r" <<<"$_fas_extra" && _fas_forbidden="$_fas_forbidden $_fas_r"
     done
     if [[ -z "$_fas_forbidden" ]]; then
-      pass "fleet-app-scope: expects no install on htpx or dotfiles-Windows (GITHUB-APP-AUTH.md withholds both)"
+      pass "fleet-app-scope: expects no install on htpx (GITHUB-APP-AUTH.md withholds it — it only mints)"
     else
       fail "fleet-app-scope: EXTRA_REPOS expects$_fas_forbidden installed, which GITHUB-APP-AUTH.md deliberately withholds"
     fi
-    unset _fas_sec _fas_undoc _fas_r _fas_forbidden
+    unset _fas_sec _fas_undoc _fas_r _fas_withheld _fas_forbidden
   fi
 
   # 3. The CLI contract, run for real — both arms exit before the script touches gh, so
@@ -922,7 +945,7 @@ else
   else
     fail "fleet-app-scope: an unknown flag exited $_fas_rc; 2 is usage, and 1/3 are verdicts a CI caller acts on"
   fi
-  unset _fas_help _fas_rc _fas_arrays _fas_extra _fas_doc
+  unset _fas_help _fas_rc _fas_arrays _fas_extra _fas_singleline _fas_doc
 fi
 
 # 4. THE WIRING, not just the script. A register nothing calls is a register nobody runs,
