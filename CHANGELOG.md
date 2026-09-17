@@ -425,6 +425,31 @@
 
 ### Fixed
 
+- **The research matrix's three container images were unpinned, two of them mutable
+  `:latest`** ([#1099](https://github.com/dotgibson/dotfiles-core/issues/1099)).
+  `research-nonmutable.yml` picks its image in the plan job's `case` and hands it to the
+  matrix, so `quay.io/fedora/fedora-bootc:44`, `registry.opensuse.org/opensuse/tumbleweed:latest`
+  and `nixos/nix:latest` never appeared on a command line — the later jobs only ever see
+  `docker pull "$IMAGE"`. `check-modern.sh` rule 4 reads command lines and `FROM`, not shell
+  assignments, so the file passed the floor green while the same file already pinned
+  `registry.fedoraproject.org/fedora:44@sha256:61beafd3…` twelve lines further down. Drift
+  against its own established shape, not an exemption.
+
+  All three now carry a digest. **Pinning a rolling image is a deliberate trade and the file
+  now says so**: tumbleweed and nixos/nix move continuously, so a digest freezes what the
+  harness measures — right for a research run, since a measurement nobody can reproduce is
+  not a measurement, but it means the digests must be refreshed whenever the research is
+  re-run, or a later run reports a 2026-09 image as if it were current. The comment claiming
+  the matrix legs "pin by variable" was a euphemism for _not pinned_; it is now simply true.
+  The pull step's name carried the whole reference, which a digest turns into an unreadable
+  hundred-character title, so it names `matrix.target` instead.
+
+  What this does _not_ do is teach rule 4 the assignment surface. A `name:tag` literal in a
+  shell assignment is a materially harder scan than a command line — every `=`-bearing token
+  becomes a candidate — and it wants its own false-positive filter and its own tests rather
+  than a bolt-on. That half stays open on #1099, and the gap stays named in rule 4's comment
+  block.
+
 - **`PORTING-MATRIX.md` was silent about Fedora on both halves of the nvim-treesitter
   requirement, and the report that noticed named the wrong release**
   ([#1010](https://github.com/dotgibson/dotfiles-core/issues/1010)). The non-mutable-host
