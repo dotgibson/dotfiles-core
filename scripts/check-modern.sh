@@ -51,7 +51,13 @@ FILES=()
 while IFS= read -r _f; do [ -n "$_f" ] && FILES+=("$_f"); done < <(_audit_ls \
   '.github/workflows/*.yml' '.github/workflows/*.yaml' \
   '.github/actions/*/action.yml' '.github/actions/*/action.yaml')
-[ "${#FILES[@]}" -gt 0 ] || { echo "check-modern: no workflow/action files to check"; exit 0; }
+# `--job-census` is exempt from this early exit: its consumer has to tell "counted zero"
+# apart from "could not count", and an exit here would hand that reader a prose sentence
+# where it expects a census line. It reports workflows=0 instead and lets the gate skip.
+if [ "${#FILES[@]}" -eq 0 ] && [ "${1:-}" != "--job-census" ]; then
+  echo "check-modern: no workflow/action files to check"
+  exit 0
+fi
 
 # Workflows alone — rule 5 gates a key that only exists at workflow scope, so it must
 # not see the composite action.yml files above.
@@ -99,14 +105,20 @@ _job_records() {
   done
 }
 
-# `--job-census` prints the two counts and nothing else, for the gate above. It is a
-# READER of the floor, not part of it: it runs no rule and returns no verdict.
+# `--job-census` prints the counts and nothing else, for the gate above. It is a READER of
+# the floor, not part of it: it runs no rule and returns no verdict.
+#
+# `workflows=` LEADS, and is not decoration. The inventory goes through git (_audit_ls, so
+# untracked files count), which can legitimately answer nothing — a container whose
+# safe.directory the caller has hidden, a tarball with no .git. The counts are then 0/0,
+# which is indistinguishable from a real answer unless the size is reported beside them,
+# and a consumer that cannot tell reports "the prose claims 58, the tree holds 0".
 case "${1:-}" in
 "") : ;;
 --job-census)
-  _job_records | awk -F'\t' '
+  _job_records | awk -F'\t' -v w="${#WORKFLOWS[@]}" '
     $1 == "runner" { r++ } $1 == "call" { c++ }
-    END { printf "runner=%d call=%d\n", r + 0, c + 0 }'
+    END { printf "workflows=%d runner=%d call=%d\n", w, r + 0, c + 0 }'
   exit 0
   ;;
 *)

@@ -982,13 +982,27 @@ _jc_tf="$HERE/scripts/test/61-check-modern.sh"
 _jc_cm="$HERE/scripts/check-modern.sh"
 if [[ ! -r "$_jc_mb" || ! -r "$_jc_tf" || ! -x "$_jc_cm" ]]; then
   fail "rule 8 job counts: check-modern.sh, modern-baseline.yml or 61-check-modern.sh is missing — the counts are gated by nothing"
-elif ! _jc_census="$("$_jc_cm" --job-census 2>&1)"; then
+# `env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_SYSTEM`, and it is load-bearing. This suite
+# exports both as /dev/null from scripts/test/30-release-tooling.sh so a developer's real
+# signing config cannot reach the fixtures — an EXPORT out of a sourced fragment, so every
+# later fragment inherits it, this one included. The census is not a fixture: it reads the
+# REAL tree through `git ls-files`, and on the Alpine and Arch legs the repo is owned by
+# the host uid while the audit runs as root in the container, so git needs the
+# `safe.directory` those legs set in the GLOBAL config. Hidden behind /dev/null, git
+# refuses the repo, _audit_ls swallows the error, and the inventory comes back empty —
+# which is how this gate first went red on exactly those two legs and nowhere else.
+elif ! _jc_census="$(env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_SYSTEM "$_jc_cm" --job-census 2>&1)"; then
   fail "rule 8 job counts: check-modern.sh --job-census failed — $_jc_census"
-elif [[ ! "$_jc_census" =~ ^runner=([0-9]+)[[:space:]]call=([0-9]+)$ ]]; then
-  fail "rule 8 job counts: --job-census answered '$_jc_census', not 'runner=N call=M'"
+elif [[ ! "$_jc_census" =~ ^workflows=([0-9]+)[[:space:]]runner=([0-9]+)[[:space:]]call=([0-9]+)$ ]]; then
+  fail "rule 8 job counts: --job-census answered '$_jc_census', not 'workflows=N runner=X call=Y'"
+elif [[ "${BASH_REMATCH[1]}" == 0 ]]; then
+  # CANNOT READ IS NEVER A PASS, and it is never a FAIL either: an inventory of nothing
+  # cannot judge a claim about 58 runner jobs, and saying "the tree holds 0" would be this
+  # gate inventing a finding out of its own blindness.
+  skip_env "rule 8 job counts (the workflow inventory is empty — git enumerated nothing here, so the counts cannot be taken)"
 else
-  _jc_runner="${BASH_REMATCH[1]}"
-  _jc_call="${BASH_REMATCH[2]}"
+  _jc_runner="${BASH_REMATCH[2]}"
+  _jc_call="${BASH_REMATCH[3]}"
   _jc_bad=""
   # $1 file, $2 extractor with ONE capture, $3 the number the walk produces, $4 the claim.
   # `s|…|` and not `s/…/`: two of the patterns match a fraction and carry a literal slash.
