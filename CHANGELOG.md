@@ -148,6 +148,104 @@
 
 ### Changed
 
+- **`extract` pins `ouch`'s pre-0.8.0 unpack location, so one archive gives one tree on every
+  box** ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045)). ouch 0.8.0
+  (`ouch-org/ouch#962`) changed its default: an archive now unpacks into `./<basename>/` instead
+  of the CWD, with a new `--here` restoring the old shape. `zsh/30-functions.zsh` still called
+  `ouch decompress` bare, and the fleet is split _today_ — openSUSE Leap ships 0.5.1, Alpine's
+  index 0.6.1, GURU 0.8.2, Arch 0.8.3 — so the same `extract foo.tar.gz` scattered into `$PWD`
+  on one supported box and nested into `./foo/` on another, with no error on either. Everything
+  around that call assumed the CWD: the tarbomb guard `mkdir`s its own containment directory and
+  cd's into it (ouch then nested a second one inside), the clobber guard tests CWD-relative names
+  (so it could veto a collision that could not happen while missing one that could), and the
+  hand-rolled `tar`/`unzip` fallback for a box with no ouch never moved at all.
+
+  `extract` now **probes** `ouch decompress --help` for `--here` and passes it where it exists.
+  That is `PORTING-MATRIX.md`'s `sd` rule (footnote ²²) — sniff a version only where the version
+  is honest, otherwise ask the CLI what it can do — and it is fail-safe in a way a version
+  compare is not: a build without `--here` is a build that already extracts into the CWD, so the
+  flag comes out absent exactly where passing it would have been wrong. One fork, paid only by an
+  interactive `extract`, never on the startup path.
+
+  **A second, older divergence came out of measuring the first.** ouch writes a single
+  decompressed `.gz`/`.bz2` into the CWD on _every_ version, while `gunzip`/`bunzip2` write next
+  to the archive — which is the target the clobber guard checks (`${abs:r}`). On an ouch box
+  `extract /sub/f.gz` therefore overwrote `./f`, a path the guard never looked at: measured here,
+  a file in `$PWD` was destroyed with no warning and nothing landed beside the archive. ouch now
+  runs from the archive's own directory for those two formats, so the guard and the unpack agree.
+
+  Four behavioural cases cover the ouch arm in `scripts/test/65-functions.sh`, on a new
+  `check_ouch` helper. Nothing in the suite had ever executed that branch — `check`/`check_dep`
+  run `zsh -fc`, where `HAVE_OUCH` is unset — which is how a change of default reached the fleet
+  without a red test. Three of the four go red against the previous code.
+
+- **`NON-MUTABLE-HOST-PROPOSAL.md` is SHIPPED, and the milestone closes without a major**
+  (#1053, the §4.6 rollout tracker). Its header still read _PROPOSED — a minor, not a
+  major_, describing §4 as the thing still to do, after every step of §4.6 had landed and
+  every issue filed from it had closed. Those steps, and the release each shipped in: `up`,
+  the shell-start nudge, the maint runner and `core-doctor` learning the staged host
+  (#1049, `v7.6.0`); `bootstrap-test.yml`'s
+  `provisioner:` input, the sweep's VM-only skip and the register's `real-bootstrap` gate
+  (#1050, `v7.7.0`); the **atomic** variant in `dotfiles-Fedora`
+  (dotgibson/dotfiles-Fedora#186) and the **transactional** variant in `dotfiles-openSUSE`
+  (dotgibson/dotfiles-openSUSE#191), whose matrix columns rendered in `v7.8.0` and
+  `v7.9.0`; and `dotfiles-NixOS`, the **declarative** target and the tenth repo, with the
+  home-manager boundary R3 measured (#1051, `v7.9.0`). Every repo Core vendors into is
+  pinned at `v7.9.0`. So the status line becomes _SHIPPED — a closed record_, the way
+  `V5-PROPOSAL.md`'s did, each runbook step carries the issue and release that discharged
+  it, and §5's exit criteria record that **both** consequences the research flagged as
+  outliving it are discharged too — dotgibson/dotfiles-openSUSE#201 moved the login-shell
+  writes _inside_ the pending snapshot (the `/etc` loss case #1052 measured), and the
+  `blib_set_login_shell` declarative arm shipped with the NixOS repo itself, printing the
+  `users.users.<you>.shell` declaration instead of running `chsh`.
+
+  **`V8-PROPOSAL.md` is corrected in the same pass**, because it is where this repo keeps
+  its roadmap findings and it was carrying a claim measurement disproved: the non-mutable
+  host as _"the right **next** major"_ whose schema break makes every vendoring repo
+  re-author its declaration. R2 measured it **additive** — six _optional_ keys, zero
+  re-authors — so §10 gains a second `*Closed.*` finding beside the "one source, generated
+  outward" one it already carries, in the same voice: right about the destination, wrong
+  about the bump class. That is twice in a row a roadmap theme's predicted major dissolved
+  under measurement, and with it the next major's content is again unwritten.
+
+  **Three comment blocks stopped being true when the keys shipped**, and are fixed here
+  rather than left for a reader to trip over. `scripts/check-capabilities.sh`'s
+  `CAP_OPTIONAL` note called them _"Four OPTIONAL keys … READ BY NO CONSUMER YET"_ while
+  citing #1049 as a reader two lines below itself — there are six, four are read, and three
+  fleet repos declare against them. `scripts/test/55-capabilities.sh` said the same, plus
+  _"the relaxation stays exactly one key wide, on exactly one provisioner"_ when the
+  validator has had **two** relaxations of `PKG_COUNT_PENDING` since R5 (declarative, and
+  any host declaring `PKG_APPLY_PENDING`) — both already pinned by cases, only the prose was
+  stale. And `scripts/research/README.md` was still titled for R1 alone; the phase is
+  closed through R6 and is now marked **archived**, the way the atuin guard beside it is.
+  No logic changed in any of the three. `examples/os.capabilities.example` now points a new
+  declaration at the three that _ship_ rather than at R2's prototypes.
+  (`NON-MUTABLE-HOST-PROPOSAL.md`, `V8-PROPOSAL.md`, `scripts/check-capabilities.sh`,
+  `scripts/test/55-capabilities.sh`, `scripts/research/README.md`,
+  `examples/os.capabilities.example`)
+
+- **`mise/config.toml` stopped asserting an impossibility mise never had**
+  ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045)). The `lockfile = true`
+  block concluded that mise _"does not lock a GLOBAL config's tools"_, from a measurement of a
+  bare `mise lock` returning `! No tools configured to lock`. The measurement was right and the
+  conclusion was not — `mise lock` targets only the active **project** config root by design,
+  and `mise lock --global` is the form that locks this file. Re-measured on the _same_ mise
+  2026.5.16 the comment cites: `mise lock --global --dry-run` resolves all 11 declared tools
+  across all 7 platforms into `~/.config/mise/mise.lock`. So the flag was never the obstacle,
+  and the block's own stated goal — floating `lts`/`latest`/`stable` that still resolve
+  identically on boxes provisioned a month apart — is reachable.
+
+  What survives the correction is the reason it is not reached _yet_: that lockfile is written
+  **per box**, and this file is copied rather than symlinked, so a lock generated on one machine
+  reaches no other. Shipping one fleet-wide has to answer the header's trade — "your local copy
+  always wins" and "this is the pinned toolchain everywhere" cannot both be true of the same
+  file — which is a design decision and belongs to `/runtime-freshness`, the routine `CLAUDE.md`
+  gives this file to. No behaviour changed here and no lockfile was generated.
+
+  Also corrected three lines below: the global-only-settings note still said this file is
+  _symlinked_ to `~/.config/mise/config.toml`, which the file's own header has contradicted at
+  length since bootstrap started adopting it instead.
+
 - **R1's three remaining cells are measured, and the research phase's last open question is
   closed** (`NON-MUTABLE-HOST-PROPOSAL.md` §5, #1052, runs 35130669056 and 35133704599).
   Two of the three were claims a _shipped_ declaration already made.
@@ -201,6 +299,17 @@
   activated but never switched; no future harness should read a `switch` failure there as a
   fact about NixOS.
 
+- **The 2026-09-15 `/tool-scout` scan's four declines are in the ledger**
+  ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045)). `rip2`, `tlrc`, `bottom`
+  and routing Core's zsh fzf widgets through `fzf --tmux`, each with the reasoning that decided
+  it, appended to `.claude/tool-decisions.md`'s Declined table. The scan itself could not write
+  them — its ledger edit was permission-blocked, so it printed the rows at the end of the report
+  instead. That is the failure mode the ledger exists to prevent: a decline that lives only in a
+  closed issue is a decline the next scan re-proposes, which is how `hexyl` came back six days
+  after #395 rejected it. Three of the four are lateral-tool declines (`no capability delta`);
+  the fourth records a design argument about picker behaviour that would otherwise be re-made
+  every time fzf ships a tmux feature.
+
 - **`scripts/os-repos.txt` no longer claims to be the only step.** Its header said "THIS
   FILE IS THE ONLY EDIT", which is why #1064 stopped there; it now names the App
   installation as the second registration, with the Organization-Owner path to add it.
@@ -208,6 +317,33 @@
   a return of the four-copies problem #669 removed: those were four copies of one fact,
   this is one fact in each of two systems that cannot read each other) and in the guidance
   `scripts/new-os-repo.sh` prints after scaffolding a repo.
+- **Both atuin guard premises re-measured against 18.22.0; both `VERIFIED_AGAINST` anchors move**
+  ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045), run 35163334747). Upstream
+  released 18.22.0 on 2026-09-09, one minor past the 18.21.0 the anchors in `zsh/00-tools.zsh`
+  carried — which `scripts/research/README.md` names as the cue to re-measure. One
+  `atuin-guard-verify` dispatch, checksum and build-provenance verified: `holds` on the
+  silent-discard premise and `holds` on autostart self-healing, with the hermetic detector
+  self-test green beside them. Both report jobs skipped, which is how that workflow says
+  `holds`. Editing an anchor is a claim that the premise was re-measured at that version, so
+  this is that claim and not a version bump.
+
+  **18.22.0 raises the guard's stakes rather than lowering them**, and the block now says so:
+  the release moves history deletion (atuin #4045) and sync (#4055) into the daemon and adds
+  command-output capture with a periodic flush (#4070), so a dead-socket window costs more than
+  the single history row it cost on 18.19.0. It also adds a _second_ socket under
+  `/tmp/atuin-$UID` for the pty-proxy — the same directory as the guard's first candidate, which
+  is not a collision because the candidate list names `atuin.sock` explicitly. Recorded so the
+  next reader does not have to re-derive it.
+
+  **And a gap the four arms have always had is now written down where the stand-down lives.**
+  `absent` has no socket, `stale` has a socket file with no process — neither is a daemon whose
+  PID is _alive_ but which is not serving. atuin autostarts from the pidfile alone, so a wedged
+  PID blocks the respawn indefinitely (upstream `atuinsh/atuin#4114`, open against 18.22.0), and
+  that is the one arm where standing down is wrong — on Alpine and macOS, where autostart is the
+  only mitigation there is. Tracked as a new harness arm in #1091, deliberately not bundled
+  here: adding an arm inside a re-measurement would conflate "upstream moved" with "we started
+  measuring more".
+
 - **`GITHUB-APP-AUTH.md` documents `Metadata: read`**, the fourth permission the
   installation API actually returns. GitHub grants it mandatorily and offers no way to
   switch it off, so a doc naming three verbs against an API returning four is how the new
