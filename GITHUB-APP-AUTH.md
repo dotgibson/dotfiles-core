@@ -55,12 +55,16 @@ section to answer. It is now narrowed, per mint:
 | `sync-fanout.yml` | the whole installation, deliberately | `contents` + `pull-requests` + `workflows: write`, + `metadata: read` for its install-reach preflight |
 | `fleet-app-scope.yml` | the whole installation, deliberately | `metadata: read` — it reads a repository list and must hold no write verb to do it |
 | `freshness.yml` (×3) | this repository (no `owner:`/`repositories:`) | `contents` + `pull-requests: write` |
+| `dotfiles-Windows`' `nvim-sync.yml`, `starship-sync.yml`, `theme-sync.yml` | that repository (no `owner:`/`repositories:`) | `contents` + `pull-requests: write` |
 
 `sync-fanout.yml` is the one that keeps **Workflows: write**, and it is load-bearing rather
 than cautious: a sync branch can carry `.github/workflows/*` pin moves, and GitHub refuses
 the **whole** push without it. `freshness.yml` deliberately does **not** take it — a pin
 bump touches `zsh/` and `nvim/lazy-lock.json`, never workflows, and if that ever changes the
 push fails loudly rather than the token having quietly been able to rewrite CI all along.
+The three `dotfiles-Windows` sync bots decline it for the same reason and on the same
+evidence: they write `nvim/`, `starship/starship.toml` and `theme/`, so a branch of theirs
+that ever carried a workflow change would fail at the push rather than succeed unnoticed.
 
 **Under-scoping fails loudly, which is the failure mode to prefer.** A missing verb is a
 403 at the call site, not a silent downgrade — so the risk of narrowing is a red job, while
@@ -181,8 +185,8 @@ variable and can be read in a step `if:`.
 
 ## Where the App is installed
 
-Installed on **`dotgibson`**, on the repos something actually writes to — plus one
-exception:
+Installed on **`dotgibson`**, on the repos something actually writes to — plus two
+exceptions, which are there for their own **self-PRs** rather than for a cross-repo write:
 
 - **The Core-vendoring OS repos** (`scripts/os-repos.txt`) **and `dotfiles-Offense`** —
   targets of `dotfiles-core`'s fan-out. `htpx`'s companion fan-out targets
@@ -199,18 +203,30 @@ exception:
   `GITHUB_TOKEN` has its CI held at `action_required` (GitHub's recursion guard).
   Installing the App here lets freshness open that PR as the App bot, so its CI runs
   without a manual "Approve and run".
+- **`dotfiles-Windows`** — the second exception, and for exactly the reason above it. This
+  section used to say the App should *not* be installed here: it vendors no `core/`, is
+  absent from `scripts/os-repos.txt`, and is not a fan-out target, since its nvim mirror is
+  `nvim-sync.ps1` run on the host (`RELEASE-RUNBOOK.md` §3b). That reasoning was right about
+  the **fan-out** and wrong about the **repo**. Its three weekly sync bots — `nvim-sync.yml`,
+  `starship-sync.yml`, `theme-sync.yml` — opened their PRs with `GITHUB_TOKEN`, so the
+  recursion guard meant `ci.yml` never fired, no required context ever arrived, and every
+  sync PR sat `BLOCKED` until a human closed and reopened it (dotgibson/dotfiles-Windows#265;
+  #260 and #264 were both unblocked that way). Each bot now mints a repo-scoped token in the
+  same shape `freshness.yml` uses (dotgibson/dotfiles-Windows#268), so its PR is App-authored
+  and its CI runs unattended. **Removing this install would take those three bots back to
+  weekly manual reopens** — and because they degrade rather than fail, the only symptom would
+  be sync PRs quietly going `BLOCKED` again.
 
 The App does **not** need installing on the *source* repos that only mint (`htpx`, and
 `dotfiles-core` for its *fan-out* minting) — a minted token's reach is decided by the
 installation on the *other* repos. `htpx` in particular is read with the built-in token,
 so do not add it.
 
-**Nor `dotfiles-Windows`**, which was left unsaid until the register went looking and found
-both installed anyway. It vendors no `core/`, is absent from `scripts/os-repos.txt`, and is
-not a fan-out target: its nvim mirror is `nvim-sync.ps1`, run on the host
-(`RELEASE-RUNBOOK.md` §3b). So the twelve repos above are the whole list, and a token minted
-for this installation carries `contents` + `workflows: write` — which is the cost of every
-repo added to it that nothing writes to.
+So the thirteen repos above are the whole list, and a token minted for this installation
+carries `contents` + `workflows: write` — which is the cost of every repo added to it that
+nothing writes to. That cost is why the `dotfiles-Windows` bullet above argues its case
+rather than resting on the install already existing: this list is the answer an Org Owner
+acts on, and until dotgibson/dotfiles-Windows#268 the honest answer there was "remove it".
 
 ### A new fleet repo is TWO registrations, and only one of them is in git
 
@@ -226,11 +242,11 @@ cloned, audited and synced all ten repos before failing on the tenth push with
 
 **So this list is checked, not just asserted** — `scripts/fleet-app-scope.sh`, the
 App-installation register. It derives the expected set the same way every other fleet gate
-derives the fleet (`scripts/os-repos.txt` through `load_os_repos`, plus the two exceptions
-named above, which `scripts/test/90-policy-gates.sh` holds to this section), then asks
-GitHub what the installation actually covers and reports both directions: a repo the
-fan-out pushes to that the App cannot reach, and a repo installed that nothing writes to.
-Twelve repos, at the time of writing.
+derives the fleet (`scripts/os-repos.txt` through `load_os_repos`, plus the three
+exceptions named above, which `scripts/test/90-policy-gates.sh` holds to this section),
+then asks GitHub what the installation actually covers and reports both directions: a repo
+the fan-out pushes to that the App cannot reach, and a repo installed that nothing writes to.
+Thirteen repos, at the time of writing.
 
 It runs in three places, because the two halves of the question are readable from opposite
 environments:
