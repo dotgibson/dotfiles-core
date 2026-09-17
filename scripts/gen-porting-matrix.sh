@@ -402,11 +402,16 @@ render_commands() {
             } else {
               # AN ABSENT KEY IS RENDERABLE ONLY WHERE THE VALIDATOR ACCEPTS ITS ABSENCE.
               # scripts/check-capabilities.sh relaxes PKG_COUNT_PENDING in exactly two
-              # cases — under PROVISIONER=declarative, and when PKG_APPLY_PENDING is
-              # declared beside it — so those are the only two cases here. Anything else
-              # stays exit 2, which is what keeps this gate strict for the eight mutable
-              # declarations: a Fedora file that lost PKG_SEARCH must still fail, not
-              # render a dash into a green table.
+              # cases — under PROVISIONER=declarative, and under PROVISIONER=atomic when
+              # PKG_APPLY_PENDING is declared beside it — so those are the only two cases
+              # here. Anything else stays exit 2, which is what keeps this gate strict for
+              # the eight mutable declarations: a Fedora file that lost PKG_SEARCH must
+              # still fail, not render a dash into a green table.
+              #
+              # THE SECOND ARM IS PROVISIONER-GATED SINCE #1057. It read "whenever
+              # PKG_APPLY_PENDING is declared", which would have rendered a dash for a
+              # mutable host that declared a truthful reboot probe and dropped a count
+              # verb it actually has.
               #
               # ONE RULE, TWO READERS. If that relaxation ever moves, both sides follow
               # from the same sentence rather than from a policy restated here.
@@ -414,10 +419,11 @@ render_commands() {
               ak = cid[c] SUBSEP label SUBSEP "PKG_APPLY_PENDING"
               prov  = (pk in has) ? val[pk] : ""
               probe = (ak in has) ? val[ak] : ""
-              if (akey[a] != "PKG_COUNT_PENDING" || (prov != "declarative" && probe == "")) {
+              relaxed = (prov == "declarative") || (prov == "atomic" && probe != "")
+              if (akey[a] != "PKG_COUNT_PENDING" || !relaxed) {
                 err(cid[c] (label != "" ? " (" label ")" : "") " declares no " akey[a] \
                     (akey[a] == "PKG_COUNT_PENDING" \
-                       ? " and nothing that permits its absence — declare the verb, or PKG_APPLY_PENDING beside it (scripts/check-capabilities.sh)" \
+                       ? " and nothing that permits its absence — declare the verb, or, under PROVISIONER=atomic, PKG_APPLY_PENDING beside it (scripts/check-capabilities.sh)" \
                        : ""))
                 exit 2
               }

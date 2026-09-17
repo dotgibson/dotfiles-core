@@ -180,19 +180,25 @@ CAP_OPTIONAL=(
 #                        otherwise), is asked by the once-a-day refresh and the maint
 #                        runner (#1049: cached with the boot id, so the per-shell path
 #                        stays fork-free), and the nudge prints "update staged — reboot
-#                        to apply" from it instead of a count. Declaring it is the second
-#                        way PKG_COUNT_PENDING may be
+#                        to apply" from it instead of a count. Declaring it UNDER
+#                        PROVISIONER=atomic is the second way PKG_COUNT_PENDING may be
 #                        absent: on an atomic host the AVAILABLE verb is root-only
 #                        (`rpm-ostree upgrade --check` → "AutomaticUpdateTrigger not
 #                        allowed for user", measured), so the runner's unattended staging
 #                        does the asking and the user-side nudge reports the staged state.
+#                        The provisioner is part of that rule, not context for it (#1057):
+#                        the refusal is what makes the absence honest, and it was measured
+#                        on rpm-ostree. A transactional or mutable host that declares this
+#                        verb still owes its count verb — MicroOS answers
+#                        `zypper -q list-updates` as the user and declares it.
 #   PROVISIONER=declarative RELAXES ONE REQUIRED KEY: PKG_COUNT_PENDING may be absent. A
 #   declarative host has no truthful unprivileged "packages pending" verb (the answer is
 #   "what a rebuild would change", which needs root's channel), and `up` already reads an
 #   absent count verb as the -1 sentinel that keeps the nudge silent. Every other required
 #   key filled honestly on all three prototypes (nix-env -i / -e are the imperative
 #   install and remove a NixOS box does have), so nothing else relaxes. PKG_APPLY_PENDING
-#   (above) is the other relaxation, for the same reason on the atomic host.
+#   (above) is the other relaxation, and it is PROVISIONER=atomic ONLY, for the reason
+#   measured there. Both arms are gated on PROVISIONER; see the loop that applies them.
 CAP_PROVISIONERS=(mutable atomic transactional declarative)
 # The PKG_* keys whose value is a COMMAND. --packages cross-checks the leading binary of
 # each of these against the repo's package list; the PKG_PENDING_* keys are awk data
@@ -323,10 +329,24 @@ if [[ -n "$prov" ]] && ! in_list "$prov" "${CAP_PROVISIONERS[@]}"; then
 fi
 for k in "${CAP_REQUIRED[@]}"; do
   # The relaxations the prototype schema makes (see CAP_OPTIONAL's note): a declarative
-  # host may leave the count verb out, because it has no truthful one; so may a host that
-  # declares PKG_APPLY_PENDING, because its nudge reports the staged state instead.
+  # host may leave the count verb out, because it has no truthful one; so may an ATOMIC
+  # host that declares PKG_APPLY_PENDING, because its AVAILABLE verb is root-only and its
+  # nudge reports the staged state instead.
+  #
+  # BOTH ARMS ARE GATED ON PROVISIONER, and the second one was not until #1057. Ungated,
+  # any repo could drop a required verb by declaring a staged-change probe beside it —
+  # PKG_APPLY=sudo systemctl reboot with PKG_APPLY_PENDING=test -e /var/run/reboot-required
+  # is entirely truthful on Debian and Ubuntu, and would have bought a mutable host an
+  # exemption it does not need. `up` then reads the absent count verb as the -1 sentinel
+  # and goes permanently silent about available updates, with this gate asserting the
+  # declaration is complete. ATOMIC ONLY, because that is what was measured: the root-only
+  # refusal is rpm-ostree's ("AutomaticUpdateTrigger not allowed for user"). The fleet's
+  # one transactional host answers `zypper -q list-updates` unprivileged and declares it,
+  # so it never needed this; a transactional host that genuinely cannot answer can widen
+  # the arm, with the measurement behind it. See also gen-porting-matrix.sh, which renders
+  # a cell only where THIS rule accepts the absence — one rule, two readers.
   [[ "$k" == PKG_COUNT_PENDING && "$prov" == declarative ]] && continue
-  [[ "$k" == PKG_COUNT_PENDING && -n "$(cap_value PKG_APPLY_PENDING)" ]] && continue
+  [[ "$k" == PKG_COUNT_PENDING && "$prov" == atomic && -n "$(cap_value PKG_APPLY_PENDING)" ]] && continue
   case "$SEEN" in
     *" $k "*)
       v="$(cap_value "$k")"
@@ -337,12 +357,20 @@ for k in "${CAP_REQUIRED[@]}"; do
 done
 pen_none="$(cap_value PKG_PENDING_EXIT_NONE)"
 pen_some="$(cap_value PKG_PENDING_EXIT_SOME)"
+# A LEADING ZERO IS REJECTED, NOT NORMALISED (#1057). `(( ))` re-expands a named variable
+# as an arithmetic expression, where an all-digit string starting with 0 is OCTAL: 077 was
+# silently accepted AS 63 — a declaration whose author wrote one status and got another —
+# and 099 was an invalid-octal-digit ERROR that `(( ))` reported by returning false, which
+# this script (no `set -e`) discarded. The `| 0` arm below only ever caught the literal 0,
+# so 00 and 000 walked through the "omit it to mean zero" rule too. An exit status is
+# written 77, never 077, so the whole class is refused rather than decoded; 10# on the
+# survivors keeps the comparison decimal no matter what a later edit lets past.
 for pair in "PKG_PENDING_EXIT_NONE=$pen_none" "PKG_PENDING_EXIT_SOME=$pen_some"; do
   pk="${pair%%=*}"; pv="${pair#*=}"
   case "$pv" in
     '') ;;
-    *[!0-9]* | 0) bad "-" "$pk must be an exit status 1-255 (got: $pv)" ;;
-    *) ((pv > 255)) && bad "-" "$pk must be an exit status 1-255 (got: $pv)" ;;
+    *[!0-9]* | 0 | 0?*) bad "-" "$pk must be an exit status 1-255, with no leading zero (got: $pv)" ;;
+    *) ((10#$pv > 255)) && bad "-" "$pk must be an exit status 1-255, with no leading zero (got: $pv)" ;;
   esac
 done
 if [[ -n "$pen_none" && -n "$pen_some" ]]; then
@@ -360,9 +388,11 @@ if [[ -n "$ap_pend" && -z "$(cap_value PKG_APPLY)" ]]; then
 fi
 if [[ -n "$ap_exit" ]]; then
   [[ -n "$ap_pend" ]] || bad "-" "PKG_APPLY_PENDING_EXIT describes PKG_APPLY_PENDING's exit status, which is not declared"
+  # Same shape, same reason as the PKG_PENDING_EXIT_* loop above: no leading zero, and 10#
+  # on the comparison (#1057).
   case "$ap_exit" in
-    *[!0-9]* | 0) bad "-" "PKG_APPLY_PENDING_EXIT must be an exit status 1-255 (got: $ap_exit)" ;;
-    *) ((ap_exit > 255)) && bad "-" "PKG_APPLY_PENDING_EXIT must be an exit status 1-255 (got: $ap_exit)" ;;
+    *[!0-9]* | 0 | 0?*) bad "-" "PKG_APPLY_PENDING_EXIT must be an exit status 1-255, with no leading zero (got: $ap_exit)" ;;
+    *) ((10#$ap_exit > 255)) && bad "-" "PKG_APPLY_PENDING_EXIT must be an exit status 1-255, with no leading zero (got: $ap_exit)" ;;
   esac
 fi
 
@@ -450,10 +480,25 @@ if [[ -n "$PKGFILE" ]]; then
         bin="${v%% *}"
       fi
       [[ -n "$bin" ]] || continue
+      # A SHELL BUILTIN IS NOT A PACKAGE ON ANY HOST (#1057). MicroOS answers the staged
+      # question with `test -e /run/reboot-needed`, whose leading token is `test` — no
+      # distro packages that, so no edit to any packages.txt could ever silence the
+      # warning. This is the ONE narrowing the cross-check can make portably: the checker
+      # runs on a CI Ubuntu box against Fedora, Arch and Alpine declarations, so asking
+      # whether `zypper` exists HERE would answer a question about the wrong machine,
+      # while `test` is a builtin everywhere and the answer travels.
+      # Read into a variable first so the `case` subject is a plain expansion, keeping
+      # this clear of the `case`-inside-a-substitution shape audit §5k gates (#1077).
+      bin_kind="$(type -t "$bin" 2>/dev/null || true)"
+      case "$bin_kind" in builtin | keyword) continue ;; esac
       # A package manager is very often not in its own package list (dnf on Fedora,
       # apt on Debian ship with the base system), so this is a WARNING, not a failure:
       # its job is catching a verb that names a tool nothing installs — `paru`, `brew`,
-      # `nala` — not re-litigating what the base image ships.
+      # `nala` — not re-litigating what the base image ships. It is noisy in that role:
+      # measured 2026-09-16, every mutable declaration in the fleet already draws 7-10 of
+      # these (Debian 10, all of them apt-get/apt-cache/dpkg). Whether it earns its keep
+      # is its own question — see the follow-up issue; this change only stops it naming a
+      # builtin, which is the one case no repo can ever act on.
       case "$PKGNAMES" in
         *" $bin "*) ;;
         # Double quotes, not backticks: shellcheck reads a backticked %s inside a

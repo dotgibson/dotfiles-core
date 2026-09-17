@@ -921,6 +921,17 @@ blib_write_zshrc_loader() {
   fi
   if _blib_dry; then
     blib_say "would write managed ~/.zshrc loader (v4 numbered-fragment glob)"
+    # Announce AND COUNT the displacement, in the order the real run performs it (#1057).
+    # This is the one action in the whole wiring pass that touches a file the user owns,
+    # and it was the only backup site whose dry branch hid it: the plan said "would write"
+    # and the tally closed "0 backed up", then the real run warned that it had moved their
+    # ~/.zshrc. blib_link (would back up + link) and blib_install_system_file (would back
+    # up + write) have both always said it, and the phrase is deliberately theirs so the
+    # library has ONE grep for "a backup was planned".
+    if [[ -f "$rc" ]]; then
+      blib_say "would back up + write: $rc"
+      BLIB_BACKED=$((BLIB_BACKED + 1))
+    fi
     # Preview the seeding too — BLIB_DRY's contract is the FULL plan, and this is a
     # second file the real run creates.
     _blib_seed_zdotdir_rc "$rc"

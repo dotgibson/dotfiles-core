@@ -465,6 +465,101 @@
   dotfiles-Alpine#170, dotfiles-openSUSE#178, this), while
   `scripts/fleet-package-versions.tsv` — dated rows, a derived verdict, a weekly bot —
   exists for exactly that and holds only `jq`.
+- **`--dry-run` hid the only thing it had to say: that it would displace your `~/.zshrc`**
+  ([#1057](https://github.com/dotgibson/dotfiles-core/issues/1057)). `blib_write_zshrc_loader`'s
+  `BLIB_DRY` branch announced _would write managed ~/.zshrc loader_ and returned — it never
+  tested `[[ -f "$rc" ]]`, so `blib_wire_summary` closed the plan with `0 backed up` and the
+  real run then warned `backed up existing ~/.zshrc -> ~/.zshrc.pre-dotfiles.…`. Wiring is
+  otherwise all symlinks into paths Core owns; this is the **one** action in the pass that
+  touches a file the user wrote, on exactly the box where it matters — a migrating machine
+  with a hand-written zshrc — and the dry run is what they read _before_ consenting.
+  `#1026` fixed the real run's tally and left this half behind, which made it the only
+  backup site in the library that did not preview: `blib_link` has said _would back up +
+  link_ and `blib_install_system_file` _would back up + write_ all along. The phrase here is
+  deliberately the latter's, so the library has one grep for "a backup was planned", and it
+  is emitted **after** the "would write" line because that is the order the real run acts
+  in. A `BLIB_DRY` twin of `#1026`'s test pins the count, the absent backup file and the
+  untouched skeleton; a second case pins the fresh box, where nothing is displaced and
+  nothing is counted.
+- **Any host could buy its way out of a required package verb by declaring a reboot probe**
+  ([#1057](https://github.com/dotgibson/dotfiles-core/issues/1057)). `scripts/check-capabilities.sh`
+  relaxes `PKG_COUNT_PENDING` in two cases, and only the `PROVISIONER=declarative` one was
+  gated on the provisioner. The other accepted `PKG_APPLY_PENDING` from anybody — so a
+  mutable repo declaring the entirely truthful `PKG_APPLY=sudo systemctl reboot` beside
+  `PKG_APPLY_PENDING=test -e /var/run/reboot-required` (Debian and Ubuntu both have that
+  file) could drop the count verb and stay green. `up` then reads the absent verb as the
+  `-1` sentinel and goes permanently silent about available updates, on a host with a
+  perfectly good unprivileged count verb, with the gate asserting the declaration is
+  complete. The arm is now **`atomic` only**, which is what was measured: the root-only
+  refusal is rpm-ostree's (_AutomaticUpdateTrigger not allowed for user_). The fleet's one
+  transactional host answers `zypper -q list-updates` as the user and declares it, so it
+  never needed the exemption — all twelve declarations still validate unchanged.
+  `scripts/gen-porting-matrix.sh` carries the same rule in awk under a comment reading
+  _ONE RULE, TWO READERS_, and moved with it; no rendered cell changes.
+- **A leading zero made an exit status mean something else, silently**
+  ([#1057](https://github.com/dotgibson/dotfiles-core/issues/1057)). `(( ))` re-expands a
+  named variable as an arithmetic expression, so an all-digit string starting with `0` is
+  **octal**: `PKG_APPLY_PENDING_EXIT=077` validated as 63, and `099` was an invalid-octal-digit
+  error that `(( ))` reported by returning false — into a script deliberately running
+  without `set -e`, which discarded it. `00` and `000` walked past the "omit it to mean
+  zero" rule as well, because the reject arm only ever matched the literal `0`. Two copies
+  of the check had it (`PKG_PENDING_EXIT_NONE`/`_SOME` and `PKG_APPLY_PENDING_EXIT`) and
+  both are fixed together, since a fix to one would have left the other lying. An exit
+  status is written `77`, never `077`, so the class is refused rather than decoded; `10#`
+  keeps the surviving comparison decimal regardless. Ten cases pin it. This was in the
+  weekly review's _Clean_ list — correctly, as to control flow, and the arithmetic was the
+  part nobody had run.
+- **The capability cross-check told openSUSE to install the shell builtin `test`**
+  ([#1057](https://github.com/dotgibson/dotfiles-core/issues/1057)). `--packages` warns when
+  a verb's leading token is absent from `install/packages.txt`; MicroOS answers the staged
+  question with `test -e /run/reboot-needed`, and no distro packages `test`, so no edit to
+  any list could ever silence it. Builtins are skipped now. This is the one narrowing the
+  check can make portably — it runs on a CI Ubuntu box against Fedora, Arch and Alpine
+  declarations, so asking whether `zypper` exists _there_ would answer about the wrong
+  machine, while a builtin is a builtin everywhere. It is a small correction to a noisy
+  check: measured across the fleet, every mutable declaration already draws 7–10 of these
+  warnings (Debian 10, all of them `apt-get`/`apt-cache`/`dpkg`), which the code comment
+  has always anticipated and which is now tracked separately.
+- **The R4 prototype patches promised a package the package manager had dropped**
+  ([#1090](https://github.com/dotgibson/dotfiles-core/issues/1090)). `dotfiles-openSUSE`'s
+  `zypper_install` silently drops names `zypper se --match-exact` cannot find on that
+  MicroOS snapshot — recording a `_note_fail` and moving on — but yazi's hint was keyed on
+  `TU_STAGED`, the run's **tally**, so it fired whenever any of the other ~40 packages had
+  staged. Trigger: yazi absent from the enabled repos, which is real (it has lived in a
+  devel repo). The operator was told _yazi is in the next snapshot — live after the
+  reboot_, the `elif` skipped the advice naming the fix, and after the reboot yazi was
+  simply not there. That is the doctor-hint class exactly: a hint promising what the
+  package manager did not do. The patch now records the staged **names** and asks about
+  yazi; the tally keeps counting, because the closing "N package(s) transacted" line is a
+  genuine count. Membership is a padded whole-token test, so `yazi-fm` does not answer for
+  `yazi`.
+- **The R4 Fedora patch could leave a truncated COPR file and brick `dnf` for the rest of
+  the run** ([#1090](https://github.com/dotgibson/dotfiles-core/issues/1090)). It curled
+  the repo file straight into `/etc/yum.repos.d` under `>/dev/null 2>&1 || true`. Measured
+  against curl 8.18.0: a 404 writes nothing — that is `-f` working, and it is the case
+  anyone would test — but a connection dropped **mid-body** exits 18 with the partial
+  bytes already on disk, and a 197-byte `[copr]\nbaseurl=…` fragment is a broken `.repo`.
+  dnf parses every file in that directory, so one bad line fails **every later dnf call**
+  with _Error in configuration file_: not just lazygit, but the rest of the bootstrap and
+  the box afterwards. R6 had already measured that downstream cost from the other
+  direction, when the reusable job's curl shim wrote the word `shim` to an `-o` path (run
+  34938554648) — on a real box there is no shim to blame. It now downloads to a temp file
+  and `install`s it only on success, so the directory either gets the whole file or none
+  of it; curl runs unprivileged, since only the move into `/etc` needs the escalator; and
+  the failure is reported instead of swallowed twice.
+- **`nonmutable-r6.sh` split its report across two files when `--out` was relative**
+  ([#1090](https://github.com/dotgibson/dotfiles-core/issues/1090)). `: >"$out"` truncates
+  against the invocation cwd, then `cd "$repo_dir"` sends every later `say`/`excerpt`
+  somewhere else: measured, 286 bytes at the path the caller named and 1,469 bytes hidden
+  under the repo. Latent — both workflow call sites pass an absolute path — and now one
+  file of 1,755 bytes either way. The script already records the twin of this hazard, in
+  the comment on `resolve_all`'s local `out`.
+
+  All three were found by the weekly `/shell-review` (#1057) and are prototype patches
+  under `scripts/research/`, vendored nowhere. They are fixed here because §4.3 says a
+  repo PR starts from them, so a defect left in place is one that gets copied out. Both
+  patches were regenerated mechanically against their recorded base commits and re-checked
+  with `git apply`; the declarations they create still validate.
 
 - **The `fleet-versions` block went unchecked on every lone clone — including all of CI**
   ([#1046](https://github.com/dotgibson/dotfiles-core/issues/1046)).
