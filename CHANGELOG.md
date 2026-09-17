@@ -1,5 +1,34 @@
 ## [Unreleased]
 
+### Fixed
+
+- **The App-installation register named the wrong failure for a missing self-PR install**
+  ([#1116](https://github.com/dotgibson/dotfiles-core/issues/1116)).
+  `scripts/fleet-app-scope.sh` printed one sentence over every fatal `MISSING` row —
+  _"is a push target and the App cannot reach it — this is the v7.9.0 403"_ — and
+  `fleet-app-scope.yml`'s job summary and the issue it files said the same. That is true of
+  the fan-out targets and false of the three installs that exist for a repo's _own_
+  self-PRs. It went wrong the first time it mattered. PR #1111 added `dotfiles-Windows` to
+  the expected set on the strength of an install that, it turns out, had never existed, and
+  the register then told its reader that a release was about to 403 on a repo the fan-out
+  has never pushed to.
+
+  The row now classifies against the fan-out list before it composes. A fan-out target
+  keeps the 403, said precisely: it lands on the _push_, at the end of a release. A self-PR
+  install reports its own failure instead — the mint _inside_ that repo answers `404` on
+  `/repos/<owner>/<repo>/installation`, its bots fall back to `GITHUB_TOKEN`, and their PRs
+  go back to sitting `BLOCKED`, **while every one of those jobs stays green**. That is the
+  shape issue #1110 predicted, and the shape that had been running unwatched since
+  `dotgibson/dotfiles-Windows#268`. The non-fatal `!` arm carries the class too, and
+  `scripts/test/90-policy-gates.sh` holds the derivation — matched on the `CORE_OS_REPOS[*]`
+  membership test, not on the English — so the two kinds cannot be collapsed back into one
+  sentence by a later edit.
+
+  `GITHUB-APP-AUTH.md` takes the general lesson under _A new fleet repo is TWO
+  registrations_: it is a rule about this whole install list, not only about fan-out
+  targets, and **the org half goes first**. Either order leaves the register red for a
+  while; only one of them leaves real machinery quietly broken while it is.
+
 ## [v7.10.0] - 2026-09-17
 
 ### Added

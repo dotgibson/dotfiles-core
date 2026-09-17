@@ -11,6 +11,12 @@ name: fleet-app-scope
 # after nine PRs had opened (dotgibson/dotfiles-core#1071). This asks the question weekly
 # instead, so the answer arrives before a release rather than during one.
 #
+# It bit a SECOND way in #1116, and not on a fan-out target: `dotfiles-Windows` holds the
+# App for its own self-PRs, #1111 wrote that expectation into the register, and the org
+# half was never done. Nothing 403'd — the mint inside that repo 404s, its three sync bots
+# fall back to GITHUB_TOKEN, and their runs stay GREEN while their PRs sit BLOCKED. This
+# job is the only thing that sees it, which is why its summary names both failures apart.
+#
 # Read-only: it never touches the installation — fixing one needs an Organization Owner in
 # the GitHub UI, which no token here has. The job only reports.
 #
@@ -109,8 +115,12 @@ jobs:
                 echo "The App installation covers every repo the fan-out pushes to."
                 ;;
               *)
-                echo "**The installation does not match the fleet.** A repo the fan-out"
-                echo "pushes to may be unreachable — the next release would 403 on it."
+                echo "**The installation does not match the fleet**, and the rows below say"
+                echo "which kind of repo is missing — they are different failures. A **fan-out"
+                echo "target** the App cannot reach means the next release 403s on its push. One"
+                echo "of the three **self-PR installs** means that repo's own bots mint nothing,"
+                echo "fall back to \`GITHUB_TOKEN\`, and leave their PRs \`BLOCKED\` — while every"
+                echo "one of their jobs stays green (#1116)."
                 echo
                 echo "Fixing this needs an **Organization Owner**: Organization settings →"
                 echo "GitHub Apps → \`dotgibson-fleet-sync\` → Configure → Repository access."
@@ -147,4 +157,4 @@ jobs:
       workflow: fleet-app-scope
       title: "ci-failure: the fleet App installation does not cover the fleet"
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "The weekly App-installation check is red: a repo the fan-out pushes to may not be in the `dotgibson-fleet-sync` installation, which would 403 the next release's fan-out (#1071). Fixing it needs an Organization Owner — Organization settings → GitHub Apps → `dotgibson-fleet-sync` → Configure → Repository access. Or the check itself may be broken."
+      details: "The weekly App-installation check is red: a repo is missing from the `dotgibson-fleet-sync` installation. The run's rows say which kind, because they are different failures — a fan-out target means the next release 403s on its push (#1071); one of the three self-PR installs means that repo's own bots fall back to GITHUB_TOKEN and leave their PRs BLOCKED while their jobs stay green (#1116). Fixing it needs an Organization Owner — Organization settings → GitHub Apps → `dotgibson-fleet-sync` → Configure → Repository access. Or the check itself may be broken."

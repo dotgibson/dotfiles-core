@@ -858,6 +858,25 @@ else
     fail "fleet-app-scope: $_fas_arrays repo array(s) declared; only EXTRA_REPOS may exist, or the fleet list has been copied"
   fi
 
+  # 1b. A MISSING repo is CLASSIFIED before its row is composed, because the two kinds of
+  # install fail differently and an operator acts on the difference. A fan-out target the
+  # App cannot reach 403s on a push at the END of a release (#1071). A self-PR exception
+  # (EXTRA_REPOS) never reaches a push at all: the mint INSIDE that repo 404s, its bots
+  # fall back to GITHUB_TOKEN, and their jobs stay green while their PRs sit BLOCKED. The
+  # row printed one sentence over both until #1116, where it told a reader that
+  # dotfiles-Windows — which nothing pushes to — was about to 403 a release.
+  #
+  # Assert the DERIVATION, not the English: the classification must read the fan-out list,
+  # so a later edit cannot quietly collapse the two kinds back into one sentence. Matched
+  # on the subscript sigil — `CORE_OS_REPOS[*]` is the membership test and nothing else in
+  # this script spells it that way, while the bare name also appears in prose and in the
+  # expected-set build.
+  if grep -qF 'CORE_OS_REPOS[*]' "$_fas"; then
+    pass "fleet-app-scope: a MISSING row is classified against the fan-out list (#1116)"
+  else
+    fail "fleet-app-scope: nothing tests membership of CORE_OS_REPOS[*] — the MISSING row can no longer tell a fan-out target's 403 from a self-PR install's silent GITHUB_TOKEN fallback (#1116)"
+  fi
+
   # 2. The three exceptions beside the fan-out targets are the ones GITHUB-APP-AUTH.md names.
   # ONE DIRECTION, deliberately: every repo the script expects must be documented, because
   # an undocumented expectation is how the next reader "fixes" the script. The reverse — the

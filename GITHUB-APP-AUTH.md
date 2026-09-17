@@ -240,12 +240,28 @@ That gap shipped once: `dotfiles-NixOS` joined the fleet in #1064, and the v7.9.
 cloned, audited and synced all ten repos before failing on the tenth push with
 `Permission to dotgibson/dotfiles-NixOS.git denied to dotgibson-fleet-sync[bot]` (#1071).
 
+**Then it shipped again, on the other kind of install — so read the rule as being about
+this whole list, not about fan-out targets.** `dotfiles-Windows` holds the App for its own
+self-PRs, and when dotgibson/dotfiles-Windows#268 made that load-bearing, the git half
+landed here in dotfiles-core#1111 — the bullet above, and `EXTRA_REPOS` — while the org
+half was never done at all. Nothing 403'd, because nothing pushes there: the mint *inside*
+that repo answered `404` on `/repos/dotgibson/dotfiles-Windows/installation`, its three
+sync bots fell back to `GITHUB_TOKEN` under `continue-on-error`, and their runs stayed
+**green** while their PRs went back to sitting `BLOCKED`. The weekly register was the only
+thing that saw it, in dotfiles-core#1116.
+
+**Which is why the org half goes FIRST.** Either order leaves the register red for a
+while — a repo installed before this list names it is an EXTRA row, surplus reach the
+fleet has not justified yet. Only one of the two orders leaves real machinery broken
+meanwhile, and in the self-PR case it breaks it silently.
+
 **So this list is checked, not just asserted** — `scripts/fleet-app-scope.sh`, the
 App-installation register. It derives the expected set the same way every other fleet gate
 derives the fleet (`scripts/os-repos.txt` through `load_os_repos`, plus the three
 exceptions named above, which `scripts/test/90-policy-gates.sh` holds to this section),
 then asks GitHub what the installation actually covers and reports both directions: a repo
-the fan-out pushes to that the App cannot reach, and a repo installed that nothing writes to.
+this list expects that the App cannot reach — naming which kind, because a fan-out target
+and a self-PR install fail differently — and a repo installed that nothing writes to.
 Thirteen repos, at the time of writing.
 
 It runs in three places, because the two halves of the question are readable from opposite
