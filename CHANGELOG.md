@@ -425,7 +425,6 @@
 
 ### Fixed
 
-
 - **`PORTING-MATRIX.md` was silent about Fedora on both halves of the nvim-treesitter
   requirement, and the report that noticed named the wrong release**
   ([#1010](https://github.com/dotgibson/dotfiles-core/issues/1010)). The non-mutable-host
@@ -522,7 +521,6 @@
   `--no-extras`**, both real, and `.claude/agents/doc-consistency.md` still called this an
   _eleven_-repo system — the auditor's own charter, stale since `dotfiles-NixOS` made the
   whole system twelve.
-
 
 ## [v7.9.0] - 2026-09-16
 
