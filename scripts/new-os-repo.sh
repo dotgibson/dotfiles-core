@@ -464,7 +464,7 @@ EOF
 
 # ── starter bootstrap ─────────────────────────────────────────────────────────
 # THE DRIVER FORM (#976, #999). Every OS/Role repo that can run on Core's bootstrap
-# driver does (#986: eight callers; MacBook exempt by design), so a repo born here is
+# driver does (#986; MacBook exempt by design), so a repo born here is
 # born in the fleet's current shape: declare what it is, define the hooks that are its
 # own, hand over to blib_main. The flag loop, the escalator, the sudo keepalive, the
 # Core symlink surface + the OS overlays, the managed ~/.zshrc loader, the login shell

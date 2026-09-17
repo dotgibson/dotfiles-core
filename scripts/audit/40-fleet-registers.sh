@@ -25,21 +25,26 @@
 
 # ── 5f. bootstrap-lib helper adoption across the fleet (a ratchet) ────────────
 # Core ships lib/bootstrap-lib.sh so the shared half of a bootstrap stops being hand-forked
-# nine ways. Helpers get ADDED to it over time — usually because one repo hit a bug — and
-# nothing has ever checked whether the other eight picked them up. So the file grows a fix
+# ten ways. Helpers get ADDED to it over time — usually because one repo hit a bug — and
+# nothing has ever checked whether the other nine picked them up. So the file grows a fix
 # and the fleet keeps the defect (#516).
 #
 # Measured adoption, and it is not a hypothetical spread. These are CALL counts — repos
 # whose bootstrap.sh really invokes the helper — which is not what the old bare grep gave,
 # and is also not the same question as "how many repos are compliant": an EXEMPT repo calls
 # nothing and is short of nothing. Both numbers are given, because conflating them is how
-# `blib_user_bindirs_on_path` got written up as 8/9 when seven repos call it:
-#   blib_resolve_su 8/9 (+1 exempt = 9/9 compliant) ·
-#   blib_sudo_keepalive_start 7/9 (+2 exempt = 9/9 compliant) ·
-#   blib_user_bindirs_on_path 7/9 (+1 exempt = 8/9 compliant) ·
-#   blib_note_fail 8/9 (+1 exempt = 9/9 compliant) · blib_failures_report 9/9 ·
-#   blib_wire_summary 8/9 · blib_install_core_guard 9/9 · BLIB_DRY 9/9 ·
-#   blib_main 8/9 (+1 exempt = 9/9 compliant)
+# `blib_user_bindirs_on_path` got written up as 8/9 when seven repos call it.
+#
+# THE DENOMINATOR IS THE FLEET, so it moved to 10 when dotfiles-NixOS arrived (#1064) —
+# and the numerators moved with it, because NixOS is in every row below and a blib_main
+# caller is credited with the whole contract. Six exemptions, all named in the case
+# further down: Defense x4, MacBook x2. Measured:
+#   blib_resolve_su 9/10 (+1 exempt = 10/10 compliant) ·
+#   blib_sudo_keepalive_start 8/10 (+2 exempt = 10/10 compliant) ·
+#   blib_user_bindirs_on_path 8/10 (+1 exempt = 9/10 compliant — MacBook is short, not exempt) ·
+#   blib_note_fail 9/10 (+1 exempt = 10/10 compliant) · blib_failures_report 10/10 ·
+#   blib_wire_summary 9/10 (MacBook short) · blib_install_core_guard 10/10 · BLIB_DRY 10/10 ·
+#   blib_main 9/10 (+1 exempt = 10/10 compliant)
 #   (Defense piloted the driver, dotgibson/dotfiles-Defense#292; Fedora and Debian followed
 #   the same day — dotgibson/dotfiles-Fedora#181, dotgibson/dotfiles-Debian#78 — and openSUSE
 #   the next, dotgibson/dotfiles-openSUSE#186, declaring its exit-2-on-any-miss contract
@@ -177,7 +182,7 @@ blib_main                dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-
       # already calls the wiring helpers directly (dotfiles-MacBook#247), so every OTHER row
       # here is satisfied by name. What the exemption asserts is narrow: no bootstrap.sh in
       # the fleet is on the pre-driver shape by accident. If MacBook's surface ever shrinks
-      # to what blib_main covers, this line goes and the row reads 9/9.
+      # to what blib_main covers, this line goes and the row reads 10/10.
       case "$_ha_repo:$_ha_h" in
       dotfiles-Defense:blib_sudo_keepalive_start | dotfiles-Defense:blib_user_bindirs_on_path | \
         dotfiles-Defense:blib_resolve_su | dotfiles-Defense:blib_note_fail | \
