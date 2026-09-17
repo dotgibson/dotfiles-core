@@ -528,7 +528,18 @@ would have connected. It now appends the `/tmp` path whenever `$TMPDIR` is set a
 works, so this list may grow again; the candidate-list test in `scripts/test/71-prompt-atuin.sh`
 is where a new path gets pinned. Both anchors were re-dated to 18.21.0 in the same change, on
 the strength of the 2026-09-03 `atuin-guard-verify` dispatches (three runs, `holds` on both
-premises) rather than a changelog read.
+premises) rather than a changelog read, and to 18.22.0 on 2026-09-16 the same way.
+
+**The autostart premise then MOVED, on 2026-09-17, and the guard changed rather than the
+recipe.** A sixth arm — a daemon whose pid is _alive_ while nothing answers its socket — was
+added to the harness and measured against 18.22.0: `absent` and `stale` still spawn and land
+their row, and that shape does not. atuin reads a live pid as health, so it never replaces the
+one process that cannot serve, and the client blocks on the pidfile lock and exits 1
+(`atuinsh/atuin#4114`). The guard **no longer stands down under `autostart`**; it probes, stays
+silent for a socket that is merely waiting to be spawned onto, and prints one warning naming
+the pid to kill when it finds the wedge. Nothing is disabled, because disabling under
+`autostart` would remove the launcher these two rows exist to document. The exports below are
+unchanged.
 
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be

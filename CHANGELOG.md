@@ -214,6 +214,41 @@
 
 ### Changed
 
+- **The atuin guard no longer stands down under `autostart` — it probes, and warns without
+  disabling** ([#1102](https://github.com/dotgibson/dotfiles-core/issues/1102), measured in run
+  35171886253). `_core_atuin_daemon_guard` used to unhook itself entirely whenever
+  `ATUIN_DAEMON__AUTOSTART` was set, on the premise that atuin supervises its own daemon there.
+  A sixth harness arm measured that premise against **18.22.0** and it does not hold: `absent`
+  and `stale` both spawn a daemon and land their row, while a daemon whose pid is _alive_ and
+  which has stopped serving is never replaced — atuin reads that pid as health. Worse than
+  upstream's own report, the client does not merely decline to spawn, it blocks on the pidfile
+  lock and then exits 1 (`ERROR error=timed out waiting for lock`). That covers Alpine and
+  macOS, where the stand-down meant nothing was watching at all.
+
+  **What it does not do is the part worth reading.** The obvious fix — stop standing down, let
+  the existing degrade path run — exports `ATUIN_DAEMON__ENABLED=false`, and under `autostart`
+  that removes the _spawn_ itself, permanently defeating the only launcher those two machines
+  have. So the guard now stays hooked and probes, and on a failed connect changes **nothing**:
+  no export, no degrade flag. A socket that is merely unreachable is still a cue rather than a
+  fault — `precmd` runs before the first command, so on a box where nothing has spawned the
+  daemon yet that is the normal state, and warning there would put a new line of startup noise
+  on exactly the machines this is meant to help.
+
+  The one thing it announces is the wedge, and the discriminator is upstream's own broken test
+  read the other way round: a live pid in the pidfile _while nothing answers the socket_ is the
+  definition of the shape, because that pid is what blocks the respawn. One warning naming the
+  pid to kill, then it unhooks — "once" stays structural. Fork-free, as everything on that path
+  must be: a `[[ -r ]]`, a `read` from a redirect and a `kill -0` are all builtins. The
+  numeric-glob guard on the pid is load-bearing rather than defensive — `kill -0 0` signals the
+  whole process group and always succeeds, so an empty or garbage pidfile would otherwise read
+  as wedged on every box that has one.
+
+  `core-doctor` reports it as a third state rather than folding it into the two it had: this
+  shell is neither healthy nor degraded, the daemon is still enabled and still the launcher, and
+  the pid is carried through to `--json` as `wedged_pid` because the pid _is_ the remedy. Six
+  cases in `scripts/test/71-prompt-atuin.sh`, all six red against the previous guard, including
+  the four garbage-pidfile shapes.
+
 - **`extract` pins `ouch`'s pre-0.8.0 unpack location, so one archive gives one tree on every
   box** ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045)). ouch 0.8.0
   (`ouch-org/ouch#962`) changed its default: an archive now unpacks into `./<basename>/` instead
