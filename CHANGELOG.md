@@ -2,6 +2,49 @@
 
 ### Added
 
+- **The autostart premise now measures a wedged daemon — the one shape where the guard's
+  stand-down is wrong rather than merely unhelpful**
+  ([#1091](https://github.com/dotgibson/dotfiles-core/issues/1091)).
+  `scripts/research/verify-atuin-guard.sh --premise autostart` measured four arms,
+  `{absent, stale} × {hook, plain}`: a socket that is gone, and a socket file whose listener
+  exited. Neither is a daemon whose PID is _alive_ and which has simply stopped serving — and
+  atuin decides whether to autostart from the **pidfile alone**, so in that shape the one
+  process that cannot serve is also the one blocking its own replacement, indefinitely
+  (upstream `atuinsh/atuin#4114`, open against 18.22.0).
+
+  That matters because `zsh/00-tools.zsh` unhooks `_core_atuin_daemon_guard` entirely under
+  `ATUIN_DAEMON__AUTOSTART`, on the strength of atuin supervising its own daemon — and on
+  Alpine and macOS that stand-down is the only mitigation there is. A `wedged × {hook, plain}`
+  pair now measures it, built by starting a real daemon and unlinking its socket out from
+  under it. Six arms, and the report, the JSON and the derived coverage sentence all follow
+  from the arm list rather than restating it.
+
+  Three things the shape forced, each of which was a real defect while it was missing.
+  `prove_unreachable` reads `/proc/net/unix` for a LISTEN row on the path, and a wedged daemon
+  **still has one** — the kernel keeps the bound name after the directory entry is gone — so
+  the arm proves unreachability from the vanished name plus a refused connect instead. The
+  wedged pair is also the only point in a run where two daemons are alive at once, which the
+  single-daemon teardown machinery cannot tell apart; the wedged one is therefore reaped by
+  pid **before** the socket-scoped stop runs, and reversing those two left a real autostart
+  daemon committing into the closing drain control, turning a clean `holds` into a `moved`
+  about rows nothing upstream wrote. And a daemon that _exits_ with its socket cannot exhibit
+  the shape at all, so that is `unmeasurable` with its own sentence rather than a quiet pass.
+
+  Covered by three cases in `scripts/test/52-atuin-autostart.sh` on two new stub modes: one
+  that heals absent and stale and fails only wedged (so no four-arm run could have caught it),
+  one that dies on unlink, and an assertion that the finding names the pidfile mechanism
+  rather than an absent socket — the two have different remedies, and unlinking a stale socket
+  or counting failed spawns reaches the wedged shape exactly zero times.
+
+  **It is not free, and the number is stated rather than absorbed.** Each wedged arm starts a
+  real daemon, waits a fixed second to confirm it survived losing its socket, and runs a full
+  stop-and-prove teardown; the self-test drives that through more than a dozen stub builds.
+  Measured on a loaded dev box, the `atuin` scope went from **309s to 672s**, so
+  `atuin-guard-verify.yml`'s self-test job moves from a 15-minute ceiling to 25 — 15 was no
+  longer clear of the slowest observed run, it was inside it. `ci.yml` is unaffected in the
+  common case: it has run this scope only when the detector, `zsh/00-tools.zsh` or `atuin/`
+  actually change since #699.
+
 - **The fan-out proves the App installation covers its targets, and a register asks the same
   question between releases** ([#1071](https://github.com/dotgibson/dotfiles-core/issues/1071)).
   The fan-out's write scope is the GitHub App's _installation_, deliberately — hardcoding a

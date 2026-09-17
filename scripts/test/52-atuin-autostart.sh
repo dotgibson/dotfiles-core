@@ -127,7 +127,7 @@ else
       done <"$pf"
       rm -f "$pf"
     done
-    rm -f "$_dstub"/*.spawned "$_dstub"/*.calls
+    rm -f "$_dstub"/*.spawned "$_dstub"/*.calls "$_dstub"/*.stopped
     return 0
   }
 
@@ -146,7 +146,11 @@ else
   #                            expires on the half that carries the row.
   #   stop-unlinks-only        `daemon stop` removes the SOCKET and leaves the process alive
   #                            and holding the DB — atuin unlinks early in shutdown, so
-  #                            "nothing answers" is not "the daemon exited".
+  #                            "nothing answers" is not "the daemon exited". Keyed on a STOP
+  #                            having been issued, not merely on the socket being gone: the
+  #                            wedged arms unlink a socket under a healthy daemon on purpose,
+  #                            and a daemon that started scribbling because of THAT would be
+  #                            modelling nothing real while failing a case about stop proofs.
   #   stop-noop                `daemon stop` accepts and does nothing — the teardown
   #                            escalation must still leave nothing running.
   #   no-daemon-subcommand     no `daemon start`.                               → unmeasurable
@@ -160,6 +164,16 @@ else
   #                            `history start`. atuin reaches its daemon through the same
   #                            autostarting path from both, so tracking only the opening half
   #                            of the pair would leave this one untracked.
+  #   pidfile-blocks-respawn   autostart judges liveness by the PIDFILE, not by reachability,
+  #                            so a daemon that is ALIVE and not serving blocks its own
+  #                            replacement forever — atuinsh/atuin#4114. Heals absent and
+  #                            stale (the pidfile is gone in both), fails only wedged, which
+  #                            is what makes it a test of the wedged arms specifically rather
+  #                            than of autostart in general.       → moved, wedged arms only
+  #   dies-on-unlink           the daemon EXITS when its socket is unlinked. Not a finding and
+  #                            not a pass: the wedged shape cannot be manufactured against it
+  #                            at all, so the run must decline rather than measure an arm
+  #                            whose premise evaporated.                     → unmeasurable
   #
   # Every invocation is appended to stub-calls, which is how the "discard never spawns" and
   # "refused builds are never spawned on" assertions are made by CONSTRUCTION rather than by
@@ -200,6 +214,10 @@ DH="\${XDG_DATA_HOME:-/nonexistent}"
 LOG="$_dstub/$name.calls"
 SPAWNMARK="$_dstub/$name.spawned"
 FORKMARK="$_dstub/$name.forked"
+# A STOP was issued against this daemon. stop-unlinks-only keys its zombie writes on this
+# rather than on a missing socket, so the wedged arms -- which unlink a socket under a
+# perfectly healthy daemon by design -- do not look like a stop that was ignored.
+STOPMARK="$_dstub/$name.stopped"
 SOCK="$sock_expr"
 STRICT_SOCKDIR="$strict_sockdir"
 PIDF="$_dstub/$name.pid"
@@ -224,9 +242,16 @@ PY
 # refuses over an existing inode, which is what 18.19.0 really does:
 #   Error: Address already in use (os error 48)  crates/atuin-daemon/src/server.rs:72
 serve_fg() {
-  exec python3 - "\$SOCK" "\$PIDF" "\$MODE" "\$DB" "\$STRICT_SOCKDIR" <<'PY'
+  exec python3 - "\$SOCK" "\$PIDF" "\$MODE" "\$DB" "\$STRICT_SOCKDIR" "\$STOPMARK" <<'PY'
 import socket, sys, os, sqlite3, stat
-sock, pidf, mode, db, strict = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+sock, pidf, mode, db, strict, stopmark = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
+# A FRESH daemon has not been stopped, whatever happened to the one before it. Clearing the
+# marker here is what keeps the flag per-daemon rather than per-stub-name, so one arm's
+# ignored stop cannot make the next arm's brand-new daemon behave like a zombie.
+try:
+    os.unlink(stopmark)
+except OSError:
+    pass
 # ONLY a daemon start creates the socket directory — never --version or a daemon-off write —
 # and it creates it 0700, as the real daemon does. A directory that already exists was made by
 # the caller, and from 18.20.0 the real daemon refuses it unless it is exactly 0700; the stub
@@ -247,6 +272,11 @@ except OSError:
     sys.stderr.write("Error: Address already in use (os error 48)\n")
     sys.exit(98)
 s.listen(8)
+# dies-on-unlink polls fast, because what it models is a daemon NOTICING its socket is gone.
+# The verifier gives a wedged candidate a fixed one-second settle before calling it a
+# survivor, and a stub that only looked every 300ms would be racing that bound rather than
+# testing it — the case would pass or fail on scheduling.
+poll = 0.05 if mode == "dies-on-unlink" else 0.3
 # DETACH, exactly as a real atuin daemon does. Measured on 18.19.0: the arm ran in process
 # group 88291 and the daemon it spawned landed in 88299. A stub that stayed in the group
 # would be reachable by the group reap and every teardown assertion here would pass for a
@@ -257,16 +287,21 @@ try:
 except OSError:
     pass
 open(pidf, "w").write(str(os.getpid()))
-s.settimeout(0.3)
+s.settimeout(poll)
 while True:
     try:
         c, _ = s.accept()
         c.close()
     except socket.timeout:
+        # dies-on-unlink: the daemon goes away with its socket. The wedged arms cannot be
+        # built against this — there is no live pid left to block a respawn — so the verifier
+        # must DECLINE rather than measure. os._exit so no atexit handler recreates anything.
+        if mode == "dies-on-unlink" and not os.path.exists(sock):
+            os._exit(0)
         # stop-unlinks-only: once the socket is gone this daemon KEEPS COMMITTING. That is
         # what makes "nothing answers" different from "the daemon exited" — and it is only
         # observable because the extra rows land in arms that come after the fake stop.
-        if mode == "stop-unlinks-only" and not os.path.exists(sock):
+        if mode == "stop-unlinks-only" and os.path.exists(stopmark) and not os.path.exists(sock):
             try:
                 con = sqlite3.connect(db, timeout=5)
                 con.execute("insert into history values ('zombie',-1)")
@@ -341,7 +376,7 @@ daemon)
     # Unlink the socket and leave the daemon running -- it then starts committing rows. A
     # socket-only stop proof accepts this as stopped, after which every later arm measures
     # against a daemon it did not start and whose writes it will attribute to upstream.
-    [[ "\$MODE" == stop-unlinks-only ]] && { rm -f "\$SOCK"; exit 0; }
+    [[ "\$MODE" == stop-unlinks-only ]] && { : >"\$STOPMARK"; rm -f "\$SOCK"; exit 0; }
     [[ -f "\$PIDF" ]] && kill "\$(cat "\$PIDF")" 2>/dev/null
     rm -f "\$SOCK" "\$PIDF"
     exit 0
@@ -371,6 +406,24 @@ history)
         # Spawns only onto a CLEAR path. A crashed daemon's leftover inode defeats it — the
         # silent net-loss on Alpine and macOS, and invisible to an absent-socket-only test.
         [[ -e "\$SOCK" ]] || spawn_bg
+        ;;
+      pidfile-blocks-respawn)
+        # atuinsh/atuin#4114, exactly: the liveness question asked is "is the recorded pid
+        # alive", never "is anything serving". A daemon that is alive and not serving
+        # therefore reads as healthy and nothing is replaced -- permanently, because the
+        # thing blocking recovery is the very process that stopped working.
+        #
+        # Absent and stale both HEAL here, and that is the point of the mode: the real
+        # 'daemon stop' removes the pidfile along with the socket, so those two arms find no
+        # recorded pid and spawn normally. Only the wedged arms leave a live pid behind, so
+        # only they fail -- which is what makes this a test of the wedged arms rather than of
+        # autostart in general.
+        if [[ -f "\$PIDF" ]] && kill -0 "\$(cat "\$PIDF" 2>/dev/null)" 2>/dev/null; then
+          :
+        else
+          rm -f "\$SOCK"
+          spawn_bg
+        fi
         ;;
       *)
         # heals and fork-hang-end both take this path: a real daemon must come up, or the arm
@@ -728,13 +781,33 @@ J4PROBE
       fail "atuin autostart: the known-good stub produced no parseable verdict (rc$_drc) — the apparatus failed to report rather than measuring${_dstderr:+ (stderr: $_dstderr)}"
     else
 
-    # 4. The happy path, and the shape real 18.19.0 has: all four arms spawn and land a row.
+    # 4. The happy path, and the shape real 18.19.0 has: every arm spawns and lands a row.
     if ((_drc == 0)) && [[ "$_dout" == *'"spawned":"no"'* ]]; then
       fail "atuin autostart: a healing atuin reported an arm that did not spawn"
     elif ((_drc == 0)); then
       pass "atuin autostart: an atuin that self-heals its daemon → holds (rc 0), every arm spawned"
     else
       fail "atuin autostart: expected holds/rc0 for a healing atuin, got rc$_drc"
+    fi
+
+    # 4a. THE ARM SET, BY NAME. The counterpart of case 8 in scripts/test/51-atuin-guard.sh,
+    #     and it has to be asserted here rather than inferred: `spawned` and the verdict are
+    #     both quantified over whatever arms RAN, so a wedged pair that silently stopped being
+    #     generated would leave every other assertion in this section green while the shape
+    #     they exist to catch went unmeasured. That is the failure mode the derived coverage
+    #     sentence (case 20) cannot see either — it reports the arms that ran, faithfully,
+    #     however few of them there are.
+    if printf '%s' "$_dout" | python3 -c '
+import json,sys
+a = json.load(sys.stdin)["arms"]
+want = {"absent_hook","absent_plain","stale_hook","stale_plain","wedged_hook","wedged_plain"}
+assert want == set(a), sorted(set(a) ^ want)
+for name, arm in a.items():
+    assert {"rc","delta","expected_delta","spawned"} <= set(arm), name
+' 2>/dev/null; then
+      pass "atuin autostart: all six arms are measured — absent/stale/wedged x hook/plain"
+    else
+      fail "atuin autostart: --json must carry absent/stale/wedged x hook/plain arms (got: $_dout)"
     fi
 
     # 4b. THE SOCKET MOVED IN 18.20.0 (upstream #3910): the default is $TMPDIR/atuin-$UID/
@@ -818,6 +891,56 @@ J4PROBE
       pass "atuin autostart: spawning on an absent socket but NOT over a stale one is moved — the stale arm is why it is measured"
     else
       fail "atuin autostart: half-healing must be moved with stale arms failing and absent arms passing, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 7b. THE WEDGED SHAPE — atuinsh/atuin#4114, and the reason these two arms exist. This stub
+    #     heals absent AND stale (its pidfile is gone in both, because a real `daemon stop`
+    #     removes it with the socket) and fails ONLY wedged. So it cannot be caught by any arm
+    #     that predates this pair: a four-arm run reports it as fully healthy.
+    #
+    #     That is not a hypothetical distribution of behaviour — it is what upstream describes.
+    #     autostart asks "is the recorded pid alive", the wedged daemon's pid IS alive, and so
+    #     the one process that cannot serve is also the one blocking its own replacement. On
+    #     Alpine and macOS, where the stand-down means the guard has already unhooked itself,
+    #     nothing else is watching.
+    _mkdstub atuin-wedged pidfile-blocks-respawn
+    _d_run atuin-wedged --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *'"wedged_hook":{"rc":0,"delta":0'* ]] &&
+      [[ "$_dout" == *'"absent_hook":{"rc":0,"delta":1'* ]] &&
+      [[ "$_dout" == *'"stale_hook":{"rc":0,"delta":1'* ]]; then
+      pass "atuin autostart: a daemon that is ALIVE but not serving blocks its own respawn → moved, with absent and stale still healing (atuin#4114)"
+    else
+      fail "atuin autostart: a pidfile-blocked respawn must be moved with ONLY the wedged arms failing, got $(_d_get "$_dout" verdict)/rc$_drc — arms: $_dout"
+    fi
+
+    # 7c. …and the verdict has to SAY which of the two mechanisms broke. absent/stale failing
+    #     means "a missing socket no longer prompts a spawn"; wedged failing means "a live
+    #     daemon that stopped serving is never replaced". They have different upstream causes
+    #     and, more importantly, different remedies — unlinking a stale socket and counting
+    #     failed spawns both reach the wedged shape exactly zero times. A reader handed the
+    #     wrong sentence fixes nothing and believes they have.
+    if [[ "$(_d_get "$_dout" reason)" == *pidfile* ]] && [[ "$(_d_get "$_dout" reason)" == *4114* ]]; then
+      pass "atuin autostart: a wedged-arm finding names the pidfile-liveness mechanism, not an absent socket"
+    else
+      fail "atuin autostart: a wedged-arm finding must name the pidfile mechanism and atuin#4114, got: $(_d_get "$_dout" reason)"
+    fi
+
+    # 7d. THE SHAPE THAT CANNOT BE BUILT. A daemon that exits when its socket is unlinked
+    #     leaves no live pid to block anything, so the wedged premise evaporates rather than
+    #     failing. That must be `unmeasurable`, never `holds`: the arm measured nothing, and
+    #     recording "no finding" for a shape that could not be constructed is the
+    #     good-news-by-omission this whole file is built to refuse. It is also not `moved` —
+    #     nothing about upstream's autostart was observed either way.
+    _mkdstub atuin-diesunlink dies-on-unlink
+    _d_run atuin-diesunlink --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+      [[ "$(_d_get "$_dout" reason)" == *"exited when its socket was unlinked"* ]]; then
+      pass "atuin autostart: a daemon that dies with its socket makes the wedged shape unconstructable → unmeasurable, never holds"
+    else
+      fail "atuin autostart: a daemon that exits on unlink must be unmeasurable/rc3 naming the lifecycle, got $(_d_get "$_dout" verdict)/rc$_drc: $(_d_get "$_dout" reason)"
     fi
 
     # 8. A daemon that comes up and drops the entry is a DIFFERENT finding from one that never
