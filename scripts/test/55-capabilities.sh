@@ -309,6 +309,69 @@ else
     fail "validator: --packages went silent entirely — the builtin skip is over-broad (got: ${_cap_btwarn:-no output})" ;;
   esac
   unset _cap_btwarn
+  # PKG_UNLISTED_TOOLS (#1087) — the repo says which verb binaries its packages.txt
+  # deliberately does not name, so the cross-check can go back to meaning something. Before
+  # it, the check fired on essentially every PKG_* verb the fleet declares (Debian 10,
+  # most repos 7-8), because a base-system binary and a verb naming a tool nothing installs
+  # were indistinguishable from here.
+  #
+  # The example declares Fedora's verbs, so `dnf` leads six of them and `$CAPV/pkgs.txt`
+  # (dnf, awk) lists it — a fixture whose packages.txt names NOTHING is what these need.
+  printf 'fzf\n' >"$CAPV/pkgs-nodnf.txt"
+  _cap_unl() { # <label> <PKG_UNLISTED_TOOLS value> <expect: quiet|warn|fail>
+    { cat "$CAPEX"; printf 'PKG_UNLISTED_TOOLS=%s\n' "$2"; } >"$CAPV/unlisted"
+    local _o _rc
+    _o="$("$CAPCHK" "$CAPV/unlisted" --packages "$CAPV/pkgs-nodnf.txt" 2>&1)"; _rc=$?
+    case "$3" in
+    quiet) if ((_rc == 0)) && ! printf '%s' "$_o" | grep -q '^warn'; then
+      pass "validator: $1"; else fail "validator: $1 (got: $_o)"; fi ;;
+    warn) if ((_rc == 0)) && printf '%s' "$_o" | grep -q '^warn'; then
+      pass "validator: $1"; else fail "validator: $1 (got: $_o)"; fi ;;
+    fail) if ((_rc != 0)); then pass "validator: $1"; else fail "validator: $1 (got: $_o)"; fi ;;
+    esac
+  }
+  _cap_unl "PKG_UNLISTED_TOOLS silences the verbs whose binary the repo does not install" "dnf" quiet
+  # The key is an exemption, so it must not become a blanket one. A name no declared verb
+  # runs is a stale silencer waiting for a verb nobody vetted.
+  _cap_unl "a PKG_UNLISTED_TOOLS name no declared verb runs (a stale exemption)" "dnf nosuchtool" fail
+  # ...and a name the repo DOES install is a contradiction: the exemption is simply false.
+  { cat "$CAPEX"; printf 'PKG_UNLISTED_TOOLS=dnf\n'; } >"$CAPV/unlisted-contra"
+  if "$CAPCHK" "$CAPV/unlisted-contra" --packages "$CAPV/pkgs.txt" >/dev/null 2>&1; then
+    fail "validator: PKG_UNLISTED_TOOLS exempted a binary that packages.txt installs"
+  else
+    # ...reported ONCE, not once per verb. dnf leads six of the example's verbs, and the
+    # first form of this check printed the same line for each — the very noise the key
+    # exists to remove.
+    _cap_ncontra="$("$CAPCHK" "$CAPV/unlisted-contra" --packages "$CAPV/pkgs.txt" 2>&1 | grep -c 'but .* installs it')"
+    if [[ "$_cap_ncontra" == 1 ]]; then
+      pass "validator: an exemption the repo installs fails, and is reported once per tool"
+    else
+      fail "validator: the PKG_UNLISTED_TOOLS contradiction was reported $_cap_ncontra times, want 1"
+    fi
+    unset _cap_ncontra
+  fi
+  # Whole-token, both ends: an exemption for `rpm` must not quietly cover `rpm-ostree`.
+  # BOTH binaries have to be genuinely run by a verb, or the staleness rule above fires
+  # first and this would pass for the wrong reason — which is how the first draft of this
+  # case "failed". `rpm -qf` is the atomic edition's real PKG_OWNS; PKG_APPLY is the
+  # optional staged-apply verb, and its presence needs nothing else declared.
+  { grep -v '^PKG_OWNS=' "$CAPEX"
+    printf 'PKG_OWNS=rpm -qf\nPKG_APPLY=rpm-ostree apply-live\nPKG_UNLISTED_TOOLS=dnf rpm\n'
+  } >"$CAPV/unl-tok"
+  _cap_tok="$("$CAPCHK" "$CAPV/unl-tok" --packages "$CAPV/pkgs-nodnf.txt" 2>&1)"
+  if printf '%s' "$_cap_tok" | grep -q 'runs "rpm-ostree"' &&
+    ! printf '%s' "$_cap_tok" | grep -q 'runs "rpm"'; then
+    pass "validator: a PKG_UNLISTED_TOOLS entry is a whole token (rpm does not cover rpm-ostree)"
+  else
+    fail "validator: PKG_UNLISTED_TOOLS did not match whole tokens (got: $_cap_tok)"
+  fi
+  unset _cap_tok
+  # Absent, the key changes nothing: every declaration written before it keeps validating.
+  if "$CAPCHK" "$CAPEX" --packages "$CAPV/pkgs.txt" >/dev/null 2>&1; then
+    pass "validator: PKG_UNLISTED_TOOLS is optional (absent ⇒ the pre-#1087 behaviour)"
+  else
+    fail "validator: the shipped example stopped validating once PKG_UNLISTED_TOOLS existed"
+  fi
 fi
 
 # The vocabulary register (scripts/test/56-fleet-vocabulary.sh) sits ABOVE the zsh gate on
