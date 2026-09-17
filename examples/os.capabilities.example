@@ -102,10 +102,14 @@ MAINT_UNATTENDED_UPGRADE=1
 # ── the non-mutable host (NON-MUTABLE-HOST-PROPOSAL.md §4, #1004) ────────────────────
 # Six OPTIONAL keys the validator accepts. They let a declaration for an atomic (bootc,
 # Silverblue), transactional (MicroOS, Aeon) or declarative (NixOS) host be written
-# truthfully; the three prototypes live in scripts/research/nonmutable/ and this Fedora
-# example declares none of them (absent PROVISIONER means mutable). Since #1049 `up`, the
-# shell-start nudge, the maint runner and core-doctor read PROVISIONER, PKG_APPLY and
-# PKG_APPLY_PENDING; the PKG_PENDING_EXIT_* pair is accepted and still read by no consumer.
+# truthfully, and this Fedora example declares none of them (absent PROVISIONER means
+# mutable). Three fleet declarations use them, and they are the ones to copy from:
+# dotfiles-Fedora/os/fedora.atomic.capabilities,
+# dotfiles-openSUSE/os/opensuse.microos.capabilities and dotfiles-NixOS/os/nixos.capabilities
+# (R2's earlier prototypes are kept under scripts/research/nonmutable/, which nothing links).
+# Since #1049 `up`, the shell-start nudge, the maint runner and core-doctor read
+# PROVISIONER, PKG_APPLY and PKG_APPLY_PENDING; the PKG_PENDING_EXIT_* pair is accepted and
+# still read by no consumer.
 #
 #   PROVISIONER=atomic | transactional | declarative   (absent = mutable)
 #   PKG_APPLY=sudo systemctl reboot     the verb that makes a STAGED change live — on an
