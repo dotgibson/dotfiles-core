@@ -138,12 +138,17 @@ CAP_OPTIONAL=(
   PROVISIONER PKG_APPLY PKG_PENDING_EXIT_NONE PKG_PENDING_EXIT_SOME
   PKG_APPLY_PENDING PKG_APPLY_PENDING_EXIT
 )
-#   ── the non-mutable host (PROTOTYPE — R2 of NON-MUTABLE-HOST-PROPOSAL.md, #1004) ──
-#   Four OPTIONAL keys, accepted by this validator and READ BY NO CONSUMER YET. They exist
-#   so the three prototype declarations under scripts/research/nonmutable/ can be written
-#   honestly and validated — R2's test was whether a required key ends up a lie on an
-#   atomic, transactional or declarative host, and the answer needed somewhere to put the
-#   truth. Every existing declaration keeps validating unchanged; that is the point.
+#   ── the non-mutable host (SHIPPED — NON-MUTABLE-HOST-PROPOSAL.md §4, #1004) ────────
+#   Six OPTIONAL keys. They were born as R2's prototype — its test was whether a required
+#   key ends up a lie on an atomic, transactional or declarative host, and the answer
+#   needed somewhere to put the truth — and they are now the schema three fleet repos
+#   declare against: dotfiles-Fedora's fedora.atomic, dotfiles-openSUSE's opensuse.microos
+#   and dotfiles-NixOS's nixos. FOUR OF THE SIX ARE READ (#1049, Core v7.6.0): PROVISIONER,
+#   PKG_APPLY, PKG_APPLY_PENDING and PKG_APPLY_PENDING_EXIT, by `up` and the shell-start
+#   nudge, the maint runner and core-doctor. The PKG_PENDING_EXIT_* pair is accepted and
+#   still read by no consumer — it describes a count verb no shipped declaration pairs it
+#   with. Every existing declaration keeps validating unchanged; that was the point, and
+#   the measured verdict (R2) was that the schema is ADDITIVE, so no repo re-authored.
 #   PROVISIONER          mutable (the default when absent) | atomic (image-based: bootc,
 #                        Silverblue) | transactional (snapshot-based: MicroOS, Aeon) |
 #                        declarative (NixOS). What a consumer branches on (#1049): `up`
