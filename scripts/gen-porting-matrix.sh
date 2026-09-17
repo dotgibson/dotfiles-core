@@ -49,12 +49,15 @@
 #
 #   gen-porting-matrix.sh              # rewrite every marked region in PORTING-MATRIX.md
 #   gen-porting-matrix.sh --check      # exit 1 (with a diff) if a region is stale — THE GATE
-#   gen-porting-matrix.sh --list       # every cell's provenance: block<TAB>row<TAB>column<TAB>derived|asserted<TAB>source
+#   gen-porting-matrix.sh --list       # EVERY block's cells: block<TAB>row<TAB>column<TAB>derived|asserted<TAB>source
+#                                      #   (every registered block — scripts/test/41 asserts
+#                                      #    the coverage, not a sample of rows; #1096)
 #   gen-porting-matrix.sh --root DIR   # run against another Core tree (test-core.sh's fixtures)
 #   gen-porting-matrix.sh --fleet DIR  # where the sibling OS clones live (default: the parent
 #                                      #   of the Core tree — inside a git worktree, pass this)
 #   gen-porting-matrix.sh --local      # only the blocks whose inputs are IN THIS REPO
 #   gen-porting-matrix.sh --check --local  #   …and gate them — needs no sibling clone
+#   gen-porting-matrix.sh --list --local   #   …and list their provenance — likewise
 #
 # NEEDS THE SIBLING CLONES FOR TWO OF THE THREE BLOCKS, so unlike gen-aliases.sh it CAN
 # be unable to answer: with a required repo not checked out it exits 3 and writes nothing.
@@ -125,11 +128,10 @@ while (($#)); do
   shift
 done
 
-# --list prints every derived cell's provenance as file:line in a sibling clone, which is
-# the one output --local cannot narrow to anything meaningful. A usage error, not a quiet
-# partial listing.
-((LOCAL)) && [[ "$MODE" == list ]] &&
-  { printf 'gen-porting-matrix: --list needs the fleet (it prints each derived cell as file:line) — it cannot be scoped with --local\n' >&2; exit 2; }
+# --list --local IS meaningful, now that every block writes provenance: it lists the
+# in-repo blocks' cells and needs no sibling clone. It was a usage error only while
+# fleet-versions contributed no rows, which would have made it an empty listing that
+# exited 0 (#1096).
 
 # --root lets the behavioural suite drive this against a hermetic fixture tree; --fleet
 # lets it point at a fixture fleet (and lets a worktree checkout, whose parent is
@@ -744,6 +746,10 @@ fi
 # the line it was filed under disagreed, and only a human re-reading the sentence could
 # notice.
 FLEET_VERSIONS="$HERE/scripts/fleet-package-versions.tsv"
+# The same path, repo-relative, for --list's `source` field: the other two blocks name a
+# sibling file as <repo>/install/packages.txt, so an absolute one here would be the only
+# provenance a reader could not paste at a `git` command.
+FV_REL="scripts/fleet-package-versions.tsv"
 FRESH_DAYS="${FRESH_DAYS:-90}"
 
 # Field-wise numeric compare, the same shape used across the fleet's floor guards: a
@@ -770,8 +776,11 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
     printf 'gen-porting-matrix: cannot read %s\n' "$FLEET_VERSIONS" >&2
     return 2
   }
-  local tool="jq" floor="" rt t target ver vdate status
+  local tool="jq" floor="" floor_line="" lno rt t target ver vdate status
   floor="$(awk -F'\t' -v tool="$tool" '$1 == "floor" && $2 == tool { print $3; exit }' "$FLEET_VERSIONS")"
+  # The floor's own line, because the status cell is COMPUTED against it — provenance that
+  # named only the version row would hide half of what decided the verdict.
+  floor_line="$(awk -F'\t' -v tool="$tool" '$1 == "floor" && $2 == tool { print NR; exit }' "$FLEET_VERSIONS")"
   [[ -n "$floor" ]] || {
     printf 'gen-porting-matrix: no floor recorded for %s in %s\n' "$tool" "$FLEET_VERSIONS" >&2
     return 2
@@ -789,9 +798,19 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
   # of a pipeline runs in a subshell on bash 3.2, so `rows` incremented there is lost and the
   # empty-input guard below would never fire.
   local rows=0 body=""
-  while IFS=$'\t' read -r rt t target ver vdate _; do
+  while IFS=$'\t' read -r lno rt t target ver vdate _; do
     [[ "$rt" == "ver" && "$t" == "$tool" ]] || continue
     if _fv_lt "$ver" "$floor"; then status="**below**"; else status="at or above"; fi
+    # PROVENANCE, unconditionally, exactly as the other two blocks do it. This block wrote
+    # nothing to $LISTFILE while --help promised "every cell's provenance", so --list was
+    # silent about a third of the document (#1096). Three cells per row: the version and
+    # the date are RECORDED in the TSV, the floor comparison is COMPUTED from the version
+    # against the floor row — so that cell names both lines it depends on.
+    {
+      printf 'fleet-versions\t%s\tversion\tderived\t%s:%s\n' "$target" "$FV_REL" "$lno"
+      printf 'fleet-versions\t%s\tvs-floor\tderived\t%s:%s vs %s:%s\n' "$target" "$FV_REL" "$lno" "$FV_REL" "$floor_line"
+      printf 'fleet-versions\t%s\tverified\tderived\t%s:%s\n' "$target" "$FV_REL" "$lno"
+    } >>"$LISTFILE"
     # A real TAB, via the $TAB the file already defines, and `%s` below: the first cut wrote
     # a literal `\t` and emitted with `%b`, which reinterprets escapes in the DATA too — a
     # backslash in any field would have been rewritten, and a `\c` would have truncated the
@@ -800,7 +819,10 @@ render_fleet_versions() { # -> the markdown table for the `fleet-versions` block
     body="$body$target$TAB$ver$TAB$status$TAB$vdate
 "
     rows=$((rows + 1))
-  done < <(grep -v '^[[:space:]]*#' "$FLEET_VERSIONS")
+    # NR, not a counter over the filtered stream: --list's file:line has to point at the
+    # line a reader opens, so comment and blank lines must still be counted. The `ver`
+    # test in the loop body does the filtering the old grep did.
+  done < <(awk '{ print NR "\t" $0 }' "$FLEET_VERSIONS")
 
   ((rows)) || {
     printf 'gen-porting-matrix: no version rows for %s in %s\n' "$tool" "$FLEET_VERSIONS" >&2

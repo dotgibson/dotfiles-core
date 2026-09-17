@@ -303,6 +303,33 @@ EOF
     fail "gen-porting-matrix: --list is missing a derived, an asserted or a commands row"
   fi
 
+  # COVERAGE, NOT SAMPLES — and this is the assertion whose absence let #1096 happen. The
+  # case above spot-checks four rows and passed for as long as the fleet-versions block
+  # wrote no provenance at all, while --help promised "every cell's provenance". Derive the
+  # expected set from BLOCK_IDS (parsed out of the script above) so a NEWLY registered
+  # block fails here until it is listed, the same way preflight refuses an unregistered
+  # marker. Spot-checks say a row is right; only this says none is missing.
+  _gp_cov_missing=""
+  for _id in $_gp_ids; do
+    grep -q "^$_id	" <<<"$_gp_list_out" || _gp_cov_missing="$_gp_cov_missing $_id"
+  done
+  if [[ -z "$_gp_cov_missing" ]]; then
+    pass "gen-porting-matrix: --list emits provenance for EVERY registered block ($_gp_ids)"
+  else
+    fail "gen-porting-matrix: --list is silent about block(s):$_gp_cov_missing — --help promises every cell's provenance (#1096)"
+  fi
+
+  # The fleet-versions rows specifically: three cells per target, and the COMPUTED one
+  # names both lines that decided it. A status cell citing only the version row would hide
+  # the floor it was compared against, which is the half that moves on a floor bump.
+  if grep -qE '^fleet-versions	Fixture Above	version	derived	scripts/fleet-package-versions\.tsv:[0-9]+$' <<<"$_gp_list_out" &&
+    grep -qE '^fleet-versions	Fixture Below	vs-floor	derived	scripts/fleet-package-versions\.tsv:[0-9]+ vs scripts/fleet-package-versions\.tsv:[0-9]+$' <<<"$_gp_list_out" &&
+    grep -qE '^fleet-versions	Fixture Equal	verified	derived	scripts/fleet-package-versions\.tsv:[0-9]+$' <<<"$_gp_list_out"; then
+    pass "gen-porting-matrix: fleet-versions provenance is repo-relative file:line, and the derived verdict cites the floor row too"
+  else
+    fail "gen-porting-matrix: the fleet-versions provenance rows are missing, absolute, or cite only one line for the computed cell"
+  fi
+
   # NEGATIVE — drift INSIDE a block exits 1, names the file and the fix, and writes nothing.
   _gp_fixture && _gp_run >/dev/null
   sed -i.bak 's/| `eza`             |/| `exa`             |/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
@@ -551,15 +578,21 @@ EOF
     fail "gen-porting-matrix: --local returned 3, so §9h cannot treat its exit code as fleet-independent"
   fi
 
-  # --list needs the fleet (it prints derived cells as file:line), so scoping it is a usage
-  # error rather than a listing that quietly covers a third of the document.
+  # --list --local IS a listing now (#1096). It was a usage error only while fleet-versions
+  # wrote no provenance, which would have made it an empty listing that exited 0 — worse
+  # than a refusal. It must cover exactly the in-repo blocks and name no sibling clone.
   _gp_fixture && _gp_run >/dev/null
-  if [[ "$(_gp_run --list --local)" == 2 ]]; then
-    pass "gen-porting-matrix: --list --local is a usage error, not a partial listing"
+  _gp_lloc_list="$(_gp_out_lone --list --local)"
+  if [[ "$(_gp_run_lone --list --local)" == 0 ]] &&
+    [[ -n "$_gp_lloc_list" ]] &&
+    [[ "$(cut -f1 <<<"$_gp_lloc_list" | sort -u | tr '\n' ' ')" == "$_gp_local_ids " ]] &&
+    ! grep -q 'dotfiles-' <<<"$_gp_lloc_list"; then
+    pass "gen-porting-matrix: --list --local lists exactly the in-repo blocks ($_gp_local_ids) with no fleet, naming no sibling clone"
   else
-    fail "gen-porting-matrix: --list --local was accepted"
+    fail "gen-porting-matrix: --list --local did not narrow to LOCAL_BLOCKS — empty, refused, or citing a sibling repo"
   fi
   unset _gp_local_ids _gp_reg_ok _gp_loc_out _gp_pkg_before _gp_lloc_out
+  unset _gp_cov_missing _gp_lloc_list
   unset -f _gp_widths
 
   # An edit OUTSIDE the markers is not drift and survives regeneration.

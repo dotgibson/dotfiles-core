@@ -36,7 +36,8 @@ truth and compare:
   `install/packages.txt`); the third is `fleet-versions`, from this repo's own
   `scripts/fleet-package-versions.tsv`. All are gated by `make audit` §9h, so do not
   re-audit them cell by cell; `scripts/gen-porting-matrix.sh --fleet <fleet-root> --list`
-  prints each cell's provenance. What can drift is the hand-written half: the ~38 numbered
+  prints each cell's provenance — all three blocks, `fleet-versions` included since #1096
+  (`--list --local` narrows it to the in-repo block and needs no sibling clone). What can drift is the hand-written half: the ~38 numbered
   footnotes and the quirks prose against the repos they describe, and the _asserted_ cells
   (footnote ²¹ names, `asset`/`cargo`/`AUR`/`GURU` routes) against what that repo's
   `bootstrap.sh` actually does out-of-band. **Mind the one overlap**: the `fleet-versions`
