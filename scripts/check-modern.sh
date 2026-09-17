@@ -62,6 +62,59 @@ while IFS= read -r _f; do [ -n "$_f" ] && WORKFLOWS+=("$_f"); done < <(_audit_ls
 violations=0
 note() { printf '  ✗ %s\n' "$*" >&2; violations=$((violations + 1)); }
 
+# ── the job census: ONE walk, two readers ────────────────────────────────────
+# `jobs:` opens the section; any column-0 key closes it; a 2-space key opens a job.
+# Structurally the same job-block walk as rule 6's checkout walk, awk-only and bash-3.2
+# safe, and scoped to WORKFLOWS, not FILES: a composite action has no jobs.
+#
+# ONE definition, because these counts are CLAIMED IN PROSE and prose drifts. Rule 8
+# reads this to find runner jobs missing a timeout; `--job-census` reads it so
+# scripts/test/90-policy-gates.sh can hold rule 8's rationale in modern-baseline.yml to
+# the number the walk actually produces. That rationale had drifted from 47 to 58
+# unnoticed (#1083) — eleven jobs added, nothing comparing the sentence to the tree. A
+# SECOND walk written for the gate would be a second definition of "runner job", which
+# is the drift class the gate exists to close, so the gate does not get its own.
+#
+# One record per job, machine fields tab-separated ahead of rule 8's human string:
+#   KIND<TAB>HAS_TIMEOUT<TAB>FILE:LINE: JOB      KIND ∈ runner | call | plain
+_job_records() {
+  [ "${#WORKFLOWS[@]}" -gt 0 ] || return 0
+  for _jr_wf in "${WORKFLOWS[@]}"; do
+    awk '
+      function emit() {
+        printf "%s\t%d\t%s:%d: %s\n",
+               (runner ? "runner" : (call ? "call" : "plain")), t, FILENAME, ln, job
+      }
+      /^jobs:[[:space:]]*$/ { injobs = 1; next }
+      /^[A-Za-z_]/          { injobs = 0 }
+      injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+        if (job != "") emit()
+        job = $1; sub(/:$/, "", job); ln = NR; runner = 0; call = 0; t = 0; next
+      }
+      injobs && /^    runs-on:/         { runner = 1 }
+      injobs && /^    uses:/            { call = 1 }
+      injobs && /^    timeout-minutes:/ { t = 1 }
+      END { if (job != "") emit() }
+    ' "$_jr_wf" 2>/dev/null || true
+  done
+}
+
+# `--job-census` prints the two counts and nothing else, for the gate above. It is a
+# READER of the floor, not part of it: it runs no rule and returns no verdict.
+case "${1:-}" in
+"") : ;;
+--job-census)
+  _job_records | awk -F'\t' '
+    $1 == "runner" { r++ } $1 == "call" { c++ }
+    END { printf "runner=%d call=%d\n", r + 0, c + 0 }'
+  exit 0
+  ;;
+*)
+  echo "check-modern: unknown argument: $1 (the only one is --job-census)" >&2
+  exit 2
+  ;;
+esac
+
 # ── 1) banned deprecated workflow-command patterns ───────────────────────────
 while IFS= read -r pat; do
   [ -n "$pat" ] || continue
@@ -305,24 +358,19 @@ fi
 # at job level) cannot legally carry timeout-minutes, so requiring it there would be a
 # guaranteed false fire. Scoped to WORKFLOWS, not FILES: a composite action has no jobs.
 #
-# Structurally the same job-block walk as rule 6's checkout walk, awk-only and bash-3.2
-# safe. `jobs:` opens the section; any column-0 key closes it; a 2-space key opens a job.
-if _yaml_bool require_job_timeout && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
-  for wf in "${WORKFLOWS[@]}"; do
-    while IFS= read -r hit; do
-      [ -n "$hit" ] && note "job without timeout-minutes (GitHub's default is 360m): $hit"
-    done < <(awk '
-      /^jobs:[[:space:]]*$/ { injobs = 1; next }
-      /^[A-Za-z_]/          { injobs = 0 }
-      injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
-        if (job != "" && runner && !t) printf "%s:%d: %s\n", FILENAME, ln, job
-        job = $1; sub(/:$/, "", job); ln = NR; runner = 0; t = 0; next
-      }
-      injobs && /^    runs-on:/         { runner = 1 }
-      injobs && /^    timeout-minutes:/ { t = 1 }
-      END { if (job != "" && runner && !t) printf "%s:%d: %s\n", FILENAME, ln, job }
-    ' "$wf" 2>/dev/null || true)
-  done
+# The walk itself is _job_records (above), shared with --job-census so the counts this
+# rule's rationale quotes have one definition. This rule is the filter over it: a job
+# that sits on a runner and declares no timeout.
+if _yaml_bool require_job_timeout; then
+  while IFS="$(printf '\t')" read -r _r8_kind _r8_timeout _r8_at; do
+    # An `if`, not a `&&` chain: under `set -e` a false test as the body's LAST command
+    # takes the whole script down mid-gate.
+    if [ "$_r8_kind" = runner ] && [ "$_r8_timeout" = 0 ]; then
+      note "job without timeout-minutes (GitHub's default is 360m): $_r8_at"
+    fi
+  done <<EOF
+$(_job_records)
+EOF
 fi
 
 if [ "$violations" -eq 0 ]; then

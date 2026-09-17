@@ -146,6 +146,29 @@
   no ruleset, a bypass actor and _could not read_ are three different verdicts the script
   keeps distinguishable, and all three are rc=1.
 
+- **The job counts `check-modern`'s rule 8 argues from are gated, so they stop drifting**
+  ([#1081](https://github.com/dotgibson/dotfiles-core/issues/1081)). Rule 8's rationale in
+  `scripts/modern-baseline.yml` claimed _all 47 runner jobs here already set one_ and
+  _cheap while the fleet is at 47/47_ over a tree holding **58**. Eleven runner jobs had
+  been added and nothing read the sentence against the tree.
+
+  Not cosmetic, which is the reason to gate it rather than retype it. Rule 8's whole
+  argument is that the property is held _universally_ today and the floor is therefore
+  cheap to encode — `58/58` **is** the evidence for "cheap", so `47/47` over a tree of 58
+  withdraws the argument while still looking like it makes it.
+
+  `scripts/check-modern.sh` grew a `--job-census`, and rule 8's own job walk moved behind
+  the same helper that answers it, so the number the prose quotes and the number the rule
+  enforces cannot be two different things. `scripts/test/90-policy-gates.sh` holds all six
+  claim sites to it — three in the rationale, one in the rule's `uses:` aside, one in the
+  test fragment that asserts the rule's shape.
+
+  **Keyed on the claim, not the number**, which is §9m's rule for §9m's reason: three
+  numbers are legitimately correct in that one comment about three different sets (runner
+  jobs, reusable-call jobs, and the six `*-call.yml@vN` workflows Core owns), so a check on
+  bare integers would red on lines that are right. A claim the gate can no longer _find_ is
+  a finding too — otherwise rewording the prose silently retires the check.
+
 ### Changed
 
 - **`extract` pins `ouch`'s pre-0.8.0 unpack location, so one archive gives one tree on every
