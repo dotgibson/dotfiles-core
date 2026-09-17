@@ -520,6 +520,46 @@
   check: measured across the fleet, every mutable declaration already draws 7–10 of these
   warnings (Debian 10, all of them `apt-get`/`apt-cache`/`dpkg`), which the code comment
   has always anticipated and which is now tracked separately.
+- **The R4 prototype patches promised a package the package manager had dropped**
+  ([#1090](https://github.com/dotgibson/dotfiles-core/issues/1090)). `dotfiles-openSUSE`'s
+  `zypper_install` silently drops names `zypper se --match-exact` cannot find on that
+  MicroOS snapshot — recording a `_note_fail` and moving on — but yazi's hint was keyed on
+  `TU_STAGED`, the run's **tally**, so it fired whenever any of the other ~40 packages had
+  staged. Trigger: yazi absent from the enabled repos, which is real (it has lived in a
+  devel repo). The operator was told _yazi is in the next snapshot — live after the
+  reboot_, the `elif` skipped the advice naming the fix, and after the reboot yazi was
+  simply not there. That is the doctor-hint class exactly: a hint promising what the
+  package manager did not do. The patch now records the staged **names** and asks about
+  yazi; the tally keeps counting, because the closing "N package(s) transacted" line is a
+  genuine count. Membership is a padded whole-token test, so `yazi-fm` does not answer for
+  `yazi`.
+- **The R4 Fedora patch could leave a truncated COPR file and brick `dnf` for the rest of
+  the run** ([#1090](https://github.com/dotgibson/dotfiles-core/issues/1090)). It curled
+  the repo file straight into `/etc/yum.repos.d` under `>/dev/null 2>&1 || true`. Measured
+  against curl 8.18.0: a 404 writes nothing — that is `-f` working, and it is the case
+  anyone would test — but a connection dropped **mid-body** exits 18 with the partial
+  bytes already on disk, and a 197-byte `[copr]\nbaseurl=…` fragment is a broken `.repo`.
+  dnf parses every file in that directory, so one bad line fails **every later dnf call**
+  with _Error in configuration file_: not just lazygit, but the rest of the bootstrap and
+  the box afterwards. R6 had already measured that downstream cost from the other
+  direction, when the reusable job's curl shim wrote the word `shim` to an `-o` path (run
+  34938554648) — on a real box there is no shim to blame. It now downloads to a temp file
+  and `install`s it only on success, so the directory either gets the whole file or none
+  of it; curl runs unprivileged, since only the move into `/etc` needs the escalator; and
+  the failure is reported instead of swallowed twice.
+- **`nonmutable-r6.sh` split its report across two files when `--out` was relative**
+  ([#1090](https://github.com/dotgibson/dotfiles-core/issues/1090)). `: >"$out"` truncates
+  against the invocation cwd, then `cd "$repo_dir"` sends every later `say`/`excerpt`
+  somewhere else: measured, 286 bytes at the path the caller named and 1,469 bytes hidden
+  under the repo. Latent — both workflow call sites pass an absolute path — and now one
+  file of 1,755 bytes either way. The script already records the twin of this hazard, in
+  the comment on `resolve_all`'s local `out`.
+
+  All three were found by the weekly `/shell-review` (#1057) and are prototype patches
+  under `scripts/research/`, vendored nowhere. They are fixed here because §4.3 says a
+  repo PR starts from them, so a defect left in place is one that gets copied out. Both
+  patches were regenerated mechanically against their recorded base commits and re-checked
+  with `git apply`; the declarations they create still validate.
 
 ## [v7.9.0] - 2026-09-16
 

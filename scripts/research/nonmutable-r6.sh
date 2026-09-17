@@ -30,6 +30,13 @@ while (($#)); do
 done
 [[ -d "$repo_dir" ]] || { echo "usage: $0 <target> --repo-dir DIR [--patch FILE] [--resolve CMD] [--out FILE]" >&2; exit 2; }
 [[ -n "$out" ]] || out="/tmp/r6-$target.md"
+# ABSOLUTE BEFORE THE `cd` BELOW. `: >"$out"` truncates relative to the invocation cwd,
+# but every later say/excerpt appends from inside $repo_dir — so a relative --out wrote
+# the header to one file and the whole report to another, leaving the path the caller
+# named empty and the findings somewhere nobody looks. Latent today (both workflow call
+# sites pass an absolute /w/research-out/r6-$t.md) and pinned here rather than left to the
+# next caller, which is the same lesson resolve_all's local `out` already records below.
+[[ "$out" = /* ]] || out="$PWD/$out"
 work="$(mktemp -d /tmp/r6.XXXXXX)"
 : >"$out"
 say() { printf '%s\n' "$*" >>"$out"; }
