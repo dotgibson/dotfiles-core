@@ -501,6 +501,29 @@
 
 ### Fixed
 
+- **§5f's ledger documented a nine-repo fleet — every stated ratio was one repo behind.**
+  The ledger _rows_ were correct and `dotfiles-NixOS` (#1064) is in all of them, so the
+  gate has been measuring the right thing; it was the comment block above them that still
+  read `/9`, along with "hand-forked _nine_ ways" and "whether the other _eight_ picked
+  them up". All nine figures now read against the ten-repo fleet, and each was **derived
+  from the ledger rows and the exemption `case`** rather than hand-counted:
+  `blib_resolve_su` 9/10, `blib_sudo_keepalive_start` 8/10, `blib_user_bindirs_on_path`
+  8/10, `blib_note_fail` 9/10, `blib_failures_report` 10/10, `blib_wire_summary` 9/10,
+  `blib_install_core_guard` 10/10, `BLIB_DRY` 10/10, `blib_main` 9/10.
+
+  Two distinctions the old text blurred and this keeps: the six exemptions are Defense ×4
+  and MacBook ×2, so `blib_user_bindirs_on_path` is 8/10 with **one** exempt and
+  `dotfiles-MacBook` genuinely _short_ — not a tenth exemption — and `blib_wire_summary`
+  has no exemption at all. The forward-looking MacBook note now says its row would read
+  10/10, not 9/9, if that repo's surface ever shrank to what `blib_main` covers.
+
+  **The driver ratchet itself is complete and was not the problem**: 9 of 10 on
+  `blib_main`, `dotfiles-MacBook` outside by design, 10/10 compliant. NixOS arrived
+  already on the driver, so the repo that moved the denominator did not reopen the
+  ratchet. `scripts/new-os-repo.sh` loses its "eight callers" count for the same reason
+  the ratios drifted — the issue reference says everything the number did, and cannot go
+  stale.
+
 - **The research matrix's three container images were unpinned, two of them mutable
   `:latest`** ([#1099](https://github.com/dotgibson/dotfiles-core/issues/1099)).
   `research-nonmutable.yml` picks its image in the plan job's `case` and hands it to the
