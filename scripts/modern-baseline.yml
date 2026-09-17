@@ -80,10 +80,18 @@ require_action_sha_pin: true
 sha_pin_exempt_owner: dotgibson
 
 # 4) Every container image must pin an @sha256: digest — a tag like `alpine:3.21` or
-#    `archlinux:latest` moves under you. Covers all four surfaces an image reaches CI by:
-#    an `image:` value, the `container: <img>` shorthand, a `uses: docker://<img>` action,
-#    and a `docker run|build|pull <image>` command (the shorthand + docker:// forms slip
-#    rule 3's owner/repo sha-pin check, so rule 4 has to catch them).
+#    `archlinux:latest` moves under you. Covers every surface an image reaches CI by: an
+#    `image:` value, the `container: <img>` shorthand, a `uses: docker://<img>` action, a
+#    `docker|podman run|build|pull|create <image>` command, and a Containerfile `FROM`
+#    written into a heredoc (the shorthand + docker:// forms slip rule 3's owner/repo
+#    sha-pin check, so rule 4 has to catch them).
+#
+#    The command scan is ENGINE-AGNOSTIC and joins `\` continuations, because the rule used
+#    to name `docker` and read one physical line at a time — and a workflow that reached for
+#    podman, a heredoc Containerfile and a line continuation therefore ran three unpinned
+#    external images, one of them `:latest` under --privileged, while this gate stayed green
+#    (#1055). An image built in the same job (`localhost/…`, a `localhost:5000/…` push) is
+#    exempt in check-modern.sh: no digest can exist for it.
 require_container_digest_pin: true
 
 # 5) Every WORKFLOW must declare a top-level `permissions:` block. Without one a job

@@ -20,7 +20,7 @@
 # Hermetic: a throwaway git repo (the gate inventories through `git ls-files`, so a plain
 # directory yields "no workflow/action files to check" and every assertion below would
 # vacuously pass) holding only the script, its lib and a crafted workflow.
-hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 5b, 7 + 8)"
+hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 4, 5b, 7 + 8)"
 if ! have git; then
   skip "check-modern rule fixtures (git not installed)"
 else
@@ -190,6 +190,72 @@ jobs:
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
+  # Rule 4 (#1055): the digest-pin rule was keyed on the TOOL NAME `docker` and read one
+  # physical line at a time, so podman, a heredoc Containerfile FROM, and an image parked
+  # behind a `\` continuation all walked past it — three live unpinned images, gate green.
+  # Four shapes in one fixture, one per surface that was blind. The continuation hit is
+  # asserted at the CHAIN HEAD line, not the line the image sits on: that is what proves
+  # the joiner ran, and a per-line scan cannot produce it.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          cat >Containerfile <<EOF
+          FROM quay.io/x/base:1
+          EOF
+          sudo podman run -d --name registry -p 5000:5000 docker.io/library/registry:2
+          docker create ghcr.io/x/staged:v1;
+          sudo podman run --rm --privileged \
+            -v "$PWD/c.toml:/c.toml:ro" \
+            quay.io/x/builder:latest --type qcow2')"
+  _cm_head="$(grep -n -- '--privileged' "$CMF/.github/workflows/probe.yml" | cut -d: -f1)"
+  if [[ "$(grep -c 'container image not digest-pinned' <<<"$_cm_out")" == 4 ]] \
+    && grep -q 'probe.yml:[0-9]*: quay.io/x/base:1' <<<"$_cm_out" \
+    && grep -q 'probe.yml:[0-9]*: docker.io/library/registry:2' <<<"$_cm_out" \
+    && grep -q 'probe.yml:[0-9]*: ghcr.io/x/staged:v1' <<<"$_cm_out" \
+    && grep -q "probe.yml:${_cm_head}: quay.io/x/builder:latest" <<<"$_cm_out"; then
+    pass "check-modern rule 4: podman, a heredoc FROM and a continuation-hidden image are caught"
+  else
+    fail "check-modern rule 4: a container surface is still invisible to the digest-pin rule"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # The negative half, and it carries real weight: widening a name:tag scan from `docker` to
+  # every container command drags in tokens that LOOK like images. Every line below is a
+  # shape lifted from the fleet's own workflows — a port map, a :ro mount, an absolute
+  # storage mount, a --security-opt value, a "$IMAGE" variable, a locally built and pushed
+  # image, an image being BUILT by -t (which can have no digest), a local registry, and a
+  # properly pinned ref. One hit here and the gate reds on work nobody can fix.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          docker run --rm -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc echo
+          sudo podman build -q -t localhost/built:latest -f Containerfile .
+          sudo podman push -q localhost/built:latest localhost:5000/built:latest
+          docker run --rm -p 5000:5000 --security-opt label=type:unconfined_t \
+            -v "$PWD/c.toml:/c.toml:ro" -v /var/lib/containers/storage:/var/lib/containers/storage \
+            alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d sh -c echo
+          (cd x && docker build -t ghcr.io/dotgibson/built:v1 . && docker pull 10.0.2.2:5000/local:latest)')"
+  if ! grep -q 'container image not digest-pinned' <<<"$_cm_out"; then
+    pass "check-modern rule 4: flags, mounts, port maps and locally built images do not false-fire"
+  else
+    fail "check-modern rule 4: false positive — the widened scan reds on an unpinnable token"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
   # Rule 5b (#816): rule 5 checks that a permissions: block EXISTS and never what it says,
   # so `permissions: write-all` — the maximal grant — satisfied a rule named for least
   # privilege. Three shapes in one fixture, each a way past a narrower matcher: the
@@ -345,6 +411,6 @@ jobs:
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
-  unset _cm_out _cm_clean
+  unset _cm_out _cm_clean _cm_head
   unset -f _cm_run
 fi
