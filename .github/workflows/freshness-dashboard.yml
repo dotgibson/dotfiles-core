@@ -2,7 +2,7 @@ name: freshness-dashboard
 
 # The weekly FLEET FRESHNESS DASHBOARD (option A: one hub rollup, not per-repo issues).
 # Consolidates the fleet's scattered freshness signals — vendoring drift, vendored-core
-# integrity, and zsh/nvim plugin-pin freshness — into ONE deduplicated GitHub issue in
+# integrity, zsh plugin pins and the vendored editor pin — into ONE deduplicated issue in
 # dotfiles-core, plus three LIVE cross-repo signals it queries from the GitHub API using
 # this job's GH_TOKEN: own-tag release drift (commits since each repo's last release),
 # open Renovate PR tallies, and links to each repo's open .claude-routine issues. It
@@ -29,9 +29,10 @@ concurrency:
 jobs:
   dashboard:
     runs-on: ubuntu-latest
-    # 15 min like freshness.yml: the nvim-pin check drives a full `:Lazy! sync` that
-    # re-clones every pinned plugin, which dominates the runtime.
-    timeout-minutes: 15
+    # Was 15 min for a `:Lazy! sync` that no longer happens here: since #1123 the editor's
+    # plugin pins are dotfiles-nvim's, and this board only ls-remotes its tags. What is left
+    # that can be slow is the fleet clone loop fleet-drift.sh drives.
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
@@ -46,16 +47,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      # The nvim-pin check (update-nvim-plugins.sh --check) hard-requires nvim and drives
-      # a real `:Lazy! sync`, so install the SAME pinned neovim freshness.yml uses — else
-      # the "nvim plugin pins" row is a permanently-false ⚠️ ("nvim not found"). The zsh-pin
-      # + drift + integrity checks need only git, already present.
-      - name: Load pinned tool versions
-        run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >> "$GITHUB_ENV"
-      - name: Install neovim (pinned)
-        uses: ./.github/actions/setup-core-tools
-        with:
-          neovim: "true"
+      # NO NEOVIM HERE ANY MORE. The editor-pin row used to run update-nvim-plugins.sh
+      # --check, which drove a real `:Lazy! sync` and so hard-required a pinned neovim.
+      # Since #1123 that row is check-nvim-freshness.sh, which compares nvim.lock's tag
+      # against dotfiles-nvim's release tags over `git ls-remote` — git is already here.
+      # Installing neovim to not use it is the kind of leftover that reads as a requirement.
 
       - name: Clone the fleet (public, anonymous, shallow)
         run: |

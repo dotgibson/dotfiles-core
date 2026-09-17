@@ -5,7 +5,9 @@
 # (markdown → stdout) that consolidates the fleet's otherwise-scattered signals:
 #   • vendoring drift         (scripts/fleet-drift.sh)      — every OS repo on the latest Core tag?
 #   • vendored-core integrity (scripts/core-integrity.sh)   — any repo's core/ hand-edited?
-#   • zsh + nvim plugin pins  (update-*-plugins.sh --check) — are the pinned SHAs behind upstream?
+#   • zsh plugin pins         (update-plugins.sh --check)   — are the pinned SHAs behind upstream?
+#   • the vendored editor pin (check-nvim-freshness.sh)     — how many dotfiles-nvim releases
+#                                                             behind is nvim.lock? (#1123)
 # plus three LIVE cross-repo signals it queries from the GitHub API (best-effort — see below):
 #   • own-tag release drift   — how many commits each repo has merged since its last release
 #                               tag (distinct from core.lock drift: this is the repo's OWN
@@ -55,7 +57,7 @@ freshness-dashboard.sh — compose the weekly fleet freshness dashboard (markdow
   ./scripts/freshness-dashboard.sh              build the dashboard for the whole fleet
   ./scripts/freshness-dashboard.sh --root DIR   use DIR as the parent holding the repos
 
-Consolidates vendoring drift, vendored-core integrity, and zsh/nvim plugin-pin freshness
+Consolidates vendoring drift, vendored-core integrity, zsh plugin-pin and editor-pin freshness
 with live GitHub signals (own-tag release drift, open dependency PRs, judgment-layer issue
 links). Reporter only — never mutates, never fails the build; live signals need `gh` + a token.
 EOF
@@ -159,7 +161,7 @@ gh_q() { [ "$GH_OK" -eq 1 ] || return 0; _gh_api "$2" --jq "$1 // empty"; }
 run "$TMP/drift" ./scripts/fleet-drift.sh --root "$ROOT" --color never;    drift_st=$?
 run "$TMP/integ" ./scripts/core-integrity.sh --root "$ROOT" --color never; integ_st=$?
 run "$TMP/zsh"   ./scripts/update-plugins.sh --check;                      zsh_st=$?
-run "$TMP/nvim"  ./scripts/update-nvim-plugins.sh --check;                 nvim_st=$?
+run "$TMP/nvim"  ./scripts/check-nvim-freshness.sh;                        nvim_st=$?
 
 # ── summary table ─────────────────────────────────────────────────────────────
 printf '**Fleet health at a glance** — the weekly freshness signals in one board.\n\n'
@@ -167,7 +169,7 @@ printf '| Signal | Status |\n| --- | --- |\n'
 printf '| Vendoring drift — every OS repo on the latest Core tag | %s |\n' "$(badge "$drift_st")"
 printf "| Vendored \`core/\` integrity — no hand-edits | %s |\n" "$(badge "$integ_st")"
 printf "| zsh plugin pins (\`zsh/45-plugins.zsh\`) | %s |\n" "$(badge "$zsh_st")"
-printf "| nvim plugin pins (\`nvim/lazy-lock.json\`) | %s |\n" "$(badge "$nvim_st")"
+printf "| Vendored editor pin (\`nvim.lock\`) | %s |\n" "$(badge "$nvim_st")"
 
 detail() { # <summary-text> <output-file>
   printf '\n<details><summary>%s</summary>\n\n```text\n' "$1"
@@ -177,7 +179,7 @@ detail() { # <summary-text> <output-file>
 detail 'Vendoring drift — fleet-drift.sh' "$TMP/drift"
 detail 'Core integrity — core-integrity.sh' "$TMP/integ"
 detail 'zsh plugin pins — update-plugins.sh --check' "$TMP/zsh"
-detail 'nvim plugin pins — update-nvim-plugins.sh --check' "$TMP/nvim"
+detail 'Vendored editor pin — check-nvim-freshness.sh' "$TMP/nvim"
 
 # ── Renovate dependency dashboards (per repo) ─────────────────────────────────
 # The wired fleet: the two standalone repos + web, the Core-vendoring OS repos

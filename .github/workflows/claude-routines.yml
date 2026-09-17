@@ -20,11 +20,14 @@ name: claude-routines
 # reads web content (WebFetch/WebSearch) must NOT also grant unrestricted `Bash` — a prompt
 # injection in fetched content could otherwise run arbitrary shell and exfiltrate
 # CLAUDE_CODE_OAUTH_TOKEN. Scope Bash to the exact verbs the routine runs (see shell-review).
-# For the same reason, freshness-triage / release-readiness are NOT granted
-# `update-nvim-plugins.sh --check`: that script runs `nvim --headless +Lazy! sync`, which
+# For the same reason, freshness-triage / release-readiness were NOT granted
+# `update-nvim-plugins.sh --check`: that script ran `nvim --headless +Lazy! sync`, which
 # executes UPSTREAM plugin build hooks in this token-bearing job (a supply-chain path to the
-# token). They read nvim-pin staleness from the open freshness PR via `gh` instead. The zsh
-# `update-plugins.sh --check` stays — it only `git ls-remote`s + `zsh -n` parses, no code exec.
+# token). Since #1123 it is gone from this repo — the editor's plugin pins are rolled in
+# dotgibson/dotfiles-nvim, which has a Neovim to test them against and no token to lose.
+# `check-nvim-freshness.sh` replaces it here and IS granted: it compares nvim.lock's tag
+# against that repo's release tags over `git ls-remote`, executing nothing. The zsh
+# `update-plugins.sh --check` stays for the same reason — `git ls-remote` + `zsh -n`, no code exec.
 
 on:
   schedule:
@@ -215,7 +218,7 @@ jobs:
           claude -p "/freshness-triage" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(git log:*),Bash(git diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh issue list:*),Bash(gh run list:*)" \
+            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(./scripts/check-nvim-freshness.sh),Bash(git log:*),Bash(git diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh issue list:*),Bash(gh run list:*)" \
             --output-format text | tee "$RUNNER_TEMP/freshness-triage.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/freshness-triage.md"
@@ -294,7 +297,7 @@ jobs:
           claude -p "/release-readiness" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,Bash(./scripts/audit-core.sh:*),Bash(./scripts/fleet-drift.sh:*),Bash(./scripts/update-plugins.sh --check),Bash(git log:*),Bash(git tag:*),Bash(cat core.version),Bash(gh pr list:*),Bash(gh issue list:*),Bash(gh run list:*)" \
+            --allowedTools "Task,Read,Grep,Glob,Bash(./scripts/audit-core.sh:*),Bash(./scripts/fleet-drift.sh:*),Bash(./scripts/update-plugins.sh --check),Bash(./scripts/check-nvim-freshness.sh),Bash(git log:*),Bash(git tag:*),Bash(cat core.version),Bash(gh pr list:*),Bash(gh issue list:*),Bash(gh run list:*)" \
             --output-format text | tee "$RUNNER_TEMP/release-readiness.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/release-readiness.md"

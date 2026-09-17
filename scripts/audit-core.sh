@@ -326,6 +326,18 @@ META_ALLOWLIST=(
   Makefile cliff.toml
   nvim/.luacheckrc
   CODEOWNERS pull_request_template.md
+  # nvim.lock — the INBOUND vendoring pin (#1123). It records which dotgibson/dotfiles-nvim
+  # revision nvim/ is a copy of, and §9q compares its nvim_tree against the committed tree.
+  #
+  # NOT core.manifest: nothing symlinks it into $HOME, and the tree it describes already has
+  # the manifest's one `nvim/` entry. NOT core.vendor either, which is the question worth
+  # answering out loud, because core.lock's mirror image is so nearly the same shape. An OS
+  # repo's core.lock says "here is the Core you carry" and lives in the CONSUMER; this says
+  # "here is the editor I carry" and lives in the PRODUCER of that same tree. No OS repo
+  # Makefile, bootstrap or CI reads it — they get the editor through core/nvim like any
+  # other Core path, and core.lock already pins the Core commit that fixes which nvim that
+  # is. Vendoring it would ship a provenance file about a repo the consumer does not talk to.
+  nvim.lock
   # theme/palette.toml is a generation-time INPUT to scripts/gen-theme.sh (already covered
   # by the scripts/ prefix below), not shipped Core: nothing symlinks it and no OS repo
   # reads it out of core/. Its OUTPUTS ship — the generated blocks in zsh/, tmux/,

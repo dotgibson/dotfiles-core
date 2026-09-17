@@ -199,6 +199,12 @@ _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
 }
 _classify_is "zsh/ change → shell gate only" 'zsh/05-ui.zsh' true false false
 _classify_is "nvim/ change → nvim gate only" 'nvim/init.lua' false true false
+# nvim.lock pins the vendored editor and audit §9q compares it against the committed nvim/
+# tree, so the lock has to reach the same gate the tree does — a bump that moved one without
+# the other is exactly what §9q catches, and it can only catch it on a leg that ran. This
+# also pins the path OUT of the fail-closed arm: before #1123 it was unrecognised, which
+# forced a full run and printed a line that reads like a defect.
+_classify_is "vendored editor pin (nvim.lock) → nvim gate only" 'nvim.lock' false true false
 _classify_is "docs (*.md) change → no gate" 'README.md' false false false
 # The generated digest is 49 KB of markdown that changes on EVERY release (#680). It must
 # not drag a full CI run along with it — it already matches the *.md inert arm, and this

@@ -56,7 +56,12 @@
 #     does not exist. It also has its own consequence in a place git cannot see: the
 #     fleet App's installation list is compared against THIS file plus three exceptions
 #     (scripts/fleet-app-scope.sh), so a repo with App access belongs in that script's
-#     EXTRA_REPOS, not here.
+#     EXTRA_REPOS, not here — and dotfiles-nvim belongs in neither, because Core only
+#     ever clones and reads it over a public URL and mints no token against it.
+#
+#     Where its facts DO live, now that #1123 has vendored it: the revision in nvim.lock,
+#     the staleness report in scripts/check-nvim-freshness.sh, the refresh in
+#     scripts/sync-nvim.sh, and the tree-vs-pin gate in audit-core.sh §9q.
 # ──────────────────────────────────────────────────────────────────────────────
 dotfiles-MacBook
 dotfiles-Alpine
