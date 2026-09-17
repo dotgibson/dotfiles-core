@@ -2379,7 +2379,7 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
 # attaching it to the FAN-OUT, which is a different set. A gate keyed on the bare number
 # would therefore red on `85-escalation.sh`'s "eight repos rely on sudo-first" (nine minus
 # Alpine — correct), on #775's "eleven defects across eight repos" (the lint-call callers —
-# correct), and on every "eleven-repo system". That gate would be noise, and noise is how a
+# correct), and on every "twelve-repo system". That gate would be noise, and noise is how a
 # check teaches the fleet to ignore it.
 #
 # KEYED ON THE CLAIM, NOT THE NUMBER. A count is only checkable when the sentence says

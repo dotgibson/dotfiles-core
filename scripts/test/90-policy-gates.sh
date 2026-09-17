@@ -431,7 +431,11 @@ else
   _fc_setup '  # by hand and found ELEVEN defects across eight repos in three shapes:'
   _fc_count "#775's eleven-defects-across-eight-repos sweep is not a fan-out claim" 0
 
-  # 11, correctly: the whole system, 8 OS + 2 Role + dotfiles-core.
+  # 11, correct WHEN WRITTEN and left as-is deliberately: the whole system was 8 OS + 2
+  # Role + dotfiles-core, and is twelve since dotfiles-NixOS. The fixture's job is to be a
+  # sentence that counts a DIFFERENT set from the fan-out, which it still is — updating the
+  # number would test nothing extra and lose the "stale count, still not a fan-out claim"
+  # case, which is the harder one to get right.
   _fc_setup 'a eleven-repo dotfiles system built on a three-layer model'
   _fc_count "the eleven-repo system count is not a fan-out claim" 0
 

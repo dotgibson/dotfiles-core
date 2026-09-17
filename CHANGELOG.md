@@ -627,6 +627,62 @@
   patches were regenerated mechanically against their recorded base commits and re-checked
   with `git apply`; the declarations they create still validate.
 
+- **The `fleet-versions` block went unchecked on every lone clone — including all of CI**
+  ([#1046](https://github.com/dotgibson/dotfiles-core/issues/1046)).
+  `PORTING-MATRIX.md` has three generated blocks, and only two of them read the sibling OS
+  repos: `fleet-versions` renders from `scripts/fleet-package-versions.tsv`, in this repo.
+  But the whole of `--check` sat behind the fleet resolve — `resolve_fleet` exits 3 about
+  125 lines before that table is ever rendered — so §9h skipped **as a unit** and filed an
+  environment SKIP over an input it was holding. A hand-edit to that table was invisible to
+  the gate everywhere the fleet was not beside the repo, which is every CI leg and every
+  git worktree.
+
+  `scripts/gen-porting-matrix.sh --local` is the scoped half: it selects the new
+  `LOCAL_BLOCKS` registry, resolves no fleet, and passes every other marked region through
+  **exactly as found on disk** — so the existing byte-exact whole-file compare reduces to
+  "do the local blocks match" and the `%x` sentinel, `core_files_identical` and the
+  `git diff --no-index` report are reused rather than copied. 3 is unreachable under it, by
+  construction, which is the property §9h now classifies on rather than inferring.
+
+  **It is a write mode too, deliberately.** A gate that reds on a box whose only repair
+  needs a fleet that box does not have is a gate nobody can act on, so the failure names
+  `scripts/gen-porting-matrix.sh --local` — and `41-gen-matrix-parity.sh` asserts that what
+  it writes is byte-identical to what the full render writes, that it leaves the
+  fleet-derived regions untouched, and that a broken marker in a region it does **not**
+  render is still the structural 2. §9h's exit-3 arm now reports a pass for the in-repo
+  block beside a **scoped** skip naming the two tables that genuinely were not covered;
+  `--strict` and `--require-siblings` keep their meanings.
+- **Three Core docs said `dotfiles-Defense` still hand-rolls its band-85 role stage.** It
+  shipped `blib_link_role_layer` in #976 (its own dotfiles-Defense#292, 2026-09-13), and
+  `wire_defense_stage` exists nowhere in that repo outside its vendored `core/` copies of
+  these very files. The claim was triplicated **by design** — `core.manifest`,
+  `lib/bootstrap-lib.sh` and `PORTING-MATRIX.md` each cited the others as corroboration —
+  so it could not self-correct, and two of the three are vendored out to the whole list.
+  `lib/bootstrap-lib.sh` had become self-contradictory, asserting the fork at `:832` while
+  documenting and implementing the adopted path at `:1670` and `:1849`. All three are now
+  past tense, and the retired `BLIB_DRY`-fork paragraph is gone: that divergence is what
+  the helper existed to end, and both repos now go through `_blib_dry()`.
+- **Seven places said `PORTING-MATRIX.md` had two generated blocks**, three of them
+  mis-attributing the third's source and two of them — `.claude/commands/doc-audit.md` and
+  `.claude/agents/doc-consistency.md` — telling the doc-audit routine that the footnote
+  region is entirely hand-written. That is how a generated block living inside footnote ³⁴
+  stayed outside the auditor's remit. Both now point at `BLOCK_IDS` as the registry rather
+  than naming a count, and flag the one overlap. Also corrected: `Makefile`'s `make help`
+  line, `PORTING-MATRIX.md`'s size (~1,350 → ~1,570 lines) and its hand-written footnote
+  count (~1,100 → ~1,230).
+- **Footnote ³¹ listed six `go install` rows while its own prose counted seven** — `duf`
+  was missing, though `dotfiles-Alpine/bootstrap.sh:493` go-installs it. The prose was the
+  correct half: with `duf` the set is seven and exactly five need a major-version suffix, a
+  `cmd/` subpath or a different host, so the row was added and the sentence left alone.
+- **`core status`'s dispatch comment omitted `--deep`**, which `_core_status_render`'s
+  `--help` line has advertised and the function has parsed all along — drift inside the
+  block whose stated job is to be the one source the completion, the did-you-mean and the
+  usage lines all read.
+- **The README's optional-flags tour omitted Arch's `--no-flatpak` and Gentoo's
+  `--no-extras`**, both real, and `.claude/agents/doc-consistency.md` still called this an
+  _eleven_-repo system — the auditor's own charter, stale since `dotfiles-NixOS` made the
+  whole system twelve.
+
 ## [v7.9.0] - 2026-09-16
 
 ### Added
