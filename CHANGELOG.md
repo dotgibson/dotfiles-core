@@ -281,6 +281,17 @@
   activated but never switched; no future harness should read a `switch` failure there as a
   fact about NixOS.
 
+- **The 2026-09-15 `/tool-scout` scan's four declines are in the ledger**
+  ([#1045](https://github.com/dotgibson/dotfiles-core/issues/1045)). `rip2`, `tlrc`, `bottom`
+  and routing Core's zsh fzf widgets through `fzf --tmux`, each with the reasoning that decided
+  it, appended to `.claude/tool-decisions.md`'s Declined table. The scan itself could not write
+  them — its ledger edit was permission-blocked, so it printed the rows at the end of the report
+  instead. That is the failure mode the ledger exists to prevent: a decline that lives only in a
+  closed issue is a decline the next scan re-proposes, which is how `hexyl` came back six days
+  after #395 rejected it. Three of the four are lateral-tool declines (`no capability delta`);
+  the fourth records a design argument about picker behaviour that would otherwise be re-made
+  every time fzf ships a tmux feature.
+
 - **`scripts/os-repos.txt` no longer claims to be the only step.** Its header said "THIS
   FILE IS THE ONLY EDIT", which is why #1064 stopped there; it now names the App
   installation as the second registration, with the Organization-Owner path to add it.
