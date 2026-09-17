@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # scripts/gen-porting-matrix.sh
 # ──────────────────────────────────────────────────────────────────────────────
-# Render PORTING-MATRIX.md's two data tables FROM the OS repos that own the data.
+# Render PORTING-MATRIX.md's three generated blocks: two data tables FROM the OS repos
+# that own the data, plus the fleet-version enumeration from this repo's own TSV.
 #
-# THE DEFECT THIS CLOSES (#686). PORTING-MATRIX.md is ~1,350 lines. Its two tables
-# (~60 lines) restate data the OS repos already hold and already enforce: the
+# THE DEFECT THIS CLOSES (#686). PORTING-MATRIX.md is ~1,570 lines. Its two data tables
+# (~70 lines) restate data the OS repos already hold and already enforce: the
 # package-manager verbs live in each repo's os/<os>.capabilities (schema-gated by
 # scripts/check-capabilities.sh), and the package names live in each repo's
 # install/packages.txt — where dotfiles-Debian's `# only:kali` / `# skip:kali` tiers
@@ -15,17 +16,22 @@
 # gen-aliases.sh, applied to the matrix: the repos are authoritative, the tables are
 # rendered, and `make audit` fails when either moves without the other.
 #
-# WHAT IS GENERATED, AND WHAT DELIBERATELY IS NOT. Only the two regions between marker
-# pairs (the shape gen-aliases.sh uses):
+# WHAT IS GENERATED, AND WHAT DELIBERATELY IS NOT. Only the THREE regions between marker
+# pairs (the shape gen-aliases.sh uses) — see BLOCK_IDS below, which is the registry:
 #
 #     <!-- core:porting-matrix:gen packages -->
 #     …a table rendered from the fleet…
 #     <!-- core:porting-matrix:end packages -->
 #
-# Everything outside them — the recipe, the ~1,100 lines of numbered footnotes, the
-# clipboard table, the quirks, the repo status — is hand-written judgment and is never
-# touched. The footnotes are the reason the file exists; `/os-package-availability`
-# is the routine that refreshes them, not this script.
+# Everything outside them — the recipe, the ~1,230 hand-written lines of numbered
+# footnotes, the clipboard table, the quirks, the repo status — is hand-written judgment
+# and is never touched. The footnotes are the reason the file exists;
+# `/os-package-availability` is the routine that refreshes them, not this script.
+#
+# ONE EXCEPTION, and it is worth knowing: the `fleet-versions` block sits INSIDE footnote
+# 34, which enumerates the fleet's jq versions. So the footnote region is hand-written
+# APART FROM those marker-delimited lines — the argument around them stays authored, the
+# version facts inside them are rendered from scripts/fleet-package-versions.tsv.
 #
 # THE TABLE IS A HYBRID, AND THE REGISTRY SAYS WHICH HALF EACH CELL IS. About half of
 # the package cells name a package the repo INSTALLS: those are DERIVED (`=` in
@@ -41,19 +47,30 @@
 # more than one declaration (openSUSE Leap/Tumbleweed/Transactional — the MicroOS edition,
 # dotfiles-openSUSE#191) renders each differing value, labelled, in registry order.
 #
-#   gen-porting-matrix.sh              # rewrite both marked regions in PORTING-MATRIX.md
+#   gen-porting-matrix.sh              # rewrite every marked region in PORTING-MATRIX.md
 #   gen-porting-matrix.sh --check      # exit 1 (with a diff) if a region is stale — THE GATE
 #   gen-porting-matrix.sh --list       # every cell's provenance: block<TAB>row<TAB>column<TAB>derived|asserted<TAB>source
 #   gen-porting-matrix.sh --root DIR   # run against another Core tree (test-core.sh's fixtures)
 #   gen-porting-matrix.sh --fleet DIR  # where the sibling OS clones live (default: the parent
 #                                      #   of the Core tree — inside a git worktree, pass this)
+#   gen-porting-matrix.sh --local      # only the blocks whose inputs are IN THIS REPO
+#   gen-porting-matrix.sh --check --local  #   …and gate them — needs no sibling clone
 #
-# NEEDS THE SIBLING CLONES, so unlike gen-aliases.sh it CAN be unable to answer: with a
-# required repo not checked out it exits 3 and writes nothing. audit-core.sh §9h
-# records that as an environment SKIP (the posture §9c and fleet-drift.sh take) — a
-# lone CI checkout of this repo is not a gate failure, and --require-siblings is what
-# reds it. Nothing is generated from a partial fleet: a table with one column stale
+# NEEDS THE SIBLING CLONES FOR TWO OF THE THREE BLOCKS, so unlike gen-aliases.sh it CAN
+# be unable to answer: with a required repo not checked out it exits 3 and writes nothing.
+# audit-core.sh §9h records that as an environment SKIP (the posture §9c and fleet-drift.sh
+# take) — a lone CI checkout of this repo is not a gate failure, and --require-siblings is
+# what reds it. Nothing is generated from a partial fleet: a table with one column stale
 # reads as health.
+#
+# BUT THE THIRD BLOCK NEVER NEEDED THEM, and for a long time nobody checked it. The
+# `fleet-versions` block reads scripts/fleet-package-versions.tsv, in this repo, and the
+# whole of --check used to sit behind the fleet resolve — so on every CI leg and in every
+# git worktree that block went uncompared and §9h filed an environment skip over an input
+# it was holding (#1046). --local is the scoped half: it selects LOCAL_BLOCKS, resolves no
+# fleet, and passes every other region through exactly as found on disk. It is also a
+# WRITE mode, deliberately, so the repair for the drift it reports can be run on the same
+# box that reported it.
 #
 # PURE BASH + AWK, NO python3/jq/yq, bash 3.2 (no mapfile, no `declare -A`,
 # PORTABILITY.md §1). The awk is POSIX (the Alpine CI leg runs busybox). The tables are
@@ -65,7 +82,9 @@
 #       2 = the generator cannot run — a derived cell no line matches, an asserted
 #           cell the repo now installs, an ambiguous match, a missing declaration
 #           key, a broken marker, a registry error, an I/O failure, or a usage error;
-#       3 = uncovered — a required sibling repo is not checked out (named).
+#       3 = uncovered — a required sibling repo is not checked out (named). NOT REACHABLE
+#           under --local: every block it selects has its input in this repo, so
+#           "uncovered" is not an answer that run can give. §9h classifies on that.
 # Structure is checked before coverage: a broken marker in this repo's own file is 2
 # even when no sibling is checked out, so 3 is only ever reported for a well-formed
 # document. Within a run 2 beats 1 (gen-aliases.sh's convention).
@@ -82,12 +101,14 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$HERE/scripts/lib/common.sh"
 
 MODE=bare
+LOCAL=0
 ROOT=""
 FLEET=""
 while (($#)); do
   case "$1" in
   --check) MODE=check ;;
   --list) MODE=list ;;
+  --local) LOCAL=1 ;;
   --root)
     [[ -n "${2:-}" ]] || { printf 'gen-porting-matrix: --root needs a directory\n' >&2; exit 2; }
     ROOT="$2"; shift ;;
@@ -103,6 +124,12 @@ while (($#)); do
   esac
   shift
 done
+
+# --list prints every derived cell's provenance as file:line in a sibling clone, which is
+# the one output --local cannot narrow to anything meaningful. A usage error, not a quiet
+# partial listing.
+((LOCAL)) && [[ "$MODE" == list ]] &&
+  { printf 'gen-porting-matrix: --list needs the fleet (it prints each derived cell as file:line) — it cannot be scoped with --local\n' >&2; exit 2; }
 
 # --root lets the behavioural suite drive this against a hermetic fixture tree; --fleet
 # lets it point at a fixture fleet (and lets a worktree checkout, whose parent is
@@ -122,6 +149,15 @@ trap 'rm -f "$LISTFILE"' EXIT
 # ── the registry ──────────────────────────────────────────────────────────────
 # Block ids, in the doc's order. Each has exactly one marker pair in $TARGET.
 BLOCK_IDS="commands packages fleet-versions"
+
+# WHICH BLOCKS ARE ANSWERABLE WITHOUT THE FLEET. A subset of BLOCK_IDS whose inputs are
+# THIS repo's own files, so --check can compare them on a lone clone — which is every CI
+# leg and every git worktree. DECLARED rather than inferred: a new block has to answer
+# the locality question out loud, because getting it wrong in the quiet direction is what
+# #1046 found. Deliberately NOT named *BLOCK_IDS: scripts/test/41-gen-matrix-parity.sh
+# parses `^BLOCK_IDS=` out of this file, and a second name ending the same way is one
+# unanchored regex away from being swept into that list.
+LOCAL_BLOCKS="fleet-versions"
 
 # The commands table. id<TAB>header<TAB>repo<TAB>declaration(s)<TAB>unit
 #   declaration(s): space-separated `os/<os>.capabilities` paths, each optionally
@@ -565,12 +601,18 @@ render_for() { # $1 = id — the pre-rendered block, blank-line padded
   esac
 }
 
-build_file() { # build_file <file> — emit <file> with every marked block re-rendered
-  local file="$1" line id found l2 endid inner
+build_file() { # build_file <file> [ids] — emit <file> with the marked blocks re-rendered
+  #                ids: space-separated subset of BLOCK_IDS (default: all of them). A block
+  #                OUTSIDE the subset has its on-disk body passed through verbatim instead
+  #                of re-rendered, which is what lets --check compare the local-input
+  #                blocks alone without a fleet to read (see check_local_blocks).
+  local file="$1" only="${2:-$BLOCK_IDS}" line id found l2 endid inner sub
   while IFS= read -r line || [[ -n "$line" ]]; do
     if id="$(marker_id gen "$line")"; then
       printf '%s\n' "$line"
-      render_for "$id" || return 2
+      sub=0
+      [[ " $only " == *" $id "* ]] && sub=1
+      ((sub == 1)) && { render_for "$id" || return 2; }
       found=0
       while IFS= read -r l2; do
         if inner="$(marker_id gen "$l2")"; then
@@ -586,6 +628,9 @@ build_file() { # build_file <file> — emit <file> with every marked block re-re
           found=1
           break
         fi
+        # Not re-rendering this block: emit what is on disk, so the region is a no-op in
+        # the comparison rather than an empty one.
+        ((sub == 1)) || printf '%s\n' "$l2"
       done
       ((found == 1)) || {
         printf "gen-porting-matrix: unterminated 'core:porting-matrix:gen %s' region in %s\n" "$id" "$file" >&2
@@ -647,6 +692,19 @@ EOF
   done <<EOF
 $markers
 EOF
+  # THE LOCALITY REGISTRY, checked here so a typo in it is a loud 2 and never a quiet
+  # green. An EMPTY set matters most: `--check --local` over zero blocks is a gate that
+  # cannot fail, which is the failure mode this whole seam exists to remove.
+  [[ -n "$LOCAL_BLOCKS" ]] || {
+    printf 'gen-porting-matrix: LOCAL_BLOCKS is empty — --local would compare nothing and report success\n' >&2
+    rc=2
+  }
+  for id in $LOCAL_BLOCKS; do
+    [[ " $BLOCK_IDS " == *" $id "* ]] || {
+      printf 'gen-porting-matrix: LOCAL_BLOCKS names %s, which is not a registered block — add it to BLOCK_IDS or fix the typo\n' "$id" >&2
+      rc=2
+    }
+  done
   return $rc
 }
 
@@ -659,13 +717,21 @@ EOF
 # audit-core.sh §9h would record a corrupted document as an environment skip.
 preflight || exit 2
 
-if ! resolve_fleet; then
-  printf 'gen-porting-matrix: not checked out under %s:%s — nothing compared, nothing written (clone the fleet beside this repo, or pass --fleet DIR)\n' "$FLEET" "$MISSING" >&2
-  exit 3
+# ── WHICH HALF OF THE DOCUMENT THIS RUN ANSWERS ──────────────────────────────
+# --local selects only the blocks whose inputs are in THIS repo, so it neither resolves
+# nor reads the fleet: 3 is unreachable by construction. Without it nothing has moved —
+# the fleet resolves or the run is an uncovered 3, exactly as before.
+if ((LOCAL)); then
+  RENDER_BLOCKS="$LOCAL_BLOCKS"
+else
+  RENDER_BLOCKS="$BLOCK_IDS"
+  if ! resolve_fleet; then
+    printf 'gen-porting-matrix: not checked out under %s:%s — nothing compared, nothing written (clone the fleet beside this repo, or pass --fleet DIR)\n' "$FLEET" "$MISSING" >&2
+    exit 3
+  fi
+  read_caps
+  read_pkgs
 fi
-
-read_caps
-read_pkgs
 # ── fleet package versions (footnote enumerations) ────────────────────────────
 # PORTING-MATRIX's floor footnotes used to enumerate a dozen distro versions in prose, and
 # prose cannot be checked: footnote 34's jq line was corrected twice in one day, once for
@@ -786,10 +852,23 @@ warn_stale_versions() {
     ' >&2
 }
 
-CMD_TABLE="$(render_commands)" || exit 2
-PKG_TABLE="$(render_packages)" || exit 2
-FLEET_TABLE="$(render_fleet_versions)" || exit 2
-warn_stale_versions
+# render_for emits PRE-rendered tables, so only the selected blocks' variables are filled
+# — the others are never reached, because build_file passes their regions through. The
+# per-id loop is self-policing: a block added to LOCAL_BLOCKS with no arm here is a loud
+# 2, not a region that quietly compares clean against itself.
+if ((LOCAL)); then
+  for _id in $LOCAL_BLOCKS; do
+    case "$_id" in
+    fleet-versions) FLEET_TABLE="$(render_fleet_versions)" || exit 2 ;;
+    *) die "$_id is in LOCAL_BLOCKS but nothing renders it without the fleet — add an arm beside render_fleet_versions here" ;;
+    esac
+  done
+else
+  CMD_TABLE="$(render_commands)" || exit 2
+  PKG_TABLE="$(render_packages)" || exit 2
+  FLEET_TABLE="$(render_fleet_versions)" || exit 2
+fi
+warn_stale_versions # reads only the TSV, so it is right in both paths
 
 if [[ "$MODE" == list ]]; then
   cat "$LISTFILE"
@@ -801,7 +880,7 @@ rc=0
 # newline, so a hand-authored blank line at the end of the document — outside both
 # markers — would read as drift and be deleted on regeneration. build_file emits one
 # newline per line, so what remains after `%x` is exactly what the walker printed.
-if ! generated="$(build_file "$TARGET" && printf x)"; then
+if ! generated="$(build_file "$TARGET" "$RENDER_BLOCKS" && printf x)"; then
   exit 2
 fi
 generated="${generated%x}"
@@ -817,13 +896,13 @@ if [[ "$MODE" == check ]]; then
     exit 2
   }
   if ! core_files_identical "$TARGET" "$_tmp"; then
-    printf 'gen-porting-matrix: DRIFT in %s — a generated table no longer matches the OS repos:\n' "$TARGET" >&2
+    printf 'gen-porting-matrix: DRIFT in %s — a generated table no longer matches its source:\n' "$TARGET" >&2
     git --no-pager diff --no-index --src-prefix=on-disk/ --dst-prefix=generated/ \
       -- "$TARGET" "$_tmp" 2>/dev/null | sed 's/^/  /' >&2 || true
     printf '  fix: run make gen-porting-matrix and commit the result.\n' >&2
     rc=1
   else
-    printf 'gen-porting-matrix: every generated table in %s matches the OS repos\n' "$TARGET"
+    printf 'gen-porting-matrix: every selected table in %s matches its source (%s)\n' "$TARGET" "$RENDER_BLOCKS"
   fi
   rm -f "$_tmp"
 else

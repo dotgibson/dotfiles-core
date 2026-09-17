@@ -1198,6 +1198,7 @@ Verified against each project's own `go.mod`, and these are the exact strings th
 | `yq`    | `github.com/mikefarah/yq/v4`          |
 | `shfmt` | `mvdan.cc/sh/v3/cmd/shfmt`            |
 | `gron`  | `github.com/tomnomnom/gron`           |
+| `duf`   | `github.com/muesli/duf`               |
 | `glow`  | `charm.land/glow/v3`                  |
 
 **Charm's tools moved off GitHub as a module host** — `glow` is now `charm.land/glow/v3`
@@ -1609,9 +1610,9 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
   call `blib_link_core` exactly as the OS repos do. Where they differ is the `80`
   band, which belongs to the OS repo underneath: the contract is that a role repo
   skips `blib_link_os_layer` and calls `blib_link_role_layer` instead, wiring the
-  `85` band and `tmux/role.conf`. **`Offense` has adopted it**; `Defense` has not —
-  it still hand-rolls the band in its own `wire_defense_stage`, and migrating it is
-  what remains. Deliberate, not drift — `core.manifest` records the same split.
+  `85` band and `tmux/role.conf`. **Both role repos have adopted it** — `Offense`
+  first, `Defense` in dotgibson/dotfiles-core#976, which retired the
+  `wire_defense_stage` it used to hand-roll. `core.manifest` records the same.
 - `Debian` is stamped from Fedora structurally, but takes its **apt idioms** from
   `Offense` — the fleet's other Debian-family repo. It is the only **frozen** target
   (Ubuntu 24.04 LTS), which is why it carries by far the largest out-of-band install
