@@ -102,7 +102,7 @@ env:
 jobs:
   # ── 0. the DETECTOR's own self-test, run unconditionally on every dispatch. ──────────
   # scripts/test-core.sh's `atuin` scope drives scripts/research/verify-atuin-guard.sh against
-  # stub binaries: ~44 hermetic scenarios asserting that the detector reports moved/holds/
+  # stub binaries: ~47 hermetic scenarios asserting that the detector reports moved/holds/
   # unmeasurable correctly. That block is 197s of a 286s behavioral suite — 68% of it, and
   # the largest single cost on the CI critical path — so ci.yml no longer runs it on every
   # push, only when the detector, zsh/00-tools.zsh or atuin/ actually change.
@@ -119,7 +119,14 @@ jobs:
   # the live measurement, it must sit red next to it and say which of the two to believe.
   selftest:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, RAISED FROM 15 when the `wedged` arms landed (#1091). Those two arms each start a
+    # REAL daemon, wait a fixed second to confirm it survived losing its socket, and then run
+    # a full stop-and-prove teardown — and the autostart self-test drives that through more
+    # than a dozen stub builds. Measured: the `atuin` scope went from 309s to 672s on a loaded
+    # dev box, so 15 was no longer a ceiling clear of the slowest observed run, it was inside
+    # it. Same reasoning as ci.yml's audit job: this number bounds a genuine hang, and it is
+    # not the fix if the job starts approaching it for real work.
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
