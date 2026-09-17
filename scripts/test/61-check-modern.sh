@@ -256,6 +256,41 @@ jobs:
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
+  # Rule 4's assignment surface (#1099), which is #1055's lesson one level up: keying on a
+  # COMMAND is as brittle as keying on a tool was, because an image bound to a variable and
+  # run as "$IMAGE" never reaches a command line. Both halves in one fixture, because the
+  # narrowness IS the rule: a registry-qualified value is evidence enough on its own, an
+  # unqualified one is not distinguishable from a clock time and must not fire.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          case "$t" in
+            x) img='"'"'registry.opensuse.org/opensuse/tumbleweed:latest'"'"'; prep='"'"'true'"'"' ;;
+            y) img='"'"'nixos/nix:latest'"'"' ;;
+          esac
+          IMG=quay.io/x/pinned:1@sha256:0123456789abcdef
+          LOCAL=localhost:5000/built:latest
+          BARE=alpine:3.21
+          START=12:30
+          URL=https://example.com:8080/x
+          docker run --rm "$img" true')"
+  if [[ "$(grep -c 'container image not digest-pinned' <<<"$_cm_out")" == 2 ]] \
+    && grep -q 'registry.opensuse.org/opensuse/tumbleweed:latest' <<<"$_cm_out" \
+    && grep -q 'nixos/nix:latest' <<<"$_cm_out" \
+    && ! grep -qE 'pinned:1|localhost|alpine:3.21|12:30|example.com' <<<"$_cm_out"; then
+    pass "check-modern rule 4: a qualified image bound to a variable is caught; a bare or local one is not"
+  else
+    fail "check-modern rule 4: the assignment surface misfired"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
   # Rule 5b (#816): rule 5 checks that a permissions: block EXISTS and never what it says,
   # so `permissions: write-all` — the maximal grant — satisfied a rule named for least
   # privilege. Three shapes in one fixture, each a way past a narrower matcher: the

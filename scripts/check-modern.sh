@@ -184,29 +184,54 @@ if _yaml_bool require_container_digest_pin; then
   # start, so one buried mid-line (a `printf 'FROM …'` writing a Containerfile) is not a
   # surface.
   #
-  # THE THIRD IS LIVE, AND IT IS THIS RULE'S OWN LESSON RECURRING. #1055 found rule 4 keyed on
-  # a TOOL NAME, so podman walked past it; keying on a SURFACE (`run`/`build`/`pull`/`FROM`)
-  # has the same shape, because an ASSIGNMENT hides the literal just as well as a different
-  # runtime did. research-nonmutable.yml picks its image in a `case` (`img='nixos/nix:latest'`),
-  # feeds it through the matrix, and runs `docker run … "$IMAGE"` — so the literal never
-  # appears on a command line, and `"$IMAGE"` is a shape the scrub above must exempt. Two
-  # MUTABLE `:latest` tags ride through that file today. Catching it means scanning shell
-  # assignments, a materially different scan from a command line and the wrong thing to bolt
-  # onto this one under the same false-positive budget; #1099 carries it, with the three refs.
-  # The first two are latent MISSES, not latent reds — the failure mode a gate can afford.
-  # The third is a KNOWN miss with a filed owner, which is the only honest way to hold one.
+  # A THIRD surface used to be missed here and is now covered by assign() above, because it
+  # was THIS RULE'S OWN LESSON RECURRING: #1055 found rule 4 keyed on a TOOL NAME, so podman
+  # walked past it; keying on a COMMAND SURFACE has the same shape, because an ASSIGNMENT
+  # hides the literal just as well as a different runtime did. research-nonmutable.yml picks
+  # its image in a `case` (`img='nixos/nix:latest'`), feeds it through the matrix, and runs
+  # `docker run … "$IMAGE"` — so the literal never reached a command line, and `"$IMAGE"` is
+  # a shape the scrub above must exempt. Two MUTABLE `:latest` tags rode through that file
+  # until #1099. What assign() cannot see is the narrower gap named in its own comment: an
+  # UNQUALIFIED `img=alpine:3.21`, which no evidence in the token distinguishes from `t=12:30`.
+  # All three gaps are latent MISSES, not latent reds — the failure mode a gate can afford.
   img_re='([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*:[a-z0-9][a-z0-9._-]*(@sha256:[0-9a-f]+)?'
   while IFS= read -r hit; do
     [ -n "$hit" ] && note "container image not digest-pinned: $hit"
   done < <(awk -v img="$img_re" '
-    function emit(s, fname, ln,   n, i, t, c, L, prev, isbuild, arr) {
-      if (s !~ /(docker|podman)[[:space:]]+(run|build|pull|create)/ &&
-          s !~ /^[[:space:]]*FROM[[:space:]]+/) return
+    # a shell-assignment VALUE: the surface a command-line scan structurally cannot see,
+    # because the literal is bound to a variable here and only "$IMAGE" ever reaches a
+    # `docker run`. Strictly narrower than the command scan, and it has to be: a command
+    # line supplies the context that says "this argument is an image", an assignment supplies
+    # none, so the VALUE must carry that evidence itself. Hence the `/` requirement — a
+    # registry- or namespace-qualified ref (`quay.io/fedora/x:44`, `nixos/nix:latest`), never
+    # a bare `img=alpine:3.21`, which is indistinguishable from `t=12:30` to a regex. That is
+    # the same bare-name gap group (b) already documents, arrived at from the other side.
+    function assign(t, fname, ln,   eq, v, c, L) {
+      if ((eq = index(t, "=")) < 2) return
+      if (substr(t, 1, eq - 1) !~ /^[A-Za-z_][A-Za-z0-9_]*$/) return  # not a shell name: a --flag=value
+      v = substr(t, eq + 1)
+      c = substr(v, 1, 1); if (c == q || c == dq) v = substr(v, 2)
+      sub(/[);,]+$/, "", v)                                            # `img='x:1';` in a case arm
+      L = length(v); if (L == 0) return
+      c = substr(v, L, 1); if (c == q || c == dq) v = substr(v, 1, L - 1)
+      if (v == "") return
+      if (index(v, "$") > 0 || index(v, bt) > 0) return
+      if (index(v, "/") == 0) return                                   # unqualified: see above
+      if (v ~ /^(localhost|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(:[0-9]+)?\//) return
+      if (index(v, "@sha256:") > 0) return
+      if (v ~ ("^" img "$")) printf "%s:%d: %s\n", fname, ln, v
+    }
+    function emit(s, fname, ln,   n, i, t, c, L, prev, isbuild, iscmd, arr) {
+      iscmd = (s ~ /(docker|podman)[[:space:]]+(run|build|pull|create)/ ||
+               s ~ /^[[:space:]]*FROM[[:space:]]+/)
+      if (!iscmd && index(s, "=") == 0) return
       isbuild = (s ~ /(docker|podman)[[:space:]]+build/)
       n = split(s, arr, " ")           # single-space FS = default splitting, so the leading
       prev = ""                        # indentation never becomes an empty first field
       for (i = 1; i <= n; i++) {
         t = arr[i]
+        assign(t, fname, ln)           # every line, command or not
+        if (!iscmd) continue
         if (prev == "--name" || prev == "--label" || prev == "-l" ||
             (isbuild && (prev == "-t" || prev == "--tag"))) { prev = t; continue }
         prev = t

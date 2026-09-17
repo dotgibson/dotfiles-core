@@ -425,6 +425,29 @@
 
 ### Fixed
 
+- **Rule 4 can see an image bound to a shell variable** — the surface that hid three
+  unpinned refs from it ([#1099](https://github.com/dotgibson/dotfiles-core/issues/1099)).
+  This is #1055's finding one level up, and worth naming as a pattern: that one was rule 4
+  keyed on a _tool name_ (`docker`), so podman walked past it; this one is the same rule
+  keyed on a _command_, so `img='nixos/nix:latest'` fed through a matrix and run as
+  `"$IMAGE"` walked past it too. A gate keyed on where a hazard usually appears misses it
+  wherever it appears next.
+
+  The new scan is **deliberately narrower than the command scan, and has to be**. A command
+  line supplies the context that says "this argument is an image"; an assignment supplies
+  none, so the value has to carry that evidence itself. It therefore requires a registry- or
+  namespace-qualified reference — `quay.io/fedora/x:44`, `nixos/nix:latest` — and skips a
+  bare `img=alpine:3.21`, which nothing in the token distinguishes from `START=12:30`. That
+  is the same bare-name gap the command scan already documents, reached from the other side,
+  and it is now the only one left in the rule.
+
+  Held by a third rule-4 assertion carrying both halves in one fixture, because the
+  narrowness _is_ the rule: the two qualified refs fire, while a pinned ref, a
+  `localhost:5000/…` build, a bare `alpine:3.21`, a `START=12:30` and an
+  `URL=https://example.com:8080/x` all stay silent. Red against the previous script, green
+  against this one, and green on a tree where the three refs are pinned — so it distinguishes
+  a rule that passes from one that never matches.
+
 - **The research matrix's three container images were unpinned, two of them mutable
   `:latest`** ([#1099](https://github.com/dotgibson/dotfiles-core/issues/1099)).
   `research-nonmutable.yml` picks its image in the plan job's `case` and hands it to the
@@ -444,11 +467,9 @@
   The pull step's name carried the whole reference, which a digest turns into an unreadable
   hundred-character title, so it names `matrix.target` instead.
 
-  What this does _not_ do is teach rule 4 the assignment surface. A `name:tag` literal in a
-  shell assignment is a materially harder scan than a command line — every `=`-bearing token
-  becomes a candidate — and it wants its own false-positive filter and its own tests rather
-  than a bolt-on. That half stays open on #1099, and the gap stays named in rule 4's comment
-  block.
+  Pinning the three was only half of
+  [#1099](https://github.com/dotgibson/dotfiles-core/issues/1099); the entry below is the
+  other half, which teaches the rule to see the surface that hid them.
 - **Three external container images ran unpinned, and the gate that forbids exactly that
   could not see them**
   ([#1055](https://github.com/dotgibson/dotfiles-core/issues/1055)). `check-modern.sh`

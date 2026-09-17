@@ -82,9 +82,9 @@ sha_pin_exempt_owner: dotgibson
 # 4) Every container image must pin an @sha256: digest — a tag like `alpine:3.21` or
 #    `archlinux:latest` moves under you. Covers every surface an image reaches CI by: an
 #    `image:` value, the `container: <img>` shorthand, a `uses: docker://<img>` action, a
-#    `docker|podman run|build|pull|create <image>` command, and a Containerfile `FROM`
-#    written into a heredoc (the shorthand + docker:// forms slip rule 3's owner/repo
-#    sha-pin check, so rule 4 has to catch them).
+#    `docker|podman run|build|pull|create <image>` command, a Containerfile `FROM` written
+#    into a heredoc, and a REGISTRY-QUALIFIED image bound to a shell variable (the shorthand
+#    + docker:// forms slip rule 3's owner/repo sha-pin check, so rule 4 has to catch them).
 #
 #    The command scan is ENGINE-AGNOSTIC and joins `\` continuations, because the rule used
 #    to name `docker` and read one physical line at a time — and a workflow that reached for
@@ -92,6 +92,12 @@ sha_pin_exempt_owner: dotgibson
 #    external images, one of them `:latest` under --privileged, while this gate stayed green
 #    (#1055). An image built in the same job (`localhost/…`, a `localhost:5000/…` push) is
 #    exempt in check-modern.sh: no digest can exist for it.
+#
+#    The ASSIGNMENT surface closes the same lesson one level up (#1099): keying on a command
+#    is as brittle as keying on a tool, because `img='nixos/nix:latest'` fed through a matrix
+#    and run as `"$IMAGE"` never reaches a command line at all. It is deliberately narrower
+#    than the command scan — the value must be registry- or namespace-qualified, since an
+#    assignment carries no context to say an argument is an image.
 require_container_digest_pin: true
 
 # 5) Every WORKFLOW must declare a top-level `permissions:` block. Without one a job
