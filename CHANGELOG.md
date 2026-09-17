@@ -625,6 +625,34 @@
   [#1099](https://github.com/dotgibson/dotfiles-core/issues/1099) and documented in the rule,
   which is the only honest way to hold a known miss.
 
+- **`--list` was silent about a third of `PORTING-MATRIX.md`, and the test asserting
+  otherwise passed** ([#1096](https://github.com/dotgibson/dotfiles-core/issues/1096)).
+  `scripts/gen-porting-matrix.sh --list` is documented in its own `--help` as "every cell's
+  provenance", but only `render_commands` and `render_packages` ever wrote to `$LISTFILE`:
+  63 `commands` rows and 288 `packages` rows against **zero** for `fleet-versions`, whose
+  table carries 17 targets. `render_fleet_versions` referenced neither `LISTFILE` nor
+  `MODE`.
+
+  It now emits three cells per target, and the distinction is the point: the version and
+  the `verified` date are _recorded_ in `scripts/fleet-package-versions.tsv`, while the
+  `vs ≥ floor` verdict is _computed_ from the version against the floor row — so that cell
+  cites **both** lines it depends on, because provenance naming only the version row would
+  hide the half that moves on a floor bump. Line numbers come from `awk`'s `NR` over the
+  whole file rather than a counter over the comment-filtered stream, so `file:line` points
+  at the line a reader opens.
+
+  **The more interesting half was the test.** `scripts/test/41-gen-matrix-parity.sh` already
+  asserted "`--list` names each cell's provenance" and passed throughout, because it
+  spot-checks four individual rows and never asked whether a block was missing. The new
+  assertion derives the expected set from `BLOCK_IDS` and fails until every registered
+  block appears, the way `preflight` already refuses an unregistered marker — verified by
+  removing the emission and watching it red, in the state where the old spot-check still
+  went green.
+
+  `--list --local` consequently becomes a real narrowed listing instead of the usage error
+  #1092 made it: that refusal existed only while the in-repo block contributed no rows,
+  where scoping would have produced an empty listing that exited 0.
+
 - **`PORTING-MATRIX.md` was silent about Fedora on both halves of the nvim-treesitter
   requirement, and the report that noticed named the wrong release**
   ([#1010](https://github.com/dotgibson/dotfiles-core/issues/1010)). The non-mutable-host
