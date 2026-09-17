@@ -88,6 +88,16 @@ a **separate, manual bump class** — neither `freshness.yml` nor Renovate touch
 `tool-versions.env`, so these move by hand. Each one carries BOTH a `*_VERSION` and
 a verified `*_SHA256` that `.github/actions/setup-core-tools` checks before install.
 
+**A pin sitting behind upstream is not automatically a bump.** Some are parked on
+purpose, and the pin carries its own reason: a `# held:` comment above the
+`*_VERSION` line names what a bump would cost and cites the issue that decided it.
+Read that issue before proposing the bump, and report the pin as **Hold** restating
+the standing reason — a newer upstream release only reopens the question if it
+removes the cost (or adds a security fix). `SHFMT_VERSION` is the live example: it is
+held at 3.13.1 because 3.14.x changes shfmt's formatting _output_, so bumping it nags
+every OS-repo lint leg until each repo reformats. The note lives in the pin file, not
+just the CHANGELOG, so it is legible even from a shallow checkout.
+
 When a triaged change bumps a `*_VERSION` here (or you bump one while triaging):
 
 1. **The checksum MUST be refreshed in the same change** — `make update-tool-checksums`
