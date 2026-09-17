@@ -191,8 +191,8 @@ fi
 
 # ── 4) container images must pin an @sha256: digest ──────────────────────────
 # A pinned reference ends in @sha256:<hex>; anything else — a bare `alpine` (implicit
-# `latest`), an `alpine:3.21` tag — is mutable and moves under you. Images reach CI four
-# ways, handled in two groups:
+# `latest`), an `alpine:3.21` tag — is mutable and moves under you. The surfaces an image
+# reaches CI by fall into two groups:
 #   (a) single-token surfaces — `image: <ref>`, the `container: <ref>` SHORTHAND (the
 #       block form's `image:` child is caught by the same `image:` rule), and a
 #       `uses: docker://<ref>` container action. Extract the one reference token and check
@@ -200,11 +200,15 @@ fi
 #       it) and a digest-only `alpine@sha256:…` is accepted (that same regex would mis-read
 #       it as unpinned). The shorthand and docker:// forms also slip sha-pin rule (3) — not
 #       owner/repo form — so rule 4 is the only thing that can catch them.
-#   (b) `docker run|build|pull … <image>` commands — the image sits among flags/mounts/args
-#       (`-v "$PWD:/x"`, `-w /x`), so keep the tolerant name:tag[@sha256] scan: a mount path
-#       has no lowercase name:tag shape and won't be mistaken for an image.
-# No live unpinned uses in the fleet today; this keeps the pinning contract airtight before
-# an OS/role repo (which inherit the *-call.yml@vN workflows) reaches for one.
+#   (b) COMMAND surfaces — a `docker|podman run|build|pull|create` line, and a Containerfile
+#       `FROM`. THIS RULE WAS KEYED ON A TOOL NAME, NOT ON THE HAZARD, and read one physical
+#       line at a time: research-nonmutable-vm.yml drives containers with PODMAN and builds
+#       one from a heredoc Containerfile, so three external images walked past the pinning
+#       contract while this gate reported zero violations — a fedora-bootc `FROM`, a
+#       registry:2 run, and bootc-image-builder:LATEST run --privileged with the ref parked
+#       behind three `\` continuations (#1055). All three surfaces are covered below.
+# This keeps the pinning contract airtight for the OS/role repos too, which inherit the
+# *-call.yml@vN workflows.
 if _yaml_bool require_container_digest_pin; then
   # (a) clean single-token surfaces
   while IFS= read -r line; do
@@ -221,17 +225,106 @@ if _yaml_bool require_container_digest_pin; then
     case "$ref" in *@sha256:*) continue ;; esac      # digest-pinned (name:tag@sha256 or name@sha256)
     note "container image not digest-pinned ($ref): $line"
   done < <(grep -HnE '(^[[:space:]]*image:[[:space:]]*[^[:space:]#]|^[[:space:]]*container:[[:space:]]*[^[:space:]#]|uses:[[:space:]]*docker://)' "${FILES[@]}" 2>/dev/null || true)
-  # (b) docker run|build|pull commands — tolerant scan for a name:tag[@sha256] token
+  # (b) command surfaces. One awk over every file: it joins trailing-`\` continuations into
+  # a LOGICAL line (reported at the chain HEAD — where a reader starts reading the command),
+  # then tests each whitespace TOKEN against img_re ANCHORED. Anchoring is what lets a
+  # tolerant scan survive a real command line: `-p 5000:5000` matches img_re as a substring
+  # but not as a whole token. The scrub below is not defensive padding — every entry answers
+  # a literal token in this tree's own workflows, and without it the rule reds on the very
+  # file it was widened for. A token is skipped when it is:
+  #   · the VALUE of `-t`/`--tag` on a BUILD (the image being produced — flagging it would be
+  #     a violation with no remedy), or of `--name`/`--label`/`-l` (never an image). NOT
+  #     generalisable to "the previous token began with -": that eats the image after --rm.
+  #   · interpolated (`$`, backtick) — `docker pull "$IMAGE"` cannot be pinned here;
+  #   · a flag, an absolute mount, or the build context (leading `-` `/` `.` `~`);
+  #   · a `--flag=value` (no OCI reference contains `=`);
+  #   · a port mapping (`5000:5000`, `127.0.0.1:8080:80`);
+  #   · a local registry — `localhost:5000/x`, `10.0.2.2:5000/x` — or a `localhost/x` image
+  #     built in this same job, for which no digest can exist;
+  #   · already digest-pinned.
+  # Three gaps are left open deliberately, in rule 2's sense above. A BARE `docker run alpine`
+  # or `FROM alpine` (no tag) is still missed — group (b) has always been name:tag-only, so
+  # the anchor narrows nothing, and that same tag requirement is what stops a multi-stage
+  # `FROM builder` stage reference from ever false-firing. And `FROM` is anchored to the line
+  # start, so one buried mid-line (a `printf 'FROM …'` writing a Containerfile) is not a
+  # surface.
+  #
+  # A THIRD surface used to be missed here and is now covered by assign() above, because it
+  # was THIS RULE'S OWN LESSON RECURRING: #1055 found rule 4 keyed on a TOOL NAME, so podman
+  # walked past it; keying on a COMMAND SURFACE has the same shape, because an ASSIGNMENT
+  # hides the literal just as well as a different runtime did. research-nonmutable.yml picks
+  # its image in a `case` (`img='nixos/nix:latest'`), feeds it through the matrix, and runs
+  # `docker run … "$IMAGE"` — so the literal never reached a command line, and `"$IMAGE"` is
+  # a shape the scrub above must exempt. Two MUTABLE `:latest` tags rode through that file
+  # until #1099. What assign() cannot see is the narrower gap named in its own comment: an
+  # UNQUALIFIED `img=alpine:3.21`, which no evidence in the token distinguishes from `t=12:30`.
+  # All three gaps are latent MISSES, not latent reds — the failure mode a gate can afford.
   img_re='([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*:[a-z0-9][a-z0-9._-]*(@sha256:[0-9a-f]+)?'
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    content="${line#*:*:}"
-    while IFS= read -r img; do
-      [ -n "$img" ] || continue
-      case "$img" in *@sha256:*) continue ;; esac    # already digest-pinned
-      note "container image not digest-pinned ($img): $line"
-    done < <(printf '%s\n' "$content" | grep -oE "$img_re" 2>/dev/null || true)
-  done < <(grep -HnE 'docker[[:space:]]+(run|build|pull)' "${FILES[@]}" 2>/dev/null || true)
+  while IFS= read -r hit; do
+    [ -n "$hit" ] && note "container image not digest-pinned: $hit"
+  done < <(awk -v img="$img_re" '
+    # a shell-assignment VALUE: the surface a command-line scan structurally cannot see,
+    # because the literal is bound to a variable here and only "$IMAGE" ever reaches a
+    # `docker run`. Strictly narrower than the command scan, and it has to be: a command
+    # line supplies the context that says "this argument is an image", an assignment supplies
+    # none, so the VALUE must carry that evidence itself. Hence the `/` requirement — a
+    # registry- or namespace-qualified ref (`quay.io/fedora/x:44`, `nixos/nix:latest`), never
+    # a bare `img=alpine:3.21`, which is indistinguishable from `t=12:30` to a regex. That is
+    # the same bare-name gap group (b) already documents, arrived at from the other side.
+    function assign(t, fname, ln,   eq, v, c, L) {
+      if ((eq = index(t, "=")) < 2) return
+      if (substr(t, 1, eq - 1) !~ /^[A-Za-z_][A-Za-z0-9_]*$/) return  # not a shell name: a --flag=value
+      v = substr(t, eq + 1)
+      c = substr(v, 1, 1); if (c == q || c == dq) v = substr(v, 2)
+      sub(/[);,]+$/, "", v)                                            # `img='x:1';` in a case arm
+      L = length(v); if (L == 0) return
+      c = substr(v, L, 1); if (c == q || c == dq) v = substr(v, 1, L - 1)
+      if (v == "") return
+      if (index(v, "$") > 0 || index(v, bt) > 0) return
+      if (index(v, "/") == 0) return                                   # unqualified: see above
+      if (v ~ /^(localhost|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(:[0-9]+)?\//) return
+      if (index(v, "@sha256:") > 0) return
+      if (v ~ ("^" img "$")) printf "%s:%d: %s\n", fname, ln, v
+    }
+    function emit(s, fname, ln,   n, i, t, c, L, prev, isbuild, iscmd, arr) {
+      iscmd = (s ~ /(docker|podman)[[:space:]]+(run|build|pull|create)/ ||
+               s ~ /^[[:space:]]*FROM[[:space:]]+/)
+      if (!iscmd && index(s, "=") == 0) return
+      isbuild = (s ~ /(docker|podman)[[:space:]]+build/)
+      n = split(s, arr, " ")           # single-space FS = default splitting, so the leading
+      prev = ""                        # indentation never becomes an empty first field
+      for (i = 1; i <= n; i++) {
+        t = arr[i]
+        assign(t, fname, ln)           # every line, command or not
+        if (!iscmd) continue
+        if (prev == "--name" || prev == "--label" || prev == "-l" ||
+            (isbuild && (prev == "-t" || prev == "--tag"))) { prev = t; continue }
+        prev = t
+        c = substr(t, 1, 1); if (c == q || c == dq) t = substr(t, 2)
+        sub(/^[(]+/, "", t); sub(/[);,]+$/, "", t)   # `(cd x && docker build …)`, `pull a:b;`
+        L = length(t); if (L == 0) continue
+        c = substr(t, L, 1); if (c == q || c == dq) t = substr(t, 1, L - 1)
+        if (t == "") continue
+        if (index(t, "$") > 0 || index(t, bt) > 0) continue
+        c = substr(t, 1, 1)
+        if (c == "-" || c == "/" || c == "." || c == "~") continue
+        if (index(t, "=") > 0) continue
+        if (t ~ /^[0-9.:]+(\/(tcp|udp|sctp))?$/) continue
+        if (t ~ /^(localhost|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(:[0-9]+)?\//) continue
+        if (index(t, "@sha256:") > 0) continue
+        if (t ~ ("^" img "$")) printf "%s:%d: %s\n", fname, ln, t
+      }
+    }
+    BEGIN { q = sprintf("%c", 39); dq = sprintf("%c", 34); bt = sprintf("%c", 96) }
+    FNR == 1 { if (pend) { emit(acc, fn, first); pend = 0; acc = "" } }  # no bleed across files
+    {
+      if (!pend) { first = FNR; fn = FILENAME; acc = "" }
+      cur = $0
+      if (cur ~ /\\[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", cur); acc = acc cur " "; pend = 1; next }
+      acc = acc cur; pend = 0; emit(acc, fn, first); acc = ""
+    }
+    END { if (pend) emit(acc, fn, first) }                               # a chain at EOF
+  ' "${FILES[@]}" 2>/dev/null || true)
 fi
 
 # ── 5) every workflow declares a top-level permissions: block ────────────────
