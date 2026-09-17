@@ -59,7 +59,7 @@ jobs:
           fleet="$RUNNER_TEMP/fleet"
           mkdir -p "$fleet"
           # Mirror scripts/os-repos.txt + the Windows host repo (fleet-drift reads its
-          # nvim/.core-ref marker too). We only read provenance markers + core/ trees,
+          # nvim.lock marker too). We only read provenance markers + core/ trees,
           # so depth 1 is plenty; a repo that fails to clone is skipped by the scripts.
           repos=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' scripts/os-repos.txt)
           for r in $repos dotfiles-Windows; do

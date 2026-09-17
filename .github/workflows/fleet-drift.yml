@@ -1,14 +1,15 @@
 name: fleet-drift
 
 # Vendoring-drift dashboard for the fleet. sync-core.sh stamps every OS repo with a
-# `core.lock` (core_sha=…) and dotfiles-Windows with nvim/.core-ref (commit = …) so
+# `core.lock` (core_sha=…), while dotfiles-Windows records its own nvim.lock
+# (nvim_sha=…) for the editor it vendors from dotgibson/dotfiles-nvim — so
 # each machine records WHICH Core it carries — but nothing compared those markers to
 # Core's tip, so a repo could silently sit on a stale Core (exactly how the nvim
 # lockfile drifted). Weekly (and on demand) this clones the fleet and runs
 # scripts/fleet-drift.sh, failing red + writing a job summary when any repo lags.
 #
 # Read-only: it never pushes or opens a PR — the fix is a human running `make sync`
-# (and nvim-sync.ps1 for Windows). First-party only: anonymous shallow clones of the
+# (and, for Windows, nvim-sync.ps1 against dotfiles-nvim). First-party only: anonymous shallow clones of the
 # public showcase repos + the job's own checkout; no third-party action to trust.
 
 on:

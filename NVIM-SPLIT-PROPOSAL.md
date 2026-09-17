@@ -11,8 +11,20 @@
 > [`dotgibson/dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) exists with the
 > editor's history preserved — the `nvim/` tree object is identical on both sides, which is
 > what makes step 2's byte-identical first sync true by construction rather than by
-> inspection. Its gate starts the editor. Steps 2–5 have not moved: Core still **authors**
-> `nvim/`, and nothing here is vendored yet.
+> inspection. Its gate starts the editor.
+>
+> **Step 2 is done (2026-09-17, [#1123](https://github.com/dotgibson/dotfiles-core/issues/1123)).**
+> Core no longer authors the editor: `nvim/` is a vendored copy of `dotfiles-nvim` `v1.0.0`
+> behind `nvim.lock`, refreshed by `scripts/sync-nvim.sh` and gated by audit §9q. The first
+> sync was byte-identical, as step 1 had made it by construction.
+>
+> **Step 3 is done (2026-09-17, [#1124](https://github.com/dotgibson/dotfiles-core/issues/1124)).**
+> `dotfiles-Windows` vendors the editor from `dotfiles-nvim` directly
+> ([its PR](https://github.com/dotgibson/dotfiles-Windows/pull/271)), pinned by a root-level
+> `nvim.lock` in Core's own field names; `fleet-drift.sh`'s Windows row became a two-lock
+> compare against that pin. That sync moved **no editor bytes** either — the same guarantee,
+> now observed on the second consumer. The side channel is the front door: Windows tracks the
+> editor's release line rather than a Core ref. **Steps 4–5 have not moved.**
 >
 > One answer was **corrected while shipping it**: §7(1) was written against a generated
 > `# core:theme:gen` block in the nvim colours that does not exist and never did. The
@@ -210,7 +222,10 @@ A2 it copies from `dotfiles-nvim` at an nvim ref — the same script, one URL, a
    vendor producer), the manifest/vendor entries, the drift check, the freshness nudge.
    First sync from the tag that equals today's tree — a **byte-identical** vendored copy,
    so the fleet's next `core.lock` bump carries no editor change at all.
-3. Windows: `nvim-sync.ps1 -Source dotfiles-nvim`; `.core-ref` → the nvim pin.
+3. Windows: `nvim-sync.ps1 -Source dotfiles-nvim`; `.core-ref` → the nvim pin. **(Done —
+   the pin became a root-level `nvim.lock` rather than a re-shaped `.core-ref`, which moved
+   it out of the tree it describes and let the parity gate drop its exclusion set. A bare
+   sync there pins a RELEASE, not a branch tip, so the two consumers' pins are comparable.)**
 4. Retire Core's nvim tests where the source repo now runs them; keep luacheck over the
    vendored copy only if it costs nothing (it is the cheapest leg).
 5. `RELEASE-RUNBOOK.md` gains the nvim line beside htpx's.

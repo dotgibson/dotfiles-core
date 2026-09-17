@@ -5,17 +5,18 @@
 #
 # sync-core.sh fans Core out and stamps each OS repo with its provenance:
 #   • Unix repos: a root-level `core.lock` with `core_sha=<full sha>` (+ `core_tag`) (B1)
-#   • dotfiles-Windows: `nvim/.core-ref` with `commit = <sha>` (+ `tag = <release>`)
-#     (it vendors only nvim/ via robocopy, not the whole core/ subtree)
+#   • dotfiles-Windows: a root-level `nvim.lock` with `nvim_sha=` (+ `nvim_tag=`)
+#     (it vendors no core/ at all — only the EDITOR, and since #1124 it vendors that
+#     from dotgibson/dotfiles-nvim directly, the same repo THIS one vendors nvim/ from)
 # Those markers answer "which Core do I carry?" offline — but NOTHING compared them
 # against each other or against Core's tip, so a repo could silently sit on a stale
 # Core for weeks (exactly how dotfiles-MacBook's nvim lockfile drifted). This is that
 # missing check: it reads every marker and flags any repo behind the reference Core commit,
-# or ahead of it off Core's released lineage. Exception: dotfiles-Windows vendors only the
-# nvim/ subtree and tracks Core's main tip (nvim-sync, not a release tag), so it's judged
-# against nvim/'s last change reachable from the reference — not the reference itself.
-# That treats both "ahead on main between releases" and "a release that changed no nvim/
-# files" as current, and still flags a genuinely stale nvim/ tree (see _classify_subtree).
+# or ahead of it off Core's released lineage. Exception: dotfiles-Windows records no Core
+# commit at all, so its row compares its editor pin against THIS repo's nvim.lock — a
+# two-lock compare between two consumers of one release line. Ahead of that pin is the
+# ordinary state (its bot syncs weekly; Core adopts an editor release with a Core release),
+# so ahead is a note and BEHIND is the signal — see _classify_nvim_pin.
 #
 # It is a REPORTER, not a mutator — it never writes to a repo. Run it locally against
 # your checked-out fleet, or in CI (.github/workflows/fleet-drift.yml) which shallow-
@@ -38,8 +39,8 @@
 # of the tag but still on main's lineage carries UNRELEASED Core, not STALE Core, so it counts
 # as current (see $_MAIN_REF and _classify). Ahead but OFF main — a feature branch fanned out
 # by mistake — is still drift, as is an ahead-only marker we cannot check because no mainline
-# ref resolved. This is the Unix-side counterpart of the same fix _classify_subtree already
-# made for dotfiles-Windows.
+# ref resolved. The same "newer is not stale" rule governs the Windows row, where it falls out
+# of comparing two editor pins rather than two commits — see _classify_nvim_pin.
 #
 # That row also reports how far BEHIND main's tip it still is, when that distance is non-zero:
 # "on main" is true both AT the tip and many commits back from it, so without the number a
@@ -265,32 +266,82 @@ _classify() { # _classify <recorded-sha>
   echo "DIFFERS (sha not in local history)"
 }
 
-# Classify a repo that vendors only a SUBTREE of Core (dotfiles-Windows: nvim/) and tracks
-# main's TIP, not a release tag. Its nvim-sync bot re-stamps the marker ONLY when the subtree
-# actually changes — it reverts the marker's timestamp-only churn otherwise (nvim-sync.yml) —
-# so the recorded commit is the last Core commit to touch that subtree. That can be an
-# ANCESTOR of REF (a release that changed nothing under the subtree leaves the marker behind
-# while the vendored tree is byte-identical) or a DESCENDANT (an unreleased subtree commit
-# pulled from main between releases). In BOTH cases the vendored tree is current iff the
-# recorded commit already contains REF's latest change to that subtree — so compare against
-# that commit (`git rev-list -1 REF -- <path>`), not REF itself. Measuring against raw REF
-# reported a false BEHIND/AHEAD for exactly these two legitimate states.
-_classify_subtree() { # _classify_subtree <recorded-sha> <subtree-path>
-  local rec="$1" path="$2" subref
+# Classify dotfiles-Windows, which vendors no core/ at all — only the EDITOR, and since
+# dotfiles-core#1124 it vendors that from dotgibson/dotfiles-nvim directly rather than out of
+# this repo. Its pin is a root-level nvim.lock carrying THIS repo's nvim.lock field names, so
+# the two are peers on one release line and the comparison is a straight two-lock compare.
+#
+# WHY THIS REPLACED A SUBTREE-ANCESTRY CHECK. The old row recorded a CORE commit and was judged
+# with `merge-base --is-ancestor` against Core's own nvim/ history. A dotfiles-nvim sha is not
+# in Core's object store at all, so that check would fall through to _classify and report
+# `DIFFERS (sha not in local history)` on a perfectly healthy repo — red forever, with
+# remediation advice that could not help. The ancestry question also stopped being the right
+# one: both sides now pin the SAME upstream, so "do we carry the same editor?" is answerable by
+# comparing the two recorded releases, with no dotfiles-nvim objects and no network.
+#
+# AHEAD IS NOT DRIFT, for the reason #371 established on the Unix side. Windows' bot syncs
+# weekly; Core adopts an editor release with a Core release (NVIM-SPLIT-PROPOSAL.md §7(3)). So
+# Windows sitting on a NEWER editor than nvim.lock is the ordinary state between Core releases,
+# not staleness — it gets the same `current (ahead …)` prefix and UNRELEASED tally the
+# ahead-on-main rows get. BEHIND is the real signal: the weekly bot stopped.
+#
+# Comparison is a three-field NUMERIC compare of the two vX.Y.Z tags, never a string compare:
+# v1.9.0 sorts after v1.10.0 lexically. Same awk cmp as scripts/check-nvim-freshness.sh, and
+# the same "no sort -V" reason (GNU-only in practice; this must behave identically on macOS).
+_nvim_lock_field() { # _nvim_lock_field <file> <key>
+  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$1" 2>/dev/null | head -n1
+}
+
+# Core's OWN editor pin, read at REF when that commit carries one and from the worktree
+# otherwise. The fallback is not cosmetic: nvim.lock landed AFTER v7.10.0, so until the next
+# release the default REF has no such file, and without it every Windows row would report
+# "cannot order the pins" on a healthy fleet.
+_core_nvim_tag() {
+  local t
+  t="$(git -C "$HERE" show "$REF:nvim.lock" 2>/dev/null |
+    sed -n 's/^[[:space:]]*nvim_tag[[:space:]]*=[[:space:]]*//p' | head -n1)"
+  [[ -n "$t" ]] || t="$(_nvim_lock_field "$HERE/nvim.lock" nvim_tag)"
+  printf '%s' "$t"
+}
+
+# -1 / 0 / 1 for a<b / a==b / a>b over vX.Y.Z; empty output when either side is unparseable,
+# which the caller treats as "don't guess".
+_semver_cmp() { # _semver_cmp <vX.Y.Z> <vX.Y.Z>
+  local a="${1#v}" b="${2#v}"
+  [[ "$a" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$b" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  awk -v a="$a" -v b="$b" '
+    BEGIN {
+      split(a, x, "."); split(b, y, ".")
+      for (i = 1; i <= 3; i++) {
+        if ((x[i] + 0) > (y[i] + 0)) { print 1; exit }
+        if ((x[i] + 0) < (y[i] + 0)) { print -1; exit }
+      }
+      print 0
+    }'
+}
+
+_classify_nvim_pin() { # _classify_nvim_pin <recorded-sha> <recorded-tag>
+  local rec="$1" rec_tag="$2" core_tag cmp
   [[ -z "$rec" ]] && { echo "no provenance recorded"; return; }
-  subref="$(git -C "$HERE" rev-list -1 "$REF" -- "$path" 2>/dev/null)" || subref=""
-  # Can't resolve the subtree's history (shallow clone, or path absent) → don't guess; fall
-  # back to the commit-level verdict.
-  [[ -n "$subref" ]] || { _classify "$rec"; return; }
-  # rec carries REF's latest <path> change (or a newer one) ⇒ the vendored tree is current.
-  # --is-ancestor is reflexive (rec == subref counts). A non-zero exit — not an ancestor, or
-  # rec absent from local history — means the vendored subtree genuinely lags; report the
-  # real commit-level distance via _classify.
-  if git -C "$HERE" merge-base --is-ancestor "$subref" "$rec" 2>/dev/null; then
-    echo "current ($path up to date)"
-  else
-    _classify "$rec"
-  fi
+  core_tag="$(_core_nvim_tag)"
+  # No pin on this side at all: we cannot say anything about relative freshness, and inventing
+  # a verdict would be worse than declining one. The sha is still worth reporting as seen.
+  [[ -n "$core_tag" ]] || { echo "current (nvim ${rec_tag:-${rec:0:12}}; Core records no nvim pin)"; return; }
+  cmp="$(_semver_cmp "$rec_tag" "$core_tag")"
+  case "$cmp" in
+  0) echo "current (nvim $rec_tag, in step with nvim.lock)" ;;
+  1) echo "current (ahead of nvim.lock: $rec_tag vs $core_tag)" ;;
+  -1) echo "BEHIND (nvim $rec_tag vs nvim.lock $core_tag)" ;;
+  *)
+    # One of the tags isn't a vX.Y.Z — an untagged -FollowBranch sync, say. Fall back to sha
+    # equality against Core's pin, which is exact when it holds and honest when it doesn't.
+    if [[ -n "$rec" && "$rec" == "$(_nvim_lock_field "$HERE/nvim.lock" nvim_sha)" ]]; then
+      echo "current (nvim ${rec:0:12}, same commit as nvim.lock)"
+    else
+      echo "DIFFERS (cannot order nvim pins: '${rec_tag:-untagged}' vs '$core_tag')"
+    fi
+    ;;
+  esac
 }
 
 hdr "Fleet drift vs Core $REF_NAME (${REF:0:12})"
@@ -300,8 +351,8 @@ hdr "Fleet drift vs Core $REF_NAME (${REF:0:12})"
 printf '%-22s %-20s %s\n' "REPO" "RECORDED" "STATUS"
 printf '%-22s %-20s %s\n' "----" "--------" "------"
 
-_check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [tag-key] [subtree-path]
-  local name="$1" marker="$2" key="$3" tagkey="${4:-core_tag}" track_path="${5:-}" dir file rec status tag shown
+_check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [tag-key] [mode]
+  local name="$1" marker="$2" key="$3" tagkey="${4:-core_tag}" mode="${5:-}" dir file rec status tag shown
   # By remote URL when the directory name misses (scripts/lib/common.sh :: resolve_repo_dir),
   # so a repo renamed upstream but still cloned under its old name reports its REAL drift
   # instead of the "not checked out" that `make sync` cannot repair.
@@ -329,11 +380,12 @@ _check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [
   # _classify — the tag is display only.
   tag="$(_read_kv "$file" "$tagkey")"
   shown="${tag:-${rec:0:12}}"
-  # A subtree-tracking repo (track_path set: dotfiles-Windows vendors only nvim/) is judged
-  # against that subtree's last change reachable from REF, not REF itself — see
-  # _classify_subtree. Everything else is pinned to the release tag by `make sync`.
-  if [[ -n "$track_path" ]]; then
-    status="$(_classify_subtree "$rec" "$track_path")"
+  # dotfiles-Windows (mode `nvim-pin`) records no Core commit at all — it vendors the editor
+  # from dotgibson/dotfiles-nvim, so its pin is compared against THIS repo's nvim.lock rather
+  # than against Core's history. See _classify_nvim_pin. Everything else is pinned to the
+  # release tag by `make sync` and judged against REF.
+  if [[ "$mode" == "nvim-pin" ]]; then
+    status="$(_classify_nvim_pin "$rec" "$tag")"
   else
     status="$(_classify "$rec")"
   fi
@@ -364,15 +416,13 @@ _check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [
 for _r in "${OS_REPOS[@]}"; do
   _check_repo "$_r" "core.lock" "core_sha"
 done
-# Windows is the outlier: no core/ subtree, only nvim/ mirrored — its provenance
-# lives in nvim/.core-ref (sha under `commit`, release name under `tag`). Include it
-# so the dashboard covers the whole fleet, labelled by tag like the Unix repos. Unlike the
-# Unix repos (pinned to a release tag by `make sync`), it vendors only the nvim/ subtree and
-# tracks main's tip via the nvim-sync bot, so pass the subtree path `nvim`: it's judged
-# against nvim/'s last change reachable from REF (see _classify_subtree), which treats both
-# "ahead on main" and "release didn't touch nvim/" as current, and still fails a genuinely
-# stale nvim/ tree.
-_check_repo "dotfiles-Windows" "nvim/.core-ref" "commit" "tag" "nvim"
+# Windows is the outlier: no core/ subtree, and since dotfiles-core#1124 the one asset it does
+# vendor — the editor — comes from dotgibson/dotfiles-nvim, not from here. Its provenance lives
+# in a root-level nvim.lock wearing THIS repo's nvim.lock field names, so the row is a two-lock
+# comparison (see _classify_nvim_pin) rather than anything measured against REF. Include it so
+# the dashboard still covers the whole fleet, labelled by editor release the way the Unix repos
+# are labelled by Core release.
+_check_repo "dotfiles-Windows" "nvim.lock" "nvim_sha" "nvim_tag" "nvim-pin"
 
 # Say the unpinned count out loud, on a green run AND on a red one — a fleet can be stale in
 # one repo and unpinned in seven, and the red row would otherwise bury the second fact. This
@@ -387,7 +437,11 @@ _unreleased_note() {
 echo
 if ((DRIFT)); then
   if ((STALE)); then
-    fail "fleet drift detected — run 'make sync' (and nvim-sync.ps1 for Windows) to bring repos to $REF_NAME"
+    # `make sync` fans Core out to the Unix repos. Windows takes no Core at all any more: its
+    # only vendored asset is the editor, so its remedy is nvim-sync.ps1 against dotfiles-nvim,
+    # which is a different repo and a different release line — name both rather than implying
+    # one command covers the fleet.
+    fail "fleet drift detected — run 'make sync' to bring repos to $REF_NAME (for dotfiles-Windows: nvim-sync.ps1, which re-pins nvim.lock from dotgibson/dotfiles-nvim)"
   elif ((OFFLINEAGE)); then
     # Nothing here is stale, so `make sync` is the wrong advice: these repos carry a Core
     # commit that isn't on main's lineage at all. Say what was actually found instead.
