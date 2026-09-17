@@ -753,15 +753,25 @@ _cache_completion ty ty generate-shell-completion zsh
 # above is how a detector silently starts comparing against the wrong number: that paragraph
 # also names 18.16.1, and a re-verification that measures against the wrong version is worse
 # than one that never runs. Editing it is a CLAIM that the premise was re-measured at that
-# version — not a version bump. Last re-measured 2026-09-03: three atuin-guard-verify
-# dispatches against upstream's then-latest 18.21.0, `holds` on both premises (#941).
-# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.21.0
+# version — not a version bump. Last re-measured 2026-09-16: one atuin-guard-verify dispatch
+# against upstream's then-latest 18.22.0 (run 35163334747, checksum + build-provenance
+# verified), `holds` on both premises — both report jobs skipped, which is that verdict (#1045).
+#
+# 18.22.0 RAISES THE STAKES; it does not lower them. That release moves history DELETION into
+# the daemon (atuin #4045), moves SYNC into it (#4055), and adds command-output capture with a
+# periodic flush (#4070). More function behind the socket means a dead-socket window costs more
+# than the one history row it cost on 18.19.0 — so the guard is worth more now, not less.
+# It also adds a SECOND socket under /tmp/atuin-$UID (pty-proxy), in the same directory as this
+# guard's first candidate. That is not a collision: the candidate list below names `atuin.sock`
+# explicitly, so it probes the history daemon's socket and no other. Stated because the next
+# reader will otherwise have to re-derive it from the candidate list.
+# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.22.0
 #
 # ONE ANCHOR PER PREMISE. The stand-down below rests on a DIFFERENT upstream fact, measured by
 # a different mode (`--premise autostart`) and reported under its own issue title, so it gets
 # its own line rather than borrowing this one — otherwise re-measuring either premise would
 # silently re-date the claim about the other.
-# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.21.0
+# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.22.0
 #
 # So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
 # throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
@@ -882,10 +892,19 @@ _core_atuin_daemon_guard() {
   # mitigation — and it is now MEASURED rather than assumed (#402). It has its own mode, its own
   # anchor above and its own issue title, because its remedy is nothing like the discard premise's:
   # `scripts/research/verify-atuin-guard.sh --premise autostart` spawns a real daemon and owns its teardown,
-  # and the (dispatch-only) atuin-guard-verify workflow runs it as a separate job. On 18.19.0 — and again on
-  # 18.21.0, 2026-09-03 — all four arms spawn and land a
+  # and the (dispatch-only) atuin-guard-verify workflow runs it as a separate job. On 18.19.0, again on
+  # 18.21.0 (2026-09-03) and again on 18.22.0 (2026-09-16) — all four arms spawn and land a
   # row, INCLUDING over the stale socket a crashed daemon leaves — the client unlinks it first,
   # which `atuin daemon start` on its own does not.
+  #
+  # WHAT THOSE FOUR ARMS DO NOT COVER, and it is the one arm where standing down is WRONG: a
+  # daemon whose PID is ALIVE but which is not serving its socket. `absent` has no socket and
+  # `stale` has a socket file with no process behind it; neither is this. atuin decides whether
+  # to autostart from the PIDFILE alone, so a live-but-wedged PID blocks the respawn
+  # indefinitely and every command keeps hitting an unreachable socket — upstream
+  # atuinsh/atuin#4114, open, filed against 18.22.0. Tracked as a new arm for the harness
+  # (#1091), NOT as a reason to touch the stand-down: see the next paragraph for why the remedy
+  # is never deletion.
   #
   # If that ever regresses, the fix is NOT to delete this stand-down. The degrade path below
   # exports ATUIN_DAEMON__ENABLED=false, which under autostart removes the spawn itself and
