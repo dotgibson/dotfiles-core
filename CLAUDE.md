@@ -52,17 +52,22 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   listing it in the script's `BLOCKS` registry, is a gate failure (`audit-core.sh` §9g).
   Edit the zsh source (a trailing `# comment` on an alias line is its Note column), run
   `make gen-aliases`. The prose around the tables stays hand-written.
-- **`PORTING-MATRIX.md`'s two tables are generated, not typed.** `scripts/gen-porting-matrix.sh`
-  renders the package-manager table from each sibling OS repo's `os/*.capabilities` and the
+- **`PORTING-MATRIX.md`'s three blocks are generated, not typed.** `scripts/gen-porting-matrix.sh`
+  renders the package-manager table from each sibling OS repo's `os/*.capabilities`, the
   package-name table from its `install/packages.txt` (Debian's through its `pkg-filter.sh`
-  tiers, `# min:` floors shown as `≥`) into `<!-- core:porting-matrix:gen … -->` blocks —
-  hand-editing a table is a gate failure (`audit-core.sh` §9h; an absent sibling clone is
-  an environment SKIP, not red). A cell the repo installs is derived; the ²¹ "available, not
+  tiers, `# min:` floors shown as `≥`), and the `fleet-versions` table from this repo's own
+  `scripts/fleet-package-versions.tsv` — all into `<!-- core:porting-matrix:gen … -->`
+  blocks, registered in the script's `BLOCK_IDS`. Hand-editing any of them is a gate
+  failure (`audit-core.sh` §9h). A cell the repo installs is derived; the ²¹ "available, not
   installed" names and the `asset`/`cargo`/`AUR` routes are asserted in the script's
   `PKG_ROWS` registry, and a repo starting to install one fails the gate until the cell is
   flipped to `=`. Fix the OS repo (or the registry), run `make gen-porting-matrix` — from a
-  worktree, `scripts/gen-porting-matrix.sh --fleet DIR`. The ~1,100 footnote lines stay
-  hand-written; `/os-package-availability` refreshes them.
+  worktree, `scripts/gen-porting-matrix.sh --fleet DIR`.
+  **Only the two fleet-fed tables need the siblings**, so an absent clone is an environment
+  SKIP for those alone; `fleet-versions` reads an in-repo file and is gated on every leg
+  through `--local`, which is also how you repair it without a fleet (#1046). The ~1,230
+  footnote lines stay hand-written — apart from the `fleet-versions` block, which sits
+  inside footnote ³⁴; `/os-package-availability` refreshes the prose.
 - **The desktop-bar `PARITY.md` pair is generated, not typed.** The Zebar ↔ sketchybar
   contract is authored once in `desktop/PARITY.shared.md` and rendered between the
   `<!-- desktop-parity:gen -->` and `<!-- desktop-parity:end -->` markers into
