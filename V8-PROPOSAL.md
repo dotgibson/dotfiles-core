@@ -10,9 +10,12 @@
 > landed** (2026-09-14): #973 (the four-helper ratchet, 9/9), #975 (§10 Q3), #976 (the
 > hook, `blib_main`) and #986 (the driver fleet-wide: eight callers, MacBook exempt by
 > design), #999 (the scaffold writes the driver form) — §5's split shipped in #970. This
-> file is a closed record, the way `V5-PROPOSAL.md` is. The next major's content is the
-> **non-mutable host** (§10), the one roadmap theme with an external forcing function —
-> planned in `NON-MUTABLE-HOST-PROPOSAL.md`, research first; the nvim split has its own
+> file is a closed record, the way `V5-PROPOSAL.md` is. It named the **non-mutable host**
+> (§10) as the next major's content — the one roadmap theme with an external forcing
+> function, planned in `NON-MUTABLE-HOST-PROPOSAL.md`, research first — and the research
+> took the major away: that theme shipped 2026-09-15 → 2026-09-16 as four minors,
+> `v7.6.0`–`v7.9.0`, because R2 measured the schema additive (§10's new *Closed.* finding
+> records it). So the next major's content is again unwritten. The nvim split has its own
 > document, `NVIM-SPLIT-PROPOSAL.md`. Nothing here schedules either.
 >
 > Written when Core was at `7.3.0` with an empty `[Unreleased]`, no open PRs, and a
@@ -553,6 +556,16 @@ force an `X.0.0` the content does not earn.
   are live. It predicted it would need a major because *"hand-edits to those files stop
   being possible"*; in the event every input was additive on its own and shipped as a
   minor. The milestone was right about the destination and wrong about the bump class.
+- *Closed.* **The non-mutable-host milestone shipped, and it shipped as minors.** The
+  non-goal below calls it *"the right **next** major"* whose schema break makes every
+  vendoring repo re-author its declaration. `NON-MUTABLE-HOST-PROPOSAL.md` §5 R2 measured
+  that and found the opposite: **additive** — six *optional* capability keys, and not one
+  repo re-authored anything. It landed as `v7.6.0` (the consumers, `#1049`), `v7.7.0` (the
+  CI input, `#1050`), `v7.8.0` and `v7.9.0` (the atomic and transactional variants' matrix
+  columns, plus `dotfiles-NixOS` as the declarative target, `#1051`). Same shape as the
+  finding above it: right about the destination, wrong about the bump class — which is now
+  twice in a row that a roadmap theme's predicted major dissolved under measurement. The
+  external forcing function was real; the coordinated event was not.
 - **The load-chain renumbering milestone has not triggered.** Its stated trigger is a
   **fourth layer** needing a band; none exists. Its real deliverable — band *ownership*
   metadata — remains unbuilt and unforced: `zsh/loader.zsh` has no owner metadata, 56 of

@@ -189,11 +189,13 @@ else
   # resolve reads as "nothing to do". Omission is how you turn it off.
   { cat "$CAPEX"; printf 'PKG_COUNT_EXIT_TRUSTED=0\n'; } >"$CAPV/trust-zero"
   _cap_rejects "PKG_COUNT_EXIT_TRUSTED=0 (omit it to mean off)" "$CAPV/trust-zero"
-  # ── the non-mutable host prototype keys (R2 of NON-MUTABLE-HOST-PROPOSAL.md, #1004) ──
-  # Four OPTIONAL keys the validator accepts and no consumer reads yet, plus the one
-  # relaxation (PKG_COUNT_PENDING may be absent under PROVISIONER=declarative). Pinned so
-  # the prototype schema cannot drift out from under the three declarations that use it —
-  # and so the relaxation stays exactly one key wide, on exactly one provisioner.
+  # ── the non-mutable host keys (NON-MUTABLE-HOST-PROPOSAL.md §4, #1004 — SHIPPED) ────
+  # Six OPTIONAL keys, four of them read by `up`, the nudge, the maint runner and
+  # core-doctor since #1049, plus the TWO relaxations of PKG_COUNT_PENDING the validator
+  # makes: PROVISIONER=declarative (no truthful unprivileged count verb exists), and any
+  # host declaring PKG_APPLY_PENDING (the nudge reports the staged state instead). Pinned
+  # so the schema cannot drift out from under the three fleet declarations that use it —
+  # and so each relaxation stays exactly ONE key wide, never widening to PKG_INSTALL.
   _cap_accepts() { # <label> <file>
     if "$CAPCHK" "$2" >/dev/null 2>&1; then
       pass "validator: accepts $1"
@@ -225,9 +227,9 @@ else
   { cat "$CAPEX"; printf 'PKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=rpm-ostree status --pending-exit-77\nPKG_APPLY_PENDING_EXIT=0\n'; } >"$CAPV/r5-exit-zero"
   _cap_rejects "PKG_APPLY_PENDING_EXIT=0 (omit it to mean exit 0)" "$CAPV/r5-exit-zero"
   { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=declarative\n'; } >"$CAPV/proto-decl"
-  _cap_accepts "PROVISIONER=declarative with no PKG_COUNT_PENDING (the one relaxation)" "$CAPV/proto-decl"
+  _cap_accepts "PROVISIONER=declarative with no PKG_COUNT_PENDING (relaxation one of two)" "$CAPV/proto-decl"
   { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=atomic\n'; } >"$CAPV/proto-decl-not"
-  _cap_rejects "PROVISIONER=atomic with no PKG_COUNT_PENDING (the relaxation is declarative-only)" "$CAPV/proto-decl-not"
+  _cap_rejects "PROVISIONER=atomic, no PKG_COUNT_PENDING and no PKG_APPLY_PENDING (neither relaxation applies)" "$CAPV/proto-decl-not"
   { grep -v '^PKG_INSTALL=' "$CAPEX"; printf 'PROVISIONER=declarative\n'; } >"$CAPV/proto-decl-install"
   _cap_rejects "PROVISIONER=declarative with no PKG_INSTALL (the relaxation is one key wide)" "$CAPV/proto-decl-install"
   # And the three prototype declarations themselves validate — the files R2 wrote to answer
