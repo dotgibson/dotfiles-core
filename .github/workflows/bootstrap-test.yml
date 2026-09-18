@@ -366,7 +366,20 @@ jobs:
           # would run `sudo chsh` and abort. Empty = run chsh/tee directly as root.
           # (Alpine/Gentoo bootstraps already export their own BLIB_SU; this is a no-op
           # there and the correct default for the rest.)
-          docker run --rm -e PREP -e OFFENSIVE -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+          #
+          # --platform linux/amd64: the runner is amd64 and docker treats a linux/386 manifest
+          # entry as COMPATIBLE with it, so an image tag whose manifest list carries only 386
+          # pulls without error and the job runs an i586 container. A fresh
+          # registry.opensuse.org date tag can look exactly like that — its per-arch entries
+          # publish independently (dotfiles-openSUSE#205: 20260917 listed only 386; the
+          # resolve job ran bash-5.3.15-8.2.i586 and blamed the three package names the i586
+          # port does not build, a misleading red). The pin turns that into docker's fast
+          # `no matching manifest for linux/amd64`, the same shape an arm-only tag already
+          # produces (dotfiles-openSUSE#193), for every caller at once. Safe fleet-wide: every
+          # job here is ubuntu-latest (amd64) and every caller's image carries amd64 (checked
+          # 2026-09-18 across scripts/os-repos.txt). Same flag on the two docker runs below
+          # and in real-bootstrap.yml, which takes the same refs.
+          docker run --rm --platform linux/amd64 -e PREP -e OFFENSIVE -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
             # Install bootstrap deps, WITH RETRY: some distro mirrors (notably openSUSE
             # Tumbleweed OSS) intermittently time out in CI (curl error 28), and a single
             # prep failure should not red every fan-out PR fleet-wide. The until-condition
@@ -572,7 +585,8 @@ jobs:
           PREP: ${{ inputs.prep }}
           PROVISIONER: ${{ inputs.provisioner }}
         run: |
-          docker run --rm -e PREP -e PROVISIONER -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+          # --platform: see the links-only job above (a 386-only manifest list pulls silently).
+          docker run --rm --platform linux/amd64 -e PREP -e PROVISIONER -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
             # The staged-host seam (#1050): validated first, so a typo fails here and not as
             # a mutable run that reads green. See the provisioner input for the whole story.
             case "$PROVISIONER" in
@@ -767,7 +781,8 @@ jobs:
         # NOTE: keep the script below apostrophe-free — it lives inside the single-quoted
         # sh -euc argument, exactly like the links-only block.
         run: |
-          docker run --rm -e PREP -e RESOLVE -e PKGFILE -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+          # --platform: see the links-only job above (a 386-only manifest list pulls silently).
+          docker run --rm --platform linux/amd64 -e PREP -e RESOLVE -e PKGFILE -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
             # Same retrying prep as the jobs above: distro mirrors intermittently time out in
             # CI, and a prep blip should not red a PR that changed nothing. Five tries, then a
             # loud failure rather than a false green.

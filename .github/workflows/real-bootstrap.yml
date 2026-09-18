@@ -175,7 +175,10 @@ jobs:
           POSTCHECK: ${{ matrix.leg.postcheck }}
         run: |
           set -euo pipefail
-          docker run --rm -e PREP -e OFFENSIVE -e POSTCHECK -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+          # --platform linux/amd64 for the reason bootstrap-test.yml records beside its
+          # links-only docker run: a manifest list with only a 386 entry pulls without error
+          # on an amd64 runner, and the sweep would then bootstrap an i586 container.
+          docker run --rm --platform linux/amd64 -e PREP -e OFFENSIVE -e POSTCHECK -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
             n=0
             until [ "$n" -ge 5 ]; do
               sh -c "$PREP" && break
