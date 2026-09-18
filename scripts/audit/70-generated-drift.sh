@@ -314,8 +314,10 @@ unset _dp_out _dp_rc
 # CHANGELOG.recent.md's sense — present, tracked, and not hand-edited — so it needs §9e's
 # kind of proof, and for §9e's reason: §1 proves only that the PATH exists (core.manifest
 # lists `nvim/` as a directory, so any tree at all satisfies it), §1e never walks it, and
-# §4/§4b check that the lua is CLEAN and REACHABLE, not that it is the lua upstream shipped.
-# A hand-edit here passes every one of them.
+# §4 checks that the lua is CLEAN, not that it is the lua upstream shipped. A hand-edit here
+# passes every one of them. (§4b used to add REACHABLE to that list; it retired with the
+# editor's tests in #1125, and the walk runs in dotfiles-nvim's own audit now — which is
+# only load-bearing BECAUSE this section proves the tree is the one upstream walked.)
 #
 # WHY A RECORDED HASH AND NOT A DERIVED ONE. core-integrity.sh answers the same question
 # for an OS repo's core/ by resolving the pinned commit to a tree — which it can, because

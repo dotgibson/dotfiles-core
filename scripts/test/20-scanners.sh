@@ -1189,7 +1189,7 @@ fi
 # cost a seventeen-minute matrix leg to find out.
 #
 # BOTH DIRECTIONS, and the second half is the important one. A gate that fires on prose ABOUT
-# the rule would be reverted the day it landed — and this repo has TEN scripts whose comments
+# the rule would be reverted the day it landed — and this repo has NINE scripts whose comments
 # name these constructs, plus one fragment (65-functions.sh) carrying ten legitimate zsh
 # `typeset -gA` lines embedded as single-quoted literals for a zsh child. Both were live
 # false positives during development; both are pinned below.
@@ -1261,7 +1261,7 @@ $_b4_wn"
   _b4_write prose.sh "#!/usr/bin/env bash
 # Read loop, NOT mapfile — mapfile is bash 4+, and declare $_b4_at, $_b4_lc and $_b4_amp too.
 while IFS= read -r l; do arr=(\"\${arr[@]}\" \"\$l\"); done <input"
-  if [[ -z "$(_core_bash4_hits "$_b4d/prose.sh")" ]]; then pass "bash 3.2 scan: prose ABOUT the rule is not a finding"; else fail "bash 3.2 scan: flagged a comment documenting the rule — it would red ten scripts here"; fi
+  if [[ -z "$(_core_bash4_hits "$_b4d/prose.sh")" ]]; then pass "bash 3.2 scan: prose ABOUT the rule is not a finding"; else fail "bash 3.2 scan: flagged a comment documenting the rule — it would red nine scripts here"; fi
 
   # The zsh spelling. scripts/test/65-functions.sh carries ten of these as single-quoted zsh
   # literals for a zsh CHILD, and zsh has had associative arrays forever. No textual scan can

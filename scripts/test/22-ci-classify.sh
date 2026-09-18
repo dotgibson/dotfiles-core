@@ -87,6 +87,12 @@ if have git; then
   # nvim-reachability.sh's module inventory. A rule documented as universal but enforced
   # on one file is worse than no rule — it reads as covered.
   #
+  # nvim-reachability.sh RETIRED to dotgibson/dotfiles-nvim with the editor's tests (#1125),
+  # which is why the table below names one standalone script and not two. Its row is not a
+  # gap: the file is gone from this repo, and a row for a missing file would pass at 0/0
+  # — the one shape this tripwire must never wear, since that is indistinguishable from a
+  # gate that quietly stopped enumerating.
+  #
   # Count CALLS robustly: `_audit_ls '<glob>'`, `_audit_ls "$m"`, and `_audit_ls \` with
   # the pathspecs on the next line all count. Two earlier patterns here were too narrow
   # and undercounted exactly those forms. The definition line `_audit_ls() {` and comment
@@ -144,7 +150,7 @@ if have git; then
   # sits in. The dispatcher keeps exactly one enumeration — `_changed_scope`'s bare
   # `git ls-files`, a pure git-state question (what does my diff touch?) that must stay
   # with the flag parsing that drives it — so its row is 0:1 and the fragments carry 11:4.
-  _als_expect="audit-core.sh:0:1 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  _als_expect="audit-core.sh:0:1 check-modern.sh:2:0"
   _als_frag_want_c=11
   _als_frag_want_d=4
   _als_bad=""
@@ -172,7 +178,7 @@ if have git; then
     _als_bad="${_als_bad}scripts/audit/*.sh (got ${_als_fc}/${_als_fd} across ${_als_fn} fragments, want ${_als_frag_want_c}/${_als_frag_want_d}) "
   fi
   if [[ -z "$_als_bad" ]]; then
-    pass "enumeration split is exact: $_als_fn audit fragments + the dispatcher + the two standalone gate scripts (content via _audit_ls / git-state direct)"
+    pass "enumeration split is exact: $_als_fn audit fragments + the dispatcher + the one standalone gate script (content via _audit_ls / git-state direct)"
   else
     fail "enumeration split changed: ${_als_bad}— a new enumeration must pick a side (content → _audit_ls, git-state → git ls-files), then update these counts"
   fi

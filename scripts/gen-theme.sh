@@ -54,8 +54,8 @@
 # The palette map is a flat PAL_<key> scalar namespace built with `printf -v`.
 #
 # Exit: 0 = clean; 1 = drift/findings; 2 = usage, or the generator cannot run.
-# That is the gate convention this repo already uses (parity-check.sh:25,
-# core-integrity.sh:55, nvim-reachability.sh:66) — NOT update-plugins.sh's
+# That is the gate convention this repo already uses (parity-check.sh:30,
+# core-integrity.sh:55) — NOT update-plugins.sh's
 # 2-means-drift, which is a freshness reporter whose scheduled workflow keys on 2.
 # Severity is sticky, 2 > 1 > 0: a structural failure in one target followed by
 # mere drift in another must never exit as drift (the bug gen-views.sh records).

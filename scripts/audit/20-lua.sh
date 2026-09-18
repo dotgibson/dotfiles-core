@@ -1,5 +1,5 @@
 # scripts/audit/20-lua.sh
-# luacheck over nvim/, and no lua module under nvim/lua/gerrrt is orphaned
+# luacheck over the VENDORED nvim/ tree
 #
 # A SOURCED FRAGMENT of scripts/audit-core.sh — not a standalone script. It runs in the
 # dispatcher's shell and uses its state: the PASS/SKIP/FAIL counters, $HERE (already cd'd
@@ -13,6 +13,20 @@
 # contract.
 
 # ── 4. lua ───────────────────────────────────────────────────────────────────
+# CORE DOES NOT AUTHOR THE EDITOR ANY MORE, so why lint it here at all? nvim/ is a
+# vendored copy of dotgibson/dotfiles-nvim (#1123), whose own gate luachecks the same tree
+# against a real Neovim before the release this repo pins. This leg is therefore
+# defence-in-depth, kept for the reason NVIM-SPLIT-PROPOSAL.md §7(2) gives — it is the
+# cheapest leg there is — and NOT, as §7(2) also says, because it is what would catch a
+# corrupt sync. §9q catches that, by comparing the committed tree of nvim/ against
+# nvim.lock's nvim_tree, byte for byte and with no network. A corrupt sync cannot reach
+# this section without §9q having failed first.
+#
+# §4b WAS HERE and retired with the editor's tests (#1125): a live run of
+# scripts/nvim-reachability.sh over nvim/, asking whether any lua module had fallen out of
+# the load graph. That question is now answered upstream, on the same tree, by
+# dotfiles-nvim's own audit §2 — and it has to be, because a tree failing it never becomes
+# a release for nvim.lock to pin. The ids are stable: 4b is retired, never reused.
 hdr "lua (luacheck)"
 # PROBE BEFORE LINTING, so a broken toolchain is never reported as a defect in nvim/ (#726).
 # `have luacheck` is a weak precondition: luarocks generates a wrapper that `exec`s an ABSOLUTE
@@ -71,40 +85,4 @@ else
     ;;
   esac
   unset lua_rc lua_probe_rc lua_probe lua_out
-fi
-
-# ── 4b. nvim module reachability (the orphan backstop) ───────────────────────
-# core.manifest lists `nvim/` as a DIRECTORY, so §1's manifest⇄fs drift check auto-lists
-# every new path under it and cannot see an orphan — a lua module nothing loads would sit
-# in the tree and fan out to all ten Core-vendoring repos silently. core.manifest said that gap was
-# covered "by verify-core.sh instead"; that script has never existed here (#454). The real
-# logic — a graph walk from nvim/init.lua, not a "is this name mentioned" scan — lives in
-# the script below, along with the rationale for its roots and its two resolved edges. It
-# is a standalone script rather than an inline block precisely so test-core.sh can drive
-# it against synthetic fixtures. Findings arrive one per line; each becomes a fail.
-hdr "nvim module reachability"
-if ! ((SCOPE_NVIM)); then
-  skip "nvim reachability (out of scope)"
-elif [[ ! -d nvim/lua/gerrrt ]]; then
-  skip "nvim reachability (no nvim/lua/gerrrt)"
-else
-  # Gate on the EXIT STATUS as well as the output. Deciding purely on "did it print
-  # anything" means a silent non-zero exit — the script killed, or dying before it can
-  # emit a diagnostic — reads as a passing gate, which is the one outcome a backstop must
-  # never produce. Pass requires rc 0 AND no findings; anything else fails, and a
-  # status-without-output still says something actionable rather than nothing.
-  orph_out="$("$HERE/scripts/nvim-reachability.sh" --root "$HERE" 2>&1)"
-  orph_rc=$?
-  if [[ -n "$orph_out" ]]; then
-    while IFS= read -r orph_line; do
-      [[ -n "$orph_line" ]] && fail "nvim: $orph_line"
-    done <<EOF
-$orph_out
-EOF
-    ((orph_rc == 0)) && fail "nvim: reachability reported findings but exited 0 (contract violation)"
-  elif ((orph_rc == 0)); then
-    pass "nvim module reachability (no orphaned lua modules)"
-  else
-    fail "nvim: reachability exited $orph_rc with no output — the gate did not actually run"
-  fi
 fi

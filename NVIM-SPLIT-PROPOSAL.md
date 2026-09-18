@@ -24,7 +24,21 @@
 > `nvim.lock` in Core's own field names; `fleet-drift.sh`'s Windows row became a two-lock
 > compare against that pin. That sync moved **no editor bytes** either — the same guarantee,
 > now observed on the second consumer. The side channel is the front door: Windows tracks the
-> editor's release line rather than a Core ref. **Steps 4–5 have not moved.**
+> editor's release line rather than a Core ref.
+>
+> **Step 4 is done (2026-09-17, [#1125](https://github.com/dotgibson/dotfiles-core/issues/1125)).**
+> Core stopped running the editor's tests. `scripts/test/15-nvim.sh`,
+> `scripts/nvim-reachability.sh` and the nvim half of `scripts/test/80-nvim-reachability.sh`
+> were **byte-identical** to the copies `dotfiles-nvim` already runs — there, against a real
+> pinned Neovim with the committed plugin pins installed — so this retired duplicates, not
+> coverage. Audit **§4b** went with the script it drove; **§4 (luacheck) stays** over the
+> vendored copy, as §7(2) decided, though not for the reason §7(2) gives: **§9q** compares
+> `nvim/`'s committed tree against `nvim.lock` byte for byte, so a corrupt sync is its
+> catch now and luacheck is defence in depth. The one thing that was **not** a duplicate is
+> the `#633` routine `allowed-tools` mirror, which had been lodging in that second file
+> under a name that described the other half of it; it survives as
+> `scripts/test/24-routine-allowed-tools.sh`, moved out of the zsh band (`NN >= 60`) that
+> had been suppressing it on every scope but `shell`. **Step 5 has not moved.**
 >
 > One answer was **corrected while shipping it**: §7(1) was written against a generated
 > `# core:theme:gen` block in the nvim colours that does not exist and never did. The
@@ -111,7 +125,7 @@ Windows becomes a first-class consumer instead of a side channel.
    `nvim/`, records the commit in `nvim/.core-ref`, and `fleet-drift.yml` reads that pin
    beside the Unix repos' `core.lock`. `tests/NvimParity.Tests.ps1` and
    `Assert-NvimParity.ps1` hold the copy to the source.
-5. Gates: luacheck (audit `§2`), the two test fragments, `scripts/nvim-reachability.sh`.
+5. Gates: luacheck (audit `§4`), the two test fragments, `scripts/nvim-reachability.sh`.
    The theme gate (`§9d`) does **not** reach into the tree — `nvim/` carries no
    `# core:theme:gen` block and never has, because it holds zero hex literals and asks the
    plugin (`nvim/lua/gerrrt/utils/palette.lua`). The coupling runs the other way:
