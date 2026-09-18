@@ -265,6 +265,28 @@
 
 ### Fixed
 
+- **The reusable showcase-dispatch header promised a tolerance it had already
+  withdrawn** ([#1127](https://github.com/dotgibson/dotfiles-core/issues/1127)).
+  `.github/workflows/notify-web-call.yml`'s AUTH paragraph told readers that
+  `WEBHOOK_SECRET` _"survives as a deprecated no-op purely so callers still passing it keep
+  working"_. There is no such input. `v7.0.0` removed the declaration — the one removal that
+  was genuinely waiting on a MAJOR, recorded as discharged in `GITHUB-APP-AUTH.md` and in
+  `scripts/sync-core.sh:390`.
+
+  **Stale would have been the benign version; this was inverted.** Removing an accepted
+  `workflow_call` secret is a breaking change to a published contract precisely because a
+  caller that keeps passing it _fails workflow validation before its own code runs_ — the
+  reason the removal was held for v7 in the first place. A maintainer opening the reusable
+  to decide whether their caller was safe to leave alone read the opposite of the truth, and
+  this file is the contract the fleet's callers consume at `@v7`. The header now names the
+  removal and its consequence, and points at the section that owns the reasoning.
+
+  `.github/workflows/notify-web.yml` carries the same paragraph but stops at the PAT's
+  deletion and claims nothing about a surviving input — it is not a reusable and never
+  declared one. Checked rather than assumed; unchanged. The declaration was the only wrong
+  site: the `FLEET_APP_PRIVATE_KEY` description twelve lines below it already called itself
+  _the SOLE active dispatch credential_.
+
 - **The `#829` regression ran on vendored-editor bumps and was skipped on the diffs that
   can break it** ([#1136](https://github.com/dotgibson/dotfiles-core/issues/1136)).
   `.github/workflows/ci.yml` installs Neovim only when the `nvim` axis is true. Until
