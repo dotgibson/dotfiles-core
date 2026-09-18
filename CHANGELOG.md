@@ -2,6 +2,20 @@
 
 ### Changed
 
+- **`gen-desktop-parity.sh`'s registry is the placement shape `gen-theme.sh` already has**
+  ([#1144](https://github.com/dotgibson/dotfiles-core/issues/1144), second of two; closes it).
+  The move onto the shared library (#1145) kept its registry as it was: a `repo<TAB>path`
+  array with the one block id held apart in a constant — the same facts as a
+  placement `BLOCKS` (`id path repo`), permuted, because there was exactly one block. It is
+  now that `BLOCKS`: one block, two rows, the same id on both, and the sibling checkout is
+  resolved through the library's `region_block_path` rather than a second copy of the
+  `resolve_repo_dir` + `-e .git` rule. With that, all four region generators declare exactly
+  one registry, named `BLOCKS`, whose first column is the block id — the prefix contract the
+  first half of #1144 documented — and the region-library bullet in `CLAUDE.md` stops saying
+  the registries are "still four different shapes". Both live copies verify byte-identically;
+  what stays this script's is the policy (an absent sibling is exit 3, a present sibling with
+  a missing file or region is exit 1), which no registry column carries.
+
 - **The four region generators' registries are one shape — and the measurement says two,
   not one** ([#1144](https://github.com/dotgibson/dotfiles-core/issues/1144), first of two).
   One symptom was left by #1129 deliberately: `gen-theme.sh` and `gen-aliases.sh` each had a

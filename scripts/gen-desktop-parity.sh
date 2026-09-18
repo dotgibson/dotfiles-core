@@ -101,8 +101,7 @@ SRC="$HERE/desktop/PARITY.shared.md"
 # siblings were renamed one repo at a time, and the legacy arm went once no live copy
 # carried it. A copy still on the old pair now has no region at all, which this gate reports
 # as the drift it is.
-BLOCK_ID=parity
-region_init desktop-parity gen-desktop-parity html "TARGETS in scripts/gen-desktop-parity.sh"
+region_init desktop-parity gen-desktop-parity html "BLOCKS in scripts/gen-desktop-parity.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)" # siblings of dotfiles-core by default
 [[ -n "${DOTFILES_ROOT:-}" ]] && ROOT="$DOTFILES_ROOT"
@@ -111,11 +110,17 @@ STRICT=0
 CHECKED=0
 MISSING=""
 
-# repo<TAB>path-within-repo. Both are mandatory when the repo is checked out.
-TARGETS=(
-  "dotfiles-Windows	desktop/PARITY.md"
-  "dotfiles-MacBook	sketchybar/PARITY.md"
-)
+# ── the registry ──────────────────────────────────────────────────────────────
+# BLOCKS: id<TAB>path<TAB>repo — a PLACEMENT registry in the shape scripts/lib/gen-region.sh
+# documents (#1144): ONE block, rendered into two files in two sibling repos, so the same id
+# sits on both rows. gen-theme.sh carries the other placement registry. Until #1144 this was
+# a `repo<TAB>path` array with the id held apart in a constant — the same facts, permuted,
+# because there was exactly one block; the library's resolver reads this shape and not that
+# one. Both files are MANDATORY when their repo is checked out — this script's policy below,
+# not the library's.
+BLOCKS="parity	desktop/PARITY.md	dotfiles-Windows
+parity	sketchybar/PARITY.md	dotfiles-MacBook"
+N_TARGETS="$(grep -c . <<<"$BLOCKS")"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -196,20 +201,18 @@ render_for() {
 
 hdr "Desktop-bar parity (Zebar ↔ sketchybar)"
 
-for entry in "${TARGETS[@]}"; do
-  repo="${entry%%	*}"
-  rel="${entry##*	}"
-  # `-e <dir>/.git`, not `-d <dir>` — the fleet convention (scripts/lib/common.sh,
-  # gen-porting-matrix.sh). `.git` is a FILE in a worktree or submodule checkout, so `-e`
-  # accepts those; and a plain directory that merely SHARES the repo's name is not a clone,
-  # so `-d` would treat it as checked out and then red on the PARITY.md it does not have —
-  # a false failure where the honest answer is "not checked out, skipped". resolve_repo_dir
-  # additionally finds a clone whose directory name differs from the repo name.
-  dir="$(resolve_repo_dir "$ROOT" "$repo")" || dir="$ROOT/$repo"
-  file="$dir/$rel"
+while IFS="$(printf '\t')" read -r id rel repo; do
+  [[ -n "$id" ]] || continue
+  # THE RESOLUTION RULE IS THE LIBRARY'S (region_block_path, #1144): resolve_repo_dir — a
+  # clone whose directory name differs from the repo's is still found — then `-e <dir>/.git`,
+  # not `-d <dir>`. `.git` is a FILE in a worktree or submodule checkout, so `-e` accepts
+  # those; and a plain directory that merely SHARES the repo's name is not a clone, so `-d`
+  # would treat it as checked out and then red on the PARITY.md it does not have — a false
+  # failure where the honest answer is "not checked out, skipped". Empty means exactly that.
+  file="$(region_block_path "$rel" "$repo" "$ROOT")"
 
   # Repo ABSENT → skip (Core-only clone), unless --strict.
-  if [[ ! -e "$dir/.git" ]]; then
+  if [[ -z "$file" ]]; then
     if ((STRICT)); then
       fail "$repo is not checked out under $ROOT (--strict)"
     else
@@ -240,14 +243,14 @@ for entry in "${TARGETS[@]}"; do
   # above", and would otherwise file a broken marker as "the gate could not run". So every
   # library call is branched on and mapped to this script's own fail(), which drives the
   # final `exit 1`. Do not "simplify" this into propagating the library's return code.
-  if ! region_preflight_file "$file" "$BLOCK_ID"; then
+  if ! region_preflight_file "$file" "$id"; then
     fail "$repo/$rel — its generated region is malformed (above); fix the markers in that repo"
     continue
   fi
   # The reverse direction: a marker whose id this generator does not render. One id is
   # registered, so anything else is either a typo or a second block nobody renders — and an
   # unrendered block is coverage loss that reads as health, the shape these gates exist to end.
-  if ! region_unregistered_in_file "$file" "$BLOCK_ID"; then
+  if ! region_unregistered_in_file "$file" "$id"; then
     fail "$repo/$rel — it carries a marker id this generator does not render"
     continue
   fi
@@ -290,7 +293,8 @@ for entry in "${TARGETS[@]}"; do
     # hole one step over. git is the one tool these scripts already cannot run without
     # (core_files_identical is built on git hash-object), so it is the portable diagnostic,
     # and the gate's exemption is structural: `diff` preceded by `git` in the same stage.
-    git --no-pager diff --no-index --no-color -- "$file" "$tmp" | sed 's/^/    /' >&2 || true
+    # stdin is the registry heredoc this loop reads from, so git gets /dev/null.
+    git --no-pager diff --no-index --no-color -- "$file" "$tmp" </dev/null | sed 's/^/    /' >&2 || true
     printf '    fix: edit desktop/PARITY.shared.md, then run: make gen-desktop-parity\n' >&2
     rm -f "$tmp"
   else
@@ -308,7 +312,9 @@ for entry in "${TARGETS[@]}"; do
     fi
     rm -f "$tmp"
   fi
-done
+done <<EOF
+$BLOCKS
+EOF
 
 if ((FAIL)); then
   if [[ "$MODE" == check ]]; then
@@ -322,7 +328,7 @@ fi
 # The message shape is the one audit-core.sh §9h parses — "not checked out under <root>:<repos> — ".
 if [[ -n "$MISSING" ]]; then
   printf 'gen-desktop-parity: not checked out under %s:%s — %d of %d copies compared (clone the fleet beside this repo, or pass --root DIR)\n' \
-    "$ROOT" "$MISSING" "$CHECKED" "${#TARGETS[@]}" >&2
+    "$ROOT" "$MISSING" "$CHECKED" "$N_TARGETS" >&2
   exit 3
 fi
 pass "desktop-bar parity — both copies track desktop/PARITY.shared.md"
