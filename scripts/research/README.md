@@ -44,8 +44,9 @@ be **re-asked on purpose**. Nothing schedules them: both `research-nonmutable.ym
   findings are read by a person and recorded in the proposal.
 
 - **`nonmutable/*.capabilities`** — R2's three prototype declarations (bootc, MicroOS,
-  NixOS), each validated by `scripts/check-capabilities.sh` with the six optional keys it
-  accepts; `nonmutable/README.md` carries the R2 verdict (additive) and what each file
+  NixOS), each validated by `scripts/check-capabilities.sh` with the four optional keys it
+  accepts (R2 prototyped six; `PKG_PENDING_EXIT_NONE` / `_SOME` were retired unread in
+  #1128); `nonmutable/README.md` carries the R2 verdict (additive) and what each file
   still marks "to verify". Not fleet declarations; nothing links them — the three that
   ship are `dotfiles-Fedora/os/fedora.atomic.capabilities`,
   `dotfiles-openSUSE/os/opensuse.microos.capabilities` and
