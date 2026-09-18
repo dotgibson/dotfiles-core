@@ -265,6 +265,32 @@
 
 ### Fixed
 
+- **The `#829` regression ran on vendored-editor bumps and was skipped on the diffs that
+  can break it** ([#1136](https://github.com/dotgibson/dotfiles-core/issues/1136)).
+  `.github/workflows/ci.yml` installs Neovim only when the `nvim` axis is true. Until
+  [#1125](https://github.com/dotgibson/dotfiles-core/issues/1125) that was right — the
+  binary's main consumer was `scripts/test/15-nvim.sh`, which genuinely was about `nvim/`.
+  With that retired upstream the sole remaining consumer is
+  `scripts/test/73-maint-runner.sh`'s
+  [#829](https://github.com/dotgibson/dotfiles-core/issues/829) regression, whose subject is
+  `maint/dotfiles-maint.sh` — and `ci-classify.sh` maps `maint/*` to `shell`. So editing the
+  test installed the editor; editing the code it guards did not.
+
+  It could not go red, either: the fragment skips on `have nvim` alone, and the behavioral
+  suite reaches the audit as _one_ backgrounded pass/fail (`scripts/audit-core.sh:270`), so
+  its skips never reach `--strict`'s tool-skip counter.
+
+  The Linux install now fires on `nvim OR shell`, which is seconds of pinned tarball. **macOS
+  stays on the nvim axis**, deliberately asymmetric: `brew install neovim` is minutes, and
+  paying it on every macOS shell leg would buy a second run of an OS-agnostic test. The
+  narrower trigger still earns its keep — that fragment is written to the bash 3.2 floor on
+  purpose, and macOS is the only leg that executes it on 2007's bash.
+
+  Teaching `ci-classify.sh` to set `nvim=true` for `maint/*` was rejected: that axis means
+  _"the editor tree changed"_ and also drives audit `§4` and every `SCOPE_NVIM` section, so
+  overloading it to mean _"install a tool"_ would make it lie — and
+  `scripts/test/22-ci-classify.sh` pins its behaviour with fixtures.
+
 - **`V8-PROPOSAL.md` §7 said where its cost list went, instead of quietly disagreeing with it**
   ([#1130](https://github.com/dotgibson/dotfiles-core/issues/1130)).
   Promoting the MAJOR cost list into `RELEASE-RUNBOOK.md` §1.1 left §7 a frozen duplicate of a
