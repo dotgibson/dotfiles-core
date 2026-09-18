@@ -307,7 +307,7 @@ both-ways shape `core.manifest` has in §1:
 3. every flag `00-tools.zsh` sets has a reader — a `zsh/*.zsh` module, or this table. #694
    removed fourteen that had neither, and this is what stops them accumulating again.
    "Reader" means a **zsh module**, not any file mentioning the name: a flag is never
-   exported, so `bin/`, `scripts/`, `maint/` and nvim's lua run where it does not exist.
+   exported, so `bin/`, `scripts/`, `maint/` and the vendored nvim lua run where it does not exist.
    A **test** is not a reader either — `HAVE_GRON` survived an earlier draft of this gate
    on the strength of one negative fixture, which is exactly the dead global the direction
    exists to find.

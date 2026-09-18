@@ -2,6 +2,55 @@
 
 ### Changed
 
+- **The docs learned the second vendored line — Core is on _both_ ends of a vendoring
+  contract now**
+  ([#1126](https://github.com/dotgibson/dotfiles-core/issues/1126)).
+  Step 5 of `NVIM-SPLIT-PROPOSAL.md` §3.5, and the last: it describes what steps 1-4 did
+  rather than what they were meant to do. `ARCHITECTURE.md`'s topology section opened with
+  _"Core flows in one direction — authored here, copied out"_ and drew a diagram to match;
+  `CLAUDE.md`, `README.md` and `ARCHITECTURE.md` each listed `nvim` in the column naming
+  what Core **owns**. The diagram now has an arrow pointing _in_, the inbound lock is
+  explained where `core.lock` is (`nvim.lock` names its source because, unlike Core's, that
+  source is not implicit — `dotfiles-Offense/companion.lock` has carried the same shape for
+  the same reason), and the editor is described as reaching a machine in three hops:
+  `dotfiles-nvim` → `dotfiles-core` → that repo's `core/`, with `dotfiles-Windows` skipping
+  the middle one.
+
+  **`RELEASE-RUNBOOK.md` gained a fifth flow.** `## 5. Cut a dotfiles-nvim release` sits
+  beside htpx's — the other repo the fleet vendors _from_ — so the header table, which had
+  said four, now says five and carries a row whose "fans out to" column points inward. The
+  old §5 and §6 shifted to §6 and §7; the one citation of them in the tree
+  (`sync-fanout.yml`) moved with them. §1.1 gained the step it had been missing: the editor
+  pin moves **at a Core release and nowhere else** (§7(3)), which `release-readiness`
+  already told a reader while the runbook itself did not.
+
+  **Two premises in the issue were wrong, and the prose says what is true instead.** htpx
+  was said to "already document the shape" — it does, in exactly one place, so for
+  `VENDORING.md`, `ARCHITECTURE.md`, `README.md` and `CLAUDE.md` this _created_ the inward
+  prose rather than extending a precedent. And _"the colour rule now spans two repos"_ is
+  true for the opposite reason to the obvious one: `nvim/` was never a `gen-theme` target
+  and has never carried a `# core:theme:gen` block, because the editor holds zero hex
+  literals and asks the plugin. What crossed the boundary is the **assertion** —
+  `dotfiles-nvim` vendors `theme/palette.toml` _out_ of Core and runs the tokyonight-pin and
+  `M.style` checks that `gen-theme.sh --refresh` can only make with a live Neovim, so they
+  now run on every pin bump instead of nowhere at all.
+
+  **The sweep went wider than the six files named**, because the same staleness sat
+  elsewhere: `RELEASE-STRATEGY.md` — the _policy_ the runbook answers to — still batched the
+  editor pin into the weekly freshness PR and still said `freshness.yml` rolls it forward,
+  both of which #1123 and §7(3) had already contradicted; it and `RELEASE-RUNBOOK.md` also
+  still sourced `dotfiles-Windows`' `nvim/` mirror from Core, which #1124 changed. Smaller
+  corrections in `GITHUB-APP-AUTH.md`, `SECURITY.md`, `CONTRIBUTING.md`, `PORTABILITY.md`,
+  the two `tool-scout` files (which pointed the scout at a vendored, gate-protected
+  lockfile), the bug-report template (which invited editor bugs into the wrong repo) and
+  `V8-PROPOSAL.md`, whose extract-or-freeze deferral is now resolved. In
+  `PORTING-MATRIX.md` only footnote prose moved: footnotes ⁵ and ³³ attribute the Neovim
+  0.12 floor to the repo that authors the pin. **The floor itself is unchanged**, and the
+  generated blocks were not touched.
+
+  `NVIM-SPLIT-PROPOSAL.md` flips **DECIDED → SHIPPED** with this entry, since §3.5
+  completes here. All five steps ride the same release, so the file still names no version.
+
 - **Core stopped running the editor's tests — and the gate that had been lodging with
   them moved somewhere it actually runs**
   ([#1125](https://github.com/dotgibson/dotfiles-core/issues/1125)).
@@ -254,7 +303,65 @@
   denied a token-bearing job because `:Lazy! sync` executes upstream build hooks, and the new
   one only `git ls-remote`s.
 
+### Removed
+
+- **Two capability keys the schema accepted and nothing ever read**
+  ([#1128](https://github.com/dotgibson/dotfiles-core/issues/1128)).
+  `PKG_PENDING_EXIT_NONE` and `PKG_PENDING_EXIT_SOME` arrived with R2's non-mutable-host
+  prototype keys (`NON-MUTABLE-HOST-PROPOSAL.md` §4.1) to describe a count verb whose
+  answer is its exit status — `rpm-ostree upgrade --check --unchanged-exit-77`. They were
+  declared optional, validated properly (numeric, 1-255, no leading zero, never both, only
+  beside `PKG_COUNT_PENDING`), and **the consumer that would have read them was never
+  written**. `PKG_APPLY_PENDING_EXIT` covers the staged question that did ship, and it is
+  the key `zsh/02-capabilities.zsh` and the maint runner actually read.
+
+  **Why a schema removal is a minor here and would not be in general.**
+  `scripts/check-capabilities.sh` is vendored, seven OS repos run it from their own
+  `core/`, and an unknown key is a hard failure — so dropping a name is normally the
+  reverse-ratchet shape [#1104](https://github.com/dotgibson/dotfiles-core/issues/1104)
+  documents, where Core breaks a repo that was doing nothing wrong. It is safe in this one
+  case for one measured reason: **nothing declares them.** Re-verified before merging
+  rather than taken from the issue — all twelve `os/*.capabilities` across the fleet, in
+  both the working trees and `origin/main`, plus the three R2 prototypes under
+  `scripts/research/nonmutable/`. Zero hits, so no repo's declaration changes validity and
+  all twelve still validate unchanged.
+
+  **The retirement is pinned, not merely absent.** `scripts/test/55-capabilities.sh` loses
+  eight assertions that existed only for these keys and gains one asserting the name now
+  lands on the unknown-key arm — because "we deleted it" and "it cannot come back without
+  its consumer" are different claims, and only the second is worth a test. The `#1057`
+  leading-zero rationale moved rather than died: it was written once and cited from both
+  copies of the check, and `PKG_APPLY_PENDING_EXIT` is the only copy now.
+
+  Prose was corrected where it describes the tree as it **is** — the validator's own
+  header, `examples/os.capabilities.example`, `scripts/research/README.md` — and left
+  where it records what R2 and R5 **measured**, which is still true as written. The §4.1
+  table keeps the row, marked retired, because six later passages in that document cite
+  the key by name and a table that never introduces it would leave them dangling.
+
 ### Fixed
+
+- **The reusable showcase-dispatch header promised a tolerance it had already
+  withdrawn** ([#1127](https://github.com/dotgibson/dotfiles-core/issues/1127)).
+  `.github/workflows/notify-web-call.yml`'s AUTH paragraph told readers that
+  `WEBHOOK_SECRET` _"survives as a deprecated no-op purely so callers still passing it keep
+  working"_. There is no such input. `v7.0.0` removed the declaration — the one removal that
+  was genuinely waiting on a MAJOR, recorded as discharged in `GITHUB-APP-AUTH.md` and in
+  `scripts/sync-core.sh:390`.
+
+  **Stale would have been the benign version; this was inverted.** Removing an accepted
+  `workflow_call` secret is a breaking change to a published contract precisely because a
+  caller that keeps passing it _fails workflow validation before its own code runs_ — the
+  reason the removal was held for v7 in the first place. A maintainer opening the reusable
+  to decide whether their caller was safe to leave alone read the opposite of the truth, and
+  this file is the contract the fleet's callers consume at `@v7`. The header now names the
+  removal and its consequence, and points at the section that owns the reasoning.
+
+  `.github/workflows/notify-web.yml` carries the same paragraph but stops at the PAT's
+  deletion and claims nothing about a surviving input — it is not a reusable and never
+  declared one. Checked rather than assumed; unchanged. The declaration was the only wrong
+  site: the `FLEET_APP_PRIVATE_KEY` description twelve lines below it already called itself
+  _the SOLE active dispatch credential_.
 
 - **The `#829` regression ran on vendored-editor bumps and was skipped on the diffs that
   can break it** ([#1136](https://github.com/dotgibson/dotfiles-core/issues/1136)).

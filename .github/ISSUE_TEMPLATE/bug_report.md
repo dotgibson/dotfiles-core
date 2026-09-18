@@ -18,7 +18,8 @@ A clear description of the bug.
 
 ## Which Core file(s)
 
-e.g. `zsh/00-tools.zsh`, `scripts/audit-core.sh`, `nvim/lua/gerrrt/...`
+e.g. `zsh/00-tools.zsh`, `scripts/audit-core.sh`
+      (editor bugs under `nvim/` go to dotgibson/dotfiles-nvim, which owns that tree)
 
 ## How to reproduce
 

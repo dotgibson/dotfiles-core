@@ -9,20 +9,23 @@ rule here drifts from `README.md` / `CONTRIBUTING.md`, those win — fix this.
 
 `dotfiles-core` is the **single source of truth** for the Core layer of a
 **twelve-repo dotfiles system** built on a three-layer model. Core is authored
-**once here** and vendored into each OS repo's `core/` — so a
-defect here fans out N-way. Treat every change as if it ships to all of them,
-because it does.
+**once here** — with one exception, the editor — and vendored into each OS repo's
+`core/`, so a defect here fans out N-way. Treat every change as if it ships to all
+of them, because it does.
 
 | Layer         | Lives in                                                                     | Examples                                                           |
 | ------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Core**      | **this repo**, vendored into each OS repo's `core/`                          | zsh modules, tmux, nvim, git, starship                             |
+| **Core**      | **this repo**, vendored into each OS repo's `core/`                          | zsh modules, tmux, git, starship — and `nvim/`, vendored **in**    |
 | **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo,NixOS}` | package manager, clipboard, paths                                  |
 | **Role**      | `dotfiles-Offense` (offensive), `dotfiles-Defense` (defensive)               | offensive engagement + defensive detection tooling on the OS layer |
 
-Plus `dotfiles-web` — the public Astro showcase/docs site (the system's public
-face, **not** a config layer). The canonical Core-vendoring fleet is
-`scripts/os-repos.txt`; `dotfiles-Windows` is a machine repo but vendors no
-`core/` (its host config is replicated from scratch in PowerShell, not ported).
+Plus two repos that are not config layers: `dotfiles-web`, the public Astro
+showcase/docs site (the system's public face), and `dotfiles-nvim`, which **owns the
+editor** — the one repo Core vendors _from_ rather than _to_ (see the `nvim/` rule
+below). The canonical Core-vendoring fleet is `scripts/os-repos.txt`;
+`dotfiles-Windows` is a machine repo but vendors no `core/` (its host config is
+replicated from scratch in PowerShell, not ported), and `dotfiles-nvim` is absent
+because the arrow points the other way.
 
 ## The rules that bite
 
@@ -36,6 +39,23 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   audit's allowlist instead.
 - **Never edit vendored `core/` in an OS repo.** That tree is a copy of this repo
   and is overwritten on the next sync. Fix it **here**, then fan out.
+- **Never edit `nvim/` here — it is vendored _in_.** Core is the consumer on this one:
+  `nvim/` is a copy of [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim)
+  pinned by `nvim.lock`, and `audit-core.sh` §9q fails on any hand-edit — the same way a
+  hand-edited `core/` reads TAMPERED in an OS repo. Editor changes go **upstream**, where
+  the gate can install the committed plugin pins, start Neovim and run `:checkhealth`;
+  none of which Core's runners can do. Then bump the pin here, `nvim/` and `nvim.lock` in
+  **one** commit (a window where the tree moved and the lock did not reads as drift):
+
+  ```bash
+  scripts/sync-nvim.sh --ref vX.Y.Z   # the normal bump — pin an exact editor release
+  make check-nvim                     # how many releases behind is the pin? (no writes)
+  ```
+
+  The pin moves **with a Core release and nowhere else** (`NVIM-SPLIT-PROPOSAL.md` §7(3));
+  adopting every editor release would reimport the churn the extraction removed. The weekly
+  `freshness.yml` `nvim-pin` job **reports** the lag and opens no PR, so "at Core's pace"
+  cannot decay into "never".
 - **Load order is load-bearing.** `tools → capabilities → ui → options → history →
   aliases → git → functions → fzf → bindings → plugins → op → maint → update → os →
   role → local`
@@ -57,6 +77,14 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   **generated** `# core:theme:gen` blocks — hand-editing one is a gate failure
   (`audit-core.sh` §9d). Edit the palette, run `make gen-theme`. Comments name palette
   tokens, never hexes, so prose cannot drift from the code it describes.
+  **The rule now spans two repos, and `nvim/` is not one of the generated dirs above** —
+  it never was: the editor holds zero hex literals and asks the plugin
+  (`nvim/lua/gerrrt/utils/palette.lua`), which is why it needed no block. What it needed
+  was the _assertion_, and that is what crossed the boundary: `dotfiles-nvim` vendors
+  `theme/palette.toml` **out** of here and runs the tokyonight-pin and `M.style` checks
+  that `gen-theme.sh --refresh` can only make with a live Neovim — so they now run on every
+  pin bump instead of nowhere. Core still authors the palette; the two repos vendor from
+  each other, on different files.
 - **`aliases.md`'s tables are generated, not typed.** `scripts/gen-aliases.sh` renders
   them from `zsh/20-aliases.zsh`, `zsh/25-git.zsh` and `zsh/30-functions.zsh` into
   `<!-- core:aliases:gen … -->` blocks — hand-editing a table, or adding an alias without
@@ -92,8 +120,8 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   an environment SKIP, not red). Edit the source, run `make gen-desktop-parity`. Anything a
   single host adds lives **outside** the markers, marked `deliberate` in the
   `aligned`/`deliberate`/`gap` vocabulary — that is where Windows' psmux battery-scale note
-  sits. Keep the source a **prettier fixed-point** (`prettier --parser markdown`): Core's nvim
-  formats markdown with prettierd, and a one-sided format is how the pair drifted 3.5 KB apart
+  sits. Keep the source a **prettier fixed-point** (`prettier --parser markdown`): the vendored
+  nvim formats markdown with prettierd, and a one-sided format is how the pair drifted 3.5 KB apart
   in the first place (#693).
 - **The README hero tape is generated, not typed.** `assets/demo.tape` is rendered by
   `scripts/gen-hero-tape.sh` from three sources — `assets/hero.tape.in` (the shared body),
@@ -152,7 +180,8 @@ fails the run if you leave one off), and the fragments are sourced libraries, so
 Run `make` with no target for the discoverable list of entry points.
 
 To cut a release, follow `RELEASE-RUNBOOK.md` (exact commands for Core, the OS-repo
-rollout, and htpx); `RELEASE-STRATEGY.md` is the policy behind it.
+rollout, `dotfiles-Windows`, htpx and `dotfiles-nvim`); `RELEASE-STRATEGY.md` is the
+policy behind it.
 
 ## Maintenance routines (`.claude/`)
 
@@ -162,8 +191,9 @@ On-demand routines that automate the judgment-heavy chores `audit-core.sh` can't
   manifest ↔ code ↔ each OS repo). Delegates to the `doc-consistency` subagent.
 - `/tool-scout` — research the modern-CLI stack for newer/better tools and major
   features worth adopting. Delegates to the `tool-scout` subagent.
-- `/freshness-triage` — review open dependency-bump PRs (zsh plugins, nvim lock,
-  actions) against upstream changelogs and flag breaking changes.
+- `/freshness-triage` — review open dependency-bump PRs (zsh plugins, actions) against
+  upstream changelogs and flag breaking changes. The editor's plugin bumps are triaged in
+  `dotfiles-nvim`; what is left here is whether `nvim.lock` is due to move.
 - `/runtime-freshness` — decide whether the **pinned** language runtimes in
   `mise/config.toml` (python/ruby/java/lua) are due to cross a pin, weighing EOL
   calendars and tooling compatibility against the maint job's `mise outdated --bump`

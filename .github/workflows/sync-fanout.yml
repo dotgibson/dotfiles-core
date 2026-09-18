@@ -239,7 +239,7 @@ jobs:
           set -euo pipefail
           core="$GITHUB_WORKSPACE/fleet/dotfiles-core"
           # The checkout above is at the RELEASED TAG while this workflow runs from main, and
-          # RELEASE-RUNBOOK.md §5 has you dry-run this job against a PAST tag — where the
+          # RELEASE-RUNBOOK.md §6 has you dry-run this job against a PAST tag — where the
           # register does not exist yet. Guarded, or that dry-run kills the fan-out. Between
           # releases, `gh workflow run fleet-app-scope.yml` asks the same question off main.
           if [ ! -x "$core/scripts/fleet-app-scope.sh" ]; then

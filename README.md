@@ -75,13 +75,17 @@ per-OS repo, so you don't install this repo directly: you clone the repo for you
 platform (macOS, Kali, Fedora, …), which already carries Core inside it. Full docs live
 at the [documentation site][docs].
 
+One tree is the exception to "authored once here": the editor lives in
+[`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim), and Core vendors it in at a
+pinned release — so Core is a consumer too, not only a source.
+
 The system is three layers — Core here, an OS-native layer per machine, and an optional
 role layer — each building on the one below. [`ARCHITECTURE.md`](ARCHITECTURE.md) is the
 canonical statement of the model and the boundary test that places a file in one:
 
 | Layer | Lives in | Owns |
 | --- | --- | --- |
-| **Core** | this repo → vendored into every OS repo's `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
+| **Core** | this repo → vendored into every OS repo's `core/` | zsh, tmux, git, starship — identical everywhere; plus `nvim`, vendored from `dotfiles-nvim` |
 | **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,…}` | package manager, clipboard, paths |
 | **Role** | `dotfiles-Offense`, `dotfiles-Defense` | offensive / defensive tooling |
 

@@ -4,7 +4,8 @@ The register of tools Core **evaluated and did not adopt**, and why — plus the
 **holding**, each with the event that would end the hold.
 
 `/tool-scout`'s baseline (`PORTING-MATRIX.md`, `zsh/00-tools.zsh`, `zsh/20-aliases.zsh`,
-`mise/config.toml`, `zsh/45-plugins.zsh`, `nvim/lazy-lock.json`) describes what Core **has**.
+`mise/config.toml`, `zsh/45-plugins.zsh`, and the vendored `nvim/lazy-lock.json`) describes
+what Core **has**.
 None of it records what Core **considered and declined**, so a rejected tool was
 indistinguishable from one never evaluated — and a weekly scan re-proposed it on the next pass.
 

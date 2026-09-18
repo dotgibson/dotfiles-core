@@ -198,15 +198,18 @@ line of this section is a measured finding from §5, cited by research item.
 
 ### 4.1 The schema (R2, R5 — shipped)
 
-Six optional keys, all in `scripts/check-capabilities.sh` and
-`examples/os.capabilities.example` today; `PROVISIONER`, `PKG_APPLY` and
-`PKG_APPLY_PENDING` are read by the §4.2 consumers as of #1049:
+Six optional keys shipped; **four** are in `scripts/check-capabilities.sh` and
+`examples/os.capabilities.example` today, and all four are read by the §4.2 consumers as
+of #1049. The `PKG_PENDING_EXIT_*` row below was retired unread in
+[#1128](https://github.com/dotgibson/dotfiles-core/issues/1128) — it is kept here because
+§5 cites it by name six times, and a table that never introduces the key would leave those
+findings dangling:
 
 | key | meaning | measured on |
 | --- | --- | --- |
 | `PROVISIONER=atomic\|transactional\|declarative` | absent = mutable; what a consumer branches on | all three |
 | `PKG_APPLY` | the verb that makes a staged change live — a reboot on both staged hosts | bootc, MicroOS |
-| `PKG_PENDING_EXIT_SOME` / `_NONE` | a count verb that answers by exit status | bootc (`rpm-ostree upgrade --check --unchanged-exit-77`: 77 nothing newer, 0 an update, from a registry, 0.1 s) |
+| `PKG_PENDING_EXIT_SOME` / `_NONE` *(retired unread, #1128)* | a count verb that answers by exit status | bootc (`rpm-ostree upgrade --check --unchanged-exit-77`: 77 nothing newer, 0 an update, from a registry, 0.1 s) |
 | `PKG_APPLY_PENDING` (+ `_EXIT`) | the STAGED question: is a change waiting for `PKG_APPLY`? | bootc (`rpm-ostree status --pending-exit-77`: 0 idle / 77 queued, user-runnable, 0.1 s); MicroOS (`test -e /run/reboot-needed`) |
 
 Two relaxations: `PKG_COUNT_PENDING` may be absent under `PROVISIONER=declarative` (no

@@ -34,11 +34,11 @@ Two designs it deliberately rejects, because both break at fleet scale:
 Every file in the fleet has exactly one home, decided by a single question: what
 does this change _with_?
 
-| Layer         | Lives in                                              | Changes with         | Examples                                                        |
-| ------------- | ----------------------------------------------------- | -------------------- | --------------------------------------------------------------- |
-| **Core**      | `dotfiles-core`, vendored into each OS repo's `core/` | nothing — identical  | zsh modules, tmux base, Neovim, git, starship, mise             |
-| **OS-native** | one repo per platform                                 | the operating system | package manager, paths, clipboard backend                       |
-| **Role**      | `dotfiles-Offense` (red) · `dotfiles-Defense` (blue)  | you as an operator   | offensive engagement tooling · defensive detection/hunt tooling |
+| Layer         | Lives in                                              | Changes with         | Examples                                                            |
+| ------------- | ----------------------------------------------------- | -------------------- | ------------------------------------------------------------------- |
+| **Core**      | `dotfiles-core`, vendored into each OS repo's `core/` | nothing — identical  | zsh modules, tmux base, git, starship, mise — and a vendored Neovim |
+| **OS-native** | one repo per platform                                 | the operating system | package manager, paths, clipboard backend                           |
+| **Role**      | `dotfiles-Offense` (red) · `dotfiles-Defense` (blue)  | you as an operator   | offensive engagement tooling · defensive detection/hunt tooling     |
 
 The boundary rule, stated as a test:
 
@@ -49,11 +49,18 @@ The boundary rule, stated as a test:
 - Everything left over is **Core**, and it lives in `dotfiles-core` only.
 
 Core is not "the Neovim config" or "the shell config" — it is the entire
-machine-independent surface: the zsh module chain, the tmux base, Neovim, git,
-starship, and mise, plus the smaller configs that are equally identical everywhere
-(atuin, lazygit, jujutsu, the seeded sesh starter, the stock-vim fallback, and the
-shared bash libs), taken together. `core.manifest` is the exhaustive list; this
-sentence is the shape, not the inventory.
+machine-independent surface: the zsh module chain, the tmux base, git, starship, and
+mise, plus the smaller configs that are equally identical everywhere (atuin, lazygit,
+jujutsu, the seeded sesh starter, the stock-vim fallback, and the shared bash libs),
+taken together. `core.manifest` is the exhaustive list; this sentence is the shape, not
+the inventory.
+
+Neovim is in that surface but is no longer **authored** in it. Since
+[#1123](https://github.com/dotgibson/dotfiles-core/issues/1123) `nvim/` is a vendored
+copy of [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) pinned by
+`nvim.lock` — the editor is still identical on every machine and still reaches them
+through Core, so the layer test's answer is unchanged; what moved is who writes it. See
+"Vendoring topology" below.
 
 `PORTABILITY.md` is the companion rule set: once something _is_ Core, that document
 defines what it may assume about the machine it lands on. `VENDORING.md` is the same
@@ -144,30 +151,36 @@ emerge` probe standing in for "is this a rolling distro" — a probe for a BINAR
 ## The fleet
 
 Twelve repositories make up the configuration system (one Core plus eleven machine
-repos), with `dotfiles-web` as a thirteenth public repo that documents the system
-rather than configuring a machine.
+repos), plus two that configure no machine: `dotfiles-web`, which documents the system,
+and `dotfiles-nvim`, which owns the editor Core vendors.
 
-| Repository          | Layer            | Vendors `core/`? | Notes                                                             |
-| ------------------- | ---------------- | ---------------- | ----------------------------------------------------------------- |
-| `dotfiles-core`     | Core             | n/a (source)     | Single source of truth; fanned out to the rest.                   |
-| `dotfiles-MacBook`  | OS-native        | yes              | Homebrew; reference implementation, synced first.                 |
-| `dotfiles-Fedora`   | OS-native        | yes              | dnf; the template the other Linux repos stamp from.               |
-| `dotfiles-Arch`     | OS-native        | yes              | pacman + AUR, rolling release.                                    |
-| `dotfiles-Debian`   | OS-native        | yes              | apt; Ubuntu 24.04 LTS — the only frozen target.                   |
-| `dotfiles-openSUSE` | OS-native        | yes              | zypper; Tumbleweed (`dup`) + Leap (`up`) aware.                   |
-| `dotfiles-Alpine`   | OS-native        | yes              | musl + busybox + doas; the lean outlier.                          |
-| `dotfiles-Gentoo`   | OS-native        | yes              | emerge from source; USE flags, full atoms.                        |
-| `dotfiles-NixOS`    | OS-native        | yes              | nix + home-manager; the one declarative host.                     |
-| `dotfiles-Offense`  | Role / offensive | yes              | Core + the offensive role layer (OS band from `dotfiles-Debian`). |
-| `dotfiles-Defense`  | Role / defensive | yes              | Core + OS layer + the defensive detection/hunt role layer.        |
-| `dotfiles-Windows`  | Native host      | no               | pwsh / scoop / winget; Core is reimplemented, not ported.         |
-| `dotfiles-web`      | Showcase (none)  | no               | Astro docs site; the system's public face.                        |
+| Repository          | Layer            | Vendors `core/`?         | Notes                                                             |
+| ------------------- | ---------------- | ------------------------ | ----------------------------------------------------------------- |
+| `dotfiles-core`     | Core             | n/a (source)             | Single source of truth; fanned out to the rest.                   |
+| `dotfiles-MacBook`  | OS-native        | yes                      | Homebrew; reference implementation, synced first.                 |
+| `dotfiles-Fedora`   | OS-native        | yes                      | dnf; the template the other Linux repos stamp from.               |
+| `dotfiles-Arch`     | OS-native        | yes                      | pacman + AUR, rolling release.                                    |
+| `dotfiles-Debian`   | OS-native        | yes                      | apt; Ubuntu 24.04 LTS — the only frozen target.                   |
+| `dotfiles-openSUSE` | OS-native        | yes                      | zypper; Tumbleweed (`dup`) + Leap (`up`) aware.                   |
+| `dotfiles-Alpine`   | OS-native        | yes                      | musl + busybox + doas; the lean outlier.                          |
+| `dotfiles-Gentoo`   | OS-native        | yes                      | emerge from source; USE flags, full atoms.                        |
+| `dotfiles-NixOS`    | OS-native        | yes                      | nix + home-manager; the one declarative host.                     |
+| `dotfiles-Offense`  | Role / offensive | yes                      | Core + the offensive role layer (OS band from `dotfiles-Debian`). |
+| `dotfiles-Defense`  | Role / defensive | yes                      | Core + OS layer + the defensive detection/hunt role layer.        |
+| `dotfiles-Windows`  | Native host      | no                       | pwsh / scoop / winget; Core is reimplemented, not ported.         |
+| `dotfiles-web`      | Showcase (none)  | no                       | Astro docs site; the system's public face.                        |
+| `dotfiles-nvim`     | Editor (source)  | no — Core vendors **it** | Owns `nvim/`; Core pins it in `nvim.lock`.                        |
 
-The canonical Core-vendoring fleet is `scripts/os-repos.txt` — ten repos.
-`dotfiles-Windows` is deliberately absent from it: its host layer is replicated
-from scratch in PowerShell rather than ported one-to-one from the Unix Core, so
-it carries no vendored `core/` subtree and `sync-core.sh` must never fan out into
-it.
+The canonical Core-vendoring fleet is `scripts/os-repos.txt` — ten repos. Two repos are
+deliberately absent from it, for opposite reasons. `dotfiles-Windows`' host layer is
+replicated from scratch in PowerShell rather than ported one-to-one from the Unix Core,
+so it carries no vendored `core/` subtree and `sync-core.sh` must never fan out into it.
+`dotfiles-nvim` is absent because **the arrow points the other way**: Core vendors the
+editor tree _from_ it, so it has no `core/` and no `core.lock` and never will. Listing
+either would enlist it in every gate that reads that file — the fan-out,
+`core-integrity`, `fleet-drift`, `fleet-vocabulary` — each of which would then demand a
+vendored tree that does not exist. `scripts/os-repos.txt` states both exclusions at the
+point of definition.
 
 `dotfiles-Debian` and `dotfiles-Offense` are both Debian-family and both drive apt, which
 is not duplication: `dotfiles-Offense` targets Kali, a _rolling_ sid derivative, and exists
@@ -179,12 +192,19 @@ rolling target needs.
 
 ## Vendoring topology
 
-Core flows in one direction — authored here, copied out:
+Core flows outward — authored here, copied out. It also flows **inward** on exactly one
+tree, and the two directions meet in this repo:
 
 ```text
                     ┌──────────────────────┐
+                    │    dotfiles-nvim     │  owns the editor; its own gate
+                    │  (releases vX.Y.Z)   │  starts Neovim and :checkhealth
+                    └──────────┬───────────┘
+                               │  make sync-nvim — nvim/ read-tree'd at nvim_sha
+                               ▼                  (provenance in nvim.lock)
+                    ┌──────────────────────┐
                     │     dotfiles-core    │  single source of truth
-                    │  (core.manifest =    │
+                    │  (core.manifest =    │  for everything else
                     │   the contract)      │
                     └──────────┬───────────┘
                                │  make sync — core/ materialized at core_sha
@@ -194,7 +214,29 @@ Core flows in one direction — authored here, copied out:
    (+ Offense and Defense, which each stack a Role layer — offensive / defensive — on top of an OS layer)
 
    dotfiles-Windows  ──  no subtree; Core reimplemented natively in PowerShell
+                         (but it takes nvim/ from dotfiles-nvim directly)
 ```
+
+**The inbound line, in one paragraph.** `nvim/` is not authored here: it is a vendored
+copy of [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim), refreshed by
+`scripts/sync-nvim.sh` and pinned by `nvim.lock` — an _inbound_ lock, and the direction is
+why it looks different from `core.lock`. `core.lock` is written **by** this repo **into**
+each OS repo, so its source is implicit; `nvim.lock` is written **into** this repo by a
+source it does not control, so it must name that source (`nvim_repo`, `nvim_branch`)
+alongside the revision. `dotfiles-Offense` carries the same shape for the same reason, in
+`companion.lock`, for the `offensive/companion` tree it vendors from `dotgibson/htpx`;
+Core is simply on the receiving end for the first time. The editor then rides the ordinary
+fan-out — `nvim/` is a `core.manifest` entry like any other — so it reaches a machine in
+**three** hops, `dotfiles-nvim` → `dotfiles-core` → that repo's `core/`. `dotfiles-Windows`
+is the exception that skips the middle hop, consuming the editor's release line directly
+since [#1124](https://github.com/dotgibson/dotfiles-core/issues/1124).
+
+Two consequences worth stating plainly. Audit **§9q** compares `nvim/`'s committed tree
+against `nvim.lock`'s recorded tree hash — offline, always on — so a hand-edit here is
+caught exactly the way a hand-edited `core/` is reported TAMPERED in an OS repo; the rule
+"never edit a vendored tree" now cuts both ways. And the traffic is not one-way even on
+this pair: `dotfiles-nvim` vendors Core's `theme/palette.toml` back out, so each repo is
+the other's upstream on a different file.
 
 Each machine repo vendors Core under `core/` once — from a **released tag, never
 `main`**. The automated fan-out pins every repo to the exact commit a release tag

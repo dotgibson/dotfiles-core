@@ -17,12 +17,13 @@
 # rebuild. AUTH (G2, GITHUB-APP-AUTH.md): the fleet App — the FLEET_APP_CLIENT_ID variable set AND
 # the caller passing the private key — mints a short-lived dotfiles-web-scoped installation
 # token for the dispatch. That is the ONLY auth: the legacy WEBHOOK_SECRET PAT was deleted
-# when G2 finished (#683), and the input below survives as a deprecated no-op purely so
-# callers still passing it keep working. Two outcomes: a caller passing NO App key (or an
-# unset FLEET_APP_CLIENT_ID) skips the mint and the dispatch warns and no-ops; a mint that IS
-# attempted but cannot reach dotfiles-web fails in create-github-app-token, so the job
-# goes red before the warning branch is reachable. First-party only
-# (actions/create-github-app-token + curl; no marketplace action).
+# when G2 finished (#683), and v7.0.0 removed its declaration from the workflow_call block
+# below — a caller still passing it now fails workflow validation before its own code runs
+# (GITHUB-APP-AUTH.md, "One live constraint … discharged in v7"). Two outcomes: a caller
+# passing NO App key (or an unset FLEET_APP_CLIENT_ID) skips the mint and the dispatch warns
+# and no-ops; a mint that IS attempted but cannot reach dotfiles-web fails in
+# create-github-app-token, so the job goes red before the warning branch is reachable.
+# First-party only (actions/create-github-app-token + curl; no marketplace action).
 # ──────────────────────────────────────────────────────────────────────────────
 name: notify-web (reusable)
 

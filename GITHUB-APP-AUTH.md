@@ -60,7 +60,8 @@ section to answer. It is now narrowed, per mint:
 `sync-fanout.yml` is the one that keeps **Workflows: write**, and it is load-bearing rather
 than cautious: a sync branch can carry `.github/workflows/*` pin moves, and GitHub refuses
 the **whole** push without it. `freshness.yml` deliberately does **not** take it — a pin
-bump touches `zsh/` and `nvim/lazy-lock.json`, never workflows, and if that ever changes the
+bump touches `zsh/` only — the editor's own pins moved to `dotfiles-nvim`, and
+`nvim/lazy-lock.json` here is vendored and gate-protected — never workflows, and if that ever changes the
 push fails loudly rather than the token having quietly been able to rewrite CI all along.
 The three `dotfiles-Windows` sync bots decline it for the same reason and on the same
 evidence: they write `nvim/`, `starship/starship.toml` and `theme/`, so a branch of theirs
