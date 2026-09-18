@@ -16,7 +16,8 @@ config; you research and recommend.
 Read what the system already ships so you do not propose something in use:
 `PORTING-MATRIX.md` (the stack + per-distro packaging), `zsh/00-tools.zsh` and
 `zsh/20-aliases.zsh` (what is detected and aliased), `mise/config.toml` (pinned
-runtimes), `zsh/45-plugins.zsh` and `nvim/lazy-lock.json` (pinned plugins).
+runtimes) and `zsh/45-plugins.zsh` (pinned zsh plugins). `nvim/lazy-lock.json` is vendored
+from `dotfiles-nvim` and is not editable here — propose editor plugins there.
 
 Then read `.claude/tool-decisions.md` — the tools Core has already **considered and declined**,
 with the reasoning and the issue behind each. The files above describe what Core *has*, so

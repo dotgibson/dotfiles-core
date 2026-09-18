@@ -42,9 +42,9 @@ its own, but only Core's is a coordinated release with a curated changelog:
   the other, and asking the second question of `core.lock` is how the tag line went
   wrong (below).
 - **`dotfiles-Windows`** vendors **no** `core/` subtree (so no `core.lock`) and carries
-  only the second line — advanced by an automatic patch when the `nvim/`/`starship/`
-  assets it mirrors from Core move, or by a deliberate minor/major a human cuts for
-  host work (see the runbook §3).
+  only the second line — advanced by an automatic patch when the assets it mirrors move
+  (`nvim/` from `dotfiles-nvim` since #1124, `starship/` from Core), or by a deliberate
+  minor/major a human cuts for host work (see the runbook §3).
 - **`dotfiles-web`** documents the system; it ships when its content is true,
   not on this cadence.
 
@@ -96,16 +96,21 @@ The weekly bots **report first** — they open a PR or a deduped issue and never
 vendor anything on their own. They run on two offset slots so the reviews don't
 all land at once:
 
-- **Mondays 06:00 UTC** — `freshness.yml` (rolls the zsh-plugin + nvim pins
-  forward as a PR) and `fleet-drift.yml` (flags any OS repo lagging the latest **released**
+- **Mondays 06:00 UTC** — `freshness.yml` (rolls the zsh-plugin pins forward as a PR, and
+  **reports** how far `nvim.lock` trails `dotfiles-nvim` without opening one) and
+  `fleet-drift.yml` (flags any OS repo lagging the latest **released**
   Core tag — not `main`'s tip, which would report every unreleased commit as drift).
 - **Tuesdays 07:00 UTC** — `claude-routines.yml` (`/doc-audit` + `/tool-scout`),
   deliberately offset a day behind freshness so its findings issue lands after
   that week's pin PR.
 
-Plugin and nvim pin bumps are batched into the weekly freshness PR, never landed
-per-tool, so the fleet sees one reviewed step a week rather than a trickle of
-unaudited churn. A quiet week means nothing needs doing.
+Plugin pin bumps are batched into the weekly freshness PR, never landed per-tool, so the
+fleet sees one reviewed step a week rather than a trickle of unaudited churn. A quiet week
+means nothing needs doing. **The editor pin is the exception and moves on the other
+cadence**: since the editor was extracted, `nvim.lock` advances only when a Core release
+adopts a `dotfiles-nvim` release (`NVIM-SPLIT-PROPOSAL.md` §7(3)), because taking every
+editor release weekly would reimport the churn the extraction removed. The Monday job
+reports the lag so that pace cannot decay into never.
 
 ### Tagged releases (on demand)
 

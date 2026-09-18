@@ -5,9 +5,11 @@ hands-on companion to `RELEASE-STRATEGY.md` — that doc is the *policy* (what i
 versioned, when, why); this is the *recipe* (what to type). When they disagree,
 `RELEASE-STRATEGY.md` wins; fix this.
 
-Four flows live here. Three are versioned on a **planned cadence** (Core,
-dotfiles-Windows, htpx); the OS-repo rollout is the consumer side of the Core line —
-each repo tags itself for it, and for its own work, without a cadence of its own:
+Five flows live here. Four are versioned on a **planned cadence** (Core,
+dotfiles-Windows, htpx, dotfiles-nvim); the OS-repo rollout is the consumer side of the
+Core line — each repo tags itself for it, and for its own work, without a cadence of its
+own. Note the last row's direction: `dotfiles-nvim` and htpx are the two repos Core's
+fleet vendors **from**, so their releases fan *inward*:
 
 | Flow | Versioned thing | Trigger | Fans out to | Section |
 | --- | --- | --- | --- | --- |
@@ -15,12 +17,15 @@ each repo tags itself for it, and for its own work, without a cadence of its own
 | **OS-repo rollout** | each repo's own `vX.Y.Z` (Core stamped in `core.lock`) | merging the fan-out PRs — or any push touching that repo's installable surface; `bump` by dispatch | the live hosts (on bootstrap) | [2](#2-roll-a-core-release-out-to-the-os-repos) |
 | **dotfiles-Windows** | `dotfiles-Windows` (own `vX.Y.Z`) | mirror-sync `nvim/`+`starship/` (auto-patch) **or** a manual CHANGELOG promotion + tag (minor/major) | the Windows host (on bootstrap) | [3](#3-cut-a-dotfiles-windows-release) |
 | **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Offense` (`companion.lock`) | [4](#4-cut-an-htpx-release) |
+| **dotfiles-nvim** | `dotfiles-nvim` (own `vX.Y.Z`) | `make release` + push tag, in that repo | `dotfiles-core` (`nvim.lock`, at a Core release) and `dotfiles-Windows` (its own `nvim.lock`, weekly bot) | [5](#5-cut-a-dotfiles-nvim-release) |
 
 These lines are independent and update different files, so they never collide: a Core
 release bumps each OS repo's `core.lock` (and earns each of them a patch tag of its own); an htpx release bumps Offense's `companion.lock`;
+a dotfiles-nvim release bumps Core's `nvim.lock` and dotfiles-Windows' own;
 and `dotfiles-Windows` carries its own version, advanced **two ways** — an automatic patch when
-the `nvim/`/`starship/` assets it mirrors from Core move, and a deliberate minor/major a human
-cuts for host work (both flows in §3). It vendors no `core/` subtree.
+the assets it mirrors move (`nvim/` from `dotfiles-nvim` since #1124, `starship/` from Core),
+and a deliberate minor/major a human cuts for host work (both flows in §3). It vendors no
+`core/` subtree.
 
 ---
 
@@ -38,7 +43,7 @@ it maps to a bump**; it lives here, beside the commands that act on it:
 
 | Bump | `X.Y.Z` moves | Cut it when… | Concrete triggers |
 | --- | --- | --- | --- |
-| **PATCH** | `Z` → `Z+1` | a fix or doc change with **no interface change** | a bug fix; a zsh-plugin / nvim pin bump with no observable behavior change; a doc correction |
+| **PATCH** | `Z` → `Z+1` | a fix or doc change with **no interface change** | a bug fix; a zsh-plugin bump, or an `nvim.lock` bump whose editor release was itself a patch; a doc correction |
 | **MINOR** | `Y` → `Y+1`, `Z` → `0` | **additive** and backward-compatible | a new zsh module, alias, function, or keybinding that **displaces nothing** a host already relies on |
 | **MAJOR** | `X` → `X+1`, `Y`,`Z` → `0` | a host must **adapt** to keep working | reordering the load chain; removing/renaming a public alias, binding, or function; changing the `bootstrap.sh` symlink contract; dropping a `core.manifest` path |
 
@@ -82,6 +87,15 @@ make audit                          # the one gate — must be green before tagg
 #    sitting on your local main, one ahead of origin, where it must never be pushed;
 #    branching first means there is nothing to clean up afterwards.
 git checkout -b release/vX.Y.Z
+
+# 1b. Adopt the editor, if it has moved. THIS release is the only place the pin moves
+#     (NVIM-SPLIT-PROPOSAL.md §7(3)), so a behind nvim.lock is a thing to DO here, not a
+#     reason to hold the release. `make check-nvim` names the newest release; pass it to
+#     --ref. nvim/ and nvim.lock land in ONE commit, or audit §9q reds the window between
+#     them. Skip the whole step when the pin is already current.
+make check-nvim                     # exits 2 and prints the target tag when behind
+scripts/sync-nvim.sh --ref vN.N.N   # stages both paths; commits nothing
+git commit -m "chore(nvim): vendor dotfiles-nvim vN.N.N" -- nvim nvim.lock
 
 # 2. Stage the release (bumps core.version + promotes CHANGELOG [Unreleased], regenerates
 #    the vendored CHANGELOG.recent.md digest, re-audits).
@@ -641,9 +655,57 @@ path instead of a re-run:
 That path takes the tag from the input rather than from HEAD, so it works regardless of
 where `main` is now.
 
+## 5. Cut a dotfiles-nvim release
+
+Run in a clean [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) checkout. It
+owns the editor and versions itself, Core-style, from its own `vX.Y.Z` tags — Core stopped
+authoring `nvim/` in
+[#1123](https://github.com/dotgibson/dotfiles-core/issues/1123) and now vendors it.
+
+**Which bump?** Read SemVer as impact on the two consumers — `dotfiles-core` (which pins the
+release in `nvim.lock` and fans the tree onward inside `core/`) and `dotfiles-Windows`
+(which pins it in an `nvim.lock` of its own and skips Core entirely):
+
+- **PATCH** — a plugin-pin roll with no behaviour change, a keymap or option fix, a lint fix.
+  The overwhelming majority of editor releases.
+- **MINOR** — a new plugin, LSP server or keymap; anything a user would notice but that
+  needs nothing of the consumers.
+- **MAJOR** — a change a **consumer** must adapt to: a new floor for the Neovim binary or a
+  system dependency (`tree-sitter-cli`, a compiler), or a change to the layout Core's
+  `core.manifest` entry and `blib_link_core`'s symlink target assume. A Neovim-floor bump is
+  the one that bites hardest — it lands in `PORTING-MATRIX.md`'s footnote ³³ as a packaging
+  problem across the whole fleet, so flag it loudly.
+
+Cut it there, then adopt it here. **Nothing is automatic**, and that is the design:
+
+1. In `dotfiles-nvim`, cut and publish the release per that repo's own runbook. Its gate
+   installs the committed plugin pins, starts Neovim and runs `:checkhealth` — the checks
+   Core structurally cannot run.
+2. **Core adopts at its own pace.** The pin moves **with a Core release and nowhere else**
+   (`NVIM-SPLIT-PROPOSAL.md` §7(3)): adopting every editor release would reimport exactly
+   the churn the extraction removed. So there is no bump PR — the bump is step 1b of §1.1
+   above, run by whoever cuts the Core release.
+3. **`dotfiles-Windows` adopts weekly**, by bot. Its `nvim-sync` job (Tuesdays 08:00 UTC,
+   plus `workflow_dispatch`) opens a PR when the editor's release line moves; merging it is
+   the whole release, and `auto-tag.yml` patch-bumps that repo (§3a). Windows therefore runs
+   **ahead** of Core's pin most weeks, which `fleet-drift.sh` reports as a note rather than
+   drift.
+4. Nothing needs to happen for the other ten repos. They receive the editor inside `core/`
+   on the next Core fan-out, like any other manifest content.
+
+**Noticing that the pin has stopped moving** is Core's half, and it is report-only:
+
+```bash
+make check-nvim   # how many dotfiles-nvim releases is nvim.lock behind? (no writes, no PR)
+```
+
+`freshness.yml`'s `nvim-pin` job runs exactly that weekly (Mondays 06:00 UTC) and reds the
+job on a stale pin without opening anything. It needs no App token and no Neovim — it
+compares tags — so a release here requires no fan-out credential at all, unlike §1 and §4.
+
 ---
 
-## 5. Before relying on a new cross-repo workflow
+## 6. Before relying on a new cross-repo workflow
 
 Cross-repo workflows (`sync-fanout`, anything that clones/pushes/PRs another repo) only
 take effect once on the **default branch** — GitHub reads `workflow_run` / `workflow_dispatch`
@@ -662,7 +724,7 @@ This catches the auth-scope, argument, and resolve-path bugs that PR CI cannot s
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |

@@ -595,6 +595,9 @@ force an `X.0.0` the content does not earn.
   `nvim-sync.ps1`), or **freeze** it against a pinned Neovim. Three deferrals is the
   signal that it needs its own release, not a fourth ride-along slot — so it does not get
   one here.
+  **Resolved since.** `NVIM-SPLIT-PROPOSAL.md` picked **extract**, and it shipped as a
+  minor rather than the major this bullet expected — nothing an OS repo consumes changed
+  shape. `dotgibson/dotfiles-nvim` owns the editor and Core vendors it behind `nvim.lock`.
 - **Retiring the bare verb names** (`up`, `serve`, `gsync`, `maint-*`). `#692` closed
   `not_planned` with an explicit revisit condition: **evidence of a real collision**, not
   a fresh aesthetic objection. No such evidence has appeared. Unchanged.
