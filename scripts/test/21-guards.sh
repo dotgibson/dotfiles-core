@@ -630,8 +630,8 @@ unset -f _vpn_reset _vpn_write _vpn_count
 # WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
 # extraction, every verdict here comes from git: is the path tracked, and which .gitignore
 # rule wins. No text fixture can stand in for that, so each case builds a throwaway repo with
-# its own index and .gitignore — the same approach the nvim-reachability tests take, and for
-# the same reason.
+# its own index and .gitignore — the same approach the nvim-reachability tests took before
+# they moved to dotfiles-nvim (#1125), and for the same reason.
 #
 # The discriminator under test is the one that makes the gate self-maintaining: a file hidden
 # by the BLANKET `.claude/*` is a finding, one named by a MORE SPECIFIC rule is a decision.

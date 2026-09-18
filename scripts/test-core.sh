@@ -103,9 +103,8 @@ while (($#)); do
     cat <<'EOF'
 usage: test-core.sh [-q|--quiet] [--scope LIST] [--color WHEN] [--json] [-h|--help]
 
-Behavioral suite: clipboard ladder + nvim headless load + nvim event callbacks
-+ zsh load-order smoke + function/unit + detection tests. Degrades gracefully
-when zsh/nvim are absent.
+Behavioral suite: clipboard ladder + repo-meta contracts + zsh load-order smoke
++ function/unit + detection tests. Degrades gracefully when zsh is absent.
 
 The sections live in scripts/test/NN-name.sh and are sourced in NN order; this
 script is the dispatcher. Adding a section is adding a file there.
@@ -113,6 +112,10 @@ script is the dispatcher. Adding a section is adding a file there.
   -q, --quiet     only print SKIP/FAIL lines and the final summary
   --scope LIST    limit the slow area sections: shell, nvim, atuin, all (default),
                   none. The clipboard + CI-classifier sections always run.
+                  `nvim` selects NOTHING here since #1125 moved the editor's tests to
+                  dotgibson/dotfiles-nvim; it stays in the vocabulary because
+                  audit-core.sh's luacheck leg still reads it and both gates parse the
+                  same list (scripts/lib/common.sh :: _set_scope).
                   `atuin` drives the premise detector's hermetic self-test
                   (scripts/research/verify-atuin-guard.sh) — the slowest thing here by far.
                   The cross-cutting bash-tooling sections (fan-out, scaffold, generators,

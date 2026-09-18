@@ -292,7 +292,17 @@ jobs:
 
       # ── neovim: Linux gets the maintainer's pinned release tarball via the same shared
       # composite action (idempotent; the action no-ops if nvim is already present). macOS
-      # uses brew below. Drives test-core.sh's headless config-load smoke test. ──
+      # uses brew below.
+      #
+      # WHAT STILL NEEDS IT, since #1125 retired the headless config-load suite to
+      # dotgibson/dotfiles-nvim: scripts/test/73-maint-runner.sh's #829 regression, which
+      # runs the maint runner's real nvim argv against a `--clean` session. That fragment
+      # carries no SCOPE_ gate, so it runs on every leg and skips on `have nvim` alone —
+      # which means this `if:` decides its coverage. It is keyed on the nvim axis, and the
+      # pushes that can reintroduce #829 touch maint/ (shell), so today the test runs on
+      # editor bumps and not on the diffs that can break it. Widening the condition costs
+      # a `brew install neovim` on every macOS shell leg, so it is tracked separately
+      # rather than changed here. ──
       - name: Install neovim (Linux, pinned)
         if: runner.os == 'Linux' && needs.changes.outputs.nvim == 'true'
         uses: ./.github/actions/setup-core-tools

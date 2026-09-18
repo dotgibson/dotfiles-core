@@ -69,19 +69,22 @@ fan-out later.
 ## Run the audit before you push
 
 `scripts/audit-core.sh` is the test suite. It checks manifest↔filesystem drift,
-executable-bit invariants, shell syntax (`bash -n` / `zsh -n`), `luacheck`, nvim
-module reachability (§4b), and `shellcheck`. It degrades gracefully — a missing
-linter is skipped, not failed — so it runs on a bare box as well as in CI.
+executable-bit invariants, shell syntax (`bash -n` / `zsh -n`), `luacheck`, and
+`shellcheck`. It degrades gracefully — a missing linter is skipped, not failed — so
+it runs on a bare box as well as in CI.
 
-One section is worth knowing about when you touch `nvim/`: **§4b
-(`scripts/nvim-reachability.sh`)** fails on a lua module nothing can require.
-`core.manifest` lists `nvim/` as a _directory_, so the manifest↔filesystem check
-auto-lists every path under it and cannot see an orphan — §4b is the backstop
-instead. Adding a module under `lua/gerrrt/utils/` or at the top level means
-something must `require()` it by name; a new `servers/<name>.lua` must be added to
-the `servers` list in `servers/init.lua` (those are required dynamically, so that
-list is the only evidence a static check has). `plugins/` is exempt — lazy imports
-the whole directory.
+**Do not edit `nvim/` here.** Since [#1123](https://github.com/dotgibson/dotfiles-core/issues/1123)
+it is a vendored copy of [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim),
+pinned by `nvim.lock`, and §9q fails on any hand-edit — the same way a hand-edited
+`core/` is reported TAMPERED in an OS repo. Editor changes go upstream, where the gate
+can install the committed plugin pins, start Neovim and run `:checkhealth`; then
+`make sync-nvim` brings the new pin here. The rules that used to live in this section —
+a module under `lua/gerrrt/utils/` needs something to `require()` it by name, a new
+`servers/<name>.lua` must join the `servers` list in `servers/init.lua`, `plugins/` is
+exempt because lazy imports the whole directory — moved with the check that enforces
+them ([#1125](https://github.com/dotgibson/dotfiles-core/issues/1125)): upstream's audit
+§2 is what fails on a module nothing can require, and it runs on every pin bump there.
+§4 still luachecks the vendored copy here, as defence in depth.
 
 ```bash
 ./scripts/audit-core.sh           # full run

@@ -2,6 +2,43 @@
 
 ### Changed
 
+- **Core stopped running the editor's tests — and the gate that had been lodging with
+  them moved somewhere it actually runs**
+  ([#1125](https://github.com/dotgibson/dotfiles-core/issues/1125)).
+  Step 4 of `NVIM-SPLIT-PROPOSAL.md` §3.5. `scripts/test/15-nvim.sh` (802 lines of headless
+  Neovim fixtures), `scripts/nvim-reachability.sh` and the nvim half of
+  `scripts/test/80-nvim-reachability.sh` were **byte-identical** to the copies
+  [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) has run since
+  [#1122](https://github.com/dotgibson/dotfiles-core/issues/1122) — there against a pinned,
+  SHA-verified Neovim with the committed plugin pins installed, which is the one thing Core's
+  runners structurally cannot do. Retiring them drops duplicates, not coverage, and that was
+  checked by diffing the files rather than by trusting the plan.
+
+  **The second file was two gates wearing one name.** Below the nvim half sat the `#633`
+  routine `allowed-tools` ⇄ workflow `--allowedTools` mirror, which has nothing to do with
+  the editor and would have been deleted by anyone reading the filename. It survives as
+  `scripts/test/24-routine-allowed-tools.sh` — and _24_, not _80_, because `NN >= 60` is the
+  zsh band: `scripts/test/60-loader.sh` ends the whole run when `SCOPE_SHELL` is off or zsh
+  is missing, so at 80 the mirror never ran under `--scope nvim`, `--scope atuin` or
+  `--scope none`. It is python3 and two file reads, so it now sits in the always-run
+  pure-bash band, ungated.
+
+  **luacheck stays, for a corrected reason.** §7(2) kept it because _it catches a corrupt
+  sync_; since [#1123](https://github.com/dotgibson/dotfiles-core/issues/1123) that is
+  §9q's job, which compares `nvim/`'s committed tree against `nvim.lock` byte for byte,
+  offline and always-on. §4 is defence in depth over a vendored tree and now says so. §4b
+  (the live reachability run) retired with the script it drove; the walk happens in
+  `dotfiles-nvim`'s own audit, on the same tree, before the release `nvim.lock` pins — which
+  is what `core.manifest`, `CONTRIBUTING.md` and `VENDORING.md` now say instead of citing a
+  section that no longer exists. Section ids are stable, so `4b` is retired, never reused.
+
+  `.github/workflows/ci.yml` keeps its Neovim install: the
+  [#829](https://github.com/dotgibson/dotfiles-core/issues/829) regression in
+  `scripts/test/73-maint-runner.sh` still needs a real editor. That step's comment records
+  that its `if:` is keyed on the wrong axis for that consumer — tracked separately rather
+  than changed here. One stale citation found while reading around this: §2 of the proposal
+  gave Core's luacheck gate the id `§2`, which has been `§4` for as long as it has existed.
+
 - **The next major is policy now: triggered by a non-empty Breaking Backlog, never
   scheduled — and the cost of cutting one lives beside the commands that cut it**
   ([#1118](https://github.com/dotgibson/dotfiles-core/issues/1118)).

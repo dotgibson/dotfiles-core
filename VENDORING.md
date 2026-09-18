@@ -138,8 +138,10 @@ split-vs-upstream check, and readers (this one included) took the coverage on fa
 `core-integrity.sh` is the gate that actually runs: it resolves `core.lock`'s `core_sha`
 to a tree object and compares it against your `core/`, which answers "has this copy been
 tampered with". It does **not** answer "does Core contain a file its manifest never
-listed" — that is `audit-core.sh`'s job, upstream, and §4b (nvim module reachability) is
-what closed the one place the manifest could not see.
+listed" — that is `audit-core.sh`'s job, upstream. The one place the manifest could not
+see was inside `nvim/`, which it lists as a directory; §9q closes it now by comparing
+that tree against `nvim.lock`, and the load-graph walk that used to close it here (§4b)
+went to `dotfiles-nvim` with the rest of the editor's gate (#1125).
 
 The pins are not inert: `auto-tag-call` holds `contents: write` and pushes tags, and
 `notify-web-call` is handed two secrets. Running a different Core's version of those than

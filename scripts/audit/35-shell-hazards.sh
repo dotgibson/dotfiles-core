@@ -101,7 +101,7 @@ fi
 
 # ── 5k. the bash 3.2 floor (PORTABILITY.md §1) ───────────────────────────────
 # PORTABILITY.md §1 puts the shell floor at bash 3.2, because macOS ships 2007's bash and
-# this matrix runs a macos-latest leg. TEN scripts here carry a comment saying so. Ten
+# this matrix runs a macos-latest leg. NINE scripts here carry a comment saying so. Nine
 # comments and, until #874, zero checks — a convention enforced only by a CI leg that takes
 # seventeen minutes to answer, on one platform of four, after the fact.
 #
