@@ -955,6 +955,54 @@ else
   fail "gen-desktop-parity: an end-before-gen marker pair was accepted"
 fi
 
+# ── the grammar migration: BOTH marker forms are accepted (#1129) ─────────────
+# This generator's targets are in two SIBLING repos, so Core and those repos cannot change
+# the marker string in one commit — whichever moved first would red the other, and
+# parity-check.yml clones both siblings from `main` weekly and runs --check --strict. Core
+# therefore learns the canonical `core:desktop-parity:gen parity` form while still accepting
+# the pre-#1129 id-less pair. The fixture above is deliberately still on the LEGACY form, so
+# every case before this point is already the "old sibling, new Core" assertion.
+
+# The CANONICAL form renders and verifies exactly like the legacy one.
+_dp_new_fixture() {
+  rm -rf "$DPF"
+  mkdir -p "$DPF/dotfiles-Windows/desktop" "$DPF/dotfiles-Windows/.git" \
+    "$DPF/dotfiles-MacBook/sketchybar"
+  printf 'gitdir: /nowhere\n' >"$DPF/dotfiles-MacBook/.git"
+  for _f in "$DPW" "$DPM"; do
+    printf '<!-- core:desktop-parity:gen parity -->\n<!-- core:desktop-parity:end parity -->\n' >"$_f"
+  done
+}
+_dp_new_fixture
+if [[ "$(_dp_run)" == 0 ]] && [[ "$(_dp_run --check)" == 0 ]] && grep -q 'Bar parity contract' "$DPW"; then
+  pass "gen-desktop-parity: the core:desktop-parity:gen form renders and verifies"
+else
+  fail "gen-desktop-parity: the canonical marker form was not accepted: $(_dp_out | head -n 3)"
+fi
+
+# ACCEPTED ON READ, NEVER EMITTED ON WRITE. A render must not quietly rewrite a sibling's
+# marker to the new grammar: that would be a cross-repo edit disguised as a render, landing
+# in a repo whose own PR has not been reviewed. The legacy fixture must come back out of a
+# write still carrying the legacy pair.
+_dp_fixture && _dp_run >/dev/null
+if grep -qxF '<!-- desktop-parity:gen -->' "$DPW" && ! grep -q 'core:desktop-parity' "$DPW"; then
+  pass "gen-desktop-parity: a legacy marker is rendered between, never rewritten to the new form"
+else
+  fail "gen-desktop-parity: write mode changed a sibling's marker grammar on its own"
+fi
+
+# A MIXED PAIR is a half-applied rename. It renders perfectly, which is exactly why it has
+# to fail: one marker says the block is Core's and carries an id while the other does not,
+# so the file disagrees with itself. Counting cannot see it — one gen and one end is a valid
+# count in every combination — so it needs its own check.
+_dp_fixture
+printf '<!-- core:desktop-parity:gen parity -->\n<!-- desktop-parity:end -->\n' >"$DPW"
+if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'not the same grammar' <<<"$(_dp_out --check)"; then
+  pass "gen-desktop-parity: a half-renamed marker pair fails (1) and says to rename both lines"
+else
+  fail "gen-desktop-parity: a mixed old/new marker pair was accepted — got $(_dp_run --check)"
+fi
+
 # IDEMPOTENCE — a second render must be byte-identical, or --check can never be stably green.
 _dp_fixture && _dp_run >/dev/null
 cp "$DPW" "$DPF/win.first.md"

@@ -79,8 +79,27 @@ HERE="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 source "$HERE/scripts/lib/common.sh"
 
 SRC="$HERE/desktop/PARITY.shared.md"
-MARK_GEN='<!-- desktop-parity:gen -->'
-MARK_END='<!-- desktop-parity:end -->'
+# ── the marker pair, during the grammar migration (#1129) ─────────────────────
+# THE CANONICAL FORM carries the `core:` prefix and a block id, like every other
+# generated region in this repo. `core:` is PROVENANCE — it names the repo whose
+# generator owns the block, which is the one thing a reader of
+# dotfiles-Windows/desktop/PARITY.md has to tell them that dotfiles-core rewrites it.
+# `dotfiles-Offense`'s own gen-views.sh is correctly `companion:` for the same reason.
+MARK_GEN='<!-- core:desktop-parity:gen parity -->'
+MARK_END='<!-- core:desktop-parity:end parity -->'
+# THE LEGACY FORM, accepted but never written. This generator's targets are in TWO SIBLING
+# REPOS, so Core and those repos cannot change the string in one commit: whichever side
+# moved first would red the other, and `.github/workflows/parity-check.yml` clones both
+# siblings from `main` weekly and runs `--check --strict` against them. So Core learns the
+# new form FIRST and keeps accepting the old one; the siblings are renamed next; and the two
+# lines below go once no live copy carries them.
+#
+# ACCEPTED ON READ, NEVER EMITTED ON WRITE — and that asymmetry is the whole mechanism.
+# render() echoes whichever marker the target FILE carries, verbatim, so a sibling still on
+# the legacy pair keeps it and stays green; nothing here silently rewrites a marker in
+# another repo's file, which would be a cross-repo edit disguised as a render.
+MARK_GEN_LEGACY='<!-- desktop-parity:gen -->'
+MARK_END_LEGACY='<!-- desktop-parity:end -->'
 
 ROOT="$(cd "$HERE/.." && pwd)" # siblings of dotfiles-core by default
 [[ -n "${DOTFILES_ROOT:-}" ]] && ROOT="$DOTFILES_ROOT"
@@ -154,14 +173,19 @@ render() {
   # I/O error, a concurrent replacement) yields an EMPTY block and awk still exits 0 — write
   # mode would then install that over a perfectly good PARITY.md and call it a success. Check
   # the status and exit non-zero so the render-failure branch leaves the target untouched.
-  awk -v src="$SRC" -v g="$MARK_GEN" -v e="$MARK_END" '
-    $0 == g {
+  # EITHER marker form opens and closes the region, and whichever one the file carries is
+  # echoed back VERBATIM by `print` — so a sibling still on the legacy pair renders
+  # correctly and keeps its own bytes. Write mode never substitutes one form for the other;
+  # renaming a marker in another repo is that repo's commit, not a side effect of a render.
+  awk -v src="$SRC" -v g="$MARK_GEN" -v e="$MARK_END" \
+    -v gl="$MARK_GEN_LEGACY" -v el="$MARK_END_LEGACY" '
+    $0 == g || $0 == gl {
       print
       while ((_rc = (getline l < src)) > 0) print l
       if (_rc < 0) { print "gen-desktop-parity: cannot read " src > "/dev/stderr"; exit 1 }
       close(src); print ""; skip = 1; next
     }
-    $0 == e { skip = 0; print; next }
+    $0 == e || $0 == el { skip = 0; print; next }
     !skip   { print }
   ' "$1"
 }
@@ -197,13 +221,27 @@ for entry in "${TARGETS[@]}"; do
     fail "$repo/$rel is missing — the repo is checked out, so this file must exist"
     continue
   fi
-  n_gen=$(grep -cFx "$MARK_GEN" "$file")
-  n_end=$(grep -cFx "$MARK_END" "$file")
+  # COUNT BOTH FORMS as one marker. `grep -xF -e A -e B` is a whole-line fixed-string match
+  # against either, so a file on the legacy pair and a file on the canonical pair both read
+  # as exactly one region — which is what lets the two siblings be renamed one repo at a
+  # time without this gate reding in between.
+  n_gen=$(grep -cxF -e "$MARK_GEN" -e "$MARK_GEN_LEGACY" "$file")
+  n_end=$(grep -cxF -e "$MARK_END" -e "$MARK_END_LEGACY" "$file")
   if ((n_gen != 1 || n_end != 1)); then
-    fail "$repo/$rel — expected exactly one '$MARK_GEN' and one '$MARK_END' (found $n_gen/$n_end); the generated block must be delimited exactly once"
+    fail "$repo/$rel — expected exactly one '$MARK_GEN' and one '$MARK_END' (found $n_gen/$n_end); the generated block must be delimited exactly once (the pre-#1129 id-less pair is still accepted)"
     continue
   fi
-  if [[ "$(grep -nFx "$MARK_GEN" "$file" | cut -d: -f1)" -gt "$(grep -nFx "$MARK_END" "$file" | cut -d: -f1)" ]]; then
+  # A MIXED PAIR is a half-applied rename, and it renders perfectly — which is exactly why
+  # it has to fail here. One marker says the block is Core's and carries an id while the
+  # other does not, so whichever a reader trusts, the file disagrees with itself. Counting
+  # alone cannot see it: one `gen` and one `end` is a valid count in every combination.
+  _dp_new_gen=$(grep -cxF "$MARK_GEN" "$file")
+  _dp_new_end=$(grep -cxF "$MARK_END" "$file")
+  if ((_dp_new_gen != _dp_new_end)); then
+    fail "$repo/$rel — the opening and closing markers are not the same grammar: one is the '<!-- core:desktop-parity:… -->' form and the other the pre-#1129 id-less one. Rename BOTH lines together"
+    continue
+  fi
+  if [[ "$(grep -nxF -e "$MARK_GEN" -e "$MARK_GEN_LEGACY" "$file" | cut -d: -f1)" -gt "$(grep -nxF -e "$MARK_END" -e "$MARK_END_LEGACY" "$file" | cut -d: -f1)" ]]; then
     fail "$repo/$rel — '$MARK_END' appears before '$MARK_GEN'"
     continue
   fi

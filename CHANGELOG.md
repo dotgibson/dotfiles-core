@@ -222,6 +222,38 @@
   other way, and the name belongs in `fleet-app-scope.sh`'s `EXTRA_REPOS` if the App is ever
   installed there — not in the fleet list.
 
+- **The last off-grammar marker learns its canonical form, and accepts both while the two
+  sibling repos catch up**
+  ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).
+  `desktop-parity` was the one namespace outside the `core:<ns>:gen <id>` grammar — no
+  `core:` prefix, no block id, matched with `grep -Fx` against two hardcoded literals, in a
+  file format that could therefore hold exactly one block forever.
+  `scripts/gen-desktop-parity.sh` now writes `<!-- core:desktop-parity:gen parity -->` and
+  **accepts the old pair as well**.
+
+  **The prefix is provenance, not tidiness.** `core:` names the repo whose generator owns
+  the region, and these blocks live in `dotfiles-Windows/desktop/PARITY.md` and
+  `dotfiles-MacBook/sketchybar/PARITY.md` — files whose only clue that _dotfiles-core_
+  rewrites them is the marker itself. By the same rule `dotfiles-Offense`'s own
+  `gen-views.sh` is correctly `companion:` and always was.
+
+  **Both forms, because the targets are in other repos.** Core and the two siblings cannot
+  change a string in one commit: whichever side moved first would red the other, and
+  `.github/workflows/parity-check.yml` clones both siblings from `main` weekly and runs
+  `--check --strict`. So Core learns the new form first, the siblings are renamed next, and
+  the legacy arm goes once no live copy carries it.
+
+  The asymmetry is the mechanism: the legacy pair is **accepted on read and never emitted
+  on write**. A render echoes whichever marker the target file carries, verbatim, so a
+  sibling still on the old pair stays green and nothing rewrites a marker in another repo's
+  file — which would be a cross-repo edit disguised as a render. A **mixed** pair is
+  refused, though, because it renders perfectly and is therefore invisible to every other
+  check: one marker claiming an id while the other does not is a file disagreeing with
+  itself, and a count of one `gen` and one `end` is valid in every combination.
+
+  Severity is unchanged: a malformed marker here is exit **1**, not 2, because _an unmarked
+  copy is the drift being gated, not an absence_ — the contract §9i classifies on.
+
 - **The nvim split is decided: A2 — extract into `dotfiles-nvim`, Core keeps vendoring it**
   ([#1120](https://github.com/dotgibson/dotfiles-core/issues/1120)).
   `NVIM-SPLIT-PROPOSAL.md` had sat at `DECISION PENDING` since 2026-09-14, after three
