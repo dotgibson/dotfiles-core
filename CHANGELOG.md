@@ -39,6 +39,46 @@
   than changed here. One stale citation found while reading around this: §2 of the proposal
   gave Core's luacheck gate the id `§2`, which has been `§4` for as long as it has existed.
 
+- **The marker-region walker is one library, and the generator with the most consumers
+  gained the two structural checks it never had**
+  ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).
+  Four generators — `gen-theme.sh`, `gen-aliases.sh`, `gen-porting-matrix.sh` and
+  `gen-desktop-parity.sh` — each re-derived "find the markers, replace what is between
+  them, write the file atomically", and each detected a _different subset_ of the ways a
+  marker pair can be malformed. `scripts/lib/gen-region.sh` is now that walker, the
+  grammar, the structural preflight and the install, once. This release moves
+  `gen-theme.sh` onto it; the other three follow.
+
+  **The duplication was the symptom; the gap was the defect.** `gen-theme.sh` renders 16
+  blocks across files that are symlinked into `$HOME` on every box, plus two in sibling
+  repos — and it was the one generator that could not see a **crossed or nested** marker
+  pair, and never checked that every `gen` had exactly one matching `end`.
+  `gen A, gen B, end A, end B` has one marker of each kind per id, so its per-block count
+  could not notice, and its walker consumed the inner `gen` as stale body — silently
+  dropping block B from the file. `gen-aliases.sh` and `gen-porting-matrix.sh` had both
+  checks; the script whose output ships to every host had neither. Both now fail with
+  exit 2 and name themselves, which is a **behaviour change**: input that used to pass
+  quietly is now refused loudly.
+
+  The second fix is structural. `gen-theme.sh`'s preflight counted markers with a
+  _second, hand-written regex_ rather than the one its walker used, which is how it came
+  to count `gen` markers alone while the walker honoured both kinds. `region_markers`
+  derives its answer by running the walker's own matcher, so a marker the walker would
+  honour can no longer be one the structural checks overlook.
+
+  **No marker string changed, and none will here.** `core:theme`, `core:aliases` and
+  `core:porting-matrix` are already the `core:<ns>:gen <id>` grammar, and `core:theme` in
+  particular is a cross-language contract: `dotfiles-Windows` runs its own
+  `gen-theme.ps1` over the same markers, with its own palette, registry and Pester suite,
+  which Core neither calls nor gates. The one off-grammar namespace is
+  `desktop-parity` — no `core:` prefix, no block id — and its only live marker pairs sit
+  in two sibling repos, so it is sequenced separately.
+
+  The gate ids are untouched: §9d, §9g, §9h and §9i classify each generator's `--check`
+  exit code and contain no marker literals at all. `scripts/test/43-gen-region.sh` tests
+  the grammar and the walker once, and each generator's fragment keeps the cases that
+  prove it still wires the library up in its own namespace.
+
 - **The next major is policy now: triggered by a non-empty Breaking Backlog, never
   scheduled — and the cost of cutting one lives beside the commands that cut it**
   ([#1118](https://github.com/dotgibson/dotfiles-core/issues/1118)).
