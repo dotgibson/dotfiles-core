@@ -2,6 +2,67 @@
 
 ### Changed
 
+- **The last generator is on the shared library, the last off-grammar marker is gone, and
+  the pair that lived in two other repos was renamed without a red in between**
+  ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).
+  `gen-desktop-parity.sh` was the outlier on both counts: its markers carried no `core:`
+  prefix and no block id — `grep -Fx` against two hardcoded literals, in a file format that
+  could therefore hold exactly one generated region forever — and it kept its own awk
+  renderer, its own count checks and its own atomic install. It now calls
+  `scripts/lib/gen-region.sh` like the other three, and every live copy carries
+  `<!-- core:desktop-parity:gen parity -->`. **There is no second marker regex left in this
+  repo.**
+
+  **The interesting part is the sequencing, not the diff.** This generator's only live
+  marker pairs are in `dotfiles-Windows/desktop/PARITY.md` and
+  `dotfiles-MacBook/sketchybar/PARITY.md`, so Core and those repos could not change a string
+  in one commit — whichever side moved first would red the other, and
+  `.github/workflows/parity-check.yml` clones both siblings from `main` weekly and runs
+  `--check --strict`. So it took three: Core learned the canonical form while still
+  _accepting_ the id-less pair
+  ([#1143](https://github.com/dotgibson/dotfiles-core/pull/1143)), the two siblings were
+  renamed one repo at a time
+  ([dotfiles-Windows#272](https://github.com/dotgibson/dotfiles-Windows/pull/272),
+  [dotfiles-MacBook#259](https://github.com/dotgibson/dotfiles-MacBook/pull/259)), and the
+  legacy arm goes here. The gate was green at every step, including the mixed state where
+  one copy was renamed and the other was not — which was checked, not assumed.
+
+  **A copy left behind now reds, and that is a new assertion rather than a side effect.** A
+  legacy marker no longer matches the grammar at all, so it is not a marker — it is prose.
+  Without a check the walker would pass such a file through untouched, the byte comparison
+  would compare it against itself, and `--check` would report green over a copy it no longer
+  covers: coverage loss reading as health. `region_preflight_file` turns that into
+  `registered block is missing: parity`, and the behavioural suite pins it in the failing
+  direction.
+
+  **Severity is translated on purpose, and the code says so.** The library returns 2 — _this
+  document is structurally broken_. This generator still exits **1**, because an unmarked
+  copy is the drift being gated rather than an absence, and `audit-core.sh` §9i is written
+  around exactly that; propagating the library's return code would file a broken marker as
+  "the gate could not run". No gate id moved, and §9i, §9d, §9g and §9h contain no marker
+  literals at all.
+
+  One user-visible message changed: an `end` before its `gen` is now reported as
+  `unterminated 'core:desktop-parity:gen parity' region` rather than the generator's own
+  _appears before_. That is the point rather than collateral — since
+  [#1141](https://github.com/dotgibson/dotfiles-core/pull/1141) the preflight and the
+  walker report the same faults in the same words, and keeping a hand-written ordering grep
+  for a nicer sentence would have left exactly one hand-written marker check alive in the
+  repo. Two checks the old generator could not express at all came free: a **crossed or
+  nested** pair, and a **block id nobody renders** — the second being unrepresentable under a
+  grammar with no ids.
+
+  **What #1129 did not do, on purpose.** Its third listed symptom was that the registries are
+  per-generator and structurally different, and they still are: two generators call theirs
+  `BLOCKS` and mean different columns, one has three parallel registries, and one holds its
+  block id outside the registry entirely. Four awk parsers in the suite read those registries'
+  _source shape_ — a coupling `gen-porting-matrix.sh` already documents as load-bearing — so a
+  rename there is a suite change first. Landing it on top of a three-repo marker rename would
+  have made any red impossible to attribute. Measured and deferred in
+  [#1144](https://github.com/dotgibson/dotfiles-core/issues/1144), which also asks the prior
+  question: whether those four shapes are one thing wearing four names, or four honest small
+  ones.
+
 - **The docs learned the second vendored line — Core is on _both_ ends of a vendoring
   contract now**
   ([#1126](https://github.com/dotgibson/dotfiles-core/issues/1126)).

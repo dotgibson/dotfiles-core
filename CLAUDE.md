@@ -68,10 +68,16 @@ because the arrow points the other way.
   `<ns>` is **provenance** — it names the repo whose generator owns the region, which is
   why `dotfiles-Offense`'s own `gen-views.sh` is correctly `companion:` and not `core:`.
   A new region generator calls `region_init <ns> <prog> <syntaxes>` and supplies a
-  renderer; it does not write a marker regex. `gen-theme.sh` is on it; the other three are
-  migrating. **Do not change a marker string casually**: `core:theme` is a cross-language
-  contract that `dotfiles-Windows`' own `gen-theme.ps1` also speaks, and Core neither
-  calls nor gates that script.
+  renderer; it does not write a marker regex. **All four are on it** — `gen-theme.sh`,
+  `gen-aliases.sh`, `gen-porting-matrix.sh` and `gen-desktop-parity.sh` — so there is no
+  second marker regex left in the repo to drift from this one. What is _not_ shared is each
+  generator's **registry**, which is still four different shapes; the library takes the
+  namespace, the program name and a registry hint as parameters instead.
+  **Do not change a marker string casually**: `core:theme` is a cross-language contract
+  that `dotfiles-Windows`' own `gen-theme.ps1` also speaks, and Core neither calls nor
+  gates that script. A marker that lives in a _sibling_ repo cannot be changed in one
+  commit at all — `core:desktop-parity` took three, Core accepting both forms in between
+  (#1143), because whichever side moves first reds the other.
 - **Colour is generated, not typed.** `theme/palette.toml` is the only place a hex is
   authored. `zsh/`, `tmux/`, `starship/`, `lazygit/`, `lib/ux.sh` and `examples/` carry
   **generated** `# core:theme:gen` blocks — hand-editing one is a gate failure
@@ -113,7 +119,7 @@ because the arrow points the other way.
   prose.
 - **The desktop-bar `PARITY.md` pair is generated, not typed.** The Zebar ↔ sketchybar
   contract is authored once in `desktop/PARITY.shared.md` and rendered between the
-  `<!-- desktop-parity:gen -->` and `<!-- desktop-parity:end -->` markers into
+  `<!-- core:desktop-parity:gen parity -->` and `<!-- core:desktop-parity:end parity -->` markers into
   `dotfiles-Windows/desktop/PARITY.md` and `dotfiles-MacBook/sketchybar/PARITY.md` by
   `scripts/gen-desktop-parity.sh` — hand-editing either copy inside the markers is a gate
   failure (`audit-core.sh` §9i, plus the weekly `parity-check.yml`; an absent sibling clone is

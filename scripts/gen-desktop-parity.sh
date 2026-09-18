@@ -9,9 +9,9 @@
 #     dotfiles-Windows/desktop/PARITY.md
 #     dotfiles-MacBook/sketchybar/PARITY.md
 #
-#     <!-- desktop-parity:gen -->
+#     <!-- core:desktop-parity:gen parity -->
 #     …rendered from dotfiles-core/desktop/PARITY.shared.md…
-#     <!-- desktop-parity:end -->
+#     <!-- core:desktop-parity:end parity -->
 #
 # Anything OUTSIDE the markers is hand-authored and never touched — that is where a
 # host puts an addendum with no counterpart on the other bar (the Windows psmux
@@ -77,29 +77,32 @@ set -uo pipefail
 HERE="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/gen-region.sh
+source "$HERE/scripts/lib/gen-region.sh"
 
 SRC="$HERE/desktop/PARITY.shared.md"
-# ── the marker pair, during the grammar migration (#1129) ─────────────────────
-# THE CANONICAL FORM carries the `core:` prefix and a block id, like every other
-# generated region in this repo. `core:` is PROVENANCE — it names the repo whose
-# generator owns the block, which is the one thing a reader of
-# dotfiles-Windows/desktop/PARITY.md has to tell them that dotfiles-core rewrites it.
-# `dotfiles-Offense`'s own gen-views.sh is correctly `companion:` for the same reason.
-MARK_GEN='<!-- core:desktop-parity:gen parity -->'
-MARK_END='<!-- core:desktop-parity:end parity -->'
-# THE LEGACY FORM, accepted but never written. This generator's targets are in TWO SIBLING
-# REPOS, so Core and those repos cannot change the string in one commit: whichever side
-# moved first would red the other, and `.github/workflows/parity-check.yml` clones both
-# siblings from `main` weekly and runs `--check --strict` against them. So Core learns the
-# new form FIRST and keeps accepting the old one; the siblings are renamed next; and the two
-# lines below go once no live copy carries them.
+
+# ── the marker grammar, and where it comes from (#1129) ───────────────────────
+# ONE BLOCK ID, `parity`, in the one grammar every generated region in this repo speaks:
+# `core:<ns>:gen <id>` … `core:<ns>:end <id>`, matched, walked and installed by
+# scripts/lib/gen-region.sh. No marker string is written out here, and neither is a count,
+# a nesting check or an atomic install — that is the entire point of the library.
 #
-# ACCEPTED ON READ, NEVER EMITTED ON WRITE — and that asymmetry is the whole mechanism.
-# render() echoes whichever marker the target FILE carries, verbatim, so a sibling still on
-# the legacy pair keeps it and stays green; nothing here silently rewrites a marker in
-# another repo's file, which would be a cross-repo edit disguised as a render.
-MARK_GEN_LEGACY='<!-- desktop-parity:gen -->'
-MARK_END_LEGACY='<!-- desktop-parity:end -->'
+# `core:` is PROVENANCE. It names the repo whose generator owns the block, which is the one
+# thing a reader of dotfiles-Windows/desktop/PARITY.md has to tell them that dotfiles-core
+# rewrites it: nothing in that repo writes the block and nothing there gates it.
+# `dotfiles-Offense`'s own gen-views.sh is correctly `companion:` for the same reason.
+#
+# THIS WAS THE LAST GENERATOR ONTO THE LIBRARY, and its targets are why. They live in TWO
+# SIBLING REPOS, so Core and those repos could not change a marker string in one commit —
+# whichever side moved first would red the other, and .github/workflows/parity-check.yml
+# clones both siblings from `main` weekly and runs `--check --strict`. So Core learned the
+# canonical form first while still ACCEPTING the id-less pre-#1129 pair (#1143), the two
+# siblings were renamed one repo at a time, and the legacy arm went once no live copy
+# carried it. A copy still on the old pair now has no region at all, which this gate reports
+# as the drift it is.
+BLOCK_ID=parity
+region_init desktop-parity gen-desktop-parity html "TARGETS in scripts/gen-desktop-parity.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)" # siblings of dotfiles-core by default
 [[ -n "${DOTFILES_ROOT:-}" ]] && ROOT="$DOTFILES_ROOT"
@@ -149,45 +152,46 @@ command -v git >/dev/null 2>&1 || {
   exit 2
 }
 
-# Remove the in-flight temp on ANY exit. The normal paths already rm it, but a Ctrl-C
-# between mktemp and the install otherwise leaves a PARITY.md.gen.XXXXXX sitting in
-# someone's checkout — litter this gate would then read as an untracked stray. EXIT does the
-# cleanup (a second rm -f is a no-op); INT/TERM exit with the conventional 128+signal and let
-# EXIT fire, exactly as audit-core.sh does.
+# Remove the in-flight render temp on ANY exit. The normal paths already rm it, but a Ctrl-C
+# between mktemp and the comparison otherwise leaves a gen-desktop-parity.XXXXXX behind, and
+# TMPDIR is pointed into the fixture by the behavioural suite — litter this gate would then
+# read as a stray. EXIT does the cleanup (a second rm -f is a no-op); INT/TERM exit with the
+# conventional 128+signal and let EXIT fire, exactly as audit-core.sh does. region_install's
+# own sibling temp is cleaned by region_install, on both its success and its failure paths.
 _gdp_cleanup() { [[ -n "${tmp:-}" ]] && rm -f "$tmp"; }
 trap _gdp_cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# render <target-file> — the file with everything between the markers replaced by $SRC.
+# render_for <id> <indent> — the block body, on stdout.
 #
-# The trailing `print ""` is FRAMING, not content: Markdown wants a blank line between the
-# last list item and the closing HTML comment, and without it prettier inserts one — which
-# would make the rendered file differ from its own formatter and re-open the drift this
-# gate closes. It lives here rather than in the source file because a trailing blank line
-# is exactly what prettier strips from PARITY.shared.md on its own, so the source could not
-# carry it and stay a fixed-point standalone.
-render() {
-  # `getline` returns 1 per line, 0 at EOF and -1 on a READ ERROR, and `> 0` cannot tell the
-  # last two apart. Unguarded, a source that became unreadable after the -f check above (an
-  # I/O error, a concurrent replacement) yields an EMPTY block and awk still exits 0 — write
-  # mode would then install that over a perfectly good PARITY.md and call it a success. Check
-  # the status and exit non-zero so the render-failure branch leaves the target untouched.
-  # EITHER marker form opens and closes the region, and whichever one the file carries is
-  # echoed back VERBATIM by `print` — so a sibling still on the legacy pair renders
-  # correctly and keeps its own bytes. Write mode never substitutes one form for the other;
-  # renaming a marker in another repo is that repo's commit, not a side effect of a render.
-  awk -v src="$SRC" -v g="$MARK_GEN" -v e="$MARK_END" \
-    -v gl="$MARK_GEN_LEGACY" -v el="$MARK_END_LEGACY" '
-    $0 == g || $0 == gl {
-      print
-      while ((_rc = (getline l < src)) > 0) print l
-      if (_rc < 0) { print "gen-desktop-parity: cannot read " src > "/dev/stderr"; exit 1 }
-      close(src); print ""; skip = 1; next
-    }
-    $0 == e || $0 == el { skip = 0; print; next }
-    !skip   { print }
-  ' "$1"
+# region_build_file calls this between the markers it echoes back VERBATIM, so this function
+# is the whole of what is generator-specific about the render; the walker is the library's.
+# The INDENT argument is ignored on purpose: these markers sit at column 0 and the body is
+# multi-line Markdown, so re-indenting it would corrupt the very tables the gate compares.
+#
+# `cat`'s exit status is the read-error guard, and it has to be checked. The awk this
+# replaced used `getline`, which returns 1 per line, 0 at EOF and -1 on a READ ERROR, and
+# `> 0` cannot tell the last two apart: a source that became unreadable after the -f test
+# above (an I/O error, a concurrent replacement) yielded an EMPTY block while awk still
+# exited 0, and write mode installed that over a perfectly good PARITY.md and called it a
+# success. `return 2` makes region_build_file fail, and the caller leaves the target alone.
+#
+# The trailing blank line is FRAMING, not content: Markdown wants one between the last list
+# item and the closing HTML comment, and without it prettier inserts one — which would make
+# the rendered file differ from its own formatter and re-open the drift this gate closes. It
+# lives here rather than in the source file because a trailing blank line is exactly what
+# prettier strips from PARITY.shared.md on its own, so the source could not carry it and
+# stay a fixed-point standalone.
+#
+# The disable below reads as dead code to the linter: this is invoked BY NAME through
+# region_build_file, because bash 3.2 has no function references. BOTH codes, not one —
+# 0.10.0 on the Alpine leg reports that diagnostic differently from the 0.11.0 pin, which
+# is how #1141 first went red.
+# shellcheck disable=SC2317,SC2329
+render_for() {
+  cat "$SRC" || return 2
+  printf '\n'
 }
 
 hdr "Desktop-bar parity (Zebar ↔ sketchybar)"
@@ -221,44 +225,46 @@ for entry in "${TARGETS[@]}"; do
     fail "$repo/$rel is missing — the repo is checked out, so this file must exist"
     continue
   fi
-  # COUNT BOTH FORMS as one marker. `grep -xF -e A -e B` is a whole-line fixed-string match
-  # against either, so a file on the legacy pair and a file on the canonical pair both read
-  # as exactly one region — which is what lets the two siblings be renamed one repo at a
-  # time without this gate reding in between.
-  n_gen=$(grep -cxF -e "$MARK_GEN" -e "$MARK_GEN_LEGACY" "$file")
-  n_end=$(grep -cxF -e "$MARK_END" -e "$MARK_END_LEGACY" "$file")
-  if ((n_gen != 1 || n_end != 1)); then
-    fail "$repo/$rel — expected exactly one '$MARK_GEN' and one '$MARK_END' (found $n_gen/$n_end); the generated block must be delimited exactly once (the pre-#1129 id-less pair is still accepted)"
+  # STRUCTURE, from the shared library — no marker string, no count and no ordering test
+  # is written here. region_preflight_file replays the marker sequence and checks that the
+  # one registered block appears exactly once with its `gen` and `end` in step. A copy with
+  # no region at all — markers deleted, or a sibling never renamed off the pre-#1129 id-less
+  # pair — reports the block MISSING, which is the drift this gate exists for rather than an
+  # absence to skip. (gen-views.sh skips an unmarked file; its target list is opt-in. These
+  # two targets are named and mandatory.)
+  #
+  # SEVERITY IS TRANSLATED HERE, DELIBERATELY. The library returns 2, "this document is
+  # structurally broken". This generator reports it as 1, because an unmarked copy is the
+  # DRIFT BEING GATED, not an absence — and audit-core.sh §9i is written around exactly
+  # that: its catch-all arm says "a missing target or broken markers are exit 1, handled
+  # above", and would otherwise file a broken marker as "the gate could not run". So every
+  # library call is branched on and mapped to this script's own fail(), which drives the
+  # final `exit 1`. Do not "simplify" this into propagating the library's return code.
+  if ! region_preflight_file "$file" "$BLOCK_ID"; then
+    fail "$repo/$rel — its generated region is malformed (above); fix the markers in that repo"
     continue
   fi
-  # A MIXED PAIR is a half-applied rename, and it renders perfectly — which is exactly why
-  # it has to fail here. One marker says the block is Core's and carries an id while the
-  # other does not, so whichever a reader trusts, the file disagrees with itself. Counting
-  # alone cannot see it: one `gen` and one `end` is a valid count in every combination.
-  _dp_new_gen=$(grep -cxF "$MARK_GEN" "$file")
-  _dp_new_end=$(grep -cxF "$MARK_END" "$file")
-  if ((_dp_new_gen != _dp_new_end)); then
-    fail "$repo/$rel — the opening and closing markers are not the same grammar: one is the '<!-- core:desktop-parity:… -->' form and the other the pre-#1129 id-less one. Rename BOTH lines together"
-    continue
-  fi
-  if [[ "$(grep -nxF -e "$MARK_GEN" -e "$MARK_GEN_LEGACY" "$file" | cut -d: -f1)" -gt "$(grep -nxF -e "$MARK_END" -e "$MARK_END_LEGACY" "$file" | cut -d: -f1)" ]]; then
-    fail "$repo/$rel — '$MARK_END' appears before '$MARK_GEN'"
+  # The reverse direction: a marker whose id this generator does not render. One id is
+  # registered, so anything else is either a typo or a second block nobody renders — and an
+  # unrendered block is coverage loss that reads as health, the shape these gates exist to end.
+  if ! region_unregistered_in_file "$file" "$BLOCK_ID"; then
+    fail "$repo/$rel — it carries a marker id this generator does not render"
     continue
   fi
 
   # ONE render, to a TEMPLATED temp file — bare `mktemp` is a BSD failure (PORTABILITY.md).
-  # In write mode the temp is a SIBLING of the target so the install below is an atomic
-  # same-filesystem rename: a full disk or a kill leaves the old file intact rather than a
-  # half-written one. In check mode nothing is installed, so it goes to TMPDIR and the
-  # target's directory need not be writable at all.
-  if [[ "$MODE" == check ]]; then _tmpl="${TMPDIR:-/tmp}/gen-desktop-parity.XXXXXX"; else _tmpl="$file.gen.XXXXXX"; fi
-  if ! tmp="$(mktemp "$_tmpl" 2>/dev/null)"; then
-    fail "$repo/$rel — could not create a temp file next to it (is the directory writable?)"
+  # It goes to TMPDIR in BOTH modes now: region_install makes its own sibling temp for the
+  # atomic same-filesystem rename, so the render itself no longer needs the target's
+  # directory to be writable, and there is one temp path to clean instead of two.
+  if ! tmp="$(mktemp "${TMPDIR:-/tmp}/gen-desktop-parity.XXXXXX" 2>/dev/null)"; then
+    fail "$repo/$rel — could not create a temp file for the render (is TMPDIR writable?)"
     continue
   fi
   # NOTHING here runs under `set -e`, so every step that can fail is branched on: an
   # unchecked render or copy prints "rewritten" and exits 0 over a stale or partial file.
-  if ! render "$file" >"$tmp"; then
+  # region_build_file returns 2 on a structural fault having written a PARTIAL stream, which
+  # is why it renders into this temp and never straight at the target.
+  if ! region_build_file "$file" render_for >"$tmp"; then
     fail "$repo/$rel — rendering the block failed; the file was NOT modified"
     rm -f "$tmp"
     continue
@@ -288,16 +294,19 @@ for entry in "${TARGETS[@]}"; do
     printf '    fix: edit desktop/PARITY.shared.md, then run: make gen-desktop-parity\n' >&2
     rm -f "$tmp"
   else
-    # Install the COMPLETE render atomically; only claim success if the whole thing worked.
-    # chmod BEFORE the rename: mktemp creates 0600, and mv preserves it, so without this
-    # every regeneration would turn a tracked, world-readable PARITY.md into an owner-only
-    # file. git stores 100644, so match that (gen-porting-matrix.sh and gen-aliases.sh both do).
-    if chmod 0644 "$tmp" && mv -f "$tmp" "$file"; then
+    # Install the COMPLETE render atomically, through the library's 0644 policy: a
+    # templated SIBLING temp so the rename is same-filesystem (a full disk or a kill leaves
+    # the old file intact rather than a half-written one), chmod BEFORE the rename because
+    # mktemp creates 0600 and mv preserves it — without that every regeneration would turn
+    # a tracked, world-readable PARITY.md into an owner-only file. git stores 100644.
+    # region_install prints its own diagnostic and cleans up its temp; this adds the line
+    # that names which repo's copy it was.
+    if region_install "$tmp" "$file" 0644; then
       pass "$repo/$rel rewritten from desktop/PARITY.shared.md"
     else
       fail "$repo/$rel — could not install the rendered block; the file is unchanged"
-      rm -f "$tmp"
     fi
+    rm -f "$tmp"
   fi
 done
 
