@@ -294,21 +294,36 @@ jobs:
       # composite action (idempotent; the action no-ops if nvim is already present). macOS
       # uses brew below.
       #
-      # WHAT STILL NEEDS IT, since #1125 retired the headless config-load suite to
+      # WHAT NEEDS IT, since #1125 retired the headless config-load suite to
       # dotgibson/dotfiles-nvim: scripts/test/73-maint-runner.sh's #829 regression, which
-      # runs the maint runner's real nvim argv against a `--clean` session. That fragment
-      # carries no SCOPE_ gate, so it runs on every leg and skips on `have nvim` alone —
-      # which means this `if:` decides its coverage. It is keyed on the nvim axis, and the
-      # pushes that can reintroduce #829 touch maint/ (shell), so today the test runs on
-      # editor bumps and not on the diffs that can break it. Widening the condition costs
-      # a `brew install neovim` on every macOS shell leg, so it is tracked separately
-      # rather than changed here. ──
+      # extracts the maint runner's REAL nvim argv and drives it against a `--clean`
+      # session. Its subject is maint/dotfiles-maint.sh, not nvim/.
+      #
+      # SO THE CONDITION FOLLOWS THE SUBJECT (#1136). That fragment carries no SCOPE_ gate,
+      # so it runs on every leg and skips on `have nvim` alone — which makes this `if:` the
+      # thing that decides its coverage, and the suite's skips never reach --strict (they
+      # are one backgrounded pass/fail, audit-core.sh:270), so the gap could not go red.
+      # Keyed on the nvim axis alone it ran on vendored-editor bumps, which cannot
+      # reintroduce #829, and was skipped on maint/ diffs, which can (ci-classify.sh maps
+      # maint/* to shell). Hence `nvim OR shell` here.
+      #
+      # TEACHING ci-classify.sh TO SET nvim=true FOR maint/* WOULD BE THE WRONG FIX: that
+      # axis means "the editor tree changed" and also drives audit §4 (luacheck over nvim/)
+      # and every SCOPE_NVIM section. Overloading it to mean "install a tool" would make it
+      # lie, and scripts/test/22-ci-classify.sh pins its behaviour with fixtures.
       - name: Install neovim (Linux, pinned)
-        if: runner.os == 'Linux' && needs.changes.outputs.nvim == 'true'
+        if: runner.os == 'Linux' && (needs.changes.outputs.nvim == 'true' || needs.changes.outputs.shell == 'true')
         uses: ./.github/actions/setup-core-tools
         with:
           neovim: "true"
 
+      # macOS STAYS ON THE NVIM AXIS, deliberately asymmetric. `brew install neovim` is
+      # minutes against seconds for the pinned tarball, and paying it on every macOS shell
+      # leg buys a second run of an OS-agnostic test that Linux now runs on exactly the
+      # pushes that matter. What this narrower trigger still buys is worth keeping: the
+      # #829 fragment is written to the bash 3.2 floor on purpose (a `read -d ''` loop
+      # rather than `mapfile`, a `sed` range over the shipped script), and this is the only
+      # leg that executes that path on 2007's bash. Rare exercise, but the only one.
       - name: Install neovim (macOS)
         if: runner.os == 'macOS' && needs.changes.outputs.nvim == 'true'
         run: brew install neovim
