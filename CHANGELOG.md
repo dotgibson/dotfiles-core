@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.11.0] - 2026-09-18
+
 ### Changed
 
 - **`gen-desktop-parity.sh`'s registry is the placement shape `gen-theme.sh` already has**
