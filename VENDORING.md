@@ -121,6 +121,35 @@ Two consumers depend on it:
 - **`core-integrity.sh`** resolves `core_sha` to a tree and compares it with your actual
   `core/`, which is how a hand-edit is detected.
 
+## One part of your `core/` did not start in Core
+
+Everything above describes Core arriving in your repo. One directory inside it arrived in
+**Core** the same way: `core/nvim/` is a vendored copy of
+[`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim), which owns the editor and
+releases it on its own line. Core pins that release in `nvim.lock` and ships the result to
+you as ordinary manifest content, so the editor reaches your box in three hops —
+`dotfiles-nvim` → `dotfiles-core` → your `core/`.
+
+**Nothing about your side changes.** You vendor one tree, from one place, gated by one
+`core.lock`; `nvim.lock` is Core's own provenance file and is deliberately _not_ vendored
+outward, because it describes a repo your bootstrap, Makefile and CI never talk to. The
+practical consequence is one line long, and it is about where a bug goes:
+
+| You found a defect in… | File it in |
+| ---------------------- | ---------- |
+| `core/nvim/**` | [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) — it owns the editor and can start one to reproduce |
+| anything else under `core/` | `dotfiles-core`, as "Getting a fix upstream" below describes |
+
+An editor fix therefore lands in a Core release only once Core adopts the pin, which it
+does **with a release and nowhere else**, so an urgent editor fix reaches you on Core's
+cadence rather than the editor's. `dotfiles-Windows` is the one repo that opted out of the
+middle hop: it has no `core/` at all and tracks the editor's release line directly.
+
+The shape is not new to the fleet — `dotfiles-Offense` vendors `offensive/companion` from
+`dotgibson/htpx` behind a `companion.lock` for the same reasons, and both locks carry a
+`_repo` and `_branch` that `core.lock` does not need, because an **inbound** lock's source
+is not implicit the way Core's is.
+
 ## The third reference: reusable-workflow SHA pins
 
 A repo names the vendored Core in **three** places, not two — and the third is the one that
@@ -645,7 +674,10 @@ OS one: send it upstream (below) rather than adding a copy each repo has to main
 
 ## Getting a fix upstream
 
-A bug in `core/` is a bug **here**, in `dotfiles-core`. Two routes:
+A bug in `core/` is a bug **here**, in `dotfiles-core` — with one exception: a bug in
+`core/nvim/` belongs in `dotfiles-nvim` (above). Neither route below can carry an editor
+fix, because Core does not author that tree either and would reject the edit at §9q. Two
+routes for everything else:
 
 1. **Preferred** — open a PR against `dotfiles-core`. Green `make audit`, `core.manifest`
    updated if you added a file, `CHANGELOG.md` entry under `[Unreleased]`.

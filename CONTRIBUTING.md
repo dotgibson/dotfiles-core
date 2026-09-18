@@ -145,7 +145,7 @@ If you install luacheck yourself, **build it against an explicit Lua 5.4.** luac
 last release) cannot load under 5.5 at all — 5.5 made some locals const, tripping "attempt to
 assign to const variable" inside luacheck's own source. `luarocks install luacheck` picks up
 whatever Lua your `luarocks` was built for, and on this repo's own box that is mise's, which
-`mise/config.toml` pins to 5.5 for the Neovim work. CI and the SessionStart hook each pin a 5.4
+`mise/config.toml` pins to 5.5 for the Lua work. CI and the SessionStart hook each pin a 5.4
 of their own for this reason.
 
 A luarocks wrapper also `exec`s an **absolute** interpreter path, so it keeps answering
@@ -191,6 +191,8 @@ optional body explaining the why
 
 Common types here: `fix`, `feat`, `test`, `ci`, `docs`, `chore`, `perf`. The
 scope is the Core area touched — `zsh`, `nvim`, `tmux`, `audit`, `changelog`, etc.
+(an `nvim` scope here can only mean the vendored tree or its pin — editor changes
+themselves carry their scope in `dotfiles-nvim`).
 A user-visible change should land in `CHANGELOG.md` under `[Unreleased]` in the
 same commit.
 

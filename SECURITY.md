@@ -1,7 +1,7 @@
 # Security Policy
 
-`dotfiles-core` ships **configuration only** — shell modules, a Neovim tree, tmux,
-git, starship, and mise. It is not a running service and stores no credentials or
+`dotfiles-core` ships **configuration only** — shell modules, tmux, git, starship, mise,
+and a Neovim tree vendored from `dotfiles-nvim`. It is not a running service and stores no credentials or
 machine state (see `.gitignore`: secrets, `*.bak`, and `zsh/99-local.zsh` never get
 tracked). Even so, this repo is the keystone of a twelve-repo system: it is vendored
 into every OS repo, so a defect here **fans out N-way**. That

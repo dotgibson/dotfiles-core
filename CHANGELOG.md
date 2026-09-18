@@ -2,6 +2,55 @@
 
 ### Changed
 
+- **The docs learned the second vendored line — Core is on _both_ ends of a vendoring
+  contract now**
+  ([#1126](https://github.com/dotgibson/dotfiles-core/issues/1126)).
+  Step 5 of `NVIM-SPLIT-PROPOSAL.md` §3.5, and the last: it describes what steps 1-4 did
+  rather than what they were meant to do. `ARCHITECTURE.md`'s topology section opened with
+  _"Core flows in one direction — authored here, copied out"_ and drew a diagram to match;
+  `CLAUDE.md`, `README.md` and `ARCHITECTURE.md` each listed `nvim` in the column naming
+  what Core **owns**. The diagram now has an arrow pointing _in_, the inbound lock is
+  explained where `core.lock` is (`nvim.lock` names its source because, unlike Core's, that
+  source is not implicit — `dotfiles-Offense/companion.lock` has carried the same shape for
+  the same reason), and the editor is described as reaching a machine in three hops:
+  `dotfiles-nvim` → `dotfiles-core` → that repo's `core/`, with `dotfiles-Windows` skipping
+  the middle one.
+
+  **`RELEASE-RUNBOOK.md` gained a fifth flow.** `## 5. Cut a dotfiles-nvim release` sits
+  beside htpx's — the other repo the fleet vendors _from_ — so the header table, which had
+  said four, now says five and carries a row whose "fans out to" column points inward. The
+  old §5 and §6 shifted to §6 and §7; the one citation of them in the tree
+  (`sync-fanout.yml`) moved with them. §1.1 gained the step it had been missing: the editor
+  pin moves **at a Core release and nowhere else** (§7(3)), which `release-readiness`
+  already told a reader while the runbook itself did not.
+
+  **Two premises in the issue were wrong, and the prose says what is true instead.** htpx
+  was said to "already document the shape" — it does, in exactly one place, so for
+  `VENDORING.md`, `ARCHITECTURE.md`, `README.md` and `CLAUDE.md` this _created_ the inward
+  prose rather than extending a precedent. And _"the colour rule now spans two repos"_ is
+  true for the opposite reason to the obvious one: `nvim/` was never a `gen-theme` target
+  and has never carried a `# core:theme:gen` block, because the editor holds zero hex
+  literals and asks the plugin. What crossed the boundary is the **assertion** —
+  `dotfiles-nvim` vendors `theme/palette.toml` _out_ of Core and runs the tokyonight-pin and
+  `M.style` checks that `gen-theme.sh --refresh` can only make with a live Neovim, so they
+  now run on every pin bump instead of nowhere at all.
+
+  **The sweep went wider than the six files named**, because the same staleness sat
+  elsewhere: `RELEASE-STRATEGY.md` — the _policy_ the runbook answers to — still batched the
+  editor pin into the weekly freshness PR and still said `freshness.yml` rolls it forward,
+  both of which #1123 and §7(3) had already contradicted; it and `RELEASE-RUNBOOK.md` also
+  still sourced `dotfiles-Windows`' `nvim/` mirror from Core, which #1124 changed. Smaller
+  corrections in `GITHUB-APP-AUTH.md`, `SECURITY.md`, `CONTRIBUTING.md`, `PORTABILITY.md`,
+  the two `tool-scout` files (which pointed the scout at a vendored, gate-protected
+  lockfile), the bug-report template (which invited editor bugs into the wrong repo) and
+  `V8-PROPOSAL.md`, whose extract-or-freeze deferral is now resolved. In
+  `PORTING-MATRIX.md` only footnote prose moved: footnotes ⁵ and ³³ attribute the Neovim
+  0.12 floor to the repo that authors the pin. **The floor itself is unchanged**, and the
+  generated blocks were not touched.
+
+  `NVIM-SPLIT-PROPOSAL.md` flips **DECIDED → SHIPPED** with this entry, since §3.5
+  completes here. All five steps ride the same release, so the file still names no version.
+
 - **Core stopped running the editor's tests — and the gate that had been lodging with
   them moved somewhere it actually runs**
   ([#1125](https://github.com/dotgibson/dotfiles-core/issues/1125)).

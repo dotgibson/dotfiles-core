@@ -26,7 +26,8 @@ something already in use:
 - `PORTING-MATRIX.md` — the modern-CLI stack and per-distro package names.
 - `zsh/00-tools.zsh`, `zsh/20-aliases.zsh` — what is detected and aliased.
 - `mise/config.toml` — pinned language runtimes.
-- `zsh/45-plugins.zsh`, `nvim/lazy-lock.json` — pinned plugins.
+- `zsh/45-plugins.zsh` — pinned zsh plugins. (`nvim/lazy-lock.json` is **vendored** from
+  `dotfiles-nvim` and cannot be changed here; editor-plugin proposals belong in that repo.)
 
 Those five describe what Core **has**. One more describes what it has already **turned down**:
 

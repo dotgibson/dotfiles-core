@@ -1,11 +1,20 @@
 # nvim split proposal — Core stops being a shell config
 
-> **Status: DECIDED (2026-09-17) — A2: extract into `dotfiles-nvim`, Core keeps vendoring
-> it.** §5's decision gate asked the author to pick A2 or B *on this file*, and A2 is
-> picked. §5's recommendation stands unchanged: none of the three conditions it named as
-> recommendation-flipping has fired, and §7's four open questions are answered below and
-> in full at §7. §3.5 is now the **runbook**, and the milestone's issues are filed from it.
-> Deciding is not shipping, and this file flips to SHIPPED when §3.5 has.
+> **Status: SHIPPED — a closed record.** Decided 2026-09-17 (A2: extract into
+> `dotfiles-nvim`, Core keeps vendoring it); §3.5 ran to completion the same day. §5's
+> recommendation stood unchanged to the end: none of the three conditions it named as
+> recommendation-flipping fired, and §7's four questions are answered in full at §7 — one
+> of them **corrected while shipping** (below). All five steps land together in the **next**
+> Core release; this file names no version, per the Additive Backlog's rule, so the release
+> that carries them is the one that promotes their `[Unreleased]` entries.
+>
+> What shipped, in §3.5's order: `dotgibson/dotfiles-nvim` with the editor's history and a
+> gate that starts it ([#1122][i1122]); Core vendoring `nvim/` behind `nvim.lock`, first
+> sync byte-identical ([#1123][i1123]); `dotfiles-Windows` consuming the editor directly and
+> `fleet-drift`'s Windows row becoming a two-lock compare ([#1124][i1124]); the editor's
+> tests retired here because upstream already runs them against a real Neovim
+> ([#1125][i1125]); and the docs learning the second vendored line — Core is now on **both**
+> ends of a vendoring contract — ([#1126][i1126]). **Nothing here is open.**
 >
 > **§3.5 step 1 is done (2026-09-17, [#1122](https://github.com/dotgibson/dotfiles-core/issues/1122)).**
 > [`dotgibson/dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) exists with the
@@ -38,7 +47,15 @@
 > the `#633` routine `allowed-tools` mirror, which had been lodging in that second file
 > under a name that described the other half of it; it survives as
 > `scripts/test/24-routine-allowed-tools.sh`, moved out of the zsh band (`NN >= 60`) that
-> had been suppressing it on every scope but `shell`. **Step 5 has not moved.**
+> had been suppressing it on every scope but `shell`.
+>
+> **Step 5 is done (2026-09-17, [#1126](https://github.com/dotgibson/dotfiles-core/issues/1126)).**
+> `VENDORING.md`, `ARCHITECTURE.md`, `CLAUDE.md`, `README.md`, `RELEASE-RUNBOOK.md` and
+> `PORTING-MATRIX.md` describe the inbound line: the topology diagram has an arrow into
+> Core, the runbook has a fifth flow, and the Neovim floor is attributed to the repo that
+> authors it. It went wider than §3.4 listed, because the sweep found the same staleness in
+> `RELEASE-STRATEGY.md` (which still batched the editor pin into the weekly freshness PR,
+> contradicting §7(3)) and in six smaller places.
 >
 > One answer was **corrected while shipping it**: §7(1) was written against a generated
 > `# core:theme:gen` block in the nvim colours that does not exist and never did. The
@@ -70,6 +87,12 @@
 > file never names one. A2 is expected to be a **minor** in Core — nothing an OS repo
 > consumes changes shape (§3.4). Per `RELEASE-STRATEGY.md`, that is the whole test, and it
 > is why this decision does not produce a major however large the diff is.
+
+[i1122]: https://github.com/dotgibson/dotfiles-core/issues/1122
+[i1123]: https://github.com/dotgibson/dotfiles-core/issues/1123
+[i1124]: https://github.com/dotgibson/dotfiles-core/issues/1124
+[i1125]: https://github.com/dotgibson/dotfiles-core/issues/1125
+[i1126]: https://github.com/dotgibson/dotfiles-core/issues/1126
 
 ## 1. Summary
 
