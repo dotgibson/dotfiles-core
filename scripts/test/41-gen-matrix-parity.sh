@@ -839,7 +839,7 @@ _dp_fixture() { # _dp_fixture [--no-macbook|--macbook-not-a-repo]
   rm -rf "$DPF"
   mkdir -p "$DPF/dotfiles-Windows/desktop" "$DPF/dotfiles-Windows/.git"
   {
-    printf '<!-- desktop-parity:gen -->\n<!-- desktop-parity:end -->\n'
+    printf '<!-- core:desktop-parity:gen parity -->\n<!-- core:desktop-parity:end parity -->\n'
     printf '\n## Host-specific addenda (Windows) — `deliberate`\n\n%s\n' "$_dp_addendum"
   } >"$DPW"
   case "${1:-}" in
@@ -851,7 +851,7 @@ _dp_fixture() { # _dp_fixture [--no-macbook|--macbook-not-a-repo]
   esac
   mkdir -p "$DPF/dotfiles-MacBook/sketchybar"
   printf 'gitdir: /nowhere\n' >"$DPF/dotfiles-MacBook/.git" # a worktree's .git is a FILE
-  printf '<!-- desktop-parity:gen -->\n<!-- desktop-parity:end -->\n' >"$DPM"
+  printf '<!-- core:desktop-parity:gen parity -->\n<!-- core:desktop-parity:end parity -->\n' >"$DPM"
 }
 _dp_run() { (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" "$@" >/dev/null 2>&1; echo $?); }
 _dp_run_root() { local r="$1"; shift; (cd "$SANDBOX" && env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$r" "$@" >/dev/null 2>&1; echo $?); }
@@ -871,7 +871,7 @@ else
 fi
 
 # The two rendered blocks must be BYTE-IDENTICAL — that is the entire contract.
-_dp_blk() { sed -n '/^<!-- desktop-parity:gen -->$/,/^<!-- desktop-parity:end -->$/p' "$1"; }
+_dp_blk() { sed -n '/^<!-- core:desktop-parity:gen parity -->$/,/^<!-- core:desktop-parity:end parity -->$/p' "$1"; }
 if [[ "$(_dp_blk "$DPW")" == "$(_dp_blk "$DPM")" ]]; then
   pass "gen-desktop-parity: the block is byte-identical in both repos"
 else
@@ -942,65 +942,63 @@ fi
 
 # MALFORMED MARKERS in a checked-out repo FAIL rather than skip — an unmarked copy is the
 # drift being gated, not an absence. (gen-views.sh skips one; its target list is opt-in.)
-_dp_fixture && grep -v 'desktop-parity:end' "$DPM" >"$DPM.tmp" && mv "$DPM.tmp" "$DPM"
+#
+# THE WORDS ARE THE LIBRARY'S NOW, AND THE SEVERITY IS THIS SCRIPT'S. Since #1129 the
+# structural checks are scripts/lib/gen-region.sh's, so these assertions pin what
+# region_preflight_file says; but that function returns 2 and this generator still exits 1,
+# because audit-core.sh §9i classifies a broken marker as drift rather than as "the gate
+# could not run". Both halves matter — an exit code with the wrong message is a gate nobody
+# can act on, and the right message under exit 2 is a gate §9i files as an infrastructure
+# failure. Assert them together.
+_dp_fixture && grep -v 'core:desktop-parity:end' "$DPM" >"$DPM.tmp" && mv "$DPM.tmp" "$DPM"
 if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'exactly one' <<<"$(_dp_out --check)"; then
-  pass "gen-desktop-parity: a missing end marker fails and says so"
+  pass "gen-desktop-parity: a missing end marker fails (1) and says so"
 else
   fail "gen-desktop-parity: a copy with no end marker was skipped instead of failing"
 fi
-_dp_fixture && printf '<!-- desktop-parity:end -->\n<!-- desktop-parity:gen -->\n' >"$DPM"
-if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'before' <<<"$(_dp_out --check)"; then
-  pass "gen-desktop-parity: markers in the wrong order fail"
+# An end BEFORE a gen leaves the trailing `gen` open, which is what the shared preflight
+# reports — "unterminated", not the "appears before" this script used to print for itself.
+# One grammar, one walker, one vocabulary: the wording is the point, not collateral.
+_dp_fixture && printf '<!-- core:desktop-parity:end parity -->\n<!-- core:desktop-parity:gen parity -->\n' >"$DPM"
+if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'unterminated' <<<"$(_dp_out --check)"; then
+  pass "gen-desktop-parity: markers in the wrong order fail (1) in the walker's own words"
 else
   fail "gen-desktop-parity: an end-before-gen marker pair was accepted"
 fi
 
-# ── the grammar migration: BOTH marker forms are accepted (#1129) ─────────────
-# This generator's targets are in two SIBLING repos, so Core and those repos cannot change
-# the marker string in one commit — whichever moved first would red the other, and
-# parity-check.yml clones both siblings from `main` weekly and runs --check --strict. Core
-# therefore learns the canonical `core:desktop-parity:gen parity` form while still accepting
-# the pre-#1129 id-less pair. The fixture above is deliberately still on the LEGACY form, so
-# every case before this point is already the "old sibling, new Core" assertion.
-
-# The CANONICAL form renders and verifies exactly like the legacy one.
-_dp_new_fixture() {
-  rm -rf "$DPF"
-  mkdir -p "$DPF/dotfiles-Windows/desktop" "$DPF/dotfiles-Windows/.git" \
-    "$DPF/dotfiles-MacBook/sketchybar"
-  printf 'gitdir: /nowhere\n' >"$DPF/dotfiles-MacBook/.git"
-  for _f in "$DPW" "$DPM"; do
-    printf '<!-- core:desktop-parity:gen parity -->\n<!-- core:desktop-parity:end parity -->\n' >"$_f"
-  done
-}
-_dp_new_fixture
-if [[ "$(_dp_run)" == 0 ]] && [[ "$(_dp_run --check)" == 0 ]] && grep -q 'Bar parity contract' "$DPW"; then
-  pass "gen-desktop-parity: the core:desktop-parity:gen form renders and verifies"
+# ── the grammar migration is OVER: the legacy pair is refused (#1129) ─────────
+# Core accepted the id-less pre-#1129 pair for exactly as long as it took to rename
+# dotfiles-Windows/desktop/PARITY.md and dotfiles-MacBook/sketchybar/PARITY.md — two repos
+# that cannot change a string in the same commit as this one. Both now carry
+# `core:desktop-parity:gen parity`, so the legacy arm is gone.
+#
+# THIS IS THE ASSERTION THAT MAKES DELETING IT SAFE, and it has to be in the FAILING
+# direction. A legacy marker no longer matches the grammar at all, so it is not a marker —
+# it is prose. Without a check, region_build_file would pass such a file through untouched,
+# core_files_identical would compare it against itself and --check would report green over a
+# copy it no longer covers: coverage loss reading as health. The preflight is what turns
+# that into "registered block is missing", and this pins it.
+_dp_fixture && printf '<!-- desktop-parity:gen -->\n<!-- desktop-parity:end -->\n' >"$DPW"
+_dp_legacy_out="$(_dp_out --check)"
+if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'registered block is missing' <<<"$_dp_legacy_out"; then
+  pass "gen-desktop-parity: a copy still on the pre-#1129 id-less pair is refused, not skipped"
 else
-  fail "gen-desktop-parity: the canonical marker form was not accepted: $(_dp_out | head -n 3)"
+  fail "gen-desktop-parity: a legacy marker pair read as green — the gate covers nothing in that file"
 fi
+unset _dp_legacy_out
 
-# ACCEPTED ON READ, NEVER EMITTED ON WRITE. A render must not quietly rewrite a sibling's
-# marker to the new grammar: that would be a cross-repo edit disguised as a render, landing
-# in a repo whose own PR has not been reviewed. The legacy fixture must come back out of a
-# write still carrying the legacy pair.
-_dp_fixture && _dp_run >/dev/null
-if grep -qxF '<!-- desktop-parity:gen -->' "$DPW" && ! grep -q 'core:desktop-parity' "$DPW"; then
-  pass "gen-desktop-parity: a legacy marker is rendered between, never rewritten to the new form"
-else
-  fail "gen-desktop-parity: write mode changed a sibling's marker grammar on its own"
-fi
-
-# A MIXED PAIR is a half-applied rename. It renders perfectly, which is exactly why it has
-# to fail: one marker says the block is Core's and carries an id while the other does not,
-# so the file disagrees with itself. Counting cannot see it — one gen and one end is a valid
-# count in every combination — so it needs its own check.
+# A marker whose id nothing renders is the reverse direction, and it is the one the old
+# id-less grammar could not even express: two blocks in one file were unrepresentable, so a
+# second one is new surface. An unrendered block is coverage loss that reads as health.
 _dp_fixture
-printf '<!-- core:desktop-parity:gen parity -->\n<!-- desktop-parity:end -->\n' >"$DPW"
-if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'not the same grammar' <<<"$(_dp_out --check)"; then
-  pass "gen-desktop-parity: a half-renamed marker pair fails (1) and says to rename both lines"
+{
+  printf '<!-- core:desktop-parity:gen parity -->\n<!-- core:desktop-parity:end parity -->\n'
+  printf '<!-- core:desktop-parity:gen extra -->\n<!-- core:desktop-parity:end extra -->\n'
+} >"$DPW"
+if [[ "$(_dp_run --check)" == 1 ]] && grep -q 'unregistered gen marker: extra' <<<"$(_dp_out --check)"; then
+  pass "gen-desktop-parity: a marker id the generator does not render is refused"
 else
-  fail "gen-desktop-parity: a mixed old/new marker pair was accepted — got $(_dp_run --check)"
+  fail "gen-desktop-parity: an unregistered block id was accepted — it would never be rendered"
 fi
 
 # IDEMPOTENCE — a second render must be byte-identical, or --check can never be stably green.
@@ -1058,18 +1056,20 @@ else
   skip "gen-desktop-parity: unwritable-target check (running as root)"
 fi
 
-# The render temp is a sibling of the target, so it must never be left behind — a stray
-# PARITY.md.gen.XXXXXX in someone's clone is litter the gate itself would then read.
-# TMPDIR is pointed INTO the fixture and BOTH names are searched, because the two modes put
-# their temp in different places: --check under ${TMPDIR:-/tmp}/gen-desktop-parity.XXXXXX,
-# write mode beside the target as PARITY.md.gen.XXXXXX. The first version of this assertion
-# scanned only $DPF for the write-mode name while exercising --check, so it could not see the
-# file it claimed to guard — deleting every `rm -f "$tmp"` in the generator left it green.
-# A cleanup test that cannot fail is the same defect as the gate this PR was filed to fix.
+# No temp may be left behind — a stray file in someone's clone is litter the gate itself
+# would then read. TMPDIR is pointed INTO the fixture and EVERY name a run can produce is
+# searched, because there are two temps in two places: the render's, always under
+# ${TMPDIR:-/tmp}/gen-desktop-parity.XXXXXX, and region_install's sibling of the target,
+# PARITY.md.XXXXXX, which only write mode creates. (Before #1129 the render temp itself was
+# the sibling, named PARITY.md.gen.XXXXXX; that glob stays so this cannot silently stop
+# covering a generator that moves back.) The first version of this assertion scanned only
+# $DPF for the write-mode name while exercising --check, so it could not see the file it
+# claimed to guard — deleting every `rm -f "$tmp"` in the generator left it green. A cleanup
+# test that cannot fail is the same defect as the gate this fragment exists to pin.
 _dp_fixture && _dp_run >/dev/null
 sed -i.bak 's/Bar parity contract/Bar parity CONTRACT/' "$DPM" && rm -f "$DPM.bak"
 (cd "$SANDBOX" && TMPDIR="$DPF" env -u CORE_JSON bash "$HERE/scripts/gen-desktop-parity.sh" --root "$DPF" --check >/dev/null 2>&1)
-_dp_litter="$(find "$DPF" \( -name '*.gen.??????' -o -name 'gen-desktop-parity.??????' \) 2>/dev/null)"
+_dp_litter="$(find "$DPF" \( -name '*.gen.??????' -o -name 'gen-desktop-parity.??????' -o -name 'PARITY.md.??????' \) 2>/dev/null)"
 if [[ -z "$_dp_litter" ]]; then
   pass "gen-desktop-parity: leaves no temp file behind, on the drift path or in TMPDIR"
 else
@@ -1117,10 +1117,11 @@ else
   skip "gen-desktop-parity: no-git guard (could not build a git-free PATH on this box)"
 fi
 
-# AN UNREADABLE SOURCE MUST NOT DESTROY THE TARGETS. awk's `getline` returns -1 on a read
-# error, which `> 0` cannot distinguish from EOF — so an unguarded loop renders an EMPTY
-# block and exits 0, and write mode installs that over a valid PARITY.md while reporting
-# success. Reproduced against a COPY of the script in its own fake repo root (HERE is derived
+# AN UNREADABLE SOURCE MUST NOT DESTROY THE TARGETS. The renderer is one `cat`, and its
+# exit status is the whole guard: unchecked, a source that became unreadable after the -f
+# test renders an EMPTY block and the walk still succeeds, so write mode installs that over
+# a valid PARITY.md while reporting success. (The awk this replaced had the same hole in a
+# subtler form — `getline` returns -1 on a read error, which `> 0` cannot tell from EOF.) Reproduced against a COPY of the script in its own fake repo root (HERE is derived
 # from the script's location), so no tracked file is ever chmod-ed. Skipped as root, where
 # mode 000 does not bite.
 if [[ "${EUID:-$(id -u)}" != 0 ]]; then
