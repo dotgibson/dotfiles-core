@@ -70,9 +70,13 @@ because the arrow points the other way.
   A new region generator calls `region_init <ns> <prog> <syntaxes>` and supplies a
   renderer; it does not write a marker regex. **All four are on it** — `gen-theme.sh`,
   `gen-aliases.sh`, `gen-porting-matrix.sh` and `gen-desktop-parity.sh` — so there is no
-  second marker regex left in the repo to drift from this one. What is _not_ shared is each
-  generator's **registry**, which is still four different shapes; the library takes the
-  namespace, the program name and a registry hint as parameters instead.
+  second marker regex left in the repo to drift from this one. Each generator's **registry**
+  is a `BLOCKS` TSV whose first column is the block id (#1144): a _placement_ registry
+  (`id path repo`) where blocks span files and sibling repos (`gen-theme.sh`,
+  `gen-desktop-parity.sh`), a _descriptor_ registry (`id …`) where one document's rows say
+  how to render each block (`gen-aliases.sh`, `gen-porting-matrix.sh`). The library reads
+  the shared prefix — and the behavioural suite reads any registry through it — while the
+  namespace, the program name and a registry hint are still parameters.
   **Do not change a marker string casually**: `core:theme` is a cross-language contract
   that `dotfiles-Windows`' own `gen-theme.ps1` also speaks, and Core neither calls nor
   gates that script. A marker that lives in a _sibling_ repo cannot be changed in one
