@@ -2,7 +2,7 @@
 # scripts/gen-porting-matrix.sh
 # ──────────────────────────────────────────────────────────────────────────────
 # Render PORTING-MATRIX.md's generated blocks: two data tables FROM the OS repos that own
-# the data, plus one fleet-version enumeration per tool from this repo's own TSV. BLOCK_IDS
+# the data, plus one fleet-version enumeration per tool from this repo's own TSV. BLOCKS
 # is the registry and the count; no comment here states one, because the last one that did
 # went stale the day a tool was added (#1082).
 #
@@ -19,7 +19,7 @@
 # rendered, and `make audit` fails when either moves without the other.
 #
 # WHAT IS GENERATED, AND WHAT DELIBERATELY IS NOT. Only the regions between marker
-# pairs (the shape gen-aliases.sh uses) — see BLOCK_IDS below, which is the registry:
+# pairs (the shape gen-aliases.sh uses) — see BLOCKS below, which is the registry:
 #
 #     <!-- core:porting-matrix:gen packages -->
 #     …a table rendered from the fleet…
@@ -34,8 +34,8 @@
 # 5 (tree-sitter-cli), 33 (neovim) and 34 (jq), each enumerating where the fleet sits against
 # that tool's recorded floor. So those footnote regions are hand-written APART FROM their
 # marker-delimited lines: the argument around them stays authored, the version facts inside
-# them are rendered from scripts/fleet-package-versions.tsv. FV_TOOLS below says which block
-# renders which tool — one block per tool, declared rather than derived from the id.
+# them are rendered from scripts/fleet-package-versions.tsv. BLOCKS' `tool` column says which
+# block renders which tool — one block per tool, declared rather than derived from the id.
 #
 # THE TABLE IS A HYBRID, AND THE REGISTRY SAYS WHICH HALF EACH CELL IS. About half of
 # the package cells name a package the repo INSTALLS: those are DERIVED (`=` in
@@ -75,8 +75,9 @@
 # They read scripts/fleet-package-versions.tsv, in this repo, and the
 # whole of --check used to sit behind the fleet resolve — so on every CI leg and in every
 # git worktree they went uncompared and §9h filed an environment skip over an input
-# it was holding (#1046). --local is the scoped half: it selects LOCAL_BLOCKS, resolves no
-# fleet, and passes every other region through exactly as found on disk. It is also a
+# it was holding (#1046). --local is the scoped half: it selects the blocks whose `scope`
+# column says `local`, resolves no fleet, and passes every other region through exactly as
+# found on disk. It is also a
 # WRITE mode, deliberately, so the repair for the drift it reports can be run on the same
 # box that reported it.
 #
@@ -114,7 +115,7 @@ source "$HERE/scripts/lib/common.sh"
 # shellcheck source=scripts/lib/gen-region.sh
 source "$HERE/scripts/lib/gen-region.sh"
 # `html` alone: the one target is a markdown document.
-region_init porting-matrix gen-porting-matrix html "BLOCK_IDS in scripts/gen-porting-matrix.sh"
+region_init porting-matrix gen-porting-matrix html "BLOCKS in scripts/gen-porting-matrix.sh"
 
 MODE=bare
 LOCAL=0
@@ -162,39 +163,48 @@ LISTFILE="$(mktemp "${TMPDIR:-/tmp}/gen-porting-matrix.list.XXXXXX")" || exit 2
 trap 'rm -f "$LISTFILE"' EXIT
 
 # ── the registry ──────────────────────────────────────────────────────────────
-# Block ids, in the doc's order. Each has exactly one marker pair in $TARGET.
-BLOCK_IDS="commands packages fleet-versions-tree-sitter-cli fleet-versions-neovim fleet-versions"
-
-# WHICH BLOCKS ARE ANSWERABLE WITHOUT THE FLEET. A subset of BLOCK_IDS whose inputs are
-# THIS repo's own files, so --check can compare them on a lone clone — which is every CI
-# leg and every git worktree. DECLARED rather than inferred: a new block has to answer
-# the locality question out loud, because getting it wrong in the quiet direction is what
-# #1046 found. Deliberately NOT named *BLOCK_IDS: scripts/test/41-gen-matrix-parity.sh
-# parses `^BLOCK_IDS=` out of this file, and a second name ending the same way is one
-# unanchored regex away from being swept into that list.
-LOCAL_BLOCKS="fleet-versions-tree-sitter-cli fleet-versions-neovim fleet-versions"
-
-# WHICH TOOL EACH fleet-version BLOCK ENUMERATES. id<TAB>tool, one line each, in the doc's
-# order. One block per tool and one tool per block: two blocks on one tool would print the
-# same table into two footnotes and --check would then police a copy, which is the thing
-# generation exists to remove.
+# BLOCKS: id<TAB>scope<TAB>tool — a DESCRIPTOR registry in the shape scripts/lib/gen-region.sh
+# documents (#1144): one target document, so no path column; the two columns after the id
+# are this script's. One row per block, in the doc's order; each id has exactly one marker
+# pair in $TARGET. Until #1144 this was three parallel variables (BLOCK_IDS, LOCAL_BLOCKS,
+# FV_TOOLS), and three of the preflight's checks existed only to catch them disagreeing.
 #
-# DECLARED, not derived from the id — the same rule, and the same reason, as LOCAL_BLOCKS
-# above. `fleet-versions` is jq's and says so nowhere in its name: it predates the suffix,
-# and renaming it would move bytes the gate compares for no gain (#1082). Deriving would
-# also forbid any tool whose name is not a legal marker id, and that grammar is
-# [a-z0-9-]+ while a tool name is whatever the distro calls it.
+#   scope   WHICH BLOCKS ARE ANSWERABLE WITHOUT THE FLEET. `local` means the block's inputs
+#           are THIS repo's own files, so --check --local can compare it on a lone clone —
+#           which is every CI leg and every git worktree. `fleet` means it reads the sibling
+#           clones. DECLARED rather than inferred: a new block has to answer the locality
+#           question out loud, because getting it wrong in the quiet direction is what #1046
+#           found.
+#   tool    WHICH TOOL A fleet-version BLOCK ENUMERATES; absent for the two built-in tables
+#           (a two-column row — the same "empty trailing column" idiom gen-theme.sh's
+#           registry uses for its own-tree rows). One block per tool and one tool per block:
+#           two blocks on one tool would print the same table into two footnotes and --check
+#           would then police a copy, which is the thing generation exists to remove.
 #
-# THE TOOL IS NOT THE PACKAGE NAME. `tree-sitter-cli` is the tool; on openSUSE the package
-# carrying it is `tree-sitter`, and on Homebrew `tree-sitter` is the lib-only formula
-# (footnote 5). The table's header names the TOOL; each row's <source> in the TSV names
-# where that row's value was actually read.
-FV_TOOLS="fleet-versions-tree-sitter-cli	tree-sitter-cli
-fleet-versions-neovim	neovim
-fleet-versions	jq"
+#           DECLARED, not derived from the id, for scope's reason. `fleet-versions` is jq's
+#           and says so nowhere in its name: it predates the suffix, and renaming it would
+#           move bytes the gate compares for no gain (#1082). Deriving would also forbid any
+#           tool whose name is not a legal marker id, and that grammar is [a-z0-9-]+ while a
+#           tool name is whatever the distro calls it.
+#
+#           THE TOOL IS NOT THE PACKAGE NAME. `tree-sitter-cli` is the tool; on openSUSE the
+#           package carrying it is `tree-sitter`, and on Homebrew `tree-sitter` is the
+#           lib-only formula (footnote 5). The table's header names the TOOL; each row's
+#           <source> in the TSV names where that row's value was actually read.
+BLOCKS="commands	fleet
+packages	fleet
+fleet-versions-tree-sitter-cli	local	tree-sitter-cli
+fleet-versions-neovim	local	neovim
+fleet-versions	local	jq"
+
+# Derived views of the registry, computed once. ALL_BLOCKS is every id in the doc's order;
+# LOCAL_BLOCKS is the --local subset. Neither is a second declaration — a block is local
+# because its row says so — and the behavioural suite reads BLOCKS itself, not these.
+ALL_BLOCKS="$(region_registry_ids "$BLOCKS")"
+LOCAL_BLOCKS="$(region_registry_where "$BLOCKS" 2 local)"
 
 # The TSV both the renderer and preflight read. REGISTRY data, so it lives up here rather
-# than beside the renderer: preflight validates FV_TOOLS against this file's `floor` lines,
+# than beside the renderer: preflight validates BLOCKS' tool column against this file's `floor` lines,
 # and preflight runs before anything else. $HERE is already final at this point (--root is
 # applied above).
 FLEET_VERSIONS="$HERE/scripts/fleet-package-versions.tsv"
@@ -625,12 +635,9 @@ render_packages() {
     }' | _table
 }
 
-block_tool() { # $1 = block id -> the tool whose rows it renders; empty + rc 1 if unregistered
+block_tool() { # $1 = block id -> the tool whose rows it renders; empty + rc 1 if none
   local _bt
-  _bt="$(awk -F'\t' -v id="$1" '$1 == id { print $2; exit }' <<EOF
-$FV_TOOLS
-EOF
-  )"
+  _bt="$(region_registry_field "$BLOCKS" "$1" 3)" || return 1
   [[ -n "$_bt" ]] || return 1
   printf '%s' "$_bt"
 }
@@ -649,7 +656,7 @@ render_block() { # $1 = block id -> that block's markdown table on stdout
   #   anyway (no associative arrays, PORTABILITY.md §1).
   #
   #   The `*` arm is the self-policing half that used to live only on the --local path: a
-  #   block registered in BLOCK_IDS with nothing behind it is now a loud 2 on EVERY path,
+  #   block registered in BLOCKS with nothing behind it is now a loud 2 on EVERY path,
   #   not a region that quietly compares clean against itself.
   local _tool
   case "$1" in
@@ -657,13 +664,13 @@ render_block() { # $1 = block id -> that block's markdown table on stdout
   (packages) printf '%s' "$PKG_TABLE" ;;
   (fleet-versions | fleet-versions-*)
     _tool="$(block_tool "$1")" || {
-      printf 'gen-porting-matrix: %s renders a fleet-version table but names no tool in FV_TOOLS\n' "$1" >&2
+      printf 'gen-porting-matrix: %s renders a fleet-version table but its BLOCKS row names no tool\n' "$1" >&2
       return 2
     }
     render_fleet_versions "$_tool" "$1" || return 2
     ;;
   (*)
-    printf 'gen-porting-matrix: %s is registered in BLOCK_IDS but nothing renders it — name its tool in FV_TOOLS, or add an arm to render_block\n' "$1" >&2
+    printf 'gen-porting-matrix: %s is registered in BLOCKS but nothing renders it — give its row a tool, or add an arm to render_block\n' "$1" >&2
     return 2
     ;;
   esac
@@ -690,58 +697,47 @@ preflight() {
   # where a crossed pair would otherwise be filed under "no sibling to read" on a lone
   # checkout. It also covers the counts and the gen/end parity; the reverse direction (a
   # marker the registry does not know) is its own call so the remediation can name
-  # BLOCK_IDS. Every message is the walker's, so both paths read the same.
-  region_preflight_file "$TARGET" "$BLOCK_IDS" || rc=2
-  region_unregistered_in_file "$TARGET" "$BLOCK_IDS" || rc=2
+  # BLOCKS. Every message is the walker's, so both paths read the same.
+  region_preflight_file "$TARGET" "$ALL_BLOCKS" || rc=2
+  region_unregistered_in_file "$TARGET" "$ALL_BLOCKS" || rc=2
 
-  # THE LOCALITY REGISTRY, checked here so a typo in it is a loud 2 and never a quiet
-  # green. An EMPTY set matters most: `--check --local` over zero blocks is a gate that
-  # cannot fail, which is the failure mode this whole seam exists to remove.
+  # THE REGISTRY'S OWN COLUMNS, checked here so a typo in them is a loud 2 and never a quiet
+  # green. Since #1144 a row cannot name an unregistered id — it IS the registration — so
+  # what is left to check is the values. An EMPTY local set matters most: `--check --local`
+  # over zero blocks is a gate that cannot fail, which is the failure mode this whole seam
+  # exists to remove.
   [[ -n "$LOCAL_BLOCKS" ]] || {
-    printf 'gen-porting-matrix: LOCAL_BLOCKS is empty — --local would compare nothing and report success\n' >&2
+    printf 'gen-porting-matrix: no BLOCKS row is scoped local — --local would compare nothing and report success\n' >&2
     rc=2
   }
-  for id in $LOCAL_BLOCKS; do
-    [[ " $BLOCK_IDS " == *" $id "* ]] || {
-      printf 'gen-porting-matrix: LOCAL_BLOCKS names %s, which is not a registered block — add it to BLOCK_IDS or fix the typo\n' "$id" >&2
-      rc=2
-    }
-  done
-
-  # THE BLOCK -> TOOL MAP, checked the way LOCAL_BLOCKS just was: a registry is only worth
-  # declaring if a typo in it is a loud 2 rather than a quiet green.
-  local fv_ids="" fv_tools="" tool
-  while IFS="$TAB" read -r id tool; do
+  local scope tool fv_ids="" fv_tools=""
+  while IFS="$TAB" read -r id scope tool; do
     [[ -n "$id" ]] || continue
-    [[ " $BLOCK_IDS " == *" $id "* ]] || {
-      printf 'gen-porting-matrix: FV_TOOLS names %s, which is not a registered block — add it to BLOCK_IDS or fix the typo\n' "$id" >&2
+    case "$scope" in
+    (fleet | local) ;;
+    (*)
+      printf 'gen-porting-matrix: BLOCKS gives %s the scope %s — it must be fleet or local\n' "$id" "${scope:-<empty>}" >&2
       rc=2
-    }
-    [[ -n "$tool" ]] || {
-      printf 'gen-porting-matrix: FV_TOOLS gives %s no tool\n' "$id" >&2
-      rc=2
-    }
-    [[ " $fv_ids " == *" $id "* ]] && {
-      printf 'gen-porting-matrix: FV_TOOLS maps %s twice\n' "$id" >&2
-      rc=2
-    }
+      ;;
+    esac
+    [[ -n "$tool" ]] || continue
     [[ " $fv_tools " == *" $tool "* ]] && {
-      printf 'gen-porting-matrix: FV_TOOLS maps %s to two blocks — one tool would render the same table into two footnotes, and --check would then police a copy\n' "$tool" >&2
+      printf 'gen-porting-matrix: BLOCKS maps %s to two blocks — one tool would render the same table into two footnotes, and --check would then police a copy\n' "$tool" >&2
       rc=2
     }
     fv_ids="$fv_ids $id"
     fv_tools="$fv_tools $tool"
   done <<EOF
-$FV_TOOLS
+$BLOCKS
 EOF
 
   # EVERY REGISTERED BLOCK HAS A RENDERER. `commands` and `packages` are render_block's
-  # built-in arms; everything else has to come from FV_TOOLS, or its region is walked,
-  # re-rendered from nothing, and compared clean against itself.
-  for id in $BLOCK_IDS; do
+  # built-in arms; everything else has to name a tool, or its region is walked, re-rendered
+  # from nothing, and compared clean against itself.
+  for id in $ALL_BLOCKS; do
     case "$id" in (commands | packages) continue ;; esac
     [[ " $fv_ids " == *" $id "* ]] || {
-      printf 'gen-porting-matrix: %s is registered in BLOCK_IDS but nothing renders it — name its tool in FV_TOOLS\n' "$id" >&2
+      printf 'gen-porting-matrix: %s is registered in BLOCKS but nothing renders it — give its row a tool\n' "$id" >&2
       rc=2
     }
   done
@@ -756,13 +752,13 @@ EOF
     while IFS= read -r tool; do
       [[ -n "$tool" ]] || continue
       [[ " $fv_tools " == *" $tool "* ]] || {
-        printf 'gen-porting-matrix: %s records a floor for %s, but no block renders it — add a block id and an FV_TOOLS entry (and its marker pair in %s), or drop the rows\n' "$FV_REL" "$tool" "$TARGET" >&2
+        printf 'gen-porting-matrix: %s records a floor for %s, but no block renders it — add a BLOCKS row naming it (and its marker pair in %s), or drop the rows\n' "$FV_REL" "$tool" "$TARGET" >&2
         rc=2
       }
     done < <(awk -F"$TAB" '$1 == "floor" && $2 ~ /^[A-Za-z0-9._+-]+$/ { print $2 }' "$FLEET_VERSIONS")
     for tool in $fv_tools; do
       grep -q "^floor$TAB$tool$TAB" "$FLEET_VERSIONS" || {
-        printf 'gen-porting-matrix: FV_TOOLS maps a block to %s, but %s records no floor for it — the status column is DERIVED against that floor and cannot be rendered without one\n' "$tool" "$FV_REL" >&2
+        printf 'gen-porting-matrix: BLOCKS maps a block to %s, but %s records no floor for it — the status column is DERIVED against that floor and cannot be rendered without one\n' "$tool" "$FV_REL" >&2
         rc=2
       }
     done
@@ -786,7 +782,7 @@ preflight || exit 2
 if ((LOCAL)); then
   RENDER_BLOCKS="$LOCAL_BLOCKS"
 else
-  RENDER_BLOCKS="$BLOCK_IDS"
+  RENDER_BLOCKS="$ALL_BLOCKS"
   if ! resolve_fleet; then
     printf 'gen-porting-matrix: not checked out under %s:%s — nothing compared, nothing written (clone the fleet beside this repo, or pass --fleet DIR)\n' "$FLEET" "$MISSING" >&2
     exit 3

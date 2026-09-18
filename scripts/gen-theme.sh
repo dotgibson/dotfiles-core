@@ -242,9 +242,10 @@ pal_hex() { local h; h="$(pal "$1")"; printf '%s' "${h#\#}"; }
 _rgb() { local h="${1#\#}"; printf '%d;%d;%d' "$((16#${h:0:2}))" "$((16#${h:2:2}))" "$((16#${h:4:2}))"; }
 
 # ── what carries blocks ───────────────────────────────────────────────────────
-# The registry: one `id<TAB>file` row per block. This is the single declaration of
-# what exists — TARGETS is derived from it, --list prints it, and preflight checks
-# it BOTH ways against the tree.
+# BLOCKS: id<TAB>path<TAB>repo — a PLACEMENT registry in the shape scripts/lib/gen-region.sh
+# documents (#1144). One row per block. This is the single declaration of what exists —
+# TARGETS is derived from it, --list prints it, and preflight checks it BOTH ways against
+# the tree.
 #
 # A FILE THAT IS ABSENT IS SKIPPED, NOT A FAILURE. That is what lets test-core.sh
 # drive this against a hermetic fixture holding one file per ENCODING rather than a
@@ -254,7 +255,7 @@ _rgb() { local h="${1#\#}"; printf '%d;%d;%d' "$((16#${h:0:2}))" "$((16#${h:2:2}
 # how a consumer would silently stop being covered.
 # THREE COLUMNS AS OF #857: id, path, and the SIBLING REPO the path is relative to.
 # An empty third column means Core's own tree, which is every row that predates #857 —
-# so the added column costs those rows nothing and the resolver below reads one rule
+# so the added column costs those rows nothing and the library's resolver reads one rule
 # rather than two. A row naming a repo is resolved under --fleet.
 BLOCKS="palette-colors	theme/palette.toml
 tmux-palette	tmux/tmux.conf
@@ -276,9 +277,10 @@ sketchybar-colors	sketchybar/colors.sh	dotfiles-MacBook
 zebar-palette	desktop/zebar/vanilla-clear/styles.css	dotfiles-Windows"
 
 # TARGETS carries RESOLVED paths — Core-relative rows unchanged, sibling rows prefixed
-# with $FLEET/<repo>. MISSING_REPOS collects the siblings that are not checked out, which
-# the driver reports as an environment SKIP rather than passing over in silence: a green
-# `--check` that never opened a file is the failure this whole gate exists to prevent.
+# with the checkout resolved under $FLEET. MISSING_REPOS collects the siblings that are not
+# checked out, which the driver reports as an environment SKIP rather than passing over in
+# silence: a green `--check` that never opened a file is the failure this whole gate exists
+# to prevent.
 #
 # MISSING_FILES is the OTHER way a sibling row can go unread, and it needs its own list
 # because it is a different fact: the repo IS checked out but the registered file is not in
@@ -289,41 +291,15 @@ zebar-palette	desktop/zebar/vanilla-clear/styles.css	dotfiles-Windows"
 # to prevent exactly that. Core-relative rows keep the silent `continue` — a partial Core
 # tree is the documented fixture case — but a sibling that is present and incomplete is
 # reported by file, and exits 3 like an absent one.
-TARGETS=""
-MISSING_REPOS=""
-MISSING_FILES=""
-while IFS="$(printf '\t')" read -r _b_id _b_path _b_repo; do
-  [[ -n "$_b_path" ]] || continue
-  if [[ -z "${_b_repo:-}" ]]; then
-    TARGETS="$TARGETS$_b_path
-"
-  elif [[ -f "$FLEET/$_b_repo/$_b_path" ]]; then
-    TARGETS="$TARGETS$FLEET/$_b_repo/$_b_path
-"
-  elif [[ -d "$FLEET/$_b_repo" ]]; then
-    MISSING_FILES="$MISSING_FILES $_b_repo/$_b_path "
-  else
-    case "$MISSING_REPOS" in
-    *" $_b_repo "*) ;;
-    *) MISSING_REPOS="$MISSING_REPOS $_b_repo " ;;
-    esac
-  fi
-done <<EOF
-$BLOCKS
-EOF
-TARGETS="$(printf '%s' "$TARGETS" | sort -u)"
-MISSING_FILES="$(printf '%s' "$MISSING_FILES" | sed 's/^ *//; s/ *$//; s/  */ /g')"
-unset _b_id _b_path _b_repo
-
-# _block_path <path> <repo> — the ONE place a registry row becomes a filesystem path.
-# Prints nothing when the row names a sibling that is not checked out, so every caller
-# gets the same answer to "can I read this?" and none of them re-implements the rule.
-_block_path() {
-  local path="$1" repo="${2:-}"
-  [[ -n "$repo" ]] || { printf '%s' "$path"; return 0; }
-  [[ -d "$FLEET/$repo" ]] || return 0
-  printf '%s' "$FLEET/$repo/$path"
-}
+#
+# The resolution rule itself — resolve_repo_dir, then `-e <dir>/.git` — is the library's
+# since #1144, shared with gen-desktop-parity.sh and matching gen-porting-matrix.sh's
+# resolve_fleet. Before that this script tested the bare directory, so a same-named directory
+# that was not a clone read as checked out here and as absent everywhere else.
+region_resolve_targets "$BLOCKS" "$FLEET"
+TARGETS="$REGION_TARGETS"
+MISSING_REPOS="$REGION_MISSING_REPOS"
+MISSING_FILES="$REGION_MISSING_FILES"
 
 # ── emitters: one function per block id ───────────────────────────────────────
 # NOT a generic renderer over a spec table. The forms differ in quoting, in `=`
@@ -695,40 +671,17 @@ render_for() { # $1 = id, $2 = indent — called as `region_build_file <file> re
 # MANY files. Forward is per-file and lives in the shared library; reverse has to sweep
 # files no registry names, so it is region_scan_tree.
 preflight() {
-  local rc=0 id f repo files="" seen ids
+  local rc=0
 
   # FORWARD, grouped BY FILE rather than by block — which is what buys the two checks
   # this script never had (#1129). region_preflight_file replays the marker SEQUENCE in
   # one file, so it sees a crossed pair and an unbalanced `gen`/`end`; the old per-block
   # grep counted one id at a time and structurally could not. Two files here carry two
   # blocks each (tmux/scripts/tmux-cheat.sh, zsh/45-plugins.zsh), so the grouping is not
-  # academic.
-  while IFS="$(printf '\t')" read -r id f repo; do
-    [[ -n "$id" ]] || continue
-    f="$(_block_path "$f" "${repo:-}")"
-    # Empty = the sibling repo is not checked out. That is an ENVIRONMENT fact, reported
-    # once by the driver as a skip, never a per-block failure here.
-    [[ -n "$f" && -f "$f" ]] || continue
-    case "$files" in
-    (*"|$f|"*) ;;
-    (*) files="$files|$f|" ;;
-    esac
-  done <<EOF
-$BLOCKS
-EOF
-
-  for seen in $(printf '%s' "$files" | tr '|' '\n' | grep -v '^$' | sort -u); do
-    # Every registered id whose resolved path is this file.
-    ids="$(while IFS="$(printf '\t')" read -r id f repo; do
-      [[ -n "$id" ]] || continue
-      f="$(_block_path "$f" "${repo:-}")"
-      [[ "$f" == "$seen" ]] && printf '%s ' "$id"
-    done <<EOF
-$BLOCKS
-EOF
-)"
-    region_preflight_file "$seen" "$ids" || rc=2
-  done
+  # academic. The grouping over a placement registry is the library's (#1144); a sibling
+  # that is not checked out is an ENVIRONMENT fact, reported once by the driver as a skip,
+  # never a per-block failure here.
+  region_preflight_targets "$BLOCKS" "$FLEET" || rc=2
 
   # REVERSE: a marker in the tree that the registry does not know about. Without this,
   # adding a block and forgetting to register it reads as success — the file is simply
@@ -821,7 +774,7 @@ if [[ "$MODE" == list ]]; then
   # without parsing this script.
   while IFS="$(printf '\t')" read -r _id _f _r; do
     [[ -n "$_id" ]] || continue
-    _f="$(_block_path "$_f" "${_r:-}")"
+    _f="$(region_block_path "$_f" "${_r:-}" "$FLEET")"
     [[ -n "$_f" && -f "$_f" ]] || continue
     printf '%s\t%s\n' "$_id" "$_f"
   done <<EOF
@@ -903,7 +856,7 @@ EOF
 # audit-core.sh §9d collects the names from both to label its skip_env.
 if [[ -n "$MISSING_REPOS" ]]; then
   printf 'gen-theme: SKIPPED — not checked out: %s (their blocks were not inspected)\n' \
-    "$(printf '%s' "$MISSING_REPOS" | sed 's/^ *//; s/ *$//; s/  */ /g')" >&2
+    "$MISSING_REPOS" >&2
   ((rc == 0)) && rc=3
 fi
 if [[ -n "$MISSING_FILES" ]]; then

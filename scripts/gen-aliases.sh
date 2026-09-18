@@ -106,7 +106,9 @@ TARGET="aliases.md"
 SOURCES="zsh/20-aliases.zsh zsh/25-git.zsh zsh/30-functions.zsh"
 
 # ── the registry: one block per table, in the doc's order ─────────────────────
-# id<TAB>kind<TAB>names. `kind` says which definitions the names resolve against:
+# BLOCKS: id<TAB>kind<TAB>names — a DESCRIPTOR registry in the shape scripts/lib/gen-region.sh
+# documents (#1144): one target document, so no path column; the columns after the id are
+# this script's. `kind` says which definitions the names resolve against:
 #   alias  — `alias NAME=VALUE` in any source           (Alias | Expands To [| Requires] [| Note])
 #   dir    — `hash -d NAME=VALUE`                       (Shortcut | Expands To)
 #   fn     — `_core_help "SYNOPSIS" "DESCRIPTION"`      (Command | Does), NAME = the synopsis's first word
@@ -344,8 +346,8 @@ _render() {
 # shellcheck disable=SC2317,SC2329
 render_for() { # $1 = id — called as `region_build_file <file> render_for`
   local kind names
-  kind="$(awk -F'\t' -v id="$1" '$1 == id { print $2 }' <<<"$BLOCKS")"
-  names="$(awk -F'\t' -v id="$1" '$1 == id { print $3 }' <<<"$BLOCKS")"
+  kind="$(region_registry_field "$BLOCKS" "$1" 2)" || kind=""
+  names="$(region_registry_field "$BLOCKS" "$1" 3)" || names=""
   [[ -n "$kind" ]] || { printf 'gen-aliases: unknown block id: %s\n' "$1" >&2; return 2; }
   _render "$kind" "$names" <<EOF
 $ROWS
@@ -361,19 +363,14 @@ EOF
 
 # ── preflight: sources, registry and doc must agree, all three ways ───────────
 preflight() {
-  local rc=0 id kind names n claimed=" " have=" " k ids=""
+  local rc=0 id kind names n claimed=" " have=" " k ids
   # 1. STRUCTURE, from the shared library: the marker SEQUENCE is well-formed (no nesting,
   #    no crossing, nothing left open), every registered block appears exactly once, every
   #    `gen` has exactly one `end`, and no marker in the doc is unregistered. All four used
   #    to be open-coded here against a second, hand-written regex; region_preflight_file
   #    derives them from the same matcher the walker uses, so a marker the walker would
   #    honour can no longer be one these checks overlook.
-  while IFS="$(printf '\t')" read -r id kind names; do
-    [[ -n "$id" ]] || continue
-    ids="$ids$id "
-  done <<EOF
-$BLOCKS
-EOF
+  ids="$(region_registry_ids "$BLOCKS")"
   region_preflight_file "$TARGET" "$ids" || rc=2
   region_unregistered_in_file "$TARGET" "$ids" || rc=2
 

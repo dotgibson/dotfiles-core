@@ -2,6 +2,39 @@
 
 ### Changed
 
+- **The four region generators' registries are one shape — and the measurement says two,
+  not one** ([#1144](https://github.com/dotgibson/dotfiles-core/issues/1144), first of two).
+  One symptom was left by #1129 deliberately: `gen-theme.sh` and `gen-aliases.sh` each had a
+  `BLOCKS` that meant different things, `gen-porting-matrix.sh`'s registry was three parallel
+  variables (`BLOCK_IDS`, `LOCAL_BLOCKS`, `FV_TOOLS`), and `gen-desktop-parity.sh` held its one
+  block id outside its registry altogether. The issue asked whether the differences were
+  accidental or real before anything converged. Column by column they are **two honest
+  shapes**: a _placement_ registry (`id path repo`) for blocks that live in many files, some
+  in sibling repos — theme has it, desktop-parity has the same facts permuted — and a
+  _descriptor_ registry (`id …`) for a single target document whose rows say how to render
+  each block — aliases has it, porting-matrix had it split three ways. They do not merge: the
+  five-column union would put a constant path on 21 alias rows and two empty columns on 18
+  theme rows, documenting nothing. What they share is a **prefix contract**, now documented
+  and read by `scripts/lib/gen-region.sh`: one registry per generator, named `BLOCKS`, a TSV
+  heredoc, column 1 the block id, the columns declared in the comment above it.
+
+  **What that bought.** `gen-porting-matrix.sh`'s three variables are one
+  `id<TAB>scope<TAB>tool` table, so three of its preflight checks — a subset or a tool naming
+  an unregistered id, a tool mapped twice — are impossible by construction and are gone; the
+  comment warning the suite off matching `LOCAL_BLOCKS` when it grepped `^BLOCK_IDS=` is gone
+  with them, because there is one variable. The behavioural suite's four bespoke `awk`
+  source parsers (five with `PKG_ROWS`) are one library call, `region_registry_from_script`,
+  which lives beside the shape it parses. `gen-theme.sh`'s hand-rolled sibling resolver and
+  by-file preflight grouping are the library's `region_resolve_targets` and
+  `region_preflight_targets`, which `gen-desktop-parity.sh` takes next. `aliases.md`,
+  `PORTING-MATRIX.md` and every themed consumer regenerate byte-identically.
+
+  **One behaviour moved, on purpose.** "Is this sibling checked out?" is now the fleet's one
+  rule everywhere — `resolve_repo_dir`, then `-e <dir>/.git` — where `gen-theme.sh` alone had
+  tested the bare directory, so a same-named directory that was not a clone read as checked
+  out there and as absent in `gen-porting-matrix.sh` and `gen-desktop-parity.sh`. It now
+  reads as absent (exit 3, reported) in all three.
+
 - **The last generator is on the shared library, the last off-grammar marker is gone, and
   the pair that lived in two other repos was renamed without a red in between**
   ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).

@@ -38,6 +38,11 @@ if ! ((SCOPE_TOOLING)); then
   return 0
 fi
 
+# The registry helpers: the fixtures below are built from the generators' REAL registries,
+# read through the library's one parser rather than a per-registry awk (#1144).
+# shellcheck source=scripts/lib/gen-region.sh
+source "$HERE/scripts/lib/gen-region.sh"
+
 if have git; then
   hdr "theme generation (scripts/gen-theme.sh)"
   GT="$HERE/scripts/gen-theme.sh"
@@ -56,7 +61,11 @@ if have git; then
     # The sibling stub: markers only. gen-theme fills the region, which is what case
     # "renders in 0xAARRGGBB" then reads back.
     mkdir -p "$GTFLEET/dotfiles-MacBook/sketchybar" \
-      "$GTFLEET/dotfiles-Windows/desktop/zebar/vanilla-clear"
+      "$GTFLEET/dotfiles-Windows/desktop/zebar/vanilla-clear" "$GTFLEET/dotfiles-Windows/.git"
+    # A `.git` in each sibling, because "checked out" is `-e <dir>/.git` since #1144 — the
+    # fleet convention every other generator already used. One a DIRECTORY and one a FILE,
+    # as in a worktree or submodule checkout, so both spellings are proven accepted.
+    printf 'gitdir: /nowhere\n' >"$GTFLEET/dotfiles-MacBook/.git"
     printf '# core:theme:gen sketchybar-colors\n# core:theme:end sketchybar-colors\n' \
       >"$GTFLEET/dotfiles-MacBook/sketchybar/colors.sh"
     # BOTH siblings, for the reason the MacBook stub exists: a registered row whose repo is
@@ -606,7 +615,7 @@ fi
 if have git; then
   hdr "aliases generation (scripts/gen-aliases.sh)"
   GAR="$SANDBOX/aliasrepo"
-  _ga_ids="$(awk '/^BLOCKS="/ { f = 1; sub(/^BLOCKS="/, "") } f { print $1; if (/"$/) f = 0 }' "$HERE/scripts/gen-aliases.sh")"
+  _ga_ids="$(region_registry_ids "$(region_registry_from_script "$HERE/scripts/gen-aliases.sh")")"
 
   _ga_fixture() {
     rm -rf "$GAR"

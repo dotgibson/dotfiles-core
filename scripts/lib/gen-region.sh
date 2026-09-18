@@ -2,8 +2,8 @@
 # scripts/lib/gen-region.sh — the marker-region grammar and walker, once.
 # ──────────────────────────────────────────────────────────────────────────────
 # ONE definition of `core:<ns>:gen <id>` — the grammar, the walker, the structural
-# preflight and the atomic install — shared by every generator that rewrites a REGION
-# of a hand-authored file. Before #1129 there were four hand-rolled copies
+# preflight, the atomic install and (since #1144) the shape of the registry that says which
+# blocks exist — shared by every generator that rewrites a REGION of a hand-authored file. Before #1129 there were four hand-rolled copies
 # (gen-theme.sh, gen-aliases.sh, gen-porting-matrix.sh, gen-desktop-parity.sh), and
 # each one detected a DIFFERENT subset of the ways a marker pair can be malformed.
 # That is the defect this closes, not the duplication: gen-theme.sh — the generator
@@ -70,6 +70,162 @@ region_init() {
   _REGION_PROG="$2"
   _REGION_SYNTAX="$3"
   _REGION_HINT="${4:-}"
+}
+
+# ── the registry ──────────────────────────────────────────────────────────────
+# ONE SHAPE FOR "WHICH BLOCKS EXIST" (#1144). Every generator declares exactly one registry,
+# named BLOCKS: a TSV heredoc string, one row per block, blank lines ignored, COLUMN 1 THE
+# BLOCK ID, and the remaining columns declared in the comment directly above it. Two honest
+# column sets exist, and this library reads only the part they share:
+#
+#   placement    id<TAB>path<TAB>repo   blocks that live in many files, some in sibling
+#                                       repos (gen-theme, gen-desktop-parity). An empty repo
+#                                       is this tree. The resolver and the grouped preflight
+#                                       below understand it.
+#   descriptor   id<TAB>…               one target document, one row per block saying how
+#                                       to render it (gen-aliases: kind, names;
+#                                       gen-porting-matrix: scope, tool). Only column 1 is
+#                                       the library's.
+#
+# They are NOT one five-column shape, on purpose: the union would put a constant path on
+# every descriptor row and two empty columns on every placement row, documenting nothing.
+# What the shared prefix buys is that region_registry_ids answers the same question for
+# every generator, and the behavioural suite reads ANY registry with one parser
+# (region_registry_from_script) instead of the four it carried — one of which had to be
+# warned off matching a second variable whose name ended the same way.
+#
+# Every helper takes the registry TEXT, not a variable name: bash 3.2 has no namerefs.
+
+# region_registry_ids <tsv> — column 1 of every non-blank row, space-separated, in order.
+region_registry_ids() {
+  awk -F'\t' '$1 != "" { printf "%s%s", (n++ ? " " : ""), $1 } END { if (n) printf "\n" }' <<EOF
+$1
+EOF
+}
+
+# region_registry_field <tsv> <id> <n> — column <n> of every row whose id is <id>, one per
+# line; returns 1 when no row carries the id. A placement registry may repeat an id across
+# rows (one block rendered into two files), so a caller that expects one value takes one line.
+region_registry_field() {
+  local out
+  out="$(awk -F'\t' -v id="$2" -v n="$3" '$1 == id { print $n; f = 1 } END { exit !f }' <<EOF
+$1
+EOF
+  )" || return 1
+  printf '%s\n' "$out"
+}
+
+# region_registry_where <tsv> <n> <value> — the ids whose column <n> is <value>, in order.
+region_registry_where() {
+  awk -F'\t' -v n="$2" -v v="$3" '$1 != "" && $n == v { printf "%s%s", (k++ ? " " : ""), $1 } END { if (k) printf "\n" }' <<EOF
+$1
+EOF
+}
+
+# region_block_path <path> <repo> <fleet> — the ONE place a placement row becomes a
+# filesystem path. An empty repo is this tree and prints <path> unchanged. A named repo is a
+# sibling under <fleet>, resolved through resolve_repo_dir (common.sh — it also finds a clone
+# whose directory name differs from the repo's) and accepted only when `<dir>/.git` EXISTS:
+# `-e`, not `-d`, because .git is a FILE in a worktree or submodule checkout. That is the
+# fleet convention gen-porting-matrix.sh's resolve_fleet and gen-desktop-parity.sh already
+# follow; gen-theme.sh tested the bare directory until #1144, so a same-named directory that
+# was not a clone read as checked out there and as absent everywhere else. Prints NOTHING
+# (rc 0) when the sibling is not checked out, so every caller gets one answer to "can I read
+# this?" and none re-implements the rule.
+region_block_path() {
+  local path="$1" repo="${2:-}" fleet="${3:-}" dir
+  [[ -n "$repo" ]] || { printf '%s' "$path"; return 0; }
+  dir="$(resolve_repo_dir "$fleet" "$repo")" || dir="$fleet/$repo"
+  [[ -e "$dir/.git" ]] || return 0
+  printf '%s' "$dir/$path"
+}
+
+# region_resolve_targets <tsv> <fleet> — every placement row, resolved. Sets three globals
+# rather than printing one stream, because they are three DIFFERENT facts:
+#   REGION_TARGETS        resolved paths of the rows whose file is PRESENT, one per line,
+#                         deduplicated (two blocks in one file is one target) and sorted
+#   REGION_MISSING_REPOS  sibling repos a row names that are not checked out, each once
+#   REGION_MISSING_FILES  `<repo>/<path>` for rows whose sibling IS checked out but does not
+#                         hold the registered file
+# both lists space-separated. A this-tree row whose file is absent is dropped in silence — a
+# partial tree is the behavioural suite's documented fixture case. A SIBLING row that goes
+# unread is reported in one list or the other, because "not checked out" and "checked out,
+# file missing" (the block has not landed there, the path moved, someone deleted it) have
+# different fixes (#933). What to DO about either is the caller's policy: gen-theme.sh skips
+# with exit 3 and says so; gen-desktop-parity.sh fails a present repo whose file is missing,
+# because its targets are named and mandatory.
+# The two MISSING lists are read by the callers, not by this file, so ShellCheck sees them
+# assigned and never read.
+# shellcheck disable=SC2034
+REGION_TARGETS=""
+# shellcheck disable=SC2034
+REGION_MISSING_REPOS=""
+# shellcheck disable=SC2034
+REGION_MISSING_FILES=""
+region_resolve_targets() {
+  local fleet="${2:-}" id path repo f targets="" repos="" files=""
+  while IFS="$(printf '\t')" read -r id path repo; do
+    [[ -n "$id" && -n "$path" ]] || continue
+    f="$(region_block_path "$path" "${repo:-}" "$fleet")"
+    if [[ -z "$f" ]]; then
+      [[ " $repos " == *" $repo "* ]] || repos="$repos $repo"
+    elif [[ -f "$f" ]]; then
+      targets="$targets$f
+"
+    elif [[ -n "${repo:-}" ]]; then
+      files="$files $repo/$path"
+    fi
+  done <<EOF
+$1
+EOF
+  REGION_TARGETS="$(printf '%s' "$targets" | sort -u)"
+  # shellcheck disable=SC2034
+  REGION_MISSING_REPOS="${repos# }"
+  # shellcheck disable=SC2034
+  REGION_MISSING_FILES="${files# }"
+}
+
+# region_preflight_targets <tsv> <fleet> — the structural preflight over a placement
+# registry, grouped BY FILE: region_preflight_file replays one file's marker SEQUENCE, so
+# two blocks registered in the same file are checked together and a crossed pair between
+# them is visible — gen-theme.sh registers two such files (tmux/scripts/tmux-cheat.sh,
+# zsh/45-plugins.zsh), so the grouping is not academic. Absent files are skipped for
+# region_resolve_targets' reasons; a sibling that is not checked out is an ENVIRONMENT fact
+# the caller reports once, never a per-block failure here. Returns 2 on any fault.
+region_preflight_targets() {
+  local tsv="$1" fleet="${2:-}" rc=0 id path repo f seen ids
+  region_resolve_targets "$tsv" "$fleet"
+  while IFS= read -r seen; do
+    [[ -n "$seen" ]] || continue
+    ids=""
+    while IFS="$(printf '\t')" read -r id path repo; do
+      [[ -n "$id" && -n "$path" ]] || continue
+      f="$(region_block_path "$path" "${repo:-}" "$fleet")"
+      [[ "$f" == "$seen" ]] && ids="$ids$id "
+    done <<EOF
+$tsv
+EOF
+    region_preflight_file "$seen" "$ids" || rc=2
+  done <<EOF
+$REGION_TARGETS
+EOF
+  return $rc
+}
+
+# region_registry_from_script <script> [var] — the body of `VAR="…"` (default BLOCKS), read
+# out of a generator's SOURCE. For the behavioural suite, which builds its fixtures from the
+# real registry so that a newly registered block costs a registry line and no test edit. The
+# suite carried one such awk per registry, each written against that registry's own shape;
+# with one shape there is one parser, and it lives beside the shape it parses. The closing
+# `"` is tested BEFORE it is stripped, or the read runs on into the rest of the script and
+# any later tab-separated line becomes a row. A one-line `VAR="a b c"` is the same rule with
+# both ends on one line.
+region_registry_from_script() {
+  local var="${2:-BLOCKS}"
+  awk -v v="$var" '
+    index($0, v "=\"") == 1 { f = 1; sub("^" v "=\"", "") }
+    f { if (/"$/) { sub(/"$/, ""); print; f = 0 } else print }
+  ' "$1"
 }
 
 # ── the grammar ───────────────────────────────────────────────────────────────

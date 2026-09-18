@@ -14,7 +14,7 @@
 # ── porting-matrix generation (scripts/gen-porting-matrix.sh) ────────────────
 # PORTING-MATRIX.md's generated blocks — two data tables rendered from the sibling OS
 # repos, plus one fleet-version enumeration per tool from this repo's own TSV, all
-# registered in BLOCK_IDS — are gated by audit-core.sh
+# registered in BLOCKS — are gated by audit-core.sh
 # §9h. The fleet-fed half is an ENVIRONMENT skip when the siblings are not checked out,
 # which is what CI's lone checkout looks like, so nothing in the real gate ever exercises
 # a red there. Everything worth pinning therefore lives here: the drift direction (1), the
@@ -22,7 +22,7 @@
 # because the audit maps each to a different verdict — plus the --local seam (#1046),
 # which is the in-repo blocks' gate and the one direction a lone clone CAN red.
 #
-# The fixture is a stub Core tree (one marker pair per BLOCK_IDS id, hand-authored lines either
+# The fixture is a stub Core tree (one marker pair per BLOCKS id, hand-authored lines either
 # side) and a fake FLEET: seven sibling directories, each with a .git so it resolves
 # like a checkout, minimal os/*.capabilities, and install/packages.txt files
 # SYNTHESISED FROM THE SCRIPT'S OWN PKG_ROWS — the first candidate of every derived cell,
@@ -47,19 +47,27 @@ if ! ((SCOPE_TOOLING)); then
   return 0
 fi
 
+# The registry helpers: the fixtures below are built from the generators' REAL registries,
+# read through the library's one parser rather than a per-registry awk (#1144).
+# shellcheck source=scripts/lib/gen-region.sh
+source "$HERE/scripts/lib/gen-region.sh"
+
 if have git; then
   hdr "porting-matrix generation (scripts/gen-porting-matrix.sh)"
   GPR="$SANDBOX/matrixrepo"
   GPF="$SANDBOX/matrixfleet"
-  _gp_ids="$(awk -F'"' '/^BLOCK_IDS=/ { print $2 }' "$HERE/scripts/gen-porting-matrix.sh")"
-  # The closing quote is the terminator: test for it BEFORE stripping it, or the read runs
-  # on into the rest of the generator and any later tab-separated line becomes a row.
-  _gp_rows="$(awk '/^PKG_ROWS="/ { f = 1; sub(/^PKG_ROWS="/, "") } f { if (/"$/) { sub(/"$/, ""); print; f = 0 } else print }' "$HERE/scripts/gen-porting-matrix.sh")"
-  # The block -> tool map, same multi-line idiom and for the same reason. Every fleet-version
-  # assertion below is driven from THIS rather than from a hand-written list of three tools,
-  # so a fourth tool costs a registry line and no test edit — which is the property the
-  # fixture document already has and the fixture DATA did not (#1082).
-  _gp_fv="$(awk '/^FV_TOOLS="/ { f = 1; sub(/^FV_TOOLS="/, "") } f { if (/"$/) { sub(/"$/, ""); print; f = 0 } else print }' "$HERE/scripts/gen-porting-matrix.sh")"
+  # THE REGISTRY, read out of the script's source by the library's parser — the same one
+  # every other fragment uses, so this suite can no longer be coupled to one script's
+  # variable NAMES (until #1144 it parsed three, and one of them had to be warned off a
+  # fourth whose name ended the same way). id<TAB>scope<TAB>tool, per the comment above it.
+  _gp_blocks="$(region_registry_from_script "$HERE/scripts/gen-porting-matrix.sh")"
+  _gp_ids="$(region_registry_ids "$_gp_blocks")"
+  _gp_rows="$(region_registry_from_script "$HERE/scripts/gen-porting-matrix.sh" PKG_ROWS)"
+  # The block -> tool map: the rows whose tool column is filled, as id<TAB>tool. Every
+  # fleet-version assertion below is driven from THIS rather than from a hand-written list of
+  # three tools, so a fourth tool costs a registry line and no test edit — which is the
+  # property the fixture document already has and the fixture DATA did not (#1082).
+  _gp_fv="$(awk -F'\t' '$3 != "" { print $1 "\t" $3 }' <<<"$_gp_blocks")"
 
   _gp_caps() { # _gp_caps <file> <prefix> — a minimal declaration whose verbs all start with <prefix>
     printf 'PKG_REFRESH=%s refresh\nPKG_UPGRADE=%s upgrade\nPKG_INSTALL=%s install\nPKG_REMOVE=%s remove\nPKG_SEARCH=%s search\nPKG_OWNS=%s owns\nPKG_COUNT_PENDING=%s pending\nSCHEDULER=none\n' \
@@ -337,7 +345,7 @@ EOF
   # COVERAGE, NOT SAMPLES — and this is the assertion whose absence let #1096 happen. The
   # case above spot-checks four rows and passed for as long as the fleet-versions block
   # wrote no provenance at all, while --help promised "every cell's provenance". Derive the
-  # expected set from BLOCK_IDS (parsed out of the script above) so a NEWLY registered
+  # expected set from BLOCKS (parsed out of the script above) so a NEWLY registered
   # block fails here until it is listed, the same way preflight refuses an unregistered
   # marker. Spot-checks say a row is right; only this says none is missing.
   _gp_cov_missing=""
@@ -534,18 +542,15 @@ EOF
   # leg and in every worktree that block went uncompared while §9h filed an environment
   # skip over an input it was holding. These cases pin the seam that closed it.
 
-  # THE REGISTRY FIRST: read the same way line 51 reads BLOCK_IDS, so both are one grammar.
-  # An empty LOCAL_BLOCKS, or one naming an unregistered id, is a gate that cannot fail.
-  _gp_local_ids="$(awk -F'"' '/^LOCAL_BLOCKS=/ { print $2 }' "$HERE/scripts/gen-porting-matrix.sh")"
-  _gp_reg_ok=1
-  [[ -n "$_gp_local_ids" ]] || _gp_reg_ok=0
-  for _id in $_gp_local_ids; do
-    [[ " $_gp_ids " == *" $_id "* ]] || _gp_reg_ok=0
-  done
-  if ((_gp_reg_ok == 1)); then
-    pass "gen-porting-matrix: LOCAL_BLOCKS is a non-empty subset of BLOCK_IDS ($_gp_local_ids)"
+  # THE REGISTRY FIRST. The local subset is the rows whose scope column says so — since
+  # #1144 it cannot name an unregistered id, because the row IS the registration — so what
+  # is left to assert is that it is not EMPTY: `--check --local` over zero blocks is a gate
+  # that cannot fail.
+  _gp_local_ids="$(region_registry_where "$_gp_blocks" 2 local)"
+  if [[ -n "$_gp_local_ids" ]]; then
+    pass "gen-porting-matrix: at least one BLOCKS row is scoped local ($_gp_local_ids)"
   else
-    fail "gen-porting-matrix: LOCAL_BLOCKS is empty or names an unregistered block ('$_gp_local_ids' vs '$_gp_ids') — --local would gate nothing and report success"
+    fail "gen-porting-matrix: no BLOCKS row is scoped local — --local would gate nothing and report success"
   fi
 
   # Clean on a lone clone: 0, not the 3 the fleet-fed half gets.
@@ -630,8 +635,8 @@ EOF
   # wrote no provenance, which would have made it an empty listing that exited 0 — worse
   # than a refusal. It must cover exactly the in-repo blocks and name no sibling clone.
   #
-  # SET MEMBERSHIP IS THE CLAIM, not order — so both sides are sorted. BLOCK_IDS is declared
-  # in the DOCUMENT's order and LOCAL_BLOCKS follows it, which since #1082 is not the same as
+  # SET MEMBERSHIP IS THE CLAIM, not order — so both sides are sorted. BLOCKS is declared
+  # in the DOCUMENT's order and the local subset follows it, which since #1082 is not the same as
   # sorted order (footnote 5's block comes first in the file and last in a sort). Comparing a
   # sorted listing against the raw declaration would force a declaration order no reader could
   # derive from the comment above it.
@@ -643,10 +648,10 @@ EOF
     ! grep -q 'dotfiles-' <<<"$_gp_lloc_list"; then
     pass "gen-porting-matrix: --list --local lists exactly the in-repo blocks ($_gp_local_ids) with no fleet, naming no sibling clone"
   else
-    fail "gen-porting-matrix: --list --local did not narrow to LOCAL_BLOCKS — empty, refused, or citing a sibling repo"
+    fail "gen-porting-matrix: --list --local did not narrow to the local blocks — empty, refused, or citing a sibling repo"
   fi
   # ── THE THREE-TOOL REGISTRY (#1082) ───────────────────────────────────────────────
-  # One renderer, N blocks, one tool each. Every assertion below is driven from FV_TOOLS,
+  # One renderer, N blocks, one tool each. Every assertion below is driven from the registry,
   # so a fourth tool costs a registry line and no test edit.
 
   # 1. EACH BLOCK RENDERS ITS OWN TOOL. This is #1082's defect one layer down, and it is the
