@@ -61,6 +61,17 @@ because the arrow points the other way.
   role → local`
   (bands: Core 00-69, OS-native 70-84, Role 85-94 on Offense/Defense, host-local 95-99)
   (the canonical order in `core.manifest`). Don't reorder casually.
+- **One marker grammar, one region library.** Every generator that rewrites a _region_ of
+  a hand-authored file speaks `core:<ns>:gen <id>` … `core:<ns>:end <id>`, in the host
+  file's comment syntax (`#`, `<!-- -->` or `/* */`), and the grammar, the walker, the
+  structural preflight and the install live once in `scripts/lib/gen-region.sh` (#1129).
+  `<ns>` is **provenance** — it names the repo whose generator owns the region, which is
+  why `dotfiles-Offense`'s own `gen-views.sh` is correctly `companion:` and not `core:`.
+  A new region generator calls `region_init <ns> <prog> <syntaxes>` and supplies a
+  renderer; it does not write a marker regex. `gen-theme.sh` is on it; the other three are
+  migrating. **Do not change a marker string casually**: `core:theme` is a cross-language
+  contract that `dotfiles-Windows`' own `gen-theme.ps1` also speaks, and Core neither
+  calls nor gates that script.
 - **Colour is generated, not typed.** `theme/palette.toml` is the only place a hex is
   authored. `zsh/`, `tmux/`, `starship/`, `lazygit/`, `lib/ux.sh` and `examples/` carry
   **generated** `# core:theme:gen` blocks — hand-editing one is a gate failure

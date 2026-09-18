@@ -13,8 +13,8 @@
 # is that idea for everything else.
 #
 # HOW. A consumer opts a region in with a marker pair naming a block id, in its
-# own comment syntax — which is `#` for all five host languages here (TOML, YAML,
-# zsh, bash, tmux.conf), so unlike the prior art there is no second marker form:
+# own comment syntax — `#` for the five host languages here (TOML, YAML, zsh,
+# bash, tmux.conf), and `/* … */` for the one CSS consumer (#926):
 #
 #     # core:theme:gen fzf-colors
 #     …rendered from theme/palette.toml…
@@ -23,6 +23,13 @@
 # Anything OUTSIDE the markers is hand-authored and never touched. Leading
 # indentation on the opening marker is captured and re-applied to every emitted
 # line, which is what lets lazygit/config.yml's 4-space `theme:` block work.
+#
+# THE GRAMMAR AND THE WALKER ARE NOT THIS SCRIPT'S (#1129). Both live in
+# scripts/lib/gen-region.sh, shared with every other region generator; this file
+# owns the palette, the emitters and the registry that says which block goes
+# where. What it GAINED by giving the walker up is two structural checks it never
+# had — a crossed or nested marker pair, and a `gen` without exactly one matching
+# `end` — each of which used to corrupt a file silently.
 #
 #   gen-theme.sh              # rewrite every marked block from theme/palette.toml
 #   gen-theme.sh --check      # exit 1 (with a diff) if any block is stale — THE GATE
@@ -35,10 +42,13 @@
 #
 # PORTED FROM dotfiles-Offense/offensive/companion/gen-views.sh, which does the
 # same job for the htpx corpus and is drift-gated by companion.yml. Same
-# build_file line-walker, same --check-diffs-and-fails, same sticky severity. One
-# structural difference: gen-views renders a block from a FILE named by the id;
-# here the source is one palette plus per-id emitter code, so the dispatch
-# resolves an id to a FUNCTION.
+# line-walker (now scripts/lib/gen-region.sh), same --check-diffs-and-fails, same
+# sticky severity. One structural difference: gen-views renders a block from a
+# FILE named by the id; here the source is one palette plus per-id emitter code,
+# so the dispatch resolves an id to a FUNCTION. That script stays standalone — it
+# sources nothing and ships into htpx on its own — so it is not a consumer of the
+# shared library, and its `companion:` namespace is correctly its own: the `core:`
+# prefix is PROVENANCE, naming the repo whose generator owns the region.
 #
 # A LITERAL INSIDE A QUOTED STRING OR A CONTINUED COMMAND GETS HOISTED FIRST.
 # Markers only ever wrap whole lines, because a `#` line inside
@@ -59,7 +69,21 @@
 # 2-means-drift, which is a freshness reporter whose scheduled workflow keys on 2.
 # Severity is sticky, 2 > 1 > 0: a structural failure in one target followed by
 # mere drift in another must never exit as drift (the bug gen-views.sh records).
+# EVERY RENDERER BELOW IS DISPATCHED BY ID, never called by name: the walker takes
+# `render_for` as a STRING, because bash 3.2 has no function references. ShellCheck
+# cannot follow that, so it reads render_for — and all 18 emit_* functions and the pal*
+# helpers it dispatches to — as dead code. That is a false positive for the whole file
+# rather than for one function, which is what .shellcheckrc reserves a file-wide
+# directive for; scripts/test/40-gen-theme-aliases.sh carries one for the same reason.
+#
+# BOTH CODES, deliberately: ShellCheck renamed this diagnostic between the versions the
+# fleet runs. 0.11.0 (the pin in scripts/tool-versions.env, and what CI's ubuntu and macOS
+# legs use) reports it as SC2329 on the FUNCTION; 0.10.0 — what `apk add shellcheck` gives
+# the Alpine leg — reports it as SC2317 on the BODY instead. Naming only the pinned
+# version's code passes locally and on ubuntu and still reds Alpine, which is how this went
+# red the first time here too. Same reasoning as scripts/test-core.sh:224.
 # ──────────────────────────────────────────────────────────────────────────────
+# shellcheck disable=SC2317,SC2329
 set -uo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,6 +99,18 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # otherwise need. Sourced via the ALREADY-ABSOLUTE $HERE, per the note above.
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/scripts/lib/common.sh"
+# The marker grammar, the block walker, the structural preflight and the install, shared
+# with every other region generator since #1129. This script was the donor for the walker
+# and the RECIPIENT of two checks it never had: a crossed or nested marker pair, and a
+# `gen` without exactly one matching `end`. Sourced via the ALREADY-ABSOLUTE $HERE, per
+# the note above.
+# shellcheck source=scripts/lib/gen-region.sh
+source "$HERE/scripts/lib/gen-region.sh"
+# `hash` and `css`: the five host languages here comment with `#` (TOML, YAML, zsh, bash,
+# tmux.conf), and dotfiles-Windows' zebar stylesheet needs the `/* … */` form (#926).
+# There is deliberately no `html` arm — no themed consumer is markdown, and accepting a
+# form nothing uses only widens what a stray line can be mistaken for.
+region_init theme gen-theme "hash css" "BLOCKS in scripts/gen-theme.sh"
 
 MODE=bare
 REFRESH=0
@@ -96,7 +132,9 @@ while (($#)); do
     FLEET="$2"; shift ;;
   -h | --help)
     # Self-documenting, like parity-check.sh:44 — print the header block above.
-    sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d;s/^# \{0,1\}//'
+    # `/^# shellcheck /d` — the file-wide lint directive above `set -u` is bookkeeping
+    # for ShellCheck, not usage text, and printing it in --help tells a reader nothing.
+    sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d;/^# shellcheck /d;s/^# \{0,1\}//'
     exit 0 ;;
   *)
     printf 'gen-theme: unexpected argument: %s (try --help)\n' "$1" >&2
@@ -597,7 +635,7 @@ emit_zebar_palette() {
   printf '%s--tn-orange: %s;\n' "$i" "$(pal orange)"
 }
 
-render_for() { # $1 = id, $2 = indent
+render_for() { # $1 = id, $2 = indent — called as `region_build_file <file> render_for`
   case "$1" in
   palette-colors) emit_palette_colors "$2" ;;
   tmux-palette) emit_tmux_palette "$2" ;;
@@ -622,190 +660,82 @@ render_for() { # $1 = id, $2 = indent
 }
 
 # ── the block walker ──────────────────────────────────────────────────────────
-# marker_id is PURE — it prints the id and nothing else. It is called through
-# $( ), which is a subshell, so anything it assigned would be discarded the
-# moment it returned. The indentation therefore comes from a separate expansion
-# in the caller's own frame (marker_indent), NOT from a side effect here. That is
-# the same subshell trap _pal_load avoids by reading from a process substitution
-# instead of a pipeline; getting it wrong here silently flattened every emitted
-# line to column 0, which only lazygit/config.yml's nested block would have shown.
+# Was ~70 lines of marker regexes, an indent capture and a nested read loop here; since
+# #1129 it is scripts/lib/gen-region.sh, shared with every other region generator.
+#
 # TWO COMMENT SYNTAXES, because a marker has to be a comment in ITS OWN file's language and
-# `#` is not one everywhere (#926). Every consumer up to now happened to be `#`-commented —
+# `#` is not one everywhere (#926). Every consumer up to #926 happened to be `#`-commented —
 # toml, yml, zsh, sh, conf — so the grammar was written for `#` and that looked like a
 # property of the tool rather than an accident of which files had blocks. CSS has no `#`
 # comment at all (`#` there begins an id selector), so dotfiles-Windows' zebar palette could
 # not carry a marker in any form and stayed the last hand-authored copy of Core's colours.
+# Which syntaxes are legal here is the `"hash css"` argument to region_init at the top.
 #
-# THE STYLE IS NOT REGISTERED ANYWHERE, and that is the whole shape of this change.
-# build_file echoes both markers VERBATIM — it never writes them — so the generator never
-# needs to know which syntax a file uses. Only the MATCHERS do, and they can simply accept
+# THE STYLE IS NOT REGISTERED ANYWHERE, and that is the whole shape of #926.
+# region_build_file echoes both markers VERBATIM — it never writes them — so the generator
+# never needs to know which syntax a file uses. Only the MATCHERS do, and they simply accept
 # either. A fourth registry column (the first design) would have been a fact stored in two
 # places, and the copy in the file is the one that decides.
-# The ERE the three greps below share. Defined once because it was restated in three places
-# and a fourth syntax would have had to find all of them — which is exactly how the `#`-only
-# assumption survived unnoticed until a CSS file needed a block (#926). `marker_id` above
-# stays a pair of explicit [[ =~ ]] arms rather than reusing this: it must CAPTURE the id and
-# reject an unterminated `/*`, neither of which a shared presence-test pattern should carry.
-MARKER_RE='^[[:space:]]*(#|/\*)[[:space:]]core:theme:gen[[:space:]]'
-
-marker_id() { # $1 = gen|end, $2 = line; prints the id, or returns 1
-  local kind="$1" line="$2"
-  # `#`-comment form: toml, yml, zsh, sh, conf.
-  if [[ "$line" =~ ^[[:space:]]*#[[:space:]]core:theme:${kind}[[:space:]]([a-z0-9-]+)[[:space:]]*$ ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
-    return 0
-  fi
-  # `/* … */` form: CSS. The closing delimiter is REQUIRED, not optional — a line opening a
-  # comment it does not close would swallow the generated block into it, and the file would
-  # still parse while rendering nothing.
-  if [[ "$line" =~ ^[[:space:]]*/\*[[:space:]]core:theme:${kind}[[:space:]]([a-z0-9-]+)[[:space:]]*\*/[[:space:]]*$ ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
-    return 0
-  fi
-  return 1
-}
-
-# The opening marker's leading whitespace, re-applied to every emitted line. This
-# is what lets lazygit/config.yml carry a block inside its 4-space gui.theme map;
-# everywhere else it is the empty string.
-# Unchanged by #926: it takes the leading run of spaces, which is the same question
-# whatever the comment delimiter that follows is.
-marker_indent() { # $1 = line
-  local line="$1"
-  printf '%s' "${line%%[! ]*}"
-}
-
-# build_file <file> — emit <file> with every marked block re-rendered.
-build_file() {
-  local file="$1" line id indent found l2 endid
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if id="$(marker_id gen "$line")"; then
-      indent="$(marker_indent "$line")"
-      printf '%s\n' "$line" # the opening marker, verbatim
-      render_for "$id" "$indent" || return 2
-      # consume the stale block up to and including its end marker
-      found=0
-      while IFS= read -r l2; do
-        if endid="$(marker_id end "$l2")"; then
-          [[ "$endid" == "$id" ]] || {
-            printf "gen-theme: marker mismatch in %s: 'gen %s' closed by 'end %s'\n" "$file" "$id" "$endid" >&2
-            return 2
-          }
-          printf '%s\n' "$l2"
-          found=1
-          break
-        fi
-      done
-      ((found == 1)) || {
-        printf "gen-theme: unterminated 'core:theme:gen %s' region in %s\n" "$id" "$file" >&2
-        return 2
-      }
-    else
-      printf '%s\n' "$line"
-    fi
-  done <"$file"
-}
-
-# ── the reverse scan's file set ───────────────────────────────────────────────
-# Which files preflight() reads when hunting for an UNREGISTERED marker. Split out
-# because the discovery rule, not the scan, is the subtle part.
 #
-# GIT-AWARE when the tree is a repo, because a plain `grep -r .` walk is wrong in a
-# way that only shows up on a developer box: it descends into `.claude/worktrees/`,
-# where Claude Code parks a full checkout per session. Every themed consumer in every
-# OTHER session's worktree was reported as unregistered drift — 57 phantom failures
-# against a tracked tree with no drift at all — and `make audit` then printed
-# `the real tree has drifted — run: make gen-theme`. That remediation is actively
-# wrong: the tree had not drifted, and regenerating from a scan polluted by unrelated
-# checkouts is a worse outcome than the gate simply not running.
-#
-# `_audit_ls` (tracked + untracked-but-not-ignored) is the right primitive and was
-# what the comment above already claimed to be using. It keeps the property that
-# motivates the reverse scan — an untracked consumer about to be committed is still
-# caught — while inheriting git's exclusions, and `.claude/` is ignored (.gitignore).
-#
-# THE FALLBACK IS NOT BELT-AND-BRACES. test-core.sh's fixtures are plain directories
-# with no `git init` (scripts/test/40-gen-theme-aliases.sh builds $SANDBOX/themerepo
-# by hand), so git-only discovery would list zero files there and report success —
-# coverage loss reading as health, the exact failure this preflight exists to end.
-# The walk is correct in a fixture, which has no nested checkouts to trip over.
-#
-# The git path is taken only when the work-tree root IS the directory being scanned.
-# A fixture created under a $TMPDIR that happens to sit inside some other repo would
-# otherwise satisfy `--is-inside-work-tree` and get that repo's file list.
-_theme_scan_files() {
-  local top
-  top="$(git rev-parse --show-toplevel 2>/dev/null)" || top=""
-  if [[ -n "$top" && "$top" -ef "$PWD" ]]; then
-    _audit_ls '*.toml' '*.yml' '*.zsh' '*.sh' '*.conf' '*.css'
-  else
-    find . -name .git -prune -o -name .claude -prune -o -type f \
-      \( -name '*.toml' -o -name '*.yml' -o -name '*.zsh' -o -name '*.sh' -o -name '*.conf' \
-      -o -name '*.css' \) \
-      -print 2>/dev/null | sed 's|^\./||' | sort -u
-  fi
-}
+# WHAT THIS SCRIPT GAINED BY GIVING THE WALKER UP (#1129). The shared walker refuses a
+# CROSSED or NESTED pair, and the shared preflight refuses a `gen` without exactly one
+# matching `end`. Neither check existed here: `gen A, gen B, end A, end B` has one of each,
+# so the old per-id count could not see it, and the old walker consumed the inner `gen` as
+# stale body — silently dropping block B from the file. gen-aliases.sh and
+# gen-porting-matrix.sh had both checks; the generator with the most consumers, and the only
+# one whose targets are symlinked into $HOME, had neither.
 
 # ── preflight: the registry and the tree must agree ───────────────────────────
 # Runs before anything is emitted or compared. A block silently deleted from a
 # consumer would otherwise just stop being generated, and --check would stay green
 # about a file it no longer covers — coverage loss reading as health, which is the
 # failure mode this whole script exists to end.
+#
+# BOTH DIRECTIONS, and they need different machinery because this generator's blocks span
+# MANY files. Forward is per-file and lives in the shared library; reverse has to sweep
+# files no registry names, so it is region_scan_tree.
 preflight() {
-  local rc=0 id f n line repo
-  # Forward: every REGISTERED block must appear exactly once in its file — unless
-  # that file is absent, which is the documented partial-tree case.
+  local rc=0 id f repo files="" seen ids
+
+  # FORWARD, grouped BY FILE rather than by block — which is what buys the two checks
+  # this script never had (#1129). region_preflight_file replays the marker SEQUENCE in
+  # one file, so it sees a crossed pair and an unbalanced `gen`/`end`; the old per-block
+  # grep counted one id at a time and structurally could not. Two files here carry two
+  # blocks each (tmux/scripts/tmux-cheat.sh, zsh/45-plugins.zsh), so the grouping is not
+  # academic.
   while IFS="$(printf '\t')" read -r id f repo; do
     [[ -n "$id" ]] || continue
     f="$(_block_path "$f" "${repo:-}")"
     # Empty = the sibling repo is not checked out. That is an ENVIRONMENT fact, reported
     # once by the driver as a skip, never a per-block failure here.
     [[ -n "$f" && -f "$f" ]] || continue
-    # Both syntaxes, and the `/* … */` arm requires its closing delimiter for marker_id's
-    # reason — a count that matched an unterminated opener would call a broken file healthy.
-    n="$(grep -cE "^[[:space:]]*(#[[:space:]]core:theme:gen ${id}|/\*[[:space:]]core:theme:gen ${id}[[:space:]]\*/)[[:space:]]*\$" "$f" || true)"
-    case "$n" in
-    1) ;;
-    0) printf 'gen-theme: %s: registered block is missing: %s (was its region deleted?)\n' "$f" "$id" >&2; rc=2 ;;
-    *) printf 'gen-theme: %s: block appears %s times: %s (ambiguous)\n' "$f" "$n" "$id" >&2; rc=2 ;;
+    case "$files" in
+    (*"|$f|"*) ;;
+    (*) files="$files|$f|" ;;
     esac
   done <<EOF
 $BLOCKS
 EOF
-  # Reverse: a marker in the tree that the registry does not know about. Without
-  # this, adding a block and forgetting to register it reads as success — the file
-  # is simply never rendered. _audit_ls-style discovery so an UNTRACKED consumer
-  # about to be committed is caught too — see _theme_scan_files for why that phrase
-  # now names the actual helper instead of describing a hand-rolled imitation of it.
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    f="${line%%:*}"
-    # THE LAST FIELD IS NOT THE ID IN EVERY SYNTAX. `${line##* }` was written when a marker
-    # could only be a `#` comment, where the id does end the line; on the CSS form it yields
-    # the closing `*/` instead, so every CSS block in this tree would report as unregistered
-    # under a name no registry could ever carry (#926). Strip a trailing `*/` first.
-    id="${line##* }"
-    [[ "$id" == '*/' ]] && { id="${line% \*/}"; id="${id##* }"; }
-    grep -qxF "$(printf '%s\t%s' "$id" "$f")" <<<"$BLOCKS" || {
-      printf 'gen-theme: %s carries an unregistered block: %s\n' "$f" "$id" >&2
-      rc=2
-    }
-  # scripts/ is EXCLUDED: it is dev tooling, never a shipped consumer, and
-  # test-core.sh's hermetic fixtures legitimately contain marker text inside
-  # heredocs. Scanning it would report this script's own test suite as drift.
-  #
-  # `/dev/null` in the grep argument list does two jobs, and both are load-bearing:
-  #   1. a batch of exactly one file still prints a filename — without it grep emits
-  #      bare `LINE:text` and the awk below reads the line number as the path;
-  #   2. it makes the empty-input case safe WITHOUT GNU's `xargs -r`, which BSD/macOS
-  #      xargs does not accept. On empty input GNU xargs runs grep once with only
-  #      /dev/null to read, which is a clean no-match rather than a read from stdin.
-  # `tr '\n' '\0' | xargs -0` is the idiom common.sh:1954 already uses, and likewise
-  # without `-r` — PORTABILITY.md §1 puts macOS inside the floor.
-  done < <(_theme_scan_files | grep -v '^scripts/' |
-    tr '\n' '\0' | xargs -0 grep -nE "$MARKER_RE" /dev/null 2>/dev/null |
-    awk -F: '{f=$1; $1=""; $2=""; sub(/^ +/,""); print f":"$0}' |
-    sed 's/[[:space:]]*$//' | sort -u)
+
+  for seen in $(printf '%s' "$files" | tr '|' '\n' | grep -v '^$' | sort -u); do
+    # Every registered id whose resolved path is this file.
+    ids="$(while IFS="$(printf '\t')" read -r id f repo; do
+      [[ -n "$id" ]] || continue
+      f="$(_block_path "$f" "${repo:-}")"
+      [[ "$f" == "$seen" ]] && printf '%s ' "$id"
+    done <<EOF
+$BLOCKS
+EOF
+)"
+    region_preflight_file "$seen" "$ids" || rc=2
+  done
+
+  # REVERSE: a marker in the tree that the registry does not know about. Without this,
+  # adding a block and forgetting to register it reads as success — the file is simply
+  # never rendered. The extensions are the host languages a themed consumer can be
+  # written in; the discovery rule (git-aware, fixture-safe, scripts/ excluded) lives in
+  # the library, which is where its three separate traps are documented.
+  region_scan_tree "$BLOCKS" '*.toml' '*.yml' '*.zsh' '*.sh' '*.conf' '*.css' || rc=2
   return $rc
 }
 
@@ -915,8 +845,8 @@ while IFS= read -r t; do
   # A configured target that is not present is skipped, not fatal, so a partial
   # fixture tree (test-core.sh's) and a standalone checkout both stay clean.
   [[ -f "$t" ]] || continue
-  grep -qE "$MARKER_RE" "$t" || continue
-  if ! generated="$(build_file "$t")"; then
+  grep -qE "$(region_marker_re)" "$t" || continue
+  if ! generated="$(region_build_file "$t" render_for)"; then
     _bump 2
     continue
   fi
@@ -938,10 +868,18 @@ while IFS= read -r t; do
     fi
     rm -f "$_tmp"
   else
-    # `>` preserves the existing mode — tmux/scripts/*.sh are 0755 and the audit
-    # asserts exec bits.
-    printf '%s\n' "$generated" >"$t"
-    printf 'gen-theme: regenerated %s\n' "$t"
+    # `preserve`, NOT the mktemp+chmod+mv install the document generators use: writing
+    # through the existing inode keeps its mode, and tmux/scripts/*.sh are 0755 with
+    # audit-core.sh §2 asserting those exec bits. An atomic rename would land 0644 over
+    # them and the gate would only notice afterwards.
+    _wtmp="$(mktemp "${TMPDIR:-/tmp}/gen-theme.XXXXXX")" || { _bump 2; continue; }
+    printf '%s\n' "$generated" >"$_wtmp"
+    if region_install "$_wtmp" "$t" preserve; then
+      printf 'gen-theme: regenerated %s\n' "$t"
+    else
+      _bump 2
+    fi
+    rm -f "$_wtmp"
   fi
 done <<EOF
 $TARGETS

@@ -67,6 +67,10 @@ if have git; then
     mkdir -p "$GTR/theme" "$GTR/scripts" "$GTR/scripts/lib" "$GTR/zsh" "$GTR/lib" "$GTR/tmux"
     cp "$HERE/scripts/gen-theme.sh" "$GTR/scripts/"
     cp "$HERE/scripts/lib/common.sh" "$GTR/scripts/lib/"
+    # The region library too (#1129): gen-theme.sh sources it for the marker grammar, the
+    # walker and the structural preflight, and a fixture without it is a generator that
+    # cannot start — which every case below would then report as the behaviour under test.
+    cp "$HERE/scripts/lib/gen-region.sh" "$GTR/scripts/lib/"
     cat >"$GTR/theme/palette.toml" <<'GTPAL'
 schema = 1
 style = "storm"
@@ -537,9 +541,43 @@ GTTOOLS
   else
     fail "gen-theme: the reverse scan missed a CSS marker or misnamed it — got '${_gt_css_out//$'\n'/ | }'"
   fi
+
+  # ── the two structural checks this generator GAINED with the shared walker (#1129) ──
+  # Both are failure directions gen-theme.sh could not express before it moved onto
+  # scripts/lib/gen-region.sh, and both are silent-corruption shapes rather than noisy
+  # ones — which is why they are asserted here rather than left to the real tree, where
+  # they can only be produced by breaking a tracked file.
+
+  # CROSSED PAIRS. `gen A, gen B, end A, end B` has exactly one marker of each kind per
+  # id, so the per-block COUNT the old preflight ran could not see it, and the old walker
+  # consumed the inner `gen` as stale body — silently dropping block B from the file. Two
+  # blocks live in zsh/45-plugins.zsh in the real tree, so this is reachable by an
+  # ordinary hand-edit, not a contrived one.
+  _gt_fixture
+  printf '# core:theme:gen tmux-palette\n# core:theme:gen sep-rule-colors\n# core:theme:end tmux-palette\n# core:theme:end sep-rule-colors\n' >"$GTR/tmux/tmux.conf"
+  _gt_cross_out="$(_gt_out --check)"
+  if [[ "$(_gt_run --check)" == 2 ]] && [[ "$_gt_cross_out" == *'blocks cannot nest or cross'* ]]; then
+    pass "gen-theme: crossed marker pairs are a structural failure (2), not a silently dropped block"
+  else
+    fail "gen-theme: crossed pairs were accepted — got rc=$(_gt_run --check), out '${_gt_cross_out//$'\n'/ | }'"
+  fi
+
+  # A STRAY DUPLICATE `end`. The walker only ever pairs an `end` with the `gen` above it,
+  # so an extra one used to pass through as prose: the old preflight counted `gen`
+  # markers alone. The file then carries a marker the generator does not own, which is
+  # the same "malformed marker hides" shape the whole preflight exists to refuse.
+  _gt_fixture && _gt_run >/dev/null
+  printf '# core:theme:end tmux-palette\n' >>"$GTR/tmux/tmux.conf"
+  _gt_stray_out="$(_gt_out --check)"
+  if [[ "$(_gt_run --check)" == 2 ]] && [[ "$_gt_stray_out" == *'gen marker(s) but'* ]]; then
+    pass "gen-theme: a stray duplicate end marker is a structural failure (2), named"
+  else
+    fail "gen-theme: a stray end marker was passed over — got rc=$(_gt_run --check), out '${_gt_stray_out//$'\n'/ | }'"
+  fi
+
   _gt_fixture && _gt_run >/dev/null
   unset -f _gt_css_fresh
-  unset _gt_css _gt_css_out
+  unset _gt_css _gt_css_out _gt_cross_out _gt_stray_out
   rm -rf "$GTR"
   unset _gt_gen_rc _gt_drift_rc _gt_before _gt_after _gt_nopal_rc _gt_fg _gt_refresh_rc
   unset _gt_drift_out _gt_bad_out
