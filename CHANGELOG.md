@@ -159,6 +159,32 @@
 
   Neither file is in `core.manifest` or `core.vendor`, so none of this ships to a host.
 
+- **Two more generators lost their hand-rolled walkers, and `--local` kept the one
+  behaviour only it uses**
+  ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).
+  `gen-aliases.sh` and `gen-porting-matrix.sh` now call `scripts/lib/gen-region.sh` for the
+  marker grammar, the block walker and the structural preflight, leaving them the parts
+  that are actually theirs: the alias extractor and the matrix's fleet readers. Between
+  them that is **180 lines deleted against 68 added**, and `aliases.md` and
+  `PORTING-MATRIX.md` both regenerate byte-identically.
+
+  The two were already copies — `gen-aliases.sh`'s walker was labelled _"gen-theme.sh's
+  build_file, HTML-comment markers"_ and `gen-porting-matrix.sh`'s _"gen-aliases.sh's,
+  HTML-comment markers"_ — so the diagnostics were already identical but for a prefix.
+  That is exactly why the library takes the namespace, the program name and the
+  registry-hint as parameters: every message these two emit is unchanged to the byte,
+  including the remediation that names `BLOCKS` in one and `BLOCK_IDS` in the other, and
+  the ~35 exact-string assertions in `scripts/test/41-gen-matrix-parity.sh` needed no edit.
+
+  **The subset render is the one thing that was not shared, and now is.**
+  `gen-porting-matrix.sh --local` re-renders only the blocks whose inputs are in-repo and
+  passes every other block's on-disk body through verbatim, so the region is a no-op in the
+  byte comparison rather than an empty one — the seam that lets `--check` answer on a lone
+  clone. It is still the only caller of that arm, which makes it the library feature most
+  likely to be quietly broken later, so `scripts/test/43-gen-region.sh` pins both it and
+  the direction that matters more: a crossed pair is still refused when **neither** block
+  is in the render subset. `--local` narrows what is rendered, never what is checked.
+
 - **`dotgibson/dotfiles-nvim` exists, and one of §7's answers was corrected while shipping
   it** ([#1122](https://github.com/dotgibson/dotfiles-core/issues/1122)).
   Step 1 of `NVIM-SPLIT-PROPOSAL.md` §3.5. The editor is now authored in

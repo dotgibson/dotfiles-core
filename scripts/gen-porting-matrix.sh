@@ -107,6 +107,14 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # and core_files_identical — the cmp/diff BINARIES are forbidden in this repo (#572).
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/scripts/lib/common.sh"
+# The marker grammar, the block walker and the structural preflight, shared with every
+# other region generator since #1129. The `--local` subset render below is the ONLY caller
+# of the walker's pass-through-when-not-selected arm, so that behaviour is the library's
+# and is pinned by scripts/test/43-gen-region.sh as well as by this script's own cases.
+# shellcheck source=scripts/lib/gen-region.sh
+source "$HERE/scripts/lib/gen-region.sh"
+# `html` alone: the one target is a markdown document.
+region_init porting-matrix gen-porting-matrix html "BLOCK_IDS in scripts/gen-porting-matrix.sh"
 
 MODE=bare
 LOCAL=0
@@ -627,16 +635,11 @@ EOF
   printf '%s' "$_bt"
 }
 
-# ── the block walker (gen-aliases.sh's, HTML-comment markers) ─────────────────
-marker_id() { # $1 = gen|end, $2 = line; prints the id, or returns 1
-  local kind="$1" line="$2"
-  [[ "$line" =~ ^[[:space:]]*\<!--[[:space:]]core:porting-matrix:${kind}[[:space:]]([a-z0-9-]+)[[:space:]]--\>[[:space:]]*$ ]] || return 1
-  printf '%s' "${BASH_REMATCH[1]}"
-}
-
-_markers() { # every marker in $TARGET as "kind id", ONE grammar shared with marker_id
-  sed -nE 's/^[[:space:]]*<!--[[:space:]]core:porting-matrix:(gen|end)[[:space:]]([a-z0-9-]+)[[:space:]]-->[[:space:]]*$/\1 \2/p' "$TARGET"
-}
+# ── the block walker ──────────────────────────────────────────────────────────
+# Was marker_id and _markers here, copied from gen-aliases.sh, which copied them from
+# gen-theme.sh. Since #1129 they are scripts/lib/gen-region.sh, parameterised by namespace
+# and program name so this file's diagnostics still say `gen-porting-matrix:` and
+# `core:porting-matrix:gen` without it owning a regex.
 
 render_block() { # $1 = block id -> that block's markdown table on stdout
   #   LAZY, and dispatched from ONE place. The fleet-fed tables are still pre-rendered into
@@ -666,103 +669,31 @@ render_block() { # $1 = block id -> that block's markdown table on stdout
   esac
 }
 
-render_for() { # $1 = id — the rendered block, blank-line padded
+# INVOKED BY NAME through the shared walker (region_build_file takes the renderer as a
+# string, because bash 3.2 has no function references), so ShellCheck cannot see the call.
+# BOTH CODES: 0.11.0 reports it as SC2329 on the function, 0.10.0 — the Alpine leg — as
+# SC2317 on the body. Naming one passes locally and reds Alpine.
+# shellcheck disable=SC2317,SC2329
+render_for() { # $1 = id — the rendered block, blank-line padded; called via region_build_file
   local _body
   _body="$(render_block "$1")" || return 2
   printf '\n%s\n\n' "$_body"
 }
 
-build_file() { # build_file <file> [ids] — emit <file> with the marked blocks re-rendered
-  #                ids: space-separated subset of BLOCK_IDS (default: all of them). A block
-  #                OUTSIDE the subset has its on-disk body passed through verbatim instead
-  #                of re-rendered, which is what lets --check compare the local-input
-  #                blocks alone without a fleet to read (see check_local_blocks).
-  local file="$1" only="${2:-$BLOCK_IDS}" line id found l2 endid inner sub
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if id="$(marker_id gen "$line")"; then
-      printf '%s\n' "$line"
-      sub=0
-      [[ " $only " == *" $id "* ]] && sub=1
-      ((sub == 1)) && { render_for "$id" || return 2; }
-      found=0
-      while IFS= read -r l2; do
-        if inner="$(marker_id gen "$l2")"; then
-          printf "gen-porting-matrix: 'core:porting-matrix:gen %s' opens inside the '%s' region of %s — blocks cannot nest or cross\n" "$inner" "$id" "$file" >&2
-          return 2
-        fi
-        if endid="$(marker_id end "$l2")"; then
-          [[ "$endid" == "$id" ]] || {
-            printf "gen-porting-matrix: marker mismatch in %s: 'gen %s' closed by 'end %s'\n" "$file" "$id" "$endid" >&2
-            return 2
-          }
-          printf '%s\n' "$l2"
-          found=1
-          break
-        fi
-        # Not re-rendering this block: emit what is on disk, so the region is a no-op in
-        # the comparison rather than an empty one.
-        ((sub == 1)) || printf '%s\n' "$l2"
-      done
-      ((found == 1)) || {
-        printf "gen-porting-matrix: unterminated 'core:porting-matrix:gen %s' region in %s\n" "$id" "$file" >&2
-        return 2
-      }
-    else
-      printf '%s\n' "$line"
-    fi
-  done <"$file"
-}
 
 # ── preflight: every registered block has one marker pair; every marker is registered ──
 preflight() {
-  local rc=0 id n m kind line markers
-  markers="$(_markers)"
-  # Counts cannot see ORDER: gen A, gen B, end A, end B has one marker of each kind per
-  # block. Replay the marker SEQUENCE (a handful of lines, not the document) with the
-  # walker's rules so a crossed or nested pair is the structural 2 here — before the
-  # fleet is resolved, where it would otherwise be filed under "no sibling to read" on a
-  # lone checkout. The messages are the walker's, so both paths read the same.
-  local open=""
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    kind="${line%% *}"
-    id="${line#* }"
-    if [[ "$kind" == gen ]]; then
-      [[ -z "$open" ]] || { printf "gen-porting-matrix: 'core:porting-matrix:gen %s' opens inside the '%s' region of %s — blocks cannot nest or cross\n" "$id" "$open" "$TARGET" >&2; rc=2; open=""; break; }
-      open="$id"
-    elif [[ -n "$open" && "$id" != "$open" ]]; then
-      printf "gen-porting-matrix: marker mismatch in %s: 'gen %s' closed by 'end %s'\n" "$TARGET" "$open" "$id" >&2; rc=2; open=""; break
-    else
-      open=""
-    fi
-  done <<EOF
-$markers
-EOF
-  [[ -z "$open" ]] || { printf "gen-porting-matrix: unterminated 'core:porting-matrix:gen %s' region in %s\n" "$open" "$TARGET" >&2; rc=2; }
-  for id in $BLOCK_IDS; do
-    n="$(grep -c "^gen $id\$" <<<"$markers" || true)"
-    m="$(grep -c "^end $id\$" <<<"$markers" || true)"
-    case "$n" in
-    1) ;;
-    0) printf 'gen-porting-matrix: %s: registered block is missing: %s (was its region deleted?)\n' "$TARGET" "$id" >&2; rc=2 ;;
-    *) printf 'gen-porting-matrix: %s: block appears %s times: %s (ambiguous)\n' "$TARGET" "$n" "$id" >&2; rc=2 ;;
-    esac
-    [[ "$m" == "$n" ]] || {
-      printf 'gen-porting-matrix: %s: block %s has %s gen marker(s) but %s end marker(s) — every gen needs exactly one matching end\n' "$TARGET" "$id" "$n" "$m" >&2
-      rc=2
-    }
-  done
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    kind="${line%% *}"
-    id="${line#* }"
-    [[ " $BLOCK_IDS " == *" $id "* ]] || {
-      printf 'gen-porting-matrix: %s carries an unregistered %s marker: %s — add the block to BLOCK_IDS in scripts/gen-porting-matrix.sh, or remove the marker\n' "$TARGET" "$kind" "$id" >&2
-      rc=2
-    }
-  done <<EOF
-$markers
-EOF
+  local rc=0 id
+  # STRUCTURE, from the shared library. Counts cannot see ORDER — `gen A, gen B, end A,
+  # end B` has one marker of each kind per block — so region_preflight_file replays the
+  # marker SEQUENCE with the walker's own rules, and does it BEFORE the fleet is resolved,
+  # where a crossed pair would otherwise be filed under "no sibling to read" on a lone
+  # checkout. It also covers the counts and the gen/end parity; the reverse direction (a
+  # marker the registry does not know) is its own call so the remediation can name
+  # BLOCK_IDS. Every message is the walker's, so both paths read the same.
+  region_preflight_file "$TARGET" "$BLOCK_IDS" || rc=2
+  region_unregistered_in_file "$TARGET" "$BLOCK_IDS" || rc=2
+
   # THE LOCALITY REGISTRY, checked here so a typo in it is a loud 2 and never a quiet
   # green. An EMPTY set matters most: `--check --local` over zero blocks is a gate that
   # cannot fail, which is the failure mode this whole seam exists to remove.
@@ -1035,7 +966,7 @@ rc=0
 # newline, so a hand-authored blank line at the end of the document — outside both
 # markers — would read as drift and be deleted on regeneration. build_file emits one
 # newline per line, so what remains after `%x` is exactly what the walker printed.
-if ! generated="$(build_file "$TARGET" "$RENDER_BLOCKS" && printf x)"; then
+if ! generated="$(region_build_file "$TARGET" render_for "$RENDER_BLOCKS" && printf x)"; then
   exit 2
 fi
 generated="${generated%x}"

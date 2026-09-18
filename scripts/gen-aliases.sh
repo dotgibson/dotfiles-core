@@ -69,6 +69,13 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # diffutils dependency.
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/scripts/lib/common.sh"
+# The marker grammar, the block walker and the structural preflight, shared with every
+# other region generator since #1129 — this script's own copies were the second of four.
+# shellcheck source=scripts/lib/gen-region.sh
+source "$HERE/scripts/lib/gen-region.sh"
+# `html` alone: the one target is a markdown document, so the `#` and `/* */` forms the
+# theme generator needs would only widen what a stray line here can be mistaken for.
+region_init aliases gen-aliases html "BLOCKS in scripts/gen-aliases.sh"
 
 MODE=bare
 ROOT=""
@@ -274,6 +281,12 @@ _dedupe() {
 # aliases.md already relies on that (its `serve [-l\|--local]` row). A backtick inside a
 # value that is itself rendered as a code span cannot be escaped that way, so it is a
 # structural failure with a message, not a mangled row.
+# INVOKED BY NAME through the shared walker (region_build_file takes the renderer as a
+# string, because bash 3.2 has no function references), so ShellCheck cannot see the call.
+# BOTH CODES: 0.11.0 — the pin in scripts/tool-versions.env, and CI's ubuntu and macOS
+# legs — reports it as SC2329 on the function; 0.10.0, what `apk add shellcheck` gives the
+# Alpine leg, reports it as SC2317 on the body. Naming one passes locally and reds Alpine.
+# shellcheck disable=SC2317,SC2329
 _render() {
   awk -F'\t' -v kind="$1" -v names="$2" '
     function esc(s,    out, k) { out = ""; while ((k = index(s, "|")) > 0) { out = out substr(s, 1, k - 1) "\\|"; s = substr(s, k + 1) } return out s }
@@ -323,7 +336,13 @@ _render() {
   '
 }
 
-render_for() { # $1 = id
+# INVOKED BY NAME through the shared walker (region_build_file takes the renderer as a
+# string, because bash 3.2 has no function references), so ShellCheck cannot see the call.
+# BOTH CODES: 0.11.0 — the pin in scripts/tool-versions.env, and CI's ubuntu and macOS
+# legs — reports it as SC2329 on the function; 0.10.0, what `apk add shellcheck` gives the
+# Alpine leg, reports it as SC2317 on the body. Naming one passes locally and reds Alpine.
+# shellcheck disable=SC2317,SC2329
+render_for() { # $1 = id — called as `region_build_file <file> render_for`
   local kind names
   kind="$(awk -F'\t' -v id="$1" '$1 == id { print $2 }' <<<"$BLOCKS")"
   names="$(awk -F'\t' -v id="$1" '$1 == id { print $3 }' <<<"$BLOCKS")"
@@ -333,92 +352,30 @@ $ROWS
 EOF
 }
 
-# ── the block walker (gen-theme.sh's build_file, HTML-comment markers) ────────
-marker_id() { # $1 = gen|end, $2 = line; prints the id, or returns 1
-  local kind="$1" line="$2"
-  [[ "$line" =~ ^[[:space:]]*\<!--[[:space:]]core:aliases:${kind}[[:space:]]([a-z0-9-]+)[[:space:]]--\>[[:space:]]*$ ]] || return 1
-  printf '%s' "${BASH_REMATCH[1]}"
-}
-
-# _markers — every marker in $TARGET as "kind id", ONE grammar shared with marker_id:
-# a single whitespace character between fields, any indentation, trailing blanks. The
-# preflight counts come from here, not from a second regex, so a marker the walker
-# would honour (tab-separated, say) can never be one the structural checks overlook.
-_markers() {
-  sed -nE 's/^[[:space:]]*<!--[[:space:]]core:aliases:(gen|end)[[:space:]]([a-z0-9-]+)[[:space:]]-->[[:space:]]*$/\1 \2/p' "$TARGET"
-}
-
-build_file() { # build_file <file> — emit <file> with every marked block re-rendered
-  local file="$1" line id found l2 endid inner
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if id="$(marker_id gen "$line")"; then
-      printf '%s\n' "$line"
-      render_for "$id" || return 2
-      found=0
-      while IFS= read -r l2; do
-        # A second `gen` before this block's `end` is a CROSSED or NESTED pair. The
-        # preflight counts cannot see it (gen A, gen B, end A, end B has one of each), and
-        # consuming it as stale body would silently drop block B from the document.
-        if inner="$(marker_id gen "$l2")"; then
-          printf "gen-aliases: 'core:aliases:gen %s' opens inside the '%s' region of %s — blocks cannot nest or cross\n" "$inner" "$id" "$file" >&2
-          return 2
-        fi
-        if endid="$(marker_id end "$l2")"; then
-          [[ "$endid" == "$id" ]] || {
-            printf "gen-aliases: marker mismatch in %s: 'gen %s' closed by 'end %s'\n" "$file" "$id" "$endid" >&2
-            return 2
-          }
-          printf '%s\n' "$l2"
-          found=1
-          break
-        fi
-      done
-      ((found == 1)) || {
-        printf "gen-aliases: unterminated 'core:aliases:gen %s' region in %s\n" "$id" "$file" >&2
-        return 2
-      }
-    else
-      printf '%s\n' "$line"
-    fi
-  done <"$file"
-}
+# ── the block walker ──────────────────────────────────────────────────────────
+# Was marker_id, _markers and build_file here — three functions that existed because
+# gen-theme.sh had them first and this script needed the same job done with HTML comments
+# instead of `#` ones. Since #1129 all three are scripts/lib/gen-region.sh, which takes the
+# namespace and the program name as parameters precisely so this file's diagnostics keep
+# saying `gen-aliases:` and `core:aliases:gen` without owning a regex.
 
 # ── preflight: sources, registry and doc must agree, all three ways ───────────
 preflight() {
-  local rc=0 id kind names n line f claimed=" " have=" " k m markers
-  markers="$(_markers)"
-  # 1. Every registered block's `gen` AND `end` marker appears exactly once in the doc,
-  #    and every marker of either kind in the doc is registered. (gen-theme.sh's forward
-  #    + reverse checks, one file.) BOTH KINDS: build_file only pairs an `end` with the
-  #    `gen` above it, so a stray or duplicated `end` marker would otherwise pass through
-  #    as prose — and the doc's contract is that a malformed marker fails, not hides.
+  local rc=0 id kind names n claimed=" " have=" " k ids=""
+  # 1. STRUCTURE, from the shared library: the marker SEQUENCE is well-formed (no nesting,
+  #    no crossing, nothing left open), every registered block appears exactly once, every
+  #    `gen` has exactly one `end`, and no marker in the doc is unregistered. All four used
+  #    to be open-coded here against a second, hand-written regex; region_preflight_file
+  #    derives them from the same matcher the walker uses, so a marker the walker would
+  #    honour can no longer be one these checks overlook.
   while IFS="$(printf '\t')" read -r id kind names; do
     [[ -n "$id" ]] || continue
-    n="$(grep -c "^gen $id\$" <<<"$markers" || true)"
-    m="$(grep -c "^end $id\$" <<<"$markers" || true)"
-    case "$n" in
-    1) ;;
-    0) printf 'gen-aliases: %s: registered block is missing: %s (was its region deleted?)\n' "$TARGET" "$id" >&2; rc=2 ;;
-    *) printf 'gen-aliases: %s: block appears %s times: %s (ambiguous)\n' "$TARGET" "$n" "$id" >&2; rc=2 ;;
-    esac
-    [[ "$m" == "$n" ]] || {
-      printf 'gen-aliases: %s: block %s has %s gen marker(s) but %s end marker(s) — every gen needs exactly one matching end\n' "$TARGET" "$id" "$n" "$m" >&2
-      rc=2
-    }
+    ids="$ids$id "
   done <<EOF
 $BLOCKS
 EOF
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    kind="${line%% *}"
-    id="${line#* }"
-    awk -F'\t' -v id="$id" '$1 == id { found = 1 } END { exit !found }' <<<"$BLOCKS" || {
-      printf 'gen-aliases: %s carries an unregistered %s marker: %s — add the block to BLOCKS in scripts/gen-aliases.sh, or remove the marker\n' "$TARGET" "$kind" "$id" >&2
-      rc=2
-    }
-  done <<EOF
-$markers
-EOF
+  region_preflight_file "$TARGET" "$ids" || rc=2
+  region_unregistered_in_file "$TARGET" "$ids" || rc=2
 
   # 2. Names: every claimed name is defined, no name is claimed twice, and — the
   #    direction that matters — every DEFINED name is claimed. Membership tests against
@@ -477,7 +434,7 @@ EOF
 preflight || exit 2
 
 rc=0
-if ! generated="$(build_file "$TARGET")"; then
+if ! generated="$(region_build_file "$TARGET" render_for)"; then
   exit 2
 fi
 if [[ "$MODE" == check ]]; then
