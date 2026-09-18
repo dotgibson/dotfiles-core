@@ -190,8 +190,10 @@ else
   { cat "$CAPEX"; printf 'PKG_COUNT_EXIT_TRUSTED=0\n'; } >"$CAPV/trust-zero"
   _cap_rejects "PKG_COUNT_EXIT_TRUSTED=0 (omit it to mean off)" "$CAPV/trust-zero"
   # ── the non-mutable host keys (NON-MUTABLE-HOST-PROPOSAL.md §4, #1004 — SHIPPED) ────
-  # Six OPTIONAL keys, four of them read by `up`, the nudge, the maint runner and
-  # core-doctor since #1049, plus the TWO relaxations of PKG_COUNT_PENDING the validator
+  # Four OPTIONAL keys, all of them read by `up`, the nudge, the maint runner and
+  # core-doctor since #1049 (R2 prototyped six; PKG_PENDING_EXIT_NONE / _SOME were retired
+  # unread in #1128 and are pinned as REJECTED below), plus the TWO relaxations of
+  # PKG_COUNT_PENDING the validator
   # makes: PROVISIONER=declarative (no truthful unprivileged count verb exists), and any
   # host declaring PKG_APPLY_PENDING (the nudge reports the staged state instead). Pinned
   # so the schema cannot drift out from under the three fleet declarations that use it —
@@ -203,18 +205,19 @@ else
       fail "validator: rejected $1 — $("$CAPCHK" "$2" 2>&1 | head -2 | tr '\n' ' ')"
     fi
   }
-  { cat "$CAPEX"; printf 'PROVISIONER=atomic\nPKG_APPLY=sudo systemctl reboot\nPKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-atomic"
-  _cap_accepts "the prototype keys on an otherwise-mutable declaration (PROVISIONER=atomic, PKG_APPLY, PKG_PENDING_EXIT_SOME)" "$CAPV/proto-atomic"
+  { cat "$CAPEX"; printf 'PROVISIONER=atomic\nPKG_APPLY=sudo systemctl reboot\n'; } >"$CAPV/proto-atomic"
+  _cap_accepts "the prototype keys on an otherwise-mutable declaration (PROVISIONER=atomic, PKG_APPLY)" "$CAPV/proto-atomic"
   { cat "$CAPEX"; printf 'PROVISIONER=magic\n'; } >"$CAPV/proto-enum"
   _cap_rejects "a PROVISIONER outside its enum" "$CAPV/proto-enum"
-  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_NONE=77\nPKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-both"
-  _cap_rejects "both PKG_PENDING_EXIT_NONE and _SOME (a verb answers with one status)" "$CAPV/proto-both"
-  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_NONE=seventy-seven\n'; } >"$CAPV/proto-word"
-  _cap_rejects "a non-numeric PKG_PENDING_EXIT_NONE" "$CAPV/proto-word"
-  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=300\n'; } >"$CAPV/proto-range"
-  _cap_rejects "a PKG_PENDING_EXIT_SOME above 255" "$CAPV/proto-range"
-  { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-orphan"
-  _cap_rejects "a PKG_PENDING_EXIT_* with no PKG_COUNT_PENDING to describe" "$CAPV/proto-orphan"
+  # THE RETIREMENT IS PINNED, NOT JUST THE ABSENCE (#1128). PKG_PENDING_EXIT_NONE / _SOME
+  # were accepted and validated for four releases with no consumer ever reading them, and
+  # PKG_APPLY_PENDING_EXIT covers the staged question that did ship. Dropping them from a
+  # VENDORED validator was safe only because no repo declared either — so what is worth a
+  # case is that the names now land on the unknown-key arm, which is what stops one being
+  # quietly re-accepted without the consumer that was missing the first time. A well-formed
+  # value is used deliberately: the point is that the KEY is gone, not that 77 is malformed.
+  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-retired"
+  _cap_rejects "a retired PKG_PENDING_EXIT_SOME (#1128 — an unknown key now, consumer never written)" "$CAPV/proto-retired"
   # R5: the staged-change probe, and the second way the count verb may be absent.
   { cat "$CAPEX"; printf 'PROVISIONER=atomic\nPKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=rpm-ostree status --pending-exit-77\nPKG_APPLY_PENDING_EXIT=77\n'; } >"$CAPV/r5-pending"
   _cap_accepts "PKG_APPLY_PENDING with an _EXIT beside PKG_APPLY" "$CAPV/r5-pending"
@@ -244,18 +247,17 @@ else
   # validated AS 63, a declaration meaning one status and getting another, and 099 was an
   # invalid-octal-digit error that `(( ))` signalled by returning false into a script with
   # no `set -e`. 00 and 000 slipped past the "omit it to mean zero" rule too, which only
-  # ever matched the literal 0. Every form is pinned on BOTH keys, because they are two
-  # copies of one check and a fix to either alone would leave the other lying.
+  # ever matched the literal 0. Every form was pinned on BOTH keys while there were two
+  # copies of this check; #1128 retired PKG_PENDING_EXIT_NONE / _SOME, so this is now the
+  # only copy — a second one is something to fold into it, not to write beside it.
   for _cap_z in 077 099 00 000; do
     { cat "$CAPEX"; printf 'PKG_APPLY=sudo systemctl reboot\nPKG_APPLY_PENDING=rpm-ostree status --pending-exit-77\nPKG_APPLY_PENDING_EXIT=%s\n' "$_cap_z"; } >"$CAPV/r5-exit-lz"
     _cap_rejects "PKG_APPLY_PENDING_EXIT=$_cap_z (a leading zero is octal to (( )), not an exit status)" "$CAPV/r5-exit-lz"
-    { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=%s\n' "$_cap_z"; } >"$CAPV/proto-exit-lz"
-    _cap_rejects "PKG_PENDING_EXIT_SOME=$_cap_z (same check, same octal trap)" "$CAPV/proto-exit-lz"
   done
   unset _cap_z
-  # The value the trap disguised must still pass: 77 is what both atomic declarations use.
-  { cat "$CAPEX"; printf 'PKG_PENDING_EXIT_SOME=77\n'; } >"$CAPV/proto-exit-ok"
-  _cap_accepts "PKG_PENDING_EXIT_SOME=77 (the rule refuses leading zeros, not the status)" "$CAPV/proto-exit-ok"
+  # The value the trap disguised must still pass — 77 is what both atomic declarations use —
+  # and the r5-pending case above already asserts exactly that, so there is no counterpart
+  # case here. There used to be one, because the retired key had no other accepts fixture.
   { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=declarative\n'; } >"$CAPV/proto-decl"
   _cap_accepts "PROVISIONER=declarative with no PKG_COUNT_PENDING (relaxation one of two)" "$CAPV/proto-decl"
   { grep -v '^PKG_COUNT_PENDING=' "$CAPEX"; printf 'PROVISIONER=atomic\n'; } >"$CAPV/proto-decl-not"

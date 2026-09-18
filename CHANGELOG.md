@@ -263,6 +263,42 @@
   denied a token-bearing job because `:Lazy! sync` executes upstream build hooks, and the new
   one only `git ls-remote`s.
 
+### Removed
+
+- **Two capability keys the schema accepted and nothing ever read**
+  ([#1128](https://github.com/dotgibson/dotfiles-core/issues/1128)).
+  `PKG_PENDING_EXIT_NONE` and `PKG_PENDING_EXIT_SOME` arrived with R2's non-mutable-host
+  prototype keys (`NON-MUTABLE-HOST-PROPOSAL.md` §4.1) to describe a count verb whose
+  answer is its exit status — `rpm-ostree upgrade --check --unchanged-exit-77`. They were
+  declared optional, validated properly (numeric, 1-255, no leading zero, never both, only
+  beside `PKG_COUNT_PENDING`), and **the consumer that would have read them was never
+  written**. `PKG_APPLY_PENDING_EXIT` covers the staged question that did ship, and it is
+  the key `zsh/02-capabilities.zsh` and the maint runner actually read.
+
+  **Why a schema removal is a minor here and would not be in general.**
+  `scripts/check-capabilities.sh` is vendored, seven OS repos run it from their own
+  `core/`, and an unknown key is a hard failure — so dropping a name is normally the
+  reverse-ratchet shape [#1104](https://github.com/dotgibson/dotfiles-core/issues/1104)
+  documents, where Core breaks a repo that was doing nothing wrong. It is safe in this one
+  case for one measured reason: **nothing declares them.** Re-verified before merging
+  rather than taken from the issue — all twelve `os/*.capabilities` across the fleet, in
+  both the working trees and `origin/main`, plus the three R2 prototypes under
+  `scripts/research/nonmutable/`. Zero hits, so no repo's declaration changes validity and
+  all twelve still validate unchanged.
+
+  **The retirement is pinned, not merely absent.** `scripts/test/55-capabilities.sh` loses
+  eight assertions that existed only for these keys and gains one asserting the name now
+  lands on the unknown-key arm — because "we deleted it" and "it cannot come back without
+  its consumer" are different claims, and only the second is worth a test. The `#1057`
+  leading-zero rationale moved rather than died: it was written once and cited from both
+  copies of the check, and `PKG_APPLY_PENDING_EXIT` is the only copy now.
+
+  Prose was corrected where it describes the tree as it **is** — the validator's own
+  header, `examples/os.capabilities.example`, `scripts/research/README.md` — and left
+  where it records what R2 and R5 **measured**, which is still true as written. The §4.1
+  table keeps the row, marked retired, because six later passages in that document cite
+  the key by name and a table that never introduces it would leave them dangling.
+
 ### Fixed
 
 - **The reusable showcase-dispatch header promised a tolerance it had already

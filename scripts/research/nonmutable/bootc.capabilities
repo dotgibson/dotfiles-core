@@ -15,7 +15,9 @@
 #                 the only user-runnable question is "is a deployment staged?" —
 #                 `rpm-ostree status --pending-exit-77` answers with its exit status
 #                 (measured: exit 0 idle; 77 when staged). The answer is one deployment,
-#                 not N packages — PKG_PENDING_EXIT_SOME says so.
+#                 not N packages. R2 wrote PKG_PENDING_EXIT_SOME here to say so; what this
+#                 file actually declares is PKG_APPLY_PENDING_EXIT below, which is the key
+#                 that shipped — the pair was retired unread in #1128.
 # Everything else fills in truthfully. Verdict for this family: additive — no required
 # key changes meaning; two optional keys (PROVISIONER, PKG_APPLY) and one exit-status key
 # carry the difference.
