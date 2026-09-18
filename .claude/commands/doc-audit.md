@@ -42,7 +42,7 @@ Run these cross-checks (skip any out of the requested scope):
    undocumented entries. (This is the fleet-wide alias-cheatsheet upkeep that used to run
    as a separate daily routine — it lives here now.)
 3. **`PORTING-MATRIX.md` ↔ each OS repo.** Several blocks are GENERATED — read the script's
-   `BLOCK_IDS` rather than assuming a count, and `FV_TOOLS` for which tool each
+   `BLOCKS` registry rather than assuming a count, and its `tool` column for which tool each
    fleet-version block enumerates. Two are the data tables
    (`scripts/gen-porting-matrix.sh` from each repo's `os/*.capabilities` and
    `install/packages.txt`); the rest are fleet-version enumerations, from this repo's own

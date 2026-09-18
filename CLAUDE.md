@@ -102,9 +102,11 @@ because the arrow points the other way.
   package-name table from its `install/packages.txt` (Debian's through its `pkg-filter.sh`
   tiers, `# min:` floors shown as `≥`), and one **fleet-version table per tool** from this
   repo's own `scripts/fleet-package-versions.tsv` — all into
-  `<!-- core:porting-matrix:gen … -->` blocks, registered in the script's `BLOCK_IDS`, with
-  `FV_TOOLS` saying which tool each fleet-version block enumerates. Read those registries
-  rather than assuming a count. Hand-editing any block is a gate
+  `<!-- core:porting-matrix:gen … -->` blocks, registered in the script's `BLOCKS` registry
+  (`id scope tool` — `scope` says whether a block needs the sibling clones, `tool` which tool a
+  fleet-version block enumerates). Read the registry rather than assuming a count. Every region
+  generator's registry is a `BLOCKS` TSV whose first column is the block id, and
+  `scripts/lib/gen-region.sh` documents the two column sets (#1144). Hand-editing any block is a gate
   failure (`audit-core.sh` §9h). A cell the repo installs is derived; the ²¹ "available, not
   installed" names and the `asset`/`cargo`/`AUR` routes are asserted in the script's
   `PKG_ROWS` registry, and a repo starting to install one fails the gate until the cell is

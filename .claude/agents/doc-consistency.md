@@ -31,7 +31,7 @@ truth and compare:
   `offensive/offensive.zsh`, `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`):
   documented entries must exist; notable source aliases/helpers should be documented.
 - **`PORTING-MATRIX.md` ↔ each OS repo.** Several blocks are GENERATED — the script's
-  `BLOCK_IDS` is the registry, so read it rather than assuming a count, and `FV_TOOLS` says
+  `BLOCKS` is the registry, so read it rather than assuming a count; its `tool` column says
   which tool each fleet-version block enumerates. Two are the data
   tables (`scripts/gen-porting-matrix.sh` from each repo's `os/*.capabilities` and
   `install/packages.txt`); the rest are fleet-version enumerations, from this repo's own
