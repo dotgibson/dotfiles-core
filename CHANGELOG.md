@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### Documentation
+
+- **Every registered README hero is now filmed** — the tenth, `dotfiles-NixOS`'s, landed as
+  [dotfiles-NixOS#8](https://github.com/dotgibson/dotfiles-NixOS/pull/8), so the "still to
+  be filmed" prose in `CLAUDE.md`, `assets/hero-repos.txt` and `assets/README.md` is retired.
+  It was the one row no rootless chroot could film — its host guard asserts
+  `sudo nixos-rebuild switch --upgrade` and `up -n` probes `$PATH` for it — so it was filmed
+  on NixOS-WSL, and `assets/README.md` gains "Filming the NixOS hero": the two-rebuild
+  install, nixpkgs' own render kit (vhs 0.11.0, not the 0.12.0 that writes no gif), the
+  Adwaita Mono rejection the `❖` fallback needs, and the trap that is NixOS-WSL's alone — a
+  `nixos-rebuild switch` resets the kernel-global `binfmt_misc` table, which every distro on
+  the machine shares, so the distro you drive from loses `wsl.exe` until it is re-registered
+  (the recipe is there). The install also surfaced
+  [dotfiles-NixOS#6](https://github.com/dotgibson/dotfiles-NixOS/issues/6): `home.nix` named
+  two attributes nixpkgs does not have, invisible to that repo's parse-only gate. `§9k`'s
+  rule stands: a registered tape with no gif is a skip, so a re-render that has not landed
+  never blocks the gate.
+
 ## [v7.11.0] - 2026-09-18
 
 ### Changed
