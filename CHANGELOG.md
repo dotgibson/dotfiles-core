@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+### Changed
+
+- **`new-os-repo.sh` writes the fleet's shield row into the README it scaffolds.** A checkup
+  that fetched every badge and link target across the fifteen public READMEs found the two
+  newest repos opening with no shield row at all — `dotfiles-NixOS` because this scaffold
+  wrote none, and its generated `.markdownlint.jsonc` deliberately left out the MD033
+  allowance the row needs ("a fresh OS repo has no showcase page"). The scaffold now writes
+  the eight-badge row above the title, the link definitions at the end, the CI badge pointing
+  at the `lint.yml` it also writes, and the scoped `MD033` `allowed_elements` stanza the
+  siblings carry — so the next repo starts where dotfiles-NixOS had to be brought to by hand
+  ([dotfiles-NixOS#11](https://github.com/dotgibson/dotfiles-NixOS/pull/11)). The same
+  checkup fixed a dead bash link here (#1151), two logo slugs simple-icons no longer ships in
+  each of `dotfiles-Windows` and `dotfiles-Defense`, and `dotfiles-Offense`'s Python badge,
+  which read CPython's GitHub releases — it publishes tags — and rendered "no releases or repo
+  not found".
+
 ### Documentation
 
 - **Every registered README hero is now filmed** — the tenth, `dotfiles-NixOS`'s, landed as

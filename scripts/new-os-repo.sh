@@ -737,8 +737,10 @@ EOF
 
 # The reusable gate's markdown leg lints against the CALLER's own .markdownlint.jsonc, so a
 # repo without one is judged by markdownlint's stock defaults — MD013's 80-column limit
-# alone would red the README above. Core's rule choices, the two that are off and why,
-# with the README-specific HTML allowance left out: a fresh OS repo has no showcase page.
+# alone would red the README above. Core's rule choices, the two that are off and why, and
+# the scoped MD033 allowance the README's shield row needs (the fleet's eight badges sit in
+# a centered <div><nobr>, with an <a id> back-to-top anchor above them — dotfiles-NixOS
+# shipped without either because this scaffold once wrote neither).
 w "$TARGET/.markdownlint.jsonc" <<'EOF'
 // .markdownlint.jsonc — the rules `make markdownlint` and the reusable lint gate's
 // markdown leg judge this repo's own markdown by (the vendored core/ is gated upstream).
@@ -758,7 +760,17 @@ w "$TARGET/.markdownlint.jsonc" <<'EOF'
   // MD024 (no-duplicate-heading): SIBLINGS ONLY. A Keep-a-Changelog CHANGELOG repeats
   // ### Added / ### Changed / ### Fixed under every release; a true duplicate under the
   // SAME parent still fires.
-  "MD024": { "siblings_only": true }
+  "MD024": { "siblings_only": true },
+
+  // MD033 (no-inline-html): SCOPED, not off. The README legitimately uses HTML the
+  // CommonMark spec can't express — the fleet's centered badge row and its back-to-top
+  // anchor. allowed_elements lists exactly the tags that design needs, so the rule still
+  // fires on ANYTHING else — the leaked-template-tag class of bug. Keep this list tight.
+  "MD033": {
+    "allowed_elements": [
+      "a", "br", "details", "div", "h3", "img", "li", "nobr", "ol", "p", "strong", "summary", "ul"
+    ]
+  }
 }
 EOF
 
@@ -1094,6 +1106,23 @@ jobs:
 EOF
 
 w "$TARGET/README.md" <<EOF
+<!-- Back to top link -->
+<a id="readme-top"></a>
+
+<!-- Project Shields -->
+<div align="center"><nobr>
+
+[![dotgibson][dotgibson-shield]][dotgibson-url]<!--
+-->[![CI][ci-shield]][ci-url]<!--
+-->![Last Commit][lastcommit-shield]<!--
+-->[![Contributors][contributors-shield]][contributors-url]<!--
+-->[![Forks][forks-shield]][forks-url]<!--
+-->[![Stargazers][stars-shield]][stars-url]<!--
+-->[![Issues][issues-shield]][issues-url]<!--
+-->[![MIT License][license-shield]][license-url]
+
+</nobr></div>
+
 # dotfiles-$OS
 
 The $OS machine repo. Vendors [Core](../dotfiles-core) under \`core/\`
@@ -1157,6 +1186,23 @@ Then, in this repo:
 \`\`\`bash
 ./bootstrap.sh          # re-link any new/changed Core files
 \`\`\`
+
+<!-- Markdown Links & Images -->
+[dotgibson-shield]: https://img.shields.io/github/v/release/dotgibson/dotfiles-core?style=plastic&label=dotgibson&labelColor=181717&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAF1klEQVR4nLSWbUxT7RnHr9PT09MXSltaoC9QXkqR16Iwhb0Iw8VYYE7jPri5aBaZzpmFZbpolpn4QeMyM%2BM%2B7MVt0Q9LNJIlxCzqxGWS6aKAig51vBQKIi3QltpCS0%2Fbc879pD1N3%2Bnz4fG5Pl2977v%2F331d131f5%2BZrddWQZAgAgy9uCRlefICzT6GeIsP%2FXF15kahmu9JglGmLRQoRQdIQWgu77BuWGe%2Fo%2BOqym8odApaWomTT1%2Bl2HqirahaTuJ9kQMggkgYhDRGfRiQDZBi9fuf52%2BD7l1b3ZhRcmq%2FMnBHmibuO7fvWoTalVoDjQRwL8RGgEOtzB0MbtBDnkRjGR0AgTK%2BQfNukr1LKXlhXKZpJSxTKGoFSq9vf16tQ8%2FiEh094Vu0L449mLGMup20DRWuFYVCiFm%2BvU36nTbOlMB%2BnCDxIOBzhvv6nFpc3TS0dUKDRHzh1Jk9O8wlPYN326Oa%2FJobnN8shAOxqKjrdXa8WSnGKWPewR%2FuHLG5P8oKUFJHi%2FH19F6UKEQ%2BnbJap27%2B%2BtWR15VAHgLkV%2F%2F0xW6OuQCfNE4PgmyX6f0xZKYbJDuj43lmtoYqHU%2FaZdwNXr4eoUG51zqgw%2B%2FCtrbm0UCeRynBhqVj2YC4RNC%2FuqStbKkydAODzeO7%2B6QYTpnOIYgB729R729RY9DAGafb0wDOHLwAA5vKK1mJNFoCpsxeLLn%2Fy91uU359719%2FfVXL%2BSM35IzU9rcXciCcQujz0imOfbGhOB0jkGo2hFQBW7Quzr0Zzq6vyBT%2FuKY%2BHErfBmQWLK1Lhr6l1OkleCqC0poPb%2FuTwv3OrA8DPDhgkokgLmLX77o86kqcGJmaj5xjr1JWlAAr1Js75MDEGAAI%2B1mvWX%2F1JY29XmYDPS5ZoNsrM24si1xSh3%2FRbGBYlz%2F73g41ztqliqYv1onyVHgDocMjjXASAKycavlqnZBHa2ajcasjv%2B8MbAPhRV9nI5MezB41crIPPHWOW9Gtl9XhDDCMCokIqSwGQ4shvyucFhEQCnqlSdm9k%2BdKt6XM%2FqO7aof7t8YbIIW5SHdpVIhUTAOAP0L8bmM3MHgJwByidQCgnhSmAqOEYnQ8AgRBr%2FuUzKsgggIs3pyVCfkeTCgAmFtaNOgm39C%2F3511r2W8JYvIAJbIaAwQ3vKAEoVgRaTQIBYKxqxgMs6euvdUXiQDgeHd5rV7K1fb2kC2rOgaYghQBMJ5grI3HUGuuhQiNIOWq8sy%2FLTgCKplgT0ZtCyprWw7%2FvKCyNr6yQqYg8cim59a9KQDnwv84R1%2F99UwAzsMya4vxeOYLN7YePGG%2BcAPjxXS%2BoavknFfOlRTAh8nHKNqLa1v2ZwK6dxQZtHk5ahu3%2FcYmLsoh%2B%2FsUgN%2BztDQzEvkYFBurGnan%2FS1%2B1P98L1FbxLIPzh193X%2FtwbmjiGUBYHd5nVFRCABPlxdtfh%2B3LHGKxof%2Bqo90C6yj58yi9Tm1kWjr94ZXsGhTuDuynAx2z0245yY4X06Kf9HWFd0N%2BuPbsUR64%2B3a57Erig2qIoOIlJSUNE69GWTZRFufXvRNL%2Fo2ywyJE1fMP6xWqHBEP5yfvP7%2FbAAAsFufG01mkVCqkGvLyrbNTD2mw9kfDckmE0oudx9rUZfhiF5Zd%2F%2F00QDF0NkBTJhanB3e0riHJIRKhXarqWfdu%2Bx0WnOot1ftuNR90lhQzEO0L7B2YvCm3b%2BWNI%2ByffSLq757%2BPcquYaIvBtgdcXycuzO9MzTFdccd9IwDNMVlDaXbzPXtxsVhQRDEQzl8i6d%2Buf12Y%2BONDVMo6vOfHWJxHLz3l811u8WAEZABCNAAHSI8n8k2HABKRJjLJ8JECxFMAE%2BHXhiGb7yn35vcCNDKVsEcSuv%2BEpn%2B7Etla0CwAQIOBLBhrkt85kAnwm8mX95e%2FTOa9vUZiIxQI43r0Kura9uN5SYNMoyuVDGZ2nK73C65iy28Rezo44152bSKYAvz3ifVA1lDn0WAAD%2F%2F%2FWvXexgMwqgAAAAAElFTkSuQmCC
+[dotgibson-url]: https://github.com/dotgibson/dotfiles-core/releases/latest
+[ci-shield]: https://img.shields.io/github/check-runs/dotgibson/dotfiles-$OS/main?style=plastic&logo=githubactions&logoColor=white&label=CI
+[ci-url]: https://github.com/dotgibson/dotfiles-$OS/actions/workflows/lint.yml
+[lastcommit-shield]: https://img.shields.io/github/last-commit/dotgibson/dotfiles-$OS?branch=main&style=plastic&logo=git&logoColor=white
+[contributors-shield]: https://img.shields.io/github/contributors/dotgibson/dotfiles-$OS.svg?style=plastic&logo=github
+[contributors-url]: https://github.com/dotgibson/dotfiles-$OS/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/dotgibson/dotfiles-$OS.svg?style=plastic&logo=github
+[forks-url]: https://github.com/dotgibson/dotfiles-$OS/network/members
+[stars-shield]: https://img.shields.io/github/stars/dotgibson/dotfiles-$OS.svg?style=plastic&logo=github
+[stars-url]: https://github.com/dotgibson/dotfiles-$OS/stargazers
+[issues-shield]: https://img.shields.io/github/issues/dotgibson/dotfiles-$OS?style=plastic&logo=github
+[issues-url]: https://github.com/dotgibson/dotfiles-$OS/issues
+[license-shield]: https://img.shields.io/github/license/dotgibson/dotfiles-$OS.svg?style=plastic
+[license-url]: https://github.com/dotgibson/dotfiles-$OS/blob/main/LICENSE
 EOF
 
 printf '\n%s──────── dotfiles-%s scaffolded ────────%s\n' "$c_blu" "$OS" "$c_rst"
