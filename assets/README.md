@@ -92,12 +92,12 @@ anything (#698). `Set Theme` was the same defect in the other direction — a fo
 place the theme was typed by hand, and the only one naming an upstream preset rather
 than the palette every other consumer is generated from.
 
-### The nine other heroes
+### The ten other heroes
 
-Ten public repos open with the same shields template and no visual, and the repo that
-*has* a hero is the one nobody installs directly. `hero-repos.txt` registers **ten rows** —
-this repo plus the nine Core-vendoring OS and role repos — and `make gen-hero-tape-fleet`
-renders those nine into their own checkouts. Their
+The public OS and role repos open with the same shields template and no visual, and the
+repo that *has* a hero is the one nobody installs directly. `hero-repos.txt` registers
+**eleven rows** — this repo plus the ten Core-vendoring OS and role repos — and
+`make gen-hero-tape-fleet` renders those ten into their own checkouts. Their
 signature command is deliberately the same three characters everywhere —
 
 ```tape
@@ -144,16 +144,20 @@ The `# one verb → …` comment stays as the maintainer-facing half: it is deri
 repo's own `os/*.capabilities` `PKG_UPGRADE`, so a tape can never *claim* a verb the repo
 does not declare, even though only the `proof` line reaches the viewer.
 
-Rendering and committing those nine gifs, and adding the hero block to each repo's
-README, was #698's follow-up — sequenced after `os.capabilities` (#667) and done as #948:
-all nine are filmed and committed in their repos — `dotfiles-openSUSE`'s once the starship
-fix from dotfiles-core#950 had been synced into its vendored `core/` (before that the prompt
-drew the openSUSE symbol as a lizard emoji, which is tofu wherever no colour-emoji font is
-installed), and `dotfiles-MacBook`'s on a Mac, since its guard asserts `brew upgrade` and
-`up -n` probes `$PATH`, which no Linux box can pass honestly.
+Rendering and committing those gifs, and adding the hero block to each repo's README, was the
+follow-up to #698 — sequenced after `os.capabilities` (#667) and done as #948 for the nine
+repos that existed then: all nine filmed and committed in their repos — `dotfiles-openSUSE`'s
+once the starship fix from dotfiles-core#950 had been synced into its vendored `core/`
+(before that the prompt drew the openSUSE symbol as a lizard emoji, which is tofu wherever
+no colour-emoji font is installed), and `dotfiles-MacBook`'s on a Mac, since its guard
+asserts `brew upgrade` and `up -n` probes `$PATH`, which no Linux box can pass honestly.
+`dotfiles-NixOS` joined the fleet afterwards (#1064) with its tape written and its gif
+unfilmed — §9k treats that as a skip, not a red — and was filmed last, on NixOS-WSL
+(dotfiles-NixOS#8): "Filming the NixOS hero" below has why no chroot could do it.
 
-**`dotfiles-Windows` is deliberately not registered**, which means those ten rows are not
-the ten repos #698 counted: that list included Windows, and this covers nine of it. The
+**`dotfiles-Windows` is deliberately not registered**, which means the registered rows are
+not #698's list: that list included Windows and predates NixOS, so this covers nine of its
+ten, plus NixOS. The
 reason is the same one that keeps Windows out of `scripts/os-repos.txt` — its host layer is
 replicated from scratch in PowerShell and it vendors no `core/`, so there is no `zsh` to
 `Set Shell`, no `~/.config/zsh/.zshrc` to source, and no `up`, `ll` or `_core_cap` for the
@@ -199,6 +203,45 @@ Five things the first renders got wrong, in the order they will bite again:
 5. **Nothing in the render may edit the vendored `core/`.** A Core fix the hero needs but the
    repo has not synced yet (#951's `ZVM_INIT_MODE=sourcing` for Debian) goes in as an
    environment variable of the recording shell, and the PR says so.
+
+### Filming the NixOS hero
+
+A chroot cannot film the NixOS row: `@@HOSTGUARD@@` asserts `sudo nixos-rebuild switch
+--upgrade` and `up -n` probes `$PATH` for it, and no other distro's image carries
+`nixos-rebuild`. The tenth hero was filmed on **NixOS-WSL** (release `2605.7.2`, NixOS
+26.05), registered from the Fedora distro over interop — `wsl.exe --install --from-file
+nixos.wsl --name NixOS` — and driven the same way, `wsl.exe -d NixOS -u gerrrt -- bash -l`
+with each script piped over stdin. The repo went in exactly as its `nix/README.md`
+prescribes, in two rebuilds: the first declares the user (`wsl.defaultUser`, `wheel`,
+`shell = pkgs.zsh`, passwordless sudo) so the clone can land at the tape's `cd` path; the
+second imports `nix/nixos.nix` and `home-manager.users.<you> = import …/nix/home.nix` as the
+NixOS module, then `./bootstrap.sh` links everything. That install is what found
+dotfiles-NixOS#6 — `home.packages` named two attributes nixpkgs does not have, which its
+parse-only gate cannot see — and the hero was filmed on `main` at the fix.
+
+The render kit is nixpkgs' own: `vhs` (26.05 ships **0.11.0**; 0.12.0 writes no gif on any
+box tried so far), which wraps ttyd, ffmpeg and chromium onto its PATH, plus `gifsicle`.
+Fonts go in `fonts.packages` — `nerd-fonts.jetbrains-mono` and `adwaita-fonts` for the `❖`
+fallback — with `fonts.fontconfig.defaultFonts.monospace` naming both and a `localConf`
+that **rejects Adwaita Mono**, which draws `❖` differently (the same trap as the chroots).
+Warm the first shell (`zsh -ic exit`) or the plugin clones land in frame one, as everywhere.
+
+One trap is NixOS-WSL's alone. **A `nixos-rebuild switch` resets the kernel-global
+`binfmt_misc` table**, and every WSL distro on the machine shares that kernel — so the
+distro you are driving from loses its `WSLInterop` entry and `wsl.exe` dies with
+`exec format error` the moment the rebuild activates. The way back needs no password:
+mount a private `binfmt_misc` inside a user namespace, register the interop line there, and
+use it to run `wsl.exe` as root in the distro that lost it:
+
+```sh
+unshare --user --map-root-user --mount sh -c '
+  mount -t binfmt_misc none /proc/sys/fs/binfmt_misc &&
+  echo ":WSLInterop:M::MZ::/init:PF" > /proc/sys/fs/binfmt_misc/register &&
+  exec /mnt/c/Windows/System32/wsl.exe -d FedoraLinux-44 -u root -- sh -c \
+    "echo \":WSLInterop:M::MZ::/init:PF\" > /proc/sys/fs/binfmt_misc/register"'
+```
+
+Expect to run it after every rebuild.
 
 ### What the tour dropped, and why
 

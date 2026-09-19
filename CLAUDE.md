@@ -146,10 +146,12 @@ because the arrow points the other way.
   has the exact commands). The tape exports `DOTFILES_NO_AUTOTMUX=1` before sourcing the zshrc,
   and the generator refuses a row whose OS layer auto-attaches tmux without honouring it — every
   OS layer's guard must read that knob. The ten OS/role repos are registered and
-  `make gen-hero-tape-fleet` writes their tapes; **nine of the ten gifs are committed** in
-  their repos (#948: eight filmed on rootless chroots — `assets/README.md`, "Filming a
-  sibling hero without its box" — and MacBook's on a Mac). `dotfiles-NixOS` is the tenth
-  and its gif is still to be filmed — a registered tape with no gif is a skip, not a red.
+  `make gen-hero-tape-fleet` writes their tapes; **all ten gifs are committed** in their
+  repos (#948: eight filmed on rootless chroots — `assets/README.md`, "Filming a sibling
+  hero without its box" — and MacBook's on a Mac; dotfiles-NixOS#8: NixOS's on NixOS-WSL,
+  because its guard wants `nixos-rebuild` on `$PATH` — "Filming the NixOS hero"). A
+  registered tape with no gif is a skip, not a red, so a re-render that has not landed yet
+  never blocks the gate.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
 - **A user-visible change lands in `CHANGELOG.md` under `[Unreleased]`** in the
