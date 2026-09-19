@@ -359,7 +359,7 @@ Here are some of my favorite dotfile configurations.
 [zsh-shield]: https://img.shields.io/badge/Zsh-F15A24?style=plastic&logo=zsh&logoColor=white
 [zsh-url]: https://github.com/zsh-users/zsh
 [bash-shield]: https://img.shields.io/badge/Bash-4EAA25?style=plastic&logo=gnubash&logoColor=white
-[bash-url]: https://github.com/bminor/bash
+[bash-url]: https://git.savannah.gnu.org/cgit/bash.git
 [lua-shield]: https://img.shields.io/github/v/tag/lua/lua?sort=semver&style=plastic&logo=lua&logoColor=white&label=Lua&color=000080
 [lua-url]: https://github.com/lua/lua
 [toml-shield]: https://img.shields.io/github/v/tag/toml-lang/toml?sort=semver&style=plastic&logo=toml&logoColor=white&label=TOML&color=9C4121
@@ -378,8 +378,8 @@ Here are some of my favorite dotfile configurations.
 [starship-url]: https://github.com/starship/starship
 [git-shield]: https://img.shields.io/github/v/tag/git/git?sort=semver&style=plastic&logo=git&logoColor=white&label=Git&labelColor=F03C2E&color=3D59A1
 [git-url]: https://github.com/git/git
-[1Password-shield]: https://img.shields.io/badge/1Password-145FE4?style=plastic&logo=1password&logoColor=white
-[1Password-url]: https://github.com/1Password
+[1password-shield]: https://img.shields.io/badge/1Password-145FE4?style=plastic&logo=1password&logoColor=white
+[1password-url]: https://github.com/1Password
 [mise-shield]: https://img.shields.io/github/v/release/jdx/mise?style=plastic&logo=gnometerminal&logoColor=24283B&label=mise&labelColor=BB9AF7&color=3D59A1
 [mise-url]: https://github.com/jdx/mise
 [lazygit-shield]: https://img.shields.io/github/v/release/jesseduffield/lazygit?style=plastic&logo=gnometerminal&logoColor=24283B&label=lazygit&labelColor=BB9AF7&color=3D59A1
