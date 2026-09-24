@@ -34,6 +34,16 @@
 
 ### Documentation
 
+- **`PORTING-MATRIX.md` and the README stop contradicting the fleet**
+  ([#1174](https://github.com/dotgibson/dotfiles-core/issues/1174), from the #1157 sweep).
+  The sesh row's Arch cell asserted `AUR⁹`, but `dotfiles-Arch` go-installs sesh and says
+  the AUR `sesh-bin` is not needed; it is now `go⁹`, and footnote ⁹ names Arch among the
+  go-install consumers. Footnote ³³ gave Gentoo's `~arch` neovim range two ways eleven lines
+  apart (0.12.5 and 0.12.3); both now read 0.12.5, as the TSV does. Footnote ³⁴ said jq 1.8.2
+  reached "all three" supported Alpine stable branches; Alpine carries four, and 3.21 is
+  still on 1.7.1. The README's install steps gain the Defense clone and name Debian and
+  NixOS among the Linux distros, matching the "all ten bootstraps" line beneath them.
+
 - **Every registered README hero is now filmed** — the tenth, `dotfiles-NixOS`'s, landed as
   [dotfiles-NixOS#8](https://github.com/dotgibson/dotfiles-NixOS/pull/8), so the "still to
   be filmed" prose in `CLAUDE.md`, `assets/hero-repos.txt` and `assets/README.md` is retired.
