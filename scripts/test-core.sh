@@ -212,6 +212,18 @@ _core_test_finish() {
 # BEFORE the zsh gate because the pure-bash fragments — the clipboard ladder first of all —
 # must run even where zsh is absent; bin/clip's whole reason to exist is bare-box portability.
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-test.XXXXXX")"
+# THE HOST SCRUB. Every fixture moves HOME into $SANDBOX, but a variable the caller's shell
+# EXPORTS outlives that move. ZDOTDIR is the dangerous one: lib/bootstrap-lib.sh defaults it
+# from XDG_CONFIG_HOME only when it is UNSET, so a suite run from an interactive fleet shell
+# (which exports ZDOTDIR=~/.config/zsh) had the driver and scaffold fixtures seed the REAL
+# ~/.config/zsh/.zshrc as a symlink into this sandbox — deleted at exit, leaving the next
+# shell bare. mise's activation state (MISE_SHELL, __MISE_*) likewise points sandboxed
+# shells at the caller's session, whose trusted configs are not the sandbox's. CI never
+# exports any of these, which is why only a developer's `make audit` went red. Same five
+# variables scripts/check-links.sh scrubs with `env -u`, applied once for the whole run.
+unset ZDOTDIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
+while IFS= read -r _core_test_v; do unset "$_core_test_v"; done < <(compgen -e | grep -E '^_*MISE_')
+unset _core_test_v
 # ONE handler, because `trap … EXIT` REPLACES rather than appends — a second one installed by
 # ANY FRAGMENT would silently take the sandbox cleanup with it, leaving a core-test.XXXXXX per
 # run under /tmp for nobody to notice. Anything else needing to run at exit hangs off this

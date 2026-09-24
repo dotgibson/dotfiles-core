@@ -473,6 +473,20 @@ else
   _fc_setup 'placeholder'
   printf '%s\n' '# Core fans out to all eight OS repos' >"$_fc_/scratch.md" # core:fanout-fixture
   _fc_count "an UNTRACKED file's fan-out claim is not judged" 0
+
+  # AND BINARIES: an asset is not prose, and reading one made gawk warn about invalid
+  # multibyte data on every audit run (assets/demo.gif). Skipped, not judged, and silent.
+  _fc_setup 'placeholder'
+  printf '\x89PNG\r\n\x1a\n\xff\xfe\x00# Core fans out to all eight OS repos\n' >"$_fc_/hero.png" # core:fanout-fixture
+  git -C "$_fc_" add -A >/dev/null 2>&1
+  _fc_count "a tracked BINARY file is not judged" 0
+  _fc_err="$(LC_ALL=en_US.UTF-8 _core_fanout_count_hits "$_fc_" 10 2>&1 >/dev/null)"
+  if [[ -z "$_fc_err" ]]; then
+    pass "fan-out count: a tracked binary file draws no stderr (awk never reads it)"
+  else
+    fail "fan-out count: a tracked binary file drew stderr — $_fc_err"
+  fi
+  unset _fc_err
 fi
 rm -rf "$_fc_"
 unset _fc_

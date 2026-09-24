@@ -85,6 +85,23 @@
 
 ### Fixed
 
+- **The test suite no longer writes to the developer's real `~/.config/zsh/.zshrc`.** Every
+  fixture moves `HOME` into the sandbox, but an interactive fleet shell also exports
+  `ZDOTDIR=~/.config/zsh`, and the driver defaults `ZDOTDIR` only when it is unset. So a
+  `make audit` (or `make release`) run from such a shell had the driver and scaffold
+  fixtures re-point the real `$ZDOTDIR/.zshrc` into a temp dir, deleted at exit, and the
+  next shell started bare. The same inherited mise activation state made sandboxed shells
+  error on an untrusted `mise/config.toml`, so the audit went red locally while CI stayed
+  green. `test-core.sh` now unsets `ZDOTDIR`, the four `XDG_*_HOME` dirs and every
+  `MISE_*`/`__MISE_*` variable before any fragment runs, and `05-suite-shape.sh` asserts
+  that none survive. The `test/check-links.sh` that `new-os-repo.sh` scaffolds clears the
+  same variables itself.
+- **The fan-out count gate no longer reads binary files.** `_core_fanout_count_hits` ran its
+  awk over every tracked file, `assets/demo.gif` included, so every `make audit` printed a
+  gawk `Invalid multibyte data detected` warning under a UTF-8 locale. It now skips any file
+  containing a NUL byte. It does not use `grep -I`, because BusyBox grep accepts that flag
+  and ignores it. The verdict never changed (a GIF makes no fan-out claim); the audit's
+  output is quieter.
 - **`new-os-repo.sh` writes the `LICENSE` its README shield advertises.** The shield row
   added above carries an MIT License badge linking `blob/main/LICENSE`, but nothing wrote
   that file (it is in neither `core.manifest` nor `core.vendor`), so a new repo's first
