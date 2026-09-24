@@ -23,8 +23,26 @@
   each of `dotfiles-Windows` and `dotfiles-Defense`, and `dotfiles-Offense`'s Python badge,
   which read CPython's GitHub releases — it publishes tags — and rendered "no releases or repo
   not found".
+- **Two tool pins roll forward: `markdownlint-cli2` 0.23.2 → 0.23.3 and the maintenance
+  bots' Claude Code CLI 2.1.273 → 2.1.281.** The weekly freshness review (#1159) found them
+  the only pins behind upstream that are not deliberately held. `markdownlint-cli2` 0.23.3
+  only updates dependencies, and both versions pin the `markdownlint` library at 0.41.1, so
+  no rule is added, renamed or given a new default in Core or in the `lint-call.yml`
+  consumers. The pre-commit hook's `rev` moves with it, because §9 keeps the two in step.
+  Both are registry installs, so there is no `*_SHA256` to refresh. `shfmt` stays held at
+  3.13.1 (#813).
 
 ### Documentation
+
+- **`PORTING-MATRIX.md` and the README stop contradicting the fleet**
+  ([#1174](https://github.com/dotgibson/dotfiles-core/issues/1174), from the #1157 sweep).
+  The sesh row's Arch cell asserted `AUR⁹`, but `dotfiles-Arch` go-installs sesh and says
+  the AUR `sesh-bin` is not needed; it is now `go⁹`, and footnote ⁹ names Arch among the
+  go-install consumers. Footnote ³³ gave Gentoo's `~arch` neovim range two ways eleven lines
+  apart (0.12.5 and 0.12.3); both now read 0.12.5, as the TSV does. Footnote ³⁴ said jq 1.8.2
+  reached "all three" supported Alpine stable branches; Alpine carries four, and 3.21 is
+  still on 1.7.1. The README's install steps gain the Defense clone and name Debian and
+  NixOS among the Linux distros, matching the "all ten bootstraps" line beneath them.
 
 - **Every registered README hero is now filmed** — the tenth, `dotfiles-NixOS`'s, landed as
   [dotfiles-NixOS#8](https://github.com/dotgibson/dotfiles-NixOS/pull/8), so the "still to
