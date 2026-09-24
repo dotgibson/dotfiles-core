@@ -279,12 +279,11 @@ Repology reports the newest version in `::gentoo` regardless of keyword, so an a
 re-read would overwrite the one number this paragraph is about. This note said 0.26.11 was
 the stable one and 0.26.12 `~`-only until 2026-09-17, by which time 0.26.12 had stabilised:
 exactly the drift the generated table exists to end.
-**Maintainer-needed as of 2026-08-30** (dotfiles-Gentoo#144): availability is unchanged —
-it is the maintainer that went away, not the package — but orphaning is what precedes a
-treeclean, which is the same hedge `dotfiles-Gentoo` already carries on `w3m` and `lnav`.
-Between this, the openSUSE paragraph above (dotfiles-openSUSE#113) and the Alpine one below
-(dotfiles-Alpine#122), **three distros in this one footnote moved in a fortnight** —
-re-query this row on every stamp. Read the `.json` endpoint or the ebuild, **not** the
+Gentoo's maintainer-needed flag from 2026-08-30 (dotfiles-Gentoo#144) was lifted by
+2026-09-23 — a person maintainer is back in `metadata.xml` — and between that, the openSUSE
+paragraph above (dotfiles-openSUSE#113) and the Alpine one below (dotfiles-Alpine#122),
+**three distros in this one footnote moved within a month** — re-query this row on every
+stamp. Read the `.json` endpoint or the ebuild, **not** the
 rendered arch table on `packages.gentoo.org`: it reported `app-shells/starship` as having
 no stable amd64 keyword where the ebuild says `KEYWORDS="amd64 arm64"`.
 Where unpackaged: `mise use -g tree-sitter` or `cargo install tree-sitter-cli`.
