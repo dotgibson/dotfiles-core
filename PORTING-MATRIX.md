@@ -179,7 +179,7 @@ and a footnote here.** The footnotes below stay hand-written.
 | shfmt⁷ ²¹        | `shfmt`           | `shfmt`           | `shfmt`                    | go²¹                                | `shfmt`⁷                   | `shfmt`       |
 | ouch²¹           | `ouch`            | `ouch`¹⁸          | testing¹⁴                  | GURU¹² ²¹                           | cargo²¹                    | —²⁹           |
 | jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`         | `jujutsu`                  | `dev-vcs/jj`²¹                      | cargo²¹                    | —²⁹           |
-| sesh⁹            | AUR⁹              | go⁹               | go⁹                        | go⁹                                 | go⁹                        | go³           |
+| sesh⁹            | go⁹               | go⁹               | go⁹                        | go⁹                                 | go⁹                        | go³           |
 | difftastic¹⁰     | `difftastic`      | `difftastic`      | `difftastic`               | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`      | `git-absorb`               | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸      | `ast-grep`                 | cargo²¹                             | cargo²¹                    | —²⁹           |
@@ -349,7 +349,8 @@ Packaged in the AUR as `sesh-bin` (which
 `provides`/`conflicts` `sesh`, so `paru -S sesh` still resolves — there is no
 AUR package under the bare name), Homebrew
 (`sesh`), and nixpkgs (`sesh`); **not** in Arch-official, openSUSE, Alpine,
-Gentoo, Fedora, or Debian/Kali apt — so most of the fleet uses
+Gentoo, Fedora, or Debian/Kali apt — so most of the fleet, Arch included (its
+`bootstrap.sh` builds from source and skips the AUR `sesh-bin`), uses
 `go install github.com/joshmedeski/sesh/v2@latest` (note the **v2** module path),
 the same build path as starship/yazi/atuin where unpackaged. `go` is already a
 pinned mise runtime, so the install works everywhere; `mise use -g go` first on a
@@ -1381,7 +1382,7 @@ the version last **moved** — a row unchecked for 90 days is named on stderr by
 They get there by four different mechanisms and only one of them looks like a problem.
 Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
 `dotfiles-Debian` declares a `# min:0.12.0` floor its CI enforces. Gentoo's is
-**keywords**: 0.12.0–0.12.3 are all in `::gentoo` right now, all `~arch`, so a stable
+**keywords**: 0.12.0–0.12.5 are all in `::gentoo` right now, all `~arch`, so a stable
 profile silently picks 0.11.7 and reports success. Nothing in an availability check can
 see it — the atom exists, installs, and is the wrong version.
 
@@ -1506,9 +1507,9 @@ enforces are now enumerated by one mechanism rather than three prose styles.
 <!-- core:porting-matrix:end fleet-versions -->
 
 The two mechanics behind that table are the part worth reading. Alpine backported
-`jq 1.8.2-r0` into `main` on all three of its supported stable branches rather than leaving
-them on the version they shipped with — exactly the behaviour a `# min:` floor is supposed
-to reward.
+`jq 1.8.2-r0` into `main` on three of its four supported stable branches (3.22–3.24; 3.21
+still carries 1.7.1) rather than leaving them on the version they shipped with — exactly the
+behaviour a `# min:` floor is supposed to reward.
 
 Fedora reaches that floor by the opposite mechanic, and it is the one crossing with a date
 on it. F45 branched from Rawhide on 2026-08-11 and goes GA **2026-10-20**. F43/F44 sit at
