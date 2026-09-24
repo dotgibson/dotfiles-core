@@ -163,7 +163,11 @@ essentials:
    git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Offense ~/dotfiles-Offense
    cd ~/dotfiles-Offense
 
-   # Linux distros (Fedora, Arch, openSUSE, Alpine, Gentoo)
+   # Defense (defensive role layer)
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Defense ~/dotfiles-Defense
+   cd ~/dotfiles-Defense
+
+   # Linux distros (Fedora, Arch, Debian, openSUSE, Alpine, Gentoo, NixOS)
    git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Fedora ~/dotfiles-Fedora
    cd ~/dotfiles-Fedora
    ```
@@ -191,7 +195,7 @@ essentials:
    ./bootstrap.sh
    exec zsh
 
-   # Offense
+   # Offense / Defense
    ./bootstrap.sh
 
    # Linux Distros
