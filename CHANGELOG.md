@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### Documentation
+
+- **The bash 3.2 floor stays, and `PORTABILITY.md` §1 now says why.** Retiring it for
+  `lib/*.sh` behind a re-exec stage-0 was costed first (#1153). It would shed about 30
+  lines of `lib/`. The injection guard stays because namerefs still expand a subscript, the
+  §5k gate stays re-scoped, and a `blib_main` stage-0 misses `dotfiles-MacBook`, the only
+  host on 3.2. `RELEASE-STRATEGY.md` §2 records it as a candidate declined before it reached
+  the Breaking Backlog.
+
 ## [v7.12.0] - 2026-09-24
 
 ### Security

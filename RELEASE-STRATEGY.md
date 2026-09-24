@@ -176,6 +176,10 @@ measured as minors once they were written down and costed:
 - `V8-PROPOSAL.md`'s own bundle — closed `DECIDED — no major comes out of this proposal`
   after all three of its changes shipped as minors.
 
+A fourth candidate, retiring the bash 3.2 floor for `lib/*.sh` (#1153), was measured
+*before* it entered the milestone and was declined outright. `PORTABILITY.md` §1 carries the
+numbers.
+
 The tiebreaker that did the work every time is the second one in `RELEASE-RUNBOOK.md`
 §1.0: *if nothing a host already uses changes meaning, it is at most a MINOR — even if the
 diff is large.* Applied honestly, it dissolves most candidates, and a candidate that
