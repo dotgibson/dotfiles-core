@@ -100,7 +100,9 @@ if have git && have zsh; then
     [[ -f "$NOR/LICENSE" ]] || _nor_lic=" missing"
     [[ -z "$_nor_lic" && "$(head -n 1 "$NOR/LICENSE")" != "MIT License" ]] && _nor_lic="$_nor_lic not-MIT"
     [[ -z "$_nor_lic" ]] && ! grep -q "^Copyright (c) $(date +%Y) " "$NOR/LICENSE" && _nor_lic="$_nor_lic wrong-year"
-    [[ -z "$_nor_lic" ]] && ! diff -q <(tail -n +4 "$NOR/LICENSE") <(tail -n +4 "$HERE/LICENSE") >/dev/null && _nor_lic="$_nor_lic body-differs-from-Core"
+    # Compared in-shell, not with diff: audit-arch's archlinux:base has no diffutils, and a
+    # missing diff read as "the body differs".
+    [[ -z "$_nor_lic" && "$(tail -n +4 "$NOR/LICENSE")" != "$(tail -n +4 "$HERE/LICENSE")" ]] && _nor_lic="$_nor_lic body-differs-from-Core"
     grep -q '^\[license-url\]: .*/blob/main/LICENSE$' "$NOR/README.md" || _nor_lic="$_nor_lic README-license-url-not-LICENSE"
     if [[ -z "$_nor_lic" ]]; then
       pass "new-os-repo: writes the LICENSE the README's license shield links (Core's MIT text, this year)"
