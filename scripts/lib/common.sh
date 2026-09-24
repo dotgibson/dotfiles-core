@@ -2408,6 +2408,9 @@ _core_fanout_count_hits() { # _core_fanout_count_hits <repo-root> <live-count>
     CHANGELOG*.md | V[0-9]-PROPOSAL.md) continue ;;
     esac
     [[ -f "$root/$file" ]] || continue
+    # Binaries hold no claim, and gawk in a UTF-8 locale warns on their bytes (assets/demo.gif).
+    # `grep -I` is the skip _core_conflict_marker_hits already uses; an empty file is skipped too.
+    grep -Iq . "$root/$file" 2>/dev/null || continue
     awk -v f="$file" -v want="$want" '
       # Number words the fleet actually writes, plus bare digits. An unknown word is not a
       # count and is skipped rather than guessed at.
