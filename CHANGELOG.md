@@ -16,6 +16,16 @@
   which read CPython's GitHub releases — it publishes tags — and rendered "no releases or repo
   not found".
 
+- **The CI floor bans `secrets: inherit`, and Core stops documenting it.** The caller
+  example at the top of `claude-routines-call.yml`, the shape the seven OS repos were told
+  to copy, passed `secrets: inherit`. That hands the called `@v7` workflow every secret the
+  caller repo holds, declared or not, at a moving tag the caller does not pin. The seven live
+  callers had already moved to the explicit `CLAUDE_CODE_OAUTH_TOKEN:` mapping, so only the
+  comment was wrong, and it now shows the mapping. A new rule 9 in `scripts/modern-baseline.yml`
+  (`banned_call_secrets`) reads the value the way rule 5b reads `write-all`: anchored to the
+  key, bare or quoted, a trailing comment tolerated. It was green on arrival, and no workflow
+  in the fleet passes it (#1160).
+
 ### Documentation
 
 - **Every registered README hero is now filmed** — the tenth, `dotfiles-NixOS`'s, landed as

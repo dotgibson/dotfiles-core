@@ -478,6 +478,20 @@ $(_job_records)
 EOF
 fi
 
+# ── 9) no `secrets: inherit` to a reusable workflow ──────────────────────────
+# `inherit` passes the callee every secret the caller holds, declared or not, and the fleet
+# calls Core's workflows at a moving @vN tag (rule 3's exemption), so what receives them can
+# change without a diff in the caller. The same anchored value read as rule 5b: any indent,
+# bare or quoted, a trailing `# comment` tolerated, and prose that merely names the word
+# never fires. Scoped to WORKFLOWS: a composite action cannot call a reusable workflow.
+if [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  while IFS= read -r sv; do
+    [ -n "$sv" ] || continue
+    while IFS= read -r hit; do note "reusable-workflow call passes secrets: $sv (map each secret by name): $hit"; done \
+      < <(grep -HnE "^[[:space:]]*secrets:[[:space:]]*[\"']?${sv}[\"']?[[:space:]]*(#.*)?\$" "${WORKFLOWS[@]}" 2>/dev/null || true)
+  done < <(_yaml_list banned_call_secrets)
+fi
+
 if [ "$violations" -eq 0 ]; then
   echo "check-modern: CI meets the modern baseline (${#FILES[@]} workflow/action files)"
   exit 0

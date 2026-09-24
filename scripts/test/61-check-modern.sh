@@ -20,7 +20,7 @@
 # Hermetic: a throwaway git repo (the gate inventories through `git ls-files`, so a plain
 # directory yields "no workflow/action files to check" and every assertion below would
 # vacuously pass) holding only the script, its lib and a crafted workflow.
-hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 4, 5b, 7 + 8)"
+hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 4, 5b, 7, 8 + 9)"
 if ! have git; then
   skip "check-modern rule fixtures (git not installed)"
 else
@@ -336,6 +336,34 @@ jobs:
     pass "check-modern rule 5b: a comment, read-all and a named-scope write do not fire"
   else
     fail "check-modern rule 5b: false positive — this shape is the prescribed remedy"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # Rule 9 (#1160): `secrets: inherit` hands a reusable workflow every secret the caller
+  # holds, declared or not, and the fleet calls Core's at a moving @vN tag. Two shapes, one
+  # per job: bare, and quoted with a trailing comment. The third job is the control, and it
+  # is the remedy: the secret mapped by name, with the word itself in a comment beside it.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    uses: dotgibson/dotfiles-core/.github/workflows/notify-failure-call.yml@v7
+    secrets: inherit
+  b:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v7
+    secrets: "inherit"   # the callee only needs the one
+  c:
+    uses: dotgibson/dotfiles-core/.github/workflows/claude-routines-call.yml@v7
+    # never secrets: inherit, see modern-baseline.yml rule 9
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}')"
+  if [[ "$(grep -c 'passes secrets: inherit' <<<"$_cm_out")" == 2 ]] \
+    && grep -q 'probe.yml:8:' <<<"$_cm_out" && grep -q 'probe.yml:11:' <<<"$_cm_out"; then
+    pass "check-modern rule 9: secrets: inherit is caught bare and quoted; a by-name mapping is not (want 2)"
+  else
+    fail "check-modern rule 9: secrets: inherit misfired (want exactly the two jobs a and b)"
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 

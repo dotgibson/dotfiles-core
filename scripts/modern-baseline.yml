@@ -177,3 +177,26 @@ banned_run_interpolation_contexts:
 #    OS repos actually execute are defined here. Cheap while the fleet is at 58/58; expensive
 #    once someone lands job 59 without it.
 require_job_timeout: true
+
+# 9) A caller must not pass `secrets: inherit` to a reusable workflow. It hands the callee
+#    EVERY secret the caller repo holds, and the callee may read them whether or not its
+#    `on.workflow_call.secrets` declares them (GitHub's docs say so outright), so the
+#    declaration buys nothing. Map each secret by name instead:
+#
+#        secrets:
+#          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+#
+#    It compounds with rule 3's @vN exemption: the fleet calls Core's *-call.yml workflows
+#    at a MOVING major tag, so the code receiving an inherited secret set can change under
+#    the caller without a diff in the caller. This is the `write-all` hole of rule 5b one
+#    level over, in secret space, and it is its own dimension for the same reason: the value
+#    is read anchored to the key, bare or quoted, with a trailing `# comment` tolerated, so
+#    the word in prose (a comment explaining why a caller maps its secrets) never fires.
+#
+#    Like rules 5b and 8, not deprecation-driven. Free when it joined: no workflow in the
+#    fleet passed it. The one occurrence was Core's own caller example in
+#    claude-routines-call.yml, a comment the seven live callers had already outgrown.
+#    Workflows only, since a composite action cannot call a reusable workflow. Full-line
+#    comments only, per the parser note under banned_runners above.
+banned_call_secrets:
+  - inherit

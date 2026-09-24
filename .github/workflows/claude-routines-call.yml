@@ -9,8 +9,13 @@ name: claude-routines (reusable)
 #     claude-routines:
 #       uses: dotgibson/dotfiles-core/.github/workflows/claude-routines-call.yml@v7
 #       permissions: { contents: read, issues: write }
-#       secrets: inherit
+#       secrets:
+#         CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 #       with: { distro: fedora }
+#
+# Map the ONE secret explicitly. `secrets: inherit` hands this @v7 workflow — a moving tag
+# the caller does not pin — every secret the caller repo holds, declared here or not, and
+# the floor bans it (scripts/modern-baseline.yml rule 9). All seven callers map it already.
 #
 # INVERTED CHECKOUT (same design as lint-call.yml): dotfiles-core@v7 is checked out
 # at ROOT — it provides the routine command (.claude/commands/), PORTING-MATRIX.md,
