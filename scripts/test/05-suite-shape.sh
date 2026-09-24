@@ -105,3 +105,15 @@ else
 fi
 
 unset _ss_dir _ss_all _ss_numbered _ss_stray _ss_exec _ss_untracked _ss_f _ss_b _ss_root _ss_out _ss_rc
+
+# ── the host scrub held ───────────────────────────────────────────────────────
+# test-core.sh unsets the caller's ZDOTDIR, XDG_*_HOME and mise activation state before any
+# fragment runs. Asserted here, not assumed: the day it regresses, a suite run from an
+# interactive fleet shell re-points the developer's REAL ~/.config/zsh/.zshrc into $SANDBOX.
+_hs_left="$(compgen -e | grep -E '^(ZDOTDIR|XDG_(CONFIG|DATA|STATE|CACHE)_HOME|_*MISE_[A-Z_]*)$' | tr '\n' ' ')"
+if [[ -z "$_hs_left" ]]; then
+  pass "host scrub: no caller ZDOTDIR, XDG_*_HOME or mise activation state reaches the fragments"
+else
+  fail "host scrub: the caller's environment leaked into the suite: $_hs_left— a sandboxed bootstrap would write the real config"
+fi
+unset _hs_left

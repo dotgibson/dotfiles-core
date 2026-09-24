@@ -799,6 +799,10 @@ w "$TARGET/test/check-links.sh" <<'EOF'
 set -uo pipefail
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "$REPO" || exit 1
+# Pinning HOME and XDG_CONFIG_HOME below is not enough on its own: the driver defaults
+# ZDOTDIR and the other XDG dirs ONLY when unset, so a caller's exported ZDOTDIR (every
+# fleet shell exports one) would seed the REAL $ZDOTDIR/.zshrc as a link into $tmp.
+unset ZDOTDIR XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
 
 # `set -e` is deliberately off (the exit code IS the result), so the sandbox is guarded
 # by hand: an empty $tmp would turn "$tmp/home" into /home, and a hermetic test would
