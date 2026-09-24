@@ -565,7 +565,7 @@ EOF
   # — the exact shape footnote 34 was corrected for twice, and what generation exists to
   # prevent. One tree, two questions, two different answers.
   _gp_fixture && _gp_run >/dev/null
-  # SCOPED to one block. There are three fleet-version blocks now, and an unscoped flip
+  # SCOPED to one block. There are four fleet-version blocks now, and an unscoped flip
   # would corrupt all of them at once — which still reds, but proves less: a gate that only
   # notices when every block is wrong is not the gate this case is about.
   sed -i.bak '/core:porting-matrix:gen fleet-versions -->/,/core:porting-matrix:end fleet-versions -->/ s/\*\*below\*\*/at or above/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
@@ -583,8 +583,11 @@ EOF
 
   # --local is NOT a whole-file check in disguise: it must leave the fleet-derived regions
   # exactly as found, or §9h's lone-clone arm would red on tables it cannot render.
+  # SCOPED to the packages block: footnote ³⁹'s fleet-versions-eza table heads a column
+  # `eza` too, and an unscoped edit would hit that LOCAL block and red --local for the right
+  # reason, proving nothing about pass-through.
   _gp_fixture && _gp_run >/dev/null
-  sed -i.bak 's/`eza`/`exa`/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
+  sed -i.bak '/core:porting-matrix:gen packages -->/,/core:porting-matrix:end packages -->/ s/`eza`/`exa`/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
   if [[ "$(_gp_run_lone --check --local)" == 0 && "$(_gp_run --check)" == 1 ]]; then
     pass "gen-porting-matrix: --local passes the fleet-derived regions through — a packages edit is drift to --check and invisible to --check --local"
   else
@@ -595,7 +598,7 @@ EOF
   # needs a fleet that box does not have is the shape this seam exists to avoid — so --local
   # is a write mode too, and what it writes must be what the full render would write.
   _gp_fixture && _gp_run >/dev/null
-  # SCOPED to one block. There are three fleet-version blocks now, and an unscoped flip
+  # SCOPED to one block. There are four fleet-version blocks now, and an unscoped flip
   # would corrupt all of them at once — which still reds, but proves less: a gate that only
   # notices when every block is wrong is not the gate this case is about.
   sed -i.bak '/core:porting-matrix:gen fleet-versions -->/,/core:porting-matrix:end fleet-versions -->/ s/\*\*below\*\*/at or above/' "$GPR/PORTING-MATRIX.md" && rm -f "$GPR/PORTING-MATRIX.md.bak"
