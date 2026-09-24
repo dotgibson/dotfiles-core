@@ -866,28 +866,30 @@ least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and t
 ask for it.
 
 Versions **verified against each distro's own package pages** on 2026-08-12, every row
-re-verified the same way on 2026-09-06, not taken from a repology snapshot. Upstream is
-0.14.1 (2026-09-05). Rolling targets get one query each, because that query is the complete
+re-verified the same way on 2026-09-06 and again on 2026-09-23, not taken from a repology
+snapshot. Upstream is 0.14.1 (2026-09-05). Rolling targets get one query each, because that query is the complete
 answer; **Fedora is versioned, so every supported stable release is named separately**
 rather than collapsed into one unqualified ✓:
 
 | Target          | Release                                      | lnav              |
 | --------------- | -------------------------------------------- | ----------------- |
 | Arch            | `extra` (rolling)                            | 0.14.1-1          |
-| openSUSE        | Tumbleweed (rolling); **not** Leap 16.0/16.1 | 0.14.0            |
+| openSUSE        | Tumbleweed (rolling); **not** Leap 16.0/16.1 | 0.14.1            |
 | Alpine          | `edge/community` — **native musl build**     | 0.14.1-r0         |
 | Homebrew        | rolling                                      | 0.14.1            |
-| **Fedora**      | **Rawhide / F45**                            | **0.14.0-3.fc45** |
+| Fedora          | Rawhide (F46)                                | 0.14.1-1.fc46     |
+| **Fedora**      | **F45**                                      | **0.14.0-3.fc45** |
 | **Fedora**      | **F44**                                      | **0.13.2-2.fc44** |
 | **Fedora**      | **F43**                                      | **0.12.4-2.fc43** |
 | **Kali/Debian** | rolling / sid                                | **0.13.2**        |
 | **Gentoo**      | `app-admin/lnav`                             | **0.11.2**        |
 
-So "Fedora has it" is true, but as of the 2026-09-06 re-check "Fedora is current" is no
-longer true anywhere: 0.14.1 landed on 2026-09-05 and Rawhide/F45 still carries 0.14.0-3, one
-patch back, while F44 and F43 track one and two minors back respectively. The rolling three —
-Arch, Alpine and Homebrew — picked 0.14.1 up within a day; nothing else has. Two targets lag
-enough to be worth naming:
+So "Fedora has it" is true, and as of the 2026-09-23 re-check "Fedora is current" is true
+only on Rawhide: 0.14.1 landed on 2026-09-05 and Rawhide (F46) now carries 0.14.1-1, but F45
+branched before it and still carries 0.14.0-3, one patch back, while F44 and F43 track one and
+two minors back respectively. The rolling targets — Arch, Alpine and Homebrew within a day,
+Tumbleweed and Fedora Rawhide since — have all picked 0.14.1 up; no versioned stable release
+has. Two targets lag enough to be worth naming:
 
 - **Gentoo `app-admin/lnav` is 0.11.2** — the only version in the tree, stable on amd64/x86,
   and the package is flagged as **needing a new maintainer**, so do not expect it to close
