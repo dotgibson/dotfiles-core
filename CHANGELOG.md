@@ -59,6 +59,16 @@
   two attributes nixpkgs does not have, invisible to that repo's parse-only gate. `§9k`'s
   rule stands: a registered tape with no gif is a skip, so a re-render that has not landed
   never blocks the gate.
+- **`PORTING-MATRIX.md` gains an eza fleet-version table (footnote ³⁹), against a 0.23.5
+  floor.** 0.23.5 added `--hyperlink=auto` and lines-of-code counting, and an older eza
+  rejects the flag outright. The `/tool-scout` scan in
+  [#1158](https://github.com/dotgibson/dotfiles-core/issues/1158) held it on a watch that ends
+  only when every lane is at or above that version, and until now nothing recorded where the
+  lanes sit. `scripts/fleet-package-versions.tsv` now carries seventeen rows, each read from
+  the distro's own index. Seven are at or above; Alpine edge/3.24/3.23 and Gentoo stable are
+  one patch short on 0.23.4; Ubuntu 24.04 (0.18.2), both Leap backports (0.20.4), Debian 13
+  (0.21.0) and Alpine 3.22/3.21 are further back. `gen-porting-matrix.sh` registers the block
+  and marks the eza row. Core enforces no eza floor, and `zsh/` passes no flag that needs one.
 
 ## [v7.11.0] - 2026-09-18
 
