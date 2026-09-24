@@ -195,7 +195,8 @@ BLOCKS="commands	fleet
 packages	fleet
 fleet-versions-tree-sitter-cli	local	tree-sitter-cli
 fleet-versions-neovim	local	neovim
-fleet-versions	local	jq"
+fleet-versions	local	jq
+fleet-versions-eza	local	eza"
 
 # Derived views of the registry, computed once. ALL_BLOCKS is every id in the doc's order;
 # LOCAL_BLOCKS is the --local subset. Neither is a second declaration — a block is local
@@ -275,7 +276,7 @@ debian	Debian/Ubuntu	dotfiles-Debian	debian,ubuntu"
 #               anything else  asserted: rendered verbatim; exit 2 if the repo installs
 #                              a candidate, because then it should be `=`
 # Row order is the doc's order. A tool the fleet starts packaging is a one-cell edit.
-PKG_ROWS="eza	-	=	=	=	=	=	=
+PKG_ROWS="eza³⁹	-	=	=	=	=	=	=
 bat	-	=	=	=	=	=⁴	=⁴
 fd	fd fd-find	=	=	=	=	=⁴	=⁴
 ripgrep	-	=	=	=	=	=	=
@@ -317,7 +318,7 @@ shellcheck²¹	shellcheck ShellCheck shellcheck-bin	\`shellcheck\`	\`ShellCheck\
 shfmt⁷ ²¹	-	\`shfmt\`	\`shfmt\`	=	go²¹	\`shfmt\`⁷	\`shfmt\`
 ouch²¹	-	\`ouch\`	=¹⁸	testing¹⁴	GURU¹² ²¹	cargo²¹	—²⁹
 jujutsu (jj)⁸	jujutsu jj	\`jujutsu\`	\`jujutsu\`	=	\`dev-vcs/jj\`²¹	cargo²¹	—²⁹
-sesh⁹	-	AUR⁹	go⁹	go⁹	go⁹	go⁹	go³
+sesh⁹	-	go⁹	go⁹	go⁹	go⁹	go⁹	go³
 difftastic¹⁰	-	\`difftastic\`	\`difftastic\`	=	=	asset²⁸	asset²⁸
 git-absorb²¹ ²⁶	-	\`git-absorb\`	\`git-absorb\`	=	=	\`git-absorb\`	\`git-absorb\`
 ast-grep¹¹	-	\`ast-grep\`	=¹⁸	=	cargo²¹	cargo²¹	—²⁹

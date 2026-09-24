@@ -137,7 +137,7 @@ and a footnote here.** The footnotes below stay hand-written.
 
 | Tool             | Arch              | openSUSE          | Alpine                     | Gentoo (atom)                       | Kali (apt)²¹ᵃ              | Debian/Ubuntu |
 | ---------------- | ----------------- | ----------------- | -------------------------- | ----------------------------------- | -------------------------- | ------------- |
-| eza              | `eza`             | `eza`             | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
+| eza³⁹            | `eza`             | `eza`             | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
 | bat              | `bat`             | `bat`             | `bat`                      | `sys-apps/bat`                      | `bat`⁴                     | `bat`⁴        |
 | fd               | `fd`              | `fd`              | `fd`                       | `sys-apps/fd`                       | `fd-find`⁴                 | `fd-find`⁴    |
 | ripgrep          | `ripgrep`         | `ripgrep`         | `ripgrep`                  | `sys-apps/ripgrep`                  | `ripgrep`                  | `ripgrep`     |
@@ -179,7 +179,7 @@ and a footnote here.** The footnotes below stay hand-written.
 | shfmt⁷ ²¹        | `shfmt`           | `shfmt`           | `shfmt`                    | go²¹                                | `shfmt`⁷                   | `shfmt`       |
 | ouch²¹           | `ouch`            | `ouch`¹⁸          | testing¹⁴                  | GURU¹² ²¹                           | cargo²¹                    | —²⁹           |
 | jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`         | `jujutsu`                  | `dev-vcs/jj`²¹                      | cargo²¹                    | —²⁹           |
-| sesh⁹            | AUR⁹              | go⁹               | go⁹                        | go⁹                                 | go⁹                        | go³           |
+| sesh⁹            | go⁹               | go⁹               | go⁹                        | go⁹                                 | go⁹                        | go³           |
 | difftastic¹⁰     | `difftastic`      | `difftastic`      | `difftastic`               | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`      | `git-absorb`               | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸      | `ast-grep`                 | cargo²¹                             | cargo²¹                    | —²⁹           |
@@ -348,7 +348,8 @@ Packaged in the AUR as `sesh-bin` (which
 `provides`/`conflicts` `sesh`, so `paru -S sesh` still resolves — there is no
 AUR package under the bare name), Homebrew
 (`sesh`), and nixpkgs (`sesh`); **not** in Arch-official, openSUSE, Alpine,
-Gentoo, Fedora, or Debian/Kali apt — so most of the fleet uses
+Gentoo, Fedora, or Debian/Kali apt — so most of the fleet, Arch included (its
+`bootstrap.sh` builds from source and skips the AUR `sesh-bin`), uses
 `go install github.com/joshmedeski/sesh/v2@latest` (note the **v2** module path),
 the same build path as starship/yazi/atuin where unpackaged. `go` is already a
 pinned mise runtime, so the install works everywhere; `mise use -g go` first on a
@@ -1380,7 +1381,7 @@ the version last **moved** — a row unchecked for 90 days is named on stderr by
 They get there by four different mechanisms and only one of them looks like a problem.
 Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
 `dotfiles-Debian` declares a `# min:0.12.0` floor its CI enforces. Gentoo's is
-**keywords**: 0.12.0–0.12.3 are all in `::gentoo` right now, all `~arch`, so a stable
+**keywords**: 0.12.0–0.12.5 are all in `::gentoo` right now, all `~arch`, so a stable
 profile silently picks 0.11.7 and reports success. Nothing in an availability check can
 see it — the atom exists, installs, and is the wrong version.
 
@@ -1505,9 +1506,9 @@ enforces are now enumerated by one mechanism rather than three prose styles.
 <!-- core:porting-matrix:end fleet-versions -->
 
 The two mechanics behind that table are the part worth reading. Alpine backported
-`jq 1.8.2-r0` into `main` on all three of its supported stable branches rather than leaving
-them on the version they shipped with — exactly the behaviour a `# min:` floor is supposed
-to reward.
+`jq 1.8.2-r0` into `main` on three of its four supported stable branches (3.22–3.24; 3.21
+still carries 1.7.1) rather than leaving them on the version they shipped with — exactly the
+behaviour a `# min:` floor is supposed to reward.
 
 Fedora reaches that floor by the opposite mechanic, and it is the one crossing with a date
 on it. F45 branched from Rawhide on 2026-08-11 and goes GA **2026-10-20**. F43/F44 sit at
@@ -1591,6 +1592,44 @@ same question as "which package owns this path" that every other column answers.
 has no path-ownership index; the nearest real equivalent is grepping the install receipts
 under the Homebrew prefix, which is neither a stable interface nor something Core may name.
 Treat this cell as "the closest available", and prefer not to build a gate on it.
+
+³⁹ **eza — every target packages it, but not every target packages the one Core would want
+to use next.** 0.23.5 (2026-07-09) added `--hyperlink=auto` and lines-of-code counting.
+Plain `--hyperlink` is older; the `=auto` value is not, and an older eza **rejects** it
+rather than ignoring it. That matters because the flag would land in `ls`/`ll`/`la`, the
+most-used commands on the box, in the one file whose contract is graceful degradation. So
+0.23.5 is not a floor Core enforces today — `zsh/` passes no flag that needs it — it is the
+floor `.claude/tool-decisions.md`'s `eza --hyperlink=auto` watch row is waiting on, recorded
+here so that watch has a table to read rather than a guess.
+
+<!-- core:porting-matrix:gen fleet-versions-eza -->
+
+| Target              | `eza`   | vs ≥ 0.23.5 | verified   |
+| ------------------- | ------- | ----------- | ---------- |
+| Arch                | 0.23.5  | at or above | 2026-09-24 |
+| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-09-24 |
+| Fedora Rawhide      | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 45           | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 44           | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 43           | 0.23.5  | at or above | 2026-09-24 |
+| Homebrew            | 0.23.5  | at or above | 2026-09-24 |
+| Alpine edge         | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.24         | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.23         | 0.23.4  | **below**   | 2026-09-24 |
+| Gentoo stable       | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.22         | 0.21.3  | **below**   | 2026-09-24 |
+| Debian 13           | 0.21.0  | **below**   | 2026-09-24 |
+| Alpine 3.21         | 0.20.12 | **below**   | 2026-09-24 |
+| openSUSE Leap 16.1  | 0.20.4  | **below**   | 2026-09-24 |
+| openSUSE Leap 16.0  | 0.20.4  | **below**   | 2026-09-24 |
+| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-09-24 |
+
+<!-- core:porting-matrix:end fleet-versions-eza -->
+
+Read it as the watch's answer: the watch ends when every row reads "at or above". The long
+tail is the frozen and slow-moving lanes — Ubuntu 24.04, both openSUSE Leap backports, Debian
+13 and the older Alpine stables — and the Alpine and Gentoo-stable rows one patch release
+short, which are the ones likely to move first.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

@@ -1,5 +1,30 @@
 ## [Unreleased]
 
+### Security
+
+- **The CI floor's template-injection rule now covers push-trigger ref names and workflow
+  inputs.** Rule 7 of `scripts/modern-baseline.yml` bans an attacker-influenced `${{ }}`
+  expression inside a `run:` body, and it named `github.head_ref` — the fork branch on a
+  pull request — but not `github.ref_name`, which on a `push` or tag event is the same
+  attacker-chosen string by another trigger (git refnames allow `$ ; & | ( ) { }`). It now
+  bans `github.ref_name` and, for uniformity, `github.base_ref`. And its `inputs.` exemption,
+  earned by the composite `setup-core-tools/action.yml`, was applied to every gated file,
+  which left bare `inputs.*` ungated in the workflows — where it is `workflow_dispatch` free
+  text or a value a sibling repo feeds one of Core's `*-call.yml@vN` workflows. A new rule
+  7b (`banned_run_interpolation_contexts_workflow_only`) bans it under `.github/workflows/`
+  alone. Both were free: every occurrence in the tree was already routed through `env:`
+  (#1160).
+
+- **The CI floor bans `secrets: inherit`, and Core stops documenting it.** The caller
+  example at the top of `claude-routines-call.yml`, the shape the seven OS repos were told
+  to copy, passed `secrets: inherit`. That hands the called `@v7` workflow every secret the
+  caller repo holds, declared or not, at a moving tag the caller does not pin. The seven live
+  callers had already moved to the explicit `CLAUDE_CODE_OAUTH_TOKEN:` mapping, so only the
+  comment was wrong, and it now shows the mapping. A new rule 9 in `scripts/modern-baseline.yml`
+  (`banned_call_secrets`) reads the value the way rule 5b reads `write-all`: anchored to the
+  key, bare or quoted, a trailing comment tolerated. It was green on arrival, and no workflow
+  in the fleet passes it (#1160).
+
 ### Changed
 
 - **Two zsh plugin pins roll forward in `zsh/45-plugins.zsh`** (#1156, the freshness bot):
@@ -40,8 +65,35 @@
   consumers. The pre-commit hook's `rev` moves with it, because §9 keeps the two in step.
   Both are registry installs, so there is no `*_SHA256` to refresh. `shfmt` stays held at
   3.13.1 (#813).
+- **Both atuin guard premises re-measured against 18.23.0; both `VERIFIED_AGAINST` anchors move**
+  ([#1158](https://github.com/dotgibson/dotfiles-core/issues/1158), run 35956975589). Upstream
+  released 18.23.0 on 2026-09-22, one minor past the 18.22.0 the anchors in `zsh/00-tools.zsh`
+  carried. One `atuin-guard-verify` dispatch, checksum and build-provenance verified:
+  silent discard `holds` (its report job skipped), and autostart self-healing is `moved`
+  exactly as it was on 18.22.0. `absent` and `stale` spawn a daemon and land their row, and
+  `wedged` blocks on the pidfile lock and loses it (upstream `atuinsh/atuin#4114`, still open).
+  That is the shape #1102 already answers by probing and warning rather than standing down, so
+  the auto-filed #1177 asks nothing new of Core. Editing an anchor is a claim that the premise
+  was re-measured at that version, so this is that claim and not a version bump.
+
+  18.23.0 continues 18.22.0's direction, and the block now says so: an FTS index over captured
+  command output and a sync engine replacing the event bus both sit behind the socket, with no
+  client-side spool or direct-write fallback (the one PR that would have changed the client's
+  connect shape, atuin #4168, closed unmerged). A dead socket still discards, and
+  `atuinsh/atuin#3382` (accept-but-silent) is still open, so the steer away from socket
+  activation stays.
 
 ### Documentation
+
+- **`PORTING-MATRIX.md` and the README stop contradicting the fleet**
+  ([#1174](https://github.com/dotgibson/dotfiles-core/issues/1174), from the #1157 sweep).
+  The sesh row's Arch cell asserted `AUR⁹`, but `dotfiles-Arch` go-installs sesh and says
+  the AUR `sesh-bin` is not needed; it is now `go⁹`, and footnote ⁹ names Arch among the
+  go-install consumers. Footnote ³³ gave Gentoo's `~arch` neovim range two ways eleven lines
+  apart (0.12.5 and 0.12.3); both now read 0.12.5, as the TSV does. Footnote ³⁴ said jq 1.8.2
+  reached "all three" supported Alpine stable branches; Alpine carries four, and 3.21 is
+  still on 1.7.1. The README's install steps gain the Defense clone and name Debian and
+  NixOS among the Linux distros, matching the "all ten bootstraps" line beneath them.
 
 - **Every registered README hero is now filmed** — the tenth, `dotfiles-NixOS`'s, landed as
   [dotfiles-NixOS#8](https://github.com/dotgibson/dotfiles-NixOS/pull/8), so the "still to
@@ -58,6 +110,16 @@
   two attributes nixpkgs does not have, invisible to that repo's parse-only gate. `§9k`'s
   rule stands: a registered tape with no gif is a skip, so a re-render that has not landed
   never blocks the gate.
+- **`PORTING-MATRIX.md` gains an eza fleet-version table (footnote ³⁹), against a 0.23.5
+  floor.** 0.23.5 added `--hyperlink=auto` and lines-of-code counting, and an older eza
+  rejects the flag outright. The `/tool-scout` scan in
+  [#1158](https://github.com/dotgibson/dotfiles-core/issues/1158) held it on a watch that ends
+  only when every lane is at or above that version, and until now nothing recorded where the
+  lanes sit. `scripts/fleet-package-versions.tsv` now carries seventeen rows, each read from
+  the distro's own index. Seven are at or above; Alpine edge/3.24/3.23 and Gentoo stable are
+  one patch short on 0.23.4; Ubuntu 24.04 (0.18.2), both Leap backports (0.20.4), Debian 13
+  (0.21.0) and Alpine 3.22/3.21 are further back. `gen-porting-matrix.sh` registers the block
+  and marks the eza row. Core enforces no eza floor, and `zsh/` passes no flag that needs one.
 
 ## [v7.11.0] - 2026-09-18
 
