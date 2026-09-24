@@ -2,6 +2,14 @@
 
 ### Changed
 
+- **Two zsh plugin pins roll forward in `zsh/45-plugins.zsh`** (#1156, the freshness bot):
+  `zsh-history-substring-search` `14c8d2e0ffae` → `a0bdb0d47dba` and `zsh-syntax-highlighting`
+  `2fc57d63067c` → `0bfcb582e71d`. This is the one change in the release that reaches a
+  host, so it is recorded here even though a bot landed it — `CONTRIBUTING.md` has no
+  carve-out for automation. Both ranges were read against the upstream compare: the first is
+  two commits touching only `README.md` (+2/-2, a zplug snippet fix), the second one commit
+  adding an Arch install path to `INSTALL.md` (+8/-0). So the pins move and no plugin code
+  does; the other six pins were already current.
 - **`new-os-repo.sh` writes the fleet's shield row into the README it scaffolds.** A checkup
   that fetched every badge and link target across the fifteen public READMEs found the two
   newest repos opening with no shield row at all — `dotfiles-NixOS` because this scaffold
