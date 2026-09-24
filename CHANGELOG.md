@@ -38,6 +38,14 @@
   each of `dotfiles-Windows` and `dotfiles-Defense`, and `dotfiles-Offense`'s Python badge,
   which read CPython's GitHub releases — it publishes tags — and rendered "no releases or repo
   not found".
+- **Two tool pins roll forward: `markdownlint-cli2` 0.23.2 → 0.23.3 and the maintenance
+  bots' Claude Code CLI 2.1.273 → 2.1.281.** The weekly freshness review (#1159) found them
+  the only pins behind upstream that are not deliberately held. `markdownlint-cli2` 0.23.3
+  only updates dependencies, and both versions pin the `markdownlint` library at 0.41.1, so
+  no rule is added, renamed or given a new default in Core or in the `lint-call.yml`
+  consumers. The pre-commit hook's `rev` moves with it, because §9 keeps the two in step.
+  Both are registry installs, so there is no `*_SHA256` to refresh. `shfmt` stays held at
+  3.13.1 (#813).
 
 ### Documentation
 
