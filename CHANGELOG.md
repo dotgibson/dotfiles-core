@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.12.0] - 2026-09-24
+
 ### Security
 
 - **The CI floor's template-injection rule now covers push-trigger ref names and workflow
