@@ -333,7 +333,9 @@ so between the two events the declaration exists in the repo and not on the mach
 §4.4 chooses the overlay, then authoring it is `v8` and depending on it is `v9` — and the
 gate for the second is evidence that the fleet has **re-bootstrapped**, which neither
 `make fleet-drift` nor `audit-core.sh` can supply, because both report whether a repo
-*declares* and what matters is whether a *box has relinked*.
+*declares* and what matters is whether a *box has relinked*. (That evidence now exists per
+box: `bootstrap.sh` writes a host relink stamp that `core doctor --json` reads against
+`core.lock` as `.relink.status`, #1154.)
 
 ## 5. Change 3 — the audit gets the `#699` treatment
 

@@ -546,6 +546,27 @@ jobs:
               done
             fi
 
+            # The host relink stamp (dotfiles-core#1154): a links-only run records which Core
+            # this box relinked against, and core-doctor compares it with core.lock. GATED on
+            # the vendored lib knowing the stamp AND the bootstrap being on the driver: this
+            # workflow is called at @v7 by repos whose core/ may predate it, and a lag is a
+            # skip, not a red. MacBook, the one bootstrap off the driver, is not in this job.
+            stamp="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-core/bootstrap.lock"
+            if grep -q blib_write_relink_stamp core/lib/bootstrap-lib.sh 2>/dev/null &&
+              grep -q blib_main bootstrap.sh && [ -r core.lock ]; then
+              want=$(sed -n "s/^core_sha=//p" core.lock | head -n 1)
+              if [ ! -f "$stamp" ]; then
+                echo "MISSING relink stamp: $stamp" >&2; exit 1
+              fi
+              if ! grep -qx "mode=links-only" "$stamp" || ! grep -qx "core_sha=$want" "$stamp"; then
+                echo "WRONG relink stamp (want mode=links-only, core_sha=$want):" >&2
+                cat "$stamp" >&2; exit 1
+              fi
+              echo "relink stamp records core_sha=$want (links-only)"
+            else
+              echo "NOTE: vendored core/ predates the relink stamp (or no driver / core.lock) — not asserted"
+            fi
+
             echo "bootstrap --links-only OK"
           '
 

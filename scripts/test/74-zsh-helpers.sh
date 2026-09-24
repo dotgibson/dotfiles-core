@@ -135,6 +135,69 @@ else
   chmod 644 "$_wsn/whatsnew"
 fi
 
+hdr "relink stamp: reader, core-doctor row, shell-start nudge (#1154)"
+# ── the host's relink stamp (30-functions.zsh + 60-update.zsh) ───────────────
+# bootstrap-lib.sh writes the stamp (36/37 pin that half); these pin the READ half: every
+# token _core_relink_state can return, the doctor's row and JSON key, and a nudge that
+# speaks on `pending` and nowhere else — a bare box, a pre-stamp box, a stamp from another
+# checkout and Core itself (no core.lock) must all stay quiet.
+_rl="$SANDBOX/relink"
+mkdir -p "$_rl/repo"
+_rl_a=3ab9c385e4a6b411556cf3ed2efeeb71b038b536
+_rl_b=4bb9c385e4a6b411556cf3ed2efeeb71b038b536
+_rl_lock() { printf 'core_sha=%s\ncore_tag=%s\n' "$1" "$2" >"$_rl/repo/core.lock"; }
+_rl_stamp() { # _rl_stamp <sha> <tag> [dotfiles]
+  printf '# header\ncore_sha=%s\ncore_tag=%s\nmode=links-only\nlinked_at=2026-09-24T00:00:00Z\ndotfiles=%s\n' \
+    "$1" "$2" "${3:-$_rl/repo}" >"$_rl/bootstrap.lock"
+}
+_rl_src="source '$UI'; source '$FN'; source '$UPD'; _CORE_LOCK_FILE='$_rl/repo/core.lock'; _CORE_RELINK_STAMP='$_rl/bootstrap.lock';"
+_rl_env=(NO_COLOR=1 UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 CORE_WHATSNEW_NUDGE=0 CORE_RELINK_NUDGE=0)
+
+_rl_lock "$_rl_a" v7.12.0
+_rl_stamp "$_rl_a" v7.12.0
+ucheck "relink: a stamp matching core.lock reads current, and the nudge is silent" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == current && \$REPLY == *'v7.12.0'* ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
+  "${_rl_env[@]}"
+
+_rl_lock "$_rl_b" v7.13.0
+ucheck "relink: a stamp behind core.lock reads pending and names both versions and the fix" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == pending && \$REPLY == *'v7.12.0'*'v7.13.0'*'--links-only'* ]]" \
+  "${_rl_env[@]}"
+ucheck "relink: the nudge fires on pending" \
+  "$_rl_src out=\$(_core_relink_nudge 2>&1); [[ \$out == *'relink pending'*'v7.13.0'* ]]" \
+  "${_rl_env[@]}"
+ucheck "relink: core-doctor renders the pending row and --json carries .relink" \
+  "$_rl_src r=\$(_core_doctor_render 2>&1); j=\$(_core_doctor_json 2>&1)
+   [[ \$r == *\$'\\nrelink\\n'*'repo vendors v7.13.0'* && \$j == *'\"relink\":{\"status\":\"pending\"'*'\"mode\":\"links-only\"'* ]]" \
+  "${_rl_env[@]}"
+
+_rl_lock "$_rl_b" v7.12.0
+ucheck "relink: same tag, different sha names the shas rather than 'v7.12.0 — vendors v7.12.0'" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == pending && \$REPLY == *'3ab9c385e4a6'*'4bb9c385e4a6'* ]]" \
+  "${_rl_env[@]}"
+
+rm -f "$_rl/bootstrap.lock"
+ucheck "relink: no stamp reads unknown (never red), the doctor shows the fallback, the nudge is silent" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == unknown ]] && [[ \$(_core_doctor_render 2>&1) == *'CORE_CAP_LOUD'* ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
+  "${_rl_env[@]}"
+
+_rl_stamp 'not-a-sha$(touch pwned)' v7.12.0
+ucheck "relink: a malformed stamp reads unknown and is never evaluated" \
+  "$_rl_src cd '$_rl'; _core_relink_state; [[ \$REPLY2 == unknown && ! -e pwned ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
+  "${_rl_env[@]}"
+
+_rl_stamp "$_rl_a" v7.11.0 /somewhere/else
+ucheck "relink: a stamp from another checkout reads other, and the nudge is silent" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == other && \$REPLY == *'/somewhere/else'* ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
+  "${_rl_env[@]}"
+
+rm -f "$_rl/repo/core.lock"
+_rl_stamp "$_rl_a" v7.11.0
+ucheck "relink: no core.lock (Core itself) reads na — no doctor row, no nudge" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == na ]] && [[ \$(_core_doctor_render 2>&1) != *\$'\\nrelink\\n'* ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
+  "${_rl_env[@]}"
+unset -f _rl_lock _rl_stamp
+
 # ── update.zsh per-manager count/list parse ──────────────────────────────────
 # _pkgup_count/_pkgup_list run ONE parse path — the declared count verb, filtered by
 # PKG_PENDING_MATCH, field PKG_PENDING_FIELD, split on PKG_PENDING_FS — and what differs
