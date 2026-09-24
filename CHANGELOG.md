@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+### Security
+
+- **The CI floor's template-injection rule now covers push-trigger ref names and workflow
+  inputs.** Rule 7 of `scripts/modern-baseline.yml` bans an attacker-influenced `${{ }}`
+  expression inside a `run:` body, and it named `github.head_ref` — the fork branch on a
+  pull request — but not `github.ref_name`, which on a `push` or tag event is the same
+  attacker-chosen string by another trigger (git refnames allow `$ ; & | ( ) { }`). It now
+  bans `github.ref_name` and, for uniformity, `github.base_ref`. And its `inputs.` exemption,
+  earned by the composite `setup-core-tools/action.yml`, was applied to every gated file,
+  which left bare `inputs.*` ungated in the workflows — where it is `workflow_dispatch` free
+  text or a value a sibling repo feeds one of Core's `*-call.yml@vN` workflows. A new rule
+  7b (`banned_run_interpolation_contexts_workflow_only`) bans it under `.github/workflows/`
+  alone. Both were free: every occurrence in the tree was already routed through `env:`
+  (#1160).
+
 ### Changed
 
 - **`new-os-repo.sh` writes the fleet's shield row into the README it scaffolds.** A checkup
