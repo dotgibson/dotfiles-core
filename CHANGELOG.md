@@ -98,9 +98,10 @@
   same variables itself.
 - **The fan-out count gate no longer reads binary files.** `_core_fanout_count_hits` ran its
   awk over every tracked file, `assets/demo.gif` included, so every `make audit` printed a
-  gawk `Invalid multibyte data detected` warning under a UTF-8 locale. It now skips binaries
-  with `grep -I`, the same test `_core_conflict_marker_hits` uses. The verdict never changed
-  (a GIF makes no fan-out claim); the audit's output is quieter.
+  gawk `Invalid multibyte data detected` warning under a UTF-8 locale. It now skips any file
+  containing a NUL byte. It does not use `grep -I`, because BusyBox grep accepts that flag
+  and ignores it. The verdict never changed (a GIF makes no fan-out claim); the audit's
+  output is quieter.
 - **`new-os-repo.sh` writes the `LICENSE` its README shield advertises.** The shield row
   added above carries an MIT License badge linking `blob/main/LICENSE`, but nothing wrote
   that file (it is in neither `core.manifest` nor `core.vendor`), so a new repo's first
