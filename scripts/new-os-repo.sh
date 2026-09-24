@@ -753,8 +753,9 @@ w "$TARGET/.markdownlint.jsonc" <<'EOF'
   // is not a defect here, so flagging every table row is pure noise.
   "MD013": false,
 
-  // MD041 (first-line-h1): OFF. Issue and PR templates are fragments injected into
-  // GitHub's UI and legitimately open with front matter or a section heading.
+  // MD041 (first-line-h1): OFF. The README opens with the fleet's back-to-top anchor and
+  // centered shield row, not an H1 — turning this on reds it. Issue and PR templates, if
+  // added, are fragments that legitimately open with front matter or a section heading.
   "MD041": false,
 
   // MD024 (no-duplicate-heading): SIBLINGS ONLY. A Keep-a-Changelog CHANGELOG repeats
@@ -1104,6 +1105,12 @@ jobs:
     with:
       bump: \${{ inputs.bump || 'patch' }}
 EOF
+
+# The README's license shield links blob/main/LICENSE, and shields.io reads GitHub's
+# licence detection — with no file the badge says "not identified" and its link 404s
+# (#1162). Nothing else writes one: LICENSE is in neither core.manifest nor core.vendor.
+# The fleet's LICENSE is Core's, byte for byte; only the year becomes the birth year.
+sed "s/^Copyright (c) [0-9]\{4\}/Copyright (c) $(date +%Y)/" "$HERE/LICENSE" | w "$TARGET/LICENSE"
 
 w "$TARGET/README.md" <<EOF
 <!-- Back to top link -->

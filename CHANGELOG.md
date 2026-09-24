@@ -16,6 +16,16 @@
   which read CPython's GitHub releases — it publishes tags — and rendered "no releases or repo
   not found".
 
+### Fixed
+
+- **`new-os-repo.sh` writes the `LICENSE` its README shield advertises.** The shield row
+  added above carries an MIT License badge linking `blob/main/LICENSE`, but nothing wrote
+  that file (it is in neither `core.manifest` nor `core.vendor`), so a new repo's first
+  push would show `license | not identified` and a link that 404s. The scaffold now writes
+  Core's `LICENSE` (the whole fleet's, byte for byte) with the birth year, and the
+  generated `.markdownlint.jsonc` names the real reason `MD041` is off: the README opens
+  with the back-to-top anchor and shield row, not an H1.
+
 ### Documentation
 
 - **Every registered README hero is now filmed** — the tenth, `dotfiles-NixOS`'s, landed as

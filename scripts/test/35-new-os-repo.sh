@@ -94,6 +94,20 @@ if have git && have zsh; then
     else
       fail "new-os-repo: bootstrap.sh is not the driver form, or its entry-pair link lines disagree with the scaffolded filenames"
     fi
+    # #1162: the README's MIT shield and its license-url point at LICENSE, so the scaffold
+    # must write one — Core's text (the whole fleet's, byte for byte) with the birth year.
+    _nor_lic=""
+    [[ -f "$NOR/LICENSE" ]] || _nor_lic=" missing"
+    [[ -z "$_nor_lic" && "$(head -n 1 "$NOR/LICENSE")" != "MIT License" ]] && _nor_lic="$_nor_lic not-MIT"
+    [[ -z "$_nor_lic" ]] && ! grep -q "^Copyright (c) $(date +%Y) " "$NOR/LICENSE" && _nor_lic="$_nor_lic wrong-year"
+    [[ -z "$_nor_lic" ]] && ! diff -q <(tail -n +4 "$NOR/LICENSE") <(tail -n +4 "$HERE/LICENSE") >/dev/null && _nor_lic="$_nor_lic body-differs-from-Core"
+    grep -q '^\[license-url\]: .*/blob/main/LICENSE$' "$NOR/README.md" || _nor_lic="$_nor_lic README-license-url-not-LICENSE"
+    if [[ -z "$_nor_lic" ]]; then
+      pass "new-os-repo: writes the LICENSE the README's license shield links (Core's MIT text, this year)"
+    else
+      fail "new-os-repo: the README advertises a LICENSE the scaffold did not write correctly —$_nor_lic"
+    fi
+    unset _nor_lic
     # And the gate can only help if what it reads actually parses. This is the check that
     # never ran on these three files in any repo until #451.
     _nor_syn=""
