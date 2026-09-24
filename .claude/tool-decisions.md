@@ -60,6 +60,9 @@ whether a prior decision exists.** Filing a decision is not enough if nothing re
 | `rip2` (`rm-improved`) | skip | [#1045](https://github.com/dotgibson/dotfiles-core/issues/1045) | a "graveyard" `rm` changes the semantics of the most **destructive** verb on the box, and packaging is thin (0.9.6, 2025-12-22; binaries + `cargo`, no first-party route on the matrix's distros) — Core's safety investment belongs where it already is, in `extract`'s guards |
 | `tlrc` | skip | [#1045](https://github.com/dotgibson/dotfiles-core/issues/1045) | lateral to `tealdeer` 1.9.0 (2026-08-24), which is current and packaged on every matrix distro — a swap with **no capability delta**, the `dysk`/`duf` case |
 | `bottom` (`btm`) | skip | [#1045](https://github.com/dotgibson/dotfiles-core/issues/1045) | lateral to `btop` 1.4.7 (2026-05-01) — same job, **no capability delta**, and `btop` is the one already in every `install/packages.txt` |
+| `diffnav` | skip | [#1158](https://github.com/dotgibson/dotfiles-core/issues/1158) | active (0.12.0, 2026-07-24) but `go install`/Homebrew-only on the matrix's distros, and the git surface is already saturated — lazygit + delta + difftastic + jj + nvim diffview (the `gitu`/`serie` reasoning) |
+| `age` | role layer, not Core | [#1158](https://github.com/dotgibson/dotfiles-core/issues/1158) | packaging is ideal (1.3.2, 2026-08-29, in every matrix distro) but `op` owns secrets and encryption-at-rest is loot/transport-flavoured — it changes with the **operator**, so it fails `CONTRIBUTING.md`'s Core test like `hexyl` |
+| `zoxide import atuin` as a documented bootstrap step | skip | [#1158](https://github.com/dotgibson/dotfiles-core/issues/1158) | 0.10.0 adds the importer **and** moves `import` from a `--from` flag to a subcommand, while Debian 13 and Alpine 3.22 sit at 0.9.7 — one recipe cannot be right on both lanes (the footnote ²² hazard), for a **one-off** seeding |
 | routing Core's zsh fzf widgets through `fzf --tmux` | skip | [#1045](https://github.com/dotgibson/dotfiles-core/issues/1045) | would **split** picker behaviour inside vs outside tmux, wants tmux 3.7+ against a 3.6a fleet floor, and costs the generated `FZF_DEFAULT_OPTS` palette plus its pwsh parity gate (`scripts/parity-check.sh` greps `--color=query`) — for a popup `tmux.conf` already provides where Core wants one |
 
 ### `hexyl` — the long form
@@ -100,12 +103,13 @@ no longer a watch, and re-proposing it needs a fresh argument rather than the ol
 
 | tool | held since | the condition that would end the watch |
 | --- | --- | --- |
-| `xan` | [#327](https://github.com/dotgibson/dotfiles-core/issues/327), [#376](https://github.com/dotgibson/dotfiles-core/issues/376), re-held [#702](https://github.com/dotgibson/dotfiles-core/issues/702) | two consecutive minors with **no breaking argument changes** — see the long form; the original packaging and frequency reasons have both expired |
+| `xan` | [#327](https://github.com/dotgibson/dotfiles-core/issues/327), [#376](https://github.com/dotgibson/dotfiles-core/issues/376), re-held [#702](https://github.com/dotgibson/dotfiles-core/issues/702) | two consecutive minors with **no breaking argument changes** — see the long form; the original packaging and frequency reasons have both expired. **One of two met** ([#1158](https://github.com/dotgibson/dotfiles-core/issues/1158)): 0.61.0 (2026-09-11) is clean, after 0.59.0 and 0.60.0 both broke arguments — the next minor decides it |
 | `csvlens` | [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | reaching Alpine `community`. **Still unmet** as of 2026-09-08 (0.15.1, 2026-01-08; Arch/Homebrew/nixpkgs/BSDs only — not even Alpine edge) |
 | `trippy` | [#327](https://github.com/dotgibson/dotfiles-core/issues/327), [#376](https://github.com/dotgibson/dotfiles-core/issues/376), [#518](https://github.com/dotgibson/dotfiles-core/issues/518) | a release that lands, **plus** an answer to `CAP_NET_RAW`. Neither has moved: 0.13.0 is from 2025-05-05, and 0.14.0's behaviour change was pre-announced and undelivered |
 | `sesh picker` (sesh's built-in TUI, replacing the `sesh list \| fzf` pipe) | [#376](https://github.com/dotgibson/dotfiles-core/issues/376), [#518](https://github.com/dotgibson/dotfiles-core/issues/518), re-held [#702](https://github.com/dotgibson/dotfiles-core/issues/702) | a **colour/theme schema in `[tui]`**. #518's "no preview" blocker is spent; #376's "loss of fzf theming" is **not**, and it is the one that costs something |
 | `mergiraf` (syntax-aware git merge driver) | [#932](https://github.com/dotgibson/dotfiles-core/issues/932) | **either** upstream tolerating `merge.conflictstyle = zdiff3` (its docs say zdiff3 "can confuse" it, and Core's conflict tooling is built on zdiff3's four markers) **or** an opt-in recipe under `examples/` — a merge driver in `git/gitconfig` is not inert without the binary, so it cannot ship as Core config. Packaged on Arch/Alpine community/Gentoo/openSUSE TW/Homebrew; Debian and Fedora have none |
 | `mise` `packslip:` backend (signed release manifests) | [#932](https://github.com/dotgibson/dotfiles-core/issues/932) | a manifest existing for something `mise/config.toml` declares — `ubi:foundry-rs/foundry` is the one unsigned fetch in the runtime set. Stable since mise v2026.9.2; `/runtime-freshness` owns that file, so the check is its |
+| `eza --hyperlink=auto` (and 0.23.5's LOC counting, which would close the "count lines of code" gap without adopting `tokei`) | [#1158](https://github.com/dotgibson/dotfiles-core/issues/1158) | an **eza floor** in `scripts/fleet-package-versions.tsv` showing every lane at ≥ 0.23.5. The flag would land in `ls`/`ll`/`la` — the most-used commands on the box, in the file whose contract is graceful degradation — and an older eza rejects it outright rather than ignoring it. Not a new eza release on its own |
 
 ### `xan` — the long form, because its reason changed
 
@@ -131,7 +135,14 @@ the boxes that upgrade first, and this fleet upgrades at eight different rates.
 **What would end the watch:** two consecutive minor releases with no breaking argument changes.
 Not a wider package footprint — that argument is already spent — and not a better `xan`.
 
+**Progress, 2026-09-22 ([#1158]):** one of two. 0.61.0 (2026-09-11) has features, six fixes and
+one perf item, no breaking-changes section and no renamed flags — against 0.59.0, which broke
+four argument surfaces at once, and 0.60.0, which led with breaking changes. The next minor
+ends the watch if it is clean too, and resets the count if it is not. The next scan should check
+that one release, not restate packaging or frequency.
+
 [#327]: https://github.com/dotgibson/dotfiles-core/issues/327
+[#1158]: https://github.com/dotgibson/dotfiles-core/issues/1158
 
 ### `sesh picker` — the long form, because the report said this was settled
 
@@ -165,11 +176,6 @@ machines, to gain a preview pane the fzf path **already has** via `--preview 'se
 palette question becomes "where does it live" rather than "can it exist", and the answer is a
 `[tui]` block in `sesh/sesh.toml.example` rendered from `theme/palette.toml` like every other
 consumer — a new emitter in `scripts/gen-theme.sh`, not a hand-copied hex. Not a new release on its own, and not the preview pane, which is already here.
-
-**Worth doing regardless, and independent of this decision:** `zsh/35-fzf.zsh` claims the shell
-and tmux "share one picker". They do not — the shell widget runs its own inline, less-featured
-copy and only delegates to `tmux/scripts/tmux-sesh.sh` when sesh is **absent**. That comment is
-wrong today whichever way this row goes.
 
 [#702]: https://github.com/dotgibson/dotfiles-core/issues/702
 
