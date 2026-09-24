@@ -399,17 +399,25 @@ fi
 # Scoped to FILES, not WORKFLOWS: a composite action's `run:` is the same hazard, and
 # rule 3 already treats composite refs as in-scope.
 #
-# The context list deliberately excludes `inputs.*`. setup-core-tools/action.yml
-# interpolates `${{ inputs.bindir }}` inline in ~8 run: steps; that is a FIRST-PARTY
-# composite input, and banning it is a fix-first migration for no security gain.
+# `inputs.*` is banned in WORKFLOWS only (rule 7b, a second list added per file). In a
+# workflow it is `workflow_dispatch` free text or a `workflow_call` value a sibling repo
+# feeds a Core *-call.yml@vN workflow; in a composite action it is a first-party input —
+# setup-core-tools/action.yml interpolates `${{ inputs.bindir }}` inline in ~8 run: steps,
+# and banning that is a fix-first migration for no security gain. The exemption used to be
+# global, which gave away the workflow half by accident.
 #
 # Structurally the same block-scalar walk as rule 6: find the `run:` key, take its
 # column, and treat every more-indented line as body until the first non-blank dedent.
 # Checking happens INSIDE each `${{ … }}` span rather than against the raw line, so a
 # context name appearing in prose or in a comment beside the step is not a false fire.
-if [ -n "$(_yaml_list banned_run_interpolation_contexts)" ]; then
-  _ctx_list="$(_yaml_list banned_run_interpolation_contexts | tr '\n' ' ')"
+_ctx_all="$(_yaml_list banned_run_interpolation_contexts | tr '\n' ' ')"
+_ctx_wf="$(_yaml_list banned_run_interpolation_contexts_workflow_only | tr '\n' ' ')"
+if [ -n "${_ctx_all// /}${_ctx_wf// /}" ]; then
   for f in "${FILES[@]}"; do
+    case "$f" in
+    .github/workflows/*) _ctx_list="$_ctx_all $_ctx_wf" ;;
+    *) _ctx_list="$_ctx_all" ;;
+    esac
     while IFS= read -r hit; do
       [ -n "$hit" ] && note "untrusted expression interpolated into a run: body (route it through env: and read \$VAR): $hit"
     done < <(awk -v ctxs="$_ctx_list" '
@@ -449,8 +457,8 @@ if [ -n "$(_yaml_list banned_run_interpolation_contexts)" ]; then
       }
     ' "$f" 2>/dev/null || true)
   done
-  unset _ctx_list
 fi
+unset _ctx_all _ctx_wf _ctx_list
 
 # ── 8) every runner job declares timeout-minutes ─────────────────────────────
 # Left unset, GitHub's default is 360 minutes — six hours of a held runner and a live
@@ -476,6 +484,20 @@ if _yaml_bool require_job_timeout; then
   done <<EOF
 $(_job_records)
 EOF
+fi
+
+# ── 9) no `secrets: inherit` to a reusable workflow ──────────────────────────
+# `inherit` passes the callee every secret the caller holds, declared or not, and the fleet
+# calls Core's workflows at a moving @vN tag (rule 3's exemption), so what receives them can
+# change without a diff in the caller. The same anchored value read as rule 5b: any indent,
+# bare or quoted, a trailing `# comment` tolerated, and prose that merely names the word
+# never fires. Scoped to WORKFLOWS: a composite action cannot call a reusable workflow.
+if [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  while IFS= read -r sv; do
+    [ -n "$sv" ] || continue
+    while IFS= read -r hit; do note "reusable-workflow call passes secrets: $sv (map each secret by name): $hit"; done \
+      < <(grep -HnE "^[[:space:]]*secrets:[[:space:]]*[\"']?${sv}[\"']?[[:space:]]*(#.*)?\$" "${WORKFLOWS[@]}" 2>/dev/null || true)
+  done < <(_yaml_list banned_call_secrets)
 fi
 
 if [ "$violations" -eq 0 ]; then
