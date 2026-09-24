@@ -137,7 +137,7 @@ and a footnote here.** The footnotes below stay hand-written.
 
 | Tool             | Arch              | openSUSE          | Alpine                     | Gentoo (atom)                       | Kali (apt)²¹ᵃ              | Debian/Ubuntu |
 | ---------------- | ----------------- | ----------------- | -------------------------- | ----------------------------------- | -------------------------- | ------------- |
-| eza              | `eza`             | `eza`             | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
+| eza³⁹            | `eza`             | `eza`             | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
 | bat              | `bat`             | `bat`             | `bat`                      | `sys-apps/bat`                      | `bat`⁴                     | `bat`⁴        |
 | fd               | `fd`              | `fd`              | `fd`                       | `sys-apps/fd`                       | `fd-find`⁴                 | `fd-find`⁴    |
 | ripgrep          | `ripgrep`         | `ripgrep`         | `ripgrep`                  | `sys-apps/ripgrep`                  | `ripgrep`                  | `ripgrep`     |
@@ -1591,6 +1591,44 @@ same question as "which package owns this path" that every other column answers.
 has no path-ownership index; the nearest real equivalent is grepping the install receipts
 under the Homebrew prefix, which is neither a stable interface nor something Core may name.
 Treat this cell as "the closest available", and prefer not to build a gate on it.
+
+³⁹ **eza — every target packages it, but not every target packages the one Core would want
+to use next.** 0.23.5 (2026-07-09) added `--hyperlink=auto` and lines-of-code counting.
+Plain `--hyperlink` is older; the `=auto` value is not, and an older eza **rejects** it
+rather than ignoring it. That matters because the flag would land in `ls`/`ll`/`la`, the
+most-used commands on the box, in the one file whose contract is graceful degradation. So
+0.23.5 is not a floor Core enforces today — `zsh/` passes no flag that needs it — it is the
+floor `.claude/tool-decisions.md`'s `eza --hyperlink=auto` watch row is waiting on, recorded
+here so that watch has a table to read rather than a guess.
+
+<!-- core:porting-matrix:gen fleet-versions-eza -->
+
+| Target              | `eza`   | vs ≥ 0.23.5 | verified   |
+| ------------------- | ------- | ----------- | ---------- |
+| Arch                | 0.23.5  | at or above | 2026-09-24 |
+| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-09-24 |
+| Fedora Rawhide      | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 45           | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 44           | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 43           | 0.23.5  | at or above | 2026-09-24 |
+| Homebrew            | 0.23.5  | at or above | 2026-09-24 |
+| Alpine edge         | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.24         | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.23         | 0.23.4  | **below**   | 2026-09-24 |
+| Gentoo stable       | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.22         | 0.21.3  | **below**   | 2026-09-24 |
+| Debian 13           | 0.21.0  | **below**   | 2026-09-24 |
+| Alpine 3.21         | 0.20.12 | **below**   | 2026-09-24 |
+| openSUSE Leap 16.1  | 0.20.4  | **below**   | 2026-09-24 |
+| openSUSE Leap 16.0  | 0.20.4  | **below**   | 2026-09-24 |
+| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-09-24 |
+
+<!-- core:porting-matrix:end fleet-versions-eza -->
+
+Read it as the watch's answer: the watch ends when every row reads "at or above". The long
+tail is the frozen and slow-moving lanes — Ubuntu 24.04, both openSUSE Leap backports, Debian
+13 and the older Alpine stables — and the Alpine and Gentoo-stable rows one patch release
+short, which are the ones likely to move first.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

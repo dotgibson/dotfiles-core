@@ -195,7 +195,8 @@ BLOCKS="commands	fleet
 packages	fleet
 fleet-versions-tree-sitter-cli	local	tree-sitter-cli
 fleet-versions-neovim	local	neovim
-fleet-versions	local	jq"
+fleet-versions	local	jq
+fleet-versions-eza	local	eza"
 
 # Derived views of the registry, computed once. ALL_BLOCKS is every id in the doc's order;
 # LOCAL_BLOCKS is the --local subset. Neither is a second declaration — a block is local
@@ -275,7 +276,7 @@ debian	Debian/Ubuntu	dotfiles-Debian	debian,ubuntu"
 #               anything else  asserted: rendered verbatim; exit 2 if the repo installs
 #                              a candidate, because then it should be `=`
 # Row order is the doc's order. A tool the fleet starts packaging is a one-cell edit.
-PKG_ROWS="eza	-	=	=	=	=	=	=
+PKG_ROWS="eza³⁹	-	=	=	=	=	=	=
 bat	-	=	=	=	=	=⁴	=⁴
 fd	fd fd-find	=	=	=	=	=⁴	=⁴
 ripgrep	-	=	=	=	=	=	=
