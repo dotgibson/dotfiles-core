@@ -166,6 +166,41 @@ if have git && have zsh; then
     else
       skip "new-os-repo: actionlint over the scaffolded workflows (actionlint unavailable)"
     fi
+    # The README's shield row is a hand-copy of Core's (#1152), judged by a
+    # .markdownlint.jsonc the same script writes — and the lint-leg case below drives
+    # markdownlint-cli2 through a recording shim, so neither half was ever checked against
+    # the other (#1162). Run the real tool on what a new repo's first CI run will lint.
+    if have markdownlint-cli2; then
+      if (cd "$NOR" && markdownlint-cli2 --config .markdownlint.jsonc README.md) >"$SANDBOX/nor-mdl.out" 2>&1; then
+        pass "new-os-repo: the scaffolded README passes markdownlint-cli2 under the scaffolded .markdownlint.jsonc"
+      else
+        fail "new-os-repo: the scaffolded README fails its own .markdownlint.jsonc: $(grep -m3 'README.md:' "$SANDBOX/nor-mdl.out" | tr '\n' ' ')"
+      fi
+    else
+      skip "new-os-repo: markdownlint-cli2 over the scaffolded README (markdownlint-cli2 unavailable)"
+    fi
+    # And the copy must not drift from its source. The header — back-to-top anchor through
+    # the closing </nobr></div> — is byte-identical to Core's; every link definition the
+    # scaffold writes must be Core's with dotfiles-core read as this repo, except the two
+    # that are ABOUT Core or this repo's own workflow: dotgibson-* point at Core's release
+    # on purpose (compared verbatim), and ci-url names lint.yml, the one workflow a fresh
+    # repo has, where Core's names ci.yml.
+    _nor_drift=""
+    [[ "$(sed -n '1,/^<\/nobr><\/div>$/p' "$NOR/README.md")" == "$(sed -n '1,/^<\/nobr><\/div>$/p' "$HERE/README.md")" ]] || _nor_drift="$_nor_drift header"
+    while IFS= read -r _nor_def; do
+      _nor_id="${_nor_def%%]:*}"; _nor_id="${_nor_id#[}"
+      [[ "$_nor_id" == ci-url ]] && continue
+      _nor_core="$(grep -m1 -F "[$_nor_id]: " "$HERE/README.md")" || { _nor_drift="$_nor_drift $_nor_id(not-in-Core)"; continue; }
+      [[ "$_nor_id" == dotgibson-* ]] || _nor_core="${_nor_core//dotfiles-core/dotfiles-Fixture}"
+      [[ "$_nor_def" == "$_nor_core" ]] || _nor_drift="$_nor_drift $_nor_id"
+    done < <(grep -E '^\[[a-z0-9-]+-(shield|url)\]: ' "$NOR/README.md")
+    grep -qE '^\[license-shield\]: ' "$NOR/README.md" || _nor_drift="$_nor_drift no-definitions-read"
+    if [[ -z "$_nor_drift" ]]; then
+      pass "new-os-repo: the scaffolded shield row and its link definitions match Core's README (repo name aside; dotgibson-* and ci-url by design)"
+    else
+      fail "new-os-repo: the scaffolded README's shield block has drifted from Core's README —$_nor_drift"
+    fi
+    unset _nor_drift _nor_def _nor_id _nor_core
     # The lint caller pins the CURRENT major, read from core.version — the Makefile's
     # claim that the gate's other legs run in CI is only true if this caller exists and
     # points at a live major.

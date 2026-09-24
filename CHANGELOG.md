@@ -35,6 +35,15 @@
   two commits touching only `README.md` (+2/-2, a zplug snippet fix), the second one commit
   adding an Arch install path to `INSTALL.md` (+8/-0). So the pins move and no plugin code
   does; the other six pins were already current.
+- **The scaffold's README is now linted for real, and held to Core's.** The suite drove the
+  scaffolded repo's markdown leg through a shim that records argv and exits 0, so the README
+  `new-os-repo.sh` writes was never judged by the `.markdownlint.jsonc` it writes beside it,
+  and its hand-copied shield block could drift from Core's unnoticed (#1162).
+  `35-new-os-repo.sh` now runs the real `markdownlint-cli2` on it wherever the tool is
+  installed (CI's main leg installs the pinned one), and asserts the header and every
+  shield link definition match Core's `README.md` with the repo name swapped. `dotgibson-*`
+  (Core's release, on purpose) and `ci-url` (`lint.yml`, not `ci.yml`) are the stated
+  exceptions.
 - **`new-os-repo.sh` writes the fleet's shield row into the README it scaffolds.** A checkup
   that fetched every badge and link target across the fifteen public READMEs found the two
   newest repos opening with no shield row at all — `dotfiles-NixOS` because this scaffold
