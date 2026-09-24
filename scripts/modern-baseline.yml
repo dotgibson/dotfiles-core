@@ -149,16 +149,40 @@ require_explicit_persist_credentials: true
 #    not a gate, and `actionlint`, which the audit already runs, has no equivalent rule.
 #    Template injection is the live exploitation path, not a theoretical one.
 #
-#    `inputs.` is deliberately ABSENT from this list: setup-core-tools/action.yml
-#    interpolates `${{ inputs.bindir }}` inline in ~8 run: steps, and that is a
-#    first-party composite input — banning it is a fix-first migration for no gain.
+#    `github.ref_name` is the branch or tag name on a `push` — the same attacker-chosen
+#    string `github.head_ref` carries on a pull_request, arriving by another trigger. Git
+#    refnames forbid spaces and `~^:?*[\` but allow `$ ; & | ( ) { }`, so the injection shape
+#    is real. `github.base_ref` is weaker (a PR author can only pick a branch that already
+#    exists) and is listed for uniformity at zero cost: both were env-routed already
+#    (release.yml's TAG, ci.yml's BASE_REF) when they joined the list.
+#
+#    `inputs.` is NOT in this list — it is in the workflow-only list below. The list here
+#    applies to every gated file, composite actions included, and setup-core-tools/action.yml
+#    interpolates `${{ inputs.bindir }}` inline in ~8 run: steps: a first-party composite
+#    input, where banning it is a fix-first migration for no gain.
 #
 #    Full-line comments only, per the parser note under banned_runners above.
 banned_run_interpolation_contexts:
   - github.event.
   - github.head_ref
+  - github.ref_name
+  - github.base_ref
   - github.actor
   - github.triggering_actor
+
+# 7b) The same ban, applied only to files under .github/workflows/. The composite-action
+#     exemption above was being applied GLOBALLY, which left the bare `inputs.*` context
+#     ungated in the workflows — and there it is `workflow_dispatch` free text, or a
+#     `workflow_call` value one of the sibling repos feeds a Core *-call.yml@vN workflow
+#     (lint-call's extra_ls_files_excludes, notify-failure-call's title/details,
+#     claude-routines-call's distro). `github.event.inputs.*` was already caught by the
+#     `github.event.` entry; the bare form was not.
+#
+#     Free when it joined: every `inputs.` interpolation in the workflows was already
+#     `KEY: ${{ inputs.x }}` under an `env:` block — a convention the fleet followed without
+#     a gate. Full-line comments only, per the parser note under banned_runners above.
+banned_run_interpolation_contexts_workflow_only:
+  - inputs.
 
 # 8) Every job that runs on a runner must declare `timeout-minutes:`. Left unset, GitHub's
 #    default is 360 minutes — six hours of a held runner and a live GITHUB_TOKEN for a job

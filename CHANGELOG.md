@@ -1,5 +1,30 @@
 ## [Unreleased]
 
+### Security
+
+- **The CI floor's template-injection rule now covers push-trigger ref names and workflow
+  inputs.** Rule 7 of `scripts/modern-baseline.yml` bans an attacker-influenced `${{ }}`
+  expression inside a `run:` body, and it named `github.head_ref` — the fork branch on a
+  pull request — but not `github.ref_name`, which on a `push` or tag event is the same
+  attacker-chosen string by another trigger (git refnames allow `$ ; & | ( ) { }`). It now
+  bans `github.ref_name` and, for uniformity, `github.base_ref`. And its `inputs.` exemption,
+  earned by the composite `setup-core-tools/action.yml`, was applied to every gated file,
+  which left bare `inputs.*` ungated in the workflows — where it is `workflow_dispatch` free
+  text or a value a sibling repo feeds one of Core's `*-call.yml@vN` workflows. A new rule
+  7b (`banned_run_interpolation_contexts_workflow_only`) bans it under `.github/workflows/`
+  alone. Both were free: every occurrence in the tree was already routed through `env:`
+  (#1160).
+
+- **The CI floor bans `secrets: inherit`, and Core stops documenting it.** The caller
+  example at the top of `claude-routines-call.yml`, the shape the seven OS repos were told
+  to copy, passed `secrets: inherit`. That hands the called `@v7` workflow every secret the
+  caller repo holds, declared or not, at a moving tag the caller does not pin. The seven live
+  callers had already moved to the explicit `CLAUDE_CODE_OAUTH_TOKEN:` mapping, so only the
+  comment was wrong, and it now shows the mapping. A new rule 9 in `scripts/modern-baseline.yml`
+  (`banned_call_secrets`) reads the value the way rule 5b reads `write-all`: anchored to the
+  key, bare or quoted, a trailing comment tolerated. It was green on arrival, and no workflow
+  in the fleet passes it (#1160).
+
 ### Changed
 
 - **Two zsh plugin pins roll forward in `zsh/45-plugins.zsh`** (#1156, the freshness bot):
@@ -48,16 +73,6 @@
   connect shape, atuin #4168, closed unmerged). A dead socket still discards, and
   `atuinsh/atuin#3382` (accept-but-silent) is still open, so the steer away from socket
   activation stays.
-
-- **The CI floor bans `secrets: inherit`, and Core stops documenting it.** The caller
-  example at the top of `claude-routines-call.yml`, the shape the seven OS repos were told
-  to copy, passed `secrets: inherit`. That hands the called `@v7` workflow every secret the
-  caller repo holds, declared or not, at a moving tag the caller does not pin. The seven live
-  callers had already moved to the explicit `CLAUDE_CODE_OAUTH_TOKEN:` mapping, so only the
-  comment was wrong, and it now shows the mapping. A new rule 9 in `scripts/modern-baseline.yml`
-  (`banned_call_secrets`) reads the value the way rule 5b reads `write-all`: anchored to the
-  key, bare or quoted, a trailing comment tolerated. It was green on arrival, and no workflow
-  in the fleet passes it (#1160).
 
 ### Documentation
 

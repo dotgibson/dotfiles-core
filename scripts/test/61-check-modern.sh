@@ -20,7 +20,7 @@
 # Hermetic: a throwaway git repo (the gate inventories through `git ls-files`, so a plain
 # directory yields "no workflow/action files to check" and every assertion below would
 # vacuously pass) holding only the script, its lib and a crafted workflow.
-hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 4, 5b, 7, 8 + 9)"
+hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 4, 5b, 7, 7b, 8 + 9)"
 if ! have git; then
   skip "check-modern rule fixtures (git not installed)"
 else
@@ -391,10 +391,63 @@ jobs:
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
-  # The three shapes that must NOT fire, asserted together because each is a live pattern
-  # somewhere in the fleet and a false positive here is a red gate on every repo:
-  #   - the same value routed through env: and read as $VAR (the prescribed remedy);
-  #   - `inputs.*`, a first-party composite input (setup-core-tools/action.yml, ~8 steps);
+  # Rules 7 + 7b (#1160): `github.ref_name` is the push-trigger twin of head_ref (the
+  # branch or tag name, attacker-chosen), `github.base_ref` joins it for uniformity, and
+  # bare `inputs.*` is banned in a WORKFLOW — where it is dispatch free text or a value a
+  # sibling repo feeds a *-call.yml — while staying legal in a composite action (below).
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "${{ github.ref_name }}"
+      - run: git diff "origin/${{ github.base_ref }}"
+      - name: caller-supplied workflow_call input
+        run: |
+          echo "${{ inputs.title }}"')"
+  if [[ "$(grep -c 'untrusted expression interpolated' <<<"$_cm_out")" == 3 ]] \
+    && grep -q 'github.ref_name' <<<"$_cm_out" \
+    && grep -q 'github.base_ref' <<<"$_cm_out" \
+    && grep -q 'inputs.title' <<<"$_cm_out"; then
+    pass "check-modern rule 7/7b: ref_name, base_ref and a workflow inputs.* in run: are caught (want 3)"
+  else
+    fail "check-modern rule 7/7b: ref_name, base_ref or a workflow inputs.* slipped through (want 3 hits)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # …and the composite half of 7b: the SAME `inputs.*` splice in an action.yml must not
+  # fire, because there it is a first-party input (setup-core-tools/action.yml, ~8 steps).
+  # A banned context in the same composite still does — the exemption is `inputs.` alone,
+  # not composite files wholesale.
+  mkdir -p "$CMF/.github/actions/probe"
+  printf '%s\n' 'name: probe
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: install -d "${{ inputs.bindir }}"
+    - shell: bash
+      run: echo "${{ github.ref_name }}"' >"$CMF/.github/actions/probe/action.yml"
+  _cm_out="$(_cm_run "$_cm_clean")"
+  if [[ "$(grep -c 'untrusted expression interpolated' <<<"$_cm_out")" == 1 ]] \
+    && grep -q 'github.ref_name' <<<"$_cm_out" \
+    && ! grep -q 'inputs.bindir' <<<"$_cm_out"; then
+    pass "check-modern rule 7b: a composite's inputs.* does not fire; its banned context still does"
+  else
+    fail "check-modern rule 7b: the composite-action inputs.* exemption misfired (want only the ref_name hit)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+  rm -rf "$CMF/.github/actions"
+  git -C "$CMF" add -A 2>/dev/null
+
+  # The shapes that must NOT fire in a workflow, asserted together because each is a live
+  # pattern somewhere in the fleet and a false positive here is a red gate on every repo:
+  #   - the same value routed through env: and read as $VAR (the prescribed remedy), for
+  #     an event context and a workflow input alike;
   #   - a banned context in `if:` / `env:` / `concurrency:`, which are not shell.
   _cm_out="$(_cm_run 'name: p
 on: [push]
@@ -412,8 +465,10 @@ jobs:
           T: ${{ github.event.pull_request.title }}
         run: |
           echo "$T"
-      - name: first-party composite input
-        run: echo "${{ inputs.bindir }}"
+      - name: workflow input routed through env
+        env:
+          TITLE: ${{ inputs.title }}
+        run: echo "$TITLE"
       - name: dedent ends the block
         run: |
           echo safe
@@ -422,7 +477,7 @@ jobs:
         with:
           v: ${{ github.event.number }}')"
   if ! grep -q 'untrusted expression interpolated' <<<"$_cm_out"; then
-    pass "check-modern rule 7: env:-routed, inputs.*, if:/concurrency: and with: do not fire"
+    pass "check-modern rule 7: env:-routed (event or inputs.*), if:/concurrency: and with: do not fire"
   else
     fail "check-modern rule 7: false positive — this shape is the prescribed remedy"
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
