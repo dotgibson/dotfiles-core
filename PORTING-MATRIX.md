@@ -913,11 +913,11 @@ including macOS"; Alpine falsified the first half, and Gentoo — checked agains
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
 2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
 re-verified 2026-08-30 against each repo's own package pages, the Arch/Homebrew pair
-alone re-verified again 2026-09-06, and the Alpine row re-verified 2026-09-13 on all five
+alone re-verified again 2026-09-23, and the Alpine row re-verified 2026-09-13 on all five
 branches — the stables it had never named (the remaining rows still carry the 08-30 stamp):
 
-- **Arch `extra` and Homebrew** — 2.7.2 (Arch's package revision is `2.7.2-1`). Still the
-  same version on both, re-checked 2026-09-06: Arch shipped `2.7.2-1` that morning.
+- **Arch `extra` and Homebrew** — 2.7.3 (Arch's package revision is `2.7.3-1`). Still the
+  same version on both, re-checked 2026-09-23 (dotfiles-Arch#187).
 - **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
   line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
   like once two of the four move and two do not.)
