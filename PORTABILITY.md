@@ -66,6 +66,18 @@ array is known non-empty), and `typeset -A`, which is the **zsh** spelling and a
 legitimately in the zsh snippets the test fragments embed. Write `declare`/`local` in bash and
 the gate has you covered.
 
+**Why the floor stays (#1153).** Raising it for `lib/*.sh` behind a stage-0 that installs a
+modern bash and re-execs was costed and declined. The floor accounts for roughly 30 of the
+2,179 lines in `lib/`: the `eval` in `blib_read_pkgs_into`, one index-append, the empty-array
+idiom and one `tr`. None of those lines is a defect. Namerefs would not retire the name
+guard in front of that `eval`. On bash 5, `local -n r="$1"; r=x` with
+`$1='a[$(cmd)]'` still runs `cmd`, so the guard and its test stay. The §5k helpers and their
+tests would be re-scoped to stage-0, not deleted. And the natural home for stage-0,
+`blib_main`, runs in every OS repo's bootstrap _except_ `dotfiles-MacBook`'s. That is the
+one host on bash 3.2, and its `Brewfile` installs no bash. The same numbers keep the floor
+on `scripts/`. Reopen on evidence, not on taste: Apple dropping `/bin/bash` 3.2, a real
+defect traced to a floor workaround, or a `lib/` feature with no 3.2 shape at all.
+
 ## 2. Coreutils are not GNU coreutils
 
 macOS ships BSD tools; Alpine ships busybox. A flag that works on your machine is not
