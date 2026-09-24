@@ -31,6 +31,23 @@
   consumers. The pre-commit hook's `rev` moves with it, because §9 keeps the two in step.
   Both are registry installs, so there is no `*_SHA256` to refresh. `shfmt` stays held at
   3.13.1 (#813).
+- **Both atuin guard premises re-measured against 18.23.0; both `VERIFIED_AGAINST` anchors move**
+  ([#1158](https://github.com/dotgibson/dotfiles-core/issues/1158), run 35956975589). Upstream
+  released 18.23.0 on 2026-09-22, one minor past the 18.22.0 the anchors in `zsh/00-tools.zsh`
+  carried. One `atuin-guard-verify` dispatch, checksum and build-provenance verified:
+  silent discard `holds` (its report job skipped), and autostart self-healing is `moved`
+  exactly as it was on 18.22.0. `absent` and `stale` spawn a daemon and land their row, and
+  `wedged` blocks on the pidfile lock and loses it (upstream `atuinsh/atuin#4114`, still open).
+  That is the shape #1102 already answers by probing and warning rather than standing down, so
+  the auto-filed #1177 asks nothing new of Core. Editing an anchor is a claim that the premise
+  was re-measured at that version, so this is that claim and not a version bump.
+
+  18.23.0 continues 18.22.0's direction, and the block now says so: an FTS index over captured
+  command output and a sync engine replacing the event bus both sit behind the socket, with no
+  client-side spool or direct-write fallback (the one PR that would have changed the client's
+  connect shape, atuin #4168, closed unmerged). A dead socket still discards, and
+  `atuinsh/atuin#3382` (accept-but-silent) is still open, so the steer away from socket
+  activation stays.
 
 - **The CI floor bans `secrets: inherit`, and Core stops documenting it.** The caller
   example at the top of `claude-routines-call.yml`, the shape the seven OS repos were told
