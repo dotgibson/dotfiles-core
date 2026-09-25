@@ -723,8 +723,18 @@ for _sh_t in eza bat zoxide dust procs btop viddy duf gping tldr; do
   printf '#!/bin/sh\n:\n' >"$SHBIN/$_sh_t"
   chmod +x "$SHBIN/$_sh_t"
 done
+# mkdir/rm/mv are real because _cache_eval (the zoxide stub's init) forks them; without them
+# every case prints "command not found" noise.
+for _sh_t in mkdir rm mv; do ln -sf "$(command -v "$_sh_t")" "$SHBIN/$_sh_t"; done
+# The `diff` shadow is CONDITIONAL on the box, not only on the knob: 20-aliases.zsh defines it
+# only when the runner's diff takes `--color`. busybox diff (Alpine) does not, and a runner
+# may have no diff at all (the Arch image). So (a) expects it only where the probe passes.
 _sh_diff="$(command -v diff)"
-[[ -n "$_sh_diff" ]] && ln -sf "$_sh_diff" "$SHBIN/diff"
+_SH_DIFF_COLOR=0
+if [[ -n "$_sh_diff" ]]; then
+  ln -sf "$_sh_diff" "$SHBIN/diff"
+  "$_sh_diff" --color=auto /dev/null /dev/null >/dev/null 2>&1 && _SH_DIFF_COLOR=1
+fi
 _SH_NAMES="names=()
    for line in \${(f)\"\$(<'$ALIASES_FILE')\"}; do
      [[ \$line =~ 'alias +([^= ]+)=[^#]*# shadow' ]] && names+=(\$match[1])
@@ -734,6 +744,7 @@ _SH_NAMES="names=()
 # (a) DEFAULT — the knob unset: every shadow is defined, exactly as before #1155.
 ucheck "shadows: knob unset → every \`# shadow\` alias is defined" \
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; $_SH_NAMES
+   (( $_SH_DIFF_COLOR )) || names=(\${names:#diff})
    bad=(); for n in \$names; do (( \$+aliases[\$n] )) || bad+=(\$n); done
    (( \${#bad} == 0 )) || { print -r -- \"missing by default: \${(j:, :)bad}\"; exit 1; }" \
   PATH="$SHBIN" XDG_CACHE_HOME="$SANDBOX/shcache-default"
@@ -758,7 +769,7 @@ ucheck "shadows: CORE_SHADOW_CLASSICS=yes behaves like the default" \
 ucheck "shadows: _core_shadow is not left defined after the module loads" \
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; ! (( \$+functions[_core_shadow] ))" \
   PATH="$SHBIN" XDG_CACHE_HOME="$SANDBOX/shcache-default"
-unset _sh_t _sh_diff _SH_NAMES
+unset _sh_t _sh_diff _SH_NAMES _SH_DIFF_COLOR
 
 # ── user bindirs reach PATH BEFORE detection (#425) ──────────────────────────
 # 00-tools.zsh prepends the per-user bindirs language installers write into, then probes
