@@ -221,8 +221,16 @@ SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-test.XXXXXX")"
 # shells at the caller's session, whose trusted configs are not the sandbox's. CI never
 # exports any of these, which is why only a developer's `make audit` went red. Same five
 # variables scripts/check-links.sh scrubs with `env -u`, applied once for the whole run.
-unset ZDOTDIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
-while IFS= read -r _core_test_v; do unset "$_core_test_v"; done < <(compgen -e | grep -E '^_*MISE_')
+#
+# Core's OWN exports belong here too, because a fleet shell is a shell that already loaded
+# Core. On a headless box (WSL included) 00-tools.zsh exports BROWSER=w3m, and an operator
+# who opted into the atuin daemon exports ATUIN_DAEMON__ENABLED=true. Inherited into ucheck,
+# they red the four cases that pin the UNSET state: GUI and macOS leave $BROWSER alone, and
+# a shell that never opted in stands the daemon guard down. That is how v7.13.0's
+# `make release` went red on a tree CI called green. Every case that wants one of these
+# sets it explicitly, so dropping the whole ATUIN_ family costs no case its input.
+unset ZDOTDIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME BROWSER
+while IFS= read -r _core_test_v; do unset "$_core_test_v"; done < <(compgen -e | grep -E '^(_*MISE_|ATUIN_)')
 unset _core_test_v
 # ONE handler, because `trap … EXIT` REPLACES rather than appends — a second one installed by
 # ANY FRAGMENT would silently take the sandbox cleanup with it, leaving a core-test.XXXXXX per
