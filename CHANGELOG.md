@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.13.0] - 2026-09-25
+
 ### Added
 
 - **Each box now records which Core it last relinked against, and says when it is behind.**
