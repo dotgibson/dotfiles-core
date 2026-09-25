@@ -936,8 +936,9 @@ blib_write_relink_stamp() {
   done <"$lock"
   # The lib floor: the version of the lib that ACTUALLY RAN, which is the vendored tree's
   # core.version beside lib/ — not core.lock's claim about it.
-  [[ -r "${BASH_SOURCE[0]%/*}/../core.version" ]] &&
+  if [[ -r "${BASH_SOURCE[0]%/*}/../core.version" ]]; then
     IFS= read -r libver <"${BASH_SOURCE[0]%/*}/../core.version" || true
+  fi
   dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-core"
   stamp="$dir/bootstrap.lock"
   tmp="$stamp.tmp.$$"
