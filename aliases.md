@@ -19,39 +19,49 @@ prose around the tables is hand-written. A `$VAR` in a value (`$BAT_BIN`, `$FD_B
 `$BROWSER_BIN`) is the tool's resolved binary from `00-tools.zsh` — `batcat` / `fdfind` on
 the Debian family, the canonical name elsewhere.
 
+**Rows whose Note starts with _shadow_ take over a standard command name** (`ls`, `cat`,
+`cd`, `vim`, `diff`, `rm`/`cp`/`mv`, `mkdir` and the rest). Export
+`CORE_SHADOW_CLASSICS=0` before the shell loads Core (in `~/.zshenv`, not a host-local
+module, which loads too late) and every _shadow_ row is skipped, so those names mean what
+they mean on any other box. The names that collide with nothing (`ll`, `la`, `lt`, `llt`,
+`catp`, `cdi`, `bat`) stay either way. Removing the shadows outright was decided against
+until there is a real incident; see
+[#1155](https://github.com/dotgibson/dotfiles-core/issues/1155), which uses the same
+evidence bar as [#692](https://github.com/dotgibson/dotfiles-core/issues/692).
+
 ## Modern CLI Replacements
 
 <!-- core:aliases:gen modern-cli -->
 
 | Alias | Expands To | Requires | Note |
 | ----- | ---------- | -------- | ---- |
-| `ls` | `eza --group-directories-first --icons=auto` | eza | |
+| `ls` | `eza --group-directories-first --icons=auto` | eza | shadow |
 | `ll` | `eza -lah --group-directories-first --icons=auto --git` | eza | |
 | `la` | `eza -a  --group-directories-first --icons=auto` | eza | |
 | `lt` | `eza --tree --level=2 --icons=auto` | eza | |
 | `llt` | `eza --tree --level=3 -l --icons=auto` | eza | |
-| `tree` | `eza --tree --icons=auto` | eza | |
-| `cat` | `$BAT_BIN --paging=never` | bat | |
+| `tree` | `eza --tree --icons=auto` | eza | shadow |
+| `cat` | `$BAT_BIN --paging=never` | bat | shadow |
 | `catp` | `$BAT_BIN` | bat | paged, full bat |
 | `bat` | `$BAT_BIN` | bat | batcat on the Debian family, bat elsewhere |
 | `fd` | `$FD_BIN` | fd-find / fd | fdfind on the Debian family, fd elsewhere |
 | `rg` | `rg --smart-case` | ripgrep | |
-| `cd` | `z` | zoxide | zoxide: frecency-ranked directory jump |
+| `cd` | `z` | zoxide | shadow · zoxide: frecency-ranked directory jump |
 | `cdi` | `zi` | zoxide | interactive jump (pick from matches) |
-| `du` | `dust` | dust | |
-| `ps` | `procs` | procs | |
-| `top` | `btop` | btop | |
-| `htop` | `btop` | btop | |
-| `watch` | `viddy` | viddy | |
-| `df` | `duf` | duf | |
+| `du` | `dust` | dust | shadow |
+| `ps` | `procs` | procs | shadow |
+| `top` | `btop` | btop | shadow |
+| `htop` | `btop` | btop | shadow |
+| `watch` | `viddy` | viddy | shadow |
+| `df` | `duf` | duf | shadow |
 | `fm` | `yazi` | yazi | |
 | `y` | `yazi` | yazi | |
 | `http` | `xh` | xh | |
 | `https` | `xh --https` | xh | |
 | `md` | `glow --pager` | glow | |
 | `dns` | `doggo` | doggo | |
-| `ping` | `gping` | gping | |
-| `help` | `tldr` | tldr | |
+| `ping` | `gping` | gping | shadow |
+| `help` | `tldr` | tldr | shadow |
 
 <!-- core:aliases:end modern-cli -->
 
@@ -61,7 +71,7 @@ the Debian family, the canonical name elsewhere.
 
 | Alias | Expands To | Requires | Note |
 | ----- | ---------- | -------- | ---- |
-| `vim` | `nvim` | | |
+| `vim` | `nvim` | | shadow |
 | `lg` | `lazygit` | | |
 | `web` | `$BROWSER_BIN` | w3m / lynx / links2 / links / elinks | the terminal web browser (see the note under the table) |
 | `notes` | `cd "$NOTES_DIR" && nvim .` | | |
@@ -83,11 +93,11 @@ your GUI browser.
 | Alias | Expands To | Note |
 | ----- | ---------- | ---- |
 | `-` | `cd -` | previous directory |
-| `diff` | `diff --color=auto` | |
-| `rm` | `rm -i` | interactive |
-| `cp` | `cp -i` | interactive |
-| `mv` | `mv -i` | interactive |
-| `mkdir` | `mkdir -p` | create parents |
+| `diff` | `diff --color=auto` | shadow |
+| `rm` | `rm -i` | shadow · interactive |
+| `cp` | `cp -i` | shadow · interactive |
+| `mv` | `mv -i` | shadow · interactive |
+| `mkdir` | `mkdir -p` | shadow · create parents |
 
 <!-- core:aliases:end nav-safety -->
 

@@ -46,7 +46,10 @@ The alias surface is broadly `aligned`: `ll`/`la`, `cat`→bat, `http`→xh,
 (`00-aliases.ps1`), zsh does **not** — shadowing `grep` on a Unix box would change
 what every script in `$PATH` gets, so Core keeps it POSIX and ships `rg` as its own
 smart-case command (`zsh/20-aliases.zsh`). Windows has no POSIX `grep` to shadow, so
-the same alias is safe there. The git
+the same alias is safe there. zsh's `CORE_SHADOW_CLASSICS=0` opt-out, which keeps
+every classic-name shadow off (#1155), is also `deliberate` and zsh-only. The aligned
+rows describe the default, which both shells share, and the pwsh profile has no knob.
+The git
 shorthands are the **full curated OMZ-style set** from `zsh/25-git.zsh` on both shells —
 `g`, the `gst`/`gss` status family, `ga`/`gaa`/`gap`, the `gc`/`gcm`/`gca`/`gcam`/`gc!`
 commit family, `gco`/`gcb`/`gsw` checkout/switch, `gd`/`gds`/`gdw`, the `glog` graph
