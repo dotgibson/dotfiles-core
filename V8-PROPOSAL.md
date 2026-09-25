@@ -603,6 +603,17 @@ force an `X.0.0` the content does not earn.
 - **Retiring the bare verb names** (`up`, `serve`, `gsync`, `maint-*`). `#692` closed
   `not_planned` with an explicit revisit condition: **evidence of a real collision**, not
   a fresh aesthetic objection. No such evidence has appeared. Unchanged.
+- **Retiring the classic-name shadows** (`ls`, `cat`, `cd`, `vim`, `diff`, the `-i`
+  coreutils, `du`/`ps`/`top`/`df`/`ping`/`help` …). Decided against in `#1155`, which was
+  closed `not_planned` against the same bar as `#692`. The minor half shipped instead:
+  `CORE_SHADOW_CLASSICS=0` turns every shadow off without removing it, and that is the
+  stopping point. **Revisit only on a concrete incident**, for example a `z` that jumped
+  to the wrong directory before a destructive command, an `rm` typed without `-i` on a
+  foreign box because the habit was trained here, or eza/bat output breaking a script or
+  a copy-paste. Removal costs a MAJOR (it drops public aliases): `aliases.md`'s tables,
+  the bat-backed fzf previews and `MANPAGER`, `compdef eza=ls`, `PARITY.md`'s `aligned`
+  tool-swap rows and `scripts/parity-aliases.txt` (a two-repo change), and muscle memory
+  on every box, with no deprecation a shell can enforce.
 - **`bootstrap.sh` consolidation beyond §4.2's ratchet.** The full collapse is real work
   and §4.4 may well make it a `v9` item; what ships here is the part that is ready.
 

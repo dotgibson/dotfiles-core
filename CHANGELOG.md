@@ -17,6 +17,18 @@
   (`CORE_RELINK_NUDGE=0` silences it). A box bootstrapped before this reads `unknown`, never
   red. `bootstrap-test.yml`'s links-only leg asserts the stamp wherever the vendored lib knows
   it (#1154).
+- **`CORE_SHADOW_CLASSICS=0` stops Core taking over standard command names.** An operator
+  who works on other people's machines trains habits on Core that fail elsewhere.
+  `cd`→`z` jumps by frecency where `cd` would have errored on a typo, and `rm -i` teaches
+  you to expect a prompt that no foreign box gives. Exported before the shell loads Core
+  (in `~/.zshenv`), the knob skips every alias in `zsh/20-aliases.zsh` that takes over a
+  standard name: `ls`, `cat`, `cd`, `vim`, `diff`, `rm`/`cp`/`mv`, `mkdir`, `tree`, `du`,
+  `ps`, `top`/`htop`, `watch`, `df`, `ping` and `help`. The names that collide with
+  nothing (`ll`, `la`, `lt`, `llt`, `catp`, `cdi`, `bat`) stay. It is unset by default,
+  so nothing changes for anyone who does not set it. In `aliases.md` each governed row now
+  has a Note that starts with _shadow_, and the suite reads the shadow set from those
+  comments, so a new shadow without the gate fails. Removing the shadows outright was
+  decided against until a real incident is recorded, the same bar as #692 (#1155).
 
 ### Documentation
 

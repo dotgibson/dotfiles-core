@@ -706,6 +706,59 @@ ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports 
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ -z \${HAVE_BAT:-} && -z \${HAVE_FD:-} ]] && ! (( \$+aliases[bat] )) && ! (( \$+aliases[fd] )) && ! (( \$+aliases[cat] )) && [[ \$j == *'\"bat\":false'* && \$j == *'\"fd\":false'* ]]" \
   PATH="$RNBIN" CORE_NO_PAGER=1
 
+# ── classic-name shadows: CORE_SHADOW_CLASSICS=0 opts out (#1155) ────────────
+# 20-aliases.zsh takes over standard names (ls, cat, cd, vim, diff, rm -i, …), and the
+# knob lets an operator who works on other people's boxes keep the classic meanings. The
+# shadow set is READ OUT OF THE SOURCE, not restated here: every alias line whose trailing
+# comment starts with `# shadow` (the same comment gen-aliases.sh renders as the Note). So a
+# shadow added later without the `_core_shadow &&` gate fails (b), and one added without the
+# comment is visible in aliases.md as a row with no `shadow` note. Every guarding tool is
+# stubbed so each guarded shadow is reachable; `diff` is the real binary, because the
+# module probes `--color` against it, and XDG_CACHE_HOME is pinned so that probe's verdict
+# cache lands in the sandbox. The floor, 18 names, is the count #1155 shipped with.
+SHBIN="$SANDBOX/shbin"
+rm -rf "$SHBIN"
+mkdir -p "$SHBIN"
+for _sh_t in eza bat zoxide dust procs btop viddy duf gping tldr; do
+  printf '#!/bin/sh\n:\n' >"$SHBIN/$_sh_t"
+  chmod +x "$SHBIN/$_sh_t"
+done
+_sh_diff="$(command -v diff)"
+[[ -n "$_sh_diff" ]] && ln -sf "$_sh_diff" "$SHBIN/diff"
+_SH_NAMES="names=()
+   for line in \${(f)\"\$(<'$ALIASES_FILE')\"}; do
+     [[ \$line =~ 'alias +([^= ]+)=[^#]*# shadow' ]] && names+=(\$match[1])
+   done
+   names=(\${(u)names})
+   (( \${#names} >= 18 )) || { print -r -- \"parsed only \${#names} shadow names out of 20-aliases.zsh\"; exit 1; }"
+# (a) DEFAULT — the knob unset: every shadow is defined, exactly as before #1155.
+ucheck "shadows: knob unset → every \`# shadow\` alias is defined" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; $_SH_NAMES
+   bad=(); for n in \$names; do (( \$+aliases[\$n] )) || bad+=(\$n); done
+   (( \${#bad} == 0 )) || { print -r -- \"missing by default: \${(j:, :)bad}\"; exit 1; }" \
+  PATH="$SHBIN" XDG_CACHE_HOME="$SANDBOX/shcache-default"
+# (b) OFF — CORE_SHADOW_CLASSICS=0: no shadow survives, diff included.
+ucheck "shadows: CORE_SHADOW_CLASSICS=0 → no \`# shadow\` alias is defined" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; $_SH_NAMES
+   bad=(); for n in \$names; do (( \$+aliases[\$n] )) && bad+=(\$n); done
+   (( \${#bad} == 0 )) || { print -r -- \"still shadowed with the knob off: \${(j:, :)bad}\"; exit 1; }" \
+  PATH="$SHBIN" XDG_CACHE_HOME="$SANDBOX/shcache-off" CORE_SHADOW_CLASSICS=0
+# (c) …and ONLY the shadows go: the names that collide with nothing, and bat's MANPAGER, stay.
+ucheck "shadows: CORE_SHADOW_CLASSICS=0 keeps ll/la/lt/llt/catp/bat/cdi and MANPAGER" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'
+   bad=(); for n in ll la lt llt catp bat cdi; do (( \$+aliases[\$n] )) || bad+=(\$n); done
+   [[ \${aliases[ll]} == eza* && -n \${MANPAGER:-} ]] || bad+=(ll-or-MANPAGER)
+   (( \${#bad} == 0 )) || { print -r -- \"lost with the knob off: \${(j:, :)bad}\"; exit 1; }" \
+  PATH="$SHBIN" XDG_CACHE_HOME="$SANDBOX/shcache-off" CORE_SHADOW_CLASSICS=0
+# (d) Only a literal 0 opts out; any other value is the default.
+ucheck "shadows: CORE_SHADOW_CLASSICS=yes behaves like the default" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[cd] && \$+aliases[rm] && \$+aliases[ls] ))" \
+  PATH="$SHBIN" XDG_CACHE_HOME="$SANDBOX/shcache-default" CORE_SHADOW_CLASSICS=yes
+# (e) The predicate is load-time only and must not leak into the interactive namespace.
+ucheck "shadows: _core_shadow is not left defined after the module loads" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; ! (( \$+functions[_core_shadow] ))" \
+  PATH="$SHBIN" XDG_CACHE_HOME="$SANDBOX/shcache-default"
+unset _sh_t _sh_diff _SH_NAMES
 
 # ── user bindirs reach PATH BEFORE detection (#425) ──────────────────────────
 # 00-tools.zsh prepends the per-user bindirs language installers write into, then probes
