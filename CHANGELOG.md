@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### Fixed
+
+- **`make audit` from a fleet shell no longer reds four cases CI calls green.** The
+  behavioral suite's host scrub now also drops `BROWSER` and every `ATUIN_*` variable.
+  Core's own `00-tools.zsh` exports `BROWSER=w3m` on a headless box (WSL included), and an
+  operator who opted into the atuin daemon exports `ATUIN_DAEMON__ENABLED=true`. Both leaked
+  into the cases that pin the unset state: the GUI and macOS browser cases, and the daemon
+  guard's never-opted-in pair. That is how the v7.13.0 cut went red locally on a tree CI
+  had passed. Every case that wants one of these variables sets it explicitly.
+
 ## [v7.13.0] - 2026-09-25
 
 ### Added
