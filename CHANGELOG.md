@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### Added
+
+- **Each box now records which Core it last relinked against, and says when it is behind.**
+  `core.lock` records what a repo vendored, and nothing recorded what a box had relinked. So
+  the fallback deletion in #763 had to guess when the fleet had re-bootstrapped, and the only
+  check was a one-liner typed on each host. `bootstrap.sh` (via `blib_main`, or
+  `blib_write_relink_stamp` for a bootstrap off the driver) now writes
+  `${XDG_STATE_HOME:-~/.local/state}/dotfiles-core/bootstrap.lock`, host state in
+  `core.lock`'s read-never-sourced shape. It holds `core_sha`, `core_tag`, the lib that ran,
+  the mode and when. A dry run, an `--only`/`--skip` partial wiring or an aborted run leaves
+  the previous stamp. An identical re-run touches nothing, so the scaffolded `check-links.sh`
+  idempotency witness stays silent. `core-doctor` gains a `relink` row and a `.relink` key in
+  `--json`, which print `relinked at v7.11.0 — repo vendors v7.12.0, run ./bootstrap.sh
+  --links-only`. A "relink pending" line fires at shell start only on a real mismatch
+  (`CORE_RELINK_NUDGE=0` silences it). A box bootstrapped before this reads `unknown`, never
+  red. `bootstrap-test.yml`'s links-only leg asserts the stamp wherever the vendored lib knows
+  it (#1154).
+
 ### Documentation
 
 - **The bash 3.2 floor stays, and `PORTABILITY.md` §1 now says why.** Retiring it for

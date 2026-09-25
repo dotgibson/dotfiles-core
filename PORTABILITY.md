@@ -197,7 +197,12 @@ built-in unit directory named macOS's LaunchAgents path, the last OS-absolute pa
 and only those lines were exempt. #665 cut that from six call sites down to one block by
 making the scheduler and its directory **declared** values (`SCHEDULER`,
 `SCHEDULER_UNIT_DIR`); #763 deleted the block once the fleet had re-bootstrapped onto those
-declarations, and the exemption went with it. Do not add another — an exception at this gate
+declarations, and the exemption went with it. "Once the fleet had re-bootstrapped" was a
+guess then. It no longer has to be: each box's `bootstrap.sh` now writes a host-local
+relink stamp in the same read-never-sourced `key=value` shape as the declaration, and
+`core-doctor` reads it against `core.lock` (#1154, `ARCHITECTURE.md`). It is host state
+under `$XDG_STATE_HOME`, never vendored, so it names no path Core would have to hardcode.
+Do not add another — an exception at this gate
 is a standing invitation for a second literal to ride along beside the sanctioned one.
 
 The plist and unit **templates** stay in that file and were never the exception: they are

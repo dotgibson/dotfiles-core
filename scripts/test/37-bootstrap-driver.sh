@@ -59,10 +59,18 @@ if [[ "${FIX_PROVISION:-0}" != 0 ]]; then
   }
 fi
 bootstrap_wire_pre_loader() { _log wire_pre; [[ -e "$HOME/.zshrc" ]] && _log "LOADER-ALREADY-WRITTEN"; return 0; }
-bootstrap_wire_post_loader() { _log wire_post; blib_link "$DOTFILES/defense/defense.zsh" "$CONFIG/fixture-extra.zsh"; }
+# FIX_ABORT fails the last wire hook under set -e: the links above it are made, and the run
+# still must not leave a fresh relink stamp (#1154).
+bootstrap_wire_post_loader() {
+  _log wire_post
+  if [[ "${FIX_ABORT:-0}" != 0 ]]; then return 1; fi
+  blib_link "$DOTFILES/defense/defense.zsh" "$CONFIG/fixture-extra.zsh"
+}
 bootstrap_closing() { _log "closing:$1"; BLIB_NEXT_HINT="then: exec zsh"; return 0; }
 blib_main "$@"
 FIX
+  # A consumer's provenance record, so the driver has something to stamp against (#1154).
+  printf 'core_version=9.9.9\ncore_sha=%s\ncore_tag=v9.9.9\n' 3ab9c385e4a6b411556cf3ed2efeeb71b038b536 >"$BD/dotfiles/core.lock"
   _bd_run() { # _bd_run <log-name> <args…> — sets BD_OUT / BD_RC; fresh HOME+config each time
     local log="$BD/$1.log"; shift
     rm -rf "${BD:?}/home" "${BD:?}/config"
@@ -70,6 +78,7 @@ FIX
     : >"$log"
     local -a _bd_env=(HOME="$BD/home" XDG_CONFIG_HOME="$BD/config" FIX_LOG="$log"
       FIX_PROVISION="${FIX_PROVISION:-0}" FIX_FAIL="${FIX_FAIL:-0}" FIX_LAZY="${FIX_LAZY:-0}"
+      FIX_ABORT="${FIX_ABORT:-0}" XDG_STATE_HOME="$BD/state"
       BLIB_ONLY="" BLIB_SKIP="")
     # BLIB_SU is set EMPTY (what CI does) unless a case needs the driver to see it unset.
     [[ "${BD_UNSET_SU:-0}" != 0 ]] || _bd_env+=(BLIB_SU='')
@@ -200,6 +209,54 @@ FIX
   else
     fail "driver: --only=nope (rc=$BD_RC, log='$BD_LOG')"
   fi
+
+  # ── the host's relink stamp (#1154) ────────────────────────────────────────
+  # $BD/state survives _bd_run's HOME reset on purpose: "an aborted run leaves the OLD stamp"
+  # is only provable with an old stamp in place. Seeded with a sentinel sha that no run writes.
+  _bd_stamp="$BD/state/dotfiles-core/bootstrap.lock"
+  _bd_seed() { mkdir -p "${_bd_stamp%/*}"; printf 'core_sha=%040d\nmode=seed\n' 0 >"$_bd_stamp"; }
+  rm -rf "$BD/state"
+  _bd_run stamp-full
+  if [[ $BD_RC -eq 0 ]] && grep -qx 'core_sha=3ab9c385e4a6b411556cf3ed2efeeb71b038b536' "$_bd_stamp" 2>/dev/null &&
+    grep -qx 'mode=full' "$_bd_stamp" && grep -qx 'core_tag=v9.9.9' "$_bd_stamp" && grep -q '^linked_at=....-..-..T' "$_bd_stamp"; then
+    pass "stamp: a full run records core.lock's sha and tag, mode=full and a UTC linked_at"
+  else
+    fail "stamp: full run (rc=$BD_RC): $(cat "$_bd_stamp" 2>&1)"
+  fi
+  _bd_run stamp-links --links-only
+  if [[ $BD_RC -eq 0 ]] && grep -qx 'mode=links-only' "$_bd_stamp" 2>/dev/null && [[ ! -e "$_bd_stamp.tmp.$$" ]]; then
+    pass "stamp: a --links-only run records mode=links-only"
+  else
+    fail "stamp: --links-only (rc=$BD_RC): $(cat "$_bd_stamp" 2>&1)"
+  fi
+  if [[ "$(grep -h '^dotfiles=' "$_bd_stamp")" == "dotfiles=$(cd "$BD/dotfiles" && pwd -P)" ]]; then
+    pass "stamp: records the checkout's physical path (what the zsh reader derives via :A)"
+  else
+    fail "stamp: dotfiles= is $(grep -h '^dotfiles=' "$_bd_stamp")"
+  fi
+  rm -rf "$BD/state"
+  _bd_run stamp-dry --dry-run
+  if [[ $BD_RC -eq 0 && ! -e "$_bd_stamp" && "$BD_OUT" != *"relink stamped"* ]]; then
+    pass "stamp: a --dry-run writes no stamp"
+  else
+    fail "stamp: --dry-run left $(cat "$_bd_stamp" 2>&1)"
+  fi
+  _bd_seed
+  _bd_run stamp-only --links-only --only=zsh
+  if [[ $BD_RC -eq 0 ]] && grep -qx 'mode=seed' "$_bd_stamp" && [[ "$BD_OUT" == *"relink stamp is left as it was"* ]]; then
+    pass "stamp: a --only partial wiring leaves the previous stamp untouched, and says so"
+  else
+    fail "stamp: --only=zsh (rc=$BD_RC): $(cat "$_bd_stamp" 2>&1)"
+  fi
+  _bd_seed
+  FIX_ABORT=1 _bd_run stamp-abort --links-only
+  if [[ $BD_RC -ne 0 ]] && grep -qx 'mode=seed' "$_bd_stamp" && [[ "$BD_OUT" != *"relink stamped"* ]]; then
+    pass "stamp: a run that aborts mid-wire leaves the previous stamp, never a fresh one"
+  else
+    fail "stamp: aborted run (rc=$BD_RC): $(cat "$_bd_stamp" 2>&1)"
+  fi
+  unset -f _bd_seed
+  unset _bd_stamp
 
   unset -f _bd_run
   unset BD BD_OUT BD_RC BD_LOG _bd_d

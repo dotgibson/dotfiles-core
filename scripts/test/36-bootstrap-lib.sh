@@ -823,6 +823,9 @@ printf '#!/bin/sh\n' >"$_sr/repo/core/bin/clip"
 printf 'Host *\n' >"$_sr/repo/core/ssh/config"
 printf 'Host os\n' >"$_sr/repo/ssh/os.conf"
 printf '# loader\n' >"$_sr/repo/core/zsh/loader.zsh"
+# A core.lock, so the relink stamp (#1154) is written on the first pass and must be a no-op
+# on the second — the check-links.sh witness runs the WHOLE bootstrap, stamp included.
+printf 'core_sha=%s\ncore_tag=v9.9.9\n' 3ab9c385e4a6b411556cf3ed2efeeb71b038b536 >"$_sr/repo/core.lock"
 for _sr_c in rm ln mv cp mkdir chmod; do
   printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "${0##*/}" "$*" >>"$MUT_LOG"\nPATH="${PATH#*:}" exec "${0##*/}" "$@"\n' >"$_sr/shim/$_sr_c"
   chmod +x "$_sr/shim/$_sr_c"
@@ -833,12 +836,13 @@ git -C "$_sr/repo" init -q >/dev/null 2>&1
 # command in the log.
 mkdir -p "$_sr/config/tmux/plugins/tpm"
 _sr_run() { # <mutation-log> — one wiring pass: core surface, os layer, guard
-  HOME="$_sr/home" XDG_CONFIG_HOME="$_sr/config" MUT_LOG="$1" PATH="$_sr/shim:$PATH" bash -c '
+  HOME="$_sr/home" XDG_CONFIG_HOME="$_sr/config" XDG_STATE_HOME="$_sr/state" MUT_LOG="$1" PATH="$_sr/shim:$PATH" bash -c '
     set -u
     . "'"$HERE/lib/bootstrap-lib.sh"'"
     blib_link_core "'"$_sr"'/repo" "'"$_sr"'/config"
     blib_link_os_layer "'"$_sr"'/repo" "'"$_sr"'/config" testos
     blib_install_core_guard "'"$_sr"'/repo"
+    blib_write_relink_stamp "'"$_sr"'/repo" full
   ' >/dev/null 2>&1
 }
 : >"$_sr/first.log"; : >"$_sr/second.log"
@@ -869,9 +873,62 @@ if [[ -x "$_sr_hook" ]] && grep -q 'dotfiles-core-guard' "$_sr_hook"; then
 else
   fail "silent second run: the guard hook was not installed executable by the first pass"
 fi
+if grep -qx 'mode=full' "$_sr/state/dotfiles-core/bootstrap.lock" 2>/dev/null; then
+  pass "silent second run: the relink stamp was written on the first pass (so its silence on the second is real)"
+else
+  fail "silent second run: no relink stamp after the first pass — the no-op claim above proves nothing"
+fi
 rm -rf "$_sr"
 unset _sr _sr_c _sr_hook
 unset -f _sr_run
+
+# ── blib_write_relink_stamp (lib/bootstrap-lib.sh, #1154) ─────────────────────
+# The driver-level cases (full / --links-only / --dry-run / --only / abort) are in
+# 37-bootstrap-driver.sh; these pin the helper's own contract, which MacBook — the one
+# bootstrap not on the driver — calls directly.
+hdr "blib_write_relink_stamp (host relink stamp: data, never sourced)"
+_rs="$(mktemp -d "$SANDBOX/relinkstamp.XXXXXX")"
+mkdir -p "$_rs/repo"
+_rs_run() { # <dry> <mode>
+  BLIB_DRY="$1" XDG_STATE_HOME="$_rs/state" HOME="$_rs" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_write_relink_stamp "'"$_rs"'/repo" "$1"
+  ' _ "$2" >/dev/null 2>&1
+}
+_rs_f="$_rs/state/dotfiles-core/bootstrap.lock"
+_rs_run 0 full
+if [[ ! -e "$_rs_f" && ! -e "$_rs/state" ]]; then
+  pass "relink stamp: no core.lock (Core itself, an unsynced checkout) writes nothing"
+else
+  fail "relink stamp: wrote $_rs_f with no core.lock to stamp against"
+fi
+# The $(…) is the payload: it must land in the stamp unexpanded.
+# shellcheck disable=SC2016
+printf 'core_sha=3ab9c385e4a6b411556cf3ed2efeeb71b038b536\ncore_tag=v1$(touch %s/pwned)\n' "$_rs" >"$_rs/repo/core.lock"
+_rs_run 1 full
+if [[ ! -e "$_rs_f" ]]; then
+  pass "relink stamp: BLIB_DRY=1 writes nothing"
+else
+  fail "relink stamp: a dry run wrote $_rs_f"
+fi
+_rs_run 0 links-only
+if [[ -e "$_rs_f" && ! -e "$_rs/pwned" ]] && grep -qF 'core_tag=v1$(touch' "$_rs_f" && grep -qx 'mode=links-only' "$_rs_f"; then
+  pass "relink stamp: core.lock values are copied verbatim, never evaluated"
+else
+  fail "relink stamp: stamp missing or a value was expanded: $(cat "$_rs_f" 2>&1)"
+fi
+_rs_at="$(grep '^linked_at=' "$_rs_f")"
+printf 'core_sha=%040d\n' 0 >"$_rs/repo/core.lock"
+_rs_run 0 links-only
+if grep -qx "core_sha=$(printf '%040d' 0)" "$_rs_f" && [[ -n "$_rs_at" ]] && [[ ! -e "$_rs_f.tmp.$$" ]]; then
+  pass "relink stamp: a new core.lock sha rewrites the stamp"
+else
+  fail "relink stamp: stamp not rewritten on a new sha: $(cat "$_rs_f" 2>&1)"
+fi
+rm -rf "$_rs"
+unset _rs _rs_f _rs_at
+unset -f _rs_run
 
 
 # ── blib_link_role_layer (lib/bootstrap-lib.sh) ──────────────────────────────

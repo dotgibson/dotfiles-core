@@ -111,17 +111,42 @@ Three things about the demolition are worth knowing rather than rediscovering:
   `./bootstrap.sh --links-only`. So the gate on #763 was evidence that the fleet had
   re-bootstrapped, not the declarations existing. Neither `make fleet-drift` nor
   `audit-core.sh` §9c can supply it: both report whether a repo **declares**, and what
-  matters is whether a **box has relinked**. The check is per host, and a non-zero count
-  means the symlink is live there:
+  matters is whether a **box has relinked**. The check is per host.
+
+  **The host now records it** ([#1154](https://github.com/dotgibson/dotfiles-core/issues/1154)).
+  Every `bootstrap.sh` run that wires the whole tree ends by writing
+  `${XDG_STATE_HOME:-~/.local/state}/dotfiles-core/bootstrap.lock`. That is host state, not a
+  vendored file, in `core.lock`'s `key=value` shape, and it is read, never sourced. It records
+  the `core_sha` and `core_tag` the box last relinked against, the `lib_version` of the
+  bootstrap lib that ran, the `mode` (`full` / `links-only`) and when. `--dry-run`, a
+  `--only`/`--skip` partial wiring and a run that aborts before the end leave the previous
+  stamp as it was.
+
+  `core-doctor` compares the stamp with the checkout's `core.lock`, and prints
+  `relinked at v7.11.0 — repo vendors v7.12.0, run ./bootstrap.sh --links-only` when they
+  differ. The shell-start nudge says "relink pending" in the same case, and only then. So the
+  evidence a contract change like #763 needed is one command per box:
+
+  ```bash
+  core doctor --json | jq -e '.relink.status == "current"'
+  ```
+
+  A box bootstrapped before the stamp existed reads `unknown`, never red. For those, the
+  fallback is still the live probe, where a non-zero count means the capability symlink is
+  live:
 
   ```bash
   CORE_CAP_LOUD=1 zsh -i -c 'print -r -- ${#_CORE_CAP}'
   ```
 
-  A host that has not relinked when this lands does not lose data or silently misbehave —
-  it loses `up`, `maint-install` on systemd/launchd, the doctor's install hint and the maint
-  runner's count, each saying so and naming `--links-only`. Running the command above is
-  still the cheapest way to find out before the box tells you.
+  There is deliberately no fleet-wide roll-up. The hosts are personal machines with no inbound
+  path, and a per-box `--json` is enough for a release gate. The stamp has to exist **one
+  release before** the major that relies on it. Any break that changes what `bootstrap.sh`
+  links ships its second half only when the stamps say the fleet has relinked.
+
+  A host that had not relinked when #763 landed did not lose data or silently misbehave. It
+  lost `up`, `maint-install` on systemd/launchd, the doctor's install hint and the maint
+  runner's count, and each of them said so and named `--links-only`.
 
 - **What an undeclared box does now.** It degrades **visibly**, at each caller's own error
   message, which is what deleting the fallbacks bought: `up` says no upgrade verb is
