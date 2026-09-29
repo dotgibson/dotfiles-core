@@ -500,6 +500,49 @@ if [ "${#WORKFLOWS[@]}" -gt 0 ]; then
   done < <(_yaml_list banned_call_secrets)
 fi
 
+# ── 10) no banned workflow trigger declared under on: ────────────────────────
+# `pull_request_target` runs fork PRs with the base repo's secrets and token. It is read
+# STRUCTURALLY, like rules 5b and 9, and for the same reason: rule 1 is a blind `grep -F`,
+# and the name has to stay writable in a comment (the baseline's own rule 1 rationale
+# names it). The walk takes the column-0 `on:` key (bare or quoted) and everything under it
+# until the next column-0 key. The inline value (`on: x`, `on: [a, x]`, `on: {x: …}`) is
+# split into word tokens. Below the key, only the FIRST indent level counts: a block-map
+# `x:` or a block-list `- x`, quoted or not, with a trailing `# comment` tolerated. Deeper
+# lines are filter values (`branches:`, `types:`), where a name is not a trigger.
+# The quote character comes in as a -v so the program can stay single-quoted. Scoped to
+# WORKFLOWS: a composite action has no triggers.
+_trig_list="$(_yaml_list banned_triggers | tr '\n' ' ')"
+if [ -n "${_trig_list// /}" ] && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  while IFS= read -r hit; do note "banned workflow trigger (runs fork PRs with base-repo secrets): $hit"; done \
+    < <(awk -v banned=" $_trig_list " -v q="'" '
+      function hit(t) { if (t != "" && index(banned, " " t " ")) printf "%s:%d: %s\n", FILENAME, FNR, t }
+      FNR == 1 { inon = 0 }
+      $0 ~ ("^[\"" q "]?on[\"" q "]?:") {
+        inon = 1; ind = -1
+        v = $0; sub("^[\"" q "]?on[\"" q "]?:", "", v); sub(/[[:space:]]#.*$/, "", v)
+        # Brackets out first, on their own: a `[]…]` class is where awks disagree.
+        gsub(/\[/, " ", v); gsub(/\]/, " ", v)
+        n = split(v, a, "[{},:[:space:]\"" q "]+")
+        for (i = 1; i <= n; i++) hit(a[i])
+        next
+      }
+      inon && /^[^[:space:]#]/ { inon = 0 }
+      inon {
+        if ($0 ~ /^[[:space:]]*(#.*)?$/) next
+        match($0, /^[[:space:]]*/)
+        if (ind < 0) ind = RLENGTH
+        if (RLENGTH != ind) next
+        l = $0; sub(/^[[:space:]]*(-[[:space:]]*)?/, "", l); sub(/[[:space:]]#.*$/, "", l)
+        if (match(l, "^[\"" q "]?[A-Za-z0-9_-]+[\"" q "]?")) {
+          t = substr(l, RSTART, RLENGTH); rest = substr(l, RLENGTH + 1)
+          gsub("[\"" q "]", "", t)
+          if (rest ~ /^[[:space:]]*(:.*)?$/) hit(t)
+        }
+      }
+    ' "${WORKFLOWS[@]}" 2>/dev/null || true)
+fi
+unset _trig_list
+
 if [ "$violations" -eq 0 ]; then
   echo "check-modern: CI meets the modern baseline (${#FILES[@]} workflow/action files)"
   exit 0
