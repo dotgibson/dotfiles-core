@@ -9,6 +9,12 @@
   into the cases that pin the unset state: the GUI and macOS browser cases, and the daemon
   guard's never-opted-in pair. That is how the v7.13.0 cut went red locally on a tree CI
   had passed. Every case that wants one of these variables sets it explicitly.
+- **The weekly `/freshness-triage` routine can now check the CLI tool pins it reports on**
+  ([#1203](https://github.com/dotgibson/dotfiles-core/issues/1203)). Its "CLI tool pins" row
+  asks for each `scripts/tool-versions.env` pin against upstream, but neither the routine's
+  `allowed-tools` nor the job's mirrored `--allowedTools` granted a release lookup, so the
+  row came back "not checked" (#1193). Both lists now grant the read-only
+  `gh release view` and `npm view`, and the routine says which to use for which pin.
 
 ## [v7.13.0] - 2026-09-25
 
