@@ -160,9 +160,18 @@ ucheck "relink: a stamp matching core.lock reads current, and the nudge is silen
   "${_rl_env[@]}"
 
 _rl_lock "$_rl_b" v7.13.0
-ucheck "relink: a stamp behind core.lock reads pending and names both versions and the fix" \
-  "$_rl_src _core_relink_state; [[ \$REPLY2 == pending && \$REPLY == *'v7.12.0'*'v7.13.0'*'--links-only'* ]]" \
+# The fix names THIS checkout's bootstrap, tilde-shortened (ucheck's HOME is $SANDBOX), not a
+# bare ./bootstrap.sh an operator with an OS and a role checkout could run in the wrong one (#1211).
+ucheck "relink: a stamp behind core.lock reads pending and names both versions and this checkout's fix" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == pending && \$REPLY == *'v7.12.0'*'v7.13.0'*'run ~/relink/repo/bootstrap.sh --links-only' ]]" \
   "${_rl_env[@]}"
+mkdir -p "$_rl/my dots"
+printf 'core_sha=%s\ncore_tag=v7.13.0\n' "$_rl_b" >"$_rl/my dots/core.lock"
+_rl_stamp "$_rl_a" v7.12.0 "$_rl/my dots"
+ucheck "relink: a checkout path with a space is quoted, so the fix stays pasteable" \
+  "$_rl_src _CORE_LOCK_FILE='$_rl/my dots/core.lock'; _core_relink_state; [[ \$REPLY2 == pending && \$REPLY == *\"run '$_rl/my dots'/bootstrap.sh --links-only\" ]]" \
+  "${_rl_env[@]}"
+_rl_stamp "$_rl_a" v7.12.0
 ucheck "relink: the nudge fires on pending" \
   "$_rl_src out=\$(_core_relink_nudge 2>&1); [[ \$out == *'relink pending'*'v7.13.0'* ]]" \
   "${_rl_env[@]}"
@@ -187,8 +196,9 @@ ucheck "relink: a malformed stamp reads unknown and is never evaluated" \
   "${_rl_env[@]}"
 
 _rl_stamp "$_rl_a" v7.11.0 /somewhere/else
-ucheck "relink: a stamp from another checkout reads other, and the nudge is silent" \
-  "$_rl_src _core_relink_state; [[ \$REPLY2 == other && \$REPLY == *'/somewhere/else'* ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
+# `other` names BOTH remedies — which checkout should own Core is #1211's open question (#1218).
+ucheck "relink: a stamp from another checkout reads other, names both fixes, and the nudge is silent" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == other && \$REPLY == *'(/somewhere/else)'*'run ~/relink/repo/bootstrap.sh --links-only'*'/somewhere/else/bootstrap.sh --links-only'* ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
   "${_rl_env[@]}"
 
 rm -f "$_rl/repo/core.lock"
