@@ -20,6 +20,16 @@
   the two Ubuntu legs do not restore each other's natively built tree. `.github/actionlint.yaml`
   returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
   would red the audit on every leg (#1200).
+- **The fleet's pinned shfmt moves 3.13.1 → 3.14.1, ending the #813 hold**
+  ([#1217](https://github.com/dotgibson/dotfiles-core/issues/1217)). The hold assumed the
+  bump would add `::warning::` nags to consumer repos that pass today. Measured against every
+  sibling's `main`, none of the ten `lint-call.yml` consumers passes today, and 3.14.1 leaves
+  each one's count of drifting files unchanged. The one consumer where shfmt _blocks_ is
+  `dotfiles-MacBook`'s `make fmt-check`, and it was rewritten first to a form both versions
+  agree on ([dotfiles-MacBook#275](https://github.com/dotgibson/dotfiles-MacBook/pull/275)).
+  `SHFMT_SHA256` is refreshed, and the `tool-versions.env` note now says where the next
+  output-changing bump can bite. Core's own scripts are unaffected, since Core does not run
+  shfmt.
 
 ## [v7.13.0] - 2026-09-25
 
