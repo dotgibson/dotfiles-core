@@ -2,6 +2,13 @@
 
 ### Fixed
 
+- **The openSUSE Tumbleweed `tree-sitter-cli` row moves to 0.27.0.** Tumbleweed's `tree-sitter`
+  went 0.26.8 → 0.27.0 (checked 2026-09-29; 0.26.8 has left the index), and both Leap 16.x
+  lanes stay at 0.26.8. All three still clear the ≥ 0.26.1 floor. Footnote ⁵ also named the
+  split-off library `libtree-sitter0_26` for every openSUSE lane. That library is named for its
+  soname, so Tumbleweed now ships `libtree-sitter0_27`. Reported by
+  dotgibson/dotfiles-openSUSE#217.
+
 - **`make audit` from a fleet shell no longer reds four cases CI calls green.** The
   behavioral suite's host scrub now also drops `BROWSER` and every `ATUIN_*` variable.
   Core's own `00-tools.zsh` exports `BROWSER=w3m` on a headless box (WSL included), and an
