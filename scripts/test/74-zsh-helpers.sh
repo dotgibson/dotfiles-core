@@ -172,6 +172,15 @@ ucheck "relink: a checkout path with a space is quoted, so the fix stays pasteab
   "$_rl_src _CORE_LOCK_FILE='$_rl/my dots/core.lock'; _core_relink_state; [[ \$REPLY2 == pending && \$REPLY == *\"run '$_rl/my dots'/bootstrap.sh --links-only\" ]]" \
   "${_rl_env[@]}"
 _rl_stamp "$_rl_a" v7.12.0
+# Not just whitespace: a `$` or `;` mis-parses bare too, so the test is "would (q-) quote it".
+mkdir -p "$_rl/a\$b;c"
+printf 'core_sha=%s\ncore_tag=v7.13.0\n' "$_rl_b" >"$_rl/a\$b;c/core.lock"
+_rl_stamp "$_rl_a" v7.12.0 "$_rl/a\$b;c"
+ucheck "relink: a checkout path with \$ or ; is quoted too, not only one with a space" \
+  "$_rl_src p='$_rl/a\$b;c'; _CORE_LOCK_FILE=\$p/core.lock; _core_relink_state
+   [[ \$REPLY2 == pending && \$REPLY == *\"run \${(q-)p}/bootstrap.sh --links-only\" && \$REPLY == *\"run '\"* ]]" \
+  "${_rl_env[@]}"
+_rl_stamp "$_rl_a" v7.12.0
 ucheck "relink: the nudge fires on pending" \
   "$_rl_src out=\$(_core_relink_nudge 2>&1); [[ \$out == *'relink pending'*'v7.13.0'* ]]" \
   "${_rl_env[@]}"
