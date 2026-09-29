@@ -4,9 +4,9 @@ How to stamp `dotfiles-Arch`, `dotfiles-openSUSE`, `dotfiles-Alpine`,
 `dotfiles-Gentoo`, and `dotfiles-Debian` from the `dotfiles-Fedora` template. The structure is identical
 every time — only three things change per distro: **package manager commands**,
 **package names**, and **distro quirks**. Core never changes (it's vendored).
-Offense (Kali) and macOS appear in the reference tables below for convenience, but
-they're their own lineages — built directly, **not** stamped from this template (see
-_Repo status_ at the bottom).
+Offense (Kali) and macOS appear in the reference tables below for convenience, and NixOS
+in the command table, but they're their own lineages — built directly, **not** stamped from
+this template (see _Repo status_ at the bottom).
 
 ## Per-repo recipe
 
@@ -154,14 +154,14 @@ and a footnote here.** The footnotes below stay hand-written.
 | atuin²⁰          | `atuin`           | `atuin`¹⁸         | `atuin`                    | `app-shells/atuin`                  | asset²⁸                    | asset²⁸       |
 | mise³⁰           | `mise`            | script³⁰          | script³⁰                   | script³⁰                            | asset²⁸                    | asset²⁸       |
 | direnv³²         | `direnv`          | `direnv`          | `direnv`                   | `app-shells/direnv`¹²               | `direnv`                   | `direnv`      |
-| yazi             | `yazi`            | `yazi`¹⁸          | `yazi`                     | `app-misc/yazi`¹²                   | cargo³                     | —²⁹           |
+| yazi             | `yazi`            | `yazi`¹⁸          | `yazi`                     | `app-misc/yazi`¹²                   | cargo²¹                    | —²⁹           |
 | tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter`     | `tree-sitter-cli` ≥ 0.26.1 | `dev-util/tree-sitter-cli` ≥ 0.26.1 | `tree-sitter-cli` ≥ 0.26.1 | asset²⁸       |
 | jq³⁴             | `jq`              | `jq`              | `jq`                       | `app-misc/jq`                       | `jq`                       | `jq`          |
 | yq⁶              | `go-yq`           | `yq`              | `yq-go`                    | `app-misc/yq-go`                    | `yq-go`                    | go³           |
 | duf              | `duf`             | `duf`             | testing¹⁴                  | `sys-fs/duf`                        | `duf`                      | `duf`         |
 | dust             | `dust`            | `dust`            | `dust`                     | `sys-block/dust`                    | `du-dust`⁴                 | asset²⁸       |
 | procs            | `procs`           | `procs`           | `procs`                    | `sys-process/procs`                 | `procs`                    | asset²⁸       |
-| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸         | `viddy`                    | cargo³                              | cargo³                     | —²⁹           |
+| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸         | `viddy`                    | cargo³                              | cargo²¹                    | —²⁹           |
 | sd²²             | `sd`              | `sd`              | `sd`                       | `sys-apps/sd`¹²                     | `sd`                       | `sd`          |
 | gron             | `gron`            | `gron`            | `gron`                     | go³                                 | `gron`                     | `gron`        |
 | jnv¹⁷            | `jnv`             | cargo             | cargo³                     | cargo                               | cargo                      | —²⁹           |
@@ -415,9 +415,12 @@ at all. Note the leading `-*`: on x86, ppc64 or riscv it is reachable only via `
 already merged the source one must `emerge --unmerge dev-util/shellcheck` first.
 ¹³ op = **1Password CLI**. bootstrap.sh installs it from 1Password's official **signed** repo,
 which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali), apk repo
-(Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
-(Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
-the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
+(Alpine — a native musl build, so it's fine on the musl outlier), and the GURU
+`app-misc/1password-cli` (Gentoo). **Arch** installs nothing: it has no AUR helper, so
+bootstrap.sh only prints a `paru -S 1password-cli` hint, the same shape as `viddy` and
+`carapace`. A vendor repo, **not** the OS repo; the apt/rpm setup is key-first (the repo entry
+is added only after 1Password's signing key has been fetched and imported, so a failed key
+leaves no repo behind — it does not roll back a repo whose later install fails).
 ¹⁴ Alpine **`testing`-only** (`duf`, `glow`, `tealdeer`, `ouch`). All four are musl-fine
 tools that live in `testing` on edge (never promoted to `community` on any stable release,
 incl. 3.24), which isn't enabled by default on a stable release. bootstrap.sh builds them
@@ -433,8 +436,8 @@ is a **footgun the OS repo documents against**: `apk` fails the whole transactio
 name, so a permanently-unresolvable entry breaks the bulk `apk add` on EVERY run and forces the
 per-package retry loop across the entire list.
 ¹⁵ Kali `glow`/`gum`: recent **Debian sid** packages (Kali rolling tracks testing/sid). If they
-haven't migrated to your snapshot, bootstrap falls back to `go install` / the Charm apt repo
-(`repo.charm.sh/apt`).
+haven't migrated to your snapshot, bootstrap falls back to the Charm apt repo
+(`repo.charm.sh/apt`) — the same route ubuntu/debian always take.
 ¹⁶ viddy: the `watch` replacement — Core aliases `watch`→`viddy` (`HAVE_VIDDY`-guarded in
 `zsh/20-aliases.zsh`), so a box without the binary just keeps classic `watch`. viddy is a
 **Rust** CLI (rewritten from Go upstream), so it installs via `cargo install viddy`, **not**
@@ -443,7 +446,9 @@ haven't migrated to your snapshot, bootstrap falls back to `go install` / the Ch
 `community` (a native musl build — apk-installed, with the cargo build kept as a fallback)
 and **openSUSE** Tumbleweed `repo-oss` (see ¹⁸).
 Where unpackaged, `bootstrap.sh` builds it best-effort via `cargo install --locked viddy`
-(the same cargo path as yazi/dust/tealdeer). **Arch** is the exception: it ships no rust toolchain and builds no AUR
+(the same cargo path as yazi/dust/tealdeer) — **not on Kali**: `dotfiles-Debian` installs
+Kali's `cargo` but cargo-installs none of yazi/viddy/ast-grep, hence `cargo²¹` in those cells.
+**Arch** is the other exception: it ships no rust toolchain and builds no AUR
 helper (see its `packages.txt`), so bootstrap prints a hint to `paru -S viddy` instead of
 auto-installing. Inert without the binary.
 
@@ -482,7 +487,7 @@ is the right first move on Leap too, and the ³ fallback is no longer the expect
 these seven — but Leap pins where Tumbleweed rolls, so treat those versions as a floor and
 take the ³ path when a row needs something newer. The rows are named for Tumbleweed because
 that's the flavor this fleet targets.
-Five of the seven (`starship`, `atuin`, `yazi`, `viddy`, `doggo`) are also installed by
+Four of the seven (`starship`, `atuin`, `viddy`, `doggo`) are also installed by
 `dotfiles-openSUSE`'s `bootstrap.sh`, which stays correct and harmless either way — each
 install is presence-guarded, so a packaged binary just short-circuits it. **`ouch` and
 `ast-grep` are not**: that bootstrap has no installer for them, so the old `cargo³` cells
@@ -490,7 +495,8 @@ promised a fallback that never existed and the package name above was, for a whi
 had to type yourself. Moving any of these into `install/packages.txt` is a separate judgment
 call — it trades upstream-latest for the distro build. **`dotfiles-openSUSE` has since made
 that call the other way**: its list flipped to packaged-first, and `starship`, `atuin` and
-`yazi` are now in it, so the three `curl | sh` installers only run as a fallback — and as of
+`yazi` are now in it — yazi's installer is gone outright, so the two `curl | sh` installers
+left (starship, atuin) only run as a fallback — and as of
 dotfiles-openSUSE#113 **`ouch` and `ast-grep` are in it too**, which is what finally closes the
 gap this paragraph opened: no installer plus no list entry had meant no automatic path at all.
 `viddy` deliberately stays out (cargo, for upstream-latest), and `doggo` likewise (go, same
@@ -1690,8 +1696,8 @@ where the learning is. Tool _names_ are full atoms (`category/name`). Treat this
 repo as your "understand the system from the ground up" build; it's the most
 educational and the most time-expensive.
 
-**Offense (Kali / WSL2)** — One of the two repos that are not stamped from Fedora (macOS
-is the other, see _Repo status_): it's Debian-family
+**Offense (Kali / WSL2)** — Not stamped from Fedora (neither are macOS and NixOS, see
+_Repo status_): it's Debian-family
 (apt) and carries a unique **offensive role layer** on top of an OS layer it no longer
 ships itself — `dotfiles-Debian` owns band 80 and accepts `ID=kali` as a first-class
 target, and Offense adds the `85-offensive.zsh` stage to the loader between it and
@@ -1731,9 +1737,9 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
   (`scripts/os-repos.txt`) plus `core` itself; `Windows` vendors no `core/` and is
   tracked separately.
 - **Stamp-pending (this doc):** none — all five template stamps are complete.
-- `Offense` (apt + offensive layer) and `MacBook` (Homebrew) are their own lineages,
-  built directly rather than stamped from Fedora. `Windows` is tracked separately
-  from this matrix.
+- `Offense` (offensive role layer on `dotfiles-Debian`), `MacBook` (Homebrew) and `NixOS`
+  (declarative, no `install/packages.txt`) are their own lineages, built directly rather
+  than stamped from Fedora. `Windows` is tracked separately from this matrix.
 - **Role repos:** `Offense` (offensive) and `Defense` (defensive) both vendor
   Core. `Offense` **used to** carry its own OS-native layer (Debian/apt,
   kali-rolling) and no longer does: it shed `os/`, `install/packages.txt` and
