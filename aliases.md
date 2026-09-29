@@ -163,7 +163,7 @@ Sourced from `zsh/30-functions.zsh`. These are functions rather than aliases bec
 they take arguments, validate them, or need real control flow — but you invoke them
 exactly like any other command. Every one accepts `--help` and ships a completion; the
 _Does_ column below **is** that `--help` one-liner, extracted from the source, so the two
-cannot disagree. `core help` (aliased to `cheat` above) lists most of them with shorter
+cannot disagree. `core help` (`cheat` above is its alias) lists most of them with shorter
 blurbs alongside the keybindings and maintenance verbs.
 
 `core [verb]` is the front door — `core help` / `doctor` / `version` / `status` /
