@@ -75,6 +75,12 @@ FIX
     local log="$BD/$1.log"; shift
     rm -rf "${BD:?}/home" "${BD:?}/config"
     mkdir -p "$BD/home" "$BD/config/tmux/plugins/tpm"
+    # BD_PRELINK=<checkout>: a Core loader already linked from ANOTHER checkout, as a box
+    # carrying an OS and a role repo has after the other one's bootstrap (#1211).
+    if [[ -n "${BD_PRELINK:-}" ]]; then
+      mkdir -p "$BD/config/zsh"
+      ln -s "$BD_PRELINK/core/zsh/loader.zsh" "$BD/config/zsh/loader.zsh"
+    fi
     : >"$log"
     local -a _bd_env=(HOME="$BD/home" XDG_CONFIG_HOME="$BD/config" FIX_LOG="$log"
       FIX_PROVISION="${FIX_PROVISION:-0}" FIX_FAIL="${FIX_FAIL:-0}" FIX_LAZY="${FIX_LAZY:-0}"
@@ -255,6 +261,71 @@ FIX
   else
     fail "stamp: aborted run (rc=$BD_RC): $(cat "$_bd_stamp" 2>&1)"
   fi
+
+  # ── newest Core wins on a box with two checkouts (#1211) ───────────────────
+  # A second checkout whose vendored Core is linked right now. The fixture's own Core says
+  # 9.9.9; the other one is set newer, then older. Only the loader link is prelinked, since
+  # it is the one the guard reads.
+  _bd_other="$BD/other"
+  mkdir -p "$_bd_other/core/zsh"
+  printf '# other checkout loader\n' >"$_bd_other/core/zsh/loader.zsh"
+  printf '9.9.9\n' >"$BD/dotfiles/core/core.version"
+  _bd_other_p="$(cd "$_bd_other" && pwd -P)"
+  _bd_own_loader="$BD/dotfiles/core/zsh/loader.zsh"
+
+  printf '9.10.0\n' >"$_bd_other/core/core.version"
+  _bd_seed
+  BD_PRELINK="$_bd_other" _bd_run dg-keep --links-only
+  if [[ $BD_RC -eq 0 && "$(readlink "$BD/config/zsh/loader.zsh")" == "$_bd_other/core/zsh/loader.zsh" &&
+    ! -e "$BD/config/zsh/30-functions.zsh" && -L "$BD/config/zsh/85-defense.zsh" &&
+    "$BD_OUT" == *"Core 9.10.0 is linked from $_bd_other_p, newer than this checkout's 9.9.9"* ]]; then
+    pass "downgrade: a NEWER Core linked from another checkout is kept, the role layer is still wired, and it says why"
+  else
+    fail "downgrade: newer Core not kept (rc=$BD_RC, loader -> $(readlink "$BD/config/zsh/loader.zsh")): $BD_OUT"
+  fi
+  if grep -qx 'mode=seed' "$_bd_stamp" && [[ "$BD_OUT" == *"Core stayed linked from"*"relink stamp is left as it was"* ]]; then
+    pass "downgrade: a kept Core leaves the relink stamp as it was, and says so"
+  else
+    fail "downgrade: stamp rewritten after keeping the other Core: $(cat "$_bd_stamp" 2>&1)"
+  fi
+  BD_PRELINK="$_bd_other" _bd_run dg-force --links-only --force-core
+  if [[ $BD_RC -eq 0 && "$(readlink "$BD/config/zsh/loader.zsh")" == "$_bd_own_loader" &&
+    "$BD_OUT" == *"--force-core: relinking Core 9.9.9"* ]] && grep -qx 'mode=links-only' "$_bd_stamp"; then
+    pass "downgrade: --force-core relinks Core from this checkout anyway and stamps it"
+  else
+    fail "downgrade: --force-core (rc=$BD_RC, loader -> $(readlink "$BD/config/zsh/loader.zsh")): $BD_OUT"
+  fi
+  BD_PRELINK="$_bd_other" _bd_run dg-dry --dry-run
+  if [[ $BD_RC -eq 0 && "$(readlink "$BD/config/zsh/loader.zsh")" == "$_bd_other/core/zsh/loader.zsh" &&
+    "$BD_OUT" == *"newer than this checkout's"* && "$BD_OUT" != *"would relink: $BD/config/zsh/loader.zsh"* ]]; then
+    pass "downgrade: --dry-run previews keeping the newer Core and plans no Core relink"
+  else
+    fail "downgrade: --dry-run (rc=$BD_RC): $BD_OUT"
+  fi
+  printf '9.8.0\n' >"$_bd_other/core/core.version"
+  BD_PRELINK="$_bd_other" _bd_run dg-older --links-only
+  if [[ $BD_RC -eq 0 && "$(readlink "$BD/config/zsh/loader.zsh")" == "$_bd_own_loader" && "$BD_OUT" != *"newer than this checkout"* ]]; then
+    pass "downgrade: an OLDER Core linked from another checkout is replaced as before"
+  else
+    fail "downgrade: older Core not replaced (rc=$BD_RC): $BD_OUT"
+  fi
+  printf '9.9.9\n' >"$_bd_other/core/core.version"
+  BD_PRELINK="$_bd_other" _bd_run dg-equal --links-only
+  if [[ $BD_RC -eq 0 && "$(readlink "$BD/config/zsh/loader.zsh")" == "$_bd_own_loader" ]]; then
+    pass "downgrade: the SAME Core version from another checkout is relinked (no downgrade to refuse)"
+  else
+    fail "downgrade: equal version refused (rc=$BD_RC): $BD_OUT"
+  fi
+  rm -f "$_bd_other/core/core.version"
+  BD_PRELINK="$_bd_other" _bd_run dg-unknown --links-only
+  if [[ $BD_RC -eq 0 && "$(readlink "$BD/config/zsh/loader.zsh")" == "$_bd_own_loader" ]]; then
+    pass "downgrade: an unreadable other core.version cannot prove a downgrade, so Core is relinked"
+  else
+    fail "downgrade: missing core.version refused (rc=$BD_RC): $BD_OUT"
+  fi
+  rm -f "$BD/dotfiles/core/core.version"
+  unset _bd_other _bd_other_p _bd_own_loader
+
   unset -f _bd_seed
   unset _bd_stamp
 

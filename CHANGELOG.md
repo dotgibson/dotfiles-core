@@ -12,6 +12,14 @@
 
 ### Changed
 
+- **A bootstrap no longer downgrades Core on a box with two checkouts.** An OS repo and a
+  role repo stacked on it each vendor Core, and each bootstrap linked the whole Core surface
+  from its own copy. So running the OS repo's bootstrap after the role repo's could quietly
+  swap in an older Core, and `core-doctor` then read `current`. The shared driver now checks
+  the Core already linked. If it comes from another checkout with a newer `core.version`, the
+  run leaves every Core link alone, still wires its own layer, says why, and leaves the relink
+  stamp as it was. `--force-core` overrides. An unreadable version or an equal one relinks as
+  before (#1211).
 - **CI audits on Ubuntu 26.04 ahead of the `ubuntu-latest` switch.** `ci.yml`'s audit
   matrix gains a temporary `ubuntu-26.04` leg, because `ubuntu-latest` rolls to 26.04 between
   2026-10-19 and 2026-11-19 and the new image changes or removes tools. The leg is not a
