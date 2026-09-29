@@ -2,6 +2,16 @@
 
 ### Fixed
 
+- **The relink fix now names which checkout to run.** `core-doctor`'s relink row and the
+  "relink pending" nudge used to say `run ./bootstrap.sh --links-only`. On a box with both an
+  OS checkout and a role checkout, running the wrong one moved the whole Core surface onto
+  that repo's vendored Core, possibly an older one, and the doctor then read `current`. The
+  line now names the loaded checkout's own script, for example
+  `run ~/dotfiles-Offense/bootstrap.sh --links-only`, quoted when the path needs it (#1213).
+  The `other` state no longer stops at "last relinked from another checkout". It appears
+  after a partial `--only`/`--skip` run of the other checkout, or a moved one. It now names
+  both fixes, since either checkout's full `--links-only` run re-stamps the box. Which one
+  _should_ own Core stays an open question in #1211 (#1218).
 - **`make audit` from a fleet shell no longer reds four cases CI calls green.** The
   behavioral suite's host scrub now also drops `BROWSER` and every `ATUIN_*` variable.
   Core's own `00-tools.zsh` exports `BROWSER=w3m` on a headless box (WSL included), and an
