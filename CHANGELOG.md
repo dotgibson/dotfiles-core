@@ -20,6 +20,17 @@
   guard's never-opted-in pair. That is how the v7.13.0 cut went red locally on a tree CI
   had passed. Every case that wants one of these variables sets it explicitly.
 
+### Changed
+
+- **CI audits on Ubuntu 26.04 ahead of the `ubuntu-latest` switch.** `ci.yml`'s audit
+  matrix gains a temporary `ubuntu-26.04` leg, because `ubuntu-latest` rolls to 26.04 between
+  2026-10-19 and 2026-11-19 and the new image changes or removes tools. The leg is not a
+  required check, so a 26.04 break shows up before the switch without blocking a merge. It
+  comes out once the rollout completes. The luacheck cache key now includes the matrix OS so
+  the two Ubuntu legs do not restore each other's natively built tree. `.github/actionlint.yaml`
+  returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
+  would red the audit on every leg (#1200).
+
 ## [v7.13.0] - 2026-09-25
 
 ### Added
