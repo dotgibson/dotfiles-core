@@ -256,9 +256,11 @@ compared against.
 **Fedora:** `tree-sitter-cli` via dnf, and it clears the floor on three of its four
 lanes — F44 reached it in `updates`, F45 and rawhide carry it — but **F43 does not**, and
 F43 is a _blocking_ lane in that repo's CI. On F43 reach past it with `mise use -g tree-sitter` or
-`cargo install tree-sitter-cli`. `dotfiles-Fedora`'s own `install/packages.txt` already
-says this in prose; dotfiles-Fedora#192 is the `# min:` and the warn-only probe that
-would make it checkable, neither of which that repo has. Footnote ³³ carries the matching
+`cargo install tree-sitter-cli`. `dotfiles-Fedora` now checks this rather than saying it
+in prose. dotfiles-Fedora#192 landed `tree-sitter-cli # min:0.26.1` in `install/packages.txt`,
+a cargo fallback in `bootstrap.sh` that runs only when the installed CLI is below
+`TREESITTER_FLOOR`, and a gate in `test/check-packages.sh` that fails if the two floors
+disagree. Footnote ³³ carries the matching
 neovim spread — same distro, same lane, **both halves of the one requirement below the
 floor on F43**, which is the shape this footnote and ³³ each caught on Alpine alone.
 **Arch:** `extra` carries it and clears the floor.
@@ -1450,18 +1452,17 @@ gate in `test/check-packages.sh` that fails a Tumbleweed shortfall (that would m
 pin outran the fleet) and reports a Leap one. Filed as dotfiles-openSUSE#178, verified
 2026-09-12.
 
-`dotfiles-Fedora` has neither guard yet, and it repeats Alpine's asymmetry exactly:
-`install/packages.txt` carries the floor for `tree-sitter-cli` — in prose, already
-naming F43's 0.25.10 as below it — while the `neovim` line beside it is bare, with no
-floor recorded anywhere and no version check in `bootstrap.sh`. It is the last
-**non-rolling** target in the fleet without one — Arch and Homebrew declare no floor
-either, but that is the rolling column answered once, which is the distinction this
-footnote closes on. That prose floor is also invisible to `gen-porting-matrix.sh`, which reads
-`# min:`; it costs nothing here only because the package table above has no Fedora column
-to derive, so the remedy moves no cell. Filed as dotfiles-Fedora#192 — Alpine's
-warn-only probe, the `# min:` pair, and the floor-agreement gate `test/check-packages.sh`
-still lacks. Verified 2026-09-16 against `packages.fedoraproject.org` and
-`mdapi.fedoraproject.org`, after #1010 reported the same shortfall from a
+`dotfiles-Fedora` takes Alpine's remedy too. It had repeated Alpine's asymmetry exactly:
+a prose floor for `tree-sitter-cli`, and a bare `neovim` line with no version check. It now
+has the `# min:` pair (`neovim # min:0.12.0`, `tree-sitter-cli # min:0.26.1`), a warn-only
+`NEOVIM_FLOOR` in `bootstrap.sh`, and the version-checked tree-sitter fallback from ⁵. A
+floor-agreement gate in `test/check-packages.sh` fails if a `# min:` disagrees with the
+`bootstrap.sh` constant it restates. F43 is still below both floors (neovim 0.11.6,
+tree-sitter-cli 0.25.10); F44 and rawhide clear them (0.12.5, 0.26.11). The package table
+above has no Fedora column, so the remedy moves no cell. Filed as dotfiles-Fedora#192, fixed
+by dotfiles-Fedora#193. Verified 2026-09-16 against `packages.fedoraproject.org` and
+`mdapi.fedoraproject.org`, and re-verified 2026-09-26 by dotfiles-Fedora#203's `mdapi`
+sweep. The 2026-09-16 check followed #1010, which reported the same shortfall from a
 `fedora-bootc:42` container — a release EOL since 2026-05-13, and not one of this
 fleet's Fedora lanes. **Measure the lanes the repo declares, not the image that happened
 to be handy**: that container was pinned for a research harness's reasons, and its package
