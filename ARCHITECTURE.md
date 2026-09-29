@@ -123,8 +123,9 @@ Three things about the demolition are worth knowing rather than rediscovering:
   stamp as it was.
 
   `core-doctor` compares the stamp with the checkout's `core.lock`, and prints
-  `relinked at v7.11.0 — repo vendors v7.12.0, run ./bootstrap.sh --links-only` when they
-  differ. The shell-start nudge says "relink pending" in the same case, and only then. So the
+  `relinked at v7.11.0 — repo vendors v7.12.0, run ~/dotfiles-Fedora/bootstrap.sh --links-only`
+  when they differ. The fix names the checkout whose Core the shell loaded, because a box with
+  an OS and a role checkout has two bootstraps and only one of them is the answer (#1211). The shell-start nudge says "relink pending" in the same case, and only then. So the
   evidence a contract change like #763 needed is one command per box:
 
   ```bash
