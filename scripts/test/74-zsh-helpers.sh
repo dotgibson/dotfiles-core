@@ -177,8 +177,10 @@ ucheck "relink: same tag, different sha names the shas rather than 'v7.12.0 — 
   "${_rl_env[@]}"
 
 rm -f "$_rl/bootstrap.lock"
-ucheck "relink: no stamp reads unknown (never red), the doctor shows the fallback, the nudge is silent" \
-  "$_rl_src _core_relink_state; [[ \$REPLY2 == unknown ]] && [[ \$(_core_doctor_render 2>&1) == *'CORE_CAP_LOUD'* ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
+# The doctor names the remedy and NOT the old `${#_CORE_CAP}` "live check": that proves one
+# contract is live, not that this box relinked, so a pass read as "you're fine" (#1204).
+ucheck "relink: no stamp reads unknown (never red), the doctor names --links-only and no false live check, the nudge is silent" \
+  "$_rl_src _core_relink_state; [[ \$REPLY2 == unknown ]] && _r=\$(_core_doctor_render 2>&1) && [[ \$_r == *'--links-only'* && \$_r != *'CORE_CAP_LOUD'* ]] && [[ -z \$(_core_relink_nudge 2>&1) ]]" \
   "${_rl_env[@]}"
 
 _rl_stamp 'not-a-sha$(touch pwned)' v7.12.0

@@ -9,6 +9,13 @@
   into the cases that pin the unset state: the GUI and macOS browser cases, and the daemon
   guard's never-opted-in pair. That is how the v7.13.0 cut went red locally on a tree CI
   had passed. Every case that wants one of these variables sets it explicitly.
+- **An operator who exports a Core knob no longer reds `make audit` either.** Exporting
+  `CORE_SHADOW_CLASSICS=0` in `~/.zshenv`, as the v7.13.0 notes suggest, failed the
+  suite's "knob unset" shadow case. The host scrub now unsets every `CORE_*` variable that
+  `zsh/` reads. The list is derived from the sources, so a new knob is covered without an
+  edit. `core-doctor`'s `unknown` relink row also drops its "live check" hint. That check
+  proved the capability contract was live, not that this box had relinked, so a pass read
+  as "you're fine" when it wasn't (#1204).
 
 ### Changed
 

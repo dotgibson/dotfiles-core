@@ -1615,8 +1615,6 @@ _core_doctor_render() {
     else
       print -r -- "  ${d}${REPLY}${r}"
     fi
-    [[ "$_rl_tok" == unknown ]] &&
-      print -r -- "  ${d}until then the live check is: CORE_CAP_LOUD=1 zsh -i -c 'print -r -- \${#_CORE_CAP}'${r}"
   fi
 
   # Resolved binary names + the detected package manager — the behaviour-affecting bits
