@@ -21,6 +21,15 @@
   returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
   would red the audit on every leg (#1200).
 
+### Documentation
+
+- **`PORTING-MATRIX.md` footnotes ⁵ and ³³ stop saying `dotfiles-Fedora` has no version floors**
+  ([dotfiles-Fedora#203](https://github.com/dotgibson/dotfiles-Fedora/issues/203)).
+  dotfiles-Fedora#193 landed both floors on 2026-09-17: the `# min:` pair on `neovim` and
+  `tree-sitter-cli`, a warn-only `NEOVIM_FLOOR`, a tree-sitter cargo fallback that runs only
+  below `TREESITTER_FLOOR`, and a floor-agreement gate. Both footnotes now describe that, and
+  ³³ drops its claim that Fedora was the last non-rolling target without a floor.
+
 ## [v7.13.0] - 2026-09-25
 
 ### Added
