@@ -304,6 +304,7 @@ viddy¹⁶	-	AUR¹⁶	\`viddy\`¹⁸	=	cargo³	cargo³	—²⁹
 sd²²	-	=	=	=	\`sys-apps/sd\`¹²	=	=
 gron	-	=	=	=	go³	=	=
 jnv¹⁷	-	\`jnv\`	cargo	cargo³	cargo	cargo	—²⁹
+jc⁴⁰	-	=	=⁴⁰	=	=⁴⁰	=	=
 lnav²¹ ²⁴	-	\`lnav\`	\`lnav\`	=	=²⁴	\`lnav\`²⁴	\`lnav\`
 glow	-	=	=	testing¹⁴	\`app-misc/glow\`¹²	=¹⁵	charm apt
 gum	-	=	=	=	mise³⁰	=¹⁵	charm apt

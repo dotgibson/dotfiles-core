@@ -40,6 +40,15 @@
   (`CORE_RELINK_NUDGE=0` silences it). A box bootstrapped before this reads `unknown`, never
   red. `bootstrap-test.yml`'s links-only leg asserts the stamp wherever the vendored lib knows
   it (#1154).
+- **`jc` is part of the stack: it turns command output into JSON.** `ps aux | jc --ps`,
+  `jc dig example.com` and a few hundred other parsers hand `jq` something to transform.
+  Before this, Core's JSON tools could transform, grep and explore JSON but could not
+  produce it from `ps`, `ss` or `dig`. It is its own command with no alias, probed by
+  `zsh/00-tools.zsh` and listed in core-doctor's `data / net` group. Every OS repo now
+  installs it. `PORTING-MATRIX.md` gains a `jc` row and footnote ⁴⁰, which records the two
+  exceptions: openSUSE Leap 16.x has no package, so it is declared opt-in there, and
+  Gentoo's `dev-python/jc` is testing-keyworded only (#1208).
+
 - **`CORE_SHADOW_CLASSICS=0` stops Core taking over standard command names.** An operator
   who works on other people's machines trains habits on Core that fail elsewhere.
   `cd`→`z` jumps by frecency where `cd` would have errored on a typo, and `rm -i` teaches
