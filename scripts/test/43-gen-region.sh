@@ -189,8 +189,8 @@ else
 fi
 
 # 9. AN UNREGISTERED MARKER, and the remediation names WHERE to register it — which
-#    differs per generator (BLOCKS, BLOCK_IDS, …), so it is a region_init parameter
-#    rather than a string in the library.
+#    differs per generator (each one's own BLOCKS, in its own script), so it is a
+#    region_init parameter rather than a string in the library.
 _gr_ur="$(_gr hash 'region_unregistered_in_file "'"$GRD"'/hash.conf" "other"; echo "rc=$?"')"
 if [[ "$_gr_ur" == *'carries an unregistered gen marker: one — add the block to BLOCKS in scripts/gen-demo.sh'* && "$_gr_ur" == *rc=2* ]]; then
   pass "gen-region: an unregistered marker is named, and so is the registry to add it to"
