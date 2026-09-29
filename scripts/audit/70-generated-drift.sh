@@ -203,14 +203,14 @@ unset _ga_out _ga_rc
 
 # ── 9h. PORTING-MATRIX.md drift (the sources ↔ every generated block) ────────
 # PORTING-MATRIX.md's generated blocks are registered in scripts/gen-porting-matrix.sh's
-# BLOCK_IDS — READ IT rather than assuming a count, which is why no number appears here
+# BLOCKS — READ IT rather than assuming a count, which is why no number appears here
 # (#1082 added two and every count in this file was a lie for an afternoon). Two of them are
 # the package-manager and package-name tables, rendered from the sibling OS repos'
 # os/*.capabilities and install/packages.txt (#686) — the same answer §9d gives colour and
 # §9g gives the alias cheat sheet. The rest are fleet-version enumerations, one per tool,
 # rendered from scripts/fleet-package-versions.tsv in THIS repo. The ~1,230 hand-written
 # lines of footnotes around them are untouched, with one exception worth knowing: those
-# fleet-version blocks sit INSIDE footnotes (5, 33, 34), so each of those footnotes is
+# fleet-version blocks sit INSIDE footnotes (5, 33, 34, 39), so each of those footnotes is
 # authored prose around generated facts.
 #
 # THE GATE IS THREE FACTS, one more than §9g. --check exits 1 on drift (a repo renamed a
