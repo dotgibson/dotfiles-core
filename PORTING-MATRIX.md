@@ -1112,7 +1112,7 @@ with an actual `go install` before believing it.**
 - **Kali/Debian** — the `linux_<arch>.deb`, same asset set (`amd64`/`arm64`).
   `apt-get install` wants a path, not a URL, so this is curl-to-a-tempfile then
   `apt-get install ./carapace-bin_*.deb` (which resolves deps, unlike bare `dpkg -i`).
-- **Arch** — the AUR, and the package name matters: **`carapace-bin`** (1.7.3-1, `provides`/
+- **Arch** — the AUR, and the package name matters: **`carapace-bin`** (1.8.0-1, `provides`/
   `conflicts` `carapace`, covers x86_64/aarch64/i686) just unpacks the upstream tarball, while
   the AUR also carries a from-source **`carapace`** that is x86_64-only and needs a Go
   toolchain. Prefer `paru -S carapace-bin`. Note the same exception ¹⁶ records for viddy:
