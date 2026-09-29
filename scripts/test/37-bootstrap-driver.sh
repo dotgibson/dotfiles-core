@@ -271,7 +271,10 @@ FIX
   printf '# other checkout loader\n' >"$_bd_other/core/zsh/loader.zsh"
   printf '9.9.9\n' >"$BD/dotfiles/core/core.version"
   _bd_other_p="$(cd "$_bd_other" && pwd -P)"
-  _bd_own_loader="$BD/dotfiles/core/zsh/loader.zsh"
+  # The driver's DOTFILES is `cd … && pwd`, so the links it writes carry the NORMALIZED path.
+  # $BD does not always: macOS's $TMPDIR ends in `/`, which puts a `//` in $SANDBOX, and a
+  # string compare against the raw path then fails on a correct link. Normalize the same way.
+  _bd_own_loader="$(cd "$BD/dotfiles" && pwd)/core/zsh/loader.zsh"
 
   printf '9.10.0\n' >"$_bd_other/core/core.version"
   _bd_seed
