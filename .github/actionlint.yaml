@@ -1,0 +1,11 @@
+# actionlint config. actionlint finds it on its own from the repo root.
+#
+# `ubuntu-26.04` is a GitHub-hosted label, not a self-hosted one. But actionlint's built-in
+# label list, up to and including the pinned 1.7.12, predates the image's 2026-09-17 GA and
+# reports the label as unknown. Listing it here is the documented escape hatch. It exists
+# only for ci.yml's temporary 26.04 audit leg (#1200). Delete the entry together with that
+# leg (#1201), or once an actionlint release knows the label, whichever comes first. A file
+# with nothing left in it goes too.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
