@@ -396,7 +396,7 @@ opt-in. It was `cargo install --locked ouch` until dotgibson/dotfiles-Gentoo#133
 upstream-latest reasoning `watchexec`²⁵ still carries. That reasoning does not survive contact
 here twice over. The cargo build **cannot succeed on a GCC/libstdc++ box at all**: ouch's
 default `unrar` feature pulls `unrar-ng-sys`, whose `build.rs` unconditionally adds
-`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.2 — **level with upstream** (2026-08-31),
+`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.3 — **level with upstream** (2026-09-13),
 with a `src_prepare()` that seds exactly that flag out. So the route-around bought no version
 advantage at all and cost the tool, on every run, silently.
 
@@ -468,8 +468,8 @@ this footnote used to prescribe `paru -S jnv`; both are now wrong.** jnv entered
 0.7.1-1 on 2026-04-01, confirmed on-box with `pacman -Si jnv` (`Repository: extra`), so no AUR
 helper is involved on Arch any more. Wiring it into the per-repo bootstrap
 (the ³ best-effort path viddy/yazi use) is done on Alpine and Gentoo and remains a tracked
-follow-up on the rest; there is no confirmed Gentoo GURU atom yet either, so verify on the
-next Gentoo stamp.
+follow-up on the rest. jnv is in neither `::gentoo` nor GURU, nor any Zugaina-indexed overlay
+(checked 2026-09-27, dotgibson/dotfiles-Gentoo#209).
 
 ¹⁸ openSUSE **Tumbleweed** now ships these first-class in the main OSS **binary** repo
 (`repo-oss`, i.e. `.../tumbleweed/repo/oss` — built from OBS `openSUSE:Factory`; note
@@ -765,7 +765,7 @@ you:
   ones — the tool is still something you can decline.
 - **Gentoo's `ouch` cell is a GURU cell, and it used to be a cargo cell by CHOICE** — the same
   shape `watchexec`²⁵ still has, and worth stating because the two parted ways. GURU carries
-  `app-arch/ouch` (0.8.0, 0.8.1, **0.8.2**) and `::gentoo` carries no `ouch` at any category;
+  `app-arch/ouch` (0.8.1, 0.8.2, **0.8.3**) and `::gentoo` carries no `ouch` at any category;
   `dotfiles-Gentoo` `cargo install`ed it anyway, for upstream-latest, until
   dotgibson/dotfiles-Gentoo#133 found the cargo build cannot succeed on a GCC/libstdc++ box at
   all (¹² has the mechanism) and moved it to `guru_extras_install app-arch/ouch`. Read the
@@ -806,8 +806,8 @@ have this" when you do not.
 **`ouch` changed its default unpack LOCATION in 0.8.0, and the spread in this table is what
 makes that Core's problem.** Since 0.8.0 (`ouch-org/ouch#962`) `ouch decompress foo.tar.gz`
 unpacks into `./foo/` rather than into the CWD, with a new `--here` for the old behaviour. The
-rows above are not level: openSUSE Leap ships **0.5.1**, Alpine's index **0.6.1**, GURU
-**0.8.2**, Arch **0.8.3** — so the same `extract foo.tar.gz` built two different trees on two
+rows above are not level: openSUSE Leap ships **0.5.1**, Alpine's index **0.6.1**, GURU and
+Arch **0.8.3** — so the same `extract foo.tar.gz` built two different trees on two
 supported boxes, silently and with no error on either. Core's `extract`
 (`zsh/30-functions.zsh`) pins the old semantics by **probing** `ouch decompress --help` for
 `--here` and passing it where it exists — the ²² rule below, not a version compare, and here
@@ -1427,6 +1427,11 @@ fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-rest
 `>=app-editors/neovim-0.12.0 ~__ARCH__` in `gentoo/package.accept_keywords` (restricted so
 0.11.x keeps tracking stable), and a check in `scripts/check-packages.sh` that fails when a
 declared floor is not reachable. Filed as dotfiles-Gentoo#116, verified 2026-08-23.
+The keyword line is not enough on its own: every 0.12.x ebuild needs `>=dev-lua/luv-1.52.1`,
+which is also `~arch` only (newest stable 1.50.0.1), so the same file carries a second
+`>=dev-lua/luv-1.52.1 ~__ARCH__` line. **luv is maintainer-needed** as of 2026-09-27 — the
+same hedge `lnav` carries, since orphaning is what precedes a treeclean, and here it
+sits one level under the editor. A watch item, not a break (dotgibson/dotfiles-Gentoo#209).
 
 `dotfiles-Alpine` has no keyword or archive lever to pull — there is no newer branch to
 point `apk` at without moving the whole box, and neovim's own releases are glibc-linked
