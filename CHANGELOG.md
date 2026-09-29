@@ -41,6 +41,19 @@
 
 ### Documentation
 
+- **The README's install steps now put the OS layer before a role repo.** Offense used to be
+  shown cloned and bootstrapped on its own, but it ships no OS layer: Kali needs
+  `dotfiles-Debian` first, and Defense needs whichever OS repo the box runs. The WSL
+  mirrored-networking note now points at `dotfiles-Debian/wsl/windows.wslconfig.example`,
+  because Offense no longer carries that file.
+- **`PORTING-MATRIX.md` no longer promises installs that don't happen.** Kali's `yazi` and
+  `viddy` cells read `cargo²¹` (available, not installed): `dotfiles-Debian` installs Kali's
+  `cargo` but cargo-builds nothing with it. Footnote ¹³ says Arch only _hints_ the AUR
+  `1password-cli`, and that the vendor-repo setup is key-first rather than rolled back.
+  Footnote ¹⁵ drops a `go install` fallback for glow/gum that never existed. Footnote ¹⁸
+  counts four openSUSE installers and two `curl | sh` routes now that yazi's is gone. The
+  lineage notes name NixOS as its own lineage and Offense as a role layer on
+  `dotfiles-Debian`. Found by the weekly doc-audit (#1192).
 - **`PORTING-MATRIX.md` footnotes ⁵ and ³³ stop saying `dotfiles-Fedora` has no version floors**
   ([dotfiles-Fedora#203](https://github.com/dotgibson/dotfiles-Fedora/issues/203)).
   dotfiles-Fedora#193 landed both floors on 2026-09-17: the `# min:` pair on `neovim` and
