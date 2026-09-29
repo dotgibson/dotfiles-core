@@ -53,9 +53,9 @@ Run these cross-checks (skip any out of the requested scope):
    names them) against what that repo's `bootstrap.sh` installs out-of-band. Flag a
    footnote gone stale, a route (`asset`, `cargo`, `AUR`, `GURU`) the repo no longer
    takes, or a distro the matrix and the repo disagree on. **The overlap to mind**: the
-   fleet-version blocks sit INSIDE footnotes — ⁵ (tree-sitter-cli), ³³ (neovim) and ³⁴ (jq)
-   — so each of those is authored prose around generated rows. Audit the argument, not the
-   numbers.
+   fleet-version blocks sit INSIDE footnotes — ⁵ (tree-sitter-cli), ³³ (neovim), ³⁴ (jq) and
+   ³⁹ (eza) — so each of those is authored prose around generated rows. Audit the argument,
+   not the numbers.
 4. **Vendored `core/` freshness.** Read each sibling OS repo's `core.lock` and
    compare `core_sha` / `core_version` against this repo's `core.version` and HEAD.
    Flag any repo whose vendored Core is behind (needs `make sync`).
