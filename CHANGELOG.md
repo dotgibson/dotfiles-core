@@ -11,6 +11,15 @@
   a branch filter or an `env:` value that names the trigger does not fire. That is why it is
   not a `banned_patterns` entry, which would red the baseline's own rule 1 rationale. It was
   free to add: no repo in the org declared the trigger on its default branch (#1215).
+- **The `pull_request_target` ban now reaches every repo that calls `lint-call.yml@v7`.**
+  The reusable workflow's `actionlint` job gains a step that runs `check-modern.sh
+  --banned-triggers caller`: rule 10 alone, from the Core checkout, over the caller's own
+  workflows, including ones not yet committed. It blocks from the start, because every
+  caller was measured clean first. Rule 10's walker is now one function that both the
+  floor and the new mode call, so the fleet check cannot drift from Core's. A caller that
+  pins the workflow to a SHA newer than the `v7` tag gets a warning, not a false red.
+  `dotfiles-Windows`, `dotfiles-web` and `htpx` do not call `lint-call.yml`, so they are
+  not covered yet. All three are clean today (#1215).
 
 ### Fixed
 
@@ -48,6 +57,25 @@
   the two Ubuntu legs do not restore each other's natively built tree. `.github/actionlint.yaml`
   returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
   would red the audit on every leg (#1200).
+- **The fleet's pinned shfmt moves 3.13.1 → 3.14.1, ending the #813 hold**
+  ([#1217](https://github.com/dotgibson/dotfiles-core/issues/1217)). The hold assumed the
+  bump would add `::warning::` nags to consumer repos that pass today. Measured against every
+  sibling's `main`, none of the ten `lint-call.yml` consumers passes today, and 3.14.1 leaves
+  each one's count of drifting files unchanged. The one consumer where shfmt _blocks_ is
+  `dotfiles-MacBook`'s `make fmt-check`, and it was rewritten first to a form both versions
+  agree on ([dotfiles-MacBook#275](https://github.com/dotgibson/dotfiles-MacBook/pull/275)).
+  `SHFMT_SHA256` is refreshed, and the `tool-versions.env` note now says where the next
+  output-changing bump can bite. Core's own scripts are unaffected, since Core does not run
+  shfmt.
+- **`make fleet-protection` now reports each repo's Actions execution settings.** After the
+  ruleset rows, the default run lists whether GitHub itself refuses a tag-pinned action
+  (`sha_pinning_required`, the server-side twin of `check-modern.sh` rule 3) and the
+  `allowed_actions` policy. The rows are reported, not gated: they never change the exit
+  code until the fleet decides whether to enforce them. An unreadable setting prints as `?`,
+  not as "not required". They need repo admin, so `--rulesets-only`, the CI mode, skips them
+  and says so. The first run shows SHA pinning required on 2 of the 11 repos it covers:
+  `dotfiles-core` and `dotfiles-MacBook`. `--help` now prints the whole header instead of a
+  fixed line range that had fallen out of date (#1226).
 
 ### Added
 
