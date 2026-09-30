@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+### Security
+
+- **GitHub now refuses a tag-pinned action in every Core-vendoring repo, and
+  `make fleet-protection` goes red if one stops.** `sha_pinning_required` was on in only
+  `dotfiles-core` and `dotfiles-MacBook`. It is now on in all eleven repos the script
+  audits, which makes GitHub enforce rule 3 of the CI floor server-side: on sibling repos'
+  own workflows, and on anything that reaches `main` without the text gate. The moving
+  major survives. GitHub exempts reusable workflows ("can still be referenced by tag"), and
+  a re-run of `dotfiles-Alpine`'s `lint-call.yml@v7` passed under enforcement. The new
+  `--require-sha-pin` mode turns it on idempotently, keeps each repo's `allowed_actions`,
+  and re-reads the server before it reports success. The admin report now fails a repo
+  whose setting is off or cannot be read. It also reports `allowed_actions` and the count
+  of Actions execution-protection policies, without gating either. CI's `--rulesets-only`
+  run still skips the block, because it has no repo admin. Composite actions are not
+  exempt, so `dotfiles-nvim` first SHA-pinned its `setup-core-tools@v7` references
+  (dotgibson/dotfiles-nvim#9) and then turned the setting on too (#1226).
+
 ### Changed
 
 - **`/release-readiness` checks the fleet-wide gates against the sibling repos before a
