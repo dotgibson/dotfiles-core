@@ -1,5 +1,18 @@
 ## [Unreleased]
 
+### Changed
+
+- **`/release-readiness` checks the fleet-wide gates against the sibling repos before a
+  tag.** A Core PR's CI checks out Core alone, so every gate that reads a sibling (§9m-§9p,
+  theme and desktop-parity drift) skips there. Until now the first run that could see a
+  sibling break was `sync-fanout`'s pre-fan-out audit, after the tag was cut. That is how
+  #1210's correct Kali matrix cells merged green and then redded the v7.14.0 fan-out on
+  dotfiles-Debian's stale `TOOLS_OPTIN` (#1239). The weekly job now checks Core out beside
+  the fleet and runs `audit-core.sh --scope none` before the routine, with both tokens
+  withheld from that step because the gates run sibling code. Any `✗` there is a HOLD, and
+  a gate that could not see its sibling is reported as unverified, not as a pass. This is
+  the fallback half of #1240. The PR-time check is still open there.
+
 ## [v7.14.0] - 2026-09-29
 
 ### Security

@@ -30,7 +30,20 @@ Target for this run: **$ARGUMENTS** (empty = infer the next version from the unr
    editor pin moves **at** a release and nowhere else (`NVIM-SPLIT-PROPOSAL.md` §7(3)), so a
    behind `nvim.lock` is a thing to DO in this release, not a reason to hold it. The bump is
    `scripts/sync-nvim.sh --ref vX.Y.Z`, with `nvim/` and `nvim.lock` in one commit.
-5. **Any open blockers?** Open `freshness-triage` **Hold** verdicts, a failing scheduled
+5. **Do the fleet-wide gates pass against the siblings?** CI's audit checks out Core alone,
+   so every gate that reads a sibling repo — §9m, §9n, §9o, §9p, the theme and desktop-parity
+   drift — `skip_env`s there, and a PR can merge green while a sibling it now contradicts
+   waits for the release. The first run that can see it is `sync-fanout`'s pre-fan-out audit,
+   after the tag is cut: that is how #1210's corrected Kali matrix cells red the v7.14.0
+   fan-out against dotfiles-Debian's stale `TOOLS_OPTIN` (#1239, #1240). So judge it HERE:
+   `./scripts/audit-core.sh --quiet --scope none` with the fleet checked out **beside** Core
+   (the gates read `$HERE/..`). The scheduled job has already run it and left the output at
+   `../fleet-audit.txt` — read that rather than re-running; run it yourself only when the file
+   is absent. **Any `✗` line is a HOLD**, and the fix usually lands in the named sibling, not
+   in Core — cite the repo and the one declaration to change. An environment skip that names
+   a sibling as *not checked out* (every one of them, from a Claude worktree or a lone clone)
+   means the gate **did not run**: report it as unverified, never as a pass.
+6. **Any open blockers?** Open `freshness-triage` **Hold** verdicts, a failing scheduled
    sweep, or a security bump that should ride the release.
 
 ## How to report
@@ -39,8 +52,9 @@ A one-line **verdict** up top — **READY to cut vX.Y.Z** or **HOLD** — then:
 
 - **What would ship** — the grouped highlights from `[Unreleased]` (the release's story).
 - **Proposed version + why** — the SemVer bump the unreleased content implies.
-- **Blockers / pre-flight** — anything that must be true first (red audit, fleet drift, a
-  Hold PR), each with the one command that clears it, in `RELEASE-RUNBOOK.md` order.
+- **Blockers / pre-flight** — anything that must be true first (red audit, a red fleet-wide
+  gate against the siblings, fleet drift, a Hold PR), each with the one command that clears
+  it, in `RELEASE-RUNBOOK.md` order.
 - **Next command** — literally `make release VERSION=X.Y.Z` when READY, or the specific
   blocker to clear when HOLD.
 

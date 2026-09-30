@@ -267,6 +267,11 @@ jobs:
   # [Unreleased] + the commits since the last release, the audit status, version coherence,
   # and fleet drift, then files a READY-to-cut-vX.Y.Z / HOLD verdict — report-first, edits
   # nothing. fetch-depth 0: it reads `git log <last-release>..HEAD`, which a shallow clone lacks.
+  # Core is checked out into dotfiles-core/ with the fleet cloned BESIDE it (doc-audit's
+  # layout), so the audit's fleet-wide gates (§9m-§9p, theme/desktop-parity drift) read real
+  # siblings instead of skipping. Without the siblings those gates never run anywhere before
+  # sync-fanout's pre-fan-out audit, which is AFTER the tag. #1210 merged green and the
+  # v7.14.0 fan-out went red on dotfiles-Debian's TOOLS_OPTIN (#1239, #1240).
   release-readiness:
     needs: preflight
     if: >-
@@ -274,7 +279,7 @@ jobs:
       (github.event.schedule == '0 10 * * 2' ||
        github.event.inputs.routine == 'release-readiness')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30 # 20 for the routine + up to 8 for the sibling audit
     permissions:
       contents: read
       issues: write
@@ -282,24 +287,55 @@ jobs:
     env:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       GH_TOKEN: ${{ github.token }}
+      OWNER: ${{ github.repository_owner }}
       ISSUE_TITLE: "release-readiness: weekly go/no-go"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+          path: dotfiles-core
+      - name: Clone the rest of the fleet (read-only, shallow)
+        run: |
+          # scripts/os-repos.txt is the fleet (#669). Windows is appended by hand because it
+          # vendors no core/ but the theme and desktop-parity gates read it.
+          repos=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' dotfiles-core/scripts/os-repos.txt)
+          for r in $repos dotfiles-Windows; do
+            git clone --depth 1 "https://github.com/${OWNER}/${r}.git" "$r" 2>/dev/null \
+              || echo "::warning::could not clone $r (its gates will read as not checked out)"
+          done
+      - name: Audit the fleet-wide gates against the siblings
+        # Deterministic, so the verdict does not depend on the model choosing to run it, and
+        # cheap: --scope none keeps the structural/config/fleet sections and drops the
+        # behavioral suite. Never fails the job. The routine reads the ✗ lines and judges.
+        # The gates run sibling code (gen-porting-matrix sources Debian's pkg-filter.sh), so
+        # this step gets neither token: first-party repos, but no reason to hand them one.
+        working-directory: dotfiles-core
+        timeout-minutes: 8
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ""
+          GH_TOKEN: ""
+        run: |
+          set +e
+          ./scripts/audit-core.sh --quiet --scope none --color never >"$GITHUB_WORKSPACE/fleet-audit.txt" 2>&1
+          echo "audit exit: $?" >>"$GITHUB_WORKSPACE/fleet-audit.txt"
+          tail -n 5 "$GITHUB_WORKSPACE/fleet-audit.txt"
       - name: Load pinned tool versions
+        working-directory: dotfiles-core
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
       - name: Install Claude Code CLI (pinned)
         run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not loaded from scripts/tool-versions.env}"
       - name: Run /release-readiness
+        working-directory: dotfiles-core
         run: |
           claude -p "/release-readiness" \
+            --add-dir "$GITHUB_WORKSPACE" \
             --model opus \
             --permission-mode default \
             --allowedTools "Task,Read,Grep,Glob,Bash(./scripts/audit-core.sh:*),Bash(./scripts/fleet-drift.sh:*),Bash(./scripts/update-plugins.sh --check),Bash(./scripts/check-nvim-freshness.sh),Bash(git log:*),Bash(git tag:*),Bash(cat core.version),Bash(gh pr list:*),Bash(gh issue list:*),Bash(gh run list:*)" \
             --output-format text | tee "$RUNNER_TEMP/release-readiness.md"
       - name: File the report as an issue
+        working-directory: dotfiles-core
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/release-readiness.md"
 
   # Draft the next release's notes from Conventional Commits. DISPATCH-ONLY (no cron) — you
