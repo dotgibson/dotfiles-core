@@ -55,6 +55,41 @@ Verify every deprecation against the **primary source** (the GitHub Changelog or
 `runner-images` repo), with the date — do not trust a single blog post. A "banned"
 entry the fleet cannot yet satisfy is a staged migration, not a floor you can flip on.
 
+## Standing watches
+
+Some floor changes cannot be adopted yet, because they wait on an upstream event. Each one
+has an open `(watch)` issue. On **every** run, check each watch below against its primary
+source and give it one line in the report: *still watching* (with the date you checked), or
+*trigger met*, followed by the adoption work the issue lists. Do not close a watch issue from
+here. When a trigger is met, that becomes a new proposal and goes through the ranked
+shortlist like any other.
+
+- **Workflow dependency locking** (#1223). A pin on a workflow's `uses:` line cannot reach
+  an upstream action's own `uses:`, and a `dependencies:` lock written by `gh actions pin`
+  would extend rule 3 to those transitive and composite refs.
+  - *Trigger:* a **public preview** announced on the GitHub Changelog. A technical preview,
+    a CLI extension or a community thread does not count.
+  - *Sources:* the [GitHub Changelog](https://github.blog/changelog/), the
+    [feedback discussion](https://github.com/orgs/community/discussions/194494) and the
+    [`gh actions pin` RFC](https://github.com/cli/cli/issues/13314).
+  - *When it fires:* report on four things. First, the lock format, and whether it treats a
+    `workflow_call` ref as a dependency, which would clash with or replace rule 3's `@vN`
+    exemption. Second, a trial on one Core workflow, plus a `require*dependency*lock: true`
+    key with a new `check-modern.sh` rule shaped like rules 5, 6 and 8. Third, how
+    Dependabot and freshness bumps rewrite the lock. Fourth, the fleet rollout through the
+    `*-call.yml` workflows.
+- **Retire `macos-15` / `macos-15-intel` / `windows-2022`** (#1222). None has a published
+  retirement date yet.
+  - *Trigger:* GitHub publishes a dated deprecation that names the label.
+  - *Sources:* an `actions/runner-images` "will begin deprecation" issue that names it, or a
+    GitHub Changelog post. endoflife.date is only a cross-check. Watch out: search
+    summaries attribute runner-images#13518's dates to `macos-15`, but that notice is for
+    `macos-14`, which is already banned.
+  - *When it fires:* add the label to `banned_runners`, with the dated rationale as a
+    full-line comment (an inline `#` breaks the parser). List `macos-15-intel` separately,
+    because rule 2's suffix group matches only `-arm` / `-large` / `-xlarge`. Re-grep the
+    fleet's workflows first. The two families may land separately.
+
 ## How to report
 
 A ranked shortlist. For each proposed floor change:

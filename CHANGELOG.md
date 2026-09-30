@@ -117,6 +117,14 @@
 
 ### Documentation
 
+- **`/modernize` now re-checks its standing watches on every run.** Some floor changes wait
+  on an upstream event, so the routine gains a _Standing watches_ list and reports each one
+  as still watching or trigger met. It starts with two. One is workflow dependency locking
+  (#1223), which would extend the SHA-pin rule to an action's transitive and composite
+  `uses:` once GitHub ships a public preview. Rule 3 in `scripts/modern-baseline.yml` now
+  names that gap. The other is the retirement of the `macos-15` and `windows-2022` runners
+  (#1222).
+
 - **The README's install steps now put the OS layer before a role repo.** Offense used to be
   shown cloned and bootstrapped on its own, but it ships no OS layer: Kali needs
   `dotfiles-Debian` first, and Defense needs whichever OS repo the box runs. The WSL
