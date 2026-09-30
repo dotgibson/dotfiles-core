@@ -19,6 +19,11 @@
   withheld from that step because the gates run sibling code. Any `✗` there is a HOLD, and
   a gate that could not see its sibling is reported as unverified, not as a pass. This is
   the fallback half of #1240. The PR-time check is still open there.
+- **`RELEASE-STRATEGY.md` no longer lists making `audit-arch` and `audit-alpine` required
+  checks as future work.** The `main` ruleset already requires both, alongside the Ubuntu and
+  macOS audit legs, and it binds admins too. The "Still worth doing" item still pointed at the
+  classic branch-protection settings page that the fleet retired. The CI bullet now says what
+  the ruleset enforces.
 
 ## [v7.14.0] - 2026-09-29
 
