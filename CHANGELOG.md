@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.14.0] - 2026-09-29
+
 ### Security
 
 - **The CI floor bans the `pull_request_target` trigger.** It runs a fork's pull request in
