@@ -42,8 +42,8 @@ truth and compare:
   footnotes and the quirks prose against the repos they describe, and the _asserted_ cells
   (footnote ²¹ names, `asset`/`cargo`/`AUR`/`GURU` routes) against what that repo's
   `bootstrap.sh` actually does out-of-band. **Mind the overlap**: the fleet-version blocks
-  sit INSIDE footnotes — ⁵ (tree-sitter-cli), ³³ (neovim) and ³⁴ (jq) — so each of those is
-  authored prose wrapped around generated rows. Audit the argument, not the numbers.
+  sit INSIDE footnotes — ⁵ (tree-sitter-cli), ³³ (neovim), ³⁴ (jq) and ³⁹ (eza) — so each of
+  those is authored prose wrapped around generated rows. Audit the argument, not the numbers.
 - **Vendored `core/` freshness.** Each OS repo's `core.lock` (`core_sha`,
   `core_version`) vs this repo's `core.version` and HEAD.
 - **`CHANGELOG.md` `[Unreleased]` ↔ recent commits** (`git log`).
