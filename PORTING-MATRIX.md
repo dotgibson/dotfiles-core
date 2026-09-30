@@ -163,7 +163,7 @@ and a footnote here.** The footnotes below stay hand-written.
 | procs            | `procs`           | `procs`           | `procs`                    | `sys-process/procs`                 | `procs`                    | asset²⁸       |
 | viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸         | `viddy`                    | cargo³                              | cargo²¹                    | —²⁹           |
 | sd²²             | `sd`              | `sd`              | `sd`                       | `sys-apps/sd`¹²                     | `sd`                       | `sd`          |
-| gron             | `gron`            | `gron`            | `gron`                     | go³                                 | `gron`                     | `gron`        |
+| gron             | `gron`            | `gron`            | `gron`                     | go³                                 | cargo²¹                    | `gron`        |
 | jnv¹⁷            | `jnv`             | cargo             | cargo³                     | cargo                               | cargo                      | —²⁹           |
 | jc⁴⁰             | `jc`              | `jc`⁴⁰            | `jc`                       | `dev-python/jc`⁴⁰                   | `jc`                       | `jc`          |
 | lnav²¹ ²⁴        | `lnav`            | `lnav`            | `lnav`                     | `app-admin/lnav`²⁴                  | `lnav`²⁴                   | `lnav`        |
