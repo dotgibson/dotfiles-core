@@ -444,7 +444,9 @@ haven't migrated to your snapshot, bootstrap falls back to the Charm apt repo
 **Rust** CLI (rewritten from Go upstream), so it installs via `cargo install viddy`, **not**
 `go install`. Packaged on Homebrew (`viddy`, already in the macOS `Brewfile`) and the AUR;
 **not** in Arch-official, Gentoo, or Debian/Kali apt, but now in **Alpine**
-`community` (a native musl build — apk-installed, with the cargo build kept as a fallback)
+`community` (a native musl build — apk-installed, with the cargo build kept as a fallback —
+but still the pre-rewrite **Go 0.4.0** on every branch, v3.21 through edge; upstream Rust is
+1.x, and the apk install stops bootstrap's presence-guarded cargo fallback from ever running)
 and **openSUSE** Tumbleweed `repo-oss` (see ¹⁸).
 Where unpackaged, `bootstrap.sh` builds it best-effort via `cargo install --locked viddy`
 (the same cargo path as yazi/dust/tealdeer) — **not on Kali**: `dotfiles-Debian` installs
