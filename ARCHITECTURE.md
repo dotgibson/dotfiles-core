@@ -145,6 +145,17 @@ Three things about the demolition are worth knowing rather than rediscovering:
   release before** the major that relies on it. Any break that changes what `bootstrap.sh`
   links ships its second half only when the stamps say the fleet has relinked.
 
+  **A box with two checkouts keeps the newer Core**
+  ([#1211](https://github.com/dotgibson/dotfiles-core/issues/1211)). An OS repo and a role repo
+  stacked on it (Debian + Offense) each vendor Core, and each bootstrap links the whole Core
+  surface from its own `core/`. So the last one to run used to decide which Core the shell
+  loaded, and running the OS repo's after the role repo's could swap in an older release that
+  the doctor then read as `current`. `blib_main` now reads the linked `loader.zsh`. If it
+  belongs to another checkout whose `core/core.version` is newer than this one's, the run
+  leaves every Core link as it is, still wires its own OS or role layer, and leaves the stamp
+  naming the checkout the links still point into. `--force-core` relinks anyway. When either
+  version cannot be read, the run relinks as before, because nothing proves a downgrade.
+
   A host that had not relinked when #763 landed did not lose data or silently misbehave. It
   lost `up`, `maint-install` on systemd/launchd, the doctor's install hint and the maint
   runner's count, and each of them said so and named `--links-only`.
