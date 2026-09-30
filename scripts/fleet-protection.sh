@@ -44,6 +44,13 @@
 #                                             admin. Rulesets ARE publicly readable, so
 #                                             this needs no privileged token at all.
 #
+# The default report ALSO prints each repo's Actions execution settings after the
+# protection rows: whether GitHub itself refuses a tag-pinned action
+# (`sha_pinning_required`, the server-side twin of check-modern.sh rule 3) and the
+# `allowed_actions` policy. These rows are REPORTED, NOT GATED (#1226). They never change
+# the exit code until the fleet decides whether to enforce them. They need repo admin, the
+# same wall as classic protection, so --rulesets-only skips them and says so.
+#
 set -uo pipefail
 
 # THE ONE FLEET LIST THIS SCRIPT CANNOT READ. Every other fleet script goes through
@@ -65,7 +72,7 @@ for arg in "$@"; do
     --migrate)       MODE=migrate ;;
     --retire)        MODE=retire  ;;
     --rulesets-only) SKIP_CLASSIC=1 ;;
-    -h|--help)       sed -n '2,46p' "$0"; exit 0 ;;
+    -h|--help)       awk 'NR > 1 && /^set -uo/ { exit } NR > 1' "$0"; exit 0 ;;
     *) echo "unknown argument: $arg (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -191,5 +198,35 @@ for repo in "${REPOS[@]}"; do
     fi
   fi
 done
+
+# ── Actions execution settings: reported, not gated (#1226) ──────────────────────
+# Report mode only: --migrate/--retire are about rulesets, and these rows would only be
+# noise under a write. A repo whose settings cannot be read is printed as `?`, never as
+# "not required". An unreadable setting and an unset one are different answers, the
+# same can't-see-vs-not-there line the protection rows hold. But `?` does not touch
+# $rc, because nothing here is gated yet.
+if [[ "$MODE" == report ]]; then
+  echo
+  if (( SKIP_CLASSIC )); then
+    echo "· Actions settings (sha_pinning_required, allowed_actions): skipped — --rulesets-only has no repo admin"
+  else
+    echo "Actions settings — reported, not gated (#1226):"
+    for repo in "${REPOS[@]}"; do
+      if perms="$(gh api "repos/$ORG/$repo/actions/permissions" 2>/dev/null)" \
+         && row="$(jq -r '
+              [ (if .sha_pinning_required == true then "required"
+                 elif .sha_pinning_required == false then "not-required"
+                 else "unreported" end),
+                (.allowed_actions // (if .enabled == false then "disabled" else "unreported" end)) ]
+              | @tsv' <<<"$perms" 2>/dev/null)" && [[ -n "$row" ]]; then
+        IFS=$'\t' read -r sha_pin allowed <<<"$row"
+        printf '%s %-20s sha_pin=%-12s allowed_actions=%s\n' \
+          "$( [[ "$sha_pin" == required ]] && echo '·' || echo '!' )" "$repo" "$sha_pin" "$allowed"
+      else
+        printf '? %-20s cannot read actions/permissions — needs repo admin; not a "not required"\n' "$repo"
+      fi
+    done
+  fi
+fi
 
 exit "$rc"

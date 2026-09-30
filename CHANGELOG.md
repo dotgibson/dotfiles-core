@@ -58,6 +58,15 @@
   the two Ubuntu legs do not restore each other's natively built tree. `.github/actionlint.yaml`
   returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
   would red the audit on every leg (#1200).
+- **`make fleet-protection` now reports each repo's Actions execution settings.** After the
+  ruleset rows, the default run lists whether GitHub itself refuses a tag-pinned action
+  (`sha_pinning_required`, the server-side twin of `check-modern.sh` rule 3) and the
+  `allowed_actions` policy. The rows are reported, not gated: they never change the exit
+  code until the fleet decides whether to enforce them. An unreadable setting prints as `?`,
+  not as "not required". They need repo admin, so `--rulesets-only`, the CI mode, skips them
+  and says so. The first run shows SHA pinning required on 2 of the 11 repos it covers:
+  `dotfiles-core` and `dotfiles-MacBook`. `--help` now prints the whole header instead of a
+  fixed line range that had fallen out of date (#1226).
 
 ### Added
 
