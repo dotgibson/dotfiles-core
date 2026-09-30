@@ -51,6 +51,17 @@
   returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
   would red the audit on every leg (#1200).
 
+### Added
+
+- **`jc` is part of the stack: it turns command output into JSON.** `ps aux | jc --ps`,
+  `jc dig example.com` and a few hundred other parsers hand `jq` something to transform.
+  Before this, Core's JSON tools could transform, grep and explore JSON but could not
+  produce it from `ps`, `ss` or `dig`. It is its own command with no alias, probed by
+  `zsh/00-tools.zsh` and listed in core-doctor's `data / net` group. Every OS repo now
+  installs it. `PORTING-MATRIX.md` gains a `jc` row and footnote ⁴⁰, which records the two
+  exceptions: openSUSE Leap 16.x has no package, so it is declared opt-in there, and
+  Gentoo's `dev-python/jc` is testing-keyworded only (#1208).
+
 ### Documentation
 
 - **The README's install steps now put the OS layer before a role repo.** Offense used to be
