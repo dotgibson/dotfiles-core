@@ -346,6 +346,13 @@ release-blocking:
   `audit-alpine`, `audit-arch`), which binds admins too, so a red on any one blocks the
   merge. `scripts/fleet-protection.sh --rulesets-only` confirms the ruleset binds
   `main` and how many checks it requires.
+- `ci.yml`'s `fleet-gates` job runs the audit's **fleet-wide gates against the real
+  siblings**. The four legs above check out Core alone, so a gate that reads a sibling skips
+  there. That is how #1210 merged green and then refused the v7.14.0 fan-out (#1239).
+  The job clones the fleet beside Core, audits the PR's base and head against the same clones
+  (`scripts/fleet-gate-delta.sh`), and fails only on a failure the PR **adds**. A red means
+  "land the sibling fix first". A failure already on `main` is a warning there, and a HOLD in
+  `/release-readiness`.
 - `bootstrap-test.yml` exercises the bootstrap path.
 - The behavioral suite (`test-core.sh`) checks load order and function units
   cross-shell.
