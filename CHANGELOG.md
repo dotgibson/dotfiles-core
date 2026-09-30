@@ -11,6 +11,15 @@
   a branch filter or an `env:` value that names the trigger does not fire. That is why it is
   not a `banned_patterns` entry, which would red the baseline's own rule 1 rationale. It was
   free to add: no repo in the org declared the trigger on its default branch (#1215).
+- **The `pull_request_target` ban now reaches every repo that calls `lint-call.yml@v7`.**
+  The reusable workflow's `actionlint` job gains a step that runs `check-modern.sh
+  --banned-triggers caller`: rule 10 alone, from the Core checkout, over the caller's own
+  workflows, including ones not yet committed. It blocks from the start, because every
+  caller was measured clean first. Rule 10's walker is now one function that both the
+  floor and the new mode call, so the fleet check cannot drift from Core's. A caller that
+  pins the workflow to a SHA newer than the `v7` tag gets a warning, not a false red.
+  `dotfiles-Windows`, `dotfiles-web` and `htpx` do not call `lint-call.yml`, so they are
+  not covered yet. All three are clean today (#1215).
 
 ### Fixed
 
@@ -39,9 +48,19 @@
   into the cases that pin the unset state: the GUI and macOS browser cases, and the daemon
   guard's never-opted-in pair. That is how the v7.13.0 cut went red locally on a tree CI
   had passed. Every case that wants one of these variables sets it explicitly.
+- **The weekly `/freshness-triage` routine can now check the CLI tool pins it reports on**
+  ([#1203](https://github.com/dotgibson/dotfiles-core/issues/1203)). Its "CLI tool pins" row
+  asks for each `scripts/tool-versions.env` pin against upstream, but neither the routine's
+  `allowed-tools` nor the job's mirrored `--allowedTools` granted a release lookup, so the
+  row came back "not checked" (#1193). Both lists now grant the read-only
+  `gh release view` and `npm view`, and the routine says which to use for which pin.
 
 ### Changed
 
+- **The maintenance bots' Claude Code CLI pin rolls forward, 2.1.281 → 2.1.285.** The weekly
+  freshness review ([#1193](https://github.com/dotgibson/dotfiles-core/issues/1193)) found it
+  the only `scripts/tool-versions.env` pin behind upstream that is not deliberately held. It is
+  an npm install, so there is no `*_SHA256` to refresh. `shfmt` stays held at 3.13.1 (#813).
 - **CI audits on Ubuntu 26.04 ahead of the `ubuntu-latest` switch.** `ci.yml`'s audit
   matrix gains a temporary `ubuntu-26.04` leg, because `ubuntu-latest` rolls to 26.04 between
   2026-10-19 and 2026-11-19 and the new image changes or removes tools. The leg is not a
@@ -50,6 +69,25 @@
   the two Ubuntu legs do not restore each other's natively built tree. `.github/actionlint.yaml`
   returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
   would red the audit on every leg (#1200).
+- **The fleet's pinned shfmt moves 3.13.1 → 3.14.1, ending the #813 hold**
+  ([#1217](https://github.com/dotgibson/dotfiles-core/issues/1217)). The hold assumed the
+  bump would add `::warning::` nags to consumer repos that pass today. Measured against every
+  sibling's `main`, none of the ten `lint-call.yml` consumers passes today, and 3.14.1 leaves
+  each one's count of drifting files unchanged. The one consumer where shfmt _blocks_ is
+  `dotfiles-MacBook`'s `make fmt-check`, and it was rewritten first to a form both versions
+  agree on ([dotfiles-MacBook#275](https://github.com/dotgibson/dotfiles-MacBook/pull/275)).
+  `SHFMT_SHA256` is refreshed, and the `tool-versions.env` note now says where the next
+  output-changing bump can bite. Core's own scripts are unaffected, since Core does not run
+  shfmt.
+- **`make fleet-protection` now reports each repo's Actions execution settings.** After the
+  ruleset rows, the default run lists whether GitHub itself refuses a tag-pinned action
+  (`sha_pinning_required`, the server-side twin of `check-modern.sh` rule 3) and the
+  `allowed_actions` policy. The rows are reported, not gated: they never change the exit
+  code until the fleet decides whether to enforce them. An unreadable setting prints as `?`,
+  not as "not required". They need repo admin, so `--rulesets-only`, the CI mode, skips them
+  and says so. The first run shows SHA pinning required on 2 of the 11 repos it covers:
+  `dotfiles-core` and `dotfiles-MacBook`. `--help` now prints the whole header instead of a
+  fixed line range that had fallen out of date (#1226).
 
 ### Added
 

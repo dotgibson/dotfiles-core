@@ -1,7 +1,7 @@
 ---
 description: Review open dependency-bump PRs against upstream changelogs
 argument-hint: "[PR number, optional — defaults to all open bot PRs]"
-allowed-tools: Task, Read, Grep, Glob, WebSearch, WebFetch, Bash(./scripts/update-plugins.sh --check), Bash(./scripts/check-nvim-freshness.sh), Bash(git log:*), Bash(git diff:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Bash(gh issue list:*), Bash(gh run list:*)
+allowed-tools: Task, Read, Grep, Glob, WebSearch, WebFetch, Bash(./scripts/update-plugins.sh --check), Bash(./scripts/check-nvim-freshness.sh), Bash(git log:*), Bash(git diff:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Bash(gh issue list:*), Bash(gh run list:*), Bash(gh release view:*), Bash(npm view:*)
 ---
 
 # /freshness-triage
@@ -105,10 +105,17 @@ purpose, and the pin carries its own reason: a `# held:` comment above the
 `*_VERSION` line names what a bump would cost and cites the issue that decided it.
 Read that issue before proposing the bump, and report the pin as **Hold** restating
 the standing reason — a newer upstream release only reopens the question if it
-removes the cost (or adds a security fix). `SHFMT_VERSION` is the live example: it is
-held at 3.13.1 because 3.14.x changes shfmt's formatting _output_, so bumping it nags
-every OS-repo lint leg until each repo reformats. The note lives in the pin file, not
-just the CHANGELOG, so it is legible even from a shallow checkout.
+removes the cost (or adds a security fix), or a measurement shows the cost was never
+there. `SHFMT_VERSION` is the worked example: it was held at 3.13.1 because 3.14.x
+changes shfmt's formatting _output_ (#813), until #1217 measured the fleet and found the
+advisory consumers already drifting and one blocking consumer that a one-line rewrite
+satisfied. The note lives in the pin file, not just the CHANGELOG, so it is legible even
+from a shallow checkout.
+
+Read upstream with the two lookups this routine is granted: `gh release view -R <owner/repo>
+--json tagName,publishedAt` for the GitHub-released binaries, and `npm view <package> version`
+for the registry installs (`@anthropic-ai/claude-code`, `markdownlint-cli2`). Without them
+the row can only say "not checked", which it did every week until #1203.
 
 When a triaged change bumps a `*_VERSION` here (or you bump one while triaging):
 
