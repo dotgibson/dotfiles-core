@@ -21,19 +21,19 @@ banned_patterns:
   - "::save-state"
   - "::set-env"
   - "::add-path"
-  # Old JS action runtimes: Node 24 is the default runner runtime since 2026-06-16;
-  # node20 is removed from the runners on 2026-09-23 (the 2025-09-19 deprecation
-  # changelog; its editor's note of 2026-08-25 fixed the date); node16 is long gone.
-  # Guards first-party action.yml `using:` declarations from browning out (third-party
-  # runtimes live in SHA-pinned upstreams and are a freshness-triage concern, not a
-  # floor one — and every external action in the tree already resolves to node24 at
-  # its pinned SHA).
+  # Old JS action runtimes: Node 24 has been the default runner runtime since 2026-06-16,
+  # and node20 was removed from the runners on 2026-09-23 (the 2025-09-19 deprecation
+  # changelog; its editor's note of 2026-08-25 fixed the date); node16 is long gone. An
+  # action declaring either no longer starts, so these entries now keep a first-party
+  # action.yml from being written against a dead runtime. Third-party runtimes live in
+  # SHA-pinned upstreams and are a freshness-triage concern, not a floor one; every
+  # external action in the tree declares node24 at its pinned SHA (checked 2026-09-29).
   - "using: node16"
   - "using: node20"
-  # The per-step opt-out that forces a node20 action to keep running on node20. It
-  # stops working entirely once node20 leaves the runners (2026-09-23), so reaching
-  # for it buys a few months and then browns out — ban the dead end rather than let
-  # a future bump-dodge land on it.
+  # The per-step opt-out that forced a node20 action to keep running on node20. It has
+  # done nothing since node20 left the runners on 2026-09-23, so an action that reaches
+  # for it fails anyway. The ban now just makes that failure show up in review, not at
+  # run time.
   - "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION"
   # The checkout input that restores fork-PR checkout under pull_request_target /
   # workflow_run. actions/checkout v7 (2026-06-18) began refusing a `repository:`, `ref:`
@@ -224,3 +224,29 @@ require_job_timeout: true
 #    comments only, per the parser note under banned_runners above.
 banned_call_secrets:
   - inherit
+
+# 10) Workflow triggers that must never be declared. `pull_request_target` runs in the BASE
+#     repo's context, with its secrets and a write-capable token, on a pull request that may
+#     come from a fork. That is the precondition for the "pwn request": one step that checks
+#     out or evaluates the fork's code, and untrusted code holds the keys. Rule 1's
+#     `allow-unsafe-pr-checkout` ban closes the checkout half of that shape; this closes the
+#     trigger half, which also covers a fork's code reaching a step some other way.
+#
+#     GitHub starts blocking the trigger by default on 2026-11-02, for repos on the default
+#     Actions policy. This rule makes that permanent, whatever a repo's or org's policy later
+#     allows. A job that genuinely needs to act on a fork PR with privilege uses the pattern
+#     rule 1 names: build in `pull_request`, consume the artifact from a `workflow_run`.
+#
+#     Anchored to the `on:` block, not a `banned_patterns` entry. Rule 1 is a blind
+#     `grep -F`, and the name has to stay writable in prose: the rationale under rule 1
+#     above names it, and so would any workflow comment explaining why a job does not use it.
+#     check-modern.sh reads the scalar (`on: x`), flow-list (`on: [a, x]`), flow-map, block-map
+#     (`on:` then `  x:`) and block-list (`  - x`) forms, bare or quoted, and a quoted `"on":`
+#     key. Only first-level entries under `on:` count.
+#
+#     Like rules 5b, 8 and 9, it was free when it joined: every non-archived repo in the
+#     dotgibson org had 0 uses of the trigger on its default branch (2026-09-29). Workflows
+#     only, since a composite action has no triggers. Full-line comments only, per the parser
+#     note under banned_runners above.
+banned_triggers:
+  - pull_request_target

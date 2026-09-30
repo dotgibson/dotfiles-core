@@ -105,6 +105,53 @@ _job_records() {
   done
 }
 
+# ── rule 10's walker, shared with --banned-triggers ──────────────────────────
+# `pull_request_target` runs fork PRs with the base repo's secrets and token. It is read
+# STRUCTURALLY, like rules 5b and 9, and for the same reason: rule 1 is a blind `grep -F`,
+# and the name has to stay writable in a comment (the baseline's own rule 1 rationale
+# names it). The walk takes the column-0 `on:` key (bare or quoted) and everything under it
+# until the next column-0 key. The inline value (`on: x`, `on: [a, x]`, `on: {x: …}`) is
+# split into word tokens. Below the key, only the FIRST indent level counts: a block-map
+# `x:` or a block-list `- x`, quoted or not, with a trailing `# comment` tolerated. Deeper
+# lines are filter values (`branches:`, `types:`), where a name is not a trigger.
+# The quote character comes in as a -v so the program can stay single-quoted.
+#
+# ONE definition, two readers: rule 10 below over this repo's workflows, and
+# --banned-triggers over ANOTHER repo's, which is how lint-call.yml@vN carries the rule to
+# the fleet without the rest of the floor (#1215). Prints `FILE:LINE: TRIGGER` per hit.
+_trigger_hits() { # $@ = workflow files
+  local _th_list
+  _th_list="$(_yaml_list banned_triggers | tr '\n' ' ')"
+  if [ -z "${_th_list// /}" ] || [ "$#" -eq 0 ]; then return 0; fi
+  awk -v banned=" $_th_list " -v q="'" '
+    function hit(t) { if (t != "" && index(banned, " " t " ")) printf "%s:%d: %s\n", FILENAME, FNR, t }
+    FNR == 1 { inon = 0 }
+    $0 ~ ("^[\"" q "]?on[\"" q "]?:") {
+      inon = 1; ind = -1
+      v = $0; sub("^[\"" q "]?on[\"" q "]?:", "", v); sub(/[[:space:]]#.*$/, "", v)
+      # Brackets out first, on their own: a `[]…]` class is where awks disagree.
+      gsub(/\[/, " ", v); gsub(/\]/, " ", v)
+      n = split(v, a, "[{},:[:space:]\"" q "]+")
+      for (i = 1; i <= n; i++) hit(a[i])
+      next
+    }
+    inon && /^[^[:space:]#]/ { inon = 0 }
+    inon {
+      if ($0 ~ /^[[:space:]]*(#.*)?$/) next
+      match($0, /^[[:space:]]*/)
+      if (ind < 0) ind = RLENGTH
+      if (RLENGTH != ind) next
+      l = $0; sub(/^[[:space:]]*(-[[:space:]]*)?/, "", l); sub(/[[:space:]]#.*$/, "", l)
+      if (match(l, "^[\"" q "]?[A-Za-z0-9_-]+[\"" q "]?")) {
+        t = substr(l, RSTART, RLENGTH); rest = substr(l, RLENGTH + 1)
+        gsub("[\"" q "]", "", t)
+        if (rest ~ /^[[:space:]]*(:.*)?$/) hit(t)
+      }
+    }
+  ' "$@" 2>/dev/null || true
+}
+_TRIGGER_NOTE="banned workflow trigger (runs fork PRs with base-repo secrets)"
+
 # `--job-census` prints the counts and nothing else, for the gate above. It is a READER of
 # the floor, not part of it: it runs no rule and returns no verdict.
 #
@@ -121,8 +168,43 @@ case "${1:-}" in
     END { printf "workflows=%d runner=%d call=%d\n", w, r + 0, c + 0 }'
   exit 0
   ;;
+# `--banned-triggers DIR` runs rule 10 ALONE over another repo's workflows. It is what
+# lint-call.yml@vN calls, from a Core checkout, on the caller's tree (#1215). Rule 10 alone
+# because it is the one rule the whole fleet met on the day it landed. The rest of the floor
+# is Core's own contract, and pointing all of it at a caller would be red on arrival.
+#
+# The inventory is DIR's own `git ls-files` (untracked included, the same rule _audit_ls
+# holds), falling back to a plain find when DIR is not a work tree. A DIR with no
+# workflows at all is a pass: a repo with no workflows cannot declare a trigger.
+--banned-triggers)
+  _bt_dir="${2:-}"
+  if [ -z "$_bt_dir" ] || [ ! -d "$_bt_dir" ]; then
+    echo "check-modern: --banned-triggers needs a directory (got: '${_bt_dir}')" >&2
+    exit 2
+  fi
+  _bt_files=()
+  while IFS= read -r _f; do [ -n "$_f" ] && _bt_files+=("$_bt_dir/$_f"); done < <(
+    if git -C "$_bt_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "$_bt_dir" ls-files --cached --others --exclude-standard -- \
+        '.github/workflows/*.yml' '.github/workflows/*.yaml'
+    else
+      ( cd "$_bt_dir" && find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sed 's|^\./||' )
+    fi)
+  _bt_n=0
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    printf '  ✗ %s: %s\n' "$_TRIGGER_NOTE" "$hit" >&2
+    _bt_n=$((_bt_n + 1))
+  done < <(_trigger_hits ${_bt_files[@]+"${_bt_files[@]}"})
+  if [ "$_bt_n" -eq 0 ]; then
+    echo "check-modern: no banned workflow trigger (${#_bt_files[@]} workflow files in $_bt_dir)"
+    exit 0
+  fi
+  printf 'check-modern: %d banned workflow trigger(s) in %s (scripts/modern-baseline.yml rule 10)\n' "$_bt_n" "$_bt_dir" >&2
+  exit 1
+  ;;
 *)
-  echo "check-modern: unknown argument: $1 (the only one is --job-census)" >&2
+  echo "check-modern: unknown argument: $1 (the options are --job-census and --banned-triggers DIR)" >&2
   exit 2
   ;;
 esac
@@ -498,6 +580,13 @@ if [ "${#WORKFLOWS[@]}" -gt 0 ]; then
     while IFS= read -r hit; do note "reusable-workflow call passes secrets: $sv (map each secret by name): $hit"; done \
       < <(grep -HnE "^[[:space:]]*secrets:[[:space:]]*[\"']?${sv}[\"']?[[:space:]]*(#.*)?\$" "${WORKFLOWS[@]}" 2>/dev/null || true)
   done < <(_yaml_list banned_call_secrets)
+fi
+
+# ── 10) no banned workflow trigger declared under on: ────────────────────────
+# The walk is _trigger_hits (above), shared with --banned-triggers. Scoped to WORKFLOWS:
+# a composite action has no triggers.
+if [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  while IFS= read -r hit; do note "$_TRIGGER_NOTE: $hit"; done < <(_trigger_hits "${WORKFLOWS[@]}")
 fi
 
 if [ "$violations" -eq 0 ]; then
