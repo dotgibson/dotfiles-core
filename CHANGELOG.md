@@ -64,6 +64,14 @@
 
 ### Changed
 
+- **A bootstrap no longer downgrades Core on a box with two checkouts.** An OS repo and a
+  role repo stacked on it each vendor Core, and each bootstrap linked the whole Core surface
+  from its own copy. So running the OS repo's bootstrap after the role repo's could quietly
+  swap in an older Core, and `core-doctor` then read `current`. The shared driver now checks
+  the Core already linked. If it comes from another checkout with a newer `core.version`, the
+  run leaves every Core link alone, still wires its own layer, says why, and leaves the relink
+  stamp as it was. `--force-core` overrides. An unreadable version or an equal one relinks as
+  before (#1211).
 - **The maintenance bots' Claude Code CLI pin rolls forward, 2.1.281 → 2.1.285.** The weekly
   freshness review ([#1193](https://github.com/dotgibson/dotfiles-core/issues/1193)) found it
   the only `scripts/tool-versions.env` pin behind upstream that is not deliberately held. It is
