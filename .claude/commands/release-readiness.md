@@ -23,9 +23,20 @@ Target for this run: **$ARGUMENTS** (empty = infer the next version from the unr
    headings must line up (`release.sh` promotes `[Unreleased]` → a dated heading, opening a
    fresh one). Propose the next SemVer from the unreleased content: a breaking change → major,
    a `feat` → minor, only `fix`/`chore`/`docs` → patch.
-4. **Is the fleet in a releasable state?** `fleet-drift.sh` (are the OS repos on the latest
-   Core?) and pin freshness (`update-plugins.sh --check` for zsh, `check-nvim-freshness.sh`
-   for the vendored editor). A release fans out, so surface any drift or stale pins that ought
+4. **Is the fleet in a releasable state?** Run these **exactly as written**. The scheduled
+   job grants each one as a literal string, so `scripts/…` without the `./`, an added flag,
+   `make check-nvim`, or `gh release list` is refused, and the answer is lost. The 2026-09-30
+   run (#1245) reported the editor pin as unverified that way, while the pin was current.
+   - `./scripts/fleet-drift.sh` — are the OS repos on the latest Core?
+   - `./scripts/update-plugins.sh --check` — the zsh plugin pins.
+   - `./scripts/check-nvim-freshness.sh` — the vendored editor. It lists `dotfiles-nvim`'s
+     release tags itself over `git ls-remote`, so no other tool is needed for this row.
+     **Exit 0** with `✓ … is current` means current. **Exit 0** with `– … SKIPPED` means
+     upstream was unreachable: report it as unverified, never as current. **Exit 2** means
+     behind, and the output names the tag to move to. **Exit 1** means `nvim.lock` itself is
+     broken, which is a blocker.
+
+   A release fans out, so surface any drift or stale pins that ought
    to settle first — **advisory**, not hard blockers, with one thing worth calling out: the
    editor pin moves **at** a release and nowhere else (`NVIM-SPLIT-PROPOSAL.md` §7(3)), so a
    behind `nvim.lock` is a thing to DO in this release, not a reason to hold it. The bump is
