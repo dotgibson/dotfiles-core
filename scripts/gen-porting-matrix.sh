@@ -31,8 +31,8 @@
 # `/os-package-availability` is the routine that refreshes them, not this script.
 #
 # ONE EXCEPTION, and it is worth knowing: the fleet-version blocks sit INSIDE footnotes —
-# 5 (tree-sitter-cli), 33 (neovim) and 34 (jq), each enumerating where the fleet sits against
-# that tool's recorded floor. So those footnote regions are hand-written APART FROM their
+# 5 (tree-sitter-cli), 33 (neovim), 34 (jq) and 39 (eza), each enumerating where the fleet
+# sits against that tool's recorded floor. So those footnote regions are hand-written APART FROM their
 # marker-delimited lines: the argument around them stays authored, the version facts inside
 # them are rendered from scripts/fleet-package-versions.tsv. BLOCKS' `tool` column says which
 # block renders which tool — one block per tool, declared rather than derived from the id.
@@ -293,17 +293,18 @@ starship	-	=	=¹⁸	=	=	=	asset²⁸
 atuin²⁰	-	=	=¹⁸	=	=	asset²⁸	asset²⁸
 mise³⁰	-	=	script³⁰	script³⁰	script³⁰	asset²⁸	asset²⁸
 direnv³²	-	=	=	=	\`app-shells/direnv\`¹²	=	=
-yazi	-	=	=¹⁸	=	\`app-misc/yazi\`¹²	cargo³	—²⁹
+yazi	-	=	=¹⁸	=	\`app-misc/yazi\`¹²	cargo²¹	—²⁹
 tree-sitter-cli⁵	tree-sitter-cli tree-sitter	=	=	=	=	=	asset²⁸
 jq³⁴	-	=	=	=	=	=	=
 yq⁶	yq go-yq yq-go	=	=	=	=	=	go³
 duf	-	=	=	testing¹⁴	=	=	=
 dust	dust du-dust	=	=	=	=	=⁴	asset²⁸
 procs	-	=	=	=	=	=	asset²⁸
-viddy¹⁶	-	AUR¹⁶	\`viddy\`¹⁸	=	cargo³	cargo³	—²⁹
+viddy¹⁶	-	AUR¹⁶	\`viddy\`¹⁸	=	cargo³	cargo²¹	—²⁹
 sd²²	-	=	=	=	\`sys-apps/sd\`¹²	=	=
 gron	-	=	=	=	go³	=	=
 jnv¹⁷	-	\`jnv\`	cargo	cargo³	cargo	cargo	—²⁹
+jc⁴⁰	-	=	=⁴⁰	=	=⁴⁰	=	=
 lnav²¹ ²⁴	-	\`lnav\`	\`lnav\`	=	=²⁴	\`lnav\`²⁴	\`lnav\`
 glow	-	=	=	testing¹⁴	\`app-misc/glow\`¹²	=¹⁵	charm apt
 gum	-	=	=	=	mise³⁰	=¹⁵	charm apt

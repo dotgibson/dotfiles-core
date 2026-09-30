@@ -1,7 +1,38 @@
 ## [Unreleased]
 
+### Security
+
+- **The CI floor bans the `pull_request_target` trigger.** It runs a fork's pull request in
+  the base repo's context, with its secrets and a write-capable token, which is the
+  precondition for a "pwn request". GitHub starts blocking it by default on 2026-11-02 for
+  repos on the default policy, and rule 10 of `scripts/modern-baseline.yml` makes that
+  permanent whatever a policy later allows. `check-modern.sh` reads the `on:` block itself:
+  the scalar, flow and block forms, quoted or bare, and first-level entries only. A comment,
+  a branch filter or an `env:` value that names the trigger does not fire. That is why it is
+  not a `banned_patterns` entry, which would red the baseline's own rule 1 rationale. It was
+  free to add: no repo in the org declared the trigger on its default branch (#1215).
+- **The `pull_request_target` ban now reaches every repo that calls `lint-call.yml@v7`.**
+  The reusable workflow's `actionlint` job gains a step that runs `check-modern.sh
+  --banned-triggers caller`: rule 10 alone, from the Core checkout, over the caller's own
+  workflows, including ones not yet committed. It blocks from the start, because every
+  caller was measured clean first. Rule 10's walker is now one function that both the
+  floor and the new mode call, so the fleet check cannot drift from Core's. A caller that
+  pins the workflow to a SHA newer than the `v7` tag gets a warning, not a false red.
+  `dotfiles-Windows`, `dotfiles-web` and `htpx` do not call `lint-call.yml`, so they are
+  not covered yet. All three are clean today (#1215).
+
 ### Fixed
 
+- **The relink fix now names which checkout to run.** `core-doctor`'s relink row and the
+  "relink pending" nudge used to say `run ./bootstrap.sh --links-only`. On a box with both an
+  OS checkout and a role checkout, running the wrong one moved the whole Core surface onto
+  that repo's vendored Core, possibly an older one, and the doctor then read `current`. The
+  line now names the loaded checkout's own script, for example
+  `run ~/dotfiles-Offense/bootstrap.sh --links-only`, quoted when the path needs it (#1213).
+  The `other` state no longer stops at "last relinked from another checkout". It appears
+  after a partial `--only`/`--skip` run of the other checkout, or a moved one. It now names
+  both fixes, since either checkout's full `--links-only` run re-stamps the box. Which one
+  _should_ own Core stays an open question in #1211 (#1218).
 - **`make audit` from a fleet shell no longer reds four cases CI calls green.** The
   behavioral suite's host scrub now also drops `BROWSER` and every `ATUIN_*` variable.
   Core's own `00-tools.zsh` exports `BROWSER=w3m` on a headless box (WSL included), and an
@@ -21,8 +52,32 @@
   returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
   would red the audit on every leg (#1200).
 
+### Added
+
+- **`jc` is part of the stack: it turns command output into JSON.** `ps aux | jc --ps`,
+  `jc dig example.com` and a few hundred other parsers hand `jq` something to transform.
+  Before this, Core's JSON tools could transform, grep and explore JSON but could not
+  produce it from `ps`, `ss` or `dig`. It is its own command with no alias, probed by
+  `zsh/00-tools.zsh` and listed in core-doctor's `data / net` group. Every OS repo now
+  installs it. `PORTING-MATRIX.md` gains a `jc` row and footnote ⁴⁰, which records the two
+  exceptions: openSUSE Leap 16.x has no package, so it is declared opt-in there, and
+  Gentoo's `dev-python/jc` is testing-keyworded only (#1208).
+
 ### Documentation
 
+- **The README's install steps now put the OS layer before a role repo.** Offense used to be
+  shown cloned and bootstrapped on its own, but it ships no OS layer: Kali needs
+  `dotfiles-Debian` first, and Defense needs whichever OS repo the box runs. The WSL
+  mirrored-networking note now points at `dotfiles-Debian/wsl/windows.wslconfig.example`,
+  because Offense no longer carries that file.
+- **`PORTING-MATRIX.md` no longer promises installs that don't happen.** Kali's `yazi` and
+  `viddy` cells read `cargo²¹` (available, not installed): `dotfiles-Debian` installs Kali's
+  `cargo` but cargo-builds nothing with it. Footnote ¹³ says Arch only _hints_ the AUR
+  `1password-cli`, and that the vendor-repo setup is key-first rather than rolled back.
+  Footnote ¹⁵ drops a `go install` fallback for glow/gum that never existed. Footnote ¹⁸
+  counts four openSUSE installers and two `curl | sh` routes now that yazi's is gone. The
+  lineage notes name NixOS as its own lineage and Offense as a role layer on
+  `dotfiles-Debian`. Found by the weekly doc-audit (#1192).
 - **`PORTING-MATRIX.md` footnotes ⁵ and ³³ stop saying `dotfiles-Fedora` has no version floors**
   ([dotfiles-Fedora#203](https://github.com/dotgibson/dotfiles-Fedora/issues/203)).
   dotfiles-Fedora#193 landed both floors on 2026-09-17: the `# min:` pair on `neovim` and
