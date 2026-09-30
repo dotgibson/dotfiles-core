@@ -43,13 +43,20 @@
 #                                             probe — for CI, whose GITHUB_TOKEN has no
 #                                             admin. Rulesets ARE publicly readable, so
 #                                             this needs no privileged token at all.
+#   ./scripts/fleet-protection.sh --require-sha-pin
+#                                             turn on sha_pinning_required wherever it is
+#                                             off (idempotent; allowed_actions preserved)
 #
 # The default report ALSO prints each repo's Actions execution settings after the
-# protection rows: whether GitHub itself refuses a tag-pinned action
-# (`sha_pinning_required`, the server-side twin of check-modern.sh rule 3) and the
-# `allowed_actions` policy. These rows are REPORTED, NOT GATED (#1226). They never change
-# the exit code until the fleet decides whether to enforce them. They need repo admin, the
-# same wall as classic protection, so --rulesets-only skips them and says so.
+# protection rows. `sha_pinning_required` is GATED (#1226): GitHub itself refuses a
+# tag-pinned action, the server-side twin of check-modern.sh rule 3, and a repo without
+# it is red. It does not break the fleet's release model. GitHub exempts REUSABLE
+# WORKFLOWS ("can still be referenced by tag"), so `*-call.yml@v7` keeps moving, and `./`
+# local actions are exempt too. It does NOT exempt a cross-repo composite ACTION: a
+# caller of `dotfiles-core/.github/actions/setup-core-tools@v7` (dotfiles-nvim does) must
+# SHA-pin that reference before it can turn this on. `allowed_actions` and the count of
+# Actions execution-protection policies are reported, not gated. All of it needs repo
+# admin, the same wall as classic protection, so --rulesets-only skips the block and says so.
 #
 set -uo pipefail
 
@@ -72,16 +79,46 @@ for arg in "$@"; do
     --migrate)       MODE=migrate ;;
     --retire)        MODE=retire  ;;
     --rulesets-only) SKIP_CLASSIC=1 ;;
+    --require-sha-pin) MODE=require-sha-pin ;;
     -h|--help)       awk 'NR > 1 && /^set -uo/ { exit } NR > 1' "$0"; exit 0 ;;
     *) echo "unknown argument: $arg (try --help)" >&2; exit 2 ;;
   esac
 done
 if (( SKIP_CLASSIC )) && [[ "$MODE" != report ]]; then
-  echo "--rulesets-only is report-only: migrating needs to READ classic protection" >&2; exit 2
+  echo "--rulesets-only is report-only: a write mode needs repo admin" >&2; exit 2
 fi
 
 command -v gh >/dev/null || { echo "gh not installed" >&2; exit 1; }
 command -v jq >/dev/null || { echo "jq not installed" >&2; exit 1; }
+
+# ── --require-sha-pin: the one Actions-settings WRITE (#1226) ────────────────────
+# PUT actions/permissions requires `enabled` and resets whatever else is omitted, so
+# the body is the repo's CURRENT settings with only sha_pinning_required changed —
+# allowed_actions is carried over, never defaulted. Success is claimed only after
+# re-reading the setting from the server, the same prove-before-claiming rule --retire
+# follows.
+if [[ "$MODE" == require-sha-pin ]]; then
+  rc=0
+  for repo in "${REPOS[@]}"; do
+    if ! perms="$(gh api "repos/$ORG/$repo/actions/permissions" 2>/dev/null)"; then
+      echo "✗ $repo: cannot read actions/permissions — needs repo admin"; rc=1; continue
+    fi
+    if [[ "$(jq -r '.sha_pinning_required' <<<"$perms")" == true ]]; then
+      echo "✓ $repo: sha_pinning_required already on"; continue
+    fi
+    if ! jq '{enabled, allowed_actions, sha_pinning_required: true}
+             | with_entries(select(.value != null))' <<<"$perms" \
+         | gh api -X PUT "repos/$ORG/$repo/actions/permissions" --input - >/dev/null 2>&1; then
+      echo "✗ $repo: PUT actions/permissions failed"; rc=1; continue
+    fi
+    if [[ "$(gh api "repos/$ORG/$repo/actions/permissions" --jq '.sha_pinning_required' 2>/dev/null)" == true ]]; then
+      echo "→ $repo: sha_pinning_required turned on (allowed_actions=$(jq -r '.allowed_actions // "unset"' <<<"$perms") kept)"
+    else
+      echo "✗ $repo: PUT accepted but the server does not report sha_pinning_required=true"; rc=1
+    fi
+  done
+  exit "$rc"
+fi
 
 # The id of the ruleset governing the default branch, by target+condition (never by
 # name — the fleet calls the same thing First/Second/main-protection).
@@ -199,18 +236,19 @@ for repo in "${REPOS[@]}"; do
   fi
 done
 
-# ── Actions execution settings: reported, not gated (#1226) ──────────────────────
+# ── Actions execution settings: sha_pin GATED, the rest reported (#1226) ─────────
 # Report mode only: --migrate/--retire are about rulesets, and these rows would only be
-# noise under a write. A repo whose settings cannot be read is printed as `?`, never as
-# "not required". An unreadable setting and an unset one are different answers, the
-# same can't-see-vs-not-there line the protection rows hold. But `?` does not touch
-# $rc, because nothing here is gated yet.
+# noise under a write. sha_pin is gated, so a repo whose setting cannot be READ is red
+# too: a gate that cannot see is not a pass, the same line the protection rows hold.
+# allowed_actions and the execution-protection policy count are reported only, so an
+# unreadable policy count prints `?` and leaves $rc alone.
 if [[ "$MODE" == report ]]; then
   echo
   if (( SKIP_CLASSIC )); then
-    echo "· Actions settings (sha_pinning_required, allowed_actions): skipped — --rulesets-only has no repo admin"
+    echo "· Actions settings (sha_pinning_required, allowed_actions, policies): skipped — --rulesets-only has no repo admin"
   else
-    echo "Actions settings — reported, not gated (#1226):"
+    echo "Actions settings — sha_pin gated; allowed_actions and policies reported (#1226):"
+    pin_bad=0
     for repo in "${REPOS[@]}"; do
       if perms="$(gh api "repos/$ORG/$repo/actions/permissions" 2>/dev/null)" \
          && row="$(jq -r '
@@ -220,12 +258,20 @@ if [[ "$MODE" == report ]]; then
                 (.allowed_actions // (if .enabled == false then "disabled" else "unreported" end)) ]
               | @tsv' <<<"$perms" 2>/dev/null)" && [[ -n "$row" ]]; then
         IFS=$'\t' read -r sha_pin allowed <<<"$row"
-        printf '%s %-20s sha_pin=%-12s allowed_actions=%s\n' \
-          "$( [[ "$sha_pin" == required ]] && echo '·' || echo '!' )" "$repo" "$sha_pin" "$allowed"
+        policies="$(gh api "repos/$ORG/$repo/actions/policies" --jq '.total_count' 2>/dev/null)"
+        [[ "$policies" =~ ^[0-9]+$ ]] || policies='?'
+        if [[ "$sha_pin" == required ]]; then mark='✓'; else mark='✗'; pin_bad=1; fi
+        printf '%s %-20s sha_pin=%-12s allowed_actions=%-9s policies=%s\n' \
+          "$mark" "$repo" "$sha_pin" "$allowed" "$policies"
       else
-        printf '? %-20s cannot read actions/permissions — needs repo admin; not a "not required"\n' "$repo"
+        printf '✗ %-20s cannot read actions/permissions — needs repo admin; a gate that cannot see is not a pass\n' "$repo"
+        rc=1
       fi
     done
+    if (( pin_bad )); then
+      echo "      Turn it on with: scripts/fleet-protection.sh --require-sha-pin"
+      rc=1
+    fi
   fi
 fi
 
