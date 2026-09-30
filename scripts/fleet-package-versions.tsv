@@ -106,12 +106,12 @@ ver	neovim	Ubuntu 24.04	0.9.5	2026-09-17	api.launchpad.net	ubuntu_24_04
 floor	tree-sitter-cli	0.26.1
 
 ver	tree-sitter-cli	Homebrew	0.27.0	2026-09-17	formulae.brew.sh	homebrew
+ver	tree-sitter-cli	openSUSE Tumbleweed	0.27.0	2026-09-29	download.opensuse.org (package: tree-sitter)	-
 ver	tree-sitter-cli	Gentoo stable	0.26.12	2026-09-17	packages.gentoo.org (newest STABLE keyword)	-
 ver	tree-sitter-cli	Fedora Rawhide	0.26.11	2026-09-17	dl.fedoraproject.org	fedora_rawhide
 ver	tree-sitter-cli	Fedora 45	0.26.11	2026-09-17	dl.fedoraproject.org (development/45)	fedora_45
 ver	tree-sitter-cli	Fedora 44	0.26.11	2026-09-17	mdapi.fedoraproject.org	fedora_44
 ver	tree-sitter-cli	Arch	0.26.9	2026-09-17	archlinux.org/packages	arch
-ver	tree-sitter-cli	openSUSE Tumbleweed	0.26.8	2026-09-17	download.opensuse.org (package: tree-sitter)	-
 ver	tree-sitter-cli	openSUSE Leap 16.1	0.26.8	2026-09-17	download.opensuse.org (package: tree-sitter)	-
 ver	tree-sitter-cli	openSUSE Leap 16.0	0.26.8	2026-09-17	download.opensuse.org (package: tree-sitter)	-
 ver	tree-sitter-cli	Alpine edge	0.26.7	2026-09-17	pkgs.alpinelinux.org	alpine_edge
