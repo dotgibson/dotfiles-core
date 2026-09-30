@@ -2,6 +2,13 @@
 
 ### Changed
 
+- **`/release-readiness` actually checks the editor pin.** The scheduled job allows
+  `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
+  script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was
+  refused, and reported a current `nvim.lock` as unverified. Step 4 now lists the three
+  fleet-state commands exactly as the job grants them, says no other tool is needed for the
+  editor row, and spells out the exit codes. Exit 0 with `✓` means current, exit 0 with a
+  SKIP means unverified, exit 2 means behind, and exit 1 means the lock is broken.
 - **`/release-readiness` checks the fleet-wide gates against the sibling repos before a
   tag.** A Core PR's CI checks out Core alone, so every gate that reads a sibling (§9m-§9p,
   theme and desktop-parity drift) skips there. Until now the first run that could see a
