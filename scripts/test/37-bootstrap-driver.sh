@@ -281,7 +281,8 @@ FIX
   BD_PRELINK="$_bd_other" _bd_run dg-keep --links-only
   if [[ $BD_RC -eq 0 && "$(readlink "$BD/config/zsh/loader.zsh")" == "$_bd_other/core/zsh/loader.zsh" &&
     ! -e "$BD/config/zsh/30-functions.zsh" && -L "$BD/config/zsh/85-defense.zsh" &&
-    "$BD_OUT" == *"Core 9.10.0 is linked from $_bd_other_p, newer than this checkout's 9.9.9"* ]]; then
+    "$BD_OUT" == *"Core 9.10.0 is linked from $_bd_other_p, newer than this checkout's 9.9.9 — leaving every Core link"* &&
+    "$BD_OUT" != *"(dry run)"* ]]; then
     pass "downgrade: a NEWER Core linked from another checkout is kept, the role layer is still wired, and it says why"
   else
     fail "downgrade: newer Core not kept (rc=$BD_RC, loader -> $(readlink "$BD/config/zsh/loader.zsh")): $BD_OUT"
@@ -300,8 +301,10 @@ FIX
   fi
   BD_PRELINK="$_bd_other" _bd_run dg-dry --dry-run
   if [[ $BD_RC -eq 0 && "$(readlink "$BD/config/zsh/loader.zsh")" == "$_bd_other/core/zsh/loader.zsh" &&
-    "$BD_OUT" == *"newer than this checkout's"* && "$BD_OUT" != *"would relink: $BD/config/zsh/loader.zsh"* ]]; then
-    pass "downgrade: --dry-run previews keeping the newer Core and plans no Core relink"
+    "$BD_OUT" == *"(dry run) Core 9.10.0"*"newer than this checkout's 9.9.9 — would leave every Core link"* &&
+    "$BD_OUT" == *"(dry run) this repo's own layers would still be wired"* &&
+    "$BD_OUT" != *"would relink: $BD/config/zsh/loader.zsh"* ]]; then
+    pass "downgrade: --dry-run previews keeping the newer Core as a plan (\"would leave\") and plans no Core relink"
   else
     fail "downgrade: --dry-run (rc=$BD_RC): $BD_OUT"
   fi

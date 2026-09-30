@@ -1997,13 +1997,17 @@ blib_main() {
 
   # ── wire ────────────────────────────────────────────────────────────────────
   # Newest Core wins on a box carrying two checkouts (#1211; the guard's header above).
+  # Under --dry-run these read as a plan ("would …"), as blib_link's and the summary's do, so a
+  # preview never sounds like something was already skipped or relinked.
   if _blib_core_downgrade "$DOTFILES" "$CONFIG"; then
+    local _bm_pre="" _bm_relink="relinking" _bm_leave="leaving" _bm_wired="are still wired"
+    _blib_dry && _bm_pre="(dry run) " _bm_relink="would relink" _bm_leave="would leave" _bm_wired="would still be wired"
     if ((_bm_force_core)); then
-      blib_warn "--force-core: relinking Core ${_BLIB_DG_OWN} from this checkout over ${_BLIB_DG_HAVE} from ${_BLIB_DG_DIR}"
+      blib_warn "${_bm_pre}--force-core: ${_bm_relink} Core ${_BLIB_DG_OWN} from this checkout over ${_BLIB_DG_HAVE} from ${_BLIB_DG_DIR}"
     else
       _bm_core=0
-      blib_warn "Core ${_BLIB_DG_HAVE} is linked from ${_BLIB_DG_DIR}, newer than this checkout's ${_BLIB_DG_OWN} — leaving every Core link as it is"
-      blib_say "this repo's own layers are still wired; pull this checkout to catch up, or pass --force-core to relink Core from it anyway"
+      blib_warn "${_bm_pre}Core ${_BLIB_DG_HAVE} is linked from ${_BLIB_DG_DIR}, newer than this checkout's ${_BLIB_DG_OWN} — ${_bm_leave} every Core link as it is"
+      blib_say "${_bm_pre}this repo's own layers ${_bm_wired}; pull this checkout to catch up, or pass --force-core to relink Core from it anyway"
     fi
   fi
   ((_bm_core)) && blib_link_core "$DOTFILES" "$CONFIG"
