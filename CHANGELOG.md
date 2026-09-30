@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+### Security
+
+- **The CI floor bans the `pull_request_target` trigger.** It runs a fork's pull request in
+  the base repo's context, with its secrets and a write-capable token, which is the
+  precondition for a "pwn request". GitHub starts blocking it by default on 2026-11-02 for
+  repos on the default policy, and rule 10 of `scripts/modern-baseline.yml` makes that
+  permanent whatever a policy later allows. `check-modern.sh` reads the `on:` block itself:
+  the scalar, flow and block forms, quoted or bare, and first-level entries only. A comment,
+  a branch filter or an `env:` value that names the trigger does not fire. That is why it is
+  not a `banned_patterns` entry, which would red the baseline's own rule 1 rationale. It was
+  free to add: no repo in the org declared the trigger on its default branch (#1215).
+
 ### Fixed
 
 - **The relink fix now names which checkout to run.** `core-doctor`'s relink row and the
