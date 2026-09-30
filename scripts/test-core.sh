@@ -235,9 +235,16 @@ SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-test.XXXXXX")"
 # The list is DERIVED from what zsh/ reads, not typed, so the next knob cannot repeat this.
 # Scoped to zsh/ deliberately: the harness's own inputs (CORE_TEST_NESTED, CORE_AUDIT_SERIAL,
 # CORE_BENCH_*, CORE_COLOR) are not read there and must survive. Cases that want a knob set it.
+# Matched as a BARE NAME, not a `$`-sigil: zsh reads booleans arithmetically as `((CORE_X))`
+# with no `$` (the house style scripts/lib/common.sh documents), which a sigil grep cannot
+# see. Comments are dropped first, whole-line and trailing, so a name a comment merely
+# mentions — a deleted knob, or a harness input like CORE_COLOR — is never unset here.
 unset ZDOTDIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME BROWSER
 while IFS= read -r _core_test_v; do unset "$_core_test_v"; done < <(compgen -e | grep -E '^(_*MISE_|ATUIN_)')
-while IFS= read -r _core_test_v; do unset "$_core_test_v"; done < <(grep -ohE '\$\{?CORE_[A-Z_]+' "$HERE"/zsh/*.zsh | tr -d '{$' | sort -u)
+while IFS= read -r _core_test_v; do unset "$_core_test_v"; done < <(
+  grep -hv '^[[:space:]]*#' "$HERE"/zsh/*.zsh | sed 's/[[:space:]]#.*$//' |
+    grep -oE '(^|[^A-Za-z0-9_])CORE_[A-Z][A-Z_]*' | grep -oE 'CORE_[A-Z_]+' | sort -u
+)
 unset _core_test_v
 # ONE handler, because `trap … EXIT` REPLACES rather than appends — a second one installed by
 # ANY FRAGMENT would silently take the sandbox cleanup with it, leaving a core-test.XXXXXX per
