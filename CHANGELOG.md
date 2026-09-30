@@ -23,6 +23,13 @@
 
 ### Fixed
 
+- **The openSUSE Tumbleweed `tree-sitter-cli` row moves to 0.27.0.** Tumbleweed's `tree-sitter`
+  went 0.26.8 → 0.27.0 (checked 2026-09-29; 0.26.8 has left the index), and both Leap 16.x
+  lanes stay at 0.26.8. All three still clear the ≥ 0.26.1 floor. Footnote ⁵ also named the
+  split-off library `libtree-sitter0_26` for every openSUSE lane. That library is named for its
+  soname, so Tumbleweed now ships `libtree-sitter0_27`. Reported by
+  dotgibson/dotfiles-openSUSE#217.
+
 - **The relink fix now names which checkout to run.** `core-doctor`'s relink row and the
   "relink pending" nudge used to say `run ./bootstrap.sh --links-only`. On a box with both an
   OS checkout and a role checkout, running the wrong one moved the whole Core surface onto
@@ -33,6 +40,7 @@
   after a partial `--only`/`--skip` run of the other checkout, or a moved one. It now names
   both fixes, since either checkout's full `--links-only` run re-stamps the box. Which one
   _should_ own Core stays an open question in #1211 (#1218).
+
 - **`make audit` from a fleet shell no longer reds four cases CI calls green.** The
   behavioral suite's host scrub now also drops `BROWSER` and every `ATUIN_*` variable.
   Core's own `00-tools.zsh` exports `BROWSER=w3m` on a headless box (WSL included), and an

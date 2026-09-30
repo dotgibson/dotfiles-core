@@ -227,12 +227,12 @@ Alpine v3.24/edge version read as fleet-wide.
 | Target              | `tree-sitter-cli` | vs ≥ 0.26.1 | verified   |
 | ------------------- | ----------------- | ----------- | ---------- |
 | Homebrew            | 0.27.0            | at or above | 2026-09-17 |
+| openSUSE Tumbleweed | 0.27.0            | at or above | 2026-09-29 |
 | Gentoo stable       | 0.26.12           | at or above | 2026-09-17 |
 | Fedora Rawhide      | 0.26.11           | at or above | 2026-09-17 |
 | Fedora 45           | 0.26.11           | at or above | 2026-09-17 |
 | Fedora 44           | 0.26.11           | at or above | 2026-09-17 |
 | Arch                | 0.26.9            | at or above | 2026-09-17 |
-| openSUSE Tumbleweed | 0.26.8            | at or above | 2026-09-17 |
 | openSUSE Leap 16.1  | 0.26.8            | at or above | 2026-09-17 |
 | openSUSE Leap 16.0  | 0.26.8            | at or above | 2026-09-17 |
 | Alpine edge         | 0.26.7            | at or above | 2026-09-17 |
@@ -266,7 +266,8 @@ neovim spread — same distro, same lane, **both halves of the one requirement b
 floor on F43**, which is the shape this footnote and ³³ each caught on Alpine alone.
 **Arch:** `extra` carries it and clears the floor.
 **openSUSE:** the CLI is in the **base `tree-sitter` package**, on Tumbleweed and both Leap
-lanes; what got split off there is the shared _library_, as `libtree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
+lanes; what got split off there is the shared _library_, named for its soname — `libtree-sitter0_27`
+on Tumbleweed, `libtree-sitter0_26` on Leap 16.x. There is **no** `tree-sitter-cli` package on openSUSE, and
 searching for that name is precisely why `dotfiles-openSUSE` carried this as `cargo³` and
 cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversion against
 the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
