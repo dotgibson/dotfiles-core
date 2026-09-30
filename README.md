@@ -159,18 +159,23 @@ essentials:
    git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-MacBook ~/dotfiles-MacBook
    cd ~/dotfiles-MacBook
 
-   # Offense (Kali / WSL2)
-   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Offense ~/dotfiles-Offense
-   cd ~/dotfiles-Offense
-
-   # Defense (defensive role layer)
-   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Defense ~/dotfiles-Defense
-   cd ~/dotfiles-Defense
-
    # Linux distros (Fedora, Arch, Debian, openSUSE, Alpine, Gentoo, NixOS)
    git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Fedora ~/dotfiles-Fedora
    cd ~/dotfiles-Fedora
+
+   # Offense (Kali / WSL2) — a role layer: dotfiles-Debian first (it provisions Kali)
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Debian ~/dotfiles-Debian
+   ~/dotfiles-Debian/bootstrap.sh
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Offense ~/dotfiles-Offense
+   cd ~/dotfiles-Offense
+
+   # Defense (defensive role layer) — on top of any OS layer above, installed first
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Defense ~/dotfiles-Defense
+   cd ~/dotfiles-Defense
    ```
+
+   The role repos install no OS layer of their own: the OS repo's `bootstrap.sh` must have
+   run before theirs.
 
    ```pwsh
    # Windows
@@ -195,7 +200,7 @@ essentials:
    ./bootstrap.sh
    exec zsh
 
-   # Offense / Defense
+   # Offense / Defense (after the OS layer's bootstrap)
    ./bootstrap.sh
 
    # Linux Distros
@@ -216,7 +221,8 @@ essentials:
 
    # Offense (Kali / WSL2)
    # Enable mirrored networking on the windows side
-   # Drop windows.wslconfig.example at %UserProfile%\.wslconfig, then from Windows:
+   # Drop dotfiles-Debian/wsl/windows.wslconfig.example at %UserProfile%\.wslconfig,
+   # then from Windows:
    wsl.exe --shutdown
 
    # Fedora / openSUSE

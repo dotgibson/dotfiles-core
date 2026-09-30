@@ -20,7 +20,7 @@
 # Hermetic: a throwaway git repo (the gate inventories through `git ls-files`, so a plain
 # directory yields "no workflow/action files to check" and every assertion below would
 # vacuously pass) holding only the script, its lib and a crafted workflow.
-hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 4, 5b, 7, 7b, 8 + 9)"
+hdr "CI modernization floor (scripts/check-modern.sh rules 2, 3, 4, 5b, 7, 7b, 8, 9 + 10)"
 if ! have git; then
   skip "check-modern rule fixtures (git not installed)"
 else
@@ -366,6 +366,74 @@ jobs:
     fail "check-modern rule 9: secrets: inherit misfired (want exactly the two jobs a and b)"
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
+
+  # Rule 10: `pull_request_target` runs fork PRs with the base repo's secrets. One probe per
+  # YAML shape the trigger can be declared in, because the rule is a structural walk and each
+  # shape takes a different branch of it: scalar, flow list (quoted), flow map, block map with
+  # a filter under it, block list (single-quoted, trailing comment), and a quoted "on": key.
+  # This also runs on the Alpine (busybox awk) and macOS (BSD awk) lanes, which is where a
+  # regex the awks read differently would show up.
+  _cm_body='permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo hi'
+  _cm_miss=""
+  for _cm_on in 'on: pull_request_target' \
+    'on: [push, "pull_request_target"]' \
+    'on: {pull_request_target: {types: [opened]}}' \
+    "$(printf 'on:\n  push:\n  pull_request_target:\n    types: [opened]')" \
+    "$(printf "on:\n  - push\n  - 'pull_request_target'  # c")" \
+    "$(printf '"on":\n  pull_request_target:')"; do
+    _cm_out="$(_cm_run "$(printf 'name: p\n%s\n%s' "$_cm_on" "$_cm_body")")"
+    [[ "$(grep -c 'banned workflow trigger' <<<"$_cm_out")" == 1 ]] || _cm_miss="$_cm_miss [$_cm_on]"
+  done
+  if [[ -z "$_cm_miss" ]]; then
+    pass "check-modern rule 10: pull_request_target is caught in all six on: shapes (scalar, flow list/map, block map/list, quoted on:)"
+  else
+    fail "check-modern rule 10: a trigger shape was not caught exactly once:$_cm_miss"
+  fi
+
+  # The control, and the reason this is not a banned_patterns entry: the name in a comment,
+  # at column 0 and inside on:, and as a filter VALUE one level down (branches:) or in env:,
+  # is not a trigger and must not fire.
+  _cm_out="$(_cm_run "$(printf '# pull_request_target is banned, see modern-baseline.yml rule 10\nname: p\non:\n  # not pull_request_target\n  pull_request:\n    branches: [pull_request_target]\nenv:\n  X: pull_request_target\n%s' "$_cm_body")")"
+  if ! grep -q 'banned workflow trigger' <<<"$_cm_out"; then
+    pass "check-modern rule 10: the name in a comment, a branch filter or env: does not fire"
+  else
+    fail "check-modern rule 10: false positive — only a first-level on: entry is a trigger"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # `--banned-triggers DIR`: rule 10 ALONE over ANOTHER repo's tree, which is what
+  # lint-call.yml@vN runs on every caller (#1215). The caller is a separate git repo, as it
+  # is in CI (a `caller/` checkout beside Core's), and the bad workflow stays UNTRACKED on
+  # purpose: the inventory must see what an author has not added yet, as _audit_ls does.
+  # Three answers, each with its own exit code: a hit (1), clean (0), and no directory (2).
+  _cm_caller="$SANDBOX/check-modern-caller"
+  rm -rf "$_cm_caller"
+  mkdir -p "$_cm_caller/.github/workflows"
+  git -C "$_cm_caller" init -q 2>/dev/null
+  printf 'name: c\non: [push]\njobs: {}\n' >"$_cm_caller/.github/workflows/ok.yml"
+  git -C "$_cm_caller" add -A 2>/dev/null
+  printf 'name: e\non:\n  pull_request_target:\njobs: {}\n' >"$_cm_caller/.github/workflows/evil.yml"
+  _cm_rc_hit=0; _cm_out="$( { ( cd "$CMF" && bash scripts/check-modern.sh --banned-triggers "$_cm_caller" >/dev/null ) || _cm_rc_hit=$?; echo "rc=$_cm_rc_hit"; } 2>&1)"
+  rm -f "$_cm_caller/.github/workflows/evil.yml"
+  _cm_rc_ok=0; ( cd "$CMF" && bash scripts/check-modern.sh --banned-triggers "$_cm_caller" >/dev/null 2>&1 ) || _cm_rc_ok=$?
+  _cm_rc_bad=0; ( cd "$CMF" && bash scripts/check-modern.sh --banned-triggers "$_cm_caller/absent" >/dev/null 2>&1 ) || _cm_rc_bad=$?
+  if grep -q 'rc=1' <<<"$_cm_out" && [[ "$(grep -c 'banned workflow trigger (' <<<"$_cm_out")" == 1 ]] \
+    && grep -q 'evil.yml:3: pull_request_target' <<<"$_cm_out" \
+    && [[ "$_cm_rc_ok" == 0 && "$_cm_rc_bad" == 2 ]]; then
+    pass "check-modern --banned-triggers DIR: an untracked hit exits 1, a clean caller 0, no directory 2"
+  else
+    fail "check-modern --banned-triggers DIR: want hit=1 (one evil.yml:3 line), clean=0, absent=2 (got clean=$_cm_rc_ok absent=$_cm_rc_bad)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+  rm -rf "$_cm_caller"
+  unset _cm_body _cm_miss _cm_on _cm_caller _cm_rc_hit _cm_rc_ok _cm_rc_bad
 
   # Rule 7: a `${{ }}` expression is substituted by the runner, textually, BEFORE the
   # shell parses the script — so an attacker-controlled value there is code, not data.
