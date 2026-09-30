@@ -407,7 +407,33 @@ jobs:
     fail "check-modern rule 10: false positive — only a first-level on: entry is a trigger"
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
-  unset _cm_body _cm_miss _cm_on
+
+  # `--banned-triggers DIR`: rule 10 ALONE over ANOTHER repo's tree, which is what
+  # lint-call.yml@vN runs on every caller (#1215). The caller is a separate git repo, as it
+  # is in CI (a `caller/` checkout beside Core's), and the bad workflow stays UNTRACKED on
+  # purpose: the inventory must see what an author has not added yet, as _audit_ls does.
+  # Three answers, each with its own exit code: a hit (1), clean (0), and no directory (2).
+  _cm_caller="$SANDBOX/check-modern-caller"
+  rm -rf "$_cm_caller"
+  mkdir -p "$_cm_caller/.github/workflows"
+  git -C "$_cm_caller" init -q 2>/dev/null
+  printf 'name: c\non: [push]\njobs: {}\n' >"$_cm_caller/.github/workflows/ok.yml"
+  git -C "$_cm_caller" add -A 2>/dev/null
+  printf 'name: e\non:\n  pull_request_target:\njobs: {}\n' >"$_cm_caller/.github/workflows/evil.yml"
+  _cm_rc_hit=0; _cm_out="$( { ( cd "$CMF" && bash scripts/check-modern.sh --banned-triggers "$_cm_caller" >/dev/null ) || _cm_rc_hit=$?; echo "rc=$_cm_rc_hit"; } 2>&1)"
+  rm -f "$_cm_caller/.github/workflows/evil.yml"
+  _cm_rc_ok=0; ( cd "$CMF" && bash scripts/check-modern.sh --banned-triggers "$_cm_caller" >/dev/null 2>&1 ) || _cm_rc_ok=$?
+  _cm_rc_bad=0; ( cd "$CMF" && bash scripts/check-modern.sh --banned-triggers "$_cm_caller/absent" >/dev/null 2>&1 ) || _cm_rc_bad=$?
+  if grep -q 'rc=1' <<<"$_cm_out" && [[ "$(grep -c 'banned workflow trigger (' <<<"$_cm_out")" == 1 ]] \
+    && grep -q 'evil.yml:3: pull_request_target' <<<"$_cm_out" \
+    && [[ "$_cm_rc_ok" == 0 && "$_cm_rc_bad" == 2 ]]; then
+    pass "check-modern --banned-triggers DIR: an untracked hit exits 1, a clean caller 0, no directory 2"
+  else
+    fail "check-modern --banned-triggers DIR: want hit=1 (one evil.yml:3 line), clean=0, absent=2 (got clean=$_cm_rc_ok absent=$_cm_rc_bad)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+  rm -rf "$_cm_caller"
+  unset _cm_body _cm_miss _cm_on _cm_caller _cm_rc_hit _cm_rc_ok _cm_rc_bad
 
   # Rule 7: a `${{ }}` expression is substituted by the runner, textually, BEFORE the
   # shell parses the script — so an attacker-controlled value there is code, not data.
