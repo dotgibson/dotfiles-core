@@ -107,7 +107,7 @@ fi
 # doggo: modern dig (DNS recon). dig stays as-is; this is a distinct verb.
 [[ -n ${HAVE_DOGGO:-} ]] && alias dns='doggo'
 # gron / sd are their own commands (no alias — never shadow sed in scripts).
-# jq / yq / jnv / lnav / hyperfine / watchexec / shellcheck / shfmt are likewise their own
+# jq / yq / jnv / jc / lnav / hyperfine / watchexec / shellcheck / shfmt are likewise their own
 # commands: they shadow nothing classic, so they get HAVE_* detection in 00-tools.zsh but
 # no alias.
 # (jnv is the interactive JSON explorer — you run `jnv file.json` or pipe into it.)
