@@ -76,6 +76,11 @@ banned_runners:
 #    and one nothing else asserted. Anything from this owner that is not a @vN reusable
 #    workflow now falls back to the 40-hex requirement, which is the correct default for a
 #    ref whose contract is not governed by the release process.
+#
+#    A pin covers only the `uses:` line it sits on. What a pinned action itself `uses:`
+#    (its transitive and composite dependencies) is not pinned from the fleet's side.
+#    Workflow dependency locking would close that gap, and #1223 watches for it; /modernize
+#    re-checks it on every run.
 require_action_sha_pin: true
 sha_pin_exempt_owner: dotgibson
 
