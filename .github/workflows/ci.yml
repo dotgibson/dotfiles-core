@@ -513,6 +513,47 @@ jobs:
   # author-time == CI, one source of truth, zero drift. SKIP the three hooks the
   # audit job already owns so nothing runs twice and this stays the fast lane.
   # Linux-only: file hygiene is OS-agnostic, unlike the audit's dual-userland matrix.
+  # The fleet-wide gates, run against the REAL siblings (#1240). Every other leg checks out
+  # Core alone, so each gate that reads a sibling repo (§5f, §9m-§9p, theme and
+  # desktop-parity drift) skips there. #1210 merged green that way, and its correct Kali matrix
+  # cells then refused the v7.14.0 fan-out on dotfiles-Debian's stale TOOLS_OPTIN (#1239): the
+  # first run that could see it was sync-fanout's pre-fan-out audit, after the tag.
+  #
+  # A REQUIRED check, so it judges a DELTA. scripts/fleet-gate-delta.sh audits the PR's base
+  # (HEAD^1 of the merge ref) and its head against the same shallow clones, and fails only on a
+  # ✗ the head adds. Without that, any sibling drifting on its own would block every Core PR.
+  # A red here means "land the sibling fix first", the fleet ratchets' sibling-first order.
+  # pull_request only: a push to main has no base to diff and is not what a ruleset gates.
+  # Anonymous clones of public repos and no token in the job, which runs sibling code
+  # (gen-porting-matrix.sh sources Debian's pkg-filter.sh).
+  fleet-gates:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base worktree and §9l's render-date check both need history
+          path: dotfiles-core
+      - name: Clone the fleet beside Core (read-only, shallow)
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -uo pipefail
+          # scripts/os-repos.txt is the fleet (#669); Windows is appended by hand because it
+          # vendors no core/ but the theme, cross-shell and desktop-parity gates read it. A
+          # failed clone is not fatal HERE: the head audit then reports that sibling as not
+          # checked out, and fleet-gate-delta.sh fails the run as unjudgeable, not green.
+          repos=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' dotfiles-core/scripts/os-repos.txt)
+          for r in $repos dotfiles-Windows; do
+            git clone -q --depth 1 "https://github.com/${OWNER}/${r}.git" "$r" \
+              || echo "::warning::could not clone $r"
+          done
+      - name: Judge the fleet-gate delta (base vs head)
+        working-directory: dotfiles-core
+        run: ./scripts/fleet-gate-delta.sh --base HEAD^1
+
   precommit:
     runs-on: ubuntu-latest
     timeout-minutes: 10

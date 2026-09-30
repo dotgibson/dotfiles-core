@@ -17,6 +17,19 @@
   exempt, so `dotfiles-nvim` first SHA-pinned its `setup-core-tools@v7` references
   (dotgibson/dotfiles-nvim#9) and then turned the setting on too (#1226).
 
+### Added
+
+- **A Core PR is checked against the real sibling repos before it merges.** The new
+  `fleet-gates` job in `ci.yml` clones the fleet beside Core and runs the audit's fleet-wide
+  gates (§5f, §9m-§9p, theme and desktop-parity drift) that every other leg skips because it
+  checks out Core alone. That gap let #1210 merge green and then refuse the v7.14.0 fan-out
+  on dotfiles-Debian's stale `TOOLS_OPTIN` (#1239). The job is meant to be a required check,
+  so it judges a delta: `scripts/fleet-gate-delta.sh` audits the PR's base and head against
+  the same clones and fails only on a failure the PR adds. A sibling that drifts on its own
+  therefore cannot block unrelated Core PRs. A failure already on `main` is a warning. A red
+  means the sibling fix lands first, which is the fleet ratchets' existing order. The job holds
+  no token, because the gates run sibling code (#1240).
+
 ### Changed
 
 - **`/release-readiness` actually checks the editor pin.** The scheduled job allows
