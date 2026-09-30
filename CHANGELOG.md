@@ -11,6 +11,15 @@
   a branch filter or an `env:` value that names the trigger does not fire. That is why it is
   not a `banned_patterns` entry, which would red the baseline's own rule 1 rationale. It was
   free to add: no repo in the org declared the trigger on its default branch (#1215).
+- **The `pull_request_target` ban now reaches every repo that calls `lint-call.yml@v7`.**
+  The reusable workflow's `actionlint` job gains a step that runs `check-modern.sh
+  --banned-triggers caller`: rule 10 alone, from the Core checkout, over the caller's own
+  workflows, including ones not yet committed. It blocks from the start, because every
+  caller was measured clean first. Rule 10's walker is now one function that both the
+  floor and the new mode call, so the fleet check cannot drift from Core's. A caller that
+  pins the workflow to a SHA newer than the `v7` tag gets a warning, not a false red.
+  `dotfiles-Windows`, `dotfiles-web` and `htpx` do not call `lint-call.yml`, so they are
+  not covered yet. All three are clean today (#1215).
 
 ### Fixed
 
