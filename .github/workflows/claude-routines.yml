@@ -218,7 +218,7 @@ jobs:
           claude -p "/freshness-triage" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(./scripts/check-nvim-freshness.sh),Bash(git log:*),Bash(git diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh issue list:*),Bash(gh run list:*)" \
+            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(./scripts/check-nvim-freshness.sh),Bash(git log:*),Bash(git diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh issue list:*),Bash(gh run list:*),Bash(gh release view:*),Bash(npm view:*)" \
             --output-format text | tee "$RUNNER_TEMP/freshness-triage.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/freshness-triage.md"
