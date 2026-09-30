@@ -882,7 +882,7 @@ _core_wired() {
 typeset -ga _CORE_DOCTOR_GROUPS=(
   "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi viddy tldr ouch"
   "integrations" "starship atuin mise carapace gum sesh"
-  "data / net"   "jq yq jnv gron sd xh doggo gping glow lnav op"
+  "data / net"   "jq yq jnv gron jc sd xh doggo gping glow lnav op"
   "dev / repo"   "ast-grep shellcheck shfmt hyperfine watchexec uv jj difft git-absorb"
 )
 
