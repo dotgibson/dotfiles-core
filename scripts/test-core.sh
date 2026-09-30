@@ -229,8 +229,15 @@ SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-test.XXXXXX")"
 # a shell that never opted in stands the daemon guard down. That is how v7.13.0's
 # `make release` went red on a tree CI called green. Every case that wants one of these
 # sets it explicitly, so dropping the whole ATUIN_ family costs no case its input.
+#
+# The same goes for Core's OPT-OUT KNOBS, which an operator exports in ~/.zshenv on purpose:
+# CORE_SHADOW_CLASSICS=0 there reds the "knob unset → every shadow is defined" case (#1204).
+# The list is DERIVED from what zsh/ reads, not typed, so the next knob cannot repeat this.
+# Scoped to zsh/ deliberately: the harness's own inputs (CORE_TEST_NESTED, CORE_AUDIT_SERIAL,
+# CORE_BENCH_*, CORE_COLOR) are not read there and must survive. Cases that want a knob set it.
 unset ZDOTDIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME BROWSER
 while IFS= read -r _core_test_v; do unset "$_core_test_v"; done < <(compgen -e | grep -E '^(_*MISE_|ATUIN_)')
+while IFS= read -r _core_test_v; do unset "$_core_test_v"; done < <(grep -ohE '\$\{?CORE_[A-Z_]+' "$HERE"/zsh/*.zsh | tr -d '{$' | sort -u)
 unset _core_test_v
 # ONE handler, because `trap … EXIT` REPLACES rather than appends — a second one installed by
 # ANY FRAGMENT would silently take the sandbox cleanup with it, leaving a core-test.XXXXXX per
