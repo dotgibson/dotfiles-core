@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+### Security
+
+- **The CI floor bans the `pull_request_target` trigger.** It runs a fork's pull request in
+  the base repo's context, with its secrets and a write-capable token, which is the
+  precondition for a "pwn request". GitHub starts blocking it by default on 2026-11-02 for
+  repos on the default policy, and rule 10 of `scripts/modern-baseline.yml` makes that
+  permanent whatever a policy later allows. `check-modern.sh` reads the `on:` block itself:
+  the scalar, flow and block forms, quoted or bare, and first-level entries only. A comment,
+  a branch filter or an `env:` value that names the trigger does not fire. That is why it is
+  not a `banned_patterns` entry, which would red the baseline's own rule 1 rationale. It was
+  free to add: no repo in the org declared the trigger on its default branch (#1215).
+
 ### Fixed
 
 - **The openSUSE Tumbleweed `tree-sitter-cli` row moves to 0.27.0.** Tumbleweed's `tree-sitter`
@@ -38,6 +50,17 @@
   the two Ubuntu legs do not restore each other's natively built tree. `.github/actionlint.yaml`
   returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
   would red the audit on every leg (#1200).
+
+### Added
+
+- **`jc` is part of the stack: it turns command output into JSON.** `ps aux | jc --ps`,
+  `jc dig example.com` and a few hundred other parsers hand `jq` something to transform.
+  Before this, Core's JSON tools could transform, grep and explore JSON but could not
+  produce it from `ps`, `ss` or `dig`. It is its own command with no alias, probed by
+  `zsh/00-tools.zsh` and listed in core-doctor's `data / net` group. Every OS repo now
+  installs it. `PORTING-MATRIX.md` gains a `jc` row and footnote ⁴⁰, which records the two
+  exceptions: openSUSE Leap 16.x has no package, so it is declared opt-in there, and
+  Gentoo's `dev-python/jc` is testing-keyworded only (#1208).
 
 ### Documentation
 

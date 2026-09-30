@@ -165,6 +165,7 @@ and a footnote here.** The footnotes below stay hand-written.
 | sd²²             | `sd`              | `sd`              | `sd`                       | `sys-apps/sd`¹²                     | `sd`                       | `sd`          |
 | gron             | `gron`            | `gron`            | `gron`                     | go³                                 | `gron`                     | `gron`        |
 | jnv¹⁷            | `jnv`             | cargo             | cargo³                     | cargo                               | cargo                      | —²⁹           |
+| jc⁴⁰             | `jc`              | `jc`⁴⁰            | `jc`                       | `dev-python/jc`⁴⁰                   | `jc`                       | `jc`          |
 | lnav²¹ ²⁴        | `lnav`            | `lnav`            | `lnav`                     | `app-admin/lnav`²⁴                  | `lnav`²⁴                   | `lnav`        |
 | glow             | `glow`            | `glow`            | testing¹⁴                  | `app-misc/glow`¹²                   | `glow`¹⁵                   | charm apt     |
 | gum              | `gum`             | `gum`             | `gum`                      | mise³⁰                              | `gum`¹⁵                    | charm apt     |
@@ -1643,6 +1644,26 @@ Read it as the watch's answer: the watch ends when every row reads "at or above"
 tail is the frozen and slow-moving lanes — Ubuntu 24.04, both openSUSE Leap backports, Debian
 13 and the older Alpine stables — and the Alpine and Gentoo-stable rows one patch release
 short, which are the ones likely to move first.
+
+⁴⁰ **jc converts plain command output into JSON.** `ps`, `ss`, `dig`, `git log`, `ifconfig`
+and a few hundred others are parsed into JSON that `jq` can then transform. It sits in front
+of the other JSON tools: `jq` transforms, `gron` greps and `jnv` explores, but none of them
+can read `ps aux`. Like those three it is its own command with no alias, probed into the
+`_CORE_PROBED` ledger by `zsh/00-tools.zsh` and listed in core-doctor's `data / net` group
+(#1208). It is a Python CLI: every packaged build puts `jc` on `PATH` and pulls in its module.
+Every fleet repo installs it from its own package manager, including `brew "jc"` on macOS and
+`jc` in NixOS's `home.packages`. There are two exceptions, both marked:
+
+- **openSUSE Leap 16.x has no package** in either `repo/oss` or `Backports:SLE-16.x`; only
+  Tumbleweed and the transactional editions ship it (1.26.0, checked 2026-09-29).
+  `dotfiles-openSUSE` still lists it, so zypper skips the name on Leap, the `tealdeer` shape
+  from ¹. There is no fallback, because Leap has no `pipx`/`uv` to build one with. Instead,
+  Leap's `TOOLS_OPTIN` names `jc`, so core-doctor shows its absence as expected rather than
+  as a failure (dotgibson/dotfiles-openSUSE#221).
+- **Gentoo has only testing ebuilds** (`dev-python/jc`, `~amd64 ~arm64 ~ppc64`, no stable
+  keyword). A stable profile needs the `dev-python/jc ~__ARCH__` line that
+  `dotfiles-Gentoo`'s `bootstrap.sh` installs into `package.accept_keywords`
+  (dotgibson/dotfiles-Gentoo#212).
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

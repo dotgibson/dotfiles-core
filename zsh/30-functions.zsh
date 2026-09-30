@@ -187,7 +187,9 @@ _core_relink_state() {
   # surface onto ITS vendored Core, and the doctor then reads `current`. Tilde-shortened for
   # the eye; quoted only when the path needs it, which loses the tilde but stays pasteable.
   local _fix="${(D)_CORE_LOCK_FILE:h}"
-  [[ "${_CORE_LOCK_FILE:h}" == *[[:space:]\'\"]* ]] && _fix="${(q-)_CORE_LOCK_FILE:h}"
+  # "Needs it" is whatever (q-) would quote — a space, a quote, and also `$`, `;`, `*` or `[`,
+  # each of which mis-parses bare. Asking (q-) itself keeps the test and the quoting in step.
+  [[ "${(q-)_CORE_LOCK_FILE:h}" != "${_CORE_LOCK_FILE:h}" ]] && _fix="${(q-)_CORE_LOCK_FILE:h}"
   _fix+="/bootstrap.sh --links-only"
   while IFS= read -r _l || [[ -n "$_l" ]]; do
     _k="${_l%%=*}" _v="${_l#*=}"
@@ -222,7 +224,7 @@ _core_relink_state() {
     # makes its own Core the loaded one (#1218). The stamp's path is file data, so it is only
     # ever printed raw; quoted like _fix when it needs to be.
     local _other="${(D)s_dir}"
-    [[ "$s_dir" == *[[:space:]\'\"]* ]] && _other="${(q-)s_dir}"
+    [[ "${(q-)s_dir}" != "$s_dir" ]] && _other="${(q-)s_dir}"
     REPLY="last full relink was from another checkout (${_other}) — run ${_fix} to relink from"
     REPLY+=" this one, or ${_other}/bootstrap.sh --links-only to restore that one"
     REPLY2=other; return 0
@@ -880,7 +882,7 @@ _core_wired() {
 typeset -ga _CORE_DOCTOR_GROUPS=(
   "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi viddy tldr ouch"
   "integrations" "starship atuin mise carapace gum sesh"
-  "data / net"   "jq yq jnv gron sd xh doggo gping glow lnav op"
+  "data / net"   "jq yq jnv gron jc sd xh doggo gping glow lnav op"
   "dev / repo"   "ast-grep shellcheck shfmt hyperfine watchexec uv jj difft git-absorb"
 )
 
