@@ -66,6 +66,12 @@ _fgd_is "without normalisation the same finding reads as new" 1 path-base.txt pa
 _fgd_is "a clean head with a different skip list is green" 0 clean.txt clean-otherskips.txt
 _fgd_is "the same block over a different skip list is not new" 0 debian.txt debian-otherskips.txt
 
+# A VACUOUS GREEN: an audit that died before its summary printed no ✗ lines either, and a
+# delta over it would pass. Either side missing its summary is unjudgeable, never green.
+printf '%s\n' '– luacheck (not installed)' 'scripts/audit-core.sh: line 97: common.sh: No such file' >"$_fgd_/died.txt"
+_fgd_is "a head audit that died before its summary is unjudgeable (2)" 2 clean.txt died.txt
+_fgd_is "a base audit that died before its summary is unjudgeable (2)" 2 died.txt clean.txt
+
 # A usage error is 2, never 0: a mis-invoked required check must not read as a pass.
 _fgd_rc=0
 "$HERE/scripts/fleet-gate-delta.sh" --compare "$_fgd_/clean.txt" >/dev/null 2>&1 || _fgd_rc=$?

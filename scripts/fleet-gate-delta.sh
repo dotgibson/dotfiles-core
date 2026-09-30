@@ -71,6 +71,14 @@ _fgd_show() {
 # _fgd_compare <base-out> <head-out> [base-core head-core] — the judgement. Returns 0/1.
 _fgd_compare() {
   local base head new old
+  # An audit that died before its summary printed no ✗ lines either, and a delta over two
+  # empty outputs is a vacuous green. Only a run that reached its summary can be judged.
+  grep -q 'audit summary' "$2" ||
+    _fgd_die 2 "the head audit did not reach its summary (it died early), so there is nothing to judge"
+  grep -q 'audit summary' "$1" ||
+    _fgd_die 2 "the base audit did not reach its summary (it died early), so there is nothing to compare against"
+  printf 'base: %s\nhead: %s\n' "$(grep -m1 -E 'pass [0-9]+ ' "$1" | sed 's/^ *//')" \
+    "$(grep -m1 -E 'pass [0-9]+ ' "$2" | sed 's/^ *//')"
   base="$(_fgd_blocks "$1" "${3:-}" | awk NF)"
   head="$(_fgd_blocks "$2" "${4:-}" | awk NF)"
   new="$(LC_ALL=C comm -13 <(printf '%s\n' "$base") <(printf '%s\n' "$head") | awk NF)"
