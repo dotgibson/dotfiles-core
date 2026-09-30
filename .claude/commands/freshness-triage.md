@@ -1,7 +1,7 @@
 ---
 description: Review open dependency-bump PRs against upstream changelogs
 argument-hint: "[PR number, optional — defaults to all open bot PRs]"
-allowed-tools: Task, Read, Grep, Glob, WebSearch, WebFetch, Bash(./scripts/update-plugins.sh --check), Bash(./scripts/check-nvim-freshness.sh), Bash(git log:*), Bash(git diff:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Bash(gh issue list:*), Bash(gh run list:*)
+allowed-tools: Task, Read, Grep, Glob, WebSearch, WebFetch, Bash(./scripts/update-plugins.sh --check), Bash(./scripts/check-nvim-freshness.sh), Bash(git log:*), Bash(git diff:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Bash(gh issue list:*), Bash(gh run list:*), Bash(gh release view:*), Bash(npm view:*)
 ---
 
 # /freshness-triage
@@ -111,6 +111,11 @@ changes shfmt's formatting _output_ (#813), until #1217 measured the fleet and f
 advisory consumers already drifting and one blocking consumer that a one-line rewrite
 satisfied. The note lives in the pin file, not just the CHANGELOG, so it is legible even
 from a shallow checkout.
+
+Read upstream with the two lookups this routine is granted: `gh release view -R <owner/repo>
+--json tagName,publishedAt` for the GitHub-released binaries, and `npm view <package> version`
+for the registry installs (`@anthropic-ai/claude-code`, `markdownlint-cli2`). Without them
+the row can only say "not checked", which it did every week until #1203.
 
 When a triaged change bumps a `*_VERSION` here (or you bump one while triaging):
 
