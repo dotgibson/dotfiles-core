@@ -57,6 +57,10 @@
   run leaves every Core link alone, still wires its own layer, says why, and leaves the relink
   stamp as it was. `--force-core` overrides. An unreadable version or an equal one relinks as
   before (#1211).
+- **The maintenance bots' Claude Code CLI pin rolls forward, 2.1.281 → 2.1.285.** The weekly
+  freshness review ([#1193](https://github.com/dotgibson/dotfiles-core/issues/1193)) found it
+  the only `scripts/tool-versions.env` pin behind upstream that is not deliberately held. It is
+  an npm install, so there is no `*_SHA256` to refresh. `shfmt` stays held at 3.13.1 (#813).
 - **CI audits on Ubuntu 26.04 ahead of the `ubuntu-latest` switch.** `ci.yml`'s audit
   matrix gains a temporary `ubuntu-26.04` leg, because `ubuntu-latest` rolls to 26.04 between
   2026-10-19 and 2026-11-19 and the new image changes or removes tools. The leg is not a
