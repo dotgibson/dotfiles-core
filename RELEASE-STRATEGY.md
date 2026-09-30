@@ -341,7 +341,11 @@ release-blocking:
   **Alpine** (`audit-alpine` — musl + busybox) and **Arch** (`audit-arch` — the
   rolling GNU toolchain, newer than Ubuntu LTS). So a Bashism that breaks the
   Mac, a busybox-applet assumption that breaks Alpine, or a coreutils deprecation
-  that will bite Arch first is all caught before a tag.
+  that will bite Arch first is all caught before a tag. All four legs are **required
+  checks** in the `main` ruleset (`audit (ubuntu-latest)`, `audit (macos-latest)`,
+  `audit-alpine`, `audit-arch`), which binds admins too, so a red on any one blocks the
+  merge. `scripts/fleet-protection.sh --rulesets-only` confirms the ruleset binds
+  `main` and how many checks it requires.
 - `bootstrap-test.yml` exercises the bootstrap path.
 - The behavioral suite (`test-core.sh`) checks load order and function units
   cross-shell.
@@ -389,10 +393,3 @@ paths are idempotent and need no manual tag/Release push. The one exception is a
 `dotfiles-Windows` minor/major** for accumulated host work: there is no `release.yml` on that
 repo, so a human promotes its `CHANGELOG.md` and cuts the tag + Release by hand. Both Windows
 flows are in `RELEASE-RUNBOOK.md` §3.
-
-### Still worth doing
-
-- **Promote `audit-arch`/`audit-alpine` to required checks** in branch
-  protection so a regression on either userland blocks a merge to `main`. This is
-  a GitHub **repo setting**, not a file: Settings → Branches → the `main` rule →
-  *Require status checks to pass* → add `audit-arch` and `audit-alpine`.
