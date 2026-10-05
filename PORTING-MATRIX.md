@@ -226,7 +226,7 @@ Alpine v3.24/edge version read as fleet-wide.
 
 | Target              | `tree-sitter-cli` | vs ≥ 0.26.1 | verified   |
 | ------------------- | ----------------- | ----------- | ---------- |
-| Homebrew            | 0.27.0            | at or above | 2026-09-17 |
+| Homebrew            | 0.27.0            | at or above | 2026-10-05 |
 | openSUSE Tumbleweed | 0.27.0            | at or above | 2026-09-29 |
 | Gentoo stable       | 0.26.12           | at or above | 2026-09-17 |
 | Fedora Rawhide      | 0.26.11           | at or above | 2026-09-17 |
@@ -240,7 +240,7 @@ Alpine v3.24/edge version read as fleet-wide.
 | Fedora 43           | 0.25.10           | **below**   | 2026-09-17 |
 | Alpine 3.23         | 0.25.10           | **below**   | 2026-09-17 |
 | Alpine 3.22         | 0.25.10           | **below**   | 2026-09-17 |
-| Alpine 3.21         | 0.24.4            | **below**   | 2026-09-17 |
+| Alpine 3.21         | 0.24.4            | **below**   | 2026-10-05 |
 
 <!-- core:porting-matrix:end fleet-versions-tree-sitter-cli -->
 
@@ -1359,23 +1359,23 @@ two of those corrections were.
 
 | Target              | `neovim` | vs ≥ 0.12.0 | verified   |
 | ------------------- | -------- | ----------- | ---------- |
-| Arch                | 0.12.5   | at or above | 2026-09-17 |
-| openSUSE Tumbleweed | 0.12.5   | at or above | 2026-09-17 |
-| Fedora Rawhide      | 0.12.5   | at or above | 2026-09-17 |
+| Arch                | 0.12.5   | at or above | 2026-10-05 |
+| openSUSE Tumbleweed | 0.12.5   | at or above | 2026-10-05 |
+| Fedora Rawhide      | 0.12.5   | at or above | 2026-10-05 |
 | Fedora 45           | 0.12.5   | at or above | 2026-09-17 |
-| Fedora 44           | 0.12.5   | at or above | 2026-09-17 |
-| Homebrew            | 0.12.5   | at or above | 2026-09-17 |
+| Fedora 44           | 0.12.5   | at or above | 2026-10-05 |
+| Homebrew            | 0.12.5   | at or above | 2026-10-05 |
 | openSUSE Leap 16.1  | 0.12.4   | at or above | 2026-09-17 |
-| Alpine edge         | 0.12.2   | at or above | 2026-09-17 |
-| Alpine 3.24         | 0.12.2   | at or above | 2026-09-17 |
+| Alpine edge         | 0.12.2   | at or above | 2026-10-05 |
+| Alpine 3.24         | 0.12.2   | at or above | 2026-10-05 |
 | Gentoo stable       | 0.11.7   | **below**   | 2026-09-17 |
-| Alpine 3.23         | 0.11.7   | **below**   | 2026-09-17 |
-| Fedora 43           | 0.11.6   | **below**   | 2026-09-17 |
+| Alpine 3.23         | 0.11.7   | **below**   | 2026-10-05 |
+| Fedora 43           | 0.11.6   | **below**   | 2026-10-05 |
 | openSUSE Leap 16.0  | 0.11.3   | **below**   | 2026-09-17 |
-| Alpine 3.22         | 0.11.1   | **below**   | 2026-09-17 |
-| Debian 13           | 0.10.4   | **below**   | 2026-09-17 |
-| Alpine 3.21         | 0.10.4   | **below**   | 2026-09-17 |
-| Ubuntu 24.04        | 0.9.5    | **below**   | 2026-09-17 |
+| Alpine 3.22         | 0.11.1   | **below**   | 2026-10-05 |
+| Debian 13           | 0.10.4   | **below**   | 2026-10-05 |
+| Alpine 3.21         | 0.10.4   | **below**   | 2026-10-05 |
+| Ubuntu 24.04        | 0.9.5    | **below**   | 2026-10-05 |
 
 <!-- core:porting-matrix:end fleet-versions-neovim -->
 
@@ -1501,22 +1501,22 @@ enforces are now enumerated by one mechanism rather than three prose styles.
 
 | Target              | `jq`  | vs ≥ 1.8.2  | verified   |
 | ------------------- | ----- | ----------- | ---------- |
-| Arch                | 1.8.2 | at or above | 2026-09-09 |
-| Gentoo              | 1.8.2 | at or above | 2026-09-09 |
-| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-09-09 |
+| Arch                | 1.8.2 | at or above | 2026-10-05 |
+| Gentoo              | 1.8.2 | at or above | 2026-10-05 |
+| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-10-05 |
 | openSUSE Leap 16.1  | 1.8.2 | at or above | 2026-09-12 |
-| Homebrew            | 1.8.2 | at or above | 2026-09-09 |
-| Alpine edge         | 1.8.2 | at or above | 2026-09-09 |
-| Alpine 3.24         | 1.8.2 | at or above | 2026-09-09 |
-| Alpine 3.23         | 1.8.2 | at or above | 2026-09-09 |
-| Alpine 3.22         | 1.8.2 | at or above | 2026-09-09 |
-| Fedora Rawhide      | 1.8.2 | at or above | 2026-09-09 |
+| Homebrew            | 1.8.2 | at or above | 2026-10-05 |
+| Alpine edge         | 1.8.2 | at or above | 2026-10-05 |
+| Alpine 3.24         | 1.8.2 | at or above | 2026-10-05 |
+| Alpine 3.23         | 1.8.2 | at or above | 2026-10-05 |
+| Alpine 3.22         | 1.8.2 | at or above | 2026-10-05 |
+| Fedora Rawhide      | 1.8.2 | at or above | 2026-10-05 |
 | Fedora 45           | 1.8.2 | at or above | 2026-09-06 |
-| Fedora 44           | 1.8.1 | **below**   | 2026-09-09 |
-| Fedora 43           | 1.8.1 | **below**   | 2026-09-09 |
-| Alpine 3.21         | 1.7.1 | **below**   | 2026-09-09 |
-| Debian 13           | 1.7.1 | **below**   | 2026-09-09 |
-| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-09-09 |
+| Fedora 44           | 1.8.1 | **below**   | 2026-10-05 |
+| Fedora 43           | 1.8.1 | **below**   | 2026-10-05 |
+| Alpine 3.21         | 1.7.1 | **below**   | 2026-10-05 |
+| Debian 13           | 1.7.1 | **below**   | 2026-10-05 |
+| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-10-05 |
 | openSUSE Leap 16.0  | 1.7.1 | **below**   | 2026-09-12 |
 
 <!-- core:porting-matrix:end fleet-versions -->
@@ -1622,23 +1622,23 @@ here so that watch has a table to read rather than a guess.
 
 | Target              | `eza`   | vs ≥ 0.23.5 | verified   |
 | ------------------- | ------- | ----------- | ---------- |
-| Arch                | 0.23.5  | at or above | 2026-09-24 |
-| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-09-24 |
-| Fedora Rawhide      | 0.23.5  | at or above | 2026-09-24 |
+| Arch                | 0.23.5  | at or above | 2026-10-05 |
+| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-10-05 |
+| Fedora Rawhide      | 0.23.5  | at or above | 2026-10-05 |
 | Fedora 45           | 0.23.5  | at or above | 2026-09-24 |
-| Fedora 44           | 0.23.5  | at or above | 2026-09-24 |
-| Fedora 43           | 0.23.5  | at or above | 2026-09-24 |
-| Homebrew            | 0.23.5  | at or above | 2026-09-24 |
-| Alpine edge         | 0.23.4  | **below**   | 2026-09-24 |
-| Alpine 3.24         | 0.23.4  | **below**   | 2026-09-24 |
-| Alpine 3.23         | 0.23.4  | **below**   | 2026-09-24 |
+| Fedora 44           | 0.23.5  | at or above | 2026-10-05 |
+| Fedora 43           | 0.23.5  | at or above | 2026-10-05 |
+| Homebrew            | 0.23.5  | at or above | 2026-10-05 |
+| Alpine edge         | 0.23.4  | **below**   | 2026-10-05 |
+| Alpine 3.24         | 0.23.4  | **below**   | 2026-10-05 |
+| Alpine 3.23         | 0.23.4  | **below**   | 2026-10-05 |
 | Gentoo stable       | 0.23.4  | **below**   | 2026-09-24 |
-| Alpine 3.22         | 0.21.3  | **below**   | 2026-09-24 |
-| Debian 13           | 0.21.0  | **below**   | 2026-09-24 |
-| Alpine 3.21         | 0.20.12 | **below**   | 2026-09-24 |
+| Alpine 3.22         | 0.21.3  | **below**   | 2026-10-05 |
+| Debian 13           | 0.21.0  | **below**   | 2026-10-05 |
+| Alpine 3.21         | 0.20.12 | **below**   | 2026-10-05 |
 | openSUSE Leap 16.1  | 0.20.4  | **below**   | 2026-09-24 |
 | openSUSE Leap 16.0  | 0.20.4  | **below**   | 2026-09-24 |
-| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-09-24 |
+| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-10-05 |
 
 <!-- core:porting-matrix:end fleet-versions-eza -->
 
