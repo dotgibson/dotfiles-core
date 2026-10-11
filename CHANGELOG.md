@@ -81,6 +81,23 @@
   classic branch-protection settings page that the fleet retired. The CI bullet now says what
   the ruleset enforces.
 
+### Fixed
+
+- **Three Arch version stamps in `PORTING-MATRIX.md` had fallen behind `extra`.** Re-checked
+  2026-10-11 against `archlinux.org`:
+  - Footnote ²⁵'s Arch/Homebrew `watchexec` bullet goes from 2.7.3 (`2.7.3-1`) to **2.8.0**
+    (`2.8.0-1`). `formulae.brew.sh` also has 2.8.0, so the two moved together again and the
+    shared bullet stays shared.
+  - Footnote ³²'s Arch `direnv` stamp goes from 2.37.1-1 to **2.38.2-1**.
+  - The Arch `neovim` row in `scripts/fleet-package-versions.tsv` goes from 0.12.5 to
+    **0.12.6**. The rendered table is regenerated with `gen-porting-matrix.sh --local`; it is
+    still above the ≥ 0.12.0 floor.
+
+  None of these changes a package name or a cell. Surfaced by `/os-package-availability arch`
+  (dotgibson/dotfiles-Arch#197). The AUR names that report could not reach (`carapace-bin`,
+  `sesh-bin`, `1password-cli`, `viddy`) were checked separately through the AUR RPC, and all
+  four still resolve.
+
 ## [v7.14.0] - 2026-09-29
 
 ### Security
