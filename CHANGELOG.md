@@ -42,10 +42,11 @@
 
 ### Changed
 
-- **`PORTING-MATRIX.md` catches up with dotgibson/dotfiles-openSUSE#229.** openSUSE now
-  installs Core's opt-in set: `hyperfine`, `ShellCheck`, `shfmt`, `lnav`, `git-absorb`,
-  `gping`, `watchexec` and `python3-uv` from `install/packages.txt`, and `jnv` through a
-  `bootstrap.sh` cargo build. Each of the eight openSUSE cells in `gen-porting-matrix.sh` is now
+- **`PORTING-MATRIX.md` catches up with dotgibson/dotfiles-openSUSE#229.** openSUSE's
+  `install/packages.txt` now lists Core's opt-in set: `hyperfine`, `ShellCheck`, `shfmt`,
+  `lnav`, `git-absorb`, `gping`, `watchexec` and `python3-uv`; `jnv` comes from a
+  `bootstrap.sh` cargo build. `lnav` installs on Tumbleweed only: Leap 16.0/16.1 do not ship
+  it, so zypper skips it there and Leap's `TOOLS_OPTIN` keeps it opt-in. Each of the eight openSUSE cells in `gen-porting-matrix.sh` is now
   derived (`=`). Before that, `gen-porting-matrix.sh --check` exited 2 against the live fleet,
   which also hid every other drift check. The `uv` cell drops its ²¹ mark. That was openSUSE's
   last cell-level mark, so the `TOOLS_OPTIN` gate no longer demands that openSUSE list Core's
