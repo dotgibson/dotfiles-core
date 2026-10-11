@@ -785,9 +785,15 @@ what a bootstrap gives you:
   it builds `--no-default-features --features use_zlib,use_zstd_thin` — dropping `unrar` for that
   reason and `bzip3` because its bindgen step needs libclang. The cost is RAR and `.bz3` only.
 - **Fedora installs these with no way to decline**, unlike Gentoo's extras below: there is no
-  `--no-extras` on `dotfiles-Fedora`. By the next bullet's test that makes its cells installs
-  rather than opt-ins, and that is deliberate (the box owner asked for every probed tool); the
-  ²¹ mark on these rows still describes the other repos.
+  `--no-extras` on `dotfiles-Fedora`. By the next bullet's test that makes its **bootstrap**
+  treat them as installs rather than opt-ins, and that is deliberate (the box owner asked for
+  every probed tool); the ²¹ mark on these rows still describes the other repos. **`core-doctor`
+  does not see it that way yet.** `os/fedora.capabilities` declares no `TOOLS_OPTIN`, so
+  `_core_doctor_optin` falls back to Core's nine-tool default, and a Fedora box whose install
+  of one of these failed still shows `·` (opt-in) rather than `✗`. Fixing that needs a Fedora
+  declaration plus a Core way to say "nothing is optional", because an empty `TOOLS_OPTIN`
+  currently means "use the default" too. Until both land, the doctor's glyph for these rows on
+  Fedora is the generic one, not this table's.
 - "extras" above means Gentoo's opt-in block: installed by default, **skipped by
   `--no-extras`**. That flag is the one thing keeping these honest as ²¹ entries rather than ³
   ones — the tool is still something you can decline.
@@ -1239,9 +1245,10 @@ the next login picks it up on its own, no symlink into `~/.local/bin` needed.
 get a `HAVE_*` flag, so a `✗` for either sent the reader to a matrix with no row to find —
 the one promise `zsh/30-functions.zsh`'s "install missing" hint makes. **`mise` is the
 chicken-and-egg row**: footnotes ¹, ⁶, ⁷, ¹⁰, ¹¹ and ²⁹ all prescribe `mise use -g <x>` as
-a fallback, and every `bootstrap.sh` reaches for `mise exec go@latest` when no Go toolchain
-is present, so it is a prerequisite of this table rather than an entry in it. **That call
-needs a `mise install go@latest` before it.** Core's `mise/config.toml` sets
+a fallback, and the package-provisioning Linux `bootstrap.sh`s reach for `mise exec go@latest`
+when no Go toolchain is present (NixOS's, the role repos' and the MacBook's never take that
+path), so it is a prerequisite of this table rather than an entry in it. **On those bootstraps
+that call needs a `mise install go@latest` before it.** Core's `mise/config.toml` sets
 `auto_install = false`, and current mise (verified 2026.10.7) carries that into
 `exec_auto_install`, so on a box with no Go a bare `mise exec go@latest` fails in about two
 seconds with `"go" couldn't exec process` instead of downloading. `dotfiles-Fedora`'s

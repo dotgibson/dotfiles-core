@@ -42,7 +42,9 @@
   tools. Footnotes ⁸ (`jj`), ¹¹ (`ast-grep`), ¹⁷ (`jnv`), ¹⁹ (`gping`), ²⁴ (`lnav`),
   ²⁵ (`watchexec`), ²⁶ (`git-absorb`) and ³⁰ (`uv`) made the same per-repo claims and now name
   Fedora too. ³⁰ also records that `mise exec go@latest` no longer downloads Go under Core's
-  `auto_install = false`, so a bootstrap needs `mise install go@latest` first.
+  `auto_install = false`, so a package-provisioning Linux bootstrap needs `mise install go@latest`
+  first. The ²¹ notes also say that `core-doctor` still shows these rows as opt-in on Fedora
+  until it declares `TOOLS_OPTIN`.
 - **`/release-readiness` actually checks the editor pin.** The scheduled job allows
   `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
   script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was
