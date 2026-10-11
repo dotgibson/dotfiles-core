@@ -465,8 +465,12 @@ esac
 # TOOLS_OPTIN's `none` is the explicit empty set, so it must stand ALONE. `none lnav` is
 # a contradiction, and the reader would treat it as a two-tool list containing a tool called
 # none, silently dropping the meaning the author reached for.
+# Split the way the reader does: zsh's ${=…} splits on ALL whitespace, so a tab is a word
+# boundary there too. A literal-space test would wave `none<TAB>lnav` through and the box
+# would then read a two-word list.
 optin="$(cap_value TOOLS_OPTIN)"
-if [[ " $optin " == *" none "* && "$optin" != none ]]; then
+read -r -a optin_words <<<"$optin"
+if ((${#optin_words[@]} > 1)) && in_list none "${optin_words[@]}"; then
   bad "-" "TOOLS_OPTIN=none means 'nothing is opt-in' and must stand alone (got: $optin)"
 fi
 

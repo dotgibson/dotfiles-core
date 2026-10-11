@@ -125,6 +125,9 @@ else
   # called `none` in it and silently lose the meaning.
   { grep -v '^TOOLS_OPTIN=' "$CAPEX"; printf 'TOOLS_OPTIN=none lnav\n'; } >"$CAPV/optin-none-mixed"
   _cap_rejects "TOOLS_OPTIN=none mixed with tool names" "$CAPV/optin-none-mixed"
+  # ...whatever whitespace separates them: the reader splits on tabs as well as spaces.
+  { grep -v '^TOOLS_OPTIN=' "$CAPEX"; printf 'TOOLS_OPTIN=none\tlnav\n'; } >"$CAPV/optin-none-tab"
+  _cap_rejects "TOOLS_OPTIN=none mixed with a tool name by a TAB" "$CAPV/optin-none-tab"
   # An inline `#` is NOT a comment inside a value (#715). This file looks like an env file
   # and its own header is dense with `#`, so this is the natural thing to author — and every
   # other rule waved it through, leaving the declared verb as the whole string, comment and
