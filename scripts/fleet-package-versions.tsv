@@ -85,7 +85,7 @@ ver	jq	openSUSE Leap 16.0	1.7.1	2026-09-12	download.opensuse.org	-
 
 floor	neovim	0.12.0
 
-ver	neovim	Arch	0.12.5	2026-10-05	archlinux.org/packages	arch
+ver	neovim	Arch	0.12.6	2026-10-11	archlinux.org/packages	arch
 ver	neovim	openSUSE Tumbleweed	0.12.5	2026-10-05	download.opensuse.org	opensuse_tumbleweed
 ver	neovim	Fedora Rawhide	0.12.5	2026-10-05	dl.fedoraproject.org	fedora_rawhide
 ver	neovim	Fedora 45	0.12.5	2026-09-17	dl.fedoraproject.org (development/45)	fedora_45
