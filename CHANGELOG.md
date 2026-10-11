@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.15.0] - 2026-10-11
+
 ### Security
 
 - **GitHub now refuses a tag-pinned action in every Core-vendoring repo, and
@@ -74,11 +76,10 @@
   ²⁵ (`watchexec`), ²⁶ (`git-absorb`) and ³⁰ (`uv`) made the same per-repo claims and now name
   Fedora too. ³⁰ also records that `mise exec go@latest` no longer downloads Go under Core's
   `auto_install = false`, so the five bootstraps that use it (Arch, openSUSE, Alpine, Gentoo,
-  Fedora) need `mise install go@latest` first. The ²¹ notes also say that `core-doctor` still
-  shows these rows as opt-in on Fedora. Fixing that needs Fedora to declare `TOOLS_OPTIN`
-  and Core to support an empty opt-in set, which today falls back to the default list. The
-  `_CORE_DOCTOR_OPTIN` comment in `zsh/30-functions.zsh` now gives that reason instead of
-  "Fedora has no ²¹ column".
+  Fedora) need `mise install go@latest` first. The ²¹ notes and the `_CORE_DOCTOR_OPTIN`
+  comment in `zsh/30-functions.zsh` say how `core-doctor` classifies these rows on Fedora:
+  it declares `TOOLS_OPTIN=none` (dotgibson/dotfiles-Fedora#212), the empty-set form added
+  in this release, so a failed install there shows `✗`, not `·`.
 - **`/release-readiness` actually checks the editor pin.** The scheduled job allows
   `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
   script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was
@@ -95,7 +96,8 @@
   the fleet and runs `audit-core.sh --scope none` before the routine, with both tokens
   withheld from that step because the gates run sibling code. Any `✗` there is a HOLD, and
   a gate that could not see its sibling is reported as unverified, not as a pass. This is
-  the fallback half of #1240. The PR-time check is still open there.
+  the fallback half of #1240. The PR-time half is the `fleet-gates` job (#1243, under
+  Added), which closed #1240.
 - **`RELEASE-STRATEGY.md` no longer lists making `audit-arch` and `audit-alpine` required
   checks as future work.** The `main` ruleset already requires both, alongside the Ubuntu and
   macOS audit legs, and it binds admins too. The "Still worth doing" item still pointed at the
