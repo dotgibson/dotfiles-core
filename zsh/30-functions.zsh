@@ -921,11 +921,16 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
 # to stop.
 #
 # So the array below is NOT a placeholder awaiting that file. It is the DEFAULT a box falls
-# back to when its OS repo declares no TOOLS_OPTIN. #667 authored the declarations, and
-# five of the seven deliberately omit this key — Arch, openSUSE and Alpine package jj and
-# ast-grep, and macOS and Fedora have no column in PORTING-MATRIX.md's footnote-21 table to
-# derive a delta from — so this array stays the live answer on most of the fleet rather
-# than a transitional one. #666 wired the doctor through $_CORE_CAP; this is the fallback.
+# back to when its OS repo declares no TOOLS_OPTIN. #667 authored the declarations. Today
+# openSUSE, Gentoo and Debian declare one, and Arch, Alpine, NixOS, macOS and Fedora omit
+# it. Arch and Alpine package jj and ast-grep, so the default is already right there.
+# macOS's Brewfile column in PORTING-MATRIX.md's footnote-21 table adds no delta worth
+# declaring. Fedora installs EVERY tool in this array (dotgibson/dotfiles-Fedora#209), so
+# its honest declaration is an empty set, and this reader cannot express that: an empty
+# TOOLS_OPTIN falls back to the array below, same as an absent one. So this array stays
+# the live answer on most of the fleet rather than a transitional one, and on Fedora it
+# renders a failed install as `·` rather than `✗` until Core grows an explicit
+# "nothing is optional" form. #666 wired the doctor through $_CORE_CAP; this is the fallback.
 typeset -ga _CORE_DOCTOR_OPTIN=(
   lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 )
