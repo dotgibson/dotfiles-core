@@ -334,9 +334,14 @@ pattern as yazi/ouch. The crate is **`jj-cli`**, not `jujutsu`: the `jujutsu`
 crate is a stub pinned at 0.7.2 whose own description reads "You don't want this
 crate - you want the `jj-cli` crate", so `cargo install jujutsu` lands a redirect
 rather than the VCS — a second reason to spell it `jj` on both packaging paths.
-As an opt-in tool it is carried in exactly one OS repo's `packages.txt` —
-`dotfiles-Alpine` (package `jujutsu`, binary `jj`). Arch lists it only as a
-commented opt-in you run by hand. **Gentoo installs it, but not from
+It is carried in three OS repos' `packages.txt` — `dotfiles-Alpine`,
+`dotfiles-Arch` and `dotfiles-openSUSE` (package `jujutsu`, binary `jj`;
+openSUSE since dotgibson/dotfiles-openSUSE#229). Arch used to list it only as a
+commented opt-in, but `dotfiles-Arch` declares no `TOOLS_OPTIN` — so `core-doctor`
+falls back to `_CORE_DOCTOR_OPTIN`, which does not list `jj`, and counts it EXPECTED
+there; leaving it out rendered a false ✗ on every fresh box
+(dotgibson/dotfiles-Arch#201, which installs `difftastic`¹⁰ and `ast-grep`¹¹ for the
+same reason). **Gentoo installs it, but not from
 `packages.txt`**: that file is the UNCONDITIONAL emerge, and an atom there would
 land on a `--no-extras` run, so `bootstrap.sh` emerges `dev-vcs/jj` from its
 opt-in extras block instead (`scripts/check-packages.sh` check 7 gates the
