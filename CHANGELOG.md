@@ -51,7 +51,8 @@
   last cell-level mark, so the `TOOLS_OPTIN` gate no longer demands that openSUSE list Core's
   whole opt-in set. Footnote ²¹'s coverage table gives openSUSE its own column and counts four
   repos whose `bootstrap.sh` installs from the family. Footnote ³⁰ no longer says openSUSE skips
-  `uv`.
+  `uv`. The `TOOLS_OPTIN` gate's tests read the real matrix and keyed on that `uv` cell, so they
+  now use Gentoo's column, whose `jj` and `ast-grep` marks also exercise the alias path.
 
 - **`PORTING-MATRIX.md` now records that Arch installs `jujutsu`, `difftastic` and
   `ast-grep`.** dotgibson/dotfiles-Arch#201 adds all three to Arch's `install/packages.txt`.
