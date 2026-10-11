@@ -963,11 +963,13 @@ including macOS"; Alpine falsified the first half, and Gentoo — checked agains
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
 2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
 re-verified 2026-08-30 against each repo's own package pages, the Arch/Homebrew pair
-alone re-verified again 2026-09-23, and the Alpine row re-verified 2026-09-13 on all five
-branches — the stables it had never named (the remaining rows still carry the 08-30 stamp):
+alone re-verified again 2026-09-23 and 2026-10-11, and the Alpine row re-verified 2026-09-13
+on all five branches — the stables it had never named (the remaining rows still carry the
+08-30 stamp):
 
-- **Arch `extra` and Homebrew** — 2.7.3 (Arch's package revision is `2.7.3-1`). Still the
-  same version on both, re-checked 2026-09-23 (dotfiles-Arch#187).
+- **Arch `extra` and Homebrew** — 2.8.0 (Arch's package revision is `2.8.0-1`). Still the
+  same version on both, re-checked 2026-10-11 (dotfiles-Arch#197; was 2.7.3 at the
+  2026-09-23 check, dotfiles-Arch#187).
 - **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
   line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
   like once two of the four move and two do not.)
@@ -1367,8 +1369,9 @@ no `os/` layer at all. So the hook is live there and simply finds no binary. The
 above is the apt name you would install by hand.
 
 Verified 2026-08-21 against each distro's own index, the Alpine stamp re-verified 2026-09-13
-(dotfiles-Alpine#188): **Arch `extra`** 2.37.1-1, **Alpine `community`** 2.37.1-r8 (v3.24 and
-`edge`; v3.23 still carries 2.37.1-r7 — a Go binary, so a native musl build), **openSUSE**
+(dotfiles-Alpine#188), the Arch stamp 2026-10-11 (dotfiles-Arch#197): **Arch `extra`**
+2.38.2-1, **Alpine `community`** 2.37.1-r8 (v3.24 and `edge`; v3.23 still carries 2.37.1-r7
+— a Go binary, so a native musl build), **openSUSE**
 Tumbleweed 2.37.1 with **Leap 16.0 and 16.1 both at 2.34.0** through Backports (`bp160.1.13` /
 `bp161.1.9`, both arches), **kali-rolling** 2.37.1-1, **Ubuntu 24.04 `universe`**
 2.32.1-2ubuntu0.24.04.3 and **Debian trixie** 2.32.1-2+b16. **Gentoo is GURU-only** — 2.37.1,
@@ -1407,7 +1410,7 @@ two of those corrections were.
 
 | Target              | `neovim` | vs ≥ 0.12.0 | verified   |
 | ------------------- | -------- | ----------- | ---------- |
-| Arch                | 0.12.5   | at or above | 2026-10-05 |
+| Arch                | 0.12.6   | at or above | 2026-10-11 |
 | openSUSE Tumbleweed | 0.12.5   | at or above | 2026-10-05 |
 | Fedora Rawhide      | 0.12.5   | at or above | 2026-10-05 |
 | Fedora 45           | 0.12.5   | at or above | 2026-09-17 |
