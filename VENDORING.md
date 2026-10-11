@@ -351,7 +351,7 @@ actually needs:
 
 | Optional key | What it is for |
 | --- | --- |
-| `TOOLS_OPTIN` | tools `core-doctor` reports as OPT-IN rather than MISSING. A declared list **replaces** Core's default rather than adding to it, so re-state everything you still consider optional. The one key where a partial declaration falls back per-key |
+| `TOOLS_OPTIN` | tools `core-doctor` reports as OPT-IN rather than MISSING. A declared list **replaces** Core's default rather than adding to it, so re-state everything you still consider optional. The one key where a partial declaration falls back per-key. An empty value means "not declared"; write `none` to say nothing is opt-in (the repo installs every probed tool) |
 | `PKG_ASSUME_YES` | the flag `up -y` appends. **Omit to mean "never auto-confirm"** — the right answer for Arch, Gentoo and Alpine |
 | `PKG_UPGRADE_PRE` | run before the upgrade, both paths; **failure aborts** |
 | `PKG_CLEANUP` | run after a successful _full_ upgrade (`autoremove`, `brew cleanup`) |

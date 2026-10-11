@@ -64,8 +64,9 @@ CAP_REQUIRED=(
 # schema keeps validating.
 #
 #   TOOLS_OPTIN          space-separated tools core-doctor reports as OPT-IN rather than
-#                        MISSING. Absent → Core's _CORE_DOCTOR_OPTIN fallback in
-#                        zsh/30-functions.zsh.
+#                        MISSING. Absent (or empty) → Core's _CORE_DOCTOR_OPTIN fallback
+#                        in zsh/30-functions.zsh. `none`, alone, is the explicit empty set:
+#                        this repo installs every probed tool, so nothing is opt-in.
 #
 #   ── how `up` applies (#664) ────────────────────────────────────────────────────────
 #   PKG_ASSUME_YES       the flag `up -y` appends to PKG_UPGRADE (and to PKG_CLEANUP).
@@ -460,6 +461,14 @@ case "$fld" in
   '') ;;
   *[!0-9]* | 0) bad "-" "PKG_PENDING_FIELD must be a positive integer (got: $fld)" ;;
 esac
+
+# TOOLS_OPTIN's `none` is the explicit empty set, so it must stand ALONE. `none lnav` is
+# a contradiction, and the reader would treat it as a two-tool list containing a tool called
+# none, silently dropping the meaning the author reached for.
+optin="$(cap_value TOOLS_OPTIN)"
+if [[ " $optin " == *" none "* && "$optin" != none ]]; then
+  bad "-" "TOOLS_OPTIN=none means 'nothing is opt-in' and must stand alone (got: $optin)"
+fi
 
 # SCHEDULER's enum.
 sched="$(cap_value SCHEDULER)"

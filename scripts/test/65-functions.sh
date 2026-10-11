@@ -498,6 +498,27 @@ _doccheck "core-doctor: a declaration with no TOOLS_OPTIN falls back to Core's d
 _doccheck "core-doctor: an empty TOOLS_OPTIN is 'not declared', not 'nothing is opt-in'" \
   'TOOLS_OPTIN=' \
   '_core_doctor_optin lnav'
+# ...so "nothing is opt-in" has its own spelling, `none`, for a repo that installs every
+# probed tool (dotfiles-Fedora). Without it such a repo could only omit the key, fall back to
+# the default list, and show a FAILED install of lnav, ouch, jnv and the rest as `·`.
+_doccheck "core-doctor: TOOLS_OPTIN=none makes every default opt-in tool EXPECTED" \
+  'TOOLS_OPTIN=none' \
+  '! _core_doctor_optin lnav && ! _core_doctor_optin gping && ! _core_doctor_optin jj'
+_doccheck "core-doctor --json: TOOLS_OPTIN=none marks lnav expected" \
+  'TOOLS_OPTIN=none' \
+  '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
+   out=$(core-doctor --json 2>&1)
+   q=$(printf \\42)
+   exp=${out#*expected}
+   exp=${exp%%\}*}
+   [[ $exp == *${q}lnav${q}:true* ]] && [[ $exp != *:false* ]]'
+_doccheck "core-doctor: TOOLS_OPTIN=none renders a missing default opt-in tool as ✗, not ·" \
+  'TOOLS_OPTIN=none' \
+  '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"✗ lnav"* ]] && [[ $out != *"· lnav"* ]]'
 # #666 warned these two could disagree: #697 added stale-flag reporting, and this changes
 # what "expected" means underneath it. They are independent by construction —
 # _core_doctor_stale runs on BOTH the opt-in and the missing branch — and this pins that, so

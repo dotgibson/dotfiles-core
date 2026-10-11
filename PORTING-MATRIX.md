@@ -788,12 +788,11 @@ what a bootstrap gives you:
   `--no-extras` on `dotfiles-Fedora`. By the next bullet's test that makes its **bootstrap**
   treat them as installs rather than opt-ins, and that is deliberate (the box owner asked for
   every probed tool); the ²¹ mark on these rows still describes the other repos. **`core-doctor`
-  does not see it that way yet.** `os/fedora.capabilities` declares no `TOOLS_OPTIN`, so
-  `_core_doctor_optin` falls back to Core's nine-tool default, and a Fedora box whose install
-  of one of these failed still shows `·` (opt-in) rather than `✗`. Fixing that needs a Fedora
-  declaration plus a Core way to say "nothing is optional", because an empty `TOOLS_OPTIN`
-  currently means "use the default" too. Until both land, the doctor's glyph for these rows on
-  Fedora is the generic one, not this table's.
+  agrees once Fedora declares `TOOLS_OPTIN=none`.** `none` is the explicit empty set ("nothing
+  is opt-in"). An empty `TOOLS_OPTIN` cannot say that: it means "not declared" and falls back
+  to Core's nine-tool default, under which a Fedora box whose install of one of these failed
+  shows `·` (opt-in) rather than `✗`. With `none`, every probed tool is expected there, so a
+  failed install is a `✗`.
 - "extras" above means Gentoo's opt-in block: installed by default, **skipped by
   `--no-extras`**. That flag is the one thing keeping these honest as ²¹ entries rather than ³
   ones — the tool is still something you can decline.
