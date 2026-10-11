@@ -705,11 +705,15 @@ unset d
 # two shapes the parser must not get wrong.
 hdr "TOOLS_OPTIN vs matrix (_core_tools_optin_hits)"
 _to_="$SANDBOX/toolsoptin"
-_to_setup() { # _to_setup <optin-line-or-empty> — a fleet with one openSUSE repo in it
-  rm -rf "$_to_"; mkdir -p "$_to_/dotfiles-openSUSE/os"
-  git -C "$_to_/dotfiles-openSUSE" init -q >/dev/null 2>&1
-  : >"$_to_/dotfiles-openSUSE/os/opensuse.capabilities"
-  [[ -n "${1:-}" ]] && printf '%s\n' "$1" >"$_to_/dotfiles-openSUSE/os/opensuse.capabilities"
+# THE FIXTURE IS GENTOO because these drive the REAL matrix, so the column has to carry
+# cell-level marks: Gentoo's are jj and ast-grep (`dev-vcs/jj`²¹, cargo²¹). It was openSUSE,
+# keyed on its `python3-uv`²¹ cell, until dotgibson/dotfiles-openSUSE#229 installed uv and
+# that mark — openSUSE's last — came off the table.
+_to_setup() { # _to_setup <optin-line-or-empty> — a fleet with one Gentoo repo in it
+  rm -rf "$_to_"; mkdir -p "$_to_/dotfiles-Gentoo/os"
+  git -C "$_to_/dotfiles-Gentoo" init -q >/dev/null 2>&1
+  : >"$_to_/dotfiles-Gentoo/os/gentoo.capabilities"
+  [[ -n "${1:-}" ]] && printf '%s\n' "$1" >"$_to_/dotfiles-Gentoo/os/gentoo.capabilities"
 }
 _to_is() { # _to_is <label> <want-hits>
   local got n=0
@@ -718,8 +722,8 @@ _to_is() { # _to_is <label> <want-hits>
   if [[ "$n" == "$2" ]]; then pass "TOOLS_OPTIN: $1"; else fail "TOOLS_OPTIN: $1 (got $n, want $2) — $got"; fi
 }
 
-# THE REAL DEFECT, as it existed: openSUSE's column marks uv²¹ and the repo declared nothing,
-# so core-doctor counted uv EXPECTED and rendered a false ✗ on every box.
+# THE REAL DEFECT, as it existed on openSUSE (#890): a column with a cell-level mark and no
+# declaration, so core-doctor counted the tool EXPECTED and rendered a false ✗ on every box.
 _to_setup ""
 _to_is "a column with a cell-level mark and NO declaration is a finding" 1
 
@@ -731,23 +735,23 @@ else
   fail "TOOLS_OPTIN: the finding did not name the fix"
 fi
 
-# THE CORRECT DECLARATION: Core's row-level nine PLUS this column's cell-level uv. A declared
-# list REPLACES the default, which is why the nine are repeated rather than just the delta.
-_to_setup 'TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv'
+# THE CORRECT DECLARATION: Core's row-level nine PLUS this column's cell-level jj and ast-grep.
+# A declared list REPLACES the default, which is why the nine are repeated, not just the delta.
+_to_setup 'TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping jj ast-grep'
 _to_is "the correct declaration is clean" 0
 
 # ORDER IS NOT THE CONTRACT — the set is. The fleet writes these in table order; a repo that
 # sorts them differently is not drifting, and a gate that said so would be noise.
-_to_setup 'TOOLS_OPTIN=uv gping jnv git-absorb ouch shfmt shellcheck watchexec hyperfine lnav'
+_to_setup 'TOOLS_OPTIN=ast-grep jj gping jnv git-absorb ouch shfmt shellcheck watchexec hyperfine lnav'
 _to_is "a reordered but identical set is clean" 0
 
 # DECLARING ONLY THE DELTA is the trap the rule exists to state: it would trade one false ✗
 # for nine, because a declared list replaces the default rather than adding to it.
-_to_setup 'TOOLS_OPTIN=uv'
+_to_setup 'TOOLS_OPTIN=jj ast-grep'
 _to_is "declaring only the delta is a finding, not a shortcut" 1
 
 # A STALE DECLARATION — the shape a repo drifts into after the matrix gains a mark.
-_to_setup 'TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping'
+_to_setup 'TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping jj'
 _to_is "a declaration missing the column's new mark is a finding" 1
 
 # THE PARSER TRAPS, both real. Footnote 21 carries a coverage table of its OWN whose first

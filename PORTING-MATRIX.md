@@ -184,7 +184,7 @@ and a footnote here.** The footnotes below stay hand-written.
 | difftastic¹⁰     | `difftastic`      | `difftastic`      | `difftastic`               | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`      | `git-absorb`               | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸      | `ast-grep`                 | cargo²¹                             | cargo²¹                    | —²⁹           |
-| uv³⁰             | `uv`              | `python3-uv`²¹    | `uv`                       | `dev-python/uv`                     | asset²⁸                    | asset²⁸       |
+| uv³⁰             | `uv`              | `python3-uv`      | `uv`                       | `dev-python/uv`                     | asset²⁸                    | asset²⁸       |
 | w3m              | `w3m`             | `w3m`             | `w3m`                      | `www-client/w3m`                    | `w3m`                      | `w3m`         |
 
 <!-- core:porting-matrix:end packages -->
@@ -741,7 +741,7 @@ made while `core-doctor` — probing live, later — reported the tool present. 
 before detection now.
 
 **Coverage here is per tool, never a fleet-wide zero** — the table below is the authority, not
-the prose. **Three** repos' `bootstrap.sh` really do install entries from this family:
+the prose. **Four** repos' `bootstrap.sh` really do install entries from this family:
 `dotfiles-Alpine` (`ouch` and `jnv`¹⁷, via cargo¹⁴), `dotfiles-Gentoo` (`shfmt`
 unconditionally via `go`; `ast-grep`¹¹, `jnv`¹⁷ and `watchexec`²⁵ via cargo, plus
 `dev-vcs/jj`⁸ via emerge and `app-arch/ouch` via GURU's `guru_extras_install` seam, all in an
@@ -749,7 +749,9 @@ opt-in extras block that `--no-extras` skips; and `gping`¹⁹ via GURU), and `d
 (`ast-grep`¹¹, `jj`⁸ as crate `jj-cli`, `jnv`¹⁷, `gping`¹⁹, `watchexec`²⁵ as crate
 `watchexec-cli` and `ouch` via cargo, **unconditionally**, with no `--no-extras`
 equivalent; its `install/packages.txt` carries the rest of the family plus `difftastic`¹⁰ and
-`uv`³⁰, dotgibson/dotfiles-Fedora#209). For the other six repos "no bootstrap installs it"
+`uv`³⁰, dotgibson/dotfiles-Fedora#209), and `dotfiles-openSUSE` (`jnv`¹⁷ via cargo,
+**unconditionally**; its `install/packages.txt` carries the rest of the family plus `uv`³⁰,
+dotgibson/dotfiles-openSUSE#229). For the other five repos "no bootstrap installs it"
 still holds.
 
 **How the Gentoo half of that went unnoticed is the lesson worth keeping:** this table was
@@ -761,28 +763,29 @@ UNCONDITIONAL emerge and everything opt-in must therefore live in the script. Ve
 
 Verified 2026-08-21 (Gentoo column re-verified against `bootstrap.sh` as well) against all six
 Linux repos plus the MacBook `Brewfile`; Fedora column re-verified 2026-10-11 against both files
-on F44, with every cell installed by a real `bootstrap.sh` run — a **—** means detect-only there,
+on F44, with every cell installed by a real `bootstrap.sh` run; openSUSE column verified
+2026-10-11 against both files at dotgibson/dotfiles-openSUSE@9db8dec (#229) — a **—** means detect-only there,
 and the packaged name in that tool's row above is what you would install by hand rather than
 what a bootstrap gives you:
 
-| Tool           | macOS `Brewfile` | Alpine             | Gentoo                                    | Fedora                                | Arch / Debian / openSUSE     |
-| -------------- | ---------------- | ------------------ | ----------------------------------------- | ------------------------------------- | ---------------------------- |
-| `hyperfine`    | ✓                | `hyperfine`        | `app-benchmarks/hyperfine`                | `hyperfine`                           | —                            |
-| `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck-bin`                 | `ShellCheck`                          | —                            |
-| `shfmt`        | ✓                | `shfmt`            | bootstrap, go⁷ (unconditional)            | `shfmt`                               | —                            |
-| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, `app-arch/ouch` (extras)       | bootstrap, cargo (no `unrar`/`bzip3`) | openSUSE: `ouch`¹⁸; others — |
-| `lnav`²⁴       | ✓                | `lnav`             | `app-admin/lnav`                          | `lnav`                                | —                            |
-| `git-absorb`²⁶ | ✓                | `git-absorb`       | `dev-vcs/git-absorb`                      | `git-absorb`                          | —                            |
-| `gping`¹⁹      | ✓                | `gping`            | bootstrap, `net-analyzer/gping` (GURU¹²)  | bootstrap, cargo                      | —                            |
-| `watchexec`²⁵  | —                | `watchexec`        | bootstrap, cargo `watchexec-cli` (extras) | bootstrap, cargo `watchexec-cli`      | —                            |
+| Tool           | macOS `Brewfile` | Alpine             | Gentoo                                    | Fedora                                | openSUSE                    | Arch / Debian |
+| -------------- | ---------------- | ------------------ | ----------------------------------------- | ------------------------------------- | --------------------------- | ------------- |
+| `hyperfine`    | ✓                | `hyperfine`        | `app-benchmarks/hyperfine`                | `hyperfine`                           | `hyperfine`                 | —             |
+| `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck-bin`                 | `ShellCheck`                          | `ShellCheck`                | —             |
+| `shfmt`        | ✓                | `shfmt`            | bootstrap, go⁷ (unconditional)            | `shfmt`                               | `shfmt`                     | —             |
+| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, `app-arch/ouch` (extras)       | bootstrap, cargo (no `unrar`/`bzip3`) | `ouch`¹⁸                    | —             |
+| `lnav`²⁴       | ✓                | `lnav`             | `app-admin/lnav`                          | `lnav`                                | `lnav` (Tumbleweed only)    | —             |
+| `git-absorb`²⁶ | ✓                | `git-absorb`       | `dev-vcs/git-absorb`                      | `git-absorb`                          | `git-absorb`                | —             |
+| `gping`¹⁹      | ✓                | `gping`            | bootstrap, `net-analyzer/gping` (GURU¹²)  | bootstrap, cargo                      | `gping`                     | —             |
+| `watchexec`²⁵  | —                | `watchexec`        | bootstrap, cargo `watchexec-cli` (extras) | bootstrap, cargo `watchexec-cli`      | `watchexec`                 | —             |
 
-- **The `ouch` row's last cell is split because that column is three repos, not one.**
-  `dotfiles-openSUSE` added `ouch` to its `install/packages.txt` in dotfiles-openSUSE#113, so
-  the tool is no longer detect-only there while it still is on Arch/Debian. Note this
-  is a **`packages.txt`** addition, not a `bootstrap.sh` one — so it does not count toward the
-  "three repos' `bootstrap.sh`" above, and this is exactly the both-files distinction the lesson
-  two paragraphs up warns about. `ast-grep` moved the same way in the same PR but has no row here.
-- **Fedora's column is split the same way, by file.** Five of its eight cells are
+- **openSUSE has its own column now.** It used to share the last column with Arch and Debian,
+  split only on the `ouch` row, which `dotfiles-openSUSE` added to its `install/packages.txt` in
+  dotfiles-openSUSE#113. dotgibson/dotfiles-openSUSE#229 then added the rest of the family, so
+  every openSUSE cell here is a `packages.txt` name. `jnv`¹⁷, which no openSUSE release
+  packages, is the one `bootstrap.sh` cargo build, and it has no row here. `lnav` is
+  Tumbleweed-only: Leap 16.0/16.1 do not ship it, and the Leap `TOOLS_OPTIN` lists it.
+- **Fedora's column is split by file.** Five of its eight cells are
   `install/packages.txt` names (all in Fedora's own repos on F44; `ShellCheck` is the package,
   `shellcheck` the binary), and the other three are `bootstrap.sh` cargo builds because no Fedora
   release packages them. Its `ouch` cell is the Gentoo lesson below met a second way: the default
@@ -1287,10 +1290,11 @@ resolve on Tumbleweed or on Leap 16.0/16.1. The binary is Python-flavored (`pyth
 `python314-uv` both provide it, so `zypper in uv` makes you pick — whereas `python3-uv` has
 exactly one provider on all three targets. Verified against the OBS published-binary index on
 Tumbleweed (`openSUSE:Factory`, 0.12.7) and Leap 16.0/16.1 (`SUSE:SLFO:1.2`/`1.3`, 0.7.18), so
-no ³ fallback is needed there. **The cell carries ²¹ because `dotfiles-openSUSE` does not
-install it** — the name is where `uv` comes from when you opt in, not something the bootstrap
-puts on the box (#836). Arch, Alpine and Gentoo do install theirs, which is why only this
-column is marked; so does Fedora, whose `install/packages.txt` lists the binary package `uv`
+no ³ fallback is needed there. **The cell used to carry ²¹**, because `dotfiles-openSUSE` did
+not install it — the name was where `uv` came from when you opted in (#836). Since
+dotgibson/dotfiles-openSUSE#229 its `install/packages.txt` lists `python3-uv`, so the cell is
+derived and the mark is gone. Every column now installs `uv`: Arch, Alpine and Gentoo by
+package, the Debian family by `asset`²⁸, and Fedora by the binary package `uv`
 (dotgibson/dotfiles-Fedora#209). **This is the same failure the paragraph above describes**:
 `python-uv` is the name the archive **contains**, not the one the repo **installs**. Gentoo's
 is `dev-python/uv`, not a bare `uv`.
