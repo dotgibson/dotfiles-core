@@ -39,8 +39,10 @@
   repos", and its table grouped Fedora with the detect-only repos. The table now has its own
   Fedora column, the counts read three and six, and new notes cover two Fedora specifics:
   `ouch` is built without `unrar`/`bzip3`, and Fedora has no `--no-extras` to decline these
-  tools. Footnotes ¹⁹ (`gping`), ²⁴ (`lnav`) and ²⁶ (`git-absorb`) made the same per-repo
-  claim and now name Fedora too.
+  tools. Footnotes ⁸ (`jj`), ¹¹ (`ast-grep`), ¹⁷ (`jnv`), ¹⁹ (`gping`), ²⁴ (`lnav`),
+  ²⁵ (`watchexec`), ²⁶ (`git-absorb`) and ³⁰ (`uv`) made the same per-repo claims and now name
+  Fedora too. ³⁰ also records that `mise exec go@latest` no longer downloads Go under Core's
+  `auto_install = false`, so a bootstrap needs `mise install go@latest` first.
 - **`/release-readiness` actually checks the editor pin.** The scheduled job allows
   `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
   script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was

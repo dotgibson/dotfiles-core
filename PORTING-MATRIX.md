@@ -341,7 +341,9 @@ commented opt-in you run by hand. **Gentoo installs it, but not from
 land on a `--no-extras` run, so `bootstrap.sh` emerges `dev-vcs/jj` from its
 opt-in extras block instead (`scripts/check-packages.sh` check 7 gates the
 hard-coded atom). Read the absence from Gentoo's list as a deliberate placement,
-not a decline. The config (`jujutsu/config.toml`) is inert without the binary.
+not a decline. **Fedora installs it from `bootstrap.sh` too**, unconditionally, as
+`cargo install --locked jj-cli` (dotgibson/dotfiles-Fedora#209) — the cargo path above, since
+`dnf` has nothing to offer. The config (`jujutsu/config.toml`) is inert without the binary.
 ⁹ sesh: smart tmux session manager that Core already drives from the `Ctrl-G`
 shell widget (`35-fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); both
 degrade to a `find`+`fzf` sessionizer when it's absent. `core-doctor` already
@@ -375,7 +377,9 @@ to `newgrp`, shipped by `login` on the Debian family and by `shadow` elsewhere. 
 that lookup, so a bare `sg` runs the search tool rather than switching group. Prefer the `ast-grep`
 name, and reach the real one as `newgrp` (or `/usr/bin/sg`). This footnote used to say `sg` "can
 collide with `setgroups`" and that ast-grep "shadows nothing" — both were wrong, and #425 turned
-the second into a live shadow rather than a hypothetical one. Core probes it into the `_CORE_PROBED` ledger and sets no flag
+the second into a live shadow rather than a hypothetical one. On Fedora that shadow is the
+default, not something you opt into: `dotfiles-Fedora`'s `bootstrap.sh` `cargo install`s
+ast-grep unconditionally (dotgibson/dotfiles-Fedora#209). Core probes it into the `_CORE_PROBED` ledger and sets no flag
 (#694 — nothing read `HAVE_ASTGREP`; `PORTABILITY.md` §5). Packaged on Arch (`extra`) and Alpine (`community` — a musl build, so the outlier is
 covered) and Homebrew; elsewhere via `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert
 without the binary — nothing depends on it.
@@ -461,20 +465,21 @@ unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep
 (YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), probed into the
 `_CORE_PROBED` ledger by `zsh/00-tools.zsh` and carrying no flag since #694, inert
 without the binary. A **Rust** CLI (embeds `jaq`, so no external
-`jq` needed). **On Linux this is detect-only on every repo but one — `jnv` is in no
-`install/packages.txt` anywhere, so `core-doctor` reports it present only once you
+`jq` needed). **On Linux this is detect-only on every repo but three — `jnv` is in no
+`install/packages.txt` anywhere, so elsewhere `core-doctor` reports it present only once you
 install it yourself. The exceptions, per ²¹: `dotfiles-Alpine`'s `bootstrap.sh` DOES install it
 (cargo, best-effort — hence `cargo³` in its cell, since `jnv` is unpackaged on all five
-Alpine branches including `testing` on edge, making cargo its only source there), and
-`dotfiles-Gentoo` cargo-builds it in the opt-in extras block that `--no-extras` skips. On
-macOS the `Brewfile` carries it.** Everywhere else the row above names where that platform
+Alpine branches including `testing` on edge, making cargo its only source there),
+`dotfiles-Gentoo` cargo-builds it in the opt-in extras block that `--no-extras` skips, and
+`dotfiles-Fedora`'s `bootstrap.sh` cargo-builds it unconditionally (no Fedora release packages
+it; dotgibson/dotfiles-Fedora#209). On macOS the `Brewfile` carries it.** Everywhere else the row above names where that platform
 gets it when you opt in — Arch `pacman -S jnv`, Nix, or `cargo install --locked jnv` — not
 an automatic install. **Arch's cell used to read `AUR` and
 this footnote used to prescribe `paru -S jnv`; both are now wrong.** jnv entered `extra` as
 0.7.1-1 on 2026-04-01, confirmed on-box with `pacman -Si jnv` (`Repository: extra`), so no AUR
 helper is involved on Arch any more. Wiring it into the per-repo bootstrap
-(the ³ best-effort path viddy/yazi use) is done on Alpine and Gentoo and remains a tracked
-follow-up on the rest. jnv is in neither `::gentoo` nor GURU, nor any Zugaina-indexed overlay
+(the ³ best-effort path viddy/yazi use) is done on Alpine, Gentoo and Fedora and remains a
+tracked follow-up on the rest. jnv is in neither `::gentoo` nor GURU, nor any Zugaina-indexed overlay
 (checked 2026-09-27, dotgibson/dotfiles-Gentoo#209).
 
 ¹⁸ openSUSE **Tumbleweed** now ships these first-class in the main OSS **binary** repo
@@ -940,8 +945,10 @@ silently hand you the wrong one.
 
 **The one tool in ²¹'s family that inverts it: macOS is the machine that doesn't get it.**
 The MacBook `Brewfile` does not carry `watchexec` — the only ²¹ entry it skips — while
-`dotfiles-Alpine`'s `install/packages.txt` carries it outright and `dotfiles-Gentoo`
-cargo-installs it from the extras block. The other seven machines are opt-in.
+`dotfiles-Alpine`'s `install/packages.txt` carries it outright, `dotfiles-Gentoo`
+cargo-installs it from the extras block, and `dotfiles-Fedora`'s `bootstrap.sh` cargo-installs
+`watchexec-cli` unconditionally (dotgibson/dotfiles-Fedora#209). The other six machines are
+opt-in.
 (This paragraph used to read "the only tool in this table that nothing in the fleet installs,
 including macOS"; Alpine falsified the first half, and Gentoo — checked against `bootstrap.sh`
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
@@ -969,7 +976,9 @@ branches — the stables it had never named (the remaining rows still carry the 
 - **Fedora and Debian/Kali do not package it at all** (confirmed: Fedora's package search
   returns no results across F43/44/45/Rawhide/EPEL). Those two take
   `cargo install --locked watchexec-cli` — note the crate is **`watchexec-cli`**; plain
-  `watchexec` on crates.io is the library, and installing that gives you no binary.
+  `watchexec` on crates.io is the library, and installing that gives you no binary. On Fedora
+  `bootstrap.sh` now runs exactly that (dotgibson/dotfiles-Fedora#209); on Debian/Kali it is
+  still yours to run.
 
 Do **not** read **Kali's** `cargo` cell as a `³`: no `bootstrap.sh` installs it there.
 **Gentoo's `cargo` cell is the exception** — its bootstrap does install `watchexec-cli`, in
@@ -1231,7 +1240,13 @@ get a `HAVE_*` flag, so a `✗` for either sent the reader to a matrix with no r
 the one promise `zsh/30-functions.zsh`'s "install missing" hint makes. **`mise` is the
 chicken-and-egg row**: footnotes ¹, ⁶, ⁷, ¹⁰, ¹¹ and ²⁹ all prescribe `mise use -g <x>` as
 a fallback, and every `bootstrap.sh` reaches for `mise exec go@latest` when no Go toolchain
-is present, so it is a prerequisite of this table rather than an entry in it. Only **Arch**
+is present, so it is a prerequisite of this table rather than an entry in it. **That call
+needs a `mise install go@latest` before it.** Core's `mise/config.toml` sets
+`auto_install = false`, and current mise (verified 2026.10.7) carries that into
+`exec_auto_install`, so on a box with no Go a bare `mise exec go@latest` fails in about two
+seconds with `"go" couldn't exec process` instead of downloading. `dotfiles-Fedora`'s
+`bootstrap.sh` lost doggo, sesh and gron to this and now installs Go first
+(dotgibson/dotfiles-Fedora#209). Only **Arch**
 packages it (`extra`); openSUSE and Gentoo have none, and the bootstraps there use the
 official installer (`curl -fsSL https://mise.run | sh`, landing in `~/.local/bin`). Alpine
 _does_ carry `mise` in `community`, but `dotfiles-Alpine` still takes `mise.run` for the musl
@@ -1261,7 +1276,8 @@ Tumbleweed (`openSUSE:Factory`, 0.12.7) and Leap 16.0/16.1 (`SUSE:SLFO:1.2`/`1.3
 no ³ fallback is needed there. **The cell carries ²¹ because `dotfiles-openSUSE` does not
 install it** — the name is where `uv` comes from when you opt in, not something the bootstrap
 puts on the box (#836). Arch, Alpine and Gentoo do install theirs, which is why only this
-column is marked. **This is the same failure the paragraph above describes**:
+column is marked; so does Fedora, whose `install/packages.txt` lists the binary package `uv`
+(dotgibson/dotfiles-Fedora#209). **This is the same failure the paragraph above describes**:
 `python-uv` is the name the archive **contains**, not the one the repo **installs**. Gentoo's
 is `dev-python/uv`, not a bare `uv`.
 
