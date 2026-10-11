@@ -334,8 +334,9 @@ pattern as yazi/ouch. The crate is **`jj-cli`**, not `jujutsu`: the `jujutsu`
 crate is a stub pinned at 0.7.2 whose own description reads "You don't want this
 crate - you want the `jj-cli` crate", so `cargo install jujutsu` lands a redirect
 rather than the VCS — a second reason to spell it `jj` on both packaging paths.
-It is carried in two OS repos' `packages.txt` — `dotfiles-Alpine` and
-`dotfiles-Arch` (package `jujutsu`, binary `jj`). Arch used to list it only as a
+It is carried in three OS repos' `packages.txt` — `dotfiles-Alpine`,
+`dotfiles-Arch` and `dotfiles-openSUSE` (package `jujutsu`, binary `jj`;
+openSUSE since dotgibson/dotfiles-openSUSE#229). Arch used to list it only as a
 commented opt-in, but `dotfiles-Arch` declares no `TOOLS_OPTIN` — so `core-doctor`
 falls back to `_CORE_DOCTOR_OPTIN`, which does not list `jj`, and counts it EXPECTED
 there; leaving it out rendered a false ✗ on every fresh box

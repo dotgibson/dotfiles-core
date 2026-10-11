@@ -318,9 +318,9 @@ watchexec²¹ ²⁵	-	\`watchexec\`	\`watchexec\`	=	cargo²⁵	cargo²⁵	—²�
 shellcheck²¹	shellcheck ShellCheck shellcheck-bin	\`shellcheck\`	\`ShellCheck\`	=	=	\`shellcheck\`	\`shellcheck\`
 shfmt⁷ ²¹	-	\`shfmt\`	\`shfmt\`	=	go²¹	\`shfmt\`⁷	\`shfmt\`
 ouch²¹	-	\`ouch\`	=¹⁸	testing¹⁴	GURU¹² ²¹	cargo²¹	—²⁹
-jujutsu (jj)⁸	jujutsu jj	=	\`jujutsu\`	=	\`dev-vcs/jj\`²¹	cargo²¹	—²⁹
+jujutsu (jj)⁸	jujutsu jj	=	=	=	\`dev-vcs/jj\`²¹	cargo²¹	—²⁹
 sesh⁹	-	go⁹	go⁹	go⁹	go⁹	go⁹	go³
-difftastic¹⁰	-	=	\`difftastic\`	=	=	asset²⁸	asset²⁸
+difftastic¹⁰	-	=	=	=	=	asset²⁸	asset²⁸
 git-absorb²¹ ²⁶	-	\`git-absorb\`	\`git-absorb\`	=	=	\`git-absorb\`	\`git-absorb\`
 ast-grep¹¹	-	=	=¹⁸	=	cargo²¹	cargo²¹	—²⁹
 uv³⁰	uv python3-uv	=	\`python3-uv\`²¹	=	=	asset²⁸	asset²⁸
