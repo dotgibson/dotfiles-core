@@ -1249,7 +1249,7 @@ a fallback, and five `bootstrap.sh`s (Arch, openSUSE, Alpine, Gentoo and Fedora)
 `mise exec go@latest` when no Go toolchain is present, so it is a prerequisite of this table
 rather than an entry in it. Debian's `_dotfiles_go_install` has no mise arm: with no `go` it
 skips the tool. NixOS's, the role repos' and the MacBook's never take this path. **On those
-five that call needs a `mise install go@latest` before it.** Core's `mise/config.toml` sets
+five, that call needs a `mise install go@latest` before it.** Core's `mise/config.toml` sets
 `auto_install = false`, and current mise (verified 2026.10.7) carries that into
 `exec_auto_install`, so on a box with no Go a bare `mise exec go@latest` fails in about two
 seconds with `"go" couldn't exec process` instead of downloading. `dotfiles-Fedora`'s

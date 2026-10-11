@@ -44,7 +44,10 @@
   Fedora too. ³⁰ also records that `mise exec go@latest` no longer downloads Go under Core's
   `auto_install = false`, so the five bootstraps that use it (Arch, openSUSE, Alpine, Gentoo,
   Fedora) need `mise install go@latest` first. The ²¹ notes also say that `core-doctor` still
-  shows these rows as opt-in on Fedora until it declares `TOOLS_OPTIN`.
+  shows these rows as opt-in on Fedora. Fixing that needs Fedora to declare `TOOLS_OPTIN`
+  and Core to support an empty opt-in set, which today falls back to the default list. The
+  `_CORE_DOCTOR_OPTIN` comment in `zsh/30-functions.zsh` now gives that reason instead of
+  "Fedora has no ²¹ column".
 - **`/release-readiness` actually checks the editor pin.** The scheduled job allows
   `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
   script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was
