@@ -305,25 +305,25 @@ sd²²	-	=	=	=	\`sys-apps/sd\`¹²	=	=
 gron	-	=	=	=	go³	=	=
 jnv¹⁷	-	\`jnv\`	cargo	cargo³	cargo	cargo	—²⁹
 jc⁴⁰	-	=	=⁴⁰	=	=⁴⁰	=	=
-lnav²¹ ²⁴	-	\`lnav\`	\`lnav\`	=	=²⁴	\`lnav\`²⁴	\`lnav\`
+lnav²¹ ²⁴	-	\`lnav\`	=	=	=²⁴	\`lnav\`²⁴	\`lnav\`
 glow	-	=	=	testing¹⁴	\`app-misc/glow\`¹²	=¹⁵	charm apt
 gum	-	=	=	=	mise³⁰	=¹⁵	charm apt
 xh	-	=	=	=	\`net-misc/xh\`¹²	=	asset²⁸
 doggo	-	=	\`doggo\`¹⁸	=	=	go³	go³
-gping¹⁹	-	\`gping\`	\`gping\`¹⁹	=	GURU¹⁹	\`gping\`¹⁹	\`gping\`
+gping¹⁹	-	\`gping\`	=¹⁹	=	GURU¹⁹	\`gping\`¹⁹	\`gping\`
 carapace	-	AUR²⁷	rpm²⁷	=	\`app-shells/carapace\`¹²	deb²⁷	deb²⁷
 op (1Password)¹³	op 1password-cli	AUR	vendor rpm	vendor apk	GURU¹²	vendor apt	vendor apt
-hyperfine²¹	-	\`hyperfine\`	\`hyperfine\`	=	=	\`hyperfine\`	\`hyperfine\`
-watchexec²¹ ²⁵	-	\`watchexec\`	\`watchexec\`	=	cargo²⁵	cargo²⁵	—²⁹
-shellcheck²¹	shellcheck ShellCheck shellcheck-bin	\`shellcheck\`	\`ShellCheck\`	=	=	\`shellcheck\`	\`shellcheck\`
-shfmt⁷ ²¹	-	\`shfmt\`	\`shfmt\`	=	go²¹	\`shfmt\`⁷	\`shfmt\`
+hyperfine²¹	-	\`hyperfine\`	=	=	=	\`hyperfine\`	\`hyperfine\`
+watchexec²¹ ²⁵	-	\`watchexec\`	=	=	cargo²⁵	cargo²⁵	—²⁹
+shellcheck²¹	shellcheck ShellCheck shellcheck-bin	\`shellcheck\`	=	=	=	\`shellcheck\`	\`shellcheck\`
+shfmt⁷ ²¹	-	\`shfmt\`	=	=	go²¹	\`shfmt\`⁷	\`shfmt\`
 ouch²¹	-	\`ouch\`	=¹⁸	testing¹⁴	GURU¹² ²¹	cargo²¹	—²⁹
 jujutsu (jj)⁸	jujutsu jj	=	=	=	\`dev-vcs/jj\`²¹	cargo²¹	—²⁹
 sesh⁹	-	go⁹	go⁹	go⁹	go⁹	go⁹	go³
 difftastic¹⁰	-	=	=	=	=	asset²⁸	asset²⁸
-git-absorb²¹ ²⁶	-	\`git-absorb\`	\`git-absorb\`	=	=	\`git-absorb\`	\`git-absorb\`
+git-absorb²¹ ²⁶	-	\`git-absorb\`	=	=	=	\`git-absorb\`	\`git-absorb\`
 ast-grep¹¹	-	=	=¹⁸	=	cargo²¹	cargo²¹	—²⁹
-uv³⁰	uv python3-uv	=	\`python3-uv\`²¹	=	=	asset²⁸	asset²⁸
+uv³⁰	uv python3-uv	=	=	=	=	asset²⁸	asset²⁸
 w3m	-	=	=	=	=	=	="
 
 # ── helpers ───────────────────────────────────────────────────────────────────

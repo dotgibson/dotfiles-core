@@ -42,6 +42,17 @@
 
 ### Changed
 
+- **`PORTING-MATRIX.md` catches up with dotgibson/dotfiles-openSUSE#229.** openSUSE now
+  installs Core's opt-in set: `hyperfine`, `ShellCheck`, `shfmt`, `lnav`, `git-absorb`,
+  `gping`, `watchexec` and `python3-uv` from `install/packages.txt`, and `jnv` through a
+  `bootstrap.sh` cargo build. Each of the eight openSUSE cells in `gen-porting-matrix.sh` is now
+  derived (`=`). Before that, `gen-porting-matrix.sh --check` exited 2 against the live fleet,
+  which also hid every other drift check. The `uv` cell drops its ²¹ mark. That was openSUSE's
+  last cell-level mark, so the `TOOLS_OPTIN` gate no longer demands that openSUSE list Core's
+  whole opt-in set. Footnote ²¹'s coverage table gives openSUSE its own column and counts four
+  repos whose `bootstrap.sh` installs from the family. Footnote ³⁰ no longer says openSUSE skips
+  `uv`.
+
 - **`PORTING-MATRIX.md` now records that Arch installs `jujutsu`, `difftastic` and
   `ast-grep`.** dotgibson/dotfiles-Arch#201 adds all three to Arch's `install/packages.txt`.
   dotfiles-Arch declares no `TOOLS_OPTIN`, so `core-doctor` falls back to
