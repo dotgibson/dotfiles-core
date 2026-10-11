@@ -926,11 +926,11 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
 # it. Arch and Alpine package jj and ast-grep, so the default is already right there.
 # macOS's Brewfile column in PORTING-MATRIX.md's footnote-21 table adds no delta worth
 # declaring. Fedora installs EVERY tool in this array (dotgibson/dotfiles-Fedora#209), so
-# its honest declaration is an empty set, and this reader cannot express that: an empty
-# TOOLS_OPTIN falls back to the array below, same as an absent one. So this array stays
-# the live answer on most of the fleet rather than a transitional one, and on Fedora it
-# renders a failed install as `·` rather than `✗` until Core grows an explicit
-# "nothing is optional" form. #666 wired the doctor through $_CORE_CAP; this is the fallback.
+# its honest declaration is the empty set. An empty TOOLS_OPTIN cannot say that (it falls
+# back to the array below, same as an absent one), so the empty set is spelled
+# `TOOLS_OPTIN=none` and _core_doctor_optin below honours it. This array stays the live
+# answer on the rest of the fleet rather than a transitional one. #666 wired the doctor
+# through $_CORE_CAP; this is the fallback.
 typeset -ga _CORE_DOCTOR_OPTIN=(
   lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 )
@@ -966,6 +966,11 @@ _core_doctor_optin() {
   if ((${+functions[_core_cap]})); then
     _list=(${=$(_core_cap TOOLS_OPTIN)})
   fi
+  # `none` ALONE is the explicit empty set: every probed tool is expected, nothing is opt-in.
+  # An empty value cannot carry that meaning, because empty already means "not declared"
+  # (_core_cap's contract, pinned in test/65-functions.sh). Same word SCHEDULER uses for
+  # its own real-nothing answer. The validator refuses `none` mixed with tool names.
+  [[ "${_list[*]}" == none ]] && return 1
   ((${#_list})) || _list=($_CORE_DOCTOR_OPTIN)
   for _o in $_list; do [[ "$_o" == "$1" ]] && return 0; done
   return 1

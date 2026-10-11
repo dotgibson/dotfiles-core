@@ -114,6 +114,20 @@ else
   else
     fail "validator: TOOLS_OPTIN was treated as required — it is not"
   fi
+  # `none` is the explicit empty set (a repo that installs every probed tool)...
+  { grep -v '^TOOLS_OPTIN=' "$CAPEX"; printf 'TOOLS_OPTIN=none\n'; } >"$CAPV/optin-none"
+  if "$CAPCHK" "$CAPV/optin-none" >/dev/null 2>&1; then
+    pass "validator: TOOLS_OPTIN=none is accepted (nothing is opt-in)"
+  else
+    fail "validator: TOOLS_OPTIN=none was rejected — it is the only way to say 'nothing is opt-in'"
+  fi
+  # ...so it cannot be mixed with tool names: the reader would see a list with a tool
+  # called `none` in it and silently lose the meaning.
+  { grep -v '^TOOLS_OPTIN=' "$CAPEX"; printf 'TOOLS_OPTIN=none lnav\n'; } >"$CAPV/optin-none-mixed"
+  _cap_rejects "TOOLS_OPTIN=none mixed with tool names" "$CAPV/optin-none-mixed"
+  # ...whatever whitespace separates them: the reader splits on tabs as well as spaces.
+  { grep -v '^TOOLS_OPTIN=' "$CAPEX"; printf 'TOOLS_OPTIN=none\tlnav\n'; } >"$CAPV/optin-none-tab"
+  _cap_rejects "TOOLS_OPTIN=none mixed with a tool name by a TAB" "$CAPV/optin-none-tab"
   # An inline `#` is NOT a comment inside a value (#715). This file looks like an env file
   # and its own header is dense with `#`, so this is the natural thing to author — and every
   # other rule waved it through, leaving the declared verb as the whole string, comment and

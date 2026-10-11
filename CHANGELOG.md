@@ -19,6 +19,16 @@
 
 ### Added
 
+- **`TOOLS_OPTIN=none` says "nothing is opt-in".** A repo that installs every tool
+  `core-doctor` probes had no way to declare it. An empty `TOOLS_OPTIN` means "not declared"
+  and falls back to the default opt-in list, so on such a box a failed install of `lnav`,
+  `ouch`, `jnv` and the rest rendered `·` instead of `✗`. `none`, alone, is now the explicit
+  empty set: `_core_doctor_optin` treats every probed tool as expected, in the render and in
+  `--json`. `check-capabilities.sh` accepts it and refuses `none` mixed with tool names. Empty
+  keeps its meaning. A Core that predates this reads `none` as a list naming one nonexistent
+  tool, which gives the same answer, so a repo can declare it before every box has upgraded.
+  `dotfiles-Fedora` is the first user.
+
 - **A Core PR is checked against the real sibling repos before it merges.** The new
   `fleet-gates` job in `ci.yml` clones the fleet beside Core and runs the audit's fleet-wide
   gates (§5f, §9m-§9p, theme and desktop-parity drift) that every other leg skips because it
