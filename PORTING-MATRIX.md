@@ -508,13 +508,14 @@ reason) — those two are declines, not gaps.
 
 ¹⁹ gping: the `ping` replacement — Core aliases `ping`→`gping` (`HAVE_GPING`-guarded in
 `zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only on
-every Linux repo except `dotfiles-Alpine` and `dotfiles-Gentoo`** — Alpine's
-`install/packages.txt` carries `gping` outright, and Gentoo emerges `net-analyzer/gping` from
-GURU in its `guru_install` pass. Gentoo's list names the atom only in a comment because
+every Linux repo except `dotfiles-Alpine`, `dotfiles-Gentoo` and `dotfiles-Fedora`** — Alpine's
+`install/packages.txt` carries `gping` outright, Gentoo emerges `net-analyzer/gping` from
+GURU in its `guru_install` pass, and Fedora's `bootstrap.sh` runs `cargo install --locked gping`
+(dotgibson/dotfiles-Fedora#209), because no Fedora release packages it. Gentoo's list names the atom only in a comment because
 overlay-only atoms **must** live there (the main-tree emerge runs before GURU is enabled, so an
 atom in the list proper would be skipped and never retried) — that comment is a pointer to the
 call, **not** a decline, which is what this footnote used to read it as. The macOS `Brewfile`
-carries it too. On the other seven repos the alias lights up only once you install it yourself —
+carries it too. On the other six repos the alias lights up only once you install it yourself —
 this row exists so there is a documented path when you do. (`aliases.md` and `PARITY.md` have advertised the alias since
 v3; the matrix row is what was missing.) A **Rust** CLI → `cargo install gping` anywhere
 unpackaged. Packaged: Arch `extra`, Alpine `community` (a native musl build, so the outlier is
@@ -886,12 +887,14 @@ per release (`lnav-0.14.1-linux-musl-x86_64.zip`, and an `arm64` twin), so the f
 an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
 the cleanest way to get 0.14.1 onto Gentoo or Debian/Kali without waiting for the package.
 **No `bootstrap.sh` installs it anywhere**, but it is not detect-only across the board:
-`dotfiles-Alpine` (`lnav`) and `dotfiles-Gentoo` (`app-admin/lnav`) both carry it in
-`install/packages.txt`, and the MacBook `Brewfile` has it too (added 2026-07-15). On the other
-four Linux repos `core-doctor` reports it present only once you install it yourself. So `lnav` sits in
+`dotfiles-Alpine` (`lnav`), `dotfiles-Gentoo` (`app-admin/lnav`) and `dotfiles-Fedora` (`lnav`,
+dotgibson/dotfiles-Fedora#209) all carry it in `install/packages.txt`, and the MacBook
+`Brewfile` has it too (added 2026-07-15). Fedora's copy is the per-release build in the table
+below, so an F44 box gets 0.13.2, not upstream's 0.14.1. On the other three Linux repos
+`core-doctor` reports it present only once you install it yourself. So `lnav` sits in
 ²¹'s family — probed but never bootstrap-installed — rather than jnv's thinner "two platforms
 package it, cargo everywhere else" one: every distro in the table above packages lnav on at
-least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and two of the repos
+least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and three of the repos
 ask for it.
 
 Versions **verified against each distro's own package pages** on 2026-08-12, every row
@@ -1049,8 +1052,9 @@ it with the same caution as the version stamps below.
 
 **No `bootstrap.sh` installs it**, and it is packaged essentially everywhere — the ²¹ shape,
 not `jnv`¹⁷'s. The MacBook `Brewfile` carries it, and so do `dotfiles-Alpine`
-(`git-absorb`) and `dotfiles-Gentoo` (`dev-vcs/git-absorb`) in their `install/packages.txt`;
-the other four Linux repos are detect-only (re-verified 2026-08-21). Package versions verified
+(`git-absorb`), `dotfiles-Gentoo` (`dev-vcs/git-absorb`) and `dotfiles-Fedora` (`git-absorb`,
+dotgibson/dotfiles-Fedora#209) in their `install/packages.txt`; the other three Linux repos
+are detect-only (re-verified 2026-08-21; Fedora 2026-10-11). Package versions verified
 2026-08-12 against each distro's own package pages, the Alpine row re-verified 2026-09-13 on
 all five branches (dotfiles-Alpine#188):
 

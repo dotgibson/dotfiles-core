@@ -39,7 +39,8 @@
   repos", and its table grouped Fedora with the detect-only repos. The table now has its own
   Fedora column, the counts read three and six, and new notes cover two Fedora specifics:
   `ouch` is built without `unrar`/`bzip3`, and Fedora has no `--no-extras` to decline these
-  tools.
+  tools. Footnotes ¹⁹ (`gping`), ²⁴ (`lnav`) and ²⁶ (`git-absorb`) made the same per-repo
+  claim and now name Fedora too.
 - **`/release-readiness` actually checks the editor pin.** The scheduled job allows
   `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
   script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was
