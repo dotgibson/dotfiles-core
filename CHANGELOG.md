@@ -42,6 +42,14 @@
 
 ### Changed
 
+- **`PORTING-MATRIX.md` now records that Arch installs `jujutsu`, `difftastic` and
+  `ast-grep`.** dotgibson/dotfiles-Arch#201 adds all three to Arch's `install/packages.txt`.
+  dotfiles-Arch declares no `TOOLS_OPTIN`, so `core-doctor` falls back to
+  `_CORE_DOCTOR_OPTIN`, which lists none of them, and showed a ✗ on every fresh Arch box.
+  Arch's three cells in `gen-porting-matrix.sh` are now derived (`=`), not asserted; the
+  rendered table is unchanged. Footnote ⁸ no longer says Arch lists `jj` "only as a
+  commented opt-in" (#1262).
+
 - **`PORTING-MATRIX.md` footnote ²¹ now counts Fedora among the repos that install this
   family.** dotgibson/dotfiles-Fedora#209 puts `hyperfine`, `ShellCheck`, `shfmt`, `lnav` and
   `git-absorb` in Fedora's `install/packages.txt`. Its `bootstrap.sh` cargo-builds `ouch`,
