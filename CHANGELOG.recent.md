@@ -54,6 +54,14 @@ repo-meta and stays upstream:
 
 ### Changed
 
+- **`PORTING-MATRIX.md` now records that Arch installs `jujutsu`, `difftastic` and
+  `ast-grep`.** dotgibson/dotfiles-Arch#201 adds all three to Arch's `install/packages.txt`.
+  dotfiles-Arch declares no `TOOLS_OPTIN`, so `core-doctor` falls back to
+  `_CORE_DOCTOR_OPTIN`, which lists none of them, and showed a ✗ on every fresh Arch box.
+  Arch's three cells in `gen-porting-matrix.sh` are now derived (`=`), not asserted; the
+  rendered table is unchanged. Footnote ⁸ no longer says Arch lists `jj` "only as a
+  commented opt-in" (#1262).
+
 - **`PORTING-MATRIX.md` footnote ²¹ now counts Fedora among the repos that install this
   family.** dotgibson/dotfiles-Fedora#209 puts `hyperfine`, `ShellCheck`, `shfmt`, `lnav` and
   `git-absorb` in Fedora's `install/packages.txt`. Its `bootstrap.sh` cargo-builds `ouch`,
@@ -65,11 +73,10 @@ repo-meta and stays upstream:
   ²⁵ (`watchexec`), ²⁶ (`git-absorb`) and ³⁰ (`uv`) made the same per-repo claims and now name
   Fedora too. ³⁰ also records that `mise exec go@latest` no longer downloads Go under Core's
   `auto_install = false`, so the five bootstraps that use it (Arch, openSUSE, Alpine, Gentoo,
-  Fedora) need `mise install go@latest` first. The ²¹ notes also say that `core-doctor` still
-  shows these rows as opt-in on Fedora. Fixing that needs Fedora to declare `TOOLS_OPTIN`
-  and Core to support an empty opt-in set, which today falls back to the default list. The
-  `_CORE_DOCTOR_OPTIN` comment in `zsh/30-functions.zsh` now gives that reason instead of
-  "Fedora has no ²¹ column".
+  Fedora) need `mise install go@latest` first. The ²¹ notes and the `_CORE_DOCTOR_OPTIN`
+  comment in `zsh/30-functions.zsh` say how `core-doctor` classifies these rows on Fedora:
+  it declares `TOOLS_OPTIN=none` (dotgibson/dotfiles-Fedora#212), the empty-set form added
+  in this release, so a failed install there shows `✗`, not `·`.
 - **`/release-readiness` actually checks the editor pin.** The scheduled job allows
   `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
   script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was
@@ -86,12 +93,30 @@ repo-meta and stays upstream:
   the fleet and runs `audit-core.sh --scope none` before the routine, with both tokens
   withheld from that step because the gates run sibling code. Any `✗` there is a HOLD, and
   a gate that could not see its sibling is reported as unverified, not as a pass. This is
-  the fallback half of #1240. The PR-time check is still open there.
+  the fallback half of #1240. The PR-time half is the `fleet-gates` job (#1243, under
+  Added), which closed #1240.
 - **`RELEASE-STRATEGY.md` no longer lists making `audit-arch` and `audit-alpine` required
   checks as future work.** The `main` ruleset already requires both, alongside the Ubuntu and
   macOS audit legs, and it binds admins too. The "Still worth doing" item still pointed at the
   classic branch-protection settings page that the fleet retired. The CI bullet now says what
   the ruleset enforces.
+
+### Fixed
+
+- **Three Arch version stamps in `PORTING-MATRIX.md` had fallen behind `extra`.** Re-checked
+  2026-10-11 against `archlinux.org`:
+  - Footnote ²⁵'s Arch/Homebrew `watchexec` bullet goes from 2.7.3 (`2.7.3-1`) to **2.8.0**
+    (`2.8.0-1`). `formulae.brew.sh` also has 2.8.0, so the two moved together again and the
+    shared bullet stays shared.
+  - Footnote ³²'s Arch `direnv` stamp goes from 2.37.1-1 to **2.38.2-1**.
+  - The Arch `neovim` row in `scripts/fleet-package-versions.tsv` goes from 0.12.5 to
+    **0.12.6**. The rendered table is regenerated with `gen-porting-matrix.sh --local`; it is
+    still above the ≥ 0.12.0 floor.
+
+  None of these changes a package name or a cell. Surfaced by `/os-package-availability arch`
+  (dotgibson/dotfiles-Arch#197). The AUR names that report could not reach (`carapace-bin`,
+  `sesh-bin`, `1password-cli`, `viddy`) were checked separately through the AUR RPC, and all
+  four still resolve.
 
 ## [v7.14.0] - 2026-09-29
 
