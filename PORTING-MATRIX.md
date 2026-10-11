@@ -730,12 +730,16 @@ made while `core-doctor` — probing live, later — reported the tool present. 
 before detection now.
 
 **Coverage here is per tool, never a fleet-wide zero** — the table below is the authority, not
-the prose. **Two** repos' `bootstrap.sh` really do install entries from this family:
-`dotfiles-Alpine` (`ouch` and `jnv`¹⁷, via cargo¹⁴) and `dotfiles-Gentoo` (`shfmt`
+the prose. **Three** repos' `bootstrap.sh` really do install entries from this family:
+`dotfiles-Alpine` (`ouch` and `jnv`¹⁷, via cargo¹⁴), `dotfiles-Gentoo` (`shfmt`
 unconditionally via `go`; `ast-grep`¹¹, `jnv`¹⁷ and `watchexec`²⁵ via cargo, plus
 `dev-vcs/jj`⁸ via emerge and `app-arch/ouch` via GURU's `guru_extras_install` seam, all in an
-opt-in extras block that `--no-extras` skips; and `gping`¹⁹ via GURU). For the other seven
-repos "no bootstrap installs it" still holds.
+opt-in extras block that `--no-extras` skips; and `gping`¹⁹ via GURU), and `dotfiles-Fedora`
+(`ast-grep`¹¹, `jj`⁸ as crate `jj-cli`, `jnv`¹⁷, `gping`¹⁹, `watchexec`²⁵ as crate
+`watchexec-cli` and `ouch` via cargo, **unconditionally**, with no `--no-extras`
+equivalent; its `install/packages.txt` carries the rest of the family plus `difftastic`¹⁰ and
+`uv`³⁰, dotgibson/dotfiles-Fedora#209). For the other six repos "no bootstrap installs it"
+still holds.
 
 **How the Gentoo half of that went unnoticed is the lesson worth keeping:** this table was
 previously verified against each repo's `install/packages.txt` **alone**, and Gentoo is the repo
@@ -745,27 +749,39 @@ UNCONDITIONAL emerge and everything opt-in must therefore live in the script. Ve
 **Check both files, or this row goes stale again.**
 
 Verified 2026-08-21 (Gentoo column re-verified against `bootstrap.sh` as well) against all six
-Linux repos plus the MacBook `Brewfile` — a **—** means detect-only there, and the packaged name
-in that tool's row above is what you would install by hand rather than what a bootstrap gives
-you:
+Linux repos plus the MacBook `Brewfile`; Fedora column re-verified 2026-10-11 against both files
+on F44, with every cell installed by a real `bootstrap.sh` run — a **—** means detect-only there,
+and the packaged name in that tool's row above is what you would install by hand rather than
+what a bootstrap gives you:
 
-| Tool           | macOS `Brewfile` | Alpine             | Gentoo                                    | Arch / Debian / Fedora / openSUSE |
-| -------------- | ---------------- | ------------------ | ----------------------------------------- | --------------------------------- |
-| `hyperfine`    | ✓                | `hyperfine`        | `app-benchmarks/hyperfine`                | —                                 |
-| `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck-bin`                 | —                                 |
-| `shfmt`        | ✓                | `shfmt`            | bootstrap, go⁷ (unconditional)            | —                                 |
-| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, `app-arch/ouch` (extras)       | openSUSE: `ouch`¹⁸; others —      |
-| `lnav`²⁴       | ✓                | `lnav`             | `app-admin/lnav`                          | —                                 |
-| `git-absorb`²⁶ | ✓                | `git-absorb`       | `dev-vcs/git-absorb`                      | —                                 |
-| `gping`¹⁹      | ✓                | `gping`            | bootstrap, `net-analyzer/gping` (GURU¹²)  | —                                 |
-| `watchexec`²⁵  | —                | `watchexec`        | bootstrap, cargo `watchexec-cli` (extras) | —                                 |
+| Tool           | macOS `Brewfile` | Alpine             | Gentoo                                    | Fedora                                | Arch / Debian / openSUSE     |
+| -------------- | ---------------- | ------------------ | ----------------------------------------- | ------------------------------------- | ---------------------------- |
+| `hyperfine`    | ✓                | `hyperfine`        | `app-benchmarks/hyperfine`                | `hyperfine`                           | —                            |
+| `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck-bin`                 | `ShellCheck`                          | —                            |
+| `shfmt`        | ✓                | `shfmt`            | bootstrap, go⁷ (unconditional)            | `shfmt`                               | —                            |
+| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, `app-arch/ouch` (extras)       | bootstrap, cargo (no `unrar`/`bzip3`) | openSUSE: `ouch`¹⁸; others — |
+| `lnav`²⁴       | ✓                | `lnav`             | `app-admin/lnav`                          | `lnav`                                | —                            |
+| `git-absorb`²⁶ | ✓                | `git-absorb`       | `dev-vcs/git-absorb`                      | `git-absorb`                          | —                            |
+| `gping`¹⁹      | ✓                | `gping`            | bootstrap, `net-analyzer/gping` (GURU¹²)  | bootstrap, cargo                      | —                            |
+| `watchexec`²⁵  | —                | `watchexec`        | bootstrap, cargo `watchexec-cli` (extras) | bootstrap, cargo `watchexec-cli`      | —                            |
 
-- **The `ouch` row's last cell is split because that column is four repos, not one.**
+- **The `ouch` row's last cell is split because that column is three repos, not one.**
   `dotfiles-openSUSE` added `ouch` to its `install/packages.txt` in dotfiles-openSUSE#113, so
-  the tool is no longer detect-only there while it still is on Arch/Debian/Fedora. Note this
-  is a **`packages.txt`** addition, not a `bootstrap.sh` one — so the "two repos' `bootstrap.sh`"
-  count above stays right, and this is exactly the both-files distinction the lesson two
-  paragraphs up warns about. `ast-grep` moved the same way in the same PR but has no row here.
+  the tool is no longer detect-only there while it still is on Arch/Debian. Note this
+  is a **`packages.txt`** addition, not a `bootstrap.sh` one — so it does not count toward the
+  "three repos' `bootstrap.sh`" above, and this is exactly the both-files distinction the lesson
+  two paragraphs up warns about. `ast-grep` moved the same way in the same PR but has no row here.
+- **Fedora's column is split the same way, by file.** Five of its eight cells are
+  `install/packages.txt` names (all in Fedora's own repos on F44; `ShellCheck` is the package,
+  `shellcheck` the binary), and the other three are `bootstrap.sh` cargo builds because no Fedora
+  release packages them. Its `ouch` cell is the Gentoo lesson below met a second way: the default
+  cargo build cannot succeed on GCC/libstdc++ (¹²), and Fedora has no overlay to fall back on, so
+  it builds `--no-default-features --features use_zlib,use_zstd_thin` — dropping `unrar` for that
+  reason and `bzip3` because its bindgen step needs libclang. The cost is RAR and `.bz3` only.
+- **Fedora installs these with no way to decline**, unlike Gentoo's extras below: there is no
+  `--no-extras` on `dotfiles-Fedora`. By the next bullet's test that makes its cells installs
+  rather than opt-ins, and that is deliberate (the box owner asked for every probed tool); the
+  ²¹ mark on these rows still describes the other repos.
 - "extras" above means Gentoo's opt-in block: installed by default, **skipped by
   `--no-extras`**. That flag is the one thing keeping these honest as ²¹ entries rather than ³
   ones — the tool is still something you can decline.
@@ -780,9 +796,10 @@ you:
   this family are `ast-grep`¹¹ and `jnv`¹⁷, absent from both trees.
 - This list used to read "**macOS-only in practice**: the MacBook `Brewfile` carries them;
   **no** Linux repo does." Every row above falsifies that — Alpine carries seven of the eight
-  outright and Gentoo installs all eight, four of them from `bootstrap.sh`. Keep it a **per-tool**
+  outright, Gentoo installs all eight, four of them from `bootstrap.sh`, and Fedora installs all
+  eight, three from `bootstrap.sh`. Keep it a **per-tool**
   statement: the family is defined by "Core probes it, and most repos leave installing it to
-  you", not by a distro, and no longer by "no bootstrap installs it" — two now do.
+  you", not by a distro, and no longer by "no bootstrap installs it" — three now do.
   (Deliberately not a counted list — "all four" went stale the first time this family grew,
   "no Linux repo does" the second, and "`ouch` is the one entry" the third.)
 - The cells that previously showed **³** here — `ouch` on Gentoo **and** Kali, `jujutsu` on

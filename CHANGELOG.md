@@ -32,6 +32,14 @@
 
 ### Changed
 
+- **`PORTING-MATRIX.md` footnote ²¹ now counts Fedora among the repos that install this
+  family.** dotgibson/dotfiles-Fedora#209 puts `hyperfine`, `ShellCheck`, `shfmt`, `lnav` and
+  `git-absorb` in Fedora's `install/packages.txt`. Its `bootstrap.sh` cargo-builds `ouch`,
+  `gping` and `watchexec`. The footnote said "two repos' `bootstrap.sh`" and "the other seven
+  repos", and its table grouped Fedora with the detect-only repos. The table now has its own
+  Fedora column, the counts read three and six, and new notes cover two Fedora specifics:
+  `ouch` is built without `unrar`/`bzip3`, and Fedora has no `--no-extras` to decline these
+  tools.
 - **`/release-readiness` actually checks the editor pin.** The scheduled job allows
   `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
   script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was
