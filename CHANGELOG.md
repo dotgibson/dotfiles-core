@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.15.0] - 2026-10-11
+
 ### Security
 
 - **GitHub now refuses a tag-pinned action in every Core-vendoring repo, and
