@@ -1303,13 +1303,14 @@ is `dev-python/uv`, not a bare `uv`.
 Charm's gum is packaged nowhere Portage can reach — not `::gentoo`, not GURU, in any category
 (see ¹²) — so `dotfiles-Gentoo` declares it in `gentoo/mise-tools.toml`, which mise installs as
 a prebuilt, checksum-verified binary with no compiler and no privileges. **Read that cell with
-one caveat:** that manifest is installed only on the **`--user`** (no-root) path, so a
-_privileged_ Gentoo bootstrap installs no gum at all. On that path it is a hand-install —
-`mise use -g gum`, or `go install charm.land/gum/v2@latest` (the module path, **not** the
-GitHub URL — see ³¹).
+one caveat:** that manifest is installed only on the **`--user`** (no-root) path. The
+_privileged_ Gentoo bootstrap gets gum from `go install charm.land/gum/v2@latest` instead
+(the module path, **not** the GitHub URL — see ³¹), beside gron, sesh and shfmt
+(dotgibson/dotfiles-Gentoo#218). Before that it installed no gum at all, and `core doctor`
+showed ✗ gum on every root-bootstrapped Gentoo box.
 
-³¹ **`go install` module paths — the repo URL is usually NOT the module path.** Five of the
-seven go-installable rows need a major-version suffix, a `cmd/` subpath, a different HOST, or a
+³¹ **`go install` module paths — the repo URL is usually NOT the module path.** Six of the
+eight go-installable rows need a major-version suffix, a `cmd/` subpath, a different HOST, or a
 combination, and a naive `go install github.com/<org>/<repo>@latest` fails or silently builds
 an abandoned major.
 Verified against each project's own `go.mod`, and these are the exact strings the fleet's
@@ -1324,6 +1325,7 @@ Verified against each project's own `go.mod`, and these are the exact strings th
 | `gron`  | `github.com/tomnomnom/gron`           |
 | `duf`   | `github.com/muesli/duf`               |
 | `glow`  | `charm.land/glow/v3`                  |
+| `gum`   | `charm.land/gum/v2`                   |
 
 **Charm's tools moved off GitHub as a module host** — `glow` is now `charm.land/glow/v3`
 (v3.0.0, 2026-08-11) and `gum` is `charm.land/gum/v2` (v2.0.0). Both still _live_ on GitHub;
@@ -1333,9 +1335,9 @@ rather than trust a remembered path. **`dotfiles-Alpine` go-installs `glow`** �
 `testing`-only on Alpine¹⁴, so `go install` is its real source there, and that call carried the
 stale `github.com/charmbracelet/glow/v2` until dotfiles-Alpine#122 moved it to
 `charm.land/glow/v3`. It resolved either way, which is precisely how it went unnoticed:
-`@latest` on the old path quietly pins the newest **v2** tag instead of failing. `gum` is
-go-installed by no `bootstrap.sh` (the Debian/Kali cells use Charm's apt repo, see ¹⁵), so that
-one is for the reader installing by hand.
+`@latest` on the old path quietly pins the newest **v2** tag instead of failing. **`dotfiles-Gentoo`
+go-installs `gum`** on its privileged path (see ³⁰; dotgibson/dotfiles-Gentoo#218) — the only
+`bootstrap.sh` that does, since the Debian/Kali cells use Charm's apt repo (see ¹⁵).
 
 ³² direnv: per-directory environment loader — **Core wires it but neither installs nor
 detects it.** There is no `HAVE_DIRENV` and no alias: `_cache_eval` already bails on an
