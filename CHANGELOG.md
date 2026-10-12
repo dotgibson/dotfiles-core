@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### Fixed
+
+- **`PORTING-MATRIX.md` no longer says a privileged Gentoo bootstrap installs no gum.**
+  dotgibson/dotfiles-Gentoo#218 adds `charm.land/gum/v2` to that path's go-install block,
+  because gum has no ebuild and `gentoo/mise-tools.toml` covers only `--user`. Footnote ³⁰
+  now names both providers. Footnote ³¹'s module-path table gains a `gum` row (six of eight
+  rows now need more than the repo URL), and its "go-installed by no `bootstrap.sh`" line
+  now names dotfiles-Gentoo. No cell changes.
+
 ## [v7.15.0] - 2026-10-11
 
 ### Security
@@ -120,13 +129,6 @@
   (dotgibson/dotfiles-Arch#197). The AUR names that report could not reach (`carapace-bin`,
   `sesh-bin`, `1password-cli`, `viddy`) were checked separately through the AUR RPC, and all
   four still resolve.
-
-- **`PORTING-MATRIX.md` no longer says a privileged Gentoo bootstrap installs no gum.**
-  dotgibson/dotfiles-Gentoo#218 adds `charm.land/gum/v2` to that path's go-install block,
-  because gum has no ebuild and `gentoo/mise-tools.toml` covers only `--user`. Footnote ³⁰
-  now names both providers. Footnote ³¹'s module-path table gains a `gum` row (six of eight
-  rows now need more than the repo URL), and its "go-installed by no `bootstrap.sh`" line
-  now names dotfiles-Gentoo. No cell changes.
 
 ## [v7.14.0] - 2026-09-29
 
