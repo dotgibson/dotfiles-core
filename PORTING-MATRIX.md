@@ -1306,8 +1306,8 @@ a prebuilt, checksum-verified binary with no compiler and no privileges. **Read 
 one caveat:** that manifest is installed only on the **`--user`** (no-root) path. The
 _privileged_ Gentoo bootstrap gets gum from `go install charm.land/gum/v2@latest` instead
 (the module path, **not** the GitHub URL — see ³¹), beside gron, sesh and shfmt
-(dotgibson/dotfiles-Gentoo#218). Before that it installed no gum at all, and `core doctor`
-showed ✗ gum on every root-bootstrapped Gentoo box.
+(dotgibson/dotfiles-Gentoo#218). Before that it installed no gum at all, so `core doctor`
+showed ✗ gum on a root-bootstrapped box unless gum had been installed by hand.
 
 ³¹ **`go install` module paths — the repo URL is usually NOT the module path.** Six of the
 eight go-installable rows need a major-version suffix, a `cmd/` subpath, a different HOST, or a
