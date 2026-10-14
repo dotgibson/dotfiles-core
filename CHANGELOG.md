@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.15.1] - 2026-10-14
+
 ### Fixed
 
 - **`PORTING-MATRIX.md` footnote ¹² no longer says `1password-cli` has no `::gentoo` atom.**
