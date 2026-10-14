@@ -1,5 +1,18 @@
 ## [Unreleased]
 
+### Added
+
+- **`sync-core.sh` refuses to vendor an unreleased commit.** `make sync` defaults to `main`,
+  so an ad-hoc run put one repo on a `main` tip no release pointed at (dotgibson/dotfiles-Arch#203,
+  stamped `v7.14.0-11-g200ebaa`, 32 minutes before v7.15.0 was tagged): unreleased behaviour
+  landed in one repo ahead of the fleet, `core.version` understated what `core/` carried, and
+  fleet-drift flagged it the next morning. The sync now classifies the resolved commit by the
+  same alias-proof `git describe` it already stamps into `core.lock` and exits 1 unless the
+  commit sits exactly at a `vX.Y.Z` tag. A tagless (greenfield) Core still syncs; a checkout
+  that lacks the commit or its tags is told to fetch rather than called unreleased. The fan-out
+  is unaffected (it passes the released SHA). `SYNC_ALLOW_UNRELEASED=1` is the explicit,
+  logged override. `--dry-run` refuses too, so a rehearsal says what the real run would.
+
 ## [v7.15.1] - 2026-10-14
 
 ### Fixed

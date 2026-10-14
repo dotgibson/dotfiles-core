@@ -654,6 +654,13 @@ if ((_sc_subtree)); then
     local want_sha want_tree got_tree locked payload trailer pre token
     _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1 || true
     want_sha="$(_scg "$SCF/coreremote" rev-parse HEAD)"
+    # The baseline must be a RELEASED commit. That is the real shape of this race — the
+    # fan-out vendors a release and the push lands an unreleased commit on top of it — and
+    # it is what sync-core.sh's release gate requires: round 1 starts at v9.9.9, but every
+    # later round starts at the previous round's raced-in commit, which no tag names, and
+    # the gate would (rightly) refuse before the race could be exercised at all.
+    _scg "$SCF/coreremote" tag -f "v9.8.$((_sc_race_n + 1))" "$want_sha" >/dev/null 2>&1
+    _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1 || true
     # Through the shared lib, not a bare rev-parse: since #676 "the tree this sha should
     # produce" is core_vendor_effective_tree's answer, and a test that hardcodes ^{tree}
     # would keep passing while the thing it claims to check had changed meaning.
@@ -755,6 +762,63 @@ if ((_sc_subtree)); then
   fi
   _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1 || true
   unset _sc_old_sha _sc_tag
+
+  # ── release gate: a sync vendors a RELEASED commit ─────────────────────────────
+  # dotgibson/dotfiles-Arch#203 synced Core main 32 minutes before v7.15.0 was tagged: one
+  # repo ran ahead of the fleet on unreleased behaviour, core.lock said v7.14.0-11-g200ebaa,
+  # core.version said 7.14.0, and fleet-drift flagged it the next morning. Fixture Core main
+  # is at v9.9.10 here; push it ONE commit past, so `git describe` reads v9.9.10-1-g…
+  _sc_lock="$SCF/repos/dotfiles-Test/core.lock"
+  _sc_lock_before="$(cat "$_sc_lock")"
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  printf 'core payload unreleased\n' >"$SCF/coreremote/payload.txt"
+  _scg "$SCF/coreremote" add -A
+  _scg "$SCF/coreremote" commit -q -m "core c-unreleased"
+  _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1 || true
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'no release tag points at' <<<"$_sc_out" \
+    && grep -q 'SYNC_ALLOW_UNRELEASED=1' <<<"$_sc_out"; then
+    pass "sync-core: refuses to vendor a commit no release tag points at (exit $_sc_rc, names the override)"
+  else
+    fail "sync-core: an unreleased main tip was NOT refused (rc=$_sc_rc)"
+  fi
+  if [[ "$(cat "$_sc_lock")" == "$_sc_lock_before" ]] \
+    && [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+    pass "sync-core: the release-gate refusal touched nothing (core.lock and HEAD unchanged)"
+  else
+    fail "sync-core: the release-gate refusal still mutated the target repo"
+  fi
+  # --dry-run must refuse the same way: a rehearsal that would refuse should say so (and this
+  # is the spot the stale-clone pre-flight's dry-run is exempt from, so assert it separately).
+  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
+    CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'no release tag points at' <<<"$_sc_out"; then
+    pass "sync-core: --dry-run refuses an unreleased commit too"
+  else
+    fail "sync-core: --dry-run let an unreleased commit through (rc=$_sc_rc)"
+  fi
+  # The deliberate case: SYNC_ALLOW_UNRELEASED=1 vendors it, says so, and core.lock carries the
+  # describe-shaped tag (the thing fleet-drift later renders as RECORDED and flags as behind).
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1 SYNC_ALLOW_UNRELEASED=1)"; _sc_rc=$?
+  if ((_sc_rc == 0)) && grep -q 'SYNC_ALLOW_UNRELEASED=1: vendoring unreleased commit' <<<"$_sc_out" \
+    && grep -qE '^core_tag=v9\.9\.10-1-g[0-9a-f]+$' "$_sc_lock"; then
+    pass "sync-core: SYNC_ALLOW_UNRELEASED=1 vendors the unreleased commit, loudly, with a describe-shaped core_tag"
+  else
+    fail "sync-core: SYNC_ALLOW_UNRELEASED=1 did not vendor as expected (rc=$_sc_rc, core_tag=$(sed -n 's/^core_tag=//p' "$_sc_lock"))"
+  fi
+  # Release the commit and the plain run passes again — the shape every fan-out has
+  # (sync-fanout.yml passes the released SHA), and what every later section here relies on.
+  _scg "$SCF/coreremote" tag -f v9.9.11 >/dev/null 2>&1
+  _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1 || true
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"; _sc_rc=$?
+  if ((_sc_rc == 0)) && ! grep -q 'no release tag points at' <<<"$_sc_out" \
+    && grep -q '^core_tag=v9\.9\.11$' "$_sc_lock"; then
+    pass "sync-core: a commit sitting exactly at a release tag passes the release gate"
+  else
+    fail "sync-core: a released commit was refused or mis-stamped (rc=$_sc_rc, core_tag=$(sed -n 's/^core_tag=//p' "$_sc_lock"))"
+  fi
+  _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1 || true
+  unset _sc_lock_before _sc_rc
   unset _sc_race_n
   unset -f _sc_race_check
 
