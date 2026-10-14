@@ -400,7 +400,11 @@ and must not be added back**: `app-misc/gum` exists in neither GURU nor `::gento
 `app-shells/gum` or `dev-util/gum`), so an entry can only ever emerge as a `skipped:` line —
 which reads like a keyword mask and gets "fixed" with an `accept_keywords` entry that unmasks
 nothing. That is exactly how it survived in `guru_install` for months; see ³⁰ for what provides
-gum on Gentoo now.
+gum on Gentoo now. One name on this list does have a `::gentoo` twin: `1password-cli` is also
+`app-admin/op-cli-bin` in the main tree (2.23.0, `~amd64 ~arm64`), but that lags GURU's
+`app-misc/1password-cli` (2.39.0, also `~arch`), so GURU stays the route and the main-tree atom
+is deliberately **not** added alongside it (checked 2026-10-14, dotfiles-Gentoo#214; whether the
+two ebuilds block each other was not checked).
 
 **`ouch` is a GURU atom too, but it is NOT in that `guru_install` list** — it is opt-in, and
 `--no-extras` has to be able to skip it. `dotfiles-Gentoo` therefore has a third seam,
@@ -427,9 +431,9 @@ already merged the source one must `emerge --unmerge dev-util/shellcheck` first.
 ¹³ op = **1Password CLI**. bootstrap.sh installs it from 1Password's official **signed** repo,
 which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali), apk repo
 (Alpine — a native musl build, so it's fine on the musl outlier), and the GURU
-`app-misc/1password-cli` (Gentoo). **Arch** installs nothing: it has no AUR helper, so
-bootstrap.sh only prints a `paru -S 1password-cli` hint, the same shape as `viddy` and
-`carapace`. A vendor repo, **not** the OS repo; the apt/rpm setup is key-first (the repo entry
+`app-misc/1password-cli` (Gentoo; chosen over `::gentoo`'s older `app-admin/op-cli-bin`, see ¹²).
+**Arch** installs nothing: it has no AUR helper, so bootstrap.sh only prints a
+`paru -S 1password-cli` hint, the same shape as `viddy` and `carapace`. A vendor repo, **not** the OS repo; the apt/rpm setup is key-first (the repo entry
 is added only after 1Password's signing key has been fetched and imported, so a failed key
 leaves no repo behind — it does not roll back a repo whose later install fails).
 ¹⁴ Alpine **`testing`-only** (`duf`, `glow`, `tealdeer`, `ouch`). All four are musl-fine

@@ -2,6 +2,11 @@
 
 ### Fixed
 
+- **`PORTING-MATRIX.md` footnote ¹² no longer says `1password-cli` has no `::gentoo` atom.**
+  The main tree carries `app-admin/op-cli-bin` (2.23.0, `~amd64 ~arm64`), a twin of GURU's
+  `app-misc/1password-cli` (2.39.0, also `~arch`). GURU stays the route because it is newer,
+  so ¹² now names the twin and says why it is not added, and ¹³ points at ¹². No cell changes;
+  dotfiles-Gentoo's package list, bootstrap and keywords are untouched (dotgibson/dotfiles-Gentoo#214).
 - **`PORTING-MATRIX.md` no longer says a privileged Gentoo bootstrap installs no gum.**
   dotgibson/dotfiles-Gentoo#218 adds `charm.land/gum/v2` to that path's go-install block,
   because gum has no ebuild and `gentoo/mise-tools.toml` covers only `--user`. Footnote ³⁰
