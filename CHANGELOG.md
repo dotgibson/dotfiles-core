@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v7.16.0] - 2026-10-14
+
 ### Added
 
 - **`sync-core.sh` refuses to vendor an unreleased commit.** `make sync` defaults to `main`,
