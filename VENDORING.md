@@ -98,7 +98,7 @@ alias exists the field is **omitted**, which is why it is documented as conditio
 | How the sync ran | `core_ref` holds |
 | --- | --- |
 | release fan-out (`sync-fanout.yml`) | the pinned **commit** — each release PR vendors the exact released commit, not a moving `main` |
-| ad-hoc `make sync` | the **branch name**, normally `main` |
+| ad-hoc `make sync` | the **branch name**, normally `main` — accepted only while that branch sits exactly at a `vX.Y.Z` tag; an un-cut `main` is refused unless `SYNC_ALLOW_UNRELEASED=1`, so one repo cannot run ahead of the fleet on unreleased Core (the `v7.14.0-11-g200ebaa` shape dotfiles-Arch#203 produced) |
 
 That distinction is the field's whole value: `core_sha` says _which commit_, `core_ref`
 says _how it was chosen_. It was called `core_branch` until #453, which made the lock file

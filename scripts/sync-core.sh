@@ -24,14 +24,19 @@
 #   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
 #   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: origin of core)
 #   CORE_BRANCH       Core ref to vendor             (default: main)
-#                     `main` is right for a maintainer's ad-hoc `make sync` — the fan-out
-#                     always overrides it with the released commit (sync-fanout.yml passes
-#                     CORE_BRANCH=<sha>). Vendoring a repo for the FIRST time is the other
-#                     case: pass a released tag, or core.lock records a commit no release
-#                     points at (#588).
+#                     The fan-out always overrides it with the released commit
+#                     (sync-fanout.yml passes CORE_BRANCH=<sha>). A maintainer's ad-hoc
+#                     `make sync` vendors `main` — which the RELEASE GATE below accepts only
+#                     while main sits exactly at a release tag, so an un-cut main is refused
+#                     rather than landing in one repo ahead of the fleet. Vendoring a repo
+#                     for the FIRST time: pass a released tag, or core.lock records a commit
+#                     no release points at (#588).
 #   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
 #   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (escape hatch; see below)
 #   SYNC_SKIP_STALE   set to 1 to skip the pre-flight 'targets are current' check (#622)
+#   SYNC_ALLOW_UNRELEASED
+#                     set to 1 to vendor a commit no release tag points at (a `main` tip).
+#                     Refused by default: see "RELEASE GATE" below.
 #
 # FAN-OUT GATE: this is the single point where Core is vendored into the OS-repo fleet, so a
 # defect here amplifies N-way — exactly what audit-core.sh exists to prevent. The repo's
@@ -41,6 +46,15 @@
 # touches nothing; SYNC_SKIP_AUDIT=1 is the documented escape hatch for a tree you just
 # audited). It also warns when local HEAD differs from the remote tip that actually fans
 # out, so you never sync a commit you didn't audit locally.
+#
+# RELEASE GATE: it also refuses to vendor a commit that no release tag points at. The
+# default CORE_BRANCH is `main`, so a maintainer's ad-hoc `make sync` lands whatever is on
+# main — unreleased behaviour, into ONE repo, a day or a week before the rest of the fleet
+# gets it through a release, with core.lock stamped `vX.Y.Z-N-gSHA` and core.version
+# understating what the tree carries (dotgibson/dotfiles-Arch#203 did exactly this, 32
+# minutes before v7.15.0 was tagged, and fleet-drift flagged the repo the next day). The
+# fan-out never trips it: sync-fanout.yml passes the released commit. For the deliberate
+# case, SYNC_ALLOW_UNRELEASED=1 lets it through — loudly.
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -77,8 +91,12 @@ Env overrides:
   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (documented escape hatch)
   SYNC_SKIP_STALE   set to 1 to skip the pre-flight check that each target is up to date
+  SYNC_ALLOW_UNRELEASED
+                    set to 1 to vendor a commit no release tag points at (e.g. main's tip);
+                    refused by default so one repo cannot run ahead of the fleet
 
 Refuses to fan out a red tree: runs scripts/audit-core.sh first (--dry-run exempt).
+Refuses to vendor an UNRELEASED commit unless SYNC_ALLOW_UNRELEASED=1 (--dry-run included).
 EOF
 }
 
@@ -238,6 +256,53 @@ if [[ "$CORE_SHA_FULL" == unknown ]]; then
   fail "fix: restore access to $CORE_REMOTE, or 'git fetch' so $HERE can resolve $CORE_BRANCH"
   exit 1
 fi
+
+# ── Release gate: a sync vendors a RELEASED commit ──────────────────────────────────────
+# $CORE_TAG already classifies the commit (same --match as above, alias-proof):
+#   vX.Y.Z          exactly at a release tag — the fan-out's SHA, or a first-vendor refs/tags/vN
+#   vX.Y.Z-N-gSHA   N commits past the nearest release — UNRELEASED
+#   (empty)         describe failed: Core has no release tags yet (greenfield), or the local
+#                   object store lacks the commit/tags — told apart below, so the message
+#                   says "fetch" when that is the fix and never calls a greenfield repo stale.
+# Why refuse rather than warn: the harm is not the stamp, it is the SKEW. One repo gets
+# behaviour the other nine have not had gated through a release, and core.version (read from
+# THIS checkout's file) lies about it — the exact "gate BEFORE vendoring" inversion the audit
+# gate above exists to prevent, on the release axis instead of the red-tree axis. Applied to
+# --dry-run too, for the same reason as the refusal above: a rehearsal that would refuse
+# should say so. Placed before the audit gate so a wrong ref costs no audit time.
+_sync_release_gate() {
+  local kind="unreleased" tags_exist have_obj
+  if [[ "$CORE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    return 0
+  fi
+  if [[ -z "$CORE_TAG" ]]; then
+    tags_exist="$(git -C "$HERE" tag -l 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null | head -1)"
+    [[ -n "$tags_exist" ]] || return 0 # greenfield Core: nothing to be behind
+    if git -C "$HERE" cat-file -e "$CORE_SHA_FULL^{commit}" 2>/dev/null; then
+      have_obj=1
+    else
+      have_obj=0
+    fi
+    if ((have_obj)) && [[ -n "$(git -C "$HERE" tag --points-at "$CORE_SHA_FULL" -l 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null)" ]]; then
+      return 0 # at a release tag that describe could not name (shallow clone, say)
+    fi
+    ((have_obj)) || kind="unverifiable"
+  fi
+  if [[ "${SYNC_ALLOW_UNRELEASED:-0}" == 1 ]]; then
+    skip "SYNC_ALLOW_UNRELEASED=1: vendoring $kind commit $CORE_SHA${CORE_TAG:+ ($CORE_TAG)} from '$CORE_BRANCH' — the targeted repo(s) run ahead of the fleet until the next release fan-out"
+    return 0
+  fi
+  if [[ "$kind" == unverifiable ]]; then
+    err "cannot tell whether $CORE_SHA ('$CORE_BRANCH') is a released commit: $HERE does not have it (or its tags) locally"
+    fail "fix: 'git -C $HERE fetch --tags origin' and re-run"
+  else
+    err "'$CORE_BRANCH' resolves to $CORE_SHA${CORE_TAG:+ ($CORE_TAG)}, which no release tag points at"
+    fail "a sync vendors a RELEASED commit: syncing main puts the targeted repo(s) ahead of the rest of the fleet on unreleased behaviour, with core.version understating what core/ carries"
+    fail "fix: cut the release (RELEASE-RUNBOOK.md §1) and let sync-fanout.yml open the PRs, or pass CORE_BRANCH=refs/tags/vX.Y.Z — or, deliberately, SYNC_ALLOW_UNRELEASED=1"
+  fi
+  exit 1
+}
+_sync_release_gate
 
 echo ":: core version = $CORE_VERSION${CORE_TAG:+  (tag $CORE_TAG)}"
 echo ":: core remote  = $CORE_REMOTE  (branch $CORE_BRANCH @ $CORE_SHA)"
