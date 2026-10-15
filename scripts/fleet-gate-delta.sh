@@ -77,6 +77,16 @@ _fgd_compare() {
     _fgd_die 2 "the head audit did not reach its summary (it died early), so there is nothing to judge"
   grep -q 'audit summary' "$1" ||
     _fgd_die 2 "the base audit did not reach its summary (it died early), so there is nothing to compare against"
+  # A gate that could not read its sibling did not run, in the base AND the head (they share
+  # the clones), so a failure the PR adds against that sibling is invisible to the delta:
+  # unjudgeable, never green. Keyed on the summary line the audit prints whenever ANY
+  # sibling was missing — not on `audit FAILED (--require-siblings`, which audit-core.sh only
+  # reaches when nothing else failed, so a head carrying any ✗ (a red main already carries,
+  # the very case this delta exists for) used to slip past this check (#1254).
+  if grep -q 'FLEET-WIDE gates with no sibling repo to read' "$2"; then
+    sed -n '/check(s) SKIPPED/,/FLEET-WIDE gates/p' "$2" >&2
+    _fgd_die 2 "the head audit could not see every sibling: clone the fleet beside Core"
+  fi
   printf 'base: %s\nhead: %s\n' "$(grep -m1 -E 'pass [0-9]+ ' "$1" | sed 's/^ *//')" \
     "$(grep -m1 -E 'pass [0-9]+ ' "$2" | sed 's/^ *//')"
   base="$(_fgd_blocks "$1" "${3:-}" | awk NF)"
@@ -104,6 +114,9 @@ These gates read the sibling repos, which a Core PR's own CI never checks out. U
 they would first fail in sync-fanout's pre-fan-out audit, after the tag (#1239). The fix usually
 lands in the named sibling: merge that PR FIRST, then re-run this check. That is the same
 sibling-first order as the fleet ratchets. If the gate itself is wrong, fix the gate in this PR.
+A block is compared by its exact text, so a failure main already carries reads as NEW when this
+PR rewords that gate's message or changes its detail format — land the rewording after the
+sibling is fixed, or accept this red as the cost of the better message.
 EOF
   if [ -n "${GITHUB_ACTIONS:-}" ]; then
     printf '%s\n' "$new" | awk 'NF { sub(/ ¦ .*/, ""); print "::error title=new fleet-gate failure::" $0 }'
@@ -133,12 +146,8 @@ _fgd_run() { # _fgd_run <base-ref>
   (cd "$here" && ./scripts/audit-core.sh --quiet --scope none --require-siblings --color never) \
     >"$out/head.txt" 2>&1
 
-  # A gate that could not read its sibling did not run, and a check that did not run
-  # cannot vouch for this PR. Say which, and fail as unjudgeable rather than green.
-  if grep -q 'audit FAILED (--require-siblings' "$out/head.txt"; then
-    sed -n '/check(s) SKIPPED/,/FLEET-WIDE gates/p' "$out/head.txt" >&2
-    _fgd_die 2 "the head audit could not see every sibling: clone the fleet beside Core"
-  fi
+  # A head that could not see every sibling is refused inside _fgd_compare (exit 2), so the
+  # test suite drives that refusal through the same --compare path as the rest.
   _fgd_compare "$out/base.txt" "$out/head.txt" "$base_dir" "$here"
 }
 

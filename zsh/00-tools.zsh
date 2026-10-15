@@ -44,13 +44,25 @@
 # change the other.
 #
 # ORDER: each existing dir is PREPENDED, so the front of PATH ends up in reverse list
-# order — ~/.atuin/bin, then go, cargo, ~/.local/bin. That matches the rest of the fleet
-# rather than inverting it (examples/atuin-daemon.service and the OS layers both put
-# ~/.atuin/bin ahead of ~/.local/bin), and a test pins it so it stays a decision.
+# order — ~/.atuin/bin, then go, cargo, ~/.local/bin, then mise's shims. That matches the
+# rest of the fleet rather than inverting it (examples/atuin-daemon.service and the OS
+# layers both put ~/.atuin/bin ahead of ~/.local/bin), and a test pins it so it stays a
+# decision.
+#
+# MISE'S SHIMS (#1257): a tool installed with `mise use -g` lives in a per-tool,
+# per-version install dir that `mise activate` (below) rewrites on every cd, so those dirs
+# cannot sit in this list — and detection ran before activation, so every mise-installed
+# tool came up unwired: no HAVE_* flag, no alias, no init, while core-doctor's "not wired"
+# block could only suggest a fix that does not exist. The shims dir is the one FIXED path
+# mise keeps, one entry per installed tool, so it is what detection reads. It goes LAST in
+# PATH order (first in the list) on purpose: `mise activate` still puts the real install
+# dirs ahead of it, so which binary runs is unchanged — the shims are here for the probes
+# to find, nothing more. Relocatable like the others: $MISE_DATA_DIR, then $XDG_DATA_HOME.
 #
 # The zero-fork contract holds: the nested ${...%%:*} is a parameter expansion, not a
 # subshell, and each candidate costs one -d stat.
-for _d in "$HOME/.local/bin" \
+for _d in "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims" \
+  "$HOME/.local/bin" \
   "${CARGO_HOME:-$HOME/.cargo}/bin" \
   "${GOBIN:-${${GOPATH:-$HOME/go}%%:*}/bin}" \
   "$HOME/.atuin/bin"; do
@@ -657,10 +669,12 @@ fi
 
 [[ -n ${HAVE_ZOXIDE:-} ]] && _cache_eval zoxide zoxide init zsh
 # mise: the chpwd-hook activation, now cached. The hook still resolves tools live
-# per-dir; only the activation script's *generation* is cached. (If you'd rather
-# use native shims — mise/config.toml has experimental=true — switch to
-# `mise activate zsh --shims` or put "$(mise where)"/shims on PATH and drop this
-# line; pick ONE deliberately.)
+# per-dir; only the activation script's *generation* is cached. The shims dir is
+# ALREADY on PATH, behind ~/.local/bin, from the band-00 bindir list above — for
+# detection only (#1257): this activation puts the real install dirs ahead of it, so
+# the shims never decide which binary runs. (If you'd rather run THROUGH the shims —
+# mise/config.toml has experimental=true — switch to `mise activate zsh --shims` and
+# drop this line; pick ONE deliberately.)
 [[ -n ${HAVE_MISE:-} ]] && _cache_eval mise mise activate zsh
 # atuin: init script is static text; ATUIN_NOBIND (set above) is read at generation, so
 # salt the cache on it — flipping ATUIN_NOBIND now busts the cache instead of serving stale.

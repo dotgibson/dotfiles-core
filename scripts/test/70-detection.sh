@@ -911,6 +911,15 @@ ucheck "bindirs: ~/.atuin/bin precedes ~/.local/bin, and all of them precede the
   "source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ \${p[(i)\$HOME/.atuin/bin]} -lt \${p[(i)\$HOME/.local/bin]} && \${p[(i)\$HOME/.local/bin]} -lt \${p[(i)$UBSYS]} ]]" \
   HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
 
+# (h2) mise's shims dir is on the list (#1257): a `mise use -g` tool used to come up unwired
+# because its install dir only joins PATH when `mise activate` runs, a band after detection.
+# The shims dir is the fixed path, and it sits BEHIND ~/.local/bin — it is there for the
+# probes, never to decide which binary runs.
+_ub_fixture .local/share/mise/shims:yazi .local/bin:eza
+ucheck "bindirs: a tool in mise's shims dir sets its HAVE_* flag, and the shims sit behind ~/.local/bin (#1257)" \
+  "source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ -n \${HAVE_YAZI:-} && \${p[(i)\$HOME/.local/bin]} -lt \${p[(i)\$HOME/.local/share/mise/shims]} && \${p[(i)\$HOME/.local/share/mise/shims]} -lt \${p[(i)$UBSYS]} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH= MISE_DATA_DIR= XDG_DATA_HOME=
+
 # (i) THE DISAGREEMENT ITSELF. The issue's symptom was not "no alias" but that core-doctor
 # and the flags answered differently about the same tool in the same shell. Assert they now
 # agree: the doctor says present AND Core wired it. Before the fix the first half passed and

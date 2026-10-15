@@ -367,6 +367,40 @@ jobs:
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
+  # Rule 11 (#1253): an explicit `cache-mode: write` / `write-only` is a no-op on a trusted
+  # trigger and a widening on a low-trust one — and a Core callee can widen every @vN caller.
+  # Two shapes, one per level: bare at the workflow root, quoted with a trailing comment at
+  # the job. The control is a job that NARROWS (`read`) beside a comment naming both words;
+  # neither may fire, and `write` must not also match `write-only` (want exactly 2 hits).
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+cache-mode: write
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    cache-mode: "write-only"   # the only mode that still saves
+    steps:
+      - run: true
+  b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # never cache-mode: write or write-only, see modern-baseline.yml rule 11
+    cache-mode: read
+    steps:
+      - run: true')"
+  if [[ "$(grep -c 'explicit cache-mode: write widens' <<<"$_cm_out")" == 1 ]] \
+    && [[ "$(grep -c 'explicit cache-mode: write-only widens' <<<"$_cm_out")" == 1 ]] \
+    && grep -q 'probe.yml:5:' <<<"$_cm_out" && grep -q 'probe.yml:10:' <<<"$_cm_out" \
+    && ! grep -q 'probe.yml:1[67]:' <<<"$_cm_out"; then
+    pass "check-modern rule 11: cache-mode write/write-only are caught bare and quoted, once each; read and a comment are not"
+  else
+    fail "check-modern rule 11: cache-mode misfired (want write at :5 and write-only at :10, nothing else)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
   # Rule 10: `pull_request_target` runs fork PRs with the base repo's secrets. One probe per
   # YAML shape the trigger can be declared in, because the rule is a structural walk and each
   # shape takes a different branch of it: scalar, flow list (quoted), flow map, block map with

@@ -1,5 +1,88 @@
 ## [Unreleased]
 
+### Added
+
+- **`modern-baseline.yml` rule 11: an explicit `cache-mode: write` or `write-only` is banned.**
+  GitHub's cache-mode setting (GA 2026-09-10) defaults low-trust triggers to `read`, and a
+  reusable workflow may request `write` even when its caller's trigger defaults to `read` —
+  the fleet's shape exactly, since the OS repos call Core's `*-call.yml` at a moving `@vN`
+  tag, so one line in a callee could widen cache access for every caller. `write` is a no-op
+  on a trusted trigger and a widening on a low-trust one, `write-only` still saves, so neither
+  has a use; `read`/`none` still narrow. `check-modern.sh` reads the value the way rules 5b
+  and 9 do (anchored to the key, bare or quoted, a trailing comment tolerated), workflows
+  only, and it never requires the key, so the pinned actionlint — which does not know
+  `cache-mode` yet — is untouched. Free on arrival: 0 occurrences in the fleet (#1253).
+
+### Fixed
+
+- **Tools installed with `mise use -g` are wired on a fresh shell.** Band-00 detection ran
+  before `mise activate` put a mise tool's install dir on PATH, so every one came up with no
+  `HAVE_*` flag, alias or init, and core-doctor's "not wired" block could only name per-tool,
+  per-version dirs that `mise activate` rewrites on each `cd` — a fix that did not exist. The
+  shims dir (`${MISE_DATA_DIR:-${XDG_DATA_HOME:-~/.local/share}/mise}/shims`) is the one fixed
+  path mise keeps, one entry per installed tool, so it joins the bindir list in
+  `zsh/00-tools.zsh` and its mirror `blib_user_bindirs_on_path` — first in the list, hence
+  LAST in PATH order: `mise activate` still puts the real install dirs ahead of it, so which
+  binary runs is unchanged. One more `-d` stat, no fork. A test pins the flag and the order
+  (#1257).
+- **`fleet-gate-delta.sh` no longer judges a head that could not see a sibling when that head
+  also carries a ✗.** The refusal keyed on `audit FAILED (--require-siblings`, which
+  `audit-core.sh` prints only when nothing else failed — so a red `main` plus a failed sibling
+  clone (the very case the delta exists for) skipped that sibling's gates in both runs and
+  passed as judged. It now keys on the summary line the audit prints whenever any sibling
+  was missing, inside `--compare`, where the suite drives it (two new cases); the red output
+  also says that a reworded gate message reads as a new failure. `fleet-protection.sh`'s
+  `policies=` column cites the documented endpoint it reads (#1254).
+- **`make bench` reads hyperfine 2.0's export and measures the same thing on 1.x and 2.x.**
+  2.0 (2026-10-07) moved `results[0].mean` under `summary.time_wall_clock` (schema 2), so
+  every box already on it — Arch, Homebrew — failed closed with "could not parse hyperfine
+  JSON"; the reader now takes either shape, and the stub exports both. 2.0 also stopped
+  wrapping the command in `sh -c`, so `-N` is passed explicitly and a 1.x box no longer
+  measures the shell's own fork into Core's startup (#1250).
+- **`mise/config.toml` sets `idiomatic_version_file_enable_tools = ["node", "python", "ruby"]`.**
+  The `legacy_version_file = true` line it replaces has not existed as a setting since mise
+  2025.10: idiomatic files (`.nvmrc`, `.python-version`, `.ruby-version`) are off by default
+  and opt-in per tool, so the comment's promise that repos "just work" was not being kept
+  (#1250).
+- **`fleet-vocabulary.sh` runs under mawk, Debian's and Ubuntu's default awk.** Its
+  Makefile walker used `t` both as a function-local scalar and as a global array, which mawk
+  refuses at parse time ("illegal reference to local variable t") — 130 behavioural cases
+  red on any such box, invisible on CI's gawk and on the busybox and BSD lanes. The array is
+  renamed.
+- **`PORTING-MATRIX.md` footnote ¹⁶ says which viddy Leap 16.x ships.** Tumbleweed's
+  `repo-oss` carries the Rust 1.3.1 line; Leap 16.0/16.1 carry the pre-rewrite Go 0.4.0, the
+  same build ¹⁶ already describes for Alpine, and ¹⁸'s Leap entry now says so too. No cell
+  changes; viddy stays a deliberate decline on openSUSE (#1260).
+- **`PORTING-MATRIX.md` catches up with dotgibson/dotfiles-openSUSE#229 and the Kali lane
+  move.** openSUSE now installs `jnv` (cargo), `gping`, `lnav` (Tumbleweed), `watchexec`,
+  `git-absorb` and `ast-grep`, which footnotes ¹¹, ¹⁷, ¹⁹, ²¹, ²⁴, ²⁵ and ²⁶ had not been told
+  (their counts and exception lists contradicted the generated table and ²¹ itself); ²⁷ no
+  longer tells openSUSE to port a carapace block it has ported; ³² no longer calls Kali the
+  single direnv gap now that `dotfiles-Debian` installs it for all three targets; the intro
+  no longer credits the Kali column to Offense, and the repo-status note no longer calls
+  Offense a Debian-family repo or Debian's floor "the only version-floor gate"; the
+  "Transcribed from" sentence about headers no file carries any more is gone (#1251).
+
+### Changed
+
+- **CI tool pins: Claude Code CLI 2.1.285 → 2.1.300, Neovim 0.12.5 → 0.12.6** (its
+  `NVIM_SHA256` refreshed through `make update-tool-checksums`). Both routine: no `# held:`
+  comment, no security note in either release line (#1252).
+- **`zsh-syntax-highlighting` pin roll `0bfcb582e71d` → `e6683f20e5c3` (#1267), recorded
+  late.** The freshness bot landed it and it shipped in v7.15.1 without an entry; the
+  upstream compare is one commit, +6/−1 in `highlighters/main/main-highlighter.zsh`, which
+  stops the path highlighter looping forever when `$PWD` has been deleted (upstream #819).
+  Plugin code this time, not docs — recorded here so the next host that pulls it knows what
+  moved (#1254).
+- **`.claude/tool-decisions.md` carries the 2026-10-06 and 2026-10-13 tool-scout outcomes**
+  that the routine could not write itself: `jaq`, `scc`, `mise bootstrap`/`dotfile_groups`,
+  mise background global-tool updates and mise dotfiles management declined, and delta as
+  lazygit's diff pager (lazygit 0.66 + delta 0.20) on watch until both floors reach every
+  lane (#1250).
+- **Prose counts, corrected:** the fan-out is ten repos, not nine (`ci.yml`, `common.sh`,
+  `22-ci-classify.sh`); `CLAUDE.md` says ~1,500 footnote lines and the doc-consistency agent
+  40 footnotes; `core.manifest`'s layer summary names every layer it lists (#1251).
+
 ## [v7.16.0] - 2026-10-14
 
 ### Added

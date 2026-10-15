@@ -255,3 +255,27 @@ banned_call_secrets:
 #     note under banned_runners above.
 banned_triggers:
   - pull_request_target
+
+# 11) `cache-mode:` values that must never be written. GitHub's cache-mode setting (GA
+#     2026-09-10) defaults low-trust triggers (`workflow_run`, `issue_comment`, …) to `read`
+#     and trusted ones to `write`, and a reusable workflow may request `write` even when its
+#     caller's trigger defaults to `read` — which is the fleet's shape exactly: the OS repos
+#     call Core's *-call.yml at a moving @vN tag (rule 3's exemption), so one line in a Core
+#     callee could widen cache access for every caller without a diff in the caller.
+#     Explicit `write` either does nothing (trusted triggers already default to it) or widens
+#     a low-trust default, so it is never needed; `write-only` is the one mode that still
+#     saves, so on a low-trust trigger it widens too. GitHub's own docs say declaring either
+#     "reintroduces the risk of cache-poisoning". Narrowing is still allowed: `read` or
+#     `none`, when a job wants less than its default.
+#
+#     Anchored to the key, bare or quoted, a trailing `# comment` tolerated, so the words in
+#     prose (this comment, a workflow's rationale) never fire; that is why this is a
+#     dimension of its own and not a `banned_patterns` entry. It never REQUIRES the key, so
+#     it needs nothing from actionlint, which at the pinned 1.7.12 does not know `cache-mode`
+#     yet — the "every cache step must state it" rule waits on that (#1253). Free when it
+#     joined: 0 occurrences anywhere in the fleet's .github/ (2026-10-13). Workflows only,
+#     since a composite action carries no trigger for the default to key on. Full-line
+#     comments only, per the parser note under banned_runners above.
+banned_cache_mode_values:
+  - write
+  - write-only

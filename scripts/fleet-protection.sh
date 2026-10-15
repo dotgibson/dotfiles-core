@@ -258,6 +258,9 @@ if [[ "$MODE" == report ]]; then
                 (.allowed_actions // (if .enabled == false then "disabled" else "unreported" end)) ]
               | @tsv' <<<"$perms" 2>/dev/null)" && [[ -n "$row" ]]; then
         IFS=$'\t' read -r sha_pin allowed <<<"$row"
+        # A documented endpoint — "List repository Actions policies", docs.github.com/rest/
+        # actions/policies (checked 2026-10-15) — so a `?` below is a failed call (token
+        # scope, rate limit), never a made-up route (#1254).
         policies="$(gh api "repos/$ORG/$repo/actions/policies" --jq '.total_count' 2>/dev/null)"
         [[ "$policies" =~ ^[0-9]+$ ]] || policies='?'
         if [[ "$sha_pin" == required ]]; then mark='✓'; else mark='✗'; pin_bad=1; fi
