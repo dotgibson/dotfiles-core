@@ -595,13 +595,15 @@ fi
 # neither value has a legitimate use; `read`/`none` still narrow. The same anchored value
 # read as rules 5b and 9: any indent, bare or quoted, a trailing `# comment` tolerated, and
 # prose that merely names the word never fires. `write` does not match `write-only` (the
-# anchor runs to the line end), so each value reports once. Scoped to WORKFLOWS: a
-# composite action has no trigger for the default to key on.
+# anchor runs to the line end), so each value reports once. The KEY may be quoted too
+# (`"cache-mode": write` is the same declaration to the runner), which rules 5b and 9 do
+# not allow for — a review catch on this rule, so it is closed here. Scoped to
+# WORKFLOWS: a composite action has no trigger for the default to key on.
 if [ "${#WORKFLOWS[@]}" -gt 0 ]; then
   while IFS= read -r cv; do
     [ -n "$cv" ] || continue
     while IFS= read -r hit; do note "explicit cache-mode: $cv widens cache access (drop the key, or narrow with read/none): $hit"; done \
-      < <(grep -HnE "^[[:space:]]*cache-mode:[[:space:]]*[\"']?${cv}[\"']?[[:space:]]*(#.*)?\$" "${WORKFLOWS[@]}" 2>/dev/null || true)
+      < <(grep -HnE "^[[:space:]]*[\"']?cache-mode[\"']?:[[:space:]]*[\"']?${cv}[\"']?[[:space:]]*(#.*)?\$" "${WORKFLOWS[@]}" 2>/dev/null || true)
   done < <(_yaml_list banned_cache_mode_values)
 fi
 

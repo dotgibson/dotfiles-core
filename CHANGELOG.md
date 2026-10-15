@@ -9,9 +9,11 @@
   tag, so one line in a callee could widen cache access for every caller. `write` is a no-op
   on a trusted trigger and a widening on a low-trust one, `write-only` still saves, so neither
   has a use; `read`/`none` still narrow. `check-modern.sh` reads the value the way rules 5b
-  and 9 do (anchored to the key, bare or quoted, a trailing comment tolerated), workflows
-  only, and it never requires the key, so the pinned actionlint — which does not know
-  `cache-mode` yet — is untouched. Free on arrival: 0 occurrences in the fleet (#1253).
+  and 9 do (anchored to the key, value bare or quoted, a trailing comment tolerated) and
+  also takes the key itself quoted (`"cache-mode": write` is the same declaration to the
+  runner — a review catch), workflows only, and it never requires the key, so the pinned
+  actionlint — which does not know `cache-mode` yet — is untouched. Free on arrival: 0
+  occurrences in the fleet (#1253).
 
 ### Fixed
 
@@ -23,8 +25,12 @@
   path mise keeps, one entry per installed tool, so it joins the bindir list in
   `zsh/00-tools.zsh` and its mirror `blib_user_bindirs_on_path` — first in the list, hence
   LAST in PATH order: `mise activate` still puts the real install dirs ahead of it, so which
-  binary runs is unchanged. One more `-d` stat, no fork. A test pins the flag and the order
-  (#1257).
+  binary runs is unchanged. One more `-d` stat, no fork. A test pins the flag and the order.
+  A shim is not the binary, though (a review catch): mise does not rewrite it when the tool
+  it fronts is upgraded, so `_cache_eval` and `_cache_completion` keyed on its mtime would
+  have served a stale init — or a negative cache — forever. Behind a shim they now key on
+  `<mise data>/installs/<tool>`, whose mtime moves whenever a version is installed or
+  removed; two tests pin the upgrade and the negative-cache reopening (#1257).
 - **`fleet-gate-delta.sh` no longer judges a head that could not see a sibling when that head
   also carries a ✗.** The refusal keyed on `audit FAILED (--require-siblings`, which
   `audit-core.sh` prints only when nothing else failed — so a red `main` plus a failed sibling

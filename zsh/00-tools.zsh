@@ -61,7 +61,10 @@
 #
 # The zero-fork contract holds: the nested ${...%%:*} is a parameter expansion, not a
 # subshell, and each candidate costs one -d stat.
-for _d in "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims" \
+# Kept as a global, not unset with _d: _cache_eval / _cache_completion below read it to
+# tell a shim from the binary it fronts.
+typeset -g _CORE_MISE_DATA="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
+for _d in "$_CORE_MISE_DATA/shims" \
   "$HOME/.local/bin" \
   "${CARGO_HOME:-$HOME/.cargo}/bin" \
   "${GOBIN:-${${GOPATH:-$HOME/go}%%:*}/bin}" \
@@ -121,6 +124,16 @@ _have() {
 # `_cache_eval --salt`, which folds it into the cache FILENAME, so flipping the env
 # selects a different cache and regenerates. (Salt-free callers — starship/zoxide/mise,
 # whose output doesn't vary on env here — keep the plain mtime-only behaviour.)
+#
+# A MISE SHIM IS NOT THE BINARY (#1257, a review catch). With the shims dir on the band-00
+# PATH, a tool that only mise provides resolves to `<mise data>/shims/<tool>`, a file mise
+# does not rewrite when the tool it fronts is upgraded — so keying on its mtime would keep
+# a stale init (or a negative cache) forever. Behind a shim the key is
+# `<mise data>/installs/<tool>`, whose mtime changes whenever a version of the tool is
+# installed or removed, and the shims dir itself when no install dir exists yet. One or
+# two -d stats, no fork, and the ordinary binary path is untouched. The four lines are
+# inlined in _cache_eval and _cache_completion rather than shared, because the suite
+# lifts each function out of this file on its own (60-loader.sh) and drives it alone.
 _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
   # --salt folds an env SIGNATURE into the cache filename, so changing env the generator
   # reads at generation time (ATUIN_NOBIND, CARAPACE_BRIDGES) selects a DIFFERENT cache
@@ -141,7 +154,12 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
   # so $commands is populated for them; an absent tool yields "" and we bail as before.
   local bin="${commands[$1]}"
   [[ -z "$bin" ]] && return 0
-  if [[ ! -s "$cache" || "$bin" -nt "$cache" ]]; then
+  local key="$bin" # a mise shim is not the binary: key on what moves on an upgrade
+  if [[ -n ${_CORE_MISE_DATA:-} && "$bin" == "$_CORE_MISE_DATA/shims/"* ]]; then
+    key="$_CORE_MISE_DATA/shims"
+    [[ -d "$_CORE_MISE_DATA/installs/$1" ]] && key="$_CORE_MISE_DATA/installs/$1"
+  fi
+  if [[ ! -s "$cache" || "$key" -nt "$cache" ]]; then
     [[ -d "$dir" ]] || mkdir -p "$dir"
     # GENERATE TO A TEMP FILE, INSTALL ONLY ON SUCCESS (#580). The obvious shape —
     # `"$@" >|"$cache"` — truncates the destination BEFORE the generator runs and never
@@ -193,7 +211,8 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
       rm -f "$tmp"
       print -r -- "# _cache_eval: '$1' produced no usable output — negative cache (#580).
 # Sources to a no-op so this shell stops re-forking a generator that cannot succeed.
-# Retry by upgrading the binary (its mtime invalidates this) or deleting this file." >|"$cache"
+# Retry by upgrading the binary (its mtime invalidates this; behind a mise shim, a
+# version installed or removed does) or deleting this file." >|"$cache"
     fi
   fi
   # Guard the source: a cache dir that could not be created (read-only $HOME, a full
@@ -243,11 +262,17 @@ _cache_completion() { # _cache_completion <tool> <command...>
   # nothing. This is why these callers need no HAVE_* flag.
   local bin="${commands[$1]}"
   [[ -z "$bin" ]] && return 0
+  local key="$bin" # a mise shim is not the binary: key on what moves on an upgrade
+  if [[ -n ${_CORE_MISE_DATA:-} && "$bin" == "$_CORE_MISE_DATA/shims/"* ]]; then
+    key="$_CORE_MISE_DATA/shims"
+    [[ -d "$_CORE_MISE_DATA/installs/$1" ]] && key="$_CORE_MISE_DATA/installs/$1"
+  fi
   # Converge on whichever record we have — a good completion, or a recorded failure. Either
-  # way the binary's mtime is the only thing that re-opens the question.
+  # way the binary's mtime (or, behind a mise shim, the install dir's) is the only thing
+  # that re-opens the question.
   local stamp="$cache"
   [[ -s "$cache" ]] || stamp="$fail"
-  [[ -e "$stamp" && ! "$bin" -nt "$stamp" ]] && return 0
+  [[ -e "$stamp" && ! "$key" -nt "$stamp" ]] && return 0
   [[ -d "$dir" ]] || mkdir -p "$dir"
   local tmp="$cache.$$" zn="${commands[zsh]}"
   if "$@" >|"$tmp" 2>/dev/null && [[ -s "$tmp" ]] \

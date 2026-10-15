@@ -268,8 +268,9 @@ banned_triggers:
 #     "reintroduces the risk of cache-poisoning". Narrowing is still allowed: `read` or
 #     `none`, when a job wants less than its default.
 #
-#     Anchored to the key, bare or quoted, a trailing `# comment` tolerated, so the words in
-#     prose (this comment, a workflow's rationale) never fire; that is why this is a
+#     Anchored to the key — itself bare or quoted — with the value bare or quoted and a
+#     trailing `# comment` tolerated, so the words in prose (this comment, a workflow's
+#     rationale) never fire; that is why this is a
 #     dimension of its own and not a `banned_patterns` entry. It never REQUIRES the key, so
 #     it needs nothing from actionlint, which at the pinned 1.7.12 does not know `cache-mode`
 #     yet — the "every cache step must state it" rule waits on that (#1253). Free when it
