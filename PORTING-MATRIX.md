@@ -4,9 +4,10 @@ How to stamp `dotfiles-Arch`, `dotfiles-openSUSE`, `dotfiles-Alpine`,
 `dotfiles-Gentoo`, and `dotfiles-Debian` from the `dotfiles-Fedora` template. The structure is identical
 every time — only three things change per distro: **package manager commands**,
 **package names**, and **distro quirks**. Core never changes (it's vendored).
-Offense (Kali) and macOS appear in the reference tables below for convenience, and NixOS
-in the command table, but they're their own lineages — built directly, **not** stamped from
-this template (see _Repo status_ at the bottom).
+Kali (a `dotfiles-Debian` tier since `Offense` shed its OS layer) and macOS appear in the
+reference tables below for convenience, and NixOS in the command table; macOS and NixOS are
+their own lineages — built directly, **not** stamped from this template (see _Repo status_
+at the bottom).
 
 ## Per-repo recipe
 
@@ -50,9 +51,7 @@ table) the declarations became the live files, held to the schema by `audit-core
 while this copy was held to nothing. So the arrow flipped: `scripts/gen-porting-matrix.sh`
 now writes every cell below from the declared `PKG_*` value, verbatim, plus a placeholder,
 and `make audit` (§9h) fails when they differ. **Edit the declaration in the OS repo, then
-run `make gen-porting-matrix`.** The declarations' own headers still say _"Transcribed from
-core/PORTING-MATRIX.md"_ — true of how they were written, no longer of which side is
-edited; issue #837 updates them. Three columns render **more than one declaration file**,
+run `make gen-porting-matrix`.** Three columns render **more than one declaration file**,
 because a declaration is data and cannot probe and the repo's `bootstrap.sh` relinks the
 right one at run time: openSUSE's `dup`-vs-`up` split plus its transactional edition
 (three labels), and Fedora's atomic edition beside Workstation (two). Labelled cells
@@ -385,8 +384,9 @@ collide with `setgroups`" and that ast-grep "shadows nothing" — both were wron
 the second into a live shadow rather than a hypothetical one. On Fedora that shadow is the
 default, not something you opt into: `dotfiles-Fedora`'s `bootstrap.sh` `cargo install`s
 ast-grep unconditionally (dotgibson/dotfiles-Fedora#209). Core probes it into the `_CORE_PROBED` ledger and sets no flag
-(#694 — nothing read `HAVE_ASTGREP`; `PORTABILITY.md` §5). Packaged on Arch (`extra`) and Alpine (`community` — a musl build, so the outlier is
-covered) and Homebrew; elsewhere via `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert
+(#694 — nothing read `HAVE_ASTGREP`; `PORTABILITY.md` §5). Packaged on Arch (`extra`), Alpine (`community` — a musl build, so the outlier is
+covered), openSUSE Tumbleweed (`ast-grep`, see ¹⁸ — `dotfiles-openSUSE` installs it) and
+Homebrew; elsewhere via `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert
 without the binary — nothing depends on it.
 ¹² Gentoo **GURU overlay** (`sd`, `glow`, `xh`, `carapace`, `1password-cli`, `tealdeer`,
 `yazi`, `lazygit`, `direnv`, `gping`¹⁹): not in the main `::gentoo` tree. Enable once with
@@ -461,7 +461,8 @@ haven't migrated to your snapshot, bootstrap falls back to the Charm apt repo
 `community` (a native musl build — apk-installed, with the cargo build kept as a fallback —
 but still the pre-rewrite **Go 0.4.0** on every branch, v3.21 through edge; upstream Rust is
 1.x, and the apk install stops bootstrap's presence-guarded cargo fallback from ever running)
-and **openSUSE** Tumbleweed `repo-oss` (see ¹⁸).
+and **openSUSE** Tumbleweed `repo-oss` (Rust 1.3.1 there; Leap 16.x carries the Go 0.4.0 —
+see ¹⁸).
 Where unpackaged, `bootstrap.sh` builds it best-effort via `cargo install --locked viddy`
 (the same cargo path as yazi/dust/tealdeer) — **not on Kali**: `dotfiles-Debian` installs
 Kali's `cargo` but cargo-installs none of yazi/viddy/ast-grep, hence `cargo²¹` in those cells.
@@ -474,14 +475,15 @@ unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep
 (YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), probed into the
 `_CORE_PROBED` ledger by `zsh/00-tools.zsh` and carrying no flag since #694, inert
 without the binary. A **Rust** CLI (embeds `jaq`, so no external
-`jq` needed). **On Linux this is detect-only on every repo but three — `jnv` is in no
+`jq` needed). **On Linux this is detect-only on every repo but four — `jnv` is in no
 `install/packages.txt` anywhere, so elsewhere `core-doctor` reports it present only once you
 install it yourself. The exceptions, per ²¹: `dotfiles-Alpine`'s `bootstrap.sh` DOES install it
 (cargo, best-effort — hence `cargo³` in its cell, since `jnv` is unpackaged on all five
 Alpine branches including `testing` on edge, making cargo its only source there),
 `dotfiles-Gentoo` cargo-builds it in the opt-in extras block that `--no-extras` skips, and
 `dotfiles-Fedora`'s `bootstrap.sh` cargo-builds it unconditionally (no Fedora release packages
-it; dotgibson/dotfiles-Fedora#209). On macOS the `Brewfile` carries it.** Everywhere else the row above names where that platform
+it; dotgibson/dotfiles-Fedora#209), and so does `dotfiles-openSUSE`'s
+(dotgibson/dotfiles-openSUSE#229). On macOS the `Brewfile` carries it.** Everywhere else the row above names where that platform
 gets it when you opt in — Arch `pacman -S jnv`, Nix, or `cargo install --locked jnv` — not
 an automatic install. **Arch's cell used to read `AUR` and
 this footnote used to prescribe `paru -S jnv`; both are now wrong.** jnv entered `extra` as
@@ -499,7 +501,7 @@ tracked follow-up on the rest. jnv is in neither `::gentoo` nor GURU, nor any Zu
 **Leap 16.0 and 16.1 have now been audited** (dotfiles-openSUSE#89, verified against both
 releases' `repo/oss` binary indexes on 2026-08-21) — the supported Leap is 16.x; 15.6, which
 this note used to hedge about, is EOL. **All seven resolve on both**, via Backports rather
-than the main OSS repo — `starship` 1.21.1, `atuin` 18.3.0, `yazi` 25.5.31, `viddy` 0.4.0,
+than the main OSS repo — `starship` 1.21.1, `atuin` 18.3.0, `yazi` 25.5.31, `viddy` 0.4.0 (the pre-rewrite Go line, as on Alpine¹⁶),
 `ouch` 0.5.1, `doggo` 1.0.5, `ast-grep` 0.28.0 (`bp160`/`bp161` disttags). So `zypper in`
 is the right first move on Leap too, and the ³ fallback is no longer the expected path for
 these seven — but Leap pins where Tumbleweed rolls, so treat those versions as a floor and
@@ -522,14 +524,15 @@ reason) — those two are declines, not gaps.
 
 ¹⁹ gping: the `ping` replacement — Core aliases `ping`→`gping` (`HAVE_GPING`-guarded in
 `zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only on
-every Linux repo except `dotfiles-Alpine`, `dotfiles-Gentoo` and `dotfiles-Fedora`** — Alpine's
-`install/packages.txt` carries `gping` outright, Gentoo emerges `net-analyzer/gping` from
+every Linux repo except `dotfiles-Alpine`, `dotfiles-Gentoo`, `dotfiles-Fedora` and
+`dotfiles-openSUSE`** — Alpine's and openSUSE's `install/packages.txt` carry `gping` outright
+(dotgibson/dotfiles-openSUSE#229 for the latter), Gentoo emerges `net-analyzer/gping` from
 GURU in its `guru_install` pass, and Fedora's `bootstrap.sh` runs `cargo install --locked gping`
 (dotgibson/dotfiles-Fedora#209), because no Fedora release packages it. Gentoo's list names the atom only in a comment because
 overlay-only atoms **must** live there (the main-tree emerge runs before GURU is enabled, so an
 atom in the list proper would be skipped and never retried) — that comment is a pointer to the
 call, **not** a decline, which is what this footnote used to read it as. The macOS `Brewfile`
-carries it too. On the other six repos the alias lights up only once you install it yourself —
+carries it too. On the other five repos the alias lights up only once you install it yourself —
 this row exists so there is a documented path when you do. (`aliases.md` and `PARITY.md` have advertised the alias since
 v3; the matrix row is what was missing.) A **Rust** CLI → `cargo install gping` anywhere
 unpackaged. Packaged: Arch `extra`, Alpine `community` (a native musl build, so the outlier is
@@ -822,7 +825,7 @@ what a bootstrap gives you:
   outright, Gentoo installs all eight, four of them from `bootstrap.sh`, and Fedora installs all
   eight, three from `bootstrap.sh`. Keep it a **per-tool**
   statement: the family is defined by "Core probes it, and most repos leave installing it to
-  you", not by a distro, and no longer by "no bootstrap installs it" — three now do.
+  you", not by a distro, and no longer by "no bootstrap installs it" — four now do.
   (Deliberately not a counted list — "all four" went stale the first time this family grew,
   "no Linux repo does" the second, and "`ouch` is the one entry" the third.)
 - The cells that previously showed **³** here — `ouch` on Gentoo **and** Kali, `jujutsu` on
@@ -909,14 +912,15 @@ per release (`lnav-0.14.1-linux-musl-x86_64.zip`, and an `arm64` twin), so the f
 an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
 the cleanest way to get 0.14.1 onto Gentoo or Debian/Kali without waiting for the package.
 **No `bootstrap.sh` installs it anywhere**, but it is not detect-only across the board:
-`dotfiles-Alpine` (`lnav`), `dotfiles-Gentoo` (`app-admin/lnav`) and `dotfiles-Fedora` (`lnav`,
-dotgibson/dotfiles-Fedora#209) all carry it in `install/packages.txt`, and the MacBook
+`dotfiles-Alpine` (`lnav`), `dotfiles-Gentoo` (`app-admin/lnav`), `dotfiles-Fedora` (`lnav`,
+dotgibson/dotfiles-Fedora#209) and `dotfiles-openSUSE` (`lnav`, Tumbleweed only —
+dotgibson/dotfiles-openSUSE#229) all carry it in `install/packages.txt`, and the MacBook
 `Brewfile` has it too (added 2026-07-15). Fedora's copy is the per-release build in the table
-below, so an F44 box gets 0.13.2, not upstream's 0.14.1. On the other three Linux repos
+below, so an F44 box gets 0.13.2, not upstream's 0.14.1. On the other two Linux repos
 `core-doctor` reports it present only once you install it yourself. So `lnav` sits in
 ²¹'s family — probed but never bootstrap-installed — rather than jnv's thinner "two platforms
 package it, cargo everywhere else" one: every distro in the table above packages lnav on at
-least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and three of the repos
+least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and four of the repos
 ask for it.
 
 Versions **verified against each distro's own package pages** on 2026-08-12, every row
@@ -962,10 +966,10 @@ silently hand you the wrong one.
 
 **The one tool in ²¹'s family that inverts it: macOS is the machine that doesn't get it.**
 The MacBook `Brewfile` does not carry `watchexec` — the only ²¹ entry it skips — while
-`dotfiles-Alpine`'s `install/packages.txt` carries it outright, `dotfiles-Gentoo`
-cargo-installs it from the extras block, and `dotfiles-Fedora`'s `bootstrap.sh` cargo-installs
-`watchexec-cli` unconditionally (dotgibson/dotfiles-Fedora#209). The other six machines are
-opt-in.
+`dotfiles-Alpine`'s and `dotfiles-openSUSE`'s `install/packages.txt` carry it outright
+(dotgibson/dotfiles-openSUSE#229 for the latter), `dotfiles-Gentoo` cargo-installs it from the
+extras block, and `dotfiles-Fedora`'s `bootstrap.sh` cargo-installs `watchexec-cli`
+unconditionally (dotgibson/dotfiles-Fedora#209). The other five machines are opt-in.
 (This paragraph used to read "the only tool in this table that nothing in the fleet installs,
 including macOS"; Alpine falsified the first half, and Gentoo — checked against `bootstrap.sh`
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
@@ -1080,8 +1084,9 @@ it with the same caution as the version stamps below.
 
 **No `bootstrap.sh` installs it**, and it is packaged essentially everywhere — the ²¹ shape,
 not `jnv`¹⁷'s. The MacBook `Brewfile` carries it, and so do `dotfiles-Alpine`
-(`git-absorb`), `dotfiles-Gentoo` (`dev-vcs/git-absorb`) and `dotfiles-Fedora` (`git-absorb`,
-dotgibson/dotfiles-Fedora#209) in their `install/packages.txt`; the other three Linux repos
+(`git-absorb`), `dotfiles-Gentoo` (`dev-vcs/git-absorb`), `dotfiles-Fedora` (`git-absorb`,
+dotgibson/dotfiles-Fedora#209) and `dotfiles-openSUSE` (`git-absorb`,
+dotgibson/dotfiles-openSUSE#229) in their `install/packages.txt`; the other two Linux repos
 are detect-only (re-verified 2026-08-21; Fedora 2026-10-11). Package versions verified
 2026-08-12 against each distro's own package pages, the Alpine row re-verified 2026-09-13 on
 all five branches (dotfiles-Alpine#188):
@@ -1144,8 +1149,8 @@ with an actual `go install` before believing it.**
 `.rpm`, `.deb`, `.apk` and `.tar.gz` (v1.7.3, 2026-06-30). Per target:
 
 - **openSUSE** — the `linux_<arch>.rpm`. This is exactly the route `dotfiles-Fedora`'s
-  `bootstrap.sh` already ships and has proven end-to-end; port that block, don't re-derive
-  it. One difference from dnf that will bite: **upstream signs nothing** (there is no `signs:`
+  `bootstrap.sh` already ships and has proven end-to-end, and `dotfiles-openSUSE`'s
+  `bootstrap.sh` now carries the ported block. One difference from dnf that bit: **upstream signs nothing** (there is no `signs:`
   stanza in `.goreleaser.yml`), and while dnf4 installs an unsigned local/URL rpm without
   complaint, `zypper -n` aborts on one — so a non-interactive install needs
   `--no-gpg-checks`. Same shape for Alpine's `.apk` (`--allow-untrusted`) if you ever need it.
@@ -1369,15 +1374,15 @@ on the `srf1` band so a directory waiting on `direnv allow` is visible rather th
 unloaded. The module only draws inside a direnv-controlled tree, so a box without the binary
 loses a segment, not the prompt.
 
-**Installed, not merely available** — the inverse of ²¹. Six of the seven package lists carry
-it outright (`dotfiles-Arch`, `-openSUSE`, `-Alpine`, `-Debian`, `-Fedora`, and the MacBook
-`Brewfile`), and `dotfiles-Gentoo` emerges `app-shells/direnv` in its `guru_install` pass per
-¹². **`dotfiles-Offense` (Kali) is the single gap, and it is structural rather than a call
-about direnv**: that repo carries no `install/packages.txt`, so nothing there installs the
-package. It does now get the **hook** — that arrives from Core at band 00 like everywhere
-else, which is a change from the band-80 arrangement, where Offense missed it too for having
-no `os/` layer at all. So the hook is live there and simply finds no binary. The Kali cell
-above is the apt name you would install by hand.
+**Installed, not merely available** — the inverse of ²¹. Every package list in the fleet
+carries it outright (`dotfiles-Arch`, `-openSUSE`, `-Alpine`, `-Debian` — for all three of
+its targets, Kali included — `-Fedora`, and the MacBook `Brewfile`), and `dotfiles-Gentoo`
+emerges `app-shells/direnv` in its `guru_install` pass per ¹². Kali used to be the single
+gap, structurally: `dotfiles-Offense` carries no `install/packages.txt`, so nothing there
+installed the package. That closed when the Kali lane moved into `dotfiles-Debian`'s
+`only:kali` tier (see _Role repos_ below) — the **hook** arrives from Core at band 00
+everywhere, and on a Kali box it now finds the binary that lane installs. The Kali cell
+above is the apt name.
 
 Verified 2026-08-21 against each distro's own index, the Alpine stamp re-verified 2026-09-13
 (dotfiles-Alpine#188), the Arch stamp 2026-10-11 (dotfiles-Arch#197): **Arch `extra`**
@@ -1842,10 +1847,11 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
   `85` band and `tmux/role.conf`. **Both role repos have adopted it** — `Offense`
   first, `Defense` in dotgibson/dotfiles-core#976, which retired the
   `wire_defense_stage` it used to hand-roll. `core.manifest` records the same.
-- `Debian` is stamped from Fedora structurally, but takes its **apt idioms** from
-  `Offense` — the fleet's other Debian-family repo. It is the only **frozen** target
+- `Debian` is stamped from Fedora structurally, but its **apt idioms** came from
+  `Offense`, which carried the fleet's other Debian-family layer until that lane moved
+  into `dotfiles-Debian` (see _Role repos_ above). It is the only **frozen** target
   (Ubuntu 24.04 LTS), which is why it carries by far the largest out-of-band install
-  surface (²⁸) and the only version-floor gate in the fleet.
+  surface (²⁸); its version-floor gate is one of several in the fleet (³³ names the others).
 
 ### Stamping order (all complete — kept as the recommended sequence for reference)
 

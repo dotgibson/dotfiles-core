@@ -1070,8 +1070,12 @@ _suite_targets() { # _suite_targets <Makefile> <run-re> [exist-list] → targets
         fresh = (l !~ /^[^:]*::/)
         inl = ""; hassemi = 0
         if (match(rhs, /;/)) { inl = substr(rhs, RSTART + 1); rhs = substr(rhs, 1, RSTART - 1); hassemi = 1 }
-        n = split(lhs, t, /[ \t]+/); ncur = 0
-        for (i = 1; i <= n; i++) if (t[i] != "" && t[i] !~ /\$\(/) { cur[++ncur] = t[i]; pre[t[i]] = pre[t[i]] " " rhs; seen[t[i]] = 1 }
+        # `tw`, not `t`: this program also declares `t` as a function-local scalar, and mawk
+        # (the default awk on Debian and Ubuntu) refuses a global ARRAY of the same name:
+        # "illegal reference to local variable t" at parse time, before a line is read.
+        # gawk, busybox and BSD awk all allow it, which is how the collision stayed hidden.
+        n = split(lhs, tw, /[ \t]+/); ncur = 0
+        for (i = 1; i <= n; i++) if (tw[i] != "" && tw[i] !~ /\$\(/) { cur[++ncur] = tw[i]; pre[tw[i]] = pre[tw[i]] " " rhs; seen[tw[i]] = 1 }
         # `test: ;` is an EMPTY recipe, and it replaces the earlier one all the same.
         if (hassemi) {
           if (fresh) { for (i = 1; i <= ncur; i++) hit[cur[i]] = 0; fresh = 0 }

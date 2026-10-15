@@ -120,7 +120,7 @@ because the arrow points the other way.
   SKIP for those alone; the fleet-version blocks read an in-repo file and are gated on every
   leg through `--local`, which is also how you repair them without a fleet (#1046). A tool
   with a floor in that TSV and no block to render it is a hard failure, not a quiet one
-  (#1082). The ~1,230 footnote lines stay hand-written — apart from the fleet-version
+  (#1082). The ~1,500 footnote lines stay hand-written — apart from the fleet-version
   blocks, which sit inside footnotes ⁵, ³³, ³⁴ and ³⁹; `/os-package-availability` refreshes the
   prose.
 - **The desktop-bar `PARITY.md` pair is generated, not typed.** The Zebar ↔ sketchybar

@@ -176,4 +176,5 @@ vim/vimrc
 # instead of the manifest" was nothing at all. Worth keeping in view: the failure mode of
 # this paragraph is citing a check that is not there.
 nvim/
-# ── Core layers: zsh + clip + mise + sesh + ssh + tmux + maint + git + nvim. ──
+# ── Core layers: zsh + bin (clip) + lib + mise + sesh + ssh + tmux + maint + git + jujutsu +
+#    lazygit + starship + atuin + tealdeer + vim + nvim, plus core.version. ──

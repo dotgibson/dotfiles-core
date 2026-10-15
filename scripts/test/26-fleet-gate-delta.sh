@@ -72,6 +72,16 @@ printf '%s\n' '– luacheck (not installed)' 'scripts/audit-core.sh: line 97: co
 _fgd_is "a head audit that died before its summary is unjudgeable (2)" 2 clean.txt died.txt
 _fgd_is "a base audit that died before its summary is unjudgeable (2)" 2 died.txt clean.txt
 
+# A head that could not read a sibling skipped that sibling's gates (in both runs), so the
+# delta cannot see a failure the PR adds against it. The refusal is keyed on the summary line
+# the audit prints whenever a sibling was missing — WITH a ✗ on the head, because the old key
+# (`audit FAILED (--require-siblings`) only printed on an otherwise clean run, so a red main
+# plus a missing clone used to pass as judged (#1254).
+printf "✗ a repo's TOOLS_OPTIN disagrees\n    dotfiles-Debian: declared [a], expected [a b]\n\n──────── audit summary ────────\n  25 check(s) SKIPPED — this run is PARTIAL, not full:\n    – luacheck (not installed)\n    – vendoring claims: 1 repo(s) not checked out — not covered by this run\n  24 of those are FLEET-WIDE gates with no sibling repo to read — they did not run.\naudit FAILED\n" >"$_fgd_/nosib-red.txt"
+printf "– luacheck (not installed)\n\n──────── audit summary ────────\n  25 check(s) SKIPPED — this run is PARTIAL, not full:\n    – luacheck (not installed)\n  24 of those are FLEET-WIDE gates with no sibling repo to read — they did not run.\naudit FAILED (--require-siblings: 24 fleet-wide gate(s) had no sibling OS repo to read)\n" >"$_fgd_/nosib-clean.txt"
+_fgd_is "a head that could not see a sibling is unjudgeable (2) even when it carries a ✗ (#1254)" 2 debian.txt nosib-red.txt
+_fgd_is "a head that could not see a sibling is unjudgeable (2) on an otherwise clean run too" 2 clean.txt nosib-clean.txt
+
 # A usage error is 2, never 0: a mis-invoked required check must not read as a pass.
 _fgd_rc=0
 "$HERE/scripts/fleet-gate-delta.sh" --compare "$_fgd_/clean.txt" >/dev/null 2>&1 || _fgd_rc=$?

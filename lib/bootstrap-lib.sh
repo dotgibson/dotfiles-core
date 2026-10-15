@@ -1574,7 +1574,11 @@ blib_user_bindirs_on_path() {
     gopath="${GOPATH:-$HOME/go}"
     gobin="${gopath%%:*}/bin" # first entry only
   fi
-  for d in "$HOME/.local/bin" \
+  # mise's shims dir leads the list (so it lands LAST in PATH order), as in 00-tools.zsh:
+  # it is there so a `mise use -g` tool is seen by the presence guards, not to decide
+  # which binary runs (#1257).
+  for d in "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims" \
+    "$HOME/.local/bin" \
     "${CARGO_HOME:-$HOME/.cargo}/bin" \
     "$gobin" \
     "$HOME/.atuin/bin"; do

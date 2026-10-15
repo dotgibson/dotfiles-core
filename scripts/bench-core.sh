@@ -243,13 +243,16 @@ printf '\n%s== Core startup benchmark (canonical .zshrc chain, hermetic) ==%s\n'
 # `zsh -i -c exit` sources the sandbox .zshrc (interactive, so the modules' `[[ $-
 # == *i* ]]` guards pass) and exits. --warmup primes the fs/exec cache so the
 # reported mean is steady-state, not first-run cold. --export-json captures the
-# mean for the verdict below (the human table still prints).
+# mean for the verdict below (the human table still prints). -N (--shell=none) runs
+# the command directly: hyperfine 2.0 made that the default, 1.x still wraps it in
+# `sh -c` unless told not to, so the flag is what keeps a 1.x box and a 2.x box
+# measuring the same thing — the shell's own fork, not Core's startup (#1250).
 json="$SANDBOX/bench.json"
 hf_rc=0
 HOME="$SANDBOX" ZDOTDIR="$SANDBOX/zdot" \
   XDG_CACHE_HOME="$SANDBOX/cache" XDG_STATE_HOME="$SANDBOX/state" \
   XDG_RUNTIME_DIR="$SANDBOX/run" XDG_DATA_HOME="$SANDBOX/data" CORE_DIR="$CORE_DIR" \
-  hyperfine --warmup 3 --min-runs "$runs" --export-json "$json" 'zsh -i -c exit' || hf_rc=$?
+  hyperfine -N --warmup 3 --min-runs "$runs" --export-json "$json" 'zsh -i -c exit' || hf_rc=$?
 # No errexit here, so hyperfine's status must be read explicitly: it can write the export
 # file AND exit non-zero (a run that failed its own checks), and parsing that JSON would let
 # a gate pass on a measurement hyperfine itself disowned (a #688 review catch). Under a
@@ -268,6 +271,9 @@ fi
 # does the arithmetic from there (bash has no floats). No budget → report only; a budget
 # with no python3 → loud skip rather than a false pass (the gate must be honest; --gate
 # already refused above, so this leg is the env-override path).
+# Two export schemas: 1.x puts mean/median on the result itself; 2.0 (schema_version 2)
+# nests them under summary.time_wall_clock, and reading the 1.x keys from a 2.x file
+# was "could not parse hyperfine JSON" on every box already on 2.0 (#1250).
 if ! have python3; then
   if [[ -n "$BUDGET" ]]; then
     skip "budget set ($BUDGET ms) but python3 absent — cannot read hyperfine JSON; not gating"
@@ -281,7 +287,8 @@ median_ms=""
 read -r mean_ms median_ms < <(python3 -c '
 import json, sys
 r = json.load(open(sys.argv[1]))["results"][0]
-print(r["mean"] * 1000, r["median"] * 1000)' "$json" 2>/dev/null)
+s = r["summary"]["time_wall_clock"] if "summary" in r else r
+print(s["mean"] * 1000, s["median"] * 1000)' "$json" 2>/dev/null)
 if [[ -z "$mean_ms" || -z "$median_ms" ]]; then
   # Same split as a non-zero hyperfine status: a budget fails closed, report mode degrades
   # to a loud skip — plain `make bench` never returns 1 for an export it cannot read.

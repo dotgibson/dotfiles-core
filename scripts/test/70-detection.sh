@@ -911,6 +911,41 @@ ucheck "bindirs: ~/.atuin/bin precedes ~/.local/bin, and all of them precede the
   "source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ \${p[(i)\$HOME/.atuin/bin]} -lt \${p[(i)\$HOME/.local/bin]} && \${p[(i)\$HOME/.local/bin]} -lt \${p[(i)$UBSYS]} ]]" \
   HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
 
+# (h2) mise's shims dir is on the list (#1257): a `mise use -g` tool used to come up unwired
+# because its install dir only joins PATH when `mise activate` runs, a band after detection.
+# The shims dir is the fixed path, and it sits BEHIND ~/.local/bin — it is there for the
+# probes, never to decide which binary runs.
+_ub_fixture .local/share/mise/shims:yazi .local/bin:eza
+ucheck "bindirs: a tool in mise's shims dir sets its HAVE_* flag, and the shims sit behind ~/.local/bin (#1257)" \
+  "source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ -n \${HAVE_YAZI:-} && \${p[(i)\$HOME/.local/bin]} -lt \${p[(i)\$HOME/.local/share/mise/shims]} && \${p[(i)\$HOME/.local/share/mise/shims]} -lt \${p[(i)$UBSYS]} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH= MISE_DATA_DIR= XDG_DATA_HOME=
+
+# (h3) THE SHIM IS NOT THE BINARY (review catch on #1257). A tool mise alone provides
+# resolves to its shim, which mise does not rewrite when the tool is upgraded — so keying
+# the init cache on the shim's mtime would serve a stale init (or a negative cache) forever.
+# _cache_key keys on <mise data>/installs/<tool> instead. The stub shim prints an init that
+# names the "version" in ~/.ver, fails outright until ~/.ok exists, and the installs dir
+# appears after a `sleep 1` so its mtime is provably newer than the cache it must reopen.
+# $UBSYS is grep + head only; the cache helper itself needs mkdir/mv/rm/touch and the stub
+# needs cat, so those (and sleep, for the mtime step) ride on a second dir — absolute
+# symlinks, so the near-empty PATH every other bindir assertion is pinned against stays.
+_ub_cachebin="$SANDBOX/ubcachebin"; rm -rf "$_ub_cachebin"; mkdir -p "$_ub_cachebin"
+for _ub_t in mkdir mv rm touch cat sleep; do ln -s "$(command -v "$_ub_t")" "$_ub_cachebin/$_ub_t"; done
+unset _ub_t
+rm -rf "$UBHOME"; mkdir -p "$UBHOME/.local/share/mise/shims"
+printf '#!/bin/sh\n[ "$1" = --version ] && { echo "starship 1.0.0"; exit 0; }\n[ -e "$HOME/.ok" ] || exit 1\necho "typeset -g _T_INIT=$(cat "$HOME/.ver")"\n' >"$UBHOME/.local/share/mise/shims/starship"
+chmod +x "$UBHOME/.local/share/mise/shims/starship"
+printf 'v1\n' >"$UBHOME/.ver"; : >"$UBHOME/.ok"
+ucheck "cache: a mise-managed tool's upgrade (a new installs/ entry) regenerates its init behind an unchanged shim" \
+  "source '$TOOLS_FILE'; _cache_eval starship starship init zsh; [[ \${_T_INIT:-} == v1 ]] || exit 1; print v2 >\$HOME/.ver; _cache_eval starship starship init zsh; [[ \${_T_INIT:-} == v1 ]] || { print 'regenerated with nothing moved'; exit 1; }; sleep 1; mkdir -p \$HOME/.local/share/mise/installs/starship/2.0; _cache_eval starship starship init zsh; [[ \${_T_INIT:-} == v2 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS:$_ub_cachebin" CARGO_HOME= GOBIN= GOPATH= MISE_DATA_DIR= XDG_DATA_HOME= XDG_CACHE_HOME=
+# The first case left ~/.ver at v2; this one starts over at v1 with no cache, no installs dir
+# and no ~/.ok, so the stub fails until the body allows it.
+rm -rf "$UBHOME/.cache" "$UBHOME/.local/share/mise/installs" "$UBHOME/.ok"; printf 'v1\n' >"$UBHOME/.ver"
+ucheck "cache: a negative cache behind a mise shim reopens once a version is installed" \
+  "source '$TOOLS_FILE'; _cache_eval starship starship init zsh; [[ -z \${_T_INIT:-} ]] || exit 1; : >\$HOME/.ok; _cache_eval starship starship init zsh; [[ -z \${_T_INIT:-} ]] || { print 'negative cache did not hold'; exit 1; }; sleep 1; mkdir -p \$HOME/.local/share/mise/installs/starship/1.0; _cache_eval starship starship init zsh; [[ \${_T_INIT:-} == v1 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS:$_ub_cachebin" CARGO_HOME= GOBIN= GOPATH= MISE_DATA_DIR= XDG_DATA_HOME= XDG_CACHE_HOME=
+
 # (i) THE DISAGREEMENT ITSELF. The issue's symptom was not "no alias" but that core-doctor
 # and the flags answered differently about the same tool in the same shell. Assert they now
 # agree: the doctor says present AND Core wired it. Before the fix the first half passed and

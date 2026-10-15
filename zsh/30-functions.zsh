@@ -1544,6 +1544,7 @@ _core_doctor_render() {
     if ((${#latedirs})); then
       print -r -- "  ${d}these joined PATH after detection: ${latedirs[*]}${r}"
       print -r -- "  ${d}move the prepend into 00-tools.zsh's bindir list to fix it for good${r}"
+      print -r -- "  ${d}(a mise tool? its shims dir is on that list since #1257 — run mise reshim)${r}"
     else
       print -r -- "  ${d}installed after this shell started — open a new shell${r}"
     fi

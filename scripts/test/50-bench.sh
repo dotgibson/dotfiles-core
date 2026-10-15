@@ -333,6 +333,11 @@ md="${CORE_TEST_HF_MEDIAN:-$m}"
 if [ -n "${CORE_TEST_HF_BAD_JSON:-}" ]; then
   # An export the reader cannot use (valid JSON, wrong shape) — a version skew, say.
   printf '{"results":[]}\n' >"$out"
+elif [ -n "${CORE_TEST_HF_SCHEMA2:-}" ]; then
+  # hyperfine 2.0's export (schema_version 2): the statistics moved under summary.<metric>,
+  # and the 1.x keys are gone from the result (#1250).
+  printf '{"schema_version":2,"primary_metric":"time_wall_clock","metadata":{"hyperfine_version":"2.0.0"},"results":[{"command":"zsh -i -c exit","measurements":[{"time_wall_clock":{"value":%s,"unit":"second"},"exit_code":0}],"summary":{"time_wall_clock":{"unit":"second","count":1,"mean":%s,"stddev":null,"median":%s,"min":%s,"max":%s}}}]}\n' \
+    "$m" "$m" "$md" "$m" "$m" >"$out"
 else
   printf '{"results":[{"command":"zsh -i -c exit","mean":%s,"stddev":0.001,"median":%s,"user":0,"system":0,"min":%s,"max":%s,"times":[%s],"exit_codes":[0]}]}\n' \
     "$m" "$md" "$m" "$m" "$m" >"$out"
@@ -351,6 +356,16 @@ EOF
       pass "bench gate: a 20 ms mean passes the committed budget and reports the baseline delta"
     else
       fail "bench gate: 20 ms should pass (rc=$_bcrc): ${_bcout//$'\n'/ | }"
+    fi
+
+    # 7b. The same verdict from a hyperfine 2.0 export (schema 2): the mean lives under
+    #     summary.time_wall_clock there, and reading the 1.x keys from it made every box on
+    #     2.0 fail closed with "could not parse hyperfine JSON" (#1250).
+    _bc_stub "CORE_TEST_HF_MEAN=0.020" "CORE_TEST_HF_SCHEMA2=1" -- --gate
+    if ((_bcrc == 0)) && [[ "$_bcout" == *"within budget $_bc_bud ms"* ]]; then
+      pass "bench gate: a hyperfine 2.0 (schema 2) export reads the same as a 1.x one"
+    else
+      fail "bench gate: a schema-2 export should pass at 20 ms (rc=$_bcrc): ${_bcout//$'\n'/ | }"
     fi
 
     # 8. THE ONE THAT MATTERS: a breach exits 1, says so, and the log carries the per-module

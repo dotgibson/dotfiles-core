@@ -191,7 +191,7 @@ fi
 # this asserts the contract the workflow depends on: known paths map to the right gates,
 # the __ALL__ sentinel runs everything, and — the regression that matters — an
 # UNRECOGNISED top-level path FAILS CLOSED to the full run instead of silently skipping
-# a gate on the nine-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
+# a gate on the ten-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
 hdr "CI path classifier (scripts/ci-classify.sh)"
 CLASSIFY="$HERE/scripts/ci-classify.sh"
 _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim> <want-atuin>

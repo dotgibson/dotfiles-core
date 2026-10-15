@@ -367,6 +367,55 @@ jobs:
     printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
   fi
 
+  # Rule 11 (#1253): an explicit `cache-mode: write` / `write-only` is a no-op on a trusted
+  # trigger and a widening on a low-trust one — and a Core callee can widen every @vN caller.
+  # Four shapes: bare at the workflow root, quoted value with a trailing comment at job a,
+  # and the KEY quoted both ways at jobs c and d (a review catch: `"cache-mode": write` is
+  # the same declaration to the runner). The control is job b, which NARROWS (`read`) beside
+  # a comment naming both words; neither may fire, and `write` must not also match
+  # `write-only` (want exactly 2 + 2 hits).
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+cache-mode: write
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    cache-mode: "write-only"   # the only mode that still saves
+    steps:
+      - run: true
+  b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # never cache-mode: write or write-only, see modern-baseline.yml rule 11
+    cache-mode: read
+    steps:
+      - run: true
+  c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    "cache-mode": write
+    steps:
+      - run: true
+  d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    '"'"'cache-mode'"'"': '"'"'write-only'"'"'
+    steps:
+      - run: true')"
+  if [[ "$(grep -c 'explicit cache-mode: write widens' <<<"$_cm_out")" == 2 ]] \
+    && [[ "$(grep -c 'explicit cache-mode: write-only widens' <<<"$_cm_out")" == 2 ]] \
+    && grep -q 'probe.yml:5:' <<<"$_cm_out" && grep -q 'probe.yml:10:' <<<"$_cm_out" \
+    && grep -q 'probe.yml:23:' <<<"$_cm_out" && grep -q 'probe.yml:29:' <<<"$_cm_out" \
+    && ! grep -q 'probe.yml:1[67]:' <<<"$_cm_out"; then
+    pass "check-modern rule 11: cache-mode write/write-only are caught with the key and value bare or quoted, once each; read and a comment are not"
+  else
+    fail "check-modern rule 11: cache-mode misfired (want write at :5 and :23, write-only at :10 and :29, nothing else)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
   # Rule 10: `pull_request_target` runs fork PRs with the base repo's secrets. One probe per
   # YAML shape the trigger can be declared in, because the rule is a structural walk and each
   # shape takes a different branch of it: scalar, flow list (quoted), flow map, block map with

@@ -65,7 +65,10 @@ foundry   = "latest" # provides forge/cast/anvil/chisel — `forge fmt` (conform
 
 [settings]
 auto_install = false        # explicit installs only; don't fetch on directory entry
-legacy_version_file = true  # honor .nvmrc/.ruby-version/.python-version so repos "just work"
+# Idiomatic version files (.nvmrc/.node-version, .python-version, .ruby-version) so repos
+# "just work". Off by default since mise 2025.10 and opt-in PER TOOL; the old boolean
+# `legacy_version_file = true` this line used to be no longer exists, so it honoured nothing.
+idiomatic_version_file_enable_tools = ["node", "python", "ruby"]
 experimental = true         # native shims (faster than the shell wrapper)
 quiet = false
 # B3 — hermetic tool resolution. The [tools] versions above are deliberately FLOATING
