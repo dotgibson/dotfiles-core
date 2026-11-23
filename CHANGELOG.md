@@ -17,6 +17,19 @@
 
 ### Fixed
 
+- **A self-PR bot that cannot mint the fleet App token now fails instead of quietly
+  opening a PR that never runs CI.** `freshness.yml`'s two PR-opening jobs fall back to
+  `GITHUB_TOKEN` when the mint is skipped or fails, and GitHub starts no workflow for a PR
+  that token opens — so the run stayed green while the PR sat `BLOCKED` waiting on required
+  contexts that would never arrive (dotgibson/dotfiles-Windows#265, dotgibson/dotfiles-nvim#16).
+  Each job now ends with a step that reds the run when no token was minted, after the PR
+  step, so the PR still opens and `notify-failure` files the red run as an issue. It says
+  which half was missing: the org secret or variable not shared with the repo, or the App
+  not installed on it. `dotfiles-nvim` is registered as the fourth `EXTRA_REPOS` self-PR
+  install in `scripts/fleet-app-scope.sh` and `GITHUB-APP-AUTH.md` — its `freshness.yml`
+  has minted since #1123 and was never on the list — and the doc records the registration
+  no register here can see: `FLEET_APP_PRIVATE_KEY` must be shared with every self-PR repo.
+
 - **Tools installed with `mise use -g` are wired on a fresh shell.** Band-00 detection ran
   before `mise activate` put a mise tool's install dir on PATH, so every one came up with no
   `HAVE_*` flag, alias or init, and core-doctor's "not wired" block could only name per-tool,

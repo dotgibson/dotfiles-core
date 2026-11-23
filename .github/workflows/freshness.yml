@@ -135,6 +135,28 @@ jobs:
           fi
           echo "📦 opened/updated PR on \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
 
+      # The mint above is continue-on-error and the PR step falls back to GITHUB_TOKEN, so a
+      # repo the App cannot reach, or a key the org never shared with it, used to leave this
+      # run GREEN while the PR it opened sat BLOCKED: GitHub starts no workflow for a PR that
+      # GITHUB_TOKEN opens, so no required context ever arrives (dotfiles-Windows#265,
+      # dotfiles-nvim#16). Fail AFTER the PR step rather than before it: the PR still opens
+      # and can be nudged by hand, and this red run is what notify-failure files as an issue.
+      # GITHUB-APP-AUTH.md, "A self-PR repo has a third registration".
+      - name: Fail if the App token was not minted
+        if: env.MODE == 'pr' && steps.app.outputs.token == ''
+        env:
+          APP_OUTCOME: ${{ steps.app.outcome }}
+          HAS_CLIENT_ID: ${{ vars.FLEET_APP_CLIENT_ID != '' }}
+        run: |
+          if [ "$HAS_APP_KEY" != true ] || [ "$HAS_CLIENT_ID" != true ]; then
+            why="FLEET_APP_PRIVATE_KEY visible: $HAS_APP_KEY, FLEET_APP_CLIENT_ID visible: $HAS_CLIENT_ID — share the org secret/variable with ${GITHUB_REPOSITORY}"
+          else
+            why="the mint ran and ended '${APP_OUTCOME}' — is dotgibson-fleet-sync installed on ${GITHUB_REPOSITORY}?"
+          fi
+          echo "::error title=PR not App-authored::No App token was minted, so any PR this job opened is GITHUB_TOKEN-authored and its CI will not start: $why"
+          { echo "### ❌ no App token — any PR opened here will sit BLOCKED"; echo ""; echo "$why"; } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
   # Core does not author the editor any more (#1123): nvim/ is a vendored copy of
   # dotgibson/dotfiles-nvim pinned by nvim.lock, and the PLUGIN-pin bump that used to live
   # here moved to that repo, which has a real Neovim to test a bump against. What is left
@@ -311,6 +333,28 @@ jobs:
           fi
           echo "📦 opened/updated PR on \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
 
+      # The mint above is continue-on-error and the PR step falls back to GITHUB_TOKEN, so a
+      # repo the App cannot reach, or a key the org never shared with it, used to leave this
+      # run GREEN while the PR it opened sat BLOCKED: GitHub starts no workflow for a PR that
+      # GITHUB_TOKEN opens, so no required context ever arrives (dotfiles-Windows#265,
+      # dotfiles-nvim#16). Fail AFTER the PR step rather than before it: the PR still opens
+      # and can be nudged by hand, and this red run is what notify-failure files as an issue.
+      # GITHUB-APP-AUTH.md, "A self-PR repo has a third registration".
+      - name: Fail if the App token was not minted
+        if: env.MODE == 'pr' && steps.app.outputs.token == ''
+        env:
+          APP_OUTCOME: ${{ steps.app.outcome }}
+          HAS_CLIENT_ID: ${{ vars.FLEET_APP_CLIENT_ID != '' }}
+        run: |
+          if [ "$HAS_APP_KEY" != true ] || [ "$HAS_CLIENT_ID" != true ]; then
+            why="FLEET_APP_PRIVATE_KEY visible: $HAS_APP_KEY, FLEET_APP_CLIENT_ID visible: $HAS_CLIENT_ID — share the org secret/variable with ${GITHUB_REPOSITORY}"
+          else
+            why="the mint ran and ended '${APP_OUTCOME}' — is dotgibson-fleet-sync installed on ${GITHUB_REPOSITORY}?"
+          fi
+          echo "::error title=PR not App-authored::No App token was minted, so any PR this job opened is GITHUB_TOKEN-authored and its CI will not start: $why"
+          { echo "### ❌ no App token — any PR opened here will sit BLOCKED"; echo ""; echo "$why"; } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
   # Turn a red run into a deduplicated issue (G1). Scheduled-only: a manual `mode=check`
   # run exits non-zero BY DESIGN when pins are behind (that's the report, not a crash), so
   # scoping to schedule avoids paging on that intended signal while still catching a real
@@ -326,4 +370,4 @@ jobs:
       workflow: freshness
       title: "ci-failure: freshness bot is red"
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "The weekly freshness bot failed on a scheduled run (rolling zsh-plugin SHAs forward, or checking the nvim.lock pin). The updater may have crashed or the push/PR step failed — the pins are not being kept current."
+      details: "The weekly freshness bot failed on a scheduled run (rolling zsh-plugin SHAs forward, or checking the nvim.lock pin). The updater may have crashed, the push/PR step failed, or no App token was minted so the PR cannot run CI — the pins are not being kept current."

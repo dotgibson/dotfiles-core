@@ -56,6 +56,7 @@ section to answer. It is now narrowed, per mint:
 | `fleet-app-scope.yml` | the whole installation, deliberately | `metadata: read` — it reads a repository list and must hold no write verb to do it |
 | `freshness.yml` (×3) | this repository (no `owner:`/`repositories:`) | `contents` + `pull-requests: write` |
 | `dotfiles-Windows`' `nvim-sync.yml`, `starship-sync.yml`, `theme-sync.yml` | that repository (no `owner:`/`repositories:`) | `contents` + `pull-requests: write` |
+| `dotfiles-nvim`'s `freshness.yml` | that repository (no `owner:`/`repositories:`) | `contents` + `pull-requests: write` |
 
 `sync-fanout.yml` is the one that keeps **Workflows: write**, and it is load-bearing rather
 than cautious: a sync branch can carry `.github/workflows/*` pin moves, and GitHub refuses
@@ -186,7 +187,7 @@ variable and can be read in a step `if:`.
 
 ## Where the App is installed
 
-Installed on **`dotgibson`**, on the repos something actually writes to — plus two
+Installed on **`dotgibson`**, on the repos something actually writes to — plus three
 exceptions, which are there for their own **self-PRs** rather than for a cross-repo write:
 
 - **The Core-vendoring OS repos** (`scripts/os-repos.txt`) **and `dotfiles-Offense`** —
@@ -217,13 +218,21 @@ exceptions, which are there for their own **self-PRs** rather than for a cross-r
   and its CI runs unattended. **Removing this install would take those three bots back to
   weekly manual reopens** — and because they degrade rather than fail, the only symptom would
   be sync PRs quietly going `BLOCKED` again.
+- **`dotfiles-nvim`** — the third exception, the same shape as the second. Its weekly
+  `freshness.yml` opens the plugin-lock refresh PR, and has minted a repo-scoped token for
+  it since it was extracted (#1123) — but nothing here registered the install, and the
+  org secret was never shared with it, so the mint step skipped on `HAS_APP_KEY: false`
+  and every refresh PR opened as `github-actions[bot]`. Its six required contexts never
+  arrived and dotgibson/dotfiles-nvim#16 sat `BLOCKED` with a green run behind it, exactly
+  as dotfiles-Windows#265 had. **Removing this install, or un-sharing the key, takes the
+  refresh PR back to a manual close-and-reopen** — and the bot now says so by going red.
 
 The App does **not** need installing on the *source* repos that only mint (`htpx`, and
 `dotfiles-core` for its *fan-out* minting) — a minted token's reach is decided by the
 installation on the *other* repos. `htpx` in particular is read with the built-in token,
 so do not add it.
 
-So the thirteen repos above are the whole list, and a token minted for this installation
+So the fourteen repos above are the whole list, and a token minted for this installation
 carries `contents` + `workflows: write` — which is the cost of every repo added to it that
 nothing writes to. That cost is why the `dotfiles-Windows` bullet above argues its case
 rather than resting on the install already existing: this list is the answer an Org Owner
@@ -251,6 +260,18 @@ sync bots fell back to `GITHUB_TOKEN` under `continue-on-error`, and their runs 
 **green** while their PRs went back to sitting `BLOCKED`. The weekly register was the only
 thing that saw it, in dotfiles-core#1116.
 
+**A self-PR repo has a third registration, and nothing in this section can see it.** The
+mint needs `FLEET_APP_PRIVATE_KEY`, an org secret shared with *selected* repositories
+(that scope is the requirement, see the migration steps below). Share it with every repo
+above but one and that one's bots never mint: `HAS_APP_KEY` reads `false`, the mint step
+is skipped rather than failed, and the register below stays green because the install is
+there. That is how dotgibson/dotfiles-nvim#16 sat `BLOCKED` with every row here correct.
+Which repos can read an org secret is answerable only by an org admin, so instead of a
+check that cannot run, every self-PR bot ends with a step that fails the run when its PR
+was not App-authored, naming which half was missing (`freshness.yml` here,
+dotfiles-nvim's, and the same step belongs in any new one). Its PR still opens; the red
+run is the report.
+
 **Which is why the org half goes FIRST.** Either order leaves the register red for a
 while — a repo installed before this list names it is an EXTRA row, surplus reach the
 fleet has not justified yet. Only one of the two orders leaves real machinery broken
@@ -263,7 +284,7 @@ exceptions named above, which `scripts/test/90-policy-gates.sh` holds to this se
 then asks GitHub what the installation actually covers and reports both directions: a repo
 this list expects that the App cannot reach — naming which kind, because a fan-out target
 and a self-PR install fail differently — and a repo installed that nothing writes to.
-Thirteen repos, at the time of writing.
+Fourteen repos, at the time of writing.
 
 It runs in three places, because the two halves of the question are readable from opposite
 environments:

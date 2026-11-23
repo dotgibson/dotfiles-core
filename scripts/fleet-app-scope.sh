@@ -39,11 +39,13 @@
 #
 # WHAT THE INSTALLATION MUST COVER: scripts/os-repos.txt through load_os_repos (the ONE
 # reader, #669 — this register keeps no second copy of the fleet list), plus `dotfiles-core`,
-# `dotfiles-web` and `dotfiles-Windows`, the three exceptions GITHUB-APP-AUTH.md names. Core
-# and Windows are there for their own self-PRs (freshness.yml; the three sync bots), web for
-# the notify dispatch plus its own refresh PR. That is thirteen repos; `htpx` is deliberately
-# NOT in it. Windows was not in it either until dotgibson/dotfiles-Windows#268 gave its bots
-# an App-authored PR to open — before that its install was surplus, and this register said so.
+# `dotfiles-web`, `dotfiles-Windows` and `dotfiles-nvim`, the four exceptions GITHUB-APP-AUTH.md
+# names. Core, Windows and nvim are there for their own self-PRs (freshness.yml; the three sync
+# bots; nvim's freshness.yml), web for the notify dispatch plus its own refresh PR. That is
+# fourteen repos; `htpx` is deliberately NOT in it. Windows was not in it either until
+# dotgibson/dotfiles-Windows#268 gave its bots an App-authored PR to open — before that its
+# install was surplus, and this register said so. nvim's freshness.yml minted all along and
+# was never registered, so its PRs opened unauthored and sat BLOCKED (dotfiles-nvim#16).
 #
 # Requires an authenticated `gh` plus `jq`; needs no local checkout beyond this repo's own
 # scripts/os-repos.txt.
@@ -55,7 +57,7 @@
 #                                                 read it — mirrors fleet-protection.sh's
 #                                                 --rulesets-only)
 #   ./scripts/fleet-app-scope.sh --require "a b"  the repos whose ABSENCE is fatal (default:
-#                                                 all thirteen). sync-fanout.yml passes the
+#                                                 all fourteen). sync-fanout.yml passes the
 #                                                 targets of the run in hand, so a subset
 #                                                 backfill is not failed by an unrelated repo.
 # Env: GITHUB_REPOSITORY_OWNER (default: dotgibson)
@@ -145,11 +147,11 @@ load_os_repos || {
   fail "$CORE_OS_REPOS_ERR — cannot enumerate the fleet to compare the installation against"
   exit 2
 }
-# The three exceptions GITHUB-APP-AUTH.md names, beside the fan-out targets. Spelled out
+# The four exceptions GITHUB-APP-AUTH.md names, beside the fan-out targets. Spelled out
 # here and asserted against that doc by scripts/test/90-policy-gates.sh — ONE direction: every
 # entry here must be documented there. The reverse is caught at runtime by the EXTRA finding
 # below, against the live installation, rather than by parsing English prose.
-EXTRA_REPOS=(dotfiles-core dotfiles-web dotfiles-Windows)
+EXTRA_REPOS=(dotfiles-core dotfiles-web dotfiles-Windows dotfiles-nvim)
 EXPECTED="$(printf '%s\n' "${CORE_OS_REPOS[@]}" "${EXTRA_REPOS[@]}" | sort -u)"
 [ "$REQUIRE_GIVEN" -eq 1 ] || REQUIRE="$(tr '\n' ' ' <<<"$EXPECTED")"
 
@@ -219,7 +221,7 @@ elif ! reach_raw="$(gh api --paginate "/installation/repositories" \
   unread=1
 else
   # --paginate + --jq streams per page, so the selection line repeats identically once per
-  # page: take the first. Paginated deliberately — the default 30/page fits thirteen today,
+  # page: take the first. Paginated deliberately — the default 30/page fits fourteen today,
   # and a silent truncation at 31 would invent MISSING repos and block releases.
   SELECTION="$(awk '/^SEL /{print $2; exit}' <<<"$reach_raw")"
   installed="$(awk '/^REPO /{print $2}' <<<"$reach_raw" | sort -u)"
