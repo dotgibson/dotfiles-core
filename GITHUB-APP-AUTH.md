@@ -267,10 +267,13 @@ above but one and that one's bots never mint: `HAS_APP_KEY` reads `false`, the m
 is skipped rather than failed, and the register below stays green because the install is
 there. That is how dotgibson/dotfiles-nvim#16 sat `BLOCKED` with every row here correct.
 Which repos can read an org secret is answerable only by an org admin, so instead of a
-check that cannot run, every self-PR bot ends with a step that fails the run when its PR
-was not App-authored, naming which half was missing (`freshness.yml` here,
-dotfiles-nvim's, and the same step belongs in any new one). Its PR still opens; the red
-run is the report.
+check that cannot run, the bot itself ends with a step that fails the run when its PR was
+not App-authored, naming which half was missing. Its PR still opens; the red run is the
+report. **Only two bots carry that step today:** Core's `freshness.yml` (both PR jobs) and
+dotfiles-nvim's `freshness.yml` (dotgibson/dotfiles-nvim#18). dotfiles-web's
+`fleet-sync.yml` and dotfiles-Windows' `nvim-sync.yml`, `starship-sync.yml` and
+`theme-sync.yml` still fall back silently, so a key un-shared from either repo is still
+seen by nothing; each needs the same step, and so does any new self-PR bot.
 
 **Which is why the org half goes FIRST.** Either order leaves the register red for a
 while — a repo installed before this list names it is an EXTRA row, surplus reach the
