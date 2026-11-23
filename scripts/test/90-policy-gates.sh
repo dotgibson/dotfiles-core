@@ -891,7 +891,7 @@ else
     fail "fleet-app-scope: nothing tests membership of CORE_OS_REPOS[*] — the MISSING row can no longer tell a fan-out target's 403 from a self-PR install's silent GITHUB_TOKEN fallback (#1116)"
   fi
 
-  # 2. The three exceptions beside the fan-out targets are the ones GITHUB-APP-AUTH.md names.
+  # 2. The four exceptions beside the fan-out targets are the ones GITHUB-APP-AUTH.md names.
   # ONE DIRECTION, deliberately: every repo the script expects must be documented, because
   # an undocumented expectation is how the next reader "fixes" the script. The reverse — the
   # doc naming a repo the script does not expect — is caught at RUNTIME by the register's own
@@ -920,7 +920,7 @@ else
   elif [[ ! -r "$_fas_doc" ]]; then
     fail "fleet-app-scope: GITHUB-APP-AUTH.md is unreadable — cannot check the expected install set against its install list"
   elif [[ -z "$_fas_extra" ]]; then
-    fail "fleet-app-scope: EXTRA_REPOS parsed empty — the expected install set is the fan-out targets alone, which omits dotfiles-core, dotfiles-web and dotfiles-Windows"
+    fail "fleet-app-scope: EXTRA_REPOS parsed empty — the expected install set is the fan-out targets alone, which omits dotfiles-core, dotfiles-web, dotfiles-Windows and dotfiles-nvim"
   else
     # The install list lives in one section; read only that, so an unrelated mention of a
     # repo elsewhere in the doc cannot satisfy this.
